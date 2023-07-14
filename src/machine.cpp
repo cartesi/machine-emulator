@@ -175,7 +175,7 @@ pma_entry &machine::register_pma_entry(pma_entry &&pma) {
             ") must be multiple of page size "s + std::to_string(PMA_PAGE_SIZE)};
     }
     // Check PMA range, when not the sentinel PMA entry
-    if (!(length == 0 && start == 0)) {
+    if (length != 0 || start != 0) {
         if (length == 0) {
             throw std::invalid_argument{"length of "s + pma.get_description() + " cannot be zero"s};
         }
@@ -398,12 +398,12 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     write_htif_tohost(m_c.htif.tohost);
     write_htif_fromhost(m_c.htif.fromhost);
     // Only command in halt device is command 0 and it is always available
-    uint64_t htif_ihalt = static_cast<uint64_t>(true) << HTIF_HALT_HALT;
+    const uint64_t htif_ihalt = static_cast<uint64_t>(true) << HTIF_HALT_HALT;
     write_htif_ihalt(htif_ihalt);
-    uint64_t htif_iconsole = static_cast<uint64_t>(m_c.htif.console_getchar) << HTIF_CONSOLE_GETCHAR |
+    const uint64_t htif_iconsole = static_cast<uint64_t>(m_c.htif.console_getchar) << HTIF_CONSOLE_GETCHAR |
         static_cast<uint64_t>(true) << HTIF_CONSOLE_PUTCHAR;
     write_htif_iconsole(htif_iconsole);
-    uint64_t htif_iyield = static_cast<uint64_t>(m_c.htif.yield_manual) << HTIF_YIELD_MANUAL |
+    const uint64_t htif_iyield = static_cast<uint64_t>(m_c.htif.yield_manual) << HTIF_YIELD_MANUAL |
         static_cast<uint64_t>(m_c.htif.yield_automatic) << HTIF_YIELD_AUTOMATIC;
     write_htif_iyield(htif_iyield);
     // Resiter CLINT device
@@ -1365,11 +1365,13 @@ void machine::set_iflags_H(void) {
     m_s.iflags.H = true;
 }
 
+#if 0 // Unused
 static double now(void) {
     using namespace std::chrono;
     return static_cast<double>(duration_cast<microseconds>(high_resolution_clock::now().time_since_epoch()).count()) *
         1.e-6;
 }
+#endif
 
 void machine::mark_write_tlb_dirty_pages(void) const {
     for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
@@ -1399,7 +1401,7 @@ bool machine::verify_dirty_page_maps(void) const {
         auto peek = pma.get_peek();
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length();
              page_start_in_range += PMA_PAGE_SIZE) {
-            uint64_t page_address = pma.get_start() + page_start_in_range;
+            const uint64_t page_address = pma.get_start() + page_start_in_range;
             if (pma.get_istart_M()) {
                 const unsigned char *page_data = nullptr;
                 peek(pma, *this, page_start_in_range, &page_data, scratch.get());
@@ -1407,8 +1409,8 @@ bool machine::verify_dirty_page_maps(void) const {
                 hash_type real;
                 m_t.get_page_node_hash(page_address, stored);
                 m_t.get_page_node_hash(h, page_data, real);
-                bool marked_dirty = pma.is_page_marked_dirty(page_start_in_range);
-                bool is_dirty = (real != stored);
+                const bool marked_dirty = pma.is_page_marked_dirty(page_start_in_range);
+                const bool is_dirty = (real != stored);
                 if (is_dirty && !marked_dirty) {
                     broken = true;
                     std::cerr << std::setfill('0') << std::setw(8) << std::hex << page_address
@@ -1432,7 +1434,7 @@ bool machine::verify_dirty_page_maps(void) const {
 }
 
 static uint64_t get_task_concurrency(uint64_t value) {
-    uint64_t concurrency = value > 0 ? value : std::max(std::thread::hardware_concurrency(), 1U);
+    const uint64_t concurrency = value > 0 ? value : std::max(std::thread::hardware_concurrency(), 1U);
     return std::min(concurrency, static_cast<uint64_t>(THREADS_MAX));
 }
 
@@ -1470,8 +1472,8 @@ bool machine::update_merkle_tree(void) const {
                     machine_merkle_tree::hasher_type h;
                     // Thread j is responsible for page i if i % n == j.
                     for (uint64_t i = j; i < pages_in_range; i += n) {
-                        uint64_t page_start_in_range = i * PMA_PAGE_SIZE;
-                        uint64_t page_address = pma->get_start() + page_start_in_range;
+                        const uint64_t page_start_in_range = i * PMA_PAGE_SIZE;
+                        const uint64_t page_address = pma->get_start() + page_start_in_range;
                         const unsigned char *page_data = nullptr;
                         // Skip any clean pages
                         if (!pma->is_page_marked_dirty(page_start_in_range)) {
@@ -1483,11 +1485,11 @@ bool machine::update_merkle_tree(void) const {
                             return false;
                         }
                         if (page_data) {
-                            bool is_pristine = std::all_of(page_data, page_data + PMA_PAGE_SIZE,
+                            const bool is_pristine = std::all_of(page_data, page_data + PMA_PAGE_SIZE,
                                 [](unsigned char pp) -> bool { return pp == '\0'; });
 
                             if (is_pristine) {
-                                std::lock_guard<std::mutex> lock(updatex);
+                                const std::lock_guard<std::mutex> lock(updatex);
                                 if (!m_t.update_page_node_hash(page_address,
                                         machine_merkle_tree::get_pristine_hash(
                                             machine_merkle_tree::get_log2_page_size()))) {
@@ -1497,7 +1499,7 @@ bool machine::update_merkle_tree(void) const {
                                 hash_type hash;
                                 m_t.get_page_node_hash(h, page_data, hash);
                                 {
-                                    std::lock_guard<std::mutex> lock(updatex);
+                                    const std::lock_guard<std::mutex> lock(updatex);
                                     if (!m_t.update_page_node_hash(page_address, hash)) {
                                         return false;
                                     }
@@ -1524,7 +1526,7 @@ bool machine::update_merkle_tree(void) const {
     }
     // std::cerr << "page updates done in " << now()-begin << "s\n";
     // begin = now();
-    bool ret = m_t.end_update(gh);
+    const bool ret = m_t.end_update(gh);
     // std::cerr << "inner tree updates done in " << now()-begin << "s\n";
     return ret;
 }
@@ -1535,7 +1537,7 @@ bool machine::update_merkle_tree_page(uint64_t address) {
     // Align address to begining of page
     address &= ~(PMA_PAGE_SIZE - 1);
     pma_entry &pma = find_pma_entry(m_pmas, address, sizeof(uint64_t));
-    uint64_t page_start_in_range = address - pma.get_start();
+    const uint64_t page_start_in_range = address - pma.get_start();
     machine_merkle_tree::hasher_type h;
     auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
     if (!scratch) {
@@ -1549,7 +1551,7 @@ bool machine::update_merkle_tree_page(uint64_t address) {
         return false;
     }
     if (page_data) {
-        uint64_t page_address = pma.get_start() + page_start_in_range;
+        const uint64_t page_address = pma.get_start() + page_start_in_range;
         hash_type hash;
         m_t.get_page_node_hash(h, page_data, hash);
         if (!m_t.update_page_node_hash(page_address, hash)) {
@@ -1572,7 +1574,8 @@ void machine::dump_pmas(void) const {
             break;
         }
         std::array<char, 256> filename{};
-        (void) sprintf(filename.data(), "%016" PRIx64 "--%016" PRIx64 ".bin", pma->get_start(), pma->get_length());
+        (void) snprintf(filename.data(), filename.size(), "%016" PRIx64 "--%016" PRIx64 ".bin", pma->get_start(),
+            pma->get_length());
         std::cerr << "writing to " << filename.data() << '\n';
         auto fp = unique_fopen(filename.data(), "wb");
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma->get_length();
@@ -1627,7 +1630,7 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
     // Therefore, it is is either entirely inside a PMA range,
     // or entirely outside it.
     if (log2_size < machine_merkle_tree::get_log2_page_size()) {
-        uint64_t length = UINT64_C(1) << log2_size;
+        const uint64_t length = UINT64_C(1) << log2_size;
         const pma_entry &pma = find_pma_entry(m_pmas, address, length);
         auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
         const unsigned char *page_data = nullptr;
@@ -1636,7 +1639,7 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
         // Therefore, the entire page where it lies is also pristine
         // Otherwise, the entire desired range is inside it.
         if (!pma.get_istart_E()) {
-            uint64_t page_start_in_range = (address - pma.get_start()) & (~(PMA_PAGE_SIZE - 1));
+            const uint64_t page_start_in_range = (address - pma.get_start()) & (~(PMA_PAGE_SIZE - 1));
             auto peek = pma.get_peek();
             if (!peek(pma, *this, page_start_in_range, &page_data, scratch.get())) {
                 throw std::runtime_error{"PMA peek failed"};
@@ -1683,7 +1686,7 @@ void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length
     auto peek = pma.get_peek();
 
     while (length != 0) {
-        uint64_t bytes_to_write = std::min(length, PMA_PAGE_SIZE - shift);
+        const uint64_t bytes_to_write = std::min(length, PMA_PAGE_SIZE - shift);
         // avoid copying to the intermediate buffer when getting the whole page
         if (bytes_to_write == PMA_PAGE_SIZE) {
             if (!peek(pma, *this, page_address, &page_data, data)) {
@@ -1738,9 +1741,9 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
     if (!data) {
         throw std::invalid_argument{"invalid data buffer"};
     }
-    uint64_t vaddr_limit = vaddr_start + length;
-    uint64_t vaddr_page_start = vaddr_start & ~(PMA_PAGE_SIZE - 1);                       // align page backward
-    uint64_t vaddr_page_limit = (vaddr_limit + PMA_PAGE_SIZE - 1) & ~(PMA_PAGE_SIZE - 1); // align page forward
+    const uint64_t vaddr_limit = vaddr_start + length;
+    const uint64_t vaddr_page_start = vaddr_start & ~(PMA_PAGE_SIZE - 1);                       // align page backward
+    const uint64_t vaddr_page_limit = (vaddr_limit + PMA_PAGE_SIZE - 1) & ~(PMA_PAGE_SIZE - 1); // align page forward
     // copy page by page, because we need to perform address translation again for each page
     for (uint64_t vaddr_page = vaddr_page_start; vaddr_page < vaddr_page_limit; vaddr_page += PMA_PAGE_SIZE) {
         uint64_t paddr_page = 0;
@@ -1751,12 +1754,12 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
         uint64_t vaddr = vaddr_page;
         uint64_t chunklen = std::min<uint64_t>(PMA_PAGE_SIZE, vaddr_limit - vaddr);
         if (vaddr_page < vaddr_start) {
-            uint64_t off = vaddr_start - vaddr_page;
+            const uint64_t off = vaddr_start - vaddr_page;
             paddr += off;
             vaddr += off;
             chunklen -= off;
         }
-        uint64_t chunkoff = vaddr - vaddr_start;
+        const uint64_t chunkoff = vaddr - vaddr_start;
         read_memory(paddr, data + chunkoff, chunklen);
     }
 }
@@ -1769,9 +1772,9 @@ void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *da
     if (!data) {
         throw std::invalid_argument{"invalid data buffer"};
     }
-    uint64_t vaddr_limit = vaddr_start + length;
-    uint64_t vaddr_page_start = vaddr_start & ~(PMA_PAGE_SIZE - 1);                       // align page backward
-    uint64_t vaddr_page_limit = (vaddr_limit + PMA_PAGE_SIZE - 1) & ~(PMA_PAGE_SIZE - 1); // align page forward
+    const uint64_t vaddr_limit = vaddr_start + length;
+    const uint64_t vaddr_page_start = vaddr_start & ~(PMA_PAGE_SIZE - 1);                       // align page backward
+    const uint64_t vaddr_page_limit = (vaddr_limit + PMA_PAGE_SIZE - 1) & ~(PMA_PAGE_SIZE - 1); // align page forward
     // copy page by page, because we need to perform address translation again for each page
     for (uint64_t vaddr_page = vaddr_page_start; vaddr_page < vaddr_page_limit; vaddr_page += PMA_PAGE_SIZE) {
         uint64_t paddr_page = 0;
@@ -1784,12 +1787,12 @@ void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *da
         uint64_t vaddr = vaddr_page;
         uint64_t chunklen = std::min<uint64_t>(PMA_PAGE_SIZE, vaddr_limit - vaddr);
         if (vaddr_page < vaddr_start) {
-            uint64_t off = vaddr_start - vaddr_page;
+            const uint64_t off = vaddr_start - vaddr_page;
             paddr += off;
             vaddr += off;
             chunklen -= off;
         }
-        uint64_t chunkoff = vaddr - vaddr_start;
+        const uint64_t chunkoff = vaddr - vaddr_start;
         write_memory(paddr, data + chunkoff, chunklen);
     }
 }
@@ -1805,14 +1808,14 @@ uint64_t machine::read_word(uint64_t word_address) const {
     // will almost never be used, so one wonders if it is worth it...
     auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
     const unsigned char *page_data = nullptr;
-    uint64_t page_start_in_range = (word_address - pma.get_start()) & (~(PMA_PAGE_SIZE - 1));
+    const uint64_t page_start_in_range = (word_address - pma.get_start()) & (~(PMA_PAGE_SIZE - 1));
     auto peek = pma.get_peek();
     if (!peek(pma, *this, page_start_in_range, &page_data, scratch.get())) {
         throw std::invalid_argument{"peek failed"};
     }
     // If peek returns a page, read from it
     if (page_data) {
-        uint64_t word_start_in_range = (word_address - pma.get_start()) & (PMA_PAGE_SIZE - 1);
+        const uint64_t word_start_in_range = (word_address - pma.get_start()) & (PMA_PAGE_SIZE - 1);
         return aliased_aligned_read<uint64_t>(page_data + word_start_in_range);
         // Otherwise, page is always pristine
     } else {
@@ -1865,10 +1868,6 @@ uint64_t machine::read_uarch_ram_length(void) const {
     return m_uarch.read_ram_length();
 }
 
-static uint64_t saturate_next_cycle(uint64_t cycle) {
-    return (cycle < UINT64_MAX) ? cycle + 1 : UINT64_MAX;
-}
-
 void machine::verify_access_log(const access_log &log, const machine_runtime_config &r, bool one_based) {
     (void) r;
     // There must be at least one access in log
@@ -1900,6 +1899,7 @@ void machine::verify_state_transition(const hash_type &root_hash_before, const a
         throw std::invalid_argument{"access has no proof"};
     }
     // Make sure the access log starts from the same root hash as the state
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
     if (log.get_accesses().front().get_proof().value().get_root_hash() != root_hash_before) {
         throw std::invalid_argument{"mismatch in root hash before replay"};
     }

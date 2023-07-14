@@ -26,7 +26,7 @@ int clua_htif_export(lua_State *L, int ctxidx) {
         uint64_t value;
         const char *name;
     };
-    std::array constants{
+    const std::array constants{
         named_constant{HTIF_DEVICE_HALT, "HTIF_DEVICE_HALT"},
         named_constant{HTIF_DEVICE_CONSOLE, "HTIF_DEVICE_CONSOLE"},
         named_constant{HTIF_DEVICE_YIELD, "HTIF_DEVICE_YIELD"},

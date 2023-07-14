@@ -68,7 +68,7 @@ struct log_prefix {
 std::ostream &operator<<(std::ostream &out, log_prefix prefix) {
     using namespace slog;
     char stime[std::size("yyyy-mm-dd hh-mm-ss")];
-    time_t t = time(nullptr);
+    const time_t t = time(nullptr);
     struct tm ttime {};
     if (strftime(std::data(stime), std::size(stime), "%Y-%m-%d %H-%M-%S", localtime_r(&t, &ttime))) {
         out << stime << " ";
@@ -95,15 +95,15 @@ static constexpr std::chrono::milliseconds checkin_retry_wait_time = 500ms;
 
 static std::string message_to_json(const google::protobuf::Message &msg) {
     std::string json_msg;
-    google::protobuf::util::JsonOptions json_opts;
-    google::protobuf::util::Status s = MessageToJsonString(msg, &json_msg, json_opts);
+    const google::protobuf::util::JsonOptions json_opts;
+    const google::protobuf::util::Status s = MessageToJsonString(msg, &json_msg, json_opts);
     if (s.ok()) {
         return json_msg;
     }
     return "[grpc message decoding failed]";
 }
 
-struct checkin_context {
+struct checkin_context { // NOLINT(bugprone-exception-escape)
     checkin_context(const char *session_id, const char *checkin_address) :
         session_id(session_id),
         checkin_address(checkin_address) {}
@@ -235,7 +235,7 @@ static void squash_parent(bool &forked) {
     // Parent will wake us back up and then exit.
     if (forked) {
         SLOG(trace) << "rasing SIGSTOP";
-        int result = raise(SIGSTOP);
+        const int result = raise(SIGSTOP);
         if (result != 0) {
             // If raise SIGSTOP failed we should abort cause something went
             // wrong and we don't have information to recover.
@@ -249,10 +249,10 @@ static void squash_parent(bool &forked) {
 
 static void snapshot(bool &forked) {
     SLOG(trace) << "snapshot called with forked: " << forked;
-    pid_t childid = 0;
     squash_parent(forked);
     // Now actually fork
-    if ((childid = fork()) == 0) {
+    const pid_t childid = fork();
+    if (childid == 0) {
         SLOG(trace) << "Child after fork will continue serving requests";
         // Child simply goes on with next loop iteration.
         forked = true;
@@ -260,7 +260,7 @@ static void snapshot(bool &forked) {
         SLOG(trace) << "Parent after fork will call waitpid";
         // Parent waits on child.
         int wstatus{};
-        pid_t pid = waitpid(childid, &wstatus, WUNTRACED);
+        const pid_t pid = waitpid(childid, &wstatus, WUNTRACED);
         SLOG(trace) << "Waitpid result: " << pid;
         if (pid == -1) {
             // If waitpid failed we should abort cause something went
@@ -336,7 +336,7 @@ class handler_SetCheckInTarget final : public handler<SetCheckInTargetRequest, V
         if (req->session_id().empty() || req->address().empty()) {
             return finish_with_error(writer, StatusCode::INVALID_ARGUMENT, "need non-empty session id and address");
         }
-        Void resp;
+        const Void resp;
         hctx.checkin = checkin_context{req->session_id(), req->address()};
         return finish_ok(writer, resp);
     }
@@ -359,7 +359,7 @@ class handler_Machine final : public handler<MachineRequest, Void> {
         if (hctx.m) {
             return finish_with_error(writer, StatusCode::FAILED_PRECONDITION, "machine already exists");
         }
-        Void resp;
+        const Void resp;
         switch (req->machine_oneof_case()) {
             case MachineRequest::kConfig:
                 hctx.m = std::make_unique<cartesi::machine>(get_proto_machine_config(req->config()),
@@ -449,7 +449,7 @@ class handler_Store final : public handler<StoreRequest, Void> {
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
-        Void resp;
+        const Void resp;
         hctx.m->store(req->directory());
         return finish_ok(writer, resp);
     }
@@ -474,7 +474,7 @@ class handler_Destroy final : public handler<Void, Void> {
         if (hctx.m) {
             hctx.m.reset();
         }
-        Void resp;
+        const Void resp;
         return finish_ok(writer, resp);
     }
 
@@ -495,7 +495,7 @@ class handler_Snapshot final : public handler<Void, Void> {
     side_effect go(handler_context &hctx, Void *req, ServerAsyncResponseWriter<Void> *writer) override {
         (void) hctx;
         (void) req;
-        Void resp;
+        const Void resp;
         return finish_ok(writer, resp);
     }
 
@@ -516,7 +516,7 @@ class handler_Rollback final : public handler<Void, Void> {
     side_effect go(handler_context &hctx, Void *req, ServerAsyncResponseWriter<Void> *writer) override {
         (void) hctx;
         (void) req;
-        Void resp;
+        const Void resp;
         return finish_ok(writer, resp);
     }
 
@@ -537,7 +537,7 @@ class handler_Shutdown final : public handler<Void, Void> {
     side_effect go(handler_context &hctx, Void *req, ServerAsyncResponseWriter<Void> *writer) override {
         (void) hctx;
         (void) req;
-        Void resp;
+        const Void resp;
         return finish_ok(writer, resp);
     }
 
@@ -561,7 +561,7 @@ class handler_ResetUarchState final : public handler<Void, Void> {
             return finish_with_error_no_machine(writer);
         }
         hctx.m->reset_uarch_state();
-        Void resp;
+        const Void resp;
         return finish_ok(writer, resp);
     }
 
@@ -584,7 +584,7 @@ class handler_StepUarch final : public handler<StepUarchRequest, StepUarchRespon
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
-        AccessLog proto_log;
+        const AccessLog proto_log;
         StepUarchResponse resp;
         set_proto_access_log(hctx.m->step_uarch(get_proto_log_type(req->log_type()), req->one_based()),
             resp.mutable_log());
@@ -610,8 +610,8 @@ class handler_ReadMemory final : public handler<ReadMemoryRequest, ReadMemoryRes
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
-        uint64_t address = req->address();
-        uint64_t length = req->length();
+        const uint64_t address = req->address();
+        const uint64_t length = req->length();
         auto data = cartesi::unique_calloc<unsigned char>(length);
         hctx.m->read_memory(address, data.get(), length);
         ReadMemoryResponse resp;
@@ -637,9 +637,9 @@ class handler_WriteMemory final : public handler<WriteMemoryRequest, Void> {
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
-        uint64_t address = req->address();
+        const uint64_t address = req->address();
         const auto &data = req->data();
-        Void resp;
+        const Void resp;
 
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         hctx.m->write_memory(address, reinterpret_cast<const unsigned char *>(data.data()), data.size());
@@ -665,8 +665,8 @@ class handler_ReadVirtualMemory final : public handler<ReadMemoryRequest, ReadMe
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
-        uint64_t address = req->address();
-        uint64_t length = req->length();
+        const uint64_t address = req->address();
+        const uint64_t length = req->length();
         auto data = cartesi::unique_calloc<unsigned char>(length);
         hctx.m->read_virtual_memory(address, data.get(), length);
         ReadMemoryResponse resp;
@@ -692,9 +692,9 @@ class handler_WriteVirtualMemory final : public handler<WriteMemoryRequest, Void
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
-        uint64_t address = req->address();
+        const uint64_t address = req->address();
         const auto &data = req->data();
-        Void resp;
+        const Void resp;
 
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         hctx.m->write_virtual_memory(address, reinterpret_cast<const unsigned char *>(data.data()), data.size());
@@ -720,7 +720,7 @@ class handler_ReadWord final : public handler<ReadWordRequest, ReadWordResponse>
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
-        uint64_t address = req->address();
+        const uint64_t address = req->address();
         ReadWordResponse resp;
         resp.set_value(hctx.m->read_word(address));
         resp.set_success(true);
@@ -772,8 +772,8 @@ class handler_GetProof final : public handler<GetProofRequest, GetProofResponse>
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
-        uint64_t address = req->address();
-        int log2_size = static_cast<int>(req->log2_size());
+        const uint64_t address = req->address();
+        const int log2_size = static_cast<int>(req->log2_size());
         GetProofResponse resp;
         set_proto_merkle_tree_proof(hctx.m->get_proof(address, log2_size), resp.mutable_proof());
         return finish_ok(writer, resp);
@@ -799,7 +799,7 @@ class handler_ReplaceMemoryRange final : public handler<ReplaceMemoryRangeReques
             return finish_with_error_no_machine(writer);
         }
         hctx.m->replace_memory_range(get_proto_memory_range_config(req->config()));
-        Void resp;
+        const Void resp;
         return finish_ok(writer, resp);
     }
 
@@ -880,7 +880,7 @@ class handler_WriteX final : public handler<WriteXRequest, Void> {
             return finish_with_error_no_machine(writer);
         }
         hctx.m->write_x(static_cast<int>(index), req->value());
-        Void resp;
+        const Void resp;
         return finish_ok(writer, resp);
     }
 
@@ -961,7 +961,7 @@ class handler_WriteUarchX final : public handler<WriteUarchXRequest, Void> {
             return finish_with_error_no_machine(writer);
         }
         hctx.m->write_uarch_x(static_cast<int>(index), req->value());
-        Void resp;
+        const Void resp;
         return finish_ok(writer, resp);
     }
 
@@ -985,7 +985,7 @@ class handler_ResetIflagsY final : public handler<Void, Void> {
             return finish_with_error_no_machine(writer);
         }
         hctx.m->reset_iflags_Y();
-        Void resp;
+        const Void resp;
         return finish_ok(writer, resp);
     }
 
@@ -1068,7 +1068,7 @@ class handler_WriteCsr final : public handler<WriteCsrRequest, Void> {
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
-        Void resp;
+        const Void resp;
         hctx.m->write_csr(csr, req->value());
         return finish_ok(writer, resp);
     }
@@ -1168,7 +1168,7 @@ class handler_DumpPmas final : public handler<Void, Void> {
             return finish_with_error_no_machine(writer);
         }
         hctx.m->dump_pmas();
-        Void resp;
+        const Void resp;
         return finish_ok(writer, resp);
     }
 
@@ -1212,7 +1212,7 @@ class handler_VerifyAccessLog final : public handler<VerifyAccessLogRequest, Voi
     side_effect go(handler_context &hctx, VerifyAccessLogRequest *req,
         ServerAsyncResponseWriter<Void> *writer) override {
         (void) hctx;
-        Void resp;
+        const Void resp;
         machine::verify_access_log(get_proto_access_log(req->log()), get_proto_machine_runtime_config(req->runtime()),
             req->one_based());
         return finish_ok(writer, resp);
@@ -1237,7 +1237,7 @@ class handler_VerifyStateTransition final : public handler<VerifyStateTransition
         (void) hctx;
         machine::verify_state_transition(get_proto_hash(req->root_hash_before()), get_proto_access_log(req->log()),
             get_proto_hash(req->root_hash_after()), get_proto_machine_runtime_config(req->runtime()), req->one_based());
-        Void resp;
+        const Void resp;
         return finish_ok(writer, resp); // NOLINT: suppress warning caused by gRPC
     }
 
@@ -1334,43 +1334,43 @@ static void server_loop(const char *server_address, const char *session_id, cons
         }
 
         SLOG(trace) << "Registering GRPC handlers";
-        handler_GetVersion hGetVersion(hctx);
-        handler_SetCheckInTarget hSetCheckInTarget(hctx);
-        handler_Machine hMachine(hctx);
-        handler_Run hRun(hctx);
-        handler_RunUarch hRunUarch(hctx);
-        handler_ResetUarchState hResetUarchState(hctx);
-        handler_Store hStore(hctx);
-        handler_Destroy hDestroy(hctx);
-        handler_Snapshot hSnapshot(hctx);
-        handler_Rollback hRollback(hctx);
-        handler_Shutdown hShutdown(hctx);
-        handler_StepUarch hStepUarch(hctx);
-        handler_ReadMemory hReadMemory(hctx);
-        handler_WriteMemory hWriteMemory(hctx);
-        handler_ReadVirtualMemory hReadVirtualMemory(hctx);
-        handler_WriteVirtualMemory hWriteVirtualMemory(hctx);
-        handler_ReadWord hReadWord(hctx);
-        handler_GetRootHash hGetRootHash(hctx);
-        handler_GetProof hGetProof(hctx);
-        handler_ReplaceMemoryRange hReplaceMemoryRange(hctx);
-        handler_GetXAddress hGetXAddress(hctx);
-        handler_ReadX hReadX(hctx);
-        handler_WriteX hWriteX(hctx);
-        handler_GetUarchXAddress hGetUarchXAddress(hctx);
-        handler_ReadUarchX hReadUarchX(hctx);
-        handler_WriteUarchX hWriteUarchX(hctx);
-        handler_ResetIflagsY hResetIflagsY(hctx);
-        handler_GetCsrAddress hGetCsrAddress(hctx);
-        handler_ReadCsr hReadCsr(hctx);
-        handler_WriteCsr hWriteCsr(hctx);
-        handler_GetInitialConfig hGetInitialConfig(hctx);
-        handler_VerifyMerkleTree hVerifyMerkleTree(hctx);
-        handler_VerifyDirtyPageMaps hVerifyDirtyPageMaps(hctx);
-        handler_DumpPmas hDumpPmas(hctx);
-        handler_GetDefaultConfig hGetDefaultConfig(hctx);
-        handler_VerifyAccessLog hVerifyAccessLog(hctx);
-        handler_VerifyStateTransition hVerifyStateTransition(hctx);
+        const handler_GetVersion hGetVersion(hctx);
+        const handler_SetCheckInTarget hSetCheckInTarget(hctx);
+        const handler_Machine hMachine(hctx);
+        const handler_Run hRun(hctx);
+        const handler_RunUarch hRunUarch(hctx);
+        const handler_ResetUarchState hResetUarchState(hctx);
+        const handler_Store hStore(hctx);
+        const handler_Destroy hDestroy(hctx);
+        const handler_Snapshot hSnapshot(hctx);
+        const handler_Rollback hRollback(hctx);
+        const handler_Shutdown hShutdown(hctx);
+        const handler_StepUarch hStepUarch(hctx);
+        const handler_ReadMemory hReadMemory(hctx);
+        const handler_WriteMemory hWriteMemory(hctx);
+        const handler_ReadVirtualMemory hReadVirtualMemory(hctx);
+        const handler_WriteVirtualMemory hWriteVirtualMemory(hctx);
+        const handler_ReadWord hReadWord(hctx);
+        const handler_GetRootHash hGetRootHash(hctx);
+        const handler_GetProof hGetProof(hctx);
+        const handler_ReplaceMemoryRange hReplaceMemoryRange(hctx);
+        const handler_GetXAddress hGetXAddress(hctx);
+        const handler_ReadX hReadX(hctx);
+        const handler_WriteX hWriteX(hctx);
+        const handler_GetUarchXAddress hGetUarchXAddress(hctx);
+        const handler_ReadUarchX hReadUarchX(hctx);
+        const handler_WriteUarchX hWriteUarchX(hctx);
+        const handler_ResetIflagsY hResetIflagsY(hctx);
+        const handler_GetCsrAddress hGetCsrAddress(hctx);
+        const handler_ReadCsr hReadCsr(hctx);
+        const handler_WriteCsr hWriteCsr(hctx);
+        const handler_GetInitialConfig hGetInitialConfig(hctx);
+        const handler_VerifyMerkleTree hVerifyMerkleTree(hctx);
+        const handler_VerifyDirtyPageMaps hVerifyDirtyPageMaps(hctx);
+        const handler_DumpPmas hDumpPmas(hctx);
+        const handler_GetDefaultConfig hGetDefaultConfig(hctx);
+        const handler_VerifyAccessLog hVerifyAccessLog(hctx);
+        const handler_VerifyStateTransition hVerifyStateTransition(hctx);
 
         // The invariant before and after snapshot/rollbacks is that all handlers
         // are in waiting mode
@@ -1385,7 +1385,8 @@ static void server_loop(const char *server_address, const char *session_id, cons
                 SLOG(debug) << "Breaking from server loop with side effect == shutdown";
                 break;
             }
-            if ((s_effect = h->advance(hctx)) != side_effect::none) {
+            s_effect = h->advance(hctx);
+            if (s_effect != side_effect::none) {
                 SLOG(debug) << "Breaking from server loop with side effect != none";
                 break;
             }
@@ -1442,7 +1443,7 @@ static void server_loop(const char *server_address, const char *session_id, cons
 /// \param val If string matches prefix, points to remaninder
 /// \returns True if string matches prefix, false otherwise
 static bool stringval(const char *pre, const char *str, const char **val) {
-    size_t len = strlen(pre);
+    const size_t len = strlen(pre);
     if (strncmp(pre, str, len) == 0) {
         *val = str + len;
         return true;

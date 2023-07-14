@@ -31,7 +31,7 @@ static bool shadow_pmas_read(void *context, i_device_state_access *a, uint64_t o
     }
     if (offset < sizeof(shadow_pmas)) {
         offset >>= 3;
-        int p = static_cast<int>(offset >> 1);
+        const int p = static_cast<int>(offset >> 1);
         if (offset & 1) {
             *pval = a->read_pma_ilength(p);
         } else {

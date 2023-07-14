@@ -144,6 +144,7 @@ static uint64_t opt_uint_field(lua_State *L, int tabidx, const char *field, uint
     return static_cast<uint64_t>(val);
 }
 
+#if 0 // Unused
 /// \brief Returns an optional string field indexed by string in a table.
 /// \param L Lua state.
 /// \param tabidx Table stack index.
@@ -161,6 +162,7 @@ static std::string opt_string_field(lua_State *L, int tabidx, const char *field)
     lua_pop(L, 1);
     return str;
 }
+#endif
 
 /// \brief Returns an allocated optional c string field indexed by string in a table.
 /// \param L Lua state.
@@ -192,7 +194,7 @@ static int check_int_field(lua_State *L, int tabidx, const char *field) {
     if (!lua_isinteger(L, -1)) {
         luaL_error(L, "invalid %s (expected integer, got %s)", field, lua_typename(L, lua_type(L, -1)));
     }
-    lua_Integer ival = lua_tointeger(L, -1);
+    const lua_Integer ival = lua_tointeger(L, -1);
     lua_pop(L, 1);
     return static_cast<int>(ival);
 }
@@ -208,7 +210,7 @@ static uint64_t check_uint_field(lua_State *L, int tabidx, const char *field) {
     if (!lua_isinteger(L, -1)) {
         luaL_error(L, "invalid %s (expected unsigned integer, got %s)", field, lua_typename(L, lua_type(L, -1)));
     }
-    lua_Integer ival = lua_tointeger(L, -1);
+    const lua_Integer ival = lua_tointeger(L, -1);
     lua_pop(L, 1);
     return static_cast<uint64_t>(ival);
 }
@@ -338,7 +340,7 @@ static void check_sibling_cm_hashes(lua_State *L, int idx, size_t log2_target_si
     cm_hash_array *sibling_hashes) {
     luaL_checktype(L, idx, LUA_TTABLE);
     memset(sibling_hashes, 0, sizeof(cm_hash_array));
-    size_t sibling_hashes_count = log2_root_size - log2_target_size;
+    const size_t sibling_hashes_count = log2_root_size - log2_target_size;
     if (sibling_hashes_count > 64) {
         luaL_error(L, "too many sibling hashes (expected max %d, got %d)", 64, static_cast<int>(sibling_hashes_count));
     }
@@ -391,7 +393,7 @@ static unsigned char *aux_cm_access_data_field(lua_State *L, int tabidx, const c
     if (lua_isstring(L, -1)) {
         size_t len = 0;
         const char *s = lua_tolstring(L, -1, &len);
-        uint64_t expected_len = UINT64_C(1) << log2_size;
+        const uint64_t expected_len = UINT64_C(1) << log2_size;
         if (len != expected_len) {
             luaL_error(L, "invalid %s (expected string with 2^%d bytes)", field, static_cast<int>(log2_size));
         }
@@ -1002,7 +1004,7 @@ static void check_cm_flash_drive_configs(lua_State *L, int tabidx, cm_memory_ran
         return;
     }
     auto flash_drive_table_idx = lua_gettop(L);
-    size_t count = luaL_len(L, flash_drive_table_idx);
+    const size_t count = luaL_len(L, flash_drive_table_idx);
     if (count > CM_FLASH_DRIVE_CONFIGS_MAX_SIZE) {
         luaL_error(L, "too many flash drives (expected max %d, got %d)", CM_FLASH_DRIVE_CONFIGS_MAX_SIZE,
             static_cast<int>(fs->count));

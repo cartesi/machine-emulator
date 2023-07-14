@@ -22,15 +22,15 @@
 #define CM_API __attribute__((visibility("default"))) // NOLINT(cppcoreguidelines-macro-usage)
 #endif
 
-#define CM_MACHINE_HASH_BYTE_SIZE 32    // NOLINT(cppcoreguidelines-macro-usage)
-#define CM_MACHINE_X_REG_COUNT 32       // NOLINT(cppcoreguidelines-macro-usage)
-#define CM_MACHINE_F_REG_COUNT 32       // NOLINT(cppcoreguidelines-macro-usage)
-#define CM_MACHINE_UARCH_X_REG_COUNT 32 // NOLINT(cppcoreguidelines-macro-usage)
+#define CM_MACHINE_HASH_BYTE_SIZE 32    // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
+#define CM_MACHINE_X_REG_COUNT 32       // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
+#define CM_MACHINE_F_REG_COUNT 32       // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
+#define CM_MACHINE_UARCH_X_REG_COUNT 32 // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
 
-#define CM_TREE_LOG2_WORD_SIZE 3          // NOLINT(cppcoreguidelines-macro-usage)
-#define CM_TREE_LOG2_PAGE_SIZE 12         // NOLINT(cppcoreguidelines-macro-usage)
-#define CM_TREE_LOG2_ROOT_SIZE 64         // NOLINT(cppcoreguidelines-macro-usage)
-#define CM_FLASH_DRIVE_CONFIGS_MAX_SIZE 8 // NOLINT(cppcoreguidelines-macro-usage)
+#define CM_TREE_LOG2_WORD_SIZE 3          // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
+#define CM_TREE_LOG2_PAGE_SIZE 12         // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
+#define CM_TREE_LOG2_ROOT_SIZE 64         // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
+#define CM_FLASH_DRIVE_CONFIGS_MAX_SIZE 8 // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
 
 #include "machine-c-version.h"
 

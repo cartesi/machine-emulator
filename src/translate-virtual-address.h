@@ -33,9 +33,9 @@ static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t va
     if (unlikely(!pma.get_istart_M() || !pma.get_istart_W())) {
         return false;
     }
-    uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+    const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
     unsigned char *hpage = a.get_host_memory(pma) + (paddr_page - pma.get_start());
-    uint64_t hoffset = paddr - paddr_page;
+    const uint64_t hoffset = paddr - paddr_page;
     // log writes to memory
     a.write_memory_word(paddr, hpage, hoffset, val);
     // mark page as dirty so we know to update the Merkle tree
@@ -55,9 +55,9 @@ static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pv
     if (unlikely(!pma.get_istart_M() || !pma.get_istart_R())) {
         return false;
     }
-    uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+    const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
     unsigned char *hpage = a.get_host_memory(pma) + (paddr_page - pma.get_start());
-    uint64_t hoffset = paddr - paddr_page;
+    const uint64_t hoffset = paddr - paddr_page;
     a.read_memory_word(paddr, hpage, hoffset, pval);
     return true;
 }
@@ -75,7 +75,7 @@ static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pv
 template <typename STATE_ACCESS, bool UPDATE_PTE = true>
 static NO_INLINE bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift) {
     auto priv = a.read_iflags_PRV();
-    uint64_t mstatus = a.read_mstatus();
+    const uint64_t mstatus = a.read_mstatus();
 
     // When MPRV is set, data loads and stores use privilege in MPP
     // instead of the current privilege level (code access is unaffected)
@@ -92,9 +92,9 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppadd
         return true;
     }
 
-    uint64_t satp = a.read_satp();
+    const uint64_t satp = a.read_satp();
 
-    uint64_t mode = satp >> SATP_MODE_SHIFT;
+    const uint64_t mode = satp >> SATP_MODE_SHIFT;
     switch (mode) {
         case SATP_MODE_BARE: // Bare: No translation or protection
             *ppaddr = vaddr;
@@ -113,14 +113,14 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppadd
     // ??D It doesn't seem like restricting to one or the other will
     //     simplify the code much. However, we may want to use sv39
     //     to reduce the size of the log sent to the blockchain
-    int levels = static_cast<int>(mode - SATP_MODE_SV39) + 3;
+    const int levels = static_cast<int>(mode - SATP_MODE_SV39) + 3;
 
     // The least significant 12 bits of vaddr are the page offset
     // Then come levels virtual page numbers (VPN)
     // The rest of vaddr must be filled with copies of the
     // most significant bit in VPN[levels]
     // Hence, the use of arithmetic shifts here
-    int vaddr_bits = XLEN - (LOG2_PAGE_SIZE + levels * LOG2_VPN_SIZE);
+    const int vaddr_bits = XLEN - (LOG2_PAGE_SIZE + levels * LOG2_VPN_SIZE);
     if (unlikely((static_cast<int64_t>(vaddr << vaddr_bits) >> vaddr_bits) != static_cast<int64_t>(vaddr))) {
         return false;
     }
@@ -129,8 +129,8 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppadd
     uint64_t pte_addr = (satp & SATP_PPN_MASK) << LOG2_PAGE_SIZE;
     for (int i = 0; i < levels; i++) {
         // Mask out VPN[levels-i-1]
-        int vaddr_shift = LOG2_PAGE_SIZE + LOG2_VPN_SIZE * (levels - 1 - i);
-        uint64_t vpn = (vaddr >> vaddr_shift) & VPN_MASK;
+        const int vaddr_shift = LOG2_PAGE_SIZE + LOG2_VPN_SIZE * (levels - 1 - i);
+        const uint64_t vpn = (vaddr >> vaddr_shift) & VPN_MASK;
         // Add offset to find physical address of page table entry
         pte_addr += vpn << LOG2_PTE_SIZE; //??D we can probably save this shift here
         // Read page table entry from physical memory
@@ -154,7 +154,7 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppadd
             return false;
         }
         // Clear all flags in least significant bits, then shift back to multiple of page size to form physical address.
-        uint64_t ppn = (pte & PTE_PPN_MASK) << (LOG2_PAGE_SIZE - PTE_PPN_SHIFT);
+        const uint64_t ppn = (pte & PTE_PPN_MASK) << (LOG2_PAGE_SIZE - PTE_PPN_SHIFT);
         // Obtain X, W, R protection bits
         uint64_t xwr = (pte >> PTE_R_SHIFT) & (PTE_XWR_R_MASK | PTE_XWR_W_MASK | PTE_XWR_X_MASK);
         // xwr != 0 means we are done walking the page tables
@@ -191,7 +191,7 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppadd
                 return false;
             }
             // Check page, megapage, and gigapage alignment
-            uint64_t vaddr_mask = (UINT64_C(1) << vaddr_shift) - 1;
+            const uint64_t vaddr_mask = (UINT64_C(1) << vaddr_shift) - 1;
             if (unlikely(ppn & vaddr_mask)) {
                 return false;
             }

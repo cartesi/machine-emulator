@@ -30,7 +30,7 @@ static bool htif_peek(const pma_entry &pma, const machine &m, uint64_t page_offs
 }
 
 pma_entry make_htif_pma_entry(uint64_t start, uint64_t length, htif_runtime_config *context) {
-    pma_entry::flags f{
+    const pma_entry::flags f{
         true,                // R
         true,                // W
         false,               // X

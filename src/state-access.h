@@ -400,19 +400,19 @@ private:
     }
 
     NO_INLINE uint64_t do_poll_console(uint64_t mcycle) {
-        bool htif_console_getchar = static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
+        const bool htif_console_getchar = static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
         if (htif_console_getchar) {
-            uint64_t warp_cycle = rtc_time_to_cycle(read_clint_mtimecmp());
+            const uint64_t warp_cycle = rtc_time_to_cycle(read_clint_mtimecmp());
             if (warp_cycle > mcycle) {
                 constexpr uint64_t cycles_per_us = RTC_CLOCK_FREQ / 1000000; // CLOCK_FREQ / 10^6
-                uint64_t wait = (warp_cycle - mcycle) / cycles_per_us;
+                const uint64_t wait = (warp_cycle - mcycle) / cycles_per_us;
                 timeval start{};
                 timeval end{};
                 gettimeofday(&start, nullptr);
                 tty_poll_console(wait);
                 gettimeofday(&end, nullptr);
-                uint64_t elapsed_us = (end.tv_sec - start.tv_sec) * 1000000 + end.tv_usec - start.tv_usec;
-                uint64_t tty_cycle = mcycle + (elapsed_us * cycles_per_us);
+                const uint64_t elapsed_us = (end.tv_sec - start.tv_sec) * 1000000 + end.tv_usec - start.tv_usec;
+                const uint64_t tty_cycle = mcycle + (elapsed_us * cycles_per_us);
                 mcycle = std::min(std::max(tty_cycle, mcycle), warp_cycle);
             }
         }
@@ -517,7 +517,7 @@ private:
 
     template <TLB_entry_type ETYPE, typename T>
     inline bool do_translate_vaddr_via_tlb(uint64_t vaddr, unsigned char **phptr) {
-        uint64_t eidx = tlb_get_entry_index(vaddr);
+        const uint64_t eidx = tlb_get_entry_index(vaddr);
         const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
         if (unlikely(!tlb_is_hit<T>(tlbhe.vaddr_page, vaddr))) {
             return false;
@@ -528,7 +528,7 @@ private:
 
     template <TLB_entry_type ETYPE, typename T>
     inline bool do_read_memory_word_via_tlb(uint64_t vaddr, T *pval) {
-        uint64_t eidx = tlb_get_entry_index(vaddr);
+        const uint64_t eidx = tlb_get_entry_index(vaddr);
         const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
         if (unlikely(!tlb_is_hit<T>(tlbhe.vaddr_page, vaddr))) {
             return false;
@@ -540,7 +540,7 @@ private:
 
     template <TLB_entry_type ETYPE, typename T>
     inline bool do_write_memory_word_via_tlb(uint64_t vaddr, T val) {
-        uint64_t eidx = tlb_get_entry_index(vaddr);
+        const uint64_t eidx = tlb_get_entry_index(vaddr);
         const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
         if (unlikely(!tlb_is_hit<T>(tlbhe.vaddr_page, vaddr))) {
             return false;
@@ -552,7 +552,7 @@ private:
 
     template <TLB_entry_type ETYPE>
     unsigned char *do_replace_tlb_entry(uint64_t vaddr, uint64_t paddr, pma_entry &pma) {
-        uint64_t eidx = tlb_get_entry_index(vaddr);
+        const uint64_t eidx = tlb_get_entry_index(vaddr);
         tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
         tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[ETYPE][eidx];
         // Mark page that was on TLB as dirty so we know to update the Merkle tree
@@ -562,8 +562,8 @@ private:
                 pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
             }
         }
-        uint64_t vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
-        uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+        const uint64_t vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
+        const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
         unsigned char *hpage = pma.get_memory_noexcept().get_host_memory() + (paddr_page - pma.get_start());
         tlbhe.vaddr_page = vaddr_page;
         tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - vaddr_page;
@@ -579,7 +579,7 @@ private:
         if constexpr (ETYPE == TLB_WRITE) {
             if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
                 tlbhe.vaddr_page = TLB_INVALID_PAGE;
-                tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[ETYPE][eidx];
+                const tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[ETYPE][eidx];
                 pma_entry &pma = do_get_pma_entry(static_cast<int>(tlbce.pma_index));
                 pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
             } else {

@@ -17,8 +17,8 @@
 #ifndef UARCH_INTERPRET_SOLIDITY_COMPAT_H
 #define UARCH_INTERPRET_SOLIDITY_COMPAT_H
 
-#include <assert.h>
-#include <inttypes.h>
+#include <cassert>
+#include <cinttypes>
 
 /// \file
 /// \brief Solidity Compatibility Layer
@@ -94,7 +94,7 @@ static inline void writeX(UarchState &a, uint8 reg, uint64 val) {
 // Conversions and arithmentic functions
 
 static inline int32 uint64ToInt32(uint64 v) {
-    return v;
+    return static_cast<int32>(v);
 }
 
 static inline uint64 uint64AddInt32(uint64 v, int32 w) {
@@ -163,7 +163,10 @@ static inline uint64 int8ToUint64(int8 v) {
     return v;
 }
 
-#define require(condition, message) assert((condition) && message)
+template <typename T1, typename T2>
+void require(T1 condition, T2 message) {
+    assert((condition) && (message));
+}
 
 template <typename UarchState>
 static void dumpInsn(UarchState &a, uint64 pc, uint32 insn, const char *name) {

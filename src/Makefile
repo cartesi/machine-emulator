@@ -265,7 +265,8 @@ PGO_WORKLOAD=\
 
 # We ignore xkcp-keccak-256-hasher.cpp because it is missing a header file.
 # The file is not being compiled but we want to keep it for reference.
-LINTER_IGNORE_SOURCES=xkcp-keccak-256-hasher.cpp
+# We ignore test-machine-c-api.cpp cause it takes too long.
+LINTER_IGNORE_SOURCES=xkcp-keccak-256-hasher.cpp test-machine-c-api.cpp
 LINTER_IGNORE_HEADERS=%.pb.h xkcp-keccak-256-hasher.h
 LINTER_SOURCES=$(filter-out $(LINTER_IGNORE_SOURCES),$(strip $(wildcard *.cpp) $(wildcard *.c)))
 LINTER_HEADERS=$(filter-out $(LINTER_IGNORE_HEADERS),$(strip $(wildcard *.hpp) $(wildcard *.h)))

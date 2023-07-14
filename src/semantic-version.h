@@ -22,7 +22,7 @@
 
 namespace cartesi {
 
-struct semantic_version {
+struct semantic_version { // NOLINT(bugprone-exception-escape)
     uint32_t major{};
     uint32_t minor{};
     uint32_t patch{};

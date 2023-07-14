@@ -119,11 +119,11 @@ pma_memory::pma_memory(const std::string &description, uint64_t length, const st
         throw std::runtime_error{"image file must be specified for "s + description};
     }
 
-    int oflag = m.shared ? O_RDWR : O_RDONLY;
-    int mflag = m.shared ? MAP_SHARED : MAP_PRIVATE;
+    const int oflag = m.shared ? O_RDWR : O_RDONLY;
+    const int mflag = m.shared ? MAP_SHARED : MAP_PRIVATE;
 
     // Try to open image file
-    int backing_file = open(path.c_str(), oflag);
+    const int backing_file = open(path.c_str(), oflag);
     if (backing_file < 0) {
         throw std::system_error{errno, std::generic_category(),
             "could not open image file '"s + path + "' when initializing "s + description};

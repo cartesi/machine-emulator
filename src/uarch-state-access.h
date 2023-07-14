@@ -139,7 +139,7 @@ private:
             throw std::runtime_error("pma is not readable");
         }
         // Found a writable memory range. Access host memory accordingly.
-        uint64_t hoffset = paddr - pma.get_start();
+        const uint64_t hoffset = paddr - pma.get_start();
         unsigned char *hmem = pma.get_memory().get_host_memory() + hoffset;
         return aliased_aligned_read<uint64_t>(hmem);
     }
@@ -164,10 +164,10 @@ private:
             throw std::runtime_error("pma is not writable");
         }
         // Found a writable memory range. Access host memory accordingly.
-        uint64_t hoffset = paddr - pma.get_start();
+        const uint64_t hoffset = paddr - pma.get_start();
         unsigned char *hmem = pma.get_memory().get_host_memory() + hoffset;
         aliased_aligned_write(hmem, data);
-        uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+        const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
         pma.mark_dirty_page(paddr_page - pma.get_start());
     }
 

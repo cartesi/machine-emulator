@@ -34,7 +34,7 @@ namespace cartesi {
 std::string encode_base64(const std::string &input) {
     std::istringstream sin(input);
     std::ostringstream sout;
-    base64::encoder E;
+    base64::encoder E; // NOLINT(clang-analyzer-optin.cplusplus.UninitializedObject)
     E.encode(sin, sout);
     return sout.str();
 }
@@ -42,7 +42,7 @@ std::string encode_base64(const std::string &input) {
 std::string decode_base64(const std::string &input) {
     std::istringstream sin(input);
     std::ostringstream sout;
-    base64::decoder E;
+    base64::decoder E; // NOLINT(clang-analyzer-optin.cplusplus.UninitializedObject)
     E.decode(sin, sout);
     return sout.str();
 }

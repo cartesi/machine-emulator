@@ -196,7 +196,7 @@ void grpc_machine_stub::wait_checkin_and_reconnect(void) {
     // Acknowledge rpc
     ok = false;
     tag = nullptr;
-    Void response;
+    const Void response;
     ctx.writer.Finish(response, grpc::Status::OK, this); // NOLINT: grpc warnings
     if (m_completion_queue->AsyncNext(&tag, &ok, time_in_future(5)) != grpc::CompletionQueue::NextStatus::GOT_EVENT) {
         throw std::runtime_error("gave up waiting for checkin response");
@@ -247,7 +247,7 @@ grpc_virtual_machine::grpc_virtual_machine(grpc_machine_stub_ptr stub, const mac
 grpc_virtual_machine::~grpc_virtual_machine(void) = default;
 
 machine_config grpc_virtual_machine::do_get_initial_config(void) const {
-    Void request;
+    const Void request;
     GetInitialConfigResponse response;
     ClientContext context;
     check_status(m_stub->get_stub()->GetInitialConfig(&context, request, &response));
@@ -255,7 +255,7 @@ machine_config grpc_virtual_machine::do_get_initial_config(void) const {
 }
 
 machine_config grpc_virtual_machine::get_default_config(const grpc_machine_stub_ptr &stub) {
-    Void request;
+    const Void request;
     GetDefaultConfigResponse response;
     ClientContext context;
     check_status(stub->get_stub()->GetDefaultConfig(&context, request, &response));
@@ -263,7 +263,7 @@ machine_config grpc_virtual_machine::get_default_config(const grpc_machine_stub_
 }
 
 semantic_version grpc_virtual_machine::get_version(const grpc_machine_stub_ptr &stub) {
-    Void request;
+    const Void request;
     GetVersionResponse response;
     ClientContext context;
     check_status(stub->get_stub()->GetVersion(&context, request, &response));
@@ -271,7 +271,7 @@ semantic_version grpc_virtual_machine::get_version(const grpc_machine_stub_ptr &
 }
 
 void grpc_virtual_machine::shutdown(const grpc_machine_stub_ptr &stub) {
-    Void request;
+    const Void request;
     Void response;
     ClientContext context;
     check_status(stub->get_stub()->Shutdown(&context, request, &response));
@@ -702,7 +702,7 @@ void grpc_virtual_machine::do_set_iflags_X(void) {
 }
 
 void grpc_virtual_machine::do_reset_iflags_Y(void) {
-    Void request;
+    const Void request;
     Void response;
     ClientContext context;
     check_status(m_stub->get_stub()->ResetIflagsY(&context, request, &response));
@@ -782,7 +782,7 @@ void grpc_virtual_machine::do_write_clint_mtimecmp(uint64_t val) {
 
 void grpc_virtual_machine::do_get_root_hash(hash_type &hash) const {
     GetRootHashResponse response;
-    Void request;
+    const Void request;
     ClientContext context;
     check_status(m_stub->get_stub()->GetRootHash(&context, request, &response));
     hash = get_proto_hash(response.hash());
@@ -822,14 +822,14 @@ access_log grpc_virtual_machine::do_step_uarch(const access_log::type &log_type,
 }
 
 void grpc_virtual_machine::do_destroy() {
-    Void request;
+    const Void request;
     Void response;
     ClientContext context;
     check_status(m_stub->get_stub()->Destroy(&context, request, &response));
 }
 
 void grpc_virtual_machine::do_snapshot() {
-    Void request;
+    const Void request;
     Void response;
     ClientContext context;
     m_stub->prepare_checkin();
@@ -838,7 +838,7 @@ void grpc_virtual_machine::do_snapshot() {
 }
 
 void grpc_virtual_machine::do_rollback() {
-    Void request;
+    const Void request;
     Void response;
     ClientContext context;
     m_stub->prepare_checkin();
@@ -847,7 +847,7 @@ void grpc_virtual_machine::do_rollback() {
 }
 
 bool grpc_virtual_machine::do_verify_dirty_page_maps(void) const {
-    Void request;
+    const Void request;
     VerifyDirtyPageMapsResponse response;
     ClientContext context;
     check_status(m_stub->get_stub()->VerifyDirtyPageMaps(&context, request, &response));
@@ -855,7 +855,7 @@ bool grpc_virtual_machine::do_verify_dirty_page_maps(void) const {
 }
 
 void grpc_virtual_machine::do_dump_pmas(void) const {
-    Void request;
+    const Void request;
     Void response;
     ClientContext context;
     check_status(m_stub->get_stub()->DumpPmas(&context, request, &response));
@@ -871,7 +871,7 @@ uint64_t grpc_virtual_machine::do_read_word(uint64_t address) const {
 }
 
 bool grpc_virtual_machine::do_verify_merkle_tree(void) const {
-    Void request;
+    const Void request;
     ClientContext context;
     VerifyMerkleTreeResponse response;
     check_status(m_stub->get_stub()->VerifyMerkleTree(&context, request, &response));
@@ -926,7 +926,7 @@ void grpc_virtual_machine::do_set_uarch_halt_flag() {
 }
 
 void grpc_virtual_machine::do_reset_uarch_state() {
-    Void request;
+    const Void request;
     Void response;
     ClientContext context;
     check_status(m_stub->get_stub()->ResetUarchState(&context, request, &response));

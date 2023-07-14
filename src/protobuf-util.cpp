@@ -224,8 +224,8 @@ machine_merkle_tree::hash_type get_proto_hash(const CartesiMachine::Hash &proto_
 }
 
 machine_merkle_tree::proof_type get_proto_merkle_tree_proof(const CartesiMachine::MerkleTreeProof &proto_proof) {
-    int log2_target_size = static_cast<int>(proto_proof.log2_target_size());
-    int log2_root_size = static_cast<int>(proto_proof.log2_root_size());
+    const int log2_target_size = static_cast<int>(proto_proof.log2_target_size());
+    const int log2_root_size = static_cast<int>(proto_proof.log2_root_size());
     machine_merkle_tree::proof_type p{log2_root_size, log2_target_size};
     p.set_target_address(proto_proof.target_address());
     p.set_target_hash(get_proto_hash(proto_proof.target_hash()));
@@ -272,6 +272,7 @@ void set_proto_access_log(const access_log &al, CartesiMachine::AccessLog *proto
         proto_a->set_read(a.get_read().data(), a.get_read().size());
         proto_a->set_written(a.get_written().data(), a.get_written().size());
         if (al.get_log_type().has_proofs() && a.get_proof().has_value()) {
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
             set_proto_merkle_tree_proof(a.get_proof().value(), proto_a->mutable_proof());
         }
     }
@@ -325,8 +326,8 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
         throw std::invalid_argument("size of log accesses and notes differ");
     }
 
-    bool has_annotations = proto_al.log_type().annotations();
-    bool has_proofs = proto_al.log_type().proofs();
+    const bool has_annotations = proto_al.log_type().annotations();
+    const bool has_proofs = proto_al.log_type().proofs();
     auto al = access_log(access_log::type{has_proofs, has_annotations});
 
     const auto &proto_accesses = proto_al.accesses();

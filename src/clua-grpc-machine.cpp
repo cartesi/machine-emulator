@@ -252,7 +252,7 @@ int clua_grpc_machine_init(lua_State *L, int ctxidx) {
 }
 
 int clua_grpc_machine_export(lua_State *L, int ctxidx) {
-    int ctxabsidx = lua_absindex(L, ctxidx);
+    const int ctxabsidx = lua_absindex(L, ctxidx);
     // grpc
     clua_grpc_machine_init(L, ctxabsidx); // grpc
     lua_pushvalue(L, ctxabsidx);          // grpc cluactx

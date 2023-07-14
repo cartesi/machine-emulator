@@ -1062,7 +1062,7 @@ void to_json(nlohmann::json &j, const access &a) {
         j["written"] = encode_base64(a.get_written());
     }
     if (a.get_proof().has_value()) {
-        j["proof"] = a.get_proof().value();
+        j["proof"] = a.get_proof().value(); // NOLINT(bugprone-unchecked-optional-access)
     }
 }
 

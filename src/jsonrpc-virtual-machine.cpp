@@ -39,7 +39,7 @@ template <typename... Ts, size_t... Is>
 std::string jsonrpc_post_data(const std::string &method, const std::tuple<Ts...> &params, std::index_sequence<Is...>) {
     json array = json::array();
     ((array.push_back(json(std::get<Is>(params)))), ...);
-    json j = {{"jsonrpc", "2.0"}, {"method", method}, {"id", 0}, {"params", std::move(array)}};
+    const json j = {{"jsonrpc", "2.0"}, {"method", method}, {"id", 0}, {"params", std::move(array)}};
     return j.dump();
 }
 
@@ -61,7 +61,7 @@ struct http_request_data {
 static void json_post_fn(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
     http_request_data *data = static_cast<http_request_data *>(fn_data);
     if (ev == MG_EV_CONNECT) {
-        struct mg_str host = mg_url_host(data->url.c_str());
+        const struct mg_str host = mg_url_host(data->url.c_str());
         mg_printf(c,
             "POST %s HTTP/1.0\r\n"
             "Host: %.*s\r\n"

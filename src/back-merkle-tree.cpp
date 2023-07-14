@@ -55,7 +55,7 @@ void back_merkle_tree::push_back(const hash_type &leaf_hash) {
     if (m_leaf_count >= m_max_leaves) {
         throw std::out_of_range{"too many leaves"};
     }
-    int depth = m_log2_root_size - m_log2_leaf_size;
+    const int depth = m_log2_root_size - m_log2_leaf_size;
     for (int i = 0; i <= depth; ++i) {
         if (m_leaf_count & (address_type{1} << i)) {
             const auto &left = m_context[i];
@@ -71,7 +71,7 @@ void back_merkle_tree::push_back(const hash_type &leaf_hash) {
 back_merkle_tree::hash_type back_merkle_tree::get_root_hash(void) const {
     hasher_type h;
     assert(m_leaf_count <= m_max_leaves);
-    int depth = m_log2_root_size - m_log2_leaf_size;
+    const int depth = m_log2_root_size - m_log2_leaf_size;
     if (m_leaf_count < m_max_leaves) {
         auto root = m_pristine_hashes.get_hash(m_log2_leaf_size);
         for (int i = 0; i < depth; ++i) {
@@ -90,7 +90,7 @@ back_merkle_tree::hash_type back_merkle_tree::get_root_hash(void) const {
 }
 
 back_merkle_tree::proof_type back_merkle_tree::get_next_leaf_proof(void) const {
-    int depth = m_log2_root_size - m_log2_leaf_size;
+    const int depth = m_log2_root_size - m_log2_leaf_size;
     if (m_leaf_count >= m_max_leaves) {
         throw std::out_of_range{"tree is full"};
     }

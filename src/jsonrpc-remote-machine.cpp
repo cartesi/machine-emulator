@@ -61,7 +61,7 @@ struct log_prefix {
 std::ostream &operator<<(std::ostream &out, log_prefix prefix) {
     using namespace slog;
     char stime[std::size("yyyy-mm-dd hh-mm-ss")];
-    time_t t = time(nullptr);
+    const time_t t = time(nullptr);
     struct tm ttime {};
     if (strftime(std::data(stime), std::size(stime), "%Y-%m-%d %H-%M-%S", localtime_r(&t, &ttime))) {
         out << stime << " ";
@@ -624,7 +624,7 @@ static json jsonrpc_fork_handler(const json &j, mg_connection *con, http_handler
         return jsonrpc_response_server_error(j, "failed creating event manager");
     }
 #endif
-    std::string any_port_address = replace_port(h->server_address, 0);
+    const std::string any_port_address = replace_port(h->server_address, 0);
     mg_connection *new_con = mg_http_listen(&h->child->event_manager, any_port_address.c_str(), http_handler, h->child);
     if (!new_con) {
         SLOG(error) << h->server_address << " failed listening";
@@ -633,7 +633,7 @@ static json jsonrpc_fork_handler(const json &j, mg_connection *con, http_handler
         h->child = nullptr;
         return jsonrpc_response_server_error(j, "failed listening");
     }
-    std::string new_server_address = replace_port(h->server_address, static_cast<int>(ntohs(new_con->loc.port)));
+    const std::string new_server_address = replace_port(h->server_address, static_cast<int>(ntohs(new_con->loc.port)));
     // Done initializing, so we fork
     auto ret = fork();
     if (ret == -1) { // failed forking
@@ -679,6 +679,7 @@ static json jsonrpc_machine_machine_directory_handler(const json &j, mg_connecti
             h->machine = std::make_unique<cartesi::machine>(std::get<0>(args));
             break;
         case 2:
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
             h->machine = std::make_unique<cartesi::machine>(std::get<0>(args), std::get<1>(args).value());
             break;
         default:
@@ -705,6 +706,7 @@ static json jsonrpc_machine_machine_config_handler(const json &j, mg_connection 
             h->machine = std::make_unique<cartesi::machine>(std::get<0>(args));
             break;
         case 2:
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
             h->machine = std::make_unique<cartesi::machine>(std::get<0>(args), std::get<1>(args).value());
             break;
         default:
@@ -824,9 +826,11 @@ static json jsonrpc_machine_step_uarch_handler(const json &j, mg_connection *con
     json s;
     switch (count_args(args)) {
         case 1:
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
             s = jsonrpc_response_ok(j, h->machine->step_uarch(std::get<0>(args).value()));
             break;
         case 2:
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
             s = jsonrpc_response_ok(j, h->machine->step_uarch(std::get<0>(args).value(), std::get<1>(args).value()));
             break;
         default:
@@ -848,14 +852,18 @@ static json jsonrpc_machine_verify_access_log_handler(const json &j, mg_connecti
         cartesi::optional_param<cartesi::machine_runtime_config>, cartesi::optional_param<bool>>(j, param_name);
     switch (count_args(args)) {
         case 1:
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
             cartesi::machine::verify_access_log(std::get<0>(args).value());
             break;
         case 2:
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
             cartesi::machine::verify_access_log(std::get<0>(args).value(), std::get<1>(args).value());
             break;
         case 3:
+            // NOLINTBEGIN(bugprone-unchecked-optional-access)
             cartesi::machine::verify_access_log(std::get<0>(args).value(), std::get<1>(args).value(),
                 std::get<2>(args).value());
+            // NOLINTEND(bugprone-unchecked-optional-access)
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};
@@ -877,15 +885,20 @@ static json jsonrpc_machine_verify_state_transition_handler(const json &j, mg_co
         cartesi::optional_param<cartesi::machine_runtime_config>, cartesi::optional_param<bool>>(j, param_name);
     switch (count_args(args)) {
         case 3:
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
             cartesi::machine::verify_state_transition(std::get<0>(args), std::get<1>(args).value(), std::get<2>(args));
             break;
         case 4:
+            // NOLINTBEGIN(bugprone-unchecked-optional-access)
             cartesi::machine::verify_state_transition(std::get<0>(args), std::get<1>(args).value(), std::get<2>(args),
                 std::get<3>(args).value());
+            // NOLINTEND(bugprone-unchecked-optional-access)
             break;
         case 5:
+            // NOLINTBEGIN(bugprone-unchecked-optional-access)
             cartesi::machine::verify_state_transition(std::get<0>(args), std::get<1>(args).value(), std::get<2>(args),
                 std::get<3>(args).value(), std::get<4>(args).value());
+            // NOLINTEND(bugprone-unchecked-optional-access)
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};
@@ -1092,7 +1105,7 @@ static json jsonrpc_machine_read_x_handler(const json &j, mg_connection *con, ht
     }
     static const char *param_name[] = {"index"};
     auto args = parse_args<uint64_t>(j, param_name);
-    int i = static_cast<int>(std::get<0>(args));
+    const int i = static_cast<int>(std::get<0>(args));
     if (i >= cartesi::X_REG_COUNT) {
         throw std::domain_error{"index out of range"};
     }
@@ -1111,7 +1124,7 @@ static json jsonrpc_machine_write_x_handler(const json &j, mg_connection *con, h
     }
     static const char *param_name[] = {"index", "value"};
     auto args = parse_args<uint64_t, uint64_t>(j, param_name);
-    int i = static_cast<int>(std::get<0>(args));
+    const int i = static_cast<int>(std::get<0>(args));
     if (i >= cartesi::X_REG_COUNT || i == 0) {
         throw std::domain_error{"index out of range"};
     }
@@ -1131,7 +1144,7 @@ static json jsonrpc_machine_read_f_handler(const json &j, mg_connection *con, ht
     }
     static const char *param_name[] = {"index"};
     auto args = parse_args<uint64_t>(j, param_name);
-    int i = static_cast<int>(std::get<0>(args));
+    const int i = static_cast<int>(std::get<0>(args));
     if (i >= cartesi::F_REG_COUNT) {
         throw std::domain_error{"index out of range"};
     }
@@ -1150,7 +1163,7 @@ static json jsonrpc_machine_write_f_handler(const json &j, mg_connection *con, h
     }
     static const char *param_name[] = {"index", "value"};
     auto args = parse_args<uint64_t, uint64_t>(j, param_name);
-    int i = static_cast<int>(std::get<0>(args));
+    const int i = static_cast<int>(std::get<0>(args));
     if (i >= cartesi::F_REG_COUNT) {
         throw std::domain_error{"index out of range"};
     }
@@ -1170,7 +1183,7 @@ static json jsonrpc_machine_read_uarch_x_handler(const json &j, mg_connection *c
     }
     static const char *param_name[] = {"index"};
     auto args = parse_args<uint64_t>(j, param_name);
-    int i = static_cast<int>(std::get<0>(args));
+    const int i = static_cast<int>(std::get<0>(args));
     if (i >= cartesi::UARCH_X_REG_COUNT) {
         throw std::domain_error{"index out of range"};
     }
@@ -1189,7 +1202,7 @@ static json jsonrpc_machine_write_uarch_x_handler(const json &j, mg_connection *
     }
     static const char *param_name[] = {"index", "value"};
     auto args = parse_args<uint64_t, uint64_t>(j, param_name);
-    int i = static_cast<int>(std::get<0>(args));
+    const int i = static_cast<int>(std::get<0>(args));
     if (i >= cartesi::UARCH_X_REG_COUNT || i == 0) {
         throw std::domain_error{"index out of range"};
     }
@@ -1220,7 +1233,7 @@ static json jsonrpc_machine_get_x_address_handler(const json &j, mg_connection *
     (void) h;
     static const char *param_name[] = {"index"};
     auto args = parse_args<uint64_t>(j, param_name);
-    int i = static_cast<int>(std::get<0>(args));
+    const int i = static_cast<int>(std::get<0>(args));
     if (i >= cartesi::X_REG_COUNT) {
         throw std::domain_error{"index out of range"};
     }
@@ -1237,7 +1250,7 @@ static json jsonrpc_machine_get_f_address_handler(const json &j, mg_connection *
     (void) h;
     static const char *param_name[] = {"index"};
     auto args = parse_args<uint64_t>(j, param_name);
-    int i = static_cast<int>(std::get<0>(args));
+    const int i = static_cast<int>(std::get<0>(args));
     if (i >= cartesi::F_REG_COUNT) {
         throw std::domain_error{"index out of range"};
     }
@@ -1254,7 +1267,7 @@ static json jsonrpc_machine_get_uarch_x_address_handler(const json &j, mg_connec
     (void) h;
     static const char *param_name[] = {"index"};
     auto args = parse_args<uint64_t>(j, param_name);
-    int i = static_cast<int>(std::get<0>(args));
+    const int i = static_cast<int>(std::get<0>(args));
     if (i >= cartesi::UARCH_X_REG_COUNT) {
         throw std::domain_error{"index out of range"};
     }
@@ -1590,7 +1603,7 @@ static void http_handler(mg_connection *con, int ev, void *ev_data, void *h_data
     auto *h = static_cast<http_handler_data *>(h_data);
     if (ev == MG_EV_HTTP_MSG) {
         auto *hm = static_cast<mg_http_message *>(ev_data);
-        std::string_view method{hm->method.ptr, hm->method.len};
+        const std::string_view method{hm->method.ptr, hm->method.len};
         // Answer OPTIONS request to support cross origin resource sharing (CORS) preflighted browser requests
         if (method == "OPTIONS") {
             SLOG(trace) << h->server_address << " serving \"" << method << "\" request";
@@ -1611,7 +1624,7 @@ static void http_handler(mg_connection *con, int ev, void *ev_data, void *h_data
             return;
         }
         // Only accept / URI
-        std::string_view uri{hm->uri.ptr, hm->uri.len};
+        const std::string_view uri{hm->uri.ptr, hm->uri.len};
         SLOG(trace) << h->server_address << " request is " << std::string_view{hm->body.ptr, hm->body.len};
         if (uri != "/") {
             // anything else
@@ -1743,7 +1756,7 @@ and options are
 /// \param val If string matches prefix, points to remainder
 /// \returns True if string matches prefix, false otherwise
 static bool stringval(const char *pre, const char *str, const char **val) {
-    size_t len = strlen(pre);
+    const size_t len = strlen(pre);
     if (strncmp(pre, str, len) == 0) {
         *val = str + len;
         return true;

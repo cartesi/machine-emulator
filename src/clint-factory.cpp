@@ -33,7 +33,7 @@ static bool clint_peek(const pma_entry &pma, const machine &m, uint64_t page_off
 }
 
 pma_entry make_clint_pma_entry(uint64_t start, uint64_t length) {
-    pma_entry::flags f{
+    const pma_entry::flags f{
         true,                 // R
         true,                 // W
         false,                // X

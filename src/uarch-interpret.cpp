@@ -25,7 +25,7 @@ uarch_interpreter_break_reason uarch_interpret(uarch_state_access &a, uint64_t c
         throw std::invalid_argument{"uarch_cycle is past"};
     }
     while (cycle < cycle_end) {
-        UArchStepStatus status = uarch_step(a);
+        const UArchStepStatus status = uarch_step(a);
         switch (status) {
             case UArchStepStatus::Success:
                 cycle += 1;

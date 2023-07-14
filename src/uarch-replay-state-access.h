@@ -68,7 +68,7 @@ public:
             if (!access.get_proof().has_value()) {
                 throw std::invalid_argument{"initial access has no proof"};
             }
-            m_root_hash = access.get_proof().value().get_root_hash();
+            m_root_hash = access.get_proof().value().get_root_hash(); // NOLINT(bugprone-unchecked-optional-access)
         }
     }
 
@@ -101,7 +101,7 @@ private:
     static void roll_hash_up_tree(machine_merkle_tree::hasher_type &hasher,
         const machine_merkle_tree::proof_type &proof, machine_merkle_tree::hash_type &rolling_hash) {
         for (int log2_size = proof.get_log2_target_size(); log2_size < proof.get_log2_root_size(); ++log2_size) {
-            int bit = (proof.get_target_address() & (UINT64_C(1) << log2_size)) != 0;
+            const int bit = (proof.get_target_address() & (UINT64_C(1) << log2_size)) != 0;
             const auto &sibling_hash = proof.get_sibling_hash(log2_size);
             hasher.begin();
             if (bit) {
@@ -187,7 +187,7 @@ private:
             if (!access.get_proof().has_value()) {
                 throw std::invalid_argument{"read access " + std::to_string(access_to_report()) + " has no proof"};
             }
-            const auto &proof = access.get_proof().value();
+            const auto &proof = access.get_proof().value(); // NOLINT(bugprone-unchecked-optional-access)
             if (proof.get_target_address() != access.get_address()) {
                 throw std::invalid_argument{
                     "mismatch in read access " + std::to_string(access_to_report()) + " address and its proof address"};
@@ -266,7 +266,7 @@ private:
             if (!access.get_proof().has_value()) {
                 throw std::invalid_argument{"write access " + std::to_string(access_to_report()) + " has no proof"};
             }
-            const auto &proof = access.get_proof().value();
+            const auto &proof = access.get_proof().value(); // NOLINT(bugprone-unchecked-optional-access)
             if (proof.get_target_address() != access.get_address()) {
                 throw std::invalid_argument{"mismatch in write access " + std::to_string(access_to_report()) +
                     " address and its proof address"};

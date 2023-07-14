@@ -14,7 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-// NOLINTBEGIN(google-readability-casting)
+// NOLINTBEGIN(google-readability-casting, misc-const-correctness)
 
 #include <stdexcept>
 
@@ -1121,4 +1121,4 @@ template UArchStepStatus uarch_step(uarch_record_state_access &a);
 template UArchStepStatus uarch_step(uarch_replay_state_access &a);
 
 } // namespace cartesi
-// NOLINTEND(google-readability-casting)
+// NOLINTEND(google-readability-casting, misc-const-correctness)

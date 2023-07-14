@@ -68,7 +68,7 @@ static int machine_class_index_verify_state_transition(lua_State *L) {
 
 /// \brief This is the machine.get_x_address() method implementation.
 static int machine_class_index_get_x_address(lua_State *L) {
-    int i = static_cast<int>(luaL_checkinteger(L, 1));
+    const int i = static_cast<int>(luaL_checkinteger(L, 1));
     if (i < 0 || i >= X_REG_COUNT) {
         luaL_error(L, "register index out of range");
     }
@@ -78,7 +78,7 @@ static int machine_class_index_get_x_address(lua_State *L) {
 
 /// \brief This is the machine.get_uarch_x_address() method implementation.
 static int machine_class_index_get_uarch_x_address(lua_State *L) {
-    int i = static_cast<int>(luaL_checkinteger(L, 1));
+    const int i = static_cast<int>(luaL_checkinteger(L, 1));
     if (i < 0 || i >= UARCH_X_REG_COUNT) {
         luaL_error(L, "register index out of range");
     }
@@ -88,7 +88,7 @@ static int machine_class_index_get_uarch_x_address(lua_State *L) {
 
 /// \brief This is the machine.get_f_address() method implementation.
 static int machine_class_index_get_f_address(lua_State *L) {
-    int i = static_cast<int>(luaL_checkinteger(L, 1));
+    const int i = static_cast<int>(luaL_checkinteger(L, 1));
     if (i < 0 || i >= F_REG_COUNT) {
         luaL_error(L, "register index out of range");
     }
@@ -165,7 +165,7 @@ int clua_machine_init(lua_State *L, int ctxidx) {
 }
 
 int clua_machine_export(lua_State *L, int ctxidx) {
-    int ctxabsidx = lua_absindex(L, ctxidx);
+    const int ctxabsidx = lua_absindex(L, ctxidx);
     // cartesi
     clua_machine_init(L, ctxabsidx);                    // cartesi
     lua_newtable(L);                                    // cartesi machine_class

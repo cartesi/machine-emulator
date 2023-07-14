@@ -192,7 +192,7 @@ public:
             "incompatible hash types");
         hash_type hash = new_target_hash;
         for (int log2_size = get_log2_target_size(); log2_size < get_log2_root_size(); ++log2_size) {
-            int bit = (get_target_address() & (static_cast<address_type>(1) << log2_size)) != 0;
+            const int bit = (get_target_address() & (static_cast<address_type>(1) << log2_size)) != 0;
             if (bit) {
                 get_concat_hash(h, get_sibling_hash(log2_size), hash, hash);
             } else {

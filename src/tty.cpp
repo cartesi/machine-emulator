@@ -51,6 +51,7 @@ static int new_ttyfd(const char *path) {
 
 static int get_ttyfd(void) {
     char *path{};
+    // NOLINTBEGIN(bugprone-assignment-in-if-condition)
     if ((path = ttyname(STDERR_FILENO)) != nullptr) {
         return new_ttyfd(path);
     } else if ((path = ttyname(STDOUT_FILENO)) != nullptr) {
@@ -62,11 +63,12 @@ static int get_ttyfd(void) {
     } else {
         errno = ENOTTY; /* No terminal */
     }
+    // NOLINTEND(bugprone-assignment-in-if-condition)
     return -1;
 }
 
 static bool try_read_chars_from_stdin(uint64_t wait, char *data, size_t max_len, long *actual_len) {
-    int fd_max{0};
+    const int fd_max{0};
     fd_set rfds{};
     timeval tv{};
     tv.tv_usec = static_cast<suseconds_t>(wait);
@@ -96,6 +98,7 @@ void tty_initialize(void) {
         throw std::runtime_error("TTY already initialized.");
     }
     s->initialized = true;
+    // NOLINTNEXTLINE(bugprone-assignment-in-if-condition)
     if ((s->ttyfd = get_ttyfd()) >= 0) {
         struct termios tty {};
         tcgetattr(s->ttyfd, &tty);

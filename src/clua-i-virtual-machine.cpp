@@ -332,7 +332,7 @@ static int machine_obj_index_read_word(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_run(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    uint64_t mcycle_end = luaL_optinteger(L, 2, UINT64_MAX);
+    const uint64_t mcycle_end = luaL_optinteger(L, 2, UINT64_MAX);
     CM_BREAK_REASON break_reason = CM_BREAK_REASON_FAILED;
     TRY_EXECUTE(cm_machine_run(m.get(), mcycle_end, &break_reason, err_msg));
     lua_pushinteger(L, static_cast<lua_Integer>(break_reason));
@@ -369,7 +369,7 @@ static int machine_obj_index_reset_uarch_state(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_run_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    uint64_t cycle_end = luaL_optinteger(L, 2, UINT64_MAX);
+    const uint64_t cycle_end = luaL_optinteger(L, 2, UINT64_MAX);
     CM_UARCH_BREAK_REASON status = CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE;
     TRY_EXECUTE(cm_machine_run_uarch(m.get(), cycle_end, &status, err_msg));
     lua_pushinteger(L, static_cast<lua_Integer>(status));
@@ -602,6 +602,9 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"write_htif_fromhost", machine_obj_index_write_htif_fromhost},
     {"write_htif_fromhost_data", machine_obj_index_write_htif_fromhost_data},
     {"write_htif_tohost", machine_obj_index_write_htif_tohost},
+    {"write_htif_ihalt", machine_obj_index_write_htif_ihalt},
+    {"write_htif_iconsole", machine_obj_index_write_htif_iconsole},
+    {"write_htif_iyield", machine_obj_index_write_htif_iyield},
     {"write_uarch_cycle", machine_obj_index_write_uarch_cycle},
     {"write_uarch_pc", machine_obj_index_write_uarch_pc},
     {"write_uarch_x", machine_obj_index_write_uarch_x},

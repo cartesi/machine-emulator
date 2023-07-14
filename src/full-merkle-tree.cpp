@@ -116,7 +116,7 @@ full_merkle_tree::address_type full_merkle_tree::get_node_index(address_type add
     if (log2_size < get_log2_leaf_size() || log2_size > get_log2_root_size()) {
         throw std::out_of_range{"log2_size is out of bounds"};
     }
-    address_type base = address_type{1} << (get_log2_root_size() - log2_size);
+    const address_type base = address_type{1} << (get_log2_root_size() - log2_size);
     // Nodes of log2_size live in indices [base, 2*base)
     // 0 <unused>
     // 1 log2_root_size

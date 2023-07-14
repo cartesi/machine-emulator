@@ -100,7 +100,7 @@ int clua_typeexists(lua_State *L, int ctxidx = lua_upvalueindex(1)) {
     ctxidx = lua_absindex(L, ctxidx);
     lua_pushstring(L, clua_rawname<T>());
     lua_rawget(L, ctxidx);
-    int exists = !lua_isnil(L, -1);
+    const int exists = !lua_isnil(L, -1);
     lua_pop(L, 1);
     return exists;
 }
@@ -117,7 +117,7 @@ int clua_is(lua_State *L, int idx, int ctxidx = lua_upvalueindex(1)) {
     if (!lua_getmetatable(L, idx)) {
         lua_pushnil(L);
     }
-    int ret = lua_compare(L, -1, -2, LUA_OPEQ);
+    const int ret = lua_compare(L, -1, -2, LUA_OPEQ);
     lua_pop(L, 2);
     return ret;
 }

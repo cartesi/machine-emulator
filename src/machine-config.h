@@ -65,23 +65,23 @@ struct processor_config final {
 };
 
 /// \brief RAM state configuration
-struct ram_config final {
+struct ram_config final {         // NOLINT(bugprone-exception-escape)
     uint64_t length{0};           ///< RAM length
     std::string image_filename{}; ///< RAM image file name
 };
 
 /// \brief ROM state configuration
-struct rom_config final {
+struct rom_config final {         // NOLINT(bugprone-exception-escape)
     std::string bootargs{};       ///< Bootargs to pass to kernel
     std::string image_filename{}; ///< ROM image file
 };
 
 /// \brief Memory range configuration
-struct memory_range_config final {
-    uint64_t start{0};            ///< Memory range start position
-    uint64_t length{0};           ///< Memory range length
-    bool shared{false};           ///< Target changes to memory affect image file?
-    std::string image_filename{}; ///< Memory range image file name
+struct memory_range_config final { // NOLINT(bugprone-exception-escape)
+    uint64_t start{0};             ///< Memory range start position
+    uint64_t length{0};            ///< Memory range length
+    bool shared{false};            ///< Target changes to memory affect image file?
+    std::string image_filename{};  ///< Memory range image file name
 };
 
 /// \brief Flash constants
@@ -93,7 +93,7 @@ enum FLASH_DRIVE_constants {
 using flash_drive_configs = boost::container::static_vector<memory_range_config, FLASH_DRIVE_MAX>;
 
 /// \brief TLB device state configuration
-struct tlb_config final {
+struct tlb_config final {         // NOLINT(bugprone-exception-escape)
     std::string image_filename{}; ///< TLB image file name
 };
 
@@ -112,7 +112,7 @@ struct htif_config final {
 };
 
 /// \brief Rollup configuration
-struct rollup_config {
+struct rollup_config {                    // NOLINT(bugprone-exception-escape)
     memory_range_config rx_buffer{};      ///< RX buffer
     memory_range_config tx_buffer{};      ///< TX buffer
     memory_range_config input_metadata{}; ///< Buffer for input metadata

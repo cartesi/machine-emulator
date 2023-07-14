@@ -275,7 +275,7 @@ int clua_jsonrpc_machine_init(lua_State *L, int ctxidx) {
 }
 
 int clua_jsonrpc_machine_export(lua_State *L, int ctxidx) {
-    int ctxabsidx = lua_absindex(L, ctxidx);
+    const int ctxabsidx = lua_absindex(L, ctxidx);
     // jsonrpc
     clua_jsonrpc_machine_init(L, ctxabsidx); // jsonrpc
     lua_pushvalue(L, ctxabsidx);             // jsonrpc cluactx

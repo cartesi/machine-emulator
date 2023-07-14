@@ -191,7 +191,7 @@ private:
     void update_after_write(uint64_t paligned) {
         assert((paligned & (sizeof(uint64_t) - 1)) == 0);
         if (m_log->get_log_type().has_proofs()) {
-            bool updated = m_m.update_merkle_tree_page(paligned);
+            const bool updated = m_m.update_merkle_tree_page(paligned);
             (void) updated;
             assert(updated);
         }
@@ -280,7 +280,7 @@ private:
             throw std::runtime_error("pma is not readable");
         }
         // Found a readable memory range. Access host memory accordingly.
-        uint64_t hoffset = paddr - pma.get_start();
+        const uint64_t hoffset = paddr - pma.get_start();
         auto *hmem = pma.get_memory().get_host_memory();
         auto data = aliased_aligned_read<uint64_t>(hmem + hoffset);
         log_read(paddr, data, "memory");
@@ -313,7 +313,7 @@ private:
         // The proof in the log uses the Merkle tree before the state is modified.
         // But log needs the word value before and after the change.
         // So we first get value before the write
-        uint64_t hoffset = paddr - pma.get_start();
+        const uint64_t hoffset = paddr - pma.get_start();
         unsigned char *hmem = pma.get_memory().get_host_memory();
         void *hdata = hmem + hoffset;
         auto old_data = aliased_aligned_read<uint64_t>(hdata);
@@ -328,7 +328,7 @@ private:
             update_after_write(paddr);
         } else {
             // Marking the page dirty is only needed for pages of memory PMAs, when proofs are not requested
-            uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+            const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
             pma.mark_dirty_page(paddr_page - pma.get_start());
         }
     }

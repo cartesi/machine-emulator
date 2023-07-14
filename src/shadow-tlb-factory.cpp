@@ -37,12 +37,12 @@ static bool shadow_tlb_peek(const pma_entry &pma, const machine &m, uint64_t pag
     // Copy relevant TLB entries to the page
     for (uint64_t off = 0; off < PMA_PAGE_SIZE; off += sizeof(uint64_t)) {
         uint64_t val = 0;
-        uint64_t tlboff = page_offset + off;
+        const uint64_t tlboff = page_offset + off;
         if (tlboff < offsetof(shadow_tlb_state, cold)) { // Hot entry
-            uint64_t etype = tlboff / sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>);
-            uint64_t etypeoff = tlboff % sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>);
-            uint64_t eidx = etypeoff / sizeof(tlb_hot_entry);
-            uint64_t fieldoff = etypeoff % sizeof(tlb_hot_entry);
+            const uint64_t etype = tlboff / sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>);
+            const uint64_t etypeoff = tlboff % sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>);
+            const uint64_t eidx = etypeoff / sizeof(tlb_hot_entry);
+            const uint64_t fieldoff = etypeoff % sizeof(tlb_hot_entry);
             const tlb_hot_entry &tlbhe = m.get_state().tlb.hot[etype][eidx];
             switch (fieldoff) {
                 case offsetof(tlb_hot_entry, vaddr_page):
@@ -54,11 +54,11 @@ static bool shadow_tlb_peek(const pma_entry &pma, const machine &m, uint64_t pag
                     break;
             }
         } else if (tlboff < sizeof(shadow_tlb_state)) { // Cold entry
-            uint64_t coldoff = tlboff - offsetof(shadow_tlb_state, cold);
-            uint64_t etype = coldoff / sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
-            uint64_t etypeoff = coldoff % sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
-            uint64_t eidx = etypeoff / sizeof(tlb_cold_entry);
-            uint64_t fieldoff = etypeoff % sizeof(tlb_cold_entry);
+            const uint64_t coldoff = tlboff - offsetof(shadow_tlb_state, cold);
+            const uint64_t etype = coldoff / sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
+            const uint64_t etypeoff = coldoff % sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
+            const uint64_t eidx = etypeoff / sizeof(tlb_cold_entry);
+            const uint64_t fieldoff = etypeoff % sizeof(tlb_cold_entry);
             const tlb_cold_entry &tlbce = m.get_state().tlb.cold[etype][eidx];
             switch (fieldoff) {
                 case offsetof(tlb_cold_entry, paddr_page):
@@ -77,7 +77,7 @@ static bool shadow_tlb_peek(const pma_entry &pma, const machine &m, uint64_t pag
 }
 
 pma_entry make_shadow_tlb_pma_entry(uint64_t start, uint64_t length) {
-    pma_entry::flags f{
+    const pma_entry::flags f{
         false,                     // R
         false,                     // W
         false,                     // X

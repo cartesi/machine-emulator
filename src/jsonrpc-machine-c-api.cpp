@@ -29,6 +29,7 @@ static const cartesi::jsonrpc_mg_mgr_ptr *convert_from_c(const cm_jsonrpc_mg_mgr
     return reinterpret_cast<const cartesi::jsonrpc_mg_mgr_ptr *>(mgr);
 }
 
+#if 0 // Unused
 static cartesi::jsonrpc_mg_mgr_ptr *convert_from_c(cm_jsonrpc_mg_mgr *mgr) {
     if (mgr == nullptr) {
         throw std::invalid_argument("invalid stub");
@@ -36,6 +37,7 @@ static cartesi::jsonrpc_mg_mgr_ptr *convert_from_c(cm_jsonrpc_mg_mgr *mgr) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return reinterpret_cast<cartesi::jsonrpc_mg_mgr_ptr *>(mgr);
 }
+#endif
 
 static inline cartesi::i_virtual_machine *create_jsonrpc_virtual_machine(const cartesi::jsonrpc_mg_mgr_ptr &mgr,
     const cartesi::machine_config &c, const cartesi::machine_runtime_config &r) {

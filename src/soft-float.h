@@ -64,7 +64,7 @@ template <typename UINT>
 static inline UINT mul_u(UINT *plow, UINT a, UINT b) {
     using ULONG = typename make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
-    ULONG r = static_cast<ULONG>(a) * static_cast<ULONG>(b);
+    const ULONG r = static_cast<ULONG>(a) * static_cast<ULONG>(b);
     *plow = static_cast<UINT>(r);
     return static_cast<UINT>(r >> UINT_SIZE);
 }
@@ -76,7 +76,7 @@ template <typename UINT>
 static inline UINT divrem_u(UINT *pr, UINT ah, UINT al, UINT b) {
     using ULONG = typename make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
-    ULONG a = (static_cast<ULONG>(ah) << UINT_SIZE) | al;
+    const ULONG a = (static_cast<ULONG>(ah) << UINT_SIZE) | al;
     *pr = static_cast<UINT>(a % b);
     return static_cast<UINT>(a / b);
 }
@@ -103,7 +103,7 @@ static inline bool sqrtrem_u(UINT *pr, UINT ah, UINT al) {
         l = UINT_SIZE - clz(al - 1);
         // LCOV_EXCL_STOP
     }
-    ULONG a = (static_cast<ULONG>(ah) << UINT_SIZE) | al;
+    const ULONG a = (static_cast<ULONG>(ah) << UINT_SIZE) | al;
     ULONG u = static_cast<ULONG>(1) << ((l + 1) / 2);
     ULONG s = 0;
     do {
@@ -160,7 +160,7 @@ struct i_sfloat {
             if (d >= F_SIZE) {
                 return (a != 0);
             } else {
-                F_UINT mask = (static_cast<F_UINT>(1) << d) - 1;
+                const F_UINT mask = (static_cast<F_UINT>(1) << d) - 1;
                 return (a >> d) | ((a & mask) != 0);
             }
         }
@@ -169,7 +169,7 @@ struct i_sfloat {
 
     /// \brief Normalizes mantissa of a subnormal float.
     static inline F_UINT mant_normalize_subnormal(int32_t *pa_exp, F_UINT a_mant) {
-        int shift = MANT_SIZE - ((F_SIZE - 1 - clz(a_mant)));
+        const int shift = MANT_SIZE - ((F_SIZE - 1 - clz(a_mant)));
         *pa_exp = 1 - shift;
         return a_mant << shift;
     }
@@ -201,8 +201,8 @@ struct i_sfloat {
         if (a_exp <= 0) {
             // Note: we set the underflow flag if the rounded result
             // is subnormal and inexact
-            bool is_subnormal = (a_exp < 0 || (a_mant + addend) < (static_cast<F_UINT>(1) << (F_SIZE - 1)));
-            int diff = 1 - a_exp;
+            const bool is_subnormal = (a_exp < 0 || (a_mant + addend) < (static_cast<F_UINT>(1) << (F_SIZE - 1)));
+            const int diff = 1 - a_exp;
             a_mant = mant_rshift_rnd(a_mant, diff);
             rnd_bits = a_mant & ((1 << RND_SIZE) - 1);
             if (is_subnormal && rnd_bits != 0) {
@@ -242,7 +242,7 @@ struct i_sfloat {
     /// \brief Normalizes a float to its final binary representation, shifting and rounding as necessary.
     /// \details a_mant is considered to have at most F_SIZE - 1 bits
     static inline F_UINT normalize(uint32_t a_sign, int a_exp, F_UINT a_mant, FRM_modes rm, uint32_t *pfflags) {
-        int shift = clz(a_mant) - (F_SIZE - 1 - IMANT_SIZE);
+        const int shift = clz(a_mant) - (F_SIZE - 1 - IMANT_SIZE);
         assert(shift >= 0); // LCOV_EXCL_LINE
         a_exp -= shift;
         a_mant <<= shift;
@@ -259,7 +259,7 @@ struct i_sfloat {
         } else {
             l = clz(a_mant1);
         }
-        int shift = l - (F_SIZE - 1 - IMANT_SIZE);
+        const int shift = l - (F_SIZE - 1 - IMANT_SIZE);
         assert(shift >= 0); // LCOV_EXCL_LINE
         a_exp -= shift;
         if (shift == 0) {
@@ -276,15 +276,15 @@ struct i_sfloat {
 
     /// \brief Checks if a float is a signaling-NaN.
     static inline bool issignan(F_UINT a) {
-        uint32_t a_exp1 = (a >> (MANT_SIZE - 1)) & ((1 << (EXP_SIZE + 1)) - 1);
-        F_UINT a_mant = a & MANT_MASK;
+        const uint32_t a_exp1 = (a >> (MANT_SIZE - 1)) & ((1 << (EXP_SIZE + 1)) - 1);
+        const F_UINT a_mant = a & MANT_MASK;
         return a_exp1 == (2 * EXP_MASK) && a_mant != 0;
     }
 
     /// \brief Checks if a float is a NaN.
     static inline bool isnan(F_UINT a) {
-        uint32_t a_exp = (a >> MANT_SIZE) & EXP_MASK;
-        F_UINT a_mant = a & MANT_MASK;
+        const uint32_t a_exp = (a >> MANT_SIZE) & EXP_MASK;
+        const F_UINT a_mant = a & MANT_MASK;
         return a_exp == EXP_MASK && a_mant != 0;
     }
 
@@ -292,12 +292,12 @@ struct i_sfloat {
     static F_UINT add(F_UINT a, F_UINT b, FRM_modes rm, uint32_t *pfflags) {
         // swap so that  abs(a) >= abs(b)
         if ((a & ~SIGN_MASK) < (b & ~SIGN_MASK)) {
-            F_UINT tmp = a;
+            const F_UINT tmp = a;
             a = b;
             b = tmp;
         }
         uint32_t a_sign = a >> (F_SIZE - 1);
-        uint32_t b_sign = b >> (F_SIZE - 1);
+        const uint32_t b_sign = b >> (F_SIZE - 1);
         uint32_t a_exp = (a >> MANT_SIZE) & EXP_MASK;
         uint32_t b_exp = (b >> MANT_SIZE) & EXP_MASK;
         F_UINT a_mant = (a & MANT_MASK) << 3;
@@ -343,9 +343,9 @@ struct i_sfloat {
 
     /// \brief Multiply operation.
     static F_UINT mul(F_UINT a, F_UINT b, FRM_modes rm, uint32_t *pfflags) {
-        uint32_t a_sign = a >> (F_SIZE - 1);
-        uint32_t b_sign = b >> (F_SIZE - 1);
-        uint32_t r_sign = a_sign ^ b_sign;
+        const uint32_t a_sign = a >> (F_SIZE - 1);
+        const uint32_t b_sign = b >> (F_SIZE - 1);
+        const uint32_t r_sign = a_sign ^ b_sign;
         int32_t a_exp = (a >> MANT_SIZE) & EXP_MASK;
         int32_t b_exp = (b >> MANT_SIZE) & EXP_MASK;
         F_UINT a_mant = a & MANT_MASK;
@@ -382,7 +382,7 @@ struct i_sfloat {
         } else {
             b_mant |= static_cast<F_UINT>(1) << MANT_SIZE;
         }
-        int32_t r_exp = a_exp + b_exp - (1 << (EXP_SIZE - 1)) + 2;
+        const int32_t r_exp = a_exp + b_exp - (1 << (EXP_SIZE - 1)) + 2;
         F_UINT r_mant_low = 0;
         F_UINT r_mant = mul_u(&r_mant_low, a_mant << RND_SIZE, b_mant << (RND_SIZE + 1));
         r_mant |= (r_mant_low != 0);
@@ -391,8 +391,8 @@ struct i_sfloat {
 
     /// \brief Fused multiply and add operation.
     static F_UINT fma(F_UINT a, F_UINT b, F_UINT c, FRM_modes rm, uint32_t *pfflags) {
-        uint32_t a_sign = a >> (F_SIZE - 1);
-        uint32_t b_sign = b >> (F_SIZE - 1);
+        const uint32_t a_sign = a >> (F_SIZE - 1);
+        const uint32_t b_sign = b >> (F_SIZE - 1);
         uint32_t c_sign = c >> (F_SIZE - 1);
         uint32_t r_sign = a_sign ^ b_sign;
         int32_t a_exp = (a >> MANT_SIZE) & EXP_MASK;
@@ -486,7 +486,7 @@ struct i_sfloat {
             c_sign = static_cast<uint32_t>(c_tmp);
         }
         // right shift c_mant
-        int32_t shift = r_exp - c_exp;
+        const int32_t shift = r_exp - c_exp;
         if (shift >= 2 * F_SIZE) {
             c_mant0 = (c_mant0 | c_mant1) != 0;
             c_mant1 = 0;
@@ -497,7 +497,7 @@ struct i_sfloat {
             c_mant0 = c_mant1 | (c_mant0 != 0);
             c_mant1 = 0;
         } else if (shift != 0) {
-            F_UINT mask = (static_cast<F_UINT>(1) << shift) - 1;
+            const F_UINT mask = (static_cast<F_UINT>(1) << shift) - 1;
             c_mant0 = (c_mant1 << (F_SIZE - shift)) | (c_mant0 >> shift) | ((c_mant0 & mask) != 0);
             c_mant1 = c_mant1 >> shift;
         }
@@ -506,7 +506,7 @@ struct i_sfloat {
             r_mant0 += c_mant0;
             r_mant1 += c_mant1 + (r_mant0 < c_mant0);
         } else {
-            F_UINT tmp = r_mant0;
+            const F_UINT tmp = r_mant0;
             r_mant0 -= c_mant0;
             r_mant1 = r_mant1 - c_mant1 - (r_mant0 > tmp);
             if ((r_mant0 | r_mant1) == 0) {
@@ -519,9 +519,9 @@ struct i_sfloat {
 
     /// \brief Division operation.
     static F_UINT div(F_UINT a, F_UINT b, FRM_modes rm, uint32_t *pfflags) {
-        uint32_t a_sign = a >> (F_SIZE - 1);
-        uint32_t b_sign = b >> (F_SIZE - 1);
-        uint32_t r_sign = a_sign ^ b_sign;
+        const uint32_t a_sign = a >> (F_SIZE - 1);
+        const uint32_t b_sign = b >> (F_SIZE - 1);
+        const uint32_t r_sign = a_sign ^ b_sign;
         int32_t a_exp = (a >> MANT_SIZE) & EXP_MASK;
         int32_t b_exp = (b >> MANT_SIZE) & EXP_MASK;
         F_UINT a_mant = a & MANT_MASK;
@@ -570,7 +570,7 @@ struct i_sfloat {
         } else {
             a_mant |= static_cast<F_UINT>(1) << MANT_SIZE;
         }
-        int32_t r_exp = a_exp - b_exp + (1 << (EXP_SIZE - 1)) - 1;
+        const int32_t r_exp = a_exp - b_exp + (1 << (EXP_SIZE - 1)) - 1;
         F_UINT r = 0;
         F_UINT r_mant = divrem_u(&r, a_mant, static_cast<F_UINT>(0), b_mant << 2);
         if (r != 0) {
@@ -581,7 +581,7 @@ struct i_sfloat {
 
     /// \brief Square root operation.
     static F_UINT sqrt(F_UINT a, FRM_modes rm, uint32_t *pfflags) {
-        uint32_t a_sign = a >> (F_SIZE - 1);
+        const uint32_t a_sign = a >> (F_SIZE - 1);
         int32_t a_exp = (a >> MANT_SIZE) & EXP_MASK;
         F_UINT a_mant = a & MANT_MASK;
         if (unlikely(a_exp == EXP_MASK)) {
@@ -647,8 +647,8 @@ struct i_sfloat {
         if (isnan(a) || isnan(b)) {
             return min_max_nan(a, b, pfflags);
         }
-        uint32_t a_sign = a >> (F_SIZE - 1);
-        uint32_t b_sign = b >> (F_SIZE - 1);
+        const uint32_t a_sign = a >> (F_SIZE - 1);
+        const uint32_t b_sign = b >> (F_SIZE - 1);
         if (a_sign != b_sign) {
             return a_sign ? a : b;
         } else {
@@ -661,8 +661,8 @@ struct i_sfloat {
         if (isnan(a) || isnan(b)) {
             return min_max_nan(a, b, pfflags);
         }
-        uint32_t a_sign = a >> (F_SIZE - 1);
-        uint32_t b_sign = b >> (F_SIZE - 1);
+        const uint32_t a_sign = a >> (F_SIZE - 1);
+        const uint32_t b_sign = b >> (F_SIZE - 1);
         if (a_sign != b_sign) {
             return a_sign ? b : a;
         } else {
@@ -690,8 +690,8 @@ struct i_sfloat {
             *pfflags |= FFLAGS_NV_MASK;
             return false;
         }
-        uint32_t a_sign = a >> (F_SIZE - 1);
-        uint32_t b_sign = b >> (F_SIZE - 1);
+        const uint32_t a_sign = a >> (F_SIZE - 1);
+        const uint32_t b_sign = b >> (F_SIZE - 1);
         if (a_sign != b_sign) {
             return a_sign || (((a | b) << 1) == 0);
         } else {
@@ -700,13 +700,13 @@ struct i_sfloat {
     }
 
     /// \brief Less than operation.
-    static bool lt(F_UINT a, F_UINT b, uint32_t *pfflags) {
+    static bool lt(F_UINT a, F_UINT b, uint32_t *pfflags) { // NOLINT(misc-confusable-identifiers)
         if (unlikely(isnan(a) || isnan(b))) {
             *pfflags |= FFLAGS_NV_MASK;
             return false;
         }
-        uint32_t a_sign = a >> (F_SIZE - 1);
-        uint32_t b_sign = b >> (F_SIZE - 1);
+        const uint32_t a_sign = a >> (F_SIZE - 1);
+        const uint32_t b_sign = b >> (F_SIZE - 1);
         if (a_sign != b_sign) {
             return a_sign && (((a | b) << 1) != 0);
         } else {
@@ -716,9 +716,9 @@ struct i_sfloat {
 
     /// \brief Retrieves float class.
     static uint32_t fclass(F_UINT a) {
-        uint32_t a_sign = a >> (F_SIZE - 1);
-        int32_t a_exp = (a >> MANT_SIZE) & EXP_MASK;
-        F_UINT a_mant = a & MANT_MASK;
+        const uint32_t a_sign = a >> (F_SIZE - 1);
+        const int32_t a_exp = (a >> MANT_SIZE) & EXP_MASK;
+        const F_UINT a_mant = a & MANT_MASK;
         if (unlikely(a_exp == EXP_MASK)) {
             if (a_mant != 0) {
                 return (a_mant & QNAN_MASK) ? FCLASS_QNAN : FCLASS_SNAN;
@@ -794,7 +794,7 @@ struct i_sfloat {
                     }
                     break;
             }
-            uint32_t rnd_bits = a_mant & ((1 << RND_SIZE) - 1);
+            const uint32_t rnd_bits = a_mant & ((1 << RND_SIZE) - 1);
             a_mant = (a_mant + addend) >> RND_SIZE;
             // half way: select even result
             if (rm == FRM_RNE && rnd_bits == (1 << (RND_SIZE - 1))) {
@@ -821,7 +821,7 @@ struct i_sfloat {
         using ICVT_UINT = typename std::make_unsigned<ICVT_INT>::type;
         constexpr bool IS_UNSIGNED = std::is_unsigned<ICVT_INT>::value;
         constexpr int ICVT_SIZE = sizeof(ICVT_UINT) * 8;
-        uint32_t a_sign = 0;
+        uint32_t a_sign = 0; // NOLINT(misc-const-correctness)
         ICVT_UINT r = static_cast<ICVT_UINT>(a);
         if constexpr (!IS_UNSIGNED) {
             if (a < 0) {
@@ -831,13 +831,13 @@ struct i_sfloat {
         }
         int32_t a_exp = (EXP_MASK / 2) + F_SIZE - 2;
         // need to reduce range before generic float normalization
-        int l = ICVT_SIZE - clz<ICVT_UINT>(r) - (F_SIZE - 1);
+        const int l = ICVT_SIZE - clz<ICVT_UINT>(r) - (F_SIZE - 1);
         if (l > 0) {
-            ICVT_UINT mask = r & ((static_cast<ICVT_UINT>(1) << l) - 1);
+            const ICVT_UINT mask = r & ((static_cast<ICVT_UINT>(1) << l) - 1);
             r = (r >> l) | ((r & mask) != 0);
             a_exp += l;
         }
-        F_UINT a_mant = r;
+        const F_UINT a_mant = r;
         return normalize(a_sign, a_exp, a_mant, rm, pfflags);
     }
 };

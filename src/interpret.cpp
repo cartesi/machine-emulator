@@ -103,6 +103,7 @@
 
 namespace cartesi {
 
+#ifdef DUMP_REGS
 static const std::array<const char *, X_REG_COUNT> reg_name{"zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0",
     "s1", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11",
     "t3", "t4", "t5", "t6"};
@@ -111,11 +112,13 @@ static const std::array<const char *, F_REG_COUNT> f_reg_name{"ft0", "ft1", "ft2
     "fs0", "fs1", "fa0", "fa1", "fa2", "fa3", "fa4", "fa5", "fa6", "fa7", "fs2", "fs3", "fs4", "fs5", "fs6", "fs7",
     "fs8", "fs9", "fs10", "fs11", "ft8", "ft9", "ft10", "ft11"};
 
-// LCOV_EXCL_START
 static void print_uint64_t(uint64_t a) {
     (void) fprintf(stderr, "%016" PRIx64, a);
 }
+#endif
 
+#if defined(DUMP_EXCEPTIONS) || defined(DUMP_MMU_EXCEPTIONS) || defined(DUMP_INTERRUPTS) ||                            \
+    defined(DUMP_ILLEGAL_INSN_EXCEPTIONS)
 static const char *sbi_ecall_name(uint64_t a7) {
     switch (a7) {
         case 0:
@@ -140,7 +143,6 @@ static const char *sbi_ecall_name(uint64_t a7) {
             return "unkonwn";
     }
 }
-// LCOV_EXCL_STOP
 
 template <typename STATE>
 static void dump_exception_or_interrupt(uint64_t cause, STATE &s) {
@@ -240,7 +242,9 @@ static void dump_exception_or_interrupt(uint64_t cause, STATE &s) {
         }
     }
 }
+#endif
 
+#ifdef DUMP_REGS
 template <typename STATE>
 static void dump_regs(const STATE &s) {
     const std::array<char, 5> priv_str{"USHM"};
@@ -272,7 +276,6 @@ static void dump_regs(const STATE &s) {
     (void) fprintf(stderr, " cycles=%" PRId64, s.mcycle);
     (void) fprintf(stderr, " insns=%" PRId64, s.mcycle - s.icycleinstret);
     (void) fprintf(stderr, "\n");
-#if 1
     (void) fprintf(stderr, "mideleg=");
     print_uint64_t(s.mideleg);
     (void) fprintf(stderr, " mie=");
@@ -280,8 +283,8 @@ static void dump_regs(const STATE &s) {
     (void) fprintf(stderr, " mip=");
     print_uint64_t(s.mip);
     (void) fprintf(stderr, "\n");
-#endif
 }
+#endif
 
 /// \brief Checks if CSR is read-only.
 /// \param csraddr Address of CSR in file.
@@ -356,7 +359,9 @@ static NO_INLINE uint64_t raise_exception(STATE_ACCESS &a, uint64_t pc, uint64_t
             (void) fprintf(stderr, " (");
             dump_exception_or_interrupt(cause, a.get_naked_state());
             (void) fprintf(stderr, ")\n");
+#ifdef DUMP_REGS
             dump_regs(a.get_naked_state());
+#endif
         }
     }
 #endif
@@ -428,11 +433,11 @@ static NO_INLINE uint64_t raise_exception(STATE_ACCESS &a, uint64_t pc, uint64_t
 /// \returns The mask.
 template <typename STATE_ACCESS>
 static inline uint32_t get_pending_irq_mask(STATE_ACCESS &a) {
-    uint64_t mip = a.read_mip();
-    uint64_t mie = a.read_mie();
+    const uint64_t mip = a.read_mip();
+    const uint64_t mie = a.read_mie();
 
     // interrupt trap condition 2: bit i is set in both mip and mie
-    uint32_t pending_ints = mip & mie;
+    const uint32_t pending_ints = mip & mie;
     if (pending_ints == 0) {
         return 0;
     }
@@ -442,7 +447,7 @@ static inline uint32_t get_pending_irq_mask(STATE_ACCESS &a) {
     switch (priv) {
         // interrupt trap condition 1a: the current privilege mode is M
         case PRV_M: {
-            uint64_t mstatus = a.read_mstatus();
+            const uint64_t mstatus = a.read_mstatus();
             // interrupt trap condition 1a: ... and the MIE bit in the mstatus
             // register is set
             if (mstatus & MSTATUS_MIE_MASK) {
@@ -454,7 +459,7 @@ static inline uint32_t get_pending_irq_mask(STATE_ACCESS &a) {
         // interrupt trap condition 1b: the current privilege mode has less
         // privilege than M-mode
         case PRV_S: {
-            uint64_t mstatus = a.read_mstatus();
+            const uint64_t mstatus = a.read_mstatus();
             // Interrupts not set in mideleg are machine-mode
             // and cannot be masked by supervisor mode
             if (mstatus & MSTATUS_SIE_MASK) {
@@ -492,7 +497,7 @@ static inline uint32_t get_highest_priority_irq_num(uint32_t v) {
         MIP_MEIP_MASK, MIP_MSIP_MASK, MIP_MTIP_MASK, // Machine interrupts has higher priority
         MIP_SEIP_MASK, MIP_SSIP_MASK, MIP_STIP_MASK  // Supervisor interrupts
     };
-    for (uint32_t mask : interrupts_priority) {
+    for (const uint32_t mask : interrupts_priority) {
         if (v & mask) {
             return ilog2(mask);
         }
@@ -508,9 +513,9 @@ static inline uint32_t get_highest_priority_irq_num(uint32_t v) {
 /// \param pc Machine current program counter.
 template <typename STATE_ACCESS>
 static inline uint64_t raise_interrupt_if_any(STATE_ACCESS &a, uint64_t pc) {
-    uint32_t mask = get_pending_irq_mask(a);
+    const uint32_t mask = get_pending_irq_mask(a);
     if (unlikely(mask != 0)) {
-        uint64_t irq_num = get_highest_priority_irq_num(mask);
+        const uint64_t irq_num = get_highest_priority_irq_num(mask);
         return raise_exception(a, pc, irq_num | MCAUSE_INTERRUPT_FLAG, 0);
     }
     return pc;
@@ -522,9 +527,9 @@ static inline uint64_t raise_interrupt_if_any(STATE_ACCESS &a, uint64_t pc) {
 template <typename STATE_ACCESS>
 static inline void set_rtc_interrupt(STATE_ACCESS &a, uint64_t mcycle) {
     if (rtc_is_tick(mcycle)) {
-        uint64_t timecmp_cycle = rtc_time_to_cycle(a.read_clint_mtimecmp());
+        const uint64_t timecmp_cycle = rtc_time_to_cycle(a.read_clint_mtimecmp());
         if (timecmp_cycle <= mcycle && timecmp_cycle != 0) {
-            uint64_t mip = a.read_mip();
+            const uint64_t mip = a.read_mip();
             a.write_mip(mip | MIP_MTIP_MASK);
         }
     }
@@ -641,18 +646,12 @@ static inline uint32_t insn_get_funct3(uint32_t insn) {
 /// \param insn Instruction.
 /// \param fcsr Current fcsr.
 static FORCE_INLINE uint32_t insn_get_rm(uint32_t insn, uint32_t fcsr) {
-    uint32_t rm = insn_get_funct3(insn);
+    const uint32_t rm = insn_get_funct3(insn);
     // If rm is set to FRM_DYN, it comes from fcsr.frm
     if (likely(rm == FRM_DYN)) {
         return fcsr >> FCSR_FRM_SHIFT;
     }
     return rm;
-}
-
-/// \brief Obtains the fmt field from an instruction.
-/// \param insn Instruction.
-static inline uint32_t insn_get_fmt(uint32_t insn) {
-    return (insn >> 25) & 0b11;
 }
 
 /// \brief Obtains the rs3 field from an instruction.
@@ -834,11 +833,11 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS
     if (likely(pma.get_istart_R())) {
         if (likely(pma.get_istart_M())) {
             unsigned char *hpage = a.template replace_tlb_entry<TLB_READ>(vaddr, paddr, pma);
-            uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
+            const uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             a.read_memory_word(paddr, hpage, hoffset, pval);
             return {true, pc};
         } else if (likely(pma.get_istart_IO())) {
-            uint64_t offset = paddr - pma.get_start();
+            const uint64_t offset = paddr - pma.get_start();
             uint64_t val{};
             // If we do not know how to read, we treat this as a PMA violation
             if (likely(a.read_device(pma, mcycle, offset, &val, log2_size<U>::value))) {
@@ -909,11 +908,11 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(S
     if (likely(pma.get_istart_W())) {
         if (likely(pma.get_istart_M())) {
             unsigned char *hpage = a.template replace_tlb_entry<TLB_WRITE>(vaddr, paddr, pma);
-            uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
+            const uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             a.write_memory_word(paddr, hpage, hoffset, static_cast<T>(val64));
             return {execute_status::success, pc};
         } else if (likely(pma.get_istart_IO())) {
-            uint64_t offset = paddr - pma.get_start();
+            const uint64_t offset = paddr - pma.get_start();
             auto status = a.write_device(pma, mcycle, offset, val64, log2_size<U>::value);
             // If we do not know how to write, we treat this as a PMA violation
             if (likely(status != execute_status::failure)) {
@@ -1053,13 +1052,13 @@ static FORCE_INLINE execute_status execute_jump(STATE_ACCESS &a, uint64_t &pc, u
 /// \param insn Instruction.
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_LR(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
-    uint64_t vaddr = a.read_x(insn_get_rs1(insn));
+    const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     T val = 0;
     if (unlikely(!read_virtual_memory<T>(a, pc, mcycle, vaddr, &val))) {
         return advance_to_raised_exception(a, pc);
     }
     a.write_ilrsc(vaddr);
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
         return advance_to_next_insn(a, pc);
     }
@@ -1075,7 +1074,7 @@ static FORCE_INLINE execute_status execute_LR(STATE_ACCESS &a, uint64_t &pc, uin
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SC(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     uint64_t val = 0;
-    uint64_t vaddr = a.read_x(insn_get_rs1(insn));
+    const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     execute_status status = execute_status::success;
     if (a.read_ilrsc() == vaddr) {
         status = write_virtual_memory<T>(a, pc, mcycle, vaddr, static_cast<T>(a.read_x(insn_get_rs2(insn))));
@@ -1086,7 +1085,7 @@ static FORCE_INLINE execute_status execute_SC(STATE_ACCESS &a, uint64_t &pc, uin
         val = 1;
     }
     a.write_ilrsc(-1); // Must clear reservation, regardless of failure
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
         return advance_to_next_insn(a, pc, status);
     }
@@ -1117,7 +1116,7 @@ static FORCE_INLINE execute_status execute_SC_W(STATE_ACCESS &a, uint64_t &pc, u
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_AMO(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn,
     const F &f) {
-    uint64_t vaddr = a.read_x(insn_get_rs1(insn));
+    const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     T valm = 0;
     // AMOs never raise load exceptions. Since any unreadable page is also unwritable,
     // attempting to perform an AMO on an unreadable page always raises a store page-fault exception.
@@ -1126,11 +1125,11 @@ static FORCE_INLINE execute_status execute_AMO(STATE_ACCESS &a, uint64_t &pc, ui
     }
     T valr = static_cast<T>(a.read_x(insn_get_rs2(insn)));
     valr = f(valm, valr);
-    execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr, valr);
+    const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr, valr);
     if (unlikely(status == execute_status::failure)) {
         return advance_to_raised_exception(a, pc);
     }
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
         return advance_to_next_insn(a, pc, status);
     }
@@ -1377,7 +1376,7 @@ static FORCE_INLINE execute_status execute_SLLW(STATE_ACCESS &a, uint64_t &pc, u
     }
     dump_insn(a, pc, insn, "sllw");
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        int32_t rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) << (rs2 & 31));
+        const int32_t rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) << (rs2 & 31));
         return static_cast<uint64_t>(rs1w);
     });
 }
@@ -1397,7 +1396,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRAW(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sraw");
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        int32_t rs1w = static_cast<int32_t>(rs1) >> (rs2 & 31);
+        const int32_t rs1w = static_cast<int32_t>(rs1) >> (rs2 & 31);
         return static_cast<uint64_t>(rs1w);
     });
 }
@@ -1528,8 +1527,8 @@ static inline uint64_t read_csr_instret(STATE_ACCESS &a, uint64_t mcycle, bool *
     if (unlikely(!rdcounteren(a, MCOUNTEREN_IR_MASK))) {
         return read_csr_fail(status);
     }
-    uint64_t icycleinstret = a.read_icycleinstret();
-    uint64_t minstret = mcycle - icycleinstret;
+    const uint64_t icycleinstret = a.read_icycleinstret();
+    const uint64_t minstret = mcycle - icycleinstret;
     return read_csr_success(minstret, status);
 }
 
@@ -1538,7 +1537,7 @@ static inline uint64_t read_csr_time(STATE_ACCESS &a, uint64_t mcycle, bool *sta
     if (unlikely(!rdcounteren(a, MCOUNTEREN_TM_MASK))) {
         return read_csr_fail(status);
     }
-    uint64_t mtime = rtc_cycle_to_time(mcycle);
+    const uint64_t mtime = rtc_cycle_to_time(mcycle);
     return read_csr_success(mtime, status);
 }
 
@@ -1554,8 +1553,8 @@ static inline uint64_t read_csr_senvcfg(STATE_ACCESS &a, bool *status) {
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_sie(STATE_ACCESS &a, bool *status) {
-    uint64_t mie = a.read_mie();
-    uint64_t mideleg = a.read_mideleg();
+    const uint64_t mie = a.read_mie();
+    const uint64_t mideleg = a.read_mideleg();
     return read_csr_success(mie & mideleg, status);
 }
 
@@ -1592,14 +1591,14 @@ static inline uint64_t read_csr_stval(STATE_ACCESS &a, bool *status) {
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_sip(STATE_ACCESS &a, bool *status) {
     // Ensure values are are loaded in order: do not nest with operator
-    uint64_t mip = a.read_mip();
-    uint64_t mideleg = a.read_mideleg();
+    const uint64_t mip = a.read_mip();
+    const uint64_t mideleg = a.read_mideleg();
     return read_csr_success(mip & mideleg, status);
 }
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_satp(STATE_ACCESS &a, bool *status) {
-    uint64_t mstatus = a.read_mstatus();
+    const uint64_t mstatus = a.read_mstatus();
     auto priv = a.read_iflags_PRV();
     // When TVM=1, attempts to read or write the satp CSR
     // while executing in S-mode will raise an illegal instruction exception
@@ -1680,8 +1679,8 @@ static inline uint64_t read_csr_mcycle(uint64_t mcycle, bool *status) {
 
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_minstret(STATE_ACCESS &a, uint64_t mcycle, bool *status) {
-    uint64_t icycleinstret = a.read_icycleinstret();
-    uint64_t minstret = mcycle - icycleinstret;
+    const uint64_t icycleinstret = a.read_icycleinstret();
+    const uint64_t minstret = mcycle - icycleinstret;
     return read_csr_success(minstret, status);
 }
 
@@ -1706,7 +1705,7 @@ static inline uint64_t read_csr_fflags(STATE_ACCESS &a, bool *status) {
     if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return read_csr_fail(status);
     }
-    uint64_t fflags = (a.read_fcsr() & FCSR_FFLAGS_RW_MASK) >> FCSR_FFLAGS_SHIFT;
+    const uint64_t fflags = (a.read_fcsr() & FCSR_FFLAGS_RW_MASK) >> FCSR_FFLAGS_SHIFT;
     return read_csr_success(fflags, status);
 }
 
@@ -1716,7 +1715,7 @@ static inline uint64_t read_csr_frm(STATE_ACCESS &a, bool *status) {
     if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return read_csr_fail(status);
     }
-    uint64_t frm = (a.read_fcsr() & FCSR_FRM_RW_MASK) >> FCSR_FRM_SHIFT;
+    const uint64_t frm = (a.read_fcsr() & FCSR_FRM_RW_MASK) >> FCSR_FRM_SHIFT;
     return read_csr_success(frm, status);
 }
 
@@ -1898,13 +1897,13 @@ static NO_INLINE uint64_t read_csr(STATE_ACCESS &a, uint64_t mcycle, CSR_address
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_sstatus(STATE_ACCESS &a, uint64_t val) {
-    uint64_t mstatus = a.read_mstatus();
+    const uint64_t mstatus = a.read_mstatus();
     return write_csr_mstatus(a, (mstatus & ~SSTATUS_W_MASK) | (val & SSTATUS_W_MASK));
 }
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_senvcfg(STATE_ACCESS &a, uint64_t val) {
-    uint64_t senvcfg = a.read_senvcfg();
+    const uint64_t senvcfg = a.read_senvcfg();
     a.write_senvcfg((senvcfg & ~SENVCFG_W_MASK) | (val & SENVCFG_W_MASK));
     return execute_status::success;
 }
@@ -1912,7 +1911,7 @@ static execute_status write_csr_senvcfg(STATE_ACCESS &a, uint64_t val) {
 template <typename STATE_ACCESS>
 static execute_status write_csr_sie(STATE_ACCESS &a, uint64_t val) {
     uint64_t mie = a.read_mie();
-    uint64_t mask = a.read_mideleg();
+    const uint64_t mask = a.read_mideleg();
     mie = (mie & ~mask) | (val & mask);
     a.write_mie(mie);
     return execute_status::success_and_serve_interrupts;
@@ -1956,7 +1955,7 @@ static execute_status write_csr_stval(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_sip(STATE_ACCESS &a, uint64_t val) {
-    uint64_t mask = a.read_mideleg();
+    const uint64_t mask = a.read_mideleg();
     uint64_t mip = a.read_mip();
     mip = (mip & ~mask) | (val & mask);
     a.write_mip(mip);
@@ -1965,7 +1964,7 @@ static execute_status write_csr_sip(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static NO_INLINE execute_status write_csr_satp(STATE_ACCESS &a, uint64_t val) {
-    uint64_t mstatus = a.read_mstatus();
+    const uint64_t mstatus = a.read_mstatus();
     auto priv = a.read_iflags_PRV();
 
     // When TVM=1, attempts to read or write the satp CSR
@@ -1974,9 +1973,9 @@ static NO_INLINE execute_status write_csr_satp(STATE_ACCESS &a, uint64_t val) {
         return execute_status::failure;
     }
 
-    uint64_t old_satp = a.read_satp();
+    const uint64_t old_satp = a.read_satp();
     uint64_t stap = old_satp;
-    uint64_t mode = val >> SATP_MODE_SHIFT;
+    const uint64_t mode = val >> SATP_MODE_SHIFT;
 
     // Checks for supported MODE
     switch (mode) {
@@ -2004,7 +2003,7 @@ static NO_INLINE execute_status write_csr_satp(STATE_ACCESS &a, uint64_t val) {
     // Changes to MODE and ASID, flushes the TLBs.
     // Note that there is no need to flush the TLB when PPN has changed,
     // because software is required to execute SFENCE.VMA when recycling an ASID.
-    uint64_t mod = old_satp ^ stap;
+    const uint64_t mod = old_satp ^ stap;
     if (mod & (SATP_ASID_MASK | SATP_MODE_MASK)) {
         a.flush_all_tlb();
         INC_COUNTER(a.get_statistics(), tlb_flush_all);
@@ -2016,7 +2015,7 @@ static NO_INLINE execute_status write_csr_satp(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static execute_status write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
-    uint64_t old_mstatus = a.read_mstatus() & MSTATUS_R_MASK;
+    const uint64_t old_mstatus = a.read_mstatus() & MSTATUS_R_MASK;
 
     // M-mode software can determine whether a privilege mode is implemented
     // by writing that mode to MPP then reading it back.
@@ -2046,7 +2045,7 @@ static execute_status write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
     // If MMU configuration was changed, we may have to flush the TLBs
     bool flush_tlb_read = false;
     bool flush_tlb_write = false;
-    uint64_t mod = old_mstatus ^ mstatus;
+    const uint64_t mod = old_mstatus ^ mstatus;
     if ((mod & MSTATUS_MXR_MASK) != 0) {
         // MXR allows read access to execute-only pages,
         // therefore it only affects read translations
@@ -2140,7 +2139,7 @@ template <typename STATE_ACCESS>
 static execute_status write_csr_minstret(STATE_ACCESS &a, uint64_t mcycle, uint64_t val) {
     // Note that mcycle will only be incremented after the instruction is executed,
     // but we have to compute this in advance
-    uint64_t icycleinstret = (mcycle + 1) - val;
+    const uint64_t icycleinstret = (mcycle + 1) - val;
     a.write_icycleinstret(icycleinstret);
     return execute_status::success;
 }
@@ -2193,36 +2192,36 @@ static execute_status write_csr_mip(STATE_ACCESS &a, uint64_t val) {
 
 template <typename STATE_ACCESS>
 static inline execute_status write_csr_fflags(STATE_ACCESS &a, uint64_t val) {
-    uint64_t mstatus = a.read_mstatus();
+    const uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return execute_status::failure;
     }
-    uint64_t fcsr = (a.read_fcsr() & ~FCSR_FFLAGS_RW_MASK) | ((val << FCSR_FFLAGS_SHIFT) & FCSR_FFLAGS_RW_MASK);
+    const uint64_t fcsr = (a.read_fcsr() & ~FCSR_FFLAGS_RW_MASK) | ((val << FCSR_FFLAGS_SHIFT) & FCSR_FFLAGS_RW_MASK);
     a.write_fcsr(fcsr);
     return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
 static inline execute_status write_csr_frm(STATE_ACCESS &a, uint64_t val) {
-    uint64_t mstatus = a.read_mstatus();
+    const uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return execute_status::failure;
     }
-    uint64_t fcsr = (a.read_fcsr() & ~FCSR_FRM_RW_MASK) | ((val << FCSR_FRM_SHIFT) & FCSR_FRM_RW_MASK);
+    const uint64_t fcsr = (a.read_fcsr() & ~FCSR_FRM_RW_MASK) | ((val << FCSR_FRM_SHIFT) & FCSR_FRM_RW_MASK);
     a.write_fcsr(fcsr);
     return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
 static inline execute_status write_csr_fcsr(STATE_ACCESS &a, uint64_t val) {
-    uint64_t mstatus = a.read_mstatus();
+    const uint64_t mstatus = a.read_mstatus();
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if (unlikely((mstatus & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return execute_status::failure;
     }
-    uint64_t fcsr = val & FCSR_RW_MASK;
+    const uint64_t fcsr = val & FCSR_RW_MASK;
     a.write_fcsr(fcsr);
     return execute_status::success;
 }
@@ -2395,7 +2394,7 @@ static FORCE_INLINE execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t &pc,
     bool status = true;
     uint64_t csrval = 0;
     // If rd=r0, we do not read from the CSR to avoid side-effects
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (rd != 0) {
         csrval = read_csr(a, mcycle, csraddr, &status);
     }
@@ -2407,7 +2406,7 @@ static FORCE_INLINE execute_status execute_csr_RW(STATE_ACCESS &a, uint64_t &pc,
     //    will have to check if there was a change to the
     //    memory manager and report back from here so we
     //    break out of the inner loop
-    execute_status wstatus = write_csr(a, mcycle, csraddr, rs1val(a, insn));
+    const execute_status wstatus = write_csr(a, mcycle, csraddr, rs1val(a, insn));
     if (unlikely(wstatus == execute_status::failure)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
@@ -2441,14 +2440,14 @@ static FORCE_INLINE execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t &pc,
     auto csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
     // Try to read old CSR value
     bool status = false;
-    uint64_t csrval = read_csr(a, mcycle, csraddr, &status);
+    const uint64_t csrval = read_csr(a, mcycle, csraddr, &status);
     if (unlikely(!status)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     // Load value of rs1 before potentially overwriting it
     // with the value of the csr when rd=rs1
-    uint32_t rs1 = insn_get_rs1(insn);
-    uint64_t rs1val = a.read_x(rs1);
+    const uint32_t rs1 = insn_get_rs1(insn);
+    const uint64_t rs1val = a.read_x(rs1);
     execute_status wstatus = execute_status::success;
     if (rs1 != 0) {
         //??D When we optimize the inner interpreter loop, we
@@ -2461,7 +2460,7 @@ static FORCE_INLINE execute_status execute_csr_SC(STATE_ACCESS &a, uint64_t &pc,
         }
     }
     // Write to rd only after potential read/write exceptions
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
         return advance_to_next_insn(a, pc, wstatus);
     }
@@ -2489,11 +2488,11 @@ static FORCE_INLINE execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t &pc
     auto csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
     // Try to read old CSR value
     bool status = false;
-    uint64_t csrval = read_csr(a, mcycle, csraddr, &status);
+    const uint64_t csrval = read_csr(a, mcycle, csraddr, &status);
     if (unlikely(!status)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    uint32_t rs1 = insn_get_rs1(insn);
+    const uint32_t rs1 = insn_get_rs1(insn);
     execute_status wstatus = execute_status::success;
     if (rs1 != 0) {
         //??D When we optimize the inner interpreter loop, we
@@ -2506,7 +2505,7 @@ static FORCE_INLINE execute_status execute_csr_SCI(STATE_ACCESS &a, uint64_t &pc
         }
     }
     // Write to rd only after potential read/write exceptions
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
         return advance_to_next_insn(a, pc, wstatus);
     }
@@ -2614,7 +2613,7 @@ static FORCE_INLINE execute_status execute_WFI(STATE_ACCESS &a, uint64_t &pc, ui
     dump_insn(a, pc, insn, "wfi");
     // Check privileges and do nothing else
     auto priv = a.read_iflags_PRV();
-    uint64_t mstatus = a.read_mstatus();
+    const uint64_t mstatus = a.read_mstatus();
     // WFI can always causes an illegal instruction exception in less-privileged modes when TW=1
     if (unlikely(priv == PRV_U || (priv < PRV_M && (mstatus & MSTATUS_TW_MASK)))) {
         return raise_illegal_insn_exception(a, pc, insn);
@@ -2646,14 +2645,14 @@ static FORCE_INLINE execute_status execute_FENCE_I(STATE_ACCESS &a, uint64_t &pc
 
 template <typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_arithmetic(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, const F &f) {
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
         return advance_to_next_insn(a, pc);
     }
     // Ensure rs1 and rs2 are loaded in order: do not nest with call to f() as
     // the order of evaluation of arguments in a function call is undefined.
-    uint64_t rs1 = a.read_x(insn_get_rs1(insn));
-    uint64_t rs2 = a.read_x(insn_get_rs2(insn));
+    const uint64_t rs1 = a.read_x(insn_get_rs1(insn));
+    const uint64_t rs2 = a.read_x(insn_get_rs2(insn));
     // Now we can safely invoke f()
     a.write_x(rd, f(rs1, rs2));
     return advance_to_next_insn(a, pc);
@@ -2850,12 +2849,12 @@ static FORCE_INLINE execute_status execute_REMU(STATE_ACCESS &a, uint64_t &pc, u
 template <typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_arithmetic_immediate(STATE_ACCESS &a, uint64_t &pc, uint32_t insn,
     const F &f) {
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
         return advance_to_next_insn(a, pc);
     }
-    uint64_t rs1 = a.read_x(insn_get_rs1(insn));
-    int32_t imm = insn_I_get_imm(insn);
+    const uint64_t rs1 = a.read_x(insn_get_rs1(insn));
+    const int32_t imm = insn_I_get_imm(insn);
     a.write_x(rd, f(rs1, imm));
     return advance_to_next_insn(a, pc);
 }
@@ -2960,7 +2959,7 @@ static FORCE_INLINE execute_status execute_SLLIW(STATE_ACCESS &a, uint64_t &pc, 
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         // No need to mask lower 5 bits in imm because of the if condition a above
         // We do it anyway here to prevent problems if this code is moved
-        int32_t rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) << (imm & 0b11111));
+        const int32_t rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) << (imm & 0b11111));
         return static_cast<uint64_t>(rs1w);
     });
 }
@@ -2982,17 +2981,17 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRAIW(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sraiw");
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
-        int32_t rs1w = static_cast<int32_t>(rs1) >> (imm & 0b11111);
+        const int32_t rs1w = static_cast<int32_t>(rs1) >> (imm & 0b11111);
         return static_cast<uint64_t>(rs1w);
     });
 }
 
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_S(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
-    uint64_t vaddr = a.read_x(insn_get_rs1(insn));
-    int32_t imm = insn_S_get_imm(insn);
-    uint64_t val = a.read_x(insn_get_rs2(insn));
-    execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
+    const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
+    const int32_t imm = insn_S_get_imm(insn);
+    const uint64_t val = a.read_x(insn_get_rs2(insn));
+    const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
     if (unlikely(status == execute_status::failure)) {
         return advance_to_raised_exception(a, pc);
     }
@@ -3029,13 +3028,13 @@ static FORCE_INLINE execute_status execute_SD(STATE_ACCESS &a, uint64_t &pc, uin
 
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_L(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
-    uint64_t vaddr = a.read_x(insn_get_rs1(insn));
-    int32_t imm = insn_I_get_imm(insn);
+    const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
+    const int32_t imm = insn_I_get_imm(insn);
     T val = 0;
     if (unlikely(!read_virtual_memory<T>(a, pc, mcycle, vaddr + imm, &val))) {
         return advance_to_raised_exception(a, pc);
     }
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     // don't write x0
     if (unlikely(rd == 0)) {
         return advance_to_next_insn(a, pc);
@@ -3100,10 +3099,10 @@ static FORCE_INLINE execute_status execute_LWU(STATE_ACCESS &a, uint64_t &pc, ui
 
 template <typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_branch(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, const F &f) {
-    uint64_t rs1 = a.read_x(insn_get_rs1(insn));
-    uint64_t rs2 = a.read_x(insn_get_rs2(insn));
+    const uint64_t rs1 = a.read_x(insn_get_rs1(insn));
+    const uint64_t rs2 = a.read_x(insn_get_rs2(insn));
     if (f(rs1, rs2)) {
-        uint64_t new_pc = static_cast<int64_t>(pc + insn_B_get_imm(insn));
+        const uint64_t new_pc = static_cast<int64_t>(pc + insn_B_get_imm(insn));
         return execute_jump(a, pc, new_pc);
     }
     return advance_to_next_insn(a, pc);
@@ -3157,7 +3156,7 @@ static FORCE_INLINE execute_status execute_BGEU(STATE_ACCESS &a, uint64_t &pc, u
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_LUI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "lui");
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
         return advance_to_next_insn(a, pc);
     }
@@ -3169,7 +3168,7 @@ static FORCE_INLINE execute_status execute_LUI(STATE_ACCESS &a, uint64_t &pc, ui
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_AUIPC(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "auipc");
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
         return advance_to_next_insn(a, pc);
     }
@@ -3181,8 +3180,8 @@ static FORCE_INLINE execute_status execute_AUIPC(STATE_ACCESS &a, uint64_t &pc, 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_JAL(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "jal");
-    uint64_t new_pc = pc + insn_J_get_imm(insn);
-    uint32_t rd = insn_get_rd(insn);
+    const uint64_t new_pc = pc + insn_J_get_imm(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
         return execute_jump(a, pc, new_pc);
     }
@@ -3194,10 +3193,10 @@ static FORCE_INLINE execute_status execute_JAL(STATE_ACCESS &a, uint64_t &pc, ui
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_JALR(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "jalr");
-    uint64_t val = pc + 4;
-    uint64_t new_pc =
+    const uint64_t val = pc + 4;
+    const uint64_t new_pc =
         static_cast<int64_t>(a.read_x(insn_get_rs1(insn)) + insn_I_get_imm(insn)) & ~static_cast<uint64_t>(1);
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd != 0)) {
         a.write_x(rd, val);
         return execute_jump(a, pc, new_pc);
@@ -3216,15 +3215,15 @@ static FORCE_INLINE execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t 
     INC_COUNTER(a.get_statistics(), fence_vma);
     dump_insn(a, pc, insn, "sfence.vma");
     auto priv = a.read_iflags_PRV();
-    uint64_t mstatus = a.read_mstatus();
+    const uint64_t mstatus = a.read_mstatus();
 
     // When TVM=1, attempts to execute an SFENCE.VMA while executing in S-mode
     // will raise an illegal instruction exception.
     if (unlikely(priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TVM_MASK)))) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    uint32_t rs1 = insn_get_rs1(insn);
-    uint32_t rs2 = insn_get_rs2(insn);
+    const uint32_t rs1 = insn_get_rs1(insn);
+    const uint32_t rs2 = insn_get_rs2(insn);
     if (rs1 == 0) {
         a.flush_all_tlb();
         INC_COUNTER(a.get_statistics(), tlb_flush_all);
@@ -3238,7 +3237,7 @@ static FORCE_INLINE execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t 
             INC_COUNTER(a.get_statistics(), tlb_flush_fence_vma_asid);
         }
     } else {
-        uint64_t vaddr = a.read_x(rs1);
+        const uint64_t vaddr = a.read_x(rs1);
         a.flush_tlb_vaddr(vaddr);
         INC_COUNTER(a.get_statistics(), tlb_flush_vaddr);
         if (rs2 == 0) {
@@ -3531,14 +3530,14 @@ static inline T float_unbox(uint64_t val) {
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_ternary_op_rm(STATE_ACCESS &a, uint64_t &pc, uint32_t insn,
     const F &f) {
-    uint64_t fcsr = a.read_fcsr();
+    const uint64_t fcsr = a.read_fcsr();
     // The rounding mode comes from the insn
-    uint32_t rm = insn_get_rm(insn, fcsr);
+    const uint32_t rm = insn_get_rm(insn, fcsr);
     // If the rounding mode is invalid, the instruction is considered illegal
     if (unlikely(rm > FRM_RMM)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
@@ -3553,14 +3552,14 @@ static FORCE_INLINE execute_status execute_float_ternary_op_rm(STATE_ACCESS &a, 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_binary_op_rm(STATE_ACCESS &a, uint64_t &pc, uint32_t insn,
     const F &f) {
-    uint64_t fcsr = a.read_fcsr();
+    const uint64_t fcsr = a.read_fcsr();
     // The rounding mode comes from the insn
-    uint32_t rm = insn_get_rm(insn, fcsr);
+    const uint32_t rm = insn_get_rm(insn, fcsr);
     // If the rounding mode is invalid, the instruction is considered illegal
     if (unlikely(rm > FRM_RMM)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
@@ -3573,18 +3572,18 @@ static FORCE_INLINE execute_status execute_float_binary_op_rm(STATE_ACCESS &a, u
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_unary_op_rm(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, const F &f) {
-    uint64_t fcsr = a.read_fcsr();
+    const uint64_t fcsr = a.read_fcsr();
     // Unary operation should have rs2 set to 0
     if (unlikely(insn_get_rs2(insn) != 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     // The rounding mode comes from the insn
-    uint32_t rm = insn_get_rm(insn, fcsr);
+    const uint32_t rm = insn_get_rm(insn, fcsr);
     // If the rounding mode is invalid, the instruction is considered illegal
     if (unlikely(rm > FRM_RMM)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
@@ -3596,12 +3595,12 @@ static FORCE_INLINE execute_status execute_float_unary_op_rm(STATE_ACCESS &a, ui
 
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FS(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
-    uint64_t vaddr = a.read_x(insn_get_rs1(insn));
-    int32_t imm = insn_S_get_imm(insn);
+    const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
+    const int32_t imm = insn_S_get_imm(insn);
     // A narrower n-bit transfer out of the floating-point
     // registers will transfer the lower n bits of the register ignoring the upper FLEN−n bits.
     T val = static_cast<T>(a.read_f(insn_get_rs2(insn)));
-    execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
+    const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
     if (unlikely(status == execute_status::failure)) {
         return advance_to_raised_exception(a, pc);
     }
@@ -3623,15 +3622,15 @@ static FORCE_INLINE execute_status execute_FSD(STATE_ACCESS &a, uint64_t &pc, ui
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FL(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     // Loads the float value from virtual memory
-    uint64_t vaddr = a.read_x(insn_get_rs1(insn));
-    int32_t imm = insn_I_get_imm(insn);
+    const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
+    const int32_t imm = insn_I_get_imm(insn);
     T val = 0;
     if (unlikely(!read_virtual_memory(a, pc, mcycle, vaddr + imm, &val))) {
         return advance_to_raised_exception(a, pc);
     }
     // A narrower n-bit transfer, n < FLEN,
     // into the f registers will create a valid NaN-boxed value.
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     a.write_f(rd, float_box(val));
     return advance_to_next_insn(a, pc);
 }
@@ -3844,7 +3843,7 @@ static FORCE_INLINE execute_status execute_FDIV_D(STATE_ACCESS &a, uint64_t &pc,
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCLASS(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, const F &f) {
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
         return advance_to_next_insn(a, pc);
     }
@@ -3856,12 +3855,12 @@ static FORCE_INLINE execute_status execute_FCLASS(STATE_ACCESS &a, uint64_t &pc,
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_binary_op(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, const F &f) {
-    uint64_t fcsr = a.read_fcsr();
+    const uint64_t fcsr = a.read_fcsr();
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
     T s2 = float_unbox<T>(a.read_f(insn_get_rs2(insn)));
-    uint32_t rd = insn_get_rd(insn);
-    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    const uint32_t rd = insn_get_rd(insn);
+    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK); // NOLINT(misc-const-correctness)
     // Must store a valid NaN-boxed value.
     a.write_f(rd, float_box(f(s1, s2, &fflags)));
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
@@ -3870,14 +3869,14 @@ static FORCE_INLINE execute_status execute_float_binary_op(STATE_ACCESS &a, uint
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_float_cmp_op(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, const F &f) {
-    uint64_t fcsr = a.read_fcsr();
+    const uint64_t fcsr = a.read_fcsr();
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
     T s2 = float_unbox<T>(a.read_f(insn_get_rs2(insn)));
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // Comparisons with NaNs may set NV (invalid operation) exception flag in fflags
-    uint64_t val = f(s1, s2, &fflags);
+    const uint64_t val = f(s1, s2, &fflags);
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
     if (unlikely(rd == 0)) {
         return advance_to_next_insn(a, pc);
@@ -4028,14 +4027,14 @@ static FORCE_INLINE execute_status execute_FMINMAX_D(STATE_ACCESS &a, uint64_t &
 
 template <typename ST, typename DT, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCVT_F_F(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, const F &f) {
-    uint64_t fcsr = a.read_fcsr();
+    const uint64_t fcsr = a.read_fcsr();
     // The rounding mode comes from the insn
-    uint32_t rm = insn_get_rm(insn, fcsr);
+    const uint32_t rm = insn_get_rm(insn, fcsr);
     // If the rounding mode is invalid, the instruction is considered illegal
     if (unlikely(rm > FRM_RMM)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // We must always check if input operands are properly NaN-boxed.
     ST s1 = float_unbox<ST>(a.read_f(insn_get_rs1(insn)));
@@ -4048,18 +4047,18 @@ static FORCE_INLINE execute_status execute_FCVT_F_F(STATE_ACCESS &a, uint64_t &p
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCVT_X_F(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, const F &f) {
-    uint64_t fcsr = a.read_fcsr();
+    const uint64_t fcsr = a.read_fcsr();
     // The rounding mode comes from the insn
-    uint32_t rm = insn_get_rm(insn, fcsr);
+    const uint32_t rm = insn_get_rm(insn, fcsr);
     // If the rounding mode is invalid, the instruction is considered illegal
     if (unlikely(rm > FRM_RMM)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
-    uint64_t val = f(s1, rm, &fflags);
+    const uint64_t val = f(s1, rm, &fflags);
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
     if (unlikely(rd == 0)) {
         return advance_to_next_insn(a, pc);
@@ -4070,16 +4069,16 @@ static FORCE_INLINE execute_status execute_FCVT_X_F(STATE_ACCESS &a, uint64_t &p
 
 template <typename T, typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_FCVT_F_X(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, const F &f) {
-    uint64_t fcsr = a.read_fcsr();
+    const uint64_t fcsr = a.read_fcsr();
     // The rounding mode comes from the insn
-    uint32_t rm = insn_get_rm(insn, fcsr);
+    const uint32_t rm = insn_get_rm(insn, fcsr);
     // If the rounding mode is invalid, the instruction is considered illegal
     if (unlikely(rm > FRM_RMM)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
-    uint64_t s1 = a.read_x(insn_get_rs1(insn));
+    const uint64_t s1 = a.read_x(insn_get_rs1(insn));
     T val = f(s1, rm, &fflags);
     // Must store a valid NaN-boxed value.
     a.write_f(rd, float_box(val));
@@ -4203,7 +4202,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_W_S(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.w.s");
     return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        int32_t val = i_sfloat32::cvt_f_i<int32_t>(s1, static_cast<FRM_modes>(rm), fflags);
+        const int32_t val = i_sfloat32::cvt_f_i<int32_t>(s1, static_cast<FRM_modes>(rm), fflags);
         // For XLEN > 32, FCVT.W.S sign-extends the 32-bit result.
         return static_cast<uint64_t>(static_cast<int64_t>(val));
     });
@@ -4213,7 +4212,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_WU_S(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.wu.s");
     return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        uint32_t val = i_sfloat32::cvt_f_i<uint32_t>(s1, static_cast<FRM_modes>(rm), fflags);
+        const uint32_t val = i_sfloat32::cvt_f_i<uint32_t>(s1, static_cast<FRM_modes>(rm), fflags);
         // For XLEN > 32, FCVT.WU.S sign-extends the 32-bit result.
         return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(val)));
     });
@@ -4223,7 +4222,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_L_S(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.l.s");
     return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        int64_t val = i_sfloat32::cvt_f_i<int64_t>(s1, static_cast<FRM_modes>(rm), fflags);
+        const int64_t val = i_sfloat32::cvt_f_i<int64_t>(s1, static_cast<FRM_modes>(rm), fflags);
         return static_cast<uint64_t>(val);
     });
 }
@@ -4240,7 +4239,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_W_D(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.w.d");
     return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        int32_t val = i_sfloat64::cvt_f_i<int32_t>(s1, static_cast<FRM_modes>(rm), fflags);
+        const int32_t val = i_sfloat64::cvt_f_i<int32_t>(s1, static_cast<FRM_modes>(rm), fflags);
         // For RV64, FCVT.W.D sign-extends the 32-bit result.
         return static_cast<uint64_t>(static_cast<int64_t>(val));
     });
@@ -4250,7 +4249,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_WU_D(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.wu.d");
     return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        uint32_t val = i_sfloat64::cvt_f_i<uint32_t>(s1, static_cast<FRM_modes>(rm), fflags);
+        const uint32_t val = i_sfloat64::cvt_f_i<uint32_t>(s1, static_cast<FRM_modes>(rm), fflags);
         // For RV64, FCVT.WU.D sign-extends the 32-bit result.
         return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(val)));
     });
@@ -4260,7 +4259,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_L_D(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.l.d");
     return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        int64_t val = i_sfloat64::cvt_f_i<int64_t>(s1, static_cast<FRM_modes>(rm), fflags);
+        const int64_t val = i_sfloat64::cvt_f_i<int64_t>(s1, static_cast<FRM_modes>(rm), fflags);
         return static_cast<uint64_t>(val);
     });
 }
@@ -4343,7 +4342,7 @@ static FORCE_INLINE execute_status execute_FMV_F_X(STATE_ACCESS &a, uint64_t &pc
     if (unlikely(insn_get_funct3(insn) != 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     // A narrower n-bit transfer, n < FLEN,
     // into the f registers will create a valid NaN-boxed value.
     a.write_f(rd, float_box(static_cast<T>(a.read_x(insn_get_rs1(insn)))));
@@ -4371,11 +4370,11 @@ static FORCE_INLINE execute_status execute_FCLASS_S(STATE_ACCESS &a, uint64_t &p
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMV_X_W(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fmv.x.w");
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
         return advance_to_next_insn(a, pc);
     }
-    uint32_t val = static_cast<uint32_t>(a.read_f(insn_get_rs1(insn)));
+    const uint32_t val = static_cast<uint32_t>(a.read_f(insn_get_rs1(insn)));
     // For RV64, the higher 32 bits of the destination register are
     // filled with copies of the floating-point number’s sign bit.
     // We can perform this with a sign extension.
@@ -4404,11 +4403,11 @@ static FORCE_INLINE execute_status execute_FCLASS_D(STATE_ACCESS &a, uint64_t &p
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMV_X_D(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fmv.x.d");
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
         return advance_to_next_insn(a, pc);
     }
-    uint64_t val = a.read_f(insn_get_rs1(insn));
+    const uint64_t val = a.read_f(insn_get_rs1(insn));
     a.write_x(rd, val);
     return advance_to_next_insn(a, pc);
 }
@@ -4520,7 +4519,7 @@ static FORCE_INLINE execute_status execute_FD(STATE_ACCESS &a, uint64_t &pc, uin
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_L(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t rd,
     uint32_t rs1, int32_t imm) {
-    uint64_t vaddr = a.read_x(rs1);
+    const uint64_t vaddr = a.read_x(rs1);
     T val = 0;
     if (unlikely(!read_virtual_memory<T>(a, pc, mcycle, vaddr + imm, &val))) {
         return advance_to_raised_exception(a, pc);
@@ -4537,9 +4536,9 @@ static FORCE_INLINE execute_status execute_C_L(STATE_ACCESS &a, uint64_t &pc, ui
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_S(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t rs2,
     uint32_t rs1, int32_t imm) {
-    uint64_t vaddr = a.read_x(rs1);
-    uint64_t val = a.read_x(rs2);
-    execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
+    const uint64_t vaddr = a.read_x(rs1);
+    const uint64_t val = a.read_x(rs2);
+    const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
     if (unlikely(status == execute_status::failure)) {
         return advance_to_raised_exception(a, pc);
     }
@@ -4550,7 +4549,7 @@ template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_FL(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t rd,
     uint32_t rs1, int32_t imm) {
     // Loads the float value from virtual memory
-    uint64_t vaddr = a.read_x(rs1);
+    const uint64_t vaddr = a.read_x(rs1);
     T val = 0;
     if (unlikely(!read_virtual_memory(a, pc, mcycle, vaddr + imm, &val))) {
         return advance_to_raised_exception(a, pc);
@@ -4564,11 +4563,11 @@ static FORCE_INLINE execute_status execute_C_FL(STATE_ACCESS &a, uint64_t &pc, u
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_FS(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t rs2,
     uint32_t rs1, int32_t imm) {
-    uint64_t vaddr = a.read_x(rs1);
+    const uint64_t vaddr = a.read_x(rs1);
     // A narrower n-bit transfer out of the floating-point
     // registers will transfer the lower n bits of the register ignoring the upper FLEN−n bits.
     T val = static_cast<T>(a.read_f(rs2));
-    execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
+    const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
     if (unlikely(status == execute_status::failure)) {
         return advance_to_raised_exception(a, pc);
     }
@@ -4584,12 +4583,12 @@ static FORCE_INLINE execute_status execute_C_ADDI4SPN(STATE_ACCESS &a, uint64_t 
     }
     dump_insn(a, pc, insn, "c.addi4spn");
     // rd cannot be zero
-    uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
-    uint32_t imm = insn_get_CIW_imm(insn);
+    const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const uint32_t imm = insn_get_CIW_imm(insn);
     if (unlikely(imm == 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    uint64_t rs1 = a.read_x(2);
+    const uint64_t rs1 = a.read_x(2);
     int64_t val = 0;
     __builtin_add_overflow(static_cast<int64_t>(rs1), static_cast<int64_t>(imm), &val);
     a.write_x(rd, static_cast<uint64_t>(val));
@@ -4600,9 +4599,9 @@ static FORCE_INLINE execute_status execute_C_ADDI4SPN(STATE_ACCESS &a, uint64_t 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_FLD(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.fld");
-    uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
-    uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    int32_t imm = insn_get_CL_CS_imm(insn);
+    const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const int32_t imm = insn_get_CL_CS_imm(insn);
     return execute_C_FL<uint64_t>(a, pc, mcycle, rd, rs1, imm);
 }
 
@@ -4610,9 +4609,9 @@ static FORCE_INLINE execute_status execute_C_FLD(STATE_ACCESS &a, uint64_t &pc, 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_LW(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.lw");
-    uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
-    uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    int32_t imm = insn_get_C_LW_C_SW_imm(insn);
+    const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const int32_t imm = insn_get_C_LW_C_SW_imm(insn);
     return execute_C_L<int32_t>(a, pc, mcycle, rd, rs1, imm);
 }
 
@@ -4620,9 +4619,9 @@ static FORCE_INLINE execute_status execute_C_LW(STATE_ACCESS &a, uint64_t &pc, u
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_LD(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.ld");
-    uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
-    uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    int32_t imm = insn_get_CL_CS_imm(insn);
+    const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const int32_t imm = insn_get_CL_CS_imm(insn);
     return execute_C_L<int64_t>(a, pc, mcycle, rd, rs1, imm);
 }
 
@@ -4630,9 +4629,9 @@ static FORCE_INLINE execute_status execute_C_LD(STATE_ACCESS &a, uint64_t &pc, u
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_FSD(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.fsd");
-    uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    uint32_t rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
-    int32_t imm = insn_get_CL_CS_imm(insn);
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint32_t rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const int32_t imm = insn_get_CL_CS_imm(insn);
     return execute_C_FS<uint64_t>(a, pc, mcycle, rs2, rs1, imm);
 }
 
@@ -4640,9 +4639,9 @@ static FORCE_INLINE execute_status execute_C_FSD(STATE_ACCESS &a, uint64_t &pc, 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SW(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.sw");
-    uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    uint32_t rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
-    int32_t imm = insn_get_C_LW_C_SW_imm(insn);
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint32_t rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const int32_t imm = insn_get_C_LW_C_SW_imm(insn);
     return execute_C_S<uint32_t>(a, pc, mcycle, rs2, rs1, imm);
 }
 
@@ -4650,9 +4649,9 @@ static FORCE_INLINE execute_status execute_C_SW(STATE_ACCESS &a, uint64_t &pc, u
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SD(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.sd");
-    uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    uint32_t rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
-    int32_t imm = insn_get_CL_CS_imm(insn);
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint32_t rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    const int32_t imm = insn_get_CL_CS_imm(insn);
     return execute_C_S<uint64_t>(a, pc, mcycle, rs2, rs1, imm);
 }
 
@@ -4670,12 +4669,12 @@ static FORCE_INLINE execute_status execute_C_NOP(STATE_ACCESS &a, uint64_t &pc, 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ADDI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, uint32_t rd) {
     dump_insn(a, pc, insn, "c.addi");
-    int32_t imm = insn_get_CI_CB_imm_se(insn);
+    const int32_t imm = insn_get_CI_CB_imm_se(insn);
     // C.ADDI with imm == 0 is just a HINT that must execute as no-op (see RISC-V spec)
     if (unlikely(imm == 0)) {
         return advance_to_next_insn<2>(a, pc);
     }
-    uint64_t rd_value = a.read_x(rd);
+    const uint64_t rd_value = a.read_x(rd);
     int64_t val = 0;
     __builtin_add_overflow(static_cast<int64_t>(rd_value), static_cast<int64_t>(imm), &val);
     a.write_x(rd, static_cast<uint64_t>(val));
@@ -4684,7 +4683,7 @@ static FORCE_INLINE execute_status execute_C_ADDI(STATE_ACCESS &a, uint64_t &pc,
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_Q1_SET0(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
         return execute_C_NOP(a, pc, insn);
     }
@@ -4695,12 +4694,12 @@ static FORCE_INLINE execute_status execute_C_Q1_SET0(STATE_ACCESS &a, uint64_t &
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ADDIW(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.addiw");
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    uint64_t rd_value = a.read_x(rd);
-    int32_t imm = insn_get_CI_CB_imm_se(insn);
+    const uint64_t rd_value = a.read_x(rd);
+    const int32_t imm = insn_get_CI_CB_imm_se(insn);
     int32_t val = 0;
     __builtin_add_overflow(static_cast<int32_t>(rd_value), imm, &val);
     a.write_x(rd, static_cast<uint64_t>(val));
@@ -4711,12 +4710,12 @@ static FORCE_INLINE execute_status execute_C_ADDIW(STATE_ACCESS &a, uint64_t &pc
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_LI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.li");
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     // C.LI with rd == 0 is just a HINT that must execute as no-op (see RISC-V spec)
     if (unlikely(rd == 0)) {
         return advance_to_next_insn<2>(a, pc);
     }
-    int32_t imm = insn_get_CI_CB_imm_se(insn);
+    const int32_t imm = insn_get_CI_CB_imm_se(insn);
     a.write_x(rd, static_cast<uint64_t>(imm));
     return advance_to_next_insn<2>(a, pc);
 }
@@ -4725,11 +4724,11 @@ static FORCE_INLINE execute_status execute_C_LI(STATE_ACCESS &a, uint64_t &pc, u
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ADDI16SP(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.addi16sp");
-    int32_t imm = insn_get_C_ADDI16SP_imm(insn);
+    const int32_t imm = insn_get_C_ADDI16SP_imm(insn);
     if (unlikely(imm == 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    uint64_t rs1_value = a.read_x(2);
+    const uint64_t rs1_value = a.read_x(2);
     int64_t val = 0;
     __builtin_add_overflow(static_cast<int64_t>(rs1_value), static_cast<int64_t>(imm), &val);
     a.write_x(2, static_cast<uint64_t>(val));
@@ -4740,7 +4739,7 @@ static FORCE_INLINE execute_status execute_C_ADDI16SP(STATE_ACCESS &a, uint64_t 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_LUI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, uint32_t rd) {
     dump_insn(a, pc, insn, "c.lui");
-    int32_t imm = insn_get_C_LUI_imm(insn);
+    const int32_t imm = insn_get_C_LUI_imm(insn);
     if (unlikely(imm == 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
@@ -4754,7 +4753,7 @@ static FORCE_INLINE execute_status execute_C_LUI(STATE_ACCESS &a, uint64_t &pc, 
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_Q1_SET1(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (rd == 2) {
         return execute_C_ADDI16SP(a, pc, insn);
     }
@@ -4765,13 +4764,13 @@ static FORCE_INLINE execute_status execute_C_Q1_SET1(STATE_ACCESS &a, uint64_t &
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SRLI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.srli");
-    uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    uint32_t imm = insn_get_CI_CB_imm(insn);
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint32_t imm = insn_get_CI_CB_imm(insn);
     // C.SRLI with imm == 0 is just a HINT that must execute as no-op (see RISC-V spec)
     if (unlikely(imm == 0)) {
         return advance_to_next_insn<2>(a, pc);
     }
-    uint64_t rs1_value = a.read_x(rs1);
+    const uint64_t rs1_value = a.read_x(rs1);
     a.write_x(rs1, rs1_value >> imm);
     return advance_to_next_insn<2>(a, pc);
 }
@@ -4780,13 +4779,13 @@ static FORCE_INLINE execute_status execute_C_SRLI(STATE_ACCESS &a, uint64_t &pc,
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SRAI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.srai");
-    uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    uint32_t imm = insn_get_CI_CB_imm(insn);
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint32_t imm = insn_get_CI_CB_imm(insn);
     // C.SRAI with imm == 0 is just a HINT that must execute as no-op (see RISC-V spec)
     if (unlikely(imm == 0)) {
         return advance_to_next_insn<2>(a, pc);
     }
-    int64_t rs1_value = static_cast<int64_t>(a.read_x(rs1));
+    const int64_t rs1_value = static_cast<int64_t>(a.read_x(rs1));
     a.write_x(rs1, static_cast<uint64_t>(rs1_value >> imm));
     return advance_to_next_insn<2>(a, pc);
 }
@@ -4795,9 +4794,9 @@ static FORCE_INLINE execute_status execute_C_SRAI(STATE_ACCESS &a, uint64_t &pc,
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ANDI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.andi");
-    uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    int32_t imm = insn_get_CI_CB_imm_se(insn);
-    uint64_t rs1_value = a.read_x(rs1);
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const int32_t imm = insn_get_CI_CB_imm_se(insn);
+    const uint64_t rs1_value = a.read_x(rs1);
     a.write_x(rs1, rs1_value & static_cast<uint64_t>(imm));
     return advance_to_next_insn<2>(a, pc);
 }
@@ -4806,9 +4805,9 @@ template <typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_C_arithmetic(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, const F &f) {
     // Ensure rs1 and rs2 are loaded in order: do not nest with call to f() as
     // the order of evaluation of arguments in a function call is undefined.
-    uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    uint64_t rs1_value = a.read_x(rs1);
-    uint64_t rs2_value = a.read_x(insn_get_CIW_CL_rd_CS_CA_rs2(insn));
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint64_t rs1_value = a.read_x(rs1);
+    const uint64_t rs2_value = a.read_x(insn_get_CIW_CL_rd_CS_CA_rs2(insn));
     // Now we can safely invoke f()
     a.write_x(rs1, f(rs1_value, rs2_value));
     return advance_to_next_insn<2>(a, pc);
@@ -4917,7 +4916,7 @@ static FORCE_INLINE execute_status execute_C_Q1_SET2(STATE_ACCESS &a, uint64_t &
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_J(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.j");
-    uint64_t new_pc = pc + static_cast<uint64_t>(insn_get_C_J_imm(insn));
+    const uint64_t new_pc = pc + static_cast<uint64_t>(insn_get_C_J_imm(insn));
     return execute_jump(a, pc, new_pc);
 }
 
@@ -4925,10 +4924,10 @@ static FORCE_INLINE execute_status execute_C_J(STATE_ACCESS &a, uint64_t &pc, ui
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_BEQZ(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.beqz");
-    uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     if (a.read_x(rs1) == 0) {
-        int32_t imm = insn_get_C_BEQZ_BNEZ_imm(insn);
-        uint64_t new_pc = pc + static_cast<uint64_t>(imm);
+        const int32_t imm = insn_get_C_BEQZ_BNEZ_imm(insn);
+        const uint64_t new_pc = pc + static_cast<uint64_t>(imm);
         return execute_jump(a, pc, new_pc);
     }
     return advance_to_next_insn<2>(a, pc);
@@ -4938,10 +4937,10 @@ static FORCE_INLINE execute_status execute_C_BEQZ(STATE_ACCESS &a, uint64_t &pc,
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_BNEZ(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.bnez");
-    uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     if (a.read_x(rs1) != 0) {
-        int32_t imm = insn_get_C_BEQZ_BNEZ_imm(insn);
-        uint64_t new_pc = pc + static_cast<uint64_t>(imm);
+        const int32_t imm = insn_get_C_BEQZ_BNEZ_imm(insn);
+        const uint64_t new_pc = pc + static_cast<uint64_t>(imm);
         return execute_jump(a, pc, new_pc);
     }
     return advance_to_next_insn<2>(a, pc);
@@ -4951,17 +4950,17 @@ static FORCE_INLINE execute_status execute_C_BNEZ(STATE_ACCESS &a, uint64_t &pc,
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SLLI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.slli");
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     // C.SLLI with rd == 0 is just a HINT that must execute as no-op (see RISC-V spec)
     if (unlikely(rd == 0)) {
         return advance_to_next_insn<2>(a, pc);
     }
-    uint32_t imm = insn_get_CI_CB_imm(insn);
+    const uint32_t imm = insn_get_CI_CB_imm(insn);
     // C.SLLI with imm == 0 is just a HINT that must execute as no-op (see RISC-V spec)
     if (unlikely(imm == 0)) {
         return advance_to_next_insn<2>(a, pc);
     }
-    uint64_t rs1_value = a.read_x(rd);
+    const uint64_t rs1_value = a.read_x(rd);
     a.write_x(rd, rs1_value << imm);
     return advance_to_next_insn<2>(a, pc);
 }
@@ -4970,8 +4969,8 @@ static FORCE_INLINE execute_status execute_C_SLLI(STATE_ACCESS &a, uint64_t &pc,
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_FLDSP(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.fldsp");
-    uint32_t rd = insn_get_rd(insn);
-    int32_t imm = insn_get_C_FLDSP_LDSP_imm(insn);
+    const uint32_t rd = insn_get_rd(insn);
+    const int32_t imm = insn_get_C_FLDSP_LDSP_imm(insn);
     return execute_C_FL<uint64_t>(a, pc, mcycle, rd, 0x2, imm);
 }
 
@@ -4979,11 +4978,11 @@ static FORCE_INLINE execute_status execute_C_FLDSP(STATE_ACCESS &a, uint64_t &pc
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_LWSP(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.lwsp");
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    int32_t imm = insn_get_C_LWSP_imm(insn);
+    const int32_t imm = insn_get_C_LWSP_imm(insn);
     return execute_C_L<int32_t>(a, pc, mcycle, rd, 0x2, imm);
 }
 
@@ -4991,11 +4990,11 @@ static FORCE_INLINE execute_status execute_C_LWSP(STATE_ACCESS &a, uint64_t &pc,
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_LDSP(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.ldsp");
-    uint32_t rd = insn_get_rd(insn);
+    const uint32_t rd = insn_get_rd(insn);
     if (unlikely(rd == 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    int32_t imm = insn_get_C_FLDSP_LDSP_imm(insn);
+    const int32_t imm = insn_get_C_FLDSP_LDSP_imm(insn);
     return execute_C_L<int64_t>(a, pc, mcycle, rd, 0x2, imm);
 }
 
@@ -5006,7 +5005,7 @@ static FORCE_INLINE execute_status execute_C_JR(STATE_ACCESS &a, uint64_t &pc, u
     if (unlikely(rs1 == 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    uint64_t new_pc = a.read_x(rs1) & ~static_cast<uint64_t>(1);
+    const uint64_t new_pc = a.read_x(rs1) & ~static_cast<uint64_t>(1);
     return execute_jump(a, pc, new_pc);
 }
 
@@ -5019,7 +5018,7 @@ static FORCE_INLINE execute_status execute_C_MV(STATE_ACCESS &a, uint64_t &pc, u
     if (unlikely(rd == 0)) {
         return advance_to_next_insn<2>(a, pc);
     }
-    uint64_t val = a.read_x(rs2);
+    const uint64_t val = a.read_x(rs2);
     a.write_x(rd, val);
     return advance_to_next_insn<2>(a, pc);
 }
@@ -5036,8 +5035,8 @@ static FORCE_INLINE execute_status execute_C_EBREAK(STATE_ACCESS &a, uint64_t &p
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_JALR(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, uint32_t rs1) {
     dump_insn(a, pc, insn, "c.jalr");
-    uint64_t new_pc = a.read_x(rs1) & ~static_cast<uint64_t>(1);
-    uint64_t val = pc + 2;
+    const uint64_t new_pc = a.read_x(rs1) & ~static_cast<uint64_t>(1);
+    const uint64_t val = pc + 2;
     a.write_x(0x1, val);
     return execute_jump(a, pc, new_pc);
 }
@@ -5051,8 +5050,8 @@ static FORCE_INLINE execute_status execute_C_ADD(STATE_ACCESS &a, uint64_t &pc, 
     if (unlikely(rd == 0)) {
         return advance_to_next_insn<2>(a, pc);
     }
-    uint64_t rd_value = a.read_x(rd);
-    uint64_t rs2_value = a.read_x(rs2);
+    const uint64_t rd_value = a.read_x(rd);
+    const uint64_t rs2_value = a.read_x(rs2);
     uint64_t val = 0;
     __builtin_add_overflow(rd_value, rs2_value, &val);
     a.write_x(rd, val);
@@ -5061,8 +5060,8 @@ static FORCE_INLINE execute_status execute_C_ADD(STATE_ACCESS &a, uint64_t &pc, 
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_Q2_SET0(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    uint32_t rs1 = insn_get_rd(insn);
-    uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
+    const uint32_t rs1 = insn_get_rd(insn);
+    const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
     if (insn & 0b0001000000000000) {
         if (rs2 == 0) {
             if (rs1 == 0) {
@@ -5082,8 +5081,8 @@ static FORCE_INLINE execute_status execute_C_Q2_SET0(STATE_ACCESS &a, uint64_t &
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_FSDSP(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.fsdsp");
-    uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
-    int32_t imm = insn_get_C_FSDSP_SDSP_imm(insn);
+    const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
+    const int32_t imm = insn_get_C_FSDSP_SDSP_imm(insn);
     return execute_C_FS<uint64_t>(a, pc, mcycle, rs2, 0x2, imm);
 }
 
@@ -5091,8 +5090,8 @@ static FORCE_INLINE execute_status execute_C_FSDSP(STATE_ACCESS &a, uint64_t &pc
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SWSP(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.swsp");
-    uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
-    int32_t imm = insn_get_C_SWSP_imm(insn);
+    const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
+    const int32_t imm = insn_get_C_SWSP_imm(insn);
     return execute_C_S<uint32_t>(a, pc, mcycle, rs2, 0x2, imm);
 }
 
@@ -5100,8 +5099,8 @@ static FORCE_INLINE execute_status execute_C_SWSP(STATE_ACCESS &a, uint64_t &pc,
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SDSP(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.sdsp");
-    uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
-    int32_t imm = insn_get_C_FSDSP_SDSP_imm(insn);
+    const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
+    const int32_t imm = insn_get_C_FSDSP_SDSP_imm(insn);
     return execute_C_S<uint64_t>(a, pc, mcycle, rs2, 0x2, imm);
 }
 
@@ -5421,7 +5420,7 @@ static FORCE_INLINE fetch_status fetch_translate_pc_slow(STATE_ACCESS &a, uint64
         return fetch_status::exception;
     }
     unsigned char *hpage = a.template replace_tlb_entry<TLB_CODE>(vaddr, paddr, pma);
-    uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
+    const uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
     *phptr = hpage + hoffset;
     return fetch_status::success;
 }
@@ -5460,7 +5459,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE fetch_status fetch_insn(STATE_ACCESS &a, uint64_t &pc, uint32_t &insn, uint64_t &fetch_vaddr_page,
     uint64_t &fetch_vh_offset) {
     unsigned char *hptr = nullptr;
-    uint64_t vaddr_page = pc & ~PAGE_OFFSET_MASK;
+    const uint64_t vaddr_page = pc & ~PAGE_OFFSET_MASK;
     // If pc is in the same page as the last pc fetch,
     // we can just reuse last fetch translation, skipping TLB or slow address translation altogether.
     if (likely(vaddr_page == fetch_vaddr_page)) {
@@ -5482,7 +5481,7 @@ static FORCE_INLINE fetch_status fetch_insn(STATE_ACCESS &a, uint64_t &pc, uint3
         // If not a compressed instruction, we must read 2 additional bytes from the next page.
         if (unlikely((insn & 3) == 3)) {
             // We have to perform a new address translation to read the next 2 bytes since we changed pages.
-            uint64_t vaddr = pc + 2;
+            const uint64_t vaddr = pc + 2;
             if (unlikely(fetch_translate_pc(a, pc, vaddr, &hptr) == fetch_status::exception)) {
                 return fetch_status::exception;
             }
@@ -5548,7 +5547,7 @@ NO_INLINE void interpret_loop(STATE_ACCESS &a, uint64_t mcycle_end, uint64_t mcy
 #endif
 
         // Limit mcycle_tick_end up to the next RTC tick, while avoiding unsigned overflows
-        uint64_t mcycle_tick_end = mcycle + std::min(mcycle_end - mcycle, RTC_FREQ_DIV - mcycle % RTC_FREQ_DIV);
+        const uint64_t mcycle_tick_end = mcycle + std::min(mcycle_end - mcycle, RTC_FREQ_DIV - mcycle % RTC_FREQ_DIV);
 
         // The inner loop continues until there is an interrupt condition
         // or mcycle reaches mcycle_tick_end
@@ -5560,7 +5559,7 @@ NO_INLINE void interpret_loop(STATE_ACCESS &a, uint64_t mcycle_end, uint64_t mcy
             // Try to fetch the next instruction
             if (likely(fetch_insn(a, pc, insn, fetch_vaddr_page, fetch_vh_offset) == fetch_status::success)) {
                 // Try to execute it
-                execute_status status = execute_insn(a, pc, mcycle, insn);
+                const execute_status status = execute_insn(a, pc, mcycle, insn);
 
                 // When execute status is above success, we have to deal with special loop conditions,
                 // this is very unlikely to happen most of the time
@@ -5612,7 +5611,7 @@ interpreter_break_reason interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
 
     // This must be the first read because we assume the first log access is a
     // mcycle read in machine::verify_state_transition
-    uint64_t mcycle = a.read_mcycle();
+    const uint64_t mcycle = a.read_mcycle();
 
     // If the cpu is halted, we are done
     if (a.read_iflags_H()) {

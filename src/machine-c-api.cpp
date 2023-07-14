@@ -456,7 +456,7 @@ cm_semantic_version *convert_to_c(const cartesi::semantic_version &cpp_version) 
 /// \brief Converts log2_size to index into siblings array
 static int cm_log2_size_to_index(int log2_size, int log2_root_size) {
     // We know log2_root_size > 0, so log2_root_size-1 >= 0
-    int index = log2_root_size - 1 - log2_size;
+    const int index = log2_root_size - 1 - log2_size;
     return index;
 }
 
@@ -480,7 +480,7 @@ static cm_merkle_tree_proof *convert_to_c(const cartesi::machine_merkle_tree::pr
 
     for (size_t log2_size = new_merkle_tree_proof->log2_target_size; log2_size < new_merkle_tree_proof->log2_root_size;
          ++log2_size) {
-        int current_index =
+        const int current_index =
             cm_log2_size_to_index(static_cast<int>(log2_size), static_cast<int>(new_merkle_tree_proof->log2_root_size));
         const cartesi::machine_merkle_tree::hash_type sibling_hash =
             proof.get_sibling_hash(static_cast<int>(log2_size));
@@ -501,7 +501,7 @@ static cartesi::machine_merkle_tree::proof_type convert_from_c(const cm_merkle_t
 
     for (int log2_size = cpp_proof.get_log2_target_size(); log2_size < cpp_proof.get_log2_root_size(); ++log2_size) {
         const int current_index = cm_log2_size_to_index(log2_size, cpp_proof.get_log2_root_size());
-        cartesi::machine_merkle_tree::hash_type cpp_sibling_hash =
+        const cartesi::machine_merkle_tree::hash_type cpp_sibling_hash =
             convert_from_c(&c_proof->sibling_hashes.entry[current_index]);
         cpp_proof.set_sibling_hash(cpp_sibling_hash, log2_size);
     }
@@ -554,7 +554,8 @@ static cm_access convert_to_c(const cartesi::access &cpp_access) {
         new_access.written_data = nullptr;
     }
 
-    if (cpp_access.get_proof()) {
+    if (cpp_access.get_proof().has_value()) {
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         new_access.proof = convert_to_c(*cpp_access.get_proof());
     } else {
         new_access.proof = nullptr;
@@ -569,7 +570,7 @@ static cartesi::access convert_from_c(const cm_access *c_access) {
     cpp_access.set_log2_size(c_access->log2_size);
     cpp_access.set_address(c_access->address);
     if (c_access->proof != nullptr) {
-        cartesi::machine_merkle_tree::proof_type proof = convert_from_c(c_access->proof);
+        const cartesi::machine_merkle_tree::proof_type proof = convert_from_c(c_access->proof);
         cpp_access.set_proof(proof);
     }
 

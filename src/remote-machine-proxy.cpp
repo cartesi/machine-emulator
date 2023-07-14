@@ -124,7 +124,7 @@ using namespace Versioning;
 // queue. THIS WILL CRASH!
 //
 
-struct checkin_context {
+struct checkin_context { // NOLINT(bugprone-exception-escape)
     checkin_context(const char *session_id, const char *checkin_address) :
         session_id(session_id),
         checkin_address(checkin_address) {}
@@ -681,7 +681,7 @@ static bool build_client(handler_context &hctx, const CheckInRequest &request) {
         return false;
     }
     // Try to get version from client
-    Void version_request;
+    const Void version_request;
     GetVersionResponse version_response;
     grpc::ClientContext client_context;
     auto status = hctx.stub->GetVersion(&client_context, version_request, &version_response);
@@ -711,7 +711,7 @@ static handler::pull_type *new_CheckIn_handler(handler_context &hctx) {
         hctx.checkin_async_service.RequestCheckIn(&server_context, &request, &writer, cq, cq, self);
         yield(side_effect::none);
         // Acknowledge check-in
-        Void response;
+        const Void response;
         writer.Finish(response, grpc::Status::OK, self); // NOLINT: suppress warning caused by gRPC
         // If we succeeded building a compatible client connection
         // to the server, enable all handlers
@@ -739,7 +739,7 @@ static handler::pull_type *new_SetCheckInTarget_handler(handler_context &hctx) {
         yield(side_effect::none);
         hctx.checkin = checkin_context{request.session_id(), request.address()};
         // Acknowledge SetCheckinTarget request
-        Void response;
+        const Void response;
         writer.Finish(response, grpc::Status::OK, self); // NOLINT: suppress warning caused by gRPC
         yield(side_effect::none);
         // Create a new SetCheckInTarget handler
@@ -835,7 +835,7 @@ static bool finished(handler::pull_type *c) {
 /// \param val If string matches prefix, points to remaninder
 /// \returns True if string matches prefix, false otherwise
 static bool stringval(const char *pre, const char *str, const char **val) {
-    size_t len = strlen(pre);
+    const size_t len = strlen(pre);
     if (strncmp(pre, str, len) == 0) {
         *val = str + len;
         return true;

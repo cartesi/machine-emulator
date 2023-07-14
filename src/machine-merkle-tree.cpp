@@ -83,7 +83,7 @@ machine_merkle_tree::tree_node *machine_merkle_tree::new_page_node(address_type 
     // path determined by the page index,
     // creating the needed nodes along the way
     while (true) {
-        int bit = (page_index & bit_mask) != 0;
+        const int bit = (page_index & bit_mask) != 0;
         tree_node *child = node->child[bit];
         if (!child) {
             child = create_node();
@@ -113,7 +113,7 @@ void machine_merkle_tree::get_page_node_hash(hasher_type &h, const unsigned char
         hash_type child0;
         hash_type child1;
         --log2_size;
-        address_type size = UINT64_C(1) << log2_size;
+        const address_type size = UINT64_C(1) << log2_size;
         get_page_node_hash(h, start, log2_size, child0);
         get_page_node_hash(h, start + size, log2_size, child1);
         get_concat_hash(h, child0, child1, hash);
@@ -205,11 +205,11 @@ void machine_merkle_tree::get_inside_page_sibling_hashes(hasher_type &h, address
     // If node currently being visited is larger than a
     // word, invoke recursively
     if (log2_curr_size > get_log2_word_size()) {
-        int log2_child_size = log2_curr_size - 1;
-        address_type child_size = UINT64_C(1) << log2_child_size;
+        const int log2_child_size = log2_curr_size - 1;
+        const address_type child_size = UINT64_C(1) << log2_child_size;
         hash_type first_hash;
         hash_type second_hash;
-        int child_bit = (address & child_size) != 0;
+        const int child_bit = (address & child_size) != 0;
         get_inside_page_sibling_hashes(h, address, log2_size, hash, curr_data, log2_child_size, first_hash,
             parent_diverged || curr_diverged, child_bit != 0, proof);
         get_inside_page_sibling_hashes(h, address, log2_size, hash, curr_data + child_size, log2_child_size,
@@ -326,7 +326,7 @@ bool machine_merkle_tree::verify_tree(hasher_type &h, tree_node *node, int log2_
     }
     // verify inner node
     if (log2_size > get_log2_page_size()) {
-        int child_log2_size = log2_size - 1;
+        const int child_log2_size = log2_size - 1;
         auto first_ok = verify_tree(h, node->child[0], child_log2_size);
         auto second_ok = verify_tree(h, node->child[1], child_log2_size);
         if (!first_ok || !second_ok) {
@@ -356,13 +356,13 @@ machine_merkle_tree::proof_type machine_merkle_tree::get_proof(address_type targ
     proof_type proof{get_log2_root_size(), log2_target_size};
 
     // Copy hashes for nodes larger than or equal to the page size
-    int log2_stop_size = std::max(log2_target_size, get_log2_page_size());
+    const int log2_stop_size = std::max(log2_target_size, get_log2_page_size());
     int log2_node_size = get_log2_root_size();
     const tree_node *node = m_root;
     // Copy non-pristine siblings hashes directly from tree nodes
     while (node && log2_node_size > log2_stop_size) {
-        int log2_child_size = log2_node_size - 1;
-        int path_bit = (target_address & (UINT64_C(1) << (log2_child_size))) != 0;
+        const int log2_child_size = log2_node_size - 1;
+        const int path_bit = (target_address & (UINT64_C(1) << (log2_child_size))) != 0;
         proof.set_sibling_hash(get_child_hash(log2_child_size, node, !path_bit), log2_child_size);
         node = node->child[path_bit];
         log2_node_size = log2_child_size;
@@ -412,7 +412,7 @@ machine_merkle_tree::proof_type machine_merkle_tree::get_proof(address_type targ
         // Case 3
         // We hit the target node itself
     } else {
-        assert(node && log2_node_size == log2_target_size);
+        assert(node && (log2_node_size == log2_target_size));
         // Copy target node hash and nothing else to do
         proof.set_target_hash(node->hash);
     }
@@ -430,7 +430,7 @@ machine_merkle_tree::proof_type machine_merkle_tree::get_proof(address_type targ
 
 std::ostream &operator<<(std::ostream &out, const machine_merkle_tree::hash_type &hash) {
     auto f = out.flags();
-    for (unsigned b : hash) {
+    for (const unsigned b : hash) {
         out << std::hex << std::setfill('0') << std::setw(2) << b;
     }
     out.flags(f);

@@ -97,7 +97,7 @@ static execute_status htif_console(htif_runtime_config *runtime_config, i_device
     // If console command is enabled, perform it and acknowledge
     if (cmd < 64 && (a->read_htif_iconsole() >> cmd) & 1) {
         if (cmd == HTIF_CONSOLE_PUTCHAR) {
-            uint8_t ch = data & 0xff;
+            const uint8_t ch = data & 0xff;
             // In microarchitecture runtime_config will always be nullptr,
             // therefore the HTIF runtime config is actually ignored.
             if (!runtime_config || !runtime_config->no_console_putchar) {
@@ -109,7 +109,7 @@ static execute_status htif_console(htif_runtime_config *runtime_config, i_device
             // to every participant in a dispute: where would c come from? So if the code reached here in the
             // blockchain, there must be some serious bug
             // In interactive mode, we just get the next character from the console and send it back in the ack
-            int c = tty_getchar();
+            const int c = tty_getchar();
             a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE, cmd, c));
         }
     }
@@ -120,9 +120,9 @@ static execute_status htif_console(htif_runtime_config *runtime_config, i_device
 static execute_status htif_write_tohost(htif_runtime_config *runtime_config, i_device_state_access *a,
     uint64_t tohost) {
     // Decode tohost
-    uint32_t device = HTIF_DEV_FIELD(tohost);
-    uint32_t cmd = HTIF_CMD_FIELD(tohost);
-    uint64_t data = HTIF_DATA_FIELD(tohost);
+    const uint32_t device = HTIF_DEV_FIELD(tohost);
+    const uint32_t cmd = HTIF_CMD_FIELD(tohost);
+    const uint64_t data = HTIF_DATA_FIELD(tohost);
     // Log write to tohost
     a->write_htif_tohost(tohost);
     // Handle devices

@@ -39,7 +39,7 @@ using hash_type = hasher_type::hash_type;
 /// \param val If string matches prefix, points to remaninder
 /// \returns True if string matches prefix, false otherwise
 static bool stringval(const char *pre, const char *str, const char **val) {
-    size_t len = strlen(pre);
+    const size_t len = strlen(pre);
     if (strncmp(pre, str, len) == 0) {
         *val = str + len;
         return true;
@@ -55,7 +55,7 @@ static bool stringval(const char *pre, const char *str, const char **val) {
 /// \returns True if string matches prefix and conversion succeeds,
 /// false otherwise
 static bool intval(const char *pre, const char *str, int *val) {
-    size_t len = strlen(pre);
+    const size_t len = strlen(pre);
     if (strncmp(pre, str, len) == 0) {
         str += len;
         int end = 0;
@@ -75,6 +75,7 @@ static void print_hash(const hash_type &hash, FILE *f) {
     (void) fprintf(f, "\n");
 }
 
+#if 0 // Unused
 /// \brief Reads a hash in hex from file
 /// \param f File to read from
 /// \returns Hash if successful, nothing otherwise
@@ -95,6 +96,7 @@ static std::optional<hash_type> read_hash(FILE *f) {
     }
     return h;
 }
+#endif
 
 /// \brief Prints formatted message to stderr
 /// \param fmt Format string
@@ -130,7 +132,8 @@ static hash_type get_leaf_hash(hasher_type &h, const unsigned char *leaf_data, i
     assert(log2_leaf_size >= log2_word_size);
     if (log2_leaf_size > log2_word_size) {
         hash_type left = get_leaf_hash(h, leaf_data, log2_leaf_size - 1, log2_word_size);
-        hash_type right = get_leaf_hash(h, leaf_data + (1 << (log2_leaf_size - 1)), log2_leaf_size - 1, log2_word_size);
+        const hash_type right =
+            get_leaf_hash(h, leaf_data + (1 << (log2_leaf_size - 1)), log2_leaf_size - 1, log2_word_size);
         get_concat_hash(h, left, right, left);
         return left;
     } else {
@@ -238,7 +241,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Allocate buffer for leaf data
-    uint64_t leaf_size = UINT64_C(1) << log2_leaf_size;
+    const uint64_t leaf_size = UINT64_C(1) << log2_leaf_size;
     auto leaf_buf = unique_calloc<unsigned char>(leaf_size, std::nothrow_t{});
     if (!leaf_buf) {
         error("unable to allocate leaf buffer\n");
@@ -247,7 +250,7 @@ int main(int argc, char *argv[]) {
 
     back_merkle_tree back_tree{log2_root_size, log2_leaf_size, log2_word_size};
 
-    uint64_t max_leaves = UINT64_C(1) << (log2_root_size - log2_leaf_size);
+    const uint64_t max_leaves = UINT64_C(1) << (log2_root_size - log2_leaf_size);
     uint64_t leaf_count = 0;
     // Loop reading leaves from file until done or error
     while (true) {

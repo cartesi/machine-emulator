@@ -75,6 +75,14 @@ private:
         return m_mcycle;
     }
 
+    void do_set_iflags_H(void) override {
+        m_a.set_iflags_H();
+    }
+
+    void do_set_iflags_Y(void) override {
+        m_a.set_iflags_Y();
+    }
+
     void do_set_iflags_X(void) override {
         m_a.set_iflags_X();
     }

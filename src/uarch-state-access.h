@@ -127,10 +127,6 @@ private:
         m_us.halt_flag = false;
     }
 
-    uint64_t do_read_iflags() {
-        return m_s.read_iflags();
-    }
-
     uint64_t do_read_word(uint64_t paddr) {
         // Find a memory range that contains the specified address
         auto &pma = find_memory_pma_entry(paddr, sizeof(uint64_t));

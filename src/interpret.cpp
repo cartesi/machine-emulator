@@ -5579,16 +5579,10 @@ NO_INLINE void interpret_loop(STATE_ACCESS &a, uint64_t mcycle_end, uint64_t mcy
                         if (likely(status == execute_status::success_and_serve_interrupts)) {
                             // We have to break the inner loop to check and serve any pending interrupt immediately
                             break;
-                        } else { // execute_status::success_and_yield_manually,execute_status::success_and_yield_automatically
-                                 // or execute_status::success_and_halt
+                        } else { // execute_status::success_and_yield or execute_status::success_and_halt
                             // Commit machine state
                             a.write_pc(pc);
                             a.write_mcycle(mcycle);
-                            if (status == execute_status::success_and_yield_manually) {
-                                a.set_iflags_Y();
-                            } else if (status == execute_status::success_and_halt) {
-                                a.set_iflags_H();
-                            }
                             // Got an interruption that must be handled externally
                             return;
                         }

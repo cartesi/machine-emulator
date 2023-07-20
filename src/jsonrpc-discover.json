@@ -1092,9 +1092,7 @@
         "title": "UarchInterpreterBreakReason",
         "enum": [
           "reached_target_cycle",
-          "uarch_halted",
-          "halted",
-          "yielded_manually"
+          "uarch_halted"
         ]
       },
 

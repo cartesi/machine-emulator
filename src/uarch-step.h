@@ -21,12 +21,9 @@ namespace cartesi {
 
 /// \brief Microarchitecture step execution status code
 enum class uarch_step_status : int {
-    success,                  // one micro instruction was executed successfully
-    success_and_uarch_halted, // one micro instruction was executed successfully and microarchitecture was halted
-    cycle_overflow,           // already at fixed point: uarch cycle has reached its maximum value
-    uarch_halted,             // already at fixed point: microarchitecture is halted
-    halted,                   // already at fixed point: iflags.H is set
-    yielded_manually          // already at fixed point: iflags.Y is set
+    success,        // one micro instruction was executed successfully
+    cycle_overflow, // already at fixed point: uarch cycle has reached its maximum value
+    uarch_halted,   // already at fixed point: microarchitecture is halted
 };
 
 /// \brief Advances the microarchitecture by one micro cycle

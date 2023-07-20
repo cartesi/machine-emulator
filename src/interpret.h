@@ -32,11 +32,8 @@ enum execute_status : uint64_t {
                                   // cache
     success_and_serve_interrupts, // Instruction execution succeed, the interpreter must serve pending interrupts
                                   // immediately
-    success_and_yield_manually,   // Instruction execution succeed, the interpreter must stop and handle a manual yield
-                                  // externally
-    success_and_yield_automatically, // Instruction execution succeed, the interpreter must stop and handle a yield with
-                                     // automatic reset  externally
-    success_and_halt, // Instruction execution succeed, the interpreter must stop because the machine cannot continue
+    success_and_yield, // Instruction execution succeed, the interpreter must stop and handle a yield externally
+    success_and_halt,  // Instruction execution succeed, the interpreter must stop because the machine cannot continue
 };
 
 /// \brief Reasons for interpreter loop interruption

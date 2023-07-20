@@ -1096,31 +1096,17 @@ static inline void executeInsn(UarchState &a, uint32 insn, uint64 pc) {
     throw std::runtime_error("illegal instruction");
 }
 
-static inline bool getIflagsH(uint64 iflags) {
-    return (iflags & IFLAGS_H_MASK) != 0;
-}
-
-static inline bool getIflagsY(uint64 iflags) {
-    return (iflags & IFLAGS_Y_MASK) != 0;
-}
-
 template <typename UarchState>
 uarch_step_status uarch_step(UarchState &a) {
     // This must be the first read in order to match the first log access in machine::verify_state_transition
     uint64 cycle = readCycle(a);
-    // do not advance if machine is at a fixed point
+    // do not advance if cycle will overflow
     if (cycle == UINT64_MAX) {
         return uarch_step_status::cycle_overflow;
     }
+    // do not advance if machine is halted
     if (readHaltFlag(a)) {
         return uarch_step_status::uarch_halted;
-    }
-    uint64 iflags = readIflags(a);
-    if (getIflagsH(iflags)) {
-        return uarch_step_status::halted;
-    }
-    if (getIflagsY(iflags)) {
-        return uarch_step_status::yielded_manually;
     }
     // execute next instruction
     auto pc = readPc(a);
@@ -1128,12 +1114,6 @@ uarch_step_status uarch_step(UarchState &a) {
     executeInsn(a, insn, pc);
     cycle = cycle + 1;
     writeCycle(a, cycle);
-    // halt if iflags.H or iflags.Y was set by the last instruction
-    iflags = readIflags(a);
-    if (getIflagsH(iflags) || getIflagsY(iflags)) {
-        setHaltFlag(a);
-        return uarch_step_status::success_and_uarch_halted;
-    }
     return uarch_step_status::success;
 }
 

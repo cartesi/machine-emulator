@@ -207,12 +207,6 @@ uarch_interpreter_break_reason uarch_interpreter_break_reason_from_name(const st
     if (name == "uarch_halted") {
         return uibr::uarch_halted;
     }
-    if (name == "halted") {
-        return uibr::halted;
-    }
-    if (name == "yielded_manually") {
-        return uibr::yielded_manually;
-    }
     throw std::domain_error{"invalid uarch interpreter break reason"};
 }
 

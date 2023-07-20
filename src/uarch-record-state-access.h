@@ -268,10 +268,6 @@ private:
             m_us.halt_flag, false, "uarch.halt_flag");
     }
 
-    uint64_t do_read_iflags() {
-        return log_read(shadow_state_get_csr_abs_addr(shadow_state_csr::iflags), m_s.read_iflags(), "iflags");
-    }
-
     uint64_t do_read_word(uint64_t paddr) {
         assert((paddr & (sizeof(uint64_t) - 1)) == 0);
         // Find a memory range that contains the specified address

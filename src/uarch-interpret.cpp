@@ -30,17 +30,11 @@ uarch_interpreter_break_reason uarch_interpret(uarch_state_access &a, uint64_t c
             case uarch_step_status::success:
                 cycle += 1;
                 break;
-            case uarch_step_status::success_and_uarch_halted:
-                [[fallthrough]];
             case uarch_step_status::uarch_halted:
                 return uarch_interpreter_break_reason::uarch_halted;
-            case uarch_step_status::halted:
-                return uarch_interpreter_break_reason::halted;
-            case uarch_step_status::yielded_manually:
-                return uarch_interpreter_break_reason::yielded_manually;
             // LCOV_EXCL_START
             case uarch_step_status::cycle_overflow:
-                // Prior condition ensures this case is unreachable. but linter may complain about missing it
+                // Prior condition ensures that this case is unreachable. but linter may complain about missing it
                 return uarch_interpreter_break_reason::reached_target_cycle;
                 // LCOV_EXCL_STOP
         }

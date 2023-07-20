@@ -72,6 +72,18 @@ public:
         return do_read_mcycle();
     }
 
+    /// \brief Sets the iflags_H flag.
+    /// \details This is Cartesi-specific.
+    void set_iflags_H(void) {
+        return do_set_iflags_H();
+    }
+
+    /// \brief Sets the iflags_Y flag.
+    /// \details This is Cartesi-specific.
+    void set_iflags_Y(void) {
+        return do_set_iflags_Y();
+    }
+
     /// \brief Sets the iflags_X flag.
     /// \details This is Cartesi-specific.
     void set_iflags_X(void) {
@@ -161,6 +173,8 @@ private:
     virtual void do_reset_mip(uint64_t mask) = 0;
     virtual uint64_t do_read_mip(void) = 0;
     virtual uint64_t do_read_mcycle(void) = 0;
+    virtual void do_set_iflags_H(void) = 0;
+    virtual void do_set_iflags_Y(void) = 0;
     virtual void do_set_iflags_X(void) = 0;
     virtual uint64_t do_read_clint_mtimecmp(void) = 0;
     virtual void do_write_clint_mtimecmp(uint64_t val) = 0;

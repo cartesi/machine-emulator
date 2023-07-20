@@ -146,14 +146,6 @@ local function run_machine_with_uarch(machine)
     -- mimics "machine:run()" using the microarchitecture
     while true do
         local ubr = machine:run_uarch()
-        if ubr == cartesi.UARCH_BREAK_REASON_HALTED then
-            -- iflags.H was already set when uarch started
-            return cartesi.BREAK_REASON_HALTED
-        end
-        if ubr == cartesi.UARCH_BREAK_REASON_YIELDED_MANUALLY then
-            -- iflags.Y was already set when uarch started
-            return cartesi.BREAK_REASON_YIELDED_MANUALLY
-        end
         if ubr == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
             machine:reset_uarch_state()
             if machine:read_iflags_H() then

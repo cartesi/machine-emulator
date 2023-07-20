@@ -642,56 +642,6 @@ do_test("do not advance micro cycle if uarch is halted", function(machine)
     assert(machine:read_uarch_cycle() == 0, "uarch cycle should still be 0")
 end)
 
-do_test("do not advance micro cycle if iflags.H is set", function(machine)
-    machine:set_iflags_H()
-    assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
-    assert(machine:read_uarch_halt_flag() == false, "uarch halt flag should be cleared")
-    assert(machine:read_iflags_Y() == false, "iflags.Y should be cleared")
-    assert(machine:read_iflags_H() == true, "iflags.H should be set")
-    local status = machine:run_uarch(1)
-    assert(status == cartesi.UARCH_BREAK_REASON_HALTED, "run_uarch should return UARCH_BREAK_REASON_HALTED")
-    assert(machine:read_uarch_cycle() == 0, "uarch cycle should still be 0")
-end)
-
-do_test("do not advance micro cycle if iflags.Y is set", function(machine)
-    machine:set_iflags_Y()
-    assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
-    assert(machine:read_uarch_halt_flag() == false, "uarch should not be halted")
-    assert(machine:read_iflags_Y() == true, "machine iflags.Y should be set")
-    assert(machine:read_iflags_H() == false, "machine iflags.H should be cleared")
-    local status = machine:run_uarch(1)
-    assert(
-        status == cartesi.UARCH_BREAK_REASON_YIELDED_MANUALLY,
-        "run_uarch should return UARCH_BREAK_REASON_YIELDED_MANUALLY"
-    )
-    assert(machine:read_uarch_cycle() == 0, "uarch cycle should still be 0")
-end)
-
-do_test("return UARCH_BREAK_REASON_UARCH_HALTED if uarch halt, iflags.H and iflags.Y are set", function(machine)
-    machine:set_uarch_halt_flag()
-    machine:set_iflags_Y()
-    machine:set_iflags_H()
-    assert(machine:read_uarch_halt_flag() == true, "uarch halt should be set")
-    assert(machine:read_iflags_Y() == true, "iflags.Y should be set")
-    assert(machine:read_iflags_H() == true, "iflags.H should be set")
-    io.write("ANTES com io")
-    local status = machine:run_uarch(1)
-    assert(status == cartesi.UARCH_BREAK_REASON_UARCH_HALTED, "run_uarch should return UARCH_BREAK_REASON_UARCH_HALTED")
-end)
-
-do_test(
-    "return UARCH_BREAK_REASON_HALTED if uarch halt is not set,  iflags.H is set and iflags.Y is set",
-    function(machine)
-        machine:set_iflags_Y()
-        machine:set_iflags_H()
-        assert(machine:read_uarch_halt_flag() == false, "uarch halt should be cleared")
-        assert(machine:read_iflags_Y() == true, "iflags.Y should be set")
-        assert(machine:read_iflags_H() == true, "iflags.H should be set")
-        local status = machine:run_uarch(1)
-        assert(status == cartesi.UARCH_BREAK_REASON_HALTED, "run_uarch should return UARCH_BREAK_REASON_HALTED")
-    end
-)
-
 do_test("advance micro cycles until halt", function(machine)
     assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
     assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
@@ -770,16 +720,14 @@ do_test("dumped log content should match", function()
     local expected_output = "begin step\n"
         .. "  1: read uarch.cycle@0x320(800): 0x0(0)\n"
         .. "  2: read uarch.halt_flag@0x328(808): 0x0(0)\n"
-        .. "  3: read iflags@0x2e8(744): 0x18(24)\n"
-        .. "  4: read uarch.pc@0x330(816): 0x70000000(1879048192)\n"
-        .. "  5: read memory@0x70000000(1879048192): 0x3280029307b00513(3638911329427784979)\n"
+        .. "  3: read uarch.pc@0x330(816): 0x70000000(1879048192)\n"
+        .. "  4: read memory@0x70000000(1879048192): 0x3280029307b00513(3638911329427784979)\n"
         .. "  begin addi\n"
-        .. "    6: read uarch.x@0x340(832): 0x0(0)\n"
-        .. "    7: write uarch.x@0x390(912): 0x0(0) -> 0x7b(123)\n"
-        .. "    8: write uarch.pc@0x330(816): 0x70000000(1879048192) -> 0x70000004(1879048196)\n"
+        .. "    5: read uarch.x@0x340(832): 0x0(0)\n"
+        .. "    6: write uarch.x@0x390(912): 0x0(0) -> 0x7b(123)\n"
+        .. "    7: write uarch.pc@0x330(816): 0x70000000(1879048192) -> 0x70000004(1879048196)\n"
         .. "  end addi\n"
-        .. "  9: write uarch.cycle@0x320(800): 0x0(0) -> 0x1(1)\n"
-        .. "  10: read iflags@0x2e8(744): 0x18(24)\n"
+        .. "  8: write uarch.cycle@0x320(800): 0x0(0) -> 0x1(1)\n"
         .. "end step\n"
 
     print("Output of dump log:")

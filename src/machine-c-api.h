@@ -150,8 +150,6 @@ typedef enum { // NOLINT(modernize-use-using)
 typedef enum { // NOLINT(modernize-use-using)
     CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE,
     CM_UARCH_BREAK_REASON_UARCH_HALTED,
-    CM_UARCH_BREAK_REASON_HALTED,
-    CM_UARCH_BREAK_REASON_YIELDED_MANUALLY
 } CM_UARCH_BREAK_REASON;
 
 /// \brief Processor state configuration

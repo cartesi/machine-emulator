@@ -97,6 +97,7 @@ where options are:
         start:<number>
         length:<number>
         shared
+        mount:<boolean>
 
         label (mandatory)
         identifies the flash drive. init attempts to mount it as /mnt/<label>.
@@ -118,6 +119,11 @@ where options are:
         shared (optional)
         target modifications to flash drive modify image file as well.
         by default, image files are not modified and changes are lost.
+
+        mount (optional)
+        whether the flash drive should be mounted automatically in init.
+        by default, the drive is mounted if there is an image file backing it,
+        you can use "mount:false" to disables auto mounting.
 
     (an option "--flash-drive=label:root,filename:rootfs.ext2" is implicit)
 
@@ -340,6 +346,7 @@ where options are:
   --quiet
     suppress cartesi-machine.lua output.
     exceptions: --initial-hash, --final-hash and text emitted from the target.
+    implies --no-init-splash.
 
   --gdb[=<address>]
     listen at <address> and wait for a GDB connection to debug the machine.
@@ -359,6 +366,25 @@ where options are:
     to perform cycle stepping in a debug session,
     use the command "stepc" after adding the following in your ~/.gdbinit file:
       source <emulator-path>/tools/gdb/gdbinit
+
+  --no-init-splash
+    don't show cartesi machine splash on boot.
+
+  --append-init=<string>
+    append a command to machine's init script to be executed with root privilege,
+    the command is executed on boot after mounting flash drives and before running the entrypoint,
+    you can pass this option multiple times.
+
+  --append-init-script=<filename>
+    like --append-init, but use contents from a script file.
+
+  --append-entrypoint=<string>
+    append a command to machine's entrypoint script to be executed with dapp privilege,
+    the command is executed after the machine is initialized and before the final entrypoint command,
+    you can pass this option multiple times.
+
+  --append-entrypoint-script=<filename>
+    like --append-entrypoint, but use contents from a script file.
 
 and command and arguments:
 
@@ -396,6 +422,7 @@ local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
 local flash_image_filename = { root = images_path .. "rootfs.ext2" }
 local flash_label_order = { "root" }
 local flash_shared = {}
+local flash_mount = {}
 local flash_start = {}
 local flash_length = {}
 local memory_range_replace = {}
@@ -404,7 +431,9 @@ local ram_length = 64 << 20
 local rom_image_filename = nil
 local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw quiet \z
                       swiotlb=noforce random.trust_bootloader=on"
-local init_commands = ""
+local init_splash = true
+local append_init = ""
+local append_entrypoint = ""
 local rollup
 local uarch
 local rollup_advance
@@ -436,7 +465,6 @@ local store_config = false
 local load_config = false
 local gdb_address
 local exec_arguments = {}
-local quiet = false
 local assert_rolling_template = false
 
 local function parse_memory_range(opts, what, all)
@@ -647,6 +675,7 @@ local options = {
                 label = true,
                 filename = true,
                 shared = true,
+                mount = true,
                 length = true,
                 start = true,
             })
@@ -655,6 +684,16 @@ local options = {
             f.filename = nil
             if f.image_filename == true then f.image_filename = "" end
             assert(not f.shared or f.shared == true, "invalid flash drive shared value in " .. all)
+            -- mount only if there is a file backing
+            if f.mount == nil then
+                f.mount = f.image_filename and f.image_filename ~= ""
+            else
+                assert(
+                    f.mount == true or f.mount == "true" or f.mount == "false",
+                    "invalid flash drive mount value in " .. all
+                )
+                f.mount = f.mount == true or f.mount == "true"
+            end
             if f.start then f.start = assert(util.parse_number(f.start), "invalid flash drive start in " .. all) end
             if f.length then f.length = assert(util.parse_number(f.length), "invalid flash drive length in " .. all) end
             local d = f.label
@@ -666,6 +705,7 @@ local options = {
             flash_start[d] = f.start or flash_start[d]
             flash_length[d] = f.length or flash_length[d]
             flash_shared[d] = f.shared or flash_shared[d]
+            flash_mount[d] = f.mount or flash_mount[d]
             return true
         end,
     },
@@ -851,7 +891,7 @@ local options = {
         function(all)
             if not all then return false end
             stderr = function() end
-            quiet = true
+            init_splash = false
             return true
         end,
     },
@@ -1069,6 +1109,52 @@ local options = {
                 return true
             end
             return false
+        end,
+    },
+    {
+        "^%-%-no%-init%-splash$",
+        function(all)
+            if not all then return false end
+            init_splash = false
+            return true
+        end,
+    },
+    {
+        "^%-%-append%-init%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            append_init = append_init .. o .. "\n"
+            return true
+        end,
+    },
+    {
+        "^%-%-append%-init%-script%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            local f <close> = assert(io.open(o, "rb"))
+            local contents = assert(f:read("*a"))
+            if not contents:find("\n$") then contents = contents .. "\n" end
+            append_init = append_init .. contents
+            return true
+        end,
+    },
+    {
+        "^%-%-append%-entrypoint%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            append_entrypoint = append_entrypoint .. o .. "\n"
+            return true
+        end,
+    },
+    {
+        "^%-%-append%-entrypoint%-script%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            local f <close> = assert(io.open(o, "rb"))
+            local contents = assert(f:read("*a"))
+            if not contents:find("\n$") then contents = contents .. "\n" end
+            append_entrypoint = append_entrypoint .. contents
+            return true
         end,
     },
     {
@@ -1338,7 +1424,8 @@ else
         rom = {
             image_filename = rom_image_filename,
             bootargs = rom_bootargs,
-            init = init_commands,
+            init = "",
+            entrypoint = "",
         },
         ram = {
             image_filename = ram_image_filename,
@@ -1353,30 +1440,12 @@ else
         uarch = uarch,
         flash_drive = {},
     }
-    for _, label in ipairs(flash_label_order) do
-        local devname = "pmem" .. #config.flash_drive
-        config.flash_drive[#config.flash_drive + 1] = {
-            image_filename = flash_image_filename[label],
-            shared = flash_shared[label],
-            start = flash_start[label],
-            length = flash_length[label] or -1,
-        }
-        if label ~= "root" then
-            config.rom.init = config.rom.init
-                .. ([[
-  busybox mkdir "/mnt/LABEL" && \
-  busybox mount "/dev/DEVNAME" "/mnt/LABEL"
-  ]]):gsub("LABEL", label):gsub("DEVNAME", devname)
-        end
-    end
 
-    if append_rom_bootargs then config.rom.bootargs = config.rom.bootargs .. " " .. append_rom_bootargs end
-
-    if not quiet then
+    -- show splash on init
+    if init_splash then
         config.rom.init = config.rom.init
             .. ([[
-cat <<EOF
-
+echo "
          .
         / \
       /    \
@@ -1386,12 +1455,33 @@ cat <<EOF
        \    / CARTESI
         \ /   MACHINE
          '    VERSION
-
-EOF
-]]):gsub("\n", "\r\n"):gsub("VERSION", "v" .. cartesi.VERSION)
+"
+]]):gsub("\\", "\\\\"):gsub("VERSION", "v" .. cartesi.VERSION)
     end
 
-    if #exec_arguments > 0 then config.rom.entrypoint = table.concat(exec_arguments, " ") end
+    for _, label in ipairs(flash_label_order) do
+        local devname = "pmem" .. #config.flash_drive
+        config.flash_drive[#config.flash_drive + 1] = {
+            image_filename = flash_image_filename[label],
+            shared = flash_shared[label],
+            start = flash_start[label],
+            length = flash_length[label] or -1,
+        }
+        if label ~= "root" and flash_mount[label] then
+            config.rom.init = config.rom.init
+                .. ([[
+busybox mkdir "/mnt/LABEL" && busybox mount "/dev/DEVNAME" "/mnt/LABEL"
+]]):gsub("LABEL", label):gsub("DEVNAME", devname)
+        end
+    end
+
+    if #append_init > 0 then config.rom.init = config.rom.init .. append_init end
+
+    if append_rom_bootargs then config.rom.bootargs = config.rom.bootargs .. " " .. append_rom_bootargs end
+
+    if #append_entrypoint > 0 then config.rom.entrypoint = config.rom.entrypoint .. append_entrypoint end
+
+    if #exec_arguments > 0 then config.rom.entrypoint = config.rom.entrypoint .. table.concat(exec_arguments, " ") end
 
     if load_config then
         local env = {}

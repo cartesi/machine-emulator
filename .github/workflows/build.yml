@@ -43,17 +43,15 @@ jobs:
             type=ref,event=tag
             type=semver,pattern={{version}},enable=${{startsWith(github.ref, 'refs/tags/v')}}
 
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v2
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
 
       - name: Build docker image
-        uses: docker/build-push-action@v4
+        uses: depot/build-push-action@v1
         with:
           file: Dockerfile
           context: .
-          builder: ${{ steps.buildx.outputs.name }}
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.docker_image_tags.outputs.tags }}
           push: false
           load: true
@@ -62,9 +60,11 @@ jobs:
           build-args: |
             RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
             GIT_COMMIT=${GITHUB_SHA}
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
 
-  test:
-    name: Test
+  test_amd64:
+    name: Test (linux/amd64)
     needs: build
     runs-on: ubuntu-latest-8-cores
     steps:
@@ -86,18 +86,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v2
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
 
       - name: Build docker image
         id: docker_build
-        uses: docker/build-push-action@v4
+        uses: depot/build-push-action@v1
         with:
           file: Dockerfile
           context: .
           target: installer
-          builder: ${{ steps.buildx.outputs.name }}
           platforms: linux/amd64
           tags: ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel
           push: false
@@ -107,6 +105,8 @@ jobs:
           build-args: |
             RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
             GIT_COMMIT=${GITHUB_SHA}
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Download [rootfs.ext2]
         uses: Legion2/download-release-action@v2.1.0
@@ -207,6 +207,142 @@ jobs:
           name: uarch-riscv-tests-json-logs
           path: /opt/cartesi/share/logs/uarch-riscv-tests-json-logs
 
+  test_arm64:
+    name: Test (linux/arm64)
+    needs: build
+    runs-on: ubuntu-latest-8-cores
+    steps:
+      - name: Checkout machine emulator source code
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
+
+      - name: Build docker image
+        id: docker_build
+        uses: depot/build-push-action@v1
+        with:
+          file: Dockerfile
+          context: .
+          target: installer
+          platforms: linux/arm64
+          tags: ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel
+          push: false
+          load: true
+          cache-from: type=gha,scope=debian
+          cache-to: type=gha,mode=max,scope=debian
+          build-args: |
+            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+            GIT_COMMIT=${GITHUB_SHA}
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
+
+      - name: Download [rootfs.ext2]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/image-rootfs
+          tag: ${{ env.ROOTFS_VERSION }}
+          file: rootfs-${{ env.ROOTFS_VERSION }}.ext2
+
+      - name: Download [kernel.bin]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/image-kernel
+          tag: ${{ env.KERNEL_VERSION }}
+          file: linux-${{ env.LINUX_VERSION }}.bin
+
+      - name: Download [rom.bin]
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/machine-emulator-rom
+          tag: ${{ env.ROM_VERSION }}
+          file: rom-${{ env.ROM_VERSION }}.bin
+
+      - name: Move images to cartesi images folder
+        run: |
+          mkdir -m 755 -p /opt/cartesi/share/images
+          mv rom-*.bin linux-*.bin rootfs-*.ext2 /opt/cartesi/share/images/
+          cd /opt/cartesi/share/images/ && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
+          cd /opt/cartesi/share/images/ && ln -s rom-${{ env.ROM_VERSION }}.bin rom.bin
+          cd /opt/cartesi/share/images/ && ln -s rootfs-${{ env.ROOTFS_VERSION }}.ext2 rootfs.ext2
+
+      - name: Download test suite
+        uses: Legion2/download-release-action@v2.1.0
+        with:
+          repository: ${{ github.repository_owner }}/machine-tests
+          tag: ${{ env.TEST_VERSION }}
+          file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
+
+      - name: Untar test suite
+        run: mkdir -p ${CARTESI_TESTS_PATH} && tar -xzf machine-tests-${TEST_VERSION}.tar.gz -C ${CARTESI_TESTS_PATH}
+
+      - name: Simple boot inside the docker image
+        run: docker run --platform linux/arm64 --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel /opt/cartesi/bin/cartesi-machine /bin/true
+
+      - name: Run test suite inside the docker image
+        run: docker run --platform linux/arm64 --rm -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel /opt/cartesi/bin/cartesi-machine-tests --test-path=${CARTESI_TESTS_PATH} run
+
+      - name: Save and Load
+        run: |
+          mkdir -m 755 -p /opt/cartesi/share/images/snapshots
+          docker run --platform linux/arm64 --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel /opt/cartesi/bin/cartesi-machine --max-mcycle=0 --rollup --store=/opt/cartesi/share/images/snapshots/save_and_load_test
+          docker run --platform linux/arm64 --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel /opt/cartesi/bin/cartesi-machine --load=/opt/cartesi/share/images/snapshots/save_and_load_test
+          sudo rm -rf /opt/cartesi/share/images/snapshots
+
+      - name: Run test scripts
+        run: |
+          docker run --platform linux/arm64 --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel ./src/tests/run.sh
+
+      - name: Run grpc lua test scripts
+        run: |
+          docker run --platform linux/arm64 --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel ./src/tests/test-grpc-server.sh remote-cartesi-machine cartesi-machine cartesi-machine-tests ${CARTESI_TESTS_PATH}
+
+      - name: Run jsonrpc lua test scripts
+        run: |
+          docker run --platform linux/arm64 --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel ./src/tests/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests ${CARTESI_TESTS_PATH}
+
+      - name: Run Merkle tree tests
+        run: |
+          docker run --platform linux/arm64 --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel ./src/tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=./src/tests/test-merkle-tree-hash
+
+      - name: Run C API tests
+        run: |
+          docker run --platform linux/arm64 --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t -e LD_LIBRARY_PATH=/opt/cartesi/lib ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel ./src/tests/test-machine-c-api
+
+      - name: Test microarchitecture interpreter
+        run: |
+          docker run --platform linux/arm64 --rm -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel make uarch-tests JOBS=-j$(nproc)
+
+      - name: Run rv64ui test suite on microarchitecture
+        run: |
+          docker run --platform linux/arm64 --rm -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel /opt/cartesi/bin/uarch-riscv-tests --test-path=${CARTESI_TESTS_PATH} run
+
+      - name: Run test suite with Microarchitecture
+        run: |
+          docker run --platform linux/arm64 --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel /opt/cartesi/bin/cartesi-machine-tests --test-path=${CARTESI_TESTS_PATH} --uarch-ram-length=0x20000 --uarch-ram-image=/opt/cartesi/share/uarch/uarch-ram.bin --jobs=$(nproc) run_uarch
+
+      - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
+        run: |
+          docker run --platform linux/arm64 --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel /opt/cartesi/bin/cartesi-machine-tests  --test="^rv64ui.*$" --test-path=${CARTESI_TESTS_PATH} --uarch-ram-length=0x20000 --uarch-ram-image=/opt/cartesi/share/uarch/uarch-ram.bin --jobs=$(nproc) run_host_and_uarch
+
   static-analysis:
     name: Static Analysis
     needs: build
@@ -229,18 +365,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v2
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
 
       - name: Build docker image
         id: docker_build
-        uses: docker/build-push-action@v4
+        uses: depot/build-push-action@v1
         with:
           file: Dockerfile
           context: .
           target: builder
-          builder: ${{ steps.buildx.outputs.name }}
           platforms: linux/amd64
           tags: ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel
           push: false
@@ -250,6 +384,8 @@ jobs:
           build-args: |
             RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
             GIT_COMMIT=${GITHUB_SHA}
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Check format (C++)
         run: |
@@ -288,18 +424,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v2
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
 
       - name: Build docker image
         id: docker_build
-        uses: docker/build-push-action@v4
+        uses: depot/build-push-action@v1
         with:
           file: Dockerfile
           context: .
           target: installer
-          builder: ${{ steps.buildx.outputs.name }}
           platforms: linux/amd64
           tags: ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:coverage
           push: false
@@ -310,6 +444,8 @@ jobs:
             GIT_COMMIT=${GITHUB_SHA}
             RELEASE=no
             COVERAGE=yes
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Download [rootfs.ext2]
         uses: Legion2/download-release-action@v2.1.0
@@ -390,18 +526,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v2
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
 
       - name: Build docker image
         id: docker_build
-        uses: docker/build-push-action@v4
+        uses: depot/build-push-action@v1
         with:
           file: Dockerfile
           context: .
           target: installer
-          builder: ${{ steps.buildx.outputs.name }}
           platforms: linux/amd64
           tags: ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:sanitize
           push: false
@@ -412,6 +546,8 @@ jobs:
             RELEASE=no
             GIT_COMMIT=${GITHUB_SHA}
             SANITIZE=yes
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Download [rootfs.ext2]
         uses: Legion2/download-release-action@v2.1.0
@@ -460,7 +596,7 @@ jobs:
 
   publish_artifacts:
     name: Publish artifacts
-    needs: [static-analysis, coverage, sanitize, test]
+    needs: [static-analysis, coverage, sanitize, test_amd64, test_arm64]
     runs-on: ubuntu-22.04
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     steps:
@@ -478,29 +614,34 @@ jobs:
             type=ref,event=branch
             type=semver,pattern={{version}}
 
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v2
-
       - name: Login to Docker Hub
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
+
       - name: Build Ubuntu based docker image
-        uses: docker/build-push-action@v4
+        uses: depot/build-push-action@v1
         with:
           file: .github/workflows/Dockerfile
           context: .
-          builder: ${{ steps.buildx.outputs.name }}
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.docker_image_tags.outputs.tags }}
           push: true
           load: false
           cache-from: type=gha,scope=debian
           cache-to: type=gha,mode=max,scope=debian
-          build-args: RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }} GIT_COMMIT=${GITHUB_SHA}
+          build-args: |
+            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+            GIT_COMMIT=${GITHUB_SHA}
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Download uarch json logs to be used to test the Solidity based microarchitecture interpreter
         uses: actions/download-artifact@master

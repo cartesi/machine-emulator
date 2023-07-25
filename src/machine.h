@@ -51,7 +51,7 @@ class machine final {
     uarch_machine m_uarch;           ///< Microarchitecture machine
     machine_runtime_config m_r;      ///< Copy of initialization runtime config
 
-    static const pma_entry::flags m_rom_flags;                   ///< PMA flags used for ROM
+    static const pma_entry::flags m_dtb_flags;                   ///< PMA flags used for DTB
     static const pma_entry::flags m_ram_flags;                   ///< PMA flags used for RAM
     static const pma_entry::flags m_flash_drive_flags;           ///< PMA flags used for flash drives
     static const pma_entry::flags m_rollup_rx_buffer_flags;      ///< PMA flags used for rollup rx buffer

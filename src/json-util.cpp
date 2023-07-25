@@ -786,7 +786,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, rom_config &value, const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, dtb_config &value, const std::string &path) {
     if (!contains(j, key)) {
         return;
     }
@@ -798,10 +798,10 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, rom_config &value, 
     ju_get_opt_field(jconfig, "image_filename"s, value.image_filename, new_path);
 }
 
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, rom_config &value,
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, dtb_config &value,
     const std::string &path);
 
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, rom_config &value,
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, dtb_config &value,
     const std::string &path);
 
 template <typename K>
@@ -1020,7 +1020,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_config &val
     const auto new_path = path + to_string(key) + "/";
     ju_get_opt_field(config, "processor"s, value.processor, new_path);
     ju_get_opt_field(config, "ram"s, value.ram, new_path);
-    ju_get_opt_field(config, "rom"s, value.rom, new_path);
+    ju_get_opt_field(config, "dtb"s, value.dtb, new_path);
     ju_get_opt_field(config, "flash_drive"s, value.flash_drive, new_path);
     ju_get_opt_field(config, "tlb"s, value.tlb, new_path);
     ju_get_opt_field(config, "clint"s, value.clint, new_path);
@@ -1134,7 +1134,7 @@ void to_json(nlohmann::json &j, const ram_config &config) {
     };
 }
 
-void to_json(nlohmann::json &j, const rom_config &config) {
+void to_json(nlohmann::json &j, const dtb_config &config) {
     j = nlohmann::json{
         {"bootargs", config.bootargs},
         {"init", config.init},
@@ -1201,7 +1201,7 @@ void to_json(nlohmann::json &j, const machine_config &config) {
     j = nlohmann::json{
         {"processor", config.processor},
         {"ram", config.ram},
-        {"rom", config.rom},
+        {"dtb", config.dtb},
         {"flash_drive", config.flash_drive},
         {"tlb", config.tlb},
         {"clint", config.clint},

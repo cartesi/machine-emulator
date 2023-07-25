@@ -73,12 +73,12 @@ struct ram_config final {
     std::string image_filename{}; ///< RAM image file name
 };
 
-/// \brief ROM state configuration
-struct rom_config final {
+/// \brief DTB state configuration
+struct dtb_config final {
     std::string bootargs{};       ///< Bootargs to pass to kernel
     std::string init{};           ///< Initialization commands to be executed as root on boot
     std::string entrypoint{};     ///< Commands to execute the main application
-    std::string image_filename{}; ///< ROM image file
+    std::string image_filename{}; ///< DTB image file
 };
 
 /// \brief Memory range configuration
@@ -131,7 +131,7 @@ struct machine_config final {
 
     processor_config processor{};          ///< Processor state
     ram_config ram{};                      ///< RAM state
-    rom_config rom{};                      ///< ROM state
+    dtb_config dtb{};                      ///< DTB state
     flash_drive_configs flash_drive{};     ///< Flash drives state
     tlb_config tlb{};                      ///< TLB device state
     clint_config clint{};                  ///< CLINT device state

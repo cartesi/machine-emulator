@@ -1453,8 +1453,8 @@
         ]
       },
 
-      "ROMConfig": {
-        "title": "ROMConfig",
+      "DTBConfig": {
+        "title": "DTBConfig",
         "type": "object",
         "properties": {
           "bootargs": {
@@ -1615,8 +1615,8 @@
           "ram": {
             "$ref": "#/components/schemas/RAMConfig"
           },
-          "rom": {
-            "$ref": "#/components/schemas/ROMConfig"
+          "dtb": {
+            "$ref": "#/components/schemas/DTBConfig"
           },
           "flash_drive": {
             "$ref": "#/components/schemas/FlashDriveConfigs"

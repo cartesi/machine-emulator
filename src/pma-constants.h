@@ -32,8 +32,8 @@ enum PMA_ranges : uint64_t {
     PMA_SHADOW_STATE_LENGTH = EXPAND_UINT64_C(PMA_SHADOW_STATE_LENGTH_DEF), ///< Length of processor shadow range
     PMA_SHADOW_PMAS_START = EXPAND_UINT64_C(PMA_SHADOW_PMAS_START_DEF),     ///< Start of pma board shadow range
     PMA_SHADOW_PMAS_LENGTH = EXPAND_UINT64_C(PMA_SHADOW_PMAS_LENGTH_DEF),   ///< Length of pma board shadow range
-    PMA_ROM_START = EXPAND_UINT64_C(PMA_ROM_START_DEF),                     ///< Start of ROM range
-    PMA_ROM_LENGTH = EXPAND_UINT64_C(PMA_ROM_LENGTH_DEF),                   ///< Length of ROM range
+    PMA_DTB_START = EXPAND_UINT64_C(PMA_DTB_START_DEF),                     ///< Start of DTB range
+    PMA_DTB_LENGTH = EXPAND_UINT64_C(PMA_DTB_LENGTH_DEF),                   ///< Length of DTB range
     PMA_SHADOW_TLB_START = EXPAND_UINT64_C(PMA_SHADOW_TLB_START_DEF),       ///< Start of TLB shadow range
     PMA_SHADOW_TLB_LENGTH = EXPAND_UINT64_C(PMA_SHADOW_TLB_LENGTH_DEF),     ///< Length of TLB shadow range
     PMA_CLINT_START = EXPAND_UINT64_C(PMA_CLINT_START_DEF),                 ///< Start of CLINT range

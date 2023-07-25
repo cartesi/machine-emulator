@@ -470,7 +470,7 @@ enum CARTESI_init : uint64_t {
     UARCH_PC_INIT = UINT64_C(0x70000000),                           ///< Initial value for microarchitecture pc
     UARCH_CYCLE_INIT = UINT64_C(0),                                 ///< Initial value for microarchitecture cycle
     MHARTID_INIT = UINT64_C(0),                                     ///< Initial mhartid
-    FDTADDR_INIT = PMA_ROM_START,                                   ///< Initial FDT address
+    FDTADDR_INIT = PMA_DTB_START,                                   ///< Initial FDT address
 
     // Registers
     REG_X0 = UINT64_C(0), //< zero - hardwired zero

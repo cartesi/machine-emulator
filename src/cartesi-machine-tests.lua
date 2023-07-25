@@ -668,7 +668,7 @@ local function print_machine(test_name, expected_cycles)
             "./cartesi-machine.lua \
  --ram-length=32Mi\
  --ram-image='%s'\
- --no-rom-bootargs\
+ --no-dtb-bootargs\
  --max-mcycle=%d ",
             test_path .. "/" .. test_name,
             2 * expected_cycles
@@ -679,7 +679,7 @@ local function print_machine(test_name, expected_cycles)
                 "./cartesi-machine.lua \
  --ram-length=32Mi\
  --ram-image='%s'\
- --no-rom-bootargs\
+ --no-dtb-bootargs\
  --uarch-ram-length=%d\
  --uarch-ram-image=%s\
  --max-mcycle=%d ",

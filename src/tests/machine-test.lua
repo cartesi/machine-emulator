@@ -152,7 +152,7 @@ end
 
 local pmas_file_names = {
     "0000000000000000--0000000000001000.bin", -- shadow state
-    "0000000000001000--000000000000f000.bin", -- rom
+    "0000000000001000--000000000000f000.bin", -- dtb
     "0000000000010000--0000000000001000.bin", -- shadow pmas
     "0000000000020000--0000000000006000.bin", -- shadow tlb
     "0000000002000000--00000000000c0000.bin", -- clint
@@ -162,7 +162,7 @@ local pmas_file_names = {
 
 local pmas_file_names_with_uarch = {
     "0000000000000000--0000000000001000.bin", -- shadow state
-    "0000000000001000--000000000000f000.bin", -- rom
+    "0000000000001000--000000000000f000.bin", -- dtb
     "0000000000010000--0000000000001000.bin", -- shadow pmas
     "0000000000020000--0000000000006000.bin", -- shadow tlb
     "0000000002000000--00000000000c0000.bin", -- clint
@@ -508,9 +508,11 @@ test_util.make_do_test(build_machine, machine_type, {
         image_filename = linux_image,
         length = 0x4000000,
     },
-    rom = {
-        bootargs = "console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw quiet swiotlb=noforce single=yes splash=no "
-            .. "-- mount /dev/pmem1 /mnt && cat /mnt/etc/issue | dd status=none of=/dev/pmem2",
+    dtb = {
+        bootargs = "console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw quiet swiotlb=noforce init=/opt/cartesi/sbin/init \z
+                    single=yes",
+        init = "mount /dev/pmem1 /mnt",
+        entrypoint = "cat /proc/device-tree/cartesi/name | dd status=none of=/dev/pmem2",
     },
     flash_drive = {
         {
@@ -530,9 +532,9 @@ test_util.make_do_test(build_machine, machine_type, {
     machine:run(MAX_MCYCLE)
     assert(machine:read_iflags_H(), "machine should be halted")
 
-    local expected_issue = "Welcome to Cartesi"
-    local flash_data = machine:read_memory(0xa0000000000000, #expected_issue)
-    assert(flash_data == expected_issue, "unexpected flash drive output")
+    local expected_data = "cartesi"
+    local flash_data = machine:read_memory(0xa0000000000000, #expected_data)
+    assert(flash_data == expected_data, "unexpected flash drive output")
 end)
 
 print("\n\n check for relevant register values after step 1")

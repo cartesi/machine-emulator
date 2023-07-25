@@ -43,7 +43,7 @@
 static hash_type get_verification_root_hash(cm_machine *machine) {
     std::vector dump_list{
         "0000000000000000--0000000000001000.bin", // shadow state
-        "0000000000001000--000000000000f000.bin", // rom
+        "0000000000001000--000000000000f000.bin", // dtb
         "0000000000010000--0000000000001000.bin", // shadow pmas
         "0000000000020000--0000000000006000.bin", // shadow tlb
         "0000000002000000--00000000000c0000.bin", // clint
@@ -221,10 +221,10 @@ protected:
         target->ram.length = source->ram.length;
         target->ram.image_filename = new_cstr(source->ram.image_filename);
 
-        target->rom.bootargs = new_cstr(source->rom.bootargs);
-        target->rom.init = new_cstr(source->rom.init);
-        target->rom.entrypoint = new_cstr(source->rom.entrypoint);
-        target->rom.image_filename = new_cstr(source->rom.image_filename);
+        target->dtb.bootargs = new_cstr(source->dtb.bootargs);
+        target->dtb.init = new_cstr(source->dtb.init);
+        target->dtb.entrypoint = new_cstr(source->dtb.entrypoint);
+        target->dtb.image_filename = new_cstr(source->dtb.image_filename);
 
         target->flash_drive.count = source->flash_drive.count;
         target->flash_drive.entry = new cm_memory_range_config[source->flash_drive.count]{};
@@ -248,17 +248,12 @@ protected:
         }
         delete[] config->tlb.image_filename;
         delete[] config->flash_drive.entry;
-        delete[] config->rom.image_filename;
-        delete[] config->rom.bootargs;
-        delete[] config->rom.init;
-        delete[] config->rom.entrypoint;
+        delete[] config->dtb.image_filename;
+        delete[] config->dtb.bootargs;
+        delete[] config->dtb.init;
+        delete[] config->dtb.entrypoint;
         delete[] config->ram.image_filename;
         delete[] config->uarch.ram.image_filename;
-    }
-
-    void _set_rom_image(const std::string &image_name) {
-        delete[] _machine_config.rom.image_filename;
-        _machine_config.rom.image_filename = new_cstr(image_name.c_str());
     }
 
     void _setup_flash(std::list<cm_memory_range_config> &&configs) {
@@ -290,27 +285,7 @@ protected:
     }
 };
 
-class machine_rom_fixture : public incomplete_machine_fixture {
-public:
-    machine_rom_fixture() {
-        std::ofstream output(_rom_path);
-        output.close();
-        _set_rom_image(_rom_path);
-    }
-    ~machine_rom_fixture() {
-        std::filesystem::remove(_rom_path);
-    }
-
-    machine_rom_fixture(const machine_rom_fixture &other) = delete;
-    machine_rom_fixture(machine_rom_fixture &&other) noexcept = delete;
-    machine_rom_fixture &operator=(const machine_rom_fixture &other) = delete;
-    machine_rom_fixture &operator=(machine_rom_fixture &&other) noexcept = delete;
-
-protected:
-    const std::string _rom_path = "./empty-rom.bin";
-};
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_machine_test, machine_rom_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_machine_test, incomplete_machine_fixture) {
     char *err_msg{};
     int error_code = cm_create_machine(&_machine_config, &_runtime_config, nullptr, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
@@ -322,43 +297,30 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_machine_test, machine_rom_fix
     cm_delete_cstring(err_msg);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_unknown_rom_file_test, incomplete_machine_fixture) {
-    _set_rom_image("/unknown/file.bin");
-    char *err_msg{};
-    int error_code = cm_create_machine(&_machine_config, &_runtime_config, &_machine, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
-
-    std::string result = err_msg;
-    std::string origin("error opening image file '/unknown/file.bin' when initializing ROM: No such file or directory");
-    BOOST_CHECK_EQUAL(origin, result);
-
-    cm_delete_cstring(err_msg);
-}
-
-class machine_rom_flash_fixture : public machine_rom_fixture {
+class machine_flash_fixture : public incomplete_machine_fixture {
 public:
-    machine_rom_flash_fixture() {
+    machine_flash_fixture() {
         cm_memory_range_config flash1_cfg = {0x80000000000000, 0x3c00000, true, _flash1_path.c_str()};
         cm_memory_range_config flash2_cfg = {0x7ffffffffff000, 0x2000, true, _flash2_path.c_str()};
         _setup_flash({flash1_cfg, flash2_cfg});
     }
 
-    ~machine_rom_flash_fixture() {
+    ~machine_flash_fixture() {
         std::filesystem::remove(_flash1_path);
         std::filesystem::remove(_flash2_path);
     }
 
-    machine_rom_flash_fixture(const machine_rom_flash_fixture &other) = delete;
-    machine_rom_flash_fixture(machine_rom_flash_fixture &&other) noexcept = delete;
-    machine_rom_flash_fixture &operator=(const machine_rom_flash_fixture &other) = delete;
-    machine_rom_flash_fixture &operator=(machine_rom_flash_fixture &&other) noexcept = delete;
+    machine_flash_fixture(const machine_flash_fixture &other) = delete;
+    machine_flash_fixture(machine_flash_fixture &&other) noexcept = delete;
+    machine_flash_fixture &operator=(const machine_flash_fixture &other) = delete;
+    machine_flash_fixture &operator=(machine_flash_fixture &&other) noexcept = delete;
 
 private:
     const std::string _flash1_path = "./flash1.bin";
     const std::string _flash2_path = "./flash2.bin";
 };
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, machine_rom_flash_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, machine_flash_fixture) {
     char *err_msg{};
     int error_code = cm_create_machine(&_machine_config, &_runtime_config, &_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
@@ -370,26 +332,26 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, machin
     cm_delete_cstring(err_msg);
 }
 
-class machine_rom_flash_simple_fixture : public machine_rom_fixture {
+class machine_flash_simple_fixture : public incomplete_machine_fixture {
 public:
-    machine_rom_flash_simple_fixture() {
+    machine_flash_simple_fixture() {
         _setup_flash(_flash_path);
     }
 
-    ~machine_rom_flash_simple_fixture() {
+    ~machine_flash_simple_fixture() {
         std::filesystem::remove(_flash_path);
     }
 
-    machine_rom_flash_simple_fixture(const machine_rom_flash_simple_fixture &other) = delete;
-    machine_rom_flash_simple_fixture(machine_rom_flash_simple_fixture &&other) noexcept = delete;
-    machine_rom_flash_simple_fixture &operator=(const machine_rom_flash_simple_fixture &other) = delete;
-    machine_rom_flash_simple_fixture &operator=(machine_rom_flash_simple_fixture &&other) noexcept = delete;
+    machine_flash_simple_fixture(const machine_flash_simple_fixture &other) = delete;
+    machine_flash_simple_fixture(machine_flash_simple_fixture &&other) noexcept = delete;
+    machine_flash_simple_fixture &operator=(const machine_flash_simple_fixture &other) = delete;
+    machine_flash_simple_fixture &operator=(machine_flash_simple_fixture &&other) noexcept = delete;
 
 protected:
     const std::string _flash_path = "./flash.bin";
 };
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_alignment_test, machine_rom_flash_simple_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_alignment_test, machine_flash_simple_fixture) {
     _machine_config.flash_drive.entry[0].start -= 1;
 
     char *err_msg{};
@@ -403,7 +365,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_alignment_test, mach
     cm_delete_cstring(err_msg);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_not_addressable_test, machine_rom_flash_simple_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_not_addressable_test, machine_flash_simple_fixture) {
     _machine_config.flash_drive.entry[0].start = 0x100000000000000 - 0x3c00000 + 4096;
     _machine_config.flash_drive.entry[0].length = 0x3c00000;
 
@@ -418,7 +380,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_not_addressable_test, machin
     cm_delete_cstring(err_msg);
 }
 
-class ordinary_machine_fixture : public machine_rom_fixture {
+class ordinary_machine_fixture : public incomplete_machine_fixture {
 public:
     ordinary_machine_fixture() {
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
@@ -465,7 +427,7 @@ bool operator==(const cm_ram_config &lhs, const cm_ram_config &rhs) {
     return (lhs.length == rhs.length && (strcmp(lhs.image_filename, rhs.image_filename) == 0));
 }
 
-bool operator==(const cm_rom_config &lhs, const cm_rom_config &rhs) {
+bool operator==(const cm_dtb_config &lhs, const cm_dtb_config &rhs) {
     return ((strcmp(lhs.bootargs, rhs.bootargs) == 0) && (strcmp(lhs.init, rhs.init) == 0) &&
         (strcmp(lhs.entrypoint, rhs.entrypoint) == 0) && (strcmp(lhs.image_filename, rhs.image_filename) == 0));
 }
@@ -484,7 +446,7 @@ bool operator==(const cm_htif_config &lhs, const cm_htif_config &rhs) {
 }
 
 bool operator==(const cm_machine_config &lhs, const cm_machine_config &rhs) {
-    return ((lhs.processor == rhs.processor) && (lhs.rom == rhs.rom) && (lhs.ram == rhs.ram) && (lhs.tlb == rhs.tlb) &&
+    return ((lhs.processor == rhs.processor) && (lhs.dtb == rhs.dtb) && (lhs.ram == rhs.ram) && (lhs.tlb == rhs.tlb) &&
         (lhs.clint == rhs.clint) && (lhs.htif == rhs.htif));
 }
 
@@ -1485,7 +1447,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_flash_config_test, ordi
     cm_delete_cstring(err_msg);
 }
 
-class flash_drive_machine_fixture : public machine_rom_flash_simple_fixture {
+class flash_drive_machine_fixture : public machine_flash_simple_fixture {
 public:
     flash_drive_machine_fixture() : _flash_config{}, _flash_data{"test data 1234567890"} {
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
@@ -1534,7 +1496,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_initial_config_flash_drive_test, flash_drive_
 BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_null_placeholder_test, flash_drive_machine_fixture) {
     std::array dump_list{
         "0000000000000000--0000000000001000.bin", // shadow state
-        "0000000000001000--000000000000f000.bin", // rom
+        "0000000000001000--000000000000f000.bin", // dtb
         "0000000000010000--0000000000001000.bin", // shadow pmas
         "0000000000020000--0000000000006000.bin", // shadow tlb
         "0000000002000000--00000000000c0000.bin", // clint
@@ -1555,7 +1517,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_null_placeholder_test, flash_drive_mach
 BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_basic_test, flash_drive_machine_fixture) {
     std::array dump_list{
         "0000000000000000--0000000000001000.bin", // shadow state
-        "0000000000001000--000000000000f000.bin", // rom
+        "0000000000001000--000000000000f000.bin", // dtb
         "0000000000010000--0000000000001000.bin", // shadow pmas
         "0000000000020000--0000000000006000.bin", // shadow tlb
         "0000000002000000--00000000000c0000.bin", // clint
@@ -1921,7 +1883,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_access_log_null_log_test, default_machine_
     cm_delete_cstring(err_msg);
 }
 
-class access_log_machine_fixture : public machine_rom_fixture {
+class access_log_machine_fixture : public incomplete_machine_fixture {
 public:
     access_log_machine_fixture() {
         _log_type = {true, true};
@@ -2546,7 +2508,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, or
 
 // GRPC machine tests
 
-class grpc_machine_fixture : public machine_rom_flash_simple_fixture {
+class grpc_machine_fixture : public machine_flash_simple_fixture {
 public:
     grpc_machine_fixture() : m_stub{} {
         char *err_msg{};

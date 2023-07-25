@@ -76,9 +76,9 @@ void cm_delete(cm_machine_runtime_config *ptr);
 template <>
 void cm_delete(cm_ram_config *p);
 
-/// \brief Deleter for C api rom config
+/// \brief Deleter for C api dtb config
 template <>
-void cm_delete(cm_rom_config *p);
+void cm_delete(cm_dtb_config *p);
 
 /// \brief Deleter for C api access log
 template <>

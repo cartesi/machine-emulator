@@ -75,13 +75,13 @@ where options are:
   --ram-length=<number>
     set RAM length.
 
-  --rom-image=<filename>
-    name of file containing ROM image (default: auto generated flattened device tree).
+  --dtb-image=<filename>
+    name of file containing DTB image (default: auto generated flattened device tree).
 
-  --no-rom-bootargs
+  --no-bootargs
     clear default bootargs.
 
-  --append-rom-bootargs=<string>
+  --append-bootargs=<string>
     append <string> to bootargs.
 
   --no-root-flash-drive
@@ -359,7 +359,6 @@ where options are:
         elf (optional)
         the binary elf file with symbols and debugging information to be debugged, such as:
         - vmlinux (for kernel debugging)
-        - ROM elf (for debugging the ROM)
         - BBL elf (for debugging the BBL boot loader)
         - a test elf (for debugging tests)
 
@@ -428,10 +427,10 @@ local flash_length = {}
 local memory_range_replace = {}
 local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 64 << 20
-local rom_image_filename = nil
-local rom_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw quiet \z
-                      swiotlb=noforce random.trust_bootloader=on"
+local dtb_image_filename = nil
+local bootargs = "console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw quiet swiotlb=noforce init=/opt/cartesi/sbin/init"
 local init_splash = true
+local append_bootargs = ""
 local append_init = ""
 local append_entrypoint = ""
 local rollup
@@ -441,7 +440,6 @@ local rollup_inspect
 local concurrency_update_merkle_tree = 0
 local skip_root_hash_check = false
 local skip_version_check = false
-local append_rom_bootargs
 local htif_no_console_putchar = false
 local htif_console_getchar = false
 local htif_yield_automatic = false
@@ -537,7 +535,7 @@ local options = {
             local ok, stdlib = pcall(require, "posix.stdlib")
             if ok and stdlib then
                 -- use realpath to get images real filenames,
-                -- tools could use this information to detect rom/linux/rootfs versions
+                -- tools could use this information to detect linux/rootfs versions
                 local ram_image = stdlib.realpath(images_path .. "linux.bin")
                 local rootfs_image = stdlib.realpath(images_path .. "rootfs.ext2")
                 if ram_image then print(string.format('  "default_ram_image": "%s",', ram_image)) end
@@ -553,26 +551,26 @@ local options = {
         end,
     },
     {
-        "^%-%-rom%-image%=(.*)$",
+        "^%-%-dtb%-image%=(.*)$",
         function(o)
             if not o or #o < 1 then return false end
-            rom_image_filename = o
+            dtb_image_filename = o
             return true
         end,
     },
     {
-        "^%-%-no%-rom%-bootargs$",
+        "^%-%-no%-bootargs$",
         function(all)
             if not all then return false end
-            rom_bootargs = ""
+            bootargs = ""
             return true
         end,
     },
     {
-        "^%-%-append%-rom%-bootargs%=(.*)$",
+        "^%-%-append%-bootargs%=(.*)$",
         function(o)
             if not o or #o < 1 then return false end
-            append_rom_bootargs = o
+            append_bootargs = o
             return true
         end,
     },
@@ -866,7 +864,7 @@ local options = {
             flash_length.root = nil
             flash_shared.root = nil
             table.remove(flash_label_order, 1)
-            rom_bootargs = "console=hvc0"
+            bootargs = "console=hvc0"
             return true
         end,
     },
@@ -1250,12 +1248,12 @@ local function store_machine_config(config, output)
     output("    image_filename = %q,", ram.image_filename or def.ram.image_filename)
     comment_default(ram.image_filename, def.ram.image_filename)
     output("  },\n")
-    local rom = config.rom or {}
-    output("  rom = {\n")
-    output("    image_filename = %q,", rom.image_filename or def.rom.image_filename)
-    comment_default(rom.image_filename, def.rom.image_filename)
-    output("    bootargs = %q,", rom.bootargs or def.rom.bootargs)
-    comment_default(rom.bootargs, def.rom.bootargs)
+    local dtb = config.dtb or {}
+    output("  dtb = {\n")
+    output("    image_filename = %q,", dtb.image_filename or def.dtb.image_filename)
+    comment_default(dtb.image_filename, def.dtb.image_filename)
+    output("    bootargs = %q,", dtb.bootargs or def.dtb.bootargs)
+    comment_default(dtb.bootargs, def.dtb.bootargs)
     output("  },\n")
     local tlb = config.tlb or {}
     output("  tlb = {\n")
@@ -1421,9 +1419,9 @@ else
             marchid = -1,
             mvendorid = -1,
         },
-        rom = {
-            image_filename = rom_image_filename,
-            bootargs = rom_bootargs,
+        dtb = {
+            image_filename = dtb_image_filename,
+            bootargs = bootargs,
             init = "",
             entrypoint = "",
         },
@@ -1443,7 +1441,7 @@ else
 
     -- show splash on init
     if init_splash then
-        config.rom.init = config.rom.init
+        config.dtb.init = config.dtb.init
             .. ([[
 echo "
          .
@@ -1468,20 +1466,20 @@ echo "
             length = flash_length[label] or -1,
         }
         if label ~= "root" and flash_mount[label] then
-            config.rom.init = config.rom.init
+            config.dtb.init = config.dtb.init
                 .. ([[
 busybox mkdir "/mnt/LABEL" && busybox mount "/dev/DEVNAME" "/mnt/LABEL"
 ]]):gsub("LABEL", label):gsub("DEVNAME", devname)
         end
     end
 
-    if #append_init > 0 then config.rom.init = config.rom.init .. append_init end
+    if #append_init > 0 then config.dtb.init = config.dtb.init .. append_init end
 
-    if append_rom_bootargs then config.rom.bootargs = config.rom.bootargs .. " " .. append_rom_bootargs end
+    if #append_bootargs > 0 then config.dtb.bootargs = config.dtb.bootargs .. " " .. append_bootargs end
 
-    if #append_entrypoint > 0 then config.rom.entrypoint = config.rom.entrypoint .. append_entrypoint end
+    if #append_entrypoint > 0 then config.dtb.entrypoint = config.dtb.entrypoint .. append_entrypoint end
 
-    if #exec_arguments > 0 then config.rom.entrypoint = config.rom.entrypoint .. table.concat(exec_arguments, " ") end
+    if #exec_arguments > 0 then config.dtb.entrypoint = config.dtb.entrypoint .. table.concat(exec_arguments, " ") end
 
     if load_config then
         local env = {}

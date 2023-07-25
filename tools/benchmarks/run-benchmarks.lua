@@ -88,7 +88,7 @@ local function build_machine(exec_args)
             marchid = -1,
             mvendorid = -1,
         },
-        rom = {
+        dtb = {
             bootargs = (
                 "console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw "
                 .. "quiet mtdparts=flash.0:-(root) -- "

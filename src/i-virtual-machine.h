@@ -630,8 +630,8 @@ public:
         return do_reset_uarch_state();
     }
 
-    /// \brief Reads the value of the microarchitecture ROM length
-    /// \returns The value of microarchitecture ROM length
+    /// \brief Reads the value of the microarchitecture RAM length
+    /// \returns The value of microarchitecture RAM length
     uint64_t read_uarch_ram_length(void) const {
         return do_read_uarch_ram_length();
     }

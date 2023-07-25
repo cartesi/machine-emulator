@@ -45,7 +45,7 @@ std::string machine_config::get_config_filename(const std::string &dir) {
 }
 
 static void adjust_image_filenames(machine_config &c, const std::string &dir) {
-    c.rom.image_filename = c.get_image_filename(dir, PMA_ROM_START, PMA_ROM_LENGTH);
+    c.dtb.image_filename = c.get_image_filename(dir, PMA_DTB_START, PMA_DTB_LENGTH);
     c.ram.image_filename = c.get_image_filename(dir, PMA_RAM_START, c.ram.length);
     c.tlb.image_filename = c.get_image_filename(dir, PMA_SHADOW_TLB_START, PMA_SHADOW_TLB_LENGTH);
     for (auto &f : c.flash_drive) {

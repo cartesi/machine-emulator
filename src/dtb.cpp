@@ -20,14 +20,14 @@
 #include <string>
 
 /// \file
-/// \brief Bootstrap and device tree in ROM
+/// \brief Device Tree Blob
 
+#include "dtb.h"
 #include "fdt-builder.h"
 #include "machine-c-version.h"
 #include "pma-constants.h"
 #include "riscv-constants.h"
 #include "rng-seed.h"
-#include "rom.h"
 #include "rtc.h"
 
 namespace cartesi {
@@ -43,29 +43,15 @@ static std::string misa_to_isa_string(uint64_t misa) {
     return ss.str();
 }
 
-void rom_init(const machine_config &c, unsigned char *rom_start, uint64_t length) {
-    if (length < PMA_ROM_EXTRASPACE_LENGTH_DEF) {
-        throw std::runtime_error{"not enough space on ROM for bootargs"};
-    }
-
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    char *bootargs = reinterpret_cast<char *>(rom_start + length - PMA_ROM_EXTRASPACE_LENGTH_DEF);
-
-    if (!c.rom.bootargs.empty()) {
-        strncpy(bootargs, c.rom.bootargs.c_str(), PMA_BOOTARGS_LENGTH_DEF);
-        bootargs[PMA_BOOTARGS_LENGTH_DEF - 1] = '\0';
-    }
-}
-
-void rom_init_device_tree(const machine_config &c, unsigned char *rom_start, uint64_t length) {
+void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_length) {
     using namespace std::string_literals;
     constexpr uint32_t INTC_PHANDLE = 1;
     constexpr uint32_t X_HOST = 13;
     constexpr uint32_t BOOTARGS_MAX_LEN = 4096;
 
     // Check if bootargs length is not too large
-    if (c.rom.bootargs.length() > BOOTARGS_MAX_LEN) {
-        throw std::runtime_error{"ROM bootargs is is above maximum length of 4096"};
+    if (c.dtb.bootargs.length() > BOOTARGS_MAX_LEN) {
+        throw std::runtime_error{"DTB bootargs is is above maximum length of 4096"};
     }
 
     FDTBuilder fdt;
@@ -80,7 +66,7 @@ void rom_init_device_tree(const machine_config &c, unsigned char *rom_start, uin
 
         { // chosen
             fdt.begin_node("chosen");
-            fdt.prop_string("bootargs", c.rom.bootargs);
+            fdt.prop_string("bootargs", c.dtb.bootargs);
             // ??(edubart): make this configurable in machine config?
             fdt.prop("rng-seed", FDT_RNG_SEED, sizeof(FDT_RNG_SEED));
             fdt.end_node();
@@ -90,8 +76,8 @@ void rom_init_device_tree(const machine_config &c, unsigned char *rom_start, uin
             fdt.begin_node("cartesi");
             // We add emulator version, so can inspect it from inside the machine by reading the FDT
             fdt.prop_string_data("version", CM_VERSION);
-            fdt.prop_string_data("init", c.rom.init);
-            fdt.prop_string_data("entrypoint", c.rom.entrypoint);
+            fdt.prop_string_data("init", c.dtb.init);
+            fdt.prop_string_data("entrypoint", c.dtb.entrypoint);
             fdt.end_node();
         }
 
@@ -216,7 +202,7 @@ void rom_init_device_tree(const machine_config &c, unsigned char *rom_start, uin
     }
 
     fdt.end();
-    fdt.finish(rom_start, length);
+    fdt.finish(dtb_start, dtb_length);
 }
 
 } // namespace cartesi

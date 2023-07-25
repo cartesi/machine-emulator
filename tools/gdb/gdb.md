@@ -11,9 +11,9 @@ This is a documentation on how to use GDB to debug privileged code with the Cart
 
 ## How to get debug information to work
 
-1. You need to compile your rom, kernel or test that you would like to debug with
+1. You need to compile your kernel or test that you would like to debug with
 debug information into a binary ELF file (using `.bin` will not work).
-2. Connect GDB with `riscv64-cartesi-linux-gnu-gdb -ex "set arch riscv:rv64" -ex "target remote 127.0.0.1:1234" <elf>` where `<elf>` is your rom, kernel or test ELF file compiled with debug information.
+2. Connect GDB with `riscv64-cartesi-linux-gnu-gdb -ex "set arch riscv:rv64" -ex "target remote 127.0.0.1:1234" <elf>` where `<elf>` is your kernel or test ELF file compiled with debug information.
 3. To view C/C++ code, make sure you run GDB client in a directory that is able to access the source files relative to the ELF binary being debugged.
 
 ## GDB commands

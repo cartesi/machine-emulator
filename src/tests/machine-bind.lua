@@ -269,7 +269,7 @@ end
 
 local pmas_file_names = {
     "0000000000000000--0000000000001000.bin", -- shadow state
-    "0000000000001000--000000000000f000.bin", -- rom
+    "0000000000001000--000000000000f000.bin", -- dtb
     "0000000000010000--0000000000001000.bin", -- shadow pmas
     "0000000000020000--0000000000006000.bin", -- shadow tlb
     "0000000002000000--00000000000c0000.bin", -- clint
@@ -432,7 +432,7 @@ end
 
 local function test_config(config)
     assert(type(config) == "table", "config not a table")
-    for _, field in ipairs({ "processor", "htif", "clint", "flash_drive", "ram", "rom" }) do
+    for _, field in ipairs({ "processor", "htif", "clint", "flash_drive", "ram", "dtb" }) do
         assert(config[field] and type(config[field]) == "table", "invalid field " .. field)
     end
     for i = 1, 31 do
@@ -449,9 +449,9 @@ local function test_config(config)
     local ram = config.ram
     assert(type(ram.length) == "number", "invalid ram.length")
     assert(ram.image_filename == nil or type(ram.image_filename) == "string", "invalid ram.image_filename")
-    local rom = config.rom
-    assert(rom.image_filename == nil or type(rom.image_filename) == "string", "invalid rom.image_filename")
-    assert(rom.bootargs == nil or type(rom.bootargs) == "string", "invalid rom.bootargs")
+    local dtb = config.dtb
+    assert(dtb.image_filename == nil or type(dtb.image_filename) == "string", "invalid dtb.image_filename")
+    assert(dtb.bootargs == nil or type(dtb.bootargs) == "string", "invalid dtb.bootargs")
     local tlb = config.tlb
     assert(tlb.image_filename == nil or type(tlb.image_filename) == "string", "invalid tlb.image_filename")
     for _, f in ipairs(config.flash_drive) do

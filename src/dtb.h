@@ -14,11 +14,11 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef ROM_H
-#define ROM_H
+#ifndef DTB_H
+#define DTB_H
 
 /// \file
-/// \brief Bootstrap and device tree in ROM
+/// \brief Device Tree Blob
 
 #include <cstdint>
 
@@ -29,17 +29,11 @@ namespace cartesi {
 // Forward declarations
 struct machine_config;
 
-/// \brief Initializes PMA extension metadata on ROM
+/// \brief Initializes flattened device tree from machine config on DTB
 /// \param c Machine configuration.
-/// \param rom_start Pointer to start of ROM contiguous range in host memory
-/// \param length Maximum amount of ROM to use from start.
-void rom_init(const machine_config &c, unsigned char *rom_start, uint64_t length);
-
-/// \brief Initializes FDT metadata on ROM
-/// \param c Machine configuration.
-/// \param rom_start Pointer to start of ROM contiguous range in host memory
-/// \param length Maximum amount of ROM to use from start.
-void rom_init_device_tree(const machine_config &c, unsigned char *rom_start, uint64_t length);
+/// \param dtb_start Pointer to start of DTB contiguous range in host memory
+/// \param dtb_length Maximum amount of DTB to use from start.
+void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_length);
 
 } // namespace cartesi
 

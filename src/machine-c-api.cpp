@@ -184,21 +184,21 @@ static cm_ram_config convert_to_c(const cartesi::ram_config &cpp_config) {
 }
 
 // --------------------------------------------
-// Rom configuration conversion functions
+// DTB configuration conversion functions
 // --------------------------------------------
 
-static cartesi::rom_config convert_from_c(const cm_rom_config *c_config) {
-    cartesi::rom_config new_cpp_rom_config{};
-    new_cpp_rom_config.bootargs = null_to_empty(c_config->bootargs);
-    new_cpp_rom_config.image_filename = null_to_empty(c_config->image_filename);
-    return new_cpp_rom_config;
+static cartesi::dtb_config convert_from_c(const cm_dtb_config *c_config) {
+    cartesi::dtb_config new_cpp_dtb_config{};
+    new_cpp_dtb_config.bootargs = null_to_empty(c_config->bootargs);
+    new_cpp_dtb_config.image_filename = null_to_empty(c_config->image_filename);
+    return new_cpp_dtb_config;
 }
 
-static cm_rom_config convert_to_c(const cartesi::rom_config &cpp_config) {
-    cm_rom_config new_c_rom_config{};
-    new_c_rom_config.bootargs = convert_to_c(cpp_config.bootargs);
-    new_c_rom_config.image_filename = convert_to_c(cpp_config.image_filename);
-    return new_c_rom_config;
+static cm_dtb_config convert_to_c(const cartesi::dtb_config &cpp_config) {
+    cm_dtb_config new_c_dtb_config{};
+    new_c_dtb_config.bootargs = convert_to_c(cpp_config.bootargs);
+    new_c_dtb_config.image_filename = convert_to_c(cpp_config.image_filename);
+    return new_c_dtb_config;
 }
 
 // ----------------------------------------------
@@ -383,7 +383,7 @@ cartesi::machine_config convert_from_c(const cm_machine_config *c_config) {
     cartesi::machine_config new_cpp_machine_config{};
     new_cpp_machine_config.processor = convert_from_c(&c_config->processor);
     new_cpp_machine_config.ram = convert_from_c(&c_config->ram);
-    new_cpp_machine_config.rom = convert_from_c(&c_config->rom);
+    new_cpp_machine_config.dtb = convert_from_c(&c_config->dtb);
     new_cpp_machine_config.tlb = convert_from_c(&c_config->tlb);
     new_cpp_machine_config.clint = convert_from_c(&c_config->clint);
     new_cpp_machine_config.htif = convert_from_c(&c_config->htif);
@@ -412,7 +412,7 @@ cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config) {
     auto *new_machine_config = new cm_machine_config{};
     new_machine_config->processor = convert_to_c(cpp_config.processor);
     new_machine_config->ram = convert_to_c(cpp_config.ram);
-    new_machine_config->rom = convert_to_c(cpp_config.rom);
+    new_machine_config->dtb = convert_to_c(cpp_config.dtb);
     new_machine_config->flash_drive = convert_to_c(cpp_config.flash_drive);
     new_machine_config->tlb = convert_to_c(cpp_config.tlb);
     new_machine_config->clint = convert_to_c(cpp_config.clint);
@@ -702,8 +702,8 @@ void cm_delete_machine_config(const cm_machine_config *config) {
         delete[] config->flash_drive.entry[i].image_filename;
     }
     delete[] config->flash_drive.entry;
-    delete[] config->rom.image_filename;
-    delete[] config->rom.bootargs;
+    delete[] config->dtb.image_filename;
+    delete[] config->dtb.bootargs;
     delete[] config->ram.image_filename;
     delete[] config->tlb.image_filename;
     delete[] config->rollup.rx_buffer.image_filename;

@@ -314,7 +314,7 @@ LIBCARTESI_OBJS:= \
 	pma-driver.o \
 	clint.o \
 	clint-factory.o \
-	rom.o \
+	dtb.o \
 	tty.o \
 	htif.o \
 	htif-factory.o \
@@ -568,7 +568,7 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	pma-driver.o \
 	clint.o \
 	clint-factory.o \
-	rom.o \
+	dtb.o \
 	tty.o \
 	htif.o \
 	htif-factory.o \
@@ -598,7 +598,7 @@ JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	pma-driver.o \
 	clint.o \
 	clint-factory.o \
-	rom.o \
+	dtb.o \
 	tty.o \
 	htif.o \
 	htif-factory.o \

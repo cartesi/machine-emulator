@@ -339,7 +339,7 @@ static hash_type calculate_emulator_hash(const std::vector<const char *> &pmas_f
     using namespace cartesi;
     cartesi::keccak_256_hasher h;
     auto shadow_state = parse_pma_file(pmas_files[0]);
-    auto rom = parse_pma_file(pmas_files[1]);
+    auto dtb = parse_pma_file(pmas_files[1]);
     auto shadow_pmas = parse_pma_file(pmas_files[2]);
     auto shadow_tlb = parse_pma_file(pmas_files[3]);
     auto clint = parse_pma_file(pmas_files[4]);
@@ -350,41 +350,41 @@ static hash_type calculate_emulator_hash(const std::vector<const char *> &pmas_f
         uarch_ram = parse_pma_file(pmas_files[7]);
     }
 
-    std::vector<uint8_t> shadow_rom;
-    shadow_rom.reserve(shadow_state.size() + rom.size() + shadow_pmas.size());
-    shadow_rom.insert(shadow_rom.end(), shadow_state.begin(), shadow_state.end());
-    shadow_rom.insert(shadow_rom.end(), rom.begin(), rom.end());
-    shadow_rom.insert(shadow_rom.end(), shadow_pmas.begin(), shadow_pmas.end());
+    std::vector<uint8_t> shadow_dtb;
+    shadow_dtb.reserve(shadow_state.size() + dtb.size() + shadow_pmas.size());
+    shadow_dtb.insert(shadow_dtb.end(), shadow_state.begin(), shadow_state.end());
+    shadow_dtb.insert(shadow_dtb.end(), dtb.begin(), dtb.end());
+    shadow_dtb.insert(shadow_dtb.end(), shadow_pmas.begin(), shadow_pmas.end());
 
-    hash_type shadow_rom_tlb_space_hash;
-    hash_type shadow_rom_tlb_clint_hash;
+    hash_type shadow_dtb_tlb_space_hash;
+    hash_type shadow_dtb_tlb_clint_hash;
     hash_type left;
     hash_type used_space_hash;
 
-    int shadow_rom_hash_size_log2 = ceil_log2(PMA_SHADOW_STATE_LENGTH + PMA_ROM_LENGTH + PMA_SHADOW_PMAS_LENGTH);
-    auto shadow_rom_space_hash = calculate_region_hash(shadow_rom,
-        (shadow_rom.size() + PMA_PAGE_SIZE - 1) / PMA_PAGE_SIZE, PMA_PAGE_SIZE_LOG2, shadow_rom_hash_size_log2);
-    shadow_rom_space_hash = extend_region_hash(shadow_rom_space_hash, 0, shadow_rom_hash_size_log2, 17);
+    int shadow_dtb_hash_size_log2 = ceil_log2(PMA_SHADOW_STATE_LENGTH + PMA_DTB_LENGTH + PMA_SHADOW_PMAS_LENGTH);
+    auto shadow_dtb_space_hash = calculate_region_hash(shadow_dtb,
+        (shadow_dtb.size() + PMA_PAGE_SIZE - 1) / PMA_PAGE_SIZE, PMA_PAGE_SIZE_LOG2, shadow_dtb_hash_size_log2);
+    shadow_dtb_space_hash = extend_region_hash(shadow_dtb_space_hash, 0, shadow_dtb_hash_size_log2, 17);
 
     auto tlb_size_log2 = ceil_log2(PMA_SHADOW_TLB_LENGTH);
     auto tlb_space_hash = calculate_region_hash(shadow_tlb, (shadow_tlb.size() + PMA_PAGE_SIZE - 1) / PMA_PAGE_SIZE,
         PMA_PAGE_SIZE_LOG2, tlb_size_log2);
     tlb_space_hash = extend_region_hash(tlb_space_hash, PMA_SHADOW_TLB_START, tlb_size_log2, 17);
 
-    get_concat_hash(h, shadow_rom_space_hash, tlb_space_hash, shadow_rom_tlb_space_hash); // 18
-    shadow_rom_tlb_space_hash = extend_region_hash(shadow_rom_tlb_space_hash, 0, 18, 25);
+    get_concat_hash(h, shadow_dtb_space_hash, tlb_space_hash, shadow_dtb_tlb_space_hash); // 18
+    shadow_dtb_tlb_space_hash = extend_region_hash(shadow_dtb_tlb_space_hash, 0, 18, 25);
 
     auto clint_size_log2 = ceil_log2(PMA_CLINT_LENGTH);
     auto clint_space_hash = calculate_region_hash(clint, (clint.size() + PMA_PAGE_SIZE - 1) / PMA_PAGE_SIZE,
         PMA_PAGE_SIZE_LOG2, clint_size_log2);
     clint_space_hash = extend_region_hash(clint_space_hash, PMA_CLINT_START, clint_size_log2, 25);
 
-    get_concat_hash(h, shadow_rom_tlb_space_hash, clint_space_hash, shadow_rom_tlb_clint_hash); // 26
-    shadow_rom_tlb_clint_hash = extend_region_hash(shadow_rom_tlb_clint_hash, 0, 26, 29);
+    get_concat_hash(h, shadow_dtb_tlb_space_hash, clint_space_hash, shadow_dtb_tlb_clint_hash); // 26
+    shadow_dtb_tlb_clint_hash = extend_region_hash(shadow_dtb_tlb_clint_hash, 0, 26, 29);
 
     uint64_t htif_size_log2 = ceil_log2(htif.size());
     auto htif_space_hash = calculate_region_hash_2(PMA_HTIF_START, htif, htif_size_log2, 29);
-    get_concat_hash(h, shadow_rom_tlb_clint_hash, htif_space_hash, left); // 30
+    get_concat_hash(h, shadow_dtb_tlb_clint_hash, htif_space_hash, left); // 30
 
     auto uarch_ram_space_hash = zero_keccak_hash_table[30];
     if (uarch_ram.size() > 0) {

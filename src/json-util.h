@@ -271,14 +271,14 @@ template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, processor_config &value,
     const std::string &path = "params/");
 
-/// \brief Attempts to load a rom_config object from a field in a JSON object
+/// \brief Attempts to load a dtb_config object from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
 /// \param key Key to load value from
 /// \param value Object to store value
 /// \param path Path to j
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, rom_config &value, const std::string &path = "params/");
+void ju_get_opt_field(const nlohmann::json &j, const K &key, dtb_config &value, const std::string &path = "params/");
 
 /// \brief Attempts to load a ram_config object from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
@@ -541,7 +541,7 @@ void to_json(nlohmann::json &j, const memory_range_config &config);
 void to_json(nlohmann::json &j, const processor_config &config);
 void to_json(nlohmann::json &j, const flash_drive_configs &fs);
 void to_json(nlohmann::json &j, const ram_config &config);
-void to_json(nlohmann::json &j, const rom_config &config);
+void to_json(nlohmann::json &j, const dtb_config &config);
 void to_json(nlohmann::json &j, const tlb_config &config);
 void to_json(nlohmann::json &j, const clint_config &config);
 void to_json(nlohmann::json &j, const htif_config &config);
@@ -640,9 +640,9 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &k
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, processor_config &value,
     const std::string &base = "params/");
-extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, rom_config &value,
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, dtb_config &value,
     const std::string &base = "params/");
-extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, rom_config &value,
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, dtb_config &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, ram_config &value,
     const std::string &base = "params/");

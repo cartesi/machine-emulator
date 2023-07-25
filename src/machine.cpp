@@ -28,11 +28,11 @@
 #include <thread>
 
 #include "clint-factory.h"
+#include "dtb.h"
 #include "htif-factory.h"
 #include "interpret.h"
 #include "machine.h"
 #include "riscv-constants.h"
-#include "rom.h"
 #include "rtc.h"
 #include "shadow-pmas-factory.h"
 #include "shadow-state-factory.h"
@@ -64,11 +64,10 @@ const pma_entry::flags machine::m_ram_flags{
     PMA_ISTART_DID::memory // DID
 };
 
-// The ROM is not really read-only, this might seem counter-intuitive at first.
-// When we pass a RNG seed in a FDT stored in ROM,
+// When we pass a RNG seed in a FDT stored in DTB,
 // Linux will wipe out its contents as a security measure,
-// therefore we need to make ROM writable, otherwise boot will hang.
-const pma_entry::flags machine::m_rom_flags{
+// therefore we need to make DTB writable, otherwise boot will hang.
+const pma_entry::flags machine::m_dtb_flags{
     true,                  // R
     true,                  // W
     true,                  // X
@@ -356,11 +355,11 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
                                .set_flags(m_ram_flags));
     }
 
-    // Register ROM
-    pma_entry &rom = register_pma_entry((m_c.rom.image_filename.empty() ?
-            make_callocd_memory_pma_entry("ROM"s, PMA_ROM_START, PMA_ROM_LENGTH) :
-            make_callocd_memory_pma_entry("ROM"s, PMA_ROM_START, PMA_ROM_LENGTH, m_c.rom.image_filename))
-                                            .set_flags(m_rom_flags));
+    // Register DTB
+    pma_entry &dtb = register_pma_entry((m_c.dtb.image_filename.empty() ?
+            make_callocd_memory_pma_entry("DTB"s, PMA_DTB_START, PMA_DTB_LENGTH) :
+            make_callocd_memory_pma_entry("DTB"s, PMA_DTB_START, PMA_DTB_LENGTH, m_c.dtb.image_filename))
+                                            .set_flags(m_dtb_flags));
 
     // Register all flash drives
     int i = 0;
@@ -424,13 +423,10 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     // Register pma board shadow device
     register_pma_entry(make_shadow_pmas_pma_entry(PMA_SHADOW_PMAS_START, PMA_SHADOW_PMAS_LENGTH));
 
-    // Initialize ROM
-    if (m_c.rom.image_filename.empty()) {
-        // Write the FDT (flattened device tree) into ROM
-        rom_init_device_tree(m_c, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
-    } else {
-        // Initialize PMA extension metadata on ROM
-        rom_init(m_c, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
+    // Initialize DTB
+    if (m_c.dtb.image_filename.empty()) {
+        // Write the FDT (flattened device tree) into DTB
+        dtb_init(m_c, dtb.get_memory().get_host_memory(), PMA_DTB_LENGTH);
     }
 
     // Add sentinel to PMA vector
@@ -547,12 +543,12 @@ machine_config machine::get_serialization_config(void) const {
     c.htif.console_getchar = static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
     c.htif.yield_manual = static_cast<bool>(read_htif_iyield() & (1 << HTIF_YIELD_MANUAL));
     c.htif.yield_automatic = static_cast<bool>(read_htif_iyield() & (1 << HTIF_YIELD_AUTOMATIC));
-    // Ensure we don't mess with ROM by writing the original bootargs
+    // Ensure we don't mess with DTB by writing the original bootargs
     // over the potentially modified memory region we serialize
-    c.rom.bootargs.clear();
+    c.dtb.bootargs.clear();
     // Remove image filenames from serialization
     // (they will be ignored by save and load for security reasons)
-    c.rom.image_filename.clear();
+    c.dtb.image_filename.clear();
     c.ram.image_filename.clear();
     c.uarch.ram.image_filename.clear();
     c.tlb.image_filename.clear();
@@ -658,7 +654,7 @@ static inline T &deref(T *t) {
 }
 
 void machine::store_pmas(const machine_config &c, const std::string &dir) const {
-    store_memory_pma(find_pma_entry<uint64_t>(PMA_ROM_START), dir);
+    store_memory_pma(find_pma_entry<uint64_t>(PMA_DTB_START), dir);
     store_memory_pma(find_pma_entry<uint64_t>(PMA_RAM_START), dir);
     store_device_pma(*this, find_pma_entry<uint64_t>(PMA_SHADOW_TLB_START), dir);
     // Could iterate over PMAs checking for those with a drive DID

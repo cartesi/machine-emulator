@@ -770,10 +770,10 @@ static void push_cm_ram_config(lua_State *L, const cm_ram_config *r) {
     }
 }
 
-/// \brief Pushes a cm_rom_config to the Lua stack
+/// \brief Pushes a cm_dtb_config to the Lua stack
 /// \param L Lua state.
 /// \param r Ram configuration to be pushed.
-static void push_cm_rom_config(lua_State *L, const cm_rom_config *r) {
+static void push_cm_dtb_config(lua_State *L, const cm_dtb_config *r) {
     lua_newtable(L);
     if (r->bootargs != nullptr) {
         clua_setstringfield(L, r->bootargs, "bootargs", -1);
@@ -905,8 +905,8 @@ void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
     lua_setfield(L, -2, "flash_drive");              // config
     push_cm_ram_config(L, &c->ram);                  // config ram
     lua_setfield(L, -2, "ram");                      // config
-    push_cm_rom_config(L, &c->rom);                  // config rom
-    lua_setfield(L, -2, "rom");                      // config
+    push_cm_dtb_config(L, &c->dtb);                  // config dtb
+    lua_setfield(L, -2, "dtb");                      // config
     push_cm_uarch_config(L, &c->uarch);              // uarch
     lua_setfield(L, -2, "uarch");                    // config
     if (c->rollup.has_value) {
@@ -942,12 +942,12 @@ static void check_cm_ram_config(lua_State *L, int tabidx, cm_ram_config *r) {
     lua_pop(L, 1);
 }
 
-/// \brief Loads ROM config from Lua to cm_rom_config
+/// \brief Loads DTB config from Lua to cm_dtb_config
 /// \param L Lua state
 /// \param tabidx Config stack index
-/// \param r C api ROM config structure to receive results
-static void check_cm_rom_config(lua_State *L, int tabidx, cm_rom_config *r) {
-    if (!opt_table_field(L, tabidx, "rom")) {
+/// \param r C api DTB config structure to receive results
+static void check_cm_dtb_config(lua_State *L, int tabidx, cm_dtb_config *r) {
+    if (!opt_table_field(L, tabidx, "dtb")) {
         return;
     }
     r->image_filename = opt_copy_string_field(L, -1, "image_filename");
@@ -1206,7 +1206,7 @@ cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ct
     config->processor = get_default_processor_config(L);
     check_cm_processor_config(L, tabidx, &config->processor, &config->processor);
     check_cm_ram_config(L, tabidx, &config->ram);
-    check_cm_rom_config(L, tabidx, &config->rom);
+    check_cm_dtb_config(L, tabidx, &config->dtb);
     check_cm_tlb_config(L, tabidx, &config->tlb);
     check_cm_htif_config(L, tabidx, &config->htif);
     check_cm_clint_config(L, tabidx, &config->clint);

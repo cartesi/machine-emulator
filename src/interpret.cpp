@@ -5412,7 +5412,7 @@ static FORCE_INLINE fetch_status fetch_translate_pc_slow(STATE_ACCESS &a, uint64
     }
     // Walk memory map to find the range that contains the physical address
     auto &pma = a.template find_pma_entry<uint16_t>(paddr);
-    // We only execute directly from RAM (as in "random access memory", which includes ROM)
+    // We only execute directly from RAM (as in "random access memory")
     // If the range is not memory or not executable, this as a PMA violation
     if (unlikely(!pma.get_istart_M() || !pma.get_istart_X())) {
         pc = raise_exception(a, pc, MCAUSE_INSN_ACCESS_FAULT, vaddr);

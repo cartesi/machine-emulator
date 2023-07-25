@@ -13,7 +13,7 @@ local config = {
     ram = {
         length = 1 << 12,
     },
-    rom = {
+    dtb = {
         image_filename = "",
     },
     uarch = {

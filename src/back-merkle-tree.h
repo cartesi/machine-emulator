@@ -51,15 +51,15 @@ public:
     /// \brief Constructor
     /// \param log2_root_size Log<sub>2</sub> of root node
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
-    /// \param log2_word_size Log<sub>2</sub> of word
+    /// \param log2_word_size Log<sub>2</sub> of word node
     back_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size);
 
     /// \brief Appends a new hash to the tree
-    /// \param hash Hash of leaf data
+    /// \param new_leaf_hash Hash of new leaf data
     /// \details
     /// Consider the tree down to the leaf level.
-    /// The tree is only complete after 2^(log2_root_size-log2_leaf_size) leaves
-    /// have been added.
+    /// The tree is only complete after 2^(log2_root_size-log2_leaf_size)
+    /// leaves have been added.
     /// Before that, when leaf_count leaves have been added, we assume the rest
     /// of the leaves are filled with zeros (i.e., they are pristine).
     /// The trick is that we do not need to store the hashes of all leaf_count
@@ -85,7 +85,27 @@ public:
     /// If the bit is not set, we simply store context[i] = right and break
     /// In other words, we can update the context in
     /// log time (log2_root_size-log2_leaf_size)
-    void push_back(const hash_type &leaf_hash);
+    void push_back(const hash_type &new_leaf_hash);
+
+    /// \brief Appends a number of padding hashes to the tree
+    /// \param leaf_count Number of padding hashes to append
+    /// \details
+    /// Recall that a bit i set in leaf_count represents a complete subtree
+    /// of size 2^i for which we have a hash in context[i].
+    /// The remaining entries in the context are unused.
+    /// The base case is when the least significant bit set in leaf_count is
+    /// bigger than new_leaf_count.
+    /// We can simply add to context[j] a pristine subtree of size 2^j
+    /// for each bit j set in new_leaf_count.
+    /// No used used entry in the context will be overwritten.
+    /// We can then simply add new_leaf_count to leaf_count and we are done.
+    /// In the general case, the least significant bit set i in leaf_count is
+    /// less than or equal to new_leaf_count.
+    /// Here, we add a pristine subtree of size 2^i to the context and
+    /// bubble up.
+    /// We add 2^i to leaf_count and subtract 2^i from new_leaf_count.
+    /// Then we repeat this process until we reach the base case.
+    void pad_back(uint64_t new_leaf_count);
 
     /// \brief Returns the root tree hash
     /// \returns Root tree hash

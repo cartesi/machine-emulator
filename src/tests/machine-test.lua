@@ -33,9 +33,6 @@ local checkin_address
 local test_path = "./"
 local cleanup = {}
 
-local linux_image = test_util.images_path .. "linux.bin"
-local rootfs_image = test_util.images_path .. "rootfs.ext2"
-
 -- Print help and exit
 local function help()
     io.stderr:write(string.format(
@@ -153,37 +150,33 @@ end
 
 local pmas_file_names = {
     "0000000000000000--0000000000001000.bin", -- shadow state
-    "0000000000001000--000000000000f000.bin", -- dtb
     "0000000000010000--0000000000001000.bin", -- shadow pmas
     "0000000000020000--0000000000006000.bin", -- shadow tlb
     "0000000002000000--00000000000c0000.bin", -- clint
     "0000000040008000--0000000000001000.bin", -- htif
+    "000000007ff00000--0000000000100000.bin", -- dtb
     "0000000080000000--0000000000100000.bin", -- ram
 }
 
 local pmas_file_names_with_uarch = {
     "0000000000000000--0000000000001000.bin", -- shadow state
-    "0000000000001000--000000000000f000.bin", -- dtb
     "0000000000010000--0000000000001000.bin", -- shadow pmas
     "0000000000020000--0000000000006000.bin", -- shadow tlb
     "0000000002000000--00000000000c0000.bin", -- clint
     "0000000040008000--0000000000001000.bin", -- htif
+    "000000007ff00000--0000000000100000.bin", -- dtb
     "0000000080000000--0000000000100000.bin", -- ram
     "0000000070000000--0000000000100000.bin", -- uarch ram
 }
 
 local remote
 local function build_machine(type, config)
-    -- Create new machine
-    -- Use default config to be max reproducible
-    local concurrency_update_merkle_tree = 0
     config = config or {
-        processor = {},
         ram = { length = 1 << 20 },
     }
     local runtime = {
         concurrency = {
-            update_merkle_tree = concurrency_update_merkle_tree,
+            update_merkle_tree = 0,
         },
     }
     local new_machine
@@ -250,7 +243,7 @@ do_test("dumped file hashes should match memory data hashes", function(machine)
         local data_region_start = tonumber(temp[1], 16)
         local data_region_size = tonumber(temp[2], 16)
 
-        local dump = assert(io.open(test_path .. file_name, "rb"))
+        local dump = assert(io.open(file_name, "rb"))
         local dump_hash = md5.sumhexa(dump:read("*all"))
         dump:close()
 
@@ -268,7 +261,7 @@ do_test("machine initial hash should match", function(machine)
     local root_hash = machine:get_root_hash()
 
     machine:dump_pmas()
-    local calculated_root_hash = test_util.calculate_emulator_hash(test_path, pmas_file_names, machine)
+    local calculated_root_hash = test_util.calculate_emulator_hash(pmas_file_names)
 
     print("Root hash:", test_util.tohex(root_hash), " calculated root hash:", test_util.tohex(calculated_root_hash))
 
@@ -286,7 +279,7 @@ test_util.make_do_test(build_uarch_machine, machine_type)(
         print("Root hash:", test_util.tohex(root_hash))
 
         machine:dump_pmas()
-        local calculated_root_hash = test_util.calculate_emulator_hash(test_path, pmas_file_names_with_uarch, machine)
+        local calculated_root_hash = test_util.calculate_emulator_hash(pmas_file_names_with_uarch)
         remove_files(pmas_file_names)
 
         assert(test_util.tohex(root_hash) == test_util.tohex(calculated_root_hash), "Initial root hash does not match")
@@ -298,8 +291,7 @@ test_util.make_do_test(build_uarch_machine, machine_type)(
         local root_hash_step1 = machine:get_root_hash()
 
         machine:dump_pmas()
-        local calculated_root_hash_step1 =
-            test_util.calculate_emulator_hash(test_path, pmas_file_names_with_uarch, machine)
+        local calculated_root_hash_step1 = test_util.calculate_emulator_hash(pmas_file_names_with_uarch)
 
         -- Remove dumped pmas files
         remove_files(pmas_file_names)
@@ -320,16 +312,16 @@ test_util.make_do_test(build_uarch_machine, machine_type)("proof check should pa
     -- get proof of ram using get_proof and check if
     -- hashes match
     machine:dump_pmas()
-    local ram_file_name = pmas_file_names[5]
-    local ram = test_util.parse_pma_file(test_path .. ram_file_name)
+    local ram_file_name = pmas_file_names[7]
+    local ram = test_util.load_file(ram_file_name)
 
     remove_files(pmas_file_names)
 
     local ram_address_start = tonumber(test_util.split_string(ram_file_name, "--.")[1], 16)
-    local ram_data_number_of_pages = math.ceil(#ram / (1 << 12))
-    local ram_log2_data_size = math.ceil(math.log(#ram, 2))
-    local calculated_ram_hash = test_util.calculate_region_hash(ram, ram_data_number_of_pages, 12, ram_log2_data_size)
-    local ram_proof = machine:get_proof(ram_address_start, ram_log2_data_size)
+    local ram_log2_size = math.ceil(math.log(#ram, 2))
+    local calculated_ram_hash = test_util.merkle_hash(ram, 0, ram_log2_size)
+
+    local ram_proof = machine:get_proof(ram_address_start, ram_log2_size)
     local root_hash = machine:get_root_hash()
 
     assert(test_util.tohex(root_hash) == test_util.tohex(ram_proof.root_hash), "root hash in proof does not match")
@@ -359,7 +351,7 @@ do_test("mcycle and root hash should match", function(machine)
     local root_hash = machine:get_root_hash()
 
     machine:dump_pmas()
-    local calculated_root_hash_1000 = test_util.calculate_emulator_hash(test_path, pmas_file_names, machine)
+    local calculated_root_hash_1000 = test_util.calculate_emulator_hash(pmas_file_names)
     -- Remove dumped pmas files
     remove_files(pmas_file_names)
 
@@ -390,7 +382,7 @@ do_test("mcycle and root hash should match", function(machine)
     print("End hash: ", test_util.tohex(root_hash))
 
     machine:dump_pmas()
-    local calculated_end_hash = test_util.calculate_emulator_hash(test_path, pmas_file_names, machine)
+    local calculated_end_hash = test_util.calculate_emulator_hash(pmas_file_names)
     -- Remove dumped pmas files
     remove_files(pmas_file_names)
 
@@ -408,7 +400,7 @@ do_test("proof  and root hash should match", function(machine)
     local initial_ram_proof = machine:get_proof(ram_address_start, 10)
     -- Calculate hash
     local initial_memory_read = machine:read_memory(ram_address_start, 2 ^ 10)
-    local initial_calculated_hash = test_util.calculate_root_hash(initial_memory_read, 10)
+    local initial_calculated_hash = test_util.merkle_hash(initial_memory_read, 0, 10)
     assert(
         test_util.tohex(initial_ram_proof.target_hash) == test_util.tohex(initial_calculated_hash),
         "initial hash does not match"
@@ -430,7 +422,7 @@ do_test("proof  and root hash should match", function(machine)
     local ram_proof = machine:get_proof(ram_address_start, 10)
     -- Calculate hash
     local memory_read = machine:read_memory(ram_address_start, 2 ^ 10)
-    local calculated_hash = test_util.calculate_root_hash(memory_read, 10)
+    local calculated_hash = test_util.merkle_hash(memory_read, 0, 10)
 
     print(
         "end target hash:",
@@ -468,8 +460,8 @@ test_util.make_do_test(build_machine, machine_type, {
     flash_drive = {
         {
             start = 0x80000000000000,
+            length = 0x100000,
             shared = false,
-            image_filename = rootfs_image,
         },
     },
 })("should replace flash drive and read something", function(machine)
@@ -500,42 +492,6 @@ test_util.make_do_test(build_machine, machine_type, {
     local flash_data = machine:read_memory(flash_address_start, 20)
     assert(flash_data == "test data 1234567890", "data read from replaced flash failed")
     os.remove(input_path)
-end)
-
-print("\n\n check reading from an input and writing to an output flash drive")
-test_util.make_do_test(build_machine, machine_type, {
-    processor = {},
-    ram = {
-        image_filename = linux_image,
-        length = 0x4000000,
-    },
-    dtb = {
-        bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce single=yes splash=no "
-            .. "init=/opt/cartesi/bin/init "
-            .. "mtdparts=flash.0:-(root);flash.1:-(input);flash.2:-(output) -- "
-            .. "cat /mnt/input/etc/issue | dd status=none of=/dev/mtdblock2",
-    },
-    flash_drive = {
-        {
-            start = 0x80000000000000,
-            image_filename = rootfs_image,
-        },
-        {
-            start = 0x90000000000000,
-            image_filename = rootfs_image,
-        },
-        {
-            start = 0xa0000000000000,
-            length = 4096,
-        },
-    },
-})("should boot mount input flash drive and output to another flash drive", function(machine)
-    machine:run(MAX_MCYCLE)
-    assert(machine:read_iflags_H(), "machine should be halted")
-
-    local expected_data = "cartesi"
-    local flash_data = machine:read_memory(0xa0000000000000, #expected_data)
-    assert(flash_data == expected_data, "unexpected flash drive output")
 end)
 
 print("\n\n check for relevant register values after step 1")

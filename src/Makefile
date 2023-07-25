@@ -544,7 +544,9 @@ TEST_MERKLE_TREE_HASH_OBJS:= \
 	test-merkle-tree-hash.o
 
 TEST_MACHINE_C_API_OBJS:= \
-    test-machine-c-api.o
+    test-machine-c-api.o \
+    back-merkle-tree.o \
+    pristine-merkle-tree.o
 
 PROTO_OBJS:= \
 	$(PROTOBUF_GEN_OBJS) \

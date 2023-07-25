@@ -35,15 +35,15 @@
 #define BOOST_FIXTURE_TEST_CASE_NOLINT(...) BOOST_FIXTURE_TEST_CASE(__VA_ARGS__)
 
 static hash_type get_verification_root_hash(cm_machine *machine) {
-    std::vector dump_list{
+    std::vector<std::string> dump_list{{
         "0000000000000000--0000000000001000.bin", // shadow state
-        "0000000000001000--000000000000f000.bin", // dtb
         "0000000000010000--0000000000001000.bin", // shadow pmas
         "0000000000020000--0000000000006000.bin", // shadow tlb
         "0000000002000000--00000000000c0000.bin", // clint
         "0000000040008000--0000000000001000.bin", // htif
+        "000000007ff00000--0000000000100000.bin", // dtb
         "0000000080000000--0000000000100000.bin", // ram
-    };
+    }};
     char *err_msg{};
 
     int error_code = cm_dump_pmas(machine, &err_msg);
@@ -232,6 +232,7 @@ protected:
 
         target->uarch.ram.image_filename = new_cstr(source->uarch.ram.image_filename);
         target->uarch.ram.length = source->uarch.ram.length;
+        target->uarch.processor = source->uarch.processor;
     }
 
     static void _cleanup_machine_config(cm_machine_config *config) {
@@ -1484,11 +1485,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_initial_config_flash_drive_test, flash_drive_
 BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_null_placeholder_test, flash_drive_machine_fixture) {
     std::array dump_list{
         "0000000000000000--0000000000001000.bin", // shadow state
-        "0000000000001000--000000000000f000.bin", // dtb
         "0000000000010000--0000000000001000.bin", // shadow pmas
         "0000000000020000--0000000000006000.bin", // shadow tlb
         "0000000002000000--00000000000c0000.bin", // clint
         "0000000040008000--0000000000001000.bin", // htif
+        "000000007ff00000--0000000000100000.bin", // dtb
         "0000000080000000--0000000000100000.bin", // ram
         "0080000000000000--0000000003c00000.bin"  // flash drive
     };
@@ -1505,11 +1506,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_null_placeholder_test, flash_drive_mach
 BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_basic_test, flash_drive_machine_fixture) {
     std::array dump_list{
         "0000000000000000--0000000000001000.bin", // shadow state
-        "0000000000001000--000000000000f000.bin", // dtb
         "0000000000010000--0000000000001000.bin", // shadow pmas
         "0000000000020000--0000000000006000.bin", // shadow tlb
         "0000000002000000--00000000000c0000.bin", // clint
         "0000000040008000--0000000000001000.bin", // htif
+        "000000007ff00000--0000000000100000.bin", // dtb
         "0000000080000000--0000000000100000.bin", // ram
         "0080000000000000--0000000003c00000.bin"  // flash drive
     };

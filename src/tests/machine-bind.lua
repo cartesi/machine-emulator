@@ -269,15 +269,15 @@ end
 
 local pmas_file_names = {
     "0000000000000000--0000000000001000.bin", -- shadow state
-    "0000000000001000--000000000000f000.bin", -- dtb
     "0000000000010000--0000000000001000.bin", -- shadow pmas
     "0000000000020000--0000000000006000.bin", -- shadow tlb
     "0000000002000000--00000000000c0000.bin", -- clint
     "0000000040008000--0000000000001000.bin", -- htif
+    "000000007ff00000--0000000000100000.bin", -- dtb
     "0000000080000000--0000000000100000.bin", -- ram
     "0000000070000000--0000000000010000.bin", -- uarch ram
 }
-local pmas_sizes = { 4096, 61440, 4096, 24576, 786432, 4096, 1048576, 65536, 65536 }
+local pmas_sizes = { 4096, 4096, 24576, 786432, 4096, 1048576, 1048576, 65536 }
 
 local remote
 
@@ -490,7 +490,7 @@ do_test("should return expected value", function(machine)
     print("Root hash: ", test_util.tohex(root_hash))
 
     machine:dump_pmas()
-    local calculated_root_hash = test_util.calculate_emulator_hash(test_path, pmas_file_names, machine)
+    local calculated_root_hash = test_util.calculate_emulator_hash(pmas_file_names)
     for _, file_name in pairs(pmas_file_names) do
         os.remove(test_path .. file_name)
     end
@@ -546,7 +546,7 @@ do_test("there should exist dumped files of expected size", function(machine)
     machine:dump_pmas()
 
     for i = 1, #pmas_file_names do
-        local dumped_file = test_path .. pmas_file_names[i]
+        local dumped_file = pmas_file_names[i]
         local fd = assert(io.open(dumped_file, "rb"))
         local real_file_size = fd:seek("end")
         fd:close(dumped_file)

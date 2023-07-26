@@ -98,6 +98,7 @@ where options are:
         length:<number>
         shared
         mount:<boolean>
+        user:<string>
 
         label (mandatory)
         identifies the flash drive. init attempts to mount it as /mnt/<label>.
@@ -124,6 +125,11 @@ where options are:
         whether the flash drive should be mounted automatically in init.
         by default, the drive is mounted if there is an image file backing it,
         you can use "mount:false" to disables auto mounting.
+
+        user (optional)
+        changes the user ownership of the mounted directory when mount is true,
+        otherwise changes the user ownership of the respective /dev/pmemX device,
+        this option is useful to allow dapp's user access the flash drive.
 
     (an option "--flash-drive=label:root,filename:rootfs.ext2" is implicit)
 
@@ -422,6 +428,7 @@ local flash_image_filename = { root = images_path .. "rootfs.ext2" }
 local flash_label_order = { "root" }
 local flash_shared = {}
 local flash_mount = {}
+local flash_user = {}
 local flash_start = {}
 local flash_length = {}
 local memory_range_replace = {}
@@ -674,6 +681,7 @@ local options = {
                 filename = true,
                 shared = true,
                 mount = true,
+                user = true,
                 length = true,
                 start = true,
             })
@@ -704,6 +712,7 @@ local options = {
             flash_length[d] = f.length or flash_length[d]
             flash_shared[d] = f.shared or flash_shared[d]
             flash_mount[d] = f.mount or flash_mount[d]
+            flash_user[d] = f.user or flash_user[d]
             return true
         end,
     },
@@ -1465,11 +1474,17 @@ echo "
             start = flash_start[label],
             length = flash_length[label] or -1,
         }
+        local chownpath = "/dev/" .. devname
         if label ~= "root" and flash_mount[label] then
-            config.dtb.init = config.dtb.init
-                .. ([[
-busybox mkdir "/mnt/LABEL" && busybox mount "/dev/DEVNAME" "/mnt/LABEL"
-]]):gsub("LABEL", label):gsub("DEVNAME", devname)
+            local cmd = ([[busybox mkdir "/mnt/LABEL" && busybox mount "/dev/DEVNAME" "/mnt/LABEL"]])
+                :gsub("LABEL", label)
+                :gsub("DEVNAME", devname)
+            config.dtb.init = config.dtb.init .. cmd .. "\n"
+            chownpath = "/mnt/" .. label
+        end
+        if label ~= "root" and flash_user[label] then
+            local cmd = ("busybox chown USER: PATH"):gsub("USER", flash_user[label] or ""):gsub("PATH", chownpath)
+            config.dtb.init = config.dtb.init .. cmd .. "\n"
         end
     end
 

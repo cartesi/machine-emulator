@@ -81,7 +81,6 @@ jobs:
 
       - name: Install lua test dependencies
         run: |
-          sudo luarocks install --lua-version=5.4 md5
           sudo luarocks install --lua-version=5.4 luaposix
 
       - name: Download emulator
@@ -341,7 +340,6 @@ jobs:
 
       - name: Install lua test dependencies
         run: |
-          sudo luarocks install --lua-version=5.4 md5
           sudo luarocks install --lua-version=5.4 luaposix
 
       - name: Download cache of third-party build
@@ -470,7 +468,6 @@ jobs:
 
       - name: Install lua test dependencies
         run: |
-          sudo luarocks install --lua-version=5.4 md5
           sudo luarocks install --lua-version=5.4 luaposix
 
       - name: Download cache of third-party build

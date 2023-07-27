@@ -40,4 +40,6 @@ function _M.word_splice_assert(root_hash, proof, old_word, new_word, new_root_ha
     assert(_M.roll_hash_up_tree(proof, cartesi.keccak(new_word)) == new_root_hash, "new root hash mismatch")
 end
 
+function _M.check_proof(proof) return _M.roll_hash_up_tree(proof, proof.target_hash) == proof.root_hash end
+
 return _M

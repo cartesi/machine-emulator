@@ -21,6 +21,7 @@
 #include "clua-machine.h"
 #include "clua.h"
 #include "machine-c-api.h"
+#include "pma-constants.h"
 #include "riscv-constants.h"
 
 /// \file
@@ -123,6 +124,21 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_UARCH_BREAK_REASON_UARCH_HALTED, "UARCH_BREAK_REASON_UARCH_HALTED", -1);
     clua_setintegerfield(L, CM_UARCH_BREAK_REASON_HALTED, "UARCH_BREAK_REASON_HALTED", -1);
     clua_setintegerfield(L, CM_UARCH_BREAK_REASON_YIELDED_MANUALLY, "UARCH_BREAK_REASON_YIELDED_MANUALLY", -1);
+
+    clua_setintegerfield(L, PMA_SHADOW_STATE_START, "PMA_SHADOW_STATE_START", -1);
+    clua_setintegerfield(L, PMA_SHADOW_STATE_LENGTH, "PMA_SHADOW_STATE_LENGTH", -1);
+    clua_setintegerfield(L, PMA_DTB_START, "PMA_DTB_START", -1);
+    clua_setintegerfield(L, PMA_DTB_LENGTH, "PMA_DTB_LENGTH", -1);
+    clua_setintegerfield(L, PMA_SHADOW_PMAS_START, "PMA_SHADOW_PMAS_START", -1);
+    clua_setintegerfield(L, PMA_SHADOW_PMAS_LENGTH, "PMA_SHADOW_PMAS_LENGTH", -1);
+    clua_setintegerfield(L, PMA_SHADOW_TLB_START, "PMA_SHADOW_TLB_START", -1);
+    clua_setintegerfield(L, PMA_SHADOW_TLB_LENGTH, "PMA_SHADOW_TLB_LENGTH", -1);
+    clua_setintegerfield(L, PMA_CLINT_START, "PMA_CLINT_START", -1);
+    clua_setintegerfield(L, PMA_CLINT_LENGTH, "PMA_CLINT_LENGTH", -1);
+    clua_setintegerfield(L, PMA_HTIF_START, "PMA_HTIF_START", -1);
+    clua_setintegerfield(L, PMA_HTIF_LENGTH, "PMA_HTIF_LENGTH", -1);
+    clua_setintegerfield(L, PMA_UARCH_RAM_START, "PMA_UARCH_RAM_START", -1);
+    clua_setintegerfield(L, PMA_RAM_START, "PMA_RAM_START", -1);
 
     clua_setintegerfield(L, MVENDORID_INIT, "MVENDORID", -1);
     clua_setintegerfield(L, MARCHID_INIT, "MARCHID", -1);

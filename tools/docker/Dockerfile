@@ -24,7 +24,6 @@ RUN \
     luarocks install --lua-version=5.4 luasec && \
     luarocks install --lua-version=5.4 luaposix && \
     luarocks install --lua-version=5.4 lpeg && \
-    luarocks install --lua-version=5.4 md5 && \
     luarocks install --lua-version=5.4 dkjson
 
 ENV PATH="${PATH}:${BASE}/build/Linux_x86_64/bin"

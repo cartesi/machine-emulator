@@ -32,43 +32,12 @@
 #include "grpc-machine-c-api.h"
 #include "machine-c-api.h"
 #include "riscv-constants.h"
-#include "test-utils.h"
 #include "uarch-solidity-compat.h"
 
 // NOLINTNEXTLINE
 #define BOOST_AUTO_TEST_CASE_NOLINT(...) BOOST_AUTO_TEST_CASE(__VA_ARGS__)
 // NOLINTNEXTLINE
 #define BOOST_FIXTURE_TEST_CASE_NOLINT(...) BOOST_FIXTURE_TEST_CASE(__VA_ARGS__)
-
-static hash_type get_verification_root_hash(cm_machine *machine) {
-    std::vector dump_list{
-        "0000000000000000--0000000000001000.bin", // shadow state
-        "0000000000001000--000000000000f000.bin", // dtb
-        "0000000000010000--0000000000001000.bin", // shadow pmas
-        "0000000000020000--0000000000006000.bin", // shadow tlb
-        "0000000002000000--00000000000c0000.bin", // clint
-        "0000000040008000--0000000000001000.bin", // htif
-        "0000000080000000--0000000000100000.bin", // ram
-    };
-    char *err_msg{};
-
-    int error_code = cm_dump_pmas(machine, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-
-    const cm_machine_config *cfg{nullptr};
-    BOOST_CHECK_EQUAL(cm_get_initial_config(machine, &cfg, &err_msg), CM_ERROR_OK);
-    if (cfg->uarch.ram.length) {
-        dump_list.push_back("0000000070000000--0000000000100000.bin"); // uarch ram
-    }
-    cm_delete_machine_config(cfg);
-
-    auto hash = calculate_emulator_hash(dump_list);
-    for (const auto &file : dump_list) {
-        std::filesystem::remove(file);
-    }
-    return hash;
-}
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_machine_config_null_test) {
     BOOST_CHECK_NO_THROW(cm_delete_machine_config(nullptr));
@@ -669,18 +638,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_null_error_placeholder_test, ordina
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_machine_hash_test, ordinary_machine_fixture) {
-    char *err_msg{};
-
-    cm_hash result_hash;
-    int error_code = cm_get_root_hash(_machine, &result_hash, &err_msg);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-
-    auto verification = get_verification_root_hash(_machine);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), result_hash, result_hash + sizeof(cm_hash));
-}
-
 BOOST_AUTO_TEST_CASE_NOLINT(get_proof_null_machine_test) {
     cm_merkle_tree_proof *proof{};
     int error_code = cm_get_proof(nullptr, 0, 12, &proof, nullptr);
@@ -747,26 +704,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_null_error_placeholder_test, ordinary_m
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 
     cm_delete_merkle_tree_proof(proof);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_machine_hash_test, ordinary_machine_fixture) {
-    char *err_msg{};
-
-    cm_merkle_tree_proof *p{};
-    int error_code = cm_get_proof(_machine, 0, 12, &p, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-
-    auto verification = calculate_proof_root_hash(p);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), p->root_hash,
-        p->root_hash + sizeof(cm_hash));
-    verification = get_verification_root_hash(_machine);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), p->root_hash,
-        p->root_hash + sizeof(cm_hash));
-    BOOST_CHECK_EQUAL(p->log2_root_size, static_cast<size_t>(64));
-    BOOST_CHECK_EQUAL(p->sibling_hashes.count, static_cast<size_t>(52));
-
-    cm_delete_merkle_tree_proof(p);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(read_word_null_machine_test) {
@@ -1493,50 +1430,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_initial_config_flash_drive_test, flash_drive_
     cm_delete_machine_config(cfg);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_null_placeholder_test, flash_drive_machine_fixture) {
-    std::array dump_list{
-        "0000000000000000--0000000000001000.bin", // shadow state
-        "0000000000001000--000000000000f000.bin", // dtb
-        "0000000000010000--0000000000001000.bin", // shadow pmas
-        "0000000000020000--0000000000006000.bin", // shadow tlb
-        "0000000002000000--00000000000c0000.bin", // clint
-        "0000000040008000--0000000000001000.bin", // htif
-        "0000000080000000--0000000000100000.bin", // ram
-        "0080000000000000--0000000003c00000.bin"  // flash drive
-    };
-
-    int error_code = cm_dump_pmas(_machine, nullptr);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-
-    for (const auto &file : dump_list) {
-        BOOST_CHECK(std::filesystem::exists(file));
-        std::filesystem::remove(file);
-    }
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_basic_test, flash_drive_machine_fixture) {
-    std::array dump_list{
-        "0000000000000000--0000000000001000.bin", // shadow state
-        "0000000000001000--000000000000f000.bin", // dtb
-        "0000000000010000--0000000000001000.bin", // shadow pmas
-        "0000000000020000--0000000000006000.bin", // shadow tlb
-        "0000000002000000--00000000000c0000.bin", // clint
-        "0000000040008000--0000000000001000.bin", // htif
-        "0000000080000000--0000000000100000.bin", // ram
-        "0080000000000000--0000000003c00000.bin"  // flash drive
-    };
-
-    char *err_msg{};
-    int error_code = cm_dump_pmas(_machine, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-
-    for (const auto &file : dump_list) {
-        BOOST_CHECK(std::filesystem::exists(file));
-        std::filesystem::remove(file);
-    }
-}
-
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_machine_test, flash_drive_machine_fixture) {
     int error_code = cm_replace_memory_range(nullptr, &_flash_config, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
@@ -2168,24 +2061,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture) {
     cm_delete_access_log(_access_log);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(step_hash_test, access_log_machine_fixture) {
-    char *err_msg{};
-
-    int error_code = cm_step_uarch(_machine, _log_type, false, &_access_log, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-
-    cm_hash hash1;
-    error_code = cm_get_root_hash(_machine, &hash1, &err_msg);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-
-    auto verification = get_verification_root_hash(_machine);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), hash1, hash1 + sizeof(cm_hash));
-
-    cm_delete_access_log(_access_log);
-}
-
 BOOST_AUTO_TEST_CASE_NOLINT(machine_run_null_machine_test) {
     CM_BREAK_REASON break_reason{};
     int error_code = cm_machine_run(nullptr, 1000, &break_reason, nullptr);
@@ -2198,27 +2073,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_null_error_placeholder_test, ordinary
     int error_code = cm_machine_run(_machine, 1000, &break_reason, nullptr);
     BOOST_CHECK_EQUAL(break_reason, CM_BREAK_REASON_REACHED_TARGET_MCYCLE);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_1000_cycle_test, ordinary_machine_fixture) {
-    char *err_msg{};
-    int error_code = cm_machine_run(_machine, 1000, nullptr, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-
-    uint64_t read_mcycle{};
-    error_code = cm_read_mcycle(_machine, &read_mcycle, &err_msg);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(read_mcycle, static_cast<uint64_t>(1000));
-
-    cm_hash hash_1000;
-    error_code = cm_get_root_hash(_machine, &hash_1000, &err_msg);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-
-    auto verification = get_verification_root_hash(_machine);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), hash_1000, hash_1000 + sizeof(cm_hash));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_to_past_test, ordinary_machine_fixture) {
@@ -2244,27 +2098,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_to_past_test, ordinary_machine_fixtur
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_cstring(err_msg);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_long_cycle_test, ordinary_machine_fixture) {
-    char *err_msg{};
-    int error_code = cm_machine_run(_machine, 600000, nullptr, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-
-    uint64_t read_mcycle{};
-    error_code = cm_read_mcycle(_machine, &read_mcycle, &err_msg);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(read_mcycle, static_cast<uint64_t>(600000));
-
-    cm_hash hash_end;
-    error_code = cm_get_root_hash(_machine, &hash_end, &err_msg);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-
-    auto verification = get_verification_root_hash(_machine);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), hash_end, hash_end + sizeof(cm_hash));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(machine_run_uarch_null_machine_test) {
@@ -2450,60 +2283,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_reset_uarch_state, access_log_machine_fix
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     BOOST_REQUIRE_EQUAL(err_msg, "reset uarch state is not allowed when uarch is not halted");
     cm_delete_cstring(err_msg);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_root_updates_test, ordinary_machine_fixture) {
-    char *err_msg{};
-
-    cm_hash start_hash;
-    int error_code = cm_get_root_hash(_machine, &start_hash, &err_msg);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    auto verification = get_verification_root_hash(_machine);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), start_hash, start_hash + sizeof(cm_hash));
-
-    error_code = cm_machine_run(_machine, 1000, nullptr, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-
-    cm_hash end_hash;
-    error_code = cm_get_root_hash(_machine, &end_hash, &err_msg);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    verification = get_verification_root_hash(_machine);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), end_hash, end_hash + sizeof(cm_hash));
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, ordinary_machine_fixture) {
-    char *err_msg{};
-
-    cm_merkle_tree_proof *start_proof{};
-    int error_code = cm_get_proof(_machine, 0, 12, &start_proof, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-    auto verification = calculate_proof_root_hash(start_proof);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), start_proof->root_hash,
-        start_proof->root_hash + sizeof(cm_hash));
-    verification = get_verification_root_hash(_machine);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), start_proof->root_hash,
-        start_proof->root_hash + sizeof(cm_hash));
-    cm_delete_merkle_tree_proof(start_proof);
-
-    error_code = cm_machine_run(_machine, 1000, nullptr, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-
-    cm_merkle_tree_proof *end_proof{};
-    error_code = cm_get_proof(_machine, 0, 12, &end_proof, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-    verification = calculate_proof_root_hash(end_proof);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), end_proof->root_hash,
-        end_proof->root_hash + sizeof(cm_hash));
-    verification = get_verification_root_hash(_machine);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), end_proof->root_hash,
-        end_proof->root_hash + sizeof(cm_hash));
-    cm_delete_merkle_tree_proof(end_proof);
 }
 
 // GRPC machine tests

@@ -16,8 +16,10 @@
 -- along with the machine-emulator. If not, see http://www.gnu.org/licenses/.
 
 local cartesi = require("cartesi")
+local merkle = require("cartesi.merkle")
+local proof = require("cartesi.proof")
+require("cartesi.machine_ext")
 local test_util = require("tests.util")
-local md5 = require("md5")
 
 -- Note: for grpc machine test to work, remote-cartesi-machine must run on
 -- same computer and remote-cartesi-machine execution path must be provided
@@ -147,27 +149,6 @@ local function connect()
     return remote, version
 end
 
-local pmas_file_names = {
-    "0000000000000000--0000000000001000.bin", -- shadow state
-    "0000000000001000--000000000000f000.bin", -- dtb
-    "0000000000010000--0000000000001000.bin", -- shadow pmas
-    "0000000000020000--0000000000006000.bin", -- shadow tlb
-    "0000000002000000--00000000000c0000.bin", -- clint
-    "0000000040008000--0000000000001000.bin", -- htif
-    "0000000080000000--0000000000100000.bin", -- ram
-}
-
-local pmas_file_names_with_uarch = {
-    "0000000000000000--0000000000001000.bin", -- shadow state
-    "0000000000001000--000000000000f000.bin", -- dtb
-    "0000000000010000--0000000000001000.bin", -- shadow pmas
-    "0000000000020000--0000000000006000.bin", -- shadow tlb
-    "0000000002000000--00000000000c0000.bin", -- clint
-    "0000000040008000--0000000000001000.bin", -- htif
-    "0000000080000000--0000000000100000.bin", -- ram
-    "0000000070000000--0000000000100000.bin", -- uarch ram
-}
-
 local remote
 local function build_machine(type, config)
     -- Create new machine
@@ -210,12 +191,6 @@ end
 
 local do_test = test_util.make_do_test(build_machine, machine_type)
 
-local function remove_files(file_names)
-    for _, file_name in pairs(file_names) do
-        os.remove(test_path .. file_name)
-    end
-end
-
 print("Testing machine for type " .. machine_type)
 
 print("\n\ntesting getting machine intial config and iflags")
@@ -224,7 +199,7 @@ do_test("machine halt and yield flags and config matches", function(machine)
     local initial_config = machine:get_initial_config()
     -- test_util.print_table(initial_config)
     assert(initial_config["processor"]["marchid"] == cartesi.MARCHID, "marchid value does not match")
-    assert(initial_config["processor"]["pc"] == 0x80000000, "pc value does not match")
+    assert(initial_config["processor"]["pc"] == cartesi.PMA_RAM_START, "pc value does not match")
     assert(initial_config["ram"]["length"] == 1048576, "ram length value does not match")
     -- Check machine is not halted
     assert(not machine:read_iflags_H(), "machine shouldn't be halted")
@@ -237,40 +212,21 @@ do_test("dumped file hashes should match memory data hashes", function(machine)
     -- Dump memory regions to files
     -- Calculate hash for memory regions
     -- Check if match memory data hash
-    machine:dump_pmas()
-
-    for _, file_name in pairs(pmas_file_names) do
-        print("Checking dump file " .. file_name)
-
-        local temp = test_util.split_string(file_name, "--.")
-        local data_region_start = tonumber(temp[1], 16)
-        local data_region_size = tonumber(temp[2], 16)
-
-        local dump = assert(io.open(test_path .. file_name, "rb"))
-        local dump_hash = md5.sumhexa(dump:read("*all"))
-        dump:close()
-
-        local memory_read = machine:read_memory(data_region_start, data_region_size)
-        local memory_hash = md5.sumhexa(memory_read)
-
-        assert(dump_hash == memory_hash, "hash does not match for dump file " .. file_name)
+    for _, pma in pairs(machine:get_pmas(true)) do
+        local dump_hash = cartesi.keccak(pma.data)
+        local memory_read = machine:read_memory(pma.start, pma.length)
+        local memory_hash = cartesi.keccak(memory_read)
+        assert(dump_hash == memory_hash, "hash does not match for pma at " .. string.format("0x%x", pma.start))
     end
-    remove_files(pmas_file_names)
 end)
 
 print("\n\ntesting if machine initial hash is correct")
 do_test("machine initial hash should match", function(machine)
     -- Get starting root hash
     local root_hash = machine:get_root_hash()
-
-    machine:dump_pmas()
-    local calculated_root_hash = test_util.calculate_emulator_hash(test_path, pmas_file_names, machine)
-
+    local calculated_root_hash = machine:dump_pmas_and_get_root_hash()
     print("Root hash:", test_util.tohex(root_hash), " calculated root hash:", test_util.tohex(calculated_root_hash))
-
     assert(test_util.tohex(root_hash) == test_util.tohex(calculated_root_hash), "Initial root hash does not match")
-
-    remove_files(pmas_file_names)
 end)
 
 print("\n\ntesting root hash after step one")
@@ -281,9 +237,7 @@ test_util.make_do_test(build_uarch_machine, machine_type)(
         local root_hash = machine:get_root_hash()
         print("Root hash:", test_util.tohex(root_hash))
 
-        machine:dump_pmas()
-        local calculated_root_hash = test_util.calculate_emulator_hash(test_path, pmas_file_names_with_uarch, machine)
-        remove_files(pmas_file_names)
+        local calculated_root_hash = machine:dump_pmas_and_get_root_hash()
 
         assert(test_util.tohex(root_hash) == test_util.tohex(calculated_root_hash), "Initial root hash does not match")
 
@@ -293,12 +247,7 @@ test_util.make_do_test(build_uarch_machine, machine_type)(
         machine:step_uarch(log_type)
         local root_hash_step1 = machine:get_root_hash()
 
-        machine:dump_pmas()
-        local calculated_root_hash_step1 =
-            test_util.calculate_emulator_hash(test_path, pmas_file_names_with_uarch, machine)
-
-        -- Remove dumped pmas files
-        remove_files(pmas_file_names)
+        local calculated_root_hash_step1 = machine:dump_pmas_and_get_root_hash()
 
         assert(
             test_util.tohex(root_hash_step1) == test_util.tohex(calculated_root_hash_step1),
@@ -312,22 +261,16 @@ test_util.make_do_test(build_uarch_machine, machine_type)("proof check should pa
     local log_type = {}
     machine:step_uarch(log_type)
 
-    -- Dump RAM memory to file, calculate hash of file
-    -- get proof of ram using get_proof and check if
-    -- hashes match
-    machine:dump_pmas()
-    local ram_file_name = pmas_file_names[5]
-    local ram = test_util.parse_pma_file(test_path .. ram_file_name)
-
-    remove_files(pmas_file_names)
-
-    local ram_address_start = tonumber(test_util.split_string(ram_file_name, "--.")[1], 16)
-    local ram_data_number_of_pages = math.ceil(#ram / (1 << 12))
-    local ram_log2_data_size = math.ceil(math.log(#ram, 2))
-    local calculated_ram_hash = test_util.calculate_region_hash(ram, ram_data_number_of_pages, 12, ram_log2_data_size)
+    -- Calculate hash RAM, get proof of ram using get_proof and check if hashes match
+    local ram_length = machine:get_initial_config().ram.length
+    local ram_address_start = cartesi.PMA_RAM_START
+    local ram = machine:read_memory(ram_address_start, ram_length)
+    local ram_log2_data_size = math.ceil(math.log(ram_length, 2))
+    local calculated_ram_hash = merkle.keccak_expanded_chunk(ram, ram_log2_data_size)
     local ram_proof = machine:get_proof(ram_address_start, ram_log2_data_size)
     local root_hash = machine:get_root_hash()
 
+    assert(proof.check_proof(ram_proof), "no proof")
     assert(test_util.tohex(root_hash) == test_util.tohex(ram_proof.root_hash), "root hash in proof does not match")
     print(
         "target hash:",
@@ -344,25 +287,28 @@ end)
 print("\n\nrun machine to 1000 mcycle and check for mcycle and root hash")
 do_test("mcycle and root hash should match", function(machine)
     -- Run to 1000 cycle tics
-    local current_mcycle = machine:read_mcycle()
-    while current_mcycle < 1000 do
-        machine:run(1000)
-        current_mcycle = machine:read_mcycle()
-    end
-
+    machine:run(1000)
     assert(machine:read_mcycle() == 1000, "machine mcycle should be 1000")
-
     local root_hash = machine:get_root_hash()
-
-    machine:dump_pmas()
-    local calculated_root_hash_1000 = test_util.calculate_emulator_hash(test_path, pmas_file_names, machine)
-    -- Remove dumped pmas files
-    remove_files(pmas_file_names)
-
+    local calculated_root_hash_1000 = machine:dump_pmas_and_get_root_hash()
     print("1000 cycle hash: ", test_util.tohex(root_hash))
     assert(
         test_util.tohex(root_hash) == test_util.tohex(calculated_root_hash_1000),
         "machine hash does not match after 1000 cycles"
+    )
+end)
+
+print("\n\nrun machine to 600000 mcycle and check for mcycle and root hash")
+do_test("mcycle and root hash should match", function(machine)
+    -- Run to 1000 cycle tics
+    machine:run(1000)
+    assert(machine:read_mcycle() == 1000, "machine mcycle should be 600000")
+    local root_hash = machine:get_root_hash()
+    local calculated_root_hash_1000 = machine:dump_pmas_and_get_root_hash()
+    print("600000 cycle hash: ", test_util.tohex(root_hash))
+    assert(
+        test_util.tohex(root_hash) == test_util.tohex(calculated_root_hash_1000),
+        "machine hash does not match after 600000 cycles"
     )
 end)
 
@@ -385,10 +331,7 @@ do_test("mcycle and root hash should match", function(machine)
     local root_hash = machine:get_root_hash()
     print("End hash: ", test_util.tohex(root_hash))
 
-    machine:dump_pmas()
-    local calculated_end_hash = test_util.calculate_emulator_hash(test_path, pmas_file_names, machine)
-    -- Remove dumped pmas files
-    remove_files(pmas_file_names)
+    local calculated_end_hash = machine:dump_pmas_and_get_root_hash()
 
     assert(
         test_util.tohex(root_hash) == test_util.tohex(calculated_end_hash),
@@ -397,14 +340,15 @@ do_test("mcycle and root hash should match", function(machine)
 end)
 
 print("\n\nwrite something to ram memory and check if hash and proof matches")
-do_test("proof  and root hash should match", function(machine)
-    local ram_address_start = 0x80000000
+do_test("proof and root hash should match", function(machine)
+    local ram_address_start = cartesi.PMA_RAM_START
 
     -- Find proof for first KB of ram
     local initial_ram_proof = machine:get_proof(ram_address_start, 10)
+    assert(proof.check_proof(initial_ram_proof), "no proof")
     -- Calculate hash
-    local initial_memory_read = machine:read_memory(ram_address_start, 2 ^ 10)
-    local initial_calculated_hash = test_util.calculate_root_hash(initial_memory_read, 10)
+    local initial_memory_read = machine:read_memory(ram_address_start, 2 << 10)
+    local initial_calculated_hash = merkle.keccak_expanded_chunk(initial_memory_read, 10)
     assert(
         test_util.tohex(initial_ram_proof.target_hash) == test_util.tohex(initial_calculated_hash),
         "initial hash does not match"
@@ -424,9 +368,10 @@ do_test("proof  and root hash should match", function(machine)
 
     -- Find proof for first KB of ram
     local ram_proof = machine:get_proof(ram_address_start, 10)
+    assert(proof.check_proof(ram_proof), "no proof")
     -- Calculate hash
-    local memory_read = machine:read_memory(ram_address_start, 2 ^ 10)
-    local calculated_hash = test_util.calculate_root_hash(memory_read, 10)
+    local memory_read = machine:read_memory(ram_address_start, 2 << 10)
+    local calculated_hash = merkle.keccak_expanded_chunk(memory_read, 10)
 
     print(
         "end target hash:",

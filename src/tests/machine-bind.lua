@@ -22,6 +22,8 @@
 -- same computer and jsonrpc-remote-cartesi-machine execution path must be provided
 
 local cartesi = require("cartesi")
+require("cartesi.machine_ext")
+local proof = require("cartesi.proof")
 local test_util = require("tests.util")
 
 local remote_address
@@ -246,18 +248,6 @@ local function connect()
     return remote, version
 end
 
-local pmas_file_names = {
-    "0000000000000000--0000000000001000.bin", -- shadow state
-    "0000000000001000--000000000000f000.bin", -- dtb
-    "0000000000010000--0000000000001000.bin", -- shadow pmas
-    "0000000000020000--0000000000006000.bin", -- shadow tlb
-    "0000000002000000--00000000000c0000.bin", -- clint
-    "0000000040008000--0000000000001000.bin", -- htif
-    "0000000080000000--0000000000100000.bin", -- ram
-    "0000000070000000--0000000000010000.bin", -- uarch ram
-}
-local pmas_sizes = { 4096, 61440, 4096, 24576, 786432, 4096, 1048576, 65536, 65536 }
-
 local remote
 local function build_machine(type)
     -- Create new machine
@@ -338,17 +328,26 @@ do_test("should provide proof for values in registers", function(machine)
     initial_csr_values.mimpid = nil
 
     -- Check proofs
+    local checked = {}
     for _, v in pairs(initial_csr_values) do
         for el = 3, 63 do
             local a = test_util.align(v, el)
-            assert(test_util.check_proof(assert(machine:get_proof(a, el)), "no proof"), "proof failed")
+            local k = tostring(a) .. tostring(el)
+            if not checked[k] then
+                checked[k] = true
+                assert(proof.check_proof(assert(machine:get_proof(a, el)), "no proof"), "proof failed")
+            end
         end
     end
 
     for _, v in pairs(initial_xreg_values) do
         for el = 3, 63 do
             local a = test_util.align(v, el)
-            assert(test_util.check_proof(assert(machine:get_proof(a, el), "no proof")), "proof failed")
+            local k = tostring(a) .. tostring(el)
+            if not checked[k] then
+                checked[k] = true
+                assert(proof.check_proof(assert(machine:get_proof(a, el), "no proof")), "proof failed")
+            end
         end
     end
 end)
@@ -464,13 +463,7 @@ do_test("should return expected value", function(machine)
     -- Get starting root hash
     local root_hash = machine:get_root_hash()
     print("Root hash: ", test_util.tohex(root_hash))
-
-    machine:dump_pmas()
-    local calculated_root_hash = test_util.calculate_emulator_hash(test_path, pmas_file_names, machine)
-    for _, file_name in pairs(pmas_file_names) do
-        os.remove(test_path .. file_name)
-    end
-
+    local calculated_root_hash = machine:dump_pmas_and_get_root_hash()
     assert(test_util.tohex(root_hash) == test_util.tohex(calculated_root_hash), "initial root hash does not match")
 end)
 
@@ -519,19 +512,25 @@ end)
 print("\n\n dump pmas to files")
 do_test("there should exist dumped files of expected size", function(machine)
     -- Dump pmas to files
+    local pmas = machine:get_pmas()
     machine:dump_pmas()
 
-    for i = 1, #pmas_file_names do
-        local dumped_file = test_path .. pmas_file_names[i]
-        local fd = assert(io.open(dumped_file, "rb"))
-        local real_file_size = fd:seek("end")
-        fd:close(dumped_file)
+    -- Remove pma files on scope end
+    local _ <close> = setmetatable({}, {
+        __close = function()
+            for _, pma in ipairs(pmas) do
+                local filename = string.format("%016x--%016x.bin", pma.start, pma.length)
+                os.remove(filename)
+            end
+        end,
+    })
 
-        assert(real_file_size == pmas_sizes[i], "unexpected pmas file size " .. dumped_file)
-
-        assert(test_util.file_exists(dumped_file), "dumping pmas to file failed " .. dumped_file)
-
-        os.remove(dumped_file)
+    for _, pma in ipairs(machine:get_pmas(true)) do
+        local filename = string.format("%s%016x--%016x.bin", test_path, pma.start, pma.length)
+        local file <close> = assert(io.open(filename, "rb"))
+        local data = assert(file:read("a"))
+        assert(#data == pma.length, "unexpected pma file size " .. filename)
+        assert(data == machine:read_memory(pma.start, pma.length), "machine memory mismatches pma file " .. filename)
     end
 end)
 

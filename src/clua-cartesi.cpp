@@ -127,8 +127,6 @@ CM_API int luaopen_cartesi(lua_State *L) {
 
     clua_setintegerfield(L, PMA_SHADOW_STATE_START, "PMA_SHADOW_STATE_START", -1);
     clua_setintegerfield(L, PMA_SHADOW_STATE_LENGTH, "PMA_SHADOW_STATE_LENGTH", -1);
-    clua_setintegerfield(L, PMA_DTB_START, "PMA_DTB_START", -1);
-    clua_setintegerfield(L, PMA_DTB_LENGTH, "PMA_DTB_LENGTH", -1);
     clua_setintegerfield(L, PMA_SHADOW_PMAS_START, "PMA_SHADOW_PMAS_START", -1);
     clua_setintegerfield(L, PMA_SHADOW_PMAS_LENGTH, "PMA_SHADOW_PMAS_LENGTH", -1);
     clua_setintegerfield(L, PMA_SHADOW_TLB_START, "PMA_SHADOW_TLB_START", -1);
@@ -138,6 +136,8 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, PMA_HTIF_START, "PMA_HTIF_START", -1);
     clua_setintegerfield(L, PMA_HTIF_LENGTH, "PMA_HTIF_LENGTH", -1);
     clua_setintegerfield(L, PMA_UARCH_RAM_START, "PMA_UARCH_RAM_START", -1);
+    clua_setintegerfield(L, PMA_DTB_START, "PMA_DTB_START", -1);
+    clua_setintegerfield(L, PMA_DTB_LENGTH, "PMA_DTB_LENGTH", -1);
     clua_setintegerfield(L, PMA_RAM_START, "PMA_RAM_START", -1);
 
     clua_setintegerfield(L, MVENDORID_INIT, "MVENDORID", -1);

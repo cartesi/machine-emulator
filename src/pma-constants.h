@@ -32,8 +32,6 @@ enum PMA_ranges : uint64_t {
     PMA_SHADOW_STATE_LENGTH = EXPAND_UINT64_C(PMA_SHADOW_STATE_LENGTH_DEF), ///< Length of processor shadow range
     PMA_SHADOW_PMAS_START = EXPAND_UINT64_C(PMA_SHADOW_PMAS_START_DEF),     ///< Start of pma board shadow range
     PMA_SHADOW_PMAS_LENGTH = EXPAND_UINT64_C(PMA_SHADOW_PMAS_LENGTH_DEF),   ///< Length of pma board shadow range
-    PMA_DTB_START = EXPAND_UINT64_C(PMA_DTB_START_DEF),                     ///< Start of DTB range
-    PMA_DTB_LENGTH = EXPAND_UINT64_C(PMA_DTB_LENGTH_DEF),                   ///< Length of DTB range
     PMA_SHADOW_TLB_START = EXPAND_UINT64_C(PMA_SHADOW_TLB_START_DEF),       ///< Start of TLB shadow range
     PMA_SHADOW_TLB_LENGTH = EXPAND_UINT64_C(PMA_SHADOW_TLB_LENGTH_DEF),     ///< Length of TLB shadow range
     PMA_CLINT_START = EXPAND_UINT64_C(PMA_CLINT_START_DEF),                 ///< Start of CLINT range
@@ -41,6 +39,8 @@ enum PMA_ranges : uint64_t {
     PMA_HTIF_START = EXPAND_UINT64_C(PMA_HTIF_START_DEF),                   ///< Start of HTIF range
     PMA_HTIF_LENGTH = EXPAND_UINT64_C(PMA_HTIF_LENGTH_DEF),                 ///< Length of HTIF range
     PMA_UARCH_RAM_START = EXPAND_UINT64_C(PMA_UARCH_RAM_START_DEF),         ///< Length of microarchitecture RAM range
+    PMA_DTB_START = EXPAND_UINT64_C(PMA_DTB_START_DEF),                     ///< Start of DTB range
+    PMA_DTB_LENGTH = EXPAND_UINT64_C(PMA_DTB_LENGTH_DEF),                   ///< Length of DTB range
     //    PMA_FIRST_VIRTIO_START  = EXPAND_UINT64_C(PMA_FIRST_VIRTIO_START_DEF),    ///< Start of first VIRTIO range
     //    PMA_VIRTIO_LENGTH  = EXPAND_UINT64_C(PMA_VIRTIO_LENGTH_DEF),   ///< Length of each VIRTIO range
     //    PMA_LAST_VIRTIO_END  = EXPAND_UINT64_C(PMA_LAST_VIRTIO_END_DEF),   ///< End of last VIRTIO range

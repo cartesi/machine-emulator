@@ -14,11 +14,11 @@ function machine_methods:get_pmas(dump_memory)
     local config = self:get_initial_config()
     local pmas = {
         { start = cartesi.PMA_SHADOW_STATE_START, length = cartesi.PMA_SHADOW_STATE_LENGTH }, -- shadow state
-        { start = cartesi.PMA_DTB_START, length = cartesi.PMA_DTB_LENGTH }, -- dtb
         { start = cartesi.PMA_SHADOW_PMAS_START, length = cartesi.PMA_SHADOW_PMAS_LENGTH }, -- shadow pmas
         { start = cartesi.PMA_SHADOW_TLB_START, length = cartesi.PMA_SHADOW_TLB_LENGTH }, -- shadow tlb
         { start = cartesi.PMA_CLINT_START, length = cartesi.PMA_CLINT_LENGTH }, -- clint
         { start = cartesi.PMA_HTIF_START, length = cartesi.PMA_HTIF_LENGTH }, -- htif
+        { start = cartesi.PMA_DTB_START, length = cartesi.PMA_DTB_LENGTH }, -- dtb
     }
     -- uarch ram
     if config.uarch.ram.length > 0 then

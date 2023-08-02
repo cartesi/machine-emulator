@@ -17,12 +17,14 @@
 --
 
 local cartesi = require("cartesi")
+local util = require("cartesi.util")
 local test_util = require("tests.util")
 
 local remote_address
 local checkin_address
 local test_path = "./"
 local cleanup = {}
+local concurrency_update_merkle_tree = util.parse_number(os.getenv("CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE")) or 0
 
 local lua_cmd = arg[-1] .. " -e "
 
@@ -51,6 +53,17 @@ where options are:
     path to test execution folder. In case of grpc tests, path must be
     working directory of remote-cartesi-machine and must be locally readable
     (default: "./")
+
+  --concurrency=<key>:<value>[,<key>:<value>[,...]...]
+    configures the number of threads used in some implementation parts.
+
+    <key>:<value> is one of
+        update_merkle_tree:<number>
+
+        update_merkle_tree (optional)
+        defines the number of threads to use while calculating the merkle tree.
+        when omitted or defined as 0, the number of hardware threads is used if
+        it can be identified or else a single thread is used.
 
 <address> is one of the following formats:
   <host>:<port>
@@ -100,6 +113,19 @@ local options = {
             if not o or #o < 1 then return false end
             test_path = o
             if string.sub(test_path, -1, -1) ~= "/" then error("test-path must end in '/'") end
+            return true
+        end,
+    },
+    {
+        "^(%-%-concurrency%=(.+))$",
+        function(all, opts)
+            if not opts then return false end
+            local c = util.parse_options(opts, {
+                update_merkle_tree = true,
+            })
+            c.update_merkle_tree =
+                assert(util.parse_number(c.update_merkle_tree), "invalid update_merkle_tree number in " .. all)
+            concurrency_update_merkle_tree = c.update_merkle_tree
             return true
         end,
     },
@@ -259,7 +285,6 @@ local function build_machine(type, build_options)
     if not build_options then build_options = {} end
 
     -- Create new machine
-    local concurrency_update_merkle_tree = 0
     local initial_csr_values = get_cpu_csr_test_values()
     local initial_xreg_values = get_cpu_xreg_test_values()
     local initial_uarch_xreg_values = get_cpu_uarch_xreg_test_values()

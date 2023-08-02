@@ -252,7 +252,7 @@ where options are:
 
         update_merkle_tree (optional)
         defines the number of threads to use while calculating the merkle tree.
-        when ommited or defined as 0, the number of hardware threads is used if
+        when omitted or defined as 0, the number of hardware threads is used if
         it can be identified or else a single thread is used.
 
   --htif-no-console-putchar

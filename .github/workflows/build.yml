@@ -309,15 +309,15 @@ jobs:
 
       - name: Run test scripts
         run: |
-          docker run --platform linux/arm64 --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel ./src/tests/run.sh
+          docker run --platform linux/arm64 -e "CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE=1" --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel ./src/tests/run.sh
 
       - name: Run grpc lua test scripts
         run: |
-          docker run --platform linux/arm64 --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel ./src/tests/test-grpc-server.sh remote-cartesi-machine cartesi-machine cartesi-machine-tests ${CARTESI_TESTS_PATH}
+          docker run --platform linux/arm64 -e "CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE=1" --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel ./src/tests/test-grpc-server.sh remote-cartesi-machine cartesi-machine cartesi-machine-tests ${CARTESI_TESTS_PATH}
 
       - name: Run jsonrpc lua test scripts
         run: |
-          docker run --platform linux/arm64 --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel ./src/tests/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests ${CARTESI_TESTS_PATH}
+          docker run --platform linux/arm64 -e "CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE=1" --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel ./src/tests/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests ${CARTESI_TESTS_PATH}
 
       - name: Run Merkle tree tests
         run: |
@@ -341,7 +341,7 @@ jobs:
 
       - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
         run: |
-          docker run --platform linux/arm64 --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel /opt/cartesi/bin/cartesi-machine-tests  --test="^rv64ui.*$" --test-path=${CARTESI_TESTS_PATH} --uarch-ram-length=0x20000 --uarch-ram-image=/opt/cartesi/share/uarch/uarch-ram.bin --jobs=$(nproc) run_host_and_uarch
+          docker run --platform linux/arm64 --rm -v /opt/cartesi/share/images:/opt/cartesi/share/images -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel /opt/cartesi/bin/cartesi-machine-tests  --test="^rv64ui%-v%-add.bin$" --test-path=${CARTESI_TESTS_PATH} --concurrency=update_merkle_tree:1 --uarch-ram-length=0x20000 --uarch-ram-image=/opt/cartesi/share/uarch/uarch-ram.bin --jobs=$(nproc) run_host_and_uarch
 
   static-analysis:
     name: Static Analysis

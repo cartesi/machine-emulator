@@ -1462,8 +1462,7 @@ bool machine::update_merkle_tree(void) const {
         std::vector<std::future<bool>> futures;
         futures.reserve(n);
         for (uint64_t j = 0; j < n; ++j) {
-            futures.emplace_back(std::async(
-                std::launch::async,
+            futures.emplace_back(std::async((n == 1) ? std::launch::deferred : std::launch::async,
                 [&](int j) -> bool {
                     auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
                     if (!scratch) {

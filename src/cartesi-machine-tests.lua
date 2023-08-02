@@ -413,7 +413,7 @@ local json_list = false
 local periodic_action = false
 local periodic_action_period = math.maxinteger
 local periodic_action_start = 0
-local concurrency_update_merkle_tree = 0
+local concurrency_update_merkle_tree = util.parse_number(os.getenv("CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE")) or 0
 local cleanup = {}
 
 -- List of supported options

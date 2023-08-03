@@ -1,4 +1,4 @@
-#!/usr/bin/env lua5.3
+#!/usr/bin/env lua5.4
 
 -- Copyright Cartesi and individual authors (see AUTHORS)
 -- SPDX-License-Identifier: Apache-2.0
@@ -30,7 +30,7 @@ local function adjust_images_path(path)
     return string.gsub(path, "/*$", "") .. "/"
 end
 
-local IMAGES_DIR = adjust_images_path(os.getenv('CARTESI_IMAGES_PATH') or "/opt/cartesi/share/images")
+local IMAGES_DIR = adjust_images_path(os.getenv('CARTESI_IMAGES_PATH') or "/usr/share/cartesi-machine/images")
 local ROOT_DIR = "/tmp/server-manager-root"
 local MACHINES_DIR = ROOT_DIR .. "/tests"
 
@@ -125,7 +125,7 @@ function create_default_config(images_dir, command)
       },
       rom = {
         image_filename = images_dir .. "rom.bin",
-        bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce splash=no mtdparts=flash.0:-(root) " .. command,
+        bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce splash=no mtdparts=flash.0:-(root) init=/opt/cartesi/bin/init " .. command,
       },
       htif = {
         console_getchar = false, -- default

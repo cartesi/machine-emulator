@@ -20,6 +20,7 @@ UNAME:=$(shell uname)
 ARCH:= $(shell dpkg --print-architecture 2>/dev/null || echo amd64)
 PREFIX= /usr
 MACHINE_EMULATOR_VERSION:= $(shell make -sC src version)
+MACHINE_EMULATOR_SO_VERSION:= $(shell make -sC src so-version)
 DEB_FILENAME= cartesi-machine-v$(MACHINE_EMULATOR_VERSION)_$(ARCH).deb
 BIN_RUNTIME_PATH= $(PREFIX)/bin
 LIB_RUNTIME_PATH= $(PREFIX)/lib
@@ -29,12 +30,20 @@ IMAGES_RUNTIME_PATH= $(SHARE_RUNTIME_PATH)/images
 LUA_RUNTIME_CPATH= $(PREFIX)/lib/lua/5.4
 LUA_RUNTIME_PATH= $(PREFIX)/share/lua/5.4
 INSTALL_PLAT = install-$(UNAME)
+
 LIBCARTESI_Darwin=libcartesi.dylib
 LIBCARTESI_Linux=libcartesi.so
 LIBCARTESI_PROTOBUF_Darwin=libcartesi_protobuf.dylib
 LIBCARTESI_PROTOBUF_Linux=libcartesi_protobuf.so
 LIBCARTESI_GRPC_Darwin=libcartesi_grpc.dylib
 LIBCARTESI_GRPC_Linux=libcartesi_grpc.so
+
+LIBCARTESI_SO_Darwin:=libcartesi-$(MACHINE_EMULATOR_SO_VERSION).dylib
+LIBCARTESI_SO_Linux:=libcartesi-$(MACHINE_EMULATOR_SO_VERSION).so
+LIBCARTESI_SO_PROTOBUF_Darwin:=libcartesi_protobuf-$(MACHINE_EMULATOR_SO_VERSION).dylib
+LIBCARTESI_SO_PROTOBUF_Linux:=libcartesi_protobuf-$(MACHINE_EMULATOR_SO_VERSION).so
+LIBCARTESI_SO_GRPC_Darwin:=libcartesi_grpc-$(MACHINE_EMULATOR_SO_VERSION).dylib
+LIBCARTESI_SO_GRPC_Linux:=libcartesi_grpc-$(MACHINE_EMULATOR_SO_VERSION).so
 
 BIN_INSTALL_PATH:=    $(DESTDIR)$(BIN_RUNTIME_PATH)
 LIB_INSTALL_PATH:=    $(DESTDIR)$(LIB_RUNTIME_PATH)
@@ -54,7 +63,7 @@ STRIP_EXEC= strip -x
 DEP_TO_BIN=
 DEP_TO_LIB=
 EMU_TO_BIN= jsonrpc-remote-cartesi-machine remote-cartesi-machine remote-cartesi-machine-proxy merkle-tree-hash
-EMU_TO_LIB= $(LIBCARTESI_$(UNAME)) $(LIBCARTESI_PROTOBUF_$(UNAME)) $(LIBCARTESI_GRPC_$(UNAME))
+EMU_TO_LIB= $(LIBCARTESI_SO_$(UNAME)) $(LIBCARTESI_SO_PROTOBUF_$(UNAME)) $(LIBCARTESI_SO_GRPC_$(UNAME))
 EMU_LUA_TO_BIN= cartesi-machine.lua cartesi-machine-stored-hash.lua rollup-memory-range.lua
 EMU_LUA_TEST_TO_BIN= cartesi-machine-tests.lua uarch-riscv-tests.lua
 EMU_TO_LUA_PATH= cartesi/util.lua cartesi/proof.lua cartesi/gdbstub.lua
@@ -300,6 +309,9 @@ install-emulator: $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/c
 	cat tools/template/cartesi-machine-stored-hash.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/cartesi-machine-stored-hash
 	cat tools/template/rollup-memory-range.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/rollup-memory-range
 	cd $(BIN_INSTALL_PATH) && $(CHMOD_EXEC) $(EMU_TO_BIN) cartesi-machine cartesi-machine-stored-hash rollup-memory-range
+	cd $(LIB_INSTALL_PATH) && ln -sf $(LIBCARTESI_SO_$(UNAME)) $(LIBCARTESI_$(UNAME))
+	cd $(LIB_INSTALL_PATH) && ln -sf $(LIBCARTESI_SO_PROTOBUF_$(UNAME)) $(LIBCARTESI_PROTOBUF_$(UNAME))
+	cd $(LIB_INSTALL_PATH) && ln -sf $(LIBCARTESI_SO_GRPC_$(UNAME)) $(LIBCARTESI_GRPC_$(UNAME))
 	cd $(LUA_INSTALL_PATH) && $(CHMOD_DATA) $(EMU_LUA_TO_BIN)
 	$(INSTALL) $(EMU_TO_INC) $(INC_INSTALL_PATH)
 	$(INSTALL) tools/gdb $(SHARE_INSTALL_PATH)/gdb

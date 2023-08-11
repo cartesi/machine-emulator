@@ -20,10 +20,10 @@
 namespace cartesi {
 
 /// \brief Microarchitecture step execution status code
-enum class uarch_step_status : int {
-    success,        // one micro instruction was executed successfully
-    cycle_overflow, // already at fixed point: uarch cycle has reached its maximum value
-    uarch_halted,   // already at fixed point: microarchitecture is halted
+enum class UArchStepStatus : int {
+    Success,       // one micro instruction was executed successfully
+    CycleOverflow, // already at fixed point: uarch cycle has reached its maximum value
+    UArchHalted    // already at fixed point: microarchitecture is halted
 };
 
 /// \brief Advances the microarchitecture by one micro cycle
@@ -31,20 +31,20 @@ enum class uarch_step_status : int {
 /// \returns Returns a status code indicating whether and how the microarchitecure was advanced
 /// \details The microarchitecture will not advance if it is at a fixed point
 template <typename STATE_ACCESS>
-uarch_step_status uarch_step(STATE_ACCESS &a);
+UArchStepStatus uarch_step(STATE_ACCESS &a);
 
 class uarch_state_access;
 class uarch_record_state_access;
 class uarch_replay_state_access;
 
 // Declaration of explicit instantiation in module uarch-step.cpp
-extern template uarch_step_status uarch_step(uarch_state_access &a);
+extern template UArchStepStatus uarch_step(uarch_state_access &a);
 
 // Declaration of explicit instantiation in module uarch-step.cpp
-extern template uarch_step_status uarch_step(uarch_record_state_access &a);
+extern template UArchStepStatus uarch_step(uarch_record_state_access &a);
 
 // Declaration of explicit instantiation in module uarch-step.cpp
-extern template uarch_step_status uarch_step(uarch_replay_state_access &a);
+extern template UArchStepStatus uarch_step(uarch_replay_state_access &a);
 
 } // namespace cartesi
 

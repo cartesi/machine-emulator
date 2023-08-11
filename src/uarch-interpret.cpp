@@ -25,15 +25,15 @@ uarch_interpreter_break_reason uarch_interpret(uarch_state_access &a, uint64_t c
         throw std::invalid_argument{"uarch_cycle is past"};
     }
     while (cycle < cycle_end) {
-        uarch_step_status status = uarch_step(a);
+        UArchStepStatus status = uarch_step(a);
         switch (status) {
-            case uarch_step_status::success:
+            case UArchStepStatus::Success:
                 cycle += 1;
                 break;
-            case uarch_step_status::uarch_halted:
+            case UArchStepStatus::UArchHalted:
                 return uarch_interpreter_break_reason::uarch_halted;
             // LCOV_EXCL_START
-            case uarch_step_status::cycle_overflow:
+            case UArchStepStatus::CycleOverflow:
                 // Prior condition ensures that this case is unreachable. but linter may complain about missing it
                 return uarch_interpreter_break_reason::reached_target_cycle;
                 // LCOV_EXCL_STOP

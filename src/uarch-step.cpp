@@ -14,6 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+// NOLINTBEGIN(google-readability-casting)
+
 #include <stdexcept>
 
 #include "riscv-constants.h"
@@ -1089,34 +1091,34 @@ static inline void executeInsn(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-uarch_step_status uarch_step(UarchState &a) {
+UArchStepStatus uarch_step(UarchState &a) {
     // This must be the first read in order to match the first log access in machine::verify_state_transition
     uint64 cycle = readCycle(a);
     // do not advance if cycle will overflow
     if (cycle == UINT64_MAX) {
-        return uarch_step_status::cycle_overflow;
+        return UArchStepStatus::CycleOverflow;
     }
     // do not advance if machine is halted
     if (readHaltFlag(a)) {
-        return uarch_step_status::uarch_halted;
+        return UArchStepStatus::UArchHalted;
     }
     // execute next instruction
-    auto pc = readPc(a);
-    auto insn = readUint32(a, pc);
+    uint64 pc = readPc(a);
+    uint32 insn = readUint32(a, pc);
     executeInsn(a, insn, pc);
     cycle = cycle + 1;
     writeCycle(a, cycle);
-    return uarch_step_status::success;
+    return UArchStepStatus::Success;
 }
 
 // Explicit instantiation for uarch_state_access
-template uarch_step_status uarch_step(uarch_state_access &a);
+template UArchStepStatus uarch_step(uarch_state_access &a);
 
 // Explicit instantiation for uarch_record_state_access
-template uarch_step_status uarch_step(uarch_record_state_access &a);
+template UArchStepStatus uarch_step(uarch_record_state_access &a);
 
 // Explicit instantiation for uarch_replay_state_access
-template uarch_step_status uarch_step(uarch_replay_state_access &a);
+template UArchStepStatus uarch_step(uarch_replay_state_access &a);
 
 } // namespace cartesi
 // NOLINTEND(google-readability-casting)

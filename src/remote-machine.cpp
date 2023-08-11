@@ -95,8 +95,8 @@ static constexpr std::chrono::milliseconds checkin_retry_wait_time = 500ms;
 
 static std::string message_to_json(const google::protobuf::Message &msg) {
     std::string json_msg;
-    const google::protobuf::util::JsonOptions json_opts;
-    const google::protobuf::util::Status s = MessageToJsonString(msg, &json_msg, json_opts);
+    const google::protobuf::util::JsonPrintOptions json_opts;
+    const auto s = MessageToJsonString(msg, &json_msg, json_opts);
     if (s.ok()) {
         return json_msg;
     }

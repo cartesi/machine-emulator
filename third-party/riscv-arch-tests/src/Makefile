@@ -1,5 +1,5 @@
 
-CFLAGS = -march=rv64i  -g0 -Wl,--gc-sections -O0 -ffreestanding -nostartfiles \
+CFLAGS = -march=rv64i -mabi=lp64 -g0 -Wl,--gc-sections -O0 -ffreestanding -nostartfiles \
    -mcmodel=medany -static -fvisibility=hidden \
 	-I$(MACHINE_EMULATOR_DEFINES_DIR)
 

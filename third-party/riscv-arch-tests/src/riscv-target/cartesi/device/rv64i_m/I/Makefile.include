@@ -1,6 +1,6 @@
 WORKDIR = $(ROOTDIR)/work
 
-GCC_OPTS = -march=rv64i -g0 -static -mcmodel=medany -fvisibility=hidden -nostdlib -nostartfiles $(RVTEST_DEFINES)
+GCC_OPTS = -march=rv64i -mabi=lp64 -g0 -static -mcmodel=medany -fvisibility=hidden -nostdlib -nostartfiles $(RVTEST_DEFINES)
 COMPILE_CMD=$(TOOLCHAIN_PREFIX)gcc $(1) $$(GCC_OPTS) \
     -I$(ROOTDIR)/riscv-test-suite/env/ \
     -I$(TARGETDIR)/$(RISCV_TARGET) \

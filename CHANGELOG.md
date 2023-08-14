@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed compile errors with GCC 13.1
 - Fixed Lua path being mixed with different Lua version path
-- Fixed bug in get_proto_access_log()
+- Fixed bug in get\_proto\_access\_log()
+- Fixed lint warnings with CLANG 15
+- Introduced a workaround for high memory usage when running on QEMU ARM64
 
 ### Added
 
@@ -20,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added --skip-root-hash-check command line option to speed up machine loading in tests
 - Added --skip-version-check command line option to allow testing old machine snapshots
 - Added --htif-no-console-putchar command line option
+- Added support for ARM64 docker images with depot.dev
+- Added support for publishing docker images on ghcr.io
 
 ### Changed
 
@@ -29,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ensure that uarch does not advance to the next micro instruction  when iflags.H or iflags.Y is set
 - Made flash drive length and ROM image filename optional in machine config
 - Updated license/copyright notice in all source code
+- Changed docker base image from Ubuntu 22.04 to Debian Bookworm
+- Started using system provided protobuf and grpc libraries
+- Updated gprc-interfaces
+- Updated machine-emulator-defines
+- Refactored continuous integration workflow
+- Updated ROM, kernel, rootfs and tests versions on CI
 
 ## [0.14.0] - 2023-05-03
 ### Added

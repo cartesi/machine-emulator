@@ -36,8 +36,8 @@ tests=(
 )
 
 is_server_running () {
-    $cartesi_machine --remote-address=$server_address --remote-protocol="jsonrpc" --max-mcycle=0 &> /dev/null
     echo $cartesi_machine --remote-address=$server_address --remote-protocol="jsonrpc" --max-mcycle=0
+    eval $cartesi_machine --remote-address=$server_address --remote-protocol="jsonrpc" --max-mcycle=0 &> /dev/null
 }
 
 wait_for_server () {

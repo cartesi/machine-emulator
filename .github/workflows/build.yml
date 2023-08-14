@@ -1,11 +1,11 @@
 name: Build/Test/Release
 on: [push]
 env:
-  ROM_VERSION: v0.16.0
-  KERNEL_VERSION: v0.16.0
-  LINUX_VERSION: 5.15.63-ctsi-2
-  ROOTFS_VERSION: v0.17.0
-  TEST_VERSION: v0.28.0
+  ROM_VERSION: v0.17.0
+  KERNEL_VERSION: v0.17.0
+  LINUX_VERSION: 5.15.63-ctsi-2-v0.17.0
+  ROOTFS_VERSION: v0.18.0
+  TEST_VERSION: v0.29.0
   CARTESI_TESTS_PATH: /opt/cartesi/share/tests
 jobs:
   build:

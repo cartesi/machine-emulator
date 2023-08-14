@@ -511,6 +511,7 @@ test_util.make_do_test(build_machine, machine_type, {
     rom = {
         image_filename = rom_image,
         bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet swiotlb=noforce single=yes splash=no "
+            .. "init=/opt/cartesi/bin/init "
             .. "mtdparts=flash.0:-(root);flash.1:-(input);flash.2:-(output) -- "
             .. "cat /mnt/input/etc/issue | dd status=none of=/dev/mtdblock2",
     },

@@ -733,7 +733,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         with:
-          prerelease: false
+          prerelease: true
           files: |
             uarch-riscv-tests-json-logs-*tar.gz
             cartesi-machine-*.deb

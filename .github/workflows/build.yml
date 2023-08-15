@@ -199,7 +199,7 @@ jobs:
       - name: Create uarch json logs to be used to test the Solidity based microarchitecture interpreter
         run: |
           mkdir -p /opt/cartesi/share/logs/uarch-riscv-tests-json-logs
-          docker run --rm -v /opt/cartesi/share/logs:/opt/cartesi/share/logs -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel /opt/cartesi/bin/uarch-riscv-tests --test-path=${CARTESI_TESTS_PATH}  --output-dir=/opt/cartesi/share/logs/uarch-riscv-tests-json-logs --proofs --proofs-frequency=50 json-logs
+          docker run --rm -v /opt/cartesi/share/logs:/opt/cartesi/share/logs -v ${CARTESI_TESTS_PATH}:${CARTESI_TESTS_PATH} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel /opt/cartesi/bin/uarch-riscv-tests --test-path=${CARTESI_TESTS_PATH}  --output-dir=/opt/cartesi/share/logs/uarch-riscv-tests-json-logs --proofs --proofs-frequency=1 json-logs
 
       - name: Upload uarch json logs to be used to test the Solidity based microarchitecture interpreter
         uses: actions/upload-artifact@master

@@ -271,11 +271,14 @@ jobs:
           mkdir -p /opt/cartesi/share/logs/uarch-riscv-tests-json-logs
           docker run --rm -v /opt/cartesi/share/logs:/opt/cartesi/share/logs -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ secrets.DOCKER_ORGANIZATION }}/machine-emulator:devel /usr/bin/uarch-riscv-tests --test-path=${{ env.CARTESI_TESTS_PATH }}  --output-dir=/opt/cartesi/share/logs/uarch-riscv-tests-json-logs --proofs --proofs-frequency=1 json-logs
 
+      - name: Compress uarch json logs
+        run: tar -czf uarch-riscv-tests-json-logs.tar.gz -C /opt/cartesi/share/logs/uarch-riscv-tests-json-logs .
+
       - name: Upload uarch json logs to be used to test the Solidity based microarchitecture interpreter
         uses: actions/upload-artifact@master
         with:
-          name: uarch-riscv-tests-json-logs
-          path: /opt/cartesi/share/logs/uarch-riscv-tests-json-logs
+          name: uarch-riscv-tests-json-logs.tar.gz
+          path: uarch-riscv-tests-json-logs.tar.gz
 
   test_arm64:
     name: Test (linux/arm64)
@@ -741,8 +744,8 @@ jobs:
         uses: actions/download-artifact@master
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         with:
-          name: uarch-riscv-tests-json-logs
-          path: /tmp/uarch-riscv-tests-json-logs
+          name: uarch-riscv-tests-json-logs.tar.gz
+          path: /tmp/uarch-riscv-tests-json-logs.tar.gz
 
       - name: Download uarch
         uses: actions/download-artifact@master
@@ -767,7 +770,7 @@ jobs:
 
       - name: Create uarch json logs TAR
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        run: tar -czf uarch-riscv-tests-json-logs-${GITHUB_REF:10}.tar.gz -C /tmp/uarch-riscv-tests-json-logs .
+        run: mv /tmp/uarch-riscv-tests-json-logs.tar.gz uarch-riscv-tests-json-logs-${GITHUB_REF:10}.tar.gz
 
       - name: Upload TAR and DEB to GitHub Release
         uses: softprops/action-gh-release@v1
@@ -775,6 +778,6 @@ jobs:
         with:
           prerelease: false
           files: |
-            uarch-riscv-tests-json-logs-*.tar.gz
+            uarch-riscv-tests-json-logs-*tar.gz
             cartesi-machine-*.deb
             uarch-ram.bin

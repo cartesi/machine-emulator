@@ -49,7 +49,7 @@ FROM --platform=$TARGETPLATFORM debian-packager as installer
 ARG MACHINE_EMULATOR_VERSION=0.0.0
 ARG TARGETARCH
 
-RUN make install-tests install-uarch debian-package DESTDIR=$PWD/_install
+RUN make install-tests
 RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt install -y \
     ./cartesi-machine-v${MACHINE_EMULATOR_VERSION}_${TARGETARCH}.deb \
     && rm -rf /var/lib/apt/lists/*
@@ -61,7 +61,7 @@ FROM --platform=$TARGETPLATFORM debian:bookworm-20230725-slim
 ARG MACHINE_EMULATOR_VERSION=0.0.0
 ARG TARGETARCH
 
-COPY --from=debian-packager \
+COPY --from=installer \
 	/usr/src/emulator/cartesi-machine-v${MACHINE_EMULATOR_VERSION}_${TARGETARCH}.deb \
 	cartesi-machine.deb
 RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt install -y \

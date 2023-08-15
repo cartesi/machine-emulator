@@ -199,6 +199,9 @@ grpc: | $(COREPROTO)
 hash luacartesi grpc test lint coverage-report check-format format check-format-lua check-lua format-lua:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
 
+version:
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -sC $(SRCDIR) $@
+
 test-%:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
 

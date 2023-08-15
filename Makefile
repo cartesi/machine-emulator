@@ -238,6 +238,7 @@ build-debian-package:
 copy:
 	ID=`docker create $(DOCKER_PLATFORM) $(DEBIAN_IMG)` && \
 	   docker cp $$ID:/usr/src/emulator/$(DEB_FILENAME) . && \
+	   docker cp $$ID:/usr/src/emulator/uarch/uarch-ram.bin . && \
 	   docker rm $$ID
 
 check-linux-env:

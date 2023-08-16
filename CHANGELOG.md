@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.15.0] - 2023-08-16
 ### Fixed
 
 - Fixed compile errors with GCC 13.1
@@ -13,9 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed lint warnings with CLANG 15
 - Introduced a workaround for high memory usage when running on QEMU ARM64
 - Added deb to release process
+- Fixed SIGTTOU handling on jsonrpc remote cartesi machine
+- Improved signal handling on remote cartesi machines
 
 ### Added
 
+- Added fork support on the jsonrpc remote cartesi machine
+- Added log level control on the jsonrpc remote cartesi machine
 - Added static analysis for Lua code
 - Added code formatter for Lua code
 - Added support for to-be-closed variables for machine Lua API
@@ -25,13 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added --htif-no-console-putchar command line option
 - Added support for ARM64 docker images with depot.dev
 - Added support for publishing docker images on ghcr.io
+- Added tlb\_get\_entry\_hot/cold\_rel\_addr
+- Added titles to jsonrpc components in jsonrpc-discover.json
+- Added proofs to uarch-riscv-tests json logs
+- Added support for Debian packages on the release
+- Added uarch-ram.bin to the release
 
 ### Changed
 
 - Updated Lua version to 5.4
 - Use Lua path environment variables specific for version 5.4
 - Move uarch halt from assembler to C++
-- Ensure that uarch does not advance to the next micro instruction  when iflags.H or iflags.Y is set
+- Ensure that uarch does not advance to the next micro instruction when iflags.H or iflags.Y is set
 - Made flash drive length and ROM image filename optional in machine config
 - Updated license/copyright notice in all source code
 - Changed docker base image from Ubuntu 22.04 to Debian Bookworm
@@ -40,6 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated machine-emulator-defines
 - Refactored continuous integration workflow
 - Updated ROM, kernel, rootfs and tests versions on CI
+- Removed Boost Log dependency
+- Renamed concurrecy\_config to concurrency\_runtime\_config
+- Optimized the use of machine::get\_proof in uarch\_record\_state\_access
+- Reverted iflags fixed point test in uarch-step
 
 ## [0.14.0] - 2023-05-03
 ### Added
@@ -291,7 +306,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [0.2.0]
 - [0.1.0]
 
-[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.15.0
 [0.14.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.14.0
 [0.13.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.13.0
 [0.12.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.12.0

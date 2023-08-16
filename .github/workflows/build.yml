@@ -258,7 +258,7 @@ jobs:
       - name: Upload uarch json logs to be used to test the Solidity based microarchitecture interpreter
         uses: actions/upload-artifact@master
         with:
-          name: uarch-riscv-tests-json-logs.tar.gz
+          name: artifacts
           path: uarch-riscv-tests-json-logs.tar.gz
 
   test_arm64:
@@ -727,14 +727,14 @@ jobs:
 
       - name: Create uarch json logs TAR
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        run: mv /tmp/uarch-riscv-tests-json-logs.tar.gz uarch-riscv-tests-json-logs-${GITHUB_REF:10}.tar.gz
+        run: mv artifacts/uarch-riscv-tests-json-logs.tar.gz artifacts/uarch-riscv-tests-json-logs-v${{ env.MACHINE_EMULATOR_VERSION }}.tar.gz
 
       - name: Upload TAR and DEB to GitHub Release
         uses: softprops/action-gh-release@v1
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         with:
-          prerelease: true
+          draft: true
           files: |
-            uarch-riscv-tests-json-logs-*tar.gz
-            cartesi-machine-*.deb
-            uarch-ram.bin
+            artifacts/uarch-riscv-tests-json-logs-*.tar.gz
+            artifacts/cartesi-machine-*.deb
+            artifacts/uarch-ram.bin

@@ -60,8 +60,6 @@ CHMOD_EXEC= chmod 0755
 CHMOD_DATA= chmod 0644
 STRIP_EXEC= strip -x
 
-DEP_TO_BIN=
-DEP_TO_LIB=
 EMU_TO_BIN= jsonrpc-remote-cartesi-machine remote-cartesi-machine remote-cartesi-machine-proxy merkle-tree-hash
 EMU_TO_LIB= $(LIBCARTESI_SO_$(UNAME)) $(LIBCARTESI_SO_PROTOBUF_$(UNAME)) $(LIBCARTESI_SO_GRPC_$(UNAME))
 EMU_LUA_TO_BIN= cartesi-machine.lua cartesi-machine-stored-hash.lua rollup-memory-range.lua
@@ -111,24 +109,18 @@ export CC = clang
 export CXX = clang++
 LUACC = "CC=$(CXX)"
 LIBRARY_PATH := "export DYLD_LIBRARY_PATH=$(BUILDDIR)/lib"
-LIB_EXTENSION = dylib
-DEP_TO_LIB += *.$(LIB_EXTENSION)
 LUAMYLIBS = "MYLIBS=-L/opt/local/lib/libomp -L/usr/local/opt/llvm/lib -lomp"
 
 # Linux specific settings
 else ifeq ($(UNAME),Linux)
 LUA_PLAT ?= linux
 LIBRARY_PATH := "export LD_LIBRARY_PATH=$(BUILDDIR)/lib:$(SRCDIR)"
-LIB_EXTENSION := so
-DEP_TO_LIB += *.$(LIB_EXTENSION)*
 LUACC = "CC=g++"
 LUAMYLIBS = "MYLIBS=\"-lgomp\""
 # Unknown platform
 else
 LUA_PLAT ?= none
 INSTALL_PLAT=
-LIB_EXTENSION := dll
-DEP_TO_LIB += *.$(LIB_EXTENSION)
 endif
 
 # Check if some binary dependencies already exists on build directory to skip
@@ -283,14 +275,14 @@ install-Darwin:
 	install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_RUNTIME_PATH) $(LUA_INSTALL_CPATH)/cartesi/grpc.so
 	install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_RUNTIME_PATH) $(LUA_INSTALL_CPATH)/cartesi/jsonrpc.so
 	cd $(BIN_INSTALL_PATH) && \
-		for x in $(DEP_TO_BIN) $(EMU_TO_BIN); do \
+		for x in $(EMU_TO_BIN); do \
 			install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_RUNTIME_PATH) $$x ;\
 		done
 
 install-Linux:
-	cd $(BIN_INSTALL_PATH) && for x in $(DEP_TO_BIN) $(EMU_TO_BIN); do patchelf --set-rpath $(LIB_RUNTIME_PATH) $$x ; done
-	cd $(LIB_INSTALL_PATH) && for x in `find . -maxdepth 1 -type f -name "*.so*"`; do patchelf --set-rpath $(LIB_RUNTIME_PATH) $$x ; done
-	cd $(LUA_INSTALL_CPATH) && for x in `find . -maxdepth 2 -type f -name "*.so"`; do patchelf --set-rpath $(LIB_RUNTIME_PATH) $$x ; done
+	cd $(BIN_INSTALL_PATH) && for x in $(EMU_TO_BIN); do patchelf --set-rpath $(LIB_RUNTIME_PATH) $$x ; done
+	cd $(LIB_INSTALL_PATH) && for x in $(EMU_TO_LIB); do patchelf --set-rpath $(LIB_RUNTIME_PATH) $$x; done
+	cd $(LUA_INSTALL_CPATH) && for x in $(EMU_TO_LUA_CPATH) $(EMU_TO_LUA_CARTESI_CPATH); do patchelf --set-rpath $(LIB_RUNTIME_PATH) $$x ; done
 
 install-tests: install
 	cd src && $(INSTALL) $(EMU_LUA_TEST_TO_BIN) $(LUA_INSTALL_PATH)
@@ -325,9 +317,9 @@ install-uarch: install $(UARCH_INSTALL_PATH)
 	$(INSTALL) uarch/$(UARCH_TO_SHARE) $(UARCH_INSTALL_PATH)
 
 install-strip: install-emulator
-	cd $(BIN_INSTALL_PATH) && $(STRIP_EXEC) $(EMU_TO_BIN) $(DEP_TO_BIN)
-	cd $(LIB_INSTALL_PATH) && $(STRIP_EXEC) $(DEP_TO_LIB)
-	cd $(LUA_INSTALL_CPATH) && $(STRIP_EXEC) *.so
+	cd $(BIN_INSTALL_PATH) && $(STRIP_EXEC) $(EMU_TO_BIN)
+	cd $(LIB_INSTALL_PATH) && $(STRIP_EXEC) $(EMU_TO_LIB)
+	cd $(LUA_INSTALL_CPATH) && $(STRIP_EXEC) $(EMU_TO_LUA_CPATH)
 
 install: install-emulator install-strip $(INSTALL_PLAT)
 debian-package: install

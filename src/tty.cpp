@@ -172,8 +172,21 @@ int tty_getchar(void) {
 }
 
 void tty_putchar(uint8_t ch) {
-    if (write(STDOUT_FILENO, &ch, 1) < 1) {
-        ;
+    auto *s = get_state();
+    if (!s->initialized) {
+        // Write through fputc(), so we can take advantage of buffering.
+        (void) fputc(ch, stdout);
+        // On Linux, stdout in fully buffered by default when it's not a TTY,
+        // here we flush every new line to perform line buffering.
+        if (ch == '\n') {
+            (void) fflush(stdout);
+        }
+    } else {
+        // In interactive sessions we want to immediately write the character to stdout,
+        // without any buffering.
+        if (write(STDOUT_FILENO, &ch, 1) < 1) {
+            ;
+        }
     }
 }
 

@@ -94,6 +94,14 @@ $ make depclean
 $ make clean
 ```
 
+Microarchitecture:
+
+If you want to use a pre-built uarch RAM image instead of building one, use the variable `UARCH_RAM_IMAGE` to specify the path to the desired image file.
+
+```bash
+$ make UARCH_RAM_IMAGE=<path-to-your-uarch-ram.bin>
+```
+
 ### Install
 
 ```bash

@@ -1155,8 +1155,12 @@ cm_uarch_processor_config get_default_uarch_processor_config(lua_State *L) {
 /// \param L Lua state.
 /// \param tabidx Config stack index.
 /// \param r C api microarchitecture RAM config structure to receive results.
-static void check_cm_uarch_ram_config(lua_State *L, int tabidx, cm_uarch_ram_config *r) {
-    check_table_field(L, tabidx, "ram");
+static void check_cm_uarch_ram_config(lua_State *L, int tabidx, cm_uarch_ram_config *r,
+    const cm_uarch_ram_config *def) {
+    if (!opt_table_field(L, tabidx, "ram")) {
+        *r = *def;
+        return;
+    }
     r->length = check_uint_field(L, -1, "length");
     r->image_filename = opt_copy_string_field(L, -1, "image_filename");
     lua_pop(L, 1);
@@ -1195,7 +1199,7 @@ static void check_cm_uarch_config(lua_State *L, int tabidx, cm_uarch_config *u) 
     if (!opt_table_field(L, tabidx, "uarch")) {
         return;
     }
-    check_cm_uarch_ram_config(L, -1, &u->ram);
+    check_cm_uarch_ram_config(L, -1, &u->ram, &u->ram);
     check_cm_uarch_processor_config(L, -1, &u->processor, &u->processor);
     lua_pop(L, 1); // uarch
 }

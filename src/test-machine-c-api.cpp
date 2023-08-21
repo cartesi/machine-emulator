@@ -49,6 +49,7 @@ static hash_type get_verification_root_hash(cm_machine *machine) {
         "0000000002000000--00000000000c0000.bin", // clint
         "0000000040008000--0000000000001000.bin", // htif
         "0000000080000000--0000000000100000.bin", // ram
+        "0000000070000000--0000000000080000.bin", // uarch ram
     };
     char *err_msg{};
 
@@ -58,9 +59,6 @@ static hash_type get_verification_root_hash(cm_machine *machine) {
 
     const cm_machine_config *cfg{nullptr};
     BOOST_CHECK_EQUAL(cm_get_initial_config(machine, &cfg, &err_msg), CM_ERROR_OK);
-    if (cfg->uarch.ram.length) {
-        dump_list.push_back("0000000070000000--0000000000100000.bin"); // uarch ram
-    }
     cm_delete_machine_config(cfg);
 
     auto hash = calculate_emulator_hash(dump_list);
@@ -236,6 +234,7 @@ protected:
         target->htif = source->htif;
         target->rollup = source->rollup;
 
+        target->uarch.processor = source->uarch.processor;
         target->uarch.ram.image_filename = new_cstr(source->uarch.ram.image_filename);
         target->uarch.ram.length = source->uarch.ram.length;
     }
@@ -1535,6 +1534,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_null_placeholder_test, flash_drive_mach
         "0000000002000000--00000000000c0000.bin", // clint
         "0000000040008000--0000000000001000.bin", // htif
         "0000000080000000--0000000000100000.bin", // ram
+        "0000000070000000--0000000000080000.bin", // uarch ram
         "0080000000000000--0000000003c00000.bin"  // flash drive
     };
 
@@ -1556,6 +1556,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_basic_test, flash_drive_machine_fixture
         "0000000002000000--00000000000c0000.bin", // clint
         "0000000040008000--0000000000001000.bin", // htif
         "0000000080000000--0000000000100000.bin", // ram
+        "0000000070000000--0000000000080000.bin", // uarch ram
         "0080000000000000--0000000003c00000.bin"  // flash drive
     };
 
@@ -1931,10 +1932,8 @@ public:
         std::ofstream of(_uarch_ram_path, std::ios::binary);
         of.write(static_cast<char *>(static_cast<void *>(&test_uarch_ram)), sizeof(test_uarch_ram));
         of.close();
-        _machine_config.uarch.ram.length = 1 << 20;
         _set_uarch_ram_image(_uarch_ram_path);
-        _machine_config.uarch.ram.length = 1 << 20;
-        _machine_config.uarch.processor.pc = cartesi::PMA_UARCH_RAM_START;
+        _machine_config.uarch.ram.length = cartesi::PMA_UARCH_RAM_LENGTH;
 
         char *err_msg{};
         cm_create_machine(&_machine_config, &_runtime_config, &_machine, &err_msg);

@@ -38,15 +38,8 @@ local function build_machine()
             image_filename = test_util.tests_path .. "mcycle_overflow.bin",
             length = 32 << 20,
         },
-        uarch = {
-            ram = {
-                length = 1 << 20,
-                image_filename = test_util.create_test_uarch_program(),
-            },
-        },
     }
     local machine = cartesi.machine(config)
-    os.remove(config.uarch.ram.image_filename)
     -- Stop the machine before the first RAM instruction
     local wfi_cycle = 7
     assert(machine:run(wfi_cycle) == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)

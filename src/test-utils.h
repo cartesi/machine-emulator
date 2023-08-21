@@ -346,9 +346,7 @@ static hash_type calculate_emulator_hash(const std::vector<const char *> &pmas_f
     auto htif = parse_pma_file(pmas_files[5]);
     auto ram = parse_pma_file(pmas_files[6]);
     std::vector<uint8_t> uarch_ram(0);
-    if (pmas_files.size() >= 8) {
-        uarch_ram = parse_pma_file(pmas_files[7]);
-    }
+    uarch_ram = parse_pma_file(pmas_files[7]);
 
     std::vector<uint8_t> shadow_rom;
     shadow_rom.reserve(shadow_state.size() + rom.size() + shadow_pmas.size());
@@ -386,13 +384,10 @@ static hash_type calculate_emulator_hash(const std::vector<const char *> &pmas_f
     auto htif_space_hash = calculate_region_hash_2(PMA_HTIF_START, htif, htif_size_log2, 29);
     get_concat_hash(h, shadow_rom_tlb_clint_hash, htif_space_hash, left); // 30
 
-    auto uarch_ram_space_hash = zero_keccak_hash_table[30];
-    if (uarch_ram.size() > 0) {
-        auto uarch_ram_size_log2 = ceil_log2(uarch_ram.size());
-        uarch_ram_space_hash = calculate_region_hash(uarch_ram, (uarch_ram.size() + PMA_PAGE_SIZE - 1) / PMA_PAGE_SIZE,
-            PMA_PAGE_SIZE_LOG2, uarch_ram_size_log2);
-        uarch_ram_space_hash = extend_region_hash(uarch_ram_space_hash, PMA_UARCH_RAM_START, uarch_ram_size_log2, 30);
-    }
+    auto uarch_ram_size_log2 = ceil_log2(uarch_ram.size());
+    auto uarch_ram_space_hash = calculate_region_hash(uarch_ram, (uarch_ram.size() + PMA_PAGE_SIZE - 1) / PMA_PAGE_SIZE,
+        PMA_PAGE_SIZE_LOG2, uarch_ram_size_log2);
+    uarch_ram_space_hash = extend_region_hash(uarch_ram_space_hash, PMA_UARCH_RAM_START, uarch_ram_size_log2, 30);
     get_concat_hash(h, left, uarch_ram_space_hash, left); // 31
 
     uint64_t ram_size_log2 = ceil_log2(ram.size());

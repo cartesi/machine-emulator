@@ -325,18 +325,19 @@ function test_util.parse_pma_file(filename)
 end
 
 -- PMA defs
-local PMA_SHADOW_STATE_LENGTH = 0x1000
-local PMA_SHADOW_PMAS_LENGTH = 0x1000
-local PMA_ROM_LENGTH = 0xF000
-local PMA_SHADOW_TLB_START = 0x20000
-local PMA_SHADOW_TLB_LENGTH = 0x6000
-local PMA_CLINT_START = 0x2000000
-local PMA_CLINT_LENGTH = 0xC0000
-local PMA_HTIF_START = 0x40008000
-local PMA_UARCH_RAM_START = 0x70000000
-local PMA_RAM_START = 0x80000000
-local PMA_PAGE_SIZE_LOG2 = 12
-local PMA_PAGE_SIZE = 1 << PMA_PAGE_SIZE_LOG2
+test_util.PMA_SHADOW_STATE_LENGTH = 0x1000
+test_util.PMA_SHADOW_PMAS_LENGTH = 0x1000
+test_util.PMA_ROM_LENGTH = 0xF000
+test_util.PMA_SHADOW_TLB_START = 0x20000
+test_util.PMA_SHADOW_TLB_LENGTH = 0x6000
+test_util.PMA_CLINT_START = 0x2000000
+test_util.PMA_CLINT_LENGTH = 0xC0000
+test_util.PMA_HTIF_START = 0x40008000
+test_util.PMA_UARCH_RAM_START = 0x70000000
+test_util.PMA_UARCH_RAM_LENGTH = 0x80000
+test_util.PMA_RAM_START = 0x80000000
+test_util.PMA_PAGE_SIZE_LOG2 = 12
+test_util.PMA_PAGE_SIZE = 1 << test_util.PMA_PAGE_SIZE_LOG2
 
 local function ceil_log2(x)
     assert(x > 0, "shouldn't try to compute log of x <= 0")
@@ -362,53 +363,59 @@ function test_util.calculate_emulator_hash(test_path, pmas_files)
 
     local shadow_rom = shadow_state .. rom .. shadow_pmas
 
-    local shadow_rom_hash_size_log2 = ceil_log2(PMA_SHADOW_STATE_LENGTH + PMA_ROM_LENGTH + PMA_SHADOW_PMAS_LENGTH)
+    local shadow_rom_hash_size_log2 =
+        ceil_log2(test_util.PMA_SHADOW_STATE_LENGTH + test_util.PMA_ROM_LENGTH + test_util.PMA_SHADOW_PMAS_LENGTH)
     local shadow_rom_space_hash = calculate_region_hash(
         shadow_rom,
-        (#shadow_rom + PMA_PAGE_SIZE - 1) // PMA_PAGE_SIZE,
-        PMA_PAGE_SIZE_LOG2,
+        (#shadow_rom + test_util.PMA_PAGE_SIZE - 1) // test_util.PMA_PAGE_SIZE,
+        test_util.PMA_PAGE_SIZE_LOG2,
         shadow_rom_hash_size_log2
     )
     shadow_rom_space_hash = extend_region_hash(shadow_rom_space_hash, 0, shadow_rom_hash_size_log2, 17)
 
-    local tlb_size_log2 = ceil_log2(PMA_SHADOW_TLB_LENGTH)
+    local tlb_size_log2 = ceil_log2(test_util.PMA_SHADOW_TLB_LENGTH)
     local tlb_space_hash = calculate_region_hash(
         shadow_tlb,
-        (#shadow_tlb + PMA_PAGE_SIZE - 1) // PMA_PAGE_SIZE,
-        PMA_PAGE_SIZE_LOG2,
+        (#shadow_tlb + test_util.PMA_PAGE_SIZE - 1) // test_util.PMA_PAGE_SIZE,
+        test_util.PMA_PAGE_SIZE_LOG2,
         tlb_size_log2
     )
-    tlb_space_hash = extend_region_hash(tlb_space_hash, PMA_SHADOW_TLB_START, tlb_size_log2, 17)
+    tlb_space_hash = extend_region_hash(tlb_space_hash, test_util.PMA_SHADOW_TLB_START, tlb_size_log2, 17)
 
     local shadow_rom_tlb_space_hash = cartesi.keccak(shadow_rom_space_hash, tlb_space_hash) -- 18
     shadow_rom_tlb_space_hash = extend_region_hash(shadow_rom_tlb_space_hash, 0, 18, 25)
 
-    local clint_size_log2 = ceil_log2(PMA_CLINT_LENGTH)
-    local clint_space_hash =
-        calculate_region_hash(clint, (#clint + PMA_PAGE_SIZE - 1) // PMA_PAGE_SIZE, PMA_PAGE_SIZE_LOG2, clint_size_log2)
-    clint_space_hash = extend_region_hash(clint_space_hash, PMA_CLINT_START, clint_size_log2, 25)
+    local clint_size_log2 = ceil_log2(test_util.PMA_CLINT_LENGTH)
+    local clint_space_hash = calculate_region_hash(
+        clint,
+        (#clint + test_util.PMA_PAGE_SIZE - 1) // test_util.PMA_PAGE_SIZE,
+        test_util.PMA_PAGE_SIZE_LOG2,
+        clint_size_log2
+    )
+    clint_space_hash = extend_region_hash(clint_space_hash, test_util.PMA_CLINT_START, clint_size_log2, 25)
 
     local shadow_rom_tlb_clint_hash = cartesi.keccak(shadow_rom_tlb_space_hash, clint_space_hash) -- 26
     shadow_rom_tlb_clint_hash = extend_region_hash(shadow_rom_tlb_clint_hash, 0, 26, 29)
 
     local htif_size_log2 = ceil_log2(#htif)
-    local htif_space_hash = calculate_region_hash_2(PMA_HTIF_START, htif, htif_size_log2, 29)
+    local htif_space_hash = calculate_region_hash_2(test_util.PMA_HTIF_START, htif, htif_size_log2, 29)
     local left = cartesi.keccak(shadow_rom_tlb_clint_hash, htif_space_hash) -- 30
     local uarch_ram_space_hash = test_util.fromhex(zero_keccak_hash_table[30])
     if #uarch_ram > 0 then
         local uarch_ram_size_log2 = ceil_log2(#uarch_ram)
         uarch_ram_space_hash = calculate_region_hash(
             uarch_ram,
-            (#uarch_ram + PMA_PAGE_SIZE - 1) // PMA_PAGE_SIZE,
-            PMA_PAGE_SIZE_LOG2,
+            (#uarch_ram + test_util.PMA_PAGE_SIZE - 1) // test_util.PMA_PAGE_SIZE,
+            test_util.PMA_PAGE_SIZE_LOG2,
             uarch_ram_size_log2
         )
-        uarch_ram_space_hash = extend_region_hash(uarch_ram_space_hash, PMA_UARCH_RAM_START, uarch_ram_size_log2, 30)
+        uarch_ram_space_hash =
+            extend_region_hash(uarch_ram_space_hash, test_util.PMA_UARCH_RAM_START, uarch_ram_size_log2, 30)
     end
     left = cartesi.keccak(left, uarch_ram_space_hash) -- 31
 
     local ram_size_log2 = ceil_log2(#ram)
-    local ram_space_hash = calculate_region_hash_2(PMA_RAM_START, ram, ram_size_log2, 31)
+    local ram_space_hash = calculate_region_hash_2(test_util.PMA_RAM_START, ram, ram_size_log2, 31)
     local used_space_hash = cartesi.keccak(left, ram_space_hash) -- 32
 
     return test_util.extend_region_hash(used_space_hash, 0, 32, 64)

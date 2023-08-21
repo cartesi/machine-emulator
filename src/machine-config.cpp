@@ -20,13 +20,11 @@
 #include <sstream>
 #include <stdexcept>
 
-#include <boost/endian/conversion.hpp>
-
+#include "json-util.h"
 #include "machine-config.h"
 #include "pma-constants.h"
-#include "protobuf-util.h"
 
-static constexpr uint32_t archive_version = 4;
+static constexpr uint32_t archive_version = 5;
 
 namespace cartesi {
 
@@ -41,7 +39,7 @@ std::string machine_config::get_image_filename(const std::string &dir, const mem
 }
 
 std::string machine_config::get_config_filename(const std::string &dir) {
-    return dir + "/config.protobuf";
+    return dir + "/config.json";
 }
 
 static void adjust_image_filenames(machine_config &c, const std::string &dir) {
@@ -73,16 +71,19 @@ machine_config machine_config::load(const std::string &dir) {
         throw std::runtime_error{"unable to open '" + name + "' for reading"};
     }
     try {
-        uint32_t version = 0;
-        ifs >> version;
-        version = boost::endian::little_to_native(version);
-        if (version != archive_version) {
-            throw std::runtime_error("expected config archive_version " + std::to_string(archive_version) + " (got " +
-                std::to_string(version) + ")");
+        auto j = nlohmann::json::parse(ifs);
+        if (!j.contains("archive_version")) {
+            throw std::runtime_error("missing field \"archive_version\"");
         }
-        CartesiMachine::MachineConfig proto;
-        proto.ParseFromIstream(&ifs);
-        c = get_proto_machine_config(proto);
+        auto jv = j["archive_version"];
+        if (!jv.is_number_integer()) {
+            throw std::runtime_error("expected integer field \"archive_version\"");
+        }
+        if (jv.get<int>() != archive_version) {
+            throw std::runtime_error("expected \"archive_version\" " + std::to_string(archive_version) + " (got " +
+                std::to_string(jv.get<int>()) + ")");
+        }
+        ju_get_field(j, std::string("config"), c, "");
         adjust_image_filenames(c, dir);
     } catch (std::exception &e) {
         throw std::runtime_error{e.what()};
@@ -92,14 +93,14 @@ machine_config machine_config::load(const std::string &dir) {
 
 void machine_config::store(const std::string &dir) const {
     auto name = get_config_filename(dir);
-    CartesiMachine::MachineConfig proto;
-    set_proto_machine_config(*this, &proto);
+    nlohmann::json j;
+    j["archive_version"] = archive_version;
+    j["config"] = *this;
     std::ofstream ofs(name, std::ios::binary);
     if (!ofs) {
         throw std::runtime_error{"unable to open '" + name + "' for writing"};
     }
-    ofs << boost::endian::native_to_little(archive_version);
-    proto.SerializeToOstream(&ofs);
+    ofs << j;
 }
 
 } // namespace cartesi

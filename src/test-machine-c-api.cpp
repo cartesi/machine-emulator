@@ -21,13 +21,7 @@
 #include <tuple>
 #include <vector>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#pragma GCC diagnostic ignored "-Wdeprecated-copy"
-#pragma GCC diagnostic ignored "-Wtype-limits"
-#include "cartesi-machine.pb.h"
-#pragma GCC diagnostic pop
+#include <nlohmann/json.hpp>
 
 #include "grpc-machine-c-api.h"
 #include "machine-c-api.h"
@@ -132,7 +126,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_unknown_dir_test, default_machine_fi
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
 
     std::string result = err_msg;
-    std::string origin("unable to open '/unknown_dir/config.protobuf' for reading");
+    std::string origin("unable to open '/unknown_dir/config.json' for reading");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_cstring(err_msg);
@@ -144,7 +138,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_path_test, default_machine_fixt
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
 
     std::string result = err_msg;
-    std::string origin("unable to open '/config.protobuf' for reading");
+    std::string origin("unable to open '/config.json' for reading");
     BOOST_CHECK_EQUAL(origin, result);
 
     cm_delete_cstring(err_msg);
@@ -507,36 +501,35 @@ public:
 protected:
     boost::filesystem::path _machine_config_path;
 
-    std::pair<uint32_t, CartesiMachine::MachineConfig> _load_config() const {
+    auto _load_config() const {
         std::ifstream ifs(_config_dir(), std::ios::binary);
         BOOST_TEST((bool) ifs);
-        uint32_t version = 0;
-        ifs >> version;
-        version = boost::endian::little_to_native(version);
-        CartesiMachine::MachineConfig proto;
-        proto.ParseFromIstream(&ifs);
-        return {version, proto};
+        auto j = nlohmann::json::parse(ifs);
+        return std::make_pair(j["archive_version"], j["config"]);
     }
 
-    void _store_config(uint32_t version, const CartesiMachine::MachineConfig &proto) const {
+    void _store_config(const nlohmann::json &version, const nlohmann::json &config) const {
         std::ofstream ofs(_config_dir(), std::ios::binary);
         BOOST_TEST((bool) ofs);
-        ofs << boost::endian::native_to_little(version);
-        proto.SerializeToOstream(&ofs);
+        nlohmann::json j;
+        j["archive_version"] = version;
+        j["config"] = config;
+        ofs << j;
     }
 
     std::string _config_dir() const {
-        return (_machine_config_path / "config.protobuf").string();
+        return (_machine_config_path / "config.json").string();
     }
 };
 
 // check that we process config version mismatch correctly
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_invalid_config_version_test, serialized_machine_fixture) {
-    auto [version, proto] = _load_config();
-    _store_config(version + 1, proto);
+    auto [version, config] = _load_config();
+    auto v = version.get<int>();
+    _store_config(v + 1, config);
 
     std::stringstream expected_err;
-    expected_err << "expected config archive_version " << version << " (got " << version + 1 << ")";
+    expected_err << "expected \"archive_version\" " << v << " (got " << v + 1 << ")";
 
     char *err_msg{};
     int error_code = cm_load_machine(_machine_config_path.c_str(), &_runtime_config, &_machine, &err_msg);
@@ -583,13 +576,13 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_machine_config_version_test, store_file_fix
     BOOST_REQUIRE(std::filesystem::exists(_broken_machine_path));
 
     // read stored config binary data
-    std::ifstream ifs(_broken_machine_path + "/config.protobuf", std::ios::out | std::fstream::binary);
+    std::ifstream ifs(_broken_machine_path + "/config.json", std::ios::out | std::fstream::binary);
 
     // check stored config version
-    uint32_t version = 0;
-    ifs >> version;
-    version = boost::endian::little_to_native(version);
-    BOOST_CHECK_EQUAL(version, static_cast<uint32_t>(4));
+    auto j = nlohmann::json::parse(ifs);
+    BOOST_REQUIRE(j.contains("archive_version"));
+    BOOST_REQUIRE(j["archive_version"].is_number_integer());
+    BOOST_CHECK_EQUAL(j["archive_version"].get<int>(), 5);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_machine_test, ordinary_machine_fixture) {
@@ -2734,7 +2727,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_grpc_machine_null_dir, grpc_machine_fixture_
     int error_code = cm_load_grpc_machine(m_stub, nullptr, &_runtime_config, &new_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     std::string result = err_msg;
-    std::string origin("unable to open '/config.protobuf' for reading");
+    std::string origin("unable to open '/config.json' for reading");
     BOOST_CHECK_EQUAL(origin, result);
     cm_delete_cstring(err_msg);
 }

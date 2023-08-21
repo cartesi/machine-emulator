@@ -91,8 +91,6 @@ BOOST_PROCESS_LIB_Darwin:=-lpthread
 LIBCARTESI_Darwin=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
 LIBCARTESI_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_Darwin)'
 LIBCARTESI_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
-LIBCARTESI_PROTOBUF_Darwin=libcartesi_protobuf-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
-LIBCARTESI_PROTOBUF_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_PROTOBUF_Darwin)'
 LIBCARTESI_GRPC_Darwin=libcartesi_grpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
 LIBCARTESI_GRPC_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_GRPC_Darwin)'
 LIBCARTESI_GRPC_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
@@ -122,8 +120,6 @@ PROTOBUF_LIB_Linux:=-lprotobuf -lpthread
 LIBCARTESI_Linux=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
 LIBCARTESI_LDFLAGS_Linux:=$(SOLDFLAGS_Linux)
 LIBCARTESI_TESTS_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/..'
-LIBCARTESI_PROTOBUF_Linux=libcartesi_protobuf-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
-LIBCARTESI_PROTOBUF_LDFLAGS_Linux:=$(SOLDFLAGS_Linux)
 LIBCARTESI_GRPC_Linux=libcartesi_grpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
 LIBCARTESI_GRPC_LDFLAGS_Linux:=$(SOLDFLAGS_Linux)
 LIBCARTESI_GRPC_TESTS_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/..'
@@ -153,9 +149,6 @@ LIBCARTESI=$(LIBCARTESI_$(UNAME))
 LIBCARTESI_LDFLAGS=$(LIBCARTESI_LDFLAGS_$(UNAME))
 LIBCARTESI_TESTS_LDFLAGS=$(LIBCARTESI_TESTS_LDFLAGS_$(UNAME))
 LIBCARTESI_LIB=-L. -lcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR)
-LIBCARTESI_PROTOBUF=$(LIBCARTESI_PROTOBUF_$(UNAME))
-LIBCARTESI_PROTOBUF_LDFLAGS=$(LIBCARTESI_PROTOBUF_LDFLAGS_$(UNAME))
-LIBCARTESI_PROTOBUF_LIB=-L. -lcartesi_protobuf-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR)
 CARTESI_EXECUTABLE_LDFLAGS=$(CARTESI_EXECUTABLE_LDFLAGS_$(UNAME))
 
 LIBCARTESI_GRPC=$(LIBCARTESI_GRPC_$(UNAME))
@@ -163,16 +156,15 @@ LIBCARTESI_GRPC_LDFLAGS=$(LIBCARTESI_GRPC_LDFLAGS_$(UNAME))
 LIBCARTESI_GRPC_TESTS_LDFLAGS=$(LIBCARTESI_GRPC_TESTS_LDFLAGS_$(UNAME))
 LIBCARTESI_GRPC_LIB=-L. -lcartesi_grpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR)
 
-CARTESI_LIBS:=$(CRYPTOPP_LIB) $(LIBCARTESI_PROTOBUF_LIB)
-CARTESI_PROTOBUF_LIBS:=$(PROTOBUF_LIB)
-CARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB)
-LUACARTESI_LIBS:=$(CRYPTOPP_LIB) $(LIBCARTESI_LIB)
-LUACARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(LIBCARTESI_GRPC_LIB) $(GRPC_LIB)  $(LIBCARTESI_LIB)
-LUACARTESI_JSONRPC_LIBS:=$(CRYPTOPP_LIB) $(LIBCARTESI_JSONRPC_LIB) $(LIBCARTESI_LIB) $(B64_LIB)
-REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(LIBCARTESI_PROTOBUF_LIB)
-JSONRPC_REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(LIBCARTESI_PROTOBUF_LIB) $(PROTOBUF_LIB) $(B64_LIB)
-REMOTE_CARTESI_MACHINE_PROXY_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(BOOST_CORO_LIB) $(LIBCARTESI_PROTOBUF_LIB) -ldl
-TEST_MACHINE_C_API_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB) $(LIBCARTESI_PROTOBUF_LIB) $(LIBCARTESI_GRPC_LIB) $(BOOST_PROCESS_LIB) $(BOOST_FILESYSTEM_LIB) $(PROTOBUF_LIB)
+LIBCARTESI_LIBS:=$(CRYPTOPP_LIB) $(B64_LIB)
+LIBCARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(PROTOBUF_LIB)
+LUACARTESI_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB)
+LUACARTESI_GRPC_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB) $(LIBCARTESI_GRPC_LIB)
+LUACARTESI_JSONRPC_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB) $(B64_LIB)
+REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(PROTOBUF_LIB) $(B64_LIB)
+JSONRPC_REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(B64_LIB)
+REMOTE_CARTESI_MACHINE_PROXY_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(PROTOBUF_LIB) $(BOOST_CORO_LIB) -ldl
+TEST_MACHINE_C_API_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB) $(LIBCARTESI_GRPC_LIB) $(BOOST_PROCESS_LIB) $(BOOST_FILESYSTEM_LIB) $(B64_LIB)
 HASH_LIBS:=$(CRYPTOPP_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
@@ -318,7 +310,7 @@ all: luacartesi grpc hash c-api jsonrpc-remote-cartesi-machine
 
 .PHONY: all generate use clean test lint format format-lua check-format check-format-lua luacartesi grpc hash c-api compile_flags.txt
 
-CARTESI_OBJS:= \
+LIBCARTESI_OBJS:= \
 	pma-driver.o \
 	clint.o \
 	clint-factory.o \
@@ -337,9 +329,10 @@ CARTESI_OBJS:= \
 	pma.o \
 	machine.o \
 	machine-config.o \
+	json-util.o \
+	base64.o \
 	interpret.o \
 	virtual-machine.o \
-	protobuf-util.o \
 	machine-c-api.o \
 	uarch-machine.o \
 	uarch-step.o \
@@ -353,20 +346,22 @@ LUACARTESI_OBJS:= \
 	clua-machine-util.o \
 	clua.o
 
-CARTESI_PROTOBUF_GEN_OBJS:= \
+PROTOBUF_GEN_OBJS:= \
 	versioning.pb.o \
 	cartesi-machine.pb.o \
 	cartesi-machine-checkin.pb.o
 
-CARTESI_GRPC_GEN_OBJS:= \
+GRPC_GEN_OBJS:= \
 	cartesi-machine.grpc.pb.o \
 	cartesi-machine-checkin.grpc.pb.o
 
-CARTESI_GRPC_OBJS:= \
+LIBCARTESI_GRPC_OBJS:= \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
-	$(CARTESI_GRPC_GEN_OBJS) \
+	$(GRPC_GEN_OBJS) \
+	$(PROTOBUF_GEN_OBJS) \
 	grpc-virtual-machine.o \
+	protobuf-util.o \
 	grpc-machine-c-api.o
 
 LUACARTESI_GRPC_OBJS:= \
@@ -392,9 +387,8 @@ LUACARTESI_JSONRPC_OBJS:= \
 
 ifeq ($(gperf),yes)
 DEFS+=-DGPERF
-CARTESI_LIBS+=-lprofiler
-CARTESI_PROTOBUF_LIBS+=-lprofiler
-CARTESI_GRPC_LIBS+=-lprofiler
+LIBCARTESI_LIBS+=-lprofiler
+LIBCARTESI_GRPC_LIBS+=-lprofiler
 LUACARTESI_LIBS+=-lprofiler
 endif
 
@@ -404,17 +398,11 @@ version:
 so-version:
 	@echo $(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR)
 
-$(LIBCARTESI): $(CARTESI_OBJS) $(LIBCARTESI_PROTOBUF)
-	$(CXX) $(LDFLAGS) $(LIBCARTESI_LDFLAGS) -o $@ $(CARTESI_OBJS) $(CARTESI_LIBS)
+$(LIBCARTESI): $(LIBCARTESI_OBJS)
+	$(CXX) $(LDFLAGS) $(LIBCARTESI_LDFLAGS) -o $@ $(LIBCARTESI_OBJS) $(LIBCARTESI_LIBS)
 
-# $(LIBCARTESI_PROTOBUF) is a dynamic library that exports all symbols
-$(CARTESI_PROTOBUF_GEN_OBJS): CXXFLAGS += -fvisibility=default
-
-$(LIBCARTESI_PROTOBUF): $(CARTESI_PROTOBUF_GEN_OBJS)
-	$(CXX) $(LDFLAGS) $(LIBCARTESI_PROTOBUF_LDFLAGS) -o $@ $^ $(CARTESI_PROTOBUF_LIBS)
-
-$(LIBCARTESI_GRPC): $(CARTESI_GRPC_OBJS) $(LIBCARTESI)
-	$(CXX) $(LDFLAGS) $(LIBCARTESI_GRPC_LDFLAGS) -o $@ $(CARTESI_GRPC_OBJS) $(CARTESI_GRPC_LIBS) $(LIBCARTESI_LIB)
+$(LIBCARTESI_GRPC): $(LIBCARTESI_GRPC_OBJS) $(LIBCARTESI)
+	$(CXX) $(LDFLAGS) $(LIBCARTESI_GRPC_LDFLAGS) -o $@ $(LIBCARTESI_GRPC_OBJS) $(LIBCARTESI_GRPC_LIBS) $(LIBCARTESI_LIB)
 
 cartesi.so: $(LUACARTESI_OBJS) $(LIBCARTESI)
 	$(CXX) $(LDFLAGS) $(SOLDFLAGS) -o $@ $(LUACARTESI_OBJS) $(LUACARTESI_LIBS)
@@ -559,19 +547,21 @@ TEST_MACHINE_C_API_OBJS:= \
     test-machine-c-api.o
 
 PROTO_OBJS:= \
-	$(CARTESI_PROTOBUF_GEN_OBJS) \
-	$(CARTESI_GRPC_GEN_OBJS)
+	$(PROTOBUF_GEN_OBJS) \
+	$(GRPC_GEN_OBJS)
 
 $(PROTO_OBJS): CXXFLAGS +=  -Wno-zero-length-array -Wno-unused-parameter -Wno-deprecated-declarations -Wno-deprecated-copy -Wno-type-limits
 
 PROTO_SOURCES:=$(PROTO_OBJS:.o=.cc)
 
 REMOTE_CARTESI_MACHINE_PROXY_OBJS:= \
-	$(CARTESI_GRPC_GEN_OBJS) \
+	$(GRPC_GEN_OBJS) \
+	$(PROTOBUF_GEN_OBJS) \
 	remote-machine-proxy.o
 
 REMOTE_CARTESI_MACHINE_OBJS:= \
-	$(CARTESI_GRPC_GEN_OBJS) \
+	$(GRPC_GEN_OBJS) \
+	$(PROTOBUF_GEN_OBJS) \
 	slog.o \
 	remote-machine.o \
 	protobuf-util.o \
@@ -593,6 +583,8 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	pma.o \
 	machine.o \
 	machine-config.o \
+	json-util.o \
+	base64.o \
 	interpret.o \
 	uarch-machine.o \
 	uarch-step.o \
@@ -603,7 +595,6 @@ JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	jsonrpc-remote-machine.o \
 	jsonrpc-discover.o \
 	$(BUILDDIR)/lib/mongoose.o \
-	protobuf-util.o \
 	pma-driver.o \
 	clint.o \
 	clint-factory.o \
@@ -698,15 +689,15 @@ tests/test-merkle-tree-hash: $(TEST_MERKLE_TREE_HASH_OBJS)
 
 grpc-interfaces: $(PROTO_SOURCES)
 
-remote-cartesi-machine: $(REMOTE_CARTESI_MACHINE_OBJS) $(LIBCARTESI_PROTOBUF)
+remote-cartesi-machine: $(REMOTE_CARTESI_MACHINE_OBJS)
 	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(REMOTE_CARTESI_MACHINE_OBJS) $(REMOTE_CARTESI_MACHINE_LIBS)
 
 $(BUILDDIR)/lib/mongoose.o: CFLAGS := $(patsubst %-std=c99,%,$(CFLAGS))
 
-jsonrpc-remote-cartesi-machine: $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) $(LIBCARTESI_PROTOBUF)
+jsonrpc-remote-cartesi-machine: $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS)
 	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) $(JSONRPC_REMOTE_CARTESI_MACHINE_LIBS)
 
-remote-cartesi-machine-proxy: $(REMOTE_CARTESI_MACHINE_PROXY_OBJS) $(LIBCARTESI_PROTOBUF)
+remote-cartesi-machine-proxy: $(REMOTE_CARTESI_MACHINE_PROXY_OBJS)
 	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(REMOTE_CARTESI_MACHINE_PROXY_OBJS) $(REMOTE_CARTESI_MACHINE_PROXY_LIBS)
 
 remote-cartesi-machine remote-cartesi-machine-proxy: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
@@ -722,9 +713,9 @@ tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI) $(LIBCARTESI_
 %.pb.cc: $(GRPC_DIR)/%.proto
 	$(PROTOC) -I$(GRPC_DIR) --cpp_out=. $<
 
-machine-config.o protobuf-util.o: $(CARTESI_PROTOBUF_GEN_OBJS)
+protobuf-util.o: $(PROTOBUF_GEN_OBJS)
 
-grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o proxy.o: $(CARTESI_GRPC_GEN_OBJS) $(CARTESI_PROTOBUF_GEN_OBJS)
+grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o proxy.o: $(GRPC_GEN_OBJS) $(PROTOBUF_GEN_OBJS)
 
 machine-c-version.h: ../tools/template/machine-c-version.h.template
 	sed "s|EMULATOR_MARCHID|$(EMULATOR_MARCHID)|g;s|EMULATOR_VERSION_MAJOR|$(EMULATOR_VERSION_MAJOR)|g;s|EMULATOR_VERSION_MINOR|$(EMULATOR_VERSION_MINOR)|g;s|EMULATOR_VERSION_PATCH|$(EMULATOR_VERSION_PATCH)|g;s|EMULATOR_VERSION_LABEL|$(EMULATOR_VERSION_LABEL)|g" $< > $@
@@ -771,7 +762,7 @@ clean-objs:
 	@rm -f *.o *.d
 
 clean-libcartesi: clean-objs
-	@rm -f $(LIBCARTESI) $(LIBCARTESI_PROTOBUF) $(LIBCARTESI_GRPC) cartesi.so cartesi/grpc.so cartesi/jsonrpc.so
+	@rm -f $(LIBCARTESI) $(LIBCARTESI_GRPC) cartesi.so cartesi/grpc.so cartesi/jsonrpc.so
 
 clean-executables:
 	@rm -f jsonrpc-remote-cartesi-machine remote-cartesi-machine remote-cartesi-machine-proxy merkle-tree-hash

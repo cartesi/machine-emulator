@@ -29,6 +29,12 @@ LUA_LIB:=-llua5.4
 LUA_BIN?=lua5.4
 GRPC_DIR:=../lib/grpc-interfaces
 
+# Path to the file containing the uarch ram image to be embedded in the emulator. Override to use a pre-built one.
+UARCH_RAM_IMAGE ?= ../uarch/uarch-ram.bin
+
+# Indicates whether the toolchain required to compile the uarch is present. If not, the one within the linux-env Docker environment  will be used.
+UARCH_TOOLCHAIN_AVAILABLE ?= no
+
 PROTOC:=$(shell which protoc)
 PROTOC_FLAGS:=--experimental_allow_proto3_optional
 GRPC_CPP_PLUGIN:=$(shell which grpc_cpp_plugin)
@@ -327,7 +333,8 @@ LIBCARTESI_OBJS:= \
 	machine-c-api.o \
 	uarch-machine.o \
 	uarch-step.o \
-	uarch-interpret.o
+	uarch-interpret.o \
+	uarch-ram.bin.o
 
 LUACARTESI_OBJS:= \
 	sha3.o \
@@ -412,9 +419,9 @@ test: luacartesi
 test-uarch-for-coverage:
 	$(MAKE) -C ../third-party/riscv-arch-tests LUA='$(LUA)'
 	$(MAKE) -C ../uarch
-	$(LUA) cartesi-machine-tests.lua --test-path="$(CARTESI_TESTS_PATH)" --test=".*csr.*" --uarch-ram-length=0x20000 --uarch-ram-image=../uarch/uarch-ram.bin run_uarch
-	$(LUA) cartesi-machine-tests.lua --test-path="$(CARTESI_TESTS_PATH)" --test=".*csr.*" --uarch-ram-length=0x20000 --uarch-ram-image=../uarch/uarch-ram.bin run_host_and_uarch
-	$(LUA) tests/htif-yield.lua --uarch --uarch-ram-length=0x20000 --uarch-ram-image=../uarch/uarch-ram.bin
+	$(LUA) cartesi-machine-tests.lua --test-path="$(CARTESI_TESTS_PATH)" --test=".*csr.*" run_uarch
+	$(LUA) cartesi-machine-tests.lua --test-path="$(CARTESI_TESTS_PATH)" --test=".*csr.*" run_host_and_uarch
+	$(LUA) tests/htif-yield.lua --uarch
 
 test-hash: hash
 	$(LD_PRELOAD_PREFIX) ./tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
@@ -582,7 +589,8 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	interpret.o \
 	uarch-machine.o \
 	uarch-step.o \
-	uarch-interpret.o
+	uarch-interpret.o \
+	uarch-ram.bin.o
 
 JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	slog.o \
@@ -613,7 +621,8 @@ JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	interpret.o \
 	uarch-machine.o \
 	uarch-step.o \
-	uarch-interpret.o
+	uarch-interpret.o \
+	uarch-ram.bin.o
 
 CYCLE_PERIOD ?= 13
 HASH_DIR = hashes/$(CYCLE_PERIOD)
@@ -742,6 +751,17 @@ sha3.o: ../third-party/tiny_sha3/sha3.c
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+uarch-ram.bin.o: $(UARCH_RAM_IMAGE)
+	xxd -i -n embedded_uarch_ram $< | $(CXX) $(CFLAGS) -c -x c -o $@ - 
+
+../uarch/uarch-ram.bin:
+	if [ "$(UARCH_TOOLCHAIN_AVAILABLE)" = "yes" ]; then \
+		$(MAKE) -C .. uarch; \
+	else \
+		$(MAKE) -C .. uarch-with-linux-env; \
+	fi
+	
 
 clean: clean-auto-generated clean-coverage clean-profile clean-proto-sources clean-tidy clean-libcartesi clean-executables clean-tests
 

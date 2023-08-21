@@ -232,11 +232,11 @@ jobs:
 
       - name: Run test suite with Microarchitecture
         run: |
-          docker run --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine-tests --test-path=${{ env.CARTESI_TESTS_PATH }} --uarch-ram-length=0x20000 --uarch-ram-image=${{ env.CARTESI_UARCH_PATH }} --jobs=$(nproc) run_uarch
+          docker run --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine-tests --test-path=${{ env.CARTESI_TESTS_PATH }} --jobs=$(nproc) run_uarch
 
       - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
         run: |
-          docker run --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine-tests  --test="^rv64ui.*$" --test-path=${{ env.CARTESI_TESTS_PATH }} --uarch-ram-length=0x20000 --uarch-ram-image=${{ env.CARTESI_UARCH_PATH }} --jobs=$(nproc) run_host_and_uarch
+          docker run --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine-tests  --test="^rv64ui.*$" --test-path=${{ env.CARTESI_TESTS_PATH }} --jobs=$(nproc) run_host_and_uarch
 
       - name: Create uarch json logs to be used to test the Solidity based microarchitecture interpreter
         run: |
@@ -378,11 +378,11 @@ jobs:
 
       - name: Run test suite with Microarchitecture
         run: |
-          docker run --platform linux/arm64 --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine-tests --test-path=${{ env.CARTESI_TESTS_PATH }} --uarch-ram-length=0x20000 --uarch-ram-image=${{ env.CARTESI_UARCH_PATH }} --jobs=$(nproc) run_uarch
+          docker run --platform linux/arm64 --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine-tests --test-path=${{ env.CARTESI_TESTS_PATH }} --jobs=$(nproc) run_uarch
 
       - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
         run: |
-          docker run --platform linux/arm64 --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine-tests  --test="^rv64ui%-v%-add.bin$" --test-path=${{ env.CARTESI_TESTS_PATH }} --concurrency=update_merkle_tree:1 --uarch-ram-length=0x20000 --uarch-ram-image=${{ env.CARTESI_UARCH_PATH }} --jobs=$(nproc) run_host_and_uarch
+          docker run --platform linux/arm64 --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine-tests  --test="^rv64ui%-v%-add.bin$" --test-path=${{ env.CARTESI_TESTS_PATH }} --concurrency=update_merkle_tree:1 --jobs=$(nproc) run_host_and_uarch
 
   static-analysis:
     name: Static Analysis

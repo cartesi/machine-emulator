@@ -269,8 +269,8 @@ end
 
 local remote
 
-local function build_machine(type, build_options)
-    if not build_options then build_options = {} end
+local function build_machine_config(config_options)
+    if not config_options then config_options = {} end
 
     -- Create new machine
     local initial_csr_values = get_cpu_csr_test_values()
@@ -278,15 +278,16 @@ local function build_machine(type, build_options)
     local initial_uarch_xreg_values = get_cpu_uarch_xreg_test_values()
     initial_csr_values.x = initial_xreg_values
     local config = {
-        processor = initial_csr_values,
+        processor = config_options.processor or initial_csr_values,
+        rom = { image_filename = test_util.images_path .. "rom.bin" },
         ram = { length = 1 << 20 },
-        uarch = {
+        uarch = config_options.uarch or {
             processor = {
                 x = initial_uarch_xreg_values,
             },
             ram = {
-                length = 1 << 16,
-                image_filename = test_util.create_test_uarch_program(build_options.uarch_program),
+                length = 0x1000,
+                image_filename = test_util.create_test_uarch_program(),
             },
         },
     }
@@ -295,7 +296,11 @@ local function build_machine(type, build_options)
             update_merkle_tree = concurrency_update_merkle_tree,
         },
     }
+    return config, runtime
+end
 
+local function build_machine(type, config_options)
+    local config, runtime = build_machine_config(config_options)
     local new_machine
     if type ~= "local" then
         if not remote then remote = connect() end
@@ -303,11 +308,7 @@ local function build_machine(type, build_options)
     else
         new_machine = assert(cartesi.machine(config, runtime))
     end
-    os.remove(config.uarch.ram.image_filename)
-    initial_csr_values.x = nil
-    initial_csr_values.mvendorid = nil
-    initial_csr_values.marchid = nil
-    initial_csr_values.mimpid = nil
+    if config.uarch.ram and config.uarch.ram.image_filename then os.remove(config.uarch.ram.image_filename) end
     return new_machine
 end
 
@@ -759,37 +760,79 @@ local uarch_proof_step_program = {
     0x0062b023, -- sd	t1,0(t0) [0xca]
 }
 
-test_util.make_do_test(build_machine, machine_type, { uarch_program = uarch_proof_step_program })(
-    "merkle tree must be consistent when stepping alternating with and without proofs",
+test_util.make_do_test(build_machine, machine_type, {
+    uarch = {
+        ram = { length = 1 << 16, image_filename = test_util.create_test_uarch_program(uarch_proof_step_program) },
+    },
+})("merkle tree must be consistent when stepping alternating with and without proofs", function(machine)
+    local t0 = 5
+    local t1 = 6
+    local t2 = 7
+    local uarch_ram_start = 0x70000000
+    local with_proofs = { proofs = true }
+    local without_proofs = {}
+
+    machine:step_uarch(with_proofs) -- auipc	t0,0x0
+    machine:step_uarch(with_proofs) -- addi	t0,t0,256 # 0x100
+    assert(machine:read_uarch_x(t0) == uarch_ram_start + 0x100)
+    machine:step_uarch(with_proofs) -- li	t1,0xca
+    assert(machine:read_uarch_x(t1) == 0xca)
+    machine:step_uarch(with_proofs) -- li	t2,0xfe
+    assert(machine:read_uarch_x(t2) == 0xfe)
+
+    -- sd and assert stored correctly
+    machine:step_uarch(with_proofs) -- sd	t1,0(t0) [0xca]
+    assert(string.unpack("I8", machine:read_memory(uarch_ram_start + 0x100, 8)) == 0xca)
+
+    -- sd and assert stored correctly
+    machine:step_uarch(without_proofs) -- t2,0(t0) [0xfe]
+    assert(string.unpack("I8", machine:read_memory(uarch_ram_start + 0x100, 8)) == 0xfe)
+
+    -- This step should run successfully
+    -- The previous unproven step should have marked the updated pages dirty, allowing
+    -- the tree to be updated correctly in the next proved step
+    machine:step_uarch(with_proofs) -- sd	t1,0(t0) [0xca]
+    assert(string.unpack("I8", machine:read_memory(uarch_ram_start + 0x100, 8)) == 0xca)
+end)
+
+test_util.make_do_test(build_machine, machine_type, { uarch = { ram = { length = 0x1000 } } })(
+    "It should initialize uarch ram with zeros when only uarch ram length is provided",
     function(machine)
-        local t0 = 5
-        local t1 = 6
-        local t2 = 7
-        local uarch_ram_start = 0x70000000
-        local with_proofs = { proofs = true }
-        local without_proofs = {}
+        local m = machine:read_memory(test_util.PMA_UARCH_RAM_START, 0x1000)
+        assert(m == string.rep("\0", 0x1000))
+        assert(machine:read_uarch_ram_length() == 0x1000)
+    end
+)
 
-        machine:step_uarch(with_proofs) -- auipc	t0,0x0
-        machine:step_uarch(with_proofs) -- addi	t0,t0,256 # 0x100
-        assert(machine:read_uarch_x(t0) == uarch_ram_start + 0x100)
-        machine:step_uarch(with_proofs) -- li	t1,0xca
-        assert(machine:read_uarch_x(t1) == 0xca)
-        machine:step_uarch(with_proofs) -- li	t2,0xfe
-        assert(machine:read_uarch_x(t2) == 0xfe)
+test_util.make_do_test(build_machine, machine_type, {
+    uarch = {
+        ram = { length = 0x1000, image_filename = test_util.create_test_uarch_program(uarch_proof_step_program) },
+    },
+})("It should load the uarch ram image from a file", function(machine)
+    local expected_ram_image = ""
+    for _, insn in pairs(uarch_proof_step_program) do
+        expected_ram_image = expected_ram_image .. string.pack("I4", insn)
+    end
+    local zeros = string.rep("\0", 0x1000 - #expected_ram_image)
+    expected_ram_image = expected_ram_image .. zeros
 
-        -- sd and assert stored correctly
-        machine:step_uarch(with_proofs) -- sd	t1,0(t0) [0xca]
-        assert(string.unpack("I8", machine:read_memory(uarch_ram_start + 0x100, 8)) == 0xca)
+    local ram_image = machine:read_memory(test_util.PMA_UARCH_RAM_START, 0x1000)
+    assert(ram_image == expected_ram_image)
+    assert(machine:read_uarch_ram_length() == 0x1000)
+end)
 
-        -- sd and assert stored correctly
-        machine:step_uarch(without_proofs) -- t2,0(t0) [0xfe]
-        assert(string.unpack("I8", machine:read_memory(uarch_ram_start + 0x100, 8)) == 0xfe)
+test_util.make_do_test(build_machine, machine_type, { processor = { mcycle = 1 }, uarch = {} })(
+    "It should use the embedded uarch-ram.bin when the uarch config is not provided",
+    function(machine)
+        assert(machine:read_mcycle() == 1)
 
-        -- This step should run successfully
-        -- The previous unproven step should have marked the updated pages dirty, allowing
-        -- the tree to be updated correctly in the next proved step
-        machine:step_uarch(with_proofs) -- sd	t1,0(t0) [0xca]
-        assert(string.unpack("I8", machine:read_memory(uarch_ram_start + 0x100, 8)) == 0xca)
+        -- Advance one mcycle by running the "big interpreter" compiled to the microarchitecture that is embedded
+        -- in the emulator executable. Note that the config used to create the machine has an empty uarch key;
+        -- therefore, the embedded uarch image is used.
+        machine:run_uarch()
+
+        assert(machine:read_mcycle() == 2)
+        assert(machine:read_uarch_ram_length() == test_util.PMA_UARCH_RAM_LENGTH)
     end
 )
 

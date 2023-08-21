@@ -200,6 +200,7 @@ protected:
         target->htif = source->htif;
         target->rollup = source->rollup;
 
+        target->uarch.processor = source->uarch.processor;
         target->uarch.ram.image_filename = new_cstr(source->uarch.ram.image_filename);
         target->uarch.ram.length = source->uarch.ram.length;
         target->uarch.processor = source->uarch.processor;
@@ -1809,10 +1810,8 @@ public:
         std::ofstream of(_uarch_ram_path, std::ios::binary);
         of.write(static_cast<char *>(static_cast<void *>(&test_uarch_ram)), sizeof(test_uarch_ram));
         of.close();
-        _machine_config.uarch.ram.length = 1 << 20;
         _set_uarch_ram_image(_uarch_ram_path);
-        _machine_config.uarch.ram.length = 1 << 20;
-        _machine_config.uarch.processor.pc = cartesi::PMA_UARCH_RAM_START;
+        _machine_config.uarch.ram.length = cartesi::PMA_UARCH_RAM_LENGTH;
 
         char *err_msg{};
         cm_create_machine(&_machine_config, &_runtime_config, &_machine, &err_msg);

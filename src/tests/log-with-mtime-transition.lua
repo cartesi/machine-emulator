@@ -17,7 +17,7 @@ local config = {
         image_filename = "",
     },
     uarch = {
-        ram = { length = 1 << 20, image_filename = test_util.create_test_uarch_program() },
+        ram = { length = 1 << 19, image_filename = test_util.create_test_uarch_program() },
     },
 }
 local machine <close> = cartesi.machine(config)

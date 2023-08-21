@@ -33,6 +33,9 @@ PROTOC=protoc
 PROTOC_FLAGS=--experimental_allow_proto3_optional
 GRPC_CPP_PLUGIN=$(shell which grpc_cpp_plugin)
 
+# Path to the file containing the uarch ram image to be embedded in the emulator. Override to use a pre-built one.
+UARCH_RAM_IMAGE ?= ../uarch/uarch-ram.bin
+
 # Code instrumentation
 release?=no
 sanitize?=no
@@ -331,7 +334,8 @@ CARTESI_CLUA_OBJS:= \
 	clua.o \
 	clua-i-virtual-machine.o \
 	clua-htif.o \
-	clua-machine-util.o
+	clua-machine-util.o \
+	uarch-ram.bin.o
 
 LUACARTESI_OBJS:= \
 	clua-cartesi.o \
@@ -425,9 +429,9 @@ test: luacartesi
 test-uarch-for-coverage:
 	$(MAKE) -C ../third-party/riscv-arch-tests LUA='$(LUA)'
 	$(MAKE) -C ../uarch
-	$(LUA) cartesi-machine-tests.lua --test-path="$(CARTESI_TESTS_PATH)" --test=".*csr.*" --uarch-ram-length=0x20000 --uarch-ram-image=../uarch/uarch-ram.bin run_uarch
-	$(LUA) cartesi-machine-tests.lua --test-path="$(CARTESI_TESTS_PATH)" --test=".*csr.*" --uarch-ram-length=0x20000 --uarch-ram-image=../uarch/uarch-ram.bin run_host_and_uarch
-	$(LUA) tests/htif-yield.lua --uarch --uarch-ram-length=0x20000 --uarch-ram-image=../uarch/uarch-ram.bin
+	$(LUA) cartesi-machine-tests.lua --test-path="$(CARTESI_TESTS_PATH)" --test=".*csr.*" run_uarch
+	$(LUA) cartesi-machine-tests.lua --test-path="$(CARTESI_TESTS_PATH)" --test=".*csr.*" run_host_and_uarch
+	$(LUA) tests/htif-yield.lua --uarch
 
 test-hash: hash
 	$(LD_PRELOAD_PREFIX) ./tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=tests/test-merkle-tree-hash
@@ -567,13 +571,15 @@ PROTO_SOURCES:=$(PROTO_OBJS:.o=.cc)
 
 REMOTE_CARTESI_MACHINE_OBJS:= \
 	remote-machine.o \
-	slog.o
+	slog.o \
+	uarch-ram.bin.o
 
 JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	jsonrpc-remote-machine.o \
 	jsonrpc-discover.o \
 	mongoose.o \
-	slog.o
+	slog.o \
+	uarch-ram.bin.o
 
 CYCLE_PERIOD ?= 13
 HASH_DIR = hashes/$(CYCLE_PERIOD)
@@ -704,6 +710,17 @@ sha3.o: ../third-party/tiny_sha3/sha3.c
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+uarch-ram.bin.o: $(UARCH_RAM_IMAGE)
+	xxd -i -n embedded_uarch_ram $< | $(CXX) $(CFLAGS) -c -x c -o $@ - 
+
+../uarch/uarch-ram.bin:
+	if [ "$(UARCH_TOOLCHAIN_AVAILABLE)" = "yes" ]; then \
+		$(MAKE) -C .. uarch; \
+	else \
+		$(MAKE) -C .. uarch-with-linux-env; \
+	fi
+	
 
 clean: clean-auto-generated clean-coverage clean-profile clean-proto-sources clean-tidy clean-libcartesi clean-executables clean-tests
 

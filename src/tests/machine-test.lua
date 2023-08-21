@@ -167,22 +167,6 @@ local function build_machine(type, config)
     return new_machine
 end
 
-local function build_uarch_machine(type)
-    local config = {
-        processor = {},
-        ram = { length = 1 << 20 },
-        uarch = {
-            ram = {
-                length = 1 << 20,
-                image_filename = test_util.create_test_uarch_program(),
-            },
-        },
-    }
-    local machine = build_machine(type, config)
-    os.remove(config.uarch.ram.image_filename)
-    return machine
-end
-
 local do_test = test_util.make_do_test(build_machine, machine_type)
 
 print("Testing machine for type " .. machine_type)
@@ -214,31 +198,25 @@ do_test("machine initial hash should match", function(machine)
 end)
 
 print("\n\ntesting root hash after step one")
-test_util.make_do_test(build_uarch_machine, machine_type)(
-    "machine root hash after step one should match",
-    function(machine)
-        -- Get starting root hash
-        local root_hash = machine:get_root_hash()
-        print("Root hash:", test_util.tohex(root_hash))
+do_test("machine root hash after step one should match", function(machine)
+    -- Get starting root hash
+    local root_hash = machine:get_root_hash()
+    print("Root hash:", test_util.tohex(root_hash))
 
-        local calculated_root_hash = test_util.calculate_emulator_hash(machine)
 
-        assert(root_hash == calculated_root_hash, "Initial root hash does not match")
+    local calculated_root_hash = test_util.calculate_emulator_hash(machine)
+    assert(root_hash == calculated_root_hash, "Initial root hash does not match")
 
-        -- Perform step, dump address space to file, calculate emulator root hash
-        -- and check if maches
-        local log_type = {}
-        machine:step_uarch(log_type)
-        local root_hash_step1 = machine:get_root_hash()
-
-        local calculated_root_hash_step1 = test_util.calculate_emulator_hash(machine)
-
-        assert(root_hash_step1 == calculated_root_hash_step1, "hash after first step does not match")
-    end
-)
+    -- Perform step and check if hash maches
+    local log_type = {}
+    machine:step_uarch(log_type)
+    local root_hash_step1 = machine:get_root_hash()
+    local calculated_root_hash_step1 = test_util.calculate_emulator_hash(machine)
+    assert(root_hash_step1 == calculated_root_hash_step1, "hash after first step does not match")
+end)
 
 print("\n\ntesting proof after step one")
-test_util.make_do_test(build_uarch_machine, machine_type)("proof check should pass", function(machine)
+do_test("proof check should pass", function(machine)
     local log_type = {}
     machine:step_uarch(log_type)
     -- find ram memory range
@@ -394,7 +372,7 @@ test_util.make_do_test(build_machine, machine_type, {
 end)
 
 print("\n\n check for relevant register values after step 1")
-test_util.make_do_test(build_uarch_machine, machine_type)("register values should match", function(machine)
+do_test("register values should match", function(machine)
     local uarch_pc_before = machine:read_uarch_pc()
     local uarch_cycle_before = machine:read_uarch_cycle()
 

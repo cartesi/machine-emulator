@@ -10,7 +10,7 @@ RUN apt-get update && \
         libboost1.81-dev libssl-dev \
         ca-certificates pkg-config lua5.4 liblua5.4-dev \
         libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
-        luarocks && \
+        luarocks xxd && \
         update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-15 120 && \
         update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-15 120 && \
     rm -rf /var/lib/apt/lists/*
@@ -37,8 +37,8 @@ FROM --platform=$TARGETPLATFORM dep-builder as builder
 ARG DEB_FILENAME=cartesi-machine.deb
 
 COPY . .
-RUN make -j$(nproc) git_commit=$GIT_COMMIT release=$RELEASE coverage=$COVERAGE sanitize=$SANITIZE && \
-    make -j$(nproc) uarch
+RUN make -j$(nproc) git_commit=$GIT_COMMIT release=$RELEASE coverage=$COVERAGE sanitize=$SANITIZE
+    
 
 FROM --platform=$TARGETPLATFORM builder as debian-packager
 RUN make install-uarch debian-package DESTDIR=$PWD/_install

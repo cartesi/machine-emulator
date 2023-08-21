@@ -99,12 +99,10 @@ local config_base = {
     },
 }
 
-if uarch then
+if uarch_ram_length then config_base.uarch = { ram = { length = uarch_ram_length } } end
+if uarch_ram_image_filename then
     assert(uarch_ram_length, "--uarch-ram-length was not specified")
-    assert(uarch_ram_image_filename, "--uarch-ram-image was not specified")
-    config_base.uarch = {
-        ram = { length = uarch_ram_length, image_filename = uarch_ram_image_filename },
-    }
+    config_base.uarch.ram.image_filename = uarch_ram_image_filename
 end
 
 local YIELD_MANUAL = cartesi.machine.HTIF_YIELD_MANUAL

@@ -40,7 +40,9 @@ enum PMA_ranges : uint64_t {
     PMA_CLINT_LENGTH = EXPAND_UINT64_C(PMA_CLINT_LENGTH_DEF),               ///< Length of CLINT range
     PMA_HTIF_START = EXPAND_UINT64_C(PMA_HTIF_START_DEF),                   ///< Start of HTIF range
     PMA_HTIF_LENGTH = EXPAND_UINT64_C(PMA_HTIF_LENGTH_DEF),                 ///< Length of HTIF range
-    PMA_UARCH_RAM_START = EXPAND_UINT64_C(PMA_UARCH_RAM_START_DEF),         ///< Length of microarchitecture RAM range
+    PMA_UARCH_RAM_START = EXPAND_UINT64_C(PMA_UARCH_RAM_START_DEF),         ///< Start of microarchitecture RAM range
+    PMA_UARCH_RAM_LENGTH = EXPAND_UINT64_C(PMA_UARCH_RAM_LENGTH_DEF),       ///< Length of microarchitecture RAM range
+
     //    PMA_FIRST_VIRTIO_START  = EXPAND_UINT64_C(PMA_FIRST_VIRTIO_START_DEF),    ///< Start of first VIRTIO range
     //    PMA_VIRTIO_LENGTH  = EXPAND_UINT64_C(PMA_VIRTIO_LENGTH_DEF),   ///< Length of each VIRTIO range
     //    PMA_LAST_VIRTIO_END  = EXPAND_UINT64_C(PMA_LAST_VIRTIO_END_DEF),   ///< End of last VIRTIO range

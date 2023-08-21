@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.2] - 2023-08-21
+### Changed
+
+- Made emulator patch version not impact machine root hash
+- Enabled line buffering for machine stdout in non-interactive mode
+
 ## [0.15.1] - 2023-08-17
 ### Fixed
 
@@ -311,7 +317,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [0.2.0]
 - [0.1.0]
 
-[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.15.1...HEAD
+[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.15.2...HEAD
+[0.15.2]: https://github.com/cartesi/machine-emulator/releases/tag/v0.15.2
 [0.15.1]: https://github.com/cartesi/machine-emulator/releases/tag/v0.15.1
 [0.15.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.15.0
 [0.14.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.14.0

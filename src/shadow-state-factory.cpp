@@ -91,14 +91,6 @@ static bool shadow_state_peek(const pma_entry &pma, const machine &m, uint64_t p
     s->htif_ihalt = m.read_htif_ihalt();
     s->htif_iconsole = m.read_htif_iconsole();
     s->htif_iyield = m.read_htif_iyield();
-    s->uarch_cycle = m.read_uarch_cycle();
-    s->uarch_halt_flag = m.read_uarch_halt_flag();
-    s->uarch_pc = m.read_uarch_pc();
-    s->uarch_ram_length = m.get_initial_config().uarch.ram.length;
-    // Copy general-purpose uarch registers
-    for (int i = 0; i < UARCH_X_REG_COUNT; ++i) {
-        s->uarch_x[i] = m.read_uarch_x(i);
-    }
     *page_data = scratch;
     return true;
 }

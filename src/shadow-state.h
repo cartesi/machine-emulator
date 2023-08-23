@@ -69,11 +69,6 @@ struct shadow_state {
     uint64_t htif_ihalt;
     uint64_t htif_iconsole;
     uint64_t htif_iyield;
-    uint64_t uarch_cycle;
-    uint64_t uarch_halt_flag;
-    uint64_t uarch_pc;
-    uint64_t uarch_ram_length;
-    uint64_t uarch_x[UARCH_X_REG_COUNT];
 };
 #pragma pack(pop)
 
@@ -118,10 +113,6 @@ enum class shadow_state_csr {
     htif_ihalt = offsetof(shadow_state, htif_ihalt),
     htif_iconsole = offsetof(shadow_state, htif_iconsole),
     htif_iyield = offsetof(shadow_state, htif_iyield),
-    uarch_cycle = offsetof(shadow_state, uarch_cycle),
-    uarch_halt_flag = offsetof(shadow_state, uarch_halt_flag),
-    uarch_ram_length = offsetof(shadow_state, uarch_ram_length),
-    uarch_pc = offsetof(shadow_state, uarch_pc),
 };
 
 /// \brief Obtains the relative address of a CSR in shadow memory.
@@ -159,21 +150,6 @@ static inline uint64_t shadow_state_get_f_rel_addr(int reg) {
 static inline uint64_t shadow_state_get_f_abs_addr(int reg) {
     return PMA_SHADOW_STATE_START + shadow_state_get_f_rel_addr(reg);
 }
-
-/// \brief Obtains the relative address of a microarchitecture general purpose register
-static inline uint64_t shadow_state_get_uarch_x_rel_addr(int reg) {
-    assert(reg >= 0 && reg < UARCH_X_REG_COUNT);
-    return offsetof(shadow_state, uarch_x) + reg * sizeof(uint64_t);
-}
-
-/// \brief Obtains the absolute address of a microarchitecture general purpose register
-static inline uint64_t shadow_state_get_uarch_x_abs_addr(int reg) {
-    return PMA_SHADOW_STATE_START + shadow_state_get_uarch_x_rel_addr(reg);
-}
-
-/// \brief Absolute address of shadow_csr::uarch_ram_length. This symbol is used by the microarchitecture boostrap to
-/// detect the RAM size
-extern "C" const uint64_t shadow_state_uarch_ram_length_abs_addr;
 
 } // namespace cartesi
 

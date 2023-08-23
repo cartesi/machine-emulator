@@ -14,17 +14,25 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <cinttypes>
+#ifndef SHADOW_UARCH_STATE_FACTORY_H
+#define SHADOW_UARCH_STATE_FACTORY_H
 
-#include "i-device-state-access.h"
-#include "pma-constants.h"
-#include "pma-driver.h"
-#include "riscv-constants.h"
-#include "shadow-state.h"
-#include "strict-aliasing.h"
+#include <cstdint>
+
+/// \file
+/// \brief Shadow uarch state device.
+
+#include "pma.h"
+#include "shadow-uarch-state.h"
 
 namespace cartesi {
 
-const pma_driver shadow_state_driver = {"SHADOW STATE", device_read_error, device_write_error};
+/// \brief Creates a PMA entry for the shadow uarch state device
+/// \param start Start address for memory range.
+/// \param length Length of memory range.
+/// \returns Corresponding PMA entry
+pma_entry make_shadow_uarch_state_pma_entry(uint64_t start, uint64_t length);
 
 } // namespace cartesi
+
+#endif

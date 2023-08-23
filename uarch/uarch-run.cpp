@@ -19,13 +19,16 @@
 #include "uarch-runtime.h" // must be included first, because of assert
 
 #include "interpret.h"
+#include "shadow-uarch-state.h"
 #include "uarch-machine-state-access.h"
 #include <cinttypes>
 
 using namespace cartesi;
 
 static void set_uarch_halt_flag() {
-    volatile uint64_t *uarch_halt_flag = reinterpret_cast<uint64_t *>(shadow_state_csr::uarch_halt_flag);
+
+    volatile uint64_t *uarch_halt_flag =
+        reinterpret_cast<uint64_t *>(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::halt_flag));
     *uarch_halt_flag = uarch_halt_flag_halt_value;
 }
 

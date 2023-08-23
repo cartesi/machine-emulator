@@ -49,9 +49,9 @@ local ZERO_PAGE = string.rep("\x00", PAGE_SIZE)
 
 test_util.uarch_programs = {
     halt = {
-        0x32800293, --   li t0, UARCH_HALT_FLAG_SHADDOW_ADDR_DEF (0x328)
-        0x00100313, --   li	t1,1           UARCH_MMIO_HALT_VALUE_DEF
-        0x0062b023, --   sd	t1,0(t0)       Halt uarch
+        0x700002b7, --   li	t0,UARCH_HALT_FLAG_SHADDOW_ADDR  Address of uarch halt flag
+        0x00100313, --   li	t1,1                             UARCH_MMIO_HALT_VALUE
+        0x0062b023, --   sd	t1,0(t0)                         Halt uarch
     },
 }
 

@@ -321,6 +321,8 @@ LIBCARTESI_OBJS:= \
 	shadow-tlb.o \
 	shadow-tlb-factory.o \
 	sha3.o \
+	shadow-uarch-state.o \
+	shadow-uarch-state-factory.o \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
 	pma.o \
@@ -579,6 +581,8 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	shadow-tlb.o \
 	shadow-tlb-factory.o \
 	sha3.o \
+	shadow-uarch-state.o \
+	shadow-uarch-state-factory.o \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
 	pma.o \
@@ -613,6 +617,8 @@ JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	shadow-tlb.o \
 	shadow-tlb-factory.o \
 	sha3.o \
+	shadow-uarch-state.o \
+	shadow-uarch-state-factory.o \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
 	pma.o \

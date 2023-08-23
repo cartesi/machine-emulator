@@ -310,40 +310,43 @@ private:
     }
 
     uint64_t do_read_x(int reg) {
-        return check_read_word(shadow_state_get_uarch_x_abs_addr(reg), "uarch.x");
+        return check_read_word(shadow_uarch_state_get_x_abs_addr(reg), "uarch.x");
     }
 
     void do_write_x(int reg, uint64_t val) {
         assert(reg != 0);
-        check_write_word(shadow_state_get_uarch_x_abs_addr(reg), val, "uarch.x");
+        check_write_word(shadow_uarch_state_get_x_abs_addr(reg), val, "uarch.x");
     }
 
     uint64_t do_read_pc() {
-        return check_read_word(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_pc), "uarch.pc");
+        return check_read_word(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::pc), "uarch.pc");
     }
 
     void do_write_pc(uint64_t val) {
-        check_write_word(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_pc), val, "uarch.pc");
+        check_write_word(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::pc), val, "uarch.pc");
     }
 
     uint64_t do_read_cycle() {
-        return check_read_word(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_cycle), "uarch.uarch_cycle");
+        return check_read_word(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::cycle), "uarch.uarch_cycle");
     }
 
     void do_write_cycle(uint64_t val) {
-        check_write_word(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_cycle), val, "uarch.cycle");
+        check_write_word(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::cycle), val, "uarch.cycle");
     }
 
     bool do_read_halt_flag() {
-        return check_read_word(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_halt_flag), "uarch.halt_flag");
+        return check_read_word(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::halt_flag),
+            "uarch.halt_flag");
     }
 
     void do_set_halt_flag() {
-        check_write_word(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_halt_flag), true, "uarch.halt_flag");
+        check_write_word(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::halt_flag), true,
+            "uarch.halt_flag");
     }
 
     void do_reset_halt_flag() {
-        check_write_word(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_halt_flag), false, "uarch.halt_flag");
+        check_write_word(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::halt_flag), false,
+            "uarch.halt_flag");
     }
 
     uint64_t do_read_word(uint64_t paddr) {

@@ -467,7 +467,7 @@ enum CARTESI_init : uint64_t {
     TOHOST_INIT = UINT64_C(0),                                      ///< Initial value for tohost
     MENVCFG_INIT = UINT64_C(0),                                     ///< Initial value for menvcfg
     SENVCFG_INIT = UINT64_C(0),                                     ///< Initial value for senvcfg
-    UARCH_PC_INIT = UINT64_C(0x70000000),                           ///< Initial value for microarchitecture pc
+    UARCH_PC_INIT = static_cast<uint64_t>(PMA_UARCH_RAM_START_DEF), ///< Initial value for microarchitecture pc
     UARCH_CYCLE_INIT = UINT64_C(0),                                 ///< Initial value for microarchitecture cycle
     MHARTID_INIT = UINT64_C(0),                                     ///< Initial mhartid
     FDTADDR_INIT = PMA_DTB_START,                                   ///< Initial FDT address

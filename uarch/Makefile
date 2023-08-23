@@ -67,6 +67,7 @@ EMULATOR_SOURCES=\
 	htif.cpp \
 	shadow-tlb.cpp \
 	shadow-state.cpp \
+	shadow-uarch-state.cpp \
 	shadow-pmas.cpp \
 	clint.cpp
 

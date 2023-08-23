@@ -23,8 +23,9 @@ EMULATOR_VERSION_PATCH=2
 EMULATOR_VERSION_LABEL=
 
 UNAME:=$(shell uname)
+UNAME_ARCH=$(shell uname -m)
 
-BUILDDIR ?= $(abspath ../build/$(UNAME)_$(shell uname -m))
+BUILDDIR ?= $(abspath ../build/$(UNAME)_$(UNAME_ARCH))
 
 LUA_INC:=$(shell pkg-config --cflags-only-I lua5.4)
 LUA_LIB:=-llua5.4
@@ -64,8 +65,6 @@ SOLDFLAGS_Darwin+=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
 ifneq (,$(wildcard /usr/local/opt/boost/lib))
 BOOST_LIB_DIR_Darwin=-L/usr/local/opt/boost/lib
 BOOST_INC_Darwin=-I/usr/local/opt/boost/include
-CRYPTOPP_LIB_Darwin:=-L/usr/local/opt/cryptopp/lib -lcryptopp
-CRYPTOPP_INC_Darwin:=-I/usr/local/opt/cryptopp/include
 NLOHMANN_JSON_INC_Darwin:=-I/usr/local/opt/nlohmann-json/include
 B64_LIB_Darwin:=-L/usr/local/opt/libb64/lib -lb64
 B64_INC_Darwin:=-I/usr/local/opt/libb64/include
@@ -75,8 +74,6 @@ PROTOBUF_LIB_Darwin:=-L/usr/local/opt/protobuf/lib -lprotobuf -lpthread
 else # Macports installation
 BOOST_LIB_DIR_Darwin=-L/opt/local/lib
 BOOST_INC_Darwin=-I/opt/local/include
-CRYPTOPP_LIB_Darwin:=-L/opt/local/lib -lcryptopp
-CRYPTOPP_INC_Darwin:=-I/opt/local/include
 B64_LIB_Darwin:=-L/opt/local/lib -lb64
 B64_INC_Darwin:=-I/opt/local/include
 GRPC_INC_Darwin=-I/opt/local/include
@@ -112,8 +109,6 @@ BOOST_PROCESS_LIB_Linux:=-lpthread
 BOOST_INC_Linux=
 B64_LIB_Linux:=-lb64
 B64_INC_Linux:=
-CRYPTOPP_LIB_Linux:=-lcryptopp
-CRYPTOPP_INC_Linux:=
 GRPC_INC_Linux:=
 GRPC_LIB_Linux:=-lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
 PROTOBUF_LIB_Linux:=-lprotobuf -lpthread
@@ -138,8 +133,13 @@ BOOST_FILESYSTEM_LIB=$(BOOST_FILESYSTEM_LIB_$(UNAME))
 BOOST_INC=$(BOOST_INC_$(UNAME))
 B64_LIB=$(B64_LIB_$(UNAME))
 B64_INC=$(B64_INC_$(UNAME))
-CRYPTOPP_LIB=$(CRYPTOPP_LIB_$(UNAME))
-CRYPTOPP_INC=$(CRYPTOPP_INC_$(UNAME))
+XKCP_LIB=-L../third-party/xkcp/XKCP-f7fe32a80f0c6600d1c5db50392a43265d3bba9a/bin
+ifeq ($(UNAME_ARCH),x86_64)
+XKCP_LIB+=-lXKCP_generic64 -lXKCP_SSSE3 -lXKCP_AVX -lXKCP_AVX2
+else
+XKCP_LIB+=-lXKCP
+endif
+XKCP_INC=-I../third-party/xkcp/XKCP-f7fe32a80f0c6600d1c5db50392a43265d3bba9a/bin/generic64/libXKCP.a.headers
 NLOHMANN_JSON_INC=$(NLOHMANN_JSON_INC_$(UNAME))
 MONGOOSE_INC=-I$(BUILDDIR)/include
 GRPC_LIB=$(GRPC_LIB_$(UNAME))
@@ -156,16 +156,16 @@ LIBCARTESI_GRPC_LDFLAGS=$(LIBCARTESI_GRPC_LDFLAGS_$(UNAME))
 LIBCARTESI_GRPC_TESTS_LDFLAGS=$(LIBCARTESI_GRPC_TESTS_LDFLAGS_$(UNAME))
 LIBCARTESI_GRPC_LIB=-L. -lcartesi_grpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR)
 
-LIBCARTESI_LIBS:=$(CRYPTOPP_LIB) $(B64_LIB)
-LIBCARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(PROTOBUF_LIB)
-LUACARTESI_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB)
-LUACARTESI_GRPC_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB) $(LIBCARTESI_GRPC_LIB)
-LUACARTESI_JSONRPC_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB) $(B64_LIB)
-REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(PROTOBUF_LIB) $(B64_LIB)
-JSONRPC_REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(B64_LIB)
-REMOTE_CARTESI_MACHINE_PROXY_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(PROTOBUF_LIB) $(BOOST_CORO_LIB) -ldl
-TEST_MACHINE_C_API_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB) $(LIBCARTESI_GRPC_LIB) $(BOOST_PROCESS_LIB) $(BOOST_FILESYSTEM_LIB) $(B64_LIB)
-HASH_LIBS:=$(CRYPTOPP_LIB)
+LIBCARTESI_LIBS:=$(XKCP_LIB) $(B64_LIB)
+LIBCARTESI_GRPC_LIBS:=$(XKCP_LIB) $(GRPC_LIB) $(PROTOBUF_LIB)
+LUACARTESI_LIBS:=$(LIBCARTESI_LIB) $(XKCP_LIB)
+LUACARTESI_GRPC_LIBS:=$(LIBCARTESI_LIB) $(XKCP_LIB) $(LIBCARTESI_GRPC_LIB)
+LUACARTESI_JSONRPC_LIBS:=$(LIBCARTESI_LIB) $(XKCP_LIB) $(B64_LIB)
+REMOTE_CARTESI_MACHINE_LIBS:=$(XKCP_LIB) $(GRPC_LIB) $(PROTOBUF_LIB) $(B64_LIB)
+JSONRPC_REMOTE_CARTESI_MACHINE_LIBS:=$(XKCP_LIB) $(B64_LIB)
+REMOTE_CARTESI_MACHINE_PROXY_LIBS:=$(XKCP_LIB) $(GRPC_LIB) $(PROTOBUF_LIB) $(BOOST_CORO_LIB) -ldl
+TEST_MACHINE_C_API_LIBS:=$(LIBCARTESI_LIB) $(XKCP_LIB) $(LIBCARTESI_GRPC_LIB) $(BOOST_PROCESS_LIB) $(BOOST_FILESYSTEM_LIB) $(B64_LIB)
+HASH_LIBS:=$(XKCP_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
 
@@ -173,7 +173,7 @@ WARNS=-W -Wall -pedantic
 
 # Place our include directories before the system's
 INCS=-I../lib/machine-emulator-defines -I../third-party/llvm-flang-uint128 \
-	$(LUA_INC) $(CRYPTOPP_INC) $(NLOHMANN_JSON_INC) $(MONGOOSE_INC) $(B64_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
+	$(LUA_INC) $(XKCP_INC) $(NLOHMANN_JSON_INC) $(MONGOOSE_INC) $(B64_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
 
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS
@@ -255,11 +255,9 @@ PGO_WORKLOAD=\
 	dhrystone 500000; \
 	whetstone 2500
 
-# We ignore xkcp-keccak-256-hasher.cpp because it is missing a header file.
-# The file is not being compiled but we want to keep it for reference.
 # We ignore test-machine-c-api.cpp cause it takes too long.
-LINTER_IGNORE_SOURCES=xkcp-keccak-256-hasher.cpp test-machine-c-api.cpp
-LINTER_IGNORE_HEADERS=%.pb.h xkcp-keccak-256-hasher.h
+LINTER_IGNORE_SOURCES=test-machine-c-api.cpp
+LINTER_IGNORE_HEADERS=%.pb.h
 LINTER_SOURCES=$(filter-out $(LINTER_IGNORE_SOURCES),$(strip $(wildcard *.cpp) $(wildcard *.c)))
 LINTER_HEADERS=$(filter-out $(LINTER_IGNORE_HEADERS),$(strip $(wildcard *.hpp) $(wildcard *.h)))
 
@@ -332,6 +330,7 @@ LIBCARTESI_OBJS:= \
 	json-util.o \
 	base64.o \
 	interpret.o \
+	xkcp-keccak-256-hasher.o \
 	virtual-machine.o \
 	machine-c-api.o \
 	uarch-machine.o \
@@ -344,6 +343,7 @@ LUACARTESI_OBJS:= \
 	clua-machine.o \
 	clua-htif.o \
 	clua-machine-util.o \
+	xkcp-keccak-256-hasher.o \
 	clua.o
 
 PROTOBUF_GEN_OBJS:= \
@@ -358,6 +358,7 @@ GRPC_GEN_OBJS:= \
 LIBCARTESI_GRPC_OBJS:= \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
+	xkcp-keccak-256-hasher.o \
 	$(GRPC_GEN_OBJS) \
 	$(PROTOBUF_GEN_OBJS) \
 	grpc-virtual-machine.o \
@@ -534,17 +535,20 @@ c-api: $(LIBCARTESI) $(LIBCARTESI_GRPC) tests/test-machine-c-api
 MERKLE_TREE_HASH_OBJS:= \
 	back-merkle-tree.o \
 	pristine-merkle-tree.o \
-	merkle-tree-hash.o
+	merkle-tree-hash.o \
+	xkcp-keccak-256-hasher.o
 
 TEST_MERKLE_TREE_HASH_OBJS:= \
 	back-merkle-tree.o \
 	pristine-merkle-tree.o \
 	complete-merkle-tree.o \
 	full-merkle-tree.o \
-	test-merkle-tree-hash.o
+	test-merkle-tree-hash.o \
+	xkcp-keccak-256-hasher.o
 
 TEST_MACHINE_C_API_OBJS:= \
-    test-machine-c-api.o
+    test-machine-c-api.o \
+	xkcp-keccak-256-hasher.o
 
 PROTO_OBJS:= \
 	$(PROTOBUF_GEN_OBJS) \
@@ -586,6 +590,7 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	json-util.o \
 	base64.o \
 	interpret.o \
+	xkcp-keccak-256-hasher.o \
 	uarch-machine.o \
 	uarch-step.o \
 	uarch-interpret.o
@@ -616,6 +621,7 @@ JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	machine.o \
 	machine-config.o \
 	interpret.o \
+	xkcp-keccak-256-hasher.o \
 	uarch-machine.o \
 	uarch-step.o \
 	uarch-interpret.o

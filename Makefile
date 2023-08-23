@@ -78,6 +78,7 @@ DEPDIRS := $(addprefix $(DEPDIR)/,mongoose-7.9)
 DEPCLEAN := $(addsuffix .clean,$(DEPDIRS))
 COREPROTO := lib/grpc-interfaces/core.proto
 LUASOCKET_VERSION ?= 5b18e475f38fcf28429b1cc4b17baee3b9793a62
+XKCP_VERSION=f7fe32a80f0c6600d1c5db50392a43265d3bba9a
 
 # Docker image tag
 TAG ?= devel
@@ -130,10 +131,13 @@ clean: $(SUBCLEAN)
 depclean: $(DEPCLEAN) clean
 	rm -rf $(BUILDDIR)
 	$(MAKE) -C third-party/riscv-arch-tests depclean
+	$(MAKE) -C third-party/xkcp depclean
 
 distclean:
 	rm -rf $(BUILDBASE) $(DOWNLOADDIR) $(DEPDIRS)
+	rm -rf third-party/xkcp/XKCP-$(XKCP_VERSION)
 	$(MAKE) -C third-party/riscv-arch-tests depclean
+	$(MAKE) -C third-party/xkcp depclean
 	$(MAKE) clean
 
 $(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH) $(UARCH_INSTALL_PATH):
@@ -168,11 +172,13 @@ help:
 $(DOWNLOADDIR):
 	@mkdir -p $(DOWNLOADDIR)
 	@wget -nc -i $(DEPDIR)/dependencies -P $(DOWNLOADDIR)
-	@cd $(DEPDIR) && shasum -c shasumfile
+	@cd $(DEPDIR) && sha1sum -c shasumfile
+	tar -C third-party/xkcp -xzf third-party/downloads/$(XKCP_VERSION).tar.gz
 
 downloads: $(DOWNLOADDIR)
 
 dep: $(DEPBINS)
+	$(MAKE) -C third-party/xkcp
 	@rm -f $(BUILDDIR)/lib/*.a
 
 submodules:

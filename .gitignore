@@ -5,10 +5,10 @@
 *.deb
 
 build
-third-party/cryptopp-CRYPTOPP_7_0_0
 third-party/downloads
 third-party/grpc
 third-party/mongoose-7.9
+third-party/xkcp/XKCP-*
 src/remote-cartesi-machine-proxy
 src/remote-cartesi-machine
 src/jsonrpc-remote-cartesi-machine

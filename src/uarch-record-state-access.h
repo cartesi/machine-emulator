@@ -227,44 +227,44 @@ private:
     }
 
     uint64_t do_read_x(int reg) const {
-        return log_read(shadow_state_get_uarch_x_abs_addr(reg), m_us.x[reg], "uarch.x");
+        return log_read(shadow_uarch_state_get_x_abs_addr(reg), m_us.x[reg], "uarch.x");
     }
 
     void do_write_x(int reg, uint64_t val) {
         assert(reg != 0);
-        return log_before_write_write_and_update(shadow_state_get_uarch_x_abs_addr(reg), m_us.x[reg], val, "uarch.x");
+        return log_before_write_write_and_update(shadow_uarch_state_get_x_abs_addr(reg), m_us.x[reg], val, "uarch.x");
     }
 
     uint64_t do_read_pc() const {
-        return log_read(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_pc), m_us.pc, "uarch.pc");
+        return log_read(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::pc), m_us.pc, "uarch.pc");
     }
 
     void do_write_pc(uint64_t val) {
-        return log_before_write_write_and_update(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_pc), m_us.pc,
-            val, "uarch.pc");
+        return log_before_write_write_and_update(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::pc),
+            m_us.pc, val, "uarch.pc");
     }
 
     uint64_t do_read_cycle() const {
-        return log_read(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_cycle), m_us.cycle, "uarch.cycle");
+        return log_read(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::cycle), m_us.cycle, "uarch.cycle");
     }
 
     void do_write_cycle(uint64_t val) {
-        return log_before_write_write_and_update(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_cycle),
+        return log_before_write_write_and_update(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::cycle),
             m_us.cycle, val, "uarch.cycle");
     }
 
     bool do_read_halt_flag() const {
-        return log_read(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_halt_flag), m_us.halt_flag,
+        return log_read(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::halt_flag), m_us.halt_flag,
             "uarch.halt_flag");
     }
 
     void do_set_halt_flag() {
-        return log_before_write_write_and_update(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_halt_flag),
+        return log_before_write_write_and_update(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::halt_flag),
             m_us.halt_flag, true, "uarch.halt_flag");
     }
 
     void do_reset_halt_flag() {
-        return log_before_write_write_and_update(shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_halt_flag),
+        return log_before_write_write_and_update(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::halt_flag),
             m_us.halt_flag, false, "uarch.halt_flag");
     }
 

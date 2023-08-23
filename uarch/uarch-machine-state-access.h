@@ -26,6 +26,7 @@
 #include "pma-constants.h"
 #include "riscv-constants.h"
 #include "shadow-state.h"
+#include "shadow-uarch-state.h"
 #include "shadow-pmas.h"
 #include "uarch-constants.h"
 #include "uarch-defines.h"

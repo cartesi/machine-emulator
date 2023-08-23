@@ -20,11 +20,16 @@
 #include "pma-constants.h"
 #include "pma-driver.h"
 #include "riscv-constants.h"
-#include "shadow-state.h"
+#include "shadow-uarch-state.h"
 #include "strict-aliasing.h"
 
 namespace cartesi {
 
-const pma_driver shadow_state_driver = {"SHADOW STATE", device_read_error, device_write_error};
+static constexpr uint64_t uarch_ram_length_abs_addr =
+    shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::ram_length);
+
+extern "C" const uint64_t shadow_uarch_state_uarch_ram_length_abs_addr = uarch_ram_length_abs_addr;
+
+const pma_driver shadow_uarch_state_driver = {"SHADOW UARCH", device_read_error, device_write_error};
 
 } // namespace cartesi

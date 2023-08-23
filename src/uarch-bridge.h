@@ -22,6 +22,7 @@
 #include "machine-state.h"
 #include "riscv-constants.h"
 #include "shadow-state.h"
+#include "shadow-uarch-state.h"
 #include "strict-aliasing.h"
 #include "uarch-constants.h"
 #include "uarch-state.h"
@@ -48,12 +49,10 @@ public:
         if (try_write_tlb(s, paddr, data)) {
             return;
         }
+        if (try_write_uarch_state(us, paddr, data)) {
+            return;
+        }
         switch (static_cast<shadow_state_csr>(paddr)) {
-            case shadow_state_csr::uarch_halt_flag:
-                if (data != uarch_halt_flag_halt_value) {
-                    throw std::runtime_error("invalid value written  microarchitecture halt flag");
-                }
-                return uarch_halt(us);
             case shadow_state_csr::pc:
                 s.pc = data;
                 return;
@@ -181,9 +180,10 @@ public:
         if (try_read_pma(s, paddr, &data)) {
             return data;
         }
+        if (try_read_uarch_state(us, paddr, &data)) {
+            return data;
+        }
         switch (static_cast<shadow_state_csr>(paddr)) {
-            case shadow_state_csr::uarch_halt_flag:
-                return us.halt_flag;
             case shadow_state_csr::pc:
                 return s.pc;
             case shadow_state_csr::fcsr:
@@ -256,12 +256,9 @@ public:
                 return s.htif.iconsole;
             case shadow_state_csr::htif_iyield:
                 return s.htif.iyield;
-            case shadow_state_csr::uarch_ram_length:
-                return us.ram.get_length();
             default:
                 break;
         }
-
         switch (static_cast<uarch_mmio_address>(paddr)) {
             case uarch_mmio_address::putchar:
                 return 0;
@@ -276,8 +273,6 @@ public:
     /// \returns The register name, if paddr maps to a register, or nullptr otherwise.
     static const char *get_register_name(uint64_t paddr) {
         switch (static_cast<shadow_state_csr>(paddr)) {
-            case shadow_state_csr::uarch_halt_flag:
-                return "uarch.halt_flag";
             case shadow_state_csr::pc:
                 return "pc";
             case shadow_state_csr::fcsr:
@@ -350,19 +345,26 @@ public:
                 return "htif.iconsole";
             case shadow_state_csr::htif_iyield:
                 return "htif.iyield";
-            case shadow_state_csr::uarch_ram_length:
-                return "uarch.ram_length";
             default:
                 break;
         }
-
         switch (static_cast<uarch_mmio_address>(paddr)) {
             case uarch_mmio_address::putchar:
                 return "uarch.putchar";
             case uarch_mmio_address::abort:
                 return "uarch.abort";
         }
-
+        if (paddr >= PMA_SHADOW_UARCH_STATE_START &&
+            paddr < PMA_SHADOW_UARCH_STATE_START + PMA_SHADOW_UARCH_STATE_LENGTH) {
+            switch (static_cast<shadow_uarch_state_csr>(paddr - PMA_SHADOW_UARCH_STATE_START)) {
+                case shadow_uarch_state_csr::halt_flag:
+                    return "uarch.halt_flag";
+                case shadow_uarch_state_csr::ram_length:
+                    return "uarch.ram_length";
+                default:
+                    break;
+            }
+        }
         if (paddr >= shadow_state_get_x_abs_addr(0) && paddr <= shadow_state_get_x_abs_addr(X_REG_COUNT - 1) &&
             (paddr & 0b111) == 0) {
             return "x";
@@ -644,6 +646,51 @@ private:
                     return false;
             }
         }
+    }
+
+    /// \brief Tries to read a uarch CSR
+    /// \param us uarch state.
+    /// \param paddr Absolute address of the TLB entry fieldwithin shadow TLB range
+    /// \param data Pointer to word receiving value.
+    /// \return true if the register was successfully read
+    static bool try_read_uarch_state(uarch_state &us, uint64_t paddr, uint64_t *data) {
+        if (paddr < PMA_SHADOW_UARCH_STATE_START ||
+            paddr >= PMA_SHADOW_UARCH_STATE_START + PMA_SHADOW_UARCH_STATE_LENGTH) {
+            return false;
+        }
+        switch (static_cast<shadow_uarch_state_csr>(paddr - PMA_SHADOW_UARCH_STATE_START)) {
+            case shadow_uarch_state_csr::halt_flag:
+                *data = us.halt_flag;
+                return true;
+            case shadow_uarch_state_csr::ram_length:
+                *data = us.ram.get_length();
+                return true;
+            default:
+                break;
+        }
+        return false;
+    }
+
+    /// \brief Tries to write a uarch CSR
+    /// \param us uarch state.
+    /// \param paddr Absolute address of the PMA entry property within shadow PMAs range
+    /// \param data Data to write
+    /// \return true if the register was successfully written
+    static bool try_write_uarch_state(uarch_state &us, uint64_t paddr, uint64_t data) {
+        if (paddr < PMA_SHADOW_UARCH_STATE_START ||
+            paddr >= PMA_SHADOW_UARCH_STATE_START + PMA_SHADOW_UARCH_STATE_LENGTH) {
+            return false;
+        }
+
+        if (static_cast<shadow_uarch_state_csr>(paddr - PMA_SHADOW_UARCH_STATE_START) ==
+            shadow_uarch_state_csr::halt_flag) {
+            if (data != uarch_halt_flag_halt_value) {
+                throw std::runtime_error("invalid value written microarchitecture halt flag");
+            }
+            uarch_halt(us);
+            return true;
+        }
+        return false;
     }
 
     /// \brief Obtain PMA entry that covers a given physical memory region

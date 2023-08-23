@@ -19,8 +19,14 @@
 
 #include "pma-defines.h"
 
-/// \brief Address of uarch halt flag in shadow
-#define UARCH_HALT_FLAG_SHADDOW_ADDR_DEF (PMA_SHADOW_STATE_START_DEF + 0x328)
+/// \brief Start address of the entire uarch memory range: shadow and ram
+#define UARCH_STATE_START_ADDRESS_DEF PMA_SHADOW_UARCH_STATE_START_DEF
+
+/// \brief Log2 size of the entire uarch memory range: shadow and ram
+#define UARCH_STATE_LOG2_SIZE_DEF 22
+
+/// \brief The address of uarch halt flag is the first dword in shadow uarch state
+#define UARCH_HALT_FLAG_SHADDOW_ADDR_DEF PMA_SHADOW_UARCH_STATE_START_DEF
 
 /// \brief The value that halts the microarchitecture when written to UARCH_HALT_FLAG_SHADDOW_ADDR_DEF
 #define UARCH_HALT_FLAG_HALT_VALUE_DEF 1

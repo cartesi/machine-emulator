@@ -53,12 +53,13 @@ private:
     //    machine.h. Maybe the compiler can do a good job we we are
     //    not constantly going through the extra indirection. We
     //    should test this.
-    mutable machine_state m_s;          ///< Opaque machine state
-    mutable machine_merkle_tree m_t;    ///< Merkle tree of state
-    std::vector<pma_entry *> m_pmas;    ///< Combines uarch PMAs and machine state PMAs for use with Merkle tree.
-    machine_config m_c;                 ///< Copy of initialization config
-    uarch_machine m_uarch;              ///< Microarchitecture machine
-    machine_runtime_config m_r;         ///< Copy of initialization runtime config
+
+    mutable machine_state m_s;       ///< Opaque machine state
+    mutable machine_merkle_tree m_t; ///< Merkle tree of state
+    std::vector<pma_entry *> m_pmas; ///< List of pmas, including uarch ram. Used to compute the machine hash
+    machine_config m_c;              ///< Copy of initialization config
+    uarch_machine m_uarch;           ///< Microarchitecture machine
+    machine_runtime_config m_r;      ///< Copy of initialization runtime config
     machine_memory_range_descrs m_mrds; ///< List of memory ranges returned by get_memory_ranges().
 
     static const pma_entry::flags m_dtb_flags;                   ///< PMA flags used for DTB

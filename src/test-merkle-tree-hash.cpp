@@ -26,14 +26,14 @@
 
 #include "back-merkle-tree.h"
 #include "complete-merkle-tree.h"
-#include "cryptopp-keccak-256-hasher.h"
 #include "full-merkle-tree.h"
 #include "merkle-tree-proof.h"
 #include "pristine-merkle-tree.h"
 #include "unique-c-ptr.h"
+#include "xkcp-keccak-256-hasher.h"
 
 using namespace cartesi;
-using hasher_type = cryptopp_keccak_256_hasher;
+using hasher_type = xkcp_keccak_256_hasher;
 using hash_type = hasher_type::hash_type;
 
 /// \brief Checks if string matches prefix and captures remaninder

@@ -20,7 +20,7 @@
 #include <type_traits>
 
 extern "C" {
-#include <KeccakSpongeWidth1600.h>
+#include <KeccakHash.h>
 }
 
 #include "i-hasher.h"
@@ -28,9 +28,10 @@ extern "C" {
 namespace cartesi {
 
 class xkcp_keccak_256_hasher final : public i_hasher<xkcp_keccak_256_hasher, std::integral_constant<int, 32>> {
+    bool m_started = false;
+    Keccak_HashInstance m_instance{};
 
-    KeccakWidth1600_SpongeInstance m_state;
-
+public:
     /// \brief No copy constructor
     xkcp_keccak_256_hasher(const xkcp_keccak_256_hasher &) = delete;
     /// \brief No move constructor
@@ -42,22 +43,13 @@ class xkcp_keccak_256_hasher final : public i_hasher<xkcp_keccak_256_hasher, std
 
     friend i_hasher<xkcp_keccak_256_hasher, std::integral_constant<int, 32>>;
 
-    void do_begin(void) {
-        KeccakWidth1600_SpongeInitialize(&m_state, 1088, 512);
-    }
+    void do_begin(void);
+    void do_add_data(const unsigned char *data, size_t length);
+    void do_end(hash_type &hash);
 
-    void do_add_data(const unsigned char *data, size_t length) {
-        KeccakWidth1600_SpongeAbsorb(&m_state, data, length);
-    }
-
-    void do_end(hash_type &hash) {
-        KeccakWidth1600_SpongeAbsorbLastFewBits(&m_state, 1);
-        KeccakWidth1600_SpongeSqueeze(&m_state, hash.data(), hash.size());
-    }
-
-public:
     /// \brief Default constructor
     xkcp_keccak_256_hasher(void) = default;
+    ~xkcp_keccak_256_hasher() = default;
 };
 
 } // namespace cartesi

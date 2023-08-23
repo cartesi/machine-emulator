@@ -12,7 +12,6 @@
 **/Dockerfile*
 
 build
-third-party/cryptopp-CRYPTOPP_7_0_0
 third-party/downloads
 third-party/grpc
 src/cartesi-machine-client

@@ -21,7 +21,6 @@ Docker targets:
 
 - C++ Compiler with support for C++17 (tested with GCC >= 8+ and Clang >= 8.x).
 - GNU Make >= 3.81
-- Cryptopp >= 7.0.0
 - GRPC >= 1.45.0
 - Lua >= 5.4.4
 - b64 >=  1.2.1
@@ -33,12 +32,12 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 #### Debian Bookworm
 
 ```
-apt-get install build-essential wget git clang-tidy-15 clang-format-15 \
+apt-get install build-essential wget git clang-tidy-15 clang-format-15 xsltproc \
         libreadline-dev libboost-coroutine-dev libboost-context-dev \
         libboost-filesystem-dev libssl-dev libc-ares-dev zlib1g-dev \
         ca-certificates automake libtool patchelf cmake pkg-config lua5.4 liblua5.4-dev \
         libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
-        luarocks libb64-dev libcrypto++-dev nlohmann-json3-dev
+        luarocks libb64-dev nlohmann-json3-dev xsltproc
 
 sudo luarocks install --lua-version=5.4 lpeg
 sudo luarocks install --lua-version=5.4 dkjson
@@ -51,7 +50,7 @@ sudo luarocks install --lua-version=5.4 md5
 
 ##### MacPorts
 ```
-sudo port install clang-15 automake boost libtool wget cmake pkgconfig grpc zlib openssl lua libb64 libcryptopp nlohmann-json lua-luarocks
+sudo port install clang-15 automake boost libtool wget cmake pkgconfig grpc zlib openssl lua libb64 nlohmann-json lua-luarocks
 
 sudo luarocks install --lua-version=5.4 lpeg
 sudo luarocks install --lua-version=5.4 dkjson
@@ -73,10 +72,6 @@ luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install md5
 ```
 
 For emulator scripts to work it is expected that `lua5.4` binary is available in the system PATH. If operating system/package manager that you are using provides only `lua` or lua binary named in a different way (e.g. on `Homebrew`), please create symbolic link or alias `lua5.4`.
-
-###### libcryptopp
-Homebrew does not have a formula for this library on the official repository, at the time of this writing.
-More information on how to obtain this library can be found on https://www.cryptopp.com
 
 ### Build
 

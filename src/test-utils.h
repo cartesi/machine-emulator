@@ -215,6 +215,7 @@ struct incremental_merkle_tree_of_pages {
 // Calculate root hash for data buffer of log2_size
 hash_type calculate_root_hash(const std::vector<uint8_t> &data, int log2_size) {
     cartesi::keccak_256_hasher h;
+    h.begin();
     hash_type result;
     if (log2_size < LOG2_WORD_SIZE) {
         throw std::invalid_argument("Wrong data size");

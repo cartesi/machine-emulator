@@ -37,6 +37,7 @@
 #include "shadow-pmas-factory.h"
 #include "shadow-state-factory.h"
 #include "shadow-tlb-factory.h"
+#include "shadow-uarch-state-factory.h"
 #include "state-access.h"
 #include "strict-aliasing.h"
 #include "translate-virtual-address.h"
@@ -423,18 +424,21 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     // Initialize PMA extension metadata on ROM
     rom_init(m_c, rom.get_memory().get_host_memory(), PMA_ROM_LENGTH);
 
+    // Register uarch shadow state
+    register_pma_entry(make_shadow_uarch_state_pma_entry(PMA_SHADOW_UARCH_STATE_START, PMA_SHADOW_UARCH_STATE_LENGTH));
+
     // Add sentinel to PMA vector
     register_pma_entry(make_empty_pma_entry("sentinel"s, 0, 0));
 
     // Initialize the vector of the pmas used by the merkle tree to compute hashes.
-    // First, add all pmas from the machine state, except the sentinel
+    // First, add the pmas visible to the big machine, except the sentinel
     for (auto &pma : m_s.pmas | sliced(0, m_s.pmas.size() - 1)) {
         m_pmas.push_back(&pma);
     }
-    // Second, add the pmas visible only to the microarchitecture interpreter
-    if (!m_uarch.get_state().ram.get_istart_E()) {
-        m_pmas.push_back(&m_uarch.get_state().ram);
-    }
+
+    // Second, push the uarch ram, which is visible only to the microarchitecture interpreter
+    m_pmas.push_back(&m_uarch.get_state().ram);
+
     // Last, add sentinel
     m_pmas.push_back(&m_s.empty_pma);
 
@@ -754,7 +758,7 @@ uint64_t machine::get_x_address(int i) {
 }
 
 uint64_t machine::get_uarch_x_address(int i) {
-    return shadow_state_get_uarch_x_abs_addr(i);
+    return shadow_uarch_state_get_x_abs_addr(i);
 }
 
 void machine::write_x(int i, uint64_t val) {
@@ -1317,13 +1321,13 @@ uint64_t machine::get_csr_address(csr csr) {
         case csr::clint_mtimecmp:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::clint_mtimecmp);
         case csr::uarch_pc:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_pc);
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::pc);
         case csr::uarch_cycle:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_cycle);
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::cycle);
         case csr::uarch_halt_flag:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_halt_flag);
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::halt_flag);
         case csr::uarch_ram_length:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::uarch_ram_length);
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::ram_length);
         default:
             throw std::invalid_argument{"unknown CSR"};
     }

@@ -39,7 +39,7 @@ end
 
 local uarch_ram_image_filename = arg[1]
 local output_signature_file = arg[2]
-local uarch_ram_start = 0x70000000
+local uarch_ram_start = 0x78000000
 local uarch_ram_length = 0x1000000
 local dummy_rom_filename = os.tmpname()
 io.open(dummy_rom_filename, "w"):close()

@@ -275,9 +275,10 @@ local pmas_file_names = {
     "0000000002000000--00000000000c0000.bin", -- clint
     "0000000040008000--0000000000001000.bin", -- htif
     "0000000080000000--0000000000100000.bin", -- ram
-    "0000000070000000--0000000000001000.bin", -- uarch ram
+    "0000000070000000--0000000000001000.bin", -- shadow uarch state
+    "0000000078000000--0000000000001000.bin", -- uarch ram
 }
-local pmas_sizes = { 4096, 61440, 4096, 24576, 786432, 4096, 1048576, 4096 }
+local pmas_sizes = { 4096, 61440, 4096, 24576, 786432, 4096, 1048576, 4096, 4096 }
 
 local remote
 
@@ -409,7 +410,7 @@ end)
 
 print("\n\ntesting get_x_uarch_address function binding")
 do_test("should return address value for uarch x registers", function()
-    local SHADOW_UARCH_XBASE = 0x340
+    local SHADOW_UARCH_XBASE = test_util.PMA_SHADOW_UARCH_STATE_START + 32
     local module = cartesi
     if machine_type == "grpc" then
         if not remote then remote = connect() end
@@ -738,16 +739,16 @@ do_test("dumped log content should match", function()
     local output = p:read(2000)
     p:close()
     local expected_output = "begin step\n"
-        .. "  1: read uarch.cycle@0x320(800): 0x0(0)\n"
-        .. "  2: read uarch.halt_flag@0x328(808): 0x0(0)\n"
-        .. "  3: read uarch.pc@0x330(816): 0x70000000(1879048192)\n"
-        .. "  4: read memory@0x70000000(1879048192): 0x3280029307b00513(3638911329427784979)\n"
+        .. "  1: read uarch.cycle@0x70000008(1879048200): 0x0(0)\n"
+        .. "  2: read uarch.halt_flag@0x70000000(1879048192): 0x0(0)\n"
+        .. "  3: read uarch.pc@0x70000010(1879048208): 0x78000000(2013265920)\n"
+        .. "  4: read memory@0x78000000(2013265920): 0x700002b707b00513(8070453517379175699)\n"
         .. "  begin addi\n"
-        .. "    5: read uarch.x@0x340(832): 0x0(0)\n"
-        .. "    6: write uarch.x@0x390(912): 0x0(0) -> 0x7b(123)\n"
-        .. "    7: write uarch.pc@0x330(816): 0x70000000(1879048192) -> 0x70000004(1879048196)\n"
+        .. "    5: read uarch.x@0x70000020(1879048224): 0x0(0)\n"
+        .. "    6: write uarch.x@0x70000070(1879048304): 0x0(0) -> 0x7b(123)\n"
+        .. "    7: write uarch.pc@0x70000010(1879048208): 0x78000000(2013265920) -> 0x78000004(2013265924)\n"
         .. "  end addi\n"
-        .. "  8: write uarch.cycle@0x320(800): 0x0(0) -> 0x1(1)\n"
+        .. "  8: write uarch.cycle@0x70000008(1879048200): 0x0(0) -> 0x1(1)\n"
         .. "end step\n"
 
     print("Output of dump log:")
@@ -806,7 +807,7 @@ test_util.make_do_test(build_machine, machine_type, {
     local t0 = 5
     local t1 = 6
     local t2 = 7
-    local uarch_ram_start = 0x70000000
+    local uarch_ram_start = test_util.PMA_UARCH_RAM_START
     local with_proofs = { proofs = true }
     local without_proofs = {}
 

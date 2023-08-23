@@ -35,13 +35,17 @@ enum PMA_ranges : uint64_t {
     PMA_ROM_START = EXPAND_UINT64_C(PMA_ROM_START_DEF),                     ///< Start of ROM range
     PMA_ROM_LENGTH = EXPAND_UINT64_C(PMA_ROM_LENGTH_DEF),                   ///< Length of ROM range
     PMA_SHADOW_TLB_START = EXPAND_UINT64_C(PMA_SHADOW_TLB_START_DEF),       ///< Start of TLB shadow range
-    PMA_SHADOW_TLB_LENGTH = EXPAND_UINT64_C(PMA_SHADOW_TLB_LENGTH_DEF),     ///< Length of TLB shadow range
-    PMA_CLINT_START = EXPAND_UINT64_C(PMA_CLINT_START_DEF),                 ///< Start of CLINT range
-    PMA_CLINT_LENGTH = EXPAND_UINT64_C(PMA_CLINT_LENGTH_DEF),               ///< Length of CLINT range
-    PMA_HTIF_START = EXPAND_UINT64_C(PMA_HTIF_START_DEF),                   ///< Start of HTIF range
-    PMA_HTIF_LENGTH = EXPAND_UINT64_C(PMA_HTIF_LENGTH_DEF),                 ///< Length of HTIF range
-    PMA_UARCH_RAM_START = EXPAND_UINT64_C(PMA_UARCH_RAM_START_DEF),         ///< Start of microarchitecture RAM range
-    PMA_UARCH_RAM_LENGTH = EXPAND_UINT64_C(PMA_UARCH_RAM_LENGTH_DEF),       ///< Length of microarchitecture RAM range
+    PMA_SHADOW_UARCH_STATE_START =
+        EXPAND_UINT64_C(PMA_SHADOW_UARCH_STATE_START_DEF), ///< Start of microarchitecture shadow state range
+    PMA_SHADOW_UARCH_STATE_LENGTH =
+        EXPAND_UINT64_C(PMA_SHADOW_UARCH_STATE_LENGTH_DEF), ///< Length of microarchitecture shadow state  range
+    PMA_SHADOW_TLB_LENGTH = EXPAND_UINT64_C(PMA_SHADOW_TLB_LENGTH_DEF), ///< Length of TLB shadow range
+    PMA_CLINT_START = EXPAND_UINT64_C(PMA_CLINT_START_DEF),             ///< Start of CLINT range
+    PMA_CLINT_LENGTH = EXPAND_UINT64_C(PMA_CLINT_LENGTH_DEF),           ///< Length of CLINT range
+    PMA_HTIF_START = EXPAND_UINT64_C(PMA_HTIF_START_DEF),               ///< Start of HTIF range
+    PMA_HTIF_LENGTH = EXPAND_UINT64_C(PMA_HTIF_LENGTH_DEF),             ///< Length of HTIF range
+    PMA_UARCH_RAM_START = EXPAND_UINT64_C(PMA_UARCH_RAM_START_DEF),     ///< Start of microarchitecture RAM range
+    PMA_UARCH_RAM_LENGTH = EXPAND_UINT64_C(PMA_UARCH_RAM_LENGTH_DEF),   ///< Length of microarchitecture RAM range
 
     //    PMA_FIRST_VIRTIO_START  = EXPAND_UINT64_C(PMA_FIRST_VIRTIO_START_DEF),    ///< Start of first VIRTIO range
     //    PMA_VIRTIO_LENGTH  = EXPAND_UINT64_C(PMA_VIRTIO_LENGTH_DEF),   ///< Length of each VIRTIO range
@@ -111,6 +115,7 @@ enum class PMA_ISTART_DID {
     rollup_input_metadata = PMA_ROLLUP_INPUT_METADATA_DID_DEF, ///< DID for rollup input metadata memory range
     rollup_voucher_hashes = PMA_ROLLUP_VOUCHER_HASHES_DID_DEF, ///< DID for rollup voucher hashes memory range
     rollup_notice_hashes = PMA_ROLLUP_NOTICE_HASHES_DID_DEF,   ///< DID for rollup notice hashes memory range
+    shadow_uarch = PMA_SHADOW_UARCH_STATE_DID_DEF,             ///< DID for shadow uarch state device
 };
 
 } // namespace cartesi

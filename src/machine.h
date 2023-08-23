@@ -54,7 +54,7 @@ class machine final {
     //    should test this.
     mutable machine_state m_s;       ///< Opaque machine state
     mutable machine_merkle_tree m_t; ///< Merkle tree of state
-    std::vector<pma_entry *> m_pmas; ///< Combines uarch PMAs and machine state PMAs.
+    std::vector<pma_entry *> m_pmas; ///< List of pmas, including uarch ram. Used to compute the machine hash
     machine_config m_c;              ///< Copy of initialization config
     uarch_machine m_uarch;           ///< Microarchitecture machine
     machine_runtime_config m_r;      ///< Copy of initialization runtime config

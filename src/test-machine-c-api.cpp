@@ -49,7 +49,9 @@ static hash_type get_verification_root_hash(cm_machine *machine) {
         "0000000002000000--00000000000c0000.bin", // clint
         "0000000040008000--0000000000001000.bin", // htif
         "0000000080000000--0000000000100000.bin", // ram
-        "0000000070000000--0000000000080000.bin", // uarch ram
+        "0000000070000000--0000000000001000.bin", // shadow uarch state
+        "0000000078000000--0000000000080000.bin", // uarch ram
+
     };
     char *err_msg{};
 
@@ -1534,7 +1536,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_null_placeholder_test, flash_drive_mach
         "0000000002000000--00000000000c0000.bin", // clint
         "0000000040008000--0000000000001000.bin", // htif
         "0000000080000000--0000000000100000.bin", // ram
-        "0000000070000000--0000000000080000.bin", // uarch ram
+        "0000000070000000--0000000000001000.bin", // shadow uarch state
+        "0000000078000000--0000000000080000.bin", // uarch ram
         "0080000000000000--0000000003c00000.bin"  // flash drive
     };
 
@@ -1556,7 +1559,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_basic_test, flash_drive_machine_fixture
         "0000000002000000--00000000000c0000.bin", // clint
         "0000000040008000--0000000000001000.bin", // htif
         "0000000080000000--0000000000100000.bin", // ram
-        "0000000070000000--0000000000080000.bin", // uarch ram
+        "0000000070000000--0000000000001000.bin", // shadow uarch state
+        "0000000078000000--0000000000080000.bin", // uarch ram
         "0080000000000000--0000000003c00000.bin"  // flash drive
     };
 
@@ -1822,7 +1826,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_uarch_x_basic_test, ordinary_machine_f
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(uarch_x_origin, uarch_x_read);
 
-    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x350), cm_get_uarch_x_address(2));
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(cartesi::PMA_SHADOW_UARCH_STATE_START + 48), cm_get_uarch_x_address(2));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(read_csr_null_machine_test) {
@@ -1925,7 +1929,7 @@ public:
 
         uint32_t test_uarch_ram[] = {
             0x07b00513, //  li	a0,123
-            0x32800293, // li t0, UARCH_HALT_FLAG_SHADDOW_ADDR_DEF (0x328)
+            0x700002b7, //  li t0,UARCH_HALT_FLAG_SHADDOW_ADDR  Address of uarch halt flag
             0x00100313, //  li	t1,1
             0x0062b023, //  sd	t1,0(t0)  Halt microarchitecture at uarch cycle 4
         };
@@ -2147,7 +2151,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_uarch_until_halt, access_log_machine_fixture
     error_code = cm_verify_state_transition(&hash2, _access_log, &hash3, &_runtime_config, false, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     cm_delete_access_log(_access_log);
-
     // step 4
     error_code = cm_step_uarch(_machine, _log_type, false, &_access_log, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);

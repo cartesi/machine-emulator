@@ -7,7 +7,7 @@
 build
 third-party/downloads
 third-party/grpc
-third-party/mongoose-7.9
+third-party/mongoose-*
 third-party/xkcp/XKCP-*
 src/remote-cartesi-machine-proxy
 src/remote-cartesi-machine

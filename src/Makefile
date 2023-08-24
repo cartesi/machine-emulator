@@ -139,7 +139,6 @@ else
 XKCP_LIB+=-lXKCP
 endif
 XKCP_INC=-I../third-party/xkcp/XKCP-f7fe32a80f0c6600d1c5db50392a43265d3bba9a/bin/generic64/libXKCP.a.headers
-MONGOOSE_INC=-I$(BUILDDIR)/include
 GRPC_LIB=$(GRPC_LIB_$(UNAME))
 GRPC_INC=$(GRPC_INC_$(UNAME))
 PROTOBUF_LIB=$(PROTOBUF_LIB_$(UNAME))
@@ -173,8 +172,9 @@ WARNS=-W -Wall -pedantic
 INCS=\
 	-I../lib/machine-emulator-defines \
 	-I../third-party/llvm-flang-uint128 \
+	-I../third-party/mongoose-7.11 \
 	-I../third-party/downloads \
-	$(LUA_INC) $(XKCP_INC) $(MONGOOSE_INC) $(B64_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
+	$(LUA_INC) $(XKCP_INC) $(B64_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
 
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS
@@ -382,7 +382,7 @@ LUACARTESI_JSONRPC_OBJS:= \
 	clua-jsonrpc-machine.o \
 	json-util.o \
 	base64.o \
-	$(BUILDDIR)/lib/mongoose.o \
+	mongoose-impl.o \
 	jsonrpc-machine-c-api.o \
 	jsonrpc-virtual-machine.o \
 	clua.o
@@ -600,7 +600,7 @@ JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	slog.o \
 	jsonrpc-remote-machine.o \
 	jsonrpc-discover.o \
-	$(BUILDDIR)/lib/mongoose.o \
+	mongoose-impl.o \
 	pma-driver.o \
 	clint.o \
 	clint-factory.o \
@@ -698,8 +698,6 @@ grpc-interfaces: $(PROTO_SOURCES)
 
 remote-cartesi-machine: $(REMOTE_CARTESI_MACHINE_OBJS)
 	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(REMOTE_CARTESI_MACHINE_OBJS) $(REMOTE_CARTESI_MACHINE_LIBS)
-
-$(BUILDDIR)/lib/mongoose.o: CFLAGS := $(patsubst %-std=c99,%,$(CFLAGS))
 
 jsonrpc-remote-cartesi-machine: $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS)
 	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) $(JSONRPC_REMOTE_CARTESI_MACHINE_LIBS)

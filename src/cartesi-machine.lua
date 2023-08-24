@@ -1698,7 +1698,7 @@ else
         cycles = machine:read_mcycle()
         -- deal with halt
         if machine:read_iflags_H() then
-            exit_code = machine:read_htif_tohost_data() >> 1
+            exit_code = machine:read_htif_tohost_data() >> 1 -- lsb is always 1
             if exit_code ~= 0 then
                 stderr("\nHalted with payload: %u\n", exit_code)
             else

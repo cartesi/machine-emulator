@@ -9,7 +9,6 @@ third-party/downloads
 third-party/grpc
 third-party/mongoose-*
 third-party/xkcp/XKCP-*
-src/remote-cartesi-machine-proxy
 src/remote-cartesi-machine
 src/jsonrpc-remote-cartesi-machine
 src/merkle-tree-hash

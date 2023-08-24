@@ -1,10 +1,13 @@
 #define BOOST_TEST_MODULE Machine C API test // NOLINT(cppcoreguidelines-macro-usage)
+#define BOOST_TEST_NO_OLD_TOOLS
 
 #pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpragmas"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wpedantic"
+#pragma GCC diagnostic ignored "-Wsign-compare"
+#pragma GCC diagnostic ignored "-Wdangling-reference"
 #include <boost/endian/conversion.hpp>
-#include <boost/filesystem.hpp>
-#include <boost/filesystem/operations.hpp>
 #include <boost/process.hpp>
 #include <boost/process/search_path.hpp>
 #include <boost/test/included/unit_test.hpp>
@@ -486,8 +489,7 @@ std::ostream &boost_test_print_type(std::ostream &ostr, const cm_machine_config 
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class serialized_machine_fixture : public ordinary_machine_fixture {
 public:
-    serialized_machine_fixture() :
-        _machine_config_path{boost::filesystem::temp_directory_path() / boost::filesystem::unique_path()} {
+    serialized_machine_fixture() : _machine_config_path{std::filesystem::temp_directory_path() / "machine"} {
         char *err_msg{};
         int error_code = cm_store(_machine, _machine_config_path.string().c_str(), &err_msg);
         BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -499,7 +501,7 @@ public:
     }
 
 protected:
-    boost::filesystem::path _machine_config_path;
+    std::filesystem::path _machine_config_path;
 
     auto _load_config() const {
         std::ifstream ifs(_config_dir(), std::ios::binary);
@@ -540,8 +542,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_invalid_config_version_test, seriali
 
 class store_file_fixture : public ordinary_machine_fixture {
 public:
-    store_file_fixture() :
-        _broken_machine_path{(boost::filesystem::temp_directory_path() / boost::filesystem::unique_path()).string()} {}
+    store_file_fixture() : _broken_machine_path{(std::filesystem::temp_directory_path() / "machine").string()} {}
 
     ~store_file_fixture() {
         std::filesystem::remove_all(_broken_machine_path);
@@ -2573,7 +2574,11 @@ static bool wait_for_server(cm_grpc_machine_stub *stub, int retries = 10) {
 class grpc_machine_fixture_with_server : public grpc_machine_fixture {
 public:
     grpc_machine_fixture_with_server() {
-        boost::process::spawn(boost::process::search_path("remote-cartesi-machine"), "127.0.0.1:5001", m_server_group);
+        auto process_path = std::filesystem::current_path() / "remote-cartesi-machine";
+        if (!std::filesystem::exists(process_path)) {
+            process_path = "/usr/bin/remote-cartesi-machine";
+        }
+        boost::process::spawn(process_path.string(), "127.0.0.1:5001", m_server_group);
         BOOST_CHECK(wait_for_server(m_stub));
     }
     ~grpc_machine_fixture_with_server() override = default;

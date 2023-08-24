@@ -25,8 +25,6 @@ EMULATOR_VERSION_LABEL=
 UNAME:=$(shell uname)
 UNAME_ARCH=$(shell uname -m)
 
-BUILDDIR ?= $(abspath ../build/$(UNAME)_$(UNAME_ARCH))
-
 LUA_INC:=$(shell pkg-config --cflags-only-I lua5.4)
 LUA_LIB:=-llua5.4
 LUA_BIN?=lua5.4
@@ -60,36 +58,29 @@ ifeq ($(UNAME),Darwin)
 ifeq ($(MACOSX_DEPLOYMENT_TARGET),)
 export MACOSX_DEPLOYMENT_TARGET := $(shell sw_vers -productVersion | sed -r  "s/([[:digit:]]+)\.([[:digit:]]+)\..+/\1.\2.0/")
 endif
-SOLDFLAGS_Darwin+=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
+SOLDFLAGS_Darwin+=-Wl,-rpath,$(CURDIR)
 # Homebrew installation
 ifneq (,$(wildcard /usr/local/opt/boost/lib))
-BOOST_LIB_DIR_Darwin=-L/usr/local/opt/boost/lib
-BOOST_INC_Darwin=-I/usr/local/opt/boost/include
 GRPC_INC_Darwin=-I/usr/local/opt/gprc/include
 GRPC_LIB_Darwin=-L/usr/local/opt/grpc/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
 PROTOBUF_LIB_Darwin:=-L/usr/local/opt/protobuf/lib -lprotobuf -lpthread
 else # Macports installation
-BOOST_LIB_DIR_Darwin=-L/opt/local/lib
-BOOST_INC_Darwin=-I/opt/local/include
 GRPC_INC_Darwin=-I/opt/local/include
 GRPC_LIB_Darwin=-L/opt/local/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
 PROTOBUF_LIB_Darwin:=-L/opt/local/lib -lprotobuf -lpthread
 endif
 endif
 
-BOOST_CORO_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_coroutine-mt -lboost_context-mt
-BOOST_FILESYSTEM_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_system-mt -lboost_filesystem-mt
-BOOST_PROCESS_LIB_Darwin:=-lpthread
 LIBCARTESI_Darwin=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
 LIBCARTESI_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_Darwin)'
-LIBCARTESI_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
+LIBCARTESI_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(CURDIR)
 LIBCARTESI_GRPC_Darwin=libcartesi_grpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
 LIBCARTESI_GRPC_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_GRPC_Darwin)'
-LIBCARTESI_GRPC_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
+LIBCARTESI_GRPC_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(CURDIR)
 LIBCARTESI_JSONRPC_Darwin=libcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
 LIBCARTESI_JSONRPC_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_JSONRPC_Darwin)'
-LIBCARTESI_JSONRPC_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
-CARTESI_EXECUTABLE_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
+LIBCARTESI_JSONRPC_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(CURDIR)
+CARTESI_EXECUTABLE_LDFLAGS_Darwin=-Wl,-rpath,$(CURDIR)
 PROFILE_DATA_Darwin=default.profdata
 
 # Linux specific setup
@@ -98,10 +89,6 @@ CC_Linux=gcc
 CXX_Linux=g++
 INCS_Linux=
 FS_LIB_Linux=-lstdc++fs
-BOOST_CORO_LIB_Linux:=-lboost_coroutine -lboost_context
-BOOST_FILESYSTEM_LIB_Linux:=-lboost_system -lboost_filesystem
-BOOST_PROCESS_LIB_Linux:=-lpthread
-BOOST_INC_Linux=
 GRPC_INC_Linux:=
 GRPC_LIB_Linux:=-lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
 PROTOBUF_LIB_Linux:=-lprotobuf -lpthread
@@ -120,10 +107,6 @@ PROFILE_DATA_Linux=
 CC=$(CC_$(UNAME))
 CXX=$(CXX_$(UNAME))
 SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
-BOOST_CORO_LIB=$(BOOST_CORO_LIB_$(UNAME))
-BOOST_PROCESS_LIB=$(BOOST_PROCESS_LIB_$(UNAME))
-BOOST_FILESYSTEM_LIB=$(BOOST_FILESYSTEM_LIB_$(UNAME))
-BOOST_INC=$(BOOST_INC_$(UNAME))
 XKCP_LIB=-L../third-party/xkcp/XKCP-f7fe32a80f0c6600d1c5db50392a43265d3bba9a/bin
 ifeq ($(UNAME_ARCH),x86_64)
 XKCP_LIB+=-lXKCP_generic64 -lXKCP_SSSE3 -lXKCP_AVX -lXKCP_AVX2
@@ -152,7 +135,7 @@ LUACARTESI_GRPC_LIBS:=$(LIBCARTESI_LIB) $(XKCP_LIB) $(LIBCARTESI_GRPC_LIB)
 LUACARTESI_JSONRPC_LIBS:=$(LIBCARTESI_LIB) $(XKCP_LIB)
 REMOTE_CARTESI_MACHINE_LIBS:=$(XKCP_LIB) $(GRPC_LIB) $(PROTOBUF_LIB)
 JSONRPC_REMOTE_CARTESI_MACHINE_LIBS:=$(XKCP_LIB)
-TEST_MACHINE_C_API_LIBS:=$(LIBCARTESI_LIB) $(XKCP_LIB) $(LIBCARTESI_GRPC_LIB) $(BOOST_PROCESS_LIB) $(BOOST_FILESYSTEM_LIB)
+TEST_MACHINE_C_API_LIBS:=$(LIBCARTESI_LIB) $(XKCP_LIB) $(LIBCARTESI_GRPC_LIB) -lpthread
 HASH_LIBS:=$(XKCP_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
@@ -165,7 +148,8 @@ INCS=\
 	-I../third-party/llvm-flang-uint128 \
 	-I../third-party/mongoose-7.11 \
 	-I../third-party/downloads \
-	$(LUA_INC) $(XKCP_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
+	-I../third-party/boost_1_83_0 \
+	$(LUA_INC) $(XKCP_INC) $(GRPC_INC) $(INCS_$(UNAME))
 
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS

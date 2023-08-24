@@ -75,6 +75,7 @@ SUBCLEAN := $(addsuffix .clean,$(SRCDIR) uarch third-party/riscv-arch-tests)
 COREPROTO := lib/grpc-interfaces/core.proto
 XKCP_VERSION=f7fe32a80f0c6600d1c5db50392a43265d3bba9a
 MONGOOSE_VERSION=7.11
+BOOST_VERSION=1_83_0
 
 # Docker image tag
 TAG ?= devel
@@ -127,6 +128,7 @@ distclean:
 	rm -rf $(DOWNLOADDIR)
 	rm -rf third-party/xkcp/XKCP-$(XKCP_VERSION)
 	rm -rf third-party/mongoose-$(MONGOOSE_VERSION)
+	rm -rf third-party/boost_$(BOOST_VERSION)
 	$(MAKE) -C third-party/riscv-arch-tests depclean
 	$(MAKE) -C third-party/xkcp depclean
 	$(MAKE) clean
@@ -169,6 +171,7 @@ $(DOWNLOADDIR):
 	$(MAKE) checksum
 	tar -C third-party/xkcp -xzf third-party/downloads/$(XKCP_VERSION).tar.gz
 	tar -C third-party -xzf third-party/downloads/$(MONGOOSE_VERSION).tar.gz mongoose-$(MONGOOSE_VERSION)/mongoose.c mongoose-$(MONGOOSE_VERSION)/mongoose.h
+	tar -C third-party -xzf third-party/downloads/boost_$(BOOST_VERSION).tar.gz boost_$(BOOST_VERSION)/boost
 
 downloads: $(DOWNLOADDIR)
 

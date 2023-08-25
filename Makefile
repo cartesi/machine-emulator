@@ -98,21 +98,14 @@ export coverage
 
 # Mac OS X specific settings
 ifeq ($(UNAME),Darwin)
-LUA_PLAT ?= macosx
 export CC = clang
 export CXX = clang++
-LUACC = "CC=$(CXX)"
-LUAMYLIBS = "MYLIBS=-L/opt/local/lib/libomp -L/usr/local/opt/llvm/lib -lomp"
 
 # Linux specific settings
 else ifeq ($(UNAME),Linux)
-LUA_PLAT ?= linux
 LIBRARY_PATH := "$(SRCDIR)"
-LUACC = "CC=g++"
-LUAMYLIBS = "MYLIBS=\"-lgomp\""
 # Unknown platform
 else
-LUA_PLAT ?= none
 INSTALL_PLAT=
 endif
 

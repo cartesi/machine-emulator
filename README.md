@@ -29,11 +29,10 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 #### Debian Bookworm
 
 ```
-apt-get install build-essential wget git clang-tidy-15 clang-format-15 xsltproc \
-        libreadline-dev libssl-dev libc-ares-dev zlib1g-dev \
-        ca-certificates automake libtool patchelf cmake pkg-config lua5.4 liblua5.4-dev \
-        libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
-        luarocks xsltproc
+apt-get install ca-certificates build-essential \
+        wget git patchelf pkg-config xsltproc \
+        lua5.4 luarocks liblua5.4-dev libssl-dev \
+        libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc
 
 sudo luarocks install --lua-version=5.4 lpeg
 sudo luarocks install --lua-version=5.4 dkjson
@@ -46,7 +45,7 @@ sudo luarocks install --lua-version=5.4 md5
 
 ##### MacPorts
 ```
-sudo port install clang-15 automake libtool wget cmake pkgconfig grpc zlib openssl lua lua-luarocks
+sudo port install wget pkgconfig grpc openssl lua lua-luarocks
 
 sudo luarocks install --lua-version=5.4 lpeg
 sudo luarocks install --lua-version=5.4 dkjson
@@ -58,7 +57,7 @@ sudo luarocks install --lua-version=5.4 md5
 
 ##### Homebrew
 ```
-brew install llvm@12 automake libomp wget cmake pkg-config grpc zlib openssl lua@5.4 luarocks
+brew install llvm@12 wget pkg-config grpc openssl lua@5.4 luarocks
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install lpeg
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install dkjson
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install luasocket

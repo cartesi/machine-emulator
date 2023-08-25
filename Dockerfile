@@ -6,11 +6,11 @@ ARG SANITIZE=no
 
 RUN apt-get update && \
     DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends -y \
-        build-essential vim wget git clang-tidy-15 clang-format-15 lcov \
-        libreadline-dev libssl-dev libc-ares-dev zlib1g-dev \
-        ca-certificates automake libtool patchelf cmake pkg-config lua5.4 liblua5.4-dev \
+        ca-certificates build-essential \
+        wget git automake libtool patchelf pkg-config xsltproc \
+        lua5.4 luarocks liblua5.4-dev libssl-dev \
         libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
-        luarocks xsltproc && \
+        vim lcov clang-tidy-15 clang-format-15 && \
         update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-15 120 && \
         update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-15 120 && \
     rm -rf /var/lib/apt/lists/*

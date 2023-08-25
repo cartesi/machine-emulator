@@ -37,8 +37,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <json.hpp>
 #include <mongoose.h>
-#include <nlohmann/json.hpp>
 
 #include "base64.h"
 #include "json-util.h"

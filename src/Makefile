@@ -68,7 +68,6 @@ BOOST_LIB_DIR_Darwin=-L$(BREW_PREFIX)/lib
 BOOST_INC_Darwin=-I$(BREW_PREFIX)/include
 CRYPTOPP_LIB_Darwin:=-L$(BREW_PREFIX)/lib -lcryptopp
 CRYPTOPP_INC_Darwin:=-I$(BREW_PREFIX)/include
-NLOHMANN_JSON_INC_Darwin:=-I$(BREW_PREFIX)/include
 GRPC_INC_Darwin:=$(shell pkg-config --cflags-only-I grpc++)
 GRPC_LIB_Darwin:=$(shell pkg-config --libs grpc++)
 PROTOBUF_INC_Darwin:=$(shell pkg-config --cflags-only-I protobuf)
@@ -137,7 +136,6 @@ BOOST_FILESYSTEM_LIB=$(BOOST_FILESYSTEM_LIB_$(UNAME))
 BOOST_INC=$(BOOST_INC_$(UNAME))
 CRYPTOPP_LIB=$(CRYPTOPP_LIB_$(UNAME))
 CRYPTOPP_INC=$(CRYPTOPP_INC_$(UNAME))
-NLOHMANN_JSON_INC=$(NLOHMANN_JSON_INC_$(UNAME))
 MONGOOSE_INC=-I$(BUILDDIR)/include
 GRPC_INC:=$(GRPC_INC_$(UNAME))
 GRPC_LIB:=$(GRPC_LIB_$(UNAME))
@@ -169,8 +167,8 @@ HASH_LIBS:=$(CRYPTOPP_LIB)
 WARNS=-W -Wall -pedantic
 
 # Place our include directories before the system's
-INCS=-I../lib/machine-emulator-defines -I../third-party/llvm-flang-uint128 \
-	$(LUA_INC) $(CRYPTOPP_INC) $(NLOHMANN_JSON_INC) $(MONGOOSE_INC) $(BOOST_INC) $(PROTOBUF_INC) $(GRPC_INC) $(INCS_$(UNAME))
+INCS=-I../lib/machine-emulator-defines -I../third-party/llvm-flang-uint128 -I../third-party/downloads \
+	$(LUA_INC) $(CRYPTOPP_INC) $(MONGOOSE_INC) $(BOOST_INC) $(PROTOBUF_INC) $(GRPC_INC) $(INCS_$(UNAME))
 
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS

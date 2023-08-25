@@ -21,7 +21,7 @@
 #include <tuple>
 #include <vector>
 
-#include <nlohmann/json.hpp>
+#include <json.hpp>
 
 #include "grpc-machine-c-api.h"
 #include "machine-c-api.h"

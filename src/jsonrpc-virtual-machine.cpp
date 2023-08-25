@@ -19,8 +19,8 @@
 #include <cstdint>
 #include <string>
 
+#include <json.hpp>
 #include <mongoose.h>
-#include <nlohmann/json.hpp>
 
 #include "jsonrpc-mg-mgr.h"
 #include "jsonrpc-virtual-machine.h"

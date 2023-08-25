@@ -11,7 +11,7 @@ RUN apt-get update && \
         libboost-filesystem-dev libssl-dev libc-ares-dev zlib1g-dev \
         ca-certificates automake libtool patchelf cmake pkg-config lua5.4 liblua5.4-dev \
         libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
-        luarocks libb64-dev xsltproc nlohmann-json3-dev && \
+        luarocks libb64-dev xsltproc && \
         update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-15 120 && \
         update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-15 120 && \
     rm -rf /var/lib/apt/lists/*

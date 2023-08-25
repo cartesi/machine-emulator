@@ -21,7 +21,7 @@
 #include <string>
 #include <type_traits>
 
-#include <nlohmann/json.hpp>
+#include <json.hpp>
 
 #include "base64.h"
 #include "machine-merkle-tree.h"

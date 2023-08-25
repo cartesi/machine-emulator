@@ -65,7 +65,6 @@ SOLDFLAGS_Darwin+=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
 ifneq (,$(wildcard /usr/local/opt/boost/lib))
 BOOST_LIB_DIR_Darwin=-L/usr/local/opt/boost/lib
 BOOST_INC_Darwin=-I/usr/local/opt/boost/include
-NLOHMANN_JSON_INC_Darwin:=-I/usr/local/opt/nlohmann-json/include
 B64_LIB_Darwin:=-L/usr/local/opt/libb64/lib -lb64
 B64_INC_Darwin:=-I/usr/local/opt/libb64/include
 GRPC_INC_Darwin=-I/usr/local/opt/gprc/include
@@ -140,7 +139,6 @@ else
 XKCP_LIB+=-lXKCP
 endif
 XKCP_INC=-I../third-party/xkcp/XKCP-f7fe32a80f0c6600d1c5db50392a43265d3bba9a/bin/generic64/libXKCP.a.headers
-NLOHMANN_JSON_INC=$(NLOHMANN_JSON_INC_$(UNAME))
 MONGOOSE_INC=-I$(BUILDDIR)/include
 GRPC_LIB=$(GRPC_LIB_$(UNAME))
 GRPC_INC=$(GRPC_INC_$(UNAME))
@@ -172,8 +170,11 @@ HASH_LIBS:=$(XKCP_LIB)
 WARNS=-W -Wall -pedantic
 
 # Place our include directories before the system's
-INCS=-I../lib/machine-emulator-defines -I../third-party/llvm-flang-uint128 \
-	$(LUA_INC) $(XKCP_INC) $(NLOHMANN_JSON_INC) $(MONGOOSE_INC) $(B64_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
+INCS=\
+	-I../lib/machine-emulator-defines \
+	-I../third-party/llvm-flang-uint128 \
+	-I../third-party/downloads \
+	$(LUA_INC) $(XKCP_INC) $(MONGOOSE_INC) $(B64_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
 
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS

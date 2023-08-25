@@ -5505,6 +5505,7 @@ static FORCE_INLINE fetch_status fetch_insn(STATE_ACCESS &a, uint64_t &pc, uint3
 /// \brief Checks that false brk is consistent with rest of state
 template <typename STATE_ACCESS>
 static void assert_no_brk(STATE_ACCESS &a) {
+    (void) a;
     assert(get_pending_irq_mask(a) == 0); // LCOV_EXCL_LINE
     assert(a.read_iflags_X() == 0);       // LCOV_EXCL_LINE
     assert(a.read_iflags_Y() == 0);       // LCOV_EXCL_LINE

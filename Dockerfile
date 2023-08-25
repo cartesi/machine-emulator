@@ -49,7 +49,7 @@ ARG MACHINE_EMULATOR_VERSION=0.0.0
 ARG TARGETARCH
 
 RUN make install-tests
-RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt install -y \
+RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
     ./cartesi-machine-v${MACHINE_EMULATOR_VERSION}_${TARGETARCH}.deb \
     && rm -rf /var/lib/apt/lists/*
 
@@ -63,7 +63,7 @@ ARG TARGETARCH
 COPY --from=installer \
 	/usr/src/emulator/cartesi-machine-v${MACHINE_EMULATOR_VERSION}_${TARGETARCH}.deb \
 	cartesi-machine.deb
-RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt install -y \
+RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
     ./cartesi-machine.deb \
     && rm -rf /var/lib/apt/lists/* \
     && rm cartesi-machine.deb

@@ -22,8 +22,8 @@ EMULATOR_VERSION_MINOR=15
 EMULATOR_VERSION_PATCH=2
 EMULATOR_VERSION_LABEL=
 
-UNAME:=$(shell uname)
-UNAME_ARCH=$(shell uname -m)
+TARGET_OS?=$(shell uname)
+TARGET_ARCH?=$(shell uname -m)
 
 LUA_INC:=$(shell pkg-config --cflags-only-I lua5.4)
 LUA_LIB:=-llua5.4
@@ -54,7 +54,7 @@ CC_Darwin=clang
 CXX_Darwin=clang++
 INCS_Darwin=
 
-ifeq ($(UNAME),Darwin)
+ifeq ($(TARGET_OS),Darwin)
 ifeq ($(MACOSX_DEPLOYMENT_TARGET),)
 export MACOSX_DEPLOYMENT_TARGET := $(shell sw_vers -productVersion | sed -r  "s/([[:digit:]]+)\.([[:digit:]]+)\..+/\1.\2.0/")
 endif
@@ -84,11 +84,10 @@ CARTESI_EXECUTABLE_LDFLAGS_Darwin=-Wl,-rpath,$(CURDIR)
 PROFILE_DATA_Darwin=default.profdata
 
 # Linux specific setup
-SOLDFLAGS_Linux:=-shared -fPIC -pthread
+SOLDFLAGS_Linux:=-shared -fPIC -pthread -z noexecstack
 CC_Linux=gcc
 CXX_Linux=g++
 INCS_Linux=
-FS_LIB_Linux=-lstdc++fs
 GRPC_INC_Linux:=
 GRPC_LIB_Linux:=-lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
 PROTOBUF_LIB_Linux:=-lprotobuf -lpthread
@@ -101,31 +100,39 @@ LIBCARTESI_GRPC_TESTS_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/..'
 LIBCARTESI_JSONRPC_Linux=libcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
 LIBCARTESI_JSONRPC_LDFLAGS_Linux:=$(SOLDFLAGS_Linux)
 LIBCARTESI_JSONRPC_TESTS_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/..'
-CARTESI_EXECUTABLE_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/' -Wl,--copy-dt-needed-entries
+CARTESI_EXECUTABLE_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/' -Wl,--copy-dt-needed-entries -z noexecstack
 PROFILE_DATA_Linux=
 
-CC=$(CC_$(UNAME))
-CXX=$(CXX_$(UNAME))
-SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
+# Emscripten (WebAssembly) specific setup
+SOLDFLAGS_Emscripten=-shared -fPIC
+LIBCARTESI_Emscripten=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
+LIBCARTESI_LDFLAGS_Emscripten=$(SOLDFLAGS_Emscripten)
+CC_Emscripten=emcc
+CXX_Emscripten=em++
+INCS_Emscripten=
+
+CC=$(CC_$(TARGET_OS))
+CXX=$(CXX_$(TARGET_OS))
+SOLDFLAGS:=$(SOLDFLAGS_$(TARGET_OS)) $(GCLDFLAGS)
 XKCP_LIB=-L../third-party/xkcp/XKCP-f7fe32a80f0c6600d1c5db50392a43265d3bba9a/bin
-ifeq ($(UNAME_ARCH),x86_64)
+ifeq ($(TARGET_ARCH),x86_64)
 XKCP_LIB+=-lXKCP_generic64 -lXKCP_SSSE3 -lXKCP_AVX -lXKCP_AVX2
 else
 XKCP_LIB+=-lXKCP
 endif
 XKCP_INC=-I../third-party/xkcp/XKCP-f7fe32a80f0c6600d1c5db50392a43265d3bba9a/bin/generic64/libXKCP.a.headers
-GRPC_LIB=$(GRPC_LIB_$(UNAME))
-GRPC_INC=$(GRPC_INC_$(UNAME))
-PROTOBUF_LIB=$(PROTOBUF_LIB_$(UNAME))
-LIBCARTESI=$(LIBCARTESI_$(UNAME))
-LIBCARTESI_LDFLAGS=$(LIBCARTESI_LDFLAGS_$(UNAME))
-LIBCARTESI_TESTS_LDFLAGS=$(LIBCARTESI_TESTS_LDFLAGS_$(UNAME))
+GRPC_LIB=$(GRPC_LIB_$(TARGET_OS))
+GRPC_INC=$(GRPC_INC_$(TARGET_OS))
+PROTOBUF_LIB=$(PROTOBUF_LIB_$(TARGET_OS))
+LIBCARTESI=$(LIBCARTESI_$(TARGET_OS))
+LIBCARTESI_LDFLAGS=$(LIBCARTESI_LDFLAGS_$(TARGET_OS))
+LIBCARTESI_TESTS_LDFLAGS=$(LIBCARTESI_TESTS_LDFLAGS_$(TARGET_OS))
 LIBCARTESI_LIB=-L. -lcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR)
-CARTESI_EXECUTABLE_LDFLAGS=$(CARTESI_EXECUTABLE_LDFLAGS_$(UNAME))
+CARTESI_EXECUTABLE_LDFLAGS=$(CARTESI_EXECUTABLE_LDFLAGS_$(TARGET_OS))
 
-LIBCARTESI_GRPC=$(LIBCARTESI_GRPC_$(UNAME))
-LIBCARTESI_GRPC_LDFLAGS=$(LIBCARTESI_GRPC_LDFLAGS_$(UNAME))
-LIBCARTESI_GRPC_TESTS_LDFLAGS=$(LIBCARTESI_GRPC_TESTS_LDFLAGS_$(UNAME))
+LIBCARTESI_GRPC=$(LIBCARTESI_GRPC_$(TARGET_OS))
+LIBCARTESI_GRPC_LDFLAGS=$(LIBCARTESI_GRPC_LDFLAGS_$(TARGET_OS))
+LIBCARTESI_GRPC_TESTS_LDFLAGS=$(LIBCARTESI_GRPC_TESTS_LDFLAGS_$(TARGET_OS))
 LIBCARTESI_GRPC_LIB=-L. -lcartesi_grpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR)
 
 LIBCARTESI_LIBS:=$(XKCP_LIB)
@@ -149,7 +156,7 @@ INCS=\
 	-I../third-party/mongoose-7.11 \
 	-I../third-party/downloads \
 	-I../third-party/boost_1_83_0 \
-	$(LUA_INC) $(XKCP_INC) $(GRPC_INC) $(INCS_$(UNAME))
+	$(LUA_INC) $(XKCP_INC) $(GRPC_INC) $(INCS_$(TARGET_OS))
 
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS
@@ -184,16 +191,18 @@ endif
 # Optimization flags
 ifneq (,$(filter yes,$(relwithdebinfo) $(release)))
 DEFS+=-DNDEBUG
-# Disable jump tables, because it degrades the instruction decoding performance in the interpret loop,
-# since it generates a memory indirection that has a high cost in opcode switches.
-OPTFLAGS+=-fno-jump-tables
 ifneq (,$(filter gcc,$(CC)))
 # The following flag helps GCC to eliminate more redundant computations in the interpret loop,
 # saving some host instructions and improving performance.
 # This flag is usually enabled by default at -O3,
 # but we don't use -O3 because it enables some other flags that are not worth for the interpreter.
 OPTFLAGS+=-fgcse-after-reload -fpredictive-commoning -fsplit-paths -ftree-partial-pre
+else ifneq (,$(filter emcc,$(CC)))
+OPTFLAGS+=-O3
 endif
+# Disable jump tables, because it degrades the instruction decoding performance in the interpret loop,
+# since it generates a memory indirection that has a high cost in opcode switches.
+OPTFLAGS+=-fno-jump-tables
 endif
 
 # Link time optimizations
@@ -282,7 +291,7 @@ endif
 
 all: luacartesi grpc hash c-api jsonrpc-remote-cartesi-machine
 
-.PHONY: all generate use clean test lint format format-lua check-format check-format-lua luacartesi grpc hash c-api compile_flags.txt
+.PHONY: all generate use clean test lint format format-lua check-format check-format-lua luacartesi libcartesi grpc hash c-api compile_flags.txt
 
 LIBCARTESI_OBJS:= \
 	pma-driver.o \
@@ -377,6 +386,8 @@ so-version:
 
 $(LIBCARTESI): $(LIBCARTESI_OBJS)
 	$(CXX) $(LDFLAGS) $(LIBCARTESI_LDFLAGS) -o $@ $(LIBCARTESI_OBJS) $(LIBCARTESI_LIBS)
+
+libcartesi: $(LIBCARTESI)
 
 $(LIBCARTESI_GRPC): $(LIBCARTESI_GRPC_OBJS) $(LIBCARTESI)
 	$(CXX) $(LDFLAGS) $(LIBCARTESI_GRPC_LDFLAGS) -o $@ $(LIBCARTESI_GRPC_OBJS) $(LIBCARTESI_GRPC_LIBS) $(LIBCARTESI_LIB)
@@ -486,7 +497,7 @@ $(PROFILE_DATA_Darwin):
 
 use: CXXFLAGS += -fprofile-use -Wno-missing-profile
 use: LDFLAGS += -fprofile-use
-use: $(PROFILE_DATA_$(UNAME)) luacartesi
+use: $(PROFILE_DATA_$(TARGET_OS)) luacartesi
 
 compile_flags.txt:
 	@echo "$(CXXFLAGS)" "-xc++" | sed -e $$'s/ \{1,\}/\\\n/g' | grep -v "MMD" > $@
@@ -734,7 +745,7 @@ clean-objs:
 	@rm -f *.o *.d
 
 clean-libcartesi: clean-objs
-	@rm -f $(LIBCARTESI) $(LIBCARTESI_GRPC) cartesi.so cartesi/grpc.so cartesi/jsonrpc.so
+	@rm -f *.so *.a *.dylib
 
 clean-executables:
 	@rm -f jsonrpc-remote-cartesi-machine remote-cartesi-machine merkle-tree-hash

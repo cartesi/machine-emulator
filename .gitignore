@@ -3,6 +3,9 @@
 *.d
 *.clang-tidy
 *.deb
+*.a
+*.wasm
+*.tar.gz
 
 build
 third-party/downloads
@@ -15,6 +18,8 @@ src/jsonrpc-remote-cartesi-machine
 src/merkle-tree-hash
 src/tests/test-machine-c-api
 src/tests/test-merkle-tree-hash
+
+cartesi-machine*_wasm
 
 doc/html
 doc/api.md

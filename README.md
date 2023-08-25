@@ -29,7 +29,7 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 #### Debian Bookworm
 
 ```
-apt-get install ca-certificates build-essential \
+sudo apt-get install ca-certificates build-essential \
         wget git patchelf pkg-config xsltproc \
         lua5.4 luarocks liblua5.4-dev libssl-dev \
         libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc
@@ -87,7 +87,7 @@ $ make clean
 ### Install
 
 ```bash
-$ make install
+$ sudo make install PREFIX=/usr/local
 ```
 
 ## Running Tests
@@ -201,6 +201,25 @@ $ make coverage=yes test-all coverage-report \
 
 This command will generate a coverage report in the src directory.
 For clang coverage, repeat the same command but with the flag coverage-toolchain=clang.
+
+## WebAssembly
+
+You can compile libcartesi static library to run it in WebAssembly environment with
+[Emscripten](https://emscripten.org/) toolchain.
+First make sure you have Emscripten installed and `emcc` is in your PATH,
+then execute the following commands:
+
+```
+make clean depclean
+make dep TARGET_OS=Emscripten TARGET_ARCH=wasm
+make libcartesi TARGET_OS=Emscripten TARGET_ARCH=wasm release=yes
+make install-wasm TARGET_OS=Emscripten TARGET_ARCH=wasm DESTDIR=cartesi-machine_wasm PREFIX=/
+```
+
+A static library will be available in `cartesi-machine_wasm/lib`
+and include headers in `cartesi-machine_wasm/include`, you can use both in WebAssembly environment.
+
+Alternatively you can use `make build-wasm-package release=yes` to perform the above steps and package into a tarball.
 
 ## Contributing
 

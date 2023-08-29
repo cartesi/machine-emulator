@@ -1,0 +1,85 @@
+AMD Ryzen 9 7940HS
+
+    keccak-256
+
+        XKCP AVX512
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0 --concurrency=update_merkle_tree:1
+              Time (mean ± σ):      4.030 s ±  0.051 s    [User: 4.007 s, System: 0.021 s]
+              Range (min … max):    4.002 s …  4.174 s    10 runs
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0
+              Time (mean ± σ):     430.9 ms ±   7.1 ms    [User: 6226.7 ms, System: 52.9 ms]
+              Range (min … max):   418.8 ms … 438.8 ms    10 runs
+
+        XKCP AVX2
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0 --concurrency=update_merkle_tree:1
+              Time (mean ± σ):      3.704 s ±  0.056 s    [User: 3.687 s, System: 0.016 s]
+              Range (min … max):    3.675 s …  3.853 s    10 runs
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0
+              Time (mean ± σ):     485.6 ms ±  11.3 ms    [User: 7031.8 ms, System: 48.8 ms]
+              Range (min … max):   467.2 ms … 500.7 ms    10 runs
+
+        XKCP AVX
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0 --concurrency=update_merkle_tree:1
+              Time (mean ± σ):      6.986 s ±  0.018 s    [User: 6.971 s, System: 0.015 s]
+              Range (min … max):    6.952 s …  7.010 s    10 runs
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0
+              Time (mean ± σ):      1.042 s ±  0.016 s    [User: 15.814 s, System: 0.045 s]
+              Range (min … max):    1.021 s …  1.066 s    10 runs
+
+        XKCP SSSE3
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0 --concurrency=update_merkle_tree:1
+              Time (mean ± σ):      4.636 s ±  0.017 s    [User: 4.621 s, System: 0.016 s]
+              Range (min … max):    4.610 s …  4.655 s    10 runs
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0
+              Time (mean ± σ):     692.5 ms ±  22.0 ms    [User: 10326.8 ms, System: 48.0 ms]
+              Range (min … max):   649.9 ms … 723.2 ms    10 runs
+
+        XKCP generic64
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0 --concurrency=update_merkle_tree:1
+              Time (mean ± σ):      5.082 s ±  0.007 s    [User: 5.064 s, System: 0.018 s]
+              Range (min … max):    5.073 s …  5.091 s    10 runs
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0
+              Time (mean ± σ):     809.4 ms ±  15.8 ms    [User: 12062.4 ms, System: 58.2 ms]
+              Range (min … max):   779.1 ms … 825.4 ms    10 runs
+
+        crypto++
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0 --concurrency=update_merkle_tree:1
+              Time (mean ± σ):      4.472 s ±  0.021 s    [User: 4.451 s, System: 0.019 s]
+              Range (min … max):    4.451 s …  4.526 s    10 runs
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0
+              Time (mean ± σ):     701.9 ms ±  12.1 ms    [User: 10505.0 ms, System: 43.0 ms]
+              Range (min … max):   683.8 ms … 717.9 ms    10 runs
+
+    K12
+
+        XKCP AVX512
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0 --concurrency=update_merkle_tree:1
+              Time (mean ± σ):      2.366 s ±  0.008 s    [User: 2.349 s, System: 0.017 s]
+              Range (min … max):    2.354 s …  2.380 s    10 runs
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0
+              Time (mean ± σ):     265.0 ms ±   6.5 ms    [User: 3649.8 ms, System: 54.4 ms]
+              Range (min … max):   258.0 ms … 280.5 ms    11 runs
+
+        XKCP AVX2
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0 --concurrency=update_merkle_tree:1
+              Time (mean ± σ):      2.193 s ±  0.032 s    [User: 2.177 s, System: 0.015 s]
+              Range (min … max):    2.179 s …  2.285 s    10 runs
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0
+              Time (mean ± σ):     296.9 ms ±   7.4 ms    [User: 4157.8 ms, System: 51.6 ms]
+              Range (min … max):   286.9 ms … 307.6 ms    10 runs
+
+        XKCP AVX
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0 --concurrency=update_merkle_tree:1
+              Time (mean ± σ):      3.858 s ±  0.025 s    [User: 3.844 s, System: 0.014 s]
+              Range (min … max):    3.828 s …  3.904 s    10 runs
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0
+              Time (mean ± σ):     576.7 ms ±   4.7 ms    [User: 8567.8 ms, System: 44.4 ms]
+              Range (min … max):   570.3 ms … 584.0 ms    10 runs
+
+        XKCP generic64
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0 --concurrency=update_merkle_tree:1
+              Time (mean ± σ):      2.708 s ±  0.005 s    [User: 2.693 s, System: 0.015 s]
+              Range (min … max):    2.700 s …  2.719 s    10 runs
+            Benchmark 1: cartesi-machine --initial-hash --max-mcycle=0
+              Time (mean ± σ):     415.9 ms ±   5.3 ms    [User: 6012.1 ms, System: 52.2 ms]
+              Range (min … max):   406.5 ms … 423.3 ms    10 runs

@@ -329,6 +329,7 @@ LIBCARTESI_OBJS:= \
 	base64.o \
 	interpret.o \
 	xkcp-keccak-256-hasher.o \
+	xkcp-kangarootwelve-hasher.o \
 	virtual-machine.o \
 	machine-c-api.o \
 	uarch-machine.o \
@@ -342,6 +343,7 @@ LUACARTESI_OBJS:= \
 	clua-htif.o \
 	clua-machine-util.o \
 	xkcp-keccak-256-hasher.o \
+	xkcp-kangarootwelve-hasher.o \
 	clua.o
 
 PROTOBUF_GEN_OBJS:= \
@@ -357,6 +359,7 @@ LIBCARTESI_GRPC_OBJS:= \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
 	xkcp-keccak-256-hasher.o \
+	xkcp-kangarootwelve-hasher.o \
 	$(GRPC_GEN_OBJS) \
 	$(PROTOBUF_GEN_OBJS) \
 	grpc-virtual-machine.o \
@@ -534,7 +537,8 @@ MERKLE_TREE_HASH_OBJS:= \
 	back-merkle-tree.o \
 	pristine-merkle-tree.o \
 	merkle-tree-hash.o \
-	xkcp-keccak-256-hasher.o
+	xkcp-keccak-256-hasher.o \
+	xkcp-kangarootwelve-hasher.o
 
 TEST_MERKLE_TREE_HASH_OBJS:= \
 	back-merkle-tree.o \
@@ -542,11 +546,13 @@ TEST_MERKLE_TREE_HASH_OBJS:= \
 	complete-merkle-tree.o \
 	full-merkle-tree.o \
 	test-merkle-tree-hash.o \
-	xkcp-keccak-256-hasher.o
+	xkcp-keccak-256-hasher.o \
+	xkcp-kangarootwelve-hasher.o
 
 TEST_MACHINE_C_API_OBJS:= \
     test-machine-c-api.o \
-	xkcp-keccak-256-hasher.o
+	xkcp-keccak-256-hasher.o \
+	xkcp-kangarootwelve-hasher.o
 
 PROTO_OBJS:= \
 	$(PROTOBUF_GEN_OBJS) \
@@ -589,6 +595,7 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	base64.o \
 	interpret.o \
 	xkcp-keccak-256-hasher.o \
+	xkcp-kangarootwelve-hasher.o \
 	uarch-machine.o \
 	uarch-step.o \
 	uarch-interpret.o
@@ -620,6 +627,7 @@ JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	machine-config.o \
 	interpret.o \
 	xkcp-keccak-256-hasher.o \
+	xkcp-kangarootwelve-hasher.o \
 	uarch-machine.o \
 	uarch-step.o \
 	uarch-interpret.o

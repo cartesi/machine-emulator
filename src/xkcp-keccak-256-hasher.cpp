@@ -23,7 +23,7 @@
 #define SSSE3_ATTRIBUTE __attribute__((target("ssse3")))
 #define AVX_ATTRIBUTE __attribute__((target("avx")))
 #define AVX2_ATTRIBUTE __attribute__((target("avx2")))
-#define AVX512_ATTRIBUTE __attribute__((target("arch=skylake-avx512")))
+#define AVX512_ATTRIBUTE __attribute__((target("avx512f")))
 #else
 #define GENERIC64_ATTRIBUTE
 #endif
@@ -124,6 +124,10 @@ AVX512_ATTRIBUTE static int XKCP_Keccak_HashFinal(Keccak_HashInstance *hashInsta
 // clang-format on
 
 namespace cartesi {
+
+#define XKCP_Keccak_HashInitialize SSSE3_Keccak_HashInitialize
+#define XKCP_Keccak_HashUpdate SSSE3_Keccak_HashUpdate
+#define XKCP_Keccak_HashFinal SSSE3_Keccak_HashFinal
 
 void xkcp_keccak_256_hasher::do_begin(void) {
     // We use the same Keccak-256 as in Ethereum, that is,

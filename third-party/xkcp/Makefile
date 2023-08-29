@@ -1,4 +1,4 @@
-LIB_CFLAGS=-O2 -g0 -fvisibility=hidden -fno-stack-protector -fPIC
+LIB_CFLAGS=-O2 -g0 -fvisibility=hidden -fno-stack-protector -fPIC -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0
 XKCP_COMMIT=f7fe32a80f0c6600d1c5db50392a43265d3bba9a
 XKCP_LIBS=XKCP/bin/libXKCP_generic64.a
 
@@ -16,10 +16,10 @@ XKCP:
 	mv XKCP-$(XKCP_COMMIT) XKCP
 	$(MAKE) -C XKCP
 
-XKCP/bin/libXKCP_SSSE3.a: ARCHFLAGS=-mssse3
-XKCP/bin/libXKCP_AVX.a: ARCHFLAGS=-mavx
-XKCP/bin/libXKCP_AVX2.a: ARCHFLAGS=-mavx2
-XKCP/bin/libXKCP_AVX512.a: ARCHFLAGS=-march=skylake-avx512
+XKCP/bin/libXKCP_SSSE3.a: ARCHFLAGS=-mssse3 -march=native
+XKCP/bin/libXKCP_AVX.a: ARCHFLAGS=-mavx -march=native
+XKCP/bin/libXKCP_AVX2.a: ARCHFLAGS=-mavx2 -march=native
+XKCP/bin/libXKCP_AVX512.a: ARCHFLAGS=-mavx512f -mavx512vl -march=native
 XKCP/bin/libXKCP_%.a: XKCP
 	$(MAKE) -C XKCP $*/libXKCP.a CFLAGS="$(ARCHFLAGS) $(LIB_CFLAGS)"
 	# prefix all library symbols with the target extension

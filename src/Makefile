@@ -262,9 +262,9 @@ EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)
 CLANG_TIDY_HEADER_FILTER=$(PWD)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
 
-CXXFLAGS+=$(OPTFLAGS) -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS) $(MYCFLAGS)
-CFLAGS+=$(OPTFLAGS) -std=c99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS) $(MYCFLAGS)
-LDFLAGS+=$(UBFLAGS) $(MYLDFLAGS)
+CXXFLAGS+=$(OPTFLAGS) -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
+CFLAGS+=$(OPTFLAGS) -std=c99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
+LDFLAGS+=$(UBFLAGS)
 
 COVERAGE_WORKLOAD=\
 	dhrystone 100; \
@@ -288,6 +288,10 @@ else ifneq ($(COVERAGE_TOOLCHAIN),)
 $(error invalid value for COVERAGE_TOOLCHAIN: $(COVERAGE_TOOLCHAIN))
 endif
 endif
+
+CXXFLAGS+=$(MYCXXFLAGS)
+CFLAGS+=$(MYCFLAGS)
+LDFLAGS+=$(MYLDFLAGS)
 
 all: luacartesi grpc hash c-api jsonrpc-remote-cartesi-machine
 

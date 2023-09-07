@@ -18,7 +18,6 @@
 #include <any>
 #include <cstring>
 #include <exception>
-#include <filesystem>
 #include <future>
 #include <ios>
 #include <optional>
@@ -84,8 +83,6 @@ int cm_result_failure(char **err_msg) try { throw; } catch (std::exception &e) {
         return CM_ERROR_REGEX_ERROR;
     } catch (std::ios_base::failure &ex) {
         return CM_ERROR_SYSTEM_IOS_BASE_FAILURE;
-    } catch (std::filesystem::filesystem_error &ex) {
-        return CM_ERROR_FILESYSTEM_ERROR;
     } catch (std::runtime_error &ex) {
         return CM_ERROR_RUNTIME_ERROR;
     } catch (std::bad_typeid &ex) {

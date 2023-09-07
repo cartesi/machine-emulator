@@ -22,8 +22,11 @@
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <sys/stat.h>
-#include <termios.h>
 #include <unistd.h>
+
+#ifndef NO_TERMIOS
+#include <termios.h>
+#endif
 
 #include "tty.h"
 
@@ -34,13 +37,16 @@ static const int CONSOLE_BUF_SIZE = 1024; ///< Number of characters in console i
 /// \brief TTY global state
 struct tty_state {
     bool initialized{false};
-    int ttyfd{-1};
-    termios oldtty{};
     std::array<char, CONSOLE_BUF_SIZE> buf{};
     ssize_t buf_pos{};
     ssize_t buf_len{};
+#ifndef NO_TERMIOS
+    int ttyfd{-1};
+    termios oldtty{};
+#endif
 };
 
+#ifndef NO_TERMIOS
 static int new_ttyfd(const char *path) {
     int fd{};
     do {
@@ -66,6 +72,7 @@ static int get_ttyfd(void) {
     // NOLINTEND(bugprone-assignment-in-if-condition)
     return -1;
 }
+#endif
 
 static bool try_read_chars_from_stdin(uint64_t wait, char *data, size_t max_len, long *actual_len) {
     const int fd_max{0};
@@ -98,6 +105,7 @@ void tty_initialize(void) {
         throw std::runtime_error("TTY already initialized.");
     }
     s->initialized = true;
+#ifndef NO_TERMIOS
     // NOLINTNEXTLINE(bugprone-assignment-in-if-condition)
     if ((s->ttyfd = get_ttyfd()) >= 0) {
         struct termios tty {};
@@ -129,6 +137,7 @@ void tty_initialize(void) {
         tcsetattr(s->ttyfd, TCSANOW, &tty);
         //??D Should we check to see if changes stuck?
     }
+#endif
 }
 
 void tty_finalize(void) {
@@ -137,11 +146,13 @@ void tty_finalize(void) {
         throw std::runtime_error("TTY not initialized");
     }
     s->initialized = false;
+#ifndef NO_TERMIOS
     if (s->ttyfd >= 0) {
         tcsetattr(s->ttyfd, TCSANOW, &s->oldtty);
         close(s->ttyfd);
         s->ttyfd = -1;
     }
+#endif
 }
 
 void tty_poll_console(uint64_t wait) {

@@ -19,7 +19,6 @@
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>
-#include <filesystem>
 #include <future>
 #include <iomanip>
 #include <iostream>
@@ -364,13 +363,19 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
         const std::string flash_description = "flash drive "s + std::to_string(i++);
         // Auto detect flash drive image length
         if (f.length == UINT64_C(-1)) {
-            std::error_code ec;
-            f.length = std::filesystem::file_size(f.image_filename, ec);
-            if (ec) {
-                throw std::system_error{ec.value(), ec.category(),
+            auto fp = unique_fopen(f.image_filename.c_str(), "rb");
+            if (fseek(fp.get(), 0, SEEK_END) != 0) {
+                throw std::system_error{errno, std::generic_category(),
                     "unable to obtain length of image file '"s + f.image_filename + "' when initializing "s +
                         flash_description};
             }
+            const auto length = ftell(fp.get());
+            if (length < 0) {
+                throw std::system_error{errno, std::generic_category(),
+                    "unable to obtain length of image file '"s + f.image_filename + "' when initializing "s +
+                        flash_description};
+            }
+            f.length = length;
         }
         register_pma_entry(make_flash_drive_pma_entry(flash_description, f));
     }

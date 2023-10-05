@@ -18,7 +18,6 @@
 
 local cartesi = require("cartesi")
 local test_util = require("tests.util")
-local md5 = require("md5")
 
 -- Note: for grpc machine test to work, remote-cartesi-machine must run on
 -- same computer and remote-cartesi-machine execution path must be provided
@@ -244,11 +243,11 @@ do_test("dumped file hashes should match memory data hashes", function(machine)
         local data_region_size = tonumber(temp[2], 16)
 
         local dump = assert(io.open(file_name, "rb"))
-        local dump_hash = md5.sumhexa(dump:read("*all"))
+        local dump_hash = cartesi.keccak(dump:read("*all"))
         dump:close()
 
         local memory_read = machine:read_memory(data_region_start, data_region_size)
-        local memory_hash = md5.sumhexa(memory_read)
+        local memory_hash = cartesi.keccak(memory_read)
 
         assert(dump_hash == memory_hash, "hash does not match for dump file " .. file_name)
     end

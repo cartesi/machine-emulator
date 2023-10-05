@@ -90,9 +90,7 @@ local function build_machine(exec_args)
         },
         dtb = {
             bootargs = (
-                "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw "
-                .. "quiet mtdparts=flash.0:-(root) -- "
-                .. exec_args
+                "console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw quiet -- " .. exec_args
             ),
         },
         ram = {

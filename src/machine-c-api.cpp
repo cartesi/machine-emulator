@@ -190,6 +190,8 @@ static cm_ram_config convert_to_c(const cartesi::ram_config &cpp_config) {
 static cartesi::dtb_config convert_from_c(const cm_dtb_config *c_config) {
     cartesi::dtb_config new_cpp_dtb_config{};
     new_cpp_dtb_config.bootargs = null_to_empty(c_config->bootargs);
+    new_cpp_dtb_config.init = null_to_empty(c_config->init);
+    new_cpp_dtb_config.entrypoint = null_to_empty(c_config->entrypoint);
     new_cpp_dtb_config.image_filename = null_to_empty(c_config->image_filename);
     return new_cpp_dtb_config;
 }
@@ -197,6 +199,8 @@ static cartesi::dtb_config convert_from_c(const cm_dtb_config *c_config) {
 static cm_dtb_config convert_to_c(const cartesi::dtb_config &cpp_config) {
     cm_dtb_config new_c_dtb_config{};
     new_c_dtb_config.bootargs = convert_to_c(cpp_config.bootargs);
+    new_c_dtb_config.init = convert_to_c(cpp_config.init);
+    new_c_dtb_config.entrypoint = convert_to_c(cpp_config.entrypoint);
     new_c_dtb_config.image_filename = convert_to_c(cpp_config.image_filename);
     return new_c_dtb_config;
 }
@@ -704,6 +708,8 @@ void cm_delete_machine_config(const cm_machine_config *config) {
     delete[] config->flash_drive.entry;
     delete[] config->dtb.image_filename;
     delete[] config->dtb.bootargs;
+    delete[] config->dtb.init;
+    delete[] config->dtb.entrypoint;
     delete[] config->ram.image_filename;
     delete[] config->tlb.image_filename;
     delete[] config->rollup.rx_buffer.image_filename;

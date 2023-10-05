@@ -97,6 +97,8 @@ where options are:
         start:<number>
         length:<number>
         shared
+        mount:<string>
+        user:<string>
 
         label (mandatory)
         identifies the flash drive. init attempts to mount it as /mnt/<label>.
@@ -118,6 +120,19 @@ where options are:
         shared (optional)
         target modifications to flash drive modify image file as well.
         by default, image files are not modified and changes are lost.
+
+        mount (optional)
+        whether the flash drive should be mounted automatically in init.
+        by default, the drive is mounted if there is an image file backing it,
+        you can use "mount:false" to disables auto mounting,
+        you can also use "mount:<path>" to choose a custom mount point.
+
+        user (optional)
+        changes the user ownership of the mounted directory when mount is true,
+        otherwise changes the user ownership of the respective /dev/pmemX device,
+        this option is useful to allow dapp's user access the flash drive,
+        by default the mounted directory ownership is configured by the filesystem being mounted,
+        in case mount is false the default ownership is set to the root user.
 
     (an option "--flash-drive=label:root,filename:rootfs.ext2" is implicit)
 
@@ -341,6 +356,25 @@ where options are:
     suppress cartesi-machine.lua output.
     exceptions: --initial-hash, --final-hash and text emitted from the target.
 
+  --no-init-splash
+    don't show cartesi machine splash on boot.
+
+  --append-init=<string>
+    append a command to machine's init script to be executed with root privilege.
+    The command is executed on boot after mounting flash drives and before running the entrypoint.
+    You can pass this option multiple times.
+
+  --append-init-file=<filename>
+    like --append-init, but use contents from a file.
+
+  --append-entrypoint=<string>
+    append a command to machine's entrypoint script to be executed with dapp privilege.
+    The command is executed after the machine is initialized and before the final entrypoint command.
+    You can pass this option multiple times.
+
+  --append-entrypoint-file=<filename>
+    like --append-entrypoint, but use contents from a file.
+
   --gdb[=<address>]
     listen at <address> and wait for a GDB connection to debug the machine.
     If <address> is omitted, '127.0.0.1:1234' is used by default.
@@ -395,6 +429,8 @@ local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
 local flash_image_filename = { root = images_path .. "rootfs.ext2" }
 local flash_label_order = { "root" }
 local flash_shared = {}
+local flash_mount = {}
+local flash_user = {}
 local flash_start = {}
 local flash_length = {}
 local memory_range_replace = {}
@@ -403,6 +439,9 @@ local ram_length = 64 << 20
 local dtb_image_filename = nil
 local dtb_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw quiet \z
                       swiotlb=noforce init=/opt/cartesi/bin/init"
+local init_splash = true
+local append_init = ""
+local append_entrypoint = ""
 local rollup
 local uarch
 local rollup_advance
@@ -434,7 +473,6 @@ local store_config = false
 local load_config = false
 local gdb_address
 local exec_arguments = {}
-local quiet = false
 local assert_rolling_template = false
 
 local function parse_memory_range(opts, what, all)
@@ -645,6 +683,8 @@ local options = {
                 label = true,
                 filename = true,
                 shared = true,
+                mount = true,
+                user = true,
                 length = true,
                 start = true,
             })
@@ -653,6 +693,18 @@ local options = {
             f.filename = nil
             if f.image_filename == true then f.image_filename = "" end
             assert(not f.shared or f.shared == true, "invalid flash drive shared value in " .. all)
+            if f.mount == nil then
+                -- mount only if there is a file backing
+                if f.image_filename and f.image_filename ~= "" then
+                    f.mount = "/mnt/" .. f.label
+                else
+                    f.mount = false
+                end
+            elseif f.mount == "true" then
+                f.mount = "/mnt/" .. f.label
+            elseif f.mount == "false" then
+                f.mount = false
+            end
             if f.start then f.start = assert(util.parse_number(f.start), "invalid flash drive start in " .. all) end
             if f.length then f.length = assert(util.parse_number(f.length), "invalid flash drive length in " .. all) end
             local d = f.label
@@ -664,6 +716,8 @@ local options = {
             flash_start[d] = f.start or flash_start[d]
             flash_length[d] = f.length or flash_length[d]
             flash_shared[d] = f.shared or flash_shared[d]
+            flash_mount[d] = f.mount or flash_mount[d]
+            flash_user[d] = f.user or flash_user[d]
             return true
         end,
     },
@@ -849,7 +903,6 @@ local options = {
         function(all)
             if not all then return false end
             stderr = function() end
-            quiet = true
             return true
         end,
     },
@@ -1057,6 +1110,52 @@ local options = {
         end,
     },
     {
+        "^%-%-no%-init%-splash$",
+        function(all)
+            if not all then return false end
+            init_splash = false
+            return true
+        end,
+    },
+    {
+        "^%-%-append%-init%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            append_init = append_init .. o .. "\n"
+            return true
+        end,
+    },
+    {
+        "^%-%-append%-init%-file%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            local f <close> = assert(io.open(o, "rb"))
+            local contents = assert(f:read("*a"))
+            if not contents:find("\n$") then contents = contents .. "\n" end
+            append_init = append_init .. contents
+            return true
+        end,
+    },
+    {
+        "^%-%-append%-entrypoint%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            append_entrypoint = append_entrypoint .. o .. "\n"
+            return true
+        end,
+    },
+    {
+        "^%-%-append%-entrypoint%-file%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            local f <close> = assert(io.open(o, "rb"))
+            local contents = assert(f:read("*a"))
+            if not contents:find("\n$") then contents = contents .. "\n" end
+            append_entrypoint = append_entrypoint .. contents
+            return true
+        end,
+    },
+    {
         "^%-%-gdb(%=?)(.*)$",
         function(o, address)
             if o == "=" and #o > 0 then
@@ -1168,6 +1267,10 @@ local function store_machine_config(config, output)
     comment_default(dtb.image_filename, def.dtb.image_filename)
     output("    bootargs = %q,", dtb.bootargs or def.dtb.bootargs)
     comment_default(dtb.bootargs, def.dtb.bootargs)
+    output("    init = %q,", dtb.init or def.dtb.init)
+    comment_default(dtb.init, def.dtb.init)
+    output("    entrypoint = %q,", dtb.entrypoint or def.dtb.entrypoint)
+    comment_default(dtb.entrypoint, def.dtb.entrypoint)
     output("  },\n")
     local tlb = config.tlb or {}
     output("  tlb = {\n")
@@ -1277,14 +1380,6 @@ local function dump_value_proofs(machine, desired_proofs, has_htif_console_getch
     end
 end
 
-local function append(a, b)
-    a = a or ""
-    b = b or ""
-    if a == "" then return b end
-    if b == "" then return a end
-    return a .. " " .. b
-end
-
 local function create_machine(config_or_dir, runtime)
     if remote then return remote.machine(config_or_dir, runtime) end
     return cartesi.machine(config_or_dir, runtime)
@@ -1344,6 +1439,8 @@ else
         dtb = {
             image_filename = dtb_image_filename,
             bootargs = dtb_bootargs,
+            init = "",
+            entrypoint = "",
         },
         ram = {
             image_filename = ram_image_filename,
@@ -1358,20 +1455,75 @@ else
         uarch = uarch,
         flash_drive = {},
     }
+
+    -- show splash on init
+    if init_splash then
+        config.dtb.init = config.dtb.init
+            .. ([[
+echo "
+         .
+        / \
+      /    \
+\---/---\  /----\
+ \       X       \
+  \----/  \---/---\
+       \    / CARTESI
+        \ /   MACHINE
+         '
+"
+]]):gsub("\\", "\\\\")
+    end
+
     for _, label in ipairs(flash_label_order) do
+        local devname = "pmem" .. #config.flash_drive
         config.flash_drive[#config.flash_drive + 1] = {
             image_filename = flash_image_filename[label],
             shared = flash_shared[label],
             start = flash_start[label],
             length = flash_length[label] or -1,
         }
+        -- auto mount
+        local mount = flash_mount[label]
+        local chownpath = "/dev/" .. devname
+        if label ~= "root" and mount then
+            local cmd = table.concat({
+                'busybox mkdir -p "',
+                mount,
+                '" && busybox mount /dev/',
+                devname,
+                ' "',
+                mount,
+                '"',
+            })
+            config.dtb.init = config.dtb.init .. cmd .. "\n"
+            chownpath = mount
+        end
+        -- change permission
+        local user = flash_user[label]
+        if label ~= "root" and user then
+            local cmd = table.concat({
+                "busybox chown ",
+                user,
+                ": ",
+                chownpath,
+            })
+            config.dtb.init = config.dtb.init .. cmd .. "\n"
+        end
+        do -- create a map of the label in /run/drive-label for flashdrive tool
+            local cmd = table.concat({
+                'busybox mkdir -p /run/drive-label && echo "',
+                label,
+                '" > /run/drive-label/',
+                devname,
+            })
+            config.dtb.init = config.dtb.init .. cmd .. "\n"
+        end
     end
 
-    config.dtb.bootargs = append(append(config.dtb.bootargs, append_dtb_bootargs), quiet and " splash=no" or "")
-
-    if #exec_arguments > 0 then
-        config.dtb.bootargs = append(config.dtb.bootargs, "-- " .. table.concat(exec_arguments, " "))
-    end
+    if #append_dtb_bootargs > 0 then config.dtb.bootargs = config.dtb.bootargs .. " " .. append_dtb_bootargs end
+    if #append_init > 0 then config.dtb.init = config.dtb.init .. append_init end
+    if #append_entrypoint > 0 then config.dtb.entrypoint = config.dtb.entrypoint .. append_entrypoint end
+    if #exec_arguments > 0 then config.dtb.entrypoint = config.dtb.entrypoint .. table.concat(exec_arguments, " ") end
 
     if load_config then
         local env = {}

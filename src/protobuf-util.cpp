@@ -47,6 +47,8 @@ void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineCo
     auto *proto_dtb = proto_c->mutable_dtb();
     proto_dtb->set_bootargs(c.dtb.bootargs);
     proto_dtb->set_image_filename(c.dtb.image_filename);
+    proto_dtb->set_init(c.dtb.init);
+    proto_dtb->set_entrypoint(c.dtb.entrypoint);
     auto *proto_ram = proto_c->mutable_ram();
     proto_ram->set_length(c.ram.length);
     proto_ram->set_image_filename(c.ram.image_filename);
@@ -815,6 +817,8 @@ machine_config get_proto_machine_config(const CartesiMachine::MachineConfig &pro
     }
     if (proto_c.has_dtb()) {
         c.dtb.bootargs = proto_c.dtb().bootargs();
+        c.dtb.init = proto_c.dtb().init();
+        c.dtb.entrypoint = proto_c.dtb().entrypoint();
         c.dtb.image_filename = proto_c.dtb().image_filename();
     }
     if (proto_c.has_ram()) {

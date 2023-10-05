@@ -158,6 +158,11 @@ public:
         prop(name, reinterpret_cast<const uint8_t *>(v.c_str()), v.length() + 1);
     }
 
+    void prop_string_data(const std::string &name, const std::string &v) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        prop(name, reinterpret_cast<const uint8_t *>(v.c_str()), v.length());
+    }
+
     template <uint32_t N>
     void prop_u32_list(const std::string &name, const std::array<uint32_t, N> &vs) {
         put_u32(FDT_PROP);

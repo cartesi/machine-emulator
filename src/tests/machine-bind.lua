@@ -452,6 +452,8 @@ local function test_config(config)
     local dtb = config.dtb
     assert(dtb.image_filename == nil or type(dtb.image_filename) == "string", "invalid dtb.image_filename")
     assert(dtb.bootargs == nil or type(dtb.bootargs) == "string", "invalid dtb.bootargs")
+    assert(dtb.init == nil or type(dtb.init) == "string", "invalid dtb.init")
+    assert(dtb.entrypoint == nil or type(dtb.entrypoint) == "string", "invalid dtb.entrypoint")
     local tlb = config.tlb
     assert(tlb.image_filename == nil or type(tlb.image_filename) == "string", "invalid tlb.image_filename")
     for _, f in ipairs(config.flash_drive) do

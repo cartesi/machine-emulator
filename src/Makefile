@@ -73,8 +73,8 @@ GRPC_INC_Darwin=-I/usr/local/opt/gprc/include
 GRPC_LIB_Darwin=-L/usr/local/opt/grpc/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
 PROTOBUF_LIB_Darwin:=-L/usr/local/opt/protobuf/lib -lprotobuf -lpthread
 else # Macports installation
-BOOST_LIB_DIR_Darwin=-L/opt/local/lib
-BOOST_INC_Darwin=-I/opt/local/include
+BOOST_LIB_DIR_Darwin=-L/opt/local/libexec/boost/1.81/lib
+BOOST_INC_Darwin=-I/opt/local/libexec/boost/1.81/include
 CRYPTOPP_LIB_Darwin:=-L/opt/local/lib -lcryptopp
 CRYPTOPP_INC_Darwin:=-I/opt/local/include
 B64_LIB_Darwin:=-L/opt/local/lib -lb64

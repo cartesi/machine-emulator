@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed stored machine configs from protobuf to JSON
 - Build device tree automatically into machine's ROM, eliminating the need for a ROM image
 - Enabled rollup by default
+- Updated libboost version to 1.81
 
 ## [0.15.2] - 2023-08-21
 ### Changed

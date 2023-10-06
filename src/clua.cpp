@@ -46,6 +46,12 @@ void clua_setstringfield(lua_State *L, const char *val, const char *name, int id
     lua_setfield(L, absidx, name);
 }
 
+void clua_setlstringfield(lua_State *L, const char *val, size_t length, const char *name, int idx) {
+    auto absidx = lua_absindex(L, idx);
+    lua_pushlstring(L, val, length);
+    lua_setfield(L, absidx, name);
+}
+
 void clua_setbooleanfield(lua_State *L, bool val, const char *name, int idx) {
     auto absidx = lua_absindex(L, idx);
     lua_pushboolean(L, val);

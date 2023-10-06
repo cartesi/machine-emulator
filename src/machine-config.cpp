@@ -57,10 +57,6 @@ static void adjust_image_filenames(machine_config &c, const std::string &dir) {
         r.voucher_hashes.image_filename = c.get_image_filename(dir, r.voucher_hashes);
         r.notice_hashes.image_filename = c.get_image_filename(dir, r.notice_hashes);
     }
-
-    if (c.uarch.ram.length > 0) {
-        c.uarch.ram.image_filename = c.get_image_filename(dir, PMA_UARCH_RAM_START, c.uarch.ram.length);
-    }
 }
 
 machine_config machine_config::load(const std::string &dir) {

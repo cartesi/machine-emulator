@@ -25,7 +25,12 @@
 
 #include "pma.h"
 #include "riscv-constants.h"
-#include <boost/container/static_vector.hpp>
+
+/// \brief Embedded pristine uarch ram image. This symbol is created by "xxd"
+extern "C" const unsigned char uarch_pristine_ram[];
+
+/// \brief Length of the embedded pristine uarch ram image. This symbol is created by "xxd"
+extern "C" const uint32_t uarch_pristine_ram_len;
 
 namespace cartesi {
 
@@ -44,8 +49,9 @@ struct uarch_state {
     std::array<uint64_t, UARCH_X_REG_COUNT> x; ///< Register file.
     uint64_t cycle;                            ///< Cycles counter
     bool halt_flag;
-    pma_entry ram;       ///< Memory range for micro RAM
-    pma_entry empty_pma; ///< Empty range fallback
+    pma_entry shadow_state; ///< Shadow uarch state
+    pma_entry ram;          ///< Memory range for micro RAM
+    pma_entry empty_pma;    ///< Empty range fallback
 };
 
 } // namespace cartesi

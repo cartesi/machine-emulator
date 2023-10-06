@@ -315,14 +315,12 @@ static cm_rollup_config convert_to_c(const std::optional<cartesi::rollup_config>
 
 static cartesi::uarch_ram_config convert_from_c(const cm_uarch_ram_config *c_config) {
     cartesi::uarch_ram_config new_cpp_uarch_ram_config{};
-    new_cpp_uarch_ram_config.length = c_config->length;
     new_cpp_uarch_ram_config.image_filename = null_to_empty(c_config->image_filename);
     return new_cpp_uarch_ram_config;
 }
 
 static cm_uarch_ram_config convert_to_c(const cartesi::uarch_ram_config &cpp_config) {
     cm_uarch_ram_config new_c_uarch_ram_config{};
-    new_c_uarch_ram_config.length = cpp_config.length;
     new_c_uarch_ram_config.image_filename = convert_to_c(cpp_config.image_filename);
     return new_c_uarch_ram_config;
 }
@@ -331,6 +329,7 @@ static cartesi::uarch_processor_config convert_from_c(const cm_uarch_processor_c
     cartesi::uarch_processor_config new_cpp_config{};
     new_cpp_config.pc = c_config->pc;
     new_cpp_config.cycle = c_config->cycle;
+    new_cpp_config.halt_flag = c_config->halt_flag;
     for (size_t i = 0; i < CM_MACHINE_UARCH_X_REG_COUNT; i++) {
         new_cpp_config.x[i] = c_config->x[i];
     }
@@ -341,6 +340,7 @@ static cm_uarch_processor_config convert_to_c(const cartesi::uarch_processor_con
     cm_uarch_processor_config new_c_config{};
     new_c_config.pc = cpp_config.pc;
     new_c_config.cycle = cpp_config.cycle;
+    new_c_config.halt_flag = cpp_config.halt_flag;
     for (size_t i = 0; i < CM_MACHINE_UARCH_X_REG_COUNT; i++) {
         new_c_config.x[i] = cpp_config.x[i];
     }
@@ -534,7 +534,7 @@ static cartesi::access_type convert_from_c(const CM_ACCESS_TYPE c_type) {
 }
 
 cartesi::access_log::type convert_from_c(const cm_access_log_type *type) {
-    cartesi::access_log::type cpp_type(type->proofs, type->annotations);
+    cartesi::access_log::type cpp_type(type->proofs, type->annotations, type->large_data);
     return cpp_type;
 }
 
@@ -543,19 +543,35 @@ static cm_access convert_to_c(const cartesi::access &cpp_access) {
     new_access.type = convert_to_c(cpp_access.get_type());
     new_access.address = cpp_access.get_address();
     new_access.log2_size = cpp_access.get_log2_size();
-    new_access.read_data_size = cpp_access.get_read().size();
-    if (new_access.read_data_size > 0) {
-        new_access.read_data = new uint8_t[new_access.read_data_size];
-        memcpy(new_access.read_data, cpp_access.get_read().data(), new_access.read_data_size);
-    } else {
-        new_access.read_data = nullptr;
+    memcpy(&new_access.read_hash, static_cast<const uint8_t *>(cpp_access.get_read_hash().data()), sizeof(cm_hash));
+    new_access.read_data = nullptr;
+    new_access.read_data_size = 0;
+    if (cpp_access.get_read().has_value()) {
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        const auto &read_value = cpp_access.get_read().value();
+        new_access.read_data_size = read_value.size();
+        if (new_access.read_data_size > 0) {
+            new_access.read_data = new uint8_t[new_access.read_data_size];
+            memcpy(new_access.read_data, read_value.data(), new_access.read_data_size);
+        }
     }
-    new_access.written_data_size = cpp_access.get_written().size();
-    if (new_access.written_data_size > 0) {
-        new_access.written_data = new uint8_t[new_access.written_data_size];
-        memcpy(new_access.written_data, cpp_access.get_written().data(), new_access.written_data_size);
+    if (cpp_access.get_written_hash().has_value()) {
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        memcpy(&new_access.written_hash, static_cast<const uint8_t *>(cpp_access.get_written_hash().value().data()),
+            sizeof(cm_hash));
     } else {
-        new_access.written_data = nullptr;
+        memset(&new_access.written_hash, 0, sizeof(cm_hash));
+    }
+    new_access.written_data = nullptr;
+    new_access.written_data_size = 0;
+    if (cpp_access.get_written().has_value()) {
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        const auto &written_value = cpp_access.get_written().value();
+        new_access.written_data_size = written_value.size();
+        if (new_access.written_data_size > 0) {
+            new_access.written_data = new uint8_t[new_access.written_data_size];
+            memcpy(new_access.written_data, written_value.data(), new_access.written_data_size);
+        }
     }
 
     if (cpp_access.get_proof().has_value()) {
@@ -578,15 +594,17 @@ static cartesi::access convert_from_c(const cm_access *c_access) {
         cpp_access.set_proof(proof);
     }
 
+    cpp_access.set_read_hash(convert_from_c(&c_access->read_hash));
     if (c_access->read_data_size > 0) {
         cpp_access.set_read(cartesi::access_data{c_access->read_data, c_access->read_data + c_access->read_data_size});
     }
-
+    if (c_access->type == CM_ACCESS_WRITE) {
+        cpp_access.set_written_hash(convert_from_c(&c_access->written_hash));
+    }
     if (c_access->written_data_size > 0) {
         cpp_access.set_written(
             cartesi::access_data{c_access->written_data, c_access->written_data + c_access->written_data_size});
     }
-
     return cpp_access;
 }
 
@@ -661,6 +679,7 @@ cm_access_log *convert_to_c(const cartesi::access_log &cpp_access_log) {
 
     new_access_log->log_type.annotations = cpp_access_log.get_log_type().has_annotations();
     new_access_log->log_type.proofs = cpp_access_log.get_log_type().has_proofs();
+    new_access_log->log_type.large_data = cpp_access_log.get_log_type().has_large_data();
 
     return new_access_log;
 }
@@ -845,9 +864,23 @@ CM_API int cm_set_uarch_halt_flag(cm_machine *m, char **err_msg) try {
     return cm_result_failure(err_msg);
 }
 
-CM_API int cm_reset_uarch_state(cm_machine *m, char **err_msg) try {
+CM_API int cm_reset_uarch(cm_machine *m, char **err_msg) try {
     auto *cpp_machine = convert_from_c(m);
-    cpp_machine->reset_uarch_state();
+    cpp_machine->reset_uarch();
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_log_uarch_reset(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
+    char **err_msg) try {
+    if (access_log == nullptr) {
+        throw std::invalid_argument("invalid access log output");
+    }
+    auto *cpp_machine = convert_from_c(m);
+    cartesi::access_log::type cpp_log_type{log_type.proofs, log_type.annotations, log_type.large_data};
+    cartesi::access_log cpp_access_log = cpp_machine->log_uarch_reset(cpp_log_type, one_based);
+    *access_log = convert_to_c(cpp_access_log);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
@@ -865,14 +898,14 @@ int cm_machine_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK
     return cm_result_failure(err_msg);
 }
 
-int cm_step_uarch(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
+int cm_log_uarch_step(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
     char **err_msg) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log output");
     }
     auto *cpp_machine = convert_from_c(m);
     cartesi::access_log::type cpp_log_type{log_type.proofs, log_type.annotations};
-    cartesi::access_log cpp_access_log = cpp_machine->step_uarch(cpp_log_type, one_based);
+    cartesi::access_log cpp_access_log = cpp_machine->log_uarch_step(cpp_log_type, one_based);
     *access_log = convert_to_c(cpp_access_log);
     return cm_result_success(err_msg);
 } catch (...) {
@@ -899,25 +932,49 @@ void cm_delete_access_log(cm_access_log *acc_log) {
     delete acc_log;
 }
 
-int cm_verify_access_log(const cm_access_log *log, const cm_machine_runtime_config *runtime_config, bool one_based,
+int cm_verify_uarch_step_log(const cm_access_log *log, const cm_machine_runtime_config *runtime_config, bool one_based,
     char **err_msg) try {
     const cartesi::access_log cpp_log = convert_from_c(log);
     const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
-    cartesi::machine::verify_access_log(cpp_log, cpp_runtime_config, one_based);
+    cartesi::machine::verify_uarch_step_log(cpp_log, cpp_runtime_config, one_based);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
 }
 
-int cm_verify_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
+int cm_verify_uarch_reset_log(const cm_access_log *log, const cm_machine_runtime_config *runtime_config, bool one_based,
+    char **err_msg) try {
+    const cartesi::access_log cpp_log = convert_from_c(log);
+    const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
+    cartesi::machine::verify_uarch_reset_log(cpp_log, cpp_runtime_config, one_based);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_verify_uarch_step_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
     const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config, bool one_based,
     char **err_msg) try {
     const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
     const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
     const cartesi::access_log cpp_log = convert_from_c(log);
     const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
-    cartesi::machine::verify_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after, cpp_runtime_config,
-        one_based);
+    cartesi::machine::verify_uarch_step_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after,
+        cpp_runtime_config, one_based);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_verify_uarch_reset_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
+    const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config, bool one_based,
+    char **err_msg) try {
+    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    const cartesi::access_log cpp_log = convert_from_c(log);
+    const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
+    cartesi::machine::verify_uarch_reset_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after,
+        cpp_runtime_config, one_based);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
@@ -1185,7 +1242,6 @@ IMPL_MACHINE_READ_WRITE(htif_iyield)
 IMPL_MACHINE_READ_WRITE(clint_mtimecmp)
 IMPL_MACHINE_READ_WRITE(uarch_cycle)
 IMPL_MACHINE_READ_WRITE(uarch_pc)
-IMPL_MACHINE_READ(uarch_ram_length)
 // clang-format-on
 
 uint64_t cm_packed_iflags(int PRV, int X, int Y, int H) {

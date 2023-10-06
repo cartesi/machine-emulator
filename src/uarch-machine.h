@@ -33,9 +33,6 @@ class uarch_machine final {
     uarch_state m_s;  ///< Opaque microarchitecture machine state
     uarch_config m_c; ///< Copy of initialization config
 
-    // Setup the machine with the provided configuration
-    void load_config(uarch_config &c);
-
 public:
     /// \brief Constructor from machine configuration
     // I will deal with clang-tidy later.
@@ -53,9 +50,6 @@ public:
     uarch_machine &operator=(const uarch_machine &other) = delete;
     /// \brief No move assignment
     uarch_machine &operator=(uarch_machine &&other) = delete;
-
-    // Reset machine state to initial configuration
-    void reset_state(void);
 
     /// \brief Returns machine state for direct access.
     uarch_state &get_state(void) {

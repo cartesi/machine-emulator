@@ -17,7 +17,7 @@
 #ifndef UARCH_STATE_ACCESS_H
 #define UARCH_STATE_ACCESS_H
 
-#include "i-uarch-state-access.h"
+#include "i-uarch-step-state-access.h"
 #include "machine-state.h"
 #include "shadow-state.h"
 #include "uarch-bridge.h"
@@ -26,7 +26,7 @@
 
 namespace cartesi {
 
-class uarch_state_access : public i_uarch_state_access<uarch_state_access> {
+class uarch_step_state_access : public i_uarch_step_state_access<uarch_step_state_access> {
     uarch_state &m_us;
     machine_state &m_s;
 
@@ -60,23 +60,23 @@ public:
     /// \brief Constructor from machine and uarch states.
     /// \param um Reference to uarch state.
     /// \param m Reference to machine state.
-    explicit uarch_state_access(uarch_state &us, machine_state &s) : m_us(us), m_s(s) {
+    explicit uarch_step_state_access(uarch_state &us, machine_state &s) : m_us(us), m_s(s) {
         ;
     }
 
     /// \brief No copy constructor
-    uarch_state_access(const uarch_state_access &) = delete;
+    uarch_step_state_access(const uarch_step_state_access &) = delete;
     /// \brief No copy assignment
-    uarch_state_access &operator=(const uarch_state_access &) = delete;
+    uarch_step_state_access &operator=(const uarch_step_state_access &) = delete;
     /// \brief No move constructor
-    uarch_state_access(uarch_state_access &&) = delete;
+    uarch_step_state_access(uarch_step_state_access &&) = delete;
     /// \brief No move assignment
-    uarch_state_access &operator=(uarch_state_access &&) = delete;
+    uarch_step_state_access &operator=(uarch_step_state_access &&) = delete;
     /// \brief Default destructor
-    ~uarch_state_access() = default;
+    ~uarch_step_state_access() = default;
 
 private:
-    friend i_uarch_state_access<uarch_state_access>;
+    friend i_uarch_step_state_access<uarch_step_state_access>;
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     void do_push_bracket(bracket_type type, const char *text) {

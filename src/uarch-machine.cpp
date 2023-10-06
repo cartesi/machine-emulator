@@ -16,17 +16,13 @@
 
 #include <utility>
 
+#include "shadow-uarch-state-factory.h"
+#include "uarch-constants.h"
 #include "uarch-machine.h"
 
 namespace cartesi {
 
 using namespace std::string_literals;
-
-/// \brief Embedded uarch ram image. Symbol created by "xxd -i uarch-ram.bin".
-extern "C" const unsigned char embedded_uarch_ram[];
-
-/// \brief Length of the embedded uarch ram image. Symbol created by "xxd -i uarch-ram.bin".
-extern "C" const uint32_t embedded_uarch_ram_len;
 
 const pma_entry::flags ram_flags{
     true,                  // R
@@ -37,19 +33,7 @@ const pma_entry::flags ram_flags{
     PMA_ISTART_DID::memory // DID
 };
 
-uarch_machine::uarch_machine(uarch_config c) : m_s{}, m_c{std::move(c)} {
-    load_config(m_c);
-}
-
-/// \brief Resets the value of halt flag
-void uarch_machine::reset_state(void) {
-    if (!m_s.halt_flag) {
-        throw std::runtime_error("reset uarch state is not allowed when uarch is not halted");
-    }
-    load_config(m_c);
-}
-
-void uarch_machine::load_config(uarch_config &c) {
+uarch_machine::uarch_machine(uarch_config c) : m_s{}, m_c{c} {
     m_s.pc = c.processor.pc;
     m_s.cycle = c.processor.cycle;
     m_s.halt_flag = c.processor.halt_flag;
@@ -57,23 +41,23 @@ void uarch_machine::load_config(uarch_config &c) {
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
         m_s.x[i] = c.processor.x[i];
     }
-
-    // Register RAM pma
+    // Register shadow state
+    m_s.shadow_state = make_shadow_uarch_state_pma_entry(PMA_SHADOW_UARCH_STATE_START, PMA_SHADOW_UARCH_STATE_LENGTH);
+    // Register RAM
+    constexpr auto ram_description = "uarch RAM";
     if (!c.ram.image_filename.empty()) {
         // Load RAM image from file
-        m_s.ram = make_callocd_memory_pma_entry("uarch RAM", PMA_UARCH_RAM_START, c.ram.length, c.ram.image_filename)
-                      .set_flags(ram_flags);
-    } else if (c.ram.length > 0) {
-        // Allocate zero-filled RAM
-        m_s.ram = make_callocd_memory_pma_entry("uarch RAM", PMA_UARCH_RAM_START, c.ram.length).set_flags(ram_flags);
-    } else {
-        // Load embedded RAM image
-        if (embedded_uarch_ram_len > PMA_UARCH_RAM_LENGTH) {
-            throw std::runtime_error("Embedded uarch RAM image is too big"); // LCOV_EXCL_LINE
-        }
         m_s.ram =
-            make_callocd_memory_pma_entry("uarch RAM", PMA_UARCH_RAM_START, PMA_UARCH_RAM_LENGTH).set_flags(ram_flags);
-        memcpy(m_s.ram.get_memory().get_host_memory(), embedded_uarch_ram, embedded_uarch_ram_len);
+            make_callocd_memory_pma_entry(ram_description, PMA_UARCH_RAM_START, UARCH_RAM_LENGTH, c.ram.image_filename)
+                .set_flags(ram_flags);
+    } else {
+        // Load embedded pristine RAM image
+        m_s.ram = make_callocd_memory_pma_entry(ram_description, PMA_UARCH_RAM_START, PMA_UARCH_RAM_LENGTH)
+                      .set_flags(ram_flags);
+        if (uarch_pristine_ram_len > m_s.ram.get_length()) {
+            throw std::runtime_error("embedded uarch ram image does not fit in uarch ram pma");
+        }
+        memcpy(m_s.ram.get_memory().get_host_memory(), uarch_pristine_ram, uarch_pristine_ram_len);
     }
 }
 
@@ -89,12 +73,10 @@ uint64_t uarch_machine::read_pc(void) const {
     return m_s.pc;
 }
 
-/// \brief Gets the value of halt flag
 bool uarch_machine::read_halt_flag(void) const {
     return m_s.halt_flag;
 }
 
-/// \brief Sets the value of halt flag
 void uarch_machine::set_halt_flag(void) {
     m_s.halt_flag = true;
 }

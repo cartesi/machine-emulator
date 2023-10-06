@@ -359,8 +359,6 @@ public:
             switch (static_cast<shadow_uarch_state_csr>(paddr - PMA_SHADOW_UARCH_STATE_START)) {
                 case shadow_uarch_state_csr::halt_flag:
                     return "uarch.halt_flag";
-                case shadow_uarch_state_csr::ram_length:
-                    return "uarch.ram_length";
                 default:
                     break;
             }
@@ -661,9 +659,6 @@ private:
         switch (static_cast<shadow_uarch_state_csr>(paddr - PMA_SHADOW_UARCH_STATE_START)) {
             case shadow_uarch_state_csr::halt_flag:
                 *data = us.halt_flag;
-                return true;
-            case shadow_uarch_state_csr::ram_length:
-                *data = us.ram.get_length();
                 return true;
             default:
                 break;

@@ -128,18 +128,18 @@ int cm_grpc_get_default_config(const cm_grpc_machine_stub *stub, const cm_machin
     return cm_result_failure(err_msg);
 }
 
-int cm_grpc_verify_access_log(const cm_grpc_machine_stub *stub, const cm_access_log *log,
+int cm_grpc_verify_uarch_step_log(const cm_grpc_machine_stub *stub, const cm_access_log *log,
     const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg) try {
     const auto *cpp_stub = convert_from_c(stub);
     const cartesi::access_log cpp_log = convert_from_c(log);
     const cartesi::machine_runtime_config cpp_runtime = convert_from_c(runtime_config);
-    cartesi::grpc_virtual_machine::verify_access_log(*cpp_stub, cpp_log, cpp_runtime, one_based);
+    cartesi::grpc_virtual_machine::verify_uarch_step_log(*cpp_stub, cpp_log, cpp_runtime, one_based);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
 }
 
-int cm_grpc_verify_state_transition(const cm_grpc_machine_stub *stub, const cm_hash *root_hash_before,
+int cm_grpc_verify_uarch_step_state_transition(const cm_grpc_machine_stub *stub, const cm_hash *root_hash_before,
     const cm_access_log *log, const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config,
     bool one_based, char **err_msg) try {
     const auto *cpp_stub = convert_from_c(stub);
@@ -147,7 +147,33 @@ int cm_grpc_verify_state_transition(const cm_grpc_machine_stub *stub, const cm_h
     const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
     const cartesi::access_log cpp_log = convert_from_c(log);
     const cartesi::machine_runtime_config cpp_runtime = convert_from_c(runtime_config);
-    cartesi::grpc_virtual_machine::verify_state_transition(*cpp_stub, cpp_root_hash_before, cpp_log,
+    cartesi::grpc_virtual_machine::verify_uarch_step_state_transition(*cpp_stub, cpp_root_hash_before, cpp_log,
+        cpp_root_hash_after, cpp_runtime, one_based);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_grpc_verify_uarch_reset_log(const cm_grpc_machine_stub *stub, const cm_access_log *log,
+    const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg) try {
+    const auto *cpp_stub = convert_from_c(stub);
+    const cartesi::access_log cpp_log = convert_from_c(log);
+    const cartesi::machine_runtime_config cpp_runtime = convert_from_c(runtime_config);
+    cartesi::grpc_virtual_machine::verify_uarch_reset_log(*cpp_stub, cpp_log, cpp_runtime, one_based);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_grpc_verify_uarch_reset_state_transition(const cm_grpc_machine_stub *stub, const cm_hash *root_hash_before,
+    const cm_access_log *log, const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config,
+    bool one_based, char **err_msg) try {
+    const auto *cpp_stub = convert_from_c(stub);
+    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    const cartesi::access_log cpp_log = convert_from_c(log);
+    const cartesi::machine_runtime_config cpp_runtime = convert_from_c(runtime_config);
+    cartesi::grpc_virtual_machine::verify_uarch_reset_state_transition(*cpp_stub, cpp_root_hash_before, cpp_log,
         cpp_root_hash_after, cpp_runtime, one_based);
     return cm_result_success(err_msg);
 } catch (...) {

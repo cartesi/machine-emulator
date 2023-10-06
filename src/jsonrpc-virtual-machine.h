@@ -52,10 +52,17 @@ public:
 
     static machine_config get_default_config(const jsonrpc_mg_mgr_ptr &mgr);
 
-    static void verify_access_log(const jsonrpc_mg_mgr_ptr &mgr, const access_log &log,
+    static void verify_uarch_step_log(const jsonrpc_mg_mgr_ptr &mgr, const access_log &log,
         const machine_runtime_config &r = {}, bool one_based = false);
 
-    static void verify_state_transition(const jsonrpc_mg_mgr_ptr &mgr, const hash_type &root_hash_before,
+    static void verify_uarch_step_state_transition(const jsonrpc_mg_mgr_ptr &mgr, const hash_type &root_hash_before,
+        const access_log &log, const hash_type &root_hash_after, const machine_runtime_config &r = {},
+        bool one_based = false);
+
+    static void verify_uarch_reset_log(const jsonrpc_mg_mgr_ptr &mgr, const access_log &log,
+        const machine_runtime_config &r = {}, bool one_based = false);
+
+    static void verify_uarch_reset_state_transition(const jsonrpc_mg_mgr_ptr &mgr, const hash_type &root_hash_before,
         const access_log &log, const hash_type &root_hash_after, const machine_runtime_config &r = {},
         bool one_based = false);
 
@@ -146,7 +153,8 @@ private:
     void do_reset_iflags_X(void) override;
     bool do_read_uarch_halt_flag(void) const override;
     void do_set_uarch_halt_flag(void) override;
-    void do_reset_uarch_state(void) override;
+    void do_reset_uarch(void) override;
+    access_log do_log_uarch_reset(const access_log::type &log_type, bool /*one_based = false*/) override;
     void do_write_iflags(uint64_t val) override;
     uint64_t do_read_htif_tohost(void) const override;
     uint64_t do_read_htif_tohost_dev(void) const override;
@@ -167,7 +175,7 @@ private:
     void do_get_root_hash(hash_type &hash) const override;
     machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const override;
     void do_replace_memory_range(const memory_range_config &new_range) override;
-    access_log do_step_uarch(const access_log::type &log_type, bool /*one_based = false*/) override;
+    access_log do_log_uarch_step(const access_log::type &log_type, bool /*one_based = false*/) override;
     void do_destroy() override;
     void do_snapshot() override;
     void do_rollback() override;
@@ -180,7 +188,6 @@ private:
     void do_write_uarch_pc(uint64_t val) override;
     uint64_t do_read_uarch_cycle(void) const override;
     void do_write_uarch_cycle(uint64_t val) override;
-    uint64_t do_read_uarch_ram_length(void) const override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
     machine_memory_range_descrs do_get_memory_ranges(void) const override;
 

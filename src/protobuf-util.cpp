@@ -198,8 +198,8 @@ void set_proto_machine_config(const machine_config &c, CartesiMachine::MachineCo
     proto_up->set_x31(c.uarch.processor.x[31]);
     proto_up->set_pc(c.uarch.processor.pc);
     proto_up->set_cycle(c.uarch.processor.cycle);
+    proto_up->set_halt_flag(c.uarch.processor.halt_flag);
     auto *proto_uarch_ram = proto_u->mutable_ram();
-    proto_uarch_ram->set_length(c.uarch.ram.length);
     proto_uarch_ram->set_image_filename(c.uarch.ram.image_filename);
 }
 
@@ -209,7 +209,7 @@ void set_proto_machine_runtime_config(const machine_runtime_config &r, CartesiMa
 }
 
 access_log::type get_proto_log_type(const CartesiMachine::AccessLogType &proto_lt) {
-    return access_log::type{proto_lt.proofs(), proto_lt.annotations()};
+    return access_log::type{proto_lt.proofs(), proto_lt.annotations(), proto_lt.large_data()};
 }
 
 void set_proto_hash(const machine_merkle_tree::hash_type &h, CartesiMachine::Hash *proto_h) {
@@ -256,6 +256,7 @@ void set_proto_merkle_tree_proof(const machine_merkle_tree::proof_type &p, Carte
 void set_proto_access_log(const access_log &al, CartesiMachine::AccessLog *proto_al) {
     proto_al->mutable_log_type()->set_annotations(al.get_log_type().has_annotations());
     proto_al->mutable_log_type()->set_proofs(al.get_log_type().has_proofs());
+    proto_al->mutable_log_type()->set_large_data(al.get_log_type().has_large_data());
     for (const auto &a : al.get_accesses()) {
         auto *proto_a = proto_al->add_accesses();
         switch (a.get_type()) {
@@ -271,8 +272,21 @@ void set_proto_access_log(const access_log &al, CartesiMachine::AccessLog *proto
         }
         proto_a->set_log2_size(a.get_log2_size());
         proto_a->set_address(a.get_address());
-        proto_a->set_read(a.get_read().data(), a.get_read().size());
-        proto_a->set_written(a.get_written().data(), a.get_written().size());
+        set_proto_hash(a.get_read_hash(), proto_a->mutable_read_hash());
+        if (a.get_read().has_value()) {
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+            const auto &value_read = a.get_read().value();
+            proto_a->set_read(value_read.data(), value_read.size());
+        }
+        if (a.get_written_hash().has_value()) {
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+            set_proto_hash(a.get_written_hash().value(), proto_a->mutable_written_hash());
+        }
+        if (a.get_written().has_value()) {
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+            const auto &value_written = a.get_written().value();
+            proto_a->set_written(value_written.data(), value_written.size());
+        }
         if (al.get_log_type().has_proofs() && a.get_proof().has_value()) {
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
             set_proto_merkle_tree_proof(a.get_proof().value(), proto_a->mutable_proof());
@@ -330,7 +344,8 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
 
     const bool has_annotations = proto_al.log_type().annotations();
     const bool has_proofs = proto_al.log_type().proofs();
-    auto al = access_log(access_log::type{has_proofs, has_annotations});
+    const bool has_large_data = proto_al.log_type().large_data();
+    auto al = access_log(access_log::type{has_proofs, has_annotations, has_large_data});
 
     const auto &proto_accesses = proto_al.accesses();
     const auto &proto_brackets = proto_al.brackets();
@@ -339,31 +354,41 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
     auto pnt = proto_notes.begin();
     auto pac = proto_accesses.begin();
     uint64_t iac = 0; // curent access index
-    while (pac != proto_accesses.end() && pbr != proto_brackets.end()) {
+    while (pac != proto_accesses.end()) {
         while (pbr != proto_brackets.end() && pbr->where() == iac) {
             // bracket note points to current access
             al.push_bracket(get_proto_bracket_type(pbr->type()), pbr->text().c_str());
             assert(pbr->where() == al.get_brackets().back().where);
             pbr++;
         }
-        if (pac != proto_accesses.end()) {
-            access a;
-            a.set_type(get_proto_access_type(pac->type()));
-            a.set_address(pac->address());
-            a.set_log2_size(static_cast<int>(pac->log2_size()));
-            a.get_read().insert(a.get_read().end(), pac->read().begin(), pac->read().end());
-            a.get_written().insert(a.get_written().end(), pac->written().begin(), pac->written().end());
-            std::string note;
-            if (has_annotations) {
-                note = *pnt++;
-            }
-            if (has_proofs) {
-                a.set_proof(get_proto_merkle_tree_proof(pac->proof()));
-            }
-            al.push_access(a, note.c_str());
-            pac++;
-            iac++;
+        access a;
+        a.set_type(get_proto_access_type(pac->type()));
+        a.set_address(pac->address());
+        a.set_log2_size(static_cast<int>(pac->log2_size()));
+        a.set_read_hash(get_proto_hash(pac->read_hash()));
+        if (pac->has_read()) {
+            access_data read_value;
+            read_value.insert(read_value.end(), pac->read().begin(), pac->read().end());
+            a.set_read(read_value);
         }
+        if (pac->has_written_hash()) {
+            a.set_written_hash(get_proto_hash(pac->written_hash()));
+        }
+        if (pac->has_written()) {
+            access_data written_value;
+            written_value.insert(written_value.end(), pac->written().begin(), pac->written().end());
+            a.set_written(written_value);
+        }
+        std::string note;
+        if (has_annotations) {
+            note = *pnt++;
+        }
+        if (has_proofs) {
+            a.set_proof(get_proto_merkle_tree_proof(pac->proof()));
+        }
+        al.push_access(a, note.c_str());
+        pac++;
+        iac++;
     }
     // push closing bracket notes
     while (pbr != proto_brackets.end()) {
@@ -678,7 +703,6 @@ static uarch_config get_proto_uarch_config(const CartesiMachine::UarchConfig &pr
     using CartesiMachine::UarchConfig;
     uarch_config c{};
     if (proto_c.has_ram()) {
-        c.ram.length = proto_c.ram().length();
         c.ram.image_filename = proto_c.ram().image_filename();
     }
     if (proto_c.has_processor()) {
@@ -782,6 +806,9 @@ static uarch_config get_proto_uarch_config(const CartesiMachine::UarchConfig &pr
         }
         if (proto_p.has_cycle()) {
             p.cycle = proto_p.cycle();
+        }
+        if (proto_p.has_halt_flag()) {
+            p.halt_flag = proto_p.halt_flag();
         }
     }
     return c;

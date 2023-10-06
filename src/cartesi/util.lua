@@ -192,17 +192,19 @@ end
 
 local function hexhash8(hash) return string.sub(hexhash(hash), 1, 8) end
 
-local function accessdatastring(data, log2_size)
+local function accessdatastring(data, data_hash, log2_size)
     if log2_size == 3 then
         data = string.unpack("<I8", data)
         return string.format("0x%x(%u)", data, data)
     else
-        return string.format(
-            "%s...%s(2^%d bytes)",
-            hexstring(string.sub(data, 1, 3)),
-            hexstring(string.sub(data, -3, -1)),
-            log2_size
-        )
+        local data_snippet = ""
+        if data_hash ~= nil then data_snippet = string.format('hash:"%s"', hexhash8(data_hash)) end
+        if data ~= nil then
+            if data_snippet ~= "" then data_snippet = data_snippet .. " " end
+            data_snippet = data_snippet
+                .. string.format("%s...%s", hexstring(data:sub(1, 3)), hexstring(data:sub(-3, -1)))
+        end
+        return string.format("%s(2^%d bytes)", data_snippet, log2_size)
     end
 end
 
@@ -231,12 +233,12 @@ function _M.dump_log(log, out)
         -- Otherwise, output access
         elseif ai then
             if ai.proof then indentout(out, indent, "hash %s\n", hexhash8(ai.proof.root_hash)) end
-            local read = accessdatastring(ai.read, ai.log2_size)
+            local read = accessdatastring(ai.read, ai.read_hash, ai.log2_size)
             if ai.type == "read" then
                 indentout(out, indent, "%d: read %s@0x%x(%u): %s\n", i, notes[i] or "", ai.address, ai.address, read)
             else
                 assert(ai.type == "write", "unknown access type")
-                local written = accessdatastring(ai.written, ai.log2_size)
+                local written = accessdatastring(ai.written, ai.written_hash, ai.log2_size)
                 indentout(
                     out,
                     indent,

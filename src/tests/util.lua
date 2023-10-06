@@ -49,7 +49,7 @@ local ZERO_PAGE = string.rep("\x00", PAGE_SIZE)
 
 test_util.uarch_programs = {
     halt = {
-        0x700002b7, --   li	t0,UARCH_HALT_FLAG_SHADDOW_ADDR  Address of uarch halt flag
+        0x004002b7, --   li	t0,UARCH_HALT_FLAG_SHADDOW_ADDR  Address of uarch halt flag
         0x00100313, --   li	t1,1                             UARCH_MMIO_HALT_VALUE
         0x0062b023, --   sd	t1,0(t0)                         Halt uarch
     },
@@ -246,6 +246,26 @@ function test_util.calculate_emulator_hash(machine)
             tree:push_back(page_hash)
         end
         last = finish
+    end
+    return tree:get_root_hash()
+end
+
+-- Read memory from given machine and calculate uarch state hash
+function test_util.calculate_uarch_state_hash(machine)
+    local shadow_data = machine:read_memory(cartesi.UARCH_SHADOW_START_ADDRESS, cartesi.UARCH_SHADOW_LENGTH)
+    local ram_data = machine:read_memory(cartesi.UARCH_RAM_START_ADDRESS, cartesi.UARCH_RAM_LENGTH)
+    local tree = test_util.new_back_merkle_tree(cartesi.UARCH_STATE_LOG2_SIZE, PAGE_LOG2_SIZE)
+    for j = 0, #shadow_data - 1, PAGE_SIZE do
+        local page_hash = merkle_hash(shadow_data, j, PAGE_LOG2_SIZE)
+        tree:push_back(page_hash)
+    end
+    -- pad the region between the end of shadow data and start of ram
+    tree:pad_back(
+        (cartesi.UARCH_RAM_START_ADDRESS - cartesi.UARCH_SHADOW_START_ADDRESS - #shadow_data) >> PAGE_LOG2_SIZE
+    )
+    for j = 0, #ram_data - 1, PAGE_SIZE do
+        local page_hash = merkle_hash(ram_data, j, PAGE_LOG2_SIZE)
+        tree:push_back(page_hash)
     end
     return tree:get_root_hash()
 end

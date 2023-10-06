@@ -7,6 +7,10 @@
 build
 third-party/downloads
 third-party/mongoose-*
+third-party/grpc
+third-party/mongoose-7.9
+src/remote-cartesi-machine-proxy
+src/compute-uarch-pristine-hash
 src/remote-cartesi-machine
 src/jsonrpc-remote-cartesi-machine
 src/merkle-tree-hash

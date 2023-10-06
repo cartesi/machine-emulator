@@ -39,14 +39,16 @@ end
 
 local uarch_ram_image_filename = arg[1]
 local output_signature_file = arg[2]
-local uarch_ram_start = 0x78000000
-local uarch_ram_length = 0x1000000
+local uarch_ram_start = cartesi.UARCH_RAM_START_ADDRESS
+local dummy_rom_filename = os.tmpname()
+io.open(dummy_rom_filename, "w"):close()
+local deleter = {}
+setmetatable(deleter, { __gc = function() os.remove(dummy_rom_filename) end })
 
 local config = {
     uarch = {
         ram = {
-            image_filename = uarch_ram_image_filename,
-            length = uarch_ram_length,
+            image_filename = uarch_ram_image_filename
         },
     },
     processor = {},
@@ -59,7 +61,7 @@ local machine = assert(cartesi.machine(config))
 machine:run_uarch()
 
 -- extract test result signature from microarchitecture RAM
-local mem = machine:read_memory(uarch_ram_start, uarch_ram_length)
+local mem = machine:read_memory(uarch_ram_start, cartesi.UARCH_RAM_LENGTH)
 local _, e1 = string.find(mem, "BEGIN_CTSI_SIGNATURE____")
 local s2, _ = string.find(mem, "END_CTSI_SIGNATURE______")
 local sig = string.sub(mem, e1 + 1, s2 - 1)

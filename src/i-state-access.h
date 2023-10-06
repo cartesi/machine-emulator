@@ -664,10 +664,6 @@ public:
         return derived().do_write_device(pma, mcycle, offset, pval, log2_size);
     }
 
-    auto read_uarch_ram_length() {
-        return derived().do_read_uarch_ram_length();
-    }
-
     /// \brief Try to translate a virtual address to a host pointer through the TLB.
     /// \tparam ETYPE TLB entry type.
     /// \tparam T Type of word that would be read with the pointer.

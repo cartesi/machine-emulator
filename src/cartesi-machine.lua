@@ -292,9 +292,6 @@ where options are:
   --max-uarch-cycle=<number>
     stop at a given micro cycle.
 
-  --auto-reset-uarch-state
-    automatically reset state after miroarchitecture halt
-
   -i or --htif-console-getchar
     run in interactive mode.
 
@@ -329,8 +326,14 @@ where options are:
     --initial-hash and --final-hash.
     (default: none)
 
-  --step-uarch
-    print step log for 1 additional micro cycle when done.
+  --log-uarch-step
+    advance one micro step and print access log .
+
+  --log-uarch-reset
+    reset the microarchitecture state and print the access log.
+
+  --auto-uarch-reset
+    reset uarch automatically after halt
 
   --json-steps=<filename>
     output json with step logs for all micro cycles to <filename>.
@@ -346,9 +349,6 @@ where options are:
 
   --uarch-ram-image=<filename>
     name of file containing microarchitecture RAM image.
-
-  --uarch-ram-length=<number>
-    set microarchitecture RAM length.
 
   --dump-memory-ranges
     dump all memory ranges to disk when done.
@@ -473,8 +473,9 @@ local dump_memory_ranges = false
 local max_mcycle = math.maxinteger
 local json_steps
 local max_uarch_cycle = 0
-local auto_reset_uarch_state = false
-local step_uarch = false
+local log_uarch_step = false
+local auto_uarch_reset = false
+local log_uarch_reset = false
 local store_dir
 local load_dir
 local cmdline_opts_finished = false
@@ -614,16 +615,6 @@ local options = {
         function(all)
             if not all then return false end
             ram_image_filename = ""
-            return true
-        end,
-    },
-    {
-        "^%-%-uarch%-ram%-length%=(.+)$",
-        function(n)
-            if not n then return false end
-            uarch = uarch or {}
-            uarch.ram = uarch.ram or {}
-            uarch.ram.length = assert(util.parse_number(n), "invalid microarchitecture RAM length " .. n)
             return true
         end,
     },
@@ -929,10 +920,18 @@ local options = {
         end,
     },
     {
-        "^%-%-step%-uarch$",
+        "^%-%-log%-uarch%-step$",
         function(all)
             if not all then return false end
-            step_uarch = true
+            log_uarch_step = true
+            return true
+        end,
+    },
+    {
+        "^%-%-log%-uarch%-reset$",
+        function(all)
+            if not all then return false end
+            log_uarch_reset = true
             return true
         end,
     },
@@ -953,10 +952,10 @@ local options = {
         end,
     },
     {
-        "^%-%-auto%-reset%-uarch%-state$",
+        "^%-%-auto%-uarch%-reset$",
         function(all)
             if not all then return false end
-            auto_reset_uarch_state = true
+            auto_uarch_reset = true
             return true
         end,
     },
@@ -1339,8 +1338,6 @@ local function store_machine_config(config, output)
     end
     output("  uarch = {\n")
     output("    ram = {\n")
-    output("      length = 0x%x,", config.uarch.ram.length or def.uarch.ram.length)
-    comment_default(config.uarch.ram.length, def.uarch.ram.length)
     output("      image_filename = %q,", config.uarch.ram.image_filename or def.uarch.ram.image_filename)
     comment_default(config.uarch.ram.image_filename, def.uarch.ram.image_filename)
     output("    },\n")
@@ -1791,7 +1788,7 @@ if json_steps then
         if init_mcycle > max_mcycle then break end
         if init_mcycle == max_mcycle and init_uarch_cycle == max_uarch_cycle then break end
         -- Advance one micro step
-        local log = machine:step_uarch(log_type)
+        local log = machine:log_uarch_step(log_type)
         steps_count = steps_count + 1
         local final_mcycle = machine:read_mcycle()
         local final_uarch_cycle = machine:read_uarch_cycle()
@@ -1802,7 +1799,7 @@ if json_steps then
             -- microarchitecture halted because it finished interpreting a whole mcycle
             machine:reset_iflags_Y() -- move past any potential yield
             -- Reset uarch_halt_flag in order to allow interpreting the next mcycle
-            machine:reset_uarch_state()
+            machine:reset_uarch()
             if machine:read_iflags_H() then
                 stderr("Halted at %u.%u\n", final_mcycle, final_uarch_cycle)
                 break
@@ -1966,18 +1963,22 @@ else
             -- The mcycle counter was incremented, unless the machine was already halted
             if machine:read_iflags_H() and not previously_halted then stderr("Halted\n") end
             stderr("Cycles: %u\n", machine:read_mcycle())
-            if auto_reset_uarch_state then
-                machine:reset_uarch_state()
+            if auto_uarch_reset then
+                machine:reset_uarch()
             else
                 stderr("uCycles: %u\n", machine:read_uarch_cycle())
             end
         end
     end
     if gdb_stub then gdb_stub:close() end
-    if step_uarch then
+    if log_uarch_step then
         assert(not config.htif.console_getchar, "micro step proof is meaningless in interactive mode")
         stderr("Gathering micro step log: please wait\n")
-        util.dump_log(machine:step_uarch({ proofs = true, annotations = true }), io.stderr)
+        util.dump_log(machine:log_uarch_step({ proofs = true, annotations = true }), io.stderr)
+    end
+    if log_uarch_reset then
+        stderr("Resetting microarchitecture state: please wait\n")
+        util.dump_log(machine:log_uarch_reset({ proofs = true, annotations = true }), io.stderr)
     end
     if dump_memory_ranges then dump_pmas(machine) end
     if final_hash then

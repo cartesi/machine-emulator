@@ -355,9 +355,6 @@ where options are:
   --uarch-ram-image=<filename>
     name of file containing microarchitecture RAM image.
 
-  --uarch-ram-length=<number>
-    set microarchitecture RAM length.
-
 and command can be:
 
   run
@@ -559,16 +556,6 @@ local options = {
             return true
         end,
     },
-    {
-        "^%-%-uarch%-ram%-length%=(.+)$",
-        function(n)
-            if not n then return false end
-            uarch = uarch or {}
-            uarch.ram = uarch.ram or {}
-            uarch.ram.length = assert(util.parse_number(n), "invalid microarchitecture RAM length " .. n)
-            return true
-        end,
-    },
     { ".*", function(all) error("unrecognized option " .. all) end },
 }
 
@@ -608,7 +595,7 @@ local function run_machine(machine, ctx, max_mcycle, advance_machine_fn)
 end
 
 local function advance_machine_with_uarch(machine)
-    if machine:run_uarch() == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then machine:reset_uarch_state() end
+    if machine:run_uarch() == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then machine:reset_uarch() end
 end
 
 local function run_machine_with_uarch(machine, ctx, max_mcycle)
@@ -681,21 +668,18 @@ local function print_machine(test_name, expected_cycles)
             2 * expected_cycles
         ))
     else
-        print(
-            string.format(
-                "./cartesi-machine.lua \
+        print(string.format(
+            "./cartesi-machine.lua \
  --ram-length=32Mi\
  --ram-image='%s'\
  --no-bootargs\
  --uarch-ram-length=%d\
  --uarch-ram-image=%s\
  --max-mcycle=%d ",
-                test_path .. "/" .. test_name,
-                uarch.ram.length,
-                uarch.ram.image_filename,
-                2 * expected_cycles
-            )
-        )
+            test_path .. "/" .. test_name,
+            uarch.ram.image_filename,
+            2 * expected_cycles
+        ))
     end
 end
 
@@ -852,7 +836,7 @@ local function hash(tests)
                 total_cycles = total_cycles + 1
             end
             if status == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
-                machine:reset_uarch_state()
+                machine:reset_uarch()
                 if machine:read_iflags_H() then break end
             end
         end
@@ -919,13 +903,13 @@ local function step(tests)
             local final_uarch_cycle = machine:read_uarch_cycle()
             total_uarch_cycles = total_uarch_cycles + (final_uarch_cycle - init_uarch_cycle)
             if machine:read_uarch_halt_flag() then
-                machine:reset_uarch_state()
+                machine:reset_uarch()
                 if machine:read_iflags_H() then break end
             end
             if not periodic_action or total_uarch_cycles == next_action_uarch_cycle then
                 local init_mcycle = machine:read_mcycle()
                 init_uarch_cycle = machine:read_uarch_cycle()
-                local log = machine:step_uarch(log_type)
+                local log = machine:log_uarch_step(log_type)
                 local final_mcycle = machine:read_mcycle()
                 final_uarch_cycle = machine:read_uarch_cycle()
                 if total_logged_steps > 0 then out:write(",\n") end
@@ -933,7 +917,7 @@ local function step(tests)
                 total_uarch_cycles = total_uarch_cycles + 1
                 total_logged_steps = total_logged_steps + 1
                 if machine:read_uarch_halt_flag() then
-                    machine:reset_uarch_state()
+                    machine:reset_uarch()
                     if machine:read_iflags_H() then break end
                 end
             end

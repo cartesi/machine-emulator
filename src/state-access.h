@@ -511,10 +511,6 @@ private:
             log2_size);
     }
 
-    uint64_t do_read_uarch_ram_length() {
-        return m_m.get_initial_config().uarch.ram.length;
-    }
-
     template <TLB_entry_type ETYPE, typename T>
     inline bool do_translate_vaddr_via_tlb(uint64_t vaddr, unsigned char **phptr) {
         const uint64_t eidx = tlb_get_entry_index(vaddr);

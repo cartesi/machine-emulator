@@ -28,7 +28,6 @@ namespace cartesi {
 
 /// \brief RAM state configuration for the microarchitecture
 struct uarch_ram_config final {   // NOLINT(bugprone-exception-escape)
-    uint64_t length{0};           ///< RAM length
     std::string image_filename{}; ///< RAM image file name
 };
 

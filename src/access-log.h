@@ -58,6 +58,7 @@ static inline uint64_t get_word_access_data(const access_data &ad) {
 class access {
 
     using proof_type = machine_merkle_tree::proof_type;
+    using hash_type = machine_merkle_tree::hash_type;
 
 public:
     void set_type(access_type type) {
@@ -102,10 +103,10 @@ public:
 
     /// \brief Gets data that can be read at address before access.
     /// \returns Data at address.
-    const access_data &get_read(void) const {
+    const std::optional<access_data> &get_read(void) const {
         return m_read;
     }
-    access_data &get_read(void) {
+    std::optional<access_data> &get_read(void) {
         return m_read;
     }
 
@@ -120,11 +121,41 @@ public:
 
     /// \brief Gets data that was written at address after access.
     /// \returns Data at address.
-    const access_data &get_written(void) const {
+    const std::optional<access_data> &get_written(void) const {
         return m_written;
     }
-    access_data &get_written(void) {
+    std::optional<access_data> &get_written(void) {
         return m_written;
+    }
+
+    /// \brief Sets hash of data that was written at address after access.
+    /// \param hash Hash of new data at address.
+    void set_written_hash(const hash_type &hash) {
+        m_written_hash = hash;
+    }
+
+    /// \brief Gets hash of data that was written at address after access.
+    /// \returns Hash of written data at address.
+    const std::optional<hash_type> &get_written_hash(void) const {
+        return m_written_hash;
+    }
+    std::optional<hash_type> &get_written_hash(void) {
+        return m_written_hash;
+    }
+
+    /// \brief Sets hash of data that can be read at address before access.
+    /// \param hash Hash of data at address.
+    void set_read_hash(const hash_type &hash) {
+        m_read_hash = hash;
+    }
+
+    /// \brief Gets hash of data that can be read at address before access.
+    /// \returns Hash of data at address.
+    const hash_type &get_read_hash(void) const {
+        return m_read_hash;
+    }
+    hash_type &get_read_hash(void) {
+        return m_read_hash;
     }
 
     /// \brief Sets proof that data read at address was in
@@ -151,12 +182,14 @@ public:
     }
 
 private:
-    access_type m_type{0};               ///< Type of access
-    uint64_t m_address{0};               ///< Address of access
-    int m_log2_size{0};                  ///< Log2 of size of access
-    access_data m_read;                  ///< Data before access
-    access_data m_written;               ///< Data after access (if writing)
-    std::optional<proof_type> m_proof{}; ///< Proof of data before access
+    access_type m_type{0};                     ///< Type of access
+    uint64_t m_address{0};                     ///< Address of access
+    int m_log2_size{0};                        ///< Log2 of size of access
+    std::optional<access_data> m_read{};       ///< Data before access
+    hash_type m_read_hash;                     ///< Hash of data before access
+    std::optional<access_data> m_written{};    ///< Written data
+    std::optional<hash_type> m_written_hash{}; ///< Hash of written data
+    std::optional<proof_type> m_proof{};       ///< Proof of data before access
 };
 
 /// \brief Log of state accesses
@@ -166,11 +199,15 @@ public:
     class type {
         bool m_proofs;      ///< Includes proofs
         bool m_annotations; ///< Includes annotations
+        bool m_large_data;  ///< Includes data bigger than 8 bytes
     public:
         /// \brief Default constructur
         /// \param proofs Include proofs
         /// \param annotations Include annotations (default false)
-        explicit type(bool proofs, bool annotations = false) : m_proofs(proofs), m_annotations(annotations) {
+        explicit type(bool proofs, bool annotations = false, bool large_data = false) :
+            m_proofs(proofs),
+            m_annotations(annotations),
+            m_large_data(large_data) {
             ;
         }
 
@@ -182,6 +219,11 @@ public:
         /// \brief Returns whether log includes annotations
         bool has_annotations(void) const {
             return m_annotations;
+        }
+
+        /// \brief Returns whether log includes data bigger than 8 bytes
+        bool has_large_data(void) const {
+            return m_large_data;
         }
     };
 

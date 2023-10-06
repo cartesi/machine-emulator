@@ -203,13 +203,12 @@ do_test("machine root hash after step one should match", function(machine)
     local root_hash = machine:get_root_hash()
     print("Root hash:", test_util.tohex(root_hash))
 
-
     local calculated_root_hash = test_util.calculate_emulator_hash(machine)
     assert(root_hash == calculated_root_hash, "Initial root hash does not match")
 
     -- Perform step and check if hash maches
     local log_type = {}
-    machine:step_uarch(log_type)
+    machine:log_uarch_step(log_type)
     local root_hash_step1 = machine:get_root_hash()
     local calculated_root_hash_step1 = test_util.calculate_emulator_hash(machine)
     assert(root_hash_step1 == calculated_root_hash_step1, "hash after first step does not match")
@@ -218,14 +217,17 @@ end)
 print("\n\ntesting proof after step one")
 do_test("proof check should pass", function(machine)
     local log_type = {}
-    machine:step_uarch(log_type)
-    -- find ram memory range
+    machine:log_uarch_step(log_type)
+
+    -- Find ram memory range
     local ram
     for _, v in ipairs(machine:get_memory_ranges()) do
         if v.description == "RAM" then ram = v end
     end
+    -- Ccalculate hash of ram
     local ram_log2_size = math.ceil(math.log(ram.length, 2))
     local calculated_ram_hash = test_util.merkle_hash(machine:read_memory(ram.start, ram.length), 0, ram_log2_size)
+    -- Get proof of ram and check if hashes match
     local ram_proof = machine:get_proof(ram.start, ram_log2_size)
     local root_hash = machine:get_root_hash()
     assert(root_hash == ram_proof.root_hash, "root hash in proof does not match")
@@ -377,7 +379,7 @@ do_test("register values should match", function(machine)
     local uarch_cycle_before = machine:read_uarch_cycle()
 
     local log_type = {}
-    machine:step_uarch(log_type)
+    machine:log_uarch_step(log_type)
 
     local uarch_pc_after = machine:read_uarch_pc()
     local uarch_cycle_after = machine:read_uarch_cycle()

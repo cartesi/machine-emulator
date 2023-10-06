@@ -85,7 +85,6 @@ PROTOBUF_LIB_Darwin:=-L/opt/local/lib -lprotobuf -lpthread
 endif
 endif
 
-BOOST_CORO_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_coroutine-mt -lboost_context-mt
 BOOST_FILESYSTEM_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_system-mt -lboost_filesystem-mt
 BOOST_PROCESS_LIB_Darwin:=-lpthread
 LIBCARTESI_Darwin=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
@@ -106,7 +105,6 @@ CC_Linux=gcc
 CXX_Linux=g++
 INCS_Linux=
 FS_LIB_Linux=-lstdc++fs
-BOOST_CORO_LIB_Linux:=-lboost_coroutine -lboost_context
 BOOST_FILESYSTEM_LIB_Linux:=-lboost_system -lboost_filesystem
 BOOST_PROCESS_LIB_Linux:=-lpthread
 BOOST_INC_Linux=
@@ -132,7 +130,6 @@ PROFILE_DATA_Linux=
 CC=$(CC_$(UNAME))
 CXX=$(CXX_$(UNAME))
 SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
-BOOST_CORO_LIB=$(BOOST_CORO_LIB_$(UNAME))
 BOOST_PROCESS_LIB=$(BOOST_PROCESS_LIB_$(UNAME))
 BOOST_FILESYSTEM_LIB=$(BOOST_FILESYSTEM_LIB_$(UNAME))
 BOOST_INC=$(BOOST_INC_$(UNAME))
@@ -163,7 +160,6 @@ LUACARTESI_GRPC_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB) $(LIBCARTESI_GRPC_LIB)
 LUACARTESI_JSONRPC_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB) $(B64_LIB)
 REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(PROTOBUF_LIB) $(B64_LIB)
 JSONRPC_REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(B64_LIB)
-REMOTE_CARTESI_MACHINE_PROXY_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(PROTOBUF_LIB) $(BOOST_CORO_LIB) -ldl
 TEST_MACHINE_C_API_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB) $(LIBCARTESI_GRPC_LIB) $(BOOST_PROCESS_LIB) $(BOOST_FILESYSTEM_LIB) $(B64_LIB)
 HASH_LIBS:=$(CRYPTOPP_LIB)
 
@@ -523,7 +519,7 @@ luacartesi-pgo:
 	$(MAKE) --no-print-directory use
 	$(MAKE) clean-profile
 
-grpc: cartesi/jsonrpc.so cartesi/grpc.so remote-cartesi-machine remote-cartesi-machine-proxy
+grpc: cartesi/jsonrpc.so cartesi/grpc.so remote-cartesi-machine
 
 jsonrpc: cartesi/jsonrpc.so jsonrpc-remote-cartesi-machine
 
@@ -555,11 +551,6 @@ PROTO_OBJS:= \
 $(PROTO_OBJS): CXXFLAGS +=  -Wno-zero-length-array -Wno-unused-parameter -Wno-deprecated-declarations -Wno-deprecated-copy -Wno-type-limits
 
 PROTO_SOURCES:=$(PROTO_OBJS:.o=.cc)
-
-REMOTE_CARTESI_MACHINE_PROXY_OBJS:= \
-	$(GRPC_GEN_OBJS) \
-	$(PROTOBUF_GEN_OBJS) \
-	remote-machine-proxy.o
 
 REMOTE_CARTESI_MACHINE_OBJS:= \
 	$(GRPC_GEN_OBJS) \
@@ -699,10 +690,7 @@ $(BUILDDIR)/lib/mongoose.o: CFLAGS := $(patsubst %-std=c99,%,$(CFLAGS))
 jsonrpc-remote-cartesi-machine: $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS)
 	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) $(JSONRPC_REMOTE_CARTESI_MACHINE_LIBS)
 
-remote-cartesi-machine-proxy: $(REMOTE_CARTESI_MACHINE_PROXY_OBJS)
-	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(REMOTE_CARTESI_MACHINE_PROXY_OBJS) $(REMOTE_CARTESI_MACHINE_PROXY_LIBS)
-
-remote-cartesi-machine remote-cartesi-machine-proxy: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
+remote-cartesi-machine: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
 
 tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI) $(LIBCARTESI_GRPC)
 	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(TEST_MACHINE_C_API_OBJS) $(TEST_MACHINE_C_API_LIBS)
@@ -717,7 +705,7 @@ tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI) $(LIBCARTESI_
 
 protobuf-util.o: $(PROTOBUF_GEN_OBJS)
 
-grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o proxy.o: $(GRPC_GEN_OBJS) $(PROTOBUF_GEN_OBJS)
+grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o: $(GRPC_GEN_OBJS) $(PROTOBUF_GEN_OBJS)
 
 machine-c-version.h: ../tools/template/machine-c-version.h.template
 	sed "s|EMULATOR_MARCHID|$(EMULATOR_MARCHID)|g;s|EMULATOR_VERSION_MAJOR|$(EMULATOR_VERSION_MAJOR)|g;s|EMULATOR_VERSION_MINOR|$(EMULATOR_VERSION_MINOR)|g;s|EMULATOR_VERSION_PATCH|$(EMULATOR_VERSION_PATCH)|g;s|EMULATOR_VERSION_LABEL|$(EMULATOR_VERSION_LABEL)|g" $< > $@
@@ -767,7 +755,7 @@ clean-libcartesi: clean-objs
 	@rm -f $(LIBCARTESI) $(LIBCARTESI_GRPC) cartesi.so cartesi/grpc.so cartesi/jsonrpc.so
 
 clean-executables:
-	@rm -f jsonrpc-remote-cartesi-machine remote-cartesi-machine remote-cartesi-machine-proxy merkle-tree-hash
+	@rm -f jsonrpc-remote-cartesi-machine remote-cartesi-machine merkle-tree-hash
 
 clean-tests:
 	@rm -f tests/test-merkle-tree-hash tests/test-machine-c-api

@@ -56,7 +56,7 @@ CHMOD_EXEC= chmod 0755
 CHMOD_DATA= chmod 0644
 STRIP_EXEC= strip -x
 
-EMU_TO_BIN= jsonrpc-remote-cartesi-machine remote-cartesi-machine remote-cartesi-machine-proxy merkle-tree-hash
+EMU_TO_BIN= jsonrpc-remote-cartesi-machine remote-cartesi-machine merkle-tree-hash
 EMU_TO_LIB= $(LIBCARTESI_SO_$(UNAME)) $(LIBCARTESI_SO_GRPC_$(UNAME))
 EMU_LUA_TO_BIN= cartesi-machine.lua cartesi-machine-stored-hash.lua rollup-memory-range.lua
 EMU_LUA_TEST_TO_BIN= cartesi-machine-tests.lua uarch-riscv-tests.lua

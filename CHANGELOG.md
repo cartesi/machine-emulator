@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Build device tree automatically into machine's ROM, eliminating the need for a ROM image
 - Enabled rollup by default
 - Updated libboost version to 1.81
+- Removed remote-cartesi-machine-proxy
 
 ## [0.15.2] - 2023-08-21
 ### Changed

@@ -34,7 +34,7 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 
 ```
 apt-get install build-essential wget git clang-tidy-15 clang-format-15 \
-        libreadline-dev libboost-coroutine1.81-dev libboost-context1.81-dev \
+        libreadline-dev libboost-context1.81-dev \
         libboost-filesystem1.81-dev libssl-dev libc-ares-dev zlib1g-dev \
         ca-certificates automake libtool patchelf cmake pkg-config lua5.4 liblua5.4-dev \
         libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \

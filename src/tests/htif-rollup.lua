@@ -35,6 +35,7 @@ local config_base = {
     },
     htif = {
         yield_automatic = true,
+        yield_manual = true,
     },
     rollup = {
         rx_buffer = {

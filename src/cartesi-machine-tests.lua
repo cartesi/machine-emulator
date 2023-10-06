@@ -639,8 +639,15 @@ local function build_machine(test_name)
         },
         htif = {
             console_getchar = false,
-            yield_progress = false,
-            yield_rollup = false,
+            yield_automatic = true,
+            yield_manual = true,
+        },
+        rollup = {
+            rx_buffer = { start = 0x60000000, length = 2 << 20 },
+            tx_buffer = { start = 0x60200000, length = 2 << 20 },
+            input_metadata = { start = 0x60400000, length = 4096 },
+            voucher_hashes = { start = 0x60600000, length = 2 << 20 },
+            notice_hashes = { start = 0x60800000, length = 2 << 20 },
         },
         flash_drive = { {
             start = 0x80000000000000,

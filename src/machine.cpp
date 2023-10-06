@@ -380,6 +380,9 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
 
     // Register rollup memory ranges
     if (m_c.rollup.has_value()) {
+        if (!m_c.htif.yield_automatic || !m_c.htif.yield_manual) {
+            throw std::invalid_argument{"rollup device requires automatic and manual yield"};
+        }
         if (m_c.rollup->rx_buffer.length == 0 || m_c.rollup->rx_buffer.start == 0 ||
             m_c.rollup->tx_buffer.length == 0 || m_c.rollup->tx_buffer.start == 0 ||
             m_c.rollup->input_metadata.length == 0 || m_c.rollup->input_metadata.start == 0 ||

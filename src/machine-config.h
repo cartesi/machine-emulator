@@ -112,17 +112,17 @@ struct htif_config final {
     uint64_t fromhost{FROMHOST_INIT}; ///< Value of fromhost CSR
     uint64_t tohost{TOHOST_INIT};     ///< Value of tohost CSR
     bool console_getchar{false};      ///< Make console getchar available?
-    bool yield_manual{false};         ///< Make yield manual available?
-    bool yield_automatic{false};      ///< Make yield automatic available?
+    bool yield_manual{true};          ///< Make yield manual available?
+    bool yield_automatic{true};       ///< Make yield automatic available?
 };
 
 /// \brief Rollup configuration
-struct rollup_config {                    // NOLINT(bugprone-exception-escape)
-    memory_range_config rx_buffer{};      ///< RX buffer
-    memory_range_config tx_buffer{};      ///< TX buffer
-    memory_range_config input_metadata{}; ///< Buffer for input metadata
-    memory_range_config voucher_hashes{}; ///< Buffer for the voucher hash array
-    memory_range_config notice_hashes{};  ///< Buffer for the notice hash array
+struct rollup_config {                                       // NOLINT(bugprone-exception-escape)
+    memory_range_config rx_buffer{0x60000000, 2 << 20};      ///< RX buffer
+    memory_range_config tx_buffer{0x60200000, 2 << 20};      ///< TX buffer
+    memory_range_config input_metadata{0x60400000, 4096};    ///< Buffer for input metadata
+    memory_range_config voucher_hashes{0x60600000, 2 << 20}; ///< Buffer for the voucher hash array
+    memory_range_config notice_hashes{0x60800000, 2 << 20};  ///< Buffer for the notice hash array
 };
 
 /// \brief Machine state configuration

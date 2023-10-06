@@ -198,7 +198,7 @@ jobs:
       - name: Save and Load
         run: |
           mkdir -m 755 -p ${{ env.CARTESI_IMAGES_PATH }}/snapshots
-          docker run --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine --max-mcycle=0 --rollup --store=${{ env.CARTESI_IMAGES_PATH }}/snapshots/save_and_load_test
+          docker run --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine --max-mcycle=0 --store=${{ env.CARTESI_IMAGES_PATH }}/snapshots/save_and_load_test
           docker run --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine --load=${{ env.CARTESI_IMAGES_PATH }}/snapshots/save_and_load_test
           sudo rm -rf ${{ env.CARTESI_IMAGES_PATH }}/snapshots
 
@@ -344,7 +344,7 @@ jobs:
       - name: Save and Load
         run: |
           mkdir -m 755 -p ${{ env.CARTESI_IMAGES_PATH }}/snapshots
-          docker run --platform linux/arm64 --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine --max-mcycle=0 --rollup --store=${{ env.CARTESI_IMAGES_PATH }}/snapshots/save_and_load_test
+          docker run --platform linux/arm64 --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine --max-mcycle=0 --store=${{ env.CARTESI_IMAGES_PATH }}/snapshots/save_and_load_test
           docker run --platform linux/arm64 --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine --load=${{ env.CARTESI_IMAGES_PATH }}/snapshots/save_and_load_test
           sudo rm -rf ${{ env.CARTESI_IMAGES_PATH }}/snapshots
 

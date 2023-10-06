@@ -37,7 +37,6 @@ struct shadow_uarch_state {
     uint64_t halt_flag;
     uint64_t cycle;
     uint64_t pc;
-    uint64_t ram_length;
     uint64_t x[UARCH_X_REG_COUNT];
 };
 #pragma pack(pop)
@@ -50,7 +49,6 @@ enum class shadow_uarch_state_csr {
     halt_flag = offsetof(shadow_uarch_state, halt_flag),
     cycle = offsetof(shadow_uarch_state, cycle),
     pc = offsetof(shadow_uarch_state, pc),
-    ram_length = offsetof(shadow_uarch_state, ram_length)
 };
 
 /// \brief Obtains the relative address of a CSR in shadow uarch state memory.
@@ -78,10 +76,6 @@ static inline uint64_t shadow_uarch_state_get_x_rel_addr(int reg) {
 static inline uint64_t shadow_uarch_state_get_x_abs_addr(int reg) {
     return PMA_SHADOW_UARCH_STATE_START + shadow_uarch_state_get_x_rel_addr(reg);
 }
-
-/// \brief Absolute address of shadow_uarch_csr::uarch_ram_length. This symbol is used by the microarchitecture boostrap
-/// to detect the RAM size
-extern "C" const uint64_t shadow_uarch_state_uarch_ram_length_abs_addr;
 
 } // namespace cartesi
 

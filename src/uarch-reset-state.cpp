@@ -14,17 +14,32 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <cinttypes>
+// NOLINTBEGIN(google-readability-casting, misc-const-correctness)
 
-#include "i-device-state-access.h"
-#include "pma-constants.h"
-#include "pma-driver.h"
+#include <stdexcept>
+
 #include "riscv-constants.h"
-#include "shadow-uarch-state.h"
-#include "strict-aliasing.h"
+#include "uarch-record-reset-state-access.h"
+#include "uarch-replay-reset-state-access.h"
+#include "uarch-reset-state-access.h"
+#include "uarch-reset-state.h"
+#include "uarch-solidity-compat.h"
 
 namespace cartesi {
 
-const pma_driver shadow_uarch_state_driver = {"SHADOW UARCH", device_read_error, device_write_error};
+template <typename UarchState>
+void uarch_reset_state(UarchState &a) {
+    a.reset_state();
+}
+
+// Explicit instantiation for uarch_step_state_access
+template void uarch_reset_state(uarch_reset_state_access &a);
+
+// Explicit instantiation for uarch_record_reset_state_access
+template void uarch_reset_state(uarch_record_reset_state_access &a);
+
+// Explicit instantiation for uarch_replay_step_state_access
+template void uarch_reset_state(uarch_replay_reset_state_access &a);
 
 } // namespace cartesi
+// NOLINTEND(google-readability-casting, misc-const-correctness)

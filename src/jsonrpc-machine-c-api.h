@@ -98,8 +98,35 @@ CM_API int cm_jsonrpc_get_default_config(const cm_jsonrpc_mg_mgr *mgr, const cm_
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_7_error_message
 /// \returns 0 for success, non zero code for error
-CM_API int cm_jsonrpc_verify_access_log(const cm_jsonrpc_mg_mgr *mgr, const cm_access_log *log,
+CM_API int cm_jsonrpc_verify_uarch_step_log(const cm_jsonrpc_mg_mgr *mgr, const cm_access_log *log,
     const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
+
+/// \brief Checks the internal consistency of an access log produced by cm_jsonrpc_log_uarch_reset
+/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
+/// \param log State access log to be verified.
+/// \param runtime_config Runtime config to be used
+/// \param one_based Use 1-based indices when reporting errors.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_7_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_jsonrpc_verify_uarch_reset_log(const cm_jsonrpc_mg_mgr *mgr, const cm_access_log *log,
+    const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
+
+/// \brief Checks the validity of a state transition caused by uarch state reset
+/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
+/// \param root_hash_before State hash before step
+/// \param log Step state access log created by cm_jsonrpc_log_uarch_reset
+/// \param root_hash_after State hash after step
+/// \param runtime_config Runtime config to be used
+/// \param one_based Use 1-based indices when reporting errors
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring
+/// \returns 0 for successfull verification, non zero code for error
+CM_API int cm_jsonrpc_verify_uarch_reset_state_transition(const cm_jsonrpc_mg_mgr *mgr, const cm_hash *root_hash_before,
+    const cm_access_log *log, const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config,
+    bool one_based, char **err_msg);
 
 /// \brief Checks the validity of a state transition
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
@@ -112,7 +139,7 @@ CM_API int cm_jsonrpc_verify_access_log(const cm_jsonrpc_mg_mgr *mgr, const cm_a
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for successfull verification, non zero code for error
-CM_API int cm_jsonrpc_verify_state_transition(const cm_jsonrpc_mg_mgr *mgr, const cm_hash *root_hash_before,
+CM_API int cm_jsonrpc_verify_uarch_step_state_transition(const cm_jsonrpc_mg_mgr *mgr, const cm_hash *root_hash_before,
     const cm_access_log *log, const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config,
     bool one_based, char **err_msg);
 

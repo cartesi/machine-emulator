@@ -11,6 +11,7 @@ build
 pkg
 third-party/downloads
 third-party/mongoose-*
+src/compute-uarch-pristine-hash
 src/remote-cartesi-machine
 src/jsonrpc-remote-cartesi-machine
 src/merkle-tree-hash

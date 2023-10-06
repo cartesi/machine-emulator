@@ -22,6 +22,8 @@
 #include "clua.h"
 #include "machine-c-api.h"
 #include "riscv-constants.h"
+#include "uarch-constants.h"
+#include "uarch-pristine-state-hash.h"
 
 /// \file
 /// \brief Scripting interface for the Cartesi SDK.
@@ -121,7 +123,15 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_BREAK_REASON_REACHED_TARGET_MCYCLE, "BREAK_REASON_REACHED_TARGET_MCYCLE", -1);
     clua_setintegerfield(L, CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE, "UARCH_BREAK_REASON_REACHED_TARGET_CYCLE", -1);
     clua_setintegerfield(L, CM_UARCH_BREAK_REASON_UARCH_HALTED, "UARCH_BREAK_REASON_UARCH_HALTED", -1);
-
+    clua_setintegerfield(L, UARCH_STATE_START_ADDRESS, "UARCH_STATE_START_ADDRESS", -1);
+    clua_setintegerfield(L, UARCH_STATE_LOG2_SIZE, "UARCH_STATE_LOG2_SIZE", -1);
+    clua_setintegerfield(L, UARCH_SHADOW_START_ADDRESS, "UARCH_SHADOW_START_ADDRESS", -1);
+    clua_setintegerfield(L, UARCH_SHADOW_LENGTH, "UARCH_SHADOW_LENGTH", -1);
+    clua_setintegerfield(L, UARCH_RAM_LENGTH, "UARCH_RAM_LENGTH", -1);
+    clua_setintegerfield(L, UARCH_RAM_START_ADDRESS, "UARCH_RAM_START_ADDRESS", -1);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    clua_setlstringfield(L, reinterpret_cast<const char *>(uarch_pristine_state_hash.data()),
+        uarch_pristine_state_hash.size(), "UARCH_PRISTINE_STATE_HASH", -1);
     clua_setintegerfield(L, MVENDORID_INIT, "MVENDORID", -1);
     clua_setintegerfield(L, MARCHID_INIT, "MARCHID", -1);
     clua_setintegerfield(L, MIMPID_INIT, "MIMPID", -1);

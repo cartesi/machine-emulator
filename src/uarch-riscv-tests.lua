@@ -90,7 +90,6 @@ where options are:
     (default: ".*", i.e., all tests)
   --output-dir=<directory-path>
     write json logs to this  directory
-    required by the command json-logs
   --proofs
     include proofs in the log
   --proofs-frequency=<number>
@@ -104,8 +103,15 @@ and command can be:
   list
     list tests selected by the test <pattern>
 
-  json-logs
-    generate json log files, used by by Solidity unit tests, to the directory specified by --output-dir
+  json-step-logs
+    generate json log files for every step of the selected tests
+    the files are written to the directory specified by --output-dir
+    these log files are used by Solidity unit tests
+
+  json-reset-log
+    generate the file uarch-reset.json containing the log of a uarch reset operation
+    the file is written to the directory specified by --output-dir
+    this log file is used by Solidity unit tests
 
 ]=],
         arg[0]
@@ -196,15 +202,14 @@ local command = assert(values[1], "missing command")
 assert(test_path, "missing test path")
 
 local function build_machine(test_name)
+    local uarch_ram = {}
+    if test_name then uarch_ram.image_filename = test_path .. "/" .. test_name end
     local config = {
         ram = {
             length = 0x20000,
         },
         uarch = {
-            ram = {
-                image_filename = test_path .. "/" .. test_name,
-                length = 0x20000,
-            },
+            ram = uarch_ram,
         },
     }
     local runtime = {}
@@ -323,10 +328,17 @@ local function write_access_to_log(access, out, indent, last)
     util.indentout(out, indent, "{\n")
     util.indentout(out, indent + 1, '"type": "%s",\n', access.type)
     util.indentout(out, indent + 1, '"address": %u,\n', access.address)
+    util.indentout(out, indent + 1, '"log2_size": %u,\n', access.log2_size)
     if access.type == "write" then
-        util.indentout(out, indent + 1, '"value": "%s"', util.hexstring(access.written))
+        local value = "null"
+        if access.written then value = '"' .. util.hexstring(access.written) .. '"' end
+        util.indentout(out, indent + 1, '"value": %s,', value)
+        util.indentout(out, indent + 1, '"hash": "%s"', util.hexhash(access.written_hash))
     else
-        util.indentout(out, indent + 1, '"value": "%s"', util.hexstring(access.read))
+        local value = "null"
+        if access.read then value = '"' .. util.hexstring(access.read) .. '"' end
+        util.indentout(out, indent + 1, '"value": %s,', value)
+        util.indentout(out, indent + 1, '"hash": "%s"', util.hexhash(access.read_hash))
     end
     if access.proof then
         out:write(",\n")
@@ -341,7 +353,7 @@ local function write_access_to_log(access, out, indent, last)
     out:write("\n")
 end
 
-local function write_step_to_log(log, out, indent, last)
+local function write_log_to_file(log, out, indent, last)
     local n = #log.accesses
     util.indentout(out, indent, "{\n")
     util.indentout(out, indent + 1, '"accesses": [\n')
@@ -393,19 +405,19 @@ local function run_machine_writing_json_logs(machine, ctx)
     local step_count = 0
     while math.ult(machine:read_uarch_cycle(), max_cycle) do
         local log_type = { proofs = should_log_proofs() }
-        local log = machine:step_uarch(log_type)
+        local log = machine:log_uarch_step(log_type)
         total_steps_counter = total_steps_counter + 1
         step_count = step_count + 1
         local halted = machine:read_uarch_halt_flag()
-        write_step_to_log(log, out, indent + 1, halted)
+        write_log_to_file(log, out, indent + 1, halted)
         if halted then break end
     end
     ctx.step_count = step_count
-    util.indentout(out, indent, "] }\n")
+    util.indentout(out, indent, "]}\n")
     out:close()
 end
 
-local function json_logs(tests)
+local function json_step_logs(tests)
     assert(output_dir, "output-dir is required for json-logs")
     local errors, error_count = {}, 0
     local contexts = {}
@@ -445,6 +457,14 @@ local function json_logs(tests)
     end
 end
 
+local function json_reset_log()
+    local machine <close> = build_machine()
+    local log = machine:log_uarch_reset({ proofs = proofs })
+    local out = create_json_log_file("uarch-reset")
+    write_log_to_file(log, out, 0, true)
+    out:close()
+end
+
 local selected_tests = {}
 for _, test in ipairs(riscv_tests) do
     if select_test(test[1], test_pattern) then selected_tests[#selected_tests + 1] = test end
@@ -456,8 +476,10 @@ elseif command == "run" then
     run(selected_tests)
 elseif command == "list" then
     list(selected_tests)
-elseif command == "json-logs" then
-    json_logs(selected_tests)
+elseif command == "json-step-logs" then
+    json_step_logs(selected_tests)
+elseif command == "json-reset-log" then
+    json_reset_log()
 else
     error("command not found")
 end

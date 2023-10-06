@@ -1,6 +1,5 @@
 #!/usr/bin/env lua5.4
 
-local test_util = require("tests.util")
 local cartesi = require("cartesi")
 
 local config = {
@@ -16,14 +15,11 @@ local config = {
     dtb = {
         image_filename = "",
     },
-    uarch = {
-        ram = { length = 1 << 19, image_filename = test_util.create_test_uarch_program() },
-    },
 }
 local machine <close> = cartesi.machine(config)
 
 local old_hash = machine:get_root_hash()
-local access_log = machine:step_uarch({ proofs = true })
+local access_log = machine:log_uarch_step({ proofs = true })
 local new_hash = machine:get_root_hash()
-cartesi.machine.verify_state_transition(old_hash, access_log, new_hash, {})
+cartesi.machine.verify_uarch_step_state_transition(old_hash, access_log, new_hash, {})
 print("ok")

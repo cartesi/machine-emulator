@@ -428,6 +428,28 @@ public:
             m_dirty_page_map[map_index] |= (1 << (page_number & 7));
         }
     }
+    /// \brief Mark all pages in rage as dirty
+    /// \param address Start address
+    /// \param size Size of range
+    void mark_dirty_pages(uint64_t address, uint64_t size) {
+        if (m_dirty_page_map.empty()) {
+            return;
+        }
+        if (!get_istart_M() || get_istart_E()) {
+            throw std::invalid_argument{"address range not entirely in memory PMA"};
+        }
+        if (!contains(address, size)) {
+            throw std::invalid_argument{"range not contained in pma"};
+        }
+        constexpr const auto log2_page_size = PMA_constants::PMA_PAGE_SIZE_LOG2;
+        uint64_t page_in_range = ((address - get_start()) >> log2_page_size) << log2_page_size;
+        constexpr const auto page_size = PMA_constants::PMA_PAGE_SIZE;
+        auto npages = (size + page_size - 1) / page_size;
+        for (decltype(npages) i = 0; i < npages; ++i) {
+            mark_dirty_page(page_in_range);
+            page_in_range += page_size;
+        }
+    }
 
     /// \brief Mark a given page as clean
     /// \param address_in_range Any address within page in range
@@ -475,6 +497,18 @@ public:
         }
         return address >= get_start() && get_length() >= length && address - get_start() <= get_length() - length;
     }
+
+    /// \brief  Writes data to pma memory
+    /// \param paddr Destination address within pma range
+    /// \param data Source data
+    /// \param size Data size
+    void write_memory(uint64_t paddr, const unsigned char *data, uint64_t size);
+
+    /// \brief  Fills pma memory with a given value
+    /// \param paddr Destination address within pma range
+    /// \param value Value to write
+    /// \param size Data size
+    void fill_memory(uint64_t paddr, unsigned char value, uint64_t size);
 };
 
 /// \brief Creates a PMA entry for a new memory range initially filled with zeros.

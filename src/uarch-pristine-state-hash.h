@@ -14,17 +14,17 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <pma-defines.h>
-#include <uarch-defines.h>
+#ifndef UARCH_STATE_HASH_H
+#define UARCH_STATE_HASH_H
 
-.section .text.init;
-.align 3;
-.global _start;
-_start:    
-    // Initialize stack
-    li sp, PMA_UARCH_RAM_START_DEF  
-    li t0, PMA_UARCH_RAM_LENGTH_DEF
-    add sp, sp, t0 // stack pointer at the end of RAM
-    call interpret_next_mcycle_with_uarch
+#include "machine-merkle-tree.h"
 
+namespace cartesi {
 
+/// \brief Hash of the pristine uarch state.
+/// \details This hash is computed at compile time by the program compute-uarch-pristine-hash.cpp
+extern const machine_merkle_tree::hash_type uarch_pristine_state_hash;
+
+} // namespace cartesi
+
+#endif

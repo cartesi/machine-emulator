@@ -36,8 +36,8 @@ interpreter_break_reason virtual_machine::do_run(uint64_t mcycle_end) {
     return m_machine->run(mcycle_end);
 }
 
-access_log virtual_machine::do_step_uarch(const access_log::type &log_type, bool one_based) {
-    return m_machine->step_uarch(log_type, one_based);
+access_log virtual_machine::do_log_uarch_step(const access_log::type &log_type, bool one_based) {
+    return m_machine->log_uarch_step(log_type, one_based);
 }
 
 machine_merkle_tree::proof_type virtual_machine::do_get_proof(uint64_t address, int log2_size) const {
@@ -472,16 +472,16 @@ void virtual_machine::do_set_uarch_halt_flag() {
     m_machine->set_uarch_halt_flag();
 }
 
-void virtual_machine::do_reset_uarch_state() {
-    m_machine->reset_uarch_state();
+void virtual_machine::do_reset_uarch() {
+    m_machine->reset_uarch();
+}
+
+access_log virtual_machine::do_log_uarch_reset(const access_log::type &log_type, bool one_based) {
+    return m_machine->log_uarch_reset(log_type, one_based);
 }
 
 bool virtual_machine::do_read_uarch_halt_flag(void) const {
     return m_machine->read_uarch_halt_flag();
-}
-
-uint64_t virtual_machine::do_read_uarch_ram_length(void) const {
-    return m_machine->read_uarch_ram_length();
 }
 
 uarch_interpreter_break_reason virtual_machine::do_run_uarch(uint64_t uarch_cycle_end) {

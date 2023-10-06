@@ -42,9 +42,9 @@ static int grpc_machine_class_get_default_config(lua_State *L) {
     return 1;
 }
 
-/// \brief This is the machine.verify_access_log()
+/// \brief This is the machine.verify_uarch_step_log()
 /// static method implementation.
-static int grpc_machine_class_verify_access_log(lua_State *L) {
+static int grpc_machine_class_verify_uarch_step_log(lua_State *L) {
     const int stubidx = lua_upvalueindex(1);
     const int ctxidx = lua_upvalueindex(2);
     lua_settop(L, 3);
@@ -53,8 +53,8 @@ static int grpc_machine_class_verify_access_log(lua_State *L) {
         clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 1, ctxidx)), ctxidx);
     auto &managed_runtime_config = clua_push_to(L,
         clua_managed_cm_ptr<cm_machine_runtime_config>(clua_opt_cm_machine_runtime_config(L, 2, {}, ctxidx)), ctxidx);
-    TRY_EXECUTE(cm_grpc_verify_access_log(managed_grpc_stub.get(), managed_log.get(), managed_runtime_config.get(),
-        lua_toboolean(L, 3), err_msg));
+    TRY_EXECUTE(cm_grpc_verify_uarch_step_log(managed_grpc_stub.get(), managed_log.get(), managed_runtime_config.get(),
+        true, err_msg));
     managed_log.reset();
     managed_runtime_config.reset();
     lua_pop(L, 2);
@@ -62,9 +62,29 @@ static int grpc_machine_class_verify_access_log(lua_State *L) {
     return 1;
 }
 
-/// \brief This is the machine.verify_state_transition()
+/// \brief This is the machine.verify_uarch_reset_log()
 /// static method implementation.
-static int grpc_machine_class_verify_state_transition(lua_State *L) {
+static int grpc_machine_class_verify_uarch_reset_log(lua_State *L) {
+    const int stubidx = lua_upvalueindex(1);
+    const int ctxidx = lua_upvalueindex(2);
+    lua_settop(L, 3);
+    auto &managed_grpc_stub = clua_check<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, stubidx, ctxidx);
+    auto &managed_log =
+        clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 1, ctxidx)), ctxidx);
+    auto &managed_runtime_config = clua_push_to(L,
+        clua_managed_cm_ptr<cm_machine_runtime_config>(clua_opt_cm_machine_runtime_config(L, 2, {}, ctxidx)), ctxidx);
+    TRY_EXECUTE(cm_grpc_verify_uarch_reset_log(managed_grpc_stub.get(), managed_log.get(), managed_runtime_config.get(),
+        true, err_msg));
+    managed_log.reset();
+    managed_runtime_config.reset();
+    lua_pop(L, 2);
+    lua_pushnumber(L, 1);
+    return 1;
+}
+
+/// \brief This is the machine.verify_uarch_reset_state_transition()
+/// static method implementation.
+static int grpc_machine_class_verify_uarch_reset_state_transition(lua_State *L) {
     const int stubidx = lua_upvalueindex(1);
     const int ctxidx = lua_upvalueindex(2);
     lua_settop(L, 5);
@@ -77,9 +97,32 @@ static int grpc_machine_class_verify_state_transition(lua_State *L) {
     clua_check_cm_hash(L, 3, &target_hash);
     auto &managed_runtime_config = clua_push_to(L,
         clua_managed_cm_ptr<cm_machine_runtime_config>(clua_opt_cm_machine_runtime_config(L, 4, {}, ctxidx)), ctxidx);
-    const bool one_based = lua_toboolean(L, 5);
-    TRY_EXECUTE(cm_grpc_verify_state_transition(managed_grpc_stub.get(), &root_hash, managed_log.get(), &target_hash,
-        managed_runtime_config.get(), one_based, err_msg));
+    TRY_EXECUTE(cm_grpc_verify_uarch_reset_state_transition(managed_grpc_stub.get(), &root_hash, managed_log.get(),
+        &target_hash, managed_runtime_config.get(), true, err_msg));
+    managed_log.reset();
+    managed_runtime_config.reset();
+    lua_pop(L, 2);
+    lua_pushnumber(L, 1);
+    return 1;
+}
+
+/// \brief This is the machine.verify_uarch_step_state_transition()
+/// static method implementation.
+static int grpc_machine_class_verify_uarch_step_state_transition(lua_State *L) {
+    const int stubidx = lua_upvalueindex(1);
+    const int ctxidx = lua_upvalueindex(2);
+    lua_settop(L, 5);
+    auto &managed_grpc_stub = clua_check<clua_managed_cm_ptr<cm_grpc_machine_stub>>(L, stubidx, ctxidx);
+    cm_hash root_hash{};
+    clua_check_cm_hash(L, 1, &root_hash);
+    auto &managed_log =
+        clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 2, ctxidx)), ctxidx);
+    cm_hash target_hash{};
+    clua_check_cm_hash(L, 3, &target_hash);
+    auto &managed_runtime_config = clua_push_to(L,
+        clua_managed_cm_ptr<cm_machine_runtime_config>(clua_opt_cm_machine_runtime_config(L, 4, {}, ctxidx)), ctxidx);
+    TRY_EXECUTE(cm_grpc_verify_uarch_step_state_transition(managed_grpc_stub.get(), &root_hash, managed_log.get(),
+        &target_hash, managed_runtime_config.get(), true, err_msg));
     managed_log.reset();
     managed_runtime_config.reset();
     lua_pop(L, 2);
@@ -121,8 +164,10 @@ static int grpc_machine_class_get_csr_address(lua_State *L) {
 /// \brief Contents of the machine class metatable __index table.
 static const auto grpc_machine_static_methods = cartesi::clua_make_luaL_Reg_array({
     {"get_default_config", grpc_machine_class_get_default_config},
-    {"verify_access_log", grpc_machine_class_verify_access_log},
-    {"verify_state_transition", grpc_machine_class_verify_state_transition},
+    {"verify_uarch_step_log", grpc_machine_class_verify_uarch_step_log},
+    {"verify_uarch_step_state_transition", grpc_machine_class_verify_uarch_step_state_transition},
+    {"verify_uarch_reset_log", grpc_machine_class_verify_uarch_reset_log},
+    {"verify_uarch_reset_state_transition", grpc_machine_class_verify_uarch_reset_state_transition},
     {"get_x_address", grpc_machine_class_get_x_address},
     {"get_uarch_x_address", grpc_machine_class_get_uarch_x_address},
     {"get_csr_address", grpc_machine_class_get_csr_address},

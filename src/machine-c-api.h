@@ -138,7 +138,6 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_PROC_UARCH_PC,
     CM_PROC_UARCH_CYCLE,
     CM_PROC_UARCH_HALT_FLAG,
-    CM_PROC_UARCH_RAM_LENGTH,
     CM_PROC_UNKNOWN
 } CM_PROC_CSR;
 
@@ -243,7 +242,6 @@ typedef struct {                           // NOLINT(modernize-use-using)
 
 /// \brief microarchitecture RAM configuration
 typedef struct {                // NOLINT(modernize-use-using)
-    uint64_t length;            ///< RAM length
     const char *image_filename; ///< RAM image file name
 } cm_uarch_ram_config;
 
@@ -297,6 +295,7 @@ typedef enum {       // NOLINT(modernize-use-using)
 typedef struct {      // NOLINT(modernize-use-using)
     bool proofs;      ///< Includes proofs
     bool annotations; ///< Includes annotations
+    bool large_data;  ///< Includes data bigger than 8 bytes
 } cm_access_log_type;
 
 /// \brief Bracket type
@@ -317,8 +316,10 @@ typedef struct {                 // NOLINT(modernize-use-using)
     CM_ACCESS_TYPE type;         ///< Type of access
     uint64_t address;            ///< Address of access
     int log2_size;               ///< Log2 of size of access
+    cm_hash read_hash;           ///< Hash of data before access
     uint8_t *read_data;          ///< Data before access
     size_t read_data_size;       ///< Size of data before access in bytes
+    cm_hash written_hash;        ///< Hash of data after access (if writing)
     uint8_t *written_data;       ///< Data after access (if writing)
     size_t written_data_size;    ///< Size of data after access in bytes
     cm_merkle_tree_proof *proof; ///< Proof of data before access
@@ -474,7 +475,7 @@ CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *b
 /// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_step_uarch(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
+CM_API int cm_log_uarch_step(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
     char **err_msg);
 
 /// \brief  Deletes the instance of cm_access_log acquired from cm_step
@@ -490,7 +491,7 @@ CM_API void cm_delete_access_log(cm_access_log *acc_log);
 /// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_verify_access_log(const cm_access_log *log, const cm_machine_runtime_config *runtime_config,
+CM_API int cm_verify_uarch_step_log(const cm_access_log *log, const cm_machine_runtime_config *runtime_config,
     bool one_based, char **err_msg);
 
 /// \brief Checks the validity of a state transition
@@ -504,8 +505,34 @@ CM_API int cm_verify_access_log(const cm_access_log *log, const cm_machine_runti
 /// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for successful verification, non zero code for error
-CM_API int cm_verify_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
+CM_API int cm_verify_uarch_step_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
     const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
+
+/// \brief Checks the validity of a state transition caused by a uarch state reset
+/// \param root_hash_before State hash before step
+/// \param log Step state access log produced by cm_log_uarch_reset
+/// \param root_hash_after State hash after step
+/// \param runtime_config Machine runtime configuration to use during verification. Must be pointer to valid object
+/// \param one_based Use 1-based indices when reporting errors
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successful function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring.
+/// err_msg can be NULL, meaning the error message won't be received.
+/// \returns 0 for successful verification, non zero code for error
+CM_API int cm_verify_uarch_reset_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
+    const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
+
+/// \brief Checks the internal consistency of an access log produced by cm_log_uarch_reset
+/// \param log State access log to be verified
+/// \param r Machine runtime configuration to use during verification. Must be pointer to valid object
+/// \param one_based Use 1-based indices when reporting errors
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successful function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring.
+/// err_msg can be NULL, meaning the error message won't be received.
+/// \returns 0 for success, non zero code for error
+CM_API int cm_verify_uarch_reset_log(const cm_access_log *log, const cm_machine_runtime_config *runtime_config,
+    bool one_based, char **err_msg);
 
 /// \brief Obtains the proof for a node in the Merkle tree
 /// \param m Pointer to valid machine instance
@@ -1657,16 +1684,6 @@ CM_API int cm_write_uarch_pc(cm_machine *m, uint64_t val, char **err_msg);
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_uarch_cycle(const cm_machine *m, uint64_t *val, char **err_msg);
 
-/// \brief Reads the value of the microarchitecture RAM length
-/// \param m Pointer to valid machine instance
-/// \param val Receives value of the microarchitecture RAM length.
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_cstring.
-/// err_msg can be NULL, meaning the error message won't be received.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_read_uarch_ram_length(const cm_machine *m, uint64_t *val, char **err_msg);
-
 /// \brief Writes the value of the microarchitecture cycle register.
 /// \param m Pointer to valid machine instance
 /// \param val New register value.
@@ -1700,7 +1717,19 @@ CM_API int cm_set_uarch_halt_flag(cm_machine *m, char **err_msg);
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
-CM_API int cm_reset_uarch_state(cm_machine *m, char **err_msg);
+CM_API int cm_reset_uarch(cm_machine *m, char **err_msg);
+
+/// \brief Resets the value of the microarchitecture halt flag.
+/// \param m Pointer to valid machine instance
+/// \param log_type Type of access log to generate.
+/// \param one_based Use 1-based indices when reporting errors.
+/// \param access_log Receives the state access log.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring
+/// \returns 0 for success, non zero code for error
+CM_API int cm_log_uarch_reset(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
+    char **err_msg);
 
 /// \brief Runs the machine in the microarchitecture until the mcycle advances by one unit or the micro cycles counter
 /// (uarch_cycle) reaches uarch_cycle_end

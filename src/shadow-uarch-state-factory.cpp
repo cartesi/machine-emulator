@@ -49,7 +49,6 @@ static bool shadow_uarch_state_peek(const pma_entry &pma, const machine &m, uint
     s->halt_flag = m.read_uarch_halt_flag();
     s->cycle = m.read_uarch_cycle();
     s->pc = m.read_uarch_pc();
-    s->ram_length = m.get_initial_config().uarch.ram.length;
     for (int i = 0; i < UARCH_X_REG_COUNT; ++i) {
         s->x[i] = m.read_uarch_x(i);
     }

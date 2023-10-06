@@ -397,7 +397,7 @@ end)
 
 print("\n\ntesting get_x_uarch_address function binding")
 do_test("should return address value for uarch x registers", function()
-    local SHADOW_UARCH_XBASE = test_util.PMA_SHADOW_UARCH_STATE_START + 32
+    local SHADOW_UARCH_XBASE = cartesi.UARCH_SHADOW_START_ADDRESS + 24
     local module = cartesi
     if machine_type == "grpc" then
         if not remote then remote = connect() end
@@ -576,7 +576,7 @@ do_test("mcycle value should match", function(machine)
     local log_type = {}
     local uarch_cycle_initial_value = machine:read_csr("uarch_cycle")
 
-    machine:step_uarch(log_type)
+    machine:log_uarch_step(log_type)
 
     -- Check mcycle increment
     local uarch_cycle_current_value = machine:read_csr("uarch_cycle")
@@ -673,8 +673,8 @@ do_test("written and read values should match", function(machine)
     assert(memory_read == "mydataol12345678")
 end)
 
-print("\n\n dump log  to console")
-do_test("dumped log content should match", function()
+print("\n\n dump step log  to console")
+do_test("dumped step log content should match", function()
     -- Dump log and check values
     local lua_code = [[ "
                                  local cartesi = require 'cartesi'
@@ -687,12 +687,12 @@ do_test("dumped log content should match", function()
                                  processor = initial_csr_values,
                                  ram = {length = 1 << 20},
                                  uarch = {
-                                    ram = { length = 1 << 16, image_filename = uarch_ram_path }
+                                    ram = { image_filename = uarch_ram_path }
                                  }
                                  }
                                  os.remove(uarch_ram_path)
                                  local log_type = {proofs = false, annotations = true}
-                                 local log = machine:step_uarch(log_type)
+                                 local log = machine:log_uarch_step(log_type)
                                  cartesi_util.dump_log(log, io.stdout)
                                  " 2>&1]]
 
@@ -700,16 +700,16 @@ do_test("dumped log content should match", function()
     local output = p:read(2000)
     p:close()
     local expected_output = "begin step\n"
-        .. "  1: read uarch.cycle@0x70000008(1879048200): 0x0(0)\n"
-        .. "  2: read uarch.halt_flag@0x70000000(1879048192): 0x0(0)\n"
-        .. "  3: read uarch.pc@0x70000010(1879048208): 0x78000000(2013265920)\n"
-        .. "  4: read memory@0x78000000(2013265920): 0x700002b707b00513(8070453517379175699)\n"
+        .. "  1: read uarch.cycle@0x400008(4194312): 0x0(0)\n"
+        .. "  2: read uarch.halt_flag@0x400000(4194304): 0x0(0)\n"
+        .. "  3: read uarch.pc@0x400010(4194320): 0x600000(6291456)\n"
+        .. "  4: read memory@0x600000(6291456): 0x4002b707b00513(18017383640728851)\n"
         .. "  begin addi\n"
-        .. "    5: read uarch.x@0x70000020(1879048224): 0x0(0)\n"
-        .. "    6: write uarch.x@0x70000070(1879048304): 0x0(0) -> 0x7b(123)\n"
-        .. "    7: write uarch.pc@0x70000010(1879048208): 0x78000000(2013265920) -> 0x78000004(2013265924)\n"
+        .. "    5: read uarch.x@0x400018(4194328): 0x0(0)\n"
+        .. "    6: write uarch.x@0x400068(4194408): 0x0(0) -> 0x7b(123)\n"
+        .. "    7: write uarch.pc@0x400010(4194320): 0x600000(6291456) -> 0x600004(6291460)\n"
         .. "  end addi\n"
-        .. "  8: write uarch.cycle@0x70000008(1879048200): 0x0(0) -> 0x1(1)\n"
+        .. "  8: write uarch.cycle@0x400008(4194312): 0x0(0) -> 0x1(1)\n"
         .. "end step\n"
 
     print("Output of dump log:")
@@ -727,10 +727,44 @@ do_test("machine step should pass verifications", function(machine)
         module = remote
     end
     local initial_hash = machine:get_root_hash()
-    local log = machine:step_uarch({ proofs = true, annotations = true })
+    local log = machine:log_uarch_step({ proofs = true, annotations = true })
     local final_hash = machine:get_root_hash()
-    module.machine.verify_state_transition(initial_hash, log, final_hash, {})
-    module.machine.verify_access_log(log, {})
+    module.machine.verify_uarch_step_state_transition(initial_hash, log, final_hash, {})
+    module.machine.verify_uarch_step_log(log, {})
+end)
+
+print("\n\ntesting step and verification")
+do_test("Step log must contain conssitent data hashes", function(machine)
+    local wrong_hash = string.rep("\0", 32)
+    local module = cartesi
+    if machine_type ~= "local" then
+        if not remote then remote = connect() end
+        module = remote
+    end
+    local log = machine:log_uarch_step({ proofs = false, annotations = false })
+    module.machine.verify_uarch_step_log(log, {})
+    local read_access = log.accesses[1]
+    assert(read_access.type == "read")
+    local read_hash = read_access.read_hash
+    -- ensure that verification fails with wrong read hash
+    read_access.read_hash = wrong_hash
+    local _, err = pcall(module.machine.verify_uarch_step_log, log, {})
+    assert(err:match("logged read data of uarch.uarch_cycle data does not hash to the logged read hash at access 1"))
+    read_access.read_hash = read_hash -- restore correct value
+
+    -- ensure that verification fails with wrong read hash
+    local write_access = log.accesses[#log.accesses]
+    assert(write_access.type == "write")
+    read_hash = write_access.read_hash
+    write_access.read_hash = wrong_hash
+    _, err = pcall(module.machine.verify_uarch_step_log, log, {})
+    assert(err:match("logged read data of uarch.cycle does not hash to the logged read hash at access 8"))
+    write_access.read_hash = read_hash -- restore correct value
+
+    -- ensure that verification fails with wrong written hash
+    write_access.written_hash = wrong_hash
+    _, err = pcall(module.machine.verify_uarch_step_log, log, {})
+    assert(err:match("logged written data of uarch.cycle does not hash to the logged written hash at access 8"))
 end)
 
 do_test("step when uarch cycle is max", function(machine)
@@ -742,12 +776,12 @@ do_test("step when uarch cycle is max", function(machine)
     machine:write_uarch_cycle(MAX_UARCH_CYCLE)
     assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
     local initial_hash = machine:get_root_hash()
-    local log = machine:step_uarch({ proofs = true, annotations = true })
+    local log = machine:log_uarch_step({ proofs = true, annotations = true })
     assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
     local final_hash = machine:get_root_hash()
     assert(final_hash == initial_hash)
-    module.machine.verify_state_transition(initial_hash, log, final_hash, {})
-    module.machine.verify_access_log(log, {})
+    module.machine.verify_uarch_step_state_transition(initial_hash, log, final_hash, {})
+    module.machine.verify_uarch_step_log(log, {})
 end)
 
 local uarch_proof_step_program = {
@@ -762,51 +796,42 @@ local uarch_proof_step_program = {
 
 test_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { length = 1 << 16, image_filename = test_util.create_test_uarch_program(uarch_proof_step_program) },
+        ram = { image_filename = test_util.create_test_uarch_program(uarch_proof_step_program) },
     },
 })("merkle tree must be consistent when stepping alternating with and without proofs", function(machine)
     local t0 = 5
     local t1 = 6
     local t2 = 7
-    local uarch_ram_start = test_util.PMA_UARCH_RAM_START
+    local uarch_ram_start = cartesi.UARCH_RAM_START_ADDRESS
     local with_proofs = { proofs = true }
     local without_proofs = {}
 
-    machine:step_uarch(with_proofs) -- auipc	t0,0x0
-    machine:step_uarch(with_proofs) -- addi	t0,t0,256 # 0x100
+    machine:log_uarch_step(with_proofs) -- auipc	t0,0x0
+    machine:log_uarch_step(with_proofs) -- addi	t0,t0,256 # 0x100
     assert(machine:read_uarch_x(t0) == uarch_ram_start + 0x100)
-    machine:step_uarch(with_proofs) -- li	t1,0xca
+    machine:log_uarch_step(with_proofs) -- li	t1,0xca
     assert(machine:read_uarch_x(t1) == 0xca)
-    machine:step_uarch(with_proofs) -- li	t2,0xfe
+    machine:log_uarch_step(with_proofs) -- li	t2,0xfe
     assert(machine:read_uarch_x(t2) == 0xfe)
 
     -- sd and assert stored correctly
-    machine:step_uarch(with_proofs) -- sd	t1,0(t0) [0xca]
+    machine:log_uarch_step(with_proofs) -- sd	t1,0(t0) [0xca]
     assert(string.unpack("I8", machine:read_memory(uarch_ram_start + 0x100, 8)) == 0xca)
 
     -- sd and assert stored correctly
-    machine:step_uarch(without_proofs) -- t2,0(t0) [0xfe]
+    machine:log_uarch_step(without_proofs) -- t2,0(t0) [0xfe]
     assert(string.unpack("I8", machine:read_memory(uarch_ram_start + 0x100, 8)) == 0xfe)
 
     -- This step should run successfully
     -- The previous unproven step should have marked the updated pages dirty, allowing
     -- the tree to be updated correctly in the next proved step
-    machine:step_uarch(with_proofs) -- sd	t1,0(t0) [0xca]
+    machine:log_uarch_step(with_proofs) -- sd	t1,0(t0) [0xca]
     assert(string.unpack("I8", machine:read_memory(uarch_ram_start + 0x100, 8)) == 0xca)
 end)
 
-test_util.make_do_test(build_machine, machine_type, { uarch = { ram = { length = 0x1000 } } })(
-    "It should initialize uarch ram with zeros when only uarch ram length is provided",
-    function(machine)
-        local m = machine:read_memory(test_util.PMA_UARCH_RAM_START, 0x1000)
-        assert(m == string.rep("\0", 0x1000))
-        assert(machine:read_uarch_ram_length() == 0x1000)
-    end
-)
-
 test_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { length = 0x1000, image_filename = test_util.create_test_uarch_program(uarch_proof_step_program) },
+        ram = { image_filename = test_util.create_test_uarch_program(uarch_proof_step_program) },
     },
 })("It should load the uarch ram image from a file", function(machine)
     local expected_ram_image = ""
@@ -816,9 +841,8 @@ test_util.make_do_test(build_machine, machine_type, {
     local zeros = string.rep("\0", 0x1000 - #expected_ram_image)
     expected_ram_image = expected_ram_image .. zeros
 
-    local ram_image = machine:read_memory(test_util.PMA_UARCH_RAM_START, 0x1000)
+    local ram_image = machine:read_memory(cartesi.UARCH_RAM_START_ADDRESS, 0x1000)
     assert(ram_image == expected_ram_image)
-    assert(machine:read_uarch_ram_length() == 0x1000)
 end)
 
 test_util.make_do_test(build_machine, machine_type, { processor = { mcycle = 1 }, uarch = {} })(
@@ -832,7 +856,174 @@ test_util.make_do_test(build_machine, machine_type, { processor = { mcycle = 1 }
         machine:run_uarch()
 
         assert(machine:read_mcycle() == 2)
-        assert(machine:read_uarch_ram_length() == test_util.PMA_UARCH_RAM_LENGTH)
+    end
+)
+
+print("\n\n testing reset uarch")
+
+local test_reset_uarch_config = {
+    processor = {
+        halt_flag = true,
+        cycle = 1,
+        pc = 0,
+        x = get_cpu_uarch_xreg_test_values(),
+    },
+}
+
+local function test_reset_uarch(machine, with_log, with_proofs, with_annotations)
+    -- assert initial fixture state
+    assert(machine:read_uarch_halt_flag() == true)
+    assert(machine:read_uarch_cycle() == 1)
+    assert(machine:read_uarch_pc() == 0)
+    local xreg_test_values = get_cpu_uarch_xreg_test_values()
+    for i = 1, 31 do
+        assert(machine:read_uarch_x(i) == xreg_test_values[i])
+    end
+    -- modify uarch ram
+    local gibberish = "mydataol12345678"
+    machine:write_memory(cartesi.UARCH_RAM_START_ADDRESS, gibberish, #gibberish)
+    assert(machine:read_memory(cartesi.UARCH_RAM_START_ADDRESS, #gibberish) == gibberish)
+    -- assert uarch state hash is not pristine
+    local uarch_state_hash = test_util.calculate_uarch_state_hash(machine)
+    assert(uarch_state_hash ~= cartesi.UARCH_PRISTINE_STATE_HASH)
+    -- reset uarch state
+    if with_log then
+        local log = machine:log_uarch_reset({ proofs = with_proofs, annotations = with_annotations })
+        assert(#log.accesses == 1)
+        local access = log.accesses[1]
+        if with_proofs then
+            assert(access.proof ~= nil)
+            assert(test_util.check_proof(access.proof), "uarch reset proof failed")
+        else
+            assert(access.proof == nil)
+        end
+        assert(access.address == cartesi.UARCH_SHADOW_START_ADDRESS)
+        assert(access.log2_size == cartesi.UARCH_STATE_LOG2_SIZE)
+        assert(access.written_hash == cartesi.UARCH_PRISTINE_STATE_HASH)
+        assert(access.written == nil)
+        assert(access.read_hash ~= nil)
+        assert(access.read == nil)
+    else
+        machine:reset_uarch()
+    end
+    --- assert registers are reset to pristine values
+    assert(machine:read_uarch_halt_flag() == false)
+    assert(machine:read_uarch_cycle() == 0)
+    assert(machine:read_uarch_pc() == cartesi.UARCH_RAM_START_ADDRESS)
+    for i = 1, 31 do
+        assert(machine:read_uarch_x(i) == 0)
+    end
+    -- assert that gibberish was removed from uarch ram
+    assert(machine:read_memory(cartesi.UARCH_RAM_START_ADDRESS, #gibberish) ~= gibberish)
+    -- compute current uarch state hash
+    uarch_state_hash = test_util.calculate_uarch_state_hash(machine)
+    -- assert computed and pristine hash match
+    assert(uarch_state_hash == cartesi.UARCH_PRISTINE_STATE_HASH)
+end
+
+test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+    "Testing reset_uarch without logging",
+    function(machine) test_reset_uarch(machine, false, false, false) end
+)
+for _, with_proofs in ipairs({ true, false }) do
+    for _, with_annotations in ipairs({ true, false }) do
+        test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+            "Testing reset_uarch with logging, proofs="
+                .. tostring(with_proofs)
+                .. ", annotations="
+                .. tostring(with_annotations),
+            function(machine) test_reset_uarch(machine, true, with_proofs, with_annotations) end
+        )
+    end
+end
+
+test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+    "Testing verify_uarch_reset_state_transition",
+    function(machine)
+        local module = cartesi
+        if machine_type ~= "local" then module = remote end
+        local initial_hash = machine:get_root_hash()
+        local log = machine:log_uarch_reset({ proofs = true, annotations = true })
+        local final_hash = machine:get_root_hash()
+        -- verify happy path
+        module.machine.verify_uarch_reset_state_transition(initial_hash, log, final_hash, {})
+        -- verifying incorrect initial hash
+        local wrong_hash = string.rep("0", 32)
+        local _, err = pcall(module.machine.verify_uarch_reset_state_transition, wrong_hash, log, final_hash, {})
+        assert(err:match("mismatch in root hash before replay"))
+        -- verifying incorrect final hash
+        _, err = pcall(module.machine.verify_uarch_reset_state_transition, initial_hash, log, wrong_hash, {})
+        assert(err:match("mismatch in root hash after replay"))
+    end
+)
+
+test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+    "Testing verify_uarch_reset_log",
+    function(machine)
+        local module = cartesi
+        if machine_type ~= "local" then module = remote end
+        local log = machine:log_uarch_reset({ proofs = true, annotations = true })
+        module.machine.verify_uarch_reset_log(log, {})
+    end
+)
+
+test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+    "Dump of log produced by log_uarch_reset should match",
+    function(machine)
+        local log = machine:log_uarch_reset({ proofs = true, annotations = true })
+        local expected_dump = "begin reset uarch state\n"
+            .. "  hash ca8558be\n"
+            .. '  1: write uarch_state@0x400000(4194304): hash:"cddaea90"(2^22 bytes) -> hash:"b8fdcda1"(2^22 bytes)\n'
+            .. "end reset uarch state\n"
+
+        local tmpname = os.tmpname()
+        local deleter = {}
+        setmetatable(deleter, { __gc = function() os.remove(tmpname) end })
+        local tmp <close> = io.open(tmpname, "w+")
+        util.dump_log(log, tmp)
+        tmp:seek("set", 0)
+        local actual_dump = tmp:read("*all")
+
+        print("Output of reset_uarch log dump:")
+        print("--------------------------")
+        print(actual_dump)
+        print("--------------------------")
+        assert(
+            actual_dump == expected_dump,
+            "Dump of uarch_reset_state does not match expected output:\n" .. expected_dump
+        )
+    end
+)
+
+test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+    "Log uarch reset with large_data option set must have consistent read and written data",
+    function(machine)
+        local module = cartesi
+        if machine_type ~= "local" then
+            module = remote
+            -- return -- TODO: fix grpc and jsorpc failing due to large data
+        end
+        -- reset uarch and get log
+        local log = machine:log_uarch_reset({ proofs = true, annotations = true, large_data = true })
+        assert(#log.accesses == 1, "log should have 1 access")
+        local access = log.accesses[1]
+        -- in debug mode, the log must include read and written data
+        assert(access.read ~= nil, "read data should not be nil")
+        assert(access.written ~= nil, "written data should not be nil")
+        -- verify returned log
+        module.machine.verify_uarch_reset_log(log, {})
+        -- save logged read and written data
+        local original_read = access.read
+        -- tamper with read data to produce a hash mismatch
+        access.read = "X" .. access.read:sub(2)
+        local _, err = pcall(module.machine.verify_uarch_reset_log, log, {})
+        assert(err:match("hash of read data and read hash at access 1 does not match read hash"))
+        -- restore correct read
+        access.read = original_read
+        --  change written data to produce a hash mismatch
+        access.written = "X" .. access.written:sub(2)
+        _, err = pcall(module.machine.verify_uarch_reset_log, log, {})
+        assert(err:match("written hash and written data mismatch at access 1"))
     end
 )
 

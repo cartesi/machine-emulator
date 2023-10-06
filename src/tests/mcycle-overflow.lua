@@ -83,11 +83,11 @@ end)
 for _, proofs in ipairs({ true, false }) do
     do_test("machine step should do nothing on max mcycle [proofs=" .. tostring(proofs) .. "]", function(machine)
         machine:write_uarch_cycle(MAX_UARCH_CYCLE)
-        local log = machine:step_uarch({ proofs = proofs })
+        local log = machine:log_uarch_step({ proofs = proofs })
         assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
         assert(#log.accesses == 1)
         assert(log.accesses[1].type == "read")
-        assert(log.accesses[1].address == test_util.PMA_SHADOW_UARCH_STATE_START + 8) -- address of uarch_cycle
+        assert(log.accesses[1].address == cartesi.UARCH_SHADOW_START_ADDRESS + 8) -- address of uarch_cycle
         assert(log.accesses[1].read == string.pack("J", MAX_UARCH_CYCLE))
         assert((log.accesses[1].proof ~= nil) == proofs)
     end)

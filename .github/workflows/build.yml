@@ -4,7 +4,7 @@ env:
   KERNEL_VERSION: v0.18.0
   LINUX_VERSION: 5.15.63-ctsi-2-v0.18.0
   ROOTFS_VERSION: v0.19.0
-  TEST_VERSION: vshadow-uarch-test
+  TEST_VERSION: vreset-uarch-test
   CARTESI_TESTS_PATH: /usr/share/cartesi-machine/tests
   CARTESI_IMAGES_PATH: /usr/share/cartesi-machine/images
   CARTESI_UARCH_PATH: /usr/share/cartesi-machine/uarch/uarch-ram.bin
@@ -241,7 +241,8 @@ jobs:
       - name: Create uarch json logs to be used to test the Solidity based microarchitecture interpreter
         run: |
           mkdir -p /opt/cartesi/share/logs/uarch-riscv-tests-json-logs
-          docker run --rm -v /opt/cartesi/share/logs:/opt/cartesi/share/logs -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/uarch-riscv-tests --test-path=${{ env.CARTESI_TESTS_PATH }}  --output-dir=/opt/cartesi/share/logs/uarch-riscv-tests-json-logs --proofs --proofs-frequency=1 json-logs
+          docker run --rm -v /opt/cartesi/share/logs:/opt/cartesi/share/logs -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/uarch-riscv-tests --test-path=${{ env.CARTESI_TESTS_PATH }}  --output-dir=/opt/cartesi/share/logs/uarch-riscv-tests-json-logs --proofs --proofs-frequency=1 json-step-logs
+          docker run --rm -v /opt/cartesi/share/logs:/opt/cartesi/share/logs -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/uarch-riscv-tests --test-path=${{ env.CARTESI_TESTS_PATH }}  --output-dir=/opt/cartesi/share/logs/uarch-riscv-tests-json-logs --proofs json-reset-log
 
       - name: Compress uarch json logs
         run: tar -czf uarch-riscv-tests-json-logs.tar.gz -C /opt/cartesi/share/logs/uarch-riscv-tests-json-logs .

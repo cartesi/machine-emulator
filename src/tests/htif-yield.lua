@@ -2,7 +2,6 @@
 
 local cartesi = require("cartesi")
 local test_util = require("tests.util")
-local util = require("cartesi.util")
 
 local function help()
     io.stderr:write(string.format(
@@ -19,9 +18,6 @@ where options are:
   --uarch-ram-image=<filename>
     name of file containing microarchitecture RAM image.
 
-  --uarch-ram-length=<number>
-    set microarchitecture RAM length.
-
 ]=],
         arg[0]
     ))
@@ -29,7 +25,6 @@ where options are:
 end
 
 local uarch = false
-local uarch_ram_length = nil
 local uarch_ram_image_filename = nil
 
 -- List of supported options
@@ -64,14 +59,6 @@ local options = {
         end,
     },
     {
-        "^%-%-uarch%-ram%-length%=(.+)$",
-        function(n)
-            if not n then return false end
-            uarch_ram_length = assert(util.parse_number(n), "invalid microarchitecture RAM length " .. n)
-            return true
-        end,
-    },
-    {
         ".*",
         function(all) error("unrecognized option " .. all .. ". Use --help to obtain a list of supported options.") end,
     },
@@ -99,11 +86,7 @@ local config_base = {
     },
 }
 
-if uarch_ram_length then config_base.uarch = { ram = { length = uarch_ram_length } } end
-if uarch_ram_image_filename then
-    assert(uarch_ram_length, "--uarch-ram-length was not specified")
-    config_base.uarch.ram.image_filename = uarch_ram_image_filename
-end
+if uarch_ram_image_filename then config_base.uarch.ram.image_filename = uarch_ram_image_filename end
 
 local YIELD_MANUAL = cartesi.machine.HTIF_YIELD_MANUAL
 local YIELD_AUTOMATIC = cartesi.machine.HTIF_YIELD_AUTOMATIC
@@ -142,7 +125,7 @@ local function run_machine_with_uarch(machine)
     while true do
         local ubr = machine:run_uarch()
         if ubr == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
-            machine:reset_uarch_state()
+            machine:reset_uarch()
             if machine:read_iflags_H() then
                 -- iflags.H was set during the last mcycle
                 return cartesi.BREAK_REASON_HALTED

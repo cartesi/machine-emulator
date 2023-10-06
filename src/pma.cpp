@@ -149,6 +149,31 @@ uint64_t pma_entry::get_ilength(void) const {
     return m_length;
 }
 
+void pma_entry::write_memory(uint64_t paddr, const unsigned char *data, uint64_t size) {
+    if (!get_istart_M() || get_istart_E()) {
+        throw std::invalid_argument{"address range not entirely in memory PMA"};
+    }
+    if (!contains(paddr, size)) {
+        throw std::invalid_argument{"range not contained in pma"};
+    }
+    if (!data) {
+        throw std::invalid_argument{"invalid data buffer"};
+    }
+    memcpy(get_memory().get_host_memory() + (paddr - get_start()), data, size);
+    mark_dirty_pages(paddr, size);
+}
+
+void pma_entry::fill_memory(uint64_t paddr, unsigned char value, uint64_t size) {
+    if (!get_istart_M() || get_istart_E()) {
+        throw std::invalid_argument{"address range not entirely in memory PMA"};
+    }
+    if (!contains(paddr, size)) {
+        throw std::invalid_argument{"range not contained in pma"};
+    }
+    memset(get_memory().get_host_memory() + (paddr - get_start()), value, size);
+    mark_dirty_pages(paddr, size);
+}
+
 bool pma_peek_error(const pma_entry &, const machine &, uint64_t, const unsigned char **, unsigned char *) {
     return false;
 }

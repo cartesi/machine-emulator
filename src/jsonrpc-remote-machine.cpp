@@ -808,12 +808,12 @@ static json jsonrpc_machine_run_uarch_handler(const json &j, mg_connection *con,
     return jsonrpc_response_ok(j, uarch_interpreter_break_reason_name(reason));
 }
 
-/// \brief JSONRPC handler for the machine.step_uarch method
+/// \brief JSONRPC handler for the machine.log_uarch_step method
 /// \param j JSON request object
 /// \param con Mongoose connection
 /// \param h Handler data
 /// \returns JSON response object
-static json jsonrpc_machine_step_uarch_handler(const json &j, mg_connection *con, http_handler_data *h) {
+static json jsonrpc_machine_log_uarch_step_handler(const json &j, mg_connection *con, http_handler_data *h) {
     (void) con;
     if (!h->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
@@ -826,11 +826,12 @@ static json jsonrpc_machine_step_uarch_handler(const json &j, mg_connection *con
     switch (count_args(args)) {
         case 1:
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            s = jsonrpc_response_ok(j, h->machine->step_uarch(std::get<0>(args).value()));
+            s = jsonrpc_response_ok(j, h->machine->log_uarch_step(std::get<0>(args).value()));
             break;
         case 2:
-            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            s = jsonrpc_response_ok(j, h->machine->step_uarch(std::get<0>(args).value(), std::get<1>(args).value()));
+            s = jsonrpc_response_ok(j,
+                // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+                h->machine->log_uarch_step(std::get<0>(args).value(), std::get<1>(args).value()));
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};
@@ -838,12 +839,12 @@ static json jsonrpc_machine_step_uarch_handler(const json &j, mg_connection *con
     return s;
 }
 
-/// \brief JSONRPC handler for the machine.verify_access_log method
+/// \brief JSONRPC handler for the machine.verify_uarch_step_log method
 /// \param j JSON request object
 /// \param con Mongoose connection
 /// \param h Handler data
 /// \returns JSON response object
-static json jsonrpc_machine_verify_access_log_handler(const json &j, mg_connection *con, http_handler_data *h) {
+static json jsonrpc_machine_verify_uarch_step_log_handler(const json &j, mg_connection *con, http_handler_data *h) {
     (void) con;
     (void) h;
     static const char *param_name[] = {"log", "runtime", "one_based"};
@@ -852,15 +853,15 @@ static json jsonrpc_machine_verify_access_log_handler(const json &j, mg_connecti
     switch (count_args(args)) {
         case 1:
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_access_log(std::get<0>(args).value());
+            cartesi::machine::verify_uarch_step_log(std::get<0>(args).value());
             break;
         case 2:
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_access_log(std::get<0>(args).value(), std::get<1>(args).value());
+            cartesi::machine::verify_uarch_step_log(std::get<0>(args).value(), std::get<1>(args).value());
             break;
         case 3:
             // NOLINTBEGIN(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_access_log(std::get<0>(args).value(), std::get<1>(args).value(),
+            cartesi::machine::verify_uarch_step_log(std::get<0>(args).value(), std::get<1>(args).value(),
                 std::get<2>(args).value());
             // NOLINTEND(bugprone-unchecked-optional-access)
             break;
@@ -870,12 +871,76 @@ static json jsonrpc_machine_verify_access_log_handler(const json &j, mg_connecti
     return jsonrpc_response_ok(j);
 }
 
-/// \brief JSONRPC handler for the machine.verify_state_transition method
+/// \brief JSONRPC handler for the machine.verify_uarch_reset_log method
 /// \param j JSON request object
 /// \param con Mongoose connection
 /// \param h Handler data
 /// \returns JSON response object
-static json jsonrpc_machine_verify_state_transition_handler(const json &j, mg_connection *con, http_handler_data *h) {
+static json jsonrpc_machine_verify_uarch_reset_log_handler(const json &j, mg_connection *con, http_handler_data *h) {
+    (void) con;
+    (void) h;
+    static const char *param_name[] = {"log", "runtime", "one_based"};
+    auto args = parse_args<cartesi::not_default_constructible<cartesi::access_log>,
+        cartesi::optional_param<cartesi::machine_runtime_config>, cartesi::optional_param<bool>>(j, param_name);
+    switch (count_args(args)) {
+        case 1:
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+            cartesi::machine::verify_uarch_reset_log(std::get<0>(args).value());
+            break;
+        case 2:
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+            cartesi::machine::verify_uarch_reset_log(std::get<0>(args).value(), std::get<1>(args).value());
+            break;
+        case 3:
+            // NOLINTBEGIN(bugprone-unchecked-optional-access)
+            cartesi::machine::verify_uarch_reset_log(std::get<0>(args).value(), std::get<1>(args).value(),
+                std::get<2>(args).value());
+            // NOLINTEND(bugprone-unchecked-optional-access)
+            break;
+        default:
+            throw std::runtime_error{"error detecting number of arguments"};
+    }
+    return jsonrpc_response_ok(j);
+}
+
+/// \brief JSONRPC handler for the machine.log_uarch_step method
+/// \param j JSON request object
+/// \param con Mongoose connection
+/// \param h Handler data
+/// \returns JSON response object
+static json jsonrpc_machine_log_uarch_reset_handler(const json &j, mg_connection *con, http_handler_data *h) {
+    (void) con;
+    if (!h->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    static const char *param_name[] = {"log_type", "one_based"};
+    auto args =
+        parse_args<cartesi::not_default_constructible<cartesi::access_log::type>, cartesi::optional_param<bool>>(j,
+            param_name);
+    json s;
+    switch (count_args(args)) {
+        case 1:
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+            s = jsonrpc_response_ok(j, h->machine->log_uarch_reset(std::get<0>(args).value()));
+            break;
+        case 2:
+            s = jsonrpc_response_ok(j,
+                // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+                h->machine->log_uarch_reset(std::get<0>(args).value(), std::get<1>(args).value()));
+            break;
+        default:
+            throw std::runtime_error{"error detecting number of arguments"};
+    }
+    return s;
+}
+
+/// \brief JSONRPC handler for the machine.verify_uarch_step_state_transition method
+/// \param j JSON request object
+/// \param con Mongoose connection
+/// \param h Handler data
+/// \returns JSON response object
+static json jsonrpc_machine_verify_uarch_step_state_transition_handler(const json &j, mg_connection *con,
+    http_handler_data *h) {
     (void) con;
     (void) h;
     static const char *param_name[] = {"root_hash_before", "log", "root_hash_after", "runtime", "one_based"};
@@ -885,18 +950,56 @@ static json jsonrpc_machine_verify_state_transition_handler(const json &j, mg_co
     switch (count_args(args)) {
         case 3:
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_state_transition(std::get<0>(args), std::get<1>(args).value(), std::get<2>(args));
+            cartesi::machine::verify_uarch_step_state_transition(std::get<0>(args), std::get<1>(args).value(),
+                std::get<2>(args));
             break;
         case 4:
             // NOLINTBEGIN(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_state_transition(std::get<0>(args), std::get<1>(args).value(), std::get<2>(args),
-                std::get<3>(args).value());
+            cartesi::machine::verify_uarch_step_state_transition(std::get<0>(args), std::get<1>(args).value(),
+                std::get<2>(args), std::get<3>(args).value());
             // NOLINTEND(bugprone-unchecked-optional-access)
             break;
         case 5:
             // NOLINTBEGIN(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_state_transition(std::get<0>(args), std::get<1>(args).value(), std::get<2>(args),
-                std::get<3>(args).value(), std::get<4>(args).value());
+            cartesi::machine::verify_uarch_step_state_transition(std::get<0>(args), std::get<1>(args).value(),
+                std::get<2>(args), std::get<3>(args).value(), std::get<4>(args).value());
+            // NOLINTEND(bugprone-unchecked-optional-access)
+            break;
+        default:
+            throw std::runtime_error{"error detecting number of arguments"};
+    }
+    return jsonrpc_response_ok(j);
+}
+
+/// \brief JSONRPC handler for the machine.verify_uarch_reset_state_transition method
+/// \param j JSON request object
+/// \param con Mongoose connection
+/// \param h Handler data
+/// \returns JSON response object
+static json jsonrpc_machine_verify_uarch_reset_state_transition_handler(const json &j, mg_connection *con,
+    http_handler_data *h) {
+    (void) con;
+    (void) h;
+    static const char *param_name[] = {"root_hash_before", "log", "root_hash_after", "runtime", "one_based"};
+    auto args = parse_args<cartesi::machine_merkle_tree::hash_type,
+        cartesi::not_default_constructible<cartesi::access_log>, cartesi::machine_merkle_tree::hash_type,
+        cartesi::optional_param<cartesi::machine_runtime_config>, cartesi::optional_param<bool>>(j, param_name);
+    switch (count_args(args)) {
+        case 3:
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+            cartesi::machine::verify_uarch_reset_state_transition(std::get<0>(args), std::get<1>(args).value(),
+                std::get<2>(args));
+            break;
+        case 4:
+            // NOLINTBEGIN(bugprone-unchecked-optional-access)
+            cartesi::machine::verify_uarch_reset_state_transition(std::get<0>(args), std::get<1>(args).value(),
+                std::get<2>(args), std::get<3>(args).value());
+            // NOLINTEND(bugprone-unchecked-optional-access)
+            break;
+        case 5:
+            // NOLINTBEGIN(bugprone-unchecked-optional-access)
+            cartesi::machine::verify_uarch_reset_state_transition(std::get<0>(args), std::get<1>(args).value(),
+                std::get<2>(args), std::get<3>(args).value(), std::get<4>(args).value());
             // NOLINTEND(bugprone-unchecked-optional-access)
             break;
         default:
@@ -1419,18 +1522,18 @@ static json jsonrpc_machine_set_uarch_halt_flag_handler(const json &j, mg_connec
     return jsonrpc_response_ok(j);
 }
 
-/// \brief JSONRPC handler for the machine.reset_uarch_state method
+/// \brief JSONRPC handler for the machine.reset_uarch method
 /// \param j JSON request object
 /// \param con Mongoose connection
 /// \param h Handler data
 /// \returns JSON response object
-static json jsonrpc_machine_reset_uarch_state_handler(const json &j, mg_connection *con, http_handler_data *h) {
+static json jsonrpc_machine_reset_uarch_handler(const json &j, mg_connection *con, http_handler_data *h) {
     (void) con;
     if (!h->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    h->machine->reset_uarch_state();
+    h->machine->reset_uarch();
     return jsonrpc_response_ok(j);
 }
 
@@ -1538,9 +1641,13 @@ static json jsonrpc_dispatch_method(const json &j, mg_connection *con, http_hand
         {"machine.store", jsonrpc_machine_store_handler},
         {"machine.run", jsonrpc_machine_run_handler},
         {"machine.run_uarch", jsonrpc_machine_run_uarch_handler},
-        {"machine.step_uarch", jsonrpc_machine_step_uarch_handler},
-        {"machine.verify_access_log", jsonrpc_machine_verify_access_log_handler},
-        {"machine.verify_state_transition", jsonrpc_machine_verify_state_transition_handler},
+        {"machine.log_uarch_step", jsonrpc_machine_log_uarch_step_handler},
+        {"machine.reset_uarch", jsonrpc_machine_reset_uarch_handler},
+        {"machine.log_uarch_reset", jsonrpc_machine_log_uarch_reset_handler},
+        {"machine.verify_uarch_reset_log", jsonrpc_machine_verify_uarch_reset_log_handler},
+        {"machine.verify_uarch_reset_state_transition", jsonrpc_machine_verify_uarch_reset_state_transition_handler},
+        {"machine.verify_uarch_step_log", jsonrpc_machine_verify_uarch_step_log_handler},
+        {"machine.verify_uarch_step_state_transition", jsonrpc_machine_verify_uarch_step_state_transition_handler},
         {"machine.get_proof", jsonrpc_machine_get_proof_handler},
         {"machine.get_root_hash", jsonrpc_machine_get_root_hash_handler},
         {"machine.read_word", jsonrpc_machine_read_word_handler},
@@ -1572,7 +1679,6 @@ static json jsonrpc_dispatch_method(const json &j, mg_connection *con, http_hand
         {"machine.read_iflags_PRV", jsonrpc_machine_read_iflags_PRV_handler},
         {"machine.read_uarch_halt_flag", jsonrpc_machine_read_uarch_halt_flag_handler},
         {"machine.set_uarch_halt_flag", jsonrpc_machine_set_uarch_halt_flag_handler},
-        {"machine.reset_uarch_state", jsonrpc_machine_reset_uarch_state_handler},
         {"machine.get_initial_config", jsonrpc_machine_get_initial_config_handler},
         {"machine.get_default_config", jsonrpc_machine_get_default_config_handler},
         {"machine.verify_merkle_tree", jsonrpc_machine_verify_merkle_tree_handler},

@@ -20,7 +20,8 @@
 /// \file
 /// \brief State access implementation that record and logs all accesses
 
-#include "i-uarch-state-access.h"
+#include "i-uarch-step-state-access.h"
+#include "machine-merkle-tree.h"
 #include "machine.h"
 #include "uarch-bridge.h"
 #include "uarch-constants.h"
@@ -28,8 +29,11 @@
 
 namespace cartesi {
 
-/// \details The uarch_record_state_access logs all access to the machine state.
-class uarch_record_state_access : public i_uarch_state_access<uarch_record_state_access> {
+/// \details The uarch_record_step_state_access logs all access to the machine state.
+class uarch_record_step_state_access : public i_uarch_step_state_access<uarch_record_step_state_access> {
+    using hasher_type = machine_merkle_tree::hasher_type;
+    using hash_type = machine_merkle_tree::hash_type;
+
     uarch_state &m_us;
     machine &m_m; ///< Macro machine
     machine_state &m_s;
@@ -61,11 +65,35 @@ class uarch_record_state_access : public i_uarch_state_access<uarch_record_state
         }
     }
 
+    static void get_hash(hasher_type &hasher, const unsigned char *data, size_t len, hash_type &hash) {
+        if (len <= 8) {
+            assert(len == 8);
+            hasher.begin();
+            hasher.add_data(data, len);
+            hasher.end(hash);
+        } else {
+            assert((len & 1) == 0);
+            len = len / 2;
+            hash_type left;
+            get_hash(hasher, data, len, left);
+            get_hash(hasher, data + len, len, hash);
+            hasher.begin();
+            hasher.add_data(left.data(), left.size());
+            hasher.add_data(hash.data(), hash.size());
+            hasher.end(hash);
+        }
+    }
+
+    static void get_hash(const access_data &data, hash_type &hash) {
+        hasher_type hasher;
+        get_hash(hasher, data.data(), data.size(), hash);
+    }
+
 public:
     /// \brief Constructor from machine and uarch states.
     /// \param um Reference to uarch state.
     /// \param m Reference to machine state.
-    explicit uarch_record_state_access(uarch_state &us, machine &m, access_log::type log_type) :
+    explicit uarch_record_step_state_access(uarch_state &us, machine &m, access_log::type log_type) :
         m_us(us),
         m_m(m),
         m_s(m.get_state()),
@@ -74,15 +102,15 @@ public:
     }
 
     /// \brief No copy constructor
-    uarch_record_state_access(const uarch_record_state_access &) = delete;
+    uarch_record_step_state_access(const uarch_record_step_state_access &) = delete;
     /// \brief No copy assignment
-    uarch_record_state_access &operator=(const uarch_record_state_access &) = delete;
+    uarch_record_step_state_access &operator=(const uarch_record_step_state_access &) = delete;
     /// \brief No move constructor
-    uarch_record_state_access(uarch_record_state_access &&) = delete;
+    uarch_record_step_state_access(uarch_record_step_state_access &&) = delete;
     /// \brief No move assignment
-    uarch_record_state_access &operator=(uarch_record_state_access &&) = delete;
+    uarch_record_step_state_access &operator=(uarch_record_step_state_access &&) = delete;
     /// \brief Default destructor
-    ~uarch_record_state_access() = default;
+    ~uarch_record_step_state_access() = default;
 
     /// \brief Returns const pointer to access log.
     std::shared_ptr<const access_log> get_log(void) const {
@@ -150,14 +178,22 @@ private:
         access a;
         if (m_log->get_log_type().has_proofs()) {
             // We can skip updating the merkle tree while getting the proof because we assume that:
-            // 1) A full merkle tree update was called at the beginning of machine::step_uarch()
+            // 1) A full merkle tree update was called at the beginning of machine::log_uarch_step()
             // 2) We called update_merkle_tree_page on all write accesses
             a.set_proof(m_m.get_proof(paligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update));
         }
         a.set_type(access_type::read);
         a.set_address(paligned);
         a.set_log2_size(machine_merkle_tree::get_log2_word_size());
-        set_word_access_data(val, a.get_read());
+        a.get_read().emplace();
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        set_word_access_data(val, a.get_read().value());
+
+        hash_type read_hash;
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        get_hash(a.get_read().value(), read_hash);
+        a.set_read_hash(read_hash);
+
         m_log->push_access(std::move(a), text);
         return val;
     }
@@ -174,15 +210,23 @@ private:
         access a;
         if (m_log->get_log_type().has_proofs()) {
             // We can skip updating the merkle tree while getting the proof because we assume that:
-            // 1) A full merkle tree update was called at the beginning of machine::step_uarch()
+            // 1) A full merkle tree update was called at the beginning of machine::log_uarch_step()
             // 2) We called update_merkle_tree_page on all write accesses
             a.set_proof(m_m.get_proof(paligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update));
         }
         a.set_type(access_type::write);
         a.set_address(paligned);
         a.set_log2_size(machine_merkle_tree::get_log2_word_size());
-        set_word_access_data(dest, a.get_read());
-        set_word_access_data(val, a.get_written());
+
+        a.get_read().emplace();
+        set_word_access_data(dest, a.get_read().value());
+        get_hash(a.get_read().value(), a.get_read_hash());
+
+        a.get_written().emplace();
+        set_word_access_data(val, a.get_written().value());
+        a.get_written_hash().emplace();
+        get_hash(a.get_written().value(), a.get_written_hash().value());
+
         m_log->push_access(std::move(a), text);
     }
 
@@ -213,10 +257,11 @@ private:
         uint64_t dest64 = dest;
         log_before_write_write_and_update(paligned, dest64, val, text);
         dest = dest64;
+        update_after_write(paligned);
     }
 
     // Declare interface as friend to it can forward calls to the "overriden" methods.
-    friend i_uarch_state_access<uarch_record_state_access>;
+    friend i_uarch_step_state_access<uarch_record_step_state_access>;
 
     void do_push_bracket(bracket_type &type, const char *text) {
         m_log->push_bracket(type, text);
@@ -259,7 +304,7 @@ private:
     }
 
     void do_set_halt_flag() {
-        return log_before_write_write_and_update(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::halt_flag),
+        log_before_write_write_and_update(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::halt_flag),
             m_us.halt_flag, true, "uarch.halt_flag");
     }
 

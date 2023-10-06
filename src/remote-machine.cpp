@@ -36,6 +36,7 @@
 #include "cartesi-machine.grpc.pb.h"
 #pragma GCC diagnostic pop
 
+#include "grpc-config.h"
 #include "machine.h"
 #include "protobuf-util.h"
 #include "unique-c-ptr.h"
@@ -547,11 +548,11 @@ public:
     }
 };
 
-class handler_ResetUarchState final : public handler<Void, Void> {
+class handler_ResetUarch final : public handler<Void, Void> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s->RequestResetUarchState(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestResetUarch(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
@@ -560,39 +561,65 @@ class handler_ResetUarchState final : public handler<Void, Void> {
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
-        hctx.m->reset_uarch_state();
+        hctx.m->reset_uarch();
         const Void resp;
         return finish_ok(writer, resp);
     }
 
 public:
-    handler_ResetUarchState(handler_context &hctx) {
+    handler_ResetUarch(handler_context &hctx) {
         advance(hctx);
     }
 };
 
-class handler_StepUarch final : public handler<StepUarchRequest, StepUarchResponse> {
+class handler_LogUarchReset final : public handler<LogUarchResetRequest, LogUarchResetResponse> {
 
-    side_effect prepare(handler_context &hctx, ServerContext *sctx, StepUarchRequest *req,
-        ServerAsyncResponseWriter<StepUarchResponse> *writer) override {
-        hctx.s->RequestStepUarch(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, LogUarchResetRequest *req,
+        ServerAsyncResponseWriter<LogUarchResetResponse> *writer) override {
+        hctx.s->RequestLogUarchReset(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
-    side_effect go(handler_context &hctx, StepUarchRequest *req,
-        ServerAsyncResponseWriter<StepUarchResponse> *writer) override {
+    side_effect go(handler_context &hctx, LogUarchResetRequest *req,
+        ServerAsyncResponseWriter<LogUarchResetResponse> *writer) override {
         if (!hctx.m) {
             return finish_with_error_no_machine(writer);
         }
         const AccessLog proto_log;
-        StepUarchResponse resp;
-        set_proto_access_log(hctx.m->step_uarch(get_proto_log_type(req->log_type()), req->one_based()),
+        LogUarchResetResponse resp;
+        set_proto_access_log(hctx.m->log_uarch_reset(get_proto_log_type(req->log_type()), req->one_based()),
             resp.mutable_log());
         return finish_ok(writer, resp);
     }
 
 public:
-    handler_StepUarch(handler_context &hctx) {
+    handler_LogUarchReset(handler_context &hctx) {
+        advance(hctx);
+    }
+};
+
+class handler_LogUarchStep final : public handler<LogUarchStepRequest, LogUarchStepResponse> {
+
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, LogUarchStepRequest *req,
+        ServerAsyncResponseWriter<LogUarchStepResponse> *writer) override {
+        hctx.s->RequestLogUarchStep(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        return side_effect::none;
+    }
+
+    side_effect go(handler_context &hctx, LogUarchStepRequest *req,
+        ServerAsyncResponseWriter<LogUarchStepResponse> *writer) override {
+        if (!hctx.m) {
+            return finish_with_error_no_machine(writer);
+        }
+        const AccessLog proto_log;
+        LogUarchStepResponse resp;
+        set_proto_access_log(hctx.m->log_uarch_step(get_proto_log_type(req->log_type()), req->one_based()),
+            resp.mutable_log());
+        return finish_ok(writer, resp);
+    }
+
+public:
+    handler_LogUarchStep(handler_context &hctx) {
         advance(hctx);
     }
 };
@@ -1177,48 +1204,96 @@ public:
     }
 };
 
-class handler_VerifyAccessLog final : public handler<VerifyAccessLogRequest, Void> {
+class handler_VerifyUarchStepLog final : public handler<VerifyUarchStepLogRequest, Void> {
 
-    side_effect prepare(handler_context &hctx, ServerContext *sctx, VerifyAccessLogRequest *req,
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, VerifyUarchStepLogRequest *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s->RequestVerifyAccessLog(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestVerifyUarchStepLog(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
-    side_effect go(handler_context &hctx, VerifyAccessLogRequest *req,
+    side_effect go(handler_context &hctx, VerifyUarchStepLogRequest *req,
         ServerAsyncResponseWriter<Void> *writer) override {
         (void) hctx;
         const Void resp;
-        machine::verify_access_log(get_proto_access_log(req->log()), get_proto_machine_runtime_config(req->runtime()),
-            req->one_based());
+        machine::verify_uarch_step_log(get_proto_access_log(req->log()),
+            get_proto_machine_runtime_config(req->runtime()), req->one_based());
         return finish_ok(writer, resp);
     }
 
 public:
-    handler_VerifyAccessLog(handler_context &hctx) {
+    handler_VerifyUarchStepLog(handler_context &hctx) {
         advance(hctx);
     }
 };
 
-class handler_VerifyStateTransition final : public handler<VerifyStateTransitionRequest, Void> {
+class handler_VerifyUarchStepStateTransition final : public handler<VerifyUarchStepStateTransitionRequest, Void> {
 
-    side_effect prepare(handler_context &hctx, ServerContext *sctx, VerifyStateTransitionRequest *req,
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, VerifyUarchStepStateTransitionRequest *req,
         ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s->RequestVerifyStateTransition(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        hctx.s->RequestVerifyUarchStepStateTransition(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
         return side_effect::none;
     }
 
-    side_effect go(handler_context &hctx, VerifyStateTransitionRequest *req,
+    side_effect go(handler_context &hctx, VerifyUarchStepStateTransitionRequest *req,
         ServerAsyncResponseWriter<Void> *writer) override {
         (void) hctx;
-        machine::verify_state_transition(get_proto_hash(req->root_hash_before()), get_proto_access_log(req->log()),
-            get_proto_hash(req->root_hash_after()), get_proto_machine_runtime_config(req->runtime()), req->one_based());
+        machine::verify_uarch_step_state_transition(get_proto_hash(req->root_hash_before()),
+            get_proto_access_log(req->log()), get_proto_hash(req->root_hash_after()),
+            get_proto_machine_runtime_config(req->runtime()), req->one_based());
         const Void resp;
         return finish_ok(writer, resp); // NOLINT: suppress warning caused by gRPC
     }
 
 public:
-    handler_VerifyStateTransition(handler_context &hctx) {
+    handler_VerifyUarchStepStateTransition(handler_context &hctx) {
+        advance(hctx);
+    }
+};
+
+class handler_VerifyUarchResetStateTransition final : public handler<VerifyUarchResetStateTransitionRequest, Void> {
+
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, VerifyUarchResetStateTransitionRequest *req,
+        ServerAsyncResponseWriter<Void> *writer) override {
+        hctx.s->RequestVerifyUarchResetStateTransition(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        return side_effect::none;
+    }
+
+    side_effect go(handler_context &hctx, VerifyUarchResetStateTransitionRequest *req,
+        ServerAsyncResponseWriter<Void> *writer) override {
+        (void) hctx;
+        machine::verify_uarch_reset_state_transition(get_proto_hash(req->root_hash_before()),
+            get_proto_access_log(req->log()), get_proto_hash(req->root_hash_after()),
+            get_proto_machine_runtime_config(req->runtime()), req->one_based());
+        const Void resp;
+        return finish_ok(writer, resp); // NOLINT: suppress warning caused by gRPC
+    }
+
+public:
+    handler_VerifyUarchResetStateTransition(handler_context &hctx) {
+        advance(hctx);
+    }
+};
+
+class handler_VerifyUarchResetLog final : public handler<VerifyUarchResetLogRequest, Void> {
+
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, VerifyUarchResetLogRequest *req,
+        ServerAsyncResponseWriter<Void> *writer) override {
+        hctx.s->RequestVerifyUarchResetLog(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        return side_effect::none;
+    }
+
+    side_effect go(handler_context &hctx, VerifyUarchResetLogRequest *req,
+        ServerAsyncResponseWriter<Void> *writer) override {
+        (void) hctx;
+        const Void resp;
+        machine::verify_uarch_reset_log(get_proto_access_log(req->log()),
+            get_proto_machine_runtime_config(req->runtime()), req->one_based());
+        return finish_ok(writer, resp);
+    }
+
+public:
+    handler_VerifyUarchResetLog(handler_context &hctx) {
         advance(hctx);
     }
 };
@@ -1269,6 +1344,7 @@ std::unique_ptr<Server> build_server(const char *server_address, handler_context
     SLOG(debug) << "Building new GRPC server";
     hctx.s = std::make_unique<Machine::AsyncService>();
     ServerBuilder builder;
+    builder.SetMaxReceiveMessageSize(GRPC_MAX_RECEIVE_MESSAGE_SIZE);
     builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
     int server_port = 0;
     builder.AddListeningPort(server_address, grpc::InsecureServerCredentials(), &server_port);
@@ -1342,13 +1418,14 @@ static void server_loop(const char *server_address, const char *session_id, cons
         const handler_Machine hMachine(hctx);
         const handler_Run hRun(hctx);
         const handler_RunUarch hRunUarch(hctx);
-        const handler_ResetUarchState hResetUarchState(hctx);
+        const handler_ResetUarch hResetUarch(hctx);
+        const handler_LogUarchReset hLogUarchReset(hctx);
         const handler_Store hStore(hctx);
         const handler_Destroy hDestroy(hctx);
         const handler_Snapshot hSnapshot(hctx);
         const handler_Rollback hRollback(hctx);
         const handler_Shutdown hShutdown(hctx);
-        const handler_StepUarch hStepUarch(hctx);
+        const handler_LogUarchStep hLogUarchStep(hctx);
         const handler_ReadMemory hReadMemory(hctx);
         const handler_WriteMemory hWriteMemory(hctx);
         const handler_ReadVirtualMemory hReadVirtualMemory(hctx);
@@ -1371,9 +1448,11 @@ static void server_loop(const char *server_address, const char *session_id, cons
         const handler_VerifyMerkleTree hVerifyMerkleTree(hctx);
         const handler_VerifyDirtyPageMaps hVerifyDirtyPageMaps(hctx);
         const handler_GetDefaultConfig hGetDefaultConfig(hctx);
-        const handler_VerifyAccessLog hVerifyAccessLog(hctx);
-        const handler_VerifyStateTransition hVerifyStateTransition(hctx);
         const handler_GetMemoryRanges hGetMemoryRanges(hctx);
+        const handler_VerifyUarchStepLog hVerifyUarchStepLog(hctx);
+        const handler_VerifyUarchStepStateTransition hVerifyUarchStepStateTransition(hctx);
+        const handler_VerifyUarchResetLog hVerifyUarchResetLog(hctx);
+        const handler_VerifyUarchResetStateTransition hVerifyUarchResetStateTransition(hctx);
 
         // The invariant before and after snapshot/rollbacks is that all handlers
         // are in waiting mode

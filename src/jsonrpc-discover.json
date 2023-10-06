@@ -193,7 +193,7 @@
     },
 
     {
-      "name": "machine.step_uarch",
+      "name": "machine.log_uarch_step",
       "summary": "Runs the small emulator for one cycle and return a log of state accesses",
       "params": [ {
           "name":"log_type",
@@ -221,7 +221,7 @@
     },
 
     {
-      "name": "machine.verify_access_log",
+      "name": "machine.verify_uarch_step_log",
       "summary": "Verifies an access log",
       "params": [ {
           "name":"log",
@@ -256,8 +256,92 @@
     },
 
     {
-      "name": "machine.verify_state_transition",
+      "name": "machine.verify_uarch_step_state_transition",
       "summary": "Verifies a state transition",
+      "params": [ {
+          "name":"root_hash_before",
+          "description": "State hash before transition described by access log",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/AccessLog"
+          }
+        }, {
+          "name":"log",
+          "description": "Access log describing transition",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/AccessLog"
+          }
+        }, {
+          "name":"root_hash_after",
+          "description": "State hash after transition described by access log",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/AccessLog"
+          }
+        }, {
+          "name":"runtime",
+          "description": "Machine runtime configuration",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/MachineRuntimeConfig"
+          }
+        }, {
+          "name":"one_based",
+          "description": "Whether messages use 1-based or 0-based indeces",
+          "required": false,
+          "schema": {
+            "type": "boolean"
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "description": "True when operation succeeded",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+
+    {
+      "name": "machine.verify_uarch_reset_log",
+      "summary": "Verifies an access log produced by a log_uarch_reset",
+      "params": [ {
+          "name":"log",
+          "description": "Access log to verify",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/AccessLog"
+          }
+        }, {
+          "name":"runtime",
+          "description": "Machine runtime configuration",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/MachineRuntimeConfig"
+          }
+        }, {
+          "name":"one_based",
+          "description": "Whether messages use 1-based or 0-based indeces",
+          "required": false,
+          "schema": {
+            "type": "boolean"
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "description": "True when operation succeeded",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+
+    {
+      "name": "machine.verify_uarch_reset_state_transition",
+      "summary": "Verifies a state transition caused by log_uarch_reset",
       "params": [ {
           "name":"root_hash_before",
           "description": "State hash before transition described by access log",
@@ -951,14 +1035,42 @@
     },
 
     {
-      "name": "machine.reset_uarch_state",
-      "summary": "Restores small emulator to what it was at initialization",
+      "name": "machine.reset_uarch",
+      "summary": "Reset uarch to pristine state",
       "params": [],
       "result": {
         "name": "status",
         "description": "True when operation succeeded",
         "schema": {
           "type": "boolean"
+        }
+      }
+    },
+
+    {
+      "name": "machine.log_uarch_reset",
+      "summary": "Reset uarch to pristine state and return a log of state accesses",
+      "params": [ {
+          "name":"log_type",
+          "description": "The maximum value of the cycle counter",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/AccessLogType"
+          }
+        }, {
+          "name":"one_based",
+          "description": "Whether messages use 1-based or 0-based indeces",
+          "required": false,
+          "schema": {
+            "type": "boolean"
+          }
+        }
+      ],
+      "result": {
+        "name": "access_log",
+        "description": "Log of state accesses",
+        "schema": {
+          "$ref": "#/components/schemas/AccessLog"
         }
       }
     },
@@ -1072,8 +1184,7 @@
           "htif_iconsole",
           "htif_iyield",
           "uarch_pc",
-          "uarch_cycle",
-          "uarch_ram_length"
+          "uarch_cycle"
         ]
       },
 
@@ -1404,11 +1515,15 @@
           },
           "has_annotations": {
             "type": "boolean"
+          },
+          "has_large_data": {
+            "type": "boolean"
           }
         },
         "required": [
           "has_proofs",
-          "has_annotations"
+          "has_annotations",
+          "has_large_data"
         ]
       },
 

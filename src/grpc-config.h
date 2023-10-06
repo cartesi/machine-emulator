@@ -14,17 +14,14 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <pma-defines.h>
-#include <uarch-defines.h>
+#ifndef GRPC_CONFIG_H
+#define GRPC_CONFIG_H
 
-.section .text.init;
-.align 3;
-.global _start;
-_start:    
-    // Initialize stack
-    li sp, PMA_UARCH_RAM_START_DEF  
-    li t0, PMA_UARCH_RAM_LENGTH_DEF
-    add sp, sp, t0 // stack pointer at the end of RAM
-    call interpret_next_mcycle_with_uarch
+namespace cartesi {
 
+/// \brief GRPC customization argument allowing larger messages
+/// \brief Currently, the biggest message is reset uarch with large_data: 2x 4MB + small data + overhead
+static constexpr int GRPC_MAX_RECEIVE_MESSAGE_SIZE = 0xc00000;
 
+} // namespace cartesi
+#endif

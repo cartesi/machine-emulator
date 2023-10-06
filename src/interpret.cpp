@@ -5609,8 +5609,6 @@ interpreter_break_reason interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "code assumes little-endian byte ordering");
     static_assert(is_an_i_state_access<STATE_ACCESS>::value, "not an i_state_access");
 
-    // This must be the first read because we assume the first log access is a
-    // mcycle read in machine::verify_state_transition
     const uint64_t mcycle = a.read_mcycle();
 
     // If the cpu is halted, we are done

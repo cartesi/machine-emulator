@@ -42,7 +42,7 @@ public:
 private:
     void do_store(const std::string &dir) override;
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
-    access_log do_step_uarch(const access_log::type &log_type, bool one_based = false) override;
+    access_log do_log_uarch_step(const access_log::type &log_type, bool one_based = false) override;
     machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const override;
     void do_get_root_hash(hash_type &hash) const override;
     bool do_verify_merkle_tree(void) const override;
@@ -150,9 +150,9 @@ private:
     void do_write_uarch_pc(uint64_t val) override;
     uint64_t do_read_uarch_cycle(void) const override;
     void do_write_uarch_cycle(uint64_t val) override;
-    uint64_t do_read_uarch_ram_length(void) const override;
     void do_set_uarch_halt_flag() override;
-    void do_reset_uarch_state() override;
+    void do_reset_uarch() override;
+    access_log do_log_uarch_reset(const access_log::type &log_type, bool one_based = false) override;
     bool do_read_uarch_halt_flag(void) const override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
     machine_memory_range_descrs do_get_memory_ranges(void) const override;

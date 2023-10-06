@@ -24,6 +24,43 @@
 
 namespace cartesi {
 
+/// \brief uarch state constants
+enum uarch_state_constants : uint64_t {
+    UARCH_STATE_START_ADDRESS =
+        EXPAND_UINT64_C(UARCH_STATE_START_ADDRESS_DEF), ///< Start address of the uarch state: shadow + ram
+    UARCH_STATE_LOG2_SIZE = EXPAND_UINT64_C(UARCH_STATE_LOG2_SIZE_DEF), ///< Log2 size of the uarch state: shadow + ram
+    UARCH_STATE_CHILD_LOG2_SIZE = UARCH_STATE_LOG2_SIZE - 1, ///< Log2 size of a uarch state child: shadow or ram
+    UARCH_SHADOW_START_ADDRESS =
+        EXPAND_UINT64_C(PMA_SHADOW_UARCH_STATE_START_DEF), ///< Start address of the shadow uarch state
+    UARCH_SHADOW_LENGTH = EXPAND_UINT64_C(PMA_SHADOW_UARCH_STATE_LENGTH_DEF),   ///< Length of the shadow uarch state
+    UARCH_RAM_START_ADDRESS = EXPAND_UINT64_C(PMA_UARCH_RAM_START_DEF),         ///< Start address of the uarch ram
+    UARCH_RAM_LENGTH = EXPAND_UINT64_C(PMA_UARCH_RAM_LENGTH_DEF),               ///< Length of the uarch ram
+    UARCH_STATE_ALIGN_MASK = (EXPAND_UINT64_C(1) << UARCH_STATE_LOG2_SIZE) - 1, ///< Mask for uarch state alignment
+    UARCH_STATE_MASK = ~UARCH_STATE_ALIGN_MASK,                                 ///< Mask for uarch state address space
+    UARCH_STATE_CHILD_ALIGN_MASK =
+        (EXPAND_UINT64_C(1) << UARCH_STATE_CHILD_LOG2_SIZE) - 1 ///< Mask for uarch state child alignment
+};
+
+static_assert((UARCH_STATE_START_ADDRESS & UARCH_STATE_ALIGN_MASK) == 0,
+    "UARCH_STATE_START_ADDRESS must be aligned to UARCH_STATE_LOG2_SIZE");
+static_assert((UARCH_SHADOW_START_ADDRESS & UARCH_STATE_MASK) == UARCH_STATE_START_ADDRESS,
+    "UARCH_SHADOW_START_ADDRESS must be within uarch state address space");
+static_assert((UARCH_RAM_START_ADDRESS & UARCH_STATE_MASK) == UARCH_STATE_START_ADDRESS,
+    "UARCH_RAM_START_ADDRESS must be within uarch state address space");
+static_assert((UARCH_SHADOW_START_ADDRESS & UARCH_STATE_CHILD_ALIGN_MASK) == 0,
+    "UARCH_SHADOW_START_ADDRESS must be aligned to UARCH_STATE_LOG2_SIZE");
+static_assert((UARCH_RAM_START_ADDRESS & UARCH_STATE_CHILD_ALIGN_MASK) == 0,
+    "UARCH_RAM_START_ADDRESS must be aligned to UARCH_STATE_LOG2_SIZE");
+static_assert(UARCH_RAM_LENGTH <= (static_cast<uint64_t>(1) << UARCH_STATE_CHILD_LOG2_SIZE),
+    "UARCH_RAM_LENGTH is too big");
+static_assert(UARCH_SHADOW_LENGTH <= (static_cast<uint64_t>(1) << UARCH_STATE_CHILD_LOG2_SIZE),
+    "UARCH_SHADOW_LENGTH is too big");
+static_assert(UARCH_SHADOW_START_ADDRESS < UARCH_RAM_START_ADDRESS,
+    "UARCH_SHADOW_START_ADDRESS must be smaller than UARCH_RAN_START_ADDRESS");
+static_assert((UARCH_SHADOW_LENGTH & (PMA_PAGE_SIZE - 1)) == 0,
+    "UARCH_SHADOW_LENGTH must be multiple of PMA_PAGE_SIZE");
+static_assert((UARCH_RAM_LENGTH & (PMA_PAGE_SIZE - 1)) == 0, "UARCH_RAM_LENGTH must be multiple of PMA_PAGE_SIZE");
+
 /// \briefThe value that halts the microarchitecture when written to shadow_state_csr::uarch_halt_flag:
 constexpr uint64_t uarch_halt_flag_halt_value = UARCH_HALT_FLAG_HALT_VALUE_DEF;
 

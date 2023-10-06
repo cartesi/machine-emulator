@@ -31,14 +31,17 @@
 #include "shadow-pmas-factory.h"
 #include "shadow-state-factory.h"
 #include "shadow-tlb-factory.h"
-#include "shadow-uarch-state-factory.h"
 #include "state-access.h"
 #include "strict-aliasing.h"
 #include "translate-virtual-address.h"
 #include "uarch-interpret.h"
-#include "uarch-record-state-access.h"
-#include "uarch-replay-state-access.h"
-#include "uarch-state-access.h"
+#include "uarch-record-reset-state-access.h"
+#include "uarch-record-step-state-access.h"
+#include "uarch-replay-reset-state-access.h"
+#include "uarch-replay-step-state-access.h"
+#include "uarch-reset-state-access.h"
+#include "uarch-reset-state.h"
+#include "uarch-step-state-access.h"
 #include "uarch-step.h"
 #include "unique-c-ptr.h"
 
@@ -433,9 +436,6 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
         dtb_init(m_c, dtb.get_memory().get_host_memory(), PMA_DTB_LENGTH);
     }
 
-    // Register uarch shadow state
-    register_pma_entry(make_shadow_uarch_state_pma_entry(PMA_SHADOW_UARCH_STATE_START, PMA_SHADOW_UARCH_STATE_LENGTH));
-
     // Add sentinel to PMA vector
     register_pma_entry(make_empty_pma_entry("sentinel"s, 0, 0));
 
@@ -445,7 +445,8 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
         m_pmas.push_back(&pma);
     }
 
-    // Second, push the uarch ram, which is visible only to the microarchitecture interpreter
+    // Second, push uarch pmas that are visible only to the microarchitecture interpreter
+    m_pmas.push_back(&m_uarch.get_state().shadow_state);
     m_pmas.push_back(&m_uarch.get_state().ram);
 
     // Last, add sentinel
@@ -1170,8 +1171,6 @@ uint64_t machine::read_csr(csr r) const {
             return read_uarch_halt_flag();
         case csr::uarch_pc:
             return read_uarch_pc();
-        case csr::uarch_ram_length:
-            return read_uarch_ram_length();
         default:
             throw std::invalid_argument{"unknown CSR"};
             return 0; // never reached
@@ -1258,8 +1257,6 @@ void machine::write_csr(csr csr, uint64_t value) {
             [[fallthrough]];
         case csr::mimpid:
             throw std::invalid_argument{"CSR is read-only"};
-        case csr::uarch_ram_length:
-            throw std::invalid_argument{"CSR is read-only"};
         default:
             throw std::invalid_argument{"unknown CSR"};
     }
@@ -1345,8 +1342,6 @@ uint64_t machine::get_csr_address(csr csr) {
             return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::cycle);
         case csr::uarch_halt_flag:
             return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::halt_flag);
-        case csr::uarch_ram_length:
-            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::ram_length);
         default:
             throw std::invalid_argument{"unknown CSR"};
     }
@@ -1687,15 +1682,7 @@ void machine::write_memory(uint64_t address, const unsigned char *data, size_t l
     if (!pma.get_istart_M() || pma.get_istart_E()) {
         throw std::invalid_argument{"address range not entirely in memory PMA"};
     }
-    constexpr const auto log2_page_size = PMA_constants::PMA_PAGE_SIZE_LOG2;
-    uint64_t page_in_range = ((address - pma.get_start()) >> log2_page_size) << log2_page_size;
-    constexpr const auto page_size = PMA_constants::PMA_PAGE_SIZE;
-    auto npages = (length + page_size - 1) / page_size;
-    for (decltype(npages) i = 0; i < npages; ++i) {
-        pma.mark_dirty_page(page_in_range);
-        page_in_range += page_size;
-    }
-    memcpy(pma.get_memory().get_host_memory() + (address - pma.get_start()), data, length);
+    pma.write_memory(address, data, length);
 }
 
 void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uint64_t length) {
@@ -1814,41 +1801,61 @@ void machine::write_uarch_cycle(uint64_t val) {
     return m_uarch.write_cycle(val);
 }
 
-/// \brief Reads the value of the microarchitecture halt flag.
-/// \returns The current microarchitecture halt value.
 bool machine::read_uarch_halt_flag(void) const {
     return m_uarch.read_halt_flag();
 }
 
-/// \brief Sets the value ofthe microarchitecture halt flag.
 void machine::set_uarch_halt_flag() {
     m_uarch.set_halt_flag();
 }
 
-void machine::reset_uarch_state() {
-    m_uarch.reset_state();
+void machine::reset_uarch() {
+    uarch_reset_state_access a(m_uarch.get_state());
+    uarch_reset_state(a);
 }
 
-uint64_t machine::read_uarch_ram_length(void) const {
-    return m_uarch.read_ram_length();
+access_log machine::log_uarch_reset(const access_log::type &log_type, bool one_based) {
+    hash_type root_hash_before;
+    if (log_type.has_proofs()) {
+        update_merkle_tree();
+        get_root_hash(root_hash_before);
+    }
+    // Call uarch_reset_state with a uarch_record_reset_state_access object
+    uarch_record_reset_state_access a(m_uarch.get_state(), *this, log_type);
+    a.push_bracket(bracket_type::begin, "reset uarch state");
+    uarch_reset_state(a);
+    a.push_bracket(bracket_type::end, "reset uarch state");
+    // Verify access log before returning
+    if (log_type.has_proofs()) {
+        hash_type root_hash_after;
+        update_merkle_tree();
+        get_root_hash(root_hash_after);
+        verify_uarch_reset_state_transition(root_hash_before, *a.get_log(), root_hash_after, m_r, one_based);
+    } else {
+        verify_uarch_reset_log(*a.get_log(), m_r, one_based);
+    }
+    return std::move(*a.get_log());
 }
 
-void machine::verify_access_log(const access_log &log, const machine_runtime_config &r, bool one_based) {
+void machine::verify_uarch_step_log(const access_log &log, const machine_runtime_config &r, bool one_based) {
     (void) r;
     // There must be at least one access in log
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
     }
-    uarch_replay_state_access a(log, log.get_log_type().has_proofs(), one_based);
+    uarch_replay_step_state_access a(log, log.get_log_type().has_proofs(), one_based);
     uarch_step(a);
     a.finish();
 }
 
-machine_config machine::get_default_config(void) {
-    return machine_config{};
+void machine::verify_uarch_reset_log(const access_log &log, const machine_runtime_config &r, bool one_based) {
+    (void) r;
+    uarch_replay_reset_state_access a(log, log.get_log_type().has_proofs(), one_based);
+    uarch_reset_state(a);
+    a.finish();
 }
 
-void machine::verify_state_transition(const hash_type &root_hash_before, const access_log &log,
+void machine::verify_uarch_reset_state_transition(const hash_type &root_hash_before, const access_log &log,
     const hash_type &root_hash_after, const machine_runtime_config &r, bool one_based) {
     (void) r;
     // We need proofs in order to verify the state transition
@@ -1869,7 +1876,39 @@ void machine::verify_state_transition(const hash_type &root_hash_before, const a
         throw std::invalid_argument{"mismatch in root hash before replay"};
     }
     // Verify all intermediate state transitions
-    uarch_replay_state_access a(log, true /* verify proofs! */, one_based);
+    uarch_replay_reset_state_access a(log, log.get_log_type().has_proofs(), one_based);
+    uarch_reset_state(a);
+    a.finish();
+    // Make sure the access log ends at the same root hash as the state
+    hash_type obtained_root_hash;
+    a.get_root_hash(obtained_root_hash);
+    if (obtained_root_hash != root_hash_after) {
+        throw std::invalid_argument{"mismatch in root hash after replay"};
+    }
+}
+
+void machine::verify_uarch_step_state_transition(const hash_type &root_hash_before, const access_log &log,
+    const hash_type &root_hash_after, const machine_runtime_config &r, bool one_based) {
+    (void) r;
+    // We need proofs in order to verify the state transition
+    if (!log.get_log_type().has_proofs()) {
+        throw std::invalid_argument{"log has no proofs"};
+    }
+    // There must be at least one access in log
+    if (log.get_accesses().empty()) {
+        throw std::invalid_argument{"too few accesses in log"};
+    }
+    // It must contain proofs
+    if (!log.get_accesses().front().get_proof().has_value()) {
+        throw std::invalid_argument{"access has no proof"};
+    }
+    // Make sure the access log starts from the same root hash as the state
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+    if (log.get_accesses().front().get_proof().value().get_root_hash() != root_hash_before) {
+        throw std::invalid_argument{"mismatch in root hash before replay"};
+    }
+    // Verify all intermediate state transitions
+    uarch_replay_step_state_access a(log, true /* verify proofs! */, one_based);
     uarch_step(a);
     a.finish();
     // Make sure the access log ends at the same root hash as the state
@@ -1880,7 +1919,11 @@ void machine::verify_state_transition(const hash_type &root_hash_before, const a
     }
 }
 
-access_log machine::step_uarch(const access_log::type &log_type, bool one_based) {
+machine_config machine::get_default_config(void) {
+    return machine_config{};
+}
+
+access_log machine::log_uarch_step(const access_log::type &log_type, bool one_based) {
     if (m_uarch.get_state().ram.get_istart_E()) {
         throw std::runtime_error("microarchitecture RAM is not present");
     }
@@ -1890,18 +1933,17 @@ access_log machine::step_uarch(const access_log::type &log_type, bool one_based)
         get_root_hash(root_hash_before);
     }
     // Call interpret with a logged state access object
-    uarch_record_state_access a(m_uarch.get_state(), *this, log_type);
+    uarch_record_step_state_access a(m_uarch.get_state(), *this, log_type);
     a.push_bracket(bracket_type::begin, "step");
     uarch_step(a);
     a.push_bracket(bracket_type::end, "step");
     // Verify access log before returning
     if (log_type.has_proofs()) {
         hash_type root_hash_after;
-        update_merkle_tree();
         get_root_hash(root_hash_after);
-        verify_state_transition(root_hash_before, *a.get_log(), root_hash_after, m_r, one_based);
+        verify_uarch_step_state_transition(root_hash_before, *a.get_log(), root_hash_after, m_r, one_based);
     } else {
-        verify_access_log(*a.get_log(), m_r, one_based);
+        verify_uarch_step_log(*a.get_log(), m_r, one_based);
     }
     return std::move(*a.get_log());
 }
@@ -1911,7 +1953,7 @@ uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
     if (m_uarch.get_state().ram.get_istart_E()) {
         throw std::runtime_error("microarchitecture RAM is not present");
     }
-    uarch_state_access a(m_uarch.get_state(), get_state());
+    uarch_step_state_access a(m_uarch.get_state(), get_state());
     return uarch_interpret(a, uarch_cycle_end);
 }
 

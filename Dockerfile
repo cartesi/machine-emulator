@@ -24,6 +24,9 @@ RUN luarocks install --lua-version=5.4 luasocket && \
     luarocks install --lua-version=5.4 luacheck && \
     cargo install stylua@0.18.1 --features lua54
 
+# Environment has the riscv64-cartesi-linux-gnu-* toolchain
+ENV DEV_ENV_HAS_TOOLCHAIN=yes
+
 WORKDIR /usr/src/emulator
 
 FROM --platform=$TARGETPLATFORM linux-env as dep-builder

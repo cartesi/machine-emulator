@@ -54,12 +54,12 @@ private:
     //    not constantly going through the extra indirection. We
     //    should test this.
 
-    mutable machine_state m_s;       ///< Opaque machine state
-    mutable machine_merkle_tree m_t; ///< Merkle tree of state
-    std::vector<pma_entry *> m_pmas; ///< List of pmas, including uarch ram. Used to compute the machine hash
-    machine_config m_c;              ///< Copy of initialization config
-    uarch_machine m_uarch;           ///< Microarchitecture machine
-    machine_runtime_config m_r;      ///< Copy of initialization runtime config
+    mutable machine_state m_s;          ///< Opaque machine state
+    mutable machine_merkle_tree m_t;    ///< Merkle tree of state
+    std::vector<pma_entry *> m_pmas;    ///< List of all pmas used to compute the machine hash: big machine and uarch
+    machine_config m_c;                 ///< Copy of initialization config
+    uarch_machine m_uarch;              ///< Microarchitecture machine
+    machine_runtime_config m_r;         ///< Copy of initialization runtime config
     machine_memory_range_descrs m_mrds; ///< List of memory ranges returned by get_memory_ranges().
 
     static const pma_entry::flags m_dtb_flags;                   ///< PMA flags used for DTB
@@ -176,7 +176,6 @@ public:
         uarch_pc,
         uarch_cycle,
         uarch_halt_flag,
-        uarch_ram_length,
         last
     };
 
@@ -219,20 +218,27 @@ public:
     /// \param uarch_cycle_end uarch_cycle limit
     uarch_interpreter_break_reason run_uarch(uint64_t uarch_cycle_end);
 
-    /// \brief Resets the microarchitecture state
-    void reset_uarch_state();
-
-    /// \brief Runs the machine for one micro cycle logging all accesses to the state.
+    /// \brief Advances one micro step and returns a state access log.
     /// \param log_type Type of access log to generate.
     /// \param one_based Use 1-based indices when reporting errors.
     /// \returns The state access log.
-    access_log step_uarch(const access_log::type &log_type, bool one_based = false);
+    access_log log_uarch_step(const access_log::type &log_type, bool one_based = false);
+
+    /// \brief Resets the microarchitecture state
+    void reset_uarch();
+
+    /// \brief Resets the microarchitecture state and returns an access log
+    /// \param log_type Type of access log to generate.
+    /// \param one_based Use 1-based indices when reporting errors.
+    /// \param log_data If true, access data is recorded in the log, otherwise only hashes. The default is false.
+    /// \returns The state access log.
+    access_log log_uarch_reset(const access_log::type &log_type, bool one_based = false);
 
     /// \brief Checks the internal consistency of an access log.
     /// \param log State access log to be verified.
     /// \param runtime Machine runtime configuration to use during verification.
     /// \param one_based Use 1-based indices when reporting errors.
-    static void verify_access_log(const access_log &log, const machine_runtime_config &runtime = {},
+    static void verify_uarch_step_log(const access_log &log, const machine_runtime_config &runtime = {},
         bool one_based = false);
 
     /// \brief Checks the validity of a state transition.
@@ -241,7 +247,23 @@ public:
     /// \param root_hash_after State hash after step.
     /// \param runtime Machine runtime configuration to use during verification.
     /// \param one_based Use 1-based indices when reporting errors.
-    static void verify_state_transition(const hash_type &root_hash_before, const access_log &log,
+    static void verify_uarch_step_state_transition(const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after, const machine_runtime_config &runtime = {}, bool one_based = false);
+
+    /// \brief Checks the internal consistency of an access log produced by log_uarch_reset
+    /// \param log State access log to be verified.
+    /// \param runtime Machine runtime configuration to use during verification.
+    /// \param one_based Use 1-based indices when reporting errors.
+    static void verify_uarch_reset_log(const access_log &log, const machine_runtime_config &runtime = {},
+        bool one_based = false);
+
+    /// \brief Checks the validity of a state transition. caused by log_uarch_reset
+    /// \param root_hash_before State hash before uarch reset
+    /// \param log Step state access log.
+    /// \param root_hash_after State hash after uarch reset.
+    /// \param runtime Machine runtime configuration to use during verification.
+    /// \param one_based Use 1-based indices when reporting errors.
+    static void verify_uarch_reset_state_transition(const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after, const machine_runtime_config &runtime = {}, bool one_based = false);
 
     static machine_config get_default_config(void);
@@ -808,10 +830,6 @@ public:
     /// \brief Writes the value ofthe microarchitecture cycle counter register.
     /// \param value New register value.
     void write_uarch_cycle(uint64_t value);
-
-    /// \brief Reads the value of the microarchitecture RAM length
-    /// \returns The value of the microarchitecture RAM length
-    uint64_t read_uarch_ram_length(void) const;
 };
 
 } // namespace cartesi

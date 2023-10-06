@@ -263,7 +263,6 @@ linux-env: check-linux-env
 		-e GROUP=$$(id -g -n) \
 		-e UID=$$(id -u) \
 		-e GID=$$(id -g) \
-		-e UARCH_TOOLCHAIN_AVAILABLE=yes \
 		-v `pwd`:/opt/cartesi/machine-emulator \
 		-w /opt/cartesi/machine-emulator \
 		cartesi/linux-env:$(TAG) /bin/bash
@@ -274,7 +273,6 @@ linux-env-exec: check-linux-env
 		-e GROUP=$$(id -g -n) \
 		-e UID=$$(id -u) \
 		-e GID=$$(id -g) \
-		-e UARCH_TOOLCHAIN_AVAILABLE=yes \
 		-v `pwd`:/opt/cartesi/machine-emulator \
 		-w /opt/cartesi/machine-emulator \
 		cartesi/linux-env:$(TAG) /bin/bash -c "$(CONTAINER_COMMAND)"

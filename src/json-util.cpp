@@ -89,9 +89,9 @@ static auto csr_from_name(const std::string &name) {
         {"htif_ihalt", csr::htif_ihalt},
         {"htif_iconsole", csr::htif_iconsole},
         {"htif_iyield", csr::htif_iyield},
+        {"uarch_halt_flag", csr::uarch_halt_flag},
         {"uarch_pc", csr::uarch_pc},
         {"uarch_cycle", csr::uarch_cycle},
-        {"uarch_ram_length", csr::uarch_ram_length},
     };
     auto got = g_csr_name.find(name);
     if (got == g_csr_name.end()) {
@@ -179,8 +179,8 @@ static auto csr_to_name(machine::csr reg) {
             return "uarch_pc";
         case csr::uarch_cycle:
             return "uarch_cycle";
-        case csr::uarch_ram_length:
-            return "uarch_ram_length";
+        case csr::uarch_halt_flag:
+            return "uarch_halt_flag";
         default:
             throw std::domain_error{"invalid csr"};
             break;
@@ -461,6 +461,25 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_merkle_tree
     std::copy(bin.begin(), bin.end(), value.data());
 }
 
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key,
+    std::optional<machine_merkle_tree::proof_type::hash_type> &optional, const std::string &path) {
+    optional = {};
+    if (!contains(j, key)) {
+        return;
+    }
+    const auto &jk = j[key];
+    if (!jk.is_string()) {
+        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a string");
+    }
+    std::string bin = decode_base64(jk.template get<std::string>());
+    optional.emplace();
+    if (bin.size() != optional.value().size()) {
+        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a base64-encoded 256-bit hash");
+    }
+    std::copy(bin.begin(), bin.end(), optional.value().data());
+}
+
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
     machine_merkle_tree::proof_type::hash_type &value, const std::string &path);
 
@@ -560,6 +579,22 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access_data &data, 
     std::copy(bin.begin(), bin.end(), std::back_inserter(data));
 }
 
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, std::optional<access_data> &optional,
+    const std::string &path) {
+    optional = {};
+    if (!contains(j, key)) {
+        return;
+    }
+    const auto &jk = j[key];
+    if (!jk.is_string()) {
+        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a string");
+    }
+    const auto &bin = decode_base64(jk.template get<std::string>());
+    optional.emplace();
+    std::copy(bin.begin(), bin.end(), std::back_inserter(optional.value()));
+}
+
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, access_data &value,
     const std::string &path);
 
@@ -588,19 +623,33 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, con
     uint64_t address = 0;
     ju_get_field(jk, "address"s, address, new_path);
     access.set_address(address);
-    access_data read_data;
-    ju_get_field(jk, "read"s, read_data, new_path);
-    if (read_data.size() != (UINT64_C(1) << log2_size)) {
-        throw std::invalid_argument("field \""s + new_path + "read\" has wrong length");
+    machine_merkle_tree::proof_type::hash_type read_hash;
+    ju_get_field(jk, "read_hash", read_hash, new_path);
+    access.set_read_hash(read_hash);
+
+    not_default_constructible<machine_merkle_tree::proof_type::hash_type> written_hash;
+    ju_get_opt_field(jk, "written_hash", written_hash, new_path);
+    if (written_hash.has_value()) {
+        access.set_written_hash(written_hash.value());
     }
-    access.set_read(std::move(read_data));
-    if (type == access_type::write) {
-        access_data write_data;
-        ju_get_field(jk, "written"s, write_data, new_path);
-        if (write_data.size() != (UINT64_C(1) << log2_size)) {
+
+    std::optional<access_data> read;
+    ju_get_opt_field(jk, "read"s, read, new_path);
+    if (read.has_value()) {
+        if (read.value().size() != (UINT64_C(1) << log2_size)) {
             throw std::invalid_argument("field \""s + new_path + "written\" has wrong length");
         }
-        access.set_written(std::move(write_data));
+        access.set_read(std::move(read.value()));
+    }
+    if (type == access_type::write) {
+        std::optional<access_data> written;
+        ju_get_opt_field(jk, "written"s, written, new_path);
+        if (written.has_value()) {
+            if (written.value().size() != (UINT64_C(1) << log2_size)) {
+                throw std::invalid_argument("field \""s + new_path + "written\" has wrong length");
+            }
+            access.set_written(std::move(written.value()));
+        }
     }
     not_default_constructible<machine_merkle_tree::proof_type> proof;
     ju_get_opt_field(jk, "proof"s, proof, new_path);
@@ -676,7 +725,9 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constru
     ju_get_field(jk, "has_proofs"s, has_proofs, new_path);
     bool has_annotations = false;
     ju_get_field(jk, "has_annotations"s, has_annotations, new_path);
-    optional.emplace(has_proofs, has_annotations);
+    bool has_large_data = false;
+    ju_get_field(jk, "has_large_data"s, has_large_data, new_path);
+    optional.emplace(has_proofs, has_annotations, has_large_data);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
@@ -964,6 +1015,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_processor_con
     ju_get_opt_array_like_field(jconfig, "x"s, value.x, new_path);
     ju_get_opt_field(jconfig, "pc"s, value.pc, new_path);
     ju_get_opt_field(jconfig, "cycle"s, value.cycle, new_path);
+    ju_get_opt_field(jconfig, "halt_flag"s, value.halt_flag, new_path);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, uarch_processor_config &value,
@@ -979,7 +1031,6 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_ram_config &v
     }
     const auto &jconfig = j[key];
     const auto new_path = path + to_string(key) + "/";
-    ju_get_opt_field(jconfig, "length"s, value.length, new_path);
     ju_get_opt_field(jconfig, "image_filename"s, value.image_filename, new_path);
 }
 
@@ -1090,13 +1141,27 @@ void to_json(nlohmann::json &j, const access &a) {
         {"type", access_type_name(a.get_type())},
         {"address", a.get_address()},
         {"log2_size", a.get_log2_size()},
-        {"read", encode_base64(a.get_read())},
     };
+
+    j["read_hash"] = encode_base64(a.get_read_hash());
+    if (a.get_read().has_value()) {
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        j["read"] = encode_base64(a.get_read().value());
+    }
+
     if (a.get_type() == access_type::write) {
-        j["written"] = encode_base64(a.get_written());
+        if (a.get_written_hash().has_value()) {
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+            j["written_hash"] = encode_base64(a.get_written_hash().value());
+        }
+        if (a.get_written().has_value()) {
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+            j["written"] = encode_base64(a.get_written().value());
+        }
     }
     if (a.get_proof().has_value()) {
-        j["proof"] = a.get_proof().value(); // NOLINT(bugprone-unchecked-optional-access)
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        j["proof"] = a.get_proof().value();
     }
 }
 
@@ -1116,10 +1181,8 @@ void to_json(nlohmann::json &j, const std::vector<access> &as) {
 }
 
 void to_json(nlohmann::json &j, const access_log::type &log_type) {
-    j = nlohmann::json{
-        {"has_proofs", log_type.has_proofs()},
-        {"has_annotations", log_type.has_annotations()},
-    };
+    j = nlohmann::json{{"has_proofs", log_type.has_proofs()}, {"has_annotations", log_type.has_annotations()},
+        {"has_large_data", log_type.has_large_data()}};
 }
 
 void to_json(nlohmann::json &j, const access_log &log) {
@@ -1206,12 +1269,12 @@ void to_json(nlohmann::json &j, const uarch_processor_config &config) {
         {"x", config.x},
         {"pc", config.pc},
         {"cycle", config.cycle},
+        {"halt_flag", config.halt_flag},
     };
 }
 
 void to_json(nlohmann::json &j, const uarch_ram_config &config) {
     j = nlohmann::json{
-        {"length", config.length},
         {"image_filename", config.image_filename},
     };
 }

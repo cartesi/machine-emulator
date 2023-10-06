@@ -413,11 +413,6 @@ static unsigned char *aux_cm_access_data_field(lua_State *L, int tabidx, const c
     return a;
 }
 
-static unsigned char *check_cm_access_data_field(lua_State *L, int tabidx, const char *field, uint64_t log2_size,
-    size_t *data_size) {
-    return aux_cm_access_data_field(L, tabidx, field, log2_size, false, data_size);
-}
-
 static unsigned char *opt_cm_access_data_field(lua_State *L, int tabidx, const char *field, uint64_t log2_size,
     size_t *data_size) {
     return aux_cm_access_data_field(L, tabidx, field, log2_size, true, data_size);
@@ -444,7 +439,16 @@ static void check_cm_access(lua_State *L, int tabidx, bool proofs, cm_access *a,
         a->proof = clua_check_cm_merkle_tree_proof(L, -1, ctxidx);
         lua_pop(L, 1);
     }
-    a->read_data = check_cm_access_data_field(L, tabidx, "read", a->log2_size, &a->read_data_size);
+
+    lua_getfield(L, tabidx, "read_hash");
+    clua_check_cm_hash(L, -1, &a->read_hash);
+    lua_pop(L, 1);
+    if (a->type == CM_ACCESS_WRITE) {
+        lua_getfield(L, tabidx, "written_hash");
+        clua_check_cm_hash(L, -1, &a->written_hash);
+        lua_pop(L, 1);
+    }
+    a->read_data = opt_cm_access_data_field(L, tabidx, "read", a->log2_size, &a->read_data_size);
     a->written_data = opt_cm_access_data_field(L, tabidx, "written", a->log2_size, &a->written_data_size);
 }
 
@@ -457,6 +461,7 @@ cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx, int ctxidx) {
     check_table_field(L, tabidx, "log_type");
     log->log_type.proofs = opt_boolean_field(L, -1, "proofs");
     log->log_type.annotations = opt_boolean_field(L, -1, "annotations");
+    log->log_type.large_data = opt_boolean_field(L, -1, "large_data");
     lua_pop(L, 1);
     check_table_field(L, tabidx, "accesses");
     log->accesses.count = luaL_len(L, -1);
@@ -557,7 +562,6 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
         {"uarch_pc", CM_PROC_UARCH_PC},
         {"uarch_cycle", CM_PROC_UARCH_CYCLE},
         {"uarch_halt_flag", CM_PROC_UARCH_HALT_FLAG},
-        {"uarch_ram_length", CM_PROC_UARCH_RAM_LENGTH}
         // clang-format on
     };
     const char *name = luaL_checkstring(L, idx);
@@ -590,6 +594,7 @@ static void push_cm_access_log_type(lua_State *L, const cm_access_log_type *log_
     lua_newtable(L);
     clua_setbooleanfield(L, log_type->annotations, "annotations", -1);
     clua_setbooleanfield(L, log_type->proofs, "proofs", -1);
+    clua_setbooleanfield(L, log_type->large_data, "large_data", -1);
 }
 
 /// \brief Converts an CM_ACCESS_TYPE to a string.
@@ -632,11 +637,19 @@ void clua_push_cm_access_log(lua_State *L, const cm_access_log *log) {
         clua_setstringfield(L, cm_access_type_name(a->type), "type", -1);
         clua_setintegerfield(L, a->address, "address", -1);
         clua_setintegerfield(L, a->log2_size, "log2_size", -1);
-        push_raw_data(L, a->read_data, a->read_data_size);
-        lua_setfield(L, -2, "read");
+        clua_push_cm_hash(L, &a->read_hash);
+        lua_setfield(L, -2, "read_hash"); // read_hash
+        if (a->read_data != nullptr) {
+            push_raw_data(L, a->read_data, a->read_data_size);
+            lua_setfield(L, -2, "read");
+        }
         if (a->type == CM_ACCESS_WRITE) {
-            push_raw_data(L, a->written_data, a->written_data_size);
-            lua_setfield(L, -2, "written");
+            clua_push_cm_hash(L, &a->written_hash);
+            lua_setfield(L, -2, "written_hash");
+            if (a->written_data != nullptr) {
+                push_raw_data(L, a->written_data, a->written_data_size);
+                lua_setfield(L, -2, "written");
+            }
         }
         if (log->log_type.proofs && a->proof != nullptr) {
             clua_push_cm_proof(L, a->proof);
@@ -713,7 +726,11 @@ void clua_push_cm_memory_range_descr_array(lua_State *L, const cm_memory_range_d
 
 cm_access_log_type clua_check_cm_log_type(lua_State *L, int tabidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
-    return cm_access_log_type{opt_boolean_field(L, tabidx, "proofs"), opt_boolean_field(L, tabidx, "annotations")};
+    return cm_access_log_type{
+        opt_boolean_field(L, tabidx, "proofs"),
+        opt_boolean_field(L, tabidx, "annotations"),
+        opt_boolean_field(L, tabidx, "large_data"),
+    };
 }
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
@@ -883,7 +900,6 @@ static void push_cm_flash_drive_configs(lua_State *L, const cm_memory_range_conf
 /// \param r microarchitecture RAM configuration to be pushed.
 static void push_cm_uarch_ram_config(lua_State *L, const cm_uarch_ram_config *r) {
     lua_newtable(L);
-    clua_setintegerfield(L, r->length, "length", -1);
     if (r->image_filename != nullptr) {
         clua_setstringfield(L, r->image_filename, "image_filename", -1);
     }
@@ -896,6 +912,7 @@ static void push_cm_uarch_processor_config(lua_State *L, const cm_uarch_processo
     lua_newtable(L);
     clua_setintegerfield(L, u->pc, "pc", -1);
     clua_setintegerfield(L, u->cycle, "cycle", -1);
+    clua_setbooleanfield(L, u->halt_flag, "halt_flag", -1);
     lua_newtable(L);
     for (int i = 1; i <= (UARCH_X_REG_COUNT - 1); i++) {
         lua_pushinteger(L, static_cast<lua_Integer>(u->x[i]));
@@ -1187,7 +1204,6 @@ static void check_cm_uarch_ram_config(lua_State *L, int tabidx, cm_uarch_ram_con
         *r = *def;
         return;
     }
-    r->length = check_uint_field(L, -1, "length");
     r->image_filename = opt_copy_string_field(L, -1, "image_filename");
     lua_pop(L, 1);
 }
@@ -1204,6 +1220,7 @@ static void check_cm_uarch_processor_config(lua_State *L, int tabidx, cm_uarch_p
     }
     p->pc = opt_uint_field(L, -1, "pc", def->pc);
     p->cycle = opt_uint_field(L, -1, "cycle", def->cycle);
+    p->halt_flag = opt_boolean_field(L, -1, "halt_flag", def->halt_flag);
     lua_getfield(L, -1, "x");
     if (lua_istable(L, -1)) {
         for (int i = 1; i <= (UARCH_X_REG_COUNT - 1); i++) {

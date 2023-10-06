@@ -1,4 +1,4 @@
-# Copyright Cartesi and individual authors (see AUTHORS)
+pris# Copyright Cartesi and individual authors (see AUTHORS)
 # SPDX-License-Identifier: LGPL-3.0-or-later
 #
 # This program is free software: you can redistribute it and/or modify it under
@@ -33,7 +33,11 @@ PROTOC=protoc
 PROTOC_FLAGS=--experimental_allow_proto3_optional
 GRPC_CPP_PLUGIN=$(shell which grpc_cpp_plugin)
 
-# Path to the file containing the uarch ram image to be embedded in the emulator. Override to use a pre-built one.
+# Are we on an environment that has the riscv64-cartesi-linux-gnu-* toolchain?
+DEV_ENV_HAS_TOOLCHAIN ?= no
+
+# If instead of building the microarchitecture you  wamt to use a pre-built image file, modify this variable to
+# indicate the path of the desired file.
 UARCH_RAM_IMAGE ?= ../uarch/uarch-ram.bin
 
 # Code instrumentation
@@ -177,7 +181,8 @@ ifneq ($(git_commit),)
 DEFS+=-DGIT_COMMIT='"$(git_commit)"'
 endif
 
-# Allow mongoose to receive up to 12MB messages
+# Allow mongoose to receive large messages
+# The biggest message is reset uarch with large_data: 2x 4MB + small data + overhad
 MONGOOSE_DEFS+=-DMG_MAX_RECV_SIZE=12582912
 
 # Optimization flags
@@ -329,6 +334,7 @@ LIBCARTESI_OBJS:= \
 	virtual-machine.o \
 	uarch-machine.o \
 	uarch-step.o \
+	uarch-reset-state.o \
 	uarch-interpret.o \
 	machine-c-api.o
 
@@ -337,7 +343,9 @@ CARTESI_CLUA_OBJS:= \
 	clua-i-virtual-machine.o \
 	clua-htif.o \
 	clua-machine-util.o \
-	uarch-ram.bin.o
+	uarch-ram.bin.o \
+	uarch-pristine-ram.o \
+	uarch-pristine-state-hash.o
 
 LUACARTESI_OBJS:= \
 	clua-cartesi.o \
@@ -530,6 +538,9 @@ compile_flags.txt:
 
 luacartesi: cartesi.so cartesi/grpc.so cartesi/jsonrpc.so
 
+compute-uarch-pristine-hash: $(COMPUTE_UARCH_PRISTINE_HASH_OBJS)
+	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $^ $(HASH_LIBS)
+
 luacartesi-pgo:
 	$(MAKE) --no-print-directory generate
 	./cartesi-machine.lua -- "$(PGO_WORKLOAD)"
@@ -574,14 +585,18 @@ PROTO_SOURCES:=$(PROTO_OBJS:.o=.cc)
 REMOTE_CARTESI_MACHINE_OBJS:= \
 	remote-machine.o \
 	slog.o \
-	uarch-ram.bin.o
+	uarch-ram.bin.o \
+	uarch-pristine-ram.o \
+	uarch-pristine-state-hash.o
 
 JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	jsonrpc-remote-machine.o \
 	jsonrpc-discover.o \
 	mongoose.o \
 	slog.o \
-	uarch-ram.bin.o
+	uarch-ram.bin.o \
+	uarch-pristine-ram.o \
+	uarch-pristine-state-hash.o
 
 CYCLE_PERIOD ?= 13
 HASH_DIR = hashes/$(CYCLE_PERIOD)
@@ -688,6 +703,16 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	echo ')json";' >> jsonrpc-discover.cpp
 	echo '} // namespace cartesi' >> jsonrpc-discover.cpp
 
+uarch-pristine-state-hash.cpp:  compute-uarch-pristine-hash
+	@echo '// This file is auto-generated and should not be modified' > $@
+	@echo '// clang-format off' >> $@
+	@echo '#include "uarch-pristine-state-hash.h"' >> $@
+	@echo 'namespace cartesi {' >> $@
+	@echo '    const machine_merkle_tree::hash_type uarch_pristine_state_hash{' >> $@
+	@./compute-uarch-pristine-hash  >> $@
+	@echo '    };' >> $@
+	@echo '} // namespace cartesi' >> $@
+
 %.clang-tidy: %.cpp $(PROTO_SOURCES) machine-c-version.h
 	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CXXFLAGS) $(LUA_INC) $(GRPC_PROTOBUF_INC) 2>/dev/null
 	@$(CXX) $(CXXFLAGS) $(LUA_INC) $(GRPC_PROTOBUF_INC) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
@@ -713,11 +738,11 @@ sha3.o: ../third-party/tiny_sha3/sha3.c
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-uarch-ram.bin.o: $(UARCH_RAM_IMAGE)
-	xxd -i -n embedded_uarch_ram $< | $(CXX) $(CFLAGS) -c -x c -o $@ - 
+uarch-pristine-ram.c: $(UARCH_RAM_IMAGE)
+	@xxd -i -n uarch_pristine_ram $< > $@
 
-../uarch/uarch-ram.bin:
-	if [ "$(UARCH_TOOLCHAIN_AVAILABLE)" = "yes" ]; then \
+$(UARCH_RAM_IMAGE):
+	@if [ "$(DEV_ENV_HAS_TOOLCHAIN)" = "yes" ]; then \
 		$(MAKE) -C .. uarch; \
 	else \
 		$(MAKE) -C .. uarch-with-linux-env; \
@@ -727,7 +752,7 @@ uarch-ram.bin.o: $(UARCH_RAM_IMAGE)
 clean: clean-auto-generated clean-coverage clean-profile clean-proto-sources clean-tidy clean-libcartesi clean-executables clean-tests
 
 clean-auto-generated:
-	@rm -f jsonrpc-discover.cpp machine-c-version.h
+	@rm -f jsonrpc-discover.cpp machine-c-version.h uarch-pristine-ram.c uarch-pristine-state-hash.cpp
 
 clean-proto-sources:
 	@rm -f *.pb.cc *.pb.h

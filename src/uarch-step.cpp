@@ -19,10 +19,10 @@
 #include <stdexcept>
 
 #include "riscv-constants.h"
-#include "uarch-record-state-access.h"
-#include "uarch-replay-state-access.h"
+#include "uarch-record-step-state-access.h"
+#include "uarch-replay-step-state-access.h"
 #include "uarch-solidity-compat.h"
-#include "uarch-state-access.h"
+#include "uarch-step-state-access.h"
 #include "uarch-step.h"
 
 namespace cartesi {
@@ -1092,7 +1092,7 @@ static inline void executeInsn(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 UArchStepStatus uarch_step(UarchState &a) {
-    // This must be the first read in order to match the first log access in machine::verify_state_transition
+    // This must be the first read in order to match the first log access in machine::verify_uarch_step_state_transition
     uint64 cycle = readCycle(a);
     // do not advance if cycle will overflow
     if (cycle == UINT64_MAX) {
@@ -1111,14 +1111,14 @@ UArchStepStatus uarch_step(UarchState &a) {
     return UArchStepStatus::Success;
 }
 
-// Explicit instantiation for uarch_state_access
-template UArchStepStatus uarch_step(uarch_state_access &a);
+// Explicit instantiation for uarch_step_state_access
+template UArchStepStatus uarch_step(uarch_step_state_access &a);
 
-// Explicit instantiation for uarch_record_state_access
-template UArchStepStatus uarch_step(uarch_record_state_access &a);
+// Explicit instantiation for uarch_record_step_state_access
+template UArchStepStatus uarch_step(uarch_record_step_state_access &a);
 
-// Explicit instantiation for uarch_replay_state_access
-template UArchStepStatus uarch_step(uarch_replay_state_access &a);
+// Explicit instantiation for uarch_replay_step_state_access
+template UArchStepStatus uarch_step(uarch_replay_step_state_access &a);
 
 } // namespace cartesi
 // NOLINTEND(google-readability-casting, misc-const-correctness)

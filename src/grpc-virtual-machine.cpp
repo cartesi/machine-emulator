@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <string>
 
+#include "grpc-config.h"
 #include "grpc-virtual-machine.h"
 #include "protobuf-util.h"
 
@@ -109,10 +110,18 @@ static std::string replace_port(const std::string &address, int port) {
     }
 }
 
+/// \brief Returns the arguments used to customize the grpc channel
+static grpc::ChannelArguments get_channel_arguments(void) {
+    grpc::ChannelArguments args;
+    args.SetMaxReceiveMessageSize(GRPC_MAX_RECEIVE_MESSAGE_SIZE);
+    return args;
+}
+
 grpc_machine_stub::grpc_machine_stub(std::string remote_address, std::string checkin_address) :
     m_remote_address(std::move(remote_address)),
     m_checkin_address(std::move(checkin_address)),
-    m_stub(Machine::NewStub(grpc::CreateChannel(m_remote_address, grpc::InsecureChannelCredentials()))) {
+    m_stub(Machine::NewStub(
+        grpc::CreateCustomChannel(m_remote_address, grpc::InsecureChannelCredentials(), get_channel_arguments()))) {
     if (!m_stub) {
         throw std::runtime_error("unable to create stub");
     }
@@ -277,20 +286,32 @@ void grpc_virtual_machine::shutdown(const grpc_machine_stub_ptr &stub) {
     check_status(stub->get_stub()->Shutdown(&context, request, &response));
 }
 
-void grpc_virtual_machine::verify_access_log(const grpc_machine_stub_ptr &stub, const access_log &log,
+void grpc_virtual_machine::verify_uarch_step_log(const grpc_machine_stub_ptr &stub, const access_log &log,
     const machine_runtime_config &r, bool one_based) {
-    VerifyAccessLogRequest request;
+    VerifyUarchStepLogRequest request;
     Void response;
     ClientContext context;
     set_proto_access_log(log, request.mutable_log());
     set_proto_machine_runtime_config(r, request.mutable_runtime());
     request.set_one_based(one_based);
-    check_status(stub->get_stub()->VerifyAccessLog(&context, request, &response));
+    check_status(stub->get_stub()->VerifyUarchStepLog(&context, request, &response));
 }
 
-void grpc_virtual_machine::verify_state_transition(const grpc_machine_stub_ptr &stub, const hash_type &root_hash_before,
-    const access_log &log, const hash_type &root_hash_after, const machine_runtime_config &r, bool one_based) {
-    VerifyStateTransitionRequest request;
+void grpc_virtual_machine::verify_uarch_reset_log(const grpc_machine_stub_ptr &stub, const access_log &log,
+    const machine_runtime_config &r, bool one_based) {
+    VerifyUarchResetLogRequest request;
+    Void response;
+    ClientContext context;
+    set_proto_access_log(log, request.mutable_log());
+    set_proto_machine_runtime_config(r, request.mutable_runtime());
+    request.set_one_based(one_based);
+    check_status(stub->get_stub()->VerifyUarchResetLog(&context, request, &response));
+}
+
+void grpc_virtual_machine::verify_uarch_reset_state_transition(const grpc_machine_stub_ptr &stub,
+    const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after,
+    const machine_runtime_config &r, bool one_based) {
+    VerifyUarchResetStateTransitionRequest request;
     Void response;
     ClientContext context;
     set_proto_hash(root_hash_before, request.mutable_root_hash_before());
@@ -298,7 +319,21 @@ void grpc_virtual_machine::verify_state_transition(const grpc_machine_stub_ptr &
     set_proto_hash(root_hash_after, request.mutable_root_hash_after());
     set_proto_machine_runtime_config(r, request.mutable_runtime());
     request.set_one_based(one_based);
-    check_status(stub->get_stub()->VerifyStateTransition(&context, request, &response));
+    check_status(stub->get_stub()->VerifyUarchResetStateTransition(&context, request, &response));
+}
+
+void grpc_virtual_machine::verify_uarch_step_state_transition(const grpc_machine_stub_ptr &stub,
+    const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after,
+    const machine_runtime_config &r, bool one_based) {
+    VerifyUarchStepStateTransitionRequest request;
+    Void response;
+    ClientContext context;
+    set_proto_hash(root_hash_before, request.mutable_root_hash_before());
+    set_proto_access_log(log, request.mutable_log());
+    set_proto_hash(root_hash_after, request.mutable_root_hash_after());
+    set_proto_machine_runtime_config(r, request.mutable_runtime());
+    request.set_one_based(one_based);
+    check_status(stub->get_stub()->VerifyUarchStepStateTransition(&context, request, &response));
 }
 
 interpreter_break_reason grpc_virtual_machine::do_run(uint64_t mcycle_end) {
@@ -810,14 +845,15 @@ void grpc_virtual_machine::do_replace_memory_range(const memory_range_config &ne
     check_status(m_stub->get_stub()->ReplaceMemoryRange(&context, request, &response));
 }
 
-access_log grpc_virtual_machine::do_step_uarch(const access_log::type &log_type, bool one_based) {
-    StepUarchRequest request;
+access_log grpc_virtual_machine::do_log_uarch_step(const access_log::type &log_type, bool one_based) {
+    LogUarchStepRequest request;
     request.mutable_log_type()->set_proofs(log_type.has_proofs());
     request.mutable_log_type()->set_annotations(log_type.has_annotations());
+    request.mutable_log_type()->set_large_data(log_type.has_large_data());
     request.set_one_based(one_based);
-    StepUarchResponse response;
+    LogUarchStepResponse response;
     ClientContext context;
-    check_status(m_stub->get_stub()->StepUarch(&context, request, &response));
+    check_status(m_stub->get_stub()->LogUarchStep(&context, request, &response));
     return get_proto_access_log(response.log());
 }
 
@@ -918,19 +954,27 @@ void grpc_virtual_machine::do_set_uarch_halt_flag() {
     write_csr(csr::uarch_halt_flag, true);
 }
 
-void grpc_virtual_machine::do_reset_uarch_state() {
+void grpc_virtual_machine::do_reset_uarch() {
     const Void request;
     Void response;
     ClientContext context;
-    check_status(m_stub->get_stub()->ResetUarchState(&context, request, &response));
+    check_status(m_stub->get_stub()->ResetUarch(&context, request, &response));
+}
+
+access_log grpc_virtual_machine::do_log_uarch_reset(const access_log::type &log_type, bool one_based) {
+    LogUarchResetRequest request;
+    request.mutable_log_type()->set_proofs(log_type.has_proofs());
+    request.mutable_log_type()->set_annotations(log_type.has_annotations());
+    request.mutable_log_type()->set_large_data(log_type.has_large_data());
+    request.set_one_based(one_based);
+    LogUarchResetResponse response;
+    ClientContext context;
+    check_status(m_stub->get_stub()->LogUarchReset(&context, request, &response));
+    return get_proto_access_log(response.log());
 }
 
 bool grpc_virtual_machine::do_read_uarch_halt_flag(void) const {
     return read_csr(csr::uarch_halt_flag);
-}
-
-uint64_t grpc_virtual_machine::do_read_uarch_ram_length(void) const {
-    return read_csr(csr::uarch_ram_length);
 }
 
 uarch_interpreter_break_reason grpc_virtual_machine::do_run_uarch(uint64_t uarch_cycle_end) {

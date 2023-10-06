@@ -153,19 +153,17 @@ where options are:
     semantics are the same as for the --flash-drive option with the following
     difference: start and length are mandatory.
 
-  --rollup
-    defines appropriate values for rollup-rx-buffer, rollup-tx-buffer,
+  --no-rollup
+    do not define values for rollup-rx-buffer, rollup-tx-buffer,
     rollup-input-metadata, rollup-voucher-hashes, rollup-notice hashes,
     and htif yield for use with rollups.
-    equivalent to the following options:
+    default defined values are equivalent to the following options:
 
     --rollup-rx-buffer=start:0x60000000,length:2<<20
     --rollup-tx-buffer=start:0x60200000,length:2<<20
     --rollup-input-metadata=start:0x60400000,length:4096
     --rollup-voucher-hashes=start:0x60600000,length:2<<20
     --rollup-notice-hashes=start:0x60800000,length:2<<20
-    --htif-yield-manual
-    --htif-yield-automatic
 
   --rollup-advance-state=<key>:<value>[,<key>:<value>[,...]...]
     advances the state of the machine through a number of inputs in an epoch
@@ -285,11 +283,11 @@ where options are:
   -i or --htif-console-getchar
     run in interactive mode.
 
-  --htif-yield-manual
-    honor yield requests with manual reset by target.
+  --no-htif-yield-manual
+    do not honor yield requests with manual reset by target.
 
-  --htif-yield-automatic
-    honor yield requests with automatic reset by target.
+  --no-htif-yield-automatic
+    do not honor yield requests with automatic reset by target.
 
   --store=<directory>
     store machine to <directory>, where "%%h" is substituted by the
@@ -403,7 +401,13 @@ local ram_length = 64 << 20
 local dtb_image_filename = nil
 local dtb_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/mtdblock0 rw quiet \z
                       swiotlb=noforce init=/opt/cartesi/bin/init random.trust_bootloader=on"
-local rollup
+local rollup = {
+    rx_buffer = { start = 0x60000000, length = 2 << 20 },
+    tx_buffer = { start = 0x60200000, length = 2 << 20 },
+    input_metadata = { start = 0x60400000, length = 4096 },
+    voucher_hashes = { start = 0x60600000, length = 2 << 20 },
+    notice_hashes = { start = 0x60800000, length = 2 << 20 },
+}
 local uarch
 local rollup_advance
 local rollup_inspect
@@ -413,8 +417,8 @@ local skip_version_check = false
 local append_dtb_bootargs = ""
 local htif_no_console_putchar = false
 local htif_console_getchar = false
-local htif_yield_automatic = false
-local htif_yield_manual = false
+local htif_yield_automatic = true
+local htif_yield_manual = true
 local initial_hash = false
 local final_hash = false
 local initial_proof = {}
@@ -607,33 +611,26 @@ local options = {
         end,
     },
     {
-        "^%-%-htif%-yield%-manual$",
+        "^%-%-no%-htif%-yield%-manual$",
         function(all)
             if not all then return false end
-            htif_yield_manual = true
+            htif_yield_manual = false
             return true
         end,
     },
     {
-        "^%-%-htif%-yield%-automatic$",
+        "^%-%-no%-htif%-yield%-automatic$",
         function(all)
             if not all then return false end
-            htif_yield_automatic = true
+            htif_yield_automatic = false
             return true
         end,
     },
     {
-        "^%-%-rollup$",
+        "^%-%-no%-rollup$",
         function(all)
             if not all then return false end
-            rollup = rollup or {}
-            rollup.rx_buffer = { start = 0x60000000, length = 2 << 20 }
-            rollup.tx_buffer = { start = 0x60200000, length = 2 << 20 }
-            rollup.input_metadata = { start = 0x60400000, length = 4096 }
-            rollup.voucher_hashes = { start = 0x60600000, length = 2 << 20 }
-            rollup.notice_hashes = { start = 0x60800000, length = 2 << 20 }
-            htif_yield_automatic = true
-            htif_yield_manual = true
+            rollup = nil
             return true
         end,
     },

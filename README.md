@@ -25,7 +25,7 @@ Docker targets:
 - GRPC >= 1.45.0
 - Lua >= 5.4.4
 - b64 >=  1.2.1
-- Boost >= 1.71
+- Boost >= 1.81
 - nlohmann JSON >= 3.10
 
 Obs: Please note that Apple Clang Version number does not follow upstream LLVM/Clang.
@@ -34,8 +34,8 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 
 ```
 apt-get install build-essential wget git clang-tidy-15 clang-format-15 \
-        libreadline-dev libboost-coroutine-dev libboost-context-dev \
-        libboost-filesystem-dev libssl-dev libc-ares-dev zlib1g-dev \
+        libreadline-dev libboost-coroutine1.81-dev libboost-context1.81-dev \
+        libboost-filesystem1.81-dev libssl-dev libc-ares-dev zlib1g-dev \
         ca-certificates automake libtool patchelf cmake pkg-config lua5.4 liblua5.4-dev \
         libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
         luarocks libb64-dev libcrypto++-dev nlohmann-json3-dev

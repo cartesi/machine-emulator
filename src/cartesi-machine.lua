@@ -78,10 +78,10 @@ where options are:
   --dtb-image=<filename>
     name of file containing DTB image (default: auto generated flattened device tree).
 
-  --no-dtb-bootargs
+  --no-bootargs
     clear default bootargs.
 
-  --append-dtb-bootargs=<string>
+  --append-bootargs=<string>
     append <string> to bootargs.
 
   --no-root-flash-drive
@@ -437,9 +437,9 @@ local memory_range_replace = {}
 local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 64 << 20
 local dtb_image_filename = nil
-local dtb_bootargs = "console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw quiet \z
-                      swiotlb=noforce init=/opt/cartesi/bin/init"
+local bootargs = "quiet earlycon=sbi console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw init=/opt/cartesi/bin/init"
 local init_splash = true
+local append_bootargs = ""
 local append_init = ""
 local append_entrypoint = ""
 local rollup
@@ -449,7 +449,6 @@ local rollup_inspect
 local concurrency_update_merkle_tree = 0
 local skip_root_hash_check = false
 local skip_version_check = false
-local append_dtb_bootargs = ""
 local htif_no_console_putchar = false
 local htif_console_getchar = false
 local htif_yield_automatic = false
@@ -569,18 +568,18 @@ local options = {
         end,
     },
     {
-        "^%-%-no%-dtb%-bootargs$",
+        "^%-%-no%-bootargs$",
         function(all)
             if not all then return false end
-            dtb_bootargs = ""
+            bootargs = ""
             return true
         end,
     },
     {
-        "^%-%-append%-dtb%-bootargs%=(.*)$",
+        "^%-%-append%-bootargs%=(.*)$",
         function(o)
             if not o or #o < 1 then return false end
-            append_dtb_bootargs = o
+            append_bootargs = o
             return true
         end,
     },
@@ -878,7 +877,7 @@ local options = {
             flash_length.root = nil
             flash_shared.root = nil
             table.remove(flash_label_order, 1)
-            dtb_bootargs = "console=hvc0"
+            bootargs = "quiet earlycon=sbi console=hvc0"
             return true
         end,
     },
@@ -1438,7 +1437,7 @@ else
         },
         dtb = {
             image_filename = dtb_image_filename,
-            bootargs = dtb_bootargs,
+            bootargs = bootargs,
             init = "",
             entrypoint = "",
         },
@@ -1520,7 +1519,7 @@ echo "
         end
     end
 
-    if #append_dtb_bootargs > 0 then config.dtb.bootargs = config.dtb.bootargs .. " " .. append_dtb_bootargs end
+    if #append_bootargs > 0 then config.dtb.bootargs = config.dtb.bootargs .. " " .. append_bootargs end
     if #append_init > 0 then config.dtb.init = config.dtb.init .. append_init end
     if #append_entrypoint > 0 then config.dtb.entrypoint = config.dtb.entrypoint .. append_entrypoint end
     if #exec_arguments > 0 then config.dtb.entrypoint = config.dtb.entrypoint .. table.concat(exec_arguments, " ") end

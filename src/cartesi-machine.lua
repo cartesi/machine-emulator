@@ -300,6 +300,12 @@ where options are:
   -i or --htif-console-getchar
     run in interactive mode.
 
+  -it
+    run in interactive mode like -i,
+    but also sets terminal features and size in the guest to match with the host.
+    This option will copy TERM, LANG, LC_ALL environment variables from the host to the guest,
+    allowing the use of true colors and special characters when the host terminal supports.
+
   --htif-yield-manual
     honor yield requests with manual reset by target.
 
@@ -640,6 +646,26 @@ local options = {
         function(all)
             if not all then return false end
             htif_console_getchar = true
+            return true
+        end,
+    },
+    {
+        "^%-it$",
+        function(all)
+            if not all then return false end
+            htif_console_getchar = true
+            local term, lang, lc_all = os.getenv("TERM"), os.getenv("LANG"), os.getenv("LC_ALL")
+            if term then append_init = append_init .. "export TERM=" .. term .. "\n" end
+            if lang then append_init = append_init .. "export LANG=" .. lang .. "\n" end
+            if lc_all then append_init = append_init .. "export LC_ALL=" .. lc_all .. "\n" end
+            local stty <close> = assert(io.popen("stty size"))
+            local line = assert(stty:read(), "command failed: stty size")
+            if line then
+                local rows, cols = line:match("^([0-9]+) ([0-9]+)$")
+                if rows and cols then
+                    append_init = append_init .. "busybox stty rows " .. rows .. " cols " .. cols .. "\n"
+                end
+            end
             return true
         end,
     },

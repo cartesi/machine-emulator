@@ -27,13 +27,13 @@
 
 using hash_type = cartesi::keccak_256_hasher::hash_type;
 
+// Calculate root hash for data buffer of log2_size
+namespace detail {
+
 constexpr int WORD_LOG2_SIZE = 3;
-constexpr uint64_t WORD_SIZE = (UINT64_C(1) << WORD_LOG2_SIZE);
 constexpr int PAGE_LOG2_SIZE = 12;
 constexpr int PAGE_SIZE = (UINT64_C(1) << PAGE_LOG2_SIZE);
 
-// Calculate root hash for data buffer of log2_size
-namespace detail {
 static hash_type merkle_hash(cartesi::keccak_256_hasher &h, const std::string_view &data, int log2_size) {
     hash_type result;
     if (log2_size > WORD_LOG2_SIZE) {
@@ -121,10 +121,10 @@ static hash_type calculate_emulator_hash(const std::vector<std::string> &pmas_fi
             static_cast<int>(path.size()) != end) {
             throw std::invalid_argument("PMA filename '" + path + "' does not match '%x--%x.bin'");
         }
-        if ((length >> PAGE_LOG2_SIZE) << PAGE_LOG2_SIZE != length) {
+        if ((length >> detail::PAGE_LOG2_SIZE) << detail::PAGE_LOG2_SIZE != length) {
             throw std::invalid_argument("PMA '" + path + "' length not multiple of page length");
         }
-        if ((start >> PAGE_LOG2_SIZE) << PAGE_LOG2_SIZE != start) {
+        if ((start >> detail::PAGE_LOG2_SIZE) << detail::PAGE_LOG2_SIZE != start) {
             throw std::invalid_argument("PMA '" + path + "' start not page-aligned");
         }
         auto data = load_file(path);
@@ -138,10 +138,10 @@ static hash_type calculate_emulator_hash(const std::vector<std::string> &pmas_fi
     cartesi::back_merkle_tree tree(64, 12, 3);
     uint64_t last = 0;
     for (const auto &e : pma_entries) {
-        tree.pad_back((e.start - last) >> PAGE_LOG2_SIZE);
-        for (uint64_t s = 0; s < e.length; s += PAGE_SIZE) {
-            std::string_view page{e.data.data() + s, PAGE_SIZE};
-            auto page_hash = merkle_hash(page, PAGE_LOG2_SIZE);
+        tree.pad_back((e.start - last) >> detail::PAGE_LOG2_SIZE);
+        for (uint64_t s = 0; s < e.length; s += detail::PAGE_SIZE) {
+            std::string_view page{e.data.data() + s, detail::PAGE_SIZE};
+            auto page_hash = merkle_hash(page, detail::PAGE_LOG2_SIZE);
             tree.push_back(page_hash);
         }
         last = e.start + e.length;

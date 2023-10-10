@@ -327,16 +327,13 @@ where options are:
     (default: none)
 
   --log-uarch-step
-    advance one micro step and print access log .
+    advance one micro step and print access log.
 
   --log-uarch-reset
     reset the microarchitecture state and print the access log.
 
   --auto-uarch-reset
-    reset uarch automatically after halt
-
-  --json-steps=<filename>
-    output json with step logs for all micro cycles to <filename>.
+    reset uarch automatically after halt.
 
   --store-config[=<filename>]
     store initial machine config to <filename>. If <filename> is omitted,
@@ -471,7 +468,6 @@ local periodic_hashes_period = math.maxinteger
 local periodic_hashes_start = 0
 local dump_memory_ranges = false
 local max_mcycle = math.maxinteger
-local json_steps
 local max_uarch_cycle = 0
 local log_uarch_step = false
 local auto_uarch_reset = false
@@ -1025,14 +1021,6 @@ local options = {
         function(o)
             if not o then return false end
             remote_destroy = false
-            return true
-        end,
-    },
-    {
-        "^%-%-json%-steps%=(.*)$",
-        function(o)
-            if not o or #o < 1 then return false end
-            json_steps = o
             return true
         end,
     },
@@ -1781,227 +1769,187 @@ end
 
 local machine = main_machine
 local config = main_config
-if json_steps then
-    assert(not rollup_advance, "json-steps and rollup advance state are incompatible")
-    assert(not rollup_inspect, "json-steps and rollup inspect state are incompatible")
-    assert(not config.htif.console_getchar, "logs are meaningless in interactive mode")
-    json_steps = assert(io.open(json_steps, "w"))
-    json_steps:write("[\n")
-    local log_type = {} -- no proofs or annotations
-    local steps_count = 0
-    while true do
-        local init_mcycle = machine:read_mcycle()
-        local init_uarch_cycle = machine:read_uarch_cycle()
-        if init_mcycle > max_mcycle then break end
-        if init_mcycle == max_mcycle and init_uarch_cycle == max_uarch_cycle then break end
-        -- Advance one micro step
-        local log = machine:log_uarch_step(log_type)
-        steps_count = steps_count + 1
-        local final_mcycle = machine:read_mcycle()
-        local final_uarch_cycle = machine:read_uarch_cycle()
-        -- Save log recorded during micro step
-        if steps_count > 1 then json_steps:write(",\n") end
-        util.dump_json_log(log, init_mcycle, init_uarch_cycle, final_mcycle, final_uarch_cycle, json_steps, 1)
-        if machine:read_uarch_halt_flag() then
-            -- microarchitecture halted because it finished interpreting a whole mcycle
-            machine:reset_iflags_Y() -- move past any potential yield
-            -- Reset uarch_halt_flag in order to allow interpreting the next mcycle
-            machine:reset_uarch()
-            if machine:read_iflags_H() then
-                stderr("Halted at %u.%u\n", final_mcycle, final_uarch_cycle)
-                break
-            end
-        end
-        stderr("%u.%u -> %u.%u\n", init_mcycle, init_uarch_cycle, final_mcycle, final_uarch_cycle)
-    end
-    json_steps:write("\n]\n")
-    json_steps:close()
-    if store_dir then store_machine(machine, config, store_dir) end
-else
-    local gdb_stub
-    if gdb_address then
-        assert(
-            periodic_hashes_start == 0 and periodic_hashes_period == math.maxinteger,
-            "periodic hashing is not supported when debugging"
-        )
-        gdb_stub = require("cartesi.gdbstub").new(machine)
-        local address, port = gdb_address:match("^(.*):(%d+)$")
-        assert(address and port, "invalid address for GDB")
-        gdb_stub:listen_and_wait_gdb(address, tonumber(port))
-    end
-    if config.htif.console_getchar then stderr("Running in interactive mode!\n") end
-    if store_config == stderr then store_machine_config(config, stderr) end
-    if rollup_advance or rollup_inspect then
-        check_rollup_htif_config(config.htif)
-        assert(config.rollup, "rollup device must be present")
-        assert(remote_address, "rollup requires --remote-address for snapshot/rollback")
-        check_rollup_memory_range_config(config.rollup.tx_buffer, "tx-buffer")
-        check_rollup_memory_range_config(config.rollup.rx_buffer, "rx-buffer")
-        check_rollup_memory_range_config(config.rollup.input_metadata, "input-metadata")
-        check_rollup_memory_range_config(config.rollup.voucher_hashes, "voucher-hashes")
-        check_rollup_memory_range_config(config.rollup.notice_hashes, "notice-hashes")
-    end
-    local cycles = machine:read_mcycle()
-    if initial_hash then
-        assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
-        print_root_hash(machine, stderr_unsilenceable)
-    end
-    dump_value_proofs(machine, initial_proof, config.htif.console_getchar)
-    local exit_code = 0
-    local next_hash_mcycle
-    if periodic_hashes_start ~= 0 then
-        next_hash_mcycle = periodic_hashes_start
-    else
-        next_hash_mcycle = periodic_hashes_period
-    end
-    -- the loop runs at most until max_mcycle. iterations happen because
-    --   1) we stopped to print a hash
-    --   2) the machine halted, so iflags_H is set
-    --   3) the machine yielded manual, so iflags_Y is set
-    --   4) the machine yielded automatic, so iflags_X is set
-    -- if the user selected the rollup advance state, then at every yield manual we check the reason
-    -- if the reason is rx-rejected, we rollback, otherwise it must be rx-accepted.
-    -- we then feed the next input, reset iflags_Y, snapshot, and resume the machine
-    -- the machine can now continue processing and may yield automatic to produce vouchers, notices, and reports we save
-    -- once all inputs for advance state have been consumed, we check if the user selected rollup inspect state
-    -- if so, we feed the query, reset iflags_Y, and resume the machine
-    -- the machine can now continue processing and may yield automatic to produce reports we save
-    while math.ult(cycles, max_mcycle) do
-        local next_mcycle = math.min(next_hash_mcycle, max_mcycle)
-        if gdb_stub and gdb_stub:is_connected() then
-            gdb_stub:run(next_mcycle)
-        else
-            machine:run(next_mcycle)
-        end
-        cycles = machine:read_mcycle()
-        -- deal with halt
-        if machine:read_iflags_H() then
-            exit_code = machine:read_htif_tohost_data() >> 1
-            if exit_code ~= 0 then
-                stderr("\nHalted with payload: %u\n", exit_code)
-            else
-                stderr("\nHalted\n")
-            end
-            stderr("Cycles: %u\n", cycles)
-            break
-        -- deal with yield manual
-        elseif machine:read_iflags_Y() then
-            local _, reason = get_and_print_yield(machine, config.htif)
-            -- there are advance state inputs to feed
-            if reason == cartesi.machine.HTIF_YIELD_REASON_TX_EXCEPTION then
-                dump_exception(machine, config.rollup.tx_buffer)
-                exit_code = 1
-            elseif rollup_advance and rollup_advance.next_input_index < rollup_advance.input_index_end then
-                -- save only if we have already run an input
-                if rollup_advance.next_input_index > rollup_advance.input_index_begin then
-                    save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup_advance)
-                end
-                if reason == cartesi.machine.HTIF_YIELD_REASON_RX_REJECTED then
-                    machine:rollback()
-                    cycles = machine:read_mcycle()
-                else
-                    assert(reason == cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED, "invalid manual yield reason")
-                end
-                stderr("\nEpoch %d before input %d\n", rollup_advance.epoch_index, rollup_advance.next_input_index)
-                if rollup_advance.hashes then print_root_hash(machine) end
-                machine:snapshot()
-                load_rollup_input_and_metadata(machine, config.rollup, rollup_advance)
-                if rollup_advance.hashes then print_root_hash(machine) end
-                machine:reset_iflags_Y()
-                machine:write_htif_fromhost_data(0) -- tell machine it is an rollup_advance state, but this is default
-                rollup_advance.voucher_index = 0
-                rollup_advance.notice_index = 0
-                rollup_advance.report_index = 0
-                rollup_advance.next_input_index = rollup_advance.next_input_index + 1
-            else
-                -- there are outputs of a prevous advance state to save
-                if rollup_advance and rollup_advance.next_input_index > rollup_advance.input_index_begin then
-                    save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup_advance)
-                end
-                -- there is an inspect state query to feed
-                if rollup_inspect and rollup_inspect.query then
-                    stderr("\nBefore query\n")
-                    load_rollup_query(machine, config.rollup, rollup_inspect)
-                    machine:reset_iflags_Y()
-                    machine:write_htif_fromhost_data(1) -- tell machine it is an inspect state
-                    rollup_inspect.report_index = 0
-                    rollup_inspect.query = nil
-                    rollup_advance = nil
-                end
-            end
-        -- deal with yield automatic
-        elseif machine:read_iflags_X() then
-            local _, reason = get_and_print_yield(machine, config.htif)
-            -- we have fed an advance state input
-            if rollup_advance and rollup_advance.next_input_index > rollup_advance.input_index_begin then
-                if reason == cartesi.machine.HTIF_YIELD_REASON_TX_VOUCHER then
-                    save_rollup_advance_state_voucher(machine, config.rollup.tx_buffer, rollup_advance)
-                    rollup_advance.voucher_index = rollup_advance.voucher_index + 1
-                elseif reason == cartesi.machine.HTIF_YIELD_REASON_TX_NOTICE then
-                    save_rollup_advance_state_notice(machine, config.rollup.tx_buffer, rollup_advance)
-                    rollup_advance.notice_index = rollup_advance.notice_index + 1
-                elseif reason == cartesi.machine.HTIF_YIELD_REASON_TX_REPORT then
-                    save_rollup_advance_state_report(machine, config.rollup.tx_buffer, rollup_advance)
-                    rollup_advance.report_index = rollup_advance.report_index + 1
-                end
-                -- ignore other reasons
-                -- we have feed the inspect state query
-            elseif rollup_inspect and not rollup_inspect.query then
-                if reason == cartesi.machine.HTIF_YIELD_REASON_TX_REPORT then
-                    save_rollup_inspect_state_report(machine, config.rollup.tx_buffer, rollup_inspect)
-                    rollup_inspect.report_index = rollup_inspect.report_index + 1
-                end
-                -- ignore other reasons
-            end
-            -- otherwise ignore
-        end
-        if machine:read_iflags_Y() then break end
-        if cycles == next_hash_mcycle then
-            print_root_hash(machine)
-            next_hash_mcycle = next_hash_mcycle + periodic_hashes_period
-        end
-    end
-    -- Advance micro cycles
-    if max_uarch_cycle > 0 then
-        -- Save halt flag before micro cycles
-        local previously_halted = machine:read_iflags_H()
-        if machine:run_uarch(max_uarch_cycle) == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
-            -- Microarchitecture  halted. This means that one "macro" instruction was totally executed
-            -- The mcycle counter was incremented, unless the machine was already halted
-            if machine:read_iflags_H() and not previously_halted then stderr("Halted\n") end
-            stderr("Cycles: %u\n", machine:read_mcycle())
-            if auto_uarch_reset then
-                machine:reset_uarch()
-            else
-                stderr("uCycles: %u\n", machine:read_uarch_cycle())
-            end
-        end
-    end
-    if gdb_stub then gdb_stub:close() end
-    if log_uarch_step then
-        assert(not config.htif.console_getchar, "micro step proof is meaningless in interactive mode")
-        stderr("Gathering micro step log: please wait\n")
-        util.dump_log(machine:log_uarch_step({ proofs = true, annotations = true }), io.stderr)
-    end
-    if log_uarch_reset then
-        stderr("Resetting microarchitecture state: please wait\n")
-        util.dump_log(machine:log_uarch_reset({ proofs = true, annotations = true }), io.stderr)
-    end
-    if dump_memory_ranges then dump_pmas(machine) end
-    if final_hash then
-        assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
-        print_root_hash(machine, stderr_unsilenceable)
-    end
-    dump_value_proofs(machine, final_proof, config.htif.console_getchar)
-    if store_dir then store_machine(machine, config, store_dir) end
-    if assert_rolling_template then
-        local cmd, reason = get_yield(machine)
-        if
-            not (cmd == cartesi.machine.HTIF_YIELD_MANUAL and reason == cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED)
-        then
-            exit_code = 2
-        end
-    end
-    if not remote or remote_destroy then machine:destroy() end
-    os.exit(exit_code, true)
+local gdb_stub
+if gdb_address then
+    assert(
+        periodic_hashes_start == 0 and periodic_hashes_period == math.maxinteger,
+        "periodic hashing is not supported when debugging"
+    )
+    gdb_stub = require("cartesi.gdbstub").new(machine)
+    local address, port = gdb_address:match("^(.*):(%d+)$")
+    assert(address and port, "invalid address for GDB")
+    gdb_stub:listen_and_wait_gdb(address, tonumber(port))
 end
+if config.htif.console_getchar then stderr("Running in interactive mode!\n") end
+if store_config == stderr then store_machine_config(config, stderr) end
+if rollup_advance or rollup_inspect then
+    check_rollup_htif_config(config.htif)
+    assert(config.rollup, "rollup device must be present")
+    assert(remote_address, "rollup requires --remote-address for snapshot/rollback")
+    check_rollup_memory_range_config(config.rollup.tx_buffer, "tx-buffer")
+    check_rollup_memory_range_config(config.rollup.rx_buffer, "rx-buffer")
+    check_rollup_memory_range_config(config.rollup.input_metadata, "input-metadata")
+    check_rollup_memory_range_config(config.rollup.voucher_hashes, "voucher-hashes")
+    check_rollup_memory_range_config(config.rollup.notice_hashes, "notice-hashes")
+end
+local cycles = machine:read_mcycle()
+if initial_hash then
+    assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
+    print_root_hash(machine, stderr_unsilenceable)
+end
+dump_value_proofs(machine, initial_proof, config.htif.console_getchar)
+local exit_code = 0
+local next_hash_mcycle
+if periodic_hashes_start ~= 0 then
+    next_hash_mcycle = periodic_hashes_start
+else
+    next_hash_mcycle = periodic_hashes_period
+end
+-- the loop runs at most until max_mcycle. iterations happen because
+--   1) we stopped to print a hash
+--   2) the machine halted, so iflags_H is set
+--   3) the machine yielded manual, so iflags_Y is set
+--   4) the machine yielded automatic, so iflags_X is set
+-- if the user selected the rollup advance state, then at every yield manual we check the reason
+-- if the reason is rx-rejected, we rollback, otherwise it must be rx-accepted.
+-- we then feed the next input, reset iflags_Y, snapshot, and resume the machine
+-- the machine can now continue processing and may yield automatic to produce vouchers, notices, and reports we save
+-- once all inputs for advance state have been consumed, we check if the user selected rollup inspect state
+-- if so, we feed the query, reset iflags_Y, and resume the machine
+-- the machine can now continue processing and may yield automatic to produce reports we save
+while math.ult(cycles, max_mcycle) do
+    local next_mcycle = math.min(next_hash_mcycle, max_mcycle)
+    if gdb_stub and gdb_stub:is_connected() then
+        gdb_stub:run(next_mcycle)
+    else
+        machine:run(next_mcycle)
+    end
+    cycles = machine:read_mcycle()
+    -- deal with halt
+    if machine:read_iflags_H() then
+        exit_code = machine:read_htif_tohost_data() >> 1
+        if exit_code ~= 0 then
+            stderr("\nHalted with payload: %u\n", exit_code)
+        else
+            stderr("\nHalted\n")
+        end
+        stderr("Cycles: %u\n", cycles)
+        break
+    -- deal with yield manual
+    elseif machine:read_iflags_Y() then
+        local _, reason = get_and_print_yield(machine, config.htif)
+        -- there are advance state inputs to feed
+        if reason == cartesi.machine.HTIF_YIELD_REASON_TX_EXCEPTION then
+            dump_exception(machine, config.rollup.tx_buffer)
+            exit_code = 1
+        elseif rollup_advance and rollup_advance.next_input_index < rollup_advance.input_index_end then
+            -- save only if we have already run an input
+            if rollup_advance.next_input_index > rollup_advance.input_index_begin then
+                save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup_advance)
+            end
+            if reason == cartesi.machine.HTIF_YIELD_REASON_RX_REJECTED then
+                machine:rollback()
+                cycles = machine:read_mcycle()
+            else
+                assert(reason == cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED, "invalid manual yield reason")
+            end
+            stderr("\nEpoch %d before input %d\n", rollup_advance.epoch_index, rollup_advance.next_input_index)
+            if rollup_advance.hashes then print_root_hash(machine) end
+            machine:snapshot()
+            load_rollup_input_and_metadata(machine, config.rollup, rollup_advance)
+            if rollup_advance.hashes then print_root_hash(machine) end
+            machine:reset_iflags_Y()
+            machine:write_htif_fromhost_data(0) -- tell machine it is an rollup_advance state, but this is default
+            rollup_advance.voucher_index = 0
+            rollup_advance.notice_index = 0
+            rollup_advance.report_index = 0
+            rollup_advance.next_input_index = rollup_advance.next_input_index + 1
+        else
+            -- there are outputs of a prevous advance state to save
+            if rollup_advance and rollup_advance.next_input_index > rollup_advance.input_index_begin then
+                save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup_advance)
+            end
+            -- there is an inspect state query to feed
+            if rollup_inspect and rollup_inspect.query then
+                stderr("\nBefore query\n")
+                load_rollup_query(machine, config.rollup, rollup_inspect)
+                machine:reset_iflags_Y()
+                machine:write_htif_fromhost_data(1) -- tell machine it is an inspect state
+                rollup_inspect.report_index = 0
+                rollup_inspect.query = nil
+                rollup_advance = nil
+            end
+        end
+    -- deal with yield automatic
+    elseif machine:read_iflags_X() then
+        local _, reason = get_and_print_yield(machine, config.htif)
+        -- we have fed an advance state input
+        if rollup_advance and rollup_advance.next_input_index > rollup_advance.input_index_begin then
+            if reason == cartesi.machine.HTIF_YIELD_REASON_TX_VOUCHER then
+                save_rollup_advance_state_voucher(machine, config.rollup.tx_buffer, rollup_advance)
+                rollup_advance.voucher_index = rollup_advance.voucher_index + 1
+            elseif reason == cartesi.machine.HTIF_YIELD_REASON_TX_NOTICE then
+                save_rollup_advance_state_notice(machine, config.rollup.tx_buffer, rollup_advance)
+                rollup_advance.notice_index = rollup_advance.notice_index + 1
+            elseif reason == cartesi.machine.HTIF_YIELD_REASON_TX_REPORT then
+                save_rollup_advance_state_report(machine, config.rollup.tx_buffer, rollup_advance)
+                rollup_advance.report_index = rollup_advance.report_index + 1
+            end
+            -- ignore other reasons
+            -- we have feed the inspect state query
+        elseif rollup_inspect and not rollup_inspect.query then
+            if reason == cartesi.machine.HTIF_YIELD_REASON_TX_REPORT then
+                save_rollup_inspect_state_report(machine, config.rollup.tx_buffer, rollup_inspect)
+                rollup_inspect.report_index = rollup_inspect.report_index + 1
+            end
+            -- ignore other reasons
+        end
+        -- otherwise ignore
+    end
+    if machine:read_iflags_Y() then break end
+    if cycles == next_hash_mcycle then
+        print_root_hash(machine)
+        next_hash_mcycle = next_hash_mcycle + periodic_hashes_period
+    end
+end
+-- Advance micro cycles
+if max_uarch_cycle > 0 then
+    -- Save halt flag before micro cycles
+    local previously_halted = machine:read_iflags_H()
+    if machine:run_uarch(max_uarch_cycle) == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
+        -- Microarchitecture  halted. This means that one "macro" instruction was totally executed
+        -- The mcycle counter was incremented, unless the machine was already halted
+        if machine:read_iflags_H() and not previously_halted then stderr("Halted\n") end
+        stderr("Cycles: %u\n", machine:read_mcycle())
+        if auto_uarch_reset then
+            machine:reset_uarch()
+        else
+            stderr("uCycles: %u\n", machine:read_uarch_cycle())
+        end
+    end
+end
+if gdb_stub then gdb_stub:close() end
+if log_uarch_step then
+    assert(not config.htif.console_getchar, "micro step proof is meaningless in interactive mode")
+    stderr("Gathering micro step log: please wait\n")
+    util.dump_log(machine:log_uarch_step({ proofs = true, annotations = true }), io.stderr)
+end
+if log_uarch_reset then
+    stderr("Resetting microarchitecture state: please wait\n")
+    util.dump_log(machine:log_uarch_reset({ proofs = true, annotations = true }), io.stderr)
+end
+if dump_memory_ranges then dump_pmas(machine) end
+if final_hash then
+    assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
+    print_root_hash(machine, stderr_unsilenceable)
+end
+dump_value_proofs(machine, final_proof, config.htif.console_getchar)
+if store_dir then store_machine(machine, config, store_dir) end
+if assert_rolling_template then
+    local cmd, reason = get_yield(machine)
+    if not (cmd == cartesi.machine.HTIF_YIELD_MANUAL and reason == cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED) then
+        exit_code = 2
+    end
+end
+if not remote or remote_destroy then machine:destroy() end
+os.exit(exit_code, true)

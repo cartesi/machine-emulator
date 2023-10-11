@@ -1247,6 +1247,33 @@ public:
     }
 };
 
+class handler_GetMemoryRanges final : public handler<Void, GetMemoryRangesResponse> {
+
+    side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
+        ServerAsyncResponseWriter<GetMemoryRangesResponse> *writer) override {
+        hctx.s->RequestGetMemoryRanges(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
+        return side_effect::none;
+    }
+
+    side_effect go(handler_context &hctx, Void *req,
+        ServerAsyncResponseWriter<GetMemoryRangesResponse> *writer) override {
+        (void) req;
+        if (!hctx.m) {
+            return finish_with_error_no_machine(writer);
+        }
+        GetMemoryRangesResponse resp;
+        for (auto &mrd : hctx.m->get_memory_ranges()) {
+            set_proto_memory_range_descr(mrd, resp.add_memory_range());
+        }
+        return finish_ok(writer, resp);
+    }
+
+public:
+    handler_GetMemoryRanges(handler_context &hctx) {
+        advance(hctx);
+    }
+};
+
 static std::string replace_port(const std::string &address, int port) {
     // Unix address?
     if (address.find("unix:") == 0) {
@@ -1371,6 +1398,7 @@ static void server_loop(const char *server_address, const char *session_id, cons
         const handler_GetDefaultConfig hGetDefaultConfig(hctx);
         const handler_VerifyAccessLog hVerifyAccessLog(hctx);
         const handler_VerifyStateTransition hVerifyStateTransition(hctx);
+        const handler_GetMemoryRanges hGetMemoryRanges(hctx);
 
         // The invariant before and after snapshot/rollbacks is that all handlers
         // are in waiting mode

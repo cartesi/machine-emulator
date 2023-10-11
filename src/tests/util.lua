@@ -219,10 +219,8 @@ end
 function test_util.align(v, el) return (v >> el << el) end
 
 function test_util.load_file(filename)
-    local fd = assert(io.open(filename, "rb"))
-    local data_size = fd:seek("end")
-    fd:seek("set")
-    local data = fd:read(data_size)
+    local fd <close> = assert(io.open(filename, "rb"))
+    local data = assert(fd:read("*all"))
     fd:close(filename)
     return data
 end
@@ -244,27 +242,17 @@ test_util.merkle_hash = merkle_hash
 
 -- Take data from dumped memory files
 -- and calculate root hash of the machine
-function test_util.calculate_emulator_hash(pmas_files)
-    local pmas = {}
-    for _, pma_file in ipairs(pmas_files) do
-        local start, length = string.match(pma_file, "^(%x+)%-%-(%x+).bin$")
-        pmas[#pmas + 1] = {
-            path = pma_file,
-            start = assert(tonumber(start, 16), "invalid PMA start in dumped filename"),
-            length = assert(tonumber(length, 16), "invalid PMA length in dumped filename"),
-            data = test_util.load_file(pma_file),
-        }
-    end
-    table.sort(pmas, function(a, b) return a.start < b.start end)
+function test_util.calculate_emulator_hash(machine)
     local tree = test_util.new_back_merkle_tree(64, PAGE_LOG2_SIZE)
     local last = 0
-    for _, v in ipairs(pmas) do
+    for _, v in ipairs(machine:get_memory_ranges()) do
         tree:pad_back((v.start - last) >> PAGE_LOG2_SIZE)
-        for j = 0, v.length - 1, PAGE_SIZE do
-            local page_hash = merkle_hash(v.data, j, PAGE_LOG2_SIZE)
+        local finish = v.start + v.length
+        for j = v.start, finish - 1, PAGE_SIZE do
+            local page_hash = merkle_hash(machine:read_memory(j, PAGE_SIZE), 0, PAGE_LOG2_SIZE)
             tree:push_back(page_hash)
         end
-        last = v.start + v.length
+        last = finish
     end
     return tree:get_root_hash()
 end

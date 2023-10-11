@@ -468,6 +468,16 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     if (m_c.htif.console_getchar) {
         tty_initialize();
     }
+
+    // Initialize memory range descriptions returned by get_memory_ranges method
+    for (auto *pma : m_pmas) {
+        if (pma->get_length() != 0) {
+            m_mrds.push_back(machine_memory_range_descr{pma->get_start(), pma->get_length(), pma->get_description()});
+        }
+    }
+    // Sort it by increasing start address
+    std::sort(m_mrds.begin(), m_mrds.end(),
+        [](const machine_memory_range_descr &a, const machine_memory_range_descr &b) { return a.start < b.start; });
 }
 
 static void load_hash(const std::string &dir, machine::hash_type &h) {

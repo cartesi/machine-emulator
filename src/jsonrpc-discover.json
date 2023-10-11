@@ -1026,6 +1026,19 @@
           "type": "boolean"
         }
       }
+    },
+
+    {
+      "name": "machine.get_memory_ranges",
+      "summary": "Returns a list with descriptions for all of the machine's memory ranges",
+      "params": [],
+      "result": {
+        "name": "ranges",
+        "description": "Array of memory range descriptions",
+        "schema": {
+          "$ref": "#/components/schemas/MemoryRangeDescriptionArray"
+        }
+      }
     }
   ],
 
@@ -1674,7 +1687,32 @@
             "type": "boolean"
           }
         }
+      },
+
+      "MemoryRangeDescription": {
+        "title": "MemoryRangeDescription",
+        "type": "object",
+        "properties": {
+          "start": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "length": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+
+      "MemoryRangeDescriptionArray": {
+        "title": "MemoryRangeDescriptionArray",
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/MemoryRangeDescription"
+        }
       }
+
     }
   }
 }

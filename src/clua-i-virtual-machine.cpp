@@ -365,6 +365,17 @@ static int machine_obj_index_reset_uarch_state(lua_State *L) {
     return 0;
 }
 
+/// \brief This is the machine:get_memory_ranges() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_get_memory_ranges(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    auto &managed_mrds = clua_push_to(L, clua_managed_cm_ptr<cm_memory_range_descr_array>(nullptr));
+    TRY_EXECUTE(cm_get_memory_ranges(m.get(), &managed_mrds.get(), err_msg));
+    clua_push_cm_memory_range_descr_array(L, managed_mrds.get());
+    managed_mrds.reset();
+    return 1;
+}
+
 /// \brief This is the machine:run_uarch() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_run_uarch(lua_State *L) {
@@ -646,6 +657,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"read_uarch_halt_flag", machine_obj_index_read_uarch_halt_flag},
     {"set_uarch_halt_flag", machine_obj_index_set_uarch_halt_flag},
     {"reset_uarch_state", machine_obj_index_reset_uarch_state},
+    {"get_memory_ranges", machine_obj_index_get_memory_ranges},
 });
 
 /// \brief This is the machine __close metamethod implementation.

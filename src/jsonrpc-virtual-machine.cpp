@@ -868,6 +868,12 @@ uarch_interpreter_break_reason jsonrpc_virtual_machine::do_run_uarch(uint64_t ua
     return result;
 }
 
+machine_memory_range_descrs jsonrpc_virtual_machine::do_get_memory_ranges(void) const {
+    machine_memory_range_descrs result;
+    jsonrpc_request(m_mgr->get_mgr(), m_mgr->get_remote_address(), "machine.get_memory_ranges", std::tie(), result);
+    return result;
+}
+
 #pragma GCC diagnostic pop
 
 } // namespace cartesi

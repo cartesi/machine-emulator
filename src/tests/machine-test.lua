@@ -147,27 +147,6 @@ local function connect()
     return remote, version
 end
 
-local pmas_file_names = {
-    "0000000000000000--0000000000001000.bin", -- shadow state
-    "0000000000010000--0000000000001000.bin", -- shadow pmas
-    "0000000000020000--0000000000006000.bin", -- shadow tlb
-    "0000000002000000--00000000000c0000.bin", -- clint
-    "0000000040008000--0000000000001000.bin", -- htif
-    "000000007ff00000--0000000000100000.bin", -- dtb
-    "0000000080000000--0000000000100000.bin", -- ram
-}
-
-local pmas_file_names_with_uarch = {
-    "0000000000000000--0000000000001000.bin", -- shadow state
-    "0000000000010000--0000000000001000.bin", -- shadow pmas
-    "0000000000020000--0000000000006000.bin", -- shadow tlb
-    "0000000002000000--00000000000c0000.bin", -- clint
-    "0000000040008000--0000000000001000.bin", -- htif
-    "000000007ff00000--0000000000100000.bin", -- dtb
-    "0000000080000000--0000000000100000.bin", -- ram
-    "0000000070000000--0000000000100000.bin", -- uarch ram
-}
-
 local remote
 local function build_machine(type, config)
     config = config or {
@@ -206,12 +185,6 @@ end
 
 local do_test = test_util.make_do_test(build_machine, machine_type)
 
-local function remove_files(file_names)
-    for _, file_name in pairs(file_names) do
-        os.remove(test_path .. file_name)
-    end
-end
-
 print("Testing machine for type " .. machine_type)
 
 print("\n\ntesting getting machine intial config and iflags")
@@ -228,30 +201,23 @@ do_test("machine halt and yield flags and config matches", function(machine)
     assert(not machine:read_iflags_Y(), "machine shouldn't be yielded")
 end)
 
-print("\n\ntesting memory pmas dump to files")
-do_test("dumped file hashes should match memory data hashes", function(machine)
-    -- Dump memory regions to files
-    -- Calculate hash for memory regions
-    -- Check if match memory data hash
-    machine:dump_pmas()
-
-    for _, file_name in pairs(pmas_file_names) do
-        print("Checking dump file " .. file_name)
-
-        local temp = test_util.split_string(file_name, "--.")
-        local data_region_start = tonumber(temp[1], 16)
-        local data_region_size = tonumber(temp[2], 16)
-
-        local dump = assert(io.open(file_name, "rb"))
-        local dump_hash = cartesi.keccak(dump:read("*all"))
-        dump:close()
-
-        local memory_read = machine:read_memory(data_region_start, data_region_size)
-        local memory_hash = cartesi.keccak(memory_read)
-
-        assert(dump_hash == memory_hash, "hash does not match for dump file " .. file_name)
+print("\n\ntesting memory range dump to files")
+do_test("dumped files and names should match memory range contents", function(machine)
+    -- Dump memory ranges to files
+    machine:dump_memory_ranges()
+    -- Obtain list of memory ranges from machine
+    local pmas = machine:get_memory_ranges()
+    for _, v in ipairs(pmas) do
+        -- Add corresponding expected dumped filename
+        v.filename = string.format("%016x--%016x.bin", v.start, v.length)
     end
-    remove_files(pmas_file_names)
+    -- Read directly from machine and compare with file contents
+    for _, v in ipairs(pmas) do
+        local dump_read = util.load_file(v.filename)
+        local memory_read = machine:read_memory(v.start, v.length)
+        assert(dump_read == memory_read, "dump file does not match memory read (" .. v.filename .. ")")
+        os.remove(v.filename)
+    end
 end)
 
 print("\n\ntesting if machine initial hash is correct")
@@ -259,14 +225,11 @@ do_test("machine initial hash should match", function(machine)
     -- Get starting root hash
     local root_hash = machine:get_root_hash()
 
-    machine:dump_pmas()
-    local calculated_root_hash = test_util.calculate_emulator_hash(pmas_file_names)
+    local calculated_root_hash = test_util.calculate_emulator_hash(machine)
 
     print("Root hash:", test_util.tohex(root_hash), " calculated root hash:", test_util.tohex(calculated_root_hash))
 
-    assert(test_util.tohex(root_hash) == test_util.tohex(calculated_root_hash), "Initial root hash does not match")
-
-    remove_files(pmas_file_names)
+    assert(root_hash == calculated_root_hash, "Initial root hash does not match")
 end)
 
 print("\n\ntesting root hash after step one")
@@ -277,11 +240,9 @@ test_util.make_do_test(build_uarch_machine, machine_type)(
         local root_hash = machine:get_root_hash()
         print("Root hash:", test_util.tohex(root_hash))
 
-        machine:dump_pmas()
-        local calculated_root_hash = test_util.calculate_emulator_hash(pmas_file_names_with_uarch)
-        remove_files(pmas_file_names)
+        local calculated_root_hash = test_util.calculate_emulator_hash(machine)
 
-        assert(test_util.tohex(root_hash) == test_util.tohex(calculated_root_hash), "Initial root hash does not match")
+        assert(root_hash == calculated_root_hash, "Initial root hash does not match")
 
         -- Perform step, dump address space to file, calculate emulator root hash
         -- and check if maches
@@ -289,16 +250,9 @@ test_util.make_do_test(build_uarch_machine, machine_type)(
         machine:step_uarch(log_type)
         local root_hash_step1 = machine:get_root_hash()
 
-        machine:dump_pmas()
-        local calculated_root_hash_step1 = test_util.calculate_emulator_hash(pmas_file_names_with_uarch)
+        local calculated_root_hash_step1 = test_util.calculate_emulator_hash(machine)
 
-        -- Remove dumped pmas files
-        remove_files(pmas_file_names)
-
-        assert(
-            test_util.tohex(root_hash_step1) == test_util.tohex(calculated_root_hash_step1),
-            "hash after first step does not match"
-        )
+        assert(root_hash_step1 == calculated_root_hash_step1, "hash after first step does not match")
     end
 )
 
@@ -306,34 +260,24 @@ print("\n\ntesting proof after step one")
 test_util.make_do_test(build_uarch_machine, machine_type)("proof check should pass", function(machine)
     local log_type = {}
     machine:step_uarch(log_type)
-
-    -- Dump RAM memory to file, calculate hash of file
-    -- get proof of ram using get_proof and check if
-    -- hashes match
-    machine:dump_pmas()
-    local ram_file_name = pmas_file_names[7]
-    local ram = test_util.load_file(ram_file_name)
-
-    remove_files(pmas_file_names)
-
-    local ram_address_start = tonumber(test_util.split_string(ram_file_name, "--.")[1], 16)
-    local ram_log2_size = math.ceil(math.log(#ram, 2))
-    local calculated_ram_hash = test_util.merkle_hash(ram, 0, ram_log2_size)
-
-    local ram_proof = machine:get_proof(ram_address_start, ram_log2_size)
+    -- find ram memory range
+    local ram
+    for _, v in ipairs(machine:get_memory_ranges()) do
+        print(v.description)
+        if v.description == "RAM" then ram = v end
+    end
+    local ram_log2_size = math.ceil(math.log(ram.length, 2))
+    local calculated_ram_hash = test_util.merkle_hash(machine:read_memory(ram.start, ram.length), 0, ram_log2_size)
+    local ram_proof = machine:get_proof(ram.start, ram_log2_size)
     local root_hash = machine:get_root_hash()
-
-    assert(test_util.tohex(root_hash) == test_util.tohex(ram_proof.root_hash), "root hash in proof does not match")
+    assert(root_hash == ram_proof.root_hash, "root hash in proof does not match")
     print(
         "target hash:",
         test_util.tohex(ram_proof.target_hash),
         " calculated target hash:",
         test_util.tohex(calculated_ram_hash)
     )
-    assert(
-        test_util.tohex(calculated_ram_hash) == test_util.tohex(ram_proof.target_hash),
-        "target hash in proof does not match"
-    )
+    assert(calculated_ram_hash == ram_proof.target_hash, "target hash in proof does not match")
 end)
 
 print("\n\nrun machine to 1000 mcycle and check for mcycle and root hash")
@@ -349,16 +293,10 @@ do_test("mcycle and root hash should match", function(machine)
 
     local root_hash = machine:get_root_hash()
 
-    machine:dump_pmas()
-    local calculated_root_hash_1000 = test_util.calculate_emulator_hash(pmas_file_names)
-    -- Remove dumped pmas files
-    remove_files(pmas_file_names)
+    local calculated_root_hash_1000 = test_util.calculate_emulator_hash(machine)
 
     print("1000 cycle hash: ", test_util.tohex(root_hash))
-    assert(
-        test_util.tohex(root_hash) == test_util.tohex(calculated_root_hash_1000),
-        "machine hash does not match after 1000 cycles"
-    )
+    assert(root_hash == calculated_root_hash_1000, "machine hash does not match after 1000 cycles")
 end)
 
 print("\n\nrun machine to end mcycle and check for mcycle, hash and halt flag")
@@ -380,15 +318,9 @@ do_test("mcycle and root hash should match", function(machine)
     local root_hash = machine:get_root_hash()
     print("End hash: ", test_util.tohex(root_hash))
 
-    machine:dump_pmas()
-    local calculated_end_hash = test_util.calculate_emulator_hash(pmas_file_names)
-    -- Remove dumped pmas files
-    remove_files(pmas_file_names)
+    local calculated_end_hash = test_util.calculate_emulator_hash(machine)
 
-    assert(
-        test_util.tohex(root_hash) == test_util.tohex(calculated_end_hash),
-        "machine hash does not match after on end cycle"
-    )
+    assert(root_hash == calculated_end_hash, "machine hash does not match after on end cycle")
 end)
 
 print("\n\nwrite something to ram memory and check if hash and proof matches")
@@ -400,10 +332,7 @@ do_test("proof  and root hash should match", function(machine)
     -- Calculate hash
     local initial_memory_read = machine:read_memory(ram_address_start, 2 ^ 10)
     local initial_calculated_hash = test_util.merkle_hash(initial_memory_read, 0, 10)
-    assert(
-        test_util.tohex(initial_ram_proof.target_hash) == test_util.tohex(initial_calculated_hash),
-        "initial hash does not match"
-    )
+    assert(initial_ram_proof.target_hash == initial_calculated_hash, "initial hash does not match")
 
     print(
         "initial target hash:",
@@ -430,20 +359,11 @@ do_test("proof  and root hash should match", function(machine)
         test_util.tohex(calculated_hash)
     )
 
-    assert(
-        test_util.tohex(initial_ram_proof.target_hash) ~= test_util.tohex(ram_proof.target_hash),
-        "hash is same after memory is written"
-    )
+    assert(initial_ram_proof.target_hash ~= ram_proof.target_hash, "hash is same after memory is written")
 
-    assert(
-        test_util.tohex(initial_calculated_hash) ~= test_util.tohex(calculated_hash),
-        "calculated hash is same after memory is written"
-    )
+    assert(initial_calculated_hash ~= calculated_hash, "calculated hash is same after memory is written")
 
-    assert(
-        test_util.tohex(ram_proof.target_hash) == test_util.tohex(calculated_hash),
-        "hash does not match after memory is written"
-    )
+    assert(ram_proof.target_hash == calculated_hash, "hash does not match after memory is written")
 end)
 
 print("\n\n check dirty page maps")

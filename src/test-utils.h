@@ -48,6 +48,7 @@ static hash_type merkle_hash(cartesi::keccak_256_hasher &h, const std::string_vi
     }
     return result;
 }
+
 } // namespace detail
 
 static hash_type merkle_hash(const std::string_view &data, int log2_size) {
@@ -105,46 +106,33 @@ static int ceil_log2(uint64_t x) {
     return static_cast<int>(std::ceil(std::log2(static_cast<double>(x))));
 }
 
-static hash_type calculate_emulator_hash(const std::vector<std::string> &pmas_files) {
-    struct pma_entry {
-        std::string path;
-        uint64_t start;
-        uint64_t length;
-        std::string data;
-    };
-    std::vector<pma_entry> pma_entries;
-    std::transform(pmas_files.begin(), pmas_files.end(), std::back_inserter(pma_entries), [](const std::string &path) {
-        uint64_t start;
-        uint64_t length;
-        int end = 0;
-        if (sscanf(path.data(), "%" SCNx64 "--%" SCNx64 ".bin%n", &start, &length, &end) != 2 ||
-            static_cast<int>(path.size()) != end) {
-            throw std::invalid_argument("PMA filename '" + path + "' does not match '%x--%x.bin'");
-        }
-        if ((length >> detail::PAGE_LOG2_SIZE) << detail::PAGE_LOG2_SIZE != length) {
-            throw std::invalid_argument("PMA '" + path + "' length not multiple of page length");
-        }
-        if ((start >> detail::PAGE_LOG2_SIZE) << detail::PAGE_LOG2_SIZE != start) {
-            throw std::invalid_argument("PMA '" + path + "' start not page-aligned");
-        }
-        auto data = load_file(path);
-        if (data.length() != length) {
-            throw std::invalid_argument("PMA '" + path + "' length does not match filename");
-        }
-        return pma_entry{path, start, length, std::move(data)};
-    });
-    std::sort(pma_entries.begin(), pma_entries.end(),
-        [](const pma_entry &a, const pma_entry &b) { return a.start < b.start; });
+static hash_type calculate_emulator_hash(cm_machine *machine) {
     cartesi::back_merkle_tree tree(64, 12, 3);
+    std::string page;
+    page.resize(detail::PAGE_SIZE);
+    cm_memory_range_descr_array *mrds = nullptr;
+    auto mrds_deleter = [](cm_memory_range_descr_array **mrds) { cm_delete_memory_range_descr_array(*mrds); };
+    std::unique_ptr<cm_memory_range_descr_array *, decltype(mrds_deleter)> auto_mrds(&mrds, mrds_deleter);
+    char *err_msg = nullptr;
+    auto err_msg_deleter = [](char **str) { cm_delete_cstring(*str); };
+    std::unique_ptr<char *, decltype(err_msg_deleter)> auto_err_msg(&err_msg, err_msg_deleter);
+    if (cm_get_memory_ranges(machine, &mrds, &err_msg) != 0) {
+        throw std::runtime_error{err_msg};
+    }
     uint64_t last = 0;
-    for (const auto &e : pma_entries) {
-        tree.pad_back((e.start - last) >> detail::PAGE_LOG2_SIZE);
-        for (uint64_t s = 0; s < e.length; s += detail::PAGE_SIZE) {
-            std::string_view page{e.data.data() + s, detail::PAGE_SIZE};
+    for (size_t i = 0; i < mrds->count; ++i) {
+        const auto &m = mrds->entry[i];
+        tree.pad_back((m.start - last) >> detail::PAGE_LOG2_SIZE);
+        auto end = m.start + m.length;
+        for (uint64_t s = m.start; s < end; s += detail::PAGE_SIZE) {
+            if (cm_read_memory(machine, s, reinterpret_cast<unsigned char *>(page.data()), page.size(), &err_msg) !=
+                0) {
+                throw std::runtime_error{err_msg};
+            }
             auto page_hash = merkle_hash(page, detail::PAGE_LOG2_SIZE);
             tree.push_back(page_hash);
         }
-        last = e.start + e.length;
+        last = end;
     }
     return tree.get_root_hash();
 }

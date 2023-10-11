@@ -26,6 +26,7 @@
 #include "access-log.h"
 #include "machine-c-defines.h"
 #include "machine-config.h"
+#include "machine-memory-range-descr.h"
 #include "machine-runtime-config.h"
 #include "semantic-version.h"
 
@@ -113,5 +114,16 @@ CM_API access_type get_proto_access_type(CartesiMachine::AccessType proto_at);
 /// \param proto_v Proto SemanticVersion to convert
 /// \returns Converted C++ semantic_version
 CM_API semantic_version get_proto_semantic_version(const Versioning::SemanticVersion &proto_v);
+
+/// \brief Converts C++ machine_memory_range_descr to proto MemoryRangeDescription
+/// \param d C++ machine_memory_range_descr to convert
+/// \param proto_d Pointer to proto repeated MemoryRangeDescription receiving result of conversion
+CM_API void set_proto_memory_range_descr(const machine_memory_range_descr &d,
+    CartesiMachine::MemoryRangeDescription *proto_d);
+
+/// \brief Converts proto MemoryRangeDescription to C++ machine_memory_range_descr
+/// \param proto_d Proto MemoryRangeDescription to convert
+/// \returns Converted C++ machine_memory_range_descr
+CM_API machine_memory_range_descr get_proto_memory_range_descr(const CartesiMachine::MemoryRangeDescription &proto_d);
 
 } // namespace cartesi

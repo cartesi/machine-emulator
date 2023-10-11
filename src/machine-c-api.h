@@ -386,6 +386,19 @@ typedef struct { // NOLINT(modernize-use-using)
     const char *build;
 } cm_semantic_version;
 
+/// \brief Memory range description
+typedef struct { // NOLINT(modernize-use-using)
+    uint64_t start;
+    uint64_t length;
+    const char *description;
+} cm_memory_range_descr;
+
+/// \brief Memory range description array
+typedef struct { // NOLINT(modernize-use-using)
+    cm_memory_range_descr *entry;
+    size_t count;
+} cm_memory_range_descr_array;
+
 // ---------------------------------
 // API function definitions
 // ---------------------------------
@@ -1700,7 +1713,9 @@ CM_API int cm_set_uarch_halt_flag(cm_machine *m, char **err_msg);
 CM_API int cm_reset_uarch_state(cm_machine *m, char **err_msg);
 
 /// \brief Runs the machine in the microarchitecture until the mcycle advances by one unit or the micro cycles counter
-/// (uarch_cycle) reaches uarch_cycle_end \param m Pointer to valid machine instance \param mcycle_end End cycle value
+/// (uarch_cycle) reaches uarch_cycle_end
+/// \param m Pointer to valid machine instance
+/// \param mcycle_end End cycle value
 /// \param status_result Receives status of machine run_uarch when not NULL
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
@@ -1709,6 +1724,22 @@ CM_API int cm_reset_uarch_state(cm_machine *m, char **err_msg);
 /// \returns 0 for success, non zero code for error
 CM_API int cm_machine_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *status_result,
     char **err_msg);
+
+/// \brief Returns an array with the description of each memory range in the machine.
+/// \param m Pointer to valid machine instance
+/// \param mrda Receives pointer to array of memory range descriptions. Must be deleted by the function caller using
+/// cm_delete_memory_range_descr_array.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successful function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring.
+/// err_msg can be NULL, meaning the error message won't be received.
+/// \returns 0 for success, non zero code for error
+CM_API int cm_get_memory_ranges(cm_machine *m, cm_memory_range_descr_array **mrda, char **err_msg);
+
+/// \brief Delete memory range description array acquired from cm_get_memory_ranges.
+/// \param mrda Pointer to array of memory range descriptions to delete.
+/// \returns void
+CM_API void cm_delete_memory_range_descr_array(cm_memory_range_descr_array *mrda);
 
 #ifdef __cplusplus
 }

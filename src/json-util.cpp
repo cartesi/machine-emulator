@@ -1029,6 +1029,37 @@ template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, machine_config &value,
     const std::string &path);
 
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_memory_range_descr &value,
+    const std::string &path) {
+    if (!contains(j, key)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    ju_get_opt_field(jconfig, "length"s, value.length, new_path);
+    ju_get_opt_field(jconfig, "start"s, value.start, new_path);
+    ju_get_opt_field(jconfig, "description"s, value.description, new_path);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
+    machine_memory_range_descr &value, const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    machine_memory_range_descr &value, const std::string &path);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_memory_range_descrs &value,
+    const std::string &path) {
+    ju_get_opt_vector_like_field(j, key, value, path);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
+    machine_memory_range_descrs &value, const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    machine_memory_range_descrs &value, const std::string &path);
+
 void to_json(nlohmann::json &j, const machine::csr &csr) {
     j = csr_to_name(csr);
 }
@@ -1226,6 +1257,16 @@ void to_json(nlohmann::json &j, const machine_runtime_config &runtime) {
         {"skip_root_hash_check", runtime.skip_root_hash_check},
         {"skip_version_check", runtime.skip_version_check},
     };
+}
+
+void to_json(nlohmann::json &j, const machine_memory_range_descr &mrd) {
+    j = nlohmann::json{{"length", mrd.length}, {"start", mrd.start}, {"description", mrd.description}};
+}
+
+void to_json(nlohmann::json &j, const machine_memory_range_descrs &mrds) {
+    j = nlohmann::json::array();
+    std::transform(mrds.cbegin(), mrds.cend(), std::back_inserter(j),
+        [](const auto &a) -> nlohmann::json { return a; });
 }
 
 } // namespace cartesi

@@ -492,4 +492,8 @@ uarch_interpreter_break_reason virtual_machine::do_run_uarch(uint64_t uarch_cycl
     return m_machine->run_uarch(uarch_cycle_end);
 }
 
+machine_memory_range_descrs virtual_machine::do_get_memory_ranges(void) const {
+    return m_machine->get_memory_ranges();
+}
+
 } // namespace cartesi

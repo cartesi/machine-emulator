@@ -643,6 +643,11 @@ public:
         return do_run_uarch(uarch_cycle_end);
     }
 
+    /// \brief Returns a list of descriptions for all PMA entries registered in the machine, sorted by start
+    virtual machine_memory_range_descrs get_memory_ranges(void) const {
+        return do_get_memory_ranges();
+    }
+
 private:
     virtual interpreter_break_reason do_run(uint64_t mcycle_end) = 0;
     virtual void do_store(const std::string &dir) = 0;
@@ -760,6 +765,7 @@ private:
     virtual void do_reset_uarch_state() = 0;
     virtual uint64_t do_read_uarch_ram_length(void) const = 0;
     virtual uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) = 0;
+    virtual machine_memory_range_descrs do_get_memory_ranges(void) const = 0;
 };
 
 } // namespace cartesi

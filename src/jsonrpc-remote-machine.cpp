@@ -1504,6 +1504,20 @@ static json jsonrpc_machine_dump_pmas_handler(const json &j, mg_connection *con,
     return jsonrpc_response_ok(j);
 }
 
+/// \brief JSONRPC handler for the machine.get_memory_ranges method
+/// \param j JSON request object
+/// \param con Mongoose connection
+/// \param h Handler data
+/// \returns JSON response object
+static json jsonrpc_machine_get_memory_ranges_handler(const json &j, mg_connection *con, http_handler_data *h) {
+    (void) con;
+    if (!h->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    jsonrpc_check_no_params(j);
+    return jsonrpc_response_ok(j, h->machine->get_memory_ranges());
+}
+
 /// \brief Sends a JSONRPC response through the Mongoose connection
 /// \param con Mongoose connection
 /// \param j JSON response object
@@ -1580,6 +1594,7 @@ static json jsonrpc_dispatch_method(const json &j, mg_connection *con, http_hand
         {"machine.verify_merkle_tree", jsonrpc_machine_verify_merkle_tree_handler},
         {"machine.verify_dirty_page_maps", jsonrpc_machine_verify_dirty_page_maps_handler},
         {"machine.dump_pmas", jsonrpc_machine_dump_pmas_handler},
+        {"machine.get_memory_ranges", jsonrpc_machine_get_memory_ranges_handler},
     };
     auto method = j["method"].get<std::string>();
     SLOG(debug) << h->server_address << " handling \"" << method << "\" method";

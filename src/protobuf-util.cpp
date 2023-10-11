@@ -376,7 +376,7 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
 
 processor_config get_proto_processor_config(const CartesiMachine::ProcessorConfig &proto_p) {
     using CartesiMachine::ProcessorConfig;
-    processor_config p;
+    processor_config p{};
     if (proto_p.has_x1()) {
         p.x[1] = proto_p.x1();
     }
@@ -660,7 +660,7 @@ processor_config get_proto_processor_config(const CartesiMachine::ProcessorConfi
 }
 
 memory_range_config get_proto_memory_range_config(const CartesiMachine::MemoryRangeConfig &proto_m) {
-    memory_range_config m;
+    memory_range_config m{};
     m.start = proto_m.start();
     m.image_filename = proto_m.image_filename();
     m.length = proto_m.length();
@@ -669,14 +669,14 @@ memory_range_config get_proto_memory_range_config(const CartesiMachine::MemoryRa
 }
 
 machine_runtime_config get_proto_machine_runtime_config(const CartesiMachine::MachineRuntimeConfig &proto_r) {
-    machine_runtime_config r;
+    machine_runtime_config r{};
     r.concurrency.update_merkle_tree = proto_r.concurrency().update_merkle_tree();
     return r;
 }
 
 static uarch_config get_proto_uarch_config(const CartesiMachine::UarchConfig &proto_c) {
     using CartesiMachine::UarchConfig;
-    uarch_config c;
+    uarch_config c{};
     if (proto_c.has_ram()) {
         c.ram.length = proto_c.ram().length();
         c.ram.image_filename = proto_c.ram().image_filename();
@@ -788,7 +788,7 @@ static uarch_config get_proto_uarch_config(const CartesiMachine::UarchConfig &pr
 }
 
 rollup_config get_proto_rollup_config(const CartesiMachine::RollupConfig &proto_r) {
-    rollup_config r;
+    rollup_config r{};
     if (proto_r.has_rx_buffer()) {
         r.rx_buffer = get_proto_memory_range_config(proto_r.rx_buffer());
     }
@@ -808,7 +808,7 @@ rollup_config get_proto_rollup_config(const CartesiMachine::RollupConfig &proto_
 }
 
 machine_config get_proto_machine_config(const CartesiMachine::MachineConfig &proto_c) {
-    machine_config c;
+    machine_config c{};
     if (proto_c.has_processor()) {
         c.processor = get_proto_processor_config(proto_c.processor());
     }
@@ -857,6 +857,21 @@ machine_config get_proto_machine_config(const CartesiMachine::MachineConfig &pro
         c.htif.yield_automatic = htif.yield_automatic();
     }
     return c;
+}
+
+void set_proto_memory_range_descr(const machine_memory_range_descr &d,
+    CartesiMachine::MemoryRangeDescription *proto_d) {
+    proto_d->set_start(d.start);
+    proto_d->set_length(d.length);
+    proto_d->set_description(d.description);
+}
+
+machine_memory_range_descr get_proto_memory_range_descr(const CartesiMachine::MemoryRangeDescription &proto_d) {
+    machine_memory_range_descr mrd{};
+    mrd.start = proto_d.start();
+    mrd.length = proto_d.length();
+    mrd.description = proto_d.description();
+    return mrd;
 }
 
 } // namespace cartesi

@@ -492,7 +492,7 @@ do_test("should return expected value", function(machine)
     print("Root hash: ", test_util.tohex(root_hash))
 
     machine:dump_pmas()
-    local calculated_root_hash = test_util.calculate_emulator_hash(pmas_file_names)
+    local calculated_root_hash = test_util.calculate_emulator_hash(machine)
     for _, file_name in pairs(pmas_file_names) do
         os.remove(test_path .. file_name)
     end

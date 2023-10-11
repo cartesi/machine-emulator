@@ -952,4 +952,16 @@ uarch_interpreter_break_reason grpc_virtual_machine::do_run_uarch(uint64_t uarch
     return uarch_interpreter_break_reason::reached_target_cycle;
 }
 
+machine_memory_range_descrs grpc_virtual_machine::do_get_memory_ranges(void) const {
+    machine_memory_range_descrs mrds;
+    const Void request;
+    GetMemoryRangesResponse response;
+    ClientContext context;
+    check_status(m_stub->get_stub()->GetMemoryRanges(&context, request, &response));
+    for (const auto &proto_m : response.memory_range()) {
+        mrds.push_back(get_proto_memory_range_descr(proto_m));
+    }
+    return mrds;
+}
+
 } // namespace cartesi

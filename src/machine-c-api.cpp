@@ -687,6 +687,27 @@ cartesi::access_log convert_from_c(const cm_access_log *c_acc_log) {
     return new_cpp_acc_log;
 }
 
+// --------------------------------------------
+// Memory range description conversion functions
+// --------------------------------------------
+cm_memory_range_descr convert_to_c(const cartesi::machine_memory_range_descr &cpp_mrd) {
+    cm_memory_range_descr new_mrd{};
+    new_mrd.start = cpp_mrd.start;
+    new_mrd.length = cpp_mrd.length;
+    new_mrd.description = convert_to_c(cpp_mrd.description);
+    return new_mrd;
+}
+
+cm_memory_range_descr_array *convert_to_c(const cartesi::machine_memory_range_descrs &cpp_mrds) {
+    auto *new_mrda = new cm_memory_range_descr_array{};
+    new_mrda->count = cpp_mrds.size();
+    new_mrda->entry = new cm_memory_range_descr[new_mrda->count];
+    for (size_t i = 0; i < new_mrda->count; ++i) {
+        new_mrda->entry[i] = convert_to_c(cpp_mrds[i]);
+    }
+    return new_mrda;
+}
+
 // -----------------------------------------------------
 // Public API functions for generation of default configs
 // -----------------------------------------------------
@@ -1354,4 +1375,26 @@ int cm_rollback(cm_machine *m, char **err_msg) try {
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
+}
+
+CM_API int cm_get_memory_ranges(cm_machine *m, cm_memory_range_descr_array **mrds, char **err_msg) try {
+    if (mrds == nullptr) {
+        throw std::invalid_argument("invalid memory range output");
+    }
+    auto *cpp_machine = convert_from_c(m);
+    *mrds = convert_to_c(cpp_machine->get_memory_ranges());
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+CM_API void cm_delete_memory_range_descr_array(cm_memory_range_descr_array *mrds) {
+    if (mrds == nullptr) {
+        return;
+    }
+    for (size_t i = 0; i < mrds->count; ++i) {
+        delete[] mrds->entry[i].description;
+    }
+    delete[] mrds->entry;
+    delete mrds;
 }

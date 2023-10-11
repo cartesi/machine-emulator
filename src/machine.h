@@ -26,6 +26,7 @@
 #include "htif.h"
 #include "interpret.h"
 #include "machine-config.h"
+#include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
 #include "machine-state.h"
@@ -45,19 +46,20 @@ constexpr skip_merkle_tree_update_t skip_merkle_tree_update;
 /// \class machine
 /// \brief Cartesi Machine implementation
 class machine final {
-
+private:
     //??D Ideally, we would hold a unique_ptr to the state. This
     //    would allow us to remove the machine-state.h include and
     //    therefore hide its contents from anyone who includes only
     //    machine.h. Maybe the compiler can do a good job we we are
     //    not constantly going through the extra indirection. We
     //    should test this.
-    mutable machine_state m_s;       ///< Opaque machine state
-    mutable machine_merkle_tree m_t; ///< Merkle tree of state
-    std::vector<pma_entry *> m_pmas; ///< Combines uarch PMAs and machine state PMAs.
-    machine_config m_c;              ///< Copy of initialization config
-    uarch_machine m_uarch;           ///< Microarchitecture machine
-    machine_runtime_config m_r;      ///< Copy of initialization runtime config
+    mutable machine_state m_s;          ///< Opaque machine state
+    mutable machine_merkle_tree m_t;    ///< Merkle tree of state
+    std::vector<pma_entry *> m_pmas;    ///< Combines uarch PMAs and machine state PMAs for use with Merkle tree.
+    machine_config m_c;                 ///< Copy of initialization config
+    uarch_machine m_uarch;              ///< Microarchitecture machine
+    machine_runtime_config m_r;         ///< Copy of initialization runtime config
+    machine_memory_range_descrs m_mrds; ///< List of memory ranges returned by get_memory_ranges().
 
     static const pma_entry::flags m_dtb_flags;                   ///< PMA flags used for DTB
     static const pma_entry::flags m_ram_flags;                   ///< PMA flags used for RAM
@@ -251,6 +253,11 @@ public:
     /// \brief Returns machine state for direct read-only access.
     const machine_state &get_state(void) const {
         return m_s;
+    }
+
+    /// \brief Returns a list of descriptions for all PMA entries registered in the machine, sorted by start
+    machine_memory_range_descrs get_memory_ranges(void) const {
+        return m_mrds;
     }
 
     /// \brief Destructor.

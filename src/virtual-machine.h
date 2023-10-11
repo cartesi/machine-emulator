@@ -156,6 +156,7 @@ private:
     void do_reset_uarch_state() override;
     bool do_read_uarch_halt_flag(void) const override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
+    machine_memory_range_descrs do_get_memory_ranges(void) const override;
 };
 
 } // namespace cartesi

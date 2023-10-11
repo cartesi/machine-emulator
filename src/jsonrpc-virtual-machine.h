@@ -183,6 +183,7 @@ private:
     void do_write_uarch_cycle(uint64_t val) override;
     uint64_t do_read_uarch_ram_length(void) const override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
+    machine_memory_range_descrs do_get_memory_ranges(void) const override;
 
     jsonrpc_mg_mgr_ptr m_mgr;
 };

@@ -738,3 +738,28 @@ jobs:
             artifacts/uarch-riscv-tests-json-logs-*.tar.gz
             artifacts/cartesi-machine-*.deb
             artifacts/uarch-ram.bin
+
+  build_homebrew:
+    name: Build (homebrew)
+    runs-on: macos-12
+    steps:
+      - name: Checkout machine emulator source code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install dependencies
+        run: |
+          brew install llvm@12 automake boost libomp wget cmake pkg-config grpc zlib openssl lua@5.4 libb64 nlohmann-json luarocks
+          luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install lpeg
+          luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install dkjson
+          luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install luasocket
+          luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install luasec
+          luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install luaposix
+          luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install md5
+      - name: Build
+        run: |
+          make submodules
+          make downloads
+          make dep
+          make
+          make install

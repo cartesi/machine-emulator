@@ -749,7 +749,7 @@ jobs:
           submodules: recursive
       - name: Install dependencies
         run: |
-          brew install llvm@12 automake boost libomp wget cmake pkg-config grpc zlib openssl lua@5.4 libb64 nlohmann-json luarocks
+          brew install llvm@12 automake boost libomp wget cmake cryptopp pkg-config grpc zlib openssl lua@5.4 libb64 nlohmann-json luarocks
           luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install lpeg
           luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install dkjson
           luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install luasocket

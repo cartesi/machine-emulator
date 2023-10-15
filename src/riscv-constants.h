@@ -596,7 +596,7 @@ enum CARTESI_init : uint64_t {
     MCAUSE_INIT = UINT64_C(0),                                                         ///< Initial value for mcause
     MTVAL_INIT = UINT64_C(0),                                                          ///< Initial value for mtval
     MISA_INIT = (MISA_MXL_VALUE << MISA_MXL_SHIFT) | MISA_EXT_S_MASK | MISA_EXT_U_MASK | MISA_EXT_I_MASK |
-        MISA_EXT_M_MASK | MISA_EXT_A_MASK | MISA_EXT_F_MASK | MISA_EXT_D_MASK |
+        MISA_EXT_M_MASK | MISA_EXT_A_MASK | MISA_EXT_F_MASK | MISA_EXT_D_MASK | MISA_EXT_H_MASK |
         MISA_EXT_C_MASK,                                            ///< Initial value for misa
     MIE_INIT = UINT64_C(0),                                         ///< Initial value for mie
     MIP_INIT = UINT64_C(0),                                         ///< Initial value for mip

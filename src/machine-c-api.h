@@ -135,6 +135,7 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_PROC_HIP,
     CM_PROC_HVIP,
     CM_PROC_HGATP,
+    CM_PROC_HENVCFG,
     CM_PROC_HTIMEDELTA,
     CM_PROC_HTVAL,
     CM_PROC_VSEPC,

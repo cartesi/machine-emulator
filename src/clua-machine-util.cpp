@@ -547,6 +547,7 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
         {"hie", CM_PROC_HIE},
         {"hvip", CM_PROC_HVIP},
         {"hgatp", CM_PROC_HGATP},
+        {"henvcfg", CM_PROC_HENVCFG},
         {"htimedelta", CM_PROC_HTIMEDELTA},
         {"htval", CM_PROC_HTVAL},
         {"vsepc", CM_PROC_VSEPC},

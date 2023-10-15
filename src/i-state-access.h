@@ -362,6 +362,234 @@ public:
         return derived().do_write_senvcfg(val);
     }
 
+    /// \brief Reads CSR hstatus.
+    /// \returns Register value.
+    uint64_t read_hstatus(void) {
+        return derived().do_read_hstatus();
+    }
+
+    /// \brief Writes CSR hstatus.
+    /// \param val New register value.
+    void write_hstatus(uint64_t val) {
+        return derived().do_write_hstatus(val);
+    }
+
+    /// \brief Reads CSR hideleg.
+    /// \returns Register value.
+    uint64_t read_hideleg(void) {
+        return derived().do_read_hideleg();
+    }
+
+    /// \brief Writes CSR hideleg.
+    /// \param val New register value.
+    void write_hideleg(uint64_t val) {
+        return derived().do_write_hideleg(val);
+    }
+
+    /// \brief Reads CSR hedeleg.
+    /// \returns Register value.
+    uint64_t read_hedeleg(void) {
+        return derived().do_read_hedeleg();
+    }
+
+    /// \brief Writes CSR hedeleg.
+    /// \param val New register value.
+    void write_hedeleg(uint64_t val) {
+        return derived().do_write_hedeleg(val);
+    }
+
+    /// \brief Reads CSR hip.
+    /// \returns Register value.
+    uint64_t read_hip(void) {
+        return derived().do_read_hip();
+    }
+
+    /// \brief Writes CSR hip.
+    /// \param val New register value.
+    void write_hip(uint64_t val) {
+        return derived().do_write_hip(val);
+    }
+
+    /// \brief Reads CSR hvip.
+    /// \returns Register value.
+    uint64_t read_hvip(void) {
+        return derived().do_read_hvip();
+    }
+
+    /// \brief Writes CSR hvip.
+    /// \param val New register value.
+    void write_hvip(uint64_t val) {
+        return derived().do_write_hvip(val);
+    }
+
+    /// \brief Reads CSR hie.
+    /// \returns Register value.
+    uint64_t read_hie(void) {
+        return derived().do_read_hie();
+    }
+
+    /// \brief Writes CSR hie.
+    /// \param val New register value.
+    void write_hie(uint64_t val) {
+        return derived().do_write_hie(val);
+    }
+
+    /// \brief Reads CSR hgatp.
+    /// \returns Register value.
+    uint64_t read_hgatp(void) {
+        return derived().do_read_hgatp();
+    }
+
+    /// \brief Writes CSR hgatp.
+    /// \param val New register value.
+    void write_hgatp(uint64_t val) {
+        return derived().do_write_hgatp(val);
+    }
+
+    /// \brief Reads CSR henvcfg.
+    /// \returns Register value.
+    uint64_t read_henvcfg(void) {
+        return derived().do_read_henvcfg();
+    }
+
+    /// \brief Writes CSR henvcfg.
+    /// \param val New register value.
+    void write_henvcfg(uint64_t val) {
+        return derived().do_write_henvcfg(val);
+    }
+
+    /// \brief Reads CSR htimedelta.
+    /// \returns Register value.
+    uint64_t read_htimedelta(void) {
+        return derived().do_read_htimedelta();
+    }
+
+    /// \brief Writes CSR htimedelta.
+    /// \param val New register value.
+    void write_htimedelta(uint64_t val) {
+        return derived().do_write_htimedelta(val);
+    }
+
+    /// \brief Reads CSR htval.
+    /// \returns Register value.
+    uint64_t read_htval(void) {
+        return derived().do_read_htval();
+    }
+
+    /// \brief Writes CSR htval.
+    /// \param val New register value.
+    void write_htval(uint64_t val) {
+        return derived().do_write_htval(val);
+    }
+
+    /// \brief Reads CSR vsepc.
+    /// \returns Register value.
+    uint64_t read_vsepc(void) {
+        return derived().do_read_vsepc();
+    }
+
+    /// \brief Writes CSR vsepc.
+    /// \param val New register value.
+    void write_vsepc(uint64_t val) {
+        return derived().do_write_vsepc(val);
+    }
+
+    /// \brief Reads CSR vsstatus.
+    /// \returns Register value.
+    uint64_t read_vsstatus(void) {
+        return derived().do_read_vsstatus();
+    }
+
+    /// \brief Writes CSR vsstatus.
+    /// \param val New register value.
+    void write_vsstatus(uint64_t val) {
+        return derived().do_write_vsstatus(val);
+    }
+
+    /// \brief Reads CSR vscause.
+    /// \returns Register value.
+    uint64_t read_vscause(void) {
+        return derived().do_read_vscause();
+    }
+
+    /// \brief Writes CSR vscause.
+    /// \param val New register value.
+    void write_vscause(uint64_t val) {
+        return derived().do_write_vscause(val);
+    }
+
+    /// \brief Reads CSR vstval.
+    /// \returns Register value.
+    uint64_t read_vstval(void) {
+        return derived().do_read_vstval();
+    }
+
+    /// \brief Writes CSR vstval.
+    /// \param val New register value.
+    void write_vstval(uint64_t val) {
+        return derived().do_write_vstval(val);
+    }
+
+    /// \brief Reads CSR vstvec.
+    /// \returns Register value.
+    uint64_t read_vstvec(void) {
+        return derived().do_read_vstvec();
+    }
+
+    /// \brief Writes CSR vstvec.
+    /// \param val New register value.
+    void write_vstvec(uint64_t val) {
+        return derived().do_write_vstvec(val);
+    }
+
+    /// \brief Reads CSR vsscratch.
+    /// \returns Register value.
+    uint64_t read_vsscratch(void) {
+        return derived().do_read_vsscratch();
+    }
+
+    /// \brief Writes CSR vsscratch.
+    /// \param val New register value.
+    void write_vsscratch(uint64_t val) {
+        return derived().do_write_vsscratch(val);
+    }
+
+    /// \brief Reads CSR vsatp.
+    /// \returns Register value.
+    uint64_t read_vsatp(void) {
+        return derived().do_read_vsatp();
+    }
+
+    /// \brief Writes CSR vsatp.
+    /// \param val New register value.
+    void write_vsatp(uint64_t val) {
+        return derived().do_write_vsatp(val);
+    }
+
+    /// \brief Reads CSR vsip.
+    /// \returns Register value.
+    uint64_t read_vsip(void) {
+        return derived().do_read_vsip();
+    }
+
+    /// \brief Writes CSR vsip.
+    /// \param val New register value.
+    void write_vsip(uint64_t val) {
+        return derived().do_write_vsip(val);
+    }
+
+    /// \brief Reads CSR vsie.
+    /// \returns Register value.
+    uint64_t read_vsie(void) {
+        return derived().do_read_vsie();
+    }
+
+    /// \brief Writes CSR vsie.
+    /// \param val New register value.
+    void write_vsie(uint64_t val) {
+        return derived().do_write_vsie(val);
+    }
+
     /// \brief Reads CSR stvec.
     /// \returns Register value.
     uint64_t read_stvec(void) {
@@ -509,6 +737,25 @@ public:
     /// \details This is Cartesi-specific.
     bool read_iflags_X(void) {
         return derived().do_read_iflags_X();
+    }
+
+    /// \brief Reads the iflags_VRT flag.
+    /// \returns The flag value.
+    /// \details This is Cartesi-specific.
+    bool read_iflags_VRT(void) {
+        return derived().do_read_iflags_VRT();
+    }
+
+    /// \brief Resets the iflags_VRT flag.
+    /// \details This is Cartesi-specific.
+    void reset_iflags_VRT(void) {
+        return derived().do_reset_iflags_VRT();
+    }
+
+    /// \brief Sets the iflags_VRT flag.
+    /// \details This is Cartesi-specific.
+    void set_iflags_VRT(void) {
+        return derived().do_set_iflags_VRT();
     }
 
     /// \brief Reads the current privilege mode from iflags_PRV.

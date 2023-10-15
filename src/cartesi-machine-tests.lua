@@ -282,7 +282,7 @@ local riscv_tests = {
     { "access.bin", 97 },
     { "interrupts.bin", 8209 },
     { "mtime_interrupt.bin", 16404 },
-    { "illegal_insn.bin", 972 },
+    { "illegal_insn.bin", 968 },
     { "version_check.bin", 26 },
     { "translate_vaddr.bin", 343 },
     { "htif_invalid_ops.bin", 109 },

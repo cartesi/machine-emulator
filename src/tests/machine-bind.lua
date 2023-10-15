@@ -196,14 +196,33 @@ local cpu_csr_addr = {
     satp = 712,
     scounteren = 720,
     senvcfg = 728,
-    ilrsc = 736,
-    iflags = 744,
-    clint_mtimecmp = 752,
-    htif_tohost = 760,
-    htif_fromhost = 768,
-    htif_ihalt = 776,
-    htif_iconsole = 784,
-    htif_iyield = 792,
+    hstatus = 736,
+    hideleg = 744,
+    hedeleg = 752,
+    hie = 760,
+    hip = 768,
+    hvip = 776,
+    hgatp = 784,
+    henvcfg = 792,
+    htimedelta = 800,
+    htval = 808,
+    vsepc = 816,
+    vsstatus = 824,
+    vscause = 832,
+    vstval = 840,
+    vstvec = 848,
+    vsscratch = 856,
+    vsatp = 864,
+    vsie = 872,
+    vsip = 880,
+    ilrsc = 888,
+    iflags = 896,
+    clint_mtimecmp = 904,
+    htif_tohost = 912,
+    htif_fromhost = 920,
+    htif_ihalt = 928,
+    htif_iconsole = 936,
+    htif_iyield = 944,
 }
 
 local function get_cpu_csr_test_values()
@@ -235,8 +254,27 @@ local function get_cpu_csr_test_values()
         satp = 0x2c0,
         scounteren = 0x2c8,
         senvcfg = 0x2d0,
+        hstatus = 0x2d8,
+        hideleg = 0x2e0,
+        hedeleg = 0x2e8,
+        hie = 0x2f0,
+        hip = 0x2f8,
+        hvip = 0x300,
+        hgatp = 0x308,
+        henvcfg = -1,
+        htimedelta = 0x318,
+        htval = 0x320,
+        vsepc = 0x328,
+        vsstatus = 0x330,
+        vscause = 0x338,
+        vstval = 0x340,
+        vstvec = 0x348,
+        vsscratch = 0x350,
+        vsatp = 0x358,
+        vsie = 0x360,
+        vsip = 0x368,
         fcsr = 0x61,
-        ilrsc = 0x2e0,
+        ilrsc = 0x378,
     }
 end
 
@@ -343,6 +381,7 @@ do_test("machine should have default config shadow register values", function(ma
     initial_csr_values.mvendorid = nil
     initial_csr_values.marchid = nil
     initial_csr_values.mimpid = nil
+    initial_csr_values.henvcfg = nil
     -- Check initialization and shadow reads
     for k, v in pairs(initial_csr_values) do
         local r = machine:read_word(cpu_csr_addr[k])
@@ -408,7 +447,7 @@ end)
 
 print("\n\ntesting get_x_uarch_address function binding")
 do_test("should return address value for uarch x registers", function()
-    local SHADOW_UARCH_XBASE = 0x340
+    local SHADOW_UARCH_XBASE = 0x3d8
     local module = cartesi
     if machine_type == "grpc" then
         if not remote then remote = connect() end
@@ -503,8 +542,9 @@ do_test("should have expected values", function(machine)
     -- Check initial config
     local initial_config = machine:get_initial_config()
     test_config(initial_config)
+    print(initial_config.processor.mstatus)
     assert(initial_config.processor.pc == 0x200, "wrong pc reg initial config value")
-    assert(initial_config.processor.ilrsc == 0x2e0, "wrong ilrsc reg initial config value")
+    assert(initial_config.processor.ilrsc == 0x378, "wrong ilrsc reg initial config value")
     assert(initial_config.processor.mstatus == 0x230, "wrong mstatus reg initial config value")
     assert(initial_config.clint.mtimecmp == 0, "wrong clint mtimecmp initial config value")
     assert(initial_config.htif.fromhost == 0, "wrong htif fromhost initial config value")
@@ -519,6 +559,7 @@ do_test("should return expected values", function(machine)
     initial_csr_values.mvendorid = cartesi.MVENDORID
     initial_csr_values.marchid = cartesi.MARCHID
     initial_csr_values.mimpid = cartesi.MIMPID
+    initial_csr_values.henvcfg = 0x0
     initial_csr_values.htif_tohost = 0x0
     initial_csr_values.htif_fromhost = 0x0
     initial_csr_values.htif_ihalt = 0x0

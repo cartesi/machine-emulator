@@ -138,6 +138,25 @@ IMPL_MACHINE_OBJ_READ_WRITE(stval)
 IMPL_MACHINE_OBJ_READ_WRITE(satp)
 IMPL_MACHINE_OBJ_READ_WRITE(scounteren)
 IMPL_MACHINE_OBJ_READ_WRITE(senvcfg)
+IMPL_MACHINE_OBJ_READ_WRITE(hstatus)
+IMPL_MACHINE_OBJ_READ_WRITE(hideleg)
+IMPL_MACHINE_OBJ_READ_WRITE(hedeleg)
+IMPL_MACHINE_OBJ_READ_WRITE(hie)
+IMPL_MACHINE_OBJ_READ_WRITE(hip)
+IMPL_MACHINE_OBJ_READ_WRITE(hvip)
+IMPL_MACHINE_OBJ_READ_WRITE(hgatp)
+IMPL_MACHINE_OBJ_READ_WRITE(henvcfg)
+IMPL_MACHINE_OBJ_READ_WRITE(htimedelta)
+IMPL_MACHINE_OBJ_READ_WRITE(htval)
+IMPL_MACHINE_OBJ_READ_WRITE(vsepc)
+IMPL_MACHINE_OBJ_READ_WRITE(vsstatus)
+IMPL_MACHINE_OBJ_READ_WRITE(vscause)
+IMPL_MACHINE_OBJ_READ_WRITE(vstval)
+IMPL_MACHINE_OBJ_READ_WRITE(vstvec)
+IMPL_MACHINE_OBJ_READ_WRITE(vsscratch)
+IMPL_MACHINE_OBJ_READ_WRITE(vsatp)
+IMPL_MACHINE_OBJ_READ_WRITE(vsie)
+IMPL_MACHINE_OBJ_READ_WRITE(vsip)
 IMPL_MACHINE_OBJ_READ_WRITE(ilrsc)
 IMPL_MACHINE_OBJ_READ_WRITE(iflags)
 IMPL_MACHINE_OBJ_READ_WRITE(htif_tohost)
@@ -588,6 +607,25 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"read_sscratch", machine_obj_index_read_sscratch},
     {"read_stval", machine_obj_index_read_stval},
     {"read_stvec", machine_obj_index_read_stvec},
+    {"read_hstatus", machine_obj_index_read_hstatus},
+    {"read_hideleg", machine_obj_index_read_hideleg},
+    {"read_hedeleg", machine_obj_index_read_hedeleg},
+    {"read_hie", machine_obj_index_read_hie},
+    {"read_hip", machine_obj_index_read_hip},
+    {"read_hvip", machine_obj_index_read_hvip},
+    {"read_hgatp", machine_obj_index_read_hgatp},
+    {"read_henvcfg", machine_obj_index_read_henvcfg},
+    {"read_htimedelta", machine_obj_index_read_htimedelta},
+    {"read_htval", machine_obj_index_read_htval},
+    {"read_vsepc", machine_obj_index_read_vsepc},
+    {"read_vsstatus", machine_obj_index_read_vsstatus},
+    {"read_vscause", machine_obj_index_read_vscause},
+    {"read_vstval", machine_obj_index_read_vstval},
+    {"read_vstvec", machine_obj_index_read_vstvec},
+    {"read_vsscratch", machine_obj_index_read_vsscratch},
+    {"read_vsatp", machine_obj_index_read_vsatp},
+    {"read_vsie", machine_obj_index_read_vsie},
+    {"read_vsip", machine_obj_index_read_vsip},
     {"read_word", machine_obj_index_read_word},
     {"read_x", machine_obj_index_read_x},
     {"read_f", machine_obj_index_read_f},
@@ -637,6 +675,25 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"write_sscratch", machine_obj_index_write_sscratch},
     {"write_stval", machine_obj_index_write_stval},
     {"write_stvec", machine_obj_index_write_stvec},
+    {"write_hstatus", machine_obj_index_write_hstatus},
+    {"write_hideleg", machine_obj_index_write_hideleg},
+    {"write_hedeleg", machine_obj_index_write_hedeleg},
+    {"write_hie", machine_obj_index_write_hie},
+    {"write_hip", machine_obj_index_write_hip},
+    {"write_hvip", machine_obj_index_write_hvip},
+    {"write_hgatp", machine_obj_index_write_hgatp},
+    {"write_henvcfg", machine_obj_index_write_henvcfg},
+    {"write_htimedelta", machine_obj_index_write_htimedelta},
+    {"write_htval", machine_obj_index_write_htval},
+    {"write_vsepc", machine_obj_index_write_vsepc},
+    {"write_vsstatus", machine_obj_index_write_vsstatus},
+    {"write_vscause", machine_obj_index_write_vscause},
+    {"write_vstval", machine_obj_index_write_vstval},
+    {"write_vstvec", machine_obj_index_write_vstvec},
+    {"write_vsscratch", machine_obj_index_write_vsscratch},
+    {"write_vsatp", machine_obj_index_write_vsatp},
+    {"write_vsie", machine_obj_index_write_vsie},
+    {"write_vsip", machine_obj_index_write_vsip},
     {"write_x", machine_obj_index_write_x},
     {"write_f", machine_obj_index_write_f},
     {"replace_memory_range", machine_obj_index_replace_memory_range},

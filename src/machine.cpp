@@ -344,6 +344,25 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     write_satp(m_c.processor.satp);
     write_scounteren(m_c.processor.scounteren);
     write_senvcfg(m_c.processor.senvcfg);
+    write_hstatus(m_c.processor.hstatus);
+    write_hedeleg(m_c.processor.hedeleg);
+    write_hideleg(m_c.processor.hideleg);
+    write_hie(m_c.processor.hie);
+    write_hip(m_c.processor.hip);
+    write_hvip(m_c.processor.hvip);
+    write_hgatp(m_c.processor.hgatp);
+    write_henvcfg(m_c.processor.henvcfg);
+    write_htimedelta(m_c.processor.htimedelta);
+    write_htval(m_c.processor.htval);
+    write_vsepc(m_c.processor.vsepc);
+    write_vsstatus(m_c.processor.vsstatus);
+    write_vscause(m_c.processor.vscause);
+    write_vstval(m_c.processor.vstval);
+    write_vstvec(m_c.processor.vstvec);
+    write_vsscratch(m_c.processor.vsscratch);
+    write_vsatp(m_c.processor.vsatp);
+    write_vsie(m_c.processor.vsie);
+    write_vsip(m_c.processor.vsip);
     write_ilrsc(m_c.processor.ilrsc);
     write_iflags(m_c.processor.iflags);
 
@@ -532,6 +551,25 @@ machine_config machine::get_serialization_config(void) const {
     c.processor.satp = read_satp();
     c.processor.scounteren = read_scounteren();
     c.processor.senvcfg = read_senvcfg();
+    c.processor.hstatus = read_hstatus();
+    c.processor.hideleg = read_hideleg();
+    c.processor.hedeleg = read_hedeleg();
+    c.processor.hie = read_hie();
+    c.processor.hip = read_hip();
+    c.processor.hvip = read_hvip();
+    c.processor.hgatp = read_hgatp();
+    c.processor.henvcfg = read_henvcfg();
+    c.processor.htimedelta = read_htimedelta();
+    c.processor.htval = read_htval();
+    c.processor.vsepc = read_vsepc();
+    c.processor.vsstatus = read_vsstatus();
+    c.processor.vscause = read_vscause();
+    c.processor.vstval = read_vstval();
+    c.processor.vstvec = read_vstvec();
+    c.processor.vsscratch = read_vsscratch();
+    c.processor.vsatp = read_vsatp();
+    c.processor.vsie = read_vsie();
+    c.processor.vsip = read_vsip();
     c.processor.ilrsc = read_ilrsc();
     c.processor.iflags = read_iflags();
     // Copy current CLINT state to config
@@ -724,9 +762,9 @@ machine::~machine() {
     (void) fprintf(stderr, "fence.i: %" PRIu64 "\n", m_s.stats.fence_i);
     (void) fprintf(stderr, "fence.vma: %" PRIu64 "\n", m_s.stats.fence_vma);
     (void) fprintf(stderr, "max asid: %" PRIu64 "\n", m_s.stats.max_asid);
-    (void) fprintf(stderr, "User mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_U]);
-    (void) fprintf(stderr, "Supervisor mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_S]);
-    (void) fprintf(stderr, "Machine mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_M]);
+    (void) fprintf(stderr, "User mode: %" PRIu64 "\n", m_s.stats.priv_level[NOM_U]);
+    (void) fprintf(stderr, "Supervisor mode: %" PRIu64 "\n", m_s.stats.priv_level[NOM_S]);
+    (void) fprintf(stderr, "Machine mode: %" PRIu64 "\n", m_s.stats.priv_level[NOM_M]);
 
     (void) fprintf(stderr, "tlb code hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_cmiss, tlb_chit));
     (void) fprintf(stderr, "tlb read hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_rmiss, tlb_rhit));
@@ -993,6 +1031,158 @@ void machine::write_senvcfg(uint64_t val) {
     m_s.senvcfg = val;
 }
 
+uint64_t machine::read_hstatus(void) const {
+    return m_s.hstatus;
+}
+
+void machine::write_hstatus(uint64_t val) {
+    m_s.hstatus = val;
+}
+
+uint64_t machine::read_hideleg(void) const {
+    return m_s.hideleg;
+}
+
+void machine::write_hideleg(uint64_t val) {
+    m_s.hideleg = val;
+}
+
+uint64_t machine::read_hedeleg(void) const {
+    return m_s.hedeleg;
+}
+
+void machine::write_hedeleg(uint64_t val) {
+    m_s.hedeleg = val;
+}
+
+uint64_t machine::read_hie(void) const {
+    return m_s.hie;
+}
+
+void machine::write_hie(uint64_t val) {
+    m_s.hie = val;
+}
+
+uint64_t machine::read_hip(void) const {
+    return m_s.hip;
+}
+
+void machine::write_hip(uint64_t val) {
+    m_s.hip = val;
+}
+
+uint64_t machine::read_hvip(void) const {
+    return m_s.hvip;
+}
+
+void machine::write_hvip(uint64_t val) {
+    m_s.hvip = val;
+}
+
+uint64_t machine::read_hgatp(void) const {
+    return m_s.hgatp;
+}
+
+void machine::write_hgatp(uint64_t val) {
+    m_s.hgatp = val;
+}
+
+uint64_t machine::read_henvcfg(void) const {
+    return m_s.henvcfg;
+}
+
+void machine::write_henvcfg(uint64_t val) {
+    m_s.henvcfg = val;
+}
+
+uint64_t machine::read_htimedelta(void) const {
+    return m_s.htimedelta;
+}
+
+void machine::write_htimedelta(uint64_t val) {
+    m_s.htimedelta = val;
+}
+
+uint64_t machine::read_htval(void) const {
+    return m_s.htval;
+}
+
+void machine::write_htval(uint64_t val) {
+    m_s.htval = val;
+}
+
+uint64_t machine::read_vsepc(void) const {
+    return m_s.vsepc;
+}
+
+void machine::write_vsepc(uint64_t val) {
+    m_s.vsepc = val;
+}
+
+uint64_t machine::read_vsstatus(void) const {
+    return m_s.vsstatus;
+}
+
+void machine::write_vsstatus(uint64_t val) {
+    m_s.vsstatus = val;
+}
+
+uint64_t machine::read_vscause(void) const {
+    return m_s.vscause;
+}
+
+void machine::write_vscause(uint64_t val) {
+    m_s.vscause = val;
+}
+
+uint64_t machine::read_vstval(void) const {
+    return m_s.vstval;
+}
+
+void machine::write_vstval(uint64_t val) {
+    m_s.vstval = val;
+}
+
+uint64_t machine::read_vstvec(void) const {
+    return m_s.vstvec;
+}
+
+void machine::write_vstvec(uint64_t val) {
+    m_s.vstvec = val;
+}
+
+uint64_t machine::read_vsscratch(void) const {
+    return m_s.vsscratch;
+}
+
+void machine::write_vsscratch(uint64_t val) {
+    m_s.vsscratch = val;
+}
+
+uint64_t machine::read_vsatp(void) const {
+    return m_s.vsatp;
+}
+
+void machine::write_vsatp(uint64_t val) {
+    m_s.vsatp = val;
+}
+
+uint64_t machine::read_vsie(void) const {
+    return m_s.vsie;
+}
+
+void machine::write_vsie(uint64_t val) {
+    m_s.vsie = val;
+}
+
+uint64_t machine::read_vsip(void) const {
+    return m_s.vsip;
+}
+
+void machine::write_vsip(uint64_t val) {
+    m_s.vsip = val;
+}
+
 uint64_t machine::read_ilrsc(void) const {
     return m_s.ilrsc;
 }
@@ -1131,6 +1321,44 @@ uint64_t machine::read_csr(csr r) const {
             return read_scounteren();
         case csr::senvcfg:
             return read_senvcfg();
+        case csr::hstatus:
+            return read_hstatus();
+        case csr::hideleg:
+            return read_hideleg();
+        case csr::hedeleg:
+            return read_hedeleg();
+        case csr::hie:
+            return read_hie();
+        case csr::hip:
+            return read_hip();
+        case csr::hvip:
+            return read_hvip();
+        case csr::hgatp:
+            return read_hgatp();
+        case csr::henvcfg:
+            return read_henvcfg();
+        case csr::htimedelta:
+            return read_htimedelta();
+        case csr::htval:
+            return read_htval();
+        case csr::vsepc:
+            return read_vsepc();
+        case csr::vsstatus:
+            return read_vsstatus();
+        case csr::vscause:
+            return read_vscause();
+        case csr::vstval:
+            return read_vstval();
+        case csr::vstvec:
+            return read_vstvec();
+        case csr::vsscratch:
+            return read_vsscratch();
+        case csr::vsatp:
+            return read_vsatp();
+        case csr::vsie:
+            return read_vsie();
+        case csr::vsip:
+            return read_vsip();
         case csr::ilrsc:
             return read_ilrsc();
         case csr::iflags:
@@ -1213,6 +1441,44 @@ void machine::write_csr(csr csr, uint64_t value) {
             return write_scounteren(value);
         case csr::senvcfg:
             return write_senvcfg(value);
+        case csr::hstatus:
+            return write_hstatus(value);
+        case csr::hideleg:
+            return write_hideleg(value);
+        case csr::hedeleg:
+            return write_hedeleg(value);
+        case csr::hie:
+            return write_hie(value);
+        case csr::hip:
+            return write_hip(value);
+        case csr::hvip:
+            return write_hvip(value);
+        case csr::hgatp:
+            return write_hgatp(value);
+        case csr::henvcfg:
+            return write_henvcfg(value);
+        case csr::htimedelta:
+            return write_htimedelta(value);
+        case csr::htval:
+            return write_htval(value);
+        case csr::vsepc:
+            return write_vsepc(value);
+        case csr::vsstatus:
+            return write_vsstatus(value);
+        case csr::vscause:
+            return write_vscause(value);
+        case csr::vstvec:
+            return write_vstvec(value);
+        case csr::vstval:
+            return write_vstval(value);
+        case csr::vsscratch:
+            return write_vsscratch(value);
+        case csr::vsatp:
+            return write_vsatp(value);
+        case csr::vsie:
+            return write_vsie(value);
+        case csr::vsip:
+            return write_vsip(value);
         case csr::ilrsc:
             return write_ilrsc(value);
         case csr::iflags:
@@ -1306,6 +1572,44 @@ uint64_t machine::get_csr_address(csr csr) {
             return shadow_state_get_csr_abs_addr(shadow_state_csr::scounteren);
         case csr::senvcfg:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::senvcfg);
+        case csr::hstatus:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::hstatus);
+        case csr::hideleg:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::hideleg);
+        case csr::hedeleg:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::hedeleg);
+        case csr::hie:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::hie);
+        case csr::hip:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::hip);
+        case csr::hvip:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::hvip);
+        case csr::hgatp:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::hgatp);
+        case csr::henvcfg:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::henvcfg);
+        case csr::htimedelta:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::htimedelta);
+        case csr::htval:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::htval);
+        case csr::vsepc:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::vsepc);
+        case csr::vsstatus:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::vsstatus);
+        case csr::vscause:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::vscause);
+        case csr::vstval:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::vstval);
+        case csr::vstvec:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::vstvec);
+        case csr::vsscratch:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::vsscratch);
+        case csr::vsatp:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::vsatp);
+        case csr::vsie:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::vsie);
+        case csr::vsip:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::vsip);
         case csr::ilrsc:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::ilrsc);
         case csr::iflags:
@@ -1336,7 +1640,19 @@ uint64_t machine::get_csr_address(csr csr) {
 }
 
 uint8_t machine::read_iflags_PRV(void) const {
-    return m_s.iflags.PRV;
+    return m_s.iflags.NOM;
+}
+
+bool machine::read_iflags_VRT(void) const {
+    return m_s.iflags.V;
+}
+
+void machine::reset_iflags_VRT(void) {
+    m_s.iflags.V = false;
+}
+
+void machine::set_iflags_VRT(void) {
+    m_s.iflags.V = true;
 }
 
 bool machine::read_iflags_Y(void) const {
@@ -1738,6 +2054,19 @@ void machine::write_memory(uint64_t address, const unsigned char *data, size_t l
     memcpy(pma.get_memory().get_host_memory() + (address - pma.get_start()), data, length);
 }
 
+static uint8_t get_access_mode(uint8_t priv, bool virt, uint64_t mstatus) {
+    if ((mstatus & MSTATUS_MPRV_MASK) && !virt) {
+        priv = (mstatus & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT;
+        virt = (mstatus & MSTATUS_MPV_MASK) >> MSTATUS_MPV_SHIFT;
+    }
+
+    uint8_t access_mode = priv;
+    if (virt) {
+        access_mode |= ACCESS_MODE_V_MASK;
+    }
+    return access_mode;
+}
+
 void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uint64_t length) {
     state_access a(*this);
     if (length == 0) {
@@ -1752,9 +2081,17 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
     // copy page by page, because we need to perform address translation again for each page
     for (uint64_t vaddr_page = vaddr_page_start; vaddr_page < vaddr_page_limit; vaddr_page += PMA_PAGE_SIZE) {
         uint64_t paddr_page = 0;
-        if (!translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
-            throw std::invalid_argument{"page fault"};
+
+        auto priv = read_iflags_PRV();
+        auto virt = read_iflags_VRT();
+        auto mstatus = read_mstatus();
+        auto access_mode = get_access_mode(priv, virt, mstatus);
+        const uint8_t cause = translate_virtual_address<state_access, ACCESS_TYPE_LOAD, false>(a, &paddr_page,
+            vaddr_page, access_mode, PTE_XWR_R_SHIFT);
+        if (cause) {
+            throw std::runtime_error{"page fault"};
         }
+
         uint64_t paddr = paddr_page;
         uint64_t vaddr = vaddr_page;
         uint64_t chunklen = std::min<uint64_t>(PMA_PAGE_SIZE, vaddr_limit - vaddr);
@@ -1783,10 +2120,16 @@ void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *da
     // copy page by page, because we need to perform address translation again for each page
     for (uint64_t vaddr_page = vaddr_page_start; vaddr_page < vaddr_page_limit; vaddr_page += PMA_PAGE_SIZE) {
         uint64_t paddr_page = 0;
+        auto priv = read_iflags_PRV();
+        auto virt = read_iflags_VRT();
+        auto mstatus = read_mstatus();
+        auto access_mode = get_access_mode(priv, virt, mstatus);
         // perform address translation using read access mode,
         // so we can write any reachable virtual memory range
-        if (!translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
-            throw std::invalid_argument{"page fault"};
+        const uint8_t cause = translate_virtual_address<state_access, ACCESS_TYPE_STORE, false>(a, &paddr_page,
+            vaddr_page, access_mode, PTE_XWR_R_SHIFT);
+        if (cause) {
+            throw std::runtime_error{"page fault"};
         }
         uint64_t paddr = paddr_page;
         uint64_t vaddr = vaddr_page;

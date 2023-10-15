@@ -162,6 +162,25 @@ public:
         satp,
         scounteren,
         senvcfg,
+        hstatus,
+        hideleg,
+        hedeleg,
+        hie,
+        hip,
+        hvip,
+        hgatp,
+        henvcfg,
+        htimedelta,
+        htval,
+        vsepc,
+        vsstatus,
+        vscause,
+        vstval,
+        vstvec,
+        vsscratch,
+        vsatp,
+        vsie,
+        vsip,
         ilrsc,
         iflags,
         clint_mtimecmp,
@@ -608,13 +627,165 @@ public:
     /// \param value New register value.
     void write_ilrsc(uint64_t value);
 
+    /// \brief Writes the value of the hstatus register.
+    /// \param val New register value.
+    void write_hstatus(uint64_t val);
+
+    /// \brief Reads the value of the hstatus register.
+    /// \returns The value of the register.
+    uint64_t read_hstatus(void) const;
+
+    /// \brief Writes the value of the hideleg register.
+    /// \param val New register value.
+    void write_hideleg(uint64_t val);
+
+    /// \brief Reads the value of the hideleg register.
+    /// \returns The value of the register.
+    uint64_t read_hideleg(void) const;
+
+    /// \brief Writes the value of the hedeleg register.
+    /// \param val New register value.
+    void write_hedeleg(uint64_t val);
+
+    /// \brief Reads the value of the hedeleg register.
+    /// \returns The value of the register.
+    uint64_t read_hedeleg(void) const;
+
+    /// \brief Writes the value of the hie register.
+    /// \param val New register value.
+    void write_hie(uint64_t val);
+
+    /// \brief Reads the value of the hie register.
+    /// \returns The value of the register.
+    uint64_t read_hie(void) const;
+
+    /// \brief Writes the value of the hip register.
+    /// \param val New register value.
+    void write_hip(uint64_t val);
+
+    /// \brief Reads the value of the hip register.
+    /// \returns The value of the register.
+    uint64_t read_hip(void) const;
+
+    /// \brief Writes the value of the hvip register.
+    /// \param val New register value.
+    void write_hvip(uint64_t val);
+
+    /// \brief Reads the value of the hvip register.
+    /// \returns The value of the register.
+    uint64_t read_hvip(void) const;
+
+    /// \brief Writes the value of the hgatp register.
+    /// \param val New register value.
+    void write_hgatp(uint64_t val);
+
+    /// \brief Reads the value of the hgatp register.
+    /// \returns The value of the register.
+    uint64_t read_hgatp(void) const;
+
+    /// \brief Writes the value of the henvcfg register.
+    /// \param val New register value.
+    void write_henvcfg(uint64_t val);
+
+    /// \brief Reads the value of the henvcfg register.
+    /// \returns The value of the register.
+    uint64_t read_henvcfg(void) const;
+
+    /// \brief Writes the value of the htimedelta register.
+    /// \param val New register value.
+    void write_htimedelta(uint64_t val);
+
+    /// \brief Reads the value of the htimedelta register.
+    /// \returns The value of the register.
+    uint64_t read_htimedelta(void) const;
+
+    /// \brief Writes the value of the htval register.
+    /// \param val New register value.
+    void write_htval(uint64_t val);
+
+    /// \brief Reads the value of the htval register.
+    /// \returns The value of the register.
+    uint64_t read_htval(void) const;
+
+    /// \brief Writes the value of the vsepc register.
+    /// \param val New register value.
+    void write_vsepc(uint64_t val);
+
+    /// \brief Reads the value of the vsepc register.
+    /// \returns The value of the register.
+    uint64_t read_vsepc(void) const;
+
+    /// \brief Writes the value of the vsstatus register.
+    /// \param val New register value.
+    void write_vsstatus(uint64_t val);
+
+    /// \brief Reads the value of the vsstatus register.
+    /// \returns The value of the register.
+    uint64_t read_vsstatus(void) const;
+
+    /// \brief Writes the value of the vscause register.
+    /// \param val New register value.
+    void write_vscause(uint64_t val);
+
+    /// \brief Reads the value of the vscause register.
+    /// \returns The value of the register.
+    uint64_t read_vscause(void) const;
+
+    /// \brief Writes the value of the vstval register.
+    /// \param val New register value.
+    void write_vstval(uint64_t val);
+
+    /// \brief Reads the value of the vstval register.
+    /// \returns The value of the register.
+    uint64_t read_vstval(void) const;
+
+    /// \brief Writes the value of the vstvec register.
+    /// \param val New register value.
+    void write_vstvec(uint64_t val);
+
+    /// \brief Reads the value of the vstvec register.
+    /// \returns The value of the register.
+    uint64_t read_vstvec(void) const;
+
+    /// \brief Writes the value of the vsscratch register.
+    /// \param val New register value.
+    void write_vsscratch(uint64_t val);
+
+    /// \brief Reads the value of the vsscratch register.
+    /// \returns The value of the register.
+    uint64_t read_vsscratch(void) const;
+
+    /// \brief Writes the value of the vsatp register.
+    /// \param val New register value.
+    void write_vsatp(uint64_t val);
+
+    /// \brief Reads the value of the vsatp register.
+    /// \returns The value of the register.
+    uint64_t read_vsatp(void) const;
+
+    /// \brief Writes the value of the vsie register.
+    /// \param val New register value.
+    void write_vsie(uint64_t val);
+
+    /// \brief Reads the value of the vsie register.
+    /// \returns The value of the register.
+    uint64_t read_vsie(void) const;
+
+    /// \brief Writes the value of the vsip register.
+    /// \param val New register value.
+    void write_vsip(uint64_t val);
+
+    /// \brief Reads the value of the vsip register.
+    /// \returns The value of the register.
+    uint64_t read_vsip(void) const;
+
     /// \brief Reads the value of the iflags register.
     /// \returns The value of the register.
     uint64_t read_iflags(void) const;
 
     /// \brief Returns packed iflags from its component fields.
     /// \returns The value of the register.
-    uint64_t packed_iflags(int PRV, int Y, int H);
+    uint64_t packed_iflags(int V, int NOM, int Y, int H);
 
     /// \brief Reads the value of the iflags register.
     /// \param value New register value.
@@ -711,6 +882,16 @@ public:
     /// \brief Checks the value of the iflags_PRV field.
     /// \returns The field value.
     uint8_t read_iflags_PRV(void) const;
+
+    /// \brief Checks the value of the iflags_VRT field.
+    /// \returns The field value.
+    bool read_iflags_VRT(void) const;
+
+    /// \brief Sets the iflags_VRT flag.
+    void set_iflags_VRT(void);
+
+    /// \brief Resets the iflags_VRT flag.
+    void reset_iflags_VRT(void);
 
     /// \brief Sets the iflags_H flag.
     void set_iflags_H(void);

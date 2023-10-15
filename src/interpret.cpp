@@ -2174,7 +2174,7 @@ static NO_INLINE bool read_csr(STATE_ACCESS &a, uint64_t mcycle, CSR_address csr
             break;
         case CSR_address::satp:
             val = read_csr_satp(a, &status);
-            if (!status) {
+            if (!status && a.read_iflags_VRT()) {
                 _cause = MCAUSE_VIRTUAL_INSTRUCTION;
             }
             break;
@@ -4406,6 +4406,9 @@ static execute_status execute_HLVX_WU(STATE_ACCESS &a, uint64_t &pc, uint64_t mc
 template <typename STATE_ACCESS>
 static execute_status execute_HLV_D(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "hlv.d");
+    if (insn_get_rs2(insn) != 0) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
     return execute_HLV<int64_t>(a, pc, mcycle, insn);
 }
 
@@ -4747,6 +4750,10 @@ static inline execute_status execute_privileged_HLV_W(STATE_ACCESS &a, uint64_t 
 
 template <typename STATE_ACCESS>
 static inline execute_status execute_privileged(STATE_ACCESS &a, uint64_t &pc, uint64_t &mcycle, uint32_t insn) {
+    if (insn_get_rd(insn) != 0) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
+
     switch (static_cast<insn_privileged_funct7>(insn_get_funct7(insn))) {
         case insn_privileged_funct7::E:
             return execute_privileged_E(a, pc, insn);

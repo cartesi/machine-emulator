@@ -80,7 +80,7 @@ COREPROTO := lib/grpc-interfaces/core.proto
 LUASOCKET_VERSION ?= 5b18e475f38fcf28429b1cc4b17baee3b9793a62
 
 # Docker image tag
-TAG ?= devel
+TAG ?= lambadex
 DEBIAN_IMG ?= cartesi/machine-emulator:$(TAG).deb
 
 # Docker image platform

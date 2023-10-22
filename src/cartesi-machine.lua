@@ -390,9 +390,9 @@ local remote_shutdown = false
 local remote_create = true
 local remote_destroy = true
 local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
-local flash_image_filename = { root = images_path .. "rootfs.ext2" }
-local flash_label_order = { "root" }
-local flash_shared = {}
+local flash_image_filename = { root = images_path .. "rootfs.ext2", lambda = images_path .. "lambda.bin"}
+local flash_label_order = { "root", "lambda"}
+local flash_shared = { lambda = true }
 local flash_start = {}
 local flash_length = {}
 local memory_range_replace = {}
@@ -623,6 +623,14 @@ local options = {
         function(all)
             if not all then return false end
             htif_yield_automatic = false
+            return true
+        end,
+    },
+    {
+        "^%-%-rollup$",
+        function(all)
+            if not all then return false end
+            -- for compatibility with old options
             return true
         end,
     },

@@ -63,7 +63,7 @@ sudo luarocks install --lua-version=5.4 md5
 
 ##### Homebrew
 ```
-brew install llvm@12 automake boost libomp wget cmake pkg-config grpc zlib openssl cryptopp lua@5.4 libb64 nlohmann-json luarocks
+brew install llvm@15 automake boost libomp wget cmake pkg-config grpc zlib openssl cryptopp lua@5.4 libb64 nlohmann-json luarocks
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install lpeg
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install dkjson
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install luasocket

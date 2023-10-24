@@ -70,8 +70,8 @@ NLOHMANN_JSON_INC_Darwin:=-I/usr/local/opt/nlohmann-json/include
 B64_LIB_Darwin:=-L/usr/local/opt/libb64/lib -lb64
 B64_INC_Darwin:=-I/usr/local/opt/libb64/include
 GRPC_INC_Darwin=-I/usr/local/opt/gprc/include
-GRPC_LIB_Darwin=-L/usr/local/opt/grpc/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
-PROTOBUF_LIB_Darwin:=-L/usr/local/opt/protobuf/lib -lprotobuf -lpthread
+GRPC_LIB_Darwin=-L/usr/local/opt/grpc/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization -labsl_log_internal_message -labsl_log_internal_check_op -labsl_cord -labsl_status
+PROTOBUF_LIB_Darwin:=-L/usr/local/opt/protobuf/lib -lprotobuf -lpthread -labsl_log_internal_message -labsl_log_internal_check_op
 else # Macports installation
 BOOST_LIB_DIR_Darwin=-L/opt/local/lib
 BOOST_INC_Darwin=-I/opt/local/include

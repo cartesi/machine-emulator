@@ -32,6 +32,7 @@ LUA_BIN?=lua5.4
 GRPC_DIR:=../lib/grpc-interfaces
 
 PROTOC:=$(shell which protoc)
+PROTOC_FLAGS:=--experimental_allow_proto3_optional
 GRPC_CPP_PLUGIN:=$(shell which grpc_cpp_plugin)
 
 # Code instrumentation
@@ -706,10 +707,10 @@ tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI) $(LIBCARTESI_
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
 
 %.grpc.pb.cc: $(GRPC_DIR)/%.proto
-	$(PROTOC) -I$(<D) --grpc_out=. --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN) $<
+	$(PROTOC) $(PROTOC_FLAGS) -I$(<D) --grpc_out=. --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN) $<
 
 %.pb.cc: $(GRPC_DIR)/%.proto
-	$(PROTOC) -I$(GRPC_DIR) --cpp_out=. $<
+	$(PROTOC) $(PROTOC_FLAGS) -I$(GRPC_DIR) --cpp_out=. $<
 
 protobuf-util.o: $(PROTOBUF_GEN_OBJS)
 

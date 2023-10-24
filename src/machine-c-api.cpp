@@ -1265,14 +1265,6 @@ int cm_set_iflags_H(cm_machine *m, char **err_msg) try {
     return cm_result_failure(err_msg);
 }
 
-int cm_dump_pmas(const cm_machine *m, char **err_msg) try {
-    const auto *cpp_machine = convert_from_c(m);
-    cpp_machine->dump_pmas();
-    return cm_result_success(err_msg);
-} catch (...) {
-    return cm_result_failure(err_msg);
-}
-
 int cm_verify_dirty_page_maps(const cm_machine *m, bool *result, char **err_msg) try {
     if (result == nullptr) {
         throw std::invalid_argument("invalid result output");

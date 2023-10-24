@@ -63,11 +63,10 @@ test_util.uarch_programs.default = {
 function test_util.create_test_uarch_program(instructions)
     if not instructions then instructions = test_util.uarch_programs.default end
     local file_path = os.tmpname()
-    local f = io.open(file_path, "wb")
+    local f <close> = io.open(file_path, "wb")
     for _, insn in pairs(instructions) do
         f:write(string.pack("I4", insn))
     end
-    f:close()
     return file_path
 end
 
@@ -175,13 +174,8 @@ function test_util.new_back_merkle_tree(log2_root_size, log2_leaf_size)
 end
 
 function test_util.file_exists(name)
-    local f = io.open(name, "r")
-    if f ~= nil then
-        io.close(f)
-        return true
-    else
-        return false
-    end
+    local f <close> = io.open(name, "r")
+    return f ~= nil
 end
 
 function test_util.tohex(str)
@@ -221,7 +215,6 @@ function test_util.align(v, el) return (v >> el << el) end
 function test_util.load_file(filename)
     local fd <close> = assert(io.open(filename, "rb"))
     local data = assert(fd:read("*all"))
-    fd:close(filename)
     return data
 end
 

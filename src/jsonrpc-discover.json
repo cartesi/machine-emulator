@@ -1016,19 +1016,6 @@
     },
 
     {
-      "name": "machine.dump_pmas",
-      "summary": "Dump all memory ranges to individual files current working directory",
-      "params": [],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
       "name": "machine.get_memory_ranges",
       "summary": "Returns a list with descriptions for all of the machine's memory ranges",
       "params": [],

@@ -420,10 +420,6 @@ void virtual_machine::do_replace_memory_range(const memory_range_config &new_ran
     m_machine->replace_memory_range(new_range);
 }
 
-void virtual_machine::do_dump_pmas(void) const {
-    m_machine->dump_pmas();
-}
-
 uint64_t virtual_machine::do_read_word(uint64_t address) const {
     return m_machine->read_word(address);
 }

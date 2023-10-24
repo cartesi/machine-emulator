@@ -722,10 +722,6 @@ public:
     /// \brief Sets the iflags_H flag.
     void set_iflags_H(void);
 
-    /// \brief Dump all memory ranges to files in current working directory.
-    /// \returns true if successful, false otherwise.
-    void dump_pmas(void) const;
-
     /// \brief Get read-only access to container with all PMA entries.
     /// \returns The container.
     const boost::container::static_vector<pma_entry, PMA_MAX> &get_pmas(void) const;

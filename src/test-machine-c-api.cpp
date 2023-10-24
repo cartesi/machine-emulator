@@ -1336,11 +1336,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_fromhost_read_complex_test, ordinary_ma
     BOOST_CHECK_EQUAL(htif_data, static_cast<uint64_t>(0x0000111111111111));
 }
 
-BOOST_AUTO_TEST_CASE_NOLINT(dump_pmas_null_machine_test) {
-    int error_code = cm_dump_pmas(nullptr, nullptr);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
 BOOST_AUTO_TEST_CASE_NOLINT(get_initial_config_null_machine_test) {
     const cm_machine_config *cfg{};
     int error_code = cm_get_initial_config(nullptr, &cfg, nullptr);
@@ -1455,50 +1450,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_initial_config_flash_drive_test, flash_drive_
     BOOST_CHECK_EQUAL(*cfg, _machine_config);
     BOOST_CHECK_EQUAL(cfg->flash_drive.count, 1);
     cm_delete_machine_config(cfg);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_null_placeholder_test, flash_drive_machine_fixture) {
-    std::array dump_list{
-        "0000000000000000--0000000000001000.bin", // shadow state
-        "0000000000010000--0000000000001000.bin", // shadow pmas
-        "0000000000020000--0000000000006000.bin", // shadow tlb
-        "0000000002000000--00000000000c0000.bin", // clint
-        "0000000040008000--0000000000001000.bin", // htif
-        "000000007ff00000--0000000000100000.bin", // dtb
-        "0000000080000000--0000000000100000.bin", // ram
-        "0080000000000000--0000000003c00000.bin"  // flash drive
-    };
-
-    int error_code = cm_dump_pmas(_machine, nullptr);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-
-    for (const auto &file : dump_list) {
-        BOOST_CHECK(std::filesystem::exists(file));
-        std::filesystem::remove(file);
-    }
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(dump_pmas_basic_test, flash_drive_machine_fixture) {
-    std::array dump_list{
-        "0000000000000000--0000000000001000.bin", // shadow state
-        "0000000000010000--0000000000001000.bin", // shadow pmas
-        "0000000000020000--0000000000006000.bin", // shadow tlb
-        "0000000002000000--00000000000c0000.bin", // clint
-        "0000000040008000--0000000000001000.bin", // htif
-        "000000007ff00000--0000000000100000.bin", // dtb
-        "0000000080000000--0000000000100000.bin", // ram
-        "0080000000000000--0000000003c00000.bin"  // flash drive
-    };
-
-    char *err_msg{};
-    int error_code = cm_dump_pmas(_machine, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-
-    for (const auto &file : dump_list) {
-        BOOST_CHECK(std::filesystem::exists(file));
-        std::filesystem::remove(file);
-    }
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_machine_test, flash_drive_machine_fixture) {

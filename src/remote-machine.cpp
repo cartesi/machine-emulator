@@ -1154,30 +1154,6 @@ public:
     }
 };
 
-class handler_DumpPmas final : public handler<Void, Void> {
-
-    side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
-        ServerAsyncResponseWriter<Void> *writer) override {
-        hctx.s->RequestDumpPmas(sctx, req, writer, hctx.cq.get(), hctx.cq.get(), this);
-        return side_effect::none;
-    }
-
-    side_effect go(handler_context &hctx, Void *req, ServerAsyncResponseWriter<Void> *writer) override {
-        (void) req;
-        if (!hctx.m) {
-            return finish_with_error_no_machine(writer);
-        }
-        hctx.m->dump_pmas();
-        const Void resp;
-        return finish_ok(writer, resp);
-    }
-
-public:
-    handler_DumpPmas(handler_context &hctx) {
-        advance(hctx);
-    }
-};
-
 class handler_GetDefaultConfig final : public handler<Void, GetDefaultConfigResponse> {
 
     side_effect prepare(handler_context &hctx, ServerContext *sctx, Void *req,
@@ -1394,7 +1370,6 @@ static void server_loop(const char *server_address, const char *session_id, cons
         const handler_GetInitialConfig hGetInitialConfig(hctx);
         const handler_VerifyMerkleTree hVerifyMerkleTree(hctx);
         const handler_VerifyDirtyPageMaps hVerifyDirtyPageMaps(hctx);
-        const handler_DumpPmas hDumpPmas(hctx);
         const handler_GetDefaultConfig hGetDefaultConfig(hctx);
         const handler_VerifyAccessLog hVerifyAccessLog(hctx);
         const handler_VerifyStateTransition hVerifyStateTransition(hctx);

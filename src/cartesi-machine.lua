@@ -352,8 +352,8 @@ where options are:
   --uarch-ram-length=<number>
     set microarchitecture RAM length.
 
-  --dump-pmas
-    dump all PMA ranges to disk when done.
+  --dump-memory-ranges
+    dump all memory ranges to disk when done.
 
   --assert-rolling-template
     exit with failure in case the generated machine is not Rolling Cartesi Machine templates compatible.
@@ -465,7 +465,7 @@ local initial_proof = {}
 local final_proof = {}
 local periodic_hashes_period = math.maxinteger
 local periodic_hashes_start = 0
-local dump_pmas = false
+local dump_memory_ranges = false
 local max_mcycle = math.maxinteger
 local json_steps
 local max_uarch_cycle = 0
@@ -908,10 +908,10 @@ local options = {
         end,
     },
     {
-        "^%-%-dump%-pmas$",
+        "^%-%-dump%-memory%-ranges$",
         function(all)
             if not all then return false end
-            dump_pmas = true
+            dump_memory_ranges = true
             return true
         end,
     },
@@ -1770,6 +1770,14 @@ local function store_machine(machine, config, dir)
     machine:store(name)
 end
 
+local function dump_pmas(machine)
+    for _, v in ipairs(machine:get_memory_ranges()) do
+        local filename = string.format("%016x--%016x.bin", v.start, v.length)
+        local file <close> = assert(io.open(filename, "w"))
+        assert(file:write(machine:read_memory(v.start, v.length)))
+    end
+end
+
 local machine = main_machine
 local config = main_config
 if json_steps then
@@ -1974,7 +1982,7 @@ else
         stderr("Gathering micro step log: please wait\n")
         util.dump_log(machine:step_uarch({ proofs = true, annotations = true }), io.stderr)
     end
-    if dump_pmas then machine:dump_pmas() end
+    if dump_memory_ranges then dump_pmas(machine) end
     if final_hash then
         assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
         print_root_hash(machine, stderr_unsilenceable)

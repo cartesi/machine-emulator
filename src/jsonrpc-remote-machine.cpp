@@ -1489,21 +1489,6 @@ static json jsonrpc_machine_verify_dirty_page_maps_handler(const json &j, mg_con
     return jsonrpc_response_ok(j, h->machine->verify_dirty_page_maps());
 }
 
-/// \brief JSONRPC handler for the machine.dump_pmas method
-/// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
-/// \returns JSON response object
-static json jsonrpc_machine_dump_pmas_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    jsonrpc_check_no_params(j);
-    h->machine->dump_pmas();
-    return jsonrpc_response_ok(j);
-}
-
 /// \brief JSONRPC handler for the machine.get_memory_ranges method
 /// \param j JSON request object
 /// \param con Mongoose connection
@@ -1593,7 +1578,6 @@ static json jsonrpc_dispatch_method(const json &j, mg_connection *con, http_hand
         {"machine.get_default_config", jsonrpc_machine_get_default_config_handler},
         {"machine.verify_merkle_tree", jsonrpc_machine_verify_merkle_tree_handler},
         {"machine.verify_dirty_page_maps", jsonrpc_machine_verify_dirty_page_maps_handler},
-        {"machine.dump_pmas", jsonrpc_machine_dump_pmas_handler},
         {"machine.get_memory_ranges", jsonrpc_machine_get_memory_ranges_handler},
     };
     auto method = j["method"].get<std::string>();

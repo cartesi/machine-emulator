@@ -854,13 +854,6 @@ bool grpc_virtual_machine::do_verify_dirty_page_maps(void) const {
     return response.success();
 }
 
-void grpc_virtual_machine::do_dump_pmas(void) const {
-    const Void request;
-    Void response;
-    ClientContext context;
-    check_status(m_stub->get_stub()->DumpPmas(&context, request, &response));
-}
-
 uint64_t grpc_virtual_machine::do_read_word(uint64_t address) const {
     ReadWordRequest request;
     request.set_address(address);

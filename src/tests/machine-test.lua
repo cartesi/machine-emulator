@@ -201,25 +201,6 @@ do_test("machine halt and yield flags and config matches", function(machine)
     assert(not machine:read_iflags_Y(), "machine shouldn't be yielded")
 end)
 
-print("\n\ntesting memory range dump to files")
-do_test("dumped files and names should match memory range contents", function(machine)
-    -- Dump memory ranges to files
-    machine:dump_memory_ranges()
-    -- Obtain list of memory ranges from machine
-    local pmas = machine:get_memory_ranges()
-    for _, v in ipairs(pmas) do
-        -- Add corresponding expected dumped filename
-        v.filename = string.format("%016x--%016x.bin", v.start, v.length)
-    end
-    -- Read directly from machine and compare with file contents
-    for _, v in ipairs(pmas) do
-        local dump_read = util.load_file(v.filename)
-        local memory_read = machine:read_memory(v.start, v.length)
-        assert(dump_read == memory_read, "dump file does not match memory read (" .. v.filename .. ")")
-        os.remove(v.filename)
-    end
-end)
-
 print("\n\ntesting if machine initial hash is correct")
 do_test("machine initial hash should match", function(machine)
     -- Get starting root hash
@@ -263,7 +244,6 @@ test_util.make_do_test(build_uarch_machine, machine_type)("proof check should pa
     -- find ram memory range
     local ram
     for _, v in ipairs(machine:get_memory_ranges()) do
-        print(v.description)
         if v.description == "RAM" then ram = v end
     end
     local ram_log2_size = math.ceil(math.log(ram.length, 2))

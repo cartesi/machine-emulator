@@ -138,7 +138,6 @@ private:
     uint64_t do_read_clint_mtimecmp(void) const override;
     void do_write_clint_mtimecmp(uint64_t val) override;
     void do_replace_memory_range(const memory_range_config &new_range) override;
-    void do_dump_pmas(void) const override;
     uint64_t do_read_word(uint64_t address) const override;
     bool do_verify_dirty_page_maps(void) const override;
     machine_config do_get_initial_config(void) const override;

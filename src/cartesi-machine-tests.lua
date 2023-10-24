@@ -376,7 +376,7 @@ and command can be:
     output json log of step at every <number> of cycles
 
   dump
-    dump machine initial state pmas on current directory
+    dump machine initial state memory ranges on current directory
 
   list
     list tests selected by the test <pattern>
@@ -946,10 +946,13 @@ local function step(tests)
 end
 
 local function dump(tests)
-    if remote_address then error("dump cannot be used with a remote machine") end
     local ram_image = tests[1][1]
     local machine = build_machine(ram_image)
-    machine:dump_pmas()
+    for _, v in machine:get_memory_ranges() do
+        local filename = string.format("%016x--%016x.bin", v.start, v.length)
+        local file <close> = assert(io.open(filename, "w"))
+        assert(file:write(machine:read_memory(v.start, v.length)))
+    end
     machine:destroy()
 end
 

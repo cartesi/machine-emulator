@@ -267,18 +267,6 @@ local function connect()
     return remote, version
 end
 
-local pmas_file_names = {
-    "0000000000000000--0000000000001000.bin", -- shadow state
-    "0000000000010000--0000000000001000.bin", -- shadow pmas
-    "0000000000020000--0000000000006000.bin", -- shadow tlb
-    "0000000002000000--00000000000c0000.bin", -- clint
-    "0000000040008000--0000000000001000.bin", -- htif
-    "000000007ff00000--0000000000100000.bin", -- dtb
-    "0000000080000000--0000000000100000.bin", -- ram
-    "0000000070000000--0000000000010000.bin", -- uarch ram
-}
-local pmas_sizes = { 4096, 4096, 24576, 786432, 4096, 1048576, 1048576, 65536 }
-
 local remote
 
 local function build_machine(type, build_options)
@@ -491,13 +479,9 @@ do_test("should return expected value", function(machine)
     local root_hash = machine:get_root_hash()
     print("Root hash: ", test_util.tohex(root_hash))
 
-    machine:dump_pmas()
     local calculated_root_hash = test_util.calculate_emulator_hash(machine)
-    for _, file_name in pairs(pmas_file_names) do
-        os.remove(test_path .. file_name)
-    end
 
-    assert(test_util.tohex(root_hash) == test_util.tohex(calculated_root_hash), "initial root hash does not match")
+    assert(root_hash == calculated_root_hash, "initial root hash does not match")
 end)
 
 print("\n\n test get_initial_config")
@@ -539,25 +523,6 @@ do_test("should return expected values", function(machine)
             local method_name = "read_" .. k
             assert(machine[method_name](machine) == initial_csr_values[k], "wrong " .. k .. " value")
         end
-    end
-end)
-
-print("\n\n dump pmas to files")
-do_test("there should exist dumped files of expected size", function(machine)
-    -- Dump pmas to files
-    machine:dump_pmas()
-
-    for i = 1, #pmas_file_names do
-        local dumped_file = pmas_file_names[i]
-        local fd = assert(io.open(dumped_file, "rb"))
-        local real_file_size = fd:seek("end")
-        fd:close(dumped_file)
-
-        assert(real_file_size == pmas_sizes[i], "unexpected pmas file size " .. dumped_file)
-
-        assert(test_util.file_exists(dumped_file), "dumping pmas to file failed " .. dumped_file)
-
-        os.remove(dumped_file)
     end
 end)
 

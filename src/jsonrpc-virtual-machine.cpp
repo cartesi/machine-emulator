@@ -805,11 +805,6 @@ bool jsonrpc_virtual_machine::do_verify_dirty_page_maps(void) const {
     return result;
 }
 
-void jsonrpc_virtual_machine::do_dump_pmas(void) const {
-    bool result = false;
-    jsonrpc_request(m_mgr->get_mgr(), m_mgr->get_remote_address(), "machine.dump_pmas", std::tie(), result);
-}
-
 uint64_t jsonrpc_virtual_machine::do_read_word(uint64_t address) const {
     uint64_t result = 0;
     jsonrpc_request(m_mgr->get_mgr(), m_mgr->get_remote_address(), "machine.read_word", std::tie(address), result);

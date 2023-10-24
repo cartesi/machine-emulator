@@ -33,14 +33,6 @@ namespace cartesi {
         (void) fprintf(stderr, #regname " = %" PRIx64 "\n", val);                                                      \
     } while (0)
 
-/// \brief This is the machine:dump_pmas() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_dump_pmas(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_dump_pmas(m.get(), err_msg));
-    return 1;
-}
-
 /// \brief This is the machine:get_proof() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_get_proof(lua_State *L) {
@@ -541,7 +533,6 @@ static int machine_obj_index_rollback(lua_State *L) {
 
 /// \brief Contents of the machine object metatable __index table.
 static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
-    {"dump_pmas", machine_obj_index_dump_pmas},
     {"get_proof", machine_obj_index_get_proof},
     {"get_initial_config", machine_obj_index_get_initial_config},
     {"get_root_hash", machine_obj_index_get_root_hash},

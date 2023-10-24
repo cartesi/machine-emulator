@@ -1509,15 +1509,6 @@ CM_API int cm_read_iflags_H(const cm_machine *m, bool *val, char **err_msg);
 /// \returns 0 for success, non zero code for error
 CM_API int cm_set_iflags_H(cm_machine *m, char **err_msg);
 
-/// \brief Dump all memory ranges to files in current working directory.
-/// \param m Pointer to valid machine instance
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_cstring.
-/// err_msg can be NULL, meaning the error message won't be received.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_dump_pmas(const cm_machine *m, char **err_msg);
-
 /// \brief Verify if dirty page maps are consistent.
 /// \param m Pointer to valid machine instance
 /// \param result True if dirty page maps are consistent, false if there is an error.

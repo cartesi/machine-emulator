@@ -211,7 +211,6 @@ private:
     void do_snapshot() override;
     void do_rollback() override;
     bool do_verify_dirty_page_maps(void) const override;
-    void do_dump_pmas(void) const override;
     uint64_t do_read_word(uint64_t address) const override;
     bool do_verify_merkle_tree(void) const override;
     uint64_t do_read_uarch_x(int i) const override;

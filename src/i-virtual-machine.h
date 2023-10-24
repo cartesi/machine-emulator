@@ -136,11 +136,6 @@ public:
         do_replace_memory_range(new_range);
     }
 
-    /// \brief Dump all memory ranges to files in current working directory.
-    void dump_pmas(void) const {
-        do_dump_pmas();
-    }
-
     /// \brief Read the value of a word in the machine state.
     uint64_t read_word(uint64_t address) const {
         return do_read_word(address);
@@ -747,7 +742,6 @@ private:
     virtual uint64_t do_read_clint_mtimecmp(void) const = 0;
     virtual void do_write_clint_mtimecmp(uint64_t val) = 0;
     virtual void do_replace_memory_range(const memory_range_config &new_range) = 0;
-    virtual void do_dump_pmas(void) const = 0;
     virtual uint64_t do_read_word(uint64_t address) const = 0;
     virtual bool do_verify_dirty_page_maps(void) const = 0;
     virtual machine_config do_get_initial_config(void) const = 0;

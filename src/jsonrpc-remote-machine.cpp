@@ -344,7 +344,7 @@ inline constexpr bool is_optional_param_v = is_optional_param<T>::value;
 /// \returns Number of parameters wrapped in optional_param
 template <typename... ARGS>
 constexpr size_t count_mandatory_params(void) {
-    return ((!is_optional_param_v<ARGS> ? 0 : 1) + ... + 0);
+    return ((is_optional_param_v<ARGS> ? 0 : 1) + ... + 0);
 }
 
 /// \brief Returns index of the first parameter that is optional (i.e., wrapped in optional_param)

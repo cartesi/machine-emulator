@@ -32,6 +32,7 @@ LUA_BIN?=lua5.4
 GRPC_DIR:=../lib/grpc-interfaces
 
 PROTOC:=$(shell which protoc)
+PROTOC_FLAGS:=--experimental_allow_proto3_optional
 GRPC_CPP_PLUGIN:=$(shell which grpc_cpp_plugin)
 
 # Code instrumentation
@@ -70,8 +71,8 @@ CRYPTOPP_INC_Darwin:=-I$(BREW_PREFIX)/include
 NLOHMANN_JSON_INC_Darwin:=-I$(BREW_PREFIX)/include
 B64_LIB_Darwin:=-L$(BREW_PREFIX)/lib -lb64
 B64_INC_Darwin:=-I$(BREW_PREFIX)/include
-GRPC_INC_Darwin:=$(shell pkg-config --cflags-only-I grpc++)
-GRPC_LIB_Darwin:=$(shell pkg-config --libs grpc++)
+GRPC_INC_Darwin:=$(shell pkg-config --cflags-only-I grpc++ protobuf)
+GRPC_LIB_Darwin:=$(shell pkg-config --libs grpc++ protobuf)
 PROTOBUF_INC_Darwin:=$(shell pkg-config --cflags-only-I protobuf)
 PROTOBUF_LIB_Darwin:=$(shell pkg-config --libs protobuf)
 else ifneq (,$(shell which port)) # Macports installation
@@ -122,8 +123,8 @@ B64_LIB_Linux:=-lb64
 B64_INC_Linux:=
 CRYPTOPP_LIB_Linux:=-lcryptopp
 CRYPTOPP_INC_Linux:=
-GRPC_INC_Linux:=$(shell pkg-config --cflags-only-I grpc++)
-GRPC_LIB_Linux:=$(shell pkg-config --libs grpc++)
+GRPC_INC_Linux:=$(shell pkg-config --cflags-only-I grpc++ protobuf)
+GRPC_LIB_Linux:=$(shell pkg-config --libs grpc++ protobuf)
 PROTOBUF_INC_Linux:=$(shell pkg-config --cflags-only-I protobuf)
 PROTOBUF_LIB_Linux:=$(shell pkg-config --libs protobuf)
 LIBCARTESI_Linux=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
@@ -725,10 +726,10 @@ tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI) $(LIBCARTESI_
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
 
 %.grpc.pb.cc: $(GRPC_DIR)/%.proto
-	$(PROTOC) -I$(<D) --grpc_out=. --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN) $<
+	$(PROTOC) $(PROTOC_FLAGS) -I$(<D) --grpc_out=. --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN) $<
 
 %.pb.cc: $(GRPC_DIR)/%.proto
-	$(PROTOC) -I$(GRPC_DIR) --cpp_out=. $<
+	$(PROTOC) $(PROTOC_FLAGS) -I$(GRPC_DIR) --cpp_out=. $<
 
 machine-config.o protobuf-util.o: $(CARTESI_PROTOBUF_GEN_OBJS)
 

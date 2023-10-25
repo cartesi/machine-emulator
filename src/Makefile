@@ -61,27 +61,33 @@ export MACOSX_DEPLOYMENT_TARGET := $(shell sw_vers -productVersion | sed -r  "s/
 endif
 SOLDFLAGS_Darwin+=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
 # Homebrew installation
-ifneq (,$(wildcard /usr/local/opt/boost/lib))
-BOOST_LIB_DIR_Darwin=-L/usr/local/opt/boost/lib
-BOOST_INC_Darwin=-I/usr/local/opt/boost/include
-CRYPTOPP_LIB_Darwin:=-L/usr/local/opt/cryptopp/lib -lcryptopp
-CRYPTOPP_INC_Darwin:=-I/usr/local/opt/cryptopp/include
-NLOHMANN_JSON_INC_Darwin:=-I/usr/local/opt/nlohmann-json/include
-B64_LIB_Darwin:=-L/usr/local/opt/libb64/lib -lb64
-B64_INC_Darwin:=-I/usr/local/opt/libb64/include
-GRPC_INC_Darwin=-I/usr/local/opt/gprc/include
-GRPC_LIB_Darwin=-L/usr/local/opt/grpc/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
-PROTOBUF_LIB_Darwin:=-L/usr/local/opt/protobuf/lib -lprotobuf -lpthread
-else # Macports installation
-BOOST_LIB_DIR_Darwin=-L/opt/local/libexec/boost/1.81/lib
-BOOST_INC_Darwin=-I/opt/local/libexec/boost/1.81/include
-CRYPTOPP_LIB_Darwin:=-L/opt/local/lib -lcryptopp
-CRYPTOPP_INC_Darwin:=-I/opt/local/include
-B64_LIB_Darwin:=-L/opt/local/lib -lb64
-B64_INC_Darwin:=-I/opt/local/include
-GRPC_INC_Darwin=-I/opt/local/include
-GRPC_LIB_Darwin=-L/opt/local/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
-PROTOBUF_LIB_Darwin:=-L/opt/local/lib -lprotobuf -lpthread
+ifneq (,$(shell which brew))
+BREW_PREFIX := $(shell brew --prefix)
+BOOST_LIB_DIR_Darwin=-L$(BREW_PREFIX)/lib
+BOOST_INC_Darwin=-I$(BREW_PREFIX)/include
+CRYPTOPP_LIB_Darwin:=-L$(BREW_PREFIX)/lib -lcryptopp
+CRYPTOPP_INC_Darwin:=-I$(BREW_PREFIX)/include
+NLOHMANN_JSON_INC_Darwin:=-I$(BREW_PREFIX)/include
+B64_LIB_Darwin:=-L$(BREW_PREFIX)/lib -lb64
+B64_INC_Darwin:=-I$(BREW_PREFIX)/include
+GRPC_INC_Darwin:=$(shell pkg-config --cflags-only-I grpc++)
+GRPC_LIB_Darwin:=$(shell pkg-config --libs grpc++)
+PROTOBUF_INC_Darwin:=$(shell pkg-config --cflags-only-I protobuf)
+PROTOBUF_LIB_Darwin:=$(shell pkg-config --libs protobuf)
+else ifneq (,$(shell which port)) # Macports installation
+PORT_PREFIX := /opt/local
+BOOST_LIB_DIR_Darwin=-L$(PORT_PREFIX)/libexec/boost/1.81/lib
+BOOST_INC_Darwin=-I$(PORT_PREFIX)/libexec/boost/1.81/include
+CRYPTOPP_LIB_Darwin:=-L$(PORT_PREFIX)/lib -lcryptopp
+CRYPTOPP_INC_Darwin:=-I$(PORT_PREFIX)/include
+B64_LIB_Darwin:=-L$(PORT_PREFIX)/lib -lb64
+B64_INC_Darwin:=-I$(PORT_PREFIX)/include
+GRPC_INC_Darwin:=-I$(PORT_PREFIX)/include
+GRPC_LIB_Darwin=-L$(PORT_PREFIX)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
+PROTOBUF_INC_Darwin:=-I$(PORT_PREFIX)/include
+PROTOBUF_LIB_Darwin:=-L$(PORT_PREFIX)/lib -lprotobuf -lpthread
+else
+$(error Neither Homebrew nor MacPorts is installed)
 endif
 endif
 
@@ -112,9 +118,10 @@ B64_LIB_Linux:=-lb64
 B64_INC_Linux:=
 CRYPTOPP_LIB_Linux:=-lcryptopp
 CRYPTOPP_INC_Linux:=
-GRPC_INC_Linux:=
-GRPC_LIB_Linux:=-lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
-PROTOBUF_LIB_Linux:=-lprotobuf -lpthread
+GRPC_INC_Linux:=$(shell pkg-config --cflags-only-I grpc++)
+GRPC_LIB_Linux:=$(shell pkg-config --libs grpc++)
+PROTOBUF_INC_Linux:=$(shell pkg-config --cflags-only-I protobuf)
+PROTOBUF_LIB_Linux:=$(shell pkg-config --libs protobuf)
 LIBCARTESI_Linux=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
 LIBCARTESI_LDFLAGS_Linux:=$(SOLDFLAGS_Linux)
 LIBCARTESI_TESTS_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/..'
@@ -124,7 +131,7 @@ LIBCARTESI_GRPC_TESTS_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/..'
 LIBCARTESI_JSONRPC_Linux=libcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
 LIBCARTESI_JSONRPC_LDFLAGS_Linux:=$(SOLDFLAGS_Linux)
 LIBCARTESI_JSONRPC_TESTS_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/..'
-CARTESI_EXECUTABLE_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/' -Wl,--copy-dt-needed-entries
+CARTESI_EXECUTABLE_LDFLAGS_Linux=-Wl,-rpath,'$$ORIGIN/'
 PROFILE_DATA_Linux=
 
 CC=$(CC_$(UNAME))
@@ -139,9 +146,10 @@ CRYPTOPP_LIB=$(CRYPTOPP_LIB_$(UNAME))
 CRYPTOPP_INC=$(CRYPTOPP_INC_$(UNAME))
 NLOHMANN_JSON_INC=$(NLOHMANN_JSON_INC_$(UNAME))
 MONGOOSE_INC=-I$(BUILDDIR)/include
-GRPC_LIB=$(GRPC_LIB_$(UNAME))
-GRPC_INC=$(GRPC_INC_$(UNAME))
-PROTOBUF_LIB=$(PROTOBUF_LIB_$(UNAME))
+GRPC_INC:=$(GRPC_INC_$(UNAME))
+GRPC_LIB:=$(GRPC_LIB_$(UNAME))
+PROTOBUF_INC:=$(PROTOBUF_INC_$(UNAME))
+PROTOBUF_LIB:=$(PROTOBUF_LIB_$(UNAME))
 LIBCARTESI=$(LIBCARTESI_$(UNAME))
 LIBCARTESI_LDFLAGS=$(LIBCARTESI_LDFLAGS_$(UNAME))
 LIBCARTESI_TESTS_LDFLAGS=$(LIBCARTESI_TESTS_LDFLAGS_$(UNAME))
@@ -169,7 +177,7 @@ WARNS=-W -Wall -pedantic
 
 # Place our include directories before the system's
 INCS=-I../lib/machine-emulator-defines -I../third-party/llvm-flang-uint128 \
-	$(LUA_INC) $(CRYPTOPP_INC) $(NLOHMANN_JSON_INC) $(MONGOOSE_INC) $(B64_INC) $(BOOST_INC) $(GRPC_INC) $(INCS_$(UNAME))
+	$(LUA_INC) $(CRYPTOPP_INC) $(NLOHMANN_JSON_INC) $(MONGOOSE_INC) $(B64_INC) $(BOOST_INC) $(PROTOBUF_INC) $(GRPC_INC) $(INCS_$(UNAME))
 
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS
@@ -690,7 +698,7 @@ $(BUILDDIR)/lib/mongoose.o: CFLAGS := $(patsubst %-std=c99,%,$(CFLAGS))
 jsonrpc-remote-cartesi-machine: $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS)
 	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) $(JSONRPC_REMOTE_CARTESI_MACHINE_LIBS)
 
-remote-cartesi-machine: CXXFLAGS := $(GRPC_INC) $(CXXFLAGS)
+remote-cartesi-machine: CXXFLAGS := $(PROTOBUF_INC) $(GRPC_INC) $(CXXFLAGS)
 
 tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) $(LIBCARTESI) $(LIBCARTESI_GRPC)
 	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(TEST_MACHINE_C_API_OBJS) $(TEST_MACHINE_C_API_LIBS)

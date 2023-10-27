@@ -67,17 +67,15 @@ EMU_TO_INC= $(addprefix lib/machine-emulator-defines/,pma-defines.h rtc-defines.
             $(addprefix src/,jsonrpc-machine-c-api.h grpc-machine-c-api.h machine-c-api.h machine-c-defines.h machine-c-version.h)
 UARCH_TO_SHARE= uarch-ram.bin
 
+MONGOOSE_VERSION=7.12
+
 # Build settings
 DEPDIR := third-party
 SRCDIR := $(abspath src)
-BUILDBASE := $(abspath build)
-BUILDDIR = $(BUILDBASE)/$(UNAME)_$(shell uname -m)
 DOWNLOADDIR := $(DEPDIR)/downloads
+DEPDIRS := third-party/mongoose-$(MONGOOSE_VERSION)
 SUBCLEAN := $(addsuffix .clean,$(SRCDIR) uarch third-party/riscv-arch-tests)
-DEPDIRS := $(addprefix $(DEPDIR)/,mongoose-7.9)
-DEPCLEAN := $(addsuffix .clean,$(DEPDIRS))
 COREPROTO := lib/grpc-interfaces/core.proto
-LUASOCKET_VERSION ?= 5b18e475f38fcf28429b1cc4b17baee3b9793a62
 
 # Docker image tag
 TAG ?= devel
@@ -104,44 +102,37 @@ LUA_PLAT ?= macosx
 export CC = clang
 export CXX = clang++
 LUACC = "CC=$(CXX)"
-LIBRARY_PATH := "export DYLD_LIBRARY_PATH=$(BUILDDIR)/lib"
-LUAMYLIBS = "MYLIBS=-L/opt/local/lib/libomp -L/usr/local/opt/llvm/lib -lomp"
+LIBRARY_PATH := "export DYLD_LIBRARY_PATH="
 
 # Linux specific settings
 else ifeq ($(UNAME),Linux)
 LUA_PLAT ?= linux
-LIBRARY_PATH := "export LD_LIBRARY_PATH=$(BUILDDIR)/lib:$(SRCDIR)"
+LIBRARY_PATH := "export LD_LIBRARY_PATH=$(SRCDIR)"
 LUACC = "CC=g++"
-LUAMYLIBS = "MYLIBS=\"-lgomp\""
 # Unknown platform
 else
 LUA_PLAT ?= none
 INSTALL_PLAT=
 endif
 
-# Check if some binary dependencies already exists on build directory to skip
-# downloading and building them.
-DEPBINS := $(addprefix $(BUILDDIR)/,include/mongoose.h)
-
 all: source-default
 
 clean: $(SUBCLEAN)
 
-depclean: $(DEPCLEAN) clean
-	rm -rf $(BUILDDIR)
+depclean: clean
 	$(MAKE) -C third-party/riscv-arch-tests depclean
 
 distclean:
-	rm -rf $(BUILDBASE) $(DOWNLOADDIR) $(DEPDIRS)
+	rm -rf $(DOWNLOADDIR) $(DEPDIRS)
 	$(MAKE) -C third-party/riscv-arch-tests depclean
 	$(MAKE) clean
 
-$(BUILDDIR) $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH) $(UARCH_INSTALL_PATH):
+$(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH) $(UARCH_INSTALL_PATH):
 	mkdir -m 0755 -p $@
 
 env:
 	@echo $(LIBRARY_PATH)
-	@echo "export PATH='$(SRCDIR):$(BUILDDIR)/bin:${PATH}'"
+	@echo "export PATH='$(SRCDIR):${PATH}'"
 	@echo "export LUA_PATH_5_4='$(SRCDIR)/?.lua;$${LUA_PATH_5_4:-;}'"
 	@echo "export LUA_CPATH_5_4='$(SRCDIR)/?.so;$${LUA_CPATH_5_4:-;}'"
 
@@ -165,15 +156,21 @@ help:
 	@echo '  uarch-tests                - build and run microarchitecture rv64i instruction tests'
 	@echo '  uarch-tests-with-linux-env - build and run microarchitecture rv64i instruction tests using the linux-env docker image'
 
+checksum:
+	@cd $(DEPDIR) && shasum -c shasumfile
+
 $(DOWNLOADDIR):
 	@mkdir -p $(DOWNLOADDIR)
 	@wget -nc -i $(DEPDIR)/dependencies -P $(DOWNLOADDIR)
-	@cd $(DEPDIR) && shasum -c shasumfile
+	$(MAKE) checksum
 
 downloads: $(DOWNLOADDIR)
 
-dep: $(DEPBINS)
-	@rm -f $(BUILDDIR)/lib/*.a
+third-party/downloads/$(MONGOOSE_VERSION).tar.gz: | downloads
+third-party/mongoose-$(MONGOOSE_VERSION): third-party/downloads/$(MONGOOSE_VERSION).tar.gz
+	tar -C third-party -xzf $< mongoose-$(MONGOOSE_VERSION)/mongoose.c mongoose-$(MONGOOSE_VERSION)/mongoose.h
+
+dep: $(DEPDIRS)
 
 submodules:
 	git submodule update --init --recursive
@@ -205,16 +202,10 @@ source-default:
 uarch: $(SRCDIR)/machine-c-version.h
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C uarch
 
-$(BUILDDIR)/include/mongoose.h $(BUILDDIR)/lib/libmongoose.a: | $(BUILDDIR) $(DOWNLOADDIR)
-	mkdir -p $(BUILDDIR)/include $(BUILDDIR)/lib
-	if [ ! -d $(DEPDIR)/mongoose-7.9 ]; then tar -xzf $(DOWNLOADDIR)/7.9.tar.gz -C /tmp/; mv /tmp/mongoose-7.9 $(DEPDIR)/; fi
-	cp $(DEPDIR)/mongoose-7.9/mongoose.c $(BUILDDIR)/lib
-	cp $(DEPDIR)/mongoose-7.9/mongoose.h $(BUILDDIR)/include
-
 $(SRCDIR)/machine-c-version.h:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) machine-c-version.h
 
-$(SUBCLEAN) $(DEPCLEAN): %.clean:
+$(SUBCLEAN): %.clean:
 	$(MAKE) -C $* clean
 
 build-linux-env:
@@ -267,12 +258,12 @@ uarch-tests-with-linux-env:
 	@$(MAKE) linux-env-exec CONTAINER_COMMAND="make uarch-tests"
 
 install-Darwin:
-	install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_RUNTIME_PATH) $(LUA_INSTALL_CPATH)/cartesi.so
-	install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_RUNTIME_PATH) $(LUA_INSTALL_CPATH)/cartesi/grpc.so
-	install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_RUNTIME_PATH) $(LUA_INSTALL_CPATH)/cartesi/jsonrpc.so
+	install_name_tool -delete_rpath $(SRCDIR) -add_rpath $(LIB_RUNTIME_PATH) $(LUA_INSTALL_CPATH)/cartesi.so
+	install_name_tool -delete_rpath $(SRCDIR) -add_rpath $(LIB_RUNTIME_PATH) $(LUA_INSTALL_CPATH)/cartesi/grpc.so
+	install_name_tool -delete_rpath $(SRCDIR) -add_rpath $(LIB_RUNTIME_PATH) $(LUA_INSTALL_CPATH)/cartesi/jsonrpc.so
 	cd $(BIN_INSTALL_PATH) && \
 		for x in $(EMU_TO_BIN); do \
-			install_name_tool -delete_rpath $(BUILDDIR)/lib -delete_rpath $(SRCDIR) -add_rpath $(LIB_RUNTIME_PATH) $$x ;\
+			install_name_tool -delete_rpath $(SRCDIR) -add_rpath $(LIB_RUNTIME_PATH) $$x ;\
 		done
 
 install-Linux:
@@ -325,5 +316,5 @@ debian-package: install
 
 .SECONDARY: $(DOWNLOADDIR) $(DEPDIRS) $(COREPROTO)
 
-.PHONY: help all submodules doc clean distclean downloads src test luacartesi grpc hash uarch \
-	$(SUBDIRS) $(SUBCLEAN) $(DEPCLEAN)
+.PHONY: help all submodules doc clean distclean downloads checksum src test luacartesi grpc hash uarch \
+	$(SUBDIRS) $(SUBCLEAN)

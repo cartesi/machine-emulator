@@ -154,14 +154,12 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
         }
 
         // drives
-        int drive_index = 0;
         for (const auto &f : c.flash_drive) {
             fdt.begin_node_num("pmem", f.start);
             fdt.prop_string("compatible", "pmem-region");
             fdt.prop_u64_list<2>("reg", {f.start, f.length});
             fdt.prop_empty("volatile");
             fdt.end_node();
-            drive_index++;
         }
 
         // rollup

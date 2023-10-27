@@ -24,8 +24,6 @@ EMULATOR_VERSION_LABEL=
 
 UNAME:=$(shell uname)
 
-BUILDDIR ?= $(abspath ../build/$(UNAME)_$(shell uname -m))
-
 LUA_INC:=$(shell pkg-config --cflags-only-I lua5.4)
 LUA_LIB:=-llua5.4
 LUA_BIN?=lua5.4
@@ -60,7 +58,7 @@ ifeq ($(UNAME),Darwin)
 ifeq ($(MACOSX_DEPLOYMENT_TARGET),)
 export MACOSX_DEPLOYMENT_TARGET := $(shell sw_vers -productVersion | sed -r  "s/([[:digit:]]+)\.([[:digit:]]+)\..+/\1.\2.0/")
 endif
-SOLDFLAGS_Darwin+=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
+SOLDFLAGS_Darwin+=-Wl,-rpath,$(CURDIR)
 # Homebrew installation
 ifneq (,$(shell which brew))
 BREW_PREFIX := $(shell brew --prefix)
@@ -91,14 +89,14 @@ BOOST_FILESYSTEM_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_system-mt -lboost_f
 BOOST_PROCESS_LIB_Darwin:=-lpthread
 LIBCARTESI_Darwin=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
 LIBCARTESI_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_Darwin)'
-LIBCARTESI_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
+LIBCARTESI_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(CURDIR)
 LIBCARTESI_GRPC_Darwin=libcartesi_grpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
 LIBCARTESI_GRPC_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_GRPC_Darwin)'
-LIBCARTESI_GRPC_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
+LIBCARTESI_GRPC_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(CURDIR)
 LIBCARTESI_JSONRPC_Darwin=libcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
 LIBCARTESI_JSONRPC_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_JSONRPC_Darwin)'
-LIBCARTESI_JSONRPC_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
-CARTESI_EXECUTABLE_LDFLAGS_Darwin=-Wl,-rpath,$(BUILDDIR)/lib -Wl,-rpath,$(CURDIR)
+LIBCARTESI_JSONRPC_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(CURDIR)
+CARTESI_EXECUTABLE_LDFLAGS_Darwin=-Wl,-rpath,$(CURDIR)
 PROFILE_DATA_Darwin=default.profdata
 
 # Linux specific setup
@@ -136,7 +134,6 @@ BOOST_FILESYSTEM_LIB=$(BOOST_FILESYSTEM_LIB_$(UNAME))
 BOOST_INC=$(BOOST_INC_$(UNAME))
 CRYPTOPP_LIB=$(CRYPTOPP_LIB_$(UNAME))
 CRYPTOPP_INC=$(CRYPTOPP_INC_$(UNAME))
-MONGOOSE_INC=-I$(BUILDDIR)/include
 GRPC_INC:=$(GRPC_INC_$(UNAME))
 GRPC_LIB:=$(GRPC_LIB_$(UNAME))
 PROTOBUF_INC:=$(PROTOBUF_INC_$(UNAME))
@@ -167,8 +164,12 @@ HASH_LIBS:=$(CRYPTOPP_LIB)
 WARNS=-W -Wall -pedantic
 
 # Place our include directories before the system's
-INCS=-I../lib/machine-emulator-defines -I../third-party/llvm-flang-uint128 -I../third-party/downloads \
-	$(LUA_INC) $(CRYPTOPP_INC) $(MONGOOSE_INC) $(BOOST_INC) $(PROTOBUF_INC) $(GRPC_INC) $(INCS_$(UNAME))
+INCS= \
+	-I../lib/machine-emulator-defines \
+	-I../third-party/llvm-flang-uint128 \
+	-I../third-party/downloads \
+	-I../third-party/mongoose-7.12 \
+	$(LUA_INC) $(CRYPTOPP_INC) $(BOOST_INC) $(PROTOBUF_INC) $(GRPC_INC) $(INCS_$(UNAME))
 
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS
@@ -275,7 +276,7 @@ SPACE:=$(EMPTY) $(EMPTY)
 CLANG_TIDY_HEADER_FILTER=$(PWD)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
 
 CXXFLAGS+=$(OPTFLAGS) -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS) $(MYCFLAGS)
-CFLAGS+=$(OPTFLAGS) -std=c99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS) $(MYCFLAGS)
+CFLAGS+=$(OPTFLAGS) -std=gnu99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS) $(MYCFLAGS)
 LDFLAGS+=$(UBFLAGS) $(MYLDFLAGS)
 
 COVERAGE_WORKLOAD=\
@@ -375,7 +376,7 @@ LUACARTESI_JSONRPC_OBJS:= \
 	clua-jsonrpc-machine.o \
 	json-util.o \
 	base64.o \
-	$(BUILDDIR)/lib/mongoose.o \
+	mongoose-impl.o \
 	jsonrpc-machine-c-api.o \
 	jsonrpc-virtual-machine.o \
 	clua.o
@@ -586,7 +587,7 @@ JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	slog.o \
 	jsonrpc-remote-machine.o \
 	jsonrpc-discover.o \
-	$(BUILDDIR)/lib/mongoose.o \
+	mongoose-impl.o \
 	pma-driver.o \
 	clint.o \
 	clint-factory.o \
@@ -683,8 +684,6 @@ grpc-interfaces: $(PROTO_SOURCES)
 
 remote-cartesi-machine: $(REMOTE_CARTESI_MACHINE_OBJS)
 	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(REMOTE_CARTESI_MACHINE_OBJS) $(REMOTE_CARTESI_MACHINE_LIBS)
-
-$(BUILDDIR)/lib/mongoose.o: CFLAGS := $(patsubst %-std=c99,%,$(CFLAGS))
 
 jsonrpc-remote-cartesi-machine: $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS)
 	$(CXX) $(LDFLAGS) $(CARTESI_EXECUTABLE_LDFLAGS) -o $@ $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) $(JSONRPC_REMOTE_CARTESI_MACHINE_LIBS)

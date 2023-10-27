@@ -4,15 +4,7 @@ EMULATOR_SRC_DIR = ../src
 MACHINE_EMULATOR_DEFINES_DIR := ../lib/machine-emulator-defines
 THIRD_PARTY_DIR := ../third-party
 
-BOOST_INC_DIR = /usr/include/boost
-ifeq ($(UNAME),Darwin)
-# Homebrew installation
-ifneq (,$(wildcard /usr/local/opt/boost/lib))
-BOOST_INC_DIR =/usr/local/opt/boost/include
-else # Macports installation
-BOOST_INC_DIR = /opt/local/include
-endif
-endif
+BOOST_INC_DIR = ../third-party/boost_1_83_0
 
 CC := $(TOOLCHAIN_PREFIX)gcc
 LD := $(TOOLCHAIN_PREFIX)ld

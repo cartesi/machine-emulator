@@ -68,12 +68,13 @@ EMU_TO_INC= $(addprefix lib/machine-emulator-defines/,pma-defines.h rtc-defines.
 UARCH_TO_SHARE= uarch-ram.bin
 
 MONGOOSE_VERSION=7.12
+BOOST_VERSION=1_83_0
 
 # Build settings
 DEPDIR := third-party
 SRCDIR := $(abspath src)
 DOWNLOADDIR := $(DEPDIR)/downloads
-DEPDIRS := third-party/mongoose-$(MONGOOSE_VERSION)
+DEPDIRS := third-party/mongoose-$(MONGOOSE_VERSION) third-party/boost_$(BOOST_VERSION)
 SUBCLEAN := $(addsuffix .clean,$(SRCDIR) uarch third-party/riscv-arch-tests)
 COREPROTO := lib/grpc-interfaces/core.proto
 
@@ -169,6 +170,10 @@ downloads: $(DOWNLOADDIR)
 third-party/downloads/$(MONGOOSE_VERSION).tar.gz: | downloads
 third-party/mongoose-$(MONGOOSE_VERSION): third-party/downloads/$(MONGOOSE_VERSION).tar.gz
 	tar -C third-party -xzf $< mongoose-$(MONGOOSE_VERSION)/mongoose.c mongoose-$(MONGOOSE_VERSION)/mongoose.h
+
+third-party/downloads/boost_$(BOOST_VERSION).tar.gz: | downloads
+third-party/boost_$(BOOST_VERSION): third-party/downloads/boost_$(BOOST_VERSION).tar.gz
+	tar -C third-party -xzf $< boost_$(BOOST_VERSION)/boost
 
 dep: $(DEPDIRS)
 

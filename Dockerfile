@@ -7,8 +7,8 @@ ARG SANITIZE=no
 RUN apt-get update && \
     DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends -y \
         build-essential vim wget git clang-tidy-15 clang-format-15 lcov \
-        libreadline-dev libboost-filesystem1.81-dev libssl-dev libc-ares-dev zlib1g-dev \
-        ca-certificates automake libtool patchelf cmake pkg-config lua5.4 liblua5.4-dev \
+        libssl-dev \
+        ca-certificates automake libtool patchelf pkg-config lua5.4 liblua5.4-dev \
         libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
         luarocks libcrypto++-dev && \
         update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-15 120 && \

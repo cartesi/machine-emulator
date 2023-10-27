@@ -24,7 +24,6 @@ Docker targets:
 - Cryptopp >= 7.0.0
 - GRPC >= 1.45.0
 - Lua >= 5.4.4
-- Boost >= 1.81
 
 Obs: Please note that Apple Clang Version number does not follow upstream LLVM/Clang.
 
@@ -32,9 +31,8 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 
 ```
 apt-get install build-essential wget git clang-tidy-15 clang-format-15 \
-        libreadline-dev libboost-context1.81-dev \
-        libboost-filesystem1.81-dev libssl-dev libc-ares-dev zlib1g-dev \
-        ca-certificates automake libtool patchelf cmake pkg-config lua5.4 liblua5.4-dev \
+        libssl-dev \
+        ca-certificates automake libtool patchelf pkg-config lua5.4 liblua5.4-dev \
         libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
         luarocks libcrypto++-dev
 
@@ -48,7 +46,7 @@ sudo luarocks install --lua-version=5.4 luaposix
 
 ##### MacPorts
 ```
-sudo port install clang-15 automake boost libtool wget cmake pkgconfig grpc zlib openssl lua libcryptopp lua-luarocks
+sudo port install clang-15 automake libtool wget pkgconfig grpc openssl lua libcryptopp lua-luarocks
 
 sudo luarocks install --lua-version=5.4 lpeg
 sudo luarocks install --lua-version=5.4 dkjson
@@ -59,7 +57,7 @@ sudo luarocks install --lua-version=5.4 luaposix
 
 ##### Homebrew
 ```
-brew install llvm@15 automake boost libomp wget cmake cryptopp pkg-config grpc zlib openssl lua@5.4 luarocks
+brew install llvm@15 automake wget cryptopp pkg-config grpc openssl lua@5.4 luarocks
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install lpeg
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install dkjson
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install luasocket

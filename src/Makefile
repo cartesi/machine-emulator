@@ -85,8 +85,7 @@ $(error Neither Homebrew nor MacPorts is installed)
 endif
 endif
 
-BOOST_FILESYSTEM_LIB_Darwin:=$(BOOST_LIB_DIR_Darwin) -lboost_system-mt -lboost_filesystem-mt
-BOOST_PROCESS_LIB_Darwin:=-lpthread
+PTHREAD_LIB_Darwin:=-lpthread
 LIBCARTESI_Darwin=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
 LIBCARTESI_LDFLAGS_Darwin=-dynamiclib -undefined dynamic_lookup -install_name '@rpath/$(LIBCARTESI_Darwin)'
 LIBCARTESI_TESTS_LDFLAGS_Darwin=-Wl,-rpath,$(CURDIR)
@@ -105,9 +104,8 @@ CC_Linux=gcc
 CXX_Linux=g++
 INCS_Linux=
 FS_LIB_Linux=-lstdc++fs
-BOOST_FILESYSTEM_LIB_Linux:=-lboost_system -lboost_filesystem
-BOOST_PROCESS_LIB_Linux:=-lpthread
-BOOST_INC_Linux=
+PTHREAD_LIB_Linux:=-lpthread
+BOOST_INC_Linux:=
 CRYPTOPP_LIB_Linux:=-lcryptopp
 CRYPTOPP_INC_Linux:=
 GRPC_INC_Linux:=$(shell pkg-config --cflags-only-I grpc++)
@@ -129,9 +127,8 @@ PROFILE_DATA_Linux=
 CC=$(CC_$(UNAME))
 CXX=$(CXX_$(UNAME))
 SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
-BOOST_PROCESS_LIB=$(BOOST_PROCESS_LIB_$(UNAME))
-BOOST_FILESYSTEM_LIB=$(BOOST_FILESYSTEM_LIB_$(UNAME))
-BOOST_INC=$(BOOST_INC_$(UNAME))
+PTHREAD_LIB:=$(PTHREAD_LIB_$(UNAME))
+BOOST_INC:=$(BOOST_INC_$(UNAME))
 CRYPTOPP_LIB=$(CRYPTOPP_LIB_$(UNAME))
 CRYPTOPP_INC=$(CRYPTOPP_INC_$(UNAME))
 GRPC_INC:=$(GRPC_INC_$(UNAME))
@@ -156,7 +153,7 @@ LUACARTESI_GRPC_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB) $(LIBCARTESI_GRPC_LIB)
 LUACARTESI_JSONRPC_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB)
 REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(PROTOBUF_LIB)
 JSONRPC_REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB)
-TEST_MACHINE_C_API_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB) $(LIBCARTESI_GRPC_LIB) $(BOOST_PROCESS_LIB) $(BOOST_FILESYSTEM_LIB)
+TEST_MACHINE_C_API_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB) $(LIBCARTESI_GRPC_LIB) $(PTHREAD_LIB)
 HASH_LIBS:=$(CRYPTOPP_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
@@ -201,9 +198,15 @@ ifneq ($(git_commit),)
 DEFS+=-DGIT_COMMIT='"$(git_commit)"'
 endif
 
+# Allow mongoose to receive up to 12MB messages
+MONGOOSE_DEFS+=-DMG_MAX_RECV_SIZE=12582912
+
 # Optimization flags
 ifneq (,$(filter yes,$(relwithdebinfo) $(release)))
 DEFS+=-DNDEBUG
+## Mongoose log is disabled because it generates code using __FILE__ macro,
+## which is reported as an error when packaging in some Linux distributions.
+MONGOOSE_DEFS+=-DMG_ENABLE_LOG=0
 # Disable jump tables, because it degrades the instruction decoding performance in the interpret loop,
 # since it generates a memory indirection that has a high cost in opcode switches.
 OPTFLAGS+=-fno-jump-tables
@@ -376,7 +379,7 @@ LUACARTESI_JSONRPC_OBJS:= \
 	clua-jsonrpc-machine.o \
 	json-util.o \
 	base64.o \
-	mongoose-impl.o \
+	mongoose.o \
 	jsonrpc-machine-c-api.o \
 	jsonrpc-virtual-machine.o \
 	clua.o
@@ -587,7 +590,7 @@ JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	slog.o \
 	jsonrpc-remote-machine.o \
 	jsonrpc-discover.o \
-	mongoose-impl.o \
+	mongoose.o \
 	pma-driver.o \
 	clint.o \
 	clint-factory.o \
@@ -725,6 +728,9 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CFLAGS) 2>/dev/null
 	@$(CC) $(CFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
+
+mongoose.o: ../third-party/mongoose-7.12/mongoose.c
+	$(CC) $(CFLAGS) $(MONGOOSE_DEFS) -c -o $@ $<
 
 %.o: %.cpp machine-c-version.h
 	$(CXX) $(CXXFLAGS) -c -o $@ $<

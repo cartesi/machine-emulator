@@ -9,7 +9,6 @@ third-party/cryptopp-CRYPTOPP_7_0_0
 third-party/downloads
 third-party/grpc
 third-party/mongoose-*
-src/remote-cartesi-machine-proxy
 src/remote-cartesi-machine
 src/jsonrpc-remote-cartesi-machine
 src/merkle-tree-hash

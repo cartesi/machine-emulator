@@ -39,7 +39,7 @@ using uint32 = uint32_t;
 using int64 = int64_t;
 using uint64 = uint64_t;
 
-// Wrapperfunctions used to access data from the uarch state accessor
+// Wrapper functions used to access data from the uarch state accessor
 
 template <typename UarchState>
 static inline uint64 readWord(UarchState &a, uint64 paddr) {

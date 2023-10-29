@@ -2203,7 +2203,7 @@ bool machine::read_uarch_halt_flag(void) const {
     return m_uarch.read_halt_flag();
 }
 
-/// \brief Sets the value ofthe microarchitecture halt flag.
+/// \brief Sets the value of the microarchitecture halt flag.
 void machine::set_uarch_halt_flag() {
     m_uarch.set_halt_flag();
 }

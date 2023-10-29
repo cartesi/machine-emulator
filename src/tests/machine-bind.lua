@@ -773,16 +773,16 @@ do_test("dumped log content should match", function()
     local output = p:read(2000)
     p:close()
     local expected_output = "begin step\n"
-        .. "  1: read uarch.cycle@0x320(800): 0x0(0)\n"
-        .. "  2: read uarch.halt_flag@0x328(808): 0x0(0)\n"
-        .. "  3: read uarch.pc@0x330(816): 0x70000000(1879048192)\n"
-        .. "  4: read memory@0x70000000(1879048192): 0x3280029307b00513(3638911329427784979)\n"
+        .. "  1: read uarch.cycle@0x3b8(952): 0x0(0)\n"
+        .. "  2: read uarch.halt_flag@0x3c0(960): 0x0(0)\n"
+        .. "  3: read uarch.pc@0x3c8(968): 0x70000000(1879048192)\n"
+        .. "  4: read memory@0x70000000(1879048192): 0x3c00029307b00513(4323458472788100371)\n"
         .. "  begin addi\n"
-        .. "    5: read uarch.x@0x340(832): 0x0(0)\n"
-        .. "    6: write uarch.x@0x390(912): 0x0(0) -> 0x7b(123)\n"
-        .. "    7: write uarch.pc@0x330(816): 0x70000000(1879048192) -> 0x70000004(1879048196)\n"
+        .. "    5: read uarch.x@0x3d8(984): 0x0(0)\n"
+        .. "    6: write uarch.x@0x428(1064): 0x0(0) -> 0x7b(123)\n"
+        .. "    7: write uarch.pc@0x3c8(968): 0x70000000(1879048192) -> 0x70000004(1879048196)\n"
         .. "  end addi\n"
-        .. "  8: write uarch.cycle@0x320(800): 0x0(0) -> 0x1(1)\n"
+        .. "  8: write uarch.cycle@0x3b8(952): 0x0(0) -> 0x1(1)\n"
         .. "end step\n"
 
     print("Output of dump log:")

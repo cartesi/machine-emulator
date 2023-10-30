@@ -17,12 +17,12 @@
 #ifndef KECCAK_256_HASHER_H
 #define KECCAK_256_HASHER_H
 
-#include "cryptopp-keccak-256-hasher.h"
+#include "xkcp-keccak-256-hasher.h"
 
 namespace cartesi {
 
 /// \brief Class used to compute Keccak 256 hashes
-using keccak_256_hasher = cryptopp_keccak_256_hasher;
+using keccak_256_hasher = xkcp_keccak_256_hasher;
 
 } // namespace cartesi
 

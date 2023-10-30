@@ -10,7 +10,7 @@ RUN apt-get update && \
         libssl-dev \
         ca-certificates automake libtool patchelf pkg-config lua5.4 liblua5.4-dev \
         libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
-        luarocks libcrypto++-dev && \
+        luarocks xsltproc && \
         update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-15 120 && \
         update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-15 120 && \
     rm -rf /var/lib/apt/lists/*

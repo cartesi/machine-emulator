@@ -21,7 +21,6 @@ Docker targets:
 
 - C++ Compiler with support for C++17 (tested with GCC >= 8+ and Clang >= 8.x).
 - GNU Make >= 3.81
-- Cryptopp >= 7.0.0
 - GRPC >= 1.45.0
 - Lua >= 5.4.4
 
@@ -34,7 +33,7 @@ apt-get install build-essential wget git clang-tidy-15 clang-format-15 \
         libssl-dev \
         ca-certificates automake libtool patchelf pkg-config lua5.4 liblua5.4-dev \
         libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
-        luarocks libcrypto++-dev
+        luarocks xsltproc
 
 sudo luarocks install --lua-version=5.4 lpeg
 sudo luarocks install --lua-version=5.4 dkjson
@@ -46,7 +45,7 @@ sudo luarocks install --lua-version=5.4 luaposix
 
 ##### MacPorts
 ```
-sudo port install clang-15 automake libtool wget pkgconfig grpc openssl lua libcryptopp lua-luarocks
+sudo port install clang-15 automake libtool wget libxslt pkgconfig grpc openssl lua lua-luarocks
 
 sudo luarocks install --lua-version=5.4 lpeg
 sudo luarocks install --lua-version=5.4 dkjson
@@ -57,7 +56,7 @@ sudo luarocks install --lua-version=5.4 luaposix
 
 ##### Homebrew
 ```
-brew install llvm@15 automake wget cryptopp pkg-config grpc openssl lua@5.4 luarocks
+brew install llvm@15 automake wget libxslt pkg-config grpc openssl lua@5.4 luarocks
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install lpeg
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install dkjson
 luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install luasocket

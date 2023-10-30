@@ -23,6 +23,7 @@ EMULATOR_VERSION_PATCH=2
 EMULATOR_VERSION_LABEL=
 
 UNAME:=$(shell uname)
+UNAME_ARCH=$(shell uname -m)
 
 LUA_INC:=$(shell pkg-config --cflags-only-I lua5.4)
 LUA_LIB:=-llua5.4
@@ -62,16 +63,12 @@ SOLDFLAGS_Darwin+=-Wl,-rpath,$(CURDIR)
 # Homebrew installation
 ifneq (,$(shell which brew))
 BREW_PREFIX := $(shell brew --prefix)
-CRYPTOPP_LIB_Darwin:=-L$(BREW_PREFIX)/lib -lcryptopp
-CRYPTOPP_INC_Darwin:=-I$(BREW_PREFIX)/include
 GRPC_INC_Darwin:=$(shell pkg-config --cflags-only-I grpc++)
 GRPC_LIB_Darwin:=$(shell pkg-config --libs grpc++)
 PROTOBUF_INC_Darwin:=$(shell pkg-config --cflags-only-I protobuf)
 PROTOBUF_LIB_Darwin:=$(shell pkg-config --libs protobuf)
 else ifneq (,$(shell which port)) # Macports installation
 PORT_PREFIX := /opt/local
-CRYPTOPP_LIB_Darwin:=-L$(PORT_PREFIX)/lib -lcryptopp
-CRYPTOPP_INC_Darwin:=-I$(PORT_PREFIX)/include
 GRPC_INC_Darwin:=-I$(PORT_PREFIX)/include
 GRPC_LIB_Darwin=-L$(PORT_PREFIX)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
 PROTOBUF_INC_Darwin:=-I$(PORT_PREFIX)/include
@@ -101,8 +98,6 @@ CXX_Linux=g++
 INCS_Linux=
 FS_LIB_Linux=-lstdc++fs
 PTHREAD_LIB_Linux:=-lpthread
-CRYPTOPP_LIB_Linux:=-lcryptopp
-CRYPTOPP_INC_Linux:=
 GRPC_INC_Linux:=$(shell pkg-config --cflags-only-I grpc++)
 GRPC_LIB_Linux:=$(shell pkg-config --libs grpc++)
 PROTOBUF_INC_Linux:=$(shell pkg-config --cflags-only-I protobuf)
@@ -123,12 +118,15 @@ CC=$(CC_$(UNAME))
 CXX=$(CXX_$(UNAME))
 SOLDFLAGS:=$(SOLDFLAGS_$(UNAME)) $(GCLDFLAGS)
 PTHREAD_LIB=$(PTHREAD_LIB_$(UNAME))
-CRYPTOPP_LIB=$(CRYPTOPP_LIB_$(UNAME))
-CRYPTOPP_INC=$(CRYPTOPP_INC_$(UNAME))
 GRPC_INC:=$(GRPC_INC_$(UNAME))
 GRPC_LIB:=$(GRPC_LIB_$(UNAME))
 PROTOBUF_INC:=$(PROTOBUF_INC_$(UNAME))
 PROTOBUF_LIB:=$(PROTOBUF_LIB_$(UNAME))
+XKCP_INC=-I../third-party/xkcp/XKCP-3dcb0dd952213b25828a5fe81ef7d31736ee3b2e/bin/libXKCP_generic64.a.headers
+XKCP_LIB=-L../third-party/xkcp/XKCP-3dcb0dd952213b25828a5fe81ef7d31736ee3b2e/bin -lXKCP_generic64
+ifeq ($(UNAME_ARCH),x86_64)
+XKCP_LIB+=-lXKCP_SSSE3 -lXKCP_AVX -lXKCP_AVX2 -lXKCP_AVX512
+endif
 LIBCARTESI=$(LIBCARTESI_$(UNAME))
 LIBCARTESI_LDFLAGS=$(LIBCARTESI_LDFLAGS_$(UNAME))
 LIBCARTESI_TESTS_LDFLAGS=$(LIBCARTESI_TESTS_LDFLAGS_$(UNAME))
@@ -140,15 +138,15 @@ LIBCARTESI_GRPC_LDFLAGS=$(LIBCARTESI_GRPC_LDFLAGS_$(UNAME))
 LIBCARTESI_GRPC_TESTS_LDFLAGS=$(LIBCARTESI_GRPC_TESTS_LDFLAGS_$(UNAME))
 LIBCARTESI_GRPC_LIB=-L. -lcartesi_grpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR)
 
-LIBCARTESI_LIBS:=$(CRYPTOPP_LIB)
-LIBCARTESI_GRPC_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(PROTOBUF_LIB)
-LUACARTESI_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB)
-LUACARTESI_GRPC_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB) $(LIBCARTESI_GRPC_LIB)
-LUACARTESI_JSONRPC_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB)
-REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB) $(GRPC_LIB) $(PROTOBUF_LIB)
-JSONRPC_REMOTE_CARTESI_MACHINE_LIBS:=$(CRYPTOPP_LIB)
-TEST_MACHINE_C_API_LIBS:=$(LIBCARTESI_LIB) $(CRYPTOPP_LIB) $(LIBCARTESI_GRPC_LIB) $(PTHREAD_LIB)
-HASH_LIBS:=$(CRYPTOPP_LIB)
+LIBCARTESI_LIBS:=$(XKCP_LIB)
+LIBCARTESI_GRPC_LIBS:=$(GRPC_LIB) $(PROTOBUF_LIB)
+LUACARTESI_LIBS:=$(LIBCARTESI_LIB)
+LUACARTESI_GRPC_LIBS:=$(LIBCARTESI_LIB) $(LIBCARTESI_GRPC_LIB)
+LUACARTESI_JSONRPC_LIBS:=$(LIBCARTESI_LIB)
+REMOTE_CARTESI_MACHINE_LIBS:=$(XKCP_LIB) $(GRPC_LIB) $(PROTOBUF_LIB)
+JSONRPC_REMOTE_CARTESI_MACHINE_LIBS:=$(XKCP_LIB)
+TEST_MACHINE_C_API_LIBS:=$(LIBCARTESI_LIB) $(LIBCARTESI_GRPC_LIB) $(PTHREAD_LIB)
+HASH_LIBS:=$(XKCP_LIB)
 
 #DEFS+= -DMT_ALL_DIRTY
 
@@ -161,7 +159,7 @@ INCS= \
 	-I../third-party/downloads \
 	-I../third-party/mongoose-7.12 \
 	-I../third-party/boost_1_83_0 \
-	$(LUA_INC) $(CRYPTOPP_INC) $(PROTOBUF_INC) $(GRPC_INC) $(INCS_$(UNAME))
+	$(LUA_INC) $(XKCP_INC) $(PROTOBUF_INC) $(GRPC_INC) $(INCS_$(UNAME))
 
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS
@@ -243,11 +241,9 @@ PGO_WORKLOAD=\
 	dhrystone 500000; \
 	whetstone 2500
 
-# We ignore xkcp-keccak-256-hasher.cpp because it is missing a header file.
-# The file is not being compiled but we want to keep it for reference.
 # We ignore test-machine-c-api.cpp cause it takes too long.
-LINTER_IGNORE_SOURCES=xkcp-keccak-256-hasher.cpp test-machine-c-api.cpp
-LINTER_IGNORE_HEADERS=%.pb.h xkcp-keccak-256-hasher.h
+LINTER_IGNORE_SOURCES=test-machine-c-api.cpp
+LINTER_IGNORE_HEADERS=%.pb.h
 LINTER_SOURCES=$(filter-out $(LINTER_IGNORE_SOURCES),$(strip $(wildcard *.cpp) $(wildcard *.c)))
 LINTER_HEADERS=$(filter-out $(LINTER_IGNORE_HEADERS),$(strip $(wildcard *.hpp) $(wildcard *.h)))
 
@@ -312,6 +308,7 @@ LIBCARTESI_OBJS:= \
 	shadow-pmas-factory.o \
 	shadow-tlb.o \
 	shadow-tlb-factory.o \
+	xkcp-keccak-256-hasher.o \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
 	pma.o \
@@ -327,6 +324,7 @@ LIBCARTESI_OBJS:= \
 	uarch-interpret.o
 
 LUACARTESI_OBJS:= \
+	xkcp-keccak-256-hasher.o \
 	clua-cartesi.o \
 	clua-i-virtual-machine.o \
 	clua-machine.o \
@@ -344,6 +342,7 @@ GRPC_GEN_OBJS:= \
 	cartesi-machine-checkin.grpc.pb.o
 
 LIBCARTESI_GRPC_OBJS:= \
+	xkcp-keccak-256-hasher.o \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
 	$(GRPC_GEN_OBJS) \
@@ -520,11 +519,13 @@ hash: merkle-tree-hash tests/test-merkle-tree-hash
 c-api: $(LIBCARTESI) $(LIBCARTESI_GRPC) tests/test-machine-c-api
 
 MERKLE_TREE_HASH_OBJS:= \
+	xkcp-keccak-256-hasher.o \
 	back-merkle-tree.o \
 	pristine-merkle-tree.o \
 	merkle-tree-hash.o
 
 TEST_MERKLE_TREE_HASH_OBJS:= \
+	xkcp-keccak-256-hasher.o \
 	back-merkle-tree.o \
 	pristine-merkle-tree.o \
 	complete-merkle-tree.o \
@@ -533,6 +534,7 @@ TEST_MERKLE_TREE_HASH_OBJS:= \
 
 TEST_MACHINE_C_API_OBJS:= \
     test-machine-c-api.o \
+	xkcp-keccak-256-hasher.o \
     back-merkle-tree.o \
     pristine-merkle-tree.o
 
@@ -563,6 +565,7 @@ REMOTE_CARTESI_MACHINE_OBJS:= \
 	shadow-pmas-factory.o \
 	shadow-tlb.o \
 	shadow-tlb-factory.o \
+	xkcp-keccak-256-hasher.o \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
 	pma.o \
@@ -595,6 +598,7 @@ JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	shadow-pmas-factory.o \
 	shadow-tlb.o \
 	shadow-tlb-factory.o \
+	xkcp-keccak-256-hasher.o \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
 	pma.o \

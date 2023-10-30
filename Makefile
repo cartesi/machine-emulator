@@ -69,13 +69,14 @@ UARCH_TO_SHARE= uarch-ram.bin
 
 MONGOOSE_VERSION=7.12
 BOOST_VERSION=1_83_0
+XKCP_VERSION=3dcb0dd952213b25828a5fe81ef7d31736ee3b2e
 
 # Build settings
 DEPDIR := third-party
 SRCDIR := $(abspath src)
 DOWNLOADDIR := $(DEPDIR)/downloads
-DEPDIRS := third-party/mongoose-$(MONGOOSE_VERSION) third-party/boost_$(BOOST_VERSION)
-SUBCLEAN := $(addsuffix .clean,$(SRCDIR) uarch third-party/riscv-arch-tests)
+DEPDIRS := third-party/mongoose-$(MONGOOSE_VERSION) third-party/boost_$(BOOST_VERSION) third-party/xkcp/XKCP-$(XKCP_VERSION)
+SUBCLEAN := $(addsuffix .clean,$(SRCDIR) uarch third-party/riscv-arch-tests third-party/xkcp)
 COREPROTO := lib/grpc-interfaces/core.proto
 
 # Docker image tag
@@ -122,10 +123,11 @@ clean: $(SUBCLEAN)
 
 depclean: clean
 	$(MAKE) -C third-party/riscv-arch-tests depclean
+	$(MAKE) -C third-party/xkcp depclean
 
 distclean:
 	rm -rf $(DOWNLOADDIR) $(DEPDIRS)
-	$(MAKE) -C third-party/riscv-arch-tests depclean
+	$(MAKE) depclean
 	$(MAKE) clean
 
 $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH) $(UARCH_INSTALL_PATH):
@@ -175,7 +177,13 @@ third-party/downloads/boost_$(BOOST_VERSION).tar.gz: | downloads
 third-party/boost_$(BOOST_VERSION): third-party/downloads/boost_$(BOOST_VERSION).tar.gz
 	tar -C third-party -xzf $< boost_$(BOOST_VERSION)/boost
 
+third-party/downloads/$(XKCP_VERSION).tar.gz: | downloads
+third-party/xkcp/XKCP-$(XKCP_VERSION): third-party/downloads/$(XKCP_VERSION).tar.gz
+	tar -C third-party/xkcp -xzf $< XKCP-$(XKCP_VERSION)
+	touch $@
+
 dep: $(DEPDIRS)
+	$(MAKE) -C third-party/xkcp
 
 submodules:
 	git submodule update --init --recursive
@@ -321,5 +329,5 @@ debian-package: install
 
 .SECONDARY: $(DOWNLOADDIR) $(DEPDIRS) $(COREPROTO)
 
-.PHONY: help all submodules doc clean distclean downloads checksum src test luacartesi grpc hash uarch \
+.PHONY: help all submodules doc clean depclean distclean downloads checksum src test luacartesi grpc hash uarch \
 	$(SUBDIRS) $(SUBCLEAN)

@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<group>
+    <target name="libXKCP_generic64.a" inherits="FIPS202 KeccakSponge K1600-plain-64bits-ua"/>
+    <target name="libXKCP_SSSE3.a" inherits="FIPS202 KeccakSponge K1600-plain-64bits-lcua"/>
+    <target name="libXKCP_AVX.a" inherits="FIPS202 KeccakSponge K1600-plain-64bits-lcua-shld"/>
+    <target name="libXKCP_AVX2.a" inherits="FIPS202 KeccakSponge K1600-AVX2"/>
+    <target name="libXKCP_AVX512.a" inherits="FIPS202 KeccakSponge K1600-AVX512"/>
+</group>

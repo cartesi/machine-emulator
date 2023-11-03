@@ -43,6 +43,7 @@ static hash_type merkle_hash(cartesi::keccak_256_hasher &h, const std::string_vi
         auto right = merkle_hash(h, std::string_view{data.data() + half_size, half_size}, log2_size);
         get_concat_hash(h, left, right, result);
     } else {
+        h.begin();
         h.add_data(reinterpret_cast<const unsigned char *>(data.data()), data.size());
         h.end(result);
     }
@@ -65,23 +66,6 @@ static hash_type merkle_hash(const std::string_view &data, int log2_size) {
     return detail::merkle_hash(h, data, log2_size);
 }
 
-// static std::string load_file(const std::string &path) {
-// std::ifstream ifs(path, std::ios::binary);
-// return std::string{std::istreambuf_iterator<char>{ifs}, {}};
-//}
-
-static std::string load_file(const std::string &path) {
-    std::streampos size;
-    std::ifstream file(path, std::ios::binary);
-    file.seekg(0, std::ios::end);
-    size = file.tellg();
-    file.seekg(0, std::ios::beg);
-    std::string data;
-    data.resize(size);
-    file.read(data.data(), data.size());
-    return data;
-}
-
 static hash_type calculate_proof_root_hash(const cm_merkle_tree_proof *proof) {
     hash_type hash;
     memcpy(hash.data(), proof->target_hash, sizeof(cm_hash));
@@ -100,10 +84,6 @@ static hash_type calculate_proof_root_hash(const cm_merkle_tree_proof *proof) {
         get_concat_hash(h, first, second, hash);
     }
     return hash;
-}
-
-static int ceil_log2(uint64_t x) {
-    return static_cast<int>(std::ceil(std::log2(static_cast<double>(x))));
 }
 
 static hash_type calculate_emulator_hash(cm_machine *machine) {

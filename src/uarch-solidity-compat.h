@@ -165,6 +165,8 @@ static inline uint64 int8ToUint64(int8 v) {
 
 template <typename T1, typename T2>
 void require(T1 condition, T2 message) {
+    (void) condition;
+    (void) message;
     assert((condition) && (message));
 }
 

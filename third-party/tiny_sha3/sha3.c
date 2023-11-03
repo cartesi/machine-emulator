@@ -6,6 +6,27 @@
 
 #include "sha3.h"
 
+// Helper macros for stringification
+#define TO_STRING_HELPER(X) #X
+#define TO_STRING(X) TO_STRING_HELPER(X)
+
+// Define loop unrolling depending on the compiler
+#if defined(__clang__)
+#define UNROLL_LOOP(n) _Pragma(TO_STRING(unroll(n)))
+#elif defined(__GNUC__) && !defined(__clang__)
+#define UNROLL_LOOP(n) _Pragma(TO_STRING(GCC unroll(n)))
+#else
+#define UNROLL_LOOP(n)
+#endif
+
+#ifndef KECCAKF_ROUNDS
+#define KECCAKF_ROUNDS 24
+#endif
+
+#ifndef ROTL64
+#define ROTL64(x, y) (((x) << (y)) | ((x) >> (64 - (y))))
+#endif
+
 // update the state with given number of rounds
 
 void sha3_keccakf(uint64_t st[25])
@@ -35,15 +56,9 @@ void sha3_keccakf(uint64_t st[25])
     uint64_t t, bc[5];
 
 #if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
-    uint8_t *v;
-
     // endianess conversion. this is redundant on little-endian targets
     for (i = 0; i < 25; i++) {
-        v = (uint8_t *) &st[i];
-        st[i] = ((uint64_t) v[0])     | (((uint64_t) v[1]) << 8) |
-            (((uint64_t) v[2]) << 16) | (((uint64_t) v[3]) << 24) |
-            (((uint64_t) v[4]) << 32) | (((uint64_t) v[5]) << 40) |
-            (((uint64_t) v[6]) << 48) | (((uint64_t) v[7]) << 56);
+        st[i] = __builtin_bswap64(st[i]);
     }
 #endif
 
@@ -51,17 +66,21 @@ void sha3_keccakf(uint64_t st[25])
     for (r = 0; r < KECCAKF_ROUNDS; r++) {
 
         // Theta
+        UNROLL_LOOP(5)
         for (i = 0; i < 5; i++)
             bc[i] = st[i] ^ st[i + 5] ^ st[i + 10] ^ st[i + 15] ^ st[i + 20];
 
+        UNROLL_LOOP(5)
         for (i = 0; i < 5; i++) {
             t = bc[(i + 4) % 5] ^ ROTL64(bc[(i + 1) % 5], 1);
+            UNROLL_LOOP(25)
             for (j = 0; j < 25; j += 5)
                 st[j + i] ^= t;
         }
 
         // Rho Pi
         t = st[1];
+        UNROLL_LOOP(24)
         for (i = 0; i < 24; i++) {
             j = keccakf_piln[i];
             bc[0] = st[j];
@@ -70,9 +89,12 @@ void sha3_keccakf(uint64_t st[25])
         }
 
         //  Chi
+        UNROLL_LOOP(25)
         for (j = 0; j < 25; j += 5) {
+            UNROLL_LOOP(5)
             for (i = 0; i < 5; i++)
                 bc[i] = st[j + i];
+            UNROLL_LOOP(5)
             for (i = 0; i < 5; i++)
                 st[j + i] ^= (~bc[(i + 1) % 5]) & bc[(i + 2) % 5];
         }
@@ -84,23 +106,14 @@ void sha3_keccakf(uint64_t st[25])
 #if __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
     // endianess conversion. this is redundant on little-endian targets
     for (i = 0; i < 25; i++) {
-        v = (uint8_t *) &st[i];
-        t = st[i];
-        v[0] = t & 0xFF;
-        v[1] = (t >> 8) & 0xFF;
-        v[2] = (t >> 16) & 0xFF;
-        v[3] = (t >> 24) & 0xFF;
-        v[4] = (t >> 32) & 0xFF;
-        v[5] = (t >> 40) & 0xFF;
-        v[6] = (t >> 48) & 0xFF;
-        v[7] = (t >> 56) & 0xFF;
+        st[i] = __builtin_bswap64(st[i]);
     }
 #endif
 }
 
 // Initialize the context for SHA3
 
-int sha3_init(sha3_ctx_t *c, int mdlen)
+int sha3_init(sha3_ctx_t *c, int mdlen, int dsuffix)
 {
     int i;
 
@@ -109,6 +122,7 @@ int sha3_init(sha3_ctx_t *c, int mdlen)
     c->mdlen = mdlen;
     c->rsiz = 200 - 2 * mdlen;
     c->pt = 0;
+    c->dsuffix = dsuffix;
 
     return 1;
 }
@@ -139,7 +153,7 @@ int sha3_final(void *md, sha3_ctx_t *c)
 {
     int i;
 
-    c->st.b[c->pt] ^= 0x06;
+    c->st.b[c->pt] ^= c->dsuffix;
     c->st.b[c->rsiz - 1] ^= 0x80;
     sha3_keccakf(c->st.q);
 
@@ -156,7 +170,7 @@ void *sha3(const void *in, size_t inlen, void *md, int mdlen)
 {
     sha3_ctx_t sha3;
 
-    sha3_init(&sha3, mdlen);
+    sha3_init(&sha3, mdlen, 0x06);
     sha3_update(&sha3, in, inlen);
     sha3_final(md, &sha3);
 

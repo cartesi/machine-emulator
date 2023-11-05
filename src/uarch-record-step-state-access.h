@@ -65,28 +65,9 @@ class uarch_record_step_state_access : public i_uarch_step_state_access<uarch_re
         }
     }
 
-    static void get_hash(hasher_type &hasher, const unsigned char *data, size_t len, hash_type &hash) {
-        if (len <= 8) {
-            assert(len == 8);
-            hasher.begin();
-            hasher.add_data(data, len);
-            hasher.end(hash);
-        } else {
-            assert((len & 1) == 0);
-            len = len / 2;
-            hash_type left;
-            get_hash(hasher, data, len, left);
-            get_hash(hasher, data + len, len, hash);
-            hasher.begin();
-            hasher.add_data(left.data(), left.size());
-            hasher.add_data(hash.data(), hash.size());
-            hasher.end(hash);
-        }
-    }
-
     static void get_hash(const access_data &data, hash_type &hash) {
         hasher_type hasher;
-        get_hash(hasher, data.data(), data.size(), hash);
+        get_merkle_tree_hash(hasher, data.data(), data.size(), sizeof(uint64_t), hash);
     }
 
 public:

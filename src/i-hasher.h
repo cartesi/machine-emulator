@@ -23,6 +23,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 
 #include "meta.h"
 
@@ -98,6 +99,38 @@ inline static typename H::hash_type get_concat_hash(H &h, const typename H::hash
     typename H::hash_type result;
     h.end(result);
     return result;
+}
+
+/// \brief  Computes a merkle tree hash of a data buffer
+/// \tparam H Hasher class
+/// \param h Hasher object
+/// \param data Data to be hashed
+/// \param data_length Length of data
+/// \param word_length  Length of each word
+/// \param result Receives the resulting merkle tree hash
+template <typename H>
+inline static void get_merkle_tree_hash(H &h, const unsigned char *data, uint64_t data_length, uint64_t word_length,
+    typename H::hash_type &result) {
+    if (data_length > word_length) {
+        if (data_length & 1) {
+            throw std::invalid_argument("data_length must be a power of 2 multiple of word_length");
+        }
+        data_length = data_length / 2;
+        typename H::hash_type left;
+        get_merkle_tree_hash(h, data, data_length, word_length, left);
+        get_merkle_tree_hash(h, data + data_length, data_length, word_length, result);
+        h.begin();
+        h.add_data(left.data(), left.size());
+        h.add_data(result.data(), result.size());
+        h.end(result);
+    } else {
+        if (data_length != word_length) {
+            throw std::invalid_argument("data_length must be a power of 2 multiple of word_length");
+        }
+        h.begin();
+        h.add_data(data, data_length);
+        h.end(result);
+    }
 }
 
 } // namespace cartesi

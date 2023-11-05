@@ -157,7 +157,8 @@ private:
         if (access.get_read().has_value()) {
             // if read data is available then its hash and the logged read hash must match
             hash_type computed_hash;
-            get_hash(hasher, access.get_read().value().data(), access.get_read().value().size(), computed_hash);
+            get_hash(hasher, access.get_read().value(), computed_hash);
+
             if (computed_hash != access.get_read_hash()) {
                 throw std::invalid_argument{"hash of read data and read hash at access " +
                     std::to_string(access_to_report()) + " does not match read hash"};
@@ -169,7 +170,7 @@ private:
         if (access.get_written().has_value()) {
             // if written data is available then its hash and the logged written hash must match
             hash_type computed_hash;
-            get_hash(hasher, access.get_written().value().data(), access.get_written().value().size(), computed_hash);
+            get_hash(hasher, access.get_written().value(), computed_hash);
             if (computed_hash != access.get_written_hash().value()) {
                 throw std::invalid_argument{
                     "written hash and written data mismatch at access " + std::to_string(access_to_report())};
@@ -209,23 +210,9 @@ private:
         m_next_access++;
     }
 
-    static void get_hash(hasher_type &hasher, const unsigned char *data, size_t len, hash_type &hash) {
-        if (len <= 8) {
-            assert(len == 8);
-            hasher.begin();
-            hasher.add_data(data, len);
-            hasher.end(hash);
-        } else {
-            assert((len & 1) == 0);
-            len = len / 2;
-            hash_type left;
-            get_hash(hasher, data, len, left);
-            get_hash(hasher, data + len, len, hash);
-            hasher.begin();
-            hasher.add_data(left.data(), left.size());
-            hasher.add_data(hash.data(), hash.size());
-            hasher.end(hash);
-        }
+    static void get_hash(machine_merkle_tree::hasher_type &hasher, const access_data &data,
+        machine_merkle_tree::hash_type &hash) {
+        get_merkle_tree_hash(hasher, data.data(), data.size(), sizeof(uint64_t), hash);
     }
 };
 

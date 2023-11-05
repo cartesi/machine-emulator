@@ -112,29 +112,9 @@ private:
         }
     }
 
-    static void get_hash(machine_merkle_tree::hasher_type &hasher, const unsigned char *data, size_t len,
-        machine_merkle_tree::hash_type &hash) {
-        if (len <= 8) {
-            assert(len == 8);
-            hasher.begin();
-            hasher.add_data(data, len);
-            hasher.end(hash);
-        } else {
-            assert((len & 1) == 0);
-            len = len / 2;
-            machine_merkle_tree::hash_type left;
-            get_hash(hasher, data, len, left);
-            get_hash(hasher, data + len, len, hash);
-            hasher.begin();
-            hasher.add_data(left.data(), left.size());
-            hasher.add_data(hash.data(), hash.size());
-            hasher.end(hash);
-        }
-    }
-
     static void get_hash(machine_merkle_tree::hasher_type &hasher, const access_data &data,
         machine_merkle_tree::hash_type &hash) {
-        get_hash(hasher, data.data(), data.size(), hash);
+        get_merkle_tree_hash(hasher, data.data(), data.size(), sizeof(uint64_t), hash);
     }
 
     /// \brief Checks a logged word read and advances log.

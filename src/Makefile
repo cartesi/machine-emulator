@@ -99,7 +99,6 @@ SOLDFLAGS_Linux:=-shared -fPIC -pthread
 CC_Linux=gcc
 CXX_Linux=g++
 INCS_Linux=
-FS_LIB_Linux=-lstdc++fs
 PTHREAD_LIB_Linux:=-lpthread
 BOOST_INC_Linux:=
 GRPC_INC_Linux:=$(shell pkg-config --cflags-only-I grpc++)

@@ -3,8 +3,11 @@
 *.d
 *.clang-tidy
 *.deb
+*.a
+*.wasm
 
 build
+pkg
 third-party/downloads
 third-party/mongoose-*
 src/remote-cartesi-machine
@@ -22,6 +25,7 @@ doc/xml/
 .vscode
 .ycm_extra_conf.py
 
+*.tar.gz
 *.raw
 *.so
 *.dylib

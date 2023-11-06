@@ -33,7 +33,7 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 ```
 sudo apt-get install build-essential wget git clang-tidy-15 clang-format-15 \
         libboost1.81-dev libssl-dev \
-        ca-certificates automake libtool patchelf pkg-config lua5.4 liblua5.4-dev \
+        ca-certificates automake libtool pkg-config lua5.4 liblua5.4-dev \
         libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
         luarocks
 

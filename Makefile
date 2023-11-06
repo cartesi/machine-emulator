@@ -14,14 +14,15 @@
 # with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 #
 
-UNAME:=$(shell uname)
+TARGET_OS?=$(shell uname)
+export TARGET_OS
 
 # Install settings
-ARCH:= $(shell dpkg --print-architecture 2>/dev/null || echo amd64)
+DEB_ARCH:= $(shell dpkg --print-architecture 2>/dev/null || echo amd64)
 PREFIX= /usr
 MACHINE_EMULATOR_VERSION:= $(shell make -sC src version)
 MACHINE_EMULATOR_SO_VERSION:= $(shell make -sC src so-version)
-DEB_FILENAME= cartesi-machine-v$(MACHINE_EMULATOR_VERSION)_$(ARCH).deb
+DEB_FILENAME= cartesi-machine-v$(MACHINE_EMULATOR_VERSION)_$(DEB_ARCH).deb
 BIN_RUNTIME_PATH= $(PREFIX)/bin
 LIB_RUNTIME_PATH= $(PREFIX)/lib
 DOC_RUNTIME_PATH= $(PREFIX)/doc/cartesi-machine
@@ -29,7 +30,7 @@ SHARE_RUNTIME_PATH= $(PREFIX)/share/cartesi-machine
 IMAGES_RUNTIME_PATH= $(SHARE_RUNTIME_PATH)/images
 LUA_RUNTIME_CPATH= $(PREFIX)/lib/lua/5.4
 LUA_RUNTIME_PATH= $(PREFIX)/share/lua/5.4
-INSTALL_PLAT = install-$(UNAME)
+INSTALL_PLAT = install-$(TARGET_OS)
 
 LIBCARTESI_Darwin=libcartesi.dylib
 LIBCARTESI_Linux=libcartesi.so
@@ -54,10 +55,11 @@ INC_INSTALL_PATH:=    $(DESTDIR)$(PREFIX)/include/cartesi-machine
 INSTALL= cp -RP
 CHMOD_EXEC= chmod 0755
 CHMOD_DATA= chmod 0644
-STRIP_EXEC= strip -x
+STRIP= strip
+STRIP_EXEC= $(STRIP) -x
 
 EMU_TO_BIN= jsonrpc-remote-cartesi-machine remote-cartesi-machine merkle-tree-hash
-EMU_TO_LIB= $(LIBCARTESI_SO_$(UNAME)) $(LIBCARTESI_SO_GRPC_$(UNAME))
+EMU_TO_LIB= $(LIBCARTESI_SO_$(TARGET_OS)) $(LIBCARTESI_SO_GRPC_$(TARGET_OS))
 EMU_LUA_TO_BIN= cartesi-machine.lua cartesi-machine-stored-hash.lua rollup-memory-range.lua
 EMU_LUA_TEST_TO_BIN= cartesi-machine-tests.lua uarch-riscv-tests.lua
 EMU_TO_LUA_PATH= cartesi/util.lua cartesi/proof.lua cartesi/gdbstub.lua
@@ -97,21 +99,18 @@ export release
 export coverage
 
 # Mac OS X specific settings
-ifeq ($(UNAME),Darwin)
-LUA_PLAT ?= macosx
+ifeq ($(TARGET_OS),Darwin)
 export CC = clang
 export CXX = clang++
-LUACC = "CC=$(CXX)"
 LIBRARY_PATH := "export DYLD_LIBRARY_PATH="
 
 # Linux specific settings
-else ifeq ($(UNAME),Linux)
-LUA_PLAT ?= linux
+else ifeq ($(TARGET_OS),Linux)
+export CC=gcc
+export CXX=g++
 LIBRARY_PATH := "export LD_LIBRARY_PATH=$(SRCDIR)"
-LUACC = "CC=g++"
 # Unknown platform
 else
-LUA_PLAT ?= none
 INSTALL_PLAT=
 endif
 
@@ -292,8 +291,8 @@ install-emulator: $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/c
 	cat tools/template/cartesi-machine-stored-hash.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/cartesi-machine-stored-hash
 	cat tools/template/rollup-memory-range.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/rollup-memory-range
 	cd $(BIN_INSTALL_PATH) && $(CHMOD_EXEC) $(EMU_TO_BIN) cartesi-machine cartesi-machine-stored-hash rollup-memory-range
-	cd $(LIB_INSTALL_PATH) && ln -sf $(LIBCARTESI_SO_$(UNAME)) $(LIBCARTESI_$(UNAME))
-	cd $(LIB_INSTALL_PATH) && ln -sf $(LIBCARTESI_SO_GRPC_$(UNAME)) $(LIBCARTESI_GRPC_$(UNAME))
+	cd $(LIB_INSTALL_PATH) && ln -sf $(LIBCARTESI_SO_$(TARGET_OS)) $(LIBCARTESI_$(TARGET_OS))
+	cd $(LIB_INSTALL_PATH) && ln -sf $(LIBCARTESI_SO_GRPC_$(TARGET_OS)) $(LIBCARTESI_GRPC_$(TARGET_OS))
 	cd $(LUA_INSTALL_PATH) && $(CHMOD_DATA) $(EMU_LUA_TO_BIN)
 	$(INSTALL) $(EMU_TO_INC) $(INC_INSTALL_PATH)
 	$(INSTALL) tools/gdb $(SHARE_INSTALL_PATH)/gdb
@@ -311,7 +310,7 @@ install: install-emulator install-strip $(INSTALL_PLAT)
 debian-package: install
 	mkdir -p $(DESTDIR)/DEBIAN $(DOC_INSTALL_PATH)
 	$(INSTALL) COPYING $(DOC_INSTALL_PATH)/copyright
-	cat tools/template/control.template | sed 's|ARG_VERSION|$(MACHINE_EMULATOR_VERSION)|g;s|ARG_ARCH|$(ARCH)|g' > $(DESTDIR)/DEBIAN/control
+	cat tools/template/control.template | sed 's|ARG_VERSION|$(MACHINE_EMULATOR_VERSION)|g;s|ARG_ARCH|$(DEB_ARCH)|g' > $(DESTDIR)/DEBIAN/control
 	dpkg-deb -Zxz --root-owner-group --build $(DESTDIR) $(DEB_FILENAME)
 
 .SECONDARY: $(DOWNLOADDIR) $(DEPDIRS) $(COREPROTO)

@@ -19,11 +19,13 @@
 #include <cstdint>
 #include <fcntl.h>
 #include <iostream>
-#include <sys/ioctl.h>
 #include <sys/select.h>
 #include <sys/stat.h>
-#include <termios.h>
 #include <unistd.h>
+
+#ifndef NO_TERMIOS
+#include <termios.h>
+#endif
 
 #include "tty.h"
 
@@ -34,13 +36,16 @@ static const int CONSOLE_BUF_SIZE = 1024; ///< Number of characters in console i
 /// \brief TTY global state
 struct tty_state {
     bool initialized{false};
-    int ttyfd{-1};
-    termios oldtty{};
     std::array<char, CONSOLE_BUF_SIZE> buf{};
     ssize_t buf_pos{};
     ssize_t buf_len{};
+#ifndef NO_TERMIOS
+    int ttyfd{-1};
+    termios oldtty{};
+#endif
 };
 
+#ifndef NO_TERMIOS
 static int new_ttyfd(const char *path) {
     int fd{};
     do {
@@ -66,16 +71,17 @@ static int get_ttyfd(void) {
     // NOLINTEND(bugprone-assignment-in-if-condition)
     return -1;
 }
+#endif
 
-static bool try_read_chars_from_stdin(uint64_t wait, char *data, size_t max_len, long *actual_len) {
+static bool try_read_chars_from_stdin(uint64_t wait, char *data, size_t max_len, ssize_t *actual_len) {
     const int fd_max{0};
     fd_set rfds{};
     timeval tv{};
-    tv.tv_usec = static_cast<suseconds_t>(wait);
+    tv.tv_usec = static_cast<decltype(tv.tv_usec)>(wait);
     FD_ZERO(&rfds); // NOLINT: suppress cause on MacOSX it resolves to __builtin_bzero
     FD_SET(STDIN_FILENO, &rfds);
     if (select(fd_max + 1, &rfds, nullptr, nullptr, &tv) > 0 && FD_ISSET(0, &rfds)) {
-        *actual_len = read(STDIN_FILENO, data, max_len);
+        *actual_len = static_cast<ssize_t>(read(STDIN_FILENO, data, max_len));
         // If stdin is closed, pass EOF to client
         if (*actual_len <= 0) {
             *actual_len = 1;
@@ -98,6 +104,7 @@ void tty_initialize(void) {
         throw std::runtime_error("TTY already initialized.");
     }
     s->initialized = true;
+#ifndef NO_TERMIOS
     // NOLINTNEXTLINE(bugprone-assignment-in-if-condition)
     if ((s->ttyfd = get_ttyfd()) >= 0) {
         struct termios tty {};
@@ -129,6 +136,7 @@ void tty_initialize(void) {
         tcsetattr(s->ttyfd, TCSANOW, &tty);
         //??D Should we check to see if changes stuck?
     }
+#endif
 }
 
 void tty_finalize(void) {
@@ -137,11 +145,13 @@ void tty_finalize(void) {
         throw std::runtime_error("TTY not initialized");
     }
     s->initialized = false;
+#ifndef NO_TERMIOS
     if (s->ttyfd >= 0) {
         tcsetattr(s->ttyfd, TCSANOW, &s->oldtty);
         close(s->ttyfd);
         s->ttyfd = -1;
     }
+#endif
 }
 
 void tty_poll_console(uint64_t wait) {

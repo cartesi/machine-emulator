@@ -14,34 +14,43 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef TTY_H
-#define TTY_H
+#ifndef OS_H
+#define OS_H
 
 #include <cstddef>
 #include <cstdint>
 
 /// \file
-/// \brief System-specific TTY handling operations
+/// \brief System-specific OS handling operations
 
 namespace cartesi {
 
-/// \brief Initialize TTY for console input
-void tty_initialize(void);
+/// \brief Initialize console
+void os_open_tty(void);
 
-/// \brief Cleanup TTY console input initialization
-void tty_finalize(void);
+/// \brief Cleanup console initialization
+void os_close_tty(void);
 
-/// \brief Polls TTY for input characters
+/// \brief Polls console for input characters
 /// \param wait Timeout to wait for characters in microseconds
-void tty_poll_console(uint64_t wait);
+void os_poll_tty(uint64_t wait);
 
-/// \brief  Reads a character from the console
+/// \brief Reads an input character from the console
 /// \return Charater read from console
-int tty_getchar(void);
+int os_getchar(void);
 
-/// \brief Writes a character to TTY
+/// \brief Writes an output character to the console
 /// \param ch Character to write
-void tty_putchar(uint8_t ch);
+void os_putchar(uint8_t ch);
+
+/// \brief Creates a new directory
+int os_mkdir(const char *path, int mode);
+
+/// \brief Maps a file to memory
+unsigned char *os_map_file(const char *path, uint64_t length, bool shared);
+
+/// \brief Unmaps a file from memory
+void os_unmap_file(unsigned char *host_memory, uint64_t length);
 
 } // namespace cartesi
 

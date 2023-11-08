@@ -19,31 +19,18 @@
 #include <string>
 #include <system_error>
 
+#include "os.h"
 #include "pma.h"
 #include "unique-c-ptr.h"
-
-#if (defined(_WIN32) || defined(__wasi__)) && !defined(NO_MMAP)
-#define NO_MMAP
-#endif
-
-#ifndef NO_MMAP
-#include <fcntl.h>    // open
-#include <sys/mman.h> // mmap, munmap
-#include <sys/stat.h> // fstat
-#include <unistd.h>   // close
-#endif
 
 namespace cartesi {
 
 using namespace std::string_literals;
 
 void pma_memory::release(void) {
-    if (m_backing_file >= 0) {
-#ifndef NO_MMAP
-        munmap(m_host_memory, m_length);
-        close(m_backing_file);
-#endif
-        m_backing_file = -1;
+    if (m_mmapped) {
+        os_unmap_file(m_host_memory, m_length);
+        m_mmapped = false;
     } else {
         std::free(m_host_memory); // NOLINT(cppcoreguidelines-no-malloc)
     }
@@ -58,17 +45,17 @@ pma_memory::~pma_memory() {
 pma_memory::pma_memory(pma_memory &&other) noexcept :
     m_length{std::move(other.m_length)},
     m_host_memory{std::move(other.m_host_memory)},
-    m_backing_file{std::move(other.m_backing_file)} {
+    m_mmapped{std::move(other.m_mmapped)} {
     // set other to safe state
     other.m_host_memory = nullptr;
-    other.m_backing_file = -1;
+    other.m_mmapped = false;
     other.m_length = 0;
 }
 
 pma_memory::pma_memory(const std::string &description, uint64_t length, const callocd &c) :
     m_length{length},
     m_host_memory{nullptr},
-    m_backing_file{-1} {
+    m_mmapped{false} {
     (void) c;
     // use calloc to improve performance
     // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-prefer-member-initializer)
@@ -81,7 +68,7 @@ pma_memory::pma_memory(const std::string &description, uint64_t length, const ca
 pma_memory::pma_memory(const std::string &description, uint64_t length, const mockd &m) :
     m_length{length},
     m_host_memory{nullptr},
-    m_backing_file{-1} {
+    m_mmapped{false} {
     (void) m;
     (void) description;
 }
@@ -119,75 +106,27 @@ pma_memory::pma_memory(const std::string &description, uint64_t length, const st
     }
 }
 
-#ifndef NO_MMAP
 pma_memory::pma_memory(const std::string &description, uint64_t length, const std::string &path, const mmapd &m) :
     m_length{length},
     m_host_memory{nullptr},
-    m_backing_file{-1} {
-    if (path.empty()) {
-        throw std::runtime_error{"image file must be specified for "s + description};
-    }
-
-    const int oflag = m.shared ? O_RDWR : O_RDONLY;
-    const int mflag = m.shared ? MAP_SHARED : MAP_PRIVATE;
-
-    // Try to open image file
-    const int backing_file = open(path.c_str(), oflag);
-    if (backing_file < 0) {
-        throw std::system_error{errno, std::generic_category(),
-            "could not open image file '"s + path + "' when initializing "s + description};
-    }
-
-    // Try to get file size
-    struct stat statbuf {};
-    if (fstat(backing_file, &statbuf) < 0) {
-        close(backing_file);
-        throw std::system_error{errno, std::generic_category(),
-            "unable to obtain length of image file '"s + path + "' when initializing "s + description};
-    }
-
-    // Check that it matches range length
-    if (static_cast<uint64_t>(statbuf.st_size) != length) {
-        close(backing_file);
-        throw std::invalid_argument{"image file '"s + path + "' size ("s +
-            std::to_string(static_cast<uint64_t>(statbuf.st_size)) + ") does not match range length ("s +
-            std::to_string(length) + ") of "s + description};
-    }
-
-    // Try to map image file to host memory
-    auto *host_memory =
-        static_cast<unsigned char *>(mmap(nullptr, length, PROT_READ | PROT_WRITE, mflag, backing_file, 0));
-    if (host_memory == MAP_FAILED) { // NOLINT(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr)
-        close(backing_file);
-        throw std::system_error{errno, std::generic_category(),
-            "could not map image file '"s + path + "' to memory when initializing "s + description};
-    }
-
-    // Finally store everything in object
-    m_host_memory = host_memory;
-    m_backing_file = backing_file;
-}
-#else
-pma_memory::pma_memory(const std::string &description, uint64_t length, const std::string &path, const mmapd &m) :
-    pma_memory(description, length, path, callocd{}) {
-    if (path.empty()) {
-        throw std::runtime_error{"image file must be specified for "s + description};
-    }
-    if (m.shared) {
-        throw std::runtime_error{"shared image is unsupported, when initializing "s + description};
+    m_mmapped{false} {
+    try {
+        m_host_memory = os_map_file(path.c_str(), length, m.shared);
+        m_mmapped = true;
+    } catch (std::exception &e) {
+        throw std::runtime_error{e.what() + " when initializing "s + description};
     }
 }
-#endif
 
 pma_memory &pma_memory::operator=(pma_memory &&other) noexcept {
     release();
     // copy from other
     m_host_memory = std::move(other.m_host_memory);
-    m_backing_file = std::move(other.m_backing_file);
+    m_mmapped = std::move(other.m_mmapped);
     m_length = std::move(other.m_length);
     // set other to safe state
     other.m_host_memory = nullptr;
-    other.m_backing_file = -1;
+    other.m_mmapped = false;
     other.m_length = 0;
     return *this;
 }

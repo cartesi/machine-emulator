@@ -45,13 +45,6 @@
 #include "uarch-step.h"
 #include "unique-c-ptr.h"
 
-#ifdef _WIN32
-#include <direct.h> // mkdir
-#define mkdir(a, b) _mkdir(a)
-#else
-#include <sys/stat.h> // mkdir
-#endif
-
 /// \file
 /// \brief Cartesi machine implementation
 
@@ -480,7 +473,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
 
     // Initialize TTY if console input is enabled
     if (m_c.htif.console_getchar) {
-        tty_initialize();
+        os_open_tty();
     }
 
     // Initialize memory range descriptions returned by get_memory_ranges method
@@ -708,7 +701,7 @@ static void store_hash(const machine::hash_type &h, const std::string &dir) {
 }
 
 void machine::store(const std::string &dir) const {
-    if (mkdir(dir.c_str(), 0700)) {
+    if (os_mkdir(dir.c_str(), 0700)) {
         throw std::runtime_error{"error creating directory '" + dir + "'"};
     }
     if (!update_merkle_tree()) {
@@ -726,7 +719,7 @@ void machine::store(const std::string &dir) const {
 machine::~machine() {
     // Cleanup TTY if console input was enabled
     if (m_c.htif.console_getchar) {
-        tty_finalize();
+        os_close_tty();
     }
 #ifdef DUMP_HIST
     (void) fprintf(stderr, "\nInstruction Histogram:\n");

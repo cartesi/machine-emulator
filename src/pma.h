@@ -94,7 +94,7 @@ class pma_memory final {
 
     uint64_t m_length;            ///< Length of memory range (copy of PMA length field).
     unsigned char *m_host_memory; ///< Start of associated memory region in host.
-    int m_backing_file;           ///< File descryptor for mmaped memory.
+    bool m_mmapped;               ///< True if memory was mapped from a file.
 
     /// \brief Close file and/or release memory.
     void release(void);
@@ -160,11 +160,6 @@ public:
     /// \brief Returns start of associated memory region in host
     const unsigned char *get_host_memory(void) const {
         return m_host_memory;
-    }
-
-    /// \brief Returns file descryptor for mmaped memory.
-    int get_backing_file(void) const {
-        return m_backing_file;
     }
 
     /// \brief Returns copy of PMA length field (needed for munmap).

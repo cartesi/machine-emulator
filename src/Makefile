@@ -308,7 +308,7 @@ LIBCARTESI_OBJS:= \
 	clint.o \
 	clint-factory.o \
 	dtb.o \
-	tty.o \
+	os.o \
 	htif.o \
 	htif-factory.o \
 	shadow-state.o \

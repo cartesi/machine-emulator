@@ -15,7 +15,7 @@
 //
 
 #include "uarch-runtime.h"
-#include "tty.h"
+#include "os.h"
 #include "uarch-constants.h"
 #include <algorithm>
 
@@ -79,19 +79,19 @@ extern "C" NO_RETURN void abort(void) {
 
 namespace cartesi {
 
-void tty_initialize(void) {}
+void os_open_tty(void) {}
 
-void tty_finalize(void) {}
+void os_close_tty(void) {}
 
-void tty_poll_console(uint64_t wait) {
+void os_poll_tty(uint64_t wait) {
     (void) wait;
 }
 
-int tty_getchar(void) {
+int os_getchar(void) {
     return 0;
 }
 
-void tty_putchar(uint8_t ch) {
+void os_putchar(uint8_t ch) {
     _putchar(ch);
 }
 

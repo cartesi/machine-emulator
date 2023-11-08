@@ -26,10 +26,10 @@
 #include "device-state-access.h"
 #include "i-state-access.h"
 #include "machine.h"
+#include "os.h"
 #include "pma.h"
 #include "rtc.h"
 #include "strict-aliasing.h"
-#include "tty.h"
 
 namespace cartesi {
 
@@ -409,7 +409,7 @@ private:
                 timeval start{};
                 timeval end{};
                 gettimeofday(&start, nullptr);
-                tty_poll_console(wait);
+                os_poll_tty(wait);
                 gettimeofday(&end, nullptr);
                 const uint64_t elapsed_us = (end.tv_sec - start.tv_sec) * 1000000 + end.tv_usec - start.tv_usec;
                 const uint64_t tty_cycle = mcycle + (elapsed_us * cycles_per_us);

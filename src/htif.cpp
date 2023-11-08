@@ -17,9 +17,9 @@
 #include "htif.h"
 #include "i-device-state-access.h"
 #include "machine-runtime-config.h"
+#include "os.h"
 #include "pma-constants.h"
 #include "strict-aliasing.h"
-#include "tty.h"
 
 namespace cartesi {
 
@@ -101,7 +101,7 @@ static execute_status htif_console(htif_runtime_config *runtime_config, i_device
             // In microarchitecture runtime_config will always be nullptr,
             // therefore the HTIF runtime config is actually ignored.
             if (!runtime_config || !runtime_config->no_console_putchar) {
-                tty_putchar(ch);
+                os_putchar(ch);
             }
             a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE, cmd, 0));
         } else if (cmd == HTIF_CONSOLE_GETCHAR) {
@@ -109,7 +109,7 @@ static execute_status htif_console(htif_runtime_config *runtime_config, i_device
             // to every participant in a dispute: where would c come from? So if the code reached here in the
             // blockchain, there must be some serious bug
             // In interactive mode, we just get the next character from the console and send it back in the ack
-            const int c = tty_getchar();
+            const int c = os_getchar();
             a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE, cmd, c));
         }
     }

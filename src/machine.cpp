@@ -23,7 +23,6 @@
 #include <iomanip>
 #include <iostream>
 #include <mutex>
-#include <sys/stat.h>
 #include <thread>
 
 #include "clint-factory.h"
@@ -45,6 +44,13 @@
 #include "uarch-state-access.h"
 #include "uarch-step.h"
 #include "unique-c-ptr.h"
+
+#ifdef _WIN32
+#include <direct.h> // mkdir
+#define mkdir(a, b) _mkdir(a)
+#else
+#include <sys/stat.h> // mkdir
+#endif
 
 /// \file
 /// \brief Cartesi machine implementation

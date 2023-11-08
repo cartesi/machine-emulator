@@ -14,11 +14,6 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <fcntl.h>    // open
-#include <sys/mman.h> // mmap, munmap
-#include <sys/stat.h> // fstat
-#include <unistd.h>   // close
-
 #include <cerrno>
 #include <cstring>
 #include <string>
@@ -27,14 +22,27 @@
 #include "pma.h"
 #include "unique-c-ptr.h"
 
+#if (defined(_WIN32) || defined(__wasi__)) && !defined(NO_MMAP)
+#define NO_MMAP
+#endif
+
+#ifndef NO_MMAP
+#include <fcntl.h>    // open
+#include <sys/mman.h> // mmap, munmap
+#include <sys/stat.h> // fstat
+#include <unistd.h>   // close
+#endif
+
 namespace cartesi {
 
 using namespace std::string_literals;
 
 void pma_memory::release(void) {
     if (m_backing_file >= 0) {
+#ifndef NO_MMAP
         munmap(m_host_memory, m_length);
         close(m_backing_file);
+#endif
         m_backing_file = -1;
     } else {
         std::free(m_host_memory); // NOLINT(cppcoreguidelines-no-malloc)
@@ -111,6 +119,7 @@ pma_memory::pma_memory(const std::string &description, uint64_t length, const st
     }
 }
 
+#ifndef NO_MMAP
 pma_memory::pma_memory(const std::string &description, uint64_t length, const std::string &path, const mmapd &m) :
     m_length{length},
     m_host_memory{nullptr},
@@ -158,6 +167,17 @@ pma_memory::pma_memory(const std::string &description, uint64_t length, const st
     m_host_memory = host_memory;
     m_backing_file = backing_file;
 }
+#else
+pma_memory::pma_memory(const std::string &description, uint64_t length, const std::string &path, const mmapd &m) :
+    pma_memory(description, length, path, callocd{}) {
+    if (path.empty()) {
+        throw std::runtime_error{"image file must be specified for "s + description};
+    }
+    if (m.shared) {
+        throw std::runtime_error{"shared image is unsupported, when initializing "s + description};
+    }
+}
+#endif
 
 pma_memory &pma_memory::operator=(pma_memory &&other) noexcept {
     release();

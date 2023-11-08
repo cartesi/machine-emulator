@@ -20,9 +20,8 @@
 #include <tuple>
 #include <vector>
 
-#include <json.hpp>
-
 #include "grpc-machine-c-api.h"
+#include "json-util.h"
 #include "machine-c-api.h"
 #include "riscv-constants.h"
 #include "test-utils.h"

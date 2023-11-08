@@ -297,6 +297,7 @@ endif
 CXXFLAGS+=$(MYCXXFLAGS)
 CFLAGS+=$(MYCFLAGS)
 LDFLAGS+=$(MYLDFLAGS)
+SOLDFLAGS+=$(MYSOLDFLAGS)
 
 all: luacartesi libcartesi.a grpc hash c-api jsonrpc-remote-cartesi-machine
 

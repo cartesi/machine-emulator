@@ -19,7 +19,6 @@
 #include <cstdint>
 #include <string>
 
-#include <json.hpp>
 #include <mongoose.h>
 
 #include "jsonrpc-mg-mgr.h"

@@ -21,6 +21,8 @@
 #include <string>
 #include <type_traits>
 
+// Disable JSON filesystem support because it is not supported in some targets
+#define JSON_HAS_FILESYSTEM 0
 #include <json.hpp>
 
 #include "base64.h"

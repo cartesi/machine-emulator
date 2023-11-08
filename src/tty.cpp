@@ -15,16 +15,26 @@
 //
 
 #include <array>
-#include <csignal>
 #include <cstdint>
-#include <fcntl.h>
 #include <iostream>
-#include <sys/select.h>
-#include <sys/stat.h>
-#include <unistd.h>
+
+#if (defined(_WIN32)) && !defined(NO_STDIN_READ)
+#define NO_STDIN_READ
+#endif
+
+#ifndef NO_STDIN_READ
+#include <sys/select.h> // select
+#endif
+
+#include <unistd.h> // write/read/close
+
+#if (defined(_WIN32) || defined(__wasi__)) && !defined(NO_TERMIOS)
+#define NO_TERMIOS
+#endif
 
 #ifndef NO_TERMIOS
-#include <termios.h>
+#include <fcntl.h>   // open
+#include <termios.h> // tcgetattr/tcsetattr
 #endif
 
 #include "tty.h"
@@ -74,6 +84,7 @@ static int get_ttyfd(void) {
 #endif
 
 static bool try_read_chars_from_stdin(uint64_t wait, char *data, size_t max_len, ssize_t *actual_len) {
+#ifndef NO_STDIN_READ
     const int fd_max{0};
     fd_set rfds{};
     timeval tv{};
@@ -90,6 +101,14 @@ static bool try_read_chars_from_stdin(uint64_t wait, char *data, size_t max_len,
         return true;
     }
     return false;
+#else
+    // No support for reading console inputs for Windows yet
+    (void) wait;
+    (void) data;
+    (void) max_len;
+    (void) actual_len;
+    return false;
+#endif
 }
 
 /// Returns pointer to the global TTY state

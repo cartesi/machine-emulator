@@ -14,6 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include <climits>
 #include <exception>
 #include <fstream>
 #include <iostream>

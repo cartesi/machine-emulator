@@ -19,7 +19,7 @@
 
 #include <cstdint>
 
-#include <pma-defines.h>
+#include "pma-defines.h"
 
 namespace cartesi {
 

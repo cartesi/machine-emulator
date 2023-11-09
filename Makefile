@@ -63,8 +63,8 @@ EMU_LUA_TEST_TO_BIN= cartesi-machine-tests.lua uarch-riscv-tests.lua
 EMU_TO_LUA_PATH= cartesi/util.lua cartesi/proof.lua cartesi/gdbstub.lua
 EMU_TO_LUA_CPATH= cartesi.so
 EMU_TO_LUA_CARTESI_CPATH= cartesi/grpc.so cartesi/jsonrpc.so
-EMU_TO_INC= $(addprefix lib/machine-emulator-defines/,pma-defines.h rtc-defines.h) \
-            $(addprefix src/,jsonrpc-machine-c-api.h grpc-machine-c-api.h machine-c-api.h machine-c-defines.h machine-c-version.h)
+EMU_TO_INC= $(addprefix src/,jsonrpc-machine-c-api.h grpc-machine-c-api.h machine-c-api.h \
+	    machine-c-defines.h machine-c-version.h pma-defines.h rtc-defines.h htif-defines.h uarch-defines.h)
 UARCH_TO_SHARE= uarch-ram.bin
 
 MONGOOSE_VERSION=7.12

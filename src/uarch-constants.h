@@ -17,8 +17,8 @@
 #ifndef UARCH_CONSTANTS_H
 #define UARCH_CONSTANTS_H
 
+#include "uarch-defines.h"
 #include <cstdint>
-#include <uarch-defines.h>
 
 namespace cartesi {
 

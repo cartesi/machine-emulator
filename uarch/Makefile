@@ -1,7 +1,6 @@
 TOOLCHAIN_PREFIX ?= riscv64-cartesi-linux-gnu-
 
 EMULATOR_SRC_DIR = ../src
-MACHINE_EMULATOR_DEFINES_DIR := ../lib/machine-emulator-defines
 THIRD_PARTY_DIR := ../third-party
 
 BOOST_INC_DIR = /usr/include/boost
@@ -49,7 +48,6 @@ CFLAGS := -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) \
 	-mstrict-align \
 	-mcmodel=medany -static -fvisibility=hidden \
 	-I. \
-	-I$(MACHINE_EMULATOR_DEFINES_DIR) \
 	-I$(THIRD_PARTY_DIR)/llvm-flang-uint128 \
 	-I$(EMULATOR_SRC_DIR) \
 	-I$(BOOST_INC_DIR)

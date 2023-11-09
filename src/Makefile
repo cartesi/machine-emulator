@@ -154,7 +154,6 @@ WARNS=-W -Wall -pedantic
 
 # Place our include directories before the system's
 INCS= \
-	-I../lib/machine-emulator-defines \
 	-I../third-party/llvm-flang-uint128 \
 	-I../third-party/tiny_sha3 \
 	-I../third-party/downloads \

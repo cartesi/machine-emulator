@@ -19,7 +19,7 @@
 
 #include <cstdint>
 
-#include <rtc-defines.h>
+#include "rtc-defines.h"
 
 /// \file
 /// \brief Real Time Clock

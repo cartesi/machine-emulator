@@ -19,8 +19,8 @@
 
 #include "machine-c-defines.h"
 #include "pma-constants.h"
+#include "pma-defines.h"
 #include <cstdint>
-#include <pma-defines.h>
 
 /// \file
 /// \brief RISC-V constants

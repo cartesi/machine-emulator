@@ -18,10 +18,10 @@ TARGET_OS?=$(shell uname)
 export TARGET_OS
 
 # Install settings
-DEB_ARCH:= $(shell dpkg --print-architecture 2>/dev/null || echo amd64)
+DEB_ARCH= $(shell dpkg --print-architecture 2>/dev/null || echo amd64)
 PREFIX= /usr
-MACHINE_EMULATOR_VERSION:= $(shell make -sC src version)
-MACHINE_EMULATOR_SO_VERSION:= $(shell make -sC src so-version)
+MACHINE_EMULATOR_VERSION= $(shell make -sC src version)
+MACHINE_EMULATOR_SO_VERSION= $(shell make -sC src so-version)
 DEB_FILENAME= cartesi-machine-v$(MACHINE_EMULATOR_VERSION)_$(DEB_ARCH).deb
 BIN_RUNTIME_PATH= $(PREFIX)/bin
 LIB_RUNTIME_PATH= $(PREFIX)/lib
@@ -31,29 +31,31 @@ IMAGES_RUNTIME_PATH= $(SHARE_RUNTIME_PATH)/images
 LUA_RUNTIME_CPATH= $(PREFIX)/lib/lua/5.4
 LUA_RUNTIME_PATH= $(PREFIX)/share/lua/5.4
 
-LIBCARTESI_Darwin=libcartesi.dylib
-LIBCARTESI_Linux=libcartesi.so
-LIBCARTESI_GRPC_Darwin=libcartesi_grpc.dylib
-LIBCARTESI_GRPC_Linux=libcartesi_grpc.so
-LIBCARTESI_JSONRPC_Darwin=libcartesi_jsonrpc.dylib
-LIBCARTESI_JSONRPC_Linux=libcartesi_jsonrpc.so
+ifeq ($(TARGET_OS),Darwin)
+LIBCARTESI=libcartesi.dylib
+LIBCARTESI_GRPC=libcartesi_grpc.dylib
+LIBCARTESI_JSONRPC=libcartesi_jsonrpc.dylib
+LIBCARTESI_SO=libcartesi-$(MACHINE_EMULATOR_SO_VERSION).dylib
+LIBCARTESI_SO_GRPC=libcartesi_grpc-$(MACHINE_EMULATOR_SO_VERSION).dylib
+LIBCARTESI_SO_JSONRPC=libcartesi_jsonrpc-$(MACHINE_EMULATOR_SO_VERSION).dylib
+else
+LIBCARTESI=libcartesi.so
+LIBCARTESI_GRPC=libcartesi_grpc.so
+LIBCARTESI_JSONRPC=libcartesi_jsonrpc.so
+LIBCARTESI_SO=libcartesi-$(MACHINE_EMULATOR_SO_VERSION).so
+LIBCARTESI_SO_GRPC=libcartesi_grpc-$(MACHINE_EMULATOR_SO_VERSION).so
+LIBCARTESI_SO_JSONRPC=libcartesi_jsonrpc-$(MACHINE_EMULATOR_SO_VERSION).so
+endif
 
-LIBCARTESI_SO_Darwin:=libcartesi-$(MACHINE_EMULATOR_SO_VERSION).dylib
-LIBCARTESI_SO_Linux:=libcartesi-$(MACHINE_EMULATOR_SO_VERSION).so
-LIBCARTESI_SO_GRPC_Darwin:=libcartesi_grpc-$(MACHINE_EMULATOR_SO_VERSION).dylib
-LIBCARTESI_SO_GRPC_Linux:=libcartesi_grpc-$(MACHINE_EMULATOR_SO_VERSION).so
-LIBCARTESI_SO_JSONRPC_Darwin:=libcartesi_jsonrpc-$(MACHINE_EMULATOR_SO_VERSION).dylib
-LIBCARTESI_SO_JSONRPC_Linux:=libcartesi_jsonrpc-$(MACHINE_EMULATOR_SO_VERSION).so
-
-BIN_INSTALL_PATH:=    $(abspath $(DESTDIR)$(BIN_RUNTIME_PATH))
-LIB_INSTALL_PATH:=    $(abspath $(DESTDIR)$(LIB_RUNTIME_PATH))
-DOC_INSTALL_PATH:=    $(abspath $(DESTDIR)$(DOC_RUNTIME_PATH))
-SHARE_INSTALL_PATH:=  $(abspath $(DESTDIR)$(SHARE_RUNTIME_PATH))
-IMAGES_INSTALL_PATH:= $(abspath $(DESTDIR)$(IMAGES_RUNTIME_PATH))
-UARCH_INSTALL_PATH:=  $(abspath $(SHARE_INSTALL_PATH)/uarch)
-LUA_INSTALL_CPATH:=   $(abspath $(DESTDIR)$(LUA_RUNTIME_CPATH))
-LUA_INSTALL_PATH:=    $(abspath $(DESTDIR)$(LUA_RUNTIME_PATH))
-INC_INSTALL_PATH:=    $(abspath $(DESTDIR)$(PREFIX)/include/cartesi-machine)
+BIN_INSTALL_PATH=    $(abspath $(DESTDIR)$(BIN_RUNTIME_PATH))
+LIB_INSTALL_PATH=    $(abspath $(DESTDIR)$(LIB_RUNTIME_PATH))
+DOC_INSTALL_PATH=    $(abspath $(DESTDIR)$(DOC_RUNTIME_PATH))
+SHARE_INSTALL_PATH=  $(abspath $(DESTDIR)$(SHARE_RUNTIME_PATH))
+IMAGES_INSTALL_PATH= $(abspath $(DESTDIR)$(IMAGES_RUNTIME_PATH))
+UARCH_INSTALL_PATH=  $(abspath $(SHARE_INSTALL_PATH)/uarch)
+LUA_INSTALL_CPATH=   $(abspath $(DESTDIR)$(LUA_RUNTIME_CPATH))
+LUA_INSTALL_PATH=    $(abspath $(DESTDIR)$(LUA_RUNTIME_PATH))
+INC_INSTALL_PATH=    $(abspath $(DESTDIR)$(PREFIX)/include/cartesi-machine)
 
 INSTALL_FILE= install -m0644
 INSTALL_EXEC= install -m0755
@@ -67,7 +69,7 @@ STRIP_STATIC= $(STRIP) -S
 
 EMU_TO_BIN= src/jsonrpc-remote-cartesi-machine src/remote-cartesi-machine src/merkle-tree-hash
 EMU_TEST_TO_BIN= src/tests/test-merkle-tree-hash src/tests/test-machine-c-api
-EMU_TO_LIB= src/$(LIBCARTESI_SO_$(TARGET_OS)) src/$(LIBCARTESI_SO_GRPC_$(TARGET_OS)) src/$(LIBCARTESI_SO_JSONRPC_$(TARGET_OS))
+EMU_TO_LIB= src/$(LIBCARTESI_SO) src/$(LIBCARTESI_SO_GRPC) src/$(LIBCARTESI_SO_JSONRPC)
 EMU_TO_LIB_A= src/libcartesi.a src/libcartesi_jsonrpc.a
 EMU_LUA_TO_BIN= src/cartesi-machine.lua src/cartesi-machine-stored-hash.lua src/rollup-memory-range.lua
 EMU_LUA_TEST_TO_BIN= src/cartesi-machine-tests.lua src/uarch-riscv-tests.lua
@@ -81,12 +83,12 @@ UARCH_TO_SHARE= uarch-ram.bin
 MONGOOSE_VERSION=7.12
 
 # Build settings
-DEPDIR := third-party
-SRCDIR := $(abspath src)
-DOWNLOADDIR := $(DEPDIR)/downloads
-DEPDIRS := third-party/mongoose-$(MONGOOSE_VERSION)
-SUBCLEAN := $(addsuffix .clean,$(SRCDIR) uarch third-party/riscv-arch-tests)
-COREPROTO := lib/grpc-interfaces/core.proto
+DEPDIR = third-party
+SRCDIR = $(abspath src)
+DOWNLOADDIR = $(DEPDIR)/downloads
+DEPDIRS = third-party/mongoose-$(MONGOOSE_VERSION)
+SUBCLEAN = $(addsuffix .clean,$(SRCDIR) uarch third-party/riscv-arch-tests)
+COREPROTO = lib/grpc-interfaces/core.proto
 
 # Docker image tag
 TAG ?= devel
@@ -111,13 +113,22 @@ export coverage
 ifeq ($(TARGET_OS),Darwin)
 export CC = clang
 export CXX = clang++
-LIBRARY_PATH := "export DYLD_LIBRARY_PATH="
+LIBRARY_PATH = "export DYLD_LIBRARY_PATH="
+SHA1SUM=shasum
 
 # Linux specific settings
 else ifeq ($(TARGET_OS),Linux)
 export CC=gcc
 export CXX=g++
-LIBRARY_PATH := "export LD_LIBRARY_PATH=$(SRCDIR)"
+LIBRARY_PATH = "export LD_LIBRARY_PATH=$(SRCDIR)"
+SHA1SUM=sha1sum
+
+# Other system
+else
+export CC=gcc
+export CXX=g++
+SHA1SUM=sha1sum
+
 endif
 
 all: source-default
@@ -162,7 +173,7 @@ help:
 	@echo '  uarch-tests-with-linux-env - build and run microarchitecture rv64i instruction tests using the linux-env docker image'
 
 checksum:
-	@cd $(DEPDIR) && shasum -c shasumfile
+	@cd $(DEPDIR) && $(SHA1SUM) -c shasumfile
 
 $(DOWNLOADDIR):
 	@mkdir -p $(DOWNLOADDIR)
@@ -280,9 +291,9 @@ install-emulator: $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/c
 	cat tools/template/cartesi-machine-stored-hash.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/cartesi-machine-stored-hash
 	cat tools/template/rollup-memory-range.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/rollup-memory-range
 	$(CHMOD_EXEC) $(BIN_INSTALL_PATH)/cartesi-machine $(BIN_INSTALL_PATH)/cartesi-machine-stored-hash $(BIN_INSTALL_PATH)/rollup-memory-range
-	$(SYMLINK) $(LIBCARTESI_SO_$(TARGET_OS)) $(LIB_INSTALL_PATH)/$(LIBCARTESI_$(TARGET_OS))
-	$(SYMLINK) $(LIBCARTESI_SO_GRPC_$(TARGET_OS)) $(LIB_INSTALL_PATH)/$(LIBCARTESI_GRPC_$(TARGET_OS))
-	$(SYMLINK) $(LIBCARTESI_SO_JSONRPC_$(TARGET_OS)) $(LIB_INSTALL_PATH)/$(LIBCARTESI_JSONRPC_$(TARGET_OS))
+	$(SYMLINK) $(LIBCARTESI_SO) $(LIB_INSTALL_PATH)/$(LIBCARTESI)
+	$(SYMLINK) $(LIBCARTESI_SO_GRPC) $(LIB_INSTALL_PATH)/$(LIBCARTESI_GRPC)
+	$(SYMLINK) $(LIBCARTESI_SO_JSONRPC) $(LIB_INSTALL_PATH)/$(LIBCARTESI_JSONRPC)
 	$(INSTALL_DIR) tools/gdb $(SHARE_INSTALL_PATH)/gdb
 
 install-strip: install-emulator

@@ -24,14 +24,14 @@ EMULATOR_VERSION_LABEL=
 
 TARGET_OS?=$(shell uname)
 
-LUA_INC:=$(shell pkg-config --cflags-only-I lua5.4)
-LUA_LIB:=-llua5.4
-LUA_BIN?=lua5.4
-GRPC_DIR:=../lib/grpc-interfaces
+LUA_INC=$(shell pkg-config --cflags-only-I lua5.4)
+LUA_LIB=$(shell pkg-config --libs lua5.4)
+LUA_BIN=lua5.4
+GRPC_DIR=../lib/grpc-interfaces
 
-PROTOC:=$(shell which protoc)
-PROTOC_FLAGS:=--experimental_allow_proto3_optional
-GRPC_CPP_PLUGIN:=$(shell which grpc_cpp_plugin)
+PROTOC=protoc
+PROTOC_FLAGS=--experimental_allow_proto3_optional
+GRPC_CPP_PLUGIN=$(shell which grpc_cpp_plugin)
 
 # Code instrumentation
 release?=no
@@ -49,118 +49,96 @@ GCLDFLAGS=-Wl,--gc-sections,--print-gc-sections
 endif
 
 # Mac OS X specific setup
-SOLDFLAGS_Darwin:=-bundle -undefined dynamic_lookup
-LIBLDFLAGS_Darwin:=-dynamiclib -undefined dynamic_lookup
-CC_Darwin=clang
-CXX_Darwin=clang++
-AR_EXEC_Darwin=libtool -static
-INCS_Darwin=
-
 ifeq ($(TARGET_OS),Darwin)
+SOLDFLAGS=-bundle -undefined dynamic_lookup
+LIBLDFLAGS=-dynamiclib -undefined dynamic_lookup
+EXELDFLAGS=
+CC=clang
+CXX=clang++
+AR_EXEC=libtool -static
+INCS=
+
+PTHREAD_LIB=-lpthread
+
 ifeq ($(MACOSX_DEPLOYMENT_TARGET),)
 export MACOSX_DEPLOYMENT_TARGET := $(shell sw_vers -productVersion | sed -r  "s/([[:digit:]]+)\.([[:digit:]]+)\..+/\1.\2.0/")
 endif
-SOLDFLAGS_Darwin+=
+
 # Homebrew installation
 ifneq (,$(shell which brew))
-BREW_PREFIX := $(shell brew --prefix)
-BOOST_LIB_DIR_Darwin=-L$(BREW_PREFIX)/lib
-BOOST_INC_Darwin=-I$(BREW_PREFIX)/include
-GRPC_INC_Darwin:=$(shell pkg-config --cflags-only-I grpc++)
-GRPC_LIB_Darwin:=$(shell pkg-config --libs grpc++)
-PROTOBUF_INC_Darwin:=$(shell pkg-config --cflags-only-I protobuf)
-PROTOBUF_LIB_Darwin:=$(shell pkg-config --libs protobuf)
-else ifneq (,$(shell which port)) # Macports installation
-PORT_PREFIX := /opt/local
-BOOST_LIB_DIR_Darwin=-L$(PORT_PREFIX)/libexec/boost/1.81/lib
-BOOST_INC_Darwin=-I$(PORT_PREFIX)/libexec/boost/1.81/include
-GRPC_INC_Darwin:=-I$(PORT_PREFIX)/include
-GRPC_LIB_Darwin=-L$(PORT_PREFIX)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
-PROTOBUF_INC_Darwin:=-I$(PORT_PREFIX)/include
-PROTOBUF_LIB_Darwin:=-L$(PORT_PREFIX)/lib -lprotobuf -lpthread
+BREW_PREFIX = $(shell brew --prefix)
+BOOST_LIB_DIR=-L$(BREW_PREFIX)/lib
+BOOST_INC=-I$(BREW_PREFIX)/include
+GRPC_PROTOBUF_INC=$(shell pkg-config --cflags-only-I grpc++ protobuf)
+GRPC_PROTOBUF_LIB=$(shell pkg-config --libs grpc++ protobuf)
+
+# Macports installation
+else ifneq (,$(shell which port))
+PORT_PREFIX = /opt/local
+BOOST_LIB_DIR=-L$(PORT_PREFIX)/libexec/boost/1.81/lib
+BOOST_INC=-I$(PORT_PREFIX)/libexec/boost/1.81/include
+GRPC_PROTOBUF_INC=-I$(PORT_PREFIX)/include
+GRPC_PROTOBUF_LIB=-L$(PORT_PREFIX)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
 else
 $(error Neither Homebrew nor MacPorts is installed)
 endif
-endif
 
-PTHREAD_LIB_Darwin:=-lpthread
-LIBCARTESI_Darwin=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
-LIBCARTESI_LDFLAGS_Darwin=-install_name '@rpath/$(LIBCARTESI_Darwin)'
-LIBCARTESI_GRPC_Darwin=libcartesi_grpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
-LIBCARTESI_GRPC_LDFLAGS_Darwin=-install_name '@rpath/$(LIBCARTESI_GRPC_Darwin)'
-LIBCARTESI_JSONRPC_Darwin=libcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
-LIBCARTESI_JSONRPC_LDFLAGS_Darwin=-install_name '@rpath/$(LIBCARTESI_JSONRPC_Darwin)'
-EXELDFLAGS_Darwin=
-PROFILE_DATA_Darwin=default.profdata
+LIBCARTESI=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
+LIBCARTESI_LDFLAGS=-install_name '@rpath/$(LIBCARTESI)'
+LIBCARTESI_GRPC=libcartesi_grpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
+LIBCARTESI_GRPC_LDFLAGS=-install_name '@rpath/$(LIBCARTESI_GRPC)'
+LIBCARTESI_JSONRPC=libcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
+LIBCARTESI_JSONRPC_LDFLAGS=-install_name '@rpath/$(LIBCARTESI_JSONRPC)'
+PROFILE_DATA=default.profdata
+
+# Linux or some other POSIX platform
+else
 
 # Linux specific setup
-SOLDFLAGS_Linux:=-shared -fPIC -pthread
-LIBLDFLAGS_Linux:=$(SOLDFLAGS_Linux) -Wl,-z,defs
-CC_Linux=gcc
-CXX_Linux=g++
-AR_EXEC_Linux=ar rcs
-INCS_Linux=
-PTHREAD_LIB_Linux:=-lpthread
-BOOST_INC_Linux:=
-GRPC_INC_Linux:=$(shell pkg-config --cflags-only-I grpc++)
-GRPC_LIB_Linux:=$(shell pkg-config --libs grpc++)
-PROTOBUF_INC_Linux:=$(shell pkg-config --cflags-only-I protobuf)
-PROTOBUF_LIB_Linux:=$(shell pkg-config --libs protobuf)
-LIBCARTESI_Linux=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
-LIBCARTESI_LDFLAGS_Linux:=
-LIBCARTESI_GRPC_Linux=libcartesi_grpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
-LIBCARTESI_GRPC_LDFLAGS_Linux:=
-LIBCARTESI_JSONRPC_Linux=libcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
-LIBCARTESI_JSONRPC_LDFLAGS_Linux:=
-EXELDFLAGS_Linux=
-PROFILE_DATA_Linux=
+SOLDFLAGS=-shared -fPIC -pthread $(GCLDFLAGS)
+LIBLDFLAGS=$(SOLDFLAGS) -Wl,-z,defs
+EXELDFLAGS=$(GCLDFLAGS)
+CC=gcc
+CXX=g++
+AR_EXEC=ar rcs
+INCS=
 
-CC=$(CC_$(TARGET_OS))
-CXX=$(CXX_$(TARGET_OS))
-AR_EXEC=$(AR_EXEC_$(TARGET_OS))
-SOLDFLAGS:=$(SOLDFLAGS_$(TARGET_OS)) $(GCLDFLAGS)
-LIBLDFLAGS:=$(LIBLDFLAGS_$(TARGET_OS))
-PTHREAD_LIB:=$(PTHREAD_LIB_$(TARGET_OS))
-BOOST_INC:=$(BOOST_INC_$(TARGET_OS))
-GRPC_INC:=$(GRPC_INC_$(TARGET_OS))
-GRPC_LIB:=$(GRPC_LIB_$(TARGET_OS))
-PROTOBUF_INC:=$(PROTOBUF_INC_$(TARGET_OS))
-PROTOBUF_LIB:=$(PROTOBUF_LIB_$(TARGET_OS))
-LIBCARTESI=$(LIBCARTESI_$(TARGET_OS))
-LIBCARTESI_LDFLAGS=$(LIBCARTESI_LDFLAGS_$(TARGET_OS))
-LIBCARTESI_LIB=-L. -lcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR)
-EXELDFLAGS=$(EXELDFLAGS_$(TARGET_OS))
+PTHREAD_LIB=-lpthread
+BOOST_INC=
+GRPC_PROTOBUF_INC=$(shell pkg-config --cflags-only-I grpc++ protobuf)
+GRPC_PROTOBUF_LIB=$(shell pkg-config --libs grpc++ protobuf)
+LIBCARTESI=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
+LIBCARTESI_LDFLAGS=
+LIBCARTESI_GRPC=libcartesi_grpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
+LIBCARTESI_GRPC_LDFLAGS=
+LIBCARTESI_JSONRPC=libcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
+LIBCARTESI_JSONRPC_LDFLAGS=
+PROFILE_DATA=
 
-LIBCARTESI_GRPC=$(LIBCARTESI_GRPC_$(TARGET_OS))
-LIBCARTESI_GRPC_LDFLAGS=$(LIBCARTESI_GRPC_LDFLAGS_$(TARGET_OS))
-LIBCARTESI_GRPC_LIB=-L. -lcartesi_grpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR)
+endif
 
-LIBCARTESI_JSONRPC=$(LIBCARTESI_JSONRPC_$(TARGET_OS))
-LIBCARTESI_JSONRPC_LDFLAGS=$(LIBCARTESI_JSONRPC_LDFLAGS_$(TARGET_OS))
-LIBCARTESI_JSONRPC_LIB=-L. -lcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR)
-
-LIBCARTESI_LIBS:=
-LIBCARTESI_GRPC_LIBS:=$(GRPC_LIB) $(PROTOBUF_LIB)
-LIBCARTESI_JSONRPC_LIBS:=
-LUACARTESI_LIBS:=
-LUACARTESI_GRPC_LIBS:=$(GRPC_LIB) $(PROTOBUF_LIB)
-LUACARTESI_JSONRPC_LIBS:=
-REMOTE_CARTESI_MACHINE_LIBS:=$(GRPC_LIB) $(PROTOBUF_LIB)
-JSONRPC_REMOTE_CARTESI_MACHINE_LIBS:=
-TEST_MACHINE_C_API_LIBS:=$(GRPC_LIB) $(PROTOBUF_LIB) $(PTHREAD_LIB)
-HASH_LIBS:=
+LIBCARTESI_LIBS=
+LIBCARTESI_GRPC_LIBS=$(GRPC_PROTOBUF_LIB)
+LIBCARTESI_JSONRPC_LIBS=
+LUACARTESI_LIBS=
+LUACARTESI_GRPC_LIBS=$(GRPC_PROTOBUF_LIB)
+LUACARTESI_JSONRPC_LIBS=
+REMOTE_CARTESI_MACHINE_LIBS=$(GRPC_PROTOBUF_LIB)
+JSONRPC_REMOTE_CARTESI_MACHINE_LIBS=
+TEST_MACHINE_C_API_LIBS=$(GRPC_PROTOBUF_LIB) $(PTHREAD_LIB)
+HASH_LIBS=
 
 #DEFS+= -DMT_ALL_DIRTY
 
 WARNS=-W -Wall -pedantic
 
 # Place our include directories before the system's
-INCS= \
+INCS+= \
 	-I../third-party/llvm-flang-uint128 \
 	-I../third-party/tiny_sha3 \
 	-I../third-party/downloads \
 	-I../third-party/mongoose-7.12 \
-	$(LUA_INC) $(BOOST_INC) $(PROTOBUF_INC) $(GRPC_INC) $(INCS_$(TARGET_OS))
+	$(BOOST_INC)
 
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS
@@ -519,12 +497,14 @@ valgrind: luacartesi
 	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) cartesi-machine-tests.lua --test-path="$(CARTESI_TESTS_PATH)" --test=".*" run
 	valgrind --leak-check=full --tool=memcheck --track-origins=yes $(LUA_BIN) cartesi-machine.lua --initial-hash --final-hash -- /bin/true
 
-$(PROFILE_DATA_Darwin):
+ifeq ($(TARGET_OS),Darwin)
+$(PROFILE_DATA):
 	llvm-profdata merge -output=default.profdata default*.profraw
+endif
 
 use: CXXFLAGS += -fprofile-use -Wno-missing-profile
 use: LDFLAGS += -fprofile-use
-use: $(PROFILE_DATA_$(TARGET_OS)) luacartesi
+use: $(PROFILE_DATA) luacartesi
 
 compile_flags.txt:
 	@echo "$(CXXFLAGS)" "-xc++" | sed -e $$'s/ \{1,\}/\\\n/g' | grep -v "MMD" > $@
@@ -663,7 +643,9 @@ remote-cartesi-machine: $(REMOTE_CARTESI_MACHINE_OBJS)
 jsonrpc-remote-cartesi-machine: $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS)
 	$(CXX) -o $@ $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) $(JSONRPC_REMOTE_CARTESI_MACHINE_LIBS) $(LDFLAGS) $(EXELDFLAGS)
 
-remote-cartesi-machine: CXXFLAGS := $(PROTOBUF_INC) $(GRPC_INC) $(CXXFLAGS)
+$(PROTOBUF_GEN_OBJS) $(GRPC_GEN_OBJS) protobuf-util.o grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o remote-cartesi-machine: CXXFLAGS += $(GRPC_PROTOBUF_INC)
+
+clua-%.o clua.o: CXXFLAGS += $(LUA_INC)
 
 tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS)
 	$(CXX) -o $@ $(TEST_MACHINE_C_API_OBJS) $(TEST_MACHINE_C_API_LIBS) $(LDFLAGS) $(EXELDFLAGS)
@@ -692,8 +674,8 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	echo '} // namespace cartesi' >> jsonrpc-discover.cpp
 
 %.clang-tidy: %.cpp $(PROTO_SOURCES) machine-c-version.h
-	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CXXFLAGS) 2>/dev/null
-	@$(CXX) $(CXXFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
+	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CXXFLAGS) $(LUA_INC) $(GRPC_PROTOBUF_INC) 2>/dev/null
+	@$(CXX) $(CXXFLAGS) $(LUA_INC) $(GRPC_PROTOBUF_INC) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
 %.clang-tidy: %.c $(PROTO_SOURCES)

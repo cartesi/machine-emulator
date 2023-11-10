@@ -304,7 +304,7 @@ SOLDFLAGS+=$(MYSOLDFLAGS)
 LIBLDFLAGS+=$(MYLIBLDFLAGS)
 EXELDFLAGS+=$(MYEXELDFLAGS)
 
-all: luacartesi libcartesi.a grpc hash c-api jsonrpc-remote-cartesi-machine
+all: luacartesi libcartesi.a libcartesi_jsonrpc.a grpc hash c-api jsonrpc-remote-cartesi-machine
 
 .PHONY: all generate use clean test lint format format-lua check-format check-format-lua luacartesi grpc hash c-api compile_flags.txt
 
@@ -400,8 +400,15 @@ version:
 so-version:
 	@echo $(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR)
 
+libcartesi: libcartesi.a $(LIBCARTESI)
+libcartesi_grpc: $(LIBCARTESI_GRPC)
+libcartesi_jsonrpc: libcartesi_jsonrpc.a $(LIBCARTESI_JSONRPC)
+
 libcartesi.a: $(LIBCARTESI_OBJS)
 	$(AR_EXEC) $@ $(LIBCARTESI_OBJS)
+
+libcartesi_jsonrpc.a: $(LIBCARTESI_JSONRPC_OBJS)
+	$(AR_EXEC) $@ $(LIBCARTESI_JSONRPC_OBJS)
 
 $(LIBCARTESI): $(LIBCARTESI_OBJS)
 	$(CXX) -o $@ $(LIBCARTESI_OBJS) $(LIBCARTESI_LIBS) $(LDFLAGS) $(LIBCARTESI_LDFLAGS) $(LIBLDFLAGS)

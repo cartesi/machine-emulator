@@ -68,7 +68,7 @@ STRIP_STATIC= $(STRIP) -S
 EMU_TO_BIN= src/jsonrpc-remote-cartesi-machine src/remote-cartesi-machine src/merkle-tree-hash
 EMU_TEST_TO_BIN= src/tests/test-merkle-tree-hash src/tests/test-machine-c-api
 EMU_TO_LIB= src/$(LIBCARTESI_SO_$(TARGET_OS)) src/$(LIBCARTESI_SO_GRPC_$(TARGET_OS)) src/$(LIBCARTESI_SO_JSONRPC_$(TARGET_OS))
-EMU_TO_LIB_A= src/libcartesi.a
+EMU_TO_LIB_A= src/libcartesi.a src/libcartesi_jsonrpc.a
 EMU_LUA_TO_BIN= src/cartesi-machine.lua src/cartesi-machine-stored-hash.lua src/rollup-memory-range.lua
 EMU_LUA_TEST_TO_BIN= src/cartesi-machine-tests.lua src/uarch-riscv-tests.lua
 EMU_TO_LUA_PATH= src/cartesi/util.lua src/cartesi/proof.lua src/cartesi/gdbstub.lua
@@ -187,6 +187,9 @@ $(COREPROTO):
 grpc: | $(COREPROTO)
 
 hash luacartesi grpc test lint coverage-report check-format format check-format-lua check-lua format-lua:
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
+
+libcartesi libcartesi_grpc libcartesi_jsonrpc:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
 
 version:

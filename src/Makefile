@@ -379,8 +379,11 @@ so-version:
 	@echo $(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR)
 
 libcartesi: libcartesi.a $(LIBCARTESI)
+libcartesi.so: $(LIBCARTESI)
 libcartesi_grpc: $(LIBCARTESI_GRPC)
+libcartesi_grpc.so: $(LIBCARTESI_GRPC)
 libcartesi_jsonrpc: libcartesi_jsonrpc.a $(LIBCARTESI_JSONRPC)
+libcartesi_jsonrpc.so: $(LIBCARTESI_JSONRPC)
 
 libcartesi.a: $(LIBCARTESI_OBJS)
 	$(AR_EXEC) $@ $(LIBCARTESI_OBJS)
@@ -484,8 +487,8 @@ coverage-report:
 		./cartesi.so \
 		-object ./cartesi/grpc.so \
 		-object ./cartesi/jsonrpc.so \
-		-object ./libcartesi.so \
-		-object ./libcartesi_grpc.so \
+		-object ./$(LIBCARTESI) \
+		-object ./$(LIBCARTESI_GRPC) \
 		-object ./tests/test-merkle-tree-hash \
 		-object ./tests/test-machine-c-api \
 		-object ./remote-cartesi-machine \

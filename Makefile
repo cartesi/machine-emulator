@@ -186,6 +186,13 @@ third-party/downloads/$(MONGOOSE_VERSION).tar.gz: | downloads
 third-party/mongoose-$(MONGOOSE_VERSION): third-party/downloads/$(MONGOOSE_VERSION).tar.gz
 	tar -C third-party -xzf $< mongoose-$(MONGOOSE_VERSION)/mongoose.c mongoose-$(MONGOOSE_VERSION)/mongoose.h
 
+bundle-boost: third-party/downloads/boost
+third-party/downloads/boost: | downloads
+	wget -O third-party/downloads/boost_1_81_0.tar.gz https://boostorg.jfrog.io/artifactory/main/release/1.81.0/source/boost_1_81_0.tar.gz
+	tar -C third-party/downloads -xzf third-party/downloads/boost_1_81_0.tar.gz boost_1_81_0/boost
+	mv third-party/downloads/boost_1_81_0/boost third-party/downloads/boost
+	rm -rf third-party/downloads/boost_1_81_0.tar.gz third-party/downloads/boost_1_81_0
+
 dep: $(DEPDIRS)
 
 submodules:
@@ -200,7 +207,7 @@ grpc: | $(COREPROTO)
 hash luacartesi grpc test lint coverage-report check-format format check-format-lua check-lua format-lua:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
 
-libcartesi libcartesi_grpc libcartesi_jsonrpc:
+libcartesi libcartesi_grpc libcartesi_jsonrpc libcartesi.a libcartesi_jsonrpc.a libcartesi.so libcartesi_grpc.so libcartesi_jsonrpc.so:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
 
 version:

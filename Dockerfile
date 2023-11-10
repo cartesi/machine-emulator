@@ -8,7 +8,7 @@ RUN apt-get update && \
     DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends -y \
         build-essential vim wget git clang-tidy-15 clang-format-15 lcov \
         libboost1.81-dev libssl-dev \
-        ca-certificates automake libtool pkg-config lua5.4 liblua5.4-dev \
+        ca-certificates pkg-config lua5.4 liblua5.4-dev \
         libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
         luarocks && \
         update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-15 120 && \

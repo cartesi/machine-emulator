@@ -21,7 +21,6 @@ Docker targets:
 
 - C++ Compiler with support for C++17 (tested with GCC >= 8+ and Clang >= 8.x).
 - GNU Make >= 3.81
-- Cryptopp >= 7.0.0
 - GRPC >= 1.45.0
 - Lua >= 5.4.4
 - Boost >= 1.81
@@ -30,10 +29,10 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 
 #### Debian Bookworm
 
-```
+```bash
 sudo apt-get install build-essential wget git clang-tidy-15 clang-format-15 \
         libboost1.81-dev libssl-dev \
-        ca-certificates automake libtool pkg-config lua5.4 liblua5.4-dev \
+        ca-certificates pkg-config lua5.4 liblua5.4-dev \
         libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
         luarocks
 
@@ -46,8 +45,8 @@ sudo luarocks install --lua-version=5.4 luaposix
 #### MacOS
 
 ##### MacPorts
-```
-sudo port install clang-15 automake boost libtool wget pkgconfig grpc openssl lua lua-luarocks
+```bash
+sudo port install clang-15 boost libtool wget pkgconfig grpc openssl lua lua-luarocks
 
 sudo luarocks install --lua-version=5.4 lpeg
 sudo luarocks install --lua-version=5.4 dkjson
@@ -57,13 +56,13 @@ sudo luarocks install --lua-version=5.4 luaposix
 ```
 
 ##### Homebrew
-```
-brew install llvm@15 automake boost wget pkg-config grpc openssl lua@5.4 luarocks
-luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install lpeg
-luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install dkjson
-luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install luasocket
-luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install luasec
-luarocks --lua-dir=$(brew --prefix)/opt/lua@5.4 install luaposix
+```bash
+brew install llvm@15 boost wget pkg-config grpc openssl lua luarocks
+luarocks --lua-dir=$(brew --prefix)/opt/lua install lpeg
+luarocks --lua-dir=$(brew --prefix)/opt/lua install dkjson
+luarocks --lua-dir=$(brew --prefix)/opt/lua install luasocket
+luarocks --lua-dir=$(brew --prefix)/opt/lua install luasec
+luarocks --lua-dir=$(brew --prefix)/opt/lua install luaposix
 ```
 
 For emulator scripts to work it is expected that `lua5.4` binary is available in the system PATH. If operating system/package manager that you are using provides only `lua` or lua binary named in a different way (e.g. on `Homebrew`), please create symbolic link or alias `lua5.4`.
@@ -71,23 +70,58 @@ For emulator scripts to work it is expected that `lua5.4` binary is available in
 ### Build
 
 ```bash
-$ make submodules
-$ make downloads
-$ make dep
-$ make
+make submodules
+make downloads
+make dep
+make
 ```
 
 Cleaning:
 
 ```bash
-$ make depclean
-$ make clean
+make depclean
+make clean
 ```
 
 ### Install
 
 ```bash
-$ sudo make install PREFIX=/usr/local
+sudo make install PREFIX=/usr/local
+```
+
+### Build C libraries in standalone
+
+Both `libcartesi` and `libcartes_jsonrpc` C libraries can be compiled in standalone, either as static or shared library:
+
+```bash
+make submodules
+make downloads
+make dep
+make bundle-boost
+make -C src release=yes libcartesi.a libcartesi_jsonrpc.a libcartesi.so libcartesi_jsonrpc.so
+```
+
+The `.a` and `.so` files will be available in `src` directory, you can use any of them to link your application.
+
+You can even use other toolchains to cross compile targeting other platforms:
+
+```bash
+# Target WASM with Emscripten toolchain
+make -C src release=yes \
+  CC=emcc CXX=em++ AR="emar rcs" \
+  libcartesi.a
+
+# Target WASM with WASI SDK toolchain
+make -C src release=yes \
+  CC=/opt/wasi-sdk/bin/clang CXX=/opt/wasi-sdk/bin/clang++ AR="/opt/wasi-sdk/bin/llvm-ar rcs" \
+  libcartesi.a
+
+# Target Windows with mingw-w64 toolchain
+make -C src release=yes \
+  CC=x86_64-w64-mingw32-gcc \
+  CXX=x86_64-w64-mingw32-g++ \
+  AR="x86_64-w64-mingw32-ar rcs" \
+  libcartesi.a
 ```
 
 ## Running Tests
@@ -95,13 +129,13 @@ $ sudo make install PREFIX=/usr/local
 Copy the tests binaries to a directory called `tests` and run: (Eg.: )
 
 ```bash
-$ make test
+make test
 ```
 
 The default search path for binaries is `machine-emulator/tests`. Alternatively you can specify the binaries path using the `CARTESI_TESTS_PATH` variable as in:
 
 ```bash
-$ make test CARTESI_TESTS_PATH=/full/path/to/test/binaries
+make test CARTESI_TESTS_PATH=/full/path/to/test/binaries
 ```
 
 ## Linter
@@ -115,14 +149,14 @@ We use clang-tidy 14 as the linter.
 You need to install the package clang-tidy-15 and set it as the default executable with update-alternatives.
 
 ```bash
-$ apt install clang-tidy-15
-$ update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-15 120
+apt install clang-tidy-15
+update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-15 120
 ```
 
 ### Running Lint
 
 ```bash
-$ make lint -j$(nproc)
+make lint -j$(nproc)
 ```
 
 ## Code format
@@ -136,20 +170,20 @@ We use clang-format to format the code base.
 You need to install the package clang-format-15 and set is as the default executable with update-alternatives.
 
 ```bash
-$ apt install clang-format-15
-$ update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-15 120
+apt install clang-format-15
+update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-15 120
 ```
 
 ### Formatting code
 
 ```bash
-$ make format
+make format
 ```
 
 ### Checking whether the code is formatted
 
 ```bash
-$ make check-format
+make check-format
 ```
 
 ## Coverage
@@ -161,13 +195,13 @@ $ make check-format
 If you want to run the GCC-based coverage, you should install the lcov package with the following command.
 
 ```bash
-$ sudo apt install lcov
+sudo apt install lcov
 ```
 
 If you want to run the clang-based coverage, you should install the clang package with the following command.
 
 ```bash
-$ sudo apt install clang llvm
+sudo apt install clang llvm
 ```
 
 ### Compilation
@@ -177,13 +211,13 @@ Make sure you run `make clean` to clean up any previous compilation.
 For GCC-based coverage run the following command.
 
 ```bash
-$ make coverage-toolchain=gcc -j$(nproc)
+make coverage-toolchain=gcc -j$(nproc)
 ```
 
 For clang-based coverage run the following command.
 
 ```bash
-$ make coverage-toolchain=clang -j$(nproc)
+make coverage-toolchain=clang -j$(nproc)
 ```
 
 ### Running coverage
@@ -194,7 +228,7 @@ You also need to specify the directory containing the kernel and rootfs with the
 For instance:
 
 ```bash
-$ make coverage=yes test-all coverage-report \
+make coverage=yes test-all coverage-report \
     CARTESI_TESTS_PATH=$(realpath ../tests/build) \
     CARTESI_IMAGES_PATH=$(realpath ./src)
 ```

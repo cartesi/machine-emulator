@@ -52,6 +52,9 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared);
 /// \brief Unmaps a file from memory
 void os_unmap_file(unsigned char *host_memory, uint64_t length);
 
+/// \brief Get time elapsed since its first call with microsecond precision
+int64_t os_now_us();
+
 } // namespace cartesi
 
 #endif

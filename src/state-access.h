@@ -21,7 +21,6 @@
 /// \brief Fast state access implementation
 
 #include <cassert>
-#include <sys/time.h>
 
 #include "device-state-access.h"
 #include "i-state-access.h"
@@ -406,12 +405,10 @@ private:
             if (warp_cycle > mcycle) {
                 constexpr uint64_t cycles_per_us = RTC_CLOCK_FREQ / 1000000; // CLOCK_FREQ / 10^6
                 const uint64_t wait = (warp_cycle - mcycle) / cycles_per_us;
-                timeval start{};
-                timeval end{};
-                gettimeofday(&start, nullptr);
+                const int64_t start = os_now_us();
                 os_poll_tty(wait);
-                gettimeofday(&end, nullptr);
-                const uint64_t elapsed_us = (end.tv_sec - start.tv_sec) * 1000000 + end.tv_usec - start.tv_usec;
+                const int64_t end = os_now_us();
+                const uint64_t elapsed_us = static_cast<uint64_t>(std::max(end - start, INT64_C(0)));
                 const uint64_t tty_cycle = mcycle + (elapsed_us * cycles_per_us);
                 mcycle = std::min(std::max(tty_cycle, mcycle), warp_cycle);
             }

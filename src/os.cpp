@@ -18,6 +18,10 @@
 #define HAVE_TTY
 #endif
 
+#if !defined(NO_THREADS)
+#define HAVE_THREADS
+#endif
+
 #if !defined(_WIN32) && !defined(__wasi__) && !defined(NO_TERMIOS)
 #define HAVE_TERMIOS
 #endif
@@ -26,22 +30,23 @@
 #define HAVE_MMAP
 #endif
 
+#if !defined(_WIN32) && !defined(NO_MKDIR)
+#define HAVE_MKDIR
+#endif
+
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <iostream>
+#include <string>
 #include <system_error>
 
 #include "os.h"
 #include "unique-c-ptr.h"
 
 #if defined(HAVE_TTY) || defined(HAVE_MMAP) || defined(HAVE_TERMIOS) || defined(_WIN32)
-#include <fcntl.h>  // open
-#include <unistd.h> // write/read/close
-#endif
-
-#if defined(HAVE_TTY) && !defined(_WIN32)
-#include <sys/select.h> // select
+#include <fcntl.h> // open
 #endif
 
 #ifdef HAVE_TERMIOS
@@ -52,12 +57,31 @@
 #include <sys/mman.h> // mmap/munmap
 #endif
 
-#ifdef _WIN32
-#include <direct.h> // mkdir
-#include <windows.h>
+#if defined(HAVE_MMAP) || defined(HAVE_MKDIR) || defined(_WIN32)
+#include <sys/stat.h> // fstat/mkdir
 #endif
 
-#include <sys/stat.h> // fstat
+#ifdef _WIN32
+
+#include <direct.h> // mkdir
+#include <io.h>     // _write/_close
+#include <windows.h>
+
+#ifndef STDOUT_FILENO
+#define STDOUT_FILENO 0
+#endif
+
+#else // not _WIN32
+
+#if defined(HAVE_TTY) || defined(HAVE_MMAP) || defined(HAVE_TERMIOS)
+#include <unistd.h> // write/read/close
+#endif
+
+#if defined(HAVE_TTY)
+#include <sys/select.h> // select
+#endif
+
+#endif // _WIN32
 
 namespace cartesi {
 
@@ -68,8 +92,8 @@ using namespace std::string_literals;
 struct tty_state {
     bool initialized{false};
     std::array<char, 1024> buf{}; // Characters in console input buffer
-    ssize_t buf_pos{};
-    ssize_t buf_len{};
+    intptr_t buf_pos{};
+    intptr_t buf_len{};
 #ifdef HAVE_TERMIOS
     int ttyfd{-1};
     termios oldtty{};
@@ -183,21 +207,22 @@ void os_open_tty(void) {
 
 void os_close_tty(void) {
 #ifdef HAVE_TTY
-    auto *s = get_state();
-
 #ifdef HAVE_TERMIOS
+    auto *s = get_state();
     if (s->ttyfd >= 0) { // Restore old mode
         tcsetattr(s->ttyfd, TCSANOW, &s->oldtty);
         close(s->ttyfd);
         s->ttyfd = 1;
     }
+
 #elif defined(_WIN32)
+    auto *s = get_state();
     if (s->hStdin) {
         SetConsoleMode(s->hStdin, s->dwOldStdinMode);
         s->hStdin = NULL;
     }
-#endif // HAVE_TERMIOS
 
+#endif // HAVE_TERMIOS
 #endif // HAVE_TTY
 }
 
@@ -233,7 +258,7 @@ void os_poll_tty(uint64_t wait) {
                 DWORD numberOfCharsRead = 0;
                 // We must read input buffer through ReadConsole() to read raw terminal input
                 if (ReadConsole(s->hStdin, s->buf.data(), s->buf.size(), &numberOfCharsRead, NULL)) {
-                    s->buf_len = static_cast<ssize_t>(numberOfCharsRead);
+                    s->buf_len = static_cast<intptr_t>(numberOfCharsRead);
                 }
                 break;
             } else {
@@ -254,7 +279,7 @@ void os_poll_tty(uint64_t wait) {
         // Nothing to read
         return;
     }
-    s->buf_len = static_cast<ssize_t>(read(STDIN_FILENO, s->buf.data(), s->buf.size()));
+    s->buf_len = static_cast<intptr_t>(read(STDIN_FILENO, s->buf.data(), s->buf.size()));
 
 #endif // _WIN32
 
@@ -306,9 +331,15 @@ void os_putchar(uint8_t ch) {
     } else {
         // In interactive sessions we want to immediately write the character to stdout,
         // without any buffering.
+#ifdef _WIN32
+        if (_write(STDOUT_FILENO, &ch, 1) < 1) {
+            ;
+        }
+#else
         if (write(STDOUT_FILENO, &ch, 1) < 1) {
             ;
         }
+#endif
     }
 #else
     fputc_with_line_buffering(ch);
@@ -316,12 +347,14 @@ void os_putchar(uint8_t ch) {
 }
 
 int os_mkdir(const char *path, int mode) {
-#ifdef _WIN32
+#ifdef HAVE_MKDIR
+    return mkdir(path, mode);
+#elif defined(_WIN32)
     (void) mode;
     return _mkdir(path);
 #else
-    return mkdir(path, mode);
-#endif
+    return -1;
+#endif // HAVE_MKDIR
 }
 
 unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
@@ -368,10 +401,10 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
     return host_memory;
 
 #elif defined(_WIN32)
-    const int oflag = (shared ? O_RDWR : O_RDONLY) | O_BINARY;
+    const int oflag = (shared ? _O_RDWR : _O_RDONLY) | _O_BINARY;
 
     // Try to open image file
-    const int backing_file = open(path, oflag);
+    const int backing_file = _open(path, oflag);
     if (backing_file < 0) {
         throw std::system_error{errno, std::generic_category(), "could not open image file '"s + path + "'"s};
     }
@@ -379,14 +412,14 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
     // Try to get file size
     struct __stat64 statbuf {};
     if (_fstat64(backing_file, &statbuf) < 0) {
-        close(backing_file);
+        _close(backing_file);
         throw std::system_error{errno, std::generic_category(),
             "unable to obtain length of image file '"s + path + "'"s};
     }
 
     // Check that it matches range length
     if (static_cast<uint64_t>(statbuf.st_size) != length) {
-        close(backing_file);
+        _close(backing_file);
         throw std::invalid_argument{"image file '"s + path + "' size ("s +
             std::to_string(static_cast<uint64_t>(statbuf.st_size)) + ") does not match range length ("s +
             std::to_string(length) + ")"s};
@@ -398,19 +431,19 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
     HANDLE hFile = reinterpret_cast<HANDLE>(_get_osfhandle(backing_file));
     HANDLE hFileMappingObject = CreateFileMapping(hFile, NULL, flProtect, length >> 32, length & 0xffffffff, NULL);
     if (!hFileMappingObject) {
-        close(backing_file);
+        _close(backing_file);
         throw std::system_error{errno, std::generic_category(), "could not map image file '"s + path + "' to memory"s};
     }
 
     DWORD dwDesiredAccess = shared ? FILE_MAP_WRITE : FILE_MAP_COPY;
     auto *host_memory = static_cast<unsigned char *>(MapViewOfFile(hFileMappingObject, dwDesiredAccess, 0, 0, length));
     if (!host_memory) {
-        close(backing_file);
+        _close(backing_file);
         throw std::system_error{errno, std::generic_category(), "could not map image file '"s + path + "' to memory"s};
     }
 
     // We can close the file after mapping it, because the OS will retain a reference of the file on its own
-    close(backing_file);
+    _close(backing_file);
     return host_memory;
 
 #else
@@ -468,6 +501,17 @@ void os_unmap_file(unsigned char *host_memory, uint64_t length) {
     std::free(host_memory);
 
 #endif // HAVE_MMAP
+}
+
+int64_t os_now_us() {
+    std::chrono::time_point<std::chrono::high_resolution_clock> start{};
+    static bool started = false;
+    if (!started) {
+        started = true;
+        start = std::chrono::high_resolution_clock::now();
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+    return static_cast<int64_t>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
 }
 
 } // namespace cartesi

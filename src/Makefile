@@ -130,7 +130,7 @@ HASH_LIBS=
 
 #DEFS+= -DMT_ALL_DIRTY
 
-WARNS=-W -Wall -pedantic
+WARNS=-Wall -Wpedantic
 
 # Place our include directories before the system's
 INCS+= \
@@ -248,7 +248,7 @@ EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)
 CLANG_TIDY_HEADER_FILTER=$(PWD)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
 
-CXXFLAGS+=$(OPTFLAGS) -std=c++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
+CXXFLAGS+=$(OPTFLAGS) -std=gnu++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
 CFLAGS+=$(OPTFLAGS) -std=gnu99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
 LDFLAGS+=$(UBFLAGS)
 

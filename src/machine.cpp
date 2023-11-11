@@ -1388,14 +1388,6 @@ void machine::set_iflags_H(void) {
     m_s.iflags.H = true;
 }
 
-#if 0 // Unused
-static double now(void) {
-    using namespace std::chrono;
-    return static_cast<double>(duration_cast<microseconds>(high_resolution_clock::now().time_since_epoch()).count()) *
-        1.e-6;
-}
-#endif
-
 void machine::mark_write_tlb_dirty_pages(void) const {
     for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
         const tlb_hot_entry &tlbhe = m_s.tlb.hot[TLB_WRITE][i];
@@ -1408,7 +1400,6 @@ void machine::mark_write_tlb_dirty_pages(void) const {
 }
 
 bool machine::verify_dirty_page_maps(void) const {
-    // double begin = now();
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
         "PMA and machine_merkle_tree page sizes must match");
     machine_merkle_tree::hasher_type h;
@@ -1463,7 +1454,6 @@ static uint64_t get_task_concurrency(uint64_t value) {
 
 bool machine::update_merkle_tree(void) const {
     machine_merkle_tree::hasher_type gh;
-    // double begin = now();
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
         "PMA and machine_merkle_tree page sizes must match");
     // Go over the write TLB and mark as dirty all pages currently there
@@ -1546,10 +1536,7 @@ bool machine::update_merkle_tree(void) const {
         // Otherwise, mark all pages in PMA as clean and move on to next
         pma->mark_pages_clean();
     }
-    // std::cerr << "page updates done in " << now()-begin << "s\n";
-    // begin = now();
     const bool ret = m_t.end_update(gh);
-    // std::cerr << "inner tree updates done in " << now()-begin << "s\n";
     return ret;
 }
 

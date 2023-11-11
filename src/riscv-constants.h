@@ -793,7 +793,7 @@ enum class insn_funct3_00000_opcode : uint32_t {
     AND_REMU = 0b111000000110011,
     ADDW_MULW_SUBW = 0b000000000111011,
     SRLW_DIVUW_SRAW = 0b101000000111011,
-    privileged = 0b000000001110011,
+    PRIVILEGED = 0b000000001110011,
 };
 
 /// \brief The result of insn >> 26 (6 most significant bits of funct7) can be

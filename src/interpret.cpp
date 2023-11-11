@@ -5324,7 +5324,7 @@ static FORCE_INLINE execute_status execute_insn(STATE_ACCESS &a, uint64_t &pc, u
                 return execute_ADDW_MULW_SUBW(a, pc, insn);
             case insn_funct3_00000_opcode::SRLW_DIVUW_SRAW:
                 return execute_SRLW_DIVUW_SRAW(a, pc, insn);
-            case insn_funct3_00000_opcode::privileged:
+            case insn_funct3_00000_opcode::PRIVILEGED:
                 return execute_privileged(a, pc, mcycle, insn);
             default: {
                 // Here we are sure that the next instruction, at best, can only be a floating point instruction,

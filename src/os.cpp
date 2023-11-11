@@ -41,9 +41,16 @@
 #include <iostream>
 #include <string>
 #include <system_error>
+#include <vector>
 
 #include "os.h"
 #include "unique-c-ptr.h"
+
+#ifdef HAVE_THREADS
+#include <future>
+#include <mutex>
+#include <thread>
+#endif
 
 #if defined(HAVE_TTY) || defined(HAVE_MMAP) || defined(HAVE_TERMIOS) || defined(_WIN32)
 #include <fcntl.h> // open
@@ -62,6 +69,14 @@
 #endif
 
 #ifdef _WIN32
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
+#ifndef _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 
 #include <direct.h> // mkdir
 #include <io.h>     // _write/_close
@@ -512,6 +527,42 @@ int64_t os_now_us() {
     }
     auto end = std::chrono::high_resolution_clock::now();
     return static_cast<int64_t>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
+}
+
+uint64_t os_get_concurrency() {
+#ifdef HAVE_THREADS
+    return std::thread::hardware_concurrency();
+#else
+    return 1;
+#endif
+}
+
+bool os_parallel_for(uint64_t n, const std::function<bool(uint64_t j, const parallel_for_mutex &mutex)> &task) {
+#ifdef HAVE_THREADS
+    if (n > 1) {
+        std::mutex mutex;
+        const parallel_for_mutex for_mutex = {[&] { mutex.lock(); }, [&] { mutex.unlock(); }};
+        std::vector<std::future<bool>> futures;
+        futures.reserve(n);
+        for (uint64_t j = 0; j < n; ++j) {
+            futures.emplace_back(std::async(std::launch::async, task, j, for_mutex));
+        }
+        // Check if any thread failed
+        bool succeeded = true;
+        for (auto &f : futures) {
+            succeeded = succeeded && f.get();
+        }
+        // Return overall status
+        return succeeded;
+    }
+#endif
+    // Run without extra threads when concurrency is 1 or as fallback
+    const parallel_for_mutex for_mutex{[] {}, [] {}};
+    bool succeeded = true;
+    for (uint64_t j = 0; j < n; ++j) {
+        succeeded = succeeded && task(j, for_mutex);
+    }
+    return succeeded;
 }
 
 } // namespace cartesi

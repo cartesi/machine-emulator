@@ -37,6 +37,7 @@ GRPC_CPP_PLUGIN=$(shell which grpc_cpp_plugin)
 release?=no
 sanitize?=no
 coverage?=no
+nothreads?=no
 
 COVERAGE_TOOLCHAIN?=gcc
 COVERAGE_OUTPUT_DIR?=coverage
@@ -50,18 +51,19 @@ endif
 
 # Mac OS X specific setup
 ifeq ($(TARGET_OS),Darwin)
+PICCFLAGS=-fPIC
 SOLDFLAGS=-bundle -undefined dynamic_lookup
-LIBLDFLAGS=-dynamiclib -undefined dynamic_lookup
+LIBLDFLAGS=-dynamiclib
 EXELDFLAGS=
+PTHREAD_CFLAGS=
+PTHREAD_LDFLAGS=-lpthread
 CC=clang
 CXX=clang++
-AR_EXEC=libtool -static
+AR=libtool -static -o
 INCS=
 
-PTHREAD_LIB=-lpthread
-
 ifeq ($(MACOSX_DEPLOYMENT_TARGET),)
-export MACOSX_DEPLOYMENT_TARGET := $(shell sw_vers -productVersion | sed -r  "s/([[:digit:]]+)\.([[:digit:]]+)\..+/\1.\2.0/")
+export MACOSX_DEPLOYMENT_TARGET := $(shell sw_vers -productVersion | sed -E "s/([[:digit:]]+)\.([[:digit:]]+)\..+/\1.\2.0/")
 endif
 
 # Homebrew installation
@@ -95,15 +97,17 @@ PROFILE_DATA=default.profdata
 else
 
 # Linux specific setup
-SOLDFLAGS=-shared -fPIC -pthread $(GCLDFLAGS)
-LIBLDFLAGS=$(SOLDFLAGS) -Wl,-z,defs
+PICCFLAGS=-fPIC
+SOLDFLAGS=-shared $(PICCFLAGS) $(GCLDFLAGS)
+LIBLDFLAGS=$(SOLDFLAGS)
 EXELDFLAGS=$(GCLDFLAGS)
+PTHREAD_CFLAGS=-pthread
+PTHREAD_LDFLAGS=-pthread -lpthread
 CC=gcc
 CXX=g++
-AR_EXEC=ar rcs
+AR=ar rcs
 INCS=
 
-PTHREAD_LIB=-lpthread
 BOOST_INC=
 GRPC_PROTOBUF_INC=$(shell pkg-config --cflags-only-I grpc++ protobuf)
 GRPC_PROTOBUF_LIB=$(shell pkg-config --libs grpc++ protobuf)
@@ -125,7 +129,7 @@ LUACARTESI_GRPC_LIBS=$(GRPC_PROTOBUF_LIB)
 LUACARTESI_JSONRPC_LIBS=
 REMOTE_CARTESI_MACHINE_LIBS=$(GRPC_PROTOBUF_LIB)
 JSONRPC_REMOTE_CARTESI_MACHINE_LIBS=
-TEST_MACHINE_C_API_LIBS=$(GRPC_PROTOBUF_LIB) $(PTHREAD_LIB)
+TEST_MACHINE_C_API_LIBS=$(GRPC_PROTOBUF_LIB)
 HASH_LIBS=
 
 #DEFS+= -DMT_ALL_DIRTY
@@ -248,8 +252,16 @@ EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)
 CLANG_TIDY_HEADER_FILTER=$(PWD)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
 
-CXXFLAGS+=$(OPTFLAGS) -std=gnu++17 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
-CFLAGS+=$(OPTFLAGS) -std=gnu99 -fvisibility=hidden -fPIC -MMD $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
+ifeq ($(nothreads),no)
+CFLAGS+=$(PTHREAD_CFLAGS)
+CXXFLAGS+=$(PTHREAD_CFLAGS)
+LDFLAGS+=$(PTHREAD_LDFLAGS)
+else
+DEFS+=-DNO_THREADS
+endif
+
+CXXFLAGS+=$(OPTFLAGS) -std=gnu++17 -fvisibility=hidden -MMD $(PICCFLAGS) $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
+CFLAGS+=$(OPTFLAGS) -std=gnu99 -fvisibility=hidden -MMD $(PICCFLAGS) $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
 LDFLAGS+=$(UBFLAGS)
 
 COVERAGE_WORKLOAD=\
@@ -275,14 +287,14 @@ $(error invalid value for COVERAGE_TOOLCHAIN: $(COVERAGE_TOOLCHAIN))
 endif
 endif
 
-CXXFLAGS+=$(MYCXXFLAGS)
-CFLAGS+=$(MYCFLAGS)
+CXXFLAGS+=$(MYCXXFLAGS) $(MYDEFS)
+CFLAGS+=$(MYCFLAGS) $(MYDEFS)
 LDFLAGS+=$(MYLDFLAGS)
 SOLDFLAGS+=$(MYSOLDFLAGS)
 LIBLDFLAGS+=$(MYLIBLDFLAGS)
 EXELDFLAGS+=$(MYEXELDFLAGS)
 
-all: luacartesi libcartesi.a libcartesi_jsonrpc.a grpc hash c-api jsonrpc-remote-cartesi-machine
+all: libcartesi.a libcartesi_jsonrpc.a c-api luacartesi jsonrpc-remote-cartesi-machine grpc hash
 
 .PHONY: all generate use clean test lint format format-lua check-format check-format-lua luacartesi grpc hash c-api compile_flags.txt
 
@@ -386,10 +398,10 @@ libcartesi_jsonrpc: libcartesi_jsonrpc.a $(LIBCARTESI_JSONRPC)
 libcartesi_jsonrpc.so: $(LIBCARTESI_JSONRPC)
 
 libcartesi.a: $(LIBCARTESI_OBJS)
-	$(AR_EXEC) $@ $(LIBCARTESI_OBJS)
+	$(AR) $@ $(LIBCARTESI_OBJS)
 
 libcartesi_jsonrpc.a: $(LIBCARTESI_JSONRPC_OBJS)
-	$(AR_EXEC) $@ $(LIBCARTESI_JSONRPC_OBJS)
+	$(AR) $@ $(LIBCARTESI_JSONRPC_OBJS)
 
 $(LIBCARTESI): $(LIBCARTESI_OBJS)
 	$(CXX) -o $@ $(LIBCARTESI_OBJS) $(LIBCARTESI_LIBS) $(LDFLAGS) $(LIBCARTESI_LDFLAGS) $(LIBLDFLAGS)

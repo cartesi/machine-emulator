@@ -19,6 +19,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 
 /// \file
 /// \brief System-specific OS handling operations
@@ -54,6 +55,38 @@ void os_unmap_file(unsigned char *host_memory, uint64_t length);
 
 /// \brief Get time elapsed since its first call with microsecond precision
 int64_t os_now_us();
+
+/// \brief Get the number of concurrent threads supported by the OS
+uint64_t os_get_concurrency();
+
+/// \brief Mutex for os_parallel_for()
+struct parallel_for_mutex {
+    std::function<void()> lock;
+    std::function<void()> unlock;
+};
+
+/// \brief Mutex guard for os_parallel_for()
+struct parallel_for_mutex_guard {
+    parallel_for_mutex_guard(const parallel_for_mutex &mutex) : mutex(mutex) {
+        mutex.lock();
+    }
+    ~parallel_for_mutex_guard() {
+        mutex.unlock();
+    }
+
+    parallel_for_mutex_guard() = delete;
+    parallel_for_mutex_guard(const parallel_for_mutex_guard &) = default;
+    parallel_for_mutex_guard(parallel_for_mutex_guard &&) = default;
+    parallel_for_mutex_guard &operator=(const parallel_for_mutex_guard &) = delete;
+    parallel_for_mutex_guard &operator=(parallel_for_mutex_guard &&) = delete;
+
+private:
+    parallel_for_mutex mutex;
+};
+
+/// \brief Runs a for loop in parallel using up to n threads
+/// \return True if all thread tasks succeeded
+bool os_parallel_for(uint64_t n, const std::function<bool(uint64_t j, const parallel_for_mutex &mutex)> &task);
 
 } // namespace cartesi
 

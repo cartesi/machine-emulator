@@ -41,9 +41,7 @@ std::string to_string(const char *s);
 
 // Generate a new optional-like type
 template <int I, typename T>
-struct new_optional : public std::optional<T> {
-    using std::optional<T>::optional;
-};
+struct new_optional : public std::optional<T> {};
 
 // Optional-like type used by parse_args function to identify an optional parameter
 template <typename T>

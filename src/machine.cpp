@@ -15,15 +15,11 @@
 //
 
 #include <boost/range/adaptor/sliced.hpp>
-#include <chrono>
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>
-#include <future>
 #include <iomanip>
 #include <iostream>
-#include <mutex>
-#include <thread>
 
 #include "clint-factory.h"
 #include "dtb.h"
@@ -1448,7 +1444,7 @@ bool machine::verify_dirty_page_maps(void) const {
 }
 
 static uint64_t get_task_concurrency(uint64_t value) {
-    const uint64_t concurrency = value > 0 ? value : std::max(std::thread::hardware_concurrency(), 1U);
+    const uint64_t concurrency = value > 0 ? value : std::max(os_get_concurrency(), UINT64_C(1));
     return std::min(concurrency, static_cast<uint64_t>(THREADS_MAX));
 }
 
@@ -1467,68 +1463,55 @@ bool machine::update_merkle_tree(void) const {
         // For each PMA, we launch as many threads (n) as defined on concurrency
         // runtime config or as the hardware supports.
         const uint64_t n = get_task_concurrency(m_r.concurrency.update_merkle_tree);
-        // The update_page_node_hash function in the machine_merkle_tree is not thread
-        // safe, so we protect it with a mutex
-        std::mutex updatex;
-        // Each thread is launched as a future, whose value tells if the
-        // computation succeeded
-        std::vector<std::future<bool>> futures;
-        futures.reserve(n);
-        for (uint64_t j = 0; j < n; ++j) {
-            futures.emplace_back(std::async((n == 1) ? std::launch::deferred : std::launch::async,
-                [&](int j) -> bool {
-                    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
-                    if (!scratch) {
-                        return false;
-                    }
-                    machine_merkle_tree::hasher_type h;
-                    // Thread j is responsible for page i if i % n == j.
-                    for (uint64_t i = j; i < pages_in_range; i += n) {
-                        const uint64_t page_start_in_range = i * PMA_PAGE_SIZE;
-                        const uint64_t page_address = pma->get_start() + page_start_in_range;
-                        const unsigned char *page_data = nullptr;
-                        // Skip any clean pages
-                        if (!pma->is_page_marked_dirty(page_start_in_range)) {
-                            continue;
-                        }
-                        // If the peek failed, or if it returned a page for update but
-                        // we failed updating it, the entire process failed
-                        if (!peek(*pma, *this, page_start_in_range, &page_data, scratch.get())) {
+        const bool succeeded = os_parallel_for(n, [&](int j, const parallel_for_mutex &mutex) -> bool {
+            auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
+            if (!scratch) {
+                return false;
+            }
+            machine_merkle_tree::hasher_type h;
+            // Thread j is responsible for page i if i % n == j.
+            for (uint64_t i = j; i < pages_in_range; i += n) {
+                const uint64_t page_start_in_range = i * PMA_PAGE_SIZE;
+                const uint64_t page_address = pma->get_start() + page_start_in_range;
+                const unsigned char *page_data = nullptr;
+                // Skip any clean pages
+                if (!pma->is_page_marked_dirty(page_start_in_range)) {
+                    continue;
+                }
+                // If the peek failed, or if it returned a page for update but
+                // we failed updating it, the entire process failed
+                if (!peek(*pma, *this, page_start_in_range, &page_data, scratch.get())) {
+                    return false;
+                }
+                if (page_data) {
+                    const bool is_pristine = std::all_of(page_data, page_data + PMA_PAGE_SIZE,
+                        [](unsigned char pp) -> bool { return pp == '\0'; });
+
+                    if (is_pristine) {
+                        // The update_page_node_hash function in the machine_merkle_tree is not thread
+                        // safe, so we protect it with a mutex
+                        const parallel_for_mutex_guard lock(mutex);
+                        if (!m_t.update_page_node_hash(page_address,
+                                machine_merkle_tree::get_pristine_hash(machine_merkle_tree::get_log2_page_size()))) {
                             return false;
                         }
-                        if (page_data) {
-                            const bool is_pristine = std::all_of(page_data, page_data + PMA_PAGE_SIZE,
-                                [](unsigned char pp) -> bool { return pp == '\0'; });
-
-                            if (is_pristine) {
-                                const std::lock_guard<std::mutex> lock(updatex);
-                                if (!m_t.update_page_node_hash(page_address,
-                                        machine_merkle_tree::get_pristine_hash(
-                                            machine_merkle_tree::get_log2_page_size()))) {
-                                    return false;
-                                }
-                            } else {
-                                hash_type hash;
-                                m_t.get_page_node_hash(h, page_data, hash);
-                                {
-                                    const std::lock_guard<std::mutex> lock(updatex);
-                                    if (!m_t.update_page_node_hash(page_address, hash)) {
-                                        return false;
-                                    }
-                                }
+                    } else {
+                        hash_type hash;
+                        m_t.get_page_node_hash(h, page_data, hash);
+                        {
+                            // The update_page_node_hash function in the machine_merkle_tree is not thread
+                            // safe, so we protect it with a mutex
+                            const parallel_for_mutex_guard lock(mutex);
+                            if (!m_t.update_page_node_hash(page_address, hash)) {
+                                return false;
                             }
                         }
                     }
-                    return true;
-                },
-                j));
-        }
-        // Check if any thread failed
-        bool succeeded = true;
-        for (auto &f : futures) {
-            succeeded = succeeded && f.get();
-        }
-        // If so, we also failed
+                }
+            }
+            return true;
+        });
+        // If any thread failed, we also failed
         if (!succeeded) {
             m_t.end_update(gh);
             return false;

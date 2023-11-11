@@ -17,7 +17,7 @@
 #include <any>
 #include <cstring>
 #include <exception>
-#include <future>
+#include <functional>
 #include <ios>
 #include <optional>
 #include <regex>
@@ -66,8 +66,6 @@ int cm_result_failure(char **err_msg) try { throw; } catch (std::exception &e) {
         return CM_ERROR_LENGTH_ERROR;
     } catch (std::out_of_range &ex) {
         return CM_ERROR_OUT_OF_RANGE;
-    } catch (std::future_error &ex) {
-        return CM_ERROR_FUTURE_ERROR;
     } catch (std::logic_error &ex) {
         return CM_ERROR_LOGIC_ERROR;
     } catch (std::bad_optional_access &ex) {

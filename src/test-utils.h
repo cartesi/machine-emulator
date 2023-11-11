@@ -31,8 +31,8 @@ using hash_type = cartesi::keccak_256_hasher::hash_type;
 namespace detail {
 
 constexpr int WORD_LOG2_SIZE = 3;
-constexpr int PAGE_LOG2_SIZE = 12;
-constexpr int PAGE_SIZE = (UINT64_C(1) << PAGE_LOG2_SIZE);
+constexpr int MERKLE_PAGE_LOG2_SIZE = 12;
+constexpr int MERKLE_PAGE_SIZE = (UINT64_C(1) << MERKLE_PAGE_LOG2_SIZE);
 
 static hash_type merkle_hash(cartesi::keccak_256_hasher &h, const std::string_view &data, int log2_size) {
     hash_type result;
@@ -89,7 +89,7 @@ static hash_type calculate_proof_root_hash(const cm_merkle_tree_proof *proof) {
 static hash_type calculate_emulator_hash(cm_machine *machine) {
     cartesi::back_merkle_tree tree(64, 12, 3);
     std::string page;
-    page.resize(detail::PAGE_SIZE);
+    page.resize(detail::MERKLE_PAGE_SIZE);
     cm_memory_range_descr_array *mrds = nullptr;
     auto mrds_deleter = [](cm_memory_range_descr_array **mrds) { cm_delete_memory_range_descr_array(*mrds); };
     std::unique_ptr<cm_memory_range_descr_array *, decltype(mrds_deleter)> auto_mrds(&mrds, mrds_deleter);
@@ -102,14 +102,14 @@ static hash_type calculate_emulator_hash(cm_machine *machine) {
     uint64_t last = 0;
     for (size_t i = 0; i < mrds->count; ++i) {
         const auto &m = mrds->entry[i];
-        tree.pad_back((m.start - last) >> detail::PAGE_LOG2_SIZE);
+        tree.pad_back((m.start - last) >> detail::MERKLE_PAGE_LOG2_SIZE);
         auto end = m.start + m.length;
-        for (uint64_t s = m.start; s < end; s += detail::PAGE_SIZE) {
+        for (uint64_t s = m.start; s < end; s += detail::MERKLE_PAGE_SIZE) {
             if (cm_read_memory(machine, s, reinterpret_cast<unsigned char *>(page.data()), page.size(), &err_msg) !=
                 0) {
                 throw std::runtime_error{err_msg};
             }
-            auto page_hash = merkle_hash(page, detail::PAGE_LOG2_SIZE);
+            auto page_hash = merkle_hash(page, detail::MERKLE_PAGE_LOG2_SIZE);
             tree.push_back(page_hash);
         }
         last = end;

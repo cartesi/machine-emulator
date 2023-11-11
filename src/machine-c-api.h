@@ -55,7 +55,6 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_ERROR_DOMAIN_ERROR,
     CM_ERROR_LENGTH_ERROR,
     CM_ERROR_OUT_OF_RANGE,
-    CM_ERROR_FUTURE_ERROR,
     CM_ERROR_LOGIC_ERROR,
     CM_LOGIC_ERROR_END,
     // Bad optional access error

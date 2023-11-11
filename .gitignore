@@ -4,6 +4,7 @@
 *.clang-tidy
 *.deb
 *.a
+*.lib
 *.wasm
 
 build
@@ -28,6 +29,8 @@ doc/xml/
 *.tar.gz
 *.raw
 *.so
+*.dll
+*.exe
 *.dylib
 *.dtb
 .DS_Store

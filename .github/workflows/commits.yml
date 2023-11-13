@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Conventional Commits Check
+on: [push]
+jobs:
+  commit_messages:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install cocogitto tool
+        run: |
+          VERSION=5.6.0
+          TAR=cocogitto-${VERSION}-x86_64-unknown-linux-musl.tar.gz
+          curl --output-dir /tmp -OL https://github.com/cocogitto/cocogitto/releases/download/${VERSION}/${TAR}
+          sudo tar -xzf /tmp/${TAR} -C /usr/local/bin
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Conventional commit check
+        run: |
+          # Assuming 'main' is the default base branch
+          BASE_BRANCH=${{ github.base_ref || 'origin/main' }}
+          cog check ${BASE_BRANCH}..HEAD

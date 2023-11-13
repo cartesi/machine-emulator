@@ -253,44 +253,50 @@ void set_proto_merkle_tree_proof(const machine_merkle_tree::proof_type &p, Carte
     }
 }
 
+static void set_proto_access(const access &a, CartesiMachine::Access *proto_a) {
+    switch (a.get_type()) {
+        case access_type::read:
+            proto_a->set_type(CartesiMachine::AccessType::READ);
+            break;
+        case access_type::write:
+            proto_a->set_type(CartesiMachine::AccessType::WRITE);
+            break;
+        default:
+            throw std::invalid_argument{"invalid AccessType"};
+            break;
+    }
+    proto_a->set_log2_size(a.get_log2_size());
+    proto_a->set_address(a.get_address());
+    set_proto_hash(a.get_read_hash(), proto_a->mutable_read_hash());
+    if (a.get_read().has_value()) {
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        const auto &value_read = a.get_read().value();
+        proto_a->set_read(value_read.data(), value_read.size());
+    }
+    if (a.get_written_hash().has_value()) {
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        set_proto_hash(a.get_written_hash().value(), proto_a->mutable_written_hash());
+    }
+    if (a.get_written().has_value()) {
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        const auto &value_written = a.get_written().value();
+        proto_a->set_written(value_written.data(), value_written.size());
+    }
+    if (a.get_sibling_hashes().has_value()) {
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        const auto &sibling_hashes = a.get_sibling_hashes().value();
+        for (const auto &s : sibling_hashes) {
+            set_proto_hash(s, proto_a->add_sibling_hashes());
+        }
+    }
+}
+
 void set_proto_access_log(const access_log &al, CartesiMachine::AccessLog *proto_al) {
     proto_al->mutable_log_type()->set_annotations(al.get_log_type().has_annotations());
     proto_al->mutable_log_type()->set_proofs(al.get_log_type().has_proofs());
     proto_al->mutable_log_type()->set_large_data(al.get_log_type().has_large_data());
     for (const auto &a : al.get_accesses()) {
-        auto *proto_a = proto_al->add_accesses();
-        switch (a.get_type()) {
-            case access_type::read:
-                proto_a->set_type(CartesiMachine::AccessType::READ);
-                break;
-            case access_type::write:
-                proto_a->set_type(CartesiMachine::AccessType::WRITE);
-                break;
-            default:
-                throw std::invalid_argument{"invalid AccessType"};
-                break;
-        }
-        proto_a->set_log2_size(a.get_log2_size());
-        proto_a->set_address(a.get_address());
-        set_proto_hash(a.get_read_hash(), proto_a->mutable_read_hash());
-        if (a.get_read().has_value()) {
-            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            const auto &value_read = a.get_read().value();
-            proto_a->set_read(value_read.data(), value_read.size());
-        }
-        if (a.get_written_hash().has_value()) {
-            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            set_proto_hash(a.get_written_hash().value(), proto_a->mutable_written_hash());
-        }
-        if (a.get_written().has_value()) {
-            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            const auto &value_written = a.get_written().value();
-            proto_a->set_written(value_written.data(), value_written.size());
-        }
-        if (al.get_log_type().has_proofs() && a.get_proof().has_value()) {
-            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            set_proto_merkle_tree_proof(a.get_proof().value(), proto_a->mutable_proof());
-        }
+        set_proto_access(a, proto_al->add_accesses());
     }
     if (al.get_log_type().has_annotations()) {
         for (const auto &bn : al.get_brackets()) {
@@ -337,6 +343,38 @@ access_type get_proto_access_type(CartesiMachine::AccessType proto_at) {
     };
 }
 
+static access get_proto_access(const CartesiMachine::Access &pac) {
+    access a;
+    a.set_type(get_proto_access_type(pac.type()));
+    a.set_address(pac.address());
+    a.set_log2_size(static_cast<int>(pac.log2_size()));
+    a.set_read_hash(get_proto_hash(pac.read_hash()));
+    if (pac.has_read()) {
+        access_data read_value;
+        read_value.insert(read_value.end(), pac.read().begin(), pac.read().end());
+        a.set_read(read_value);
+    }
+    if (pac.has_written_hash()) {
+        a.set_written_hash(get_proto_hash(pac.written_hash()));
+    }
+    if (pac.has_written()) {
+        access_data written_value;
+        written_value.insert(written_value.end(), pac.written().begin(), pac.written().end());
+        a.set_written(written_value);
+    }
+
+    if (!pac.sibling_hashes().empty()) {
+        const auto &proto_sibs = pac.sibling_hashes();
+        a.get_sibling_hashes().emplace();
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        auto &sibling_hashes = a.get_sibling_hashes().value();
+        for (const auto &s : proto_sibs) {
+            sibling_hashes.push_back(get_proto_hash(s));
+        }
+    }
+    return a;
+}
+
 access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
     if (proto_al.log_type().annotations() && proto_al.accesses().size() != proto_al.notes().size()) {
         throw std::invalid_argument("size of log accesses and notes differ");
@@ -361,32 +399,12 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
             assert(pbr->where() == al.get_brackets().back().where);
             pbr++;
         }
-        access a;
-        a.set_type(get_proto_access_type(pac->type()));
-        a.set_address(pac->address());
-        a.set_log2_size(static_cast<int>(pac->log2_size()));
-        a.set_read_hash(get_proto_hash(pac->read_hash()));
-        if (pac->has_read()) {
-            access_data read_value;
-            read_value.insert(read_value.end(), pac->read().begin(), pac->read().end());
-            a.set_read(read_value);
-        }
-        if (pac->has_written_hash()) {
-            a.set_written_hash(get_proto_hash(pac->written_hash()));
-        }
-        if (pac->has_written()) {
-            access_data written_value;
-            written_value.insert(written_value.end(), pac->written().begin(), pac->written().end());
-            a.set_written(written_value);
-        }
+        const auto &proto_a = get_proto_access(*pac);
         std::string note;
         if (has_annotations) {
             note = *pnt++;
         }
-        if (has_proofs) {
-            a.set_proof(get_proto_merkle_tree_proof(pac->proof()));
-        }
-        al.push_access(a, note.c_str());
+        al.push_access(proto_a, note.c_str());
         pac++;
         iac++;
     }

@@ -303,25 +303,16 @@ end
 local function open_steps_json_log(test_name) return create_json_log_file(test_name, "-steps") end
 
 local function write_sibling_hashes_to_log(sibling_hashes, out, indent)
+    util.indentout(out, indent, '"sibling_hashes": [\n')
     for i, h in ipairs(sibling_hashes) do
-        util.indentout(out, indent, '"%s"', util.hexhash(h))
+        util.indentout(out, indent + 1, '"%s"', util.hexhash(h))
         if sibling_hashes[i + 1] then
             out:write(",\n")
         else
             out:write("\n")
         end
     end
-end
-
-local function write_proof_to_log(proof, out, indent)
-    util.indentout(out, indent, '"target_address": %u,\n', proof.target_address)
-    util.indentout(out, indent, '"log2_target_size": %u,\n', proof.log2_target_size)
-    util.indentout(out, indent, '"log2_root_size": %u,\n', proof.log2_root_size)
-    util.indentout(out, indent, '"target_hash": "%s",\n', util.hexhash(proof.target_hash))
-    util.indentout(out, indent, '"sibling_hashes": [\n')
-    write_sibling_hashes_to_log(proof.sibling_hashes, out, indent + 1)
-    util.indentout(out, indent, "],\n")
-    util.indentout(out, indent, '"root_hash": "%s"\n', util.hexhash(proof.root_hash))
+    util.indentout(out, indent, "]\n")
 end
 
 local function write_access_to_log(access, out, indent, last)
@@ -333,18 +324,18 @@ local function write_access_to_log(access, out, indent, last)
         local value = "null"
         if access.written then value = '"' .. util.hexstring(access.written) .. '"' end
         util.indentout(out, indent + 1, '"value": %s,', value)
-        util.indentout(out, indent + 1, '"hash": "%s"', util.hexhash(access.written_hash))
+        util.indentout(out, indent + 1, '"hash": "%s",', util.hexhash(access.written_hash))
+        util.indentout(out, indent + 1, '"read_hash": "%s"', util.hexhash(access.read_hash))
     else
         local value = "null"
         if access.read then value = '"' .. util.hexstring(access.read) .. '"' end
         util.indentout(out, indent + 1, '"value": %s,', value)
-        util.indentout(out, indent + 1, '"hash": "%s"', util.hexhash(access.read_hash))
+        util.indentout(out, indent + 1, '"hash": "%s",', util.hexhash(access.read_hash))
+        util.indentout(out, indent + 1, '"read_hash": "%s"', util.hexhash(access.read_hash))
     end
-    if access.proof then
+    if access.sibling_hashes then
         out:write(",\n")
-        util.indentout(out, indent + 1, '"proof": {\n')
-        write_proof_to_log(access.proof, out, indent + 2)
-        util.indentout(out, indent + 1, "}\n")
+        write_sibling_hashes_to_log(access.sibling_hashes, out, indent + 2)
     else
         out:write("\n")
     end

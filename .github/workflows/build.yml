@@ -106,6 +106,8 @@ jobs:
           name: artifacts
           path: |
             uarch-ram.bin
+            uarch-pristine-ram.c
+            uarch-pristine-state-hash.cpp
             cartesi-machine-v${{ env.MACHINE_EMULATOR_VERSION }}_amd64.deb
             cartesi-machine-v${{ env.MACHINE_EMULATOR_VERSION }}_arm64.deb
 
@@ -706,3 +708,5 @@ jobs:
             artifacts/uarch-riscv-tests-json-logs-*.tar.gz
             artifacts/cartesi-machine-*.deb
             artifacts/uarch-ram.bin
+            artifacts/uarch-pristine-ram.c
+            artifacts/uarch-pristine-state-hash.cpp

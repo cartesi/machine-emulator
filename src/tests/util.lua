@@ -47,9 +47,13 @@ end
 
 local ZERO_PAGE = string.rep("\x00", PAGE_SIZE)
 
+-- Encodes: li t0, UARCH_HALT_FLAG_SHADDOW_ADDR
+-- The halt flag is located at the first dword starting from UARCH_SHADOW_START_ADDRESS
+local li_t0_UARCH_SHADOW_START_ADDRESS = ((cartesi.UARCH_SHADOW_START_ADDRESS >> 12) << 12) | 0x02b7
+
 test_util.uarch_programs = {
     halt = {
-        0x004002b7, --   li	t0,UARCH_HALT_FLAG_SHADDOW_ADDR  Address of uarch halt flag
+        li_t0_UARCH_SHADOW_START_ADDRESS, --   li	t0,UARCH_HALT_FLAG_SHADDOW_ADDR
         0x00100313, --   li	t1,1                             UARCH_MMIO_HALT_VALUE
         0x0062b023, --   sd	t1,0(t0)                         Halt uarch
     },
@@ -201,9 +205,9 @@ function test_util.check_proof(proof)
         local bit = (proof.target_address & (1 << log2_size)) ~= 0
         local first, second
         if bit then
-            first, second = proof.sibling_hashes[proof.log2_root_size - log2_size], hash
+            first, second = proof.sibling_hashes[log2_size - proof.log2_target_size + 1], hash
         else
-            first, second = hash, proof.sibling_hashes[proof.log2_root_size - log2_size]
+            first, second = hash, proof.sibling_hashes[log2_size - proof.log2_target_size + 1]
         end
         hash = cartesi.keccak(first, second)
     end

@@ -75,11 +75,11 @@ static hash_type calculate_proof_root_hash(const cm_merkle_tree_proof *proof) {
         auto bit = (proof->target_address & (UINT64_C(1) << log2_size));
         hash_type first, second;
         if (bit) {
-            memcpy(first.data(), proof->sibling_hashes.entry[proof->log2_root_size - log2_size - 1], sizeof(cm_hash));
+            memcpy(first.data(), proof->sibling_hashes.entry[log2_size - proof->log2_target_size], sizeof(cm_hash));
             second = hash;
         } else {
             first = hash;
-            memcpy(second.data(), proof->sibling_hashes.entry[proof->log2_root_size - log2_size - 1], sizeof(cm_hash));
+            memcpy(second.data(), proof->sibling_hashes.entry[log2_size - proof->log2_target_size], sizeof(cm_hash));
         }
         get_concat_hash(h, first, second, hash);
     }

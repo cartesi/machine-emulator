@@ -312,17 +312,17 @@ typedef struct {          // NOLINT(modernize-use-using)
 } cm_bracket_note;
 
 /// \brief Records an access to the machine state
-typedef struct {                 // NOLINT(modernize-use-using)
-    CM_ACCESS_TYPE type;         ///< Type of access
-    uint64_t address;            ///< Address of access
-    int log2_size;               ///< Log2 of size of access
-    cm_hash read_hash;           ///< Hash of data before access
-    uint8_t *read_data;          ///< Data before access
-    size_t read_data_size;       ///< Size of data before access in bytes
-    cm_hash written_hash;        ///< Hash of data after access (if writing)
-    uint8_t *written_data;       ///< Data after access (if writing)
-    size_t written_data_size;    ///< Size of data after access in bytes
-    cm_merkle_tree_proof *proof; ///< Proof of data before access
+typedef struct {                   // NOLINT(modernize-use-using)
+    CM_ACCESS_TYPE type;           ///< Type of access
+    uint64_t address;              ///< Address of access
+    int log2_size;                 ///< Log2 of size of access
+    cm_hash read_hash;             ///< Hash of data before access
+    uint8_t *read_data;            ///< Data before access
+    size_t read_data_size;         ///< Size of data before access in bytes
+    cm_hash written_hash;          ///< Hash of data after access (if writing)
+    uint8_t *written_data;         ///< Data after access (if writing)
+    size_t written_data_size;      ///< Size of data after access in bytes
+    cm_hash_array *sibling_hashes; ///< Sibling hashes towards root
 } cm_access;
 
 /// \brief Array of accesses

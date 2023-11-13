@@ -143,6 +143,10 @@ public:
         m_sibling_hashes[log2_size_to_index(log2_size)] = hash;
     }
 
+    const sibling_hashes_type &get_sibling_hashes() const {
+        return m_sibling_hashes;
+    }
+
     /// \brief Checks if two Merkle proofs are equal
     bool operator==(const merkle_tree_proof &other) const {
         if (get_log2_target_size() != other.get_log2_target_size()) {
@@ -256,8 +260,7 @@ private:
     /// \brief Converts log2_size to index into siblings array
     /// \return Index into siblings array, or throws exception if out of bouds
     int log2_size_to_index(int log2_size) const {
-        // We know log2_root_size > 0, so log2_root_size-1 >= 0
-        const int index = m_log2_root_size - 1 - log2_size;
+        const int index = log2_size - m_log2_target_size;
         if (index < 0 || index >= static_cast<int>(m_sibling_hashes.size())) {
             throw std::out_of_range{"log2_size is out of range"};
         }

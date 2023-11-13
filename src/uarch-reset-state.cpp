@@ -29,7 +29,7 @@ namespace cartesi {
 
 template <typename UarchState>
 void uarch_reset_state(UarchState &a) {
-    a.reset_state();
+    resetState(a);
 }
 
 // Explicit instantiation for uarch_step_state_access

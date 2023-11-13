@@ -56,26 +56,23 @@ public:
     /// \brief Constructor from access log
     /// \param log Access log to be replayed
     /// \param verify_proofs Whether to verify proofs in access log
+    /// \param initial_hash Initial root hash
     /// \param one_based Whether to add one to indices reported in errors
-    explicit uarch_replay_reset_state_access(const access_log &log, bool verify_proofs, bool one_based) :
+    explicit uarch_replay_reset_state_access(const access_log &log, bool verify_proofs, const hash_type &initial_hash,
+        bool one_based) :
         m_accesses(log.get_accesses()),
         m_verify_proofs(verify_proofs),
         m_next_access{0},
         m_one_based{one_based},
-        m_root_hash{},
+        m_root_hash{initial_hash},
         m_hasher{} {
-        if (m_verify_proofs && !log.get_log_type().has_proofs()) {
-            throw std::invalid_argument{"log has no proofs"};
-        }
-        if (log.get_accesses().size() != 1) {
-            throw std::invalid_argument{"there must be one access in log"};
+        if (m_accesses.empty()) {
+            throw std::invalid_argument{"the access log has no accesses"};
         }
         if (m_verify_proofs) {
-            const auto &access = m_accesses.front();
-            if (!access.get_proof().has_value()) {
-                throw std::invalid_argument{"initial access has no proof"};
+            if (!log.get_log_type().has_proofs()) {
+                throw std::invalid_argument{"log has no proofs"};
             }
-            m_root_hash = access.get_proof().value().get_root_hash(); // NOLINT(bugprone-unchecked-optional-access)
         }
     }
 
@@ -102,23 +99,6 @@ public:
     }
 
 private:
-    static void roll_hash_up_tree(machine_merkle_tree::hasher_type &hasher,
-        const machine_merkle_tree::proof_type &proof, machine_merkle_tree::hash_type &rolling_hash) {
-        for (int log2_size = proof.get_log2_target_size(); log2_size < proof.get_log2_root_size(); ++log2_size) {
-            const int bit = (proof.get_target_address() & (UINT64_C(1) << log2_size)) != 0;
-            const auto &sibling_hash = proof.get_sibling_hash(log2_size);
-            hasher.begin();
-            if (bit) {
-                hasher.add_data(sibling_hash.data(), sibling_hash.size());
-                hasher.add_data(rolling_hash.data(), rolling_hash.size());
-            } else {
-                hasher.add_data(rolling_hash.data(), rolling_hash.size());
-                hasher.add_data(sibling_hash.data(), sibling_hash.size());
-            }
-            hasher.end(rolling_hash);
-        }
-    }
-
     friend i_uarch_reset_state_access<uarch_replay_reset_state_access>;
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
@@ -143,22 +123,21 @@ private:
             throw std::invalid_argument{"too few accesses in log"};
         }
         const auto &access = m_accesses[m_next_access];
-        if (access.get_type() != access_type::write) {
-            throw std::invalid_argument{"expected access " + std::to_string(access_to_report()) + " to write " + text};
-        }
         if (access.get_address() != UARCH_STATE_START_ADDRESS) {
             throw std::invalid_argument{"expected address of access " + std::to_string(access_to_report()) +
                 " to be the start address of the uarch state"};
         }
         if (access.get_log2_size() != UARCH_STATE_LOG2_SIZE) {
             throw std::invalid_argument{"expected access " + std::to_string(access_to_report()) + " to write 2^" +
-                std::to_string(UARCH_STATE_LOG2_SIZE) + " bytes from " + text};
+                std::to_string(UARCH_STATE_LOG2_SIZE) + " bytes to " + text};
+        }
+        if (access.get_type() != access_type::write) {
+            throw std::invalid_argument{"expected access " + std::to_string(access_to_report()) + " to write " + text};
         }
         if (access.get_read().has_value()) {
             // if read data is available then its hash and the logged read hash must match
             hash_type computed_hash;
             get_hash(hasher, access.get_read().value(), computed_hash);
-
             if (computed_hash != access.get_read_hash()) {
                 throw std::invalid_argument{"hash of read data and read hash at access " +
                     std::to_string(access_to_report()) + " does not match read hash"};
@@ -167,45 +146,26 @@ private:
         if (!access.get_written_hash().has_value()) {
             throw std::invalid_argument{"write access " + std::to_string(access_to_report()) + " has no written hash"};
         }
+        const auto &written_hash = access.get_written_hash().value();
+        if (written_hash != uarch_pristine_state_hash) {
+            throw std::invalid_argument{"expected written hash of access " + std::to_string(access_to_report()) +
+                " to be the start hash of the pristine uarch state"};
+        }
         if (access.get_written().has_value()) {
             // if written data is available then its hash and the logged written hash must match
             hash_type computed_hash;
             get_hash(hasher, access.get_written().value(), computed_hash);
-            if (computed_hash != access.get_written_hash().value()) {
+            if (computed_hash != written_hash) {
                 throw std::invalid_argument{
                     "written hash and written data mismatch at access " + std::to_string(access_to_report())};
             }
         }
         if (m_verify_proofs) {
-            if (!access.get_proof().has_value()) {
-                throw std::invalid_argument{"write access " + std::to_string(access_to_report()) + " has no proof"};
+            auto proof = access.make_proof(m_root_hash);
+            if (!proof.verify(m_hasher)) {
+                throw std::invalid_argument{"Mismatch in root hash of access " + std::to_string(access_to_report())};
             }
-            const auto &proof = access.get_proof().value(); // NOLINT(bugprone-unchecked-optional-access)
-            if (proof.get_target_address() != access.get_address()) {
-                throw std::invalid_argument{"mismatch in write access " + std::to_string(access_to_report()) +
-                    " address and its proof address"};
-            }
-            if (m_root_hash != proof.get_root_hash()) {
-                throw std::invalid_argument{
-                    "mismatch in write access " + std::to_string(access_to_report()) + " root hash"};
-            }
-            auto rolling_hash = access.get_read_hash();
-            if (rolling_hash != proof.get_target_hash()) {
-                throw std::invalid_argument{
-                    "value before write access " + std::to_string(access_to_report()) + " does not match target hash"};
-            }
-            roll_hash_up_tree(m_hasher, proof, rolling_hash);
-            if (rolling_hash != proof.get_root_hash()) {
-                throw std::invalid_argument{
-                    "value before write access " + std::to_string(access_to_report()) + " fails proof"};
-            }
-            // computes the new root hash by rolling up the write hash
-            m_root_hash = access.get_written_hash().value();
-            roll_hash_up_tree(m_hasher, proof, m_root_hash);
-        }
-        if (access.get_written_hash().value() != uarch_pristine_state_hash) {
-            throw std::invalid_argument{"expected written hash of access " + std::to_string(access_to_report()) +
-                " to be the start hash of the pristine uarch state"};
+            m_root_hash = proof.bubble_up(m_hasher, written_hash);
         }
         m_next_access++;
     }

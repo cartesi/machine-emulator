@@ -653,8 +653,15 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, con
     }
     not_default_constructible<machine_merkle_tree::proof_type> proof;
     ju_get_opt_field(jk, "proof"s, proof, new_path);
-    if (proof.has_value()) {
-        access.set_proof(std::move(proof).value());
+    if (contains(jk, "sibling_hashes")) {
+        access.get_sibling_hashes().emplace();
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        auto &sibling_hashes = access.get_sibling_hashes().value();
+        ju_get_vector_like_field(jk, "sibling_hashes"s, sibling_hashes, new_path);
+        auto expected_depth = static_cast<size_t>(machine_merkle_tree::get_log2_root_size() - access.get_log2_size());
+        if (sibling_hashes.size() != expected_depth) {
+            throw std::invalid_argument("field \""s + new_path + "sibling_hashes\" has wrong length");
+        }
     }
 }
 
@@ -754,8 +761,9 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constru
     ju_get_vector_like_field(jk, "accesses"s, accesses, new_path);
     if (log_type.value().has_proofs()) {
         for (unsigned i = 0; i < accesses.size(); ++i) {
-            if (!accesses[i].get_proof().has_value()) {
-                throw std::invalid_argument("field \""s + new_path + "accesses/" + to_string(i) + "\" missing proof");
+            if (!accesses[i].get_sibling_hashes().has_value()) {
+                throw std::invalid_argument(
+                    "field \""s + new_path + "accesses/" + to_string(i) + "\" missing sibling hashes");
             }
         }
     }
@@ -1159,9 +1167,15 @@ void to_json(nlohmann::json &j, const access &a) {
             j["written"] = encode_base64(a.get_written().value());
         }
     }
-    if (a.get_proof().has_value()) {
+    if (a.get_sibling_hashes().has_value()) {
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        j["proof"] = a.get_proof().value();
+        const auto &sibling_hashes = a.get_sibling_hashes().value();
+        auto depth = machine_merkle_tree::get_log2_root_size() - a.get_log2_size();
+        nlohmann::json s = nlohmann::json::array();
+        for (int i = 0; i < depth; i++) {
+            s.push_back(encode_base64(sibling_hashes[i]));
+        }
+        j["sibling_hashes"] = s;
     }
 }
 

@@ -433,6 +433,25 @@ cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash) {
     return cpp_hash;
 }
 
+std::vector<cartesi::machine_merkle_tree::hash_type> convert_from_c(const cm_hash_array *c_array) {
+    auto new_array = std::vector<cartesi::machine_merkle_tree::hash_type>(c_array->count);
+    for (size_t i = 0; i < c_array->count; ++i) {
+        new_array[i] = convert_from_c(&c_array->entry[i]);
+    }
+    return new_array;
+}
+
+static cm_hash_array *convert_to_c(const std::vector<cartesi::machine_merkle_tree::hash_type> &cpp_array) {
+    auto *new_array = new cm_hash_array{};
+    new_array->count = cpp_array.size();
+    new_array->entry = new cm_hash[cpp_array.size()];
+    memset(new_array->entry, 0, sizeof(cm_hash) * new_array->count);
+    for (size_t i = 0; i < new_array->count; ++i) {
+        memcpy(&new_array->entry[i], static_cast<const uint8_t *>(cpp_array[i].data()), sizeof(cm_hash));
+    }
+    return new_array;
+}
+
 // ----------------------------------------------
 // Semantic version conversion functions
 // ----------------------------------------------
@@ -452,9 +471,11 @@ cm_semantic_version *convert_to_c(const cartesi::semantic_version &cpp_version) 
 // ----------------------------------------------
 
 /// \brief Converts log2_size to index into siblings array
-static int cm_log2_size_to_index(int log2_size, int log2_root_size) {
-    // We know log2_root_size > 0, so log2_root_size-1 >= 0
-    const int index = log2_root_size - 1 - log2_size;
+static int cm_log2_size_to_index(int log2_size, int log2_target_size) {
+    const int index = log2_size - log2_target_size;
+    if (index < 0) {
+        throw std::invalid_argument("log2_size can't be smaller than log2_target_size");
+    }
     return index;
 }
 
@@ -478,8 +499,8 @@ static cm_merkle_tree_proof *convert_to_c(const cartesi::machine_merkle_tree::pr
 
     for (size_t log2_size = new_merkle_tree_proof->log2_target_size; log2_size < new_merkle_tree_proof->log2_root_size;
          ++log2_size) {
-        const int current_index =
-            cm_log2_size_to_index(static_cast<int>(log2_size), static_cast<int>(new_merkle_tree_proof->log2_root_size));
+        const int current_index = cm_log2_size_to_index(static_cast<int>(log2_size),
+            static_cast<int>(new_merkle_tree_proof->log2_target_size));
         const cartesi::machine_merkle_tree::hash_type sibling_hash =
             proof.get_sibling_hash(static_cast<int>(log2_size));
         memcpy(&(new_merkle_tree_proof->sibling_hashes.entry[current_index]),
@@ -487,24 +508,6 @@ static cm_merkle_tree_proof *convert_to_c(const cartesi::machine_merkle_tree::pr
     }
 
     return new_merkle_tree_proof;
-}
-
-static cartesi::machine_merkle_tree::proof_type convert_from_c(const cm_merkle_tree_proof *c_proof) {
-    cartesi::machine_merkle_tree::proof_type cpp_proof(static_cast<int>(c_proof->log2_root_size),
-        static_cast<int>(c_proof->log2_target_size));
-    cpp_proof.set_target_address(c_proof->target_address);
-
-    cpp_proof.set_root_hash(convert_from_c(&c_proof->root_hash));
-    cpp_proof.set_target_hash(convert_from_c(&c_proof->target_hash));
-
-    for (int log2_size = cpp_proof.get_log2_target_size(); log2_size < cpp_proof.get_log2_root_size(); ++log2_size) {
-        const int current_index = cm_log2_size_to_index(log2_size, cpp_proof.get_log2_root_size());
-        const cartesi::machine_merkle_tree::hash_type cpp_sibling_hash =
-            convert_from_c(&c_proof->sibling_hashes.entry[current_index]);
-        cpp_proof.set_sibling_hash(cpp_sibling_hash, log2_size);
-    }
-
-    return cpp_proof;
 }
 
 // ----------------------------------------------
@@ -568,24 +571,23 @@ static cm_access convert_to_c(const cartesi::access &cpp_access) {
         }
     }
 
-    if (cpp_access.get_proof().has_value()) {
+    if (cpp_access.get_sibling_hashes().has_value()) {
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        new_access.proof = convert_to_c(*cpp_access.get_proof());
+        new_access.sibling_hashes = convert_to_c(*cpp_access.get_sibling_hashes());
     } else {
-        new_access.proof = nullptr;
+        new_access.sibling_hashes = nullptr;
     }
 
     return new_access;
 }
 
-static cartesi::access convert_from_c(const cm_access *c_access) {
+cartesi::access convert_from_c(const cm_access *c_access) {
     cartesi::access cpp_access{};
     cpp_access.set_type(convert_from_c(c_access->type));
     cpp_access.set_log2_size(c_access->log2_size);
     cpp_access.set_address(c_access->address);
-    if (c_access->proof != nullptr) {
-        const cartesi::machine_merkle_tree::proof_type proof = convert_from_c(c_access->proof);
-        cpp_access.set_proof(proof);
+    if (c_access->sibling_hashes != nullptr) {
+        cpp_access.set_sibling_hashes(convert_from_c(c_access->sibling_hashes));
     }
 
     cpp_access.set_read_hash(convert_from_c(&c_access->read_hash));
@@ -606,7 +608,10 @@ static void cm_cleanup_access(cm_access *access) {
     if (access == nullptr) {
         return;
     }
-    cm_delete_merkle_tree_proof(access->proof);
+    if (access->sibling_hashes != nullptr) {
+        delete[] access->sibling_hashes->entry;
+        delete access->sibling_hashes;
+    }
     delete[] access->written_data;
     delete[] access->read_data;
 }

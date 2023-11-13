@@ -57,8 +57,12 @@ static inline uint64_t get_word_access_data(const access_data &ad) {
 /// NOLINTNEXTLINE(bugprone-exception-escape)
 class access {
 
-    using proof_type = machine_merkle_tree::proof_type;
+    using hasher_type = machine_merkle_tree::hasher_type;
+
+public:
     using hash_type = machine_merkle_tree::hash_type;
+    using sibling_hashes_type = std::vector<hash_type>;
+    using proof_type = machine_merkle_tree::proof_type;
 
 public:
     void set_type(access_type type) {
@@ -158,38 +162,46 @@ public:
         return m_read_hash;
     }
 
-    /// \brief Sets proof that data read at address was in
-    /// Merkle tree before access.
-    /// \param proof Corresponding Merkle tree proof.
-    void set_proof(const proof_type &proof) {
-        m_proof = proof;
-    }
-    void set_proof(proof_type &&proof) {
-        m_proof = std::move(proof);
+    /// \brief Constructs a proof using this access' data and a given root hash.
+    /// \param root_hash Hash to be used as the root of the proof.
+    /// \return The corresponding proof
+    proof_type make_proof(const hash_type root_hash) const {
+        if (!m_sibling_hashes.has_value()) {
+            throw std::runtime_error("can't make proof if access doesn't have sibling hashes");
+        }
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        const auto &sibiling_hashes = m_sibling_hashes.value();
+        auto log2_root_size = m_log2_size + sibiling_hashes.size();
+        proof_type proof(log2_root_size, m_log2_size);
+        proof.set_root_hash(root_hash);
+        proof.set_target_address(m_address);
+        proof.set_target_hash(m_read_hash);
+        for (size_t log2_size = m_log2_size; log2_size < log2_root_size; log2_size++) {
+            proof.set_sibling_hash(sibiling_hashes[log2_size - m_log2_size], log2_size);
+        }
+        return proof;
     }
 
-    /// \brief Gets proof that data read at address was in
-    /// Merkle tree before access.
-    /// \returns Proof, if one is available.
-    const std::optional<proof_type> &get_proof(void) const {
-        return m_proof;
+    std::optional<sibling_hashes_type> &get_sibling_hashes() {
+        return m_sibling_hashes;
+    }
+    const std::optional<sibling_hashes_type> &get_sibling_hashes() const {
+        return m_sibling_hashes;
     }
 
-    /// \brief Removes proof that data read at address was in
-    /// Merkle tree before access.
-    void clear_proof(void) {
-        m_proof = std::nullopt;
+    void set_sibling_hashes(const sibling_hashes_type &sibling_hashes) {
+        m_sibling_hashes = sibling_hashes;
     }
 
 private:
-    access_type m_type{0};                     ///< Type of access
-    uint64_t m_address{0};                     ///< Address of access
-    int m_log2_size{0};                        ///< Log2 of size of access
-    std::optional<access_data> m_read{};       ///< Data before access
-    hash_type m_read_hash;                     ///< Hash of data before access
-    std::optional<access_data> m_written{};    ///< Written data
-    std::optional<hash_type> m_written_hash{}; ///< Hash of written data
-    std::optional<proof_type> m_proof{};       ///< Proof of data before access
+    access_type m_type{0};                                 ///< Type of access
+    uint64_t m_address{0};                                 ///< Address of access
+    int m_log2_size{0};                                    ///< Log2 of size of access
+    std::optional<access_data> m_read{};                   ///< Data before access
+    hash_type m_read_hash;                                 ///< Hash of data before access
+    std::optional<access_data> m_written{};                ///< Written data
+    std::optional<hash_type> m_written_hash{};             ///< Hash of written data
+    std::optional<sibling_hashes_type> m_sibling_hashes{}; ///< Hashes of siblings in path from address to root
 };
 
 /// \brief Log of state accesses

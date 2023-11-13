@@ -97,9 +97,8 @@ static int jsonrpc_machine_class_verify_uarch_step_state_transition(lua_State *L
     clua_check_cm_hash(L, 3, &target_hash);
     auto &managed_runtime_config = clua_push_to(L,
         clua_managed_cm_ptr<cm_machine_runtime_config>(clua_opt_cm_machine_runtime_config(L, 4, {}, ctxidx)), ctxidx);
-    const bool one_based = lua_toboolean(L, 5);
     TRY_EXECUTE(cm_jsonrpc_verify_uarch_step_state_transition(managed_jsonrpc_mg_mgr.get(), &root_hash,
-        managed_log.get(), &target_hash, managed_runtime_config.get(), one_based, err_msg));
+        managed_log.get(), &target_hash, managed_runtime_config.get(), true, err_msg));
     managed_log.reset();
     managed_runtime_config.reset();
     lua_pop(L, 2);
@@ -122,9 +121,8 @@ static int jsonrpc_machine_class_verify_uarch_reset_state_transition(lua_State *
     clua_check_cm_hash(L, 3, &target_hash);
     auto &managed_runtime_config = clua_push_to(L,
         clua_managed_cm_ptr<cm_machine_runtime_config>(clua_opt_cm_machine_runtime_config(L, 4, {}, ctxidx)), ctxidx);
-    const bool one_based = lua_toboolean(L, 5);
     TRY_EXECUTE(cm_jsonrpc_verify_uarch_reset_state_transition(managed_jsonrpc_mg_mgr.get(), &root_hash,
-        managed_log.get(), &target_hash, managed_runtime_config.get(), one_based, err_msg));
+        managed_log.get(), &target_hash, managed_runtime_config.get(), true, err_msg));
     managed_log.reset();
     managed_runtime_config.reset();
     lua_pop(L, 2);

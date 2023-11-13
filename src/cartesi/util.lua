@@ -232,7 +232,6 @@ function _M.dump_log(log, out)
             j = j + 1
         -- Otherwise, output access
         elseif ai then
-            if ai.proof then indentout(out, indent, "hash %s\n", hexhash8(ai.proof.root_hash)) end
             local read = accessdatastring(ai.read, ai.read_hash, ai.log2_size)
             if ai.type == "read" then
                 indentout(out, indent, "%d: read %s@0x%x(%u): %s\n", i, notes[i] or "", ai.address, ai.address, read)

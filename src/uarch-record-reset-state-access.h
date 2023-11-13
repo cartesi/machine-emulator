@@ -149,7 +149,9 @@ private:
             a.get_read().emplace(get_uarch_state_image());
         }
         if (m_log->get_log_type().has_proofs()) {
-            a.set_proof(std::move(proof));
+            // We just store the sibling hashes in the access because this is the only missing piece of data needed to
+            // reconstruct the proof
+            a.set_sibling_hashes(proof.get_sibling_hashes());
         }
         a.set_written_hash(uarch_pristine_state_hash);
 

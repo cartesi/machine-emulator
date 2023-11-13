@@ -1817,7 +1817,6 @@ void machine::reset_uarch() {
 access_log machine::log_uarch_reset(const access_log::type &log_type, bool one_based) {
     hash_type root_hash_before;
     if (log_type.has_proofs()) {
-        update_merkle_tree();
         get_root_hash(root_hash_before);
     }
     // Call uarch_reset_state with a uarch_record_reset_state_access object
@@ -1837,20 +1836,13 @@ access_log machine::log_uarch_reset(const access_log::type &log_type, bool one_b
     return std::move(*a.get_log());
 }
 
-void machine::verify_uarch_step_log(const access_log &log, const machine_runtime_config &r, bool one_based) {
+void machine::verify_uarch_reset_log(const access_log &log, const machine_runtime_config &r, bool one_based) {
     (void) r;
     // There must be at least one access in log
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
     }
-    uarch_replay_step_state_access a(log, log.get_log_type().has_proofs(), one_based);
-    uarch_step(a);
-    a.finish();
-}
-
-void machine::verify_uarch_reset_log(const access_log &log, const machine_runtime_config &r, bool one_based) {
-    (void) r;
-    uarch_replay_reset_state_access a(log, log.get_log_type().has_proofs(), one_based);
+    uarch_replay_reset_state_access a(log, false /* verify_proofs */, {} /* initial_hash */, one_based);
     uarch_reset_state(a);
     a.finish();
 }
@@ -1866,17 +1858,8 @@ void machine::verify_uarch_reset_state_transition(const hash_type &root_hash_bef
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
     }
-    // It must contain proofs
-    if (!log.get_accesses().front().get_proof().has_value()) {
-        throw std::invalid_argument{"access has no proof"};
-    }
-    // Make sure the access log starts from the same root hash as the state
-    // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-    if (log.get_accesses().front().get_proof().value().get_root_hash() != root_hash_before) {
-        throw std::invalid_argument{"mismatch in root hash before replay"};
-    }
     // Verify all intermediate state transitions
-    uarch_replay_reset_state_access a(log, log.get_log_type().has_proofs(), one_based);
+    uarch_replay_reset_state_access a(log, true /* verify_proofs */, root_hash_before, one_based);
     uarch_reset_state(a);
     a.finish();
     // Make sure the access log ends at the same root hash as the state
@@ -1887,49 +1870,12 @@ void machine::verify_uarch_reset_state_transition(const hash_type &root_hash_bef
     }
 }
 
-void machine::verify_uarch_step_state_transition(const hash_type &root_hash_before, const access_log &log,
-    const hash_type &root_hash_after, const machine_runtime_config &r, bool one_based) {
-    (void) r;
-    // We need proofs in order to verify the state transition
-    if (!log.get_log_type().has_proofs()) {
-        throw std::invalid_argument{"log has no proofs"};
-    }
-    // There must be at least one access in log
-    if (log.get_accesses().empty()) {
-        throw std::invalid_argument{"too few accesses in log"};
-    }
-    // It must contain proofs
-    if (!log.get_accesses().front().get_proof().has_value()) {
-        throw std::invalid_argument{"access has no proof"};
-    }
-    // Make sure the access log starts from the same root hash as the state
-    // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-    if (log.get_accesses().front().get_proof().value().get_root_hash() != root_hash_before) {
-        throw std::invalid_argument{"mismatch in root hash before replay"};
-    }
-    // Verify all intermediate state transitions
-    uarch_replay_step_state_access a(log, true /* verify proofs! */, one_based);
-    uarch_step(a);
-    a.finish();
-    // Make sure the access log ends at the same root hash as the state
-    hash_type obtained_root_hash;
-    a.get_root_hash(obtained_root_hash);
-    if (obtained_root_hash != root_hash_after) {
-        throw std::invalid_argument{"mismatch in root hash after replay"};
-    }
-}
-
-machine_config machine::get_default_config(void) {
-    return machine_config{};
-}
-
 access_log machine::log_uarch_step(const access_log::type &log_type, bool one_based) {
     if (m_uarch.get_state().ram.get_istart_E()) {
         throw std::runtime_error("microarchitecture RAM is not present");
     }
     hash_type root_hash_before;
     if (log_type.has_proofs()) {
-        update_merkle_tree();
         get_root_hash(root_hash_before);
     }
     // Call interpret with a logged state access object
@@ -1946,6 +1892,44 @@ access_log machine::log_uarch_step(const access_log::type &log_type, bool one_ba
         verify_uarch_step_log(*a.get_log(), m_r, one_based);
     }
     return std::move(*a.get_log());
+}
+
+void machine::verify_uarch_step_log(const access_log &log, const machine_runtime_config &r, bool one_based) {
+    (void) r;
+    // There must be at least one access in log
+    if (log.get_accesses().empty()) {
+        throw std::invalid_argument{"too few accesses in log"};
+    }
+    uarch_replay_step_state_access a(log, false /* verify proofs */, {} /* initial hash */, one_based);
+    uarch_step(a);
+    a.finish();
+}
+
+void machine::verify_uarch_step_state_transition(const hash_type &root_hash_before, const access_log &log,
+    const hash_type &root_hash_after, const machine_runtime_config &r, bool one_based) {
+    (void) r;
+    // We need proofs in order to verify the state transition
+    if (!log.get_log_type().has_proofs()) {
+        throw std::invalid_argument{"log has no proofs"};
+    }
+    // There must be at least one access in log
+    if (log.get_accesses().empty()) {
+        throw std::invalid_argument{"too few accesses in log"};
+    }
+    // Verify all intermediate state transitions
+    uarch_replay_step_state_access a(log, true /* verify proofs! */, root_hash_before, one_based);
+    uarch_step(a);
+    a.finish();
+    // Make sure the access log ends at the same root hash as the state
+    hash_type obtained_root_hash;
+    a.get_root_hash(obtained_root_hash);
+    if (obtained_root_hash != root_hash_after) {
+        throw std::invalid_argument{"mismatch in root hash after replay"};
+    }
+}
+
+machine_config machine::get_default_config(void) {
+    return machine_config{};
 }
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

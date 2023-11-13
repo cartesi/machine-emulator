@@ -161,7 +161,12 @@ private:
             // We can skip updating the merkle tree while getting the proof because we assume that:
             // 1) A full merkle tree update was called at the beginning of machine::log_uarch_step()
             // 2) We called update_merkle_tree_page on all write accesses
-            a.set_proof(m_m.get_proof(paligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update));
+            const auto proof =
+                m_m.get_proof(paligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
+
+            // We just store the sibling hashes in the access because this is the only missing piece of data needed to
+            // reconstruct the proof
+            a.set_sibling_hashes(proof.get_sibling_hashes());
         }
         a.set_type(access_type::read);
         a.set_address(paligned);
@@ -193,7 +198,11 @@ private:
             // We can skip updating the merkle tree while getting the proof because we assume that:
             // 1) A full merkle tree update was called at the beginning of machine::log_uarch_step()
             // 2) We called update_merkle_tree_page on all write accesses
-            a.set_proof(m_m.get_proof(paligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update));
+            const auto proof =
+                m_m.get_proof(paligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
+            // We just store the sibling hashes in the access because this is the only missing piece of data needed to
+            // reconstruct the proof
+            a.set_sibling_hashes(proof.get_sibling_hashes());
         }
         a.set_type(access_type::write);
         a.set_address(paligned);

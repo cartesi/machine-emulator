@@ -764,7 +764,7 @@ do_test("Step log must contain conssitent data hashes", function(machine)
     -- ensure that verification fails with wrong written hash
     write_access.written_hash = wrong_hash
     _, err = pcall(module.machine.verify_uarch_step_log, log, {})
-    assert(err:match("logged written data of uarch.cycle does not hash to the logged written hash at access 8"))
+    assert(err:match("value being written to uarch.cycle does not hash to the logged written hash at access 8"))
 end)
 
 do_test("step when uarch cycle is max", function(machine)
@@ -892,10 +892,9 @@ local function test_reset_uarch(machine, with_log, with_proofs, with_annotations
         assert(#log.accesses == 1)
         local access = log.accesses[1]
         if with_proofs then
-            assert(access.proof ~= nil)
-            assert(test_util.check_proof(access.proof), "uarch reset proof failed")
+            assert(access.sibling_hashes ~= nil)
         else
-            assert(access.proof == nil)
+            assert(access.sibling_hashes == nil)
         end
         assert(access.address == cartesi.UARCH_SHADOW_START_ADDRESS)
         assert(access.log2_size == cartesi.UARCH_STATE_LOG2_SIZE)
@@ -950,7 +949,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         -- verifying incorrect initial hash
         local wrong_hash = string.rep("0", 32)
         local _, err = pcall(module.machine.verify_uarch_reset_state_transition, wrong_hash, log, final_hash, {})
-        assert(err:match("mismatch in root hash before replay"))
+        assert(err:match("Mismatch in root hash of access 1"))
         -- verifying incorrect final hash
         _, err = pcall(module.machine.verify_uarch_reset_state_transition, initial_hash, log, wrong_hash, {})
         assert(err:match("mismatch in root hash after replay"))
@@ -972,8 +971,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
     function(machine)
         local log = machine:log_uarch_reset({ proofs = true, annotations = true })
         local expected_dump = "begin reset uarch state\n"
-            .. "  hash ca8558be\n"
-            .. '  1: write uarch_state@0x400000(4194304): hash:"cddaea90"(2^22 bytes) -> hash:"b8fdcda1"(2^22 bytes)\n'
+            .. '  1: write uarch_state@0x400000(4194304): hash:"17b76b32"(2^22 bytes) -> hash:"990691da"(2^22 bytes)\n'
             .. "end reset uarch state\n"
 
         local tmpname = os.tmpname()
@@ -999,10 +997,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
     "Log uarch reset with large_data option set must have consistent read and written data",
     function(machine)
         local module = cartesi
-        if machine_type ~= "local" then
-            module = remote
-            -- return -- TODO: fix grpc and jsorpc failing due to large data
-        end
+        if machine_type ~= "local" then module = remote end
         -- reset uarch and get log
         local log = machine:log_uarch_reset({ proofs = true, annotations = true, large_data = true })
         assert(#log.accesses == 1, "log should have 1 access")
@@ -1026,5 +1021,96 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         assert(err:match("written hash and written data mismatch at access 1"))
     end
 )
+
+do_test("Test unhappy paths of verify_uarch_reset_state_transition", function(machine)
+    local module = cartesi
+    if machine_type ~= "local" then
+        if not remote then remote = connect() end
+        module = remote
+    end
+    local bad_hash = string.rep("\0", 32)
+    local function assert_error(expected_error, callback)
+        machine:reset_uarch()
+        local initial_hash = machine:get_root_hash()
+        local log = machine:log_uarch_reset({ proofs = true, annotations = false })
+        local final_hash = machine:get_root_hash()
+        callback(log)
+        local _, err = pcall(module.machine.verify_uarch_reset_state_transition, initial_hash, log, final_hash, {})
+        assert(
+            err:match(expected_error),
+            'Error text "' .. err .. '"  does not match expected "' .. expected_error .. '"'
+        )
+    end
+    assert_error("too few accesses in log", function(log) log.accesses = {} end)
+    assert_error(
+        "expected address of access 1 to be the start address of the uarch state",
+        function(log) log.accesses[1].address = 0 end
+    )
+
+    assert_error(
+        "expected access 1 to write 2%^22 bytes to uarchState",
+        function(log) log.accesses[1].log2_size = 64 end
+    )
+
+    assert_error("hash length must be 32 bytes", function(log) log.accesses[#log.accesses].read_hash = nil end)
+    assert_error("Mismatch in root hash of access 1", function(log) log.accesses[1].read_hash = bad_hash end)
+    assert_error(
+        "access log was not fully consumed",
+        function(log) log.accesses[#log.accesses + 1] = log.accesses[1] end
+    )
+    assert_error("hash length must be 32 bytes", function(log) log.accesses[#log.accesses].written_hash = nil end)
+    assert_error(
+        "invalid written %(expected% string with 2%^22 bytes%)",
+        function(log) log.accesses[#log.accesses].written = "\0" end
+    )
+    assert_error(
+        "written hash and written data mismatch at access 1",
+        function(log) log.accesses[#log.accesses].written = string.rep("\0", 2 ^ 22) end
+    )
+    assert_error("Mismatch in root hash of access 1", function(log) log.accesses[1].sibling_hashes[1] = bad_hash end)
+end)
+
+do_test("Test unhappy paths of verify_uarch_step_state_transition", function(machine)
+    local module = cartesi
+    if machine_type ~= "local" then
+        if not remote then remote = connect() end
+        module = remote
+    end
+    local bad_hash = string.rep("\0", 32)
+    local function assert_error(expected_error, callback)
+        machine:reset_uarch()
+        local initial_hash = machine:get_root_hash()
+        local log = machine:log_uarch_step({ proofs = true, annotations = false })
+        local final_hash = machine:get_root_hash()
+        callback(log)
+        local _, err = pcall(module.machine.verify_uarch_step_state_transition, initial_hash, log, final_hash, {})
+        assert(
+            err:match(expected_error),
+            'Error text "' .. err .. '"  does not match expected "' .. expected_error .. '"'
+        )
+    end
+    assert_error("too few accesses in log", function(log) log.accesses = {} end)
+    assert_error("expected access 1 to read uarch.uarch_cycle", function(log) log.accesses[1].address = 0 end)
+    assert_error("invalid log2_size", function(log) log.accesses[1].log2_size = 2 end)
+    assert_error("invalid log2_size", function(log) log.accesses[1].log2_size = 65 end)
+    assert_error("missing read uarch.uarch_cycle data at access 1", function(log) log.accesses[1].read = nil end)
+    assert_error("invalid read %(expected string with 2%^3 bytes%)", function(log) log.accesses[1].read = "\0" end)
+    assert_error(
+        "logged read data of uarch.uarch_cycle data does not hash to the logged read hash at access 1",
+        function(log) log.accesses[1].read_hash = bad_hash end
+    )
+    assert_error("hash length must be 32 bytes", function(log) log.accesses[#log.accesses].read_hash = nil end)
+    assert_error("too many word accesses in log", function(log) log.accesses[#log.accesses + 1] = log.accesses[1] end)
+    assert_error("hash length must be 32 bytes", function(log) log.accesses[#log.accesses].written_hash = nil end)
+    assert_error(
+        "invalid written %(expected string with 2%^3 bytes%)",
+        function(log) log.accesses[#log.accesses].written = "\0" end
+    )
+    assert_error(
+        "logged written data of uarch.cycle does not hash to the logged written hash at access 7",
+        function(log) log.accesses[#log.accesses].written = "\0\0\0\0\0\0\0\0" end
+    )
+    assert_error("Mismatch in root hash of access 1", function(log) log.accesses[1].sibling_hashes[1] = bad_hash end)
+end)
 
 print("\n\nAll machine binding tests for type " .. machine_type .. " passed")

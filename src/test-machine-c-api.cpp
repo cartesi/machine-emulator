@@ -1799,11 +1799,15 @@ public:
         _log_type = {true, true, false};
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
 
+        // Encodes: li t0, UARCH_HALT_FLAG_SHADDOW_ADDR
+        uint32_t li_t0_UARCH_SHADOW_START_ADDRESS =
+            ((UARCH_HALT_FLAG_SHADDOW_ADDR_DEF >> 12) << 12) | static_cast<uint32_t>(0x02b7);
+
         uint32_t test_uarch_ram[] = {
-            0x07b00513, //  li	a0,123
-            0x004002b7, //  li t0,UARCH_HALT_FLAG_SHADDOW_ADDR  Address of uarch halt flag
-            0x00100313, //  li	t1,1
-            0x0062b023, //  sd	t1,0(t0)  Halt microarchitecture at uarch cycle 4
+            0x07b00513,                       //  li	a0,123
+            li_t0_UARCH_SHADOW_START_ADDRESS, //  li t0,UARCH_HALT_FLAG_SHADDOW_ADDR
+            0x00100313,                       //  li	t1,1
+            0x0062b023,                       //  sd	t1,0(t0)  Halt microarchitecture at uarch cycle 4
         };
         std::ofstream of(_uarch_ram_path, std::ios::binary);
         of.write(static_cast<char *>(static_cast<void *>(&test_uarch_ram)), sizeof(test_uarch_ram));

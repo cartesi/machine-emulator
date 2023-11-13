@@ -673,7 +673,6 @@ local function print_machine(test_name, expected_cycles)
  --ram-length=32Mi\
  --ram-image='%s'\
  --no-bootargs\
- --uarch-ram-length=%d\
  --uarch-ram-image=%s\
  --max-mcycle=%d ",
             test_path .. "/" .. test_name,

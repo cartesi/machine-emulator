@@ -91,6 +91,11 @@ static inline void writeX(UarchState &a, uint8 reg, uint64 val) {
     a.write_x(reg, val);
 }
 
+template <typename UarchState>
+static inline void resetState(UarchState &a) {
+    a.reset_state();
+}
+
 // Conversions and arithmentic functions
 
 static inline int32 uint64ToInt32(uint64 v) {

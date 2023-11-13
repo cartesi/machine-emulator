@@ -40,10 +40,7 @@ end
 local uarch_ram_image_filename = arg[1]
 local output_signature_file = arg[2]
 local uarch_ram_start = cartesi.UARCH_RAM_START_ADDRESS
-local dummy_rom_filename = os.tmpname()
-io.open(dummy_rom_filename, "w"):close()
 local deleter = {}
-setmetatable(deleter, { __gc = function() os.remove(dummy_rom_filename) end })
 
 local config = {
     uarch = {

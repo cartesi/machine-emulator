@@ -352,9 +352,9 @@ static void check_sibling_cm_hashes(lua_State *L, int idx, size_t log2_target_si
     }
     sibling_hashes->count = sibling_hashes_count;
     sibling_hashes->entry = new cm_hash[sibling_hashes_count]{};
-    for (; log2_target_size < log2_root_size; ++log2_target_size) {
-        lua_rawgeti(L, idx, static_cast<lua_Integer>(log2_root_size - log2_target_size));
-        auto index = log2_root_size - 1 - log2_target_size;
+    for (size_t log2_size = log2_target_size; log2_size < log2_root_size; ++log2_size) {
+        lua_rawgeti(L, idx, static_cast<lua_Integer>(log2_size - log2_target_size) + 1);
+        auto index = log2_size - log2_target_size;
         clua_check_cm_hash(L, -1, &sibling_hashes->entry[index]);
         lua_pop(L, 1);
     }
@@ -421,11 +421,11 @@ static unsigned char *opt_cm_access_data_field(lua_State *L, int tabidx, const c
 /// \brief Loads an cm_access from Lua
 /// \param L Lua state
 /// \param tabidx access stack index
+/// \param proofs Whether to load sibling hashes for constructing proofs
 /// \param a Pointer to receive access
 /// \param ctxidx Index (or pseudo-index) of clua context
 static void check_cm_access(lua_State *L, int tabidx, bool proofs, cm_access *a, int ctxidx) {
-    ctxidx = lua_absindex(L, ctxidx);
-    tabidx = lua_absindex(L, tabidx);
+    (void) ctxidx;
     luaL_checktype(L, tabidx, LUA_TTABLE);
     a->type = check_cm_access_type_field(L, tabidx, "type");
     a->address = check_uint_field(L, tabidx, "address");
@@ -434,10 +434,13 @@ static void check_cm_access(lua_State *L, int tabidx, bool proofs, cm_access *a,
         luaL_error(L, "invalid log2_size (expected integer in {%d..%d})", CM_TREE_LOG2_WORD_SIZE,
             CM_TREE_LOG2_ROOT_SIZE);
     }
-    if (proofs) {
-        lua_getfield(L, tabidx, "proof");
-        a->proof = clua_check_cm_merkle_tree_proof(L, -1, ctxidx);
+
+    if (opt_table_field(L, tabidx, "sibling_hashes")) {
+        a->sibling_hashes = new cm_hash_array{};
+        check_sibling_cm_hashes(L, -1, a->log2_size, CM_TREE_LOG2_ROOT_SIZE, a->sibling_hashes);
         lua_pop(L, 1);
+    } else if (proofs) {
+        luaL_error(L, "missing sibling_hashes");
     }
 
     lua_getfield(L, tabidx, "read_hash");
@@ -651,9 +654,13 @@ void clua_push_cm_access_log(lua_State *L, const cm_access_log *log) {
                 lua_setfield(L, -2, "written");
             }
         }
-        if (log->log_type.proofs && a->proof != nullptr) {
-            clua_push_cm_proof(L, a->proof);
-            lua_setfield(L, -2, "proof");
+        if (log->log_type.proofs && a->sibling_hashes != nullptr) {
+            lua_newtable(L);
+            for (size_t log2_size = a->log2_size; log2_size < CM_TREE_LOG2_ROOT_SIZE; log2_size++) {
+                clua_push_cm_hash(L, &a->sibling_hashes->entry[log2_size - a->log2_size]);
+                lua_rawseti(L, -2, static_cast<lua_Integer>(log2_size - a->log2_size) + 1);
+            }
+            lua_setfield(L, -2, "sibling_hashes");
         }
         lua_rawseti(L, -2, static_cast<lua_Integer>(i) + 1);
     }

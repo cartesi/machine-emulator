@@ -40,6 +40,7 @@ struct machine_runtime_config {
     htif_runtime_config htif{};
     bool skip_root_hash_check{};
     bool skip_version_check{};
+    bool soft_yield{};
 };
 
 /// \brief CONCURRENCY constants

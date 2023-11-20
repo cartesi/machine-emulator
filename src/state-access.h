@@ -602,6 +602,10 @@ private:
         do_flush_tlb_type<TLB_WRITE>();
     }
 
+    bool do_get_soft_yield() {
+        return m_m.get_state().soft_yield;
+    }
+
 #ifdef DUMP_COUNTERS
     machine_statistics &do_get_statistics() {
         return m_m.get_state().stats;

@@ -307,6 +307,8 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
         throw std::invalid_argument{"mimpid mismatch, emulator version is incompatible"};
     }
 
+    m_s.soft_yield = r.soft_yield;
+
     // General purpose registers
     for (int i = 1; i < X_REG_COUNT; i++) {
         write_x(i, m_c.processor.x[i]);

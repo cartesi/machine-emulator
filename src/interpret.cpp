@@ -2980,6 +2980,11 @@ static FORCE_INLINE execute_status execute_SRLIW(STATE_ACCESS &a, uint64_t &pc, 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRAIW(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sraiw");
+    // When rd=0 the instruction is a HINT, and we consider it as a soft yield when rs1 == 31
+    if (unlikely(insn_get_rd(insn) == 0 && insn_get_rs1(insn) == 31 && a.get_soft_yield())) {
+        // Force the main interpreter loop to break
+        return advance_to_next_insn(a, pc, execute_status::success_and_yield);
+    }
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         const int32_t rs1w = static_cast<int32_t>(rs1) >> (imm & 0b11111);
         return static_cast<uint64_t>(rs1w);
@@ -5514,7 +5519,7 @@ static void assert_no_brk(STATE_ACCESS &a) {
 
 /// \brief Interpreter hot loop
 template <typename STATE_ACCESS>
-NO_INLINE void interpret_loop(STATE_ACCESS &a, uint64_t mcycle_end, uint64_t mcycle) {
+static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_end, uint64_t mcycle) {
     // The interpret loop is constantly reading and modifying the pc and mcycle variables,
     // because of this care is taken to make them stack variables that are propagated across inline functions,
     // helping the C++ compiler optimize them into registers instead of stack variables when compiling,
@@ -5584,7 +5589,7 @@ NO_INLINE void interpret_loop(STATE_ACCESS &a, uint64_t mcycle_end, uint64_t mcy
                             a.write_pc(pc);
                             a.write_mcycle(mcycle);
                             // Got an interruption that must be handled externally
-                            return;
+                            return status;
                         }
                     }
                 }
@@ -5603,6 +5608,7 @@ NO_INLINE void interpret_loop(STATE_ACCESS &a, uint64_t mcycle_end, uint64_t mcy
     // Commit machine state
     a.write_pc(pc);
     a.write_mcycle(mcycle);
+    return execute_status::success;
 }
 
 template <typename STATE_ACCESS>
@@ -5632,7 +5638,7 @@ interpreter_break_reason interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
 
     // Run the interpreter loop,
     // the loop is outlined in a dedicated function so the compiler can optimize it better
-    interpret_loop(a, mcycle_end, mcycle);
+    const execute_status status = interpret_loop(a, mcycle_end, mcycle);
 
     // Detect and return the reason for stopping the interpreter loop
     if (a.read_iflags_H()) {
@@ -5641,6 +5647,8 @@ interpreter_break_reason interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
         return interpreter_break_reason::yielded_manually;
     } else if (a.read_iflags_X()) {
         return interpreter_break_reason::yielded_automatically;
+    } else if (status == execute_status::success_and_yield) {
+        return interpreter_break_reason::yielded_softly;
     } else {                                   // Reached mcycle_end
         assert(a.read_mcycle() == mcycle_end); // LCOV_EXCL_LINE
         return interpreter_break_reason::reached_target_mcycle;

@@ -1195,6 +1195,7 @@
           "halted",
           "yielded_manually",
           "yielded_automatically",
+          "yielded_softly",
           "reached_target_mcycle"
         ]
       },
@@ -1786,6 +1787,9 @@
             "type": "boolean"
           },
           "skip_version_check": {
+            "type": "boolean"
+          },
+          "soft_yield": {
             "type": "boolean"
           }
         }

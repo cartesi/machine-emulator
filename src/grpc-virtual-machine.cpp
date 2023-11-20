@@ -343,16 +343,7 @@ interpreter_break_reason grpc_virtual_machine::do_run(uint64_t mcycle_end) {
     RunResponse response;
     ClientContext context;
     check_status(m_stub->get_stub()->Run(&context, request, &response));
-    if (response.iflags_h()) {
-        return interpreter_break_reason::halted;
-    } else if (response.iflags_y()) {
-        return interpreter_break_reason::yielded_manually;
-    } else if (response.iflags_x()) {
-        return interpreter_break_reason::yielded_automatically;
-    } else {
-        assert(response.mcycle() == mcycle_end);
-        return interpreter_break_reason::reached_target_mcycle;
-    }
+    return static_cast<interpreter_break_reason>(response.break_reason());
 }
 
 void grpc_virtual_machine::do_store(const std::string &dir) {

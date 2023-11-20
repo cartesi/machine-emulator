@@ -112,6 +112,9 @@ struct machine_state {
         uint64_t iyield;   ///< CSR iyield.
     } htif;
 
+    /// Soft yield
+    bool soft_yield;
+
     /// Map of physical memory ranges
     boost::container::static_vector<pma_entry, PMA_MAX> pmas;
 

@@ -42,6 +42,7 @@ enum class interpreter_break_reason {
     halted,
     yielded_manually,
     yielded_automatically,
+    yielded_softly,
     reached_target_mcycle
 };
 

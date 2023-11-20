@@ -729,6 +729,11 @@ public:
         return derived().do_flush_tlb_vaddr(vaddr);
     }
 
+    /// \brief Returns true if soft yield HINT instruction is enabled at runtime
+    bool get_soft_yield() {
+        return derived().do_get_soft_yield();
+    }
+
 #ifdef DUMP_COUNTERS
     auto &get_statistics() {
         return derived().do_get_statistics();

@@ -73,10 +73,10 @@ function test_util.create_test_uarch_program(instructions)
     return file_path
 end
 
-function test_util.make_do_test(build_machine, type, config)
+function test_util.make_do_test(build_machine, type, config, runtime_config)
     return function(description, f)
         io.write("  " .. description .. "...\n")
-        local machine <close> = build_machine(type, config)
+        local machine <close> = build_machine(type, config, runtime_config)
         f(machine)
         print("<<<<<<<<<<<<<<<< passed >>>>>>>>>>>>>>>")
     end

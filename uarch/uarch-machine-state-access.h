@@ -722,6 +722,11 @@ private:
         do_flush_tlb_type<TLB_READ>();
         do_flush_tlb_type<TLB_WRITE>();
     }
+
+    bool do_get_soft_yield() {
+        // Soft yield is meaningless in microarchitecture
+        return false;
+    }
 };
 
 } // namespace cartesi

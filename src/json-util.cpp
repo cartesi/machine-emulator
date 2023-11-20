@@ -191,7 +191,7 @@ interpreter_break_reason interpreter_break_reason_from_name(const std::string &n
     using ibr = interpreter_break_reason;
     const static std::unordered_map<std::string, ibr> g_ibr_name = {{"failed", ibr::failed}, {"halted", ibr::halted},
         {"yielded_manually", ibr::yielded_manually}, {"yielded_automatically", ibr::yielded_automatically},
-        {"reached_target_mcycle", ibr::reached_target_mcycle}};
+        {"yielded_softly", ibr::yielded_softly}, {"reached_target_mcycle", ibr::reached_target_mcycle}};
     auto got = g_ibr_name.find(name);
     if (got == g_ibr_name.end()) {
         throw std::domain_error{"invalid interpreter break reason"};
@@ -435,6 +435,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_runtime_con
     ju_get_field(j[key], "htif"s, value.htif, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "skip_root_hash_check"s, value.skip_root_hash_check, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "skip_version_check"s, value.skip_version_check, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "soft_yield"s, value.soft_yield, path + to_string(key) + "/");
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, machine_runtime_config &value,
@@ -1333,6 +1334,7 @@ void to_json(nlohmann::json &j, const machine_runtime_config &runtime) {
         {"htif", runtime.htif},
         {"skip_root_hash_check", runtime.skip_root_hash_check},
         {"skip_version_check", runtime.skip_version_check},
+        {"soft_yield", runtime.soft_yield},
     };
 }
 

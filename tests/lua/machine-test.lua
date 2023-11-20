@@ -148,11 +148,11 @@ local function connect()
 end
 
 local remote
-local function build_machine(type, config)
+local function build_machine(type, config, runtime_config)
     config = config or {
         ram = { length = 1 << 20 },
     }
-    local runtime = {
+    runtime_config = runtime_config or {
         concurrency = {
             update_merkle_tree = 0,
         },
@@ -160,9 +160,9 @@ local function build_machine(type, config)
     local new_machine
     if type ~= "local" then
         if not remote then remote = connect() end
-        new_machine = assert(remote.machine(config, runtime))
+        new_machine = assert(remote.machine(config, runtime_config))
     else
-        new_machine = assert(cartesi.machine(config, runtime))
+        new_machine = assert(cartesi.machine(config, runtime_config))
     end
     return new_machine
 end
@@ -282,6 +282,33 @@ do_test("mcycle and root hash should match", function(machine)
 
     assert(root_hash == calculated_end_hash, "machine hash does not match after on end cycle")
 end)
+
+if machine_type == "local" then
+    print("\n\ntesting soft yield")
+    test_util.make_do_test(build_machine, machine_type, {
+        ram = { length = 1 << 20 },
+    }, {
+        soft_yield = true,
+    })("check soft yield", function(machine)
+        -- The following is a RISC-V bytecode that cause a soft yield immediately,
+        local function sraiw(rd, rs1, shamt) return 0x4000501b | (rd << 7) | (rs1 << 15) | (shamt << 20) end
+        local soft_yield_insn = sraiw(0, 31, 7)
+
+        machine:write_memory(machine:read_pc(), string.pack("<I4", soft_yield_insn))
+
+        assert(machine:run(1000) == cartesi.BREAK_REASON_YIELDED_SOFTLY)
+
+        -- Check machine state
+        assert(machine:read_mcycle() == 1, "machine mcycle should be 1")
+        assert(not machine:read_iflags_H())
+        assert(not machine:read_iflags_Y())
+        assert(not machine:read_iflags_X())
+
+        -- Check if previous instruction match
+        local prev_insn = string.unpack("<I4", machine:read_virtual_memory(machine:read_pc() - 4, 4))
+        assert(prev_insn == soft_yield_insn)
+    end)
+end
 
 print("\n\nwrite something to ram memory and check if hash and proof matches")
 do_test("proof  and root hash should match", function(machine)

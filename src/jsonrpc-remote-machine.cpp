@@ -752,6 +752,8 @@ static std::string interpreter_break_reason_name(cartesi::interpreter_break_reas
             return "yielded_manually";
         case R::yielded_automatically:
             return "yielded_automatically";
+        case R::yielded_softly:
+            return "yielded_softly";
         case R::reached_target_mcycle:
             return "reached_target_mcycle";
     }

@@ -395,7 +395,7 @@ class handler_Run final : public handler<RunRequest, RunResponse> {
         }
         auto limit = static_cast<uint64_t>(req->limit());
         RunResponse resp;
-        hctx.m->run(limit);
+        resp.set_break_reason(static_cast<RunResponse_InterpreterBreakReason>(hctx.m->run(limit)));
         resp.set_mcycle(hctx.m->read_mcycle());
         resp.set_tohost(hctx.m->read_htif_tohost());
         resp.set_iflags_h(hctx.m->read_iflags_H());

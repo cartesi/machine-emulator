@@ -93,6 +93,7 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_BREAK_REASON_HALTED,
     CM_BREAK_REASON_YIELDED_MANUALLY,
     CM_BREAK_REASON_YIELDED_AUTOMATICALLY,
+    CM_BREAK_REASON_YIELDED_SOFTLY,
     CM_BREAK_REASON_REACHED_TARGET_MCYCLE
 } CM_BREAK_REASON;
 
@@ -366,6 +367,7 @@ typedef struct { // NOLINT(modernize-use-using)
     cm_htif_runtime_config htif;
     bool skip_root_hash_check;
     bool skip_version_check;
+    bool soft_yield;
 } cm_machine_runtime_config;
 
 /// \brief Machine instance handle

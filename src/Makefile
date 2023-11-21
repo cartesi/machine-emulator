@@ -336,8 +336,7 @@ CARTESI_CLUA_OBJS:= \
 LUACARTESI_OBJS:= \
 	clua-cartesi.o \
 	clua-machine.o \
-	$(CARTESI_CLUA_OBJS) \
-	$(LIBCARTESI_OBJS)
+	$(CARTESI_CLUA_OBJS)
 
 PROTOBUF_GEN_OBJS:= \
 	versioning.pb.o \
@@ -353,26 +352,22 @@ LIBCARTESI_GRPC_OBJS:= \
 	grpc-machine-c-api.o \
 	protobuf-util.o \
 	$(GRPC_GEN_OBJS) \
-	$(PROTOBUF_GEN_OBJS) \
-	$(LIBCARTESI_OBJS)
+	$(PROTOBUF_GEN_OBJS)
 
 LIBCARTESI_JSONRPC_OBJS:= \
 	jsonrpc-virtual-machine.o \
 	jsonrpc-machine-c-api.o \
-	mongoose.o \
-	$(LIBCARTESI_OBJS)
+	mongoose.o
 
 LUACARTESI_GRPC_OBJS:= \
 	clua-cartesi-grpc.o \
 	clua-grpc-machine.o \
-	$(CARTESI_CLUA_OBJS) \
-	$(LIBCARTESI_GRPC_OBJS)
+	$(CARTESI_CLUA_OBJS)
 
 LUACARTESI_JSONRPC_OBJS:= \
 	clua-cartesi-jsonrpc.o \
 	clua-jsonrpc-machine.o \
-	$(CARTESI_CLUA_OBJS) \
-	$(LIBCARTESI_JSONRPC_OBJS)
+	$(CARTESI_CLUA_OBJS)
 
 ifeq ($(gperf),yes)
 DEFS+=-DGPERF
@@ -392,34 +387,37 @@ so-version:
 
 libcartesi: libcartesi.a $(LIBCARTESI)
 libcartesi.so: $(LIBCARTESI)
-libcartesi_grpc: $(LIBCARTESI_GRPC)
+libcartesi_grpc: libcartesi_grpc.a $(LIBCARTESI_GRPC)
 libcartesi_grpc.so: $(LIBCARTESI_GRPC)
 libcartesi_jsonrpc: libcartesi_jsonrpc.a $(LIBCARTESI_JSONRPC)
 libcartesi_jsonrpc.so: $(LIBCARTESI_JSONRPC)
 
 libcartesi.a: $(LIBCARTESI_OBJS)
-	$(AR) $@ $(LIBCARTESI_OBJS)
+	$(AR) $@ $^
+
+libcartesi_grpc.a: $(LIBCARTESI_GRPC_OBJS)
+	$(AR) $@ $^
 
 libcartesi_jsonrpc.a: $(LIBCARTESI_JSONRPC_OBJS)
-	$(AR) $@ $(LIBCARTESI_JSONRPC_OBJS)
+	$(AR) $@ $^
 
 $(LIBCARTESI): $(LIBCARTESI_OBJS)
-	$(CXX) -o $@ $(LIBCARTESI_OBJS) $(LIBCARTESI_LIBS) $(LDFLAGS) $(LIBCARTESI_LDFLAGS) $(LIBLDFLAGS)
+	$(CXX) -o $@ $^ $(LIBCARTESI_LIBS) $(LDFLAGS) $(LIBCARTESI_LDFLAGS) $(LIBLDFLAGS)
 
-$(LIBCARTESI_GRPC): $(LIBCARTESI_GRPC_OBJS)
-	$(CXX) -o $@ $(LIBCARTESI_GRPC_OBJS) $(LIBCARTESI_GRPC_LIBS) $(LDFLAGS) $(LIBCARTESI_GRPC_LDFLAGS) $(LIBLDFLAGS)
+$(LIBCARTESI_GRPC): $(LIBCARTESI_GRPC_OBJS) libcartesi.a
+	$(CXX) -o $@ $^ $(LIBCARTESI_GRPC_LIBS) $(LDFLAGS) $(LIBCARTESI_GRPC_LDFLAGS) $(LIBLDFLAGS)
 
-$(LIBCARTESI_JSONRPC): $(LIBCARTESI_JSONRPC_OBJS)
-	$(CXX) -o $@ $(LIBCARTESI_JSONRPC_OBJS) $(LIBCARTESI_JSONRPC_LIBS) $(LDFLAGS) $(LIBCARTESI_JSONRPC_LDFLAGS) $(LIBLDFLAGS)
+$(LIBCARTESI_JSONRPC): $(LIBCARTESI_JSONRPC_OBJS) libcartesi.a
+	$(CXX) -o $@ $^ $(LIBCARTESI_JSONRPC_LIBS) $(LDFLAGS) $(LIBCARTESI_JSONRPC_LDFLAGS) $(LIBLDFLAGS)
 
-cartesi.so: $(LUACARTESI_OBJS)
-	$(CXX) -o $@ $(LUACARTESI_OBJS) $(LUACARTESI_LIBS) $(LDFLAGS) $(SOLDFLAGS)
+cartesi.so: $(LUACARTESI_OBJS) libcartesi.a
+	$(CXX) -o $@ $^ $(LUACARTESI_LIBS) $(LDFLAGS) $(SOLDFLAGS)
 
-cartesi/grpc.so: $(LUACARTESI_GRPC_OBJS)
-	$(CXX) -o $@ $(LUACARTESI_GRPC_OBJS) $(LUACARTESI_GRPC_LIBS) $(LDFLAGS) $(SOLDFLAGS)
+cartesi/grpc.so: $(LUACARTESI_GRPC_OBJS) libcartesi_grpc.a libcartesi.a
+	$(CXX) -o $@ $^ $(LUACARTESI_GRPC_LIBS) $(LDFLAGS) $(SOLDFLAGS)
 
-cartesi/jsonrpc.so: $(LUACARTESI_JSONRPC_OBJS)
-	$(CXX) -o $@ $(LUACARTESI_JSONRPC_OBJS) $(LUACARTESI_JSONRPC_LIBS) $(LDFLAGS) $(SOLDFLAGS)
+cartesi/jsonrpc.so: $(LUACARTESI_JSONRPC_OBJS) libcartesi_jsonrpc.a libcartesi.a
+	$(CXX) -o $@ $^ $(LUACARTESI_JSONRPC_LIBS) $(LDFLAGS) $(SOLDFLAGS)
 
 test: luacartesi
 	$(LUA) cartesi-machine-tests.lua --test-path="$(CARTESI_TESTS_PATH)" --test=".*" run
@@ -557,8 +555,7 @@ TEST_MERKLE_TREE_HASH_OBJS:= \
 
 TEST_MACHINE_C_API_OBJS:= \
     test-machine-c-api.o \
-    back-merkle-tree.o \
-    $(LIBCARTESI_GRPC_OBJS)
+    back-merkle-tree.o
 
 PROTO_OBJS:= \
 	$(PROTOBUF_GEN_OBJS) \
@@ -570,18 +567,13 @@ PROTO_SOURCES:=$(PROTO_OBJS:.o=.cc)
 
 REMOTE_CARTESI_MACHINE_OBJS:= \
 	remote-machine.o \
-	protobuf-util.o \
-	slog.o \
-	$(GRPC_GEN_OBJS) \
-	$(PROTOBUF_GEN_OBJS) \
-	$(LIBCARTESI_OBJS)
+	slog.o
 
 JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	jsonrpc-remote-machine.o \
 	jsonrpc-discover.o \
 	mongoose.o \
-	slog.o \
-	$(LIBCARTESI_OBJS)
+	slog.o
 
 CYCLE_PERIOD ?= 13
 HASH_DIR = hashes/$(CYCLE_PERIOD)
@@ -652,18 +644,18 @@ tests/test-merkle-tree-hash: $(TEST_MERKLE_TREE_HASH_OBJS)
 
 grpc-interfaces: $(PROTO_SOURCES)
 
-remote-cartesi-machine: $(REMOTE_CARTESI_MACHINE_OBJS)
-	$(CXX) -o $@ $(REMOTE_CARTESI_MACHINE_OBJS) $(REMOTE_CARTESI_MACHINE_LIBS) $(LDFLAGS) $(EXELDFLAGS)
+remote-cartesi-machine: $(REMOTE_CARTESI_MACHINE_OBJS) libcartesi_grpc.a libcartesi.a
+	$(CXX) -o $@ $^ $(REMOTE_CARTESI_MACHINE_LIBS) $(LDFLAGS) $(EXELDFLAGS)
 
-jsonrpc-remote-cartesi-machine: $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS)
-	$(CXX) -o $@ $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) $(JSONRPC_REMOTE_CARTESI_MACHINE_LIBS) $(LDFLAGS) $(EXELDFLAGS)
+jsonrpc-remote-cartesi-machine: $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) libcartesi_jsonrpc.a libcartesi.a
+	$(CXX) -o $@ $^ $(JSONRPC_REMOTE_CARTESI_MACHINE_LIBS) $(LDFLAGS) $(EXELDFLAGS)
 
 $(PROTOBUF_GEN_OBJS) $(GRPC_GEN_OBJS) protobuf-util.o grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o remote-cartesi-machine: CXXFLAGS += $(GRPC_PROTOBUF_INC)
 
 clua-%.o clua.o: CXXFLAGS += $(LUA_INC)
 
-tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS)
-	$(CXX) -o $@ $(TEST_MACHINE_C_API_OBJS) $(TEST_MACHINE_C_API_LIBS) $(LDFLAGS) $(EXELDFLAGS)
+tests/test-machine-c-api: $(TEST_MACHINE_C_API_OBJS) libcartesi_grpc.a libcartesi.a
+	$(CXX) -o $@ $^ $(TEST_MACHINE_C_API_LIBS) $(LDFLAGS) $(EXELDFLAGS)
 
 .PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
 

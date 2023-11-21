@@ -588,8 +588,13 @@ local options = {
     {
         "^%-%-append%-bootargs%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
-            append_bootargs = o
+            if not o then return false end
+            if #o == 0 then return true end
+            if #append_bootargs == 0 then
+                append_bootargs = o
+            else
+                append_bootargs = append_bootargs .. " " .. o
+            end
             return true
         end,
     },
@@ -1142,7 +1147,8 @@ local options = {
     {
         "^%-%-append%-init%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o then return false end
+            if #o == 0 then return true end
             append_init = append_init .. o .. "\n"
             return true
         end,
@@ -1161,7 +1167,8 @@ local options = {
     {
         "^%-%-append%-entrypoint%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o then return false end
+            if #o == 0 then return true end
             append_entrypoint = append_entrypoint .. o .. "\n"
             return true
         end,

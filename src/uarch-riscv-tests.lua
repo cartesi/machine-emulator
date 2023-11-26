@@ -366,11 +366,14 @@ local function create_catalog_json_log(contexts)
         util.indentout(
             out,
             1,
-            '{"path": "%s", "steps": %d, "proofs":%s, "proofsFrequency":%d}',
+            '{"path": "%s", "steps": %d, "proofs":%s, "proofsFrequency":%d, '
+                .. '"initialRootHash": "%s", "finalRootHash": "%s"}',
             path,
             ctx.step_count,
             proofs,
-            proofs_frequency
+            proofs_frequency,
+            util.hexhash(ctx.initial_root_hash),
+            util.hexhash(ctx.final_root_hash)
         )
         if i < n then
             out:write(",\n")
@@ -424,7 +427,9 @@ local function json_step_logs(tests)
         contexts[#contexts + 1] = ctx
         local machine <close> = build_machine(ctx.ram_image)
         io.write(ctx.ram_image, ": ")
+        ctx.initial_root_hash = machine:get_root_hash()
         run_machine_writing_json_logs(machine, ctx)
+        ctx.final_root_hash = machine:get_root_hash()
         check_test_result(machine, ctx, errors)
         if ctx.failed then
             print("failed")

@@ -971,7 +971,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
     function(machine)
         local log = machine:log_uarch_reset({ proofs = true, annotations = true })
         local expected_dump = "begin reset uarch state\n"
-            .. '  1: write uarch_state@0x400000(4194304): hash:"17b76b32"(2^22 bytes) -> hash:"990691da"(2^22 bytes)\n'
+            .. '  1: write uarch_state@0x400000(4194304): hash:"fc6e9db3"(2^22 bytes) -> hash:"5ba1620b"(2^22 bytes)\n'
             .. "end reset uarch state\n"
 
         local tmpname = os.tmpname()

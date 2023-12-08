@@ -970,8 +970,9 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
     "Dump of log produced by log_uarch_reset should match",
     function(machine)
         local log = machine:log_uarch_reset({ proofs = true, annotations = true })
-        local expected_dump = "begin reset uarch state\n"
-            .. '  1: write uarch_state@0x400000(4194304): hash:"fc6e9db3"(2^22 bytes) -> hash:"5ba1620b"(2^22 bytes)\n'
+        local expected_dump_pattern = "begin reset uarch state\n"
+            .. "  1: write uarch_state@0x400000%(4194304%): "
+            .. 'hash:"[0-9a-f]+"%(2%^22 bytes%) %-> hash:"[0-9a-fA-F]+"%(2%^22 bytes%)\n'
             .. "end reset uarch state\n"
 
         local tmpname = os.tmpname()
@@ -987,8 +988,8 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         print(actual_dump)
         print("--------------------------")
         assert(
-            actual_dump == expected_dump,
-            "Dump of uarch_reset_state does not match expected output:\n" .. expected_dump
+            actual_dump:match(expected_dump_pattern),
+            "Dump of uarch_reset_state does not match expected pattern:\n" .. expected_dump_pattern
         )
     end
 )

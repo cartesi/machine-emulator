@@ -360,6 +360,9 @@ where options are:
   --no-init-splash
     don't show cartesi machine splash on boot.
 
+  --no-default-init
+    don't use cartesi machine default init value (USER=dapp)
+
   --append-init=<string>
     append a command to machine's init script to be executed with root privilege.
     The command is executed on boot after mounting flash drives and before running the entrypoint.
@@ -438,9 +441,10 @@ local memory_range_replace = {}
 local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 64 << 20
 local dtb_image_filename = nil
-local bootargs = "quiet earlycon=sbi console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw init=/opt/cartesi/bin/init"
+local bootargs = "quiet earlycon=sbi console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"
 local init_splash = true
 local append_bootargs = ""
+local default_init = "USER=dapp\n"
 local append_init = ""
 local append_entrypoint = ""
 local rollup = {
@@ -1132,6 +1136,14 @@ local options = {
         end,
     },
     {
+        "^%-%-no%-default%-init$",
+        function(all)
+            if not all then return false end
+            default_init = ""
+            return true
+        end,
+    },
+    {
         "^%-%-append%-init%=(.*)$",
         function(o)
             if not o then return false end
@@ -1535,6 +1547,7 @@ echo "
     end
 
     if #append_bootargs > 0 then config.dtb.bootargs = config.dtb.bootargs .. " " .. append_bootargs end
+    if #default_init > 0 then config.dtb.init = config.dtb.init .. default_init end
     if #append_init > 0 then config.dtb.init = config.dtb.init .. append_init end
     if #append_entrypoint > 0 then config.dtb.entrypoint = config.dtb.entrypoint .. append_entrypoint end
     if #exec_arguments > 0 then config.dtb.entrypoint = config.dtb.entrypoint .. table.concat(exec_arguments, " ") end

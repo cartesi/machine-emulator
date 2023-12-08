@@ -3,7 +3,7 @@ on: [push]
 env:
   KERNEL_VERSION: v0.19.1
   LINUX_VERSION: 6.5.9-ctsi-1-v0.19.1
-  ROOTFS_VERSION: v0.19.0
+  TOOLS_VERSION: v0.14.0
   TEST_VERSION: v0.30.0
   CARTESI_TESTS_PATH: /usr/share/cartesi-machine/tests
   CARTESI_IMAGES_PATH: /usr/share/cartesi-machine/images
@@ -163,9 +163,9 @@ jobs:
       - name: Download [rootfs.ext2]
         uses: Legion2/download-release-action@v2.1.0
         with:
-          repository: ${{ github.repository_owner }}/image-rootfs
-          tag: ${{ env.ROOTFS_VERSION }}
-          file: rootfs-${{ env.ROOTFS_VERSION }}.ext2
+          repository: ${{ github.repository_owner }}/machine-emulator-tools
+          tag: ${{ env.TOOLS_VERSION }}
+          file: rootfs-tools-${{ env.TOOLS_VERSION }}.ext2
 
       - name: Download [kernel.bin]
         uses: Legion2/download-release-action@v2.1.0
@@ -179,7 +179,7 @@ jobs:
           mkdir -m 755 -p ${{ env.CARTESI_IMAGES_PATH }}
           mv linux-*.bin rootfs-*.ext2 ${{ env.CARTESI_IMAGES_PATH }}
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
-          cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rootfs-${{ env.ROOTFS_VERSION }}.ext2 rootfs.ext2
+          cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rootfs-tools-${{ env.TOOLS_VERSION }}.ext2 rootfs.ext2
 
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0
@@ -310,9 +310,9 @@ jobs:
       - name: Download [rootfs.ext2]
         uses: Legion2/download-release-action@v2.1.0
         with:
-          repository: ${{ github.repository_owner }}/image-rootfs
-          tag: ${{ env.ROOTFS_VERSION }}
-          file: rootfs-${{ env.ROOTFS_VERSION }}.ext2
+          repository: ${{ github.repository_owner }}/machine-emulator-tools
+          tag: ${{ env.TOOLS_VERSION }}
+          file: rootfs-tools-${{ env.TOOLS_VERSION }}.ext2
 
       - name: Download [kernel.bin]
         uses: Legion2/download-release-action@v2.1.0
@@ -326,7 +326,7 @@ jobs:
           mkdir -m 755 -p ${{ env.CARTESI_IMAGES_PATH }}
           mv linux-*.bin rootfs-*.ext2 ${{ env.CARTESI_IMAGES_PATH }}/
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
-          cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rootfs-${{ env.ROOTFS_VERSION }}.ext2 rootfs.ext2
+          cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rootfs-tools-${{ env.TOOLS_VERSION }}.ext2 rootfs.ext2
 
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0
@@ -502,9 +502,9 @@ jobs:
       - name: Download [rootfs.ext2]
         uses: Legion2/download-release-action@v2.1.0
         with:
-          repository: ${{ github.repository_owner }}/image-rootfs
-          tag: ${{ env.ROOTFS_VERSION }}
-          file: rootfs-${{ env.ROOTFS_VERSION }}.ext2
+          repository: ${{ github.repository_owner }}/machine-emulator-tools
+          tag: ${{ env.TOOLS_VERSION }}
+          file: rootfs-tools-${{ env.TOOLS_VERSION }}.ext2
 
       - name: Download [kernel.bin]
         uses: Legion2/download-release-action@v2.1.0
@@ -518,7 +518,7 @@ jobs:
           mkdir -m 755 -p ${{ env.CARTESI_IMAGES_PATH }}
           mv linux-*.bin rootfs-*.ext2 ${{ env.CARTESI_IMAGES_PATH }}/
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
-          cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rootfs-${{ env.ROOTFS_VERSION }}.ext2 rootfs.ext2
+          cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rootfs-tools-${{ env.TOOLS_VERSION }}.ext2 rootfs.ext2
 
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0
@@ -600,9 +600,9 @@ jobs:
       - name: Download [rootfs.ext2]
         uses: Legion2/download-release-action@v2.1.0
         with:
-          repository: ${{ github.repository_owner }}/image-rootfs
-          tag: ${{ env.ROOTFS_VERSION }}
-          file: rootfs-${{ env.ROOTFS_VERSION }}.ext2
+          repository: ${{ github.repository_owner }}/machine-emulator-tools
+          tag: ${{ env.TOOLS_VERSION }}
+          file: rootfs-tools-${{ env.TOOLS_VERSION }}.ext2
 
       - name: Download [kernel.bin]
         uses: Legion2/download-release-action@v2.1.0
@@ -616,7 +616,7 @@ jobs:
           mkdir -m 755 -p ${{ env.CARTESI_IMAGES_PATH }}
           mv linux-*.bin rootfs-*.ext2 ${{ env.CARTESI_IMAGES_PATH }}/
           cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
-          cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rootfs-${{ env.ROOTFS_VERSION }}.ext2 rootfs.ext2
+          cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rootfs-tools-${{ env.TOOLS_VERSION }}.ext2 rootfs.ext2
 
       - name: Download test suite
         uses: Legion2/download-release-action@v2.1.0

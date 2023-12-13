@@ -54,6 +54,7 @@ where options are:
 end
 
 local rollup_init = false
+local cmdline_opts_finished = false
 -- List of supported options
 -- Options are processed in order
 -- For each option,
@@ -89,9 +90,9 @@ local options = {
 }
 
 -- Process command line options
-for i, a in ipairs(arg) do
+for _, a in ipairs(arg) do
     if not cmdline_opts_finished then
-        for j, option in ipairs(options) do
+        for _, option in ipairs(options) do
             if option[2](a:match(option[1])) then
                 break
             end
@@ -100,7 +101,7 @@ for i, a in ipairs(arg) do
 end
 
 local function create_directory(path)
-    local success, message = io.open(path, "r")
+    local success = io.open(path, "r")
     if success == nil then
         os.execute("mkdir " .. path)
         stderr("Created directory:" .. path .. "\n")
@@ -112,12 +113,13 @@ end
 
 local function get_file_length(file_path)
     local file = io.open(file_path, "rb")
+    if file == nil then error("File not found: " .. file_path) end
     local size = file:seek("end")
     file:close()
     return size
 end
 
-function create_default_config(images_dir, command)
+local function create_default_config(images_dir, command)
     return {
         ram = {
             length = 0x4000000,
@@ -181,7 +183,7 @@ local function instantiate_filename(pattern, values)
     return (string.gsub(pattern, "\0", "%"))
 end
 
-local function store_machine(machine, config, store_dir)
+local function store_machine(machine, store_dir)
     local h = util.hexhash(machine:get_root_hash())
     local name = instantiate_filename(store_dir, { h = h })
     machine:store(name)
@@ -193,7 +195,7 @@ local function create_machine(machine_name, command, config_func)
     if config_func then config_func(config) end
     local machine = cartesi.machine(config)
     machine:run(math.maxinteger)
-    store_machine(machine, config, MACHINES_DIR .. "/" .. machine_name)
+    store_machine(machine, MACHINES_DIR .. "/" .. machine_name)
 end
 
 

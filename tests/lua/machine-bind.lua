@@ -1126,4 +1126,48 @@ do_test("Test unhappy paths of verify_uarch_step_state_transition", function(mac
     assert_error("Mismatch in root hash of access 1", function(log) log.accesses[1].sibling_hashes[1] = bad_hash end)
 end)
 
+print("\n\n testing unsupported uarch instructions ")
+
+local uarch_ecall_program = {
+    0x00000073, -- ecall
+}
+
+local uarch_ebreak_program = {
+    0x00100073, -- ebreak
+}
+
+local uarch_illegal_insn_program = {
+    0x00000000, -- some illegal instruction
+}
+
+test_util.make_do_test(build_machine, machine_type, {
+    uarch = {
+        ram = { image_filename = test_util.create_test_uarch_program(uarch_ecall_program) },
+    },
+})("Detect unsupported ECALL instruction", function(machine)
+    local success, err = pcall(machine.run_uarch, machine)
+    assert(success == false)
+    assert(err:match("ECALL is not supported"))
+end)
+
+test_util.make_do_test(build_machine, machine_type, {
+    uarch = {
+        ram = { image_filename = test_util.create_test_uarch_program(uarch_ebreak_program) },
+    },
+})("Detect unsupported EBREAK instruction", function(machine)
+    local success, err = pcall(machine.run_uarch, machine)
+    assert(success == false)
+    assert(err:match("EBREAK is not supported"))
+end)
+
+test_util.make_do_test(build_machine, machine_type, {
+    uarch = {
+        ram = { image_filename = test_util.create_test_uarch_program(uarch_illegal_insn_program) },
+    },
+})("Detect illegal instruction", function(machine)
+    local success, err = pcall(machine.run_uarch, machine)
+    assert(success == false)
+    assert(err:match("illegal instruction"))
+end)
+
 print("\n\nAll machine binding tests for type " .. machine_type .. " passed")

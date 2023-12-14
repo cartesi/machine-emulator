@@ -1085,6 +1085,10 @@ static inline void executeInsn(UarchState &a, uint32 insn, uint64 pc) {
         return executeSLTI(a, insn, pc);
     } else if (insnMatchOpcodeFunct3(insn, 0xf, 0x0)) {
         return executeFENCE(a, insn, pc);
+    } else if (insn == uint32(0x73)) {
+        throw std::runtime_error("ECALL is not supported");
+    } else if (insn == uint32(0x100073)) {
+        throw std::runtime_error("EBREAK is not supported");
     }
     throw std::runtime_error("illegal instruction");
 }

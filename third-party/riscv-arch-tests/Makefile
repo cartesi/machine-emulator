@@ -1,7 +1,7 @@
 MACHINE_EMULATOR_DEFINES_DIR ?= $(abspath ../../src)
 RISCV_ARCH_TEST_PROJ = riscv-arch-test
 RISCV_ARCHTEST_BASE_URL = https://github.com/riscv-non-isa/$(RISCV_ARCH_TEST_PROJ)/archive
-RISCV_ARCHTEST_RELEASE = 2.7.3
+RISCV_ARCHTEST_RELEASE = 2.7.4
 RISCV_ARCHTEST_URL = $(RISCV_ARCHTEST_BASE_URL)/$(RISCV_ARCHTEST_RELEASE).tar.gz
 SRCDIR = $(abspath src)
 DEPDIR = third-party

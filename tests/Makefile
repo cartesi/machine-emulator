@@ -20,7 +20,7 @@ INSTALLDIR = $(PREFIX)/tests
 LUA_BIN ?= $(shell which lua5.4)
 
 TOOLCHAIN_DOCKER_REPOSITORY ?= cartesi/toolchain
-TOOLCHAIN_TAG ?= 0.16.0
+TOOLCHAIN_TAG ?= 0.17.0
 
 BUILDDIR = $(abspath build)
 RISCV_PREFIX = riscv64-cartesi-linux-gnu-
@@ -95,7 +95,7 @@ build-tests-misc: misc
 
 build-tests-images: images
 
-build-tests-uarch-with-toolchain uarch-with-toolchain riscv-arch-test-with-toolchain: TOOLCHAIN_TAG:=0.16.0-rv64ima-lp64
+build-tests-uarch-with-toolchain uarch-with-toolchain riscv-arch-test-with-toolchain: TOOLCHAIN_TAG:=0.17.0-rv64ima-lp64
 
 machine uarch misc:
 	@$(MAKE) $(BUILDDIR)/$@
@@ -119,8 +119,8 @@ $(BUILDDIR)/%:
 $(CARTESI_IMAGES): | $(CARTESI_IMAGES_PATH)
 	@wget -nc -i dependencies -P $(CARTESI_IMAGES_PATH)
 	@shasum -ca 256 dependencies.sha256
-	@cd $(CARTESI_IMAGES_PATH) && ln -s rootfs-tools-v0.14.1.ext2 rootfs.ext2
-	@cd $(CARTESI_IMAGES_PATH) && ln -s linux-6.5.9-ctsi-1-v0.19.1.bin linux.bin
+	@cd $(CARTESI_IMAGES_PATH) && ln -s rootfs-tools-v0.15.0-output-unification-test3.ext2 rootfs.ext2
+	@cd $(CARTESI_IMAGES_PATH) && ln -s linux-6.5.13-ctsi-1-v0.20.0.bin linux.bin
 
 images: | $(CARTESI_IMAGES)
 

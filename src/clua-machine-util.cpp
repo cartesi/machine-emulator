@@ -903,21 +903,15 @@ static void push_cm_virtio_hostfwd_config(lua_State *L, const cm_virtio_hostfwd_
     clua_setintegerfield(L, m->guest_port, "guest_port", -1);
 }
 
-/// \brief Pushes cm_rollup_config to the Lua stack
+/// \brief Pushes cm_cmio_config to the Lua stack
 /// \param L Lua state.
-/// \param r Rollup config to be pushed.
-static void push_cm_rollup_config(lua_State *L, const cm_rollup_config *r) {
-    lua_newtable(L);                                    // rollup
-    push_cm_memory_range_config(L, &r->rx_buffer);      // rollup rx_buffer
-    lua_setfield(L, -2, "rx_buffer");                   // rollup
-    push_cm_memory_range_config(L, &r->tx_buffer);      // rollup tx_buffer
-    lua_setfield(L, -2, "tx_buffer");                   // rollup
-    push_cm_memory_range_config(L, &r->input_metadata); // rollup input_metadata
-    lua_setfield(L, -2, "input_metadata");              // rollup
-    push_cm_memory_range_config(L, &r->voucher_hashes); // rollup voucher_hashes
-    lua_setfield(L, -2, "voucher_hashes");              // rollup
-    push_cm_memory_range_config(L, &r->notice_hashes);  // rollup notice_hashes
-    lua_setfield(L, -2, "notice_hashes");               // rollup
+/// \param r Cmio config to be pushed.
+static void push_cm_cmio_config(lua_State *L, const cm_cmio_config *r) {
+    lua_newtable(L);                               // cmio
+    push_cm_memory_range_config(L, &r->rx_buffer); // cmio rx_buffer
+    lua_setfield(L, -2, "rx_buffer");              // cmio
+    push_cm_memory_range_config(L, &r->tx_buffer); // cmio tx_buffer
+    lua_setfield(L, -2, "tx_buffer");              // cmio
 }
 
 /// \brief Pushes cm_flash_drive_configs to the Lua stack
@@ -1041,9 +1035,9 @@ void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
     lua_setfield(L, -2, "dtb");                      // config
     push_cm_uarch_config(L, &c->uarch);              // uarch
     lua_setfield(L, -2, "uarch");                    // config
-    if (c->rollup.has_value) {
-        push_cm_rollup_config(L, &c->rollup); // config rollup
-        lua_setfield(L, -2, "rollup");        // config
+    if (c->cmio.has_value) {
+        push_cm_cmio_config(L, &c->cmio); // config cmio
+        lua_setfield(L, -2, "cmio");      // config
     }
 }
 
@@ -1114,30 +1108,21 @@ cm_virtio_hostfwd_config *clua_check_cm_virtio_hostfwd_config(lua_State *L, int 
     return m;
 }
 
-/// \brief Loads rollup config from Lua to cm_rollup_config
+/// \brief Loads cmio config from Lua to cm_cmio_config
 /// \param L Lua state
 /// \param tabidx Config stack index
-/// \param r C api rollup config structure to receive results
-static void check_cm_rollup_config(lua_State *L, int tabidx, cm_rollup_config *r) {
-    if (!opt_table_field(L, tabidx, "rollup")) {
+/// \param r C api cmio config structure to receive results
+static void check_cm_cmio_config(lua_State *L, int tabidx, cm_cmio_config *r) {
+    if (!opt_table_field(L, tabidx, "cmio")) {
         r->has_value = false;
         return;
     }
     r->has_value = true;
     lua_getfield(L, -1, "rx_buffer");
-    clua_check_cm_memory_range_config(L, -1, "rollup rx buffer", &r->rx_buffer);
+    clua_check_cm_memory_range_config(L, -1, "cmio rx buffer", &r->rx_buffer);
     lua_pop(L, 1);
     lua_getfield(L, -1, "tx_buffer");
-    clua_check_cm_memory_range_config(L, -1, "rollup rx buffer", &r->tx_buffer);
-    lua_pop(L, 1);
-    lua_getfield(L, -1, "input_metadata");
-    clua_check_cm_memory_range_config(L, -1, "rollup input metadata", &r->input_metadata);
-    lua_pop(L, 1);
-    lua_getfield(L, -1, "voucher_hashes");
-    clua_check_cm_memory_range_config(L, -1, "rollup voucher hashes", &r->voucher_hashes);
-    lua_pop(L, 1);
-    lua_getfield(L, -1, "notice_hashes");
-    clua_check_cm_memory_range_config(L, -1, "rollup notice hashes", &r->notice_hashes);
+    clua_check_cm_memory_range_config(L, -1, "cmio tx buffer", &r->tx_buffer);
     lua_pop(L, 2);
 }
 
@@ -1450,7 +1435,7 @@ cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ct
     check_cm_clint_config(L, tabidx, &config->clint);
     check_cm_plic_config(L, tabidx, &config->plic);
     check_cm_uarch_config(L, tabidx, &config->uarch);
-    check_cm_rollup_config(L, tabidx, &config->rollup);
+    check_cm_cmio_config(L, tabidx, &config->cmio);
     check_cm_flash_drive_configs(L, tabidx, &config->flash_drive);
     check_cm_virtio_configs(L, tabidx, &config->virtio);
     managed.release();

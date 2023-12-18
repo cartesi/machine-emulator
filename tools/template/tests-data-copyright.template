@@ -19,9 +19,9 @@ Files: /usr/share/cartesi-machine/tests/data/machine/access.*
        /usr/share/cartesi-machine/tests/data/machine/fternary_d.*
        /usr/share/cartesi-machine/tests/data/machine/fternary_s.*
        /usr/share/cartesi-machine/tests/data/machine/funary.*
+       /usr/share/cartesi-machine/tests/data/machine/htif_cmio.*
        /usr/share/cartesi-machine/tests/data/machine/htif_console.*
        /usr/share/cartesi-machine/tests/data/machine/htif_invalid_ops.*
-       /usr/share/cartesi-machine/tests/data/machine/htif_rollup.*
        /usr/share/cartesi-machine/tests/data/machine/htif_yield.*
        /usr/share/cartesi-machine/tests/data/machine/illegal_insn.*
        /usr/share/cartesi-machine/tests/data/machine/interrupts.*

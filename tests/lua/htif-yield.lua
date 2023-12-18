@@ -125,8 +125,7 @@ local YIELD_AUTOMATIC = cartesi.machine.HTIF_YIELD_AUTOMATIC
 local REASON_PROGRESS = cartesi.machine.HTIF_YIELD_REASON_PROGRESS
 local REASON_RX_ACCEPTED = cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED
 local REASON_RX_REJECTED = cartesi.machine.HTIF_YIELD_REASON_RX_REJECTED
-local REASON_TX_VOUCHER = cartesi.machine.HTIF_YIELD_REASON_TX_VOUCHER
-local REASON_TX_NOTICE = cartesi.machine.HTIF_YIELD_REASON_TX_NOTICE
+local REASON_TX_OUTPUT = cartesi.machine.HTIF_YIELD_REASON_TX_OUTPUT
 local REASON_TX_REPORT = cartesi.machine.HTIF_YIELD_REASON_TX_REPORT
 local REASON_TX_EXCEPTION = cartesi.machine.HTIF_YIELD_REASON_TX_EXCEPTION
 
@@ -136,19 +135,17 @@ local yields = {
     { mcycle = 71, data = 12, cmd = YIELD_MANUAL, reason = REASON_PROGRESS },
     { mcycle = 103, data = 13, cmd = YIELD_MANUAL, reason = REASON_RX_ACCEPTED },
     { mcycle = 135, data = 14, cmd = YIELD_MANUAL, reason = REASON_RX_REJECTED },
-    { mcycle = 167, data = 15, cmd = YIELD_MANUAL, reason = REASON_TX_VOUCHER },
-    { mcycle = 199, data = 16, cmd = YIELD_MANUAL, reason = REASON_TX_NOTICE },
-    { mcycle = 231, data = 17, cmd = YIELD_MANUAL, reason = REASON_TX_REPORT },
-    { mcycle = 263, data = 18, cmd = YIELD_MANUAL, reason = REASON_TX_EXCEPTION },
+    { mcycle = 167, data = 15, cmd = YIELD_MANUAL, reason = REASON_TX_OUTPUT },
+    { mcycle = 199, data = 16, cmd = YIELD_MANUAL, reason = REASON_TX_REPORT },
+    { mcycle = 231, data = 17, cmd = YIELD_MANUAL, reason = REASON_TX_EXCEPTION },
 
-    { mcycle = 294, data = 20, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
-    { mcycle = 325, data = 21, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
-    { mcycle = 356, data = 22, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
-    { mcycle = 388, data = 23, cmd = YIELD_AUTOMATIC, reason = REASON_RX_ACCEPTED },
-    { mcycle = 420, data = 24, cmd = YIELD_AUTOMATIC, reason = REASON_RX_REJECTED },
-    { mcycle = 452, data = 25, cmd = YIELD_AUTOMATIC, reason = REASON_TX_VOUCHER },
-    { mcycle = 484, data = 26, cmd = YIELD_AUTOMATIC, reason = REASON_TX_NOTICE },
-    { mcycle = 516, data = 27, cmd = YIELD_AUTOMATIC, reason = REASON_TX_REPORT },
+    { mcycle = 262, data = 20, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
+    { mcycle = 293, data = 21, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
+    { mcycle = 324, data = 22, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
+    { mcycle = 356, data = 23, cmd = YIELD_AUTOMATIC, reason = REASON_RX_ACCEPTED },
+    { mcycle = 388, data = 24, cmd = YIELD_AUTOMATIC, reason = REASON_RX_REJECTED },
+    { mcycle = 420, data = 25, cmd = YIELD_AUTOMATIC, reason = REASON_TX_OUTPUT },
+    { mcycle = 452, data = 26, cmd = YIELD_AUTOMATIC, reason = REASON_TX_REPORT },
 }
 
 local function run_machine_with_uarch(machine)
@@ -180,7 +177,7 @@ end
 
 local function stderr(...) io.stderr:write(string.format(...)) end
 
-local final_mcycle = 557
+local final_mcycle = 493
 local exit_payload = 42
 local progress_enable = false
 
@@ -230,7 +227,7 @@ local function test(machine_config, yield_automatic_enable, yield_manual_enable)
             local reason = data >> 32
             data = data << 32 >> 32
             assert(data == v.data, string.format("data: expected %d, got %d", v.data, data))
-            assert(reason == v.reason)
+            assert(reason == v.reason, string.format("reason: expected %d, got %d", v.reason, reason))
             -- cmd should be as expected
             assert(machine:read_htif_tohost_cmd() == v.cmd)
             -- trying to run it without resetting iflags.Y should not advance

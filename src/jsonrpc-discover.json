@@ -1737,23 +1737,14 @@
         }
       },
 
-      "RollupConfig": {
-        "title": "RollupConfig",
+      "CmioConfig": {
+        "title": "CmioConfig",
         "type": "object",
         "properties": {
           "rx_buffer": {
             "$ref": "#/components/schemas/MemoryRangeConfig"
           },
           "tx_buffer": {
-            "$ref": "#/components/schemas/MemoryRangeConfig"
-          },
-          "input_metadata": {
-            "$ref": "#/components/schemas/MemoryRangeConfig"
-          },
-          "voucher_hashes": {
-            "$ref": "#/components/schemas/MemoryRangeConfig"
-          },
-          "notice_hashes": {
             "$ref": "#/components/schemas/MemoryRangeConfig"
           }
         }
@@ -1790,8 +1781,8 @@
           "uarch": {
             "$ref": "#/components/schemas/UarchConfig"
           },
-          "rollup": {
-            "$ref": "#/components/schemas/RollupConfig"
+          "cmio": {
+            "$ref": "#/components/schemas/CmioConfig"
           }
         }
       },

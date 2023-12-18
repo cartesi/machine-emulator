@@ -1,5 +1,5 @@
 ARG TAG=devel
-FROM --platform=$TARGETPLATFORM cartesi/toolchain:0.16.0 as machine-tests-builder
+FROM --platform=$TARGETPLATFORM cartesi/toolchain:0.17.0 as machine-tests-builder
 ARG RELEASE=no
 ARG COVERAGE=no
 ARG SANITIZE=no

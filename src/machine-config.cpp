@@ -50,13 +50,10 @@ static void adjust_image_filenames(machine_config &c, const std::string &dir) {
     for (auto &f : c.flash_drive) {
         f.image_filename = c.get_image_filename(dir, f);
     }
-    if (c.rollup.has_value()) {
-        auto &r = c.rollup.value();
+    if (c.cmio.has_value()) {
+        auto &r = c.cmio.value();
         r.rx_buffer.image_filename = c.get_image_filename(dir, r.rx_buffer);
         r.tx_buffer.image_filename = c.get_image_filename(dir, r.tx_buffer);
-        r.input_metadata.image_filename = c.get_image_filename(dir, r.input_metadata);
-        r.voucher_hashes.image_filename = c.get_image_filename(dir, r.voucher_hashes);
-        r.notice_hashes.image_filename = c.get_image_filename(dir, r.notice_hashes);
     }
 }
 

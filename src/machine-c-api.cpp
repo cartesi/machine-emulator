@@ -277,30 +277,28 @@ static cm_htif_config convert_to_c(const cartesi::htif_config &cpp_config) {
 }
 
 // --------------------------------------------
-// Rollup configuration conversion functions
+// cmio configuration conversion functions
 // --------------------------------------------
-static std::optional<cartesi::rollup_config> convert_from_c(const cm_rollup_config *c_config) {
+static std::optional<cartesi::cmio_config> convert_from_c(const cm_cmio_config *c_config) {
     if (!c_config->has_value) {
         return {};
     }
-    cartesi::rollup_config new_cpp_rollup_config{convert_from_c(&c_config->rx_buffer),
-        convert_from_c(&c_config->tx_buffer), convert_from_c(&c_config->input_metadata),
-        convert_from_c(&c_config->voucher_hashes), convert_from_c(&c_config->notice_hashes)};
-    return new_cpp_rollup_config;
+    cartesi::cmio_config new_cpp_cmio_config{
+        convert_from_c(&c_config->rx_buffer),
+        convert_from_c(&c_config->tx_buffer)
+    };
+    return new_cpp_cmio_config;
 }
 
-static cm_rollup_config convert_to_c(const std::optional<cartesi::rollup_config> &cpp_config) {
-    cm_rollup_config new_c_rollup_config{};
-    new_c_rollup_config.has_value = cpp_config.has_value();
+static cm_cmio_config convert_to_c(const std::optional<cartesi::cmio_config> &cpp_config) {
+    cm_cmio_config new_c_cmio_config{};
+    new_c_cmio_config.has_value = cpp_config.has_value();
     if (!cpp_config.has_value()) {
-        return new_c_rollup_config;
+        return new_c_cmio_config;
     }
-    new_c_rollup_config.rx_buffer = convert_to_c(cpp_config->rx_buffer);
-    new_c_rollup_config.tx_buffer = convert_to_c(cpp_config->tx_buffer);
-    new_c_rollup_config.input_metadata = convert_to_c(cpp_config->input_metadata);
-    new_c_rollup_config.voucher_hashes = convert_to_c(cpp_config->voucher_hashes);
-    new_c_rollup_config.notice_hashes = convert_to_c(cpp_config->notice_hashes);
-    return new_c_rollup_config;
+    new_c_cmio_config.rx_buffer = convert_to_c(cpp_config->rx_buffer);
+    new_c_cmio_config.tx_buffer = convert_to_c(cpp_config->tx_buffer);
+    return new_c_cmio_config;
 }
 
 // --------------------------------------------
@@ -387,7 +385,7 @@ cartesi::machine_config convert_from_c(const cm_machine_config *c_config) {
     new_cpp_machine_config.clint = convert_from_c(&c_config->clint);
     new_cpp_machine_config.htif = convert_from_c(&c_config->htif);
     new_cpp_machine_config.uarch = convert_from_c(&c_config->uarch);
-    new_cpp_machine_config.rollup = convert_from_c(&c_config->rollup);
+    new_cpp_machine_config.cmio = convert_from_c(&c_config->cmio);
 
     for (size_t i = 0; i < c_config->flash_drive.count; ++i) {
         new_cpp_machine_config.flash_drive.push_back(convert_from_c(&(c_config->flash_drive.entry[i])));
@@ -417,7 +415,7 @@ cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config) {
     new_machine_config->clint = convert_to_c(cpp_config.clint);
     new_machine_config->htif = convert_to_c(cpp_config.htif);
     new_machine_config->uarch = convert_to_c(cpp_config.uarch);
-    new_machine_config->rollup = convert_to_c(cpp_config.rollup);
+    new_machine_config->cmio = convert_to_c(cpp_config.cmio);
     return new_machine_config;
 }
 
@@ -752,11 +750,8 @@ void cm_delete_machine_config(const cm_machine_config *config) {
     delete[] config->dtb.entrypoint;
     delete[] config->ram.image_filename;
     delete[] config->tlb.image_filename;
-    delete[] config->rollup.rx_buffer.image_filename;
-    delete[] config->rollup.tx_buffer.image_filename;
-    delete[] config->rollup.input_metadata.image_filename;
-    delete[] config->rollup.voucher_hashes.image_filename;
-    delete[] config->rollup.notice_hashes.image_filename;
+    delete[] config->cmio.rx_buffer.image_filename;
+    delete[] config->cmio.tx_buffer.image_filename;
     delete[] config->uarch.ram.image_filename;
 
     delete config;

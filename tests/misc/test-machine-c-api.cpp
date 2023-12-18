@@ -223,7 +223,7 @@ protected:
         target->tlb.image_filename = new_cstr(source->tlb.image_filename);
         target->clint = source->clint;
         target->htif = source->htif;
-        target->rollup = source->rollup;
+        target->cmio = source->cmio;
 
         target->uarch.processor = source->uarch.processor;
         target->uarch.ram.image_filename = new_cstr(source->uarch.ram.image_filename);

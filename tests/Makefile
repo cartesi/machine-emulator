@@ -20,7 +20,7 @@ INSTALLDIR = $(PREFIX)/tests
 LUA_BIN ?= $(shell which lua5.4)
 
 TOOLCHAIN_DOCKER_REPOSITORY ?= cartesi/toolchain
-TOOLCHAIN_TAG ?= 0.16.0
+TOOLCHAIN_TAG ?= 0.17.0-dev
 
 BUILDDIR = $(abspath build)
 RISCV_PREFIX = riscv64-cartesi-linux-gnu-
@@ -80,7 +80,7 @@ endif
 
 RUN_ARCH_TEST = $(LUA) $(abspath ./lua/run-rv64i-arch-test.lua)
 
-CARTESI_IMAGES = $(CARTESI_IMAGES_PATH)/linux.bin
+CARTESI_IMAGES = $(CARTESI_IMAGES_PATH)/linux.bin $(CARTESI_IMAGES_PATH)/rootfs.ext2
 
 STYLUA=stylua
 STYLUA_FLAGS=--indent-type Spaces --collapse-simple-statement Always
@@ -116,7 +116,7 @@ riscv-arch-test:
 $(BUILDDIR)/%:
 	@mkdir -p $@
 
-$(CARTESI_IMAGES): | $(CARTESI_IMAGES_PATH)
+$(CARTESI_IMAGES) &: | $(CARTESI_IMAGES_PATH)
 	@wget -nc -i dependencies -P $(CARTESI_IMAGES_PATH)
 	@shasum -ca 256 dependencies.sha256
 	@cd $(CARTESI_IMAGES_PATH) && ln -s rootfs-tools-v0.14.1.ext2 rootfs.ext2

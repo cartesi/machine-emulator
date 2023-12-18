@@ -22,7 +22,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 LUA=${1:-lua5.4}
 
-TEST_LIST=(htif-console.lua htif-rollup.lua htif-yield.lua log-with-mtime-transition.lua machine-bind.lua machine-test.lua mcycle-overflow.lua mtime-interrupt.lua)
+TEST_LIST=(htif-console.lua htif-cmio.lua htif-yield.lua log-with-mtime-transition.lua machine-bind.lua machine-test.lua mcycle-overflow.lua mtime-interrupt.lua)
 
 for x in ${TEST_LIST[@]}; do
     echo "Running $x"

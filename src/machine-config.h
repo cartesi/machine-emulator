@@ -116,13 +116,10 @@ struct htif_config final {
     bool yield_automatic{true};       ///< Make yield automatic available?
 };
 
-/// \brief Rollup configuration
-struct rollup_config {                                       // NOLINT(bugprone-exception-escape)
+/// \brief Cmio configuration
+struct cmio_config {                                       // NOLINT(bugprone-exception-escape)
     memory_range_config rx_buffer{0x60000000, 2 << 20};      ///< RX buffer
     memory_range_config tx_buffer{0x60200000, 2 << 20};      ///< TX buffer
-    memory_range_config input_metadata{0x60400000, 4096};    ///< Buffer for input metadata
-    memory_range_config voucher_hashes{0x60600000, 2 << 20}; ///< Buffer for the voucher hash array
-    memory_range_config notice_hashes{0x60800000, 2 << 20};  ///< Buffer for the notice hash array
 };
 
 /// \brief Machine state configuration
@@ -137,7 +134,7 @@ struct machine_config final {
     clint_config clint{};                  ///< CLINT device state
     htif_config htif{};                    ///< HTIF device state
     uarch_config uarch{};                  ///< microarchitecture configuration
-    std::optional<rollup_config> rollup{}; ///< Rollup state
+    std::optional<cmio_config> cmio{};     ///< Cmio state
 
     /// \brief Get the name where config will be stored in a directory
     static std::string get_config_filename(const std::string &dir);

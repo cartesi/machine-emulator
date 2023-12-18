@@ -62,11 +62,8 @@ private:
     static const pma_entry::flags m_dtb_flags;                   ///< PMA flags used for DTB
     static const pma_entry::flags m_ram_flags;                   ///< PMA flags used for RAM
     static const pma_entry::flags m_flash_drive_flags;           ///< PMA flags used for flash drives
-    static const pma_entry::flags m_rollup_rx_buffer_flags;      ///< PMA flags used for rollup rx buffer
-    static const pma_entry::flags m_rollup_tx_buffer_flags;      ///< PMA flags used for rollup tx buffer
-    static const pma_entry::flags m_rollup_input_metadata_flags; ///< PMA flags used for rollup input metadata
-    static const pma_entry::flags m_rollup_voucher_hashes_flags; ///< PMA flags used for rollup voucher hashes
-    static const pma_entry::flags m_rollup_notice_hashes_flags;  ///< PMA flags used for rollup notice hashes
+    static const pma_entry::flags m_cmio_rx_buffer_flags;        ///< PMA flags used for cmio rx buffer
+    static const pma_entry::flags m_cmio_tx_buffer_flags;        ///< PMA flags used for cmio tx buffer
 
     /// \brief Allocates a new PMA entry.
     /// \param pma PMA entry to add to machine.
@@ -85,30 +82,15 @@ private:
     /// \returns New PMA entry with flash drive flags already set.
     static pma_entry make_flash_drive_pma_entry(const std::string &description, const memory_range_config &c);
 
-    /// \brief Creates a new rollup rx buffer PMA entry.
+    /// \brief Creates a new cmio rx buffer PMA entry.
     /// \param c Memory range configuration.
     /// \returns New PMA entry with rx buffer flags already set.
-    static pma_entry make_rollup_rx_buffer_pma_entry(const memory_range_config &c);
+    static pma_entry make_cmio_rx_buffer_pma_entry(const memory_range_config &c);
 
-    /// \brief Creates a new rollup tx buffer PMA entry.
+    /// \brief Creates a new cmio tx buffer PMA entry.
     /// \param c Memory range configuration.
     /// \returns New PMA entry with tx buffer flags already set.
-    static pma_entry make_rollup_tx_buffer_pma_entry(const memory_range_config &c);
-
-    /// \brief Creates a new rollup input metadata PMA entry.
-    /// \param c Memory range configuration.
-    /// \returns New PMA entry with rollup input metadata flags already set.
-    static pma_entry make_rollup_input_metadata_pma_entry(const memory_range_config &c);
-
-    /// \brief Creates a new rollup voucher hashes PMA entry.
-    /// \param c Memory range configuration.
-    /// \returns New PMA entry with rollup voucher hashes flags already set.
-    static pma_entry make_rollup_voucher_hashes_pma_entry(const memory_range_config &c);
-
-    /// \brief Creates a new rollup notice hahes PMA entry.
-    /// \param c Memory range configuration.
-    /// \returns New PMA entry with rollup notice hashes flags already set.
-    static pma_entry make_rollup_notice_hashes_pma_entry(const memory_range_config &c);
+    static pma_entry make_cmio_tx_buffer_pma_entry(const memory_range_config &c);
 
     /// \brief Saves PMAs into files for serialization
     /// \param config Machine config to be stored

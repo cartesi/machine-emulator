@@ -54,13 +54,10 @@
 #define PMA_CLINT_DID_DEF 4                  ///< Device ID for CLINT device
 #define PMA_HTIF_DID_DEF 5                   ///< Device ID for HTIF device
 #define PMA_SHADOW_TLB_DID_DEF 6             ///< Device ID for shadow TLB device
-#define PMA_ROLLUP_RX_BUFFER_DID_DEF 7       ///< Device ID for rollup RX buffer
-#define PMA_ROLLUP_TX_BUFFER_DID_DEF 8       ///< Device ID for rollup TX buffer
-#define PMA_ROLLUP_INPUT_METADATA_DID_DEF 9  ///< Device ID for rollup input metadata buffer
-#define PMA_ROLLUP_VOUCHER_HASHES_DID_DEF 10 ///< Device ID for rollup voucher hashes buffer
-#define PMA_ROLLUP_NOTICE_HASHES_DID_DEF 11  ///< Device ID for rollup notice hashes buffer
-#define PMA_DHD_DID_DEF 12                   ///< Device ID for DHD device
-#define PMA_SHADOW_UARCH_STATE_DID_DEF 15    ///< Device ID for uarch shadow state device
+#define PMA_CMIO_RX_BUFFER_DID_DEF 7         ///< Device ID for cmio RX buffer
+#define PMA_CMIO_TX_BUFFER_DID_DEF 8         ///< Device ID for cmio TX buffer
+#define PMA_DHD_DID_DEF 9                    ///< Device ID for DHD device
+#define PMA_SHADOW_UARCH_STATE_DID_DEF 10    ///< Device ID for uarch shadow state device
 
 // helper for using UINT64_C with defines
 #ifndef EXPAND_UINT64_C

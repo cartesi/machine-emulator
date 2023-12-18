@@ -130,7 +130,7 @@ where options are:
 
   --replace-flash-drive=<key>:<value>[,<key>:<value>[,...]...]
   --replace-memory-range=<key>:<value>[,<key>:<value>[,...]...]
-    replaces an existing flash drive or rollup memory range right after
+    replaces an existing flash drive or cmio memory range right after
     machine instantiation.
     (typically used in conjunction with the --load=<directory> option.)
 
@@ -142,14 +142,10 @@ where options are:
 
     semantics are the same as for the --flash-drive option with the following
     difference: start and length are mandatory, and must match those of a
-    previously existing flash drive or rollup memory memory range.
+    previously existing flash drive or cmio memory memory range.
 
-  --rollup-rx-buffer=<key>:<value>[,<key>:<value>[,...]...]
-  --rollup-tx-buffer=<key>:<value>[,<key>:<value>[,...]...]
-  --rollup-input-metadata=<key>:<value>[,<key>:<value>[,...]...]
-  --rollup-voucher-hashes=<key>:<value>[,<key>:<value>[,...]...]
-  --rollup-notice-hashes=<key>:<value>[,<key>:<value>[,...]...]
-    defines the individual the memory ranges used by rollups.
+  --cmio-rx-buffer=<key>:<value>[,<key>:<value>[,...]...]
+  --cmio-tx-buffer=<key>:<value>[,<key>:<value>[,...]...]
 
     <key>:<value> is one of
         filename:<filename>
@@ -160,32 +156,25 @@ where options are:
     semantics are the same as for the --flash-drive option with the following
     difference: start and length are mandatory.
 
-  --no-rollup
-    do not define values for rollup-rx-buffer, rollup-tx-buffer,
-    rollup-input-metadata, rollup-voucher-hashes, rollup-notice hashes,
-    and htif yield for use with rollups.
-    default defined values are equivalent to the following options:
+  --no-cmio
+    do not define values for cmio-rx-buffer, cmio-tx-buffer, and htif yield
+    for use with cmios. default defined values are equivalent to the following
+    options:
 
-    --rollup-rx-buffer=start:0x60000000,length:2<<20
-    --rollup-tx-buffer=start:0x60200000,length:2<<20
-    --rollup-input-metadata=start:0x60400000,length:4096
-    --rollup-voucher-hashes=start:0x60600000,length:2<<20
-    --rollup-notice-hashes=start:0x60800000,length:2<<20
+    --cmio-rx-buffer=start:0x60000000,length:2<<20
+    --cmio-tx-buffer=start:0x60200000,length:2<<20
 
-  --rollup-advance-state=<key>:<value>[,<key>:<value>[,...]...]
+  --cmio-advance-state=<key>:<value>[,<key>:<value>[,...]...]
     advances the state of the machine through a number of inputs in an epoch
 
     <key>:<value> is one of
         epoch_index:<number>
         input:<filename-pattern>
-        input_metadata:<filename-pattern>
         input_index_begin:<number>
         input_index_end:<number>
-        voucher:<filename-pattern>
-        voucher_hashes: <filename>
-        notice:<filename-pattern>
-        notice_hashes: <filename>
+        output:<filename-pattern>
         report:<filename-pattern>
+        outputs_root_hash:<filename-pattern>
         hashes
 
         epoch_index
@@ -201,40 +190,28 @@ where options are:
         input_index_end (default: 0)
         one past index of last input to advance (one past last value of %%i).
 
-        input_metadata (default: "epoch-%%e-input-metadata-%%i.bin")
-        the pattern that derives the name of the file read for
-        input metadata %%i of epoch index %%e.
-
-        voucher (default: "epoch-%%e-input-%%i-voucher-%%o.bin")
-        the pattern that derives the name of the file written for voucher %%o
+        output (default: "epoch-%%e-input-%%i-output-%%o.bin")
+        the pattern that derives the name of the file written for output %%o
         of input %%i of epoch %%e.
-
-        voucher_hashes (default: "epoch-%%e-input-%%i-voucher-hashes.bin")
-        the pattern that derives the name of the file written for the voucher
-        hashes of input %%i of epoch %%e.
-
-        notice (default: "epoch-%%e-input-%%i-notice-%%o.bin")
-        the pattern that derives the name of the file written for notice %%o
-        of input %%i of epoch %%e.
-
-        notice_hashes (default: "epoch-%%e-input-%%i-notice-hashes.bin")
-        the pattern that derives the name of the file written for the notice
-        hashes of input %%i of epoch %%e.
 
         report (default: "epoch-%%e-input-%%i-report-%%o.bin")
         the pattern that derives the name of the file written for report %%o
         of input %%i of epoch %%e.
+
+        outputs_root_hash (default: "epoch-%%e-input-%%i-outputs-root-hash.bin")
+        the pattern that derives the name of the file written for outputs root
+        hash of input %%i of epoch %%e.
 
         hashes
         print out hashes before every input.
 
     the input index ranges in {input_index_begin, ..., input_index_end-1}.
     for each input, "%%e" is replaced by the epoch index, "%%i" by the
-    input index, and "%%o" by the voucher, notice, or report index.
+    input index, and "%%o" by the output or report index.
 
-  --rollup-inspect-state=<key>:<value>[,<key>:<value>[,...]...]
+  --cmio-inspect-state=<key>:<value>[,<key>:<value>[,...]...]
     inspect the state of the machine with a query.
-    the query happens after the end of --rollup-advance-state.
+    the query happens after the end of --cmio-advance-state.
 
     <key>:<value> is one of
         query:<filename>
@@ -438,16 +415,13 @@ local append_bootargs = ""
 local default_init = "USER=dapp\n"
 local append_init = ""
 local append_entrypoint = ""
-local rollup = {
+local cmio = {
     rx_buffer = { start = 0x60000000, length = 2 << 20 },
     tx_buffer = { start = 0x60200000, length = 2 << 20 },
-    input_metadata = { start = 0x60400000, length = 4096 },
-    voucher_hashes = { start = 0x60600000, length = 2 << 20 },
-    notice_hashes = { start = 0x60800000, length = 2 << 20 },
 }
 local uarch
-local rollup_advance
-local rollup_inspect
+local cmio_advance
+local cmio_inspect
 local concurrency_update_merkle_tree = 0
 local skip_root_hash_check = false
 local skip_version_check = false
@@ -677,10 +651,10 @@ local options = {
         end,
     },
     {
-        "^%-%-no%-rollup$",
+        "^%-%-no%-cmio$",
         function(all)
             if not all then return false end
-            rollup = nil
+            cmio = nil
             return true
         end,
     },
@@ -747,42 +721,36 @@ local options = {
         end,
     },
     {
-        "^(%-%-rollup%-advance%-state%=(.+))$",
+        "^(%-%-cmio%-advance%-state%=(.+))$",
         function(all, opts)
             if not opts then return false end
             local r = util.parse_options(opts, {
                 epoch_index = true,
                 input = true,
-                input_metadata = true,
                 input_index_begin = true,
                 input_index_end = true,
-                voucher = true,
-                voucher_hashes = true,
-                notice = true,
-                notice_hashes = true,
+                outputs_root_hash = true,
+                output = true,
                 report = true,
                 hashes = true,
             })
             assert(not r.hashes or r.hashes == true, "invalid hashes value in " .. all)
             r.epoch_index = assert(util.parse_number(r.epoch_index), "invalid epoch index in " .. all)
             r.input = r.input or "epoch-%e-input-%i.bin"
-            r.input_metadata = r.input_metadata or "epoch-%e-input-metadata-%i.bin"
             r.input_index_begin = r.input_index_begin or 0
             r.input_index_begin = assert(util.parse_number(r.input_index_begin), "invalid input index begin in " .. all)
             r.input_index_end = r.input_index_end or 0
             r.input_index_end = assert(util.parse_number(r.input_index_end), "invalid input index end in " .. all)
-            r.voucher = r.voucher or "epoch-%e-input-%i-voucher-%o.bin"
-            r.voucher_hashes = r.voucher_hashes or "epoch-%e-input-%i-voucher-hashes.bin"
-            r.notice = r.notice or "epoch-%e-input-%i-notice-%o.bin"
-            r.notice_hashes = r.notice_hashes or "epoch-%e-input-%i-notice-hashes.bin"
+            r.output = r.output or "epoch-%e-input-%i-output-%o.bin"
             r.report = r.report or "epoch-%e-input-%i-report-%o.bin"
+            r.outputs_root_hash = r.outputs_root_hash or "epoch-%e-input-%i-outputs_root_hash.bin"
             r.next_input_index = r.input_index_begin
-            rollup_advance = r
+            cmio_advance = r
             return true
         end,
     },
     {
-        "^(%-%-rollup%-inspect%-state%=(.+))$",
+        "^(%-%-cmio%-inspect%-state%=(.+))$",
         function(_, opts)
             if not opts then return false end
             local r = util.parse_options(opts, {
@@ -791,15 +759,15 @@ local options = {
             })
             r.query = r.query or "query.bin"
             r.report = r.report or "query-report-%o.bin"
-            rollup_inspect = r
+            cmio_inspect = r
             return true
         end,
     },
     {
-        "^%-%-rollup%-inspect%-state$",
+        "^%-%-cmio%-inspect%-state$",
         function(all)
             if not all then return false end
-            rollup_inspect = {
+            cmio_inspect = {
                 query = "query.bin",
                 report = "query-report-%o.bin",
             }
@@ -1058,47 +1026,20 @@ local options = {
         end,
     },
     {
-        "^(%-%-rollup%-rx%-buffer%=(.+))$",
+        "^(%-%-cmio%-rx%-buffer%=(.+))$",
         function(all, opts)
             if not opts then return false end
-            rollup = rollup or {}
-            rollup.rx_buffer = parse_memory_range(opts, "rollup rx buffer", all)
+            cmio = cmio or {}
+            cmio.rx_buffer = parse_memory_range(opts, "cmio rx buffer", all)
             return true
         end,
     },
     {
-        "^(%-%-rollup%-tx%-buffer%=(.+))$",
+        "^(%-%-cmio%-tx%-buffer%=(.+))$",
         function(all, opts)
             if not opts then return false end
-            rollup = rollup or {}
-            rollup.tx_buffer = parse_memory_range(opts, "tx buffer", all)
-            return true
-        end,
-    },
-    {
-        "^(%-%-rollup%-input%-metadata%=(.+))$",
-        function(all, opts)
-            if not opts then return false end
-            rollup = rollup or {}
-            rollup.input_metadata = parse_memory_range(opts, "rollup input metadata", all)
-            return true
-        end,
-    },
-    {
-        "^(%-%-rollup%-voucher%-hashes%=(.+))$",
-        function(all, opts)
-            if not opts then return false end
-            rollup = rollup or {}
-            rollup.voucher_hashes = parse_memory_range(opts, "rollup voucher hashes", all)
-            return true
-        end,
-    },
-    {
-        "^(%-%-rollup%-notice%-hashes%=(.+))$",
-        function(all, opts)
-            if not opts then return false end
-            rollup = rollup or {}
-            rollup.notice_hashes = parse_memory_range(opts, "rollup notice hashes", all)
+            cmio = cmio or {}
+            cmio.tx_buffer = parse_memory_range(opts, "tx buffer", all)
             return true
         end,
     },
@@ -1304,18 +1245,12 @@ local function store_machine_config(config, output)
         store_memory_range(f, "    ", output)
     end
     output("  },\n")
-    if config.rollup then
-        output("  rollup = {\n")
+    if config.cmio then
+        output("  cmio = {\n")
         output("    rx_buffer = ")
-        store_memory_range(config.rollup.rx_buffer, "    ", output)
+        store_memory_range(config.cmio.rx_buffer, "    ", output)
         output("    tx_buffer = ")
-        store_memory_range(config.rollup.tx_buffer, "    ", output)
-        output("    input_metadata = ")
-        store_memory_range(config.rollup.input_metadata, "    ", output)
-        output("    voucher_hashes = ")
-        store_memory_range(config.rollup.voucher_hashes, "    ", output)
-        output("    notice_hashes = ")
-        store_memory_range(config.rollup.notice_hashes, "    ", output)
+        store_memory_range(config.cmio.tx_buffer, "    ", output)
         output("  },\n")
     end
     output("  uarch = {\n")
@@ -1448,7 +1383,7 @@ else
             yield_automatic = htif_yield_automatic,
             yield_manual = htif_yield_manual,
         },
-        rollup = rollup,
+        cmio = cmio,
         uarch = uarch,
         flash_drive = {},
     }
@@ -1553,15 +1488,19 @@ if type(store_config) == "string" then
     store_config:close()
 end
 
-local htif_yield_reason = {
+local htif_yield_reason_guest_to_host = {
     [cartesi.machine.HTIF_YIELD_REASON_PROGRESS] = "progress",
     [cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED] = "rx-accepted",
     [cartesi.machine.HTIF_YIELD_REASON_RX_REJECTED] = "rx-rejected",
-    [cartesi.machine.HTIF_YIELD_REASON_TX_VOUCHER] = "tx-voucher",
-    [cartesi.machine.HTIF_YIELD_REASON_TX_NOTICE] = "tx-notice",
+    [cartesi.machine.HTIF_YIELD_REASON_TX_OUTPUT] = "tx-output",
     [cartesi.machine.HTIF_YIELD_REASON_TX_REPORT] = "tx-report",
     [cartesi.machine.HTIF_YIELD_REASON_TX_EXCEPTION] = "tx-exception",
 }
+
+-- local htif_yield_reason_host_to_guest = {
+--     [cartesi.machine.HTIF_YIELD_REASON_ADVANCE_STATE] = "advance-state",
+--     [cartesi.machine.HTIF_YIELD_REASON_INSPECT_STATE] = "inspect-state",
+-- }
 
 local htif_yield_mode = {
     [cartesi.machine.HTIF_YIELD_MANUAL] = "Manual",
@@ -1581,33 +1520,41 @@ local function ilog2(value)
     return value
 end
 
-local function check_rollup_memory_range_config(range, name)
-    assert(range, string.format("rollup range %s must be defined", name))
-    assert(not range.shared, string.format("rollup range %s cannot be shared", name))
+local function check_cmio_memory_range_config(range, name)
+    assert(range, string.format("cmio range %s must be defined", name))
+    assert(not range.shared, string.format("cmio range %s cannot be shared", name))
     assert(
         is_power_of_two(range.length),
-        string.format("rollup range %s length not a power of two (%u)", name, range.length)
+        string.format("cmio range %s length not a power of two (%u)", name, range.length)
     )
     local log = ilog2(range.length)
     local aligned_start = (range.start >> log) << log
     assert(
         aligned_start == range.start,
-        string.format("rollup range %s start not aligned to its power of two size", name)
+        string.format("cmio range %s start not aligned to its power of two size", name)
     )
     range.image_filename = nil
 end
 
-local function check_rollup_htif_config(htif)
-    assert(not htif.console_getchar, "console getchar must be disabled for rollup")
-    assert(htif.yield_manual, "yield manual must be enabled for rollup")
-    assert(htif.yield_automatic, "yield automatic must be enabled for rollup")
+local function check_cmio_htif_config(htif)
+    assert(not htif.console_getchar, "console getchar must be disabled for cmio")
+    assert(htif.yield_manual, "yield manual must be enabled for cmio")
+    assert(htif.yield_automatic, "yield automatic must be enabled for cmio")
+end
+
+local function set_yield_data(machine, reason, data)
+    local m16 = (1 << 16) - 1
+    local m32 = (1 << 32) - 1
+    machine:write_htif_fromhost_data((reason & (m16 << 32)) | (data & m32))
 end
 
 local function get_yield(machine)
+    local m16 = (1 << 16) - 1
+    local m32 = (1 << 32) - 1
     local cmd = machine:read_htif_tohost_cmd()
     local data = machine:read_htif_tohost_data()
     local reason = data >> 32
-    return cmd, reason, data
+    return cmd, reason & m16, data & m32
 end
 
 local function get_and_print_yield(machine, htif)
@@ -1616,26 +1563,11 @@ local function get_and_print_yield(machine, htif)
         stderr("Progress: %6.2f" .. (htif.console_getchar and "\n" or "\r"), data / 10)
     else
         local cmd_str = htif_yield_mode[cmd] or "Unknown"
-        local reason_str = htif_yield_reason[reason] or "unknown"
+        local reason_str = htif_yield_reason_guest_to_host[reason] or "unknown"
         stderr("\n%s yield %s (0x%06x data)\n", cmd_str, reason_str, data)
         stderr("Cycles: %u\n", machine:read_mcycle())
     end
     return cmd, reason, data
-end
-
-local function save_rollup_hashes(machine, range, filename)
-    stderr("Storing %s\n", filename)
-    local hash_len = 32
-    local f = assert(io.open(filename, "wb"))
-    local zeros = string.rep("\0", hash_len)
-    local offset = 0
-    while offset < range.length do
-        local hash = machine:read_memory(range.start + offset, 32)
-        if hash == zeros then break end
-        assert(f:write(hash))
-        offset = offset + hash_len
-    end
-    f:close()
 end
 
 local function instantiate_filename(pattern, values)
@@ -1646,10 +1578,25 @@ local function instantiate_filename(pattern, values)
     return (string.gsub(pattern, "\0", "%"))
 end
 
-local function save_rollup_voucher_and_notice_hashes(machine, config, advance)
-    local values = { e = advance.epoch_index, i = advance.next_input_index - 1 }
-    save_rollup_hashes(machine, config.voucher_hashes, instantiate_filename(advance.voucher_hashes, values))
-    save_rollup_hashes(machine, config.notice_hashes, instantiate_filename(advance.notice_hashes, values))
+local function save_cmio_state_with_format(machine, config, advance, length, format, index)
+    local values = { e = advance.epoch_index, i = advance.next_input_index - 1, o = index }
+    local name = instantiate_filename(format, values)
+    stderr("Storing %s\n", name)
+    local f = assert(io.open(name, "wb"))
+    assert(f:write(machine:read_memory(config.start, length)))
+    f:close()
+end
+
+local function save_cmio_report(machine, config, advance, length)
+    return save_cmio_state_with_format(machine, config, advance, length, advance.report, advance.report_index)
+end
+
+local function save_cmio_output(machine, config, advance, length)
+    return save_cmio_state_with_format(machine, config, advance, length, advance.output, advance.output_index)
+end
+
+local function save_cmio_outputs_root_hash(machine, config, advance, length)
+    return save_cmio_state_with_format(machine, config, advance, length, advance.outputs_root_hash)
 end
 
 local function load_memory_range(machine, config, filename)
@@ -1658,79 +1605,30 @@ local function load_memory_range(machine, config, filename)
     local s = assert(f:read("*a"))
     f:close()
     machine:write_memory(config.start, s)
+    return #s
 end
 
-local function load_rollup_input_and_metadata(machine, config, advance)
+local function load_cmio_input(machine, config, advance)
     local values = { e = advance.epoch_index, i = advance.next_input_index }
-    machine:replace_memory_range(config.input_metadata) -- clear
-    load_memory_range(machine, config.input_metadata, instantiate_filename(advance.input_metadata, values))
     machine:replace_memory_range(config.rx_buffer) -- clear
-    load_memory_range(machine, config.rx_buffer, instantiate_filename(advance.input, values))
-    machine:replace_memory_range(config.voucher_hashes) -- clear
-    machine:replace_memory_range(config.notice_hashes) -- clear
+    return load_memory_range(machine, config.rx_buffer, instantiate_filename(advance.input, values))
 end
 
-local function load_rollup_query(machine, config, inspect)
+local function load_cmio_query(machine, config, inspect)
     machine:replace_memory_range(config.rx_buffer) -- clear
-    load_memory_range(machine, config.rx_buffer, inspect.query) -- load query payload
+    return load_memory_range(machine, config.rx_buffer, inspect.query) -- load query payload
 end
 
-local function save_rollup_advance_state_voucher(machine, config, advance)
-    local values = { e = advance.epoch_index, i = advance.next_input_index - 1, o = advance.voucher_index }
-    local name = instantiate_filename(advance.voucher, values)
-    stderr("Storing %s\n", name)
-    local f = assert(io.open(name, "wb"))
-    -- skip address and offset to reach payload length
-    local length = string.unpack(">I8", machine:read_memory(config.start + 3 * 32 - 8, 8))
-    -- add address, offset, and payload length to amount to be read
-    length = length + 3 * 32
-    assert(f:write(machine:read_memory(config.start, length)))
-    f:close()
+local function dump_exception(machine, config, length)
+    local payload = machine:read_memory(config.start, length)
+    stderr("cmio exception with payload: %q\n", payload)
 end
 
-local function save_rollup_advance_state_notice(machine, config, advance)
-    local values = { e = advance.epoch_index, i = advance.next_input_index - 1, o = advance.notice_index }
-    local name = instantiate_filename(advance.notice, values)
-    stderr("Storing %s\n", name)
-    local f = assert(io.open(name, "wb"))
-    -- skip offset to reach payload length
-    local length = string.unpack(">I8", machine:read_memory(config.start + 2 * 32 - 8, 8))
-    -- add offset and payload length to amount to be read
-    length = length + 2 * 32
-    assert(f:write(machine:read_memory(config.start, length)))
-    f:close()
-end
-
-local function dump_exception(machine, config)
-    -- skip offset to reach payload length
-    local length = string.unpack(">I8", machine:read_memory(config.start + 2 * 32 - 8, 8))
-    -- add offset and payload length to amount to be read
-    local payload = machine:read_memory(config.start + 2 * 32, length)
-    stderr("Rollup exception with payload: %q\n", payload)
-end
-
-local function save_rollup_advance_state_report(machine, config, advance)
-    local values = { e = advance.epoch_index, i = advance.next_input_index - 1, o = advance.report_index }
-    local name = instantiate_filename(advance.report, values)
-    stderr("Storing %s\n", name)
-    local f = assert(io.open(name, "wb"))
-    -- skip offset to reach payload length
-    local length = string.unpack(">I8", machine:read_memory(config.start + 2 * 32 - 8, 8))
-    -- add offset and payload length to amount to be read
-    length = length + 2 * 32
-    assert(f:write(machine:read_memory(config.start, length)))
-    f:close()
-end
-
-local function save_rollup_inspect_state_report(machine, config, inspect)
+local function save_cmio_inspect_state_report(machine, config, inspect, length)
     local values = { o = inspect.report_index }
     local name = instantiate_filename(inspect.report, values)
     stderr("Storing %s\n", name)
     local f = assert(io.open(name, "wb"))
-    -- skip offset to reach payload length
-    local length = string.unpack(">I8", machine:read_memory(config.start + 2 * 32 - 8, 8))
-    -- add offset and payload length to amount to be read
-    length = length + 2 * 32
     assert(f:write(machine:read_memory(config.start, length)))
     f:close()
 end
@@ -1766,15 +1664,12 @@ if gdb_address then
 end
 if config.htif.console_getchar then stderr("Running in interactive mode!\n") end
 if store_config == stderr then store_machine_config(config, stderr) end
-if rollup_advance or rollup_inspect then
-    check_rollup_htif_config(config.htif)
-    assert(config.rollup, "rollup device must be present")
-    assert(remote_address, "rollup requires --remote-address for snapshot/rollback")
-    check_rollup_memory_range_config(config.rollup.tx_buffer, "tx-buffer")
-    check_rollup_memory_range_config(config.rollup.rx_buffer, "rx-buffer")
-    check_rollup_memory_range_config(config.rollup.input_metadata, "input-metadata")
-    check_rollup_memory_range_config(config.rollup.voucher_hashes, "voucher-hashes")
-    check_rollup_memory_range_config(config.rollup.notice_hashes, "notice-hashes")
+if cmio_advance or cmio_inspect then
+    check_cmio_htif_config(config.htif)
+    assert(config.cmio, "cmio device must be present")
+    assert(remote_address, "cmio requires --remote-address for snapshot/rollback")
+    check_cmio_memory_range_config(config.cmio.tx_buffer, "tx-buffer")
+    check_cmio_memory_range_config(config.cmio.rx_buffer, "rx-buffer")
 end
 local cycles = machine:read_mcycle()
 if initial_hash then
@@ -1794,11 +1689,11 @@ end
 --   2) the machine halted, so iflags_H is set
 --   3) the machine yielded manual, so iflags_Y is set
 --   4) the machine yielded automatic, so iflags_X is set
--- if the user selected the rollup advance state, then at every yield manual we check the reason
+-- if the user selected the cmio advance state, then at every yield manual we check the reason
 -- if the reason is rx-rejected, we rollback, otherwise it must be rx-accepted.
 -- we then feed the next input, reset iflags_Y, snapshot, and resume the machine
--- the machine can now continue processing and may yield automatic to produce vouchers, notices, and reports we save
--- once all inputs for advance state have been consumed, we check if the user selected rollup inspect state
+-- the machine can now continue processing and may yield automatic to produce outputs and reports we save
+-- once all inputs for advance state have been consumed, we check if the user selected cmio inspect state
 -- if so, we feed the query, reset iflags_Y, and resume the machine
 -- the machine can now continue processing and may yield automatic to produce reports we save
 while math.ult(cycles, max_mcycle) do
@@ -1821,15 +1716,15 @@ while math.ult(cycles, max_mcycle) do
         break
     -- deal with yield manual
     elseif machine:read_iflags_Y() then
-        local _, reason = get_and_print_yield(machine, config.htif)
+        local _, reason, data = get_and_print_yield(machine, config.htif)
         -- there are advance state inputs to feed
         if reason == cartesi.machine.HTIF_YIELD_REASON_TX_EXCEPTION then
-            dump_exception(machine, config.rollup.tx_buffer)
+            dump_exception(machine, config.cmio.tx_buffer, data)
             exit_code = 1
-        elseif rollup_advance and rollup_advance.next_input_index < rollup_advance.input_index_end then
+        elseif cmio_advance and cmio_advance.next_input_index < cmio_advance.input_index_end then
             -- save only if we have already run an input
-            if rollup_advance.next_input_index > rollup_advance.input_index_begin then
-                save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup_advance)
+            if cmio_advance.next_input_index > cmio_advance.input_index_begin then
+                save_cmio_outputs_root_hash(machine, config.cmio.tx_buffer, cmio_advance, 32)
             end
             if reason == cartesi.machine.HTIF_YIELD_REASON_RX_REJECTED then
                 machine:rollback()
@@ -1837,54 +1732,50 @@ while math.ult(cycles, max_mcycle) do
             else
                 assert(reason == cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED, "invalid manual yield reason")
             end
-            stderr("\nEpoch %d before input %d\n", rollup_advance.epoch_index, rollup_advance.next_input_index)
-            if rollup_advance.hashes then print_root_hash(machine) end
+            stderr("\nEpoch %d before input %d\n", cmio_advance.epoch_index, cmio_advance.next_input_index)
+            if cmio_advance.hashes then print_root_hash(machine) end
             machine:snapshot()
-            load_rollup_input_and_metadata(machine, config.rollup, rollup_advance)
-            if rollup_advance.hashes then print_root_hash(machine) end
+            local input_length = load_cmio_input(machine, config.cmio, cmio_advance)
+            if cmio_advance.hashes then print_root_hash(machine) end
             machine:reset_iflags_Y()
-            machine:write_htif_fromhost_data(0) -- tell machine it is an rollup_advance state, but this is default
-            rollup_advance.voucher_index = 0
-            rollup_advance.notice_index = 0
-            rollup_advance.report_index = 0
-            rollup_advance.next_input_index = rollup_advance.next_input_index + 1
+            set_yield_data(machine, cartesi.machine.HTIF_YIELD_REASON_ADVANCE_STATE, input_length)
+            cmio_advance.output_index = 0
+            cmio_advance.report_index = 0
+            cmio_advance.next_input_index = cmio_advance.next_input_index + 1
         else
             -- there are outputs of a prevous advance state to save
-            if rollup_advance and rollup_advance.next_input_index > rollup_advance.input_index_begin then
-                save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup_advance)
+            if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
+                save_cmio_outputs_root_hash(machine, config.cmio.tx_buffer, cmio_advance, 32)
             end
             -- there is an inspect state query to feed
-            if rollup_inspect and rollup_inspect.query then
+            if cmio_inspect and cmio_inspect.query then
                 stderr("\nBefore query\n")
-                load_rollup_query(machine, config.rollup, rollup_inspect)
+                local input_length = load_cmio_query(machine, config.cmio, cmio_inspect)
                 machine:reset_iflags_Y()
-                machine:write_htif_fromhost_data(1) -- tell machine it is an inspect state
-                rollup_inspect.report_index = 0
-                rollup_inspect.query = nil
-                rollup_advance = nil
+                set_yield_data(machine, cartesi.machine.HTIF_YIELD_REASON_INSPECT_STATE, input_length)
+                cmio_inspect.report_index = 0
+                cmio_inspect.query = nil
+                cmio_advance = nil
             end
         end
     -- deal with yield automatic
     elseif machine:read_iflags_X() then
-        local _, reason = get_and_print_yield(machine, config.htif)
+        local _, reason, length = get_and_print_yield(machine, config.htif)
         -- we have fed an advance state input
-        if rollup_advance and rollup_advance.next_input_index > rollup_advance.input_index_begin then
-            if reason == cartesi.machine.HTIF_YIELD_REASON_TX_VOUCHER then
-                save_rollup_advance_state_voucher(machine, config.rollup.tx_buffer, rollup_advance)
-                rollup_advance.voucher_index = rollup_advance.voucher_index + 1
-            elseif reason == cartesi.machine.HTIF_YIELD_REASON_TX_NOTICE then
-                save_rollup_advance_state_notice(machine, config.rollup.tx_buffer, rollup_advance)
-                rollup_advance.notice_index = rollup_advance.notice_index + 1
+        if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
+            if reason == cartesi.machine.HTIF_YIELD_REASON_TX_OUTPUT then
+                save_cmio_output(machine, config.cmio.tx_buffer, cmio_advance, length)
+                cmio_advance.output_index = cmio_advance.output_index + 1
             elseif reason == cartesi.machine.HTIF_YIELD_REASON_TX_REPORT then
-                save_rollup_advance_state_report(machine, config.rollup.tx_buffer, rollup_advance)
-                rollup_advance.report_index = rollup_advance.report_index + 1
+                save_cmio_report(machine, config.cmio.tx_buffer, cmio_advance, length)
+                cmio_advance.report_index = cmio_advance.report_index + 1
             end
         -- ignore other reasons
         -- we have feed the inspect state query
-        elseif rollup_inspect and not rollup_inspect.query then
+        elseif cmio_inspect and not cmio_inspect.query then
             if reason == cartesi.machine.HTIF_YIELD_REASON_TX_REPORT then
-                save_rollup_inspect_state_report(machine, config.rollup.tx_buffer, rollup_inspect)
-                rollup_inspect.report_index = rollup_inspect.report_index + 1
+                save_cmio_inspect_state_report(machine, config.cmio.tx_buffer, cmio_inspect, length)
+                cmio_inspect.report_index = cmio_inspect.report_index + 1
             end
             -- ignore other reasons
         end

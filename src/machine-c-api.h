@@ -230,15 +230,12 @@ typedef struct {          // NOLINT(modernize-use-using)
     bool yield_automatic; ///< Make yield automatic available?
 } cm_htif_config;
 
-/// \brief Rollup state configuration
+/// \brief Cmio state configuration
 typedef struct {                           // NOLINT(modernize-use-using)
     bool has_value;                        ///< Represents whether the rest of the struct have been filled
     cm_memory_range_config rx_buffer;      ///< RX buffer memory range
     cm_memory_range_config tx_buffer;      ///< TX buffer memory range
-    cm_memory_range_config input_metadata; ///< Input metadata memory range
-    cm_memory_range_config voucher_hashes; ///< Voucher hashes memory range
-    cm_memory_range_config notice_hashes;  ///< Notice hashes memory range
-} cm_rollup_config;
+} cm_cmio_config;
 
 /// \brief microarchitecture RAM configuration
 typedef struct {                // NOLINT(modernize-use-using)
@@ -268,7 +265,7 @@ typedef struct { // NOLINT(modernize-use-using)
     cm_tlb_config tlb;
     cm_clint_config clint;
     cm_htif_config htif;
-    cm_rollup_config rollup;
+    cm_cmio_config cmio;
     cm_uarch_config uarch;
 } cm_machine_config;
 

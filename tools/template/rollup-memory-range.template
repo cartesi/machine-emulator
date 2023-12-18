@@ -1,4 +1,0 @@
-#!/bin/sh
-export LUA_PATH_5_4="ARG_LUA_PATH;${LUA_PATH_5_4:-;}"
-export LUA_CPATH_5_4="ARG_LUA_CPATH;${LUA_CPATH_5_4:-;}"
-lua5.4 "ARG_LUA_RUNTIME_PATH/rollup-memory-range.lua" "$@"

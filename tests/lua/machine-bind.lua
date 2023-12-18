@@ -429,13 +429,10 @@ local function test_config(config)
     for _, f in ipairs(config.flash_drive) do
         test_config_memory_range(f)
     end
-    local rollup = config.rollup
-    if config.rollup then
-        test_config_memory_range(rollup.rx_buffer)
-        test_config_memory_range(rollup.tx_buffer)
-        test_config_memory_range(rollup.input_metadata)
-        test_config_memory_range(rollup.voucher_hashes)
-        test_config_memory_range(rollup.notice_hashes)
+    local cmio = config.cmio
+    if config.cmio then
+        test_config_memory_range(cmio.rx_buffer)
+        test_config_memory_range(cmio.tx_buffer)
     end
 end
 

@@ -16,9 +16,9 @@
 
 #include "htif_util.h"
 
-// This test will fetch the rollup buffers from the PMA entries; check that
-// `rx_buffer` and `input_metadata` are filled with a byte patern; then write a
-// byte pattern into `tx_buffer`, `voucher_hashes` and `notice_hashes`.
+// This test will fetch the cmio buffers from the PMA entries; check that
+// `rx_buffer` is filled with a byte patern; then write a byte pattern into
+// `tx_buffer`.
 
 /** from: https://www.cartesi.io/en/docs/machine/target/architecture/
  *
@@ -44,27 +44,12 @@
 .align 2;
 _start:
     li a2, 0x0123456789abcdef;
-    li a0, PMA_START_DID_CONST(PMA_ROLLUP_RX_BUFFER_DID_DEF);
+    li a0, PMA_START_DID_CONST(PMA_CMIO_RX_BUFFER_DID_DEF);
     jal ra, find_pma_by_did;
     jal ra, check_pma_with_a2;
 
     li a2, 0x0123456789abcdef;
-    li a0, PMA_START_DID_CONST(PMA_ROLLUP_INPUT_METADATA_DID_DEF);
-    jal ra, find_pma_by_did;
-    jal ra, check_pma_with_a2;
-
-    li a2, 0x0123456789abcdef;
-    li a0, PMA_START_DID_CONST(PMA_ROLLUP_TX_BUFFER_DID_DEF);
-    jal ra, find_pma_by_did;
-    jal ra, fill_pma_with_a2;
-
-    li a2, 0x0123456789abcdef;
-    li a0, PMA_START_DID_CONST(PMA_ROLLUP_VOUCHER_HASHES_DID_DEF);
-    jal ra, find_pma_by_did;
-    jal ra, fill_pma_with_a2;
-
-    li a2, 0x0123456789abcdef;
-    li a0, PMA_START_DID_CONST(PMA_ROLLUP_NOTICE_HASHES_DID_DEF);
+    li a0, PMA_START_DID_CONST(PMA_CMIO_TX_BUFFER_DID_DEF);
     jal ra, find_pma_by_did;
     jal ra, fill_pma_with_a2;
 

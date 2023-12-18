@@ -998,7 +998,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, rollup_config &value, const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, cmio_config &value, const std::string &path) {
     if (!contains(j, key)) {
         return;
     }
@@ -1006,19 +1006,16 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, rollup_config &valu
     const auto new_path = path + to_string(key) + "/";
     ju_get_field(jconfig, "rx_buffer"s, value.rx_buffer, new_path);
     ju_get_field(jconfig, "tx_buffer"s, value.tx_buffer, new_path);
-    ju_get_field(jconfig, "input_metadata"s, value.input_metadata, new_path);
-    ju_get_field(jconfig, "voucher_hashes"s, value.voucher_hashes, new_path);
-    ju_get_field(jconfig, "notice_hashes"s, value.notice_hashes, new_path);
 }
 
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, rollup_config &value,
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, cmio_config &value,
     const std::string &path);
 
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, rollup_config &value,
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, cmio_config &value,
     const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, std::optional<rollup_config> &optional,
+void ju_get_opt_field(const nlohmann::json &j, const K &key, std::optional<cmio_config> &optional,
     const std::string &path) {
     optional.reset();
     if (!contains(j, key)) {
@@ -1030,16 +1027,13 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, std::optional<rollu
     auto &value = optional.value();
     ju_get_field(jconfig, "rx_buffer"s, value.rx_buffer, new_path);
     ju_get_field(jconfig, "tx_buffer"s, value.tx_buffer, new_path);
-    ju_get_field(jconfig, "input_metadata"s, value.input_metadata, new_path);
-    ju_get_field(jconfig, "voucher_hashes"s, value.voucher_hashes, new_path);
-    ju_get_field(jconfig, "notice_hashes"s, value.notice_hashes, new_path);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
-    std::optional<rollup_config> &value, const std::string &path);
+    std::optional<cmio_config> &value, const std::string &path);
 
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
-    std::optional<rollup_config> &value, const std::string &path);
+    std::optional<cmio_config> &value, const std::string &path);
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_processor_config &value, const std::string &path) {
@@ -1109,7 +1103,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_config &val
     ju_get_opt_field(config, "plic"s, value.plic, new_path);
     ju_get_opt_field(config, "htif"s, value.htif, new_path);
     ju_get_opt_field(config, "uarch"s, value.uarch, new_path);
-    ju_get_opt_field(config, "rollup"s, value.rollup, new_path);
+    ju_get_opt_field(config, "cmio"s, value.cmio, new_path);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, machine_config &value,
@@ -1304,13 +1298,10 @@ void to_json(nlohmann::json &j, const htif_config &config) {
     };
 }
 
-void to_json(nlohmann::json &j, const rollup_config &config) {
+void to_json(nlohmann::json &j, const cmio_config &config) {
     j = nlohmann::json{
         {"rx_buffer", config.rx_buffer},
         {"tx_buffer", config.tx_buffer},
-        {"input_metadata", config.input_metadata},
-        {"voucher_hashes", config.voucher_hashes},
-        {"notice_hashes", config.notice_hashes},
     };
 }
 
@@ -1348,8 +1339,8 @@ void to_json(nlohmann::json &j, const machine_config &config) {
         {"htif", config.htif},
         {"uarch", config.uarch},
     };
-    if (config.rollup.has_value()) {
-        j["rollup"] = config.rollup.value();
+    if (config.cmio.has_value()) {
+        j["cmio"] = config.cmio.value();
     }
 }
 

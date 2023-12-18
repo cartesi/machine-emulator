@@ -109,21 +109,18 @@ enum PMA_ISTART_masks : uint64_t {
 
 /// \brief PMA device ids
 enum class PMA_ISTART_DID {
-    memory = PMA_MEMORY_DID_DEF,                               ///< DID for memory
-    shadow_state = PMA_SHADOW_STATE_DID_DEF,                   ///< DID for shadow device
-    shadow_pmas = PMA_SHADOW_PMAS_DID_DEF,                     ///< DID for shadow pma array device
-    shadow_TLB = PMA_SHADOW_TLB_DID_DEF,                       ///< DID for shadow TLB device
-    flash_drive = PMA_FLASH_DRIVE_DID_DEF,                     ///< DID for drive device
-    CLINT = PMA_CLINT_DID_DEF,                                 ///< DID for CLINT device
-    PLIC = PMA_PLIC_DID_DEF,                                   ///< DID for PLIC device
-    HTIF = PMA_HTIF_DID_DEF,                                   ///< DID for HTIF device
-    VIRTIO = PMA_VIRTIO_DID_DEF,                               ///< DID for VirtIO devices
-    rollup_rx_buffer = PMA_ROLLUP_RX_BUFFER_DID_DEF,           ///< DID for rollup receive buffer
-    rollup_tx_buffer = PMA_ROLLUP_TX_BUFFER_DID_DEF,           ///< DID for rollup transmit buffer
-    rollup_input_metadata = PMA_ROLLUP_INPUT_METADATA_DID_DEF, ///< DID for rollup input metadata memory range
-    rollup_voucher_hashes = PMA_ROLLUP_VOUCHER_HASHES_DID_DEF, ///< DID for rollup voucher hashes memory range
-    rollup_notice_hashes = PMA_ROLLUP_NOTICE_HASHES_DID_DEF,   ///< DID for rollup notice hashes memory range
-    shadow_uarch = PMA_SHADOW_UARCH_STATE_DID_DEF,             ///< DID for shadow uarch state device
+    memory = PMA_MEMORY_DID_DEF,                   ///< DID for memory
+    shadow_state = PMA_SHADOW_STATE_DID_DEF,       ///< DID for shadow device
+    shadow_pmas = PMA_SHADOW_PMAS_DID_DEF,         ///< DID for shadow pma array device
+    shadow_TLB = PMA_SHADOW_TLB_DID_DEF,           ///< DID for shadow TLB device
+    flash_drive = PMA_FLASH_DRIVE_DID_DEF,         ///< DID for drive device
+    CLINT = PMA_CLINT_DID_DEF,                     ///< DID for CLINT device
+    PLIC = PMA_PLIC_DID_DEF,                       ///< DID for PLIC device
+    HTIF = PMA_HTIF_DID_DEF,                       ///< DID for HTIF device
+    VIRTIO = PMA_VIRTIO_DID_DEF,                   ///< DID for VirtIO devices
+    cmio_rx_buffer = PMA_CMIO_RX_BUFFER_DID_DEF,   ///< DID for cmio receive buffer
+    cmio_tx_buffer = PMA_CMIO_TX_BUFFER_DID_DEF,   ///< DID for cmio transmit buffer
+    shadow_uarch = PMA_SHADOW_UARCH_STATE_DID_DEF, ///< DID for shadow uarch state device
 };
 
 } // namespace cartesi

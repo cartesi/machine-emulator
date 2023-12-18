@@ -26,18 +26,17 @@ local config_base = {
         marchid = -1,
     },
     ram = {
-        -- This test will fetch the rollup buffers from the PMA entries; check
-        -- that `rx_buffer` and `input_metadata` are filled with a byte patern;
-        -- then write a byte pattern into `tx_buffer`, `voucher_hashes` and
-        -- `notice_hashes`.
-        image_filename = test_util.tests_path .. "htif_rollup.bin",
+        -- This test will fetch the cmio buffers from the PMA entries; check
+        -- that `rx_buffer` is filled with a byte patern;
+        -- then write a byte pattern into `tx_buffer` to be checked inside.
+        image_filename = test_util.tests_path .. "htif_cmio.bin",
         length = 0x4000000,
     },
     htif = {
         yield_automatic = true,
         yield_manual = true,
     },
-    rollup = {
+    cmio = {
         rx_buffer = {
             start = 0x60000000,
             length = 0x1000,
@@ -48,51 +47,27 @@ local config_base = {
             length = 0x1000,
             shared = false,
         },
-        input_metadata = {
-            start = 0x60002000,
-            length = 0x1000,
-            shared = false,
-        },
-        voucher_hashes = {
-            start = 0x60003000,
-            length = 0x1000,
-            shared = false,
-        },
-        notice_hashes = {
-            start = 0x60004000,
-            length = 0x1000,
-            shared = false,
-        },
     },
 }
 
 local function stderr(...) io.stderr:write(string.format(...)) end
 
-local final_mcycle = 8977
+local final_mcycle = 3677
 local exit_payload = 0
-
-local function check_buffer(machine, pattern, buffer)
-    local mem = string.rep(pattern, buffer.length / 8)
-    assert(mem == machine:read_memory(buffer.start, buffer.length))
-end
 
 local function test(config)
     local pattern = "\xef\xcd\xab\x89\x67\x45\x23\x01"
     local machine <close> = cartesi.machine(config)
 
     -- fill input with `pattern`
-    local rx = config.rollup.rx_buffer
+    local rx = config.cmio.rx_buffer
     machine:write_memory(rx.start, string.rep(pattern, rx.length / 8), rx.length)
 
-    -- fill input_metadata with `pattern`
-    local im = config.rollup.input_metadata
-    machine:write_memory(im.start, string.rep(pattern, im.length / 8), im.length)
     machine:run(math.maxinteger)
 
     -- check that buffers got filled in with `pattern`
-    check_buffer(machine, pattern, config.rollup.tx_buffer)
-    check_buffer(machine, pattern, config.rollup.voucher_hashes)
-    check_buffer(machine, pattern, config.rollup.notice_hashes)
+    local tx = config.cmio.tx_buffer
+    assert(string.rep(pattern, tx.length / 8) == machine:read_memory(tx.start, tx.length))
 
     assert(machine:read_iflags_H())
 
@@ -105,5 +80,5 @@ local function test(config)
     stderr("    passed\n")
 end
 
-stderr("testing rollup\n")
+stderr("testing cmio\n")
 test(config_base)

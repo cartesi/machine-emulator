@@ -444,7 +444,7 @@ local dtb_image_filename = nil
 local bootargs = "quiet earlycon=sbi console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"
 local init_splash = true
 local append_bootargs = ""
-local default_init = "USER=dapp\n"
+local default_init = "busybox id dapp >/dev/null 2>&1 && USER=dapp\n"
 local append_init = ""
 local append_entrypoint = ""
 local rollup = {

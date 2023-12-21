@@ -75,7 +75,7 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
         // We add emulator version, so can inspect it from inside the machine by reading the FDT
         { // cartesi-machine
             fdt.begin_node("cartesi-machine");
-            fdt.prop_string("version", CM_VERSION);
+            fdt.prop_string("version", CM_VERSION_MAJMIN);
             fdt.prop_string_data("init", c.dtb.init);
             fdt.prop_string_data("entrypoint", c.dtb.entrypoint);
             fdt.end_node();

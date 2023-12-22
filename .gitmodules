@@ -1,3 +1,9 @@
 [submodule "lib/grpc-interfaces"]
 	path = lib/grpc-interfaces
 	url = ../grpc-interfaces.git
+[submodule "tests/riscv-tests"]
+	path = third-party/riscv-tests
+	url = ../riscv-tests.git
+[submodule "tests/riscv-arch-test"]
+	path = third-party/riscv-arch-test
+	url = ../riscv-arch-test.git

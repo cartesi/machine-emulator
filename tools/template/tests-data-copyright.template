@@ -1,0 +1,131 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: cartesi-machine-tests-data
+Source: https://github.com/cartesi/machine-emulator
+
+Files: /usr/share/cartesi-machine/tests/data/machine/access.*
+       /usr/share/cartesi-machine/tests/data/machine/amo.*
+       /usr/share/cartesi-machine/tests/data/machine/bootstrap.*
+       /usr/share/cartesi-machine/tests/data/machine/clint_ops.*
+       /usr/share/cartesi-machine/tests/data/machine/compressed.*
+       /usr/share/cartesi-machine/tests/data/machine/csr_counters.*
+       /usr/share/cartesi-machine/tests/data/machine/csr_semantics.*
+       /usr/share/cartesi-machine/tests/data/machine/dont_write_x0.*
+       /usr/share/cartesi-machine/tests/data/machine/ebreak.*
+       /usr/share/cartesi-machine/tests/data/machine/f*ary_d.*
+       /usr/share/cartesi-machine/tests/data/machine/f*ary_s.*
+       /usr/share/cartesi-machine/tests/data/machine/fclass.*
+       /usr/share/cartesi-machine/tests/data/machine/fcmp.*
+       /usr/share/cartesi-machine/tests/data/machine/fcvt.*
+       /usr/share/cartesi-machine/tests/data/machine/fternary_d.*
+       /usr/share/cartesi-machine/tests/data/machine/fternary_s.*
+       /usr/share/cartesi-machine/tests/data/machine/funary.*
+       /usr/share/cartesi-machine/tests/data/machine/htif_console.*
+       /usr/share/cartesi-machine/tests/data/machine/htif_invalid_ops.*
+       /usr/share/cartesi-machine/tests/data/machine/htif_rollup.*
+       /usr/share/cartesi-machine/tests/data/machine/htif_yield.*
+       /usr/share/cartesi-machine/tests/data/machine/illegal_insn.*
+       /usr/share/cartesi-machine/tests/data/machine/interrupts.*
+       /usr/share/cartesi-machine/tests/data/machine/lrsc_semantics.*
+       /usr/share/cartesi-machine/tests/data/machine/mcycle_overflow.*
+       /usr/share/cartesi-machine/tests/data/machine/mcycle_write.*
+       /usr/share/cartesi-machine/tests/data/machine/mtime_interrupt.*
+       /usr/share/cartesi-machine/tests/data/machine/pte_reserved_exception.*
+       /usr/share/cartesi-machine/tests/data/machine/sd_pma_overflow.*
+       /usr/share/cartesi-machine/tests/data/machine/shadow_ops.*
+       /usr/share/cartesi-machine/tests/data/machine/translate_vaddr.*
+       /usr/share/cartesi-machine/tests/data/machine/version_check.*
+       /usr/share/cartesi-machine/tests/data/machine/xpie_exceptions.*
+Copyright: Cartesi and individual authors (see AUTHORS)
+Source: https://github.com/cartesi/machine-emulator
+License: Apache-2.0
+
+Files: /usr/share/cartesi-machine/tests/data/machine/rv64*
+       /usr/share/cartesi-machine/tests/data/uarch/rv64*
+Copyright: 2012-2015, The Regents of the University of California (Regents).
+Source: https://github.com/cartesi/riscv-tests
+License: BSD-3-Clause-Regents
+
+Files: /usr/share/cartesi-machine/tests/data/uarch-riscv-arch-test/*
+Copyright: 2020. RISC-V International.
+Source: https://github.com/cartesi/riscv-arch-test
+License: BSD-3-Clause
+
+Files: /usr/share/cartesi-machine/tests/data/images/linux-6.5.9-ctsi-1-v0.19.1.bin
+Copyright: Various authors, see below
+Source: https://github.com/cartesi/linux/
+License: GPL-2.0-only
+
+Files: /usr/share/cartesi-machine/tests/data/images/rootfs-tools-v0.14.1.ext2
+Copyright: Various authors, see below
+Source: https://github.com/cartesi/machine-emulator-tools/
+License: Various, see below
+
+License: Apache-2.0
+ The full text of the Apache License Version 2.0 can be found in the
+ `/usr/share/common-licenses/Apache-2.0` file on Debian systems or online at
+ http://www.apache.org/licenses/LICENSE-2.0.
+
+License: BSD-3-Clause-Regents
+ Copyright (c) 2012-2015, The Regents of the University of California (Regents).
+ All Rights Reserved.
+ .
+ Redistribution and use in source and binary forms, with or without
+ modification, are permitted provided that the following conditions are met:
+ 1. Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+ 3. Neither the name of the Regents nor the
+    names of its contributors may be used to endorse or promote products
+    derived from this software without specific prior written permission.
+ .
+ IN NO EVENT SHALL REGENTS BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT,
+ SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING LOST PROFITS, ARISING
+ OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF REGENTS HAS
+ BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ .
+ REGENTS SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+ THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ PURPOSE. THE SOFTWARE AND ACCOMPANYING DOCUMENTATION, IF ANY, PROVIDED
+ HEREUNDER IS PROVIDED "AS IS". REGENTS HAS NO OBLIGATION TO PROVIDE
+ MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
+
+License: BSD-3-Clause-Regents
+ Copyright (c) 2020. RISC-V International. All rights reserved.
+ .
+ Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
+ .
+ 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+ 2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.
+ 3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
+ .
+ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+License: GPL-2.0-only
+ The Linux Kernel is free software; you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation; either version 2 of the License, or
+ (at your option) any later version.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU General Public License for more details.
+ .
+ On Debian and Ubuntu systems, the complete text of the GNU General Public
+ License version 2 can be found in "/usr/share/common-licenses/GPL-2".
+
+License: Various, see below
+ The Ubuntu filesystem includes software under various licenses. Each
+ software component retains its original license. For specific license
+ details of each component, refer to the corresponding documentation
+ and license files within the filesystem.
+ .
+ Ubuntu is a distribution of free software and complies with its own
+ licensing policies, which are designed to be consistent with the broader
+ free software community's standards. More information on the licenses
+ of software included in Ubuntu can be found at https://ubuntu.com/legal
+ or within the specific documentation and license files provided with
+ each software component in the filesystem.
+

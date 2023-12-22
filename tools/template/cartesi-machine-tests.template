@@ -1,5 +1,5 @@
 #!/bin/sh
 export LUA_PATH_5_4="ARG_LUA_PATH;${LUA_PATH_5_4:-;}"
 export LUA_CPATH_5_4="ARG_LUA_CPATH;${LUA_CPATH_5_4:-;}"
-export CARTESI_IMAGES_PATH="ARG_INSTALL_PATH"
+export CARTESI_TESTS_PATH="${CARTESI_TESTS_PATH:-ARG_TESTS_PATH}"
 lua5.4 "ARG_LUA_RUNTIME_PATH/cartesi-machine-tests.lua" "$@"

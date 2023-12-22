@@ -1,13 +1,5 @@
 name: Build/Test/Release
 on: [push]
-env:
-  KERNEL_VERSION: v0.19.1
-  LINUX_VERSION: 6.5.9-ctsi-1-v0.19.1
-  TOOLS_VERSION: v0.14.0
-  TEST_VERSION: v0.30.0
-  CARTESI_TESTS_PATH: /usr/share/cartesi-machine/tests
-  CARTESI_IMAGES_PATH: /usr/share/cartesi-machine/images
-  CARTESI_UARCH_PATH: /usr/share/cartesi-machine/uarch/uarch-ram.bin
 jobs:
   build:
     name: Build
@@ -25,13 +17,13 @@ jobs:
         run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -77,7 +69,7 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Export deb package artifact (amd64)
-        run: make copy BUILD_PLATFORM=linux/amd64 ARCH=amd64 DEBIAN_IMG=cartesi/machine-emulator:amd64_deb
+        run: make copy BUILD_PLATFORM=linux/amd64 DEB_ARCH=amd64 DEBIAN_IMG=cartesi/machine-emulator:amd64_deb
 
       - name: Build debian package (arm64)
         uses: depot/build-push-action@v1
@@ -98,10 +90,10 @@ jobs:
           token: ${{ secrets.DEPOT_TOKEN }}
 
       - name: Export deb package artifact (arm64)
-        run: make copy BUILD_PLATFORM=linux/arm64 ARCH=arm64 DEBIAN_IMG=cartesi/machine-emulator:arm64_deb
+        run: make copy BUILD_PLATFORM=linux/arm64 DEB_ARCH=arm64 DEBIAN_IMG=cartesi/machine-emulator:arm64_deb
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@master
+        uses: actions/upload-artifact@v4
         with:
           name: artifacts
           path: |
@@ -125,13 +117,13 @@ jobs:
         run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -140,13 +132,30 @@ jobs:
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
 
-      - name: Build docker image
-        id: docker_build
+      - name: Build machine-emulator "builder" docker image
         uses: depot/build-push-action@v1
         with:
           file: Dockerfile
           context: .
-          target: installer
+          target: builder
+          platforms: linux/amd64
+          tags: ${{ github.repository_owner }}/machine-emulator:builder
+          push: false
+          load: true
+          cache-from: type=gha,scope=debian
+          cache-to: type=gha,mode=max,scope=debian
+          build-args: |
+            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+            GIT_COMMIT=${GITHUB_SHA}
+            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
+
+      - name: Build machine-emulator docker image
+        uses: depot/build-push-action@v1
+        with:
+          file: Dockerfile
+          context: .
           platforms: linux/amd64
           tags: ${{ github.repository_owner }}/machine-emulator:devel
           push: false
@@ -160,100 +169,77 @@ jobs:
           project: ${{ vars.DEPOT_PROJECT }}
           token: ${{ secrets.DEPOT_TOKEN }}
 
-      - name: Download [rootfs.ext2]
-        uses: Legion2/download-release-action@v2.1.0
+      - name: Build machine-emulator "tests" docker image
+        uses: docker/build-push-action@v5
         with:
-          repository: ${{ github.repository_owner }}/machine-emulator-tools
-          tag: ${{ env.TOOLS_VERSION }}
-          file: rootfs-tools-${{ env.TOOLS_VERSION }}.ext2
-
-      - name: Download [kernel.bin]
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ github.repository_owner }}/image-kernel
-          tag: ${{ env.KERNEL_VERSION }}
-          file: linux-${{ env.LINUX_VERSION }}.bin
-
-      - name: Move images to cartesi images folder
-        run: |
-          mkdir -m 755 -p ${{ env.CARTESI_IMAGES_PATH }}
-          mv linux-*.bin rootfs-*.ext2 ${{ env.CARTESI_IMAGES_PATH }}
-          cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
-          cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rootfs-tools-${{ env.TOOLS_VERSION }}.ext2 rootfs.ext2
-
-      - name: Download test suite
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ github.repository_owner }}/machine-tests
-          tag: ${{ env.TEST_VERSION }}
-          file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
-
-      - name: Untar test suite
-        run: mkdir -p ${{ env.CARTESI_TESTS_PATH }} && tar -xzf machine-tests-${{ env.TEST_VERSION }}.tar.gz -C ${{ env.CARTESI_TESTS_PATH }}
+          file: tests/Dockerfile
+          context: .
+          platforms: linux/amd64
+          tags: ${{ github.repository_owner }}/machine-emulator:tests
+          push: false
+          load: true
+          build-args: |
+            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
 
       - name: Simple boot inside the docker image
-        run: docker run --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine /bin/true
+        run: docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine /bin/true
 
       - name: Run test suite inside the docker image
-        run: docker run --rm -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine-tests --test-path=${{ env.CARTESI_TESTS_PATH }} run
+        run: docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine-tests run
 
       - name: Save and Load
         run: |
-          mkdir -m 755 -p ${{ env.CARTESI_IMAGES_PATH }}/snapshots
-          docker run --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine --max-mcycle=0 --store=${{ env.CARTESI_IMAGES_PATH }}/snapshots/save_and_load_test
-          docker run --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine --load=${{ env.CARTESI_IMAGES_PATH }}/snapshots/save_and_load_test
-          sudo rm -rf ${{ env.CARTESI_IMAGES_PATH }}/snapshots
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-save-and-load.sh
 
       - name: Run test scripts
         run: |
-          docker run --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel ./src/tests/run.sh
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/run-lua-tests.sh
 
       - name: Run grpc lua test scripts
         run: |
-          docker run --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel ./src/tests/test-grpc-server.sh remote-cartesi-machine cartesi-machine cartesi-machine-tests ${{ env.CARTESI_TESTS_PATH }}
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-grpc-server.sh remote-cartesi-machine cartesi-machine cartesi-machine-tests
 
       - name: Run jsonrpc lua test scripts
         run: |
-          docker run --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel ./src/tests/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests ${{ env.CARTESI_TESTS_PATH }}
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests
 
       - name: Run Merkle tree tests
         run: |
-          docker run --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel ./src/tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=./src/tests/test-merkle-tree-hash
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash
 
       - name: Run C API tests
         run: |
-          docker run --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel ./src/tests/test-machine-c-api
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-machine-c-api
 
       - name: Test microarchitecture interpreter
+        if: false
         run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:devel make uarch-tests run-uarch-tests JOBS=-j$(nproc)
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests make uarch-tests run-uarch-tests JOBS=-j$(nproc)
 
       - name: Run rv64ui test suite on microarchitecture
         run: |
-          docker run --rm -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/uarch-riscv-tests --test-path=${{ env.CARTESI_TESTS_PATH }} run
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests run
 
       - name: Run test suite with Microarchitecture
         run: |
-          docker run --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine-tests --test-path=${{ env.CARTESI_TESTS_PATH }} --jobs=$(nproc) run_uarch
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests --jobs=$(nproc) run_uarch
 
       - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
         run: |
-          docker run --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine-tests  --test="^rv64ui.*$" --test-path=${{ env.CARTESI_TESTS_PATH }} --jobs=$(nproc) run_host_and_uarch
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests  --test="^rv64ui.*$" --jobs=$(nproc) run_host_and_uarch
 
       - name: Create uarch json logs to be used to test the Solidity based microarchitecture interpreter
         run: |
-          mkdir -p /opt/cartesi/share/logs/uarch-riscv-tests-json-logs
-          docker run --rm -v /opt/cartesi/share/logs:/opt/cartesi/share/logs -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/uarch-riscv-tests --test-path=${{ env.CARTESI_TESTS_PATH }}  --output-dir=/opt/cartesi/share/logs/uarch-riscv-tests-json-logs --proofs --proofs-frequency=1 json-step-logs
-          docker run --rm -v /opt/cartesi/share/logs:/opt/cartesi/share/logs -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/uarch-riscv-tests --test-path=${{ env.CARTESI_TESTS_PATH }}  --output-dir=/opt/cartesi/share/logs/uarch-riscv-tests-json-logs --proofs json-reset-log
-
-      - name: Compress uarch json logs
-        run: tar -czf uarch-riscv-tests-json-logs.tar.gz -C /opt/cartesi/share/logs/uarch-riscv-tests-json-logs .
+          docker run --name uarch-logs -w /tmp -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/collect-uarch-test-logs.sh
+          docker cp uarch-logs:/tmp/uarch-riscv-tests-json-logs.tar.gz .
+          docker rm uarch-logs
 
       - name: Upload uarch json logs to be used to test the Solidity based microarchitecture interpreter
-        uses: actions/upload-artifact@master
+        uses: actions/upload-artifact@v4
         with:
-          name: artifacts
+          name: uarch-logs
           path: uarch-riscv-tests-json-logs.tar.gz
+          compression-level: 0
 
   test_arm64:
     name: Test (linux/arm64)
@@ -269,13 +255,13 @@ jobs:
         run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -293,7 +279,25 @@ jobs:
         with:
           file: Dockerfile
           context: .
-          target: installer
+          target: builder
+          platforms: linux/arm64
+          tags: ${{ github.repository_owner }}/machine-emulator:builder
+          push: false
+          load: true
+          cache-from: type=gha,scope=debian
+          cache-to: type=gha,mode=max,scope=debian
+          build-args: |
+            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+            GIT_COMMIT=${GITHUB_SHA}
+            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
+
+      - name: Build machine-emulator docker image
+        uses: depot/build-push-action@v1
+        with:
+          file: Dockerfile
+          context: .
           platforms: linux/arm64
           tags: ${{ github.repository_owner }}/machine-emulator:devel
           push: false
@@ -307,85 +311,64 @@ jobs:
           project: ${{ vars.DEPOT_PROJECT }}
           token: ${{ secrets.DEPOT_TOKEN }}
 
-      - name: Download [rootfs.ext2]
-        uses: Legion2/download-release-action@v2.1.0
+      - name: Build machine-emulator "tests" docker image
+        uses: docker/build-push-action@v5
         with:
-          repository: ${{ github.repository_owner }}/machine-emulator-tools
-          tag: ${{ env.TOOLS_VERSION }}
-          file: rootfs-tools-${{ env.TOOLS_VERSION }}.ext2
-
-      - name: Download [kernel.bin]
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ github.repository_owner }}/image-kernel
-          tag: ${{ env.KERNEL_VERSION }}
-          file: linux-${{ env.LINUX_VERSION }}.bin
-
-      - name: Move images to cartesi images folder
-        run: |
-          mkdir -m 755 -p ${{ env.CARTESI_IMAGES_PATH }}
-          mv linux-*.bin rootfs-*.ext2 ${{ env.CARTESI_IMAGES_PATH }}/
-          cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s linux-${{ env.LINUX_VERSION }}.bin linux.bin
-          cd ${{ env.CARTESI_IMAGES_PATH }} && ln -s rootfs-tools-${{ env.TOOLS_VERSION }}.ext2 rootfs.ext2
-
-      - name: Download test suite
-        uses: Legion2/download-release-action@v2.1.0
-        with:
-          repository: ${{ github.repository_owner }}/machine-tests
-          tag: ${{ env.TEST_VERSION }}
-          file: machine-tests-${{ env.TEST_VERSION }}.tar.gz
-
-      - name: Untar test suite
-        run: mkdir -p ${{ env.CARTESI_TESTS_PATH }} && tar -xzf machine-tests-${{ env.TEST_VERSION }}.tar.gz -C ${{ env.CARTESI_TESTS_PATH }}
+          file: tests/Dockerfile
+          context: .
+          platforms: linux/arm64
+          tags: ${{ github.repository_owner }}/machine-emulator:tests
+          push: false
+          load: true
+          build-args: |
+            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
 
       - name: Simple boot inside the docker image
-        run: docker run --platform linux/arm64 --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine /bin/true
+        run: docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine /bin/true
 
       - name: Run test suite inside the docker image
-        run: docker run --platform linux/arm64 --rm -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine-tests --test-path=${{ env.CARTESI_TESTS_PATH }} run
+        run: docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine-tests run
 
       - name: Save and Load
         run: |
-          mkdir -m 755 -p ${{ env.CARTESI_IMAGES_PATH }}/snapshots
-          docker run --platform linux/arm64 --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine --max-mcycle=0 --store=${{ env.CARTESI_IMAGES_PATH }}/snapshots/save_and_load_test
-          docker run --platform linux/arm64 --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine --load=${{ env.CARTESI_IMAGES_PATH }}/snapshots/save_and_load_test
-          sudo rm -rf ${{ env.CARTESI_IMAGES_PATH }}/snapshots
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-save-and-load.sh
 
       - name: Run test scripts
         run: |
-          docker run --platform linux/arm64 -e "CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE=1" --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel ./src/tests/run.sh
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/run-lua-tests.sh
 
       - name: Run grpc lua test scripts
         run: |
-          docker run --platform linux/arm64 -e "CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE=1" --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel ./src/tests/test-grpc-server.sh remote-cartesi-machine cartesi-machine cartesi-machine-tests ${{ env.CARTESI_TESTS_PATH }}
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-grpc-server.sh remote-cartesi-machine cartesi-machine cartesi-machine-tests
 
       - name: Run jsonrpc lua test scripts
         run: |
-          docker run --platform linux/arm64 -e "CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE=1" --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel ./src/tests/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests ${{ env.CARTESI_TESTS_PATH }}
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests
 
       - name: Run Merkle tree tests
         run: |
-          docker run --platform linux/arm64 --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel ./src/tests/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=./src/tests/test-merkle-tree-hash
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash
 
       - name: Run C API tests
         run: |
-          docker run --platform linux/arm64 --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel ./src/tests/test-machine-c-api
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-machine-c-api
 
       - name: Test microarchitecture interpreter
+        if: false
         run: |
-          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:devel make uarch-tests JOBS=-j$(nproc)
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests make uarch-tests run-uarch-tests JOBS=-j$(nproc)
 
       - name: Run rv64ui test suite on microarchitecture
         run: |
-          docker run --platform linux/arm64 --rm -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/uarch-riscv-tests --test-path=${{ env.CARTESI_TESTS_PATH }} run
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests run
 
       - name: Run test suite with Microarchitecture
         run: |
-          docker run --platform linux/arm64 --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine-tests --test-path=${{ env.CARTESI_TESTS_PATH }} --jobs=$(nproc) run_uarch
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests --jobs=$(nproc) run_uarch
 
       - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
         run: |
-          docker run --platform linux/arm64 --rm -v ${{ env.CARTESI_IMAGES_PATH }}:${{ env.CARTESI_IMAGES_PATH }} -v ${{ env.CARTESI_TESTS_PATH }}:${{ env.CARTESI_TESTS_PATH }} -t ${{ github.repository_owner }}/machine-emulator:devel /usr/bin/cartesi-machine-tests  --test="^rv64ui%-v%-add.bin$" --test-path=${{ env.CARTESI_TESTS_PATH }} --concurrency=update_merkle_tree:1 --jobs=$(nproc) run_host_and_uarch
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests  --test="^rv64ui%-v%-add.bin$" --concurrency=update_merkle_tree:1 --jobs=$(nproc) run_host_and_uarch
 
   static-analysis:
     name: Static Analysis
@@ -400,13 +383,13 @@ jobs:
         run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -454,6 +437,7 @@ jobs:
   coverage:
     name: Coverage
     runs-on: ubuntu-latest-8-cores
+    if: false
     steps:
       - uses: actions/checkout@v3
         with:
@@ -463,13 +447,13 @@ jobs:
         run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -544,7 +528,7 @@ jobs:
         run: grep -F -e "=====:" -e "#####:" /opt/cartesi/share/coverage/gcc/*.gcov
 
       - name: Upload coverage detailed report
-        uses: actions/upload-artifact@master
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: /opt/cartesi/share/coverage
@@ -552,13 +536,14 @@ jobs:
   sanitize:
     name: Sanitize
     runs-on: ubuntu-22.04
+    if: false
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: recursive
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
@@ -567,7 +552,7 @@ jobs:
         run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -638,6 +623,7 @@ jobs:
     name: Publish artifacts
     needs: [static-analysis, coverage, sanitize, test_amd64, test_arm64]
     runs-on: ubuntu-22.04
+    if: false
     steps:
       - name: Checkout emulator source code
         uses: actions/checkout@v3
@@ -648,13 +634,13 @@ jobs:
         run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

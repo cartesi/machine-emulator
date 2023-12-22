@@ -9,12 +9,26 @@ The emulator implements RISC-V's RV64IMASU ISA. The letters after RV specify the
 Run `make help` for a list of target options. Here are some of them:
 
 ```
+Main targets:
+* all                              - build the src/ code. To build from a clean clone, run: make submodules downloads dep all
+  uarch                            - build microarchitecture (requires riscv64-cartesi-linux-gnu-* toolchain)
+  uarch-with-linux-env             - build microarchitecture using the linux-env docker image
+  build-tests                      - Build machine emulator tests (requires rv64gc-lp64d riscv64-cartesi-linux-gnu-* toolchain)
+  build-tests-with-toolchain       - Build machine emulator tests using the rv64gc-lp64d toolchain docker image
+  build-tests-uarch                - build microarchitecture rv64i instruction tests (requires rv64ima-lp64 riscv64-cartesi-linux-gnu-* toolchain)
+  build-tests-uarch-with-toolchain - build microarchitecture rv64i instruction tests using the rv64ima-lp64 toolchain docker image
+  test-machine                     - Run machine emulator tests
+  test-uarch                       - Run uarch tests
+  test                             - Build and run all tests
+  doc                              - build the doxygen documentation (requires doxygen)
+Docker images targets:
+  build-debian-image               - Build the machine-emulator debian based docker image
+  build-debian-package             - Build the cartesi-machine.deb package from image
+  build-linux-env                  - Build the linux environment docker image
 Cleaning targets:
-  clean                      - clean the src/ artifacts
-  depclean                   - clean + dependencies
-  distclean                  - depclean + profile information and downloads
-Docker targets:
-  build-debian-image         - Build the machine-emulator debian based docker image
+  clean                            - clean the src/ artifacts
+  depclean                         - clean + dependencies
+  distclean                        - depclean + profile information and downloads
 ```
 
 ### Requirements
@@ -46,7 +60,7 @@ sudo luarocks install --lua-version=5.4 luaposix
 
 ##### MacPorts
 ```bash
-sudo port install clang-15 boost libtool wget pkgconfig grpc openssl lua lua-luarocks
+sudo port install clang-15 boost181 wget pkgconfig grpc lua54 lua-luarocks
 
 sudo luarocks install --lua-version=5.4 lpeg
 sudo luarocks install --lua-version=5.4 dkjson
@@ -70,16 +84,13 @@ For emulator scripts to work it is expected that `lua5.4` binary is available in
 ### Build
 
 ```bash
-make submodules
-make downloads
-make dep
+git clone --recurse-submodules -j3 https://github.com/cartesi/machine-emulator.git
 make
 ```
 
 Cleaning:
 
 ```bash
-make depclean
 make clean
 ```
 
@@ -102,8 +113,6 @@ sudo make install PREFIX=/usr/local
 Both `libcartesi` and `libcartes_jsonrpc` C libraries can be compiled in standalone, either as static or shared library:
 
 ```bash
-make submodules
-make downloads
 make dep
 make bundle-boost
 make -C src release=yes libcartesi.a libcartesi_jsonrpc.a libcartesi.so libcartesi_jsonrpc.so
@@ -134,16 +143,22 @@ make -C src release=yes \
 
 ## Running Tests
 
-Copy the tests binaries to a directory called `tests` and run: (Eg.: )
+To build and execute the all tests run:
 
 ```bash
 make test
 ```
 
-The default search path for binaries is `machine-emulator/tests`. Alternatively you can specify the binaries path using the `CARTESI_TESTS_PATH` variable as in:
+To execute the machine test suite run:
 
 ```bash
-make test CARTESI_TESTS_PATH=/full/path/to/test/binaries
+make test-machine
+```
+
+To execute the uarch test suite run:
+
+```bash
+make test-uarch
 ```
 
 ## Linter
@@ -231,13 +246,11 @@ make coverage-toolchain=clang -j$(nproc)
 ### Running coverage
 
 After building the emulator with coverage enable, you should run the following command.
-You need to specify the binaries test path using the `CARTESI_TESTS_PATH` variable.
 You also need to specify the directory containing the kernel and rootfs with the `CARTESI_IMAGES_PATH` variable.
 For instance:
 
 ```bash
 make coverage=yes test-all coverage-report \
-    CARTESI_TESTS_PATH=$(realpath ../tests/build) \
     CARTESI_IMAGES_PATH=$(realpath ./src)
 ```
 

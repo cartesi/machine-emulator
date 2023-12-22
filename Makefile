@@ -31,6 +31,12 @@ IMAGES_RUNTIME_PATH= $(SHARE_RUNTIME_PATH)/images
 LUA_RUNTIME_CPATH= $(PREFIX)/lib/lua/5.4
 LUA_RUNTIME_PATH= $(PREFIX)/share/lua/5.4
 
+TESTS_DEB_FILENAME= cartesi-machine-tests-v$(MACHINE_EMULATOR_VERSION)_$(DEB_ARCH).deb
+TESTS_DATA_DEB_FILENAME= cartesi-machine-tests-data-v$(MACHINE_EMULATOR_VERSION)_$(DEB_ARCH).deb
+TESTS_DATA_RUNTIME_PATH= $(SHARE_RUNTIME_PATH)/tests/data
+TESTS_SCRIPTS_RUNTIME_PATH= $(SHARE_RUNTIME_PATH)/tests/scripts
+TESTS_LUA_RUNTIME_PATH= $(SHARE_RUNTIME_PATH)/tests/lua
+
 ifeq ($(TARGET_OS),Darwin)
 LIBCARTESI=libcartesi.dylib
 LIBCARTESI_GRPC=libcartesi_grpc.dylib
@@ -57,6 +63,10 @@ LUA_INSTALL_CPATH=   $(abspath $(DESTDIR)$(LUA_RUNTIME_CPATH))
 LUA_INSTALL_PATH=    $(abspath $(DESTDIR)$(LUA_RUNTIME_PATH))
 INC_INSTALL_PATH=    $(abspath $(DESTDIR)$(PREFIX)/include/cartesi-machine)
 
+TESTS_DATA_INSTALL_PATH= $(abspath $(DESTDIR)$(TESTS_DATA_RUNTIME_PATH))
+TESTS_SCRIPTS_INSTALL_PATH= $(abspath $(DESTDIR)$(TESTS_SCRIPTS_RUNTIME_PATH))
+TESTS_LUA_INSTALL_PATH= $(abspath $(DESTDIR)$(TESTS_LUA_RUNTIME_PATH))
+
 INSTALL_FILE= install -m0644
 INSTALL_EXEC= install -m0755
 INSTALL_DIR= cp -RP
@@ -68,11 +78,9 @@ STRIP_SHARED= $(STRIP) -S -x
 STRIP_STATIC= $(STRIP) -S
 
 EMU_TO_BIN= src/jsonrpc-remote-cartesi-machine src/remote-cartesi-machine src/merkle-tree-hash
-EMU_TEST_TO_BIN= src/tests/test-merkle-tree-hash src/tests/test-machine-c-api
 EMU_TO_LIB= src/$(LIBCARTESI_SO) src/$(LIBCARTESI_SO_GRPC) src/$(LIBCARTESI_SO_JSONRPC)
 EMU_TO_LIB_A= src/libcartesi.a src/libcartesi_grpc.a src/libcartesi_jsonrpc.a
 EMU_LUA_TO_BIN= src/cartesi-machine.lua src/cartesi-machine-stored-hash.lua src/rollup-memory-range.lua
-EMU_LUA_TEST_TO_BIN= src/cartesi-machine-tests.lua src/uarch-riscv-tests.lua
 EMU_TO_LUA_PATH= src/cartesi/util.lua src/cartesi/proof.lua src/cartesi/gdbstub.lua
 EMU_TO_LUA_CPATH= src/cartesi.so
 EMU_TO_LUA_CARTESI_CPATH= src/cartesi/grpc.so src/cartesi/jsonrpc.so
@@ -80,14 +88,21 @@ EMU_TO_INC= $(addprefix src/,jsonrpc-machine-c-api.h grpc-machine-c-api.h machin
 	    machine-c-defines.h machine-c-version.h pma-defines.h rtc-defines.h htif-defines.h uarch-defines.h)
 UARCH_TO_SHARE= uarch-ram.bin
 
+TESTS_TO_BIN= tests/build/misc/test-merkle-tree-hash tests/build/misc/test-machine-c-api
+TESTS_LUA_TO_LUA_PATH=tests/lua/cartesi
+TESTS_LUA_TO_TEST_LUA_PATH=$(wildcard tests/lua/*.lua)
+TESTS_SCRIPTS_TO_TEST_SCRIPTS_PATH=$(wildcard tests/scripts/*.sh)
+TESTS_DATA_TO_TESTS_DATA_PATH= tests/build/machine tests/build/uarch tests/build/uarch-riscv-arch-test tests/build/images
+
 MONGOOSE_VERSION=7.12
 
 # Build settings
 DEPDIR = third-party
 SRCDIR = $(abspath src)
+TESTSDIR = $(abspath tests)
 DOWNLOADDIR = $(DEPDIR)/downloads
-DEPDIRS = third-party/mongoose-$(MONGOOSE_VERSION)
-SUBCLEAN = $(addsuffix .clean,$(SRCDIR) uarch third-party/riscv-arch-tests)
+DEPDIRS = $(DEPDIR)/mongoose-$(MONGOOSE_VERSION)
+SUBCLEAN = $(addsuffix .clean,$(SRCDIR) uarch tests)
 COREPROTO = lib/grpc-interfaces/core.proto
 
 # Docker image tag
@@ -133,44 +148,51 @@ endif
 
 all: source-default
 
+help:
+	@echo 'Main targets:'
+	@echo '* all                                 - build the src/ code. To build from a clean clone, run: make submodules downloads dep all'
+	@echo '  uarch                               - build microarchitecture (requires riscv64-cartesi-linux-gnu-* toolchain)'
+	@echo '  uarch-with-linux-env                - build microarchitecture using the linux-env docker image'
+	@echo '  build-tests-all                     - build all tests (machine, uarch and misc)'
+	@echo '  build-tests-machine                 - Build machine emulator tests (requires rv64gc-lp64d riscv64-cartesi-linux-gnu-* toolchain)'
+	@echo '  build-tests-machine-with-toolchain  - Build machine emulator tests using the rv64gc-lp64d toolchain docker image'
+	@echo '  build-tests-uarch                   - build microarchitecture rv64i instruction tests (requires rv64ima-lp64 riscv64-cartesi-linux-gnu-* toolchain)'
+	@echo '  build-tests-uarch-with-toolchain    - build microarchitecture rv64i instruction tests using the rv64ima-lp64 toolchain docker image'
+	@echo '  build-tests-misc                    - build miscellaneous tests'
+	@echo '  build-tests-misc-with-builder-image - build miscellaneous tests using the cartesi/machine-emulator:builder image'
+	@echo '  test-machine                        - Run machine emulator tests'
+	@echo '  test-uarch                          - Run uarch tests'
+	@echo '  test                                - Build and run all tests'
+	@echo '  doc                                 - build the doxygen documentation (requires doxygen)'
+	@echo 'Docker images targets:'
+	@echo '  build-emulator-image                - Build the machine-emulator debian based docker image'
+	@echo '  build-debian-package                - Build the cartesi-machine.deb package from image'
+	@echo '  build-linux-env                     - Build the linux environment docker image'
+	@echo 'Cleaning targets:'
+	@echo '  clean                               - clean the src/ artifacts'
+	@echo '  depclean                            - clean + dependencies'
+	@echo '  distclean                           - depclean + profile information and downloads'
+
+$(SUBCLEAN): %.clean:
+	@$(MAKE) -C $* clean
+
 clean: $(SUBCLEAN)
+	@rm -rf cartesi-machine-*.deb
 
 depclean: clean
-	$(MAKE) -C third-party/riscv-arch-tests depclean
+	@rm -rf $(DEPDIRS)
 
-distclean:
-	rm -rf $(DOWNLOADDIR) $(DEPDIRS)
-	$(MAKE) -C third-party/riscv-arch-tests depclean
-	$(MAKE) clean
-
-$(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH) $(UARCH_INSTALL_PATH):
-	mkdir -m 0755 -p $@
+distclean: depclean
+	@rm -rf $(DOWNLOADDIR)
 
 env:
 	@echo $(LIBRARY_PATH)
-	@echo "export PATH='$(SRCDIR):${PATH}'"
-	@echo "export LUA_PATH_5_4='$(SRCDIR)/?.lua;$${LUA_PATH_5_4:-;}'"
+	@echo "export PATH='$(SRCDIR):$(TESTSDIR)/misc:${PATH}'"
+	@echo "export LUA_PATH_5_4='$(SRCDIR)/?.lua;$(TESTSDIR)/lua/?.lua;$${LUA_PATH_5_4:-;}'"
 	@echo "export LUA_CPATH_5_4='$(SRCDIR)/?.so;$${LUA_CPATH_5_4:-;}'"
 
 doc:
 	cd doc && doxygen Doxyfile
-
-help:
-	@echo 'Cleaning targets:'
-	@echo '  clean                      - clean the src/ artifacts'
-	@echo '  depclean                   - clean + dependencies'
-	@echo '  distclean                  - depclean + profile information and downloads'
-	@echo 'Docker targets:'
-	@echo '  build-debian-image         - Build the machine-emulator debian based docker image'
-	@echo '  build-debian-package       - BUild the cartesi-machine.deb package from image'
-	@echo 'Generic targets:'
-	@echo '* all                        - build the src/ code. To build from a clean clone, run: make submodules downloads dep all'
-	@echo '  doc                        - build the doxygen documentation (requires doxygen to be installed)'
-	@echo '  copy                       - copy generated artifacts out of a docker image'
-	@echo '  uarch                      - build microarchitecture'
-	@echo '  uarch-with-linux-env       - build microarchitecture using the linux-env docker image'
-	@echo '  uarch-tests                - build and run microarchitecture rv64i instruction tests'
-	@echo '  uarch-tests-with-linux-env - build and run microarchitecture rv64i instruction tests using the linux-env docker image'
 
 checksum:
 	@cd $(DEPDIR) && $(SHA1SUM) -c shasumfile
@@ -182,16 +204,16 @@ $(DOWNLOADDIR):
 
 downloads: $(DOWNLOADDIR)
 
-third-party/downloads/$(MONGOOSE_VERSION).tar.gz: | downloads
-third-party/mongoose-$(MONGOOSE_VERSION): third-party/downloads/$(MONGOOSE_VERSION).tar.gz
-	tar -C third-party -xzf $< mongoose-$(MONGOOSE_VERSION)/mongoose.c mongoose-$(MONGOOSE_VERSION)/mongoose.h
+$(DEPDIR)/downloads/$(MONGOOSE_VERSION).tar.gz: | downloads
+$(DEPDIR)/mongoose-$(MONGOOSE_VERSION): $(DEPDIR)/downloads/$(MONGOOSE_VERSION).tar.gz
+	tar -C $(DEPDIR) -xzf $< mongoose-$(MONGOOSE_VERSION)/mongoose.c mongoose-$(MONGOOSE_VERSION)/mongoose.h
 
-bundle-boost: third-party/downloads/boost
-third-party/downloads/boost: | downloads
-	wget -O third-party/downloads/boost_1_81_0.tar.gz https://boostorg.jfrog.io/artifactory/main/release/1.81.0/source/boost_1_81_0.tar.gz
-	tar -C third-party/downloads -xzf third-party/downloads/boost_1_81_0.tar.gz boost_1_81_0/boost
-	mv third-party/downloads/boost_1_81_0/boost third-party/downloads/boost
-	rm -rf third-party/downloads/boost_1_81_0.tar.gz third-party/downloads/boost_1_81_0
+bundle-boost: $(DEPDIR)/downloads/boost
+$(DEPDIR)/downloads/boost: | downloads
+	wget -O $(DEPDIR)/downloads/boost_1_81_0.tar.gz https://boostorg.jfrog.io/artifactory/main/release/1.81.0/source/boost_1_81_0.tar.gz
+	tar -C $(DEPDIR)/downloads -xzf $(DEPDIR)/downloads/boost_1_81_0.tar.gz boost_1_81_0/boost
+	mv $(DEPDIR)/downloads/boost_1_81_0/boost $(DEPDIR)/downloads/boost
+	rm -rf $(DEPDIR)/downloads/boost_1_81_0.tar.gz $(DEPDIR)/downloads/boost_1_81_0
 
 dep: $(DEPDIRS)
 
@@ -204,7 +226,7 @@ $(COREPROTO):
 
 grpc: | $(COREPROTO)
 
-hash luacartesi grpc test lint coverage-report check-format format check-format-lua check-lua format-lua:
+hash luacartesi grpc lint coverage-report check-format format check-format-lua check-lua format-lua:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
 
 libcartesi libcartesi_grpc libcartesi_jsonrpc libcartesi.a libcartesi_grpc.a libcartesi_jsonrpc.a libcartesi.so libcartesi_grpc.so libcartesi_jsonrpc.so:
@@ -213,16 +235,18 @@ libcartesi libcartesi_grpc libcartesi_jsonrpc libcartesi.a libcartesi_grpc.a lib
 version:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -sC $(SRCDIR) $@
 
-test-%:
-	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
+test: build-tests-all
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C tests $@
 
-uarch-tests:
-	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C third-party/riscv-arch-tests
+test%:
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C tests $@
 
-run-uarch-tests:
-	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C third-party/riscv-arch-tests run
+build-tests-misc-with-builder-image: build-emulator-builder-image
 
-source-default:
+build-tests%:
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C tests $@
+
+source-default: dep
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR)
 
 uarch: $(SRCDIR)/machine-c-version.h
@@ -231,17 +255,27 @@ uarch: $(SRCDIR)/machine-c-version.h
 $(SRCDIR)/machine-c-version.h:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) machine-c-version.h
 
-$(SUBCLEAN): %.clean:
-	$(MAKE) -C $* clean
+build-emulator-builder-image:
+	docker build $(DOCKER_PLATFORM) --target builder -t cartesi/machine-emulator:builder -f Dockerfile .
 
-build-linux-env:
-	docker build $(DOCKER_PLATFORM) --target linux-env -t cartesi/linux-env:$(TAG) -f Dockerfile .
+build-emulator-linux-env-image build-linux-env:
+	docker build $(DOCKER_PLATFORM) --target linux-env -t cartesi/machine-emulator:linux-env -f Dockerfile .
 
-build-debian-image:
+build-emulator-image:
 	docker build $(DOCKER_PLATFORM) --build-arg RELEASE=$(release) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) -t cartesi/machine-emulator:$(TAG) -f Dockerfile .
+
+build-emulator-tests-image: build-emulator-builder-image build-emulator-image
+	docker build $(DOCKER_PLATFORM) --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests -f tests/Dockerfile .
 
 build-debian-package:
 	docker build $(DOCKER_PLATFORM) --target debian-packager --build-arg RELEASE=$(release) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION=) -t $(DEBIAN_IMG) -f Dockerfile .
+
+build-tests-debian-packages: build-emulator-builder-image
+	docker build $(DOCKER_PLATFORM) --target tests-debian-packager --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests-debian-packager -f tests/Dockerfile .
+	ID=`docker create $(DOCKER_PLATFORM) cartesi/machine-emulator:tests-debian-packager` && \
+	   docker cp $$ID:/usr/src/emulator/$(TESTS_DEB_FILENAME) . && \
+	   docker cp $$ID:/usr/src/emulator/$(TESTS_DATA_DEB_FILENAME) . && \
+	   docker rm $$ID
 
 copy:
 	ID=`docker create $(DOCKER_PLATFORM) $(DEBIAN_IMG)` && \
@@ -250,10 +284,10 @@ copy:
 	   docker rm $$ID
 
 check-linux-env:
-	@if docker images $(DOCKER_PLATFORM) -q cartesi/linux-env:$(TAG)$(image_name) 2>/dev/null | grep -q .; then \
-		echo "Docker image cartesi/linux-env:$(TAG) exists"; \
+	@if docker images $(DOCKER_PLATFORM) -q cartesi/machine-emulator:linux-env 2>/dev/null | grep -q .; then \
+		echo "Docker image cartesi/machine-emulator:linux-env exists"; \
 	else \
-		echo "Docker image cartesi/linux-env:$(TAG) does not exist. Creating:"; \
+		echo "Docker image cartesi/machine-emulator:linux-env does not exist. Creating:"; \
 		$(MAKE) build-linux-env; \
 	fi
 
@@ -265,7 +299,7 @@ linux-env: check-linux-env
 		-e GID=$$(id -g) \
 		-v `pwd`:/opt/cartesi/machine-emulator \
 		-w /opt/cartesi/machine-emulator \
-		cartesi/linux-env:$(TAG) /bin/bash
+		cartesi/machine-emulator:linux-env /bin/bash
 
 linux-env-exec: check-linux-env
 	@docker run --hostname linux-env --rm \
@@ -275,13 +309,14 @@ linux-env-exec: check-linux-env
 		-e GID=$$(id -g) \
 		-v `pwd`:/opt/cartesi/machine-emulator \
 		-w /opt/cartesi/machine-emulator \
-		cartesi/linux-env:$(TAG) /bin/bash -c "$(CONTAINER_COMMAND)"
+		cartesi/machine-emulator:linux-env /bin/bash -c "$(CONTAINER_COMMAND)"
 
 uarch-with-linux-env:
 	@$(MAKE) linux-env-exec CONTAINER_COMMAND="make uarch"
 
-uarch-tests-with-linux-env:
-	@$(MAKE) linux-env-exec CONTAINER_COMMAND="make uarch-tests"
+# Create install directories
+$(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH) $(UARCH_INSTALL_PATH) $(TESTS_DATA_INSTALL_PATH) $(TESTS_SCRIPTS_INSTALL_PATH) $(TESTS_LUA_INSTALL_PATH):
+	mkdir -m 0755 -p $@
 
 install-headers: $(INC_INSTALL_PATH)
 	$(INSTALL_FILE) $(EMU_TO_INC) $(INC_INSTALL_PATH)
@@ -294,7 +329,7 @@ install-emulator: $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/c
 	$(INSTALL_EXEC) $(EMU_TO_LUA_CPATH) $(LUA_INSTALL_CPATH)
 	$(INSTALL_EXEC) $(EMU_TO_LUA_CARTESI_CPATH) $(LUA_INSTALL_CPATH)/cartesi
 	$(INSTALL_FILE) $(EMU_TO_LUA_PATH) $(LUA_INSTALL_PATH)/cartesi
-	cat tools/template/cartesi-machine.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_INSTALL_PATH|$(IMAGES_RUNTIME_PATH)|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/cartesi-machine
+	cat tools/template/cartesi-machine.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_IMAGES_PATH|$(IMAGES_RUNTIME_PATH)|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/cartesi-machine
 	cat tools/template/cartesi-machine-stored-hash.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/cartesi-machine-stored-hash
 	cat tools/template/rollup-memory-range.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/rollup-memory-range
 	$(CHMOD_EXEC) $(BIN_INSTALL_PATH)/cartesi-machine $(BIN_INSTALL_PATH)/cartesi-machine-stored-hash $(BIN_INSTALL_PATH)/rollup-memory-range
@@ -311,23 +346,40 @@ install-strip: install-emulator
 
 install: install-strip install-headers
 
-install-tests: install
-	$(INSTALL_FILE) $(EMU_LUA_TEST_TO_BIN) $(LUA_INSTALL_PATH)
-	$(INSTALL_EXEC) $(EMU_TEST_TO_BIN) $(BIN_INSTALL_PATH)
-	cat tools/template/cartesi-machine-tests.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/cartesi-machine-tests
-	cat tools/template/uarch-riscv-tests.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/uarch-riscv-tests
-	$(CHMOD_EXEC) $(BIN_INSTALL_PATH)/cartesi-machine-tests $(BIN_INSTALL_PATH)/uarch-riscv-tests
-
 install-uarch: install $(UARCH_INSTALL_PATH)
 	$(INSTALL_FILE) uarch/$(UARCH_TO_SHARE) $(UARCH_INSTALL_PATH)
 
 debian-package: install
 	mkdir -p $(DESTDIR)/DEBIAN $(DOC_INSTALL_PATH)
 	$(INSTALL_FILE) COPYING $(DOC_INSTALL_PATH)/copyright
-	cat tools/template/control.template | sed 's|ARG_VERSION|$(MACHINE_EMULATOR_VERSION)|g;s|ARG_ARCH|$(DEB_ARCH)|g' > $(DESTDIR)/DEBIAN/control
+	sed 's|ARG_VERSION|$(MACHINE_EMULATOR_VERSION)|g;s|ARG_ARCH|$(DEB_ARCH)|g' tools/template/control.template > $(DESTDIR)/DEBIAN/control
 	dpkg-deb -Zxz --root-owner-group --build $(DESTDIR) $(DEB_FILENAME)
+
+install-tests-data: | $(LUA_INSTALL_PATH) $(BIN_INSTALL_PATH) $(TESTS_DATA_INSTALL_PATH) $(TESTS_SCRIPTS_INSTALL_PATH) $(TESTS_LUA_INSTALL_PATH)
+	$(INSTALL_DIR) $(TESTS_LUA_TO_LUA_PATH) $(LUA_INSTALL_PATH)
+	$(INSTALL_DIR) $(TESTS_LUA_TO_TEST_LUA_PATH) $(TESTS_LUA_INSTALL_PATH)
+	$(INSTALL_DIR) $(TESTS_SCRIPTS_TO_TEST_SCRIPTS_PATH) $(TESTS_SCRIPTS_INSTALL_PATH)
+	$(INSTALL_DIR) $(TESTS_DATA_TO_TESTS_DATA_PATH) $(TESTS_DATA_INSTALL_PATH)
+	sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(TESTS_LUA_RUNTIME_PATH)|g' tools/template/cartesi-machine-tests.template > $(BIN_INSTALL_PATH)/cartesi-machine-tests
+	sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(TESTS_LUA_RUNTIME_PATH)|g' tools/template/uarch-riscv-tests.template > $(BIN_INSTALL_PATH)/uarch-riscv-tests
+	$(CHMOD_EXEC) $(BIN_INSTALL_PATH)/cartesi-machine-tests $(BIN_INSTALL_PATH)/uarch-riscv-tests
+
+install-tests: | $(BIN_INSTALL_PATH)
+	$(INSTALL_EXEC) $(TESTS_TO_BIN) $(BIN_INSTALL_PATH)
+
+tests-data-debian-package: install-tests-data
+	mkdir -p $(DESTDIR)/DEBIAN $(DOC_INSTALL_PATH)
+	$(INSTALL_FILE) COPYING $(DOC_INSTALL_PATH)/tests-data-copyright
+	sed 's|ARG_VERSION|$(MACHINE_EMULATOR_VERSION)|g;s|ARG_ARCH|$(DEB_ARCH)|g' tools/template/tests-data-control.template > $(DESTDIR)/DEBIAN/control
+	dpkg-deb -Zxz --root-owner-group --build $(DESTDIR) $(TESTS_DATA_DEB_FILENAME)
+
+tests-debian-package: install-tests
+	mkdir -p $(DESTDIR)/DEBIAN $(DOC_INSTALL_PATH)
+	$(INSTALL_FILE) COPYING $(DOC_INSTALL_PATH)/tests-copyright
+	sed 's|ARG_VERSION|$(MACHINE_EMULATOR_VERSION)|g;s|ARG_ARCH|$(DEB_ARCH)|g' tools/template/tests-control.template > $(DESTDIR)/DEBIAN/control
+	dpkg-deb -Zxz --root-owner-group --build $(DESTDIR) $(TESTS_DEB_FILENAME)
 
 .SECONDARY: $(DOWNLOADDIR) $(DEPDIRS) $(COREPROTO)
 
-.PHONY: help all submodules doc clean distclean downloads checksum src test luacartesi grpc hash uarch \
+.PHONY: help all submodules doc clean distclean downloads checksum src luacartesi grpc hash uarch \
 	$(SUBDIRS) $(SUBCLEAN)

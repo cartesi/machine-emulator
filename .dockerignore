@@ -8,8 +8,7 @@
 **/*.dtb
 **/*.bin
 **/*.md
-
-**/Dockerfile*
+**/*.deb
 
 build
 third-party/downloads

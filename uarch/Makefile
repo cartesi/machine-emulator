@@ -100,4 +100,4 @@ uarch-ram-entry.o: uarch-ram-entry.S
 	grep -v '^#' $@.tmp > $@
 
 clean:
-	rm -f *.ld *.elf *.bin *.tmp link.ld *.o
+	@rm -f *.ld *.elf *.bin *.tmp link.ld *.o

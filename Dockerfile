@@ -6,13 +6,13 @@ ARG SANITIZE=no
 
 RUN apt-get update && \
     DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends -y \
-        build-essential vim wget git clang-tidy-15 clang-format-15 lcov \
-        libboost1.81-dev libssl-dev \
-        ca-certificates pkg-config lua5.4 liblua5.4-dev \
-        libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
-        luarocks xxd && \
-        update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-15 120 && \
-        update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-15 120 && \
+    build-essential vim wget git clang-tidy-15 clang-format-15 lcov \
+    libboost1.81-dev libssl-dev \
+    ca-certificates pkg-config lua5.4 liblua5.4-dev \
+    libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
+    luarocks xxd && \
+    update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-15 120 && \
+    update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-15 120 && \
     rm -rf /var/lib/apt/lists/*
 
 
@@ -37,34 +37,25 @@ COPY third-party third-party
 RUN make -j$(nproc) dep
 
 FROM --platform=$TARGETPLATFORM dep-builder as builder
-ARG DEB_FILENAME=cartesi-machine.deb
 
 COPY . .
 RUN make -j$(nproc) git_commit=$GIT_COMMIT release=$RELEASE coverage=$COVERAGE sanitize=$SANITIZE
-    
 
 FROM --platform=$TARGETPLATFORM builder as debian-packager
-RUN make install-uarch debian-package DESTDIR=$PWD/_install
-
-FROM --platform=$TARGETPLATFORM debian-packager as installer
 ARG MACHINE_EMULATOR_VERSION=0.0.0
-ARG TARGETARCH
 
-RUN make install-tests
-RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
-    ./cartesi-machine-v${MACHINE_EMULATOR_VERSION}_${TARGETARCH}.deb \
-    && rm -rf /var/lib/apt/lists/*
-
-ENV CARTESI_TESTS_PATH="/usr/share/cartesi-machine/tests"
-ENV CARTESI_IMAGES_PATH="/usr/share/cartesi-machine/images"
+RUN make install-uarch debian-package DESTDIR=$PWD/_install
 
 FROM --platform=$TARGETPLATFORM debian:bookworm-20230725-slim
 ARG MACHINE_EMULATOR_VERSION=0.0.0
 ARG TARGETARCH
 
-COPY --from=installer \
-	/usr/src/emulator/cartesi-machine-v${MACHINE_EMULATOR_VERSION}_${TARGETARCH}.deb \
-	cartesi-machine.deb
+COPY --from=debian-packager \
+    /usr/src/emulator/cartesi-machine-v${MACHINE_EMULATOR_VERSION}_${TARGETARCH}.deb \
+    cartesi-machine.deb
+COPY --from=debian-packager /usr/local/lib/lua /usr/local/lib/lua
+COPY --from=debian-packager /usr/local/share/lua /usr/local/share/lua
+
 RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
     ./cartesi-machine.deb \
     && rm -rf /var/lib/apt/lists/* \

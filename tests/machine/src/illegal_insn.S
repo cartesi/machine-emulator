@@ -1,0 +1,209 @@
+/* Copyright Cartesi and individual authors (see AUTHORS)
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+
+#include <pma-defines.h>
+
+// Uses HTIF to exit the emulator with exit code in an immediate
+#define exit_imm(imm) \
+  li gp, imm; \
+  j exit;
+
+
+#define MSTATUS_FS_MASK     (3<<13)
+
+#define MCAUSE_ILLEGAL_INSN     0x2
+
+#define TEST_ILLEGAL_INSN(insn)  \
+    li t5, 0;                    \
+    .word (insn);                \
+    li t0, 1;                    \
+    bne t5, t0, fail;
+
+#define SHIFT_OPCODE 0
+#define SHIFT_FUNCT7 25
+#define SHIFT_FUNCT3 12
+#define SHIFT_FUNCT2 25
+#define SHIFT_RM 12
+#define SHIFT_RS3 27
+#define SHIFT_RS2 20
+#define SHIFT_RD 7
+
+// Section with code
+.section .text.init
+.align 2;
+.global _start;
+_start:
+    // Set a trap that will ignore the failing illegal instructions and resume to next instruction
+    la t0, skip_illegal_insn_trap;
+    csrw mtvec, t0;
+
+    // Invalid instruction (no bit set)
+    TEST_ILLEGAL_INSN(0x0)
+
+    // Invalid instruction (all bits set)
+    TEST_ILLEGAL_INSN(0xffffffff)
+
+    // SLLI/SRLI/SRAI with invalid funct7
+    TEST_ILLEGAL_INSN((0b0010011 << SHIFT_OPCODE) | (0b001 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+    TEST_ILLEGAL_INSN((0b0010011 << SHIFT_OPCODE) | (0b101 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+
+    // ADD/MUL/SUB/SLL/MULH/SLT/MULHSU/SLTU/MULHU/XOR/DIV/SRL/DIVU/SRA/OR/REM/AND/REMU with invalid funct7
+    TEST_ILLEGAL_INSN((0b0110011 << SHIFT_OPCODE) | (0b000 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+    TEST_ILLEGAL_INSN((0b0110011 << SHIFT_OPCODE) | (0b001 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+    TEST_ILLEGAL_INSN((0b0110011 << SHIFT_OPCODE) | (0b010 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+    TEST_ILLEGAL_INSN((0b0110011 << SHIFT_OPCODE) | (0b011 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+    TEST_ILLEGAL_INSN((0b0110011 << SHIFT_OPCODE) | (0b100 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+    TEST_ILLEGAL_INSN((0b0110011 << SHIFT_OPCODE) | (0b101 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+    TEST_ILLEGAL_INSN((0b0110011 << SHIFT_OPCODE) | (0b110 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+    TEST_ILLEGAL_INSN((0b0110011 << SHIFT_OPCODE) | (0b111 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+
+    // SLLIW/SRLIW/SRAIW with invalid funct7
+    TEST_ILLEGAL_INSN((0b0011011 << SHIFT_OPCODE) | (0b001 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+    TEST_ILLEGAL_INSN((0b0011011 << SHIFT_OPCODE) | (0b101 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+
+    // ADDW/SUBW/SLLW/SRLW/SRAW/MULW/DIVW/DIVUW/REMW/REMUW with invalid funct7
+    TEST_ILLEGAL_INSN((0b0111011 << SHIFT_OPCODE) | (0b000 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+    TEST_ILLEGAL_INSN((0b0111011 << SHIFT_OPCODE) | (0b001 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+    TEST_ILLEGAL_INSN((0b0111011 << SHIFT_OPCODE) | (0b100 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+    TEST_ILLEGAL_INSN((0b0111011 << SHIFT_OPCODE) | (0b101 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+    TEST_ILLEGAL_INSN((0b0111011 << SHIFT_OPCODE) | (0b110 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+    TEST_ILLEGAL_INSN((0b0111011 << SHIFT_OPCODE) | (0b111 << SHIFT_FUNCT3) | (0b0000010 << SHIFT_FUNCT7))
+
+    // LR.W/LR.D with rs2 != 0
+    TEST_ILLEGAL_INSN((0b0101111 << SHIFT_OPCODE) | (0b010 << SHIFT_FUNCT3) | (0b00010 << SHIFT_RS3) | (0b00001 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b0101111 << SHIFT_OPCODE) | (0b011 << SHIFT_FUNCT3) | (0b00010 << SHIFT_RS3) | (0b00001 << SHIFT_RS2))
+
+    // LR/AMO with invalid funct7
+    TEST_ILLEGAL_INSN((0b0101111 << SHIFT_OPCODE) | (0b010 << SHIFT_FUNCT3) | (0b11111 << SHIFT_RS3))
+    TEST_ILLEGAL_INSN((0b0101111 << SHIFT_OPCODE) | (0b011 << SHIFT_FUNCT3) | (0b11111 << SHIFT_RS3))
+
+    // SFENCE.VMA with rd != 0 or funct7 != 0
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b000 << SHIFT_FUNCT3) | (0b0000001 << SHIFT_FUNCT7))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b000 << SHIFT_FUNCT3) | (0b00001 << SHIFT_RD))
+
+    // Privileged instruction with invalid funct7
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b000 << SHIFT_FUNCT3) | (0b1111111 << SHIFT_FUNCT7))
+
+    // Enable float state
+    li t0, MSTATUS_FS_MASK
+    csrs mstatus, t0
+
+    // Invalid funct7 for float instruction
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b1111111 << SHIFT_FUNCT7))
+
+    // Invalid funct3 for float instruction
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b0010000 << SHIFT_FUNCT7) | (0b111 << SHIFT_FUNCT3))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b0010100 << SHIFT_FUNCT7) | (0b111 << SHIFT_FUNCT3))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b1010000 << SHIFT_FUNCT7) | (0b111 << SHIFT_FUNCT3))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b0010001 << SHIFT_FUNCT7) | (0b111 << SHIFT_FUNCT3))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b0010101 << SHIFT_FUNCT7) | (0b111 << SHIFT_FUNCT3))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b1010001 << SHIFT_FUNCT7) | (0b111 << SHIFT_FUNCT3))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b1110000 << SHIFT_FUNCT7) | (0b111 << SHIFT_FUNCT3))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b1110001 << SHIFT_FUNCT7) | (0b111 << SHIFT_FUNCT3))
+
+    // Invalid rs2 for float instruction
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b1110000 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b1111000 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b1110001 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b1111001 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b0101100 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b1100000 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b1101000 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b0101101 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b0100000 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b0100001 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b1100001 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b1101001 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+
+    // FADD.S with invalid rounding mode
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b101 << SHIFT_RM))
+
+    // FMV with rm != 0
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b1110000 << SHIFT_FUNCT7) | (0b111 << SHIFT_RM))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b1111000 << SHIFT_FUNCT7) | (0b111 << SHIFT_RM))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b1110001 << SHIFT_FUNCT7) | (0b111 << SHIFT_RM))
+    TEST_ILLEGAL_INSN((0b1010011 << SHIFT_OPCODE) | (0b1111001 << SHIFT_FUNCT7) | (0b111 << SHIFT_RM))
+
+    // FMADD/FMSUB/FNMSUB/FNMADD with invalid funct2
+    TEST_ILLEGAL_INSN((0b1000011 << SHIFT_OPCODE) | (0b11 << SHIFT_FUNCT2))
+    TEST_ILLEGAL_INSN((0b1000111 << SHIFT_OPCODE) | (0b11 << SHIFT_FUNCT2))
+    TEST_ILLEGAL_INSN((0b1001011 << SHIFT_OPCODE) | (0b11 << SHIFT_FUNCT2))
+    TEST_ILLEGAL_INSN((0b1001111 << SHIFT_OPCODE) | (0b11 << SHIFT_FUNCT2))
+
+    // Privileged instructions with rd != 0
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b0000000 << SHIFT_FUNCT7) | (0b00001 << SHIFT_RD))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b0001000 << SHIFT_FUNCT7) | (0b00001 << SHIFT_RD))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b0011000 << SHIFT_FUNCT7) | (0b00001 << SHIFT_RD))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b0001100 << SHIFT_FUNCT7) | (0b00001 << SHIFT_RD))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b0001001 << SHIFT_FUNCT7) | (0b00001 << SHIFT_RD))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b0001011 << SHIFT_FUNCT7) | (0b00001 << SHIFT_RD))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b0010001 << SHIFT_FUNCT7) | (0b00001 << SHIFT_RD))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b0110001 << SHIFT_FUNCT7) | (0b00001 << SHIFT_RD))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b0010011 << SHIFT_FUNCT7) | (0b00001 << SHIFT_RD))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b0110011 << SHIFT_FUNCT7) | (0b00001 << SHIFT_RD))
+
+    // Hypervisor instructions with rd != 0
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b100 << SHIFT_FUNCT3) | (0b0110001 << SHIFT_FUNCT7) | (0b00001 << SHIFT_RD))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b100 << SHIFT_FUNCT3) | (0b0110011 << SHIFT_FUNCT7) | (0b00001 << SHIFT_RD))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b100 << SHIFT_FUNCT3) | (0b0110101 << SHIFT_FUNCT7) | (0b00001 << SHIFT_RD))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b100 << SHIFT_FUNCT3) | (0b0110111 << SHIFT_FUNCT7) | (0b00001 << SHIFT_RD))
+
+    // Hypervisor instructions with invalid rs2
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b100 << SHIFT_FUNCT3) | (0b0110000 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b100 << SHIFT_FUNCT3) | (0b0110000 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b100 << SHIFT_FUNCT3) | (0b0110010 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b100 << SHIFT_FUNCT3) | (0b0110010 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b100 << SHIFT_FUNCT3) | (0b0110010 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b100 << SHIFT_FUNCT3) | (0b0110100 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b100 << SHIFT_FUNCT3) | (0b0110100 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b100 << SHIFT_FUNCT3) | (0b0110100 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+    TEST_ILLEGAL_INSN((0b1110011 << SHIFT_OPCODE) | (0b100 << SHIFT_FUNCT3) | (0b0110110 << SHIFT_FUNCT7) | (0b11111 << SHIFT_RS2))
+
+    exit_imm(0)
+
+skip_illegal_insn_trap:
+    // Expected an illegal instruction exception
+    csrr gp, mcause
+    li t6, MCAUSE_ILLEGAL_INSN
+    bne gp, t6, exit
+
+    // Increment illegal instruction counter
+    addi t5, t5, 1
+
+    // Resume to next instruction
+    csrr t6, mepc
+    addi t6, t6, 4
+    csrw mepc, t6
+    mret
+
+    exit_imm(1)
+
+fail:
+    exit_imm(1);
+
+// Exits via HTIF using gp content as the exit code
+exit:
+    // HTIF exits with dev = cmd = 0 and a payload with lsb set.
+    // the exit code is taken from payload >> 2
+    slli gp, gp, 16;
+    srli gp, gp, 15;
+    ori gp, gp, 1;
+1:
+    li t0, PMA_HTIF_START_DEF
+    sd gp, 0(t0);
+    j 1b; // Should not be necessary
+

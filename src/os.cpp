@@ -26,18 +26,25 @@
 #define HAVE_TERMIOS
 #endif
 
+#if !defined(_WIN32) && !defined(__wasi__) && !defined(NO_IOCTL)
+#define HAVE_IOCTL
+#endif
+
 #if !defined(_WIN32) && !defined(__wasi__) && !defined(NO_MMAP)
 #define HAVE_MMAP
 #endif
 
-#if !defined(_WIN32) && !defined(NO_MKDIR)
+#if !defined(NO_MKDIR)
 #define HAVE_MKDIR
 #endif
 
 #include <array>
 #include <chrono>
+#include <csignal>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <iostream>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -56,6 +63,9 @@
 
 #ifdef HAVE_TERMIOS
 #include <termios.h> // tcgetattr/tcsetattr
+#ifdef HAVE_IOCTL
+#include <sys/ioctl.h> // ioctl
+#endif
 #endif
 
 #ifdef HAVE_MMAP
@@ -84,6 +94,9 @@
 #define STDOUT_FILENO 0
 #endif
 
+#define plat_write _write
+#define plat_mkdir(a, mode) _mkdir(a)
+
 #else // not _WIN32
 
 #if defined(HAVE_TTY) || defined(HAVE_MMAP) || defined(HAVE_TERMIOS)
@@ -94,7 +107,13 @@
 #include <sys/select.h> // select
 #endif
 
+#define plat_write write
+#define plat_mkdir mkdir
+
 #endif // _WIN32
+
+// Enable these defines to debug
+// #define DEBUG_OS
 
 namespace cartesi {
 
@@ -104,9 +123,12 @@ using namespace std::string_literals;
 /// \brief TTY global state
 struct tty_state {
     bool initialized{false};
-    std::array<char, 1024> buf{}; // Characters in console input buffer
+    bool resize_pending{false};
+    std::array<char, TTY_BUF_SIZE> buf{}; // Characters in console input buffer
     intptr_t buf_pos{};
     intptr_t buf_len{};
+    unsigned short cols{TTY_DEFAULT_COLS};
+    unsigned short rows{TTY_DEFAULT_ROWS};
 #ifdef HAVE_TERMIOS
     int ttyfd{-1};
     termios oldtty{};
@@ -151,21 +173,71 @@ static int get_ttyfd(void) {
 }
 #endif // HAVE_TERMIOS
 
+/// \brief Signal raised whenever TTY size changes
+static void os_SIGWINCH_handler(int sig) {
+    (void) sig;
+    auto *s = get_state();
+    if (!s->initialized) {
+        return;
+    }
+    // It's not safe to do complex logic in signal handlers,
+    // therefore we will actually update the console size in the next get size request.
+    s->resize_pending = true;
+}
+
+bool os_update_tty_size(tty_state *s) {
+#ifdef HAVE_TTY
+#if defined(HAVE_TERMIOS) && defined(HAVE_IOCTL)
+    winsize ws{};
+    if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == 0) {
+        if (ws.ws_col >= 1 && ws.ws_row >= 1) {
+            s->cols = ws.ws_col;
+            s->rows = ws.ws_row;
+            return true;
+        }
+    } else {
+#ifdef DEBUG_OS
+        (void) fprintf(stderr, "os_update_tty_size(): ioctl TIOCGWINSZ failed\n");
+#endif
+    }
+
+#else
+    // TODO(edubart): what to do on Windows and MacOS?
+
+#endif // defined(HAVE_TERMIOS) && defined(HAVE_IOCTL)
+#endif // HAVE_TTY
+    return false;
+}
+
 void os_open_tty(void) {
 #ifdef HAVE_TTY
     auto *s = get_state();
+    if (s->initialized) {
+        // Already initialized
+        return;
+    }
+
     s->initialized = true;
 
 #ifdef HAVE_TERMIOS
     if (s->ttyfd >= 0) { // Already open
+#ifdef DEBUG_OS
+        (void) fprintf(stderr, "os_open_tty(): tty already open\n");
+#endif
         return;
     }
     const int ttyfd = get_ttyfd();
     if (ttyfd < 0) { // Failed to open tty fd
+#ifdef DEBUG_OS
+        (void) fprintf(stderr, "os_open_tty(): get_tty() failed\n");
+#endif
         return;
     }
     struct termios tty {};
     if (tcgetattr(ttyfd, &tty) < 0) { // Failed to retrieve old mode
+#ifdef DEBUG_OS
+        (void) fprintf(stderr, "os_open_tty(): failed retrieve old mode\n");
+#endif
         close(ttyfd);
         return;
     }
@@ -194,6 +266,9 @@ void os_open_tty(void) {
     tty.c_cc[VMIN] = 1;
     tty.c_cc[VTIME] = 0;
     if (tcsetattr(ttyfd, TCSANOW, &tty) < 0) { // Failed to set raw mode
+#ifdef DEBUG_OS
+        (void) fprintf(stderr, "os_open_tty(): failed to set raw mode\n");
+#endif
         close(ttyfd);
         return;
     }
@@ -202,6 +277,9 @@ void os_open_tty(void) {
     // Get stdin handle
     s->hStdin = GetStdHandle(STD_INPUT_HANDLE);
     if (!s->hStdin) {
+#ifdef DEBUG_OS
+        (void) fprintf(stderr, "os_open_tty(): GetStdHandle() failed\n");
+#endif
         return;
     }
     // Set console in raw mode
@@ -209,9 +287,27 @@ void os_open_tty(void) {
         DWORD dwMode = s->dwOldStdinMode;
         dwMode &= ~(ENABLE_ECHO_INPUT | ENABLE_LINE_INPUT | ENABLE_PROCESSED_INPUT);
         dwMode |= ENABLE_VIRTUAL_TERMINAL_INPUT;
-        SetConsoleMode(s->hStdin, dwMode);
+        if (!SetConsoleMode(s->hStdin, dwMode)) {
+#ifdef DEBUG_OS
+            (void) fprintf(stderr, "os_open_tty(): SetConsoleMode() failed\n");
+#endif
+        }
     }
 #endif // HAVE_TERMIOS
+
+    // Get tty initial size
+    os_update_tty_size(s);
+
+    // TODO(edubart): does this handler works on Windows and MacOS?
+    // Install console resize signal handler
+    struct sigaction sigact {};
+    sigact.sa_flags = SA_RESTART;
+    sigact.sa_handler = os_SIGWINCH_handler;
+    if (sigemptyset(&sigact.sa_mask) != 0 || sigaction(SIGWINCH, &sigact, nullptr) != 0) {
+#ifdef DEBUG_OS
+        (void) fprintf(stderr, "os_open_tty(): failed to install SIGWINCH handler\n");
+#endif
+    }
 
 #else
     throw std::runtime_error("unable to open console input, stdin is unsupported in this platform");
@@ -239,39 +335,70 @@ void os_close_tty(void) {
 #endif // HAVE_TTY
 }
 
-void os_poll_tty(uint64_t wait) {
-#ifdef HAVE_TTY
+void os_get_tty_size(uint16_t *pwidth, uint16_t *pheight) {
     auto *s = get_state();
     if (!s->initialized) {
-        throw std::runtime_error("can't poll console input, it is not initialized");
-    }
-    if (s->buf_pos < s->buf_len) {
-        // Input buffer still has pending characters to be read
+        // fallback values
+        *pwidth = TTY_DEFAULT_COLS;
+        *pheight = TTY_DEFAULT_ROWS;
         return;
+    }
+    // Update console size after a SIGWINCH signal
+    if (s->resize_pending) {
+        if (os_update_tty_size(s)) {
+            s->resize_pending = false;
+        }
+    }
+    *pwidth = s->cols;
+    *pheight = s->rows;
+}
+
+void os_prepare_tty_select(select_fd_sets *fds) {
+#ifdef HAVE_TTY
+    auto *s = get_state();
+    // Ignore if TTY is not initialized or stdin was closed
+    if (!s->initialized) {
+        return;
+    }
+#ifndef _WIN32
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    fd_set *readfds = reinterpret_cast<fd_set *>(fds->readfds);
+    FD_SET(STDIN_FILENO, readfds);
+    if (STDIN_FILENO > fds->maxfd) {
+        fds->maxfd = STDIN_FILENO;
+    }
+#else
+    (void) data;
+#endif
+#endif
+}
+
+bool os_poll_selected_tty(int select_ret, select_fd_sets *fds) {
+    auto *s = get_state();
+    if (!s->initialized) { // We can't poll when TTY is not initialized
+        return false;
+    }
+    // If we have characters left in buffer, we don't need to obtain more characters
+    if (s->buf_pos < s->buf_len) {
+        return true;
     }
 
 #ifdef _WIN32
-    s->buf_len = -1;
+    intptr_t len = -1;
     if (s->hStdin) {
-        // Wait for an input event
-        const uint64_t wait_millis = (wait + 999) / 1000;
-        if (WaitForSingleObject(s->hStdin, wait_millis) != WAIT_OBJECT_0) {
-            // No input events
-            return;
-        }
         // Consume input events until buffer is full or the event list is empty
         INPUT_RECORD inputRecord{};
         DWORD numberOfEventsRead = 0;
         while (PeekConsoleInput(s->hStdin, &inputRecord, 1, &numberOfEventsRead)) {
             if (numberOfEventsRead == 0) {
                 // Nothing to read
-                return;
+                return false;
             } else if (inputRecord.EventType == KEY_EVENT && inputRecord.Event.KeyEvent.bKeyDown) {
                 // Key was pressed
                 DWORD numberOfCharsRead = 0;
                 // We must read input buffer through ReadConsole() to read raw terminal input
                 if (ReadConsole(s->hStdin, s->buf.data(), s->buf.size(), &numberOfCharsRead, NULL)) {
-                    s->buf_len = static_cast<intptr_t>(numberOfCharsRead);
+                    len = static_cast<intptr_t>(numberOfCharsRead);
                 }
                 break;
             } else {
@@ -280,49 +407,78 @@ void os_poll_tty(uint64_t wait) {
             }
         }
     }
-
 #else
-    const int fd_max{0};
-    fd_set rfds{};
-    timeval tv{};
-    tv.tv_usec = static_cast<decltype(tv.tv_usec)>(wait);
-    FD_ZERO(&rfds); // NOLINT: suppress cause on MacOSX it resolves to __builtin_bzero
-    FD_SET(STDIN_FILENO, &rfds);
-    if (select(fd_max + 1, &rfds, nullptr, nullptr, &tv) <= 0 || !FD_ISSET(0, &rfds)) {
-        // Nothing to read
-        return;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    fd_set *readfds = reinterpret_cast<fd_set *>(fds->readfds);
+    // If the stdin file description is not ready, we can't obtain more characters
+    if (select_ret <= 0 || !FD_ISSET(STDIN_FILENO, readfds)) {
+        return false;
     }
-    s->buf_len = static_cast<intptr_t>(read(STDIN_FILENO, s->buf.data(), s->buf.size()));
+    const intptr_t len = static_cast<intptr_t>(read(STDIN_FILENO, s->buf.data(), s->buf.size()));
 
 #endif // _WIN32
 
     // If stdin is closed, pass EOF to client
-    if (s->buf_len <= 0) {
+    if (len <= 0) {
         s->buf_len = 1;
-        s->buf[0] = 4; // CTRL+D
+        s->buf[0] = TTY_CTRL_D;
+    } else {
+        s->buf_len = len;
     }
     s->buf_pos = 0;
+    return true;
+}
+
+bool os_poll_tty(uint64_t timeout_us) {
+#ifdef _WIN32
+    auto *s = get_state();
+    if (!s->initialized) { // We can't poll when TTY is not initialized
+        return false;
+    }
+    if (s->hStdin) {
+        // Wait for an input event
+        const uint64_t wait_millis = (wait_us + 999) / 1000;
+        if (WaitForSingleObject(s->hStdin, wait_millis) != WAIT_OBJECT_0) {
+            // No input events
+            return false;
+        }
+    }
+    return os_poll_selected_tty(-1, nullptr);
 
 #else
-    (void) wait;
-    throw std::runtime_error("can't poll console input, it is unsupported in this platform");
-#endif // HAVE_TTY
+    return os_select_fds(
+        [](select_fd_sets *fds, const uint64_t *timeout_us) -> void {
+            (void) timeout_us;
+            os_prepare_tty_select(fds);
+        },
+        [](int select_ret, select_fd_sets *fds) -> bool { return os_poll_selected_tty(select_ret, fds); }, &timeout_us);
+
+#endif // _WIN32
 }
 
 int os_getchar(void) {
 #ifdef HAVE_TTY
     auto *s = get_state();
     if (!s->initialized) {
-        throw std::runtime_error("can't get char, console input is not initialized");
+        return -1;
     }
-    os_poll_tty(0);
     if (s->buf_pos < s->buf_len) {
-        return s->buf[s->buf_pos++] + 1;
+        return s->buf[s->buf_pos++];
     }
-#else
-    throw std::runtime_error("can't get char, console input is unsupported in this platform");
 #endif // HAVE_TTY
-    return 0;
+    return -1;
+}
+
+size_t os_getchars(unsigned char *data, size_t max_len) {
+    size_t i = 0;
+    for (; i < max_len; ++i) {
+        const int c = os_getchar();
+        if (c < 0) {
+            break;
+        }
+        data[i] = c;
+    }
+    return i;
 }
 
 static void fputc_with_line_buffering(uint8_t ch) {
@@ -344,27 +500,24 @@ void os_putchar(uint8_t ch) {
     } else {
         // In interactive sessions we want to immediately write the character to stdout,
         // without any buffering.
-#ifdef _WIN32
-        if (_write(STDOUT_FILENO, &ch, 1) < 1) {
+        if (plat_write(STDOUT_FILENO, &ch, 1) < 1) {
             ;
         }
-#else
-        if (write(STDOUT_FILENO, &ch, 1) < 1) {
-            ;
-        }
-#endif
     }
 #else
     fputc_with_line_buffering(ch);
 #endif // HAVE_TTY
 }
 
+void os_putchars(const uint8_t *data, size_t len) {
+    for (size_t i = 0; i < len; ++i) {
+        os_putchar(data[i]);
+    }
+}
+
 int os_mkdir(const char *path, int mode) {
 #ifdef HAVE_MKDIR
-    return mkdir(path, mode);
-#elif defined(_WIN32)
-    (void) mode;
-    return _mkdir(path);
+    return plat_mkdir(path, mode);
 #else
     return -1;
 #endif // HAVE_MKDIR
@@ -563,4 +716,59 @@ bool os_parallel_for(uint64_t n, const std::function<bool(uint64_t j, const para
     return succeeded;
 }
 
+bool os_select_fds(const os_select_before_callback &before_cb, const os_select_after_callback &after_cb,
+    uint64_t *timeout_us) {
+    // Create empty fd sets
+    select_fd_sets fds{};
+    fds.maxfd = -1;
+    fd_set readfds{};
+    fd_set writefds{};
+    fd_set exceptfds{};
+    FD_ZERO(&readfds);
+    FD_ZERO(&writefds);
+    FD_ZERO(&exceptfds);
+    fds.readfds = &readfds;
+    fds.writefds = &writefds;
+    fds.exceptfds = &exceptfds;
+    // Fill fds
+    before_cb(&fds, timeout_us);
+    // Configure timeout
+    timeval tv{};
+    tv.tv_sec = static_cast<decltype(tv.tv_sec)>(*timeout_us / 1000000);
+    tv.tv_usec = static_cast<decltype(tv.tv_usec)>(*timeout_us % 1000000);
+    // Wait for events
+    // TODO(edubart): consider supporting other OSes
+    const int select_ret = select(fds.maxfd + 1, &readfds, &writefds, &exceptfds, &tv);
+    // Process ready fds
+    return after_cb(select_ret, &fds);
+}
+
+void os_disable_sigpipe() {
+    struct sigaction sigact {};
+    sigact.sa_handler = SIG_IGN;
+    sigact.sa_flags = SA_RESTART;
+    if (sigemptyset(&sigact.sa_mask) != 0 || sigaction(SIGPIPE, &sigact, nullptr) != 0) {
+#ifdef DEBUG_OS
+        (void) fprintf(stderr, "os_disable_sigpipe(): failed to disable SIGPIPE handler\n");
+#endif
+    }
+}
+
+void os_sleep_us(uint64_t timeout_us) {
+    if (timeout_us == 0) {
+        return;
+    }
+    // Select without fds just to sleep
+    os_select_fds(
+        [](select_fd_sets *fds, const uint64_t *timeout_us) -> void {
+            (void) fds;
+            (void) timeout_us;
+        },
+        [](int select_ret, select_fd_sets *fds) -> bool {
+            (void) select_ret;
+            (void) fds;
+            return false;
+        },
+        &timeout_us);
+}
 } // namespace cartesi

@@ -45,6 +45,8 @@
 #include "uarch-step-state-access.h"
 #include "uarch-step.h"
 #include "unique-c-ptr.h"
+#include "virtio-console.h"
+#include "virtio-factory.h"
 
 /// \file
 /// \brief Cartesi machine implementation
@@ -440,6 +442,16 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     // Register pma board shadow device
     register_pma_entry(make_shadow_pmas_pma_entry(PMA_SHADOW_PMAS_START, PMA_SHADOW_PMAS_LENGTH));
 
+    // TODO(edubart): user should be able to configure these devices
+    if (m_c.htif.console_getchar) {
+        // Register VirtIO console device
+        auto vdev_console = std::make_unique<virtio_console>(m_vdevs.size());
+        register_pma_entry(
+            make_virtio_pma_entry(PMA_FIRST_VIRTIO_START + vdev_console->get_virtio_index() * PMA_VIRTIO_LENGTH,
+                PMA_VIRTIO_LENGTH, "VirtIO console device", &virtio_driver, vdev_console.get()));
+        m_vdevs.push_back(std::move(vdev_console));
+    }
+
     // Initialize DTB
     if (m_c.dtb.image_filename.empty()) {
         // Write the FDT (flattened device tree) into DTB
@@ -496,6 +508,11 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     // Sort it by increasing start address
     std::sort(m_mrds.begin(), m_mrds.end(),
         [](const machine_memory_range_descr &a, const machine_memory_range_descr &b) { return a.start < b.start; });
+
+    // Disable SIGPIPE handler, because this signal be raised and terminate the emulator process,
+    // when calling write() on closed file descriptors.
+    // This can happen with the stdout console file descriptors or network file descriptors.
+    os_disable_sigpipe();
 }
 
 static void load_hash(const std::string &dir, machine::hash_type &h) {
@@ -520,6 +537,41 @@ machine::machine(const std::string &dir, const machine_runtime_config &r) : mach
     if (hstored != hrestored) {
         throw std::runtime_error{"stored and restored hashes do not match"};
     }
+}
+
+void machine::prepare_virtio_devices_select(select_fd_sets *fds, uint64_t *timeout_us) {
+    for (auto &vdev : m_vdevs) {
+        vdev->prepare_select(fds, timeout_us);
+    }
+}
+
+bool machine::poll_selected_virtio_devices(int select_ret, select_fd_sets *fds, i_device_state_access *da) {
+    bool interrupt_requested = false;
+    for (auto &vdev : m_vdevs) {
+        interrupt_requested |= vdev->poll_selected(select_ret, fds, da);
+    }
+    return interrupt_requested;
+}
+
+bool machine::poll_virtio_devices(uint64_t *timeout_us, i_device_state_access *da) {
+    return os_select_fds(
+        [&](select_fd_sets *fds, uint64_t *timeout_us) -> void { prepare_virtio_devices_select(fds, timeout_us); },
+        [&](int select_ret, select_fd_sets *fds) -> bool { return poll_selected_virtio_devices(select_ret, fds, da); },
+        timeout_us);
+}
+
+bool machine::has_virtio_devices() const {
+    return !m_vdevs.empty();
+}
+
+bool machine::has_virtio_console() const {
+    // When present, the console device is guaranteed to be the first VirtIO device,
+    // therefore we only need to check the first device.
+    return !m_vdevs.empty() && m_vdevs[0]->get_device_id() == VIRTIO_DEVICE_CONSOLE;
+}
+
+bool machine::has_htif_console() const {
+    return static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
 }
 
 machine_config machine::get_serialization_config(void) const {

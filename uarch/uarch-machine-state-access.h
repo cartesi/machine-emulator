@@ -522,8 +522,8 @@ private:
         return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::htif_iyield));
     }
 
-    uint64_t do_poll_console(uint64_t mcycle) {
-        return mcycle;
+    std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
+        return {mcycle, false};
     }
     
     uint64_t do_read_pma_istart(int i) {
@@ -541,7 +541,17 @@ private:
         *pval = raw_read_memory<T>(paddr);
     }
 
-    void do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t log2_size) {}
+    bool do_read_memory(uint64_t paddr, unsigned char *data, uint64_t length) {
+        // This is not implemented yet because it's not being used
+        abort();
+        return false;
+    }
+
+    bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
+        // This is not implemented yet because it's not being used
+        abort();
+        return false;
+    }
 
     template <typename T>
     void do_write_memory_word(uint64_t paddr, const unsigned char *hpage, uint64_t hoffset, T val) {
@@ -614,6 +624,8 @@ private:
                     driver = &htif_driver;
                     break;
                 default:
+                    // Other unsupported device in uarch (eg. VirtIO)
+                    abort();
                     break;
             }
         }

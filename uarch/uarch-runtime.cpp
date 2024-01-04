@@ -83,12 +83,13 @@ void os_open_tty(void) {}
 
 void os_close_tty(void) {}
 
-void os_poll_tty(uint64_t wait) {
-    (void) wait;
+bool os_poll_tty(uint64_t timeout_us) {
+    (void) timeout_us;
+    return false;
 }
 
 int os_getchar(void) {
-    return 0;
+    return -1;
 }
 
 void os_putchar(uint8_t ch) {

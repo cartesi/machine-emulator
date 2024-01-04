@@ -416,22 +416,41 @@ private:
         return m_m.get_state().htif.iyield;
     }
 
-    NO_INLINE uint64_t do_poll_console(uint64_t mcycle) {
-        const bool htif_console_getchar = static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
-        if (htif_console_getchar) {
-            const uint64_t warp_cycle = rtc_time_to_cycle(read_clint_mtimecmp());
-            if (warp_cycle > mcycle) {
-                constexpr uint64_t cycles_per_us = RTC_CLOCK_FREQ / 1000000; // CLOCK_FREQ / 10^6
-                const uint64_t wait = (warp_cycle - mcycle) / cycles_per_us;
-                const int64_t start = os_now_us();
-                os_poll_tty(wait);
-                const int64_t end = os_now_us();
-                const uint64_t elapsed_us = static_cast<uint64_t>(std::max(end - start, INT64_C(0)));
-                const uint64_t tty_cycle = mcycle + (elapsed_us * cycles_per_us);
-                mcycle = std::min(std::max(tty_cycle, mcycle), warp_cycle);
+    NO_INLINE std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
+        bool interrupt_raised = false;
+        const bool has_htif_console = m_m.has_htif_console();
+        const bool has_virtio_devices = m_m.has_virtio_devices();
+        const bool has_virtio_console = m_m.has_virtio_console();
+        // Only poll external interrupts if we are in interactive mode (console is enabled or have VirtIO devices)
+        if (unlikely(has_htif_console || has_virtio_devices)) {
+            // Convert the relative interval of cycles we can wait to the interval of host time we can wait
+            uint64_t timeout_us = (mcycle_max - mcycle) / RTC_CYCLES_PER_US;
+            int64_t start_us = 0;
+            if (timeout_us > 0) {
+                start_us = os_now_us();
+            }
+            device_state_access da(*this, mcycle);
+            // Poll virtio for events (e.g console stdin, network sockets)
+            // Timeout may be decremented in case a device has deadline timers (e.g network device)
+            if (has_virtio_devices && has_virtio_console) { // VirtIO + VirtIO console
+                m_m.poll_virtio_devices(&timeout_us, &da);
+                // VirtIO console device will poll TTY
+            } else if (has_virtio_devices) { // VirtIO without a console + HTIF console
+                m_m.poll_virtio_devices(&timeout_us, &da);
+                // Poll tty without waiting more time, because the pool above should have waited enough time
+                os_poll_tty(0);
+            } else { // Only HTIF console
+                os_poll_tty(timeout_us);
+            }
+            // If timeout is greater than zero, we should also increment mcycle relative to the elapsed time
+            if (timeout_us > 0) {
+                const int64_t end_us = os_now_us();
+                const uint64_t elapsed_us = static_cast<uint64_t>(std::max(end_us - start_us, INT64_C(0)));
+                uint64_t next_mcycle = mcycle + (elapsed_us * RTC_CYCLES_PER_US);
+                mcycle = std::min(std::max(next_mcycle, mcycle), mcycle_max);
             }
         }
-        return mcycle;
+        return {mcycle, interrupt_raised};
     }
 
     uint64_t do_read_pma_istart(int i) const {
@@ -466,8 +485,26 @@ private:
         aliased_aligned_write(hpage + hoffset, val);
     }
 
-    void do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t log2_size) {
-        m_m.write_memory(paddr, data, UINT64_C(1) << log2_size);
+    bool do_read_memory(uint64_t paddr, unsigned char *data, uint64_t length) const {
+        //??(edubart): Treating exceptions here is not ideal, we should probably
+        // move read_memory() method implementation inside state access later
+        try {
+            m_m.read_memory(paddr, data, length);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
+        //??(edubart): Treating exceptions here is not ideal, we should probably
+        // move write_memory() method implementation inside state access later
+        try {
+            m_m.write_memory(paddr, data, length);
+            return true;
+        } catch (...) {
+            return false;
+        }
     }
 
     template <typename T>

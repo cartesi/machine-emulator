@@ -302,6 +302,9 @@ LIBCARTESI_OBJS:= \
 	clint-factory.o \
 	plic.o \
 	plic-factory.o \
+	virtio-factory.o \
+	virtio-device.o \
+	virtio-console.o \
 	dtb.o \
 	os.o \
 	htif.o \

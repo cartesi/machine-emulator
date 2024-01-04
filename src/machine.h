@@ -20,6 +20,9 @@
 /// \file
 /// \brief Cartesi machine interface
 
+#include <boost/container/static_vector.hpp>
+#include <memory>
+
 #include "access-log.h"
 #include "interpret.h"
 #include "machine-config.h"
@@ -27,8 +30,10 @@
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
 #include "machine-state.h"
+#include "os.h"
 #include "uarch-interpret.h"
 #include "uarch-machine.h"
+#include "virtio-device.h"
 
 namespace cartesi {
 
@@ -58,6 +63,8 @@ private:
     uarch_machine m_uarch;              ///< Microarchitecture machine
     machine_runtime_config m_r;         ///< Copy of initialization runtime config
     machine_memory_range_descrs m_mrds; ///< List of memory ranges returned by get_memory_ranges().
+
+    boost::container::static_vector<std::unique_ptr<virtio_device>, VIRTIO_MAX> m_vdevs; ///< Array of VirtIO devices
 
     static const pma_entry::flags m_dtb_flags;                   ///< PMA flags used for DTB
     static const pma_entry::flags m_ram_flags;                   ///< PMA flags used for RAM
@@ -284,6 +291,36 @@ public:
 
     /// \brief Destructor.
     ~machine();
+
+    /// \brief Fill file descriptors to be polled by select() for all VirtIO devices.
+    /// \param fds Pointer to sets of read, write and except file descriptors to be updated.
+    /// \param timeout_us Maximum amount of time to wait in microseconds, this may be updated (always to lower values).
+    void prepare_virtio_devices_select(select_fd_sets *fds, uint64_t *timeout_us);
+
+    /// \brief Poll file descriptors that were marked as ready by select() for all VirtIO devices.
+    /// \param select_ret Return value from the most recent select() call.
+    /// \param fds Pointer to sets of read, write and except file descriptors to be checked.
+    /// \returns True if an interrupt was requested, false otherwise.
+    /// \details This function process pending events and trigger interrupt requests (if any).
+    bool poll_selected_virtio_devices(int select_ret, select_fd_sets *fds, i_device_state_access *da);
+
+    /// \brief Poll file descriptors through select() for all VirtIO devices.
+    /// \details Basically call prepare_virtio_devices_select(), select() and poll_selected_virtio_devices().
+    /// \param timeout_us Maximum amount of time to wait in microseconds, this may be updated (always to lower values).
+    /// \returns True if an interrupt was requested, false otherwise.
+    bool poll_virtio_devices(uint64_t *timeout_us, i_device_state_access *da);
+
+    /// \brief Checks if the machine has VirtIO devices.
+    /// \returns True if at least one VirtIO device is present.
+    bool has_virtio_devices() const;
+
+    /// \brief Checks if the machine has VirtIO console device.
+    /// \returns True if at least one VirtIO console is present.
+    bool has_virtio_console() const;
+
+    /// \brief Checks if the machine has HTIF console device.
+    /// \returns True if HTIF console is present.
+    bool has_htif_console() const;
 
     /// \brief Update the Merkle tree so it matches the contents of the machine state.
     /// \returns true if succeeded, false otherwise.

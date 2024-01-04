@@ -645,18 +645,13 @@ local options = {
         function(all)
             if not all then return false end
             htif_console_getchar = true
+            -- Switch from HTIF Console (hvc0) to VirtIO console (hvc1)
+            bootargs = bootargs:gsub("console=hvc0", "console=hvc1")
+            -- Expose current terminal features to the virtual terminal
             local term, lang, lc_all = os.getenv("TERM"), os.getenv("LANG"), os.getenv("LC_ALL")
             if term then append_init = append_init .. "export TERM=" .. term .. "\n" end
             if lang then append_init = append_init .. "export LANG=" .. lang .. "\n" end
             if lc_all then append_init = append_init .. "export LC_ALL=" .. lc_all .. "\n" end
-            local stty <close> = assert(io.popen("stty size"))
-            local line = assert(stty:read(), "command failed: stty size")
-            if line then
-                local rows, cols = line:match("^([0-9]+) ([0-9]+)$")
-                if rows and cols then
-                    append_init = append_init .. "busybox stty rows " .. rows .. " cols " .. cols .. "\n"
-                end
-            end
             return true
         end,
     },
@@ -887,7 +882,7 @@ local options = {
             flash_length.root = nil
             flash_shared.root = nil
             table.remove(flash_label_order, 1)
-            bootargs = "quiet earlycon=sbi console=hvc0"
+            bootargs = bootargs:gsub(" rootfstype=.*$", "")
             return true
         end,
     },

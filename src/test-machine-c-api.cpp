@@ -9,24 +9,26 @@
 #include <boost/test/included/unit_test.hpp>
 #pragma GCC diagnostic pop
 
+#define JSON_HAS_FILESYSTEM 0
+#include <json.hpp>
+
 #include <array>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <iterator>
-#include <limits>
 #include <thread>
 #include <tuple>
 #include <vector>
 
 #include "grpc-machine-c-api.h"
-#include "json-util.h"
 #include "machine-c-api.h"
 #include "riscv-constants.h"
 #include "test-utils.h"
 #include "uarch-constants.h"
 #include "uarch-solidity-compat.h"
+
+// NOLINTBEGIN(cppcoreguidelines-avoid-do-while)
 
 // NOLINTNEXTLINE
 #define BOOST_AUTO_TEST_CASE_NOLINT(...) BOOST_AUTO_TEST_CASE(__VA_ARGS__)
@@ -72,7 +74,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_default_machine_config_basic_test) {
 
 class default_machine_fixture {
 public:
-    default_machine_fixture() : _machine(nullptr), _default_machine_config(cm_new_default_machine_config()) {}
+    default_machine_fixture() : _default_machine_config(cm_new_default_machine_config()) {}
 
     ~default_machine_fixture() {
         cm_delete_machine_config(_default_machine_config);
@@ -85,7 +87,7 @@ public:
 
 protected:
     cm_machine_runtime_config _runtime_config{};
-    cm_machine *_machine;
+    cm_machine *_machine{};
     const cm_machine_config *_default_machine_config;
 };
 
@@ -152,12 +154,14 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_default_machine_test, default_mach
     cm_delete_cstring(err_msg);
 }
 
-static char *new_cstr(const char *str) {
+namespace {
+char *new_cstr(const char *str) {
     auto size = strlen(str) + 1;
     auto *copy = new char[size];
     strncpy(copy, str, size);
     return copy;
 }
+} // namespace
 
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class incomplete_machine_fixture : public default_machine_fixture {
@@ -219,7 +223,8 @@ protected:
         delete[] config->uarch.ram.image_filename;
     }
 
-    void _setup_flash(std::list<cm_memory_range_config> &&configs) {
+    void _setup_flash(std::list<cm_memory_range_config> &&config_list) {
+        std::list<cm_memory_range_config> configs = std::move(config_list);
         _machine_config.flash_drive.count = configs.size();
         delete[] _machine_config.flash_drive.entry;
         _machine_config.flash_drive.entry = new cm_memory_range_config[configs.size()];
@@ -415,7 +420,7 @@ bool operator==(const cm_machine_config &lhs, const cm_machine_config &rhs) {
 
 std::ostream &boost_test_print_type(std::ostream &ostr, const cm_machine_config &rhs) {
     (void) rhs; // suppress 'unused param' warning
-    ostr << "configs not equal" << std::endl;
+    ostr << "configs not equal\n";
     return ostr;
 }
 
@@ -1799,13 +1804,13 @@ public:
         _log_type = {true, true, false};
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
 
-        // Encodes: li t0, UARCH_HALT_FLAG_SHADDOW_ADDR
+        // Encodes: li t0, UARCH_HALT_FLAG_SHADOW_ADDR
         uint32_t li_t0_UARCH_SHADOW_START_ADDRESS =
-            ((UARCH_HALT_FLAG_SHADDOW_ADDR_DEF >> 12) << 12) | static_cast<uint32_t>(0x02b7);
+            ((UARCH_HALT_FLAG_SHADOW_ADDR_DEF >> 12) << 12) | static_cast<uint32_t>(0x02b7);
 
         uint32_t test_uarch_ram[] = {
             0x07b00513,                       //  li	a0,123
-            li_t0_UARCH_SHADOW_START_ADDRESS, //  li t0,UARCH_HALT_FLAG_SHADDOW_ADDR
+            li_t0_UARCH_SHADOW_START_ADDRESS, //  li t0,UARCH_HALT_FLAG_SHADOW_ADDR
             0x00100313,                       //  li	t1,1
             0x0062b023,                       //  sd	t1,0(t0)  Halt microarchitecture at uarch cycle 4
         };
@@ -2332,7 +2337,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_reset_uarch, ordinary_machine_fixture) {
         modified_uarch_ram.size(), nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
-    // ensure that modified ram is diferent from the one initially saved
+    // ensure that modified ram is different from the one initially saved
     BOOST_REQUIRE(initial_uarch_ram != modified_uarch_ram);
 
     // reset state
@@ -2415,7 +2420,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, or
 
 class grpc_machine_fixture : public machine_flash_simple_fixture {
 public:
-    grpc_machine_fixture() : m_stub{} {
+    grpc_machine_fixture() : machine_flash_simple_fixture() {
         char *err_msg{};
         int result = cm_create_grpc_machine_stub("127.0.0.1:5001", "127.0.0.1:5002", &m_stub, &err_msg);
         BOOST_CHECK_EQUAL(result, CM_ERROR_OK);
@@ -2430,10 +2435,11 @@ public:
     grpc_machine_fixture &operator=(grpc_machine_fixture &&) = delete;
 
 protected:
-    cm_grpc_machine_stub *m_stub;
+    cm_grpc_machine_stub *m_stub{};
 };
 
-static bool wait_for_server(cm_grpc_machine_stub *stub, int retries = 10) {
+namespace {
+bool wait_for_server(cm_grpc_machine_stub *stub, int retries = 10) {
     for (int i = 0; i < retries; i++) {
         const cm_semantic_version *version{};
         char *err_msg{};
@@ -2448,6 +2454,7 @@ static bool wait_for_server(cm_grpc_machine_stub *stub, int retries = 10) {
     }
     return false;
 }
+} // namespace
 
 class grpc_machine_fixture_with_server : public grpc_machine_fixture {
 public:
@@ -2471,7 +2478,7 @@ protected:
 
 class grpc_access_log_machine_fixture : public grpc_machine_fixture {
 public:
-    grpc_access_log_machine_fixture() : _access_log{}, _log_type{true, true, true} {}
+    grpc_access_log_machine_fixture() : grpc_machine_fixture(), _log_type{true, true, true} {}
     ~grpc_access_log_machine_fixture() override = default;
     grpc_access_log_machine_fixture(const grpc_access_log_machine_fixture &) = delete;
     grpc_access_log_machine_fixture(grpc_access_log_machine_fixture &&) = delete;
@@ -2479,7 +2486,7 @@ public:
     grpc_access_log_machine_fixture &operator=(grpc_access_log_machine_fixture &&) = delete;
 
 protected:
-    cm_access_log *_access_log;
+    cm_access_log *_access_log{};
     cm_access_log_type _log_type;
 };
 
@@ -2839,3 +2846,4 @@ BOOST_AUTO_TEST_CASE_NOLINT(uarch_solidity_compatibility_layer) {
     BOOST_CHECK_EQUAL(int8ToUint64(int8(127)), 127);
     BOOST_CHECK_EQUAL(int8ToUint64(int8(-128)), 0xffffffffffffff80ULL);
 }
+// NOLINTEND(cppcoreguidelines-avoid-do-while)

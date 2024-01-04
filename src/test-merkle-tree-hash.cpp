@@ -16,32 +16,30 @@
 
 #include <array>
 #include <cassert>
-#include <cinttypes>
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <optional>
 
 #include "back-merkle-tree.h"
 #include "complete-merkle-tree.h"
 #include "full-merkle-tree.h"
 #include "keccak-256-hasher.h"
 #include "merkle-tree-proof.h"
-#include "pristine-merkle-tree.h"
 #include "unique-c-ptr.h"
 
 using namespace cartesi;
 using hasher_type = keccak_256_hasher;
 using hash_type = hasher_type::hash_type;
 
+namespace {
 /// \brief Checks if string matches prefix and captures remaninder
 /// \param pre Prefix to match in str.
 /// \param str Input string
 /// \param val If string matches prefix, points to remaninder
 /// \returns True if string matches prefix, false otherwise
-static bool stringval(const char *pre, const char *str, const char **val) {
+bool stringval(const char *pre, const char *str, const char **val) {
     const size_t len = strlen(pre);
     if (strncmp(pre, str, len) == 0) {
         *val = str + len;
@@ -57,7 +55,7 @@ static bool stringval(const char *pre, const char *str, const char **val) {
 /// to converted int
 /// \returns True if string matches prefix and conversion succeeds,
 /// false otherwise
-static bool intval(const char *pre, const char *str, int *val) {
+bool intval(const char *pre, const char *str, int *val) {
     const size_t len = strlen(pre);
     if (strncmp(pre, str, len) == 0) {
         str += len;
@@ -71,13 +69,14 @@ static bool intval(const char *pre, const char *str, int *val) {
 /// \brief Prints hash in hex to file
 /// \param hash Hash to be printed.
 /// \param f File to print to
-static void print_hash(const hash_type &hash, FILE *f) {
+void print_hash(const hash_type &hash, FILE *f) {
     for (auto b : hash) {
         (void) fprintf(f, "%02x", static_cast<int>(b));
     }
     (void) fprintf(f, "\n");
 }
 
+// NOLINTNEXTLINE
 #if 0 // Unused
 /// \brief Reads a hash in hex from file
 /// \param f File to read from
@@ -105,7 +104,7 @@ static std::optional<hash_type> read_hash(FILE *f) {
 /// \param fmt Format string
 /// \param ... Arguments, if any
 // NOLINTNEXTLINE(cert-dcl50-cpp): this vararg is safe because the compiler can check the format
-__attribute__((format(printf, 1, 2))) static void error(const char *fmt, ...) {
+__attribute__((format(printf, 1, 2))) void error(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
     (void) vfprintf(stderr, fmt, ap);
@@ -118,7 +117,7 @@ __attribute__((format(printf, 1, 2))) static void error(const char *fmt, ...) {
 /// \param leaf Pointer to leaf data. Must contain 2^log2_word_size bytes
 /// \param log2_word Log<sub>2</sub> of word size
 /// \param hash Receives the leaf hash
-static void get_word_hash(hasher_type &h, const unsigned char *word, int log2_word_size, hash_type &hash) {
+void get_word_hash(hasher_type &h, const unsigned char *word, int log2_word_size, hash_type &hash) {
     h.begin();
     h.add_data(word, 1 << log2_word_size);
     h.end(hash);
@@ -131,7 +130,7 @@ static void get_word_hash(hasher_type &h, const unsigned char *word, int log2_wo
 /// at least 2^log2_leaf_size bytes
 /// \param log2_leaf_size Log<sub>2</sub> of leaf size
 /// \returns Merkle hash of leaf data
-static hash_type get_leaf_hash(hasher_type &h, int log2_word_size, const unsigned char *leaf_data, int log2_leaf_size) {
+hash_type get_leaf_hash(hasher_type &h, int log2_word_size, const unsigned char *leaf_data, int log2_leaf_size) {
     assert(log2_leaf_size >= log2_word_size);
     if (log2_leaf_size > log2_word_size) {
         hash_type left = get_leaf_hash(h, log2_word_size, leaf_data, log2_leaf_size - 1);
@@ -152,13 +151,13 @@ static hash_type get_leaf_hash(hasher_type &h, int log2_word_size, const unsigne
 /// at least 2^log2_leaf_size bytes
 /// \param log2_leaf_size Log<sub>2</sub> of leaf size
 /// \returns Merkle hash of leaf data
-static hash_type get_leaf_hash(int log2_word_size, const unsigned char *leaf_data, int log2_leaf_size) {
+hash_type get_leaf_hash(int log2_word_size, const unsigned char *leaf_data, int log2_leaf_size) {
     hasher_type h;
     return get_leaf_hash(h, log2_word_size, leaf_data, log2_leaf_size);
 }
 
 /// \brief Prints help message
-static void help(const char *name) {
+void help(const char *name) {
     (void) fprintf(stderr,
         "Usage:\n  %s [--input=<filename>] "
         "[--log2-word-size=<w>] [--log2-leaf-size=<p>] "
@@ -166,6 +165,7 @@ static void help(const char *name) {
         name);
     exit(0);
 }
+}; // namespace
 
 int main(int argc, char *argv[]) try {
     const char *input_name = nullptr;
@@ -233,7 +233,7 @@ int main(int argc, char *argv[]) try {
     // 2) The full_merkle_tree builds a tree from scratch based on
     // all leaf hashes
     // 3) The full_merkle_tree can also receive leaf hashes and a
-    // log-size proof for the leaf currently in the tree and udpate
+    // log-size proof for the leaf currently in the tree and update
     // the root hash in log time keeping only constant size state.
     // 4) The complete_merkle_tree can receive leaf hashes and maintain
     // only the part of the tree that is not pristine

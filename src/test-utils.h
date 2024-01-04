@@ -14,16 +14,11 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <array>
-#include <fstream>
-#include <iostream>
 #include <string>
-#include <vector>
 
 #include "back-merkle-tree.h"
 #include "keccak-256-hasher.h"
 #include "machine-c-api.h"
-#include "pma-constants.h"
 
 using hash_type = cartesi::keccak_256_hasher::hash_type;
 
@@ -44,6 +39,7 @@ static hash_type merkle_hash(cartesi::keccak_256_hasher &h, const std::string_vi
         get_concat_hash(h, left, right, result);
     } else {
         h.begin();
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         h.add_data(reinterpret_cast<const unsigned char *>(data.data()), data.size());
         h.end(result);
     }
@@ -73,7 +69,8 @@ static hash_type calculate_proof_root_hash(const cm_merkle_tree_proof *proof) {
          ++log2_size) {
         cartesi::keccak_256_hasher h;
         auto bit = (proof->target_address & (UINT64_C(1) << log2_size));
-        hash_type first, second;
+        hash_type first;
+        hash_type second;
         if (bit) {
             memcpy(first.data(), proof->sibling_hashes.entry[log2_size - proof->log2_target_size], sizeof(cm_hash));
             second = hash;
@@ -105,6 +102,7 @@ static hash_type calculate_emulator_hash(cm_machine *machine) {
         tree.pad_back((m.start - last) >> detail::MERKLE_PAGE_LOG2_SIZE);
         auto end = m.start + m.length;
         for (uint64_t s = m.start; s < end; s += detail::MERKLE_PAGE_SIZE) {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
             if (cm_read_memory(machine, s, reinterpret_cast<unsigned char *>(page.data()), page.size(), &err_msg) !=
                 0) {
                 throw std::runtime_error{err_msg};

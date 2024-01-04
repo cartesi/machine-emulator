@@ -26,9 +26,9 @@
 #define UARCH_STATE_LOG2_SIZE_DEF 22
 
 /// \brief The address of uarch halt flag is the first dword in shadow uarch state
-#define UARCH_HALT_FLAG_SHADDOW_ADDR_DEF PMA_SHADOW_UARCH_STATE_START_DEF
+#define UARCH_HALT_FLAG_SHADOW_ADDR_DEF PMA_SHADOW_UARCH_STATE_START_DEF
 
-/// \brief The value that halts the microarchitecture when written to UARCH_HALT_FLAG_SHADDOW_ADDR_DEF
+/// \brief The value that halts the microarchitecture when written to UARCH_HALT_FLAG_SHADOW_ADDR_DEF
 #define UARCH_HALT_FLAG_HALT_VALUE_DEF 1
 
 /// \brief Base of microarchitecture special addresses

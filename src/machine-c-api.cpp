@@ -252,6 +252,24 @@ static cm_clint_config convert_to_c(const cartesi::clint_config &cpp_config) {
 }
 
 // ----------------------------------------------
+// PLIC configuration conversion functions
+// ----------------------------------------------
+static cartesi::plic_config convert_from_c(const cm_plic_config *c_config) {
+    cartesi::plic_config new_cpp_plic_config{};
+    new_cpp_plic_config.girqpend = c_config->girqpend;
+    new_cpp_plic_config.girqsrvd = c_config->girqsrvd;
+    return new_cpp_plic_config;
+}
+
+static cm_plic_config convert_to_c(const cartesi::plic_config &cpp_config) {
+    cm_plic_config new_c_plic_config{};
+    memset(&new_c_plic_config, 0, sizeof(cm_plic_config));
+    new_c_plic_config.girqpend = cpp_config.girqpend;
+    new_c_plic_config.girqsrvd = cpp_config.girqsrvd;
+    return new_c_plic_config;
+}
+
+// ----------------------------------------------
 // HTIF configuration conversion functions
 // ----------------------------------------------
 static cartesi::htif_config convert_from_c(const cm_htif_config *c_config) {
@@ -385,6 +403,7 @@ cartesi::machine_config convert_from_c(const cm_machine_config *c_config) {
     new_cpp_machine_config.dtb = convert_from_c(&c_config->dtb);
     new_cpp_machine_config.tlb = convert_from_c(&c_config->tlb);
     new_cpp_machine_config.clint = convert_from_c(&c_config->clint);
+    new_cpp_machine_config.plic = convert_from_c(&c_config->plic);
     new_cpp_machine_config.htif = convert_from_c(&c_config->htif);
     new_cpp_machine_config.uarch = convert_from_c(&c_config->uarch);
     new_cpp_machine_config.rollup = convert_from_c(&c_config->rollup);
@@ -415,6 +434,7 @@ cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config) {
     new_machine_config->flash_drive = convert_to_c(cpp_config.flash_drive);
     new_machine_config->tlb = convert_to_c(cpp_config.tlb);
     new_machine_config->clint = convert_to_c(cpp_config.clint);
+    new_machine_config->plic = convert_to_c(cpp_config.plic);
     new_machine_config->htif = convert_to_c(cpp_config.htif);
     new_machine_config->uarch = convert_to_c(cpp_config.uarch);
     new_machine_config->rollup = convert_to_c(cpp_config.rollup);
@@ -1240,6 +1260,8 @@ IMPL_MACHINE_READ_WRITE(htif_ihalt)
 IMPL_MACHINE_READ_WRITE(htif_iconsole)
 IMPL_MACHINE_READ_WRITE(htif_iyield)
 IMPL_MACHINE_READ_WRITE(clint_mtimecmp)
+IMPL_MACHINE_READ_WRITE(plic_girqpend)
+IMPL_MACHINE_READ_WRITE(plic_girqsrvd)
 IMPL_MACHINE_READ_WRITE(uarch_cycle)
 IMPL_MACHINE_READ_WRITE(uarch_pc)
 // clang-format-on

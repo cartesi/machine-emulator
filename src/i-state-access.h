@@ -535,6 +535,30 @@ public:
         return derived().do_write_clint_mtimecmp(val);
     }
 
+    /// \brief Reads PLIC's girqpend.
+    /// \returns Register value.
+    uint64_t read_plic_girqpend(void) {
+        return derived().do_read_plic_girqpend();
+    }
+
+    /// \brief Writes PLIC's girqpend.
+    /// \param val New register value.
+    void write_plic_girqpend(uint64_t val) {
+        return derived().do_write_plic_girqpend(val);
+    }
+
+    /// \brief Reads PLIC's girqsrvd.
+    /// \returns Register value.
+    uint64_t read_plic_girqsrvd(void) {
+        return derived().do_read_plic_girqsrvd();
+    }
+
+    /// \brief Writes PLIC's girqsrvd.
+    /// \param val New register value.
+    void write_plic_girqsrvd(uint64_t val) {
+        return derived().do_write_plic_girqsrvd(val);
+    }
+
     /// \brief Reads HTIF's fromhost.
     /// \returns Register value.
     uint64_t read_htif_fromhost(void) {

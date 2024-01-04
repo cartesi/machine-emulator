@@ -45,7 +45,7 @@ static std::string misa_to_isa_string(uint64_t misa) {
 
 void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_length) {
     using namespace std::string_literals;
-    constexpr uint32_t INTC_PHANDLE = 1;
+    enum : uint32_t { INTC_PHANDLE = 1, PLIC_PHANDLE };
     constexpr uint32_t X_HOST = 13;
     constexpr uint32_t BOOTARGS_MAX_LEN = 4096;
 
@@ -120,6 +120,18 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
                 fdt.prop_u64_list<2>("reg", {PMA_CLINT_START, PMA_CLINT_LENGTH});
                 fdt.prop_u32_list<4>("interrupts-extended",
                     {INTC_PHANDLE, MIP_MSIP_SHIFT, INTC_PHANDLE, MIP_MTIP_SHIFT});
+                fdt.end_node();
+            }
+            { // plic
+                fdt.begin_node_num("plic", PMA_PLIC_START);
+                fdt.prop_u32("#interrupt-cells", 1);
+                fdt.prop_empty("interrupt-controller");
+                fdt.prop_string("compatible", "riscv,plic0");
+                fdt.prop_u32("riscv,ndev", PMA_PLIC_MAX_IRQ);
+                fdt.prop_u64_list<2>("reg", {PMA_PLIC_START, PMA_PLIC_LENGTH});
+                fdt.prop_u32_list<4>("interrupts-extended",
+                    {INTC_PHANDLE, MIP_SEIP_SHIFT, INTC_PHANDLE, MIP_MEIP_SHIFT});
+                fdt.prop_u32("phandle", PLIC_PHANDLE);
                 fdt.end_node();
             }
             { // htif

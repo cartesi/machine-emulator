@@ -20,6 +20,7 @@
 #include "uarch-runtime.h" // must be included first, because of assert
 
 #include "clint.h"
+#include "plic.h"
 #include "device-state-access.h"
 #include "htif.h"
 #include "i-state-access.h"
@@ -471,11 +472,26 @@ private:
 
     uint64_t do_read_clint_mtimecmp(void) {
         return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::clint_mtimecmp));
-        
     }
 
     void do_write_clint_mtimecmp(uint64_t val) {
         raw_write_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::clint_mtimecmp), val);
+    }
+
+    uint64_t do_read_plic_girqpend(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::plic_girqpend));
+    }
+
+    void do_write_plic_girqpend(uint64_t val) {
+        raw_write_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::plic_girqpend), val);
+    }
+
+    uint64_t do_read_plic_girqsrvd(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::plic_girqsrvd));
+    }
+
+    void do_write_plic_girqsrvd(uint64_t val) {
+        raw_write_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::plic_girqsrvd), val);
     }
 
     uint64_t do_read_htif_fromhost(void) {
@@ -590,6 +606,9 @@ private:
                     break;
                 case PMA_ISTART_DID::CLINT:
                     driver = &clint_driver;
+                    break;
+                case PMA_ISTART_DID::PLIC:
+                    driver = &plic_driver;
                     break;
                 case PMA_ISTART_DID::HTIF:
                     driver = &htif_driver;

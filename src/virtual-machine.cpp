@@ -416,6 +416,22 @@ void virtual_machine::do_write_clint_mtimecmp(uint64_t val) {
     return m_machine->write_clint_mtimecmp(val);
 }
 
+uint64_t virtual_machine::do_read_plic_girqpend(void) const {
+    return m_machine->read_plic_girqpend();
+}
+
+void virtual_machine::do_write_plic_girqpend(uint64_t val) {
+    return m_machine->write_plic_girqpend(val);
+}
+
+uint64_t virtual_machine::do_read_plic_girqsrvd(void) const {
+    return m_machine->read_plic_girqsrvd();
+}
+
+void virtual_machine::do_write_plic_girqsrvd(uint64_t val) {
+    return m_machine->write_plic_girqsrvd(val);
+}
+
 void virtual_machine::do_replace_memory_range(const memory_range_config &new_range) {
     m_machine->replace_memory_range(new_range);
 }

@@ -135,6 +135,12 @@ public:
             case shadow_state_csr::clint_mtimecmp:
                 s.clint.mtimecmp = data;
                 return;
+            case shadow_state_csr::plic_girqpend:
+                s.plic.girqpend = data;
+                return;
+            case shadow_state_csr::plic_girqsrvd:
+                s.plic.girqsrvd = data;
+                return;
             case shadow_state_csr::htif_tohost:
                 s.htif.tohost = data;
                 return;
@@ -244,6 +250,10 @@ public:
                 return s.read_iflags();
             case shadow_state_csr::clint_mtimecmp:
                 return s.clint.mtimecmp;
+            case shadow_state_csr::plic_girqpend:
+                return s.plic.girqpend;
+            case shadow_state_csr::plic_girqsrvd:
+                return s.plic.girqsrvd;
             case shadow_state_csr::htif_tohost:
                 return s.htif.tohost;
             case shadow_state_csr::htif_fromhost:
@@ -333,6 +343,10 @@ public:
                 return "iflags";
             case shadow_state_csr::clint_mtimecmp:
                 return "clint.mtimecmp";
+            case shadow_state_csr::plic_girqpend:
+                return "plic.girqpend";
+            case shadow_state_csr::plic_girqsrvd:
+                return "plic.girqsrvd";
             case shadow_state_csr::htif_tohost:
                 return "htif.tohost";
             case shadow_state_csr::htif_fromhost:

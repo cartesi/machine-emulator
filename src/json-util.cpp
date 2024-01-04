@@ -83,6 +83,8 @@ static auto csr_from_name(const std::string &name) {
         {"ilrsc", csr::ilrsc},
         {"iflags", csr::iflags},
         {"clint_mtimecmp", csr::clint_mtimecmp},
+        {"plic_girqpend", csr::plic_girqpend},
+        {"plic_girqsrvd", csr::plic_girqsrvd},
         {"htif_tohost", csr::htif_tohost},
         {"htif_fromhost", csr::htif_fromhost},
         {"htif_ihalt", csr::htif_ihalt},
@@ -164,6 +166,10 @@ static auto csr_to_name(machine::csr reg) {
             return "iflags";
         case csr::clint_mtimecmp:
             return "clint_mtimecmp";
+        case csr::plic_girqpend:
+            return "plic_girqpend";
+        case csr::plic_girqsrvd:
+            return "plic_girqsrvd";
         case csr::htif_tohost:
             return "htif_tohost";
         case csr::htif_fromhost:
@@ -950,6 +956,23 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, plic_config &value, const std::string &path) {
+    if (!contains(j, key)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    ju_get_opt_field(jconfig, "girqpend"s, value.girqpend, new_path);
+    ju_get_opt_field(jconfig, "girqsrvd"s, value.girqsrvd, new_path);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, plic_config &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, plic_config &value,
+    const std::string &path);
+
+template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, htif_config &value, const std::string &path) {
     if (!contains(j, key)) {
         return;
@@ -1078,6 +1101,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_config &val
     ju_get_opt_field(config, "flash_drive"s, value.flash_drive, new_path);
     ju_get_opt_field(config, "tlb"s, value.tlb, new_path);
     ju_get_opt_field(config, "clint"s, value.clint, new_path);
+    ju_get_opt_field(config, "plic"s, value.plic, new_path);
     ju_get_opt_field(config, "htif"s, value.htif, new_path);
     ju_get_opt_field(config, "uarch"s, value.uarch, new_path);
     ju_get_opt_field(config, "rollup"s, value.rollup, new_path);
@@ -1258,6 +1282,13 @@ void to_json(nlohmann::json &j, const clint_config &config) {
     };
 }
 
+void to_json(nlohmann::json &j, const plic_config &config) {
+    j = nlohmann::json{
+        {"girqpend", config.girqpend},
+        {"girqsrvd", config.girqsrvd},
+    };
+}
+
 void to_json(nlohmann::json &j, const htif_config &config) {
     j = nlohmann::json{
         {"fromhost", config.fromhost},
@@ -1308,6 +1339,7 @@ void to_json(nlohmann::json &j, const machine_config &config) {
         {"flash_drive", config.flash_drive},
         {"tlb", config.tlb},
         {"clint", config.clint},
+        {"plic", config.plic},
         {"htif", config.htif},
         {"uarch", config.uarch},
     };

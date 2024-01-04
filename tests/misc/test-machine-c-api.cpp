@@ -222,6 +222,7 @@ protected:
 
         target->tlb.image_filename = new_cstr(source->tlb.image_filename);
         target->clint = source->clint;
+        target->plic = source->plic;
         target->htif = source->htif;
         target->rollup = source->rollup;
 
@@ -428,6 +429,10 @@ bool operator==(const cm_clint_config &lhs, const cm_clint_config &rhs) {
     return (lhs.mtimecmp == rhs.mtimecmp);
 }
 
+bool operator==(const cm_plic_config &lhs, const cm_plic_config &rhs) {
+    return (lhs.girqpend == rhs.girqpend && lhs.girqsrvd == rhs.girqsrvd);
+}
+
 bool operator==(const cm_htif_config &lhs, const cm_htif_config &rhs) {
     return (lhs.fromhost == rhs.fromhost && lhs.tohost == rhs.tohost && lhs.console_getchar == rhs.console_getchar &&
         lhs.yield_manual == rhs.yield_manual && lhs.yield_automatic == rhs.yield_automatic);
@@ -435,7 +440,7 @@ bool operator==(const cm_htif_config &lhs, const cm_htif_config &rhs) {
 
 bool operator==(const cm_machine_config &lhs, const cm_machine_config &rhs) {
     return ((lhs.processor == rhs.processor) && (lhs.dtb == rhs.dtb) && (lhs.ram == rhs.ram) && (lhs.tlb == rhs.tlb) &&
-        (lhs.clint == rhs.clint) && (lhs.htif == rhs.htif));
+        (lhs.clint == rhs.clint) && (lhs.plic == rhs.plic) && (lhs.htif == rhs.htif));
 }
 
 std::ostream &boost_test_print_type(std::ostream &ostr, const cm_machine_config &rhs) {
@@ -1092,6 +1097,8 @@ CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_ihalt)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_iconsole)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_iyield)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, clint_mtimecmp)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, plic_girqpend)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, plic_girqsrvd)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, mvendorid)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, marchid)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, mimpid)
@@ -1144,6 +1151,8 @@ CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_ihalt)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_iconsole)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_iyield)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(clint_mtimecmp)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(plic_girqpend)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(plic_girqsrvd)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(uarch_cycle)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(uarch_pc)
 // clang-format on
@@ -1195,6 +1204,8 @@ CHECK_REGISTER_READ_WRITE(htif_ihalt)
 CHECK_REGISTER_READ_WRITE(htif_iconsole)
 CHECK_REGISTER_READ_WRITE(htif_iyield)
 CHECK_REGISTER_READ_WRITE(clint_mtimecmp)
+CHECK_REGISTER_READ_WRITE(plic_girqpend)
+CHECK_REGISTER_READ_WRITE(plic_girqsrvd)
 CHECK_REGISTER_READ_WRITE(uarch_cycle)
 CHECK_REGISTER_READ_WRITE(uarch_pc)
     // clang-format on

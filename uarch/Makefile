@@ -72,6 +72,7 @@ EMULATOR_SOURCES=\
 	shadow-state.cpp \
 	shadow-uarch-state.cpp \
 	shadow-pmas.cpp \
+	plic.cpp \
 	clint.cpp
 
 COMPUTE_UARCH_CPP_SOURCES=\

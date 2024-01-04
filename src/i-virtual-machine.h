@@ -572,6 +572,26 @@ public:
         do_write_clint_mtimecmp(val);
     }
 
+    /// \brief Reads PLIC's girqpend
+    uint64_t read_plic_girqpend(void) const {
+        return do_read_plic_girqpend();
+    }
+
+    /// \brief Writes PLIC's girqpend
+    void write_plic_girqpend(uint64_t val) {
+        do_write_plic_girqpend(val);
+    }
+
+    /// \brief Reads PLIC's girqsrvd
+    uint64_t read_plic_girqsrvd(void) const {
+        return do_read_plic_girqsrvd();
+    }
+
+    /// \brief Writes PLIC's girqsrvd
+    void write_plic_girqsrvd(uint64_t val) {
+        do_write_plic_girqsrvd(val);
+    }
+
     /// \brief Reads the value of a microarchitecture register.
     /// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
     /// \returns The value of the register.
@@ -743,6 +763,10 @@ private:
     virtual void do_write_htif_iyield(uint64_t val) = 0;
     virtual uint64_t do_read_clint_mtimecmp(void) const = 0;
     virtual void do_write_clint_mtimecmp(uint64_t val) = 0;
+    virtual uint64_t do_read_plic_girqpend(void) const = 0;
+    virtual void do_write_plic_girqpend(uint64_t val) = 0;
+    virtual uint64_t do_read_plic_girqsrvd(void) const = 0;
+    virtual void do_write_plic_girqsrvd(uint64_t val) = 0;
     virtual void do_replace_memory_range(const memory_range_config &new_range) = 0;
     virtual uint64_t do_read_word(uint64_t address) const = 0;
     virtual bool do_verify_dirty_page_maps(void) const = 0;

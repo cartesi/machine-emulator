@@ -186,11 +186,13 @@ local cpu_csr_addr = {
     ilrsc = 736,
     iflags = 744,
     clint_mtimecmp = 752,
-    htif_tohost = 760,
-    htif_fromhost = 768,
-    htif_ihalt = 776,
-    htif_iconsole = 784,
-    htif_iyield = 792,
+    plic_girqpend = 760,
+    plic_girqsrvd = 768,
+    htif_tohost = 776,
+    htif_fromhost = 784,
+    htif_ihalt = 792,
+    htif_iconsole = 800,
+    htif_iyield = 808,
 }
 
 local function get_cpu_csr_test_values()
@@ -395,7 +397,7 @@ end
 
 local function test_config(config)
     assert(type(config) == "table", "config not a table")
-    for _, field in ipairs({ "processor", "htif", "clint", "flash_drive", "ram", "dtb" }) do
+    for _, field in ipairs({ "processor", "htif", "clint", "plic", "flash_drive", "ram", "dtb" }) do
         assert(config[field] and type(config[field]) == "table", "invalid field " .. field)
     end
     for i = 1, 31 do
@@ -409,6 +411,9 @@ local function test_config(config)
     assert(type(htif.fromhost) == "number", "invalid htif.fromhost")
     local clint = config.clint
     assert(type(clint.mtimecmp) == "number", "invalid clint.mtimecmp")
+    local plic = config.plic
+    assert(type(plic.girqpend) == "number", "invalid plic.girqpend")
+    assert(type(plic.girqsrvd) == "number", "invalid plic.girqsrvd")
     local ram = config.ram
     assert(type(ram.length) == "number", "invalid ram.length")
     assert(ram.image_filename == nil or type(ram.image_filename) == "string", "invalid ram.image_filename")
@@ -468,6 +473,8 @@ do_test("should have expected values", function(machine)
     assert(initial_config.processor.ilrsc == 0x2e0, "wrong ilrsc reg initial config value")
     assert(initial_config.processor.mstatus == 0x230, "wrong mstatus reg initial config value")
     assert(initial_config.clint.mtimecmp == 0, "wrong clint mtimecmp initial config value")
+    assert(initial_config.plic.girqpend == 0, "wrong plic girqpend initial config value")
+    assert(initial_config.plic.girqsrvd == 0, "wrong plic girqsrvd initial config value")
     assert(initial_config.htif.fromhost == 0, "wrong htif fromhost initial config value")
     assert(initial_config.htif.tohost == 0, "wrong htif tohost initial config value")
     assert(initial_config.htif.yield_automatic == false, "wrong htif yield automatic initial config value")
@@ -490,6 +497,8 @@ do_test("should return expected values", function(machine)
     local to_ignore = {
         iflags = true,
         clint_mtimecmp = true,
+        plic_girqpend = true,
+        plic_girqsrvd = true,
         htif_ihalt = true,
         htif_iconsole = true,
     }

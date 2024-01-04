@@ -300,6 +300,8 @@ LIBCARTESI_OBJS:= \
 	pma-driver.o \
 	clint.o \
 	clint-factory.o \
+	plic.o \
+	plic-factory.o \
 	dtb.o \
 	os.o \
 	htif.o \

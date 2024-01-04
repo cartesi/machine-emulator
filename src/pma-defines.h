@@ -29,15 +29,15 @@
 #define PMA_UARCH_RAM_LENGTH_DEF 0x200000         ///< microarchitecture RAM length
 #define PMA_CLINT_START_DEF 0x2000000             ///< CLINT start address
 #define PMA_CLINT_LENGTH_DEF 0xC0000              ///< CLINT length in bytes
+#define PMA_PLIC_START_DEF 0x40100000             ///< Start of PLIC range
+#define PMA_PLIC_LENGTH_DEF 0x00400000            ///< Length of PLIC range
 #define PMA_HTIF_START_DEF 0x40008000             ///< HTIF base address (to_host)
 #define PMA_HTIF_LENGTH_DEF 0x1000                ///< HTIF length in bytes
-#define PMA_FIRST_VIRTIO_START_DEF 0x40010000     ///< Start of first VIRTIO range (RESERVED)
-#define PMA_VIRTIO_LENGTH_DEF 0x1000              ///< Length of each VIRTIO range (RESERVED)
-#define PMA_LAST_VIRTIO_END_DEF 0x40020000        ///< End of last VIRTIO range (RESERVED)
+#define PMA_FIRST_VIRTIO_START_DEF 0x40010000     ///< Start of first VIRTIO range
+#define PMA_VIRTIO_LENGTH_DEF 0x1000              ///< Length of each VIRTIO range
+#define PMA_LAST_VIRTIO_END_DEF 0x40020000        ///< End of last VIRTIO range
 #define PMA_DHD_START_DEF 0x40030000              ///< Start of DEHASH range
 #define PMA_DHD_LENGTH_DEF 0x1000                 ///< Length of in bytes
-#define PMA_PLIC_START_DEF 0x40100000             ///< Start of PLIC range (RESERVED)
-#define PMA_PLIC_LENGTH_DEF 0x00400000            ///< Length of PLIC range (RESERVED)
 #define PMA_DTB_START_DEF 0x7ff00000              ///< DTB start address
 #define PMA_DTB_LENGTH_DEF 0x100000               ///< DTB length in bytes
 #define PMA_RAM_START_DEF 0x80000000              ///< RAM start address
@@ -46,6 +46,7 @@
 #define PMA_WORD_SIZE_DEF 8       ///< Physical memory word size.
 #define PMA_MAX_DEF 32            ///< Maximum number of PMAs
 #define PMA_TLB_SIZE_DEF 256      ///< Number for entries per TLB type
+#define PMA_PLIC_MAX_IRQ_DEF 31   ///< Maximum PLIC interrupt
 
 #define PMA_MEMORY_DID_DEF 0                 ///< Device ID for memory
 #define PMA_SHADOW_STATE_DID_DEF 1           ///< Device ID for shadow state device
@@ -60,6 +61,8 @@
 #define PMA_ROLLUP_VOUCHER_HASHES_DID_DEF 10 ///< Device ID for rollup voucher hashes buffer
 #define PMA_ROLLUP_NOTICE_HASHES_DID_DEF 11  ///< Device ID for rollup notice hashes buffer
 #define PMA_DHD_DID_DEF 12                   ///< Device ID for DHD device
+#define PMA_PLIC_DID_DEF 13                  ///< Device ID for PLIC device
+#define PMA_VIRTIO_DID_DEF 14                ///< Device ID for VirtIO devices
 #define PMA_SHADOW_UARCH_STATE_DID_DEF 15    ///< Device ID for uarch shadow state device
 
 // helper for using UINT64_C with defines

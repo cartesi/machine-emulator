@@ -130,6 +130,8 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_PROC_ILRSC,
     CM_PROC_IFLAGS,
     CM_PROC_CLINT_MTIMECMP,
+    CM_PROC_PLIC_GIRQPEND,
+    CM_PROC_PLIC_GIRQSRVD,
     CM_PROC_HTIF_TOHOST,
     CM_PROC_HTIF_FROMHOST,
     CM_PROC_HTIF_IHALT,
@@ -221,6 +223,12 @@ typedef struct {       // NOLINT(modernize-use-using)
     uint64_t mtimecmp; ///< Value of mtimecmp CSR
 } cm_clint_config;
 
+/// \brief PLIC device state configuration
+typedef struct {       // NOLINT(modernize-use-using)
+    uint64_t girqpend; ///< Value of girqpend CSR
+    uint64_t girqsrvd; ///< Value of girqsrvd CSR
+} cm_plic_config;
+
 /// \brief HTIF device state configuration
 typedef struct {          // NOLINT(modernize-use-using)
     uint64_t fromhost;    ///< Value of fromhost CSR
@@ -267,6 +275,7 @@ typedef struct { // NOLINT(modernize-use-using)
     cm_memory_range_config_array flash_drive;
     cm_tlb_config tlb;
     cm_clint_config clint;
+    cm_plic_config plic;
     cm_htif_config htif;
     cm_rollup_config rollup;
     cm_uarch_config uarch;
@@ -1460,6 +1469,46 @@ CM_API int cm_read_clint_mtimecmp(const cm_machine *m, uint64_t *val, char **err
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_clint_mtimecmp(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of PLIC's girqpend register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successful function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message.
+/// err_msg can be NULL, meaning the error message won't be received.
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_plic_girqpend(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of PLIC's girqpend register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successful function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message.
+/// err_msg can be NULL, meaning the error message won't be received.
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_plic_girqpend(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of PLIC's girqsrvd register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successful function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message.
+/// err_msg can be NULL, meaning the error message won't be received.
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_plic_girqsrvd(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of PLIC's girqsrvd register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successful function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_error_message.
+/// err_msg can be NULL, meaning the error message won't be received.
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_plic_girqsrvd(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Checks the value of the iflags_X flag.
 /// \param m Pointer to valid machine instance

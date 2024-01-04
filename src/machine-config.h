@@ -107,6 +107,12 @@ struct clint_config final {
     uint64_t mtimecmp{MTIMECMP_INIT}; ///< Value of mtimecmp CSR
 };
 
+/// \brief PLIC device state configuration
+struct plic_config final {
+    uint64_t girqpend{GIRQPEND_INIT}; ///< Value of girqpend CSR
+    uint64_t girqsrvd{GIRQSRVD_INIT}; ///< Value of girqsrvd CSR
+};
+
 /// \brief HTIF device state configuration
 struct htif_config final {
     uint64_t fromhost{FROMHOST_INIT}; ///< Value of fromhost CSR
@@ -135,6 +141,7 @@ struct machine_config final {
     flash_drive_configs flash_drive{};     ///< Flash drives state
     tlb_config tlb{};                      ///< TLB device state
     clint_config clint{};                  ///< CLINT device state
+    plic_config plic{};                    ///< PLIC device state
     htif_config htif{};                    ///< HTIF device state
     uarch_config uarch{};                  ///< microarchitecture configuration
     std::optional<rollup_config> rollup{}; ///< Rollup state

@@ -1298,6 +1298,12 @@ local function store_machine_config(config, output)
     output("    mtimecmp = 0x%x,", clint.mtimecmp or def.clint.mtimecmp)
     comment_default(clint.mtimecmp, def.clint.mtimecmp)
     output("  },\n")
+    local plic = config.plic or {}
+    output("  plic = {\n")
+    output("    girqpend = 0x%x,", plic.girqpend or def.plic.girqpend)
+    output("    girqsrvd = 0x%x,", plic.girqsrvd or def.plic.girqsrvd)
+    comment_default(plic.girqpend, def.plic.girqpend)
+    output("  },\n")
     output("  flash_drive = {\n")
     for _, f in ipairs(config.flash_drive) do
         output("    ")

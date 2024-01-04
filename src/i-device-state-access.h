@@ -102,6 +102,30 @@ public:
         return do_write_clint_mtimecmp(val);
     }
 
+    /// \brief Reads PLIC's girqpend.
+    /// \returns Register value.
+    uint64_t read_plic_girqpend(void) {
+        return do_read_plic_girqpend();
+    }
+
+    /// \brief Writes PLIC's girqpend.
+    /// \param val New register value.
+    void write_plic_girqpend(uint64_t val) {
+        return do_write_plic_girqpend(val);
+    }
+
+    /// \brief Reads PLIC's girqsrvd.
+    /// \returns Register value.
+    uint64_t read_plic_girqsrvd(void) {
+        return do_read_plic_girqsrvd();
+    }
+
+    /// \brief Writes PLIC's girqsrvd.
+    /// \param val New register value.
+    void write_plic_girqsrvd(uint64_t val) {
+        return do_write_plic_girqsrvd(val);
+    }
+
     /// \brief Reads HTIF's fromhost.
     /// \returns Register value.
     uint64_t read_htif_fromhost(void) {
@@ -178,6 +202,10 @@ private:
     virtual void do_set_iflags_X(void) = 0;
     virtual uint64_t do_read_clint_mtimecmp(void) = 0;
     virtual void do_write_clint_mtimecmp(uint64_t val) = 0;
+    virtual uint64_t do_read_plic_girqpend(void) = 0;
+    virtual void do_write_plic_girqpend(uint64_t val) = 0;
+    virtual uint64_t do_read_plic_girqsrvd(void) = 0;
+    virtual void do_write_plic_girqsrvd(uint64_t val) = 0;
     virtual uint64_t do_read_htif_fromhost(void) = 0;
     virtual void do_write_htif_fromhost(uint64_t val) = 0;
     virtual uint64_t do_read_htif_tohost(void) = 0;

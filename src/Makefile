@@ -139,6 +139,9 @@ INCS+= \
 	-I../third-party/mongoose-7.12 \
 	$(BOOST_INC)
 
+# Use 64-bit offsets for file operations in POSIX APIs
+DEFS+=-D_FILE_OFFSET_BITS=64
+
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS
 #DEFS+=-DDUMP_EXCEPTIONS
@@ -305,6 +308,7 @@ LIBCARTESI_OBJS:= \
 	virtio-factory.o \
 	virtio-device.o \
 	virtio-console.o \
+	virtio-p9fs.o \
 	dtb.o \
 	os.o \
 	htif.o \

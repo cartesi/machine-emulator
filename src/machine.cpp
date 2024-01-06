@@ -47,6 +47,7 @@
 #include "unique-c-ptr.h"
 #include "virtio-console.h"
 #include "virtio-factory.h"
+#include "virtio-p9fs.h"
 
 /// \file
 /// \brief Cartesi machine implementation
@@ -450,6 +451,13 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
             make_virtio_pma_entry(PMA_FIRST_VIRTIO_START + vdev_console->get_virtio_index() * PMA_VIRTIO_LENGTH,
                 PMA_VIRTIO_LENGTH, "VirtIO console device", &virtio_driver, vdev_console.get()));
         m_vdevs.push_back(std::move(vdev_console));
+
+        // Register VirtIO Plan 9 filesystem device
+        auto vdev_p9fs = std::make_unique<virtio_p9fs_device>(m_vdevs.size(), "vfs0", "/tmp");
+        register_pma_entry(
+            make_virtio_pma_entry(PMA_FIRST_VIRTIO_START + vdev_p9fs->get_virtio_index() * PMA_VIRTIO_LENGTH,
+                PMA_VIRTIO_LENGTH, "VirtIO p9fs device", &virtio_driver, vdev_p9fs.get()));
+        m_vdevs.push_back(std::move(vdev_p9fs));
     }
 
     // Initialize DTB

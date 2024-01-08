@@ -7,7 +7,7 @@ ARG SANITIZE=no
 RUN apt-get update && \
     DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends -y \
     build-essential vim wget git clang-tidy-16 clang-format-16 lcov \
-    libboost1.81-dev libssl-dev \
+    libboost1.81-dev libssl-dev libslirp-dev \
     ca-certificates pkg-config lua5.4 liblua5.4-dev \
     luarocks xxd procps && \
     update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-16 120 && \

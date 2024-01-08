@@ -40,6 +40,7 @@ Cleaning targets:
 - C++ Compiler with support for C++17 (tested with GCC >= 8+ and Clang >= 8.x).
 - GNU Make >= 3.81
 - Lua >= 5.4.4
+- Libslirp >= 4.6.0
 - Boost >= 1.81
 
 Obs: Please note that Apple Clang Version number does not follow upstream LLVM/Clang.
@@ -48,7 +49,7 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 
 ```bash
 sudo apt-get install build-essential wget git clang-tidy-16 clang-format-16 \
-        libboost1.81-dev libssl-dev \
+        libboost1.81-dev libssl-dev libslirp-dev \
         ca-certificates pkg-config lua5.4 liblua5.4-dev \
         luarocks
 
@@ -66,7 +67,7 @@ For more information, see the [Configuring Lua 5.4](#configuring-lua-54) section
 ##### MacPorts
 
 ```bash
-sudo port install clang-16 boost181 wget pkgconfig lua54 lua-luarocks
+sudo port install clang-16 boost181 wget pkgconfig lua54 lua-luarocks libslirp
 
 sudo luarocks install --lua-version=5.4 lpeg
 sudo luarocks install --lua-version=5.4 dkjson
@@ -80,7 +81,7 @@ For more information, see the [Configuring Lua 5.4](#configuring-lua-54) section
 ##### Homebrew
 
 ```bash
-brew install llvm@16 boost wget pkg-config openssl lua luarocks
+brew install llvm@16 boost wget pkg-config openssl lua luarocks libslirp
 
 luarocks --lua-dir=$(brew --prefix)/opt/lua install lpeg
 luarocks --lua-dir=$(brew --prefix)/opt/lua install dkjson

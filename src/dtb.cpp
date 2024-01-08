@@ -161,6 +161,16 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
                 fdt.prop_u32_list<2>("interrupts-extended", {PLIC_PHANDLE, plic_irq_id});
                 fdt.end_node();
             }
+            if (c.htif.console_getchar) { // virtio net
+                const uint32_t virtio_idx = 2;
+                const uint64_t virtio_paddr = PMA_FIRST_VIRTIO_START + virtio_idx * PMA_VIRTIO_LENGTH;
+                const uint32_t plic_irq_id = virtio_idx + 1;
+                fdt.begin_node_num("virtio", virtio_paddr);
+                fdt.prop_string("compatible", "virtio,mmio");
+                fdt.prop_u64_list<2>("reg", {virtio_paddr, PMA_VIRTIO_LENGTH});
+                fdt.prop_u32_list<2>("interrupts-extended", {PLIC_PHANDLE, plic_irq_id});
+                fdt.end_node();
+            }
             fdt.end_node();
         }
 

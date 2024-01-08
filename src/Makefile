@@ -74,12 +74,16 @@ ifneq (,$(shell which brew))
 BREW_PREFIX = $(shell brew --prefix)
 BOOST_LIB_DIR=-L$(BREW_PREFIX)/lib
 BOOST_INC=-I$(BREW_PREFIX)/include
+SLIRP_LIB=-L$(BREW_PREFIX)/libslirp/lib -lslirp
+SLIRP_INC=-I$(BREW_PREFIX)/libslirp/include
 
 # Macports installation
 else ifneq (,$(shell which port))
 PORT_PREFIX = /opt/local
 BOOST_LIB_DIR=-L$(PORT_PREFIX)/libexec/boost/1.81/lib
 BOOST_INC=-I$(PORT_PREFIX)/libexec/boost/1.81/include
+SLIRP_LIB=-L$(PORT_PREFIX)/libslirp/lib -lslirp
+SLIRP_INC=-I$(PORT_PREFIX)/libslirp/include
 else
 $(error Neither Homebrew nor MacPorts is installed)
 endif
@@ -108,6 +112,8 @@ AR=ar rcs
 INCS=
 
 BOOST_INC=
+SLIRP_INC=
+SLIRP_LIB=-lslirp
 LIBCARTESI=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
 LIBCARTESI_LDFLAGS=
 LIBCARTESI_MERKLE_TREE=libcartesi_merkle_tree-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
@@ -118,13 +124,12 @@ PROFILE_DATA=
 
 endif
 
-LIBCARTESI_LIBS=
+LIBCARTESI_LIBS=$(SLIRP_LIB)
 LIBCARTESI_MERKLE_TREE_LIBS=
-LIBCARTESI_JSONRPC_LIBS=
-LUACARTESI_LIBS=
-LUACARTESI_JSONRPC_LIBS=
-JSONRPC_REMOTE_CARTESI_MACHINE_LIBS=
-TEST_MACHINE_C_API_LIBS=
+LIBCARTESI_JSONRPC_LIBS=$(SLIRP_LIB)
+LUACARTESI_LIBS=$(SLIRP_LIB)
+LUACARTESI_JSONRPC_LIBS=$(SLIRP_LIB)
+JSONRPC_REMOTE_CARTESI_MACHINE_LIBS=$(SLIRP_LIB)
 HASH_LIBS=
 
 #DEFS+= -DMT_ALL_DIRTY
@@ -137,7 +142,7 @@ INCS+= \
 	-I../third-party/tiny_sha3 \
 	-I../third-party/downloads \
 	-I../third-party/mongoose-7.12 \
-	$(BOOST_INC)
+	$(SLIRP_INC) $(BOOST_INC)
 
 # Use 64-bit offsets for file operations in POSIX APIs
 DEFS+=-D_FILE_OFFSET_BITS=64
@@ -309,6 +314,9 @@ LIBCARTESI_OBJS:= \
 	virtio-device.o \
 	virtio-console.o \
 	virtio-p9fs.o \
+	virtio-net.o \
+	virtio-net-carrier-tuntap.o \
+	virtio-net-carrier-slirp.o \
 	dtb.o \
 	os.o \
 	htif.o \

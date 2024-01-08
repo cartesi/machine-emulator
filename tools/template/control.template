@@ -5,7 +5,7 @@ Homepage: https://docs.cartesi.io/machine/host/cmdline/
 Architecture: ARG_ARCH
 Maintainer: Machine Reference Unit <https://discord.com/channels/600597137524391947/1107965671976992878>
 Provides: machine-emulator
-Depends: lua5.4
+Depends: lua5.4, libslirp0
 Section: devel
 Priority: optional
 Multi-Arch: foreign

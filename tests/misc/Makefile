@@ -36,12 +36,16 @@ ifneq (,$(shell which brew))
 BREW_PREFIX = $(shell brew --prefix)
 BOOST_LIB_DIR=-L$(BREW_PREFIX)/lib
 BOOST_INC=-I$(BREW_PREFIX)/include
+SLIRP_LIB=-L$(BREW_PREFIX)/libslirp/lib -lslirp
+SLIRP_INC=-I$(BREW_PREFIX)/libslirp/include
 
 # Macports installation
 else ifneq (,$(shell which port))
 PORT_PREFIX = /opt/local
 BOOST_LIB_DIR=-L$(PORT_PREFIX)/libexec/boost/1.81/lib
 BOOST_INC=-I$(PORT_PREFIX)/libexec/boost/1.81/include
+SLIRP_LIB=-L$(PORT_PREFIX)/libslirp/lib -lslirp
+SLIRP_INC=-I$(PORT_PREFIX)/libslirp/include
 else
 $(error Neither Homebrew nor MacPorts is installed)
 endif
@@ -50,6 +54,8 @@ endif
 else
 CC=gcc
 CXX=g++
+SLIRP_INC=
+SLIRP_LIB=-lslirp
 endif
 
 ifeq ($(coverage),yes)
@@ -105,7 +111,7 @@ $(BUILDDIR)/test-merkle-tree-hash: test-merkle-tree-hash.cpp ../../src/libcartes
 	$(CXX) -o $@ $^ $(CXXFLAGS)
 
 $(BUILDDIR)/test-machine-c-api: test-machine-c-api.cpp ../../src/libcartesi.a ../../src/libcartesi_merkle_tree.a
-	$(CXX) -o $@ $^ $(CXXFLAGS) $(BOOST_INC)
+	$(CXX) -o $@ $^ $(SLIRP_LIB) $(CXXFLAGS) $(BOOST_INC)
 
 %.clang-tidy: %.cpp
 	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CXXFLAGS) $(BOOST_INC) 2>/dev/null

@@ -26,6 +26,8 @@
 #include <regex>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
+#include <utility>
 
 #include "i-virtual-machine.h"
 #include "machine-config.h"
@@ -221,6 +223,94 @@ static cm_memory_range_config convert_to_c(const cartesi::memory_range_config &c
 }
 
 // ----------------------------------------------
+// VirtIO host forward configuration conversion functions
+// ----------------------------------------------
+static cartesi::virtio_hostfwd_config convert_from_c(const cm_virtio_hostfwd_config *c_config) {
+    if (c_config == nullptr) {
+        throw std::invalid_argument("invalid memory range configuration");
+    }
+    cartesi::virtio_hostfwd_config new_cpp_virtio_hostfwd_config{c_config->is_udp, c_config->host_port,
+        c_config->guest_port};
+    return new_cpp_virtio_hostfwd_config;
+}
+
+static cm_virtio_hostfwd_config convert_to_c(const cartesi::virtio_hostfwd_config &cpp_config) {
+    cm_virtio_hostfwd_config new_c_virtio_hostfwd_config{};
+    new_c_virtio_hostfwd_config.is_udp = cpp_config.is_udp;
+    new_c_virtio_hostfwd_config.guest_port = cpp_config.guest_port;
+    new_c_virtio_hostfwd_config.host_port = cpp_config.host_port;
+    return new_c_virtio_hostfwd_config;
+}
+
+// ----------------------------------------------
+// VirtIO device configuration conversion functions
+// ----------------------------------------------
+static cartesi::virtio_device_config convert_from_c(const cm_virtio_device_config *c_config) {
+    if (c_config == nullptr) {
+        throw std::invalid_argument("invalid virtio device configuration");
+    }
+    switch (c_config->type) {
+        case CM_VIRTIO_DEVICE_CONSOLE:
+            return cartesi::virtio_console_config{};
+        case CM_VIRTIO_DEVICE_P9FS: {
+            cartesi::virtio_p9fs_config new_cpp_virtio_device_config{};
+            new_cpp_virtio_device_config.tag = null_to_empty(c_config->device.p9fs.tag);
+            new_cpp_virtio_device_config.host_directory = null_to_empty(c_config->device.p9fs.host_directory);
+            return new_cpp_virtio_device_config;
+        }
+        case CM_VIRTIO_DEVICE_NET_USER: {
+            cartesi::virtio_net_user_config new_cpp_virtio_device_config{};
+            for (size_t i = 0; i < c_config->device.net_user.hostfwd.count; ++i) {
+                new_cpp_virtio_device_config.hostfwd.push_back(
+                    convert_from_c(&(c_config->device.net_user.hostfwd.entry[i])));
+            }
+            return new_cpp_virtio_device_config;
+        }
+        case CM_VIRTIO_DEVICE_NET_TUNTAP: {
+            cartesi::virtio_net_tuntap_config new_cpp_virtio_device_config{};
+            new_cpp_virtio_device_config.iface = null_to_empty(c_config->device.net_tuntap.iface);
+            return new_cpp_virtio_device_config;
+        }
+        default:
+            throw std::invalid_argument("invalid virtio device configuration");
+    }
+}
+
+static cm_virtio_device_config convert_to_c(const cartesi::virtio_device_config &cpp_config) {
+    return std::visit(
+        [](const auto &cpp_virtio_device_config) -> cm_virtio_device_config {
+            using T = std::decay_t<decltype(cpp_virtio_device_config)>;
+            cm_virtio_device_config new_c_virtio_device_config{};
+            if constexpr (std::is_same_v<T, cartesi::virtio_console_config>) {
+                new_c_virtio_device_config.type = CM_VIRTIO_DEVICE_CONSOLE;
+            } else if constexpr (std::is_same_v<T, cartesi::virtio_p9fs_config>) {
+                new_c_virtio_device_config.type = CM_VIRTIO_DEVICE_P9FS;
+                new_c_virtio_device_config.device.p9fs.tag = convert_to_c(cpp_virtio_device_config.tag);
+                new_c_virtio_device_config.device.p9fs.host_directory =
+                    convert_to_c(cpp_virtio_device_config.host_directory);
+            } else if constexpr (std::is_same_v<T, cartesi::virtio_net_user_config>) {
+                cm_virtio_hostfwd_config_array new_c_hostfdw;
+                new_c_hostfdw.count = cpp_virtio_device_config.hostfwd.size();
+                new_c_hostfdw.entry = new cm_virtio_hostfwd_config[new_c_hostfdw.count];
+                memset(new_c_hostfdw.entry, 0, sizeof(cm_virtio_hostfwd_config) * new_c_hostfdw.count);
+                for (size_t i = 0; i < new_c_hostfdw.count; ++i) {
+                    new_c_hostfdw.entry[i] = convert_to_c(cpp_virtio_device_config.hostfwd[i]);
+                }
+
+                new_c_virtio_device_config.type = CM_VIRTIO_DEVICE_NET_USER;
+                new_c_virtio_device_config.device.net_user.hostfwd = new_c_hostfdw;
+            } else if constexpr (std::is_same_v<T, cartesi::virtio_net_tuntap_config>) {
+                new_c_virtio_device_config.type = CM_VIRTIO_DEVICE_NET_TUNTAP;
+                new_c_virtio_device_config.device.net_tuntap.iface = convert_to_c(cpp_virtio_device_config.iface);
+            } else {
+                throw std::invalid_argument("invalid virtio device configuration");
+            }
+            return new_c_virtio_device_config;
+        },
+        cpp_config);
+}
+
+// ----------------------------------------------
 // TLB configuration conversion functions
 // ----------------------------------------------
 static cartesi::tlb_config convert_from_c(const cm_tlb_config *c_config) {
@@ -412,6 +502,10 @@ cartesi::machine_config convert_from_c(const cm_machine_config *c_config) {
         new_cpp_machine_config.flash_drive.push_back(convert_from_c(&(c_config->flash_drive.entry[i])));
     }
 
+    for (size_t i = 0; i < c_config->virtio.count; ++i) {
+        new_cpp_machine_config.virtio.push_back(convert_from_c(&(c_config->virtio.entry[i])));
+    }
+
     return new_cpp_machine_config;
 }
 
@@ -426,12 +520,23 @@ cm_memory_range_config_array convert_to_c(const cartesi::flash_drive_configs &fl
     return new_flash_drive;
 }
 
+cm_virtio_config_array convert_to_c(const cartesi::virtio_configs &virtio) {
+    cm_virtio_config_array new_virtio;
+    new_virtio.count = virtio.size();
+    new_virtio.entry = new cm_virtio_device_config[virtio.size()]{};
+    for (size_t i = 0; i < new_virtio.count; ++i) {
+        new_virtio.entry[i] = convert_to_c(virtio[i]);
+    }
+    return new_virtio;
+}
+
 cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config) {
     auto *new_machine_config = new cm_machine_config{};
     new_machine_config->processor = convert_to_c(cpp_config.processor);
     new_machine_config->ram = convert_to_c(cpp_config.ram);
     new_machine_config->dtb = convert_to_c(cpp_config.dtb);
     new_machine_config->flash_drive = convert_to_c(cpp_config.flash_drive);
+    new_machine_config->virtio = convert_to_c(cpp_config.virtio);
     new_machine_config->tlb = convert_to_c(cpp_config.tlb);
     new_machine_config->clint = convert_to_c(cpp_config.clint);
     new_machine_config->plic = convert_to_c(cpp_config.plic);
@@ -766,6 +871,26 @@ void cm_delete_machine_config(const cm_machine_config *config) {
         delete[] config->flash_drive.entry[i].image_filename;
     }
     delete[] config->flash_drive.entry;
+
+    for (size_t i = 0; i < config->virtio.count; ++i) {
+        const cm_virtio_device_config &entry = config->virtio.entry[i];
+        switch (entry.type) {
+            case CM_VIRTIO_DEVICE_NET_USER:
+                delete[] entry.device.net_user.hostfwd.entry;
+                break;
+            case CM_VIRTIO_DEVICE_P9FS:
+                delete[] entry.device.p9fs.tag;
+                delete[] entry.device.p9fs.host_directory;
+                break;
+            case CM_VIRTIO_DEVICE_NET_TUNTAP:
+                delete[] entry.device.net_tuntap.iface;
+                break;
+            default:
+                break;
+        }
+    }
+    delete[] config->virtio.entry;
+
     delete[] config->dtb.image_filename;
     delete[] config->dtb.bootargs;
     delete[] config->dtb.init;

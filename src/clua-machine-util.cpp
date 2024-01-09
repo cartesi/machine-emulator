@@ -889,6 +889,16 @@ static void push_cm_memory_range_config(lua_State *L, const cm_memory_range_conf
     clua_setbooleanfield(L, m->shared, "shared", -1);
 }
 
+/// \brief Pushes cm_virtio_hostfwd_config to the Lua stack
+/// \param L Lua state.
+/// \param m VirtIO host forward config to be pushed.
+static void push_cm_virtio_hostfwd_config(lua_State *L, const cm_virtio_hostfwd_config *m) {
+    lua_newtable(L);
+    clua_setbooleanfield(L, m->is_udp, "is_udp", -1);
+    clua_setintegerfield(L, m->host_port, "host_port", -1);
+    clua_setintegerfield(L, m->guest_port, "guest_port", -1);
+}
+
 /// \brief Pushes cm_rollup_config to the Lua stack
 /// \param L Lua state.
 /// \param r Rollup config to be pushed.
@@ -913,6 +923,57 @@ static void push_cm_flash_drive_configs(lua_State *L, const cm_memory_range_conf
     lua_newtable(L);
     for (size_t j = 0; j < flash_drives->count; ++j) {
         push_cm_memory_range_config(L, &flash_drives->entry[j]);
+        lua_rawseti(L, -2, static_cast<lua_Integer>(j) + 1);
+    }
+}
+
+/// \brief Pushes cm_virtio_hostfwd_configs to the Lua stack
+/// \param L Lua state.
+/// \param virtio_hostfwds VirtIO host forward configuration array to be pushed.
+static void push_cm_virtio_hostfwd_configs(lua_State *L, const cm_virtio_hostfwd_config_array *virtio_hostfwds) {
+    lua_newtable(L);
+    for (size_t j = 0; j < virtio_hostfwds->count; ++j) {
+        push_cm_virtio_hostfwd_config(L, &virtio_hostfwds->entry[j]);
+        lua_rawseti(L, -2, static_cast<lua_Integer>(j) + 1);
+    }
+}
+
+/// \brief Pushes cm_virtio_device_config to the Lua stack
+/// \param L Lua state.
+/// \param m VirtIO device config to be pushed.
+static void push_cm_virtio_device_config(lua_State *L, const cm_virtio_device_config *v) {
+    lua_newtable(L);
+    switch (v->type) {
+        case CM_VIRTIO_DEVICE_CONSOLE:
+            clua_setstringfield(L, "console", "type", -1);
+            break;
+        case CM_VIRTIO_DEVICE_P9FS:
+            clua_setstringfield(L, "p9fs", "type", -1);
+            clua_setstringfield(L, v->device.p9fs.tag, "tag", -1);
+            clua_setstringfield(L, v->device.p9fs.host_directory, "host_directory", -1);
+            break;
+        case CM_VIRTIO_DEVICE_NET_USER:
+            clua_setstringfield(L, "net-user", "type", -1);
+            push_cm_virtio_hostfwd_configs(L, &v->device.net_user.hostfwd);
+            lua_setfield(L, -2, "hostfwd");
+            break;
+        case CM_VIRTIO_DEVICE_NET_TUNTAP:
+            clua_setstringfield(L, "net-tuntap", "type", -1);
+            clua_setstringfield(L, v->device.net_tuntap.iface, "iface", -1);
+            break;
+        default:
+            luaL_error(L, "invalid virtio device config type");
+            break;
+    }
+}
+
+/// \brief Pushes cm_virtio_config_array to the Lua stack
+/// \param L Lua state.
+/// \param virtio VirtIO configuration array to be pushed.
+static void push_cm_virtio_configs(lua_State *L, const cm_virtio_config_array *virtio) {
+    lua_newtable(L);
+    for (size_t j = 0; j < virtio->count; ++j) {
+        push_cm_virtio_device_config(L, &virtio->entry[j]);
         lua_rawseti(L, -2, static_cast<lua_Integer>(j) + 1);
     }
 }
@@ -968,6 +1029,8 @@ void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
     lua_setfield(L, -2, "plic");                     // config
     push_cm_flash_drive_configs(L, &c->flash_drive); // config flash_drive
     lua_setfield(L, -2, "flash_drive");              // config
+    push_cm_virtio_configs(L, &c->virtio);           // config virtio
+    lua_setfield(L, -2, "virtio");                   // config
     push_cm_ram_config(L, &c->ram);                  // config ram
     lua_setfield(L, -2, "ram");                      // config
     push_cm_dtb_config(L, &c->dtb);                  // config dtb
@@ -1034,6 +1097,17 @@ cm_memory_range_config *clua_check_cm_memory_range_config(lua_State *L, int tabi
     return m;
 }
 
+cm_virtio_hostfwd_config *clua_check_cm_virtio_hostfwd_config(lua_State *L, int tabidx, const char *what,
+    cm_virtio_hostfwd_config *m) {
+    if (!lua_istable(L, tabidx)) {
+        luaL_error(L, "%s virtio hostfwd not a table", what);
+    }
+    m->is_udp = opt_boolean_field(L, tabidx, "is_udp");
+    m->guest_port = check_uint_field(L, tabidx, "guest_port");
+    m->host_port = check_uint_field(L, tabidx, "host_port");
+    return m;
+}
+
 /// \brief Loads rollup config from Lua to cm_rollup_config
 /// \param L Lua state
 /// \param tabidx Config stack index
@@ -1081,6 +1155,79 @@ static void check_cm_flash_drive_configs(lua_State *L, int tabidx, cm_memory_ran
     for (unsigned i = 1; i <= fs->count; ++i) {
         lua_geti(L, flash_drive_table_idx, i);
         clua_check_cm_memory_range_config(L, -1, "flash drive", &fs->entry[i - 1]);
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+}
+
+/// \brief Loads a C api VirtIO host forward configs from a Lua machine config
+/// \param L Lua state
+/// \param tabidx Machine config stack index
+/// \param fs Receives allocated array of VirtIO host forward configs
+static void check_cm_virtio_hostfwd_configs(lua_State *L, int tabidx, cm_virtio_hostfwd_config_array *hostfwds) {
+    memset(hostfwds, 0, sizeof(cm_virtio_hostfwd_config_array));
+    if (!opt_table_field(L, tabidx, "hostfwd")) {
+        return;
+    }
+    auto virtio_hostfwd_table_idx = lua_gettop(L);
+    const size_t count = luaL_len(L, virtio_hostfwd_table_idx);
+    if (count > CM_VIRTIO_HOSTFWD_CONFIGS_MAX_SIZE) {
+        luaL_error(L, "too many host forwards (expected max %d, got %d)", CM_VIRTIO_HOSTFWD_CONFIGS_MAX_SIZE,
+            static_cast<int>(hostfwds->count));
+    }
+    hostfwds->count = count;
+    hostfwds->entry = new cm_virtio_hostfwd_config[count]{};
+    for (unsigned i = 1; i <= hostfwds->count; ++i) {
+        lua_geti(L, virtio_hostfwd_table_idx, i);
+        clua_check_cm_virtio_hostfwd_config(L, -1, "hostfwd", &hostfwds->entry[i - 1]);
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+}
+
+cm_virtio_device_config *clua_check_cm_virtio_device_config(lua_State *L, int tabidx, cm_virtio_device_config *m) {
+    if (!lua_istable(L, tabidx)) {
+        luaL_error(L, "virtio device not a table");
+    }
+    const std::string type = check_string_field(L, tabidx, "type");
+    if (type == "console") {
+        m->type = CM_VIRTIO_DEVICE_CONSOLE;
+    } else if (type == "p9fs") {
+        m->type = CM_VIRTIO_DEVICE_P9FS;
+        m->device.p9fs.tag = opt_copy_string_field(L, tabidx, "tag");
+        m->device.p9fs.host_directory = opt_copy_string_field(L, tabidx, "host_directory");
+    } else if (type == "net-user") {
+        m->type = CM_VIRTIO_DEVICE_NET_USER;
+        check_cm_virtio_hostfwd_configs(L, tabidx, &m->device.net_user.hostfwd);
+    } else if (type == "net-tuntap") {
+        m->type = CM_VIRTIO_DEVICE_NET_TUNTAP;
+        m->device.net_tuntap.iface = opt_copy_string_field(L, tabidx, "iface");
+    } else {
+        luaL_error(L, "invalid virtio device type '%s'", type.c_str());
+    }
+    return m;
+}
+
+/// \brief Loads a C api virtio configs from a Lua machine config
+/// \param L Lua state
+/// \param tabidx Machine config stack index
+/// \param virtio Receives allocated array of virtio configs
+static void check_cm_virtio_configs(lua_State *L, int tabidx, cm_virtio_config_array *virtio) {
+    memset(virtio, 0, sizeof(cm_virtio_config_array));
+    if (!opt_table_field(L, tabidx, "virtio")) {
+        return;
+    }
+    auto virtio_table_idx = lua_gettop(L);
+    const size_t count = luaL_len(L, virtio_table_idx);
+    if (count > CM_VIRTIO_CONFIGS_MAX_SIZE) {
+        luaL_error(L, "too many virtio devices (expected max %d, got %d)", CM_VIRTIO_CONFIGS_MAX_SIZE,
+            static_cast<int>(virtio->count));
+    }
+    virtio->count = count;
+    virtio->entry = new cm_virtio_device_config[count]{};
+    for (unsigned i = 1; i <= virtio->count; ++i) {
+        lua_geti(L, virtio_table_idx, i);
+        clua_check_cm_virtio_device_config(L, -1, &virtio->entry[i - 1]);
         lua_pop(L, 1);
     }
     lua_pop(L, 1);
@@ -1298,6 +1445,7 @@ cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ct
     check_cm_uarch_config(L, tabidx, &config->uarch);
     check_cm_rollup_config(L, tabidx, &config->rollup);
     check_cm_flash_drive_configs(L, tabidx, &config->flash_drive);
+    check_cm_virtio_configs(L, tabidx, &config->virtio);
     managed.release();
     lua_pop(L, 1); //??DD I don't think lua_pop can throw, but we should check
     return config;

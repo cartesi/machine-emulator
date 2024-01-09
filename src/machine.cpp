@@ -446,28 +446,44 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     // Register pma board shadow device
     register_pma_entry(make_shadow_pmas_pma_entry(PMA_SHADOW_PMAS_START, PMA_SHADOW_PMAS_LENGTH));
 
-    // TODO(edubart): user should be able to configure these devices
-    if (m_c.htif.console_getchar) {
-        // Register VirtIO console device
-        auto vdev_console = std::make_unique<virtio_console>(m_vdevs.size());
-        register_pma_entry(
-            make_virtio_pma_entry(PMA_FIRST_VIRTIO_START + vdev_console->get_virtio_index() * PMA_VIRTIO_LENGTH,
-                PMA_VIRTIO_LENGTH, "VirtIO console device", &virtio_driver, vdev_console.get()));
-        m_vdevs.push_back(std::move(vdev_console));
+    // Initialize VirtIO devices
+    if (!m_c.virtio.empty()) {
+        // VirtIO devices are disallowed when interactive mode is disabled
+        if (!m_c.htif.console_getchar) {
+            throw std::invalid_argument{"virtio devices are only supported while in interactive mode"};
+        }
 
-        // Register VirtIO Plan 9 filesystem device
-        auto vdev_p9fs = std::make_unique<virtio_p9fs_device>(m_vdevs.size(), "vfs0", "/tmp");
-        register_pma_entry(
-            make_virtio_pma_entry(PMA_FIRST_VIRTIO_START + vdev_p9fs->get_virtio_index() * PMA_VIRTIO_LENGTH,
-                PMA_VIRTIO_LENGTH, "VirtIO p9fs device", &virtio_driver, vdev_p9fs.get()));
-        m_vdevs.push_back(std::move(vdev_p9fs));
-
-        // Register VirtIO network device
-        auto vdev_net = std::make_unique<virtio_net>(m_vdevs.size(), std::make_unique<virtio_net_carrier_slirp>());
-        register_pma_entry(
-            make_virtio_pma_entry(PMA_FIRST_VIRTIO_START + vdev_net->get_virtio_index() * PMA_VIRTIO_LENGTH,
-                PMA_VIRTIO_LENGTH, "VirtIO network device", &virtio_driver, vdev_net.get()));
-        m_vdevs.push_back(std::move(vdev_net));
+        for (const auto &vdev_config_entry : m_c.virtio) {
+            std::visit(
+                [&](const auto &vdev_config) {
+                    using T = std::decay_t<decltype(vdev_config)>;
+                    std::string pma_name = "VirtIO device";
+                    std::unique_ptr<virtio_device> vdev;
+                    if constexpr (std::is_same_v<T, cartesi::virtio_console_config>) {
+                        pma_name = "VirtIO Console";
+                        vdev = std::make_unique<virtio_console>(m_vdevs.size());
+                    } else if constexpr (std::is_same_v<T, cartesi::virtio_p9fs_config>) {
+                        pma_name = "VirtIO 9P";
+                        vdev = std::make_unique<virtio_p9fs_device>(m_vdevs.size(), vdev_config.tag,
+                            vdev_config.host_directory);
+                    } else if constexpr (std::is_same_v<T, cartesi::virtio_net_user_config>) {
+                        pma_name = "VirtIO Net User";
+                        vdev = std::make_unique<virtio_net>(m_vdevs.size(),
+                            std::make_unique<virtio_net_carrier_slirp>(vdev_config));
+                    } else if constexpr (std::is_same_v<T, cartesi::virtio_net_tuntap_config>) {
+                        pma_name = "VirtIO Net TUN/TAP";
+                        vdev = std::make_unique<virtio_net>(m_vdevs.size(),
+                            std::make_unique<virtio_net_carrier_tuntap>(vdev_config.iface));
+                    } else {
+                        throw std::invalid_argument("invalid virtio device configuration");
+                    }
+                    register_pma_entry(
+                        make_virtio_pma_entry(PMA_FIRST_VIRTIO_START + vdev->get_virtio_index() * PMA_VIRTIO_LENGTH,
+                            PMA_VIRTIO_LENGTH, pma_name, &virtio_driver, vdev.get()));
+                    m_vdevs.push_back(std::move(vdev));
+                },
+                vdev_config_entry);
+        }
     }
 
     // Initialize DTB
@@ -656,6 +672,9 @@ machine_config machine::get_serialization_config(void) const {
     for (auto &f : c.flash_drive) {
         f.image_filename.clear();
     }
+    if (!c.virtio.empty()) {
+        throw std::runtime_error{"machine config with VirtIO devices cannot be serialized"};
+    }
     if (c.rollup.has_value()) {
         auto &r = c.rollup.value();
         r.rx_buffer.image_filename.clear();
@@ -755,6 +774,9 @@ static inline T &deref(T *t) {
 }
 
 void machine::store_pmas(const machine_config &c, const std::string &dir) const {
+    if (!c.virtio.empty()) {
+        throw std::runtime_error{"machine with VirtIO devices cannot be stored"};
+    }
     store_memory_pma(find_pma_entry<uint64_t>(PMA_DTB_START), dir);
     store_memory_pma(find_pma_entry<uint64_t>(PMA_RAM_START), dir);
     store_device_pma(*this, find_pma_entry<uint64_t>(PMA_SHADOW_TLB_START), dir);

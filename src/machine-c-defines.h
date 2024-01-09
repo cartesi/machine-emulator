@@ -27,10 +27,12 @@
 #define CM_MACHINE_F_REG_COUNT 32       // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
 #define CM_MACHINE_UARCH_X_REG_COUNT 32 // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
 
-#define CM_TREE_LOG2_WORD_SIZE 3          // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
-#define CM_TREE_LOG2_PAGE_SIZE 12         // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
-#define CM_TREE_LOG2_ROOT_SIZE 64         // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
-#define CM_FLASH_DRIVE_CONFIGS_MAX_SIZE 8 // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
+#define CM_TREE_LOG2_WORD_SIZE 3              // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
+#define CM_TREE_LOG2_PAGE_SIZE 12             // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
+#define CM_TREE_LOG2_ROOT_SIZE 64             // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
+#define CM_FLASH_DRIVE_CONFIGS_MAX_SIZE 8     // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
+#define CM_VIRTIO_CONFIGS_MAX_SIZE 16         // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
+#define CM_VIRTIO_HOSTFWD_CONFIGS_MAX_SIZE 16 // NOLINT(cppcoreguidelines-macro-usage, modernize-macro-to-enum)
 
 #include "machine-c-version.h"
 

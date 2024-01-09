@@ -22,11 +22,19 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <variant>
 
 #include "riscv-constants.h"
 #include "uarch-config.h"
 
 namespace cartesi {
+
+/// \brief Machine config constants
+enum machine_config_constants {
+    FLASH_DRIVE_MAX = 8,     ///< Maximum number of flash drives
+    VIRTIO_DEVICE_MAX = 16,  ///< Maximum number of virtio devices
+    VIRTIO_HOSTFWD_MAX = 16, ///< Maximum number of virtio net user host forward ports
+};
 
 /// \brief Processor state configuration
 struct processor_config final {
@@ -89,11 +97,6 @@ struct memory_range_config final { // NOLINT(bugprone-exception-escape)
     std::string image_filename{};  ///< Memory range image file name
 };
 
-/// \brief Flash constants
-enum FLASH_DRIVE_constants {
-    FLASH_DRIVE_MAX = 8 ///< Maximum number of flash drives
-};
-
 /// \brief List of flash drives
 using flash_drive_configs = boost::container::static_vector<memory_range_config, FLASH_DRIVE_MAX>;
 
@@ -122,6 +125,45 @@ struct htif_config final {
     bool yield_automatic{true};       ///< Make yield automatic available?
 };
 
+/// \brief VirtIO console device state config
+struct virtio_console_config final {};
+
+/// \brief VirtIO Plan 9 filesystem device state config
+struct virtio_p9fs_config final {
+    std::string tag{};            ///< Guest mount tag
+    std::string host_directory{}; ///< Path to the host shared directory
+};
+
+/// \brief VirtIO host forward state config
+struct virtio_hostfwd_config final {
+    bool is_udp{false};
+    uint16_t host_port{0};
+    uint16_t guest_port{0};
+};
+
+/// \brief List of VirtIO host forwards
+using virtio_hostfwd_configs = boost::container::static_vector<virtio_hostfwd_config, VIRTIO_HOSTFWD_MAX>;
+
+/// \brief VirtIO user network device state config
+struct virtio_net_user_config final {
+    virtio_hostfwd_configs hostfwd{};
+};
+
+/// \brief VirtIO TUN/TAP network device state config
+struct virtio_net_tuntap_config final {
+    std::string iface{}; ///< Host's tap network interface (e.g "tap0")
+};
+
+/// \brief VirtIO device state config
+using virtio_device_config = std::variant<virtio_console_config, ///< Console
+    virtio_p9fs_config,                                          ///< Plan 9 filesystem
+    virtio_net_user_config,                                      ///< User-mode networking
+    virtio_net_tuntap_config                                     ///< TUN/TAP networking
+    >;
+
+/// \brief List of VirtIO devices
+using virtio_configs = boost::container::static_vector<virtio_device_config, VIRTIO_DEVICE_MAX>;
+
 /// \brief Rollup configuration
 struct rollup_config {                                       // NOLINT(bugprone-exception-escape)
     memory_range_config rx_buffer{0x60000000, 2 << 20};      ///< RX buffer
@@ -134,7 +176,6 @@ struct rollup_config {                                       // NOLINT(bugprone-
 /// \brief Machine state configuration
 /// NOLINTNEXTLINE(bugprone-exception-escape)
 struct machine_config final {
-
     processor_config processor{};          ///< Processor state
     ram_config ram{};                      ///< RAM state
     dtb_config dtb{};                      ///< DTB state
@@ -143,6 +184,7 @@ struct machine_config final {
     clint_config clint{};                  ///< CLINT device state
     plic_config plic{};                    ///< PLIC device state
     htif_config htif{};                    ///< HTIF device state
+    virtio_configs virtio{};               ///< VirtIO devices state
     uarch_config uarch{};                  ///< microarchitecture configuration
     std::optional<rollup_config> rollup{}; ///< Rollup state
 

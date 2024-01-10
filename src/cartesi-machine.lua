@@ -53,7 +53,8 @@ where options are:
     shutdown the remote cartesi machine after the execution.
 
   --no-remote-create
-    use existing cartesi machine in the remote server instead of creating a new one.
+    use existing cartesi machine in the remote server instead of creating
+    a new one.
 
   --no-remote-destroy
     do not destroy the cartesi machine in the remote server after the execution.
@@ -68,7 +69,8 @@ where options are:
     set RAM length.
 
   --dtb-image=<filename>
-    name of file containing DTB image (default: auto generated flattened device tree).
+    name of file containing DTB image
+    (default: auto generated flattened device tree).
 
   --no-bootargs
     clear default bootargs.
@@ -80,7 +82,7 @@ where options are:
     clear default root flash drive and associated bootargs parameters.
 
   --flash-drive=<key>:<value>[,<key>:<value>[,...]...]
-    defines a new flash drive, or modify an existing flash drive definition
+    defines a new flash drive, or modify an existing flash drive definition.
     flash drives appear as /dev/pmem[0-7].
 
     <key>:<value> is one of
@@ -120,11 +122,12 @@ where options are:
         you can also use "mount:<path>" to choose a custom mount point.
 
         user (optional)
-        changes the user ownership of the mounted directory when mount is true,
-        otherwise changes the user ownership of the respective /dev/pmemX device,
-        this option is useful to allow dapp's user access the flash drive,
-        by default the mounted directory ownership is configured by the filesystem being mounted,
-        in case mount is false the default ownership is set to the root user.
+        when mount is true, changes the user ownership of the mounted directory,
+        otherwise changes the user ownership of the /dev/pmemX device.
+        this option is useful to allow dapp's user access the flash drive.
+        by default the mounted directory ownership is configured by the
+        filesystem being mounted.
+        in case mount is false, the default ownership is set to the root user.
 
     (an option "--flash-drive=label:root,filename:rootfs.ext2" is implicit)
 
@@ -261,19 +264,19 @@ where options are:
         it can be identified or else a single thread is used.
 
   --htif-no-console-putchar
-    suppress any console output during machine run,
+    suppress any console output during machine run.
     this includes anything written to machine's stdout or stderr.
 
   --skip-root-hash-check
-    skip merkle tree root hash check when loading a stored machine,
-    assuming the stored machine files are not corrupt,
+    skip merkle tree root hash check when loading a stored machine.
+    i.e., assume the stored machine files are not corrupt.
     this is only intended to speed up machine loading in emulator tests.
 
     DON'T USE THIS OPTION IN PRODUCTION
 
   --skip-version-check
-    skip emulator version check when loading a stored machine,
-    assuming the stored machine is compatible with current emulator version,
+    skip emulator version check when loading a stored machine.
+    i.e., assume the stored machine is compatible with current emulator version.
     this is only intended to test old snapshots during emulator development.
 
     DON'T USE THIS OPTION IN PRODUCTION
@@ -284,14 +287,138 @@ where options are:
   --max-uarch-cycle=<number>
     stop at a given micro cycle.
 
+  --unreproducible
+    run machine in unreproducible mode.
+    unreproducible machines will advance time normally when its CPU is idle.
+    i.e., when sleeping 1 second on the guest, 1 second will pass on the host.
+    this is automatically implied by all options marked as NON REPRODUCIBLE.
+
+    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
+
+  --sync-init-date
+    set the guest date to match the host date on initialization.
+    this option is recommended when using TLS connections or when sharing
+    host directories systems.
+    this is is automatically implied with --network or --volume options.
+
+    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
+
+  --virtio-9p=<tag>:<directory>
+    add a VirtIO Plan9 filesystem device for sharing a host directory
+    in the guest.
+    the filesystem will have a tag can be used to mount the host directory
+    in the guest using the following command:
+
+        busybox mount -t 9p <tag> <mountpoint>
+
+    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
+
+  -v or --volume=<host_directory>:<guest_directory>
+    like --virtio-9p, but also appends init commands to auto mount the
+    host directory in the guest.
+    mount tags are incrementally set to "vfs0", "vfs1", ...
+
+    this option implies --sync-init-date.
+
+    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
+
+  --virtio-net=<iface>
+    add a VirtIO network device using host TUN/TAP interface.
+    this allows the use of the host network from inside the machine.
+    this is more efficient and has fewer limitations than the user-space
+    networking option (--virtio-net=user...).
+
+    run the following commands in the host before starting the emulator:
+
+        sudo modprobe tun
+        sudo ip link add br0 type bridge
+        sudo ip tuntap add dev tap0 mode tap user $USER
+        sudo ip link set dev tap0 master br0
+        sudo ip link set dev br0 up
+        sudo ip link set dev tap0 up
+        sudo ip addr add 10.0.2.2/24 dev br0
+        sudo sysctl -w net.ipv4.ip_forward=1
+        sudo iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+
+    (in the example above, the host public internet interface is eth0,
+    but this depends on your host.)
+
+    then, start the machine with using --virtio-net=tap0 and
+    execute the following commands in the guest (with root privilege):
+
+        busybox ip link set dev eth0 up
+        busybox ip addr add 10.0.2.15/24 dev eth0
+        busybox ip route add default via 10.0.2.2 dev eth0
+        echo "nameserver 8.8.8.8" > /etc/resolv.conf
+
+    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
+
+  --virtio-net=user[,<key>:<value>[,...]...]
+    add a VirtIO network device using host user-space networking.
+    this allows the use of the host network from inside the machine.
+    you don't need root privilege or any configuration in the host to use this.
+    although this mode is easier to use, it has the following limitations:
+      - there is an additional an emulation layer of the TCP/IP stack;
+      - not all IP protocols are emulated, but TCP and UDP should work;
+      - host cannot connect to guest TCP ports.
+    the implementation uses the libslirp TCP/IP emulator library.
+
+    you must execute the following commands in the guest (with root privilege):
+
+        busybox ip link set dev eth0 up
+        busybox ip addr add 10.0.2.15/24 dev eth0
+        busybox ip route add default via 10.0.2.2 dev eth0
+        echo 'nameserver 10.0.2.3' > /etc/resolv.conf
+
+    the network settings configuration is fixed to the following:
+        Network:      10.0.2.0
+        Netmask:      255.255.255.0
+        Host/Gateway: 10.0.2.2
+        DHCP Start:   10.0.2.15
+        Nameserver:   10.0.2.3
+
+    <key>:<value> is one of
+        hostfwd:[tcp|udp]:hostport[:guestport]
+            redirect incoming TCP or UDP connections.
+            bind the host 127.0.0.1:hostport to the guest 10.0.2.15:guestport.
+            if connection type is absent, TCP is assumed.
+            if guest port is absent, it's set to the same as host port.
+            you can pass this option multiple times.
+
+    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
+
+  -n[=...] or --network[=...]
+    like --virtio-net=user, but automatically appends init commands to
+    initialize the network in the guest.
+
+    this option implies --sync-init-date.
+
+    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
+
   -i or --htif-console-getchar
-    run in interactive mode.
+    run in interactive mode using a HTIF console device.
+
+    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
+
+  --virtio-console
+    add a VirtIO console device.
+    VirtIO console is more responsive than the HTIF console and
+    supports terminal size.
+
+    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
 
   -it
-    run in interactive mode like -i,
-    but also sets terminal features and size in the guest to match with the host.
-    This option will copy TERM, LANG, LC_ALL environment variables from the host to the guest,
-    allowing the use of true colors and special characters when the host terminal supports.
+    run in enhanced interactive mode using a VirtIO console device.
+    the console is resizable, more responsive, and support more features
+    than the -i option.
+
+    like --virtio-console, but automatically appends init commands to forward
+    TERM and LANG environment variables from the host to the guest,
+    allowing the use of true colors and special characters (when supported).
+
+    this option implies --sync-init-date.
+
+    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
 
   --no-htif-yield-manual
     do not honor yield requests with manual reset by target.
@@ -313,9 +440,9 @@ where options are:
     print final state hash when done.
 
   --periodic-hashes=<number-period>[,<number-start>]
-    prints root hash every <number-period> cycles. If <number-start> is given,
-    the periodic hashing will start at that mcycle. This option implies
-    --initial-hash and --final-hash.
+    prints root hash every <number-period> cycles.
+    if <number-start> is given, the periodic hashing will start at that mcycle.
+    this option implies --initial-hash and --final-hash.
     (default: none)
 
   --log-uarch-step
@@ -343,7 +470,8 @@ where options are:
     dump all memory ranges to disk when done.
 
   --assert-rolling-template
-    exit with failure in case the generated machine is not Rolling Cartesi Machine templates compatible.
+    exit with failure in case the generated machine is not compatible with
+    Rolling Cartesi Machine templates.
 
   --quiet
     suppress cartesi-machine.lua output.
@@ -356,31 +484,34 @@ where options are:
     don't use cartesi machine default init value (USER=dapp)
 
   --append-init=<string>
-    append a command to machine's init script to be executed with root privilege.
-    The command is executed on boot after mounting flash drives and before running the entrypoint.
-    You can pass this option multiple times.
+    append <string> to the machine's init script, to execute as root.
+    <string> is executed on boot after mounting flash drives but before
+    running the entrypoint.
+    you can pass this option multiple times.
 
   --append-init-file=<filename>
-    like --append-init, but use contents from a file.
+    like --append-init, but read contents from a file.
 
   --append-entrypoint=<string>
-    append a command to machine's entrypoint script to be executed with dapp privilege.
-    The command is executed after the machine is initialized and before the final entrypoint command.
-    You can pass this option multiple times.
+    append a <string> to the machine's entrypoint script, to execute as dapp.
+    <string> is executed after the machine is initialized, and before the
+    command and arguments passed last in the command line.
+    you can pass this option multiple times.
 
   --append-entrypoint-file=<filename>
-    like --append-entrypoint, but use contents from a file.
+    like --append-entrypoint, but read contents from a file.
 
   --gdb[=<address>]
     listen at <address> and wait for a GDB connection to debug the machine.
-    If <address> is omitted, '127.0.0.1:1234' is used by default.
-    The host GDB client must have support for RISC-V architecture.
+    if <address> is omitted, '127.0.0.1:1234' is used by default.
+    the host GDB client must have support for RISC-V architecture.
 
     host GDB can connect with the following command:
         gdb -ex "set arch riscv:rv64" -ex "target remote <address>" [elf]
 
         elf (optional)
-        the binary elf file with symbols and debugging information to be debugged, such as:
+        the binary elf file with symbols and debugging information
+        to be debugged, such as:
         - vmlinux (for kernel debugging)
         - BBL elf (for debugging the BBL boot loader)
         - a test elf (for debugging tests)
@@ -428,11 +559,19 @@ local flash_mount = {}
 local flash_user = {}
 local flash_start = {}
 local flash_length = {}
+local unreproducible = false
+local virtio = {}
+local virtio_volume_count = 0
+local has_virtio_console = false
+local has_network = false
+local has_sync_init_date = false
 local memory_range_replace = {}
 local ram_image_filename = images_path .. "linux.bin"
-local ram_length = 64 << 20
+local ram_length = 128 << 20 -- 128MB
 local dtb_image_filename = nil
-local bootargs = "quiet earlycon=sbi console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"
+local bootargs = "quiet earlycon=sbi console=hvc0"
+    -- rootfs related arguments must come at the end to be replaced by --no-root-flash-drive
+    .. " rootfstype=ext2 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"
 local init_splash = true
 local append_bootargs = ""
 local default_init = "USER=dapp\n"
@@ -490,6 +629,118 @@ local function parse_memory_range(opts, what, all)
     f.start = assert(util.parse_number(f.start), "invalid " .. what .. " start in " .. all)
     f.length = assert(util.parse_number(f.length), "invalid " .. what .. " length in " .. all)
     return f
+end
+
+local function handle_sync_init_date(all)
+    if not all then return false end
+    if has_sync_init_date then return end
+    unreproducible = true
+    has_sync_init_date = true
+    -- round up time by 1, to decrease chance of guest time being in the past
+    local seconds = os.time() + 1
+    append_init = append_init .. "busybox date -s @" .. seconds .. " >> /dev/null\n"
+end
+
+local function handle_virtio_9p(tag, host_directory)
+    if not tag or not host_directory then return false end
+    unreproducible = true
+    table.insert(virtio, { type = "p9fs", tag = tag, host_directory = host_directory })
+    return true
+end
+
+local function handle_volume_option(host_directory, guest_directory)
+    if not host_directory or not guest_directory then return false end
+    unreproducible = true
+    local tag = "vfs" .. virtio_volume_count
+    virtio_volume_count = virtio_volume_count + 1
+    table.insert(virtio, { type = "p9fs", tag = tag, host_directory = host_directory })
+    append_init = append_init .. "busybox mount -t 9p " .. tag .. " " .. guest_directory .. "\n"
+    -- sync guest date with host date, otherwise file system updates will have wrong dates
+    handle_sync_init_date(true)
+    return true
+end
+
+local function handle_htif_console_getchar(all)
+    if not all then return false end
+    htif_console_getchar = true
+    unreproducible = true
+    return true
+end
+
+local function parse_virtio_net_user_config(opts)
+    local o = opts ~= "" and util.parse_options(opts, {
+        hostfwd = "array",
+    }) or {}
+    local vdev_config = { type = "net-user" }
+    if o.hostfwd then
+        for _, hostfwd in ipairs(o.hostfwd) do
+            local is_udp = nil
+            local host_port, guest_port = hostfwd:match("^([0-9]+):?([0-9]*)$")
+            if not host_port then
+                host_port, guest_port = hostfwd:match("^tcp:([0-9]+):?([0-9]*)$")
+            end
+            if not host_port then
+                host_port, guest_port = hostfwd:match("^udp:([0-9]+):?([0-9]*)$")
+                is_udp = true
+            end
+            host_port = tonumber(host_port)
+            guest_port = guest_port ~= "" and tonumber(guest_port) or host_port
+            assert(host_port and guest_port, "malformed hostfwd option")
+            vdev_config.hostfwd = vdev_config.hostfwd or {}
+            table.insert(vdev_config.hostfwd, { is_udp = is_udp, host_port = host_port, guest_port = guest_port })
+        end
+    end
+    return vdev_config
+end
+
+local function handle_virtio_net(mode, opts)
+    if not mode then return false end
+    unreproducible = true
+    if mode == "user" then
+        table.insert(virtio, parse_virtio_net_user_config(opts))
+    else
+        table.insert(virtio, { type = "net-tuntap", iface = opts })
+    end
+    return true
+end
+
+local function handle_network_option(opts)
+    if not opts then return false end
+    if has_network then return true end
+    has_network = true
+    table.insert(virtio, parse_virtio_net_user_config(opts))
+    -- initialize network
+    append_init = append_init
+        .. [[
+busybox ip link set dev eth0 up
+busybox ip addr add 10.0.2.15/24 dev eth0
+busybox ip route add default via 10.0.2.2 dev eth0
+echo 'nameserver 10.0.2.3' > /etc/resolv.conf
+]]
+    -- sync guest date with host date, otherwise SSL connections may fail to validate certificates
+    handle_sync_init_date(true)
+    return true
+end
+
+local function handle_virtio_console(all)
+    if not all then return false end
+    if has_virtio_console then return end
+    unreproducible = true
+    has_virtio_console = true
+    -- Switch from HTIF Console (hvc0) to VirtIO console (hvc1)
+    bootargs = bootargs:gsub("console=hvc0", "console=hvc1")
+    table.insert(virtio, 1, { type = "console" })
+end
+
+local function handle_interactive(all)
+    if not all then return false end
+    handle_virtio_console(true)
+    handle_sync_init_date(true)
+    -- Expose current terminal features to the virtual terminal
+    local term, lang = os.getenv("TERM"), os.getenv("LANG")
+    if term then append_init = append_init .. "export TERM=" .. term .. "\n" end
+    if lang and lang:find("utf8") then append_init = append_init .. "export LANG=C.utf8\n" end
+    return true
 end
 
 -- List of supported options
@@ -625,35 +876,56 @@ local options = {
         end,
     },
     {
-        "^%-%-htif%-console%-getchar$",
+        "^%-%-unreproducible$",
         function(all)
             if not all then return false end
-            htif_console_getchar = true
+            unreproducible = true
             return true
         end,
+    },
+    {
+        "^%-%-sync%-init-date$",
+        handle_sync_init_date,
+    },
+    {
+        "^%-%-virtio%-9p%=([%w_-]+):(.*)$",
+        handle_virtio_9p,
+    },
+    {
+        "^%-v%=([^:]+):(.*)$",
+        handle_volume_option,
+    },
+    {
+        "^%-%-volume%=([^:]+):(.*)$",
+        handle_volume_option,
+    },
+    {
+        "^%-%-virtio%-console$",
+        handle_virtio_console,
+    },
+    {
+        "^%-%-virtio%-net%=([%w+]+),?([%w:,]*)$",
+        handle_virtio_net,
+    },
+    {
+        "^%-%-network=?([%w:,]*)$",
+        handle_network_option,
+    },
+    {
+        "^%-n=?([%w:,]*)$",
+        handle_network_option,
+    },
+    {
+        "^%-%-htif%-console%-getchar$",
+        handle_htif_console_getchar,
     },
     {
         "^%-i$",
-        function(all)
-            if not all then return false end
-            htif_console_getchar = true
-            return true
-        end,
+        handle_htif_console_getchar,
     },
     {
         "^%-it$",
-        function(all)
-            if not all then return false end
-            htif_console_getchar = true
-            -- Switch from HTIF Console (hvc0) to VirtIO console (hvc1)
-            bootargs = bootargs:gsub("console=hvc0", "console=hvc1")
-            -- Expose current terminal features to the virtual terminal
-            local term, lang, lc_all = os.getenv("TERM"), os.getenv("LANG"), os.getenv("LC_ALL")
-            if term then append_init = append_init .. "export TERM=" .. term .. "\n" end
-            if lang then append_init = append_init .. "export LANG=" .. lang .. "\n" end
-            if lc_all then append_init = append_init .. "export LC_ALL=" .. lc_all .. "\n" end
-            return true
-        end,
+        handle_interactive,
     },
     {
         "^%-%-no%-htif%-yield%-manual$",
@@ -1211,6 +1483,35 @@ local function store_memory_range(r, indent, output)
     output("%s},\n", indent)
 end
 
+local function store_value(key, value, indent, output)
+    -- skip empty values
+    if value == nil or (type(value) == "table" and next(value) == nil) then return end
+    -- add key
+    if key ~= nil then
+        output("%s%s = ", indent, key)
+    else
+        output("%s", indent)
+    end
+    -- add value
+    if type(value) == "table" then
+        output("{\n", key)
+        if type(next(value)) == "string" then
+            for k, v in pairs(value) do
+                store_value(k, v, "  " .. indent, output)
+            end
+        elseif #value > 0 then
+            for _, v in ipairs(value) do
+                store_value(nil, v, "  " .. indent, output)
+            end
+        end
+        output("%s},\n", indent)
+    elseif type(value) == "string" then
+        output('"%s",\n', value)
+    else
+        output("%s,\n", value)
+    end
+end
+
 local function store_machine_config(config, output)
     local function comment_default(u, v) output(u == v and " -- default\n" or "\n") end
 
@@ -1305,6 +1606,7 @@ local function store_machine_config(config, output)
         store_memory_range(f, "    ", output)
     end
     output("  },\n")
+    store_value("virtio", config.virtio, "  ", output)
     if config.rollup then
         output("  rollup = {\n")
         output("    rx_buffer = ")
@@ -1371,8 +1673,10 @@ local function resolve_flash_starts(label_order, start)
     end
 end
 
-local function dump_value_proofs(machine, desired_proofs, has_htif_console_getchar)
-    if #desired_proofs > 0 then assert(not has_htif_console_getchar, "proofs are meaningless in interactive mode") end
+local function dump_value_proofs(machine, desired_proofs, config)
+    if #desired_proofs > 0 then
+        assert(config.processor.iunrep == 0, "proofs are meaningless in unreproducible mode")
+    end
     for _, desired in ipairs(desired_proofs) do
         local proof = machine:get_proof(desired.address, desired.log2_size)
         local out = desired.filename and assert(io.open(desired.filename, "wb")) or io.stdout
@@ -1433,6 +1737,7 @@ else
             mimpid = -1,
             marchid = -1,
             mvendorid = -1,
+            iunrep = unreproducible and 1 or 0,
         },
         dtb = {
             image_filename = dtb_image_filename,
@@ -1452,6 +1757,7 @@ else
         rollup = rollup,
         uarch = uarch,
         flash_drive = {},
+        virtio = virtio,
     }
 
     -- show splash on init
@@ -1599,7 +1905,6 @@ local function check_rollup_memory_range_config(range, name)
 end
 
 local function check_rollup_htif_config(htif)
-    assert(not htif.console_getchar, "console getchar must be disabled for rollup")
     assert(htif.yield_manual, "yield manual must be enabled for rollup")
     assert(htif.yield_automatic, "yield automatic must be enabled for rollup")
 end
@@ -1737,7 +2042,7 @@ local function save_rollup_inspect_state_report(machine, config, inspect)
 end
 
 local function store_machine(machine, config, dir)
-    assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
+    assert(config.processor.iunrep == 0, "hashes are meaningless in unreproducible mode")
     stderr("Storing machine: please wait\n")
     local h = util.hexhash(machine:get_root_hash())
     local name = instantiate_filename(dir, { h = h })
@@ -1765,7 +2070,7 @@ if gdb_address then
     assert(address and port, "invalid address for GDB")
     gdb_stub:listen_and_wait_gdb(address, tonumber(port))
 end
-if config.htif.console_getchar then stderr("Running in interactive mode!\n") end
+if config.processor.iunrep ~= 0 then stderr("Running in unreproducible mode!\n") end
 if store_config == stderr then store_machine_config(config, stderr) end
 if rollup_advance or rollup_inspect then
     check_rollup_htif_config(config.htif)
@@ -1779,10 +2084,10 @@ if rollup_advance or rollup_inspect then
 end
 local cycles = machine:read_mcycle()
 if initial_hash then
-    assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
+    assert(config.processor.iunrep == 0, "hashes are meaningless in unreproducible mode")
     print_root_hash(machine, stderr_unsilenceable)
 end
-dump_value_proofs(machine, initial_proof, config.htif.console_getchar)
+dump_value_proofs(machine, initial_proof, config)
 local exit_code = 0
 local next_hash_mcycle
 if periodic_hashes_start ~= 0 then
@@ -1915,7 +2220,7 @@ if max_uarch_cycle > 0 then
 end
 if gdb_stub then gdb_stub:close() end
 if log_uarch_step then
-    assert(not config.htif.console_getchar, "micro step proof is meaningless in interactive mode")
+    assert(config.processor.iunrep == 0, "micro step proof is meaningless in unreproducible mode")
     stderr("Gathering micro step log: please wait\n")
     util.dump_log(machine:log_uarch_step({ proofs = true, annotations = true }), io.stderr)
 end
@@ -1925,10 +2230,10 @@ if log_uarch_reset then
 end
 if dump_memory_ranges then dump_pmas(machine) end
 if final_hash then
-    assert(not config.htif.console_getchar, "hashes are meaningless in interactive mode")
+    assert(config.processor.iunrep == 0, "hashes are meaningless in unreproducible mode")
     print_root_hash(machine, stderr_unsilenceable)
 end
-dump_value_proofs(machine, final_proof, config.htif.console_getchar)
+dump_value_proofs(machine, final_proof, config)
 if store_dir then store_machine(machine, config, store_dir) end
 if assert_rolling_template then
     local cmd, reason = get_yield(machine)

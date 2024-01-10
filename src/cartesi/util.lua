@@ -185,7 +185,12 @@ function _M.parse_options(s, keys)
             v = true
         end
         assert(keys[k], string.format("unknown option '%q'", k))
-        options[k] = v
+        if keys[k] == "array" then
+            options[k] = options[k] or {}
+            table.insert(options[k], v)
+        else
+            options[k] = v
+        end
     end)
     return options
 end

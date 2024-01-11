@@ -82,6 +82,7 @@ static auto csr_from_name(const std::string &name) {
         {"senvcfg", csr::senvcfg},
         {"ilrsc", csr::ilrsc},
         {"iflags", csr::iflags},
+        {"iunrep", csr::iunrep},
         {"clint_mtimecmp", csr::clint_mtimecmp},
         {"plic_girqpend", csr::plic_girqpend},
         {"plic_girqsrvd", csr::plic_girqsrvd},
@@ -164,6 +165,8 @@ static auto csr_to_name(machine::csr reg) {
             return "ilrsc";
         case csr::iflags:
             return "iflags";
+        case csr::iunrep:
+            return "iunrep";
         case csr::clint_mtimecmp:
             return "clint_mtimecmp";
         case csr::plic_girqpend:
@@ -837,6 +840,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, processor_config &v
     ju_get_opt_field(jconfig, "senvcfg"s, value.senvcfg, new_path);
     ju_get_opt_field(jconfig, "ilrsc"s, value.ilrsc, new_path);
     ju_get_opt_field(jconfig, "iflags"s, value.iflags, new_path);
+    ju_get_opt_field(jconfig, "iunrep"s, value.iunrep, new_path);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, processor_config &value,
@@ -1245,7 +1249,7 @@ void to_json(nlohmann::json &j, const processor_config &config) {
         {"medeleg", config.medeleg}, {"mideleg", config.mideleg}, {"mcounteren", config.mcounteren},
         {"menvcfg", config.menvcfg}, {"stvec", config.stvec}, {"sscratch", config.sscratch}, {"sepc", config.sepc},
         {"scause", config.scause}, {"stval", config.stval}, {"satp", config.satp}, {"scounteren", config.scounteren},
-        {"senvcfg", config.senvcfg}, {"ilrsc", config.ilrsc}, {"iflags", config.iflags}};
+        {"senvcfg", config.senvcfg}, {"ilrsc", config.ilrsc}, {"iflags", config.iflags}, {"iunrep", config.iunrep}};
 }
 
 void to_json(nlohmann::json &j, const flash_drive_configs &fs) {

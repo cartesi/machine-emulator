@@ -130,6 +130,7 @@ IMPL_MACHINE_OBJ_READ_WRITE(scounteren)
 IMPL_MACHINE_OBJ_READ_WRITE(senvcfg)
 IMPL_MACHINE_OBJ_READ_WRITE(ilrsc)
 IMPL_MACHINE_OBJ_READ_WRITE(iflags)
+IMPL_MACHINE_OBJ_READ_WRITE(iunrep)
 IMPL_MACHINE_OBJ_READ_WRITE(htif_tohost)
 IMPL_MACHINE_OBJ_READ(htif_tohost_dev)
 IMPL_MACHINE_OBJ_READ(htif_tohost_cmd)
@@ -570,6 +571,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"set_iflags_X", machine_obj_index_set_iflags_X},
     {"reset_iflags_Y", machine_obj_index_reset_iflags_Y},
     {"reset_iflags_X", machine_obj_index_reset_iflags_X},
+    {"read_iunrep", machine_obj_index_read_iunrep},
     {"read_ilrsc", machine_obj_index_read_ilrsc},
     {"read_marchid", machine_obj_index_read_marchid},
     {"read_mcause", machine_obj_index_read_mcause},
@@ -624,6 +626,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"write_uarch_pc", machine_obj_index_write_uarch_pc},
     {"write_uarch_x", machine_obj_index_write_uarch_x},
     {"write_iflags", machine_obj_index_write_iflags},
+    {"write_iunrep", machine_obj_index_write_iunrep},
     {"write_ilrsc", machine_obj_index_write_ilrsc},
     {"write_mcause", machine_obj_index_write_mcause},
     {"write_mcounteren", machine_obj_index_write_mcounteren},

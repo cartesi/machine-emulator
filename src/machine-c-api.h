@@ -129,6 +129,7 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_PROC_SENVCFG,
     CM_PROC_ILRSC,
     CM_PROC_IFLAGS,
+    CM_PROC_IUNREP,
     CM_PROC_CLINT_MTIMECMP,
     CM_PROC_PLIC_GIRQPEND,
     CM_PROC_PLIC_GIRQSRVD,
@@ -183,6 +184,7 @@ typedef struct {                        // NOLINT(modernize-use-using)
     uint64_t senvcfg;                   ///< Value of senvcfg CSR
     uint64_t ilrsc;                     ///< Value of ilrsc CSR
     uint64_t iflags;                    ///< Value of iflags CSR
+    uint64_t iunrep;                    ///< Value of iunrep CSR
 } cm_processor_config;
 
 /// \brief RAM state configuration
@@ -1366,6 +1368,26 @@ CM_API uint64_t cm_packed_iflags(int PRV, int X, int Y, int H);
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_iflags(cm_machine *m, uint64_t val, char **err_msg);
+
+/// \brief Reads the value of the iunrep register.
+/// \param m Pointer to valid machine instance
+/// \param val Receives value of the register.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successful function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring.
+/// err_msg can be NULL, meaning the error message won't be received.
+/// \returns 0 for success, non zero code for error
+CM_API int cm_read_iunrep(const cm_machine *m, uint64_t *val, char **err_msg);
+
+/// \brief Writes the value of the iunrep register.
+/// \param m Pointer to valid machine instance
+/// \param val New register value.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successful function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring.
+/// err_msg can be NULL, meaning the error message won't be received.
+/// \returns 0 for success, non zero code for error
+CM_API int cm_write_iunrep(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Reads the value of HTIF's tohost register.
 /// \param m Pointer to valid machine instance

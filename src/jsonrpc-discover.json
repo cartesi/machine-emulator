@@ -1177,6 +1177,7 @@
           "senvcfg",
           "ilrsc",
           "iflags",
+          "iunrep",
           "clint_mtimecmp",
           "plic_girqpend",
           "plic_girqsrvd",
@@ -1351,6 +1352,9 @@
             "$ref": "#/components/schemas/UnsignedInteger"
           },
           "iflags": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "iunrep": {
             "$ref": "#/components/schemas/UnsignedInteger"
           }
         }

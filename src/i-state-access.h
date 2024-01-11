@@ -523,6 +523,20 @@ public:
         return derived().do_write_iflags_PRV(val);
     }
 
+    /// \brief Reads CSR iunrep.
+    /// \returns Register value.
+    /// \details This is Cartesi-specific.
+    uint64_t read_iunrep(void) {
+        return derived().do_read_iunrep();
+    }
+
+    /// \brief Writes CSR iunrep.
+    /// \param val New register value.
+    /// \details This is Cartesi-specific.
+    void write_iunrep(uint64_t val) {
+        return derived().do_write_iunrep(val);
+    }
+
     /// \brief Reads CLINT's mtimecmp.
     /// \returns Register value.
     uint64_t read_clint_mtimecmp(void) {

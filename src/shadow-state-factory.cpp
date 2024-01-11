@@ -79,6 +79,7 @@ static bool shadow_state_peek(const pma_entry &pma, const machine &m, uint64_t p
     s->senvcfg = m.read_senvcfg();
     s->ilrsc = m.read_ilrsc();
     s->iflags = m.read_iflags();
+    s->iunrep = m.read_iunrep();
     s->clint_mtimecmp = m.read_clint_mtimecmp();
     s->plic_girqpend = m.read_plic_girqpend();
     s->plic_girqsrvd = m.read_plic_girqsrvd();

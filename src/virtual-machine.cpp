@@ -352,6 +352,14 @@ void virtual_machine::do_write_iflags(uint64_t val) {
     return m_machine->write_iflags(val);
 }
 
+uint64_t virtual_machine::do_read_iunrep(void) const {
+    return m_machine->read_iunrep();
+}
+
+void virtual_machine::do_write_iunrep(uint64_t val) {
+    return m_machine->write_iunrep(val);
+}
+
 uint64_t virtual_machine::do_read_htif_tohost(void) const {
     return m_machine->read_htif_tohost();
 }

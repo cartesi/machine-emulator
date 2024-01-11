@@ -364,6 +364,14 @@ private:
         m_m.get_state().iflags.PRV = val;
     }
 
+    uint64_t do_read_iunrep(void) const {
+        return m_m.get_state().iunrep;
+    }
+
+    void do_write_iunrep(uint64_t val) {
+        m_m.get_state().iunrep = val;
+    }
+
     uint64_t do_read_clint_mtimecmp(void) const {
         return m_m.get_state().clint.mtimecmp;
     }
@@ -417,12 +425,9 @@ private:
     }
 
     NO_INLINE std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
-        bool interrupt_raised = false;
-        const bool has_htif_console = m_m.has_htif_console();
-        const bool has_virtio_devices = m_m.has_virtio_devices();
-        const bool has_virtio_console = m_m.has_virtio_console();
-        // Only poll external interrupts if we are in interactive mode (console is enabled or have VirtIO devices)
-        if (unlikely(has_htif_console || has_virtio_devices)) {
+        const bool interrupt_raised = false;
+        // Only poll external interrupts if we are in unreproducible mode
+        if (unlikely(do_read_iunrep())) {
             // Convert the relative interval of cycles we can wait to the interval of host time we can wait
             uint64_t timeout_us = (mcycle_max - mcycle) / RTC_CYCLES_PER_US;
             int64_t start_us = 0;
@@ -432,21 +437,25 @@ private:
             device_state_access da(*this, mcycle);
             // Poll virtio for events (e.g console stdin, network sockets)
             // Timeout may be decremented in case a device has deadline timers (e.g network device)
-            if (has_virtio_devices && has_virtio_console) { // VirtIO + VirtIO console
+            if (m_m.has_virtio_devices() && m_m.has_virtio_console()) { // VirtIO + VirtIO console
                 m_m.poll_virtio_devices(&timeout_us, &da);
                 // VirtIO console device will poll TTY
-            } else if (has_virtio_devices) { // VirtIO without a console + HTIF console
+            } else if (m_m.has_virtio_devices()) { // VirtIO without a console
                 m_m.poll_virtio_devices(&timeout_us, &da);
-                // Poll tty without waiting more time, because the pool above should have waited enough time
-                os_poll_tty(0);
-            } else { // Only HTIF console
+                if (m_m.has_htif_console()) { // VirtIO + HTIF console
+                    // Poll tty without waiting more time, because the pool above should have waited enough time
+                    os_poll_tty(0);
+                }
+            } else if (m_m.has_htif_console()) { // Only HTIF console
                 os_poll_tty(timeout_us);
+            } else if (timeout_us > 0) { // No interrupts to check, just keep the CPU idle
+                os_sleep_us(timeout_us);
             }
             // If timeout is greater than zero, we should also increment mcycle relative to the elapsed time
             if (timeout_us > 0) {
                 const int64_t end_us = os_now_us();
                 const uint64_t elapsed_us = static_cast<uint64_t>(std::max(end_us - start_us, INT64_C(0)));
-                uint64_t next_mcycle = mcycle + (elapsed_us * RTC_CYCLES_PER_US);
+                const uint64_t next_mcycle = mcycle + (elapsed_us * RTC_CYCLES_PER_US);
                 mcycle = std::min(std::max(next_mcycle, mcycle), mcycle_max);
             }
         }

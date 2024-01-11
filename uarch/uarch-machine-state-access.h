@@ -470,6 +470,14 @@ private:
         write_iflags(new_iflags);
     }
 
+    uint64_t do_read_iunrep(void) {
+        return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::iunrep));
+    }
+
+    void do_write_iunrep(uint64_t val) {
+        raw_write_memory(shadow_state_get_csr_abs_addr(shadow_state_csr::iunrep), val);
+    }
+
     uint64_t do_read_clint_mtimecmp(void) {
         return raw_read_memory<uint64_t>(shadow_state_get_csr_abs_addr(shadow_state_csr::clint_mtimecmp));
     }

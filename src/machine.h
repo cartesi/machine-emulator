@@ -171,6 +171,7 @@ public:
         senvcfg,
         ilrsc,
         iflags,
+        iunrep,
         clint_mtimecmp,
         plic_girqpend,
         plic_girqsrvd,
@@ -685,6 +686,14 @@ public:
     /// \brief Reads the value of the iflags register.
     /// \param value New register value.
     void write_iflags(uint64_t value);
+
+    /// \brief Reads the value of the iunrep register.
+    /// \returns The value of the register.
+    uint64_t read_iunrep(void) const;
+
+    /// \brief Writes the value of the iunrep register.
+    /// \param value New register value.
+    void write_iunrep(uint64_t value);
 
     /// \brief Reads the value of HTIF's tohost register.
     /// \returns The value of the register.

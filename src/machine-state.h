@@ -91,7 +91,8 @@ struct machine_state {
     uint64_t senvcfg;    ///< CSR senvcfg.
 
     // Cartesi-specific state
-    uint64_t ilrsc; ///< Cartesi-specific CSR ilrsc (For LR/SC instructions).
+    uint64_t ilrsc;  ///< Cartesi-specific CSR ilrsc (For LR/SC instructions).
+    uint64_t iunrep; ///< Cartesi-specific CSR iunrep
 
     unpacked_iflags iflags; ///< Cartesi-specific unpacked CSR iflags.
 

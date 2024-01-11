@@ -353,6 +353,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     write_senvcfg(m_c.processor.senvcfg);
     write_ilrsc(m_c.processor.ilrsc);
     write_iflags(m_c.processor.iflags);
+    write_iunrep(m_c.processor.iunrep);
 
     // Register RAM
     if (m_c.ram.image_filename.empty()) {
@@ -448,9 +449,9 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
 
     // Initialize VirtIO devices
     if (!m_c.virtio.empty()) {
-        // VirtIO devices are disallowed when interactive mode is disabled
-        if (!m_c.htif.console_getchar) {
-            throw std::invalid_argument{"virtio devices are only supported while in interactive mode"};
+        // VirtIO devices are disallowed in unreproducible mode
+        if (!m_c.processor.iunrep) {
+            throw std::invalid_argument{"virtio devices are only supported in unreproducible machines"};
         }
 
         for (const auto &vdev_config_entry : m_c.virtio) {
@@ -529,7 +530,10 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     }
 
     // Initialize TTY if console input is enabled
-    if (m_c.htif.console_getchar) {
+    if (m_c.htif.console_getchar || has_virtio_console()) {
+        if (!m_c.processor.iunrep) {
+            throw std::invalid_argument{"TTY stdin is only supported in unreproducible machines"};
+        }
         os_open_tty();
     }
 
@@ -543,7 +547,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     std::sort(m_mrds.begin(), m_mrds.end(),
         [](const machine_memory_range_descr &a, const machine_memory_range_descr &b) { return a.start < b.start; });
 
-    // Disable SIGPIPE handler, because this signal be raised and terminate the emulator process,
+    // Disable SIGPIPE handler, because this signal can be raised and terminate the emulator process
     // when calling write() on closed file descriptors.
     // This can happen with the stdout console file descriptors or network file descriptors.
     os_disable_sigpipe();
@@ -609,6 +613,9 @@ bool machine::has_htif_console() const {
 }
 
 machine_config machine::get_serialization_config(void) const {
+    if (read_iunrep()) {
+        throw std::runtime_error{"cannot serialize configuration of unreproducible machines"};
+    }
     // Initialize with copy of original config
     machine_config c = m_c;
     // Copy current processor state to config
@@ -648,6 +655,7 @@ machine_config machine::get_serialization_config(void) const {
     c.processor.senvcfg = read_senvcfg();
     c.processor.ilrsc = read_ilrsc();
     c.processor.iflags = read_iflags();
+    c.processor.iunrep = read_iunrep();
     // Copy current CLINT state to config
     c.clint.mtimecmp = read_clint_mtimecmp();
     // Copy current PLIC state to config
@@ -671,9 +679,6 @@ machine_config machine::get_serialization_config(void) const {
     c.tlb.image_filename.clear();
     for (auto &f : c.flash_drive) {
         f.image_filename.clear();
-    }
-    if (!c.virtio.empty()) {
-        throw std::runtime_error{"machine config with VirtIO devices cannot be serialized"};
     }
     if (c.rollup.has_value()) {
         auto &r = c.rollup.value();
@@ -774,8 +779,8 @@ static inline T &deref(T *t) {
 }
 
 void machine::store_pmas(const machine_config &c, const std::string &dir) const {
-    if (!c.virtio.empty()) {
-        throw std::runtime_error{"machine with VirtIO devices cannot be stored"};
+    if (read_iunrep()) {
+        throw std::runtime_error{"cannot store PMAs of unreproducible machines"};
     }
     store_memory_pma(find_pma_entry<uint64_t>(PMA_DTB_START), dir);
     store_memory_pma(find_pma_entry<uint64_t>(PMA_RAM_START), dir);
@@ -824,7 +829,7 @@ void machine::store(const std::string &dir) const {
 // NOLINTNEXTLINE(modernize-use-equals-default)
 machine::~machine() {
     // Cleanup TTY if console input was enabled
-    if (m_c.htif.console_getchar) {
+    if (m_c.htif.console_getchar || has_virtio_console()) {
         os_close_tty();
     }
 #ifdef DUMP_HIST
@@ -1132,6 +1137,14 @@ void machine::write_iflags(uint64_t val) {
     m_s.write_iflags(val);
 }
 
+uint64_t machine::read_iunrep(void) const {
+    return m_s.iunrep;
+}
+
+void machine::write_iunrep(uint64_t val) {
+    m_s.iunrep = val;
+}
+
 uint64_t machine::read_htif_tohost(void) const {
     return m_s.htif.tohost;
 }
@@ -1274,6 +1287,8 @@ uint64_t machine::read_csr(csr r) const {
             return read_ilrsc();
         case csr::iflags:
             return read_iflags();
+        case csr::iunrep:
+            return read_iunrep();
         case csr::clint_mtimecmp:
             return read_clint_mtimecmp();
         case csr::plic_girqpend:
@@ -1358,6 +1373,8 @@ void machine::write_csr(csr csr, uint64_t value) {
             return write_ilrsc(value);
         case csr::iflags:
             return write_iflags(value);
+        case csr::iunrep:
+            return write_iunrep(value);
         case csr::clint_mtimecmp:
             return write_clint_mtimecmp(value);
         case csr::plic_girqpend:
@@ -1453,6 +1470,8 @@ uint64_t machine::get_csr_address(csr csr) {
             return shadow_state_get_csr_abs_addr(shadow_state_csr::ilrsc);
         case csr::iflags:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::iflags);
+        case csr::iunrep:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::iunrep);
         case csr::htif_tohost:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::htif_tohost);
         case csr::htif_fromhost:
@@ -1692,6 +1711,9 @@ const boost::container::static_vector<pma_entry, PMA_MAX> &machine::get_pmas(voi
 }
 
 void machine::get_root_hash(hash_type &hash) const {
+    if (read_iunrep()) {
+        throw std::runtime_error("cannot compute root hash of unreproducible machines");
+    }
     if (!update_merkle_tree()) {
         throw std::runtime_error{"error updating Merkle tree"};
     }
@@ -2067,6 +2089,9 @@ machine_config machine::get_default_config(void) {
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
+    if (read_iunrep()) {
+        throw std::runtime_error("microarchitecture cannot be used with unreproducible machines");
+    }
     if (m_uarch.get_state().ram.get_istart_E()) {
         throw std::runtime_error("microarchitecture RAM is not present");
     }

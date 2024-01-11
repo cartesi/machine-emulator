@@ -492,6 +492,16 @@ public:
         return do_write_iflags(val);
     }
 
+    /// \brief Reads the iunrep register
+    uint64_t read_iunrep(void) const {
+        return do_read_iunrep();
+    }
+
+    /// \brief Writes the iunrep register
+    void write_iunrep(uint64_t val) {
+        do_write_iunrep(val);
+    }
+
     /// \brief Reads htif's tohost
     uint64_t read_htif_tohost(void) const {
         return do_read_htif_tohost();
@@ -747,6 +757,8 @@ private:
     virtual void do_reset_iflags_Y(void) = 0;
     virtual void do_reset_iflags_X(void) = 0;
     virtual void do_write_iflags(uint64_t val) = 0;
+    virtual uint64_t do_read_iunrep(void) const = 0;
+    virtual void do_write_iunrep(uint64_t val) = 0;
     virtual uint64_t do_read_htif_tohost(void) const = 0;
     virtual uint64_t do_read_htif_tohost_dev(void) const = 0;
     virtual uint64_t do_read_htif_tohost_cmd(void) const = 0;

@@ -185,14 +185,15 @@ local cpu_csr_addr = {
     senvcfg = 728,
     ilrsc = 736,
     iflags = 744,
-    clint_mtimecmp = 752,
-    plic_girqpend = 760,
-    plic_girqsrvd = 768,
-    htif_tohost = 776,
-    htif_fromhost = 784,
-    htif_ihalt = 792,
-    htif_iconsole = 800,
-    htif_iyield = 808,
+    iunrep = 752,
+    clint_mtimecmp = 760,
+    plic_girqpend = 768,
+    plic_girqsrvd = 776,
+    htif_tohost = 784,
+    htif_fromhost = 792,
+    htif_ihalt = 800,
+    htif_iconsole = 808,
+    htif_iyield = 816,
 }
 
 local function get_cpu_csr_test_values()
@@ -226,6 +227,7 @@ local function get_cpu_csr_test_values()
         senvcfg = 0x2d0,
         fcsr = 0x61,
         ilrsc = 0x2e0,
+        iunrep = 0x0,
     }
 end
 

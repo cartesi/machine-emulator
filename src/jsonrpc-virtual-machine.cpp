@@ -697,6 +697,14 @@ void jsonrpc_virtual_machine::do_reset_iflags_X(void) {
     jsonrpc_request(m_mgr->get_mgr(), m_mgr->get_remote_address(), "machine.reset_iflags_X", std::tie(), result);
 }
 
+uint64_t jsonrpc_virtual_machine::do_read_iunrep(void) const {
+    return read_csr(csr::iunrep);
+}
+
+void jsonrpc_virtual_machine::do_write_iunrep(uint64_t val) {
+    write_csr(csr::iunrep, val);
+}
+
 bool jsonrpc_virtual_machine::do_read_uarch_halt_flag(void) const {
     bool result = false;
     jsonrpc_request(m_mgr->get_mgr(), m_mgr->get_remote_address(), "machine.read_uarch_halt_flag", std::tie(), result);

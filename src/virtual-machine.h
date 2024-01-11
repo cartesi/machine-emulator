@@ -120,6 +120,8 @@ private:
     void do_reset_iflags_Y(void) override;
     void do_reset_iflags_X(void) override;
     void do_write_iflags(uint64_t val) override;
+    uint64_t do_read_iunrep(void) const override;
+    void do_write_iunrep(uint64_t val) override;
     uint64_t do_read_htif_tohost(void) const override;
     uint64_t do_read_htif_tohost_dev(void) const override;
     uint64_t do_read_htif_tohost_cmd(void) const override;

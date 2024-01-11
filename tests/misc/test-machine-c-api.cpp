@@ -409,7 +409,7 @@ bool operator==(const cm_processor_config &lhs, const cm_processor_config &rhs) 
         lhs.mcounteren == rhs.mcounteren && lhs.menvcfg == rhs.menvcfg && lhs.stvec == rhs.stvec &&
         lhs.sscratch == rhs.sscratch && lhs.sepc == rhs.sepc && lhs.scause == rhs.scause && lhs.stval == rhs.stval &&
         lhs.satp == rhs.satp && lhs.scounteren == rhs.scounteren && lhs.senvcfg == rhs.senvcfg &&
-        lhs.ilrsc == rhs.ilrsc && lhs.iflags == rhs.iflags;
+        lhs.ilrsc == rhs.ilrsc && lhs.iflags == rhs.iflags && lhs.iunrep == rhs.iunrep;
 }
 
 bool operator==(const cm_ram_config &lhs, const cm_ram_config &rhs) {
@@ -1088,6 +1088,7 @@ CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, scounteren)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, senvcfg)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, ilrsc)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, iflags)
+CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, iunrep)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_tohost)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_tohost_dev)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_tohost_cmd)
@@ -1144,6 +1145,7 @@ CHECK_WRITER_FAILS_ON_nullptr_MACHINE(scounteren)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(senvcfg)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(ilrsc)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(iflags)
+CHECK_WRITER_FAILS_ON_nullptr_MACHINE(iunrep)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_tohost)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_fromhost)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_fromhost_data)
@@ -1198,6 +1200,7 @@ CHECK_REGISTER_READ_WRITE(satp)
 CHECK_REGISTER_READ_WRITE(scounteren)
 CHECK_REGISTER_READ_WRITE(senvcfg)
 CHECK_REGISTER_READ_WRITE(ilrsc)
+CHECK_REGISTER_READ_WRITE(iunrep)
 CHECK_REGISTER_READ_WRITE(htif_tohost)
 CHECK_REGISTER_READ_WRITE(htif_fromhost)
 CHECK_REGISTER_READ_WRITE(htif_ihalt)

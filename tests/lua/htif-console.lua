@@ -24,6 +24,7 @@ local config_base = {
         mvendorid = -1,
         mimpid = -1,
         marchid = -1,
+        iunrep = 1,
     },
     ram = {
         image_filename = test_util.tests_path .. "htif_console.bin",

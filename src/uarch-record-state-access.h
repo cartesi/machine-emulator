@@ -20,17 +20,21 @@
 /// \file
 /// \brief State access implementation that record and logs all accesses
 
-#include "i-uarch-step-state-access.h"
+#include <memory>
+
+#include "i-uarch-state-access.h"
 #include "machine-merkle-tree.h"
 #include "machine.h"
 #include "uarch-bridge.h"
-
-#include <memory>
+#include "uarch-constants.h"
+#include "uarch-machine.h"
+#include "uarch-pristine-state-hash.h"
+#include "unique-c-ptr.h"
 
 namespace cartesi {
 
-/// \details The uarch_record_step_state_access logs all access to the machine state.
-class uarch_record_step_state_access : public i_uarch_step_state_access<uarch_record_step_state_access> {
+/// \details The uarch_record_state_access logs all access to the machine state.
+class uarch_record_state_access : public i_uarch_state_access<uarch_record_state_access> {
     using hasher_type = machine_merkle_tree::hasher_type;
     using hash_type = machine_merkle_tree::hash_type;
 
@@ -76,7 +80,7 @@ public:
     /// \brief Constructor from machine and uarch states.
     /// \param um Reference to uarch state.
     /// \param m Reference to machine state.
-    explicit uarch_record_step_state_access(uarch_state &us, machine &m, access_log::type log_type) :
+    explicit uarch_record_state_access(uarch_state &us, machine &m, access_log::type log_type) :
         m_us(us),
         m_m(m),
         m_s(m.get_state()),
@@ -85,15 +89,15 @@ public:
     }
 
     /// \brief No copy constructor
-    uarch_record_step_state_access(const uarch_record_step_state_access &) = delete;
+    uarch_record_state_access(const uarch_record_state_access &) = delete;
     /// \brief No copy assignment
-    uarch_record_step_state_access &operator=(const uarch_record_step_state_access &) = delete;
+    uarch_record_state_access &operator=(const uarch_record_state_access &) = delete;
     /// \brief No move constructor
-    uarch_record_step_state_access(uarch_record_step_state_access &&) = delete;
+    uarch_record_state_access(uarch_record_state_access &&) = delete;
     /// \brief No move assignment
-    uarch_record_step_state_access &operator=(uarch_record_step_state_access &&) = delete;
+    uarch_record_state_access &operator=(uarch_record_state_access &&) = delete;
     /// \brief Default destructor
-    ~uarch_record_step_state_access() = default;
+    ~uarch_record_state_access() = default;
 
     /// \brief Returns const pointer to access log.
     std::shared_ptr<const access_log> get_log(void) const {
@@ -254,8 +258,8 @@ private:
         update_after_write(paligned);
     }
 
-    // Declare interface as friend to it can forward calls to the "overridden" methods.
-    friend i_uarch_step_state_access<uarch_record_step_state_access>;
+    // Declare interface as friend to it can forward calls to the "overriden" methods.
+    friend i_uarch_state_access<uarch_record_state_access>;
 
     void do_push_bracket(bracket_type &type, const char *text) {
         m_log->push_bracket(type, text);
@@ -390,6 +394,67 @@ private:
         (void) data;
         throw std::runtime_error("invalid memory write access from microarchitecture");
     }
+
+    void do_reset_state(void) {
+        // The pristine uarch state decided at compile time and never changes.
+        // We set all uarch registers and RAM to their initial values and
+        // log a single write access to the entire uarch memory range.
+        // This write access does not contain any data, just hashes, unless log_type.large_data is enabled.
+        access a;
+        a.set_type(access_type::write);
+        a.set_address(UARCH_STATE_START_ADDRESS);
+        a.set_log2_size(UARCH_STATE_LOG2_SIZE);
+
+        // Always compute the proof, even if we are not logging it, because:
+        // (1) we always need to compute read_hash.
+        // (2) Depending on the log type, we may also need to compute the proof.
+        // (3) proof.target_hash is the  value that we  need for a.read_hash in (1).
+        auto proof = m_m.get_proof(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE);
+        a.set_read_hash(proof.get_target_hash());
+        if (m_log->get_log_type().has_large_data()) {
+            // log read data, if debug info is enabled
+            a.get_read().emplace(get_uarch_state_image());
+        }
+        if (m_log->get_log_type().has_proofs()) {
+            // We just store the sibling hashes in the access because this is the only missing piece of data needed to
+            // reconstruct the proof
+            a.set_sibling_hashes(proof.get_sibling_hashes());
+        }
+        a.set_written_hash(uarch_pristine_state_hash);
+
+        // Restore uarch to pristine state
+        m_us.halt_flag = false;
+        m_us.pc = UARCH_PC_INIT;
+        m_us.cycle = UARCH_CYCLE_INIT;
+        for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
+            m_us.x[i] = UARCH_X_INIT;
+        }
+        m_us.ram.fill_memory(m_us.ram.get_start(), 0, m_us.ram.get_length());
+        m_us.ram.write_memory(m_us.ram.get_start(), uarch_pristine_ram, uarch_pristine_ram_len);
+        if (m_log->get_log_type().has_large_data()) {
+            // log written data, if debug info is enabled
+            a.get_written().emplace(get_uarch_state_image());
+        }
+        m_log->push_access(a, "uarch_state");
+    }
+
+    /// \brief Returns the image of the entire uarch state
+    /// \return access_data containing the image of the current uarch state
+    access_data get_uarch_state_image(void) {
+        constexpr int uarch_data_len = uint64_t{1} << UARCH_STATE_LOG2_SIZE;
+        access_data data(uarch_data_len, 0);
+        constexpr auto ram_offset = UARCH_RAM_START_ADDRESS - UARCH_STATE_START_ADDRESS;
+        // copy shadow state data
+        const unsigned char *page_data = nullptr;
+        auto peek = m_us.shadow_state.get_peek();
+        if (!peek(m_us.shadow_state, m_m, 0, &page_data, data.data())) {
+            throw std::runtime_error{"peek failed"};
+        }
+        // copy ram data
+        memcpy(data.data() + ram_offset, m_us.ram.get_memory().get_host_memory(), m_us.ram.get_length());
+        return data;
+    }
+
 };
 
 } // namespace cartesi

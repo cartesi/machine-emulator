@@ -19,7 +19,7 @@
 
 namespace cartesi {
 
-uarch_interpreter_break_reason uarch_interpret(uarch_step_state_access &a, uint64_t cycle_end) {
+uarch_interpreter_break_reason uarch_interpret(uarch_state_access &a, uint64_t cycle_end) {
     uint64_t cycle = a.read_cycle();
     if (cycle_end < cycle) {
         throw std::invalid_argument{"uarch_cycle is past"};

@@ -1110,7 +1110,7 @@ do_test("Test unhappy paths of verify_uarch_step_state_transition", function(mac
         function(log) log.accesses[1].read_hash = bad_hash end
     )
     assert_error("hash length must be 32 bytes", function(log) log.accesses[#log.accesses].read_hash = nil end)
-    assert_error("too many word accesses in log", function(log) log.accesses[#log.accesses + 1] = log.accesses[1] end)
+    assert_error("access log was not fully consumed", function(log) log.accesses[#log.accesses + 1] = log.accesses[1] end)
     assert_error("hash length must be 32 bytes", function(log) log.accesses[#log.accesses].written_hash = nil end)
     assert_error(
         "invalid written %(expected string with 2%^3 bytes%)",

@@ -25,22 +25,21 @@ namespace cartesi {
 template <typename STATE_ACCESS>
 void uarch_reset_state(STATE_ACCESS &a);
 
-class uarch_reset_state_access;
-class uarch_record_step_state_access;
-class uarch_record_reset_state_access;
-class uarch_replay_step_state_access;
+class uarch_state_access;
+class uarch_record_state_access;
+class uarch_replay_state_access;
 
 // Declaration of explicit instantiation in module uarch-reset-state.cpp
-extern template void uarch_reset_state(uarch_reset_state_access &a);
+extern template void uarch_reset_state(uarch_state_access &a);
 
 // Declaration of explicit instantiation in module uarch-reset-state.cpp
-extern template void uarch_reset_state(uarch_record_step_state_access &a);
+extern template void uarch_reset_state(uarch_state_access &a);
 
 // Declaration of explicit instantiation in module uarch-reset-state.cpp
-extern template void uarch_reset_state(uarch_record_reset_state_access &a);
+extern template void uarch_reset_state(uarch_record_state_access &a);
 
 // Declaration of explicit instantiation in module uarch-reset-state.cpp
-extern template void uarch_reset_state(uarch_replay_step_state_access &a);
+extern template void uarch_reset_state(uarch_replay_state_access &a);
 
 } // namespace cartesi
 

@@ -17,14 +17,14 @@
 #ifndef UARCH_INTERPRET_H
 #define UARCH_INTERPRET_H
 
-#include "uarch-step-state-access.h"
+#include "uarch-state-access.h"
 
 namespace cartesi {
 
 enum class uarch_interpreter_break_reason : int { reached_target_cycle, uarch_halted };
 
 // Run the microarchitecture interpreter until cycle hits a target or a fixed point is reached
-uarch_interpreter_break_reason uarch_interpret(uarch_step_state_access &a, uint64_t uarch_cycle_end);
+uarch_interpreter_break_reason uarch_interpret(uarch_state_access &a, uint64_t uarch_cycle_end);
 
 } // namespace cartesi
 

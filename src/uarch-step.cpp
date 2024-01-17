@@ -18,10 +18,12 @@
 
 #include <stdexcept>
 
-#include "uarch-record-step-state-access.h"
-#include "uarch-replay-step-state-access.h"
+
+#include "riscv-constants.h"
+#include "uarch-record-state-access.h"
+#include "uarch-replay-state-access.h"
 #include "uarch-solidity-compat.h"
-#include "uarch-step-state-access.h"
+#include "uarch-state-access.h"
 #include "uarch-step.h"
 
 namespace cartesi {
@@ -1087,14 +1089,14 @@ UArchStepStatus uarch_step(UarchState &a) {
     return UArchStepStatus::Success;
 }
 
-// Explicit instantiation for uarch_step_state_access
-template UArchStepStatus uarch_step(uarch_step_state_access &a);
+// Explicit instantiation for uarch_state_access
+template UArchStepStatus uarch_step(uarch_state_access &a);
 
-// Explicit instantiation for uarch_record_step_state_access
-template UArchStepStatus uarch_step(uarch_record_step_state_access &a);
+// Explicit instantiation for uarch_record_state_access
+template UArchStepStatus uarch_step(uarch_record_state_access &a);
 
-// Explicit instantiation for uarch_replay_step_state_access
-template UArchStepStatus uarch_step(uarch_replay_step_state_access &a);
+// Explicit instantiation for uarch_replay_state_access
+template UArchStepStatus uarch_step(uarch_replay_state_access &a);
 
 } // namespace cartesi
 // NOLINTEND(google-readability-casting, misc-const-correctness)

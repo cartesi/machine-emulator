@@ -14,16 +14,17 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef I_UARCH_RESET_STATE_ACCESS_H
-#define I_UARCH_RESET_STATE_ACCESS_H
+#ifndef I_UARCH_STATE_ACCESS_H
+#define I_UARCH_STATE_ACCESS_H
 
 #include "bracket-note.h"
+#include "pma.h"
 
 namespace cartesi {
 
-// Interface for microarchitecture reset state access
+// Interface for microarchitecture state access
 template <typename DERIVED>
-class i_uarch_reset_state_access { // CRTP
+class i_uarch_state_access { // CRTP
 
     DERIVED &derived(void) {
         return *static_cast<DERIVED *>(this);
@@ -46,6 +47,55 @@ public:
     /// \returns An object that, when constructed and destroyed issues an annonation.
     auto make_scoped_note(const char *text) {
         return derived().do_make_scoped_note(text);
+    }
+
+    auto read_x(int r) {
+        return derived().do_read_x(r);
+    }
+
+    auto write_x(int r, uint64_t v) {
+        return derived().do_write_x(r, v);
+    }
+
+    auto read_pc() {
+        return derived().do_read_pc();
+    }
+
+    auto write_pc(uint64_t v) {
+        return derived().do_write_pc(v);
+    }
+
+    auto read_cycle() {
+        return derived().do_read_cycle();
+    }
+
+    auto read_halt_flag() {
+        return derived().do_read_halt_flag();
+    }
+
+    auto set_halt_flag() {
+        return derived().do_set_halt_flag();
+    }
+
+    auto reset_halt_flag() {
+        return derived().do_reset_halt_flag();
+    }
+
+    auto write_cycle(uint64_t v) {
+        return derived().do_write_cycle(v);
+    }
+
+    uint64_t read_word(uint64_t paddr) {
+        return derived().do_read_word(paddr);
+    }
+
+    void write_word(uint64_t paddr, uint64_t data) {
+        return derived().do_write_word(paddr, data);
+    }
+
+    template <typename T>
+    pma_entry &find_pma_entry(uint64_t paddr) {
+        return derived().template do_find_pma_entry<T>(paddr);
     }
 
     /// \brief Resets uarch to pristine state

@@ -25,14 +25,13 @@
 #include <sstream>
 #include <string>
 
-#include "access-log.h"
-#include "i-uarch-step-state-access.h"
-#include "machine-merkle-tree.h"
+#include "i-uarch-state-access.h"
+#include "shadow-state.h"
 #include "uarch-bridge.h"
 
 namespace cartesi {
 
-class uarch_replay_step_state_access : public i_uarch_step_state_access<uarch_replay_step_state_access> {
+class uarch_replay_state_access : public i_uarch_state_access<uarch_replay_state_access> {
     using tree_type = machine_merkle_tree;
     using hash_type = tree_type::hash_type;
     using hasher_type = tree_type::hasher_type;
@@ -58,7 +57,7 @@ public:
     /// \param verify_proofs Whether to verify proofs in access log
     /// \param initial_hash  Initial root hash
     /// \param one_based Whether to add one to indices reported in errors
-    explicit uarch_replay_step_state_access(const access_log &log, bool verify_proofs, const hash_type &initial_hash,
+    explicit uarch_replay_state_access(const access_log &log, bool verify_proofs, const hash_type &initial_hash,
         bool one_based) :
         m_accesses(log.get_accesses()),
         m_verify_proofs(verify_proofs),
@@ -77,19 +76,19 @@ public:
     }
 
     /// \brief No copy constructor
-    uarch_replay_step_state_access(const uarch_replay_step_state_access &) = delete;
+    uarch_replay_state_access(const uarch_replay_state_access &) = delete;
     /// \brief No copy assignment
-    uarch_replay_step_state_access &operator=(const uarch_replay_step_state_access &) = delete;
+    uarch_replay_state_access &operator=(const uarch_replay_state_access &) = delete;
     /// \brief No move constructor
-    uarch_replay_step_state_access(uarch_replay_step_state_access &&) = delete;
+    uarch_replay_state_access(uarch_replay_state_access &&) = delete;
     /// \brief No move assignment
-    uarch_replay_step_state_access &operator=(uarch_replay_step_state_access &&) = delete;
+    uarch_replay_state_access &operator=(uarch_replay_state_access &&) = delete;
     /// \brief Default destructor
-    ~uarch_replay_step_state_access() = default;
+    ~uarch_replay_state_access() = default;
 
     void finish(void) {
         if (m_next_access != m_accesses.size()) {
-            throw std::invalid_argument{"too many word accesses in log"};
+            throw std::invalid_argument{"access log was not fully consumed"};
         }
     }
 
@@ -264,7 +263,7 @@ private:
         m_next_access++;
     }
 
-    friend i_uarch_step_state_access<uarch_replay_step_state_access>;
+    friend i_uarch_state_access<uarch_replay_state_access>;
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     void do_push_bracket(bracket_type type, const char *text) {
@@ -338,6 +337,61 @@ private:
         }
         check_write_word(paddr, data, name);
     }
+
+    void do_reset_state(void) {
+        hasher_type hasher;
+        auto text = std::string("uarchState");
+        if (m_next_access >= m_accesses.size()) {
+            throw std::invalid_argument{"too few accesses in log"};
+        }
+        const auto &access = m_accesses[m_next_access];
+        if (access.get_address() != UARCH_STATE_START_ADDRESS) {
+            throw std::invalid_argument{"expected address of access " + std::to_string(access_to_report()) +
+                " to be the start address of the uarch state"};
+        }
+        if (access.get_log2_size() != UARCH_STATE_LOG2_SIZE) {
+            throw std::invalid_argument{"expected access " + std::to_string(access_to_report()) + " to write 2^" +
+                std::to_string(UARCH_STATE_LOG2_SIZE) + " bytes to " + text};
+        }
+        if (access.get_type() != access_type::write) {
+            throw std::invalid_argument{"expected access " + std::to_string(access_to_report()) + " to write " + text};
+        }
+        if (access.get_read().has_value()) {
+            // if read data is available then its hash and the logged read hash must match
+            hash_type computed_hash;
+            get_hash(hasher, access.get_read().value(), computed_hash);
+            if (computed_hash != access.get_read_hash()) {
+                throw std::invalid_argument{"hash of read data and read hash at access " +
+                    std::to_string(access_to_report()) + " does not match read hash"};
+            }
+        }
+        if (!access.get_written_hash().has_value()) {
+            throw std::invalid_argument{"write access " + std::to_string(access_to_report()) + " has no written hash"};
+        }
+        const auto &written_hash = access.get_written_hash().value();
+        if (written_hash != uarch_pristine_state_hash) {
+            throw std::invalid_argument{"expected written hash of access " + std::to_string(access_to_report()) +
+                " to be the start hash of the pristine uarch state"};
+        }
+        if (access.get_written().has_value()) {
+            // if written data is available then its hash and the logged written hash must match
+            hash_type computed_hash;
+            get_hash(hasher, access.get_written().value(), computed_hash);
+            if (computed_hash != written_hash) {
+                throw std::invalid_argument{
+                    "written hash and written data mismatch at access " + std::to_string(access_to_report())};
+            }
+        }
+        if (m_verify_proofs) {
+            auto proof = access.make_proof(m_root_hash);
+            if (!proof.verify(m_hasher)) {
+                throw std::invalid_argument{"Mismatch in root hash of access " + std::to_string(access_to_report())};
+            }
+            m_root_hash = proof.bubble_up(m_hasher, written_hash);
+        }
+        m_next_access++;
+    }
+
 };
 
 } // namespace cartesi

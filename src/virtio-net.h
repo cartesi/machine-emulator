@@ -17,8 +17,11 @@
 #ifndef VIRTIO_NET_H
 #define VIRTIO_NET_H
 
-#include "virtio-device.h"
+#include "os-features.h"
 
+#ifdef HAVE_SLIRP
+
+#include "virtio-device.h"
 #include <memory>
 
 namespace cartesi {
@@ -112,5 +115,7 @@ private:
 };
 
 } // namespace cartesi
+
+#endif // HAVE_SLIRP
 
 #endif

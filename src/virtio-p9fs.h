@@ -17,6 +17,10 @@
 #ifndef VIRTIO_P9FS_H
 #define VIRTIO_P9FS_H
 
+#include "os-features.h"
+
+#ifdef HAVE_POSIX_FS
+
 #include "virtio-device.h"
 #include "virtio-serializer.h"
 
@@ -449,5 +453,7 @@ public:
 };
 
 } // namespace cartesi
+
+#endif // HAVE_POSIX_FS
 
 #endif

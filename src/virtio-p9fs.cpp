@@ -34,6 +34,8 @@
 
 #include "virtio-p9fs.h"
 
+#ifdef HAVE_POSIX_FS
+
 #include <cerrno>
 #include <cstring>
 
@@ -1826,3 +1828,5 @@ bool virtio_p9fs_device::send_error(const virtq_unserializer &in_msg, uint16_t t
 }
 
 } // namespace cartesi
+
+#endif // HAVE_POSIX_FS

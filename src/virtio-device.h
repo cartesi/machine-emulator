@@ -21,8 +21,6 @@
 #include <cstdint>
 #include <cstring>
 
-#include <sys/select.h>
-
 #include "i-device-state-access.h"
 #include "os.h"
 #include "pma.h"

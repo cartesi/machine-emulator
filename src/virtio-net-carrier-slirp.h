@@ -17,6 +17,10 @@
 #ifndef VIRTIO_NET_CARRIER_SLIRP_H
 #define VIRTIO_NET_CARRIER_SLIRP_H
 
+#include "os-features.h"
+
+#ifdef HAVE_SLIRP
+
 #include "machine-config.h"
 #include "virtio-net.h"
 
@@ -84,5 +88,7 @@ public:
 };
 
 } // namespace cartesi
+
+#endif // HAVE_SLIRP
 
 #endif

@@ -14,33 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#if !defined(NO_TTY)
-#define HAVE_TTY
-#endif
-
-#if !defined(NO_THREADS)
-#define HAVE_THREADS
-#endif
-
-#if !defined(_WIN32) && !defined(__wasi__) && !defined(NO_TERMIOS)
-#define HAVE_TERMIOS
-#endif
-
-#if !defined(_WIN32) && !defined(__wasi__) && !defined(NO_IOCTL)
-#define HAVE_IOCTL
-#endif
-
-#if !defined(_WIN32) && !defined(__wasi__) && !defined(NO_MMAP)
-#define HAVE_MMAP
-#endif
-
-#if !defined(NO_MKDIR)
-#define HAVE_MKDIR
-#endif
-
 #include <array>
 #include <chrono>
-#include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -49,7 +24,12 @@
 #include <system_error>
 #include <vector>
 
+#include "os-features.h"
 #include "os.h"
+
+#ifdef HAVE_SIGACTION
+#include <csignal>
+#endif
 
 #ifdef HAVE_THREADS
 #include <future>
@@ -97,13 +77,17 @@
 #define plat_write _write
 #define plat_mkdir(a, mode) _mkdir(a)
 
+#if defined(HAVE_SELECT)
+#include <winsock2.h> // select
+#endif
+
 #else // not _WIN32
 
-#if defined(HAVE_TTY) || defined(HAVE_MMAP) || defined(HAVE_TERMIOS)
+#if defined(HAVE_TTY) || defined(HAVE_MMAP) || defined(HAVE_TERMIOS) || defined(HAVE_USLEEP)
 #include <unistd.h> // write/read/close
 #endif
 
-#if defined(HAVE_TTY)
+#if defined(HAVE_SELECT)
 #include <sys/select.h> // select
 #endif
 
@@ -173,6 +157,7 @@ static int get_ttyfd(void) {
 }
 #endif // HAVE_TERMIOS
 
+#ifdef HAVE_SIGACTION
 /// \brief Signal raised whenever TTY size changes
 static void os_SIGWINCH_handler(int sig) {
     (void) sig;
@@ -184,6 +169,7 @@ static void os_SIGWINCH_handler(int sig) {
     // therefore we will actually update the console size in the next get size request.
     s->resize_pending = true;
 }
+#endif
 
 bool os_update_tty_size(tty_state *s) {
 #ifdef HAVE_TTY
@@ -201,8 +187,21 @@ bool os_update_tty_size(tty_state *s) {
 #endif
     }
 
-#else
-    // TODO(edubart): what to do on Windows and MacOS?
+#elif defined(_WIN32)
+    CONSOLE_SCREEN_BUFFER_INFO csbi{};
+    if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
+        int cols = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+        int rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+        if (cols >= 1 && rows >= 1) {
+            s->cols = cols;
+            s->rows = rows;
+            return true;
+        }
+    } else {
+#ifdef DEBUG_OS
+        (void) fprintf(stderr, "os_update_tty_size(): GetConsoleScreenBufferInfo failed\n");
+#endif
+    }
 
 #endif // defined(HAVE_TERMIOS) && defined(HAVE_IOCTL)
 #endif // HAVE_TTY
@@ -298,7 +297,7 @@ void os_open_tty(void) {
     // Get tty initial size
     os_update_tty_size(s);
 
-    // TODO(edubart): does this handler works on Windows and MacOS?
+#ifdef HAVE_SIGACTION
     // Install console resize signal handler
     struct sigaction sigact {};
     sigact.sa_flags = SA_RESTART;
@@ -308,6 +307,7 @@ void os_open_tty(void) {
         (void) fprintf(stderr, "os_open_tty(): failed to install SIGWINCH handler\n");
 #endif
     }
+#endif
 
 #else
     throw std::runtime_error("unable to open console input, stdin is unsupported in this platform");
@@ -368,7 +368,7 @@ void os_prepare_tty_select(select_fd_sets *fds) {
         fds->maxfd = STDIN_FILENO;
     }
 #else
-    (void) data;
+    (void) fds;
 #endif
 #endif
 }
@@ -437,8 +437,8 @@ bool os_poll_tty(uint64_t timeout_us) {
     }
     if (s->hStdin) {
         // Wait for an input event
-        const uint64_t wait_millis = (wait_us + 999) / 1000;
-        if (WaitForSingleObject(s->hStdin, wait_millis) != WAIT_OBJECT_0) {
+        const uint64_t wait_ms = (timeout_us + 999) / 1000;
+        if (WaitForSingleObject(s->hStdin, wait_ms) != WAIT_OBJECT_0) {
             // No input events
             return false;
         }
@@ -721,6 +721,7 @@ bool os_select_fds(const os_select_before_callback &before_cb, const os_select_a
     // Create empty fd sets
     select_fd_sets fds{};
     fds.maxfd = -1;
+#ifdef HAVE_SELECT
     fd_set readfds{};
     fd_set writefds{};
     fd_set exceptfds{};
@@ -737,13 +738,19 @@ bool os_select_fds(const os_select_before_callback &before_cb, const os_select_a
     tv.tv_sec = static_cast<decltype(tv.tv_sec)>(*timeout_us / 1000000);
     tv.tv_usec = static_cast<decltype(tv.tv_usec)>(*timeout_us % 1000000);
     // Wait for events
-    // TODO(edubart): consider supporting other OSes
     const int select_ret = select(fds.maxfd + 1, &readfds, &writefds, &exceptfds, &tv);
+    return after_cb(select_ret, &fds);
+#else
+    // Act like select failed
+    before_cb(&fds, timeout_us);
+    const int select_ret = -1;
+#endif
     // Process ready fds
     return after_cb(select_ret, &fds);
 }
 
 void os_disable_sigpipe() {
+#ifdef HAVE_SIGACTION
     struct sigaction sigact {};
     sigact.sa_handler = SIG_IGN;
     sigact.sa_flags = SA_RESTART;
@@ -752,12 +759,14 @@ void os_disable_sigpipe() {
         (void) fprintf(stderr, "os_disable_sigpipe(): failed to disable SIGPIPE handler\n");
 #endif
     }
+#endif
 }
 
 void os_sleep_us(uint64_t timeout_us) {
     if (timeout_us == 0) {
         return;
     }
+#ifdef HAVE_SELECT
     // Select without fds just to sleep
     os_select_fds(
         [](select_fd_sets *fds, const uint64_t *timeout_us) -> void {
@@ -770,5 +779,10 @@ void os_sleep_us(uint64_t timeout_us) {
             return false;
         },
         &timeout_us);
+#elif defined(HAVE_USLEEP)
+    usleep(static_cast<useconds_t>(*timeout_us));
+#elif defined(_WIN32)
+    Sleep(timeout_us / 1000);
+#endif
 }
 } // namespace cartesi

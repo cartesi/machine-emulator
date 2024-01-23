@@ -16,6 +16,8 @@
 
 #include "virtio-net.h"
 
+#ifdef HAVE_SLIRP
+
 namespace cartesi {
 
 virtio_net::virtio_net(uint32_t virtio_idx, std::unique_ptr<virtio_net_carrier> &&carrier) :
@@ -138,3 +140,5 @@ bool virtio_net::read_next_packet_from_host(i_device_state_access *a) {
 }
 
 } // namespace cartesi
+
+#endif // HAVE_SLIRP

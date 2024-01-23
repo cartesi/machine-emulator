@@ -55,6 +55,8 @@
 
 #include "virtio-net-carrier-slirp.h"
 
+#ifdef HAVE_SLIRP
+
 #include <cerrno>
 #include <chrono>
 #include <cstring>
@@ -380,3 +382,5 @@ bool virtio_net_carrier_slirp::read_packet_from_host(i_device_state_access *a, v
 }
 
 } // namespace cartesi
+
+#endif // HAVE_SLIRP

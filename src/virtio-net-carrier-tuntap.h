@@ -17,6 +17,10 @@
 #ifndef VIRTIO_NET_CARRIER_TUNTAP_H
 #define VIRTIO_NET_CARRIER_TUNTAP_H
 
+#include "os-features.h"
+
+#ifdef HAVE_TUNTAP
+
 #include "virtio-net.h"
 
 namespace cartesi {
@@ -44,5 +48,7 @@ public:
 };
 
 } // namespace cartesi
+
+#endif // HAVE_TUNTAP
 
 #endif

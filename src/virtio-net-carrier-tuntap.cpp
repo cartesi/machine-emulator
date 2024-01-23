@@ -54,6 +54,8 @@
 
 #include "virtio-net-carrier-tuntap.h"
 
+#ifdef HAVE_TUNTAP
+
 #include <cerrno>
 
 #include <fcntl.h>
@@ -213,3 +215,5 @@ bool virtio_net_carrier_tuntap::read_packet_from_host(i_device_state_access *a, 
 }
 
 } // namespace cartesi
+
+#endif // HAVE_TUNTAP

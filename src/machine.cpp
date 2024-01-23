@@ -464,17 +464,31 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
                         pma_name = "VirtIO Console";
                         vdev = std::make_unique<virtio_console>(m_vdevs.size());
                     } else if constexpr (std::is_same_v<T, cartesi::virtio_p9fs_config>) {
+#ifdef HAVE_POSIX_FS
                         pma_name = "VirtIO 9P";
                         vdev = std::make_unique<virtio_p9fs_device>(m_vdevs.size(), vdev_config.tag,
                             vdev_config.host_directory);
+#else
+                        throw std::invalid_argument("virtio 9p device is unsupported in this platform");
+#endif
                     } else if constexpr (std::is_same_v<T, cartesi::virtio_net_user_config>) {
+#ifdef HAVE_SLIRP
                         pma_name = "VirtIO Net User";
                         vdev = std::make_unique<virtio_net>(m_vdevs.size(),
                             std::make_unique<virtio_net_carrier_slirp>(vdev_config));
+#else
+                        throw std::invalid_argument("virtio network user device is unsupported in this platform");
+
+#endif
                     } else if constexpr (std::is_same_v<T, cartesi::virtio_net_tuntap_config>) {
+#ifdef HAVE_TUNTAP
                         pma_name = "VirtIO Net TUN/TAP";
                         vdev = std::make_unique<virtio_net>(m_vdevs.size(),
                             std::make_unique<virtio_net_carrier_tuntap>(vdev_config.iface));
+#else
+
+                        throw std::invalid_argument("virtio network TUN/TAP device is unsupported in this platform");
+#endif
                     } else {
                         throw std::invalid_argument("invalid virtio device configuration");
                     }

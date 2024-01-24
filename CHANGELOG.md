@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.3] - 2024-01-24
+### Fixed 
+
+- Fixed missing lua modules in docker image 
+- Fixed upload artifacts step in CI
+
 ## [0.15.2] - 2023-08-21
 ### Changed
 
@@ -317,7 +323,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [0.2.0]
 - [0.1.0]
 
-[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.15.2...HEAD
+[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.15.3...HEAD
+[0.15.3]: https://github.com/cartesi/machine-emulator/releases/tag/v0.15.3
 [0.15.2]: https://github.com/cartesi/machine-emulator/releases/tag/v0.15.2
 [0.15.1]: https://github.com/cartesi/machine-emulator/releases/tag/v0.15.1
 [0.15.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.15.0

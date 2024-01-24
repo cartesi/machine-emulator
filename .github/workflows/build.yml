@@ -102,7 +102,7 @@ jobs:
         run: make copy BUILD_PLATFORM=linux/arm64 ARCH=arm64 DEBIAN_IMG=cartesi/machine-emulator:arm64_deb
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@master
+        uses: actions/upload-artifact@v3
         with:
           name: artifacts
           path: |
@@ -256,7 +256,7 @@ jobs:
         run: tar -czf uarch-riscv-tests-json-logs.tar.gz -C /opt/cartesi/share/logs/uarch-riscv-tests-json-logs .
 
       - name: Upload uarch json logs to be used to test the Solidity based microarchitecture interpreter
-        uses: actions/upload-artifact@master
+        uses: actions/upload-artifact@v3
         with:
           name: artifacts
           path: uarch-riscv-tests-json-logs.tar.gz
@@ -566,7 +566,7 @@ jobs:
         run: grep -F -e "=====:" -e "#####:" /opt/cartesi/share/coverage/gcc/*.gcov
 
       - name: Upload coverage detailed report
-        uses: actions/upload-artifact@master
+        uses: actions/upload-artifact@v3
         with:
           name: coverage-report
           path: /opt/cartesi/share/coverage

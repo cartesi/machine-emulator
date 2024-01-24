@@ -64,6 +64,9 @@ ARG TARGETARCH
 COPY --from=installer \
 	/usr/src/emulator/cartesi-machine-v${MACHINE_EMULATOR_VERSION}_${TARGETARCH}.deb \
 	cartesi-machine.deb
+COPY --from=installer /usr/local/lib/lua /usr/local/lib/lua
+COPY --from=installer /usr/local/share/lua /usr/local/share/lua
+
 RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt install -y \
     ./cartesi-machine.deb \
     && rm -rf /var/lib/apt/lists/* \

@@ -6,11 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.15.3] - 2024-01-24
+## [0.15.3] - 2024-01-25
 ### Fixed 
 
 - Fixed missing lua modules in docker image 
-- Fixed upload artifacts step in CI
+- Fixed upload and download of artifacts on CI
+- Fixed protoc compile errors on Ubuntu
+- Fixed build on MacOS with homebrew
 
 ## [0.15.2] - 2023-08-21
 ### Changed

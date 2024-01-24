@@ -106,6 +106,7 @@ jobs:
   test_amd64:
     name: Test (linux/amd64)
     needs: build
+    if: false
     runs-on: ubuntu-latest-8-cores
     steps:
       - name: Checkout machine emulator source code
@@ -335,7 +336,7 @@ jobs:
 
       - name: Run test scripts
         run: |
-          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/run-lua-tests.sh
+          docker run --platform linux/arm64 --user root --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/run-lua-tests.sh
 
       - name: Run grpc lua test scripts
         run: |

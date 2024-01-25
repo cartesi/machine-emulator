@@ -229,16 +229,18 @@ static cartesi::virtio_hostfwd_config convert_from_c(const cm_virtio_hostfwd_con
     if (c_config == nullptr) {
         throw std::invalid_argument("invalid memory range configuration");
     }
-    cartesi::virtio_hostfwd_config new_cpp_virtio_hostfwd_config{c_config->is_udp, c_config->host_port,
-        c_config->guest_port};
+    cartesi::virtio_hostfwd_config new_cpp_virtio_hostfwd_config{c_config->is_udp, c_config->host_ip,
+        c_config->guest_ip, c_config->host_port, c_config->guest_port};
     return new_cpp_virtio_hostfwd_config;
 }
 
 static cm_virtio_hostfwd_config convert_to_c(const cartesi::virtio_hostfwd_config &cpp_config) {
     cm_virtio_hostfwd_config new_c_virtio_hostfwd_config{};
     new_c_virtio_hostfwd_config.is_udp = cpp_config.is_udp;
-    new_c_virtio_hostfwd_config.guest_port = cpp_config.guest_port;
+    new_c_virtio_hostfwd_config.host_ip = cpp_config.host_ip;
+    new_c_virtio_hostfwd_config.guest_ip = cpp_config.guest_ip;
     new_c_virtio_hostfwd_config.host_port = cpp_config.host_port;
+    new_c_virtio_hostfwd_config.guest_port = cpp_config.guest_port;
     return new_c_virtio_hostfwd_config;
 }
 

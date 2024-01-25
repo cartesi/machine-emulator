@@ -249,7 +249,7 @@ typedef enum { // NOLINT(modernize-use-using)
 } CM_VIRTIO_DEVICE_TYPE;
 
 /// \brief VirtIO Plan 9 filesystem device state configuration
-typedef struct {
+typedef struct {                // NOLINT(modernize-use-using)
     const char *tag;            ///< Guest mount tag
     const char *host_directory; ///< Path to the host shared directory
 } cm_virtio_p9fs_config;
@@ -257,6 +257,8 @@ typedef struct {
 /// \brief VirtIO host forward state config
 typedef struct cm_virtio_hostfwd_config { // NOLINT(modernize-use-using)
     bool is_udp;
+    uint64_t host_ip;
+    uint64_t guest_ip;
     uint16_t host_port;
     uint16_t guest_port;
 } cm_virtio_hostfwd_config;

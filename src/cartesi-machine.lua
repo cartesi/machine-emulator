@@ -353,7 +353,7 @@ where options are:
 
     NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
 
-  --virtio-net=user[,<key>:<value>[,...]...]
+  --virtio-net=user
     add a VirtIO network device using host user-space networking.
     this allows the use of the host network from inside the machine.
     you don't need root privilege or any configuration in the host to use this.
@@ -377,21 +377,26 @@ where options are:
         DHCP Start:   10.0.2.15
         Nameserver:   10.0.2.3
 
-    <key>:<value> is one of
-        hostfwd:[tcp|udp]:hostport[:guestport]
-            redirect incoming TCP or UDP connections.
-            bind the host 127.0.0.1:hostport to the guest 10.0.2.15:guestport.
-            if connection type is absent, TCP is assumed.
-            if guest port is absent, it's set to the same as host port.
-            you can pass this option multiple times.
-
     NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
 
-  -n[=...] or --network[=...]
+  -n or --network
     like --virtio-net=user, but automatically appends init commands to
     initialize the network in the guest.
 
     this option implies --sync-init-date.
+
+    NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
+
+  -p=... or --port-forward=[hostip:]hostport[:guestip][:guestport][/protocol]
+    redirect incoming TCP or UDP connections.
+    bind the host hostip:hostport to the guest guestip:guestport.
+    protocol can be "tcp" or "udp".
+    if host ip is absent, it's set to "127.0.0.1".
+    if guest ip is absent, it's set to "10.0.2.15".
+    if guest port is absent, it's set to the same as host port.
+    if protocol is absent, it's set to "tcp".
+    you can pass this option multiple times.
+    this options requires --network or --virtio-net=user option.
 
     NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
 
@@ -561,6 +566,7 @@ local flash_start = {}
 local flash_length = {}
 local unreproducible = false
 local virtio = {}
+local virtio_net_user_config = false
 local virtio_volume_count = 0
 local has_virtio_console = false
 local has_network = false
@@ -667,37 +673,60 @@ local function handle_htif_console_getchar(all)
     return true
 end
 
-local function parse_virtio_net_user_config(opts)
-    local o = opts ~= "" and util.parse_options(opts, {
-        hostfwd = "array",
-    }) or {}
-    local vdev_config = { type = "net-user" }
-    if o.hostfwd then
-        for _, hostfwd in ipairs(o.hostfwd) do
-            local is_udp = nil
-            local host_port, guest_port = hostfwd:match("^([0-9]+):?([0-9]*)$")
+local function parse_ipv4(s)
+    local a, b, c, d = s:match("^([0-9]+)%.([0-9]+)%.([0-9]+)%.([0-9]+)$")
+    a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
+    assert(a and b and c and d and a <= 255 and b <= 255 and c <= 255 and d <= 255, "malformed IPv4 " .. s)
+    return (a << 24) | (b << 18) | (c << 8) | d
+end
+
+local function handle_port_forward_option(opts)
+    if not opts then return false end
+    assert(virtio_net_user_config, "--port-forward option requires --network or --virtio-net=user option")
+    local host_ip, guest_ip, host_port, guest_port, proto
+    for s in opts:gmatch("[%w.]+") do
+        if (not host_port or not guest_port) and s:find("^[0-9]+$") then
             if not host_port then
-                host_port, guest_port = hostfwd:match("^tcp:([0-9]+):?([0-9]*)$")
+                host_port = tonumber(s)
+            else
+                guest_port = tonumber(s)
             end
-            if not host_port then
-                host_port, guest_port = hostfwd:match("^udp:([0-9]+):?([0-9]*)$")
-                is_udp = true
+        elseif (not host_ip or not guest_ip) and s:find("^[0-9]+%.[0-9]+%.[0-9]+%.[0-9]+$") then
+            if not host_ip then
+                host_ip = parse_ipv4(s)
+            else
+                guest_ip = parse_ipv4(s)
             end
-            host_port = tonumber(host_port)
-            guest_port = guest_port ~= "" and tonumber(guest_port) or host_port
-            assert(host_port and guest_port, "malformed hostfwd option")
-            vdev_config.hostfwd = vdev_config.hostfwd or {}
-            table.insert(vdev_config.hostfwd, { is_udp = is_udp, host_port = host_port, guest_port = guest_port })
+        elseif proto == nil and (s == "tcp" or s == "udp") then
+            proto = s
+        else
+            error("malformed --port-forward option")
         end
     end
-    return vdev_config
+    host_ip = host_ip or parse_ipv4("127.0.0.1")
+    guest_ip = guest_ip or parse_ipv4("10.0.2.15")
+    assert(host_port, "malformed --port-forward option")
+    guest_port = guest_port or host_port
+    local is_udp = proto == "udp"
+    virtio_net_user_config.hostfwd = virtio_net_user_config.hostfwd or {}
+    table.insert(virtio_net_user_config.hostfwd, {
+        is_udp = is_udp,
+        host_ip = host_ip,
+        guest_ip = guest_ip,
+        host_port = host_port,
+        guest_port = guest_port,
+    })
+    return true
 end
 
 local function handle_virtio_net(mode, opts)
     if not mode then return false end
     unreproducible = true
     if mode == "user" then
-        table.insert(virtio, parse_virtio_net_user_config(opts))
+        if not virtio_net_user_config then
+            virtio_net_user_config = { type = "net-user" }
+            table.insert(virtio, virtio_net_user_config)
+        end
     else
         table.insert(virtio, { type = "net-tuntap", iface = opts })
     end
@@ -707,8 +736,8 @@ end
 local function handle_network_option(opts)
     if not opts then return false end
     if has_network then return true end
+    handle_virtio_net("user")
     has_network = true
-    table.insert(virtio, parse_virtio_net_user_config(opts))
     -- initialize network
     append_init = append_init
         .. [[
@@ -914,6 +943,14 @@ local options = {
     {
         "^%-n=?([%w:,]*)$",
         handle_network_option,
+    },
+    {
+        "^%-%-port%-forward=([0-9:.]+/?[udptcp]*)$",
+        handle_port_forward_option,
+    },
+    {
+        "^%-p=([0-9:.]+/?[udptcp]*)$",
+        handle_port_forward_option,
     },
     {
         "^%-%-htif%-console%-getchar$",

@@ -206,9 +206,8 @@ virtio_net_carrier_slirp::virtio_net_carrier_slirp(const cartesi::virtio_net_use
     for (const auto &hostfwd : config.hostfwd) {
         struct in_addr host_addr {};
         struct in_addr guest_addr {};
-        // ??(edubart): Should we allow configuring host/guest addrs?
-        host_addr.s_addr = htonl(INADDR_LOOPBACK);
-        guest_addr.s_addr = htonl(SLIRP_DEFAULT_IPV4_VDHCP_START);
+        host_addr.s_addr = htonl(hostfwd.host_ip);
+        guest_addr.s_addr = htonl(hostfwd.guest_ip);
         if (slirp_add_hostfwd(slirp, hostfwd.is_udp, host_addr, hostfwd.host_port, guest_addr, hostfwd.guest_port) <
             0) {
             throw std::system_error{errno, std::generic_category(),

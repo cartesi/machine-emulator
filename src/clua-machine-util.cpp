@@ -897,6 +897,8 @@ static void push_cm_memory_range_config(lua_State *L, const cm_memory_range_conf
 static void push_cm_virtio_hostfwd_config(lua_State *L, const cm_virtio_hostfwd_config *m) {
     lua_newtable(L);
     clua_setbooleanfield(L, m->is_udp, "is_udp", -1);
+    clua_setintegerfield(L, m->host_ip, "host_ip", -1);
+    clua_setintegerfield(L, m->guest_ip, "guest_ip", -1);
     clua_setintegerfield(L, m->host_port, "host_port", -1);
     clua_setintegerfield(L, m->guest_port, "guest_port", -1);
 }
@@ -1105,8 +1107,10 @@ cm_virtio_hostfwd_config *clua_check_cm_virtio_hostfwd_config(lua_State *L, int 
         luaL_error(L, "%s virtio hostfwd not a table", what);
     }
     m->is_udp = opt_boolean_field(L, tabidx, "is_udp");
-    m->guest_port = check_uint_field(L, tabidx, "guest_port");
+    m->host_ip = check_uint_field(L, tabidx, "host_ip");
+    m->guest_ip = check_uint_field(L, tabidx, "guest_ip");
     m->host_port = check_uint_field(L, tabidx, "host_port");
+    m->guest_port = check_uint_field(L, tabidx, "guest_port");
     return m;
 }
 

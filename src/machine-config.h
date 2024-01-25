@@ -138,6 +138,8 @@ struct virtio_p9fs_config final {
 /// \brief VirtIO host forward state config
 struct virtio_hostfwd_config final {
     bool is_udp{false};
+    uint64_t host_ip{0};
+    uint64_t guest_ip{0};
     uint16_t host_port{0};
     uint16_t guest_port{0};
 };

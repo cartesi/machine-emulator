@@ -653,7 +653,7 @@ sha3.o: ../third-party/tiny_sha3/sha3.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 uarch-pristine-ram.c: $(UARCH_RAM_IMAGE)
-	@xxd -i -n uarch_pristine_ram $< > $@
+	@(echo '#include <stddef.h>'; xxd -i -n uarch_pristine_ram $<) > $@
 
 $(UARCH_RAM_IMAGE):
 	@if [ "$(DEV_ENV_HAS_TOOLCHAIN)" = "yes" ]; then \

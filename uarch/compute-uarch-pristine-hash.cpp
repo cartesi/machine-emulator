@@ -18,11 +18,11 @@
 #include <iomanip>
 #include <iostream>
 
-#include "machine-merkle-tree.h"
-#include "shadow-uarch-state.h"
-#include "uarch-constants.h"
-#include "uarch-state.h"
-#include "unique-c-ptr.h"
+#include <machine-merkle-tree.h>
+#include <shadow-uarch-state.h>
+#include <uarch-constants.h>
+#include <uarch-state.h>
+#include <unique-c-ptr.h>
 
 /// \file
 /// \brief This program computes the hash of the pristine uarch state ad writes it to stdout
@@ -113,11 +113,24 @@ int main(int argc, char *argv[]) try {
     proof_type proof = tree.get_proof(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE, nullptr);
     auto &uarch_state_hash = proof.get_target_hash();
 
+    // Print header
+    std::cout << "// This file is auto-generated and should not be modified" << std::endl;
+
     // Print hash
+    std::cout << "unsigned char uarch_pristine_hash[] = {\n  ";
+    int i = 0;
     for (auto c : uarch_state_hash) {
-        std::cout << "0x" << std::setw(2) << std::setfill('0') << std::hex << static_cast<int>(c) << ", ";
+        if (i > 0 && i % 12 == 0) {
+            std::cout << ",\n  ";
+        } else if (i > 0) {
+            std::cout << ", ";
+        }
+        std::cout << "0x" << std::setw(2) << std::setfill('0') << std::hex << static_cast<int>(c);
+        i++;
     }
-    std::cout << std::endl;
+    std::cout << "\n};\nunsigned int uarch_pristine_hash_len = " << std::dec << uarch_state_hash.size() << ";"
+              << std::endl;
+
     return 0;
 } catch (std::exception &e) {
     std::cerr << "Caught exception: " << e.what() << '\n';

@@ -298,6 +298,8 @@ copy:
 	docker create --name uarch-ram-bin $(DOCKER_PLATFORM) $(DEBIAN_IMG)
 	docker cp uarch-ram-bin:/usr/src/emulator/$(DEB_FILENAME) .
 	docker cp uarch-ram-bin:/usr/src/emulator/uarch/uarch-ram.bin .
+	docker cp uarch-ram-bin:/usr/src/emulator/uarch/uarch-pristine-ram.c .
+	docker cp uarch-ram-bin:/usr/src/emulator/uarch/uarch-pristine-hash.c .
 	docker rm uarch-ram-bin
 
 check-linux-env:
@@ -338,30 +340,39 @@ $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH)
 install-headers: $(INC_INSTALL_PATH)
 	$(INSTALL_FILE) $(EMU_TO_INC) $(INC_INSTALL_PATH)
 
-install-emulator: $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(IMAGES_INSTALL_PATH)
-	$(INSTALL_EXEC) $(EMU_TO_BIN) $(BIN_INSTALL_PATH)
-	$(INSTALL_EXEC) $(EMU_TO_LIB) $(LIB_INSTALL_PATH)
+install-static-libs: $(LIB_INSTALL_PATH)
 	$(INSTALL_FILE) $(EMU_TO_LIB_A) $(LIB_INSTALL_PATH)
+	$(STRIP_STATIC) $(subst src/,$(LIB_INSTALL_PATH)/,$(EMU_TO_LIB_A))
+
+install-shared-libs: $(LIB_INSTALL_PATH)
+	$(INSTALL_EXEC) $(EMU_TO_LIB) $(LIB_INSTALL_PATH)
+	$(SYMLINK) $(LIBCARTESI_SO) $(LIB_INSTALL_PATH)/$(LIBCARTESI)
+	$(SYMLINK) $(LIBCARTESI_SO_GRPC) $(LIB_INSTALL_PATH)/$(LIBCARTESI_GRPC)
+	$(SYMLINK) $(LIBCARTESI_SO_JSONRPC) $(LIB_INSTALL_PATH)/$(LIBCARTESI_JSONRPC)
+	$(STRIP_SHARED) $(subst src/,$(LIB_INSTALL_PATH)/,$(EMU_TO_LIB))
+
+install-lua-libs: $(LUA_INSTALL_PATH)/cartesi $(LUA_INSTALL_CPATH)/cartesi
 	$(INSTALL_FILE) $(EMU_LUA_TO_BIN) $(LUA_INSTALL_PATH)
+	$(INSTALL_FILE) $(EMU_TO_LUA_PATH) $(LUA_INSTALL_PATH)/cartesi
 	$(INSTALL_EXEC) $(EMU_TO_LUA_CPATH) $(LUA_INSTALL_CPATH)
 	$(INSTALL_EXEC) $(EMU_TO_LUA_CARTESI_CPATH) $(LUA_INSTALL_CPATH)/cartesi
-	$(INSTALL_FILE) $(EMU_TO_LUA_PATH) $(LUA_INSTALL_PATH)/cartesi
+	$(STRIP_SHARED) $(subst src/,$(LUA_INSTALL_CPATH)/,$(EMU_TO_LUA_CPATH))
+	$(STRIP_SHARED) $(subst src/,$(LUA_INSTALL_CPATH)/,$(EMU_TO_LUA_CARTESI_CPATH))
+
+install-bins: $(BIN_INSTALL_PATH)
+	$(INSTALL_EXEC) $(EMU_TO_BIN) $(BIN_INSTALL_PATH)
+	$(STRIP_BINARY) $(subst src/,$(BIN_INSTALL_PATH)/,$(EMU_TO_BIN))
+
+install-lua-bins: $(BIN_INSTALL_PATH)
 	cat tools/template/cartesi-machine.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_IMAGES_PATH|$(IMAGES_RUNTIME_PATH)|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/cartesi-machine
 	cat tools/template/cartesi-machine-stored-hash.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/cartesi-machine-stored-hash
 	cat tools/template/rollup-memory-range.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/rollup-memory-range
 	$(CHMOD_EXEC) $(BIN_INSTALL_PATH)/cartesi-machine $(BIN_INSTALL_PATH)/cartesi-machine-stored-hash $(BIN_INSTALL_PATH)/rollup-memory-range
-	$(SYMLINK) $(LIBCARTESI_SO) $(LIB_INSTALL_PATH)/$(LIBCARTESI)
-	$(SYMLINK) $(LIBCARTESI_SO_GRPC) $(LIB_INSTALL_PATH)/$(LIBCARTESI_GRPC)
-	$(SYMLINK) $(LIBCARTESI_SO_JSONRPC) $(LIB_INSTALL_PATH)/$(LIBCARTESI_JSONRPC)
+
+install-shared-files: $(IMAGES_INSTALL_PATH)
 	$(INSTALL_DIR) tools/gdb $(SHARE_INSTALL_PATH)/gdb
 
-install-strip: install-emulator
-	$(STRIP_BINARY) $(subst src/,$(BIN_INSTALL_PATH)/,$(EMU_TO_BIN))
-	$(STRIP_SHARED) $(subst src/,$(LUA_INSTALL_CPATH)/,$(EMU_TO_LUA_CPATH))
-	$(STRIP_SHARED) $(subst src/,$(LIB_INSTALL_PATH)/,$(EMU_TO_LIB))
-	$(STRIP_STATIC) $(subst src/,$(LIB_INSTALL_PATH)/,$(EMU_TO_LIB_A))
-
-install: install-strip install-headers
+install: install-headers install-static-libs install-shared-libs install-lua-libs install-bins install-lua-bins install-shared-files
 
 install-uarch: install $(UARCH_INSTALL_PATH)
 	$(INSTALL_FILE) uarch/$(UARCH_TO_SHARE) $(UARCH_INSTALL_PATH)

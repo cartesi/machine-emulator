@@ -5,3 +5,6 @@
 *.bin
 .DS_Store
 .vscode
+uarch-pristine-hash.c
+uarch-pristine-ram.c
+compute-uarch-pristine-hash

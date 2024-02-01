@@ -10,6 +10,3 @@ compile_flags.txt
 coverage*
 jsonrpc-discover.cpp
 machine-c-version.h
-uarch-pristine-state-hash.cpp
-uarch-pristine-ram.c
-

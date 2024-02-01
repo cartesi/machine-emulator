@@ -24,12 +24,7 @@
 
 #include "pma.h"
 #include "riscv-constants.h"
-
-/// \brief Embedded pristine uarch ram image. This symbol is created by "xxd"
-extern "C" const unsigned char uarch_pristine_ram[];
-
-/// \brief Length of the embedded pristine uarch ram image. This symbol is created by "xxd"
-extern "C" const uint32_t uarch_pristine_ram_len;
+#include "uarch-pristine.h"
 
 namespace cartesi {
 

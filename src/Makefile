@@ -342,6 +342,9 @@ LIBCARTESI_OBJS:= \
 	uarch-machine.o \
 	uarch-step.o \
 	uarch-reset-state.o \
+	sha3.o \
+	machine-merkle-tree.o \
+	pristine-merkle-tree.o \
 	uarch-interpret.o \
 	machine-c-api.o \
 	uarch-pristine-ram.o \
@@ -472,22 +475,22 @@ libcartesi_jsonrpc.a: $(LIBCARTESI_JSONRPC_OBJS)
 $(LIBCARTESI_MERKLE_TREE): $(LIBCARTESI_MERKLE_TREE_OBJS)
 	$(CXX) -o $@ $^ $(LIBCARTESI_MERKLE_TREE_LIBS) $(LDFLAGS) $(LIBCARTESI_MERKLE_TREE_LDFLAGS) $(LIBLDFLAGS)
 
-$(LIBCARTESI): $(LIBCARTESI_OBJS) libcartesi_merkle_tree.a
+$(LIBCARTESI): $(LIBCARTESI_OBJS)
 	$(CXX) -o $@ $^ $(LIBCARTESI_LIBS) $(LDFLAGS) $(LIBCARTESI_LDFLAGS) $(LIBLDFLAGS)
 
-$(LIBCARTESI_GRPC): $(LIBCARTESI_GRPC_OBJS) libcartesi.a libcartesi_merkle_tree.a
+$(LIBCARTESI_GRPC): $(LIBCARTESI_GRPC_OBJS) libcartesi.a
 	$(CXX) -o $@ $^ $(LIBCARTESI_GRPC_LIBS) $(LDFLAGS) $(LIBCARTESI_GRPC_LDFLAGS) $(LIBLDFLAGS)
 
-$(LIBCARTESI_JSONRPC): $(LIBCARTESI_JSONRPC_OBJS) libcartesi.a libcartesi_merkle_tree.a
+$(LIBCARTESI_JSONRPC): $(LIBCARTESI_JSONRPC_OBJS) libcartesi.a
 	$(CXX) -o $@ $^ $(LIBCARTESI_JSONRPC_LIBS) $(LDFLAGS) $(LIBCARTESI_JSONRPC_LDFLAGS) $(LIBLDFLAGS)
 
-cartesi.so: $(LUACARTESI_OBJS) libcartesi.a libcartesi_merkle_tree.a
+cartesi.so: $(LUACARTESI_OBJS) libcartesi.a
 	$(CXX) -o $@ $^ $(LUACARTESI_LIBS) $(LDFLAGS) $(SOLDFLAGS)
 
-cartesi/grpc.so: $(LUACARTESI_GRPC_OBJS) libcartesi_grpc.a libcartesi.a libcartesi_merkle_tree.a
+cartesi/grpc.so: $(LUACARTESI_GRPC_OBJS) libcartesi_grpc.a libcartesi.a
 	$(CXX) -o $@ $^ $(LUACARTESI_GRPC_LIBS) $(LDFLAGS) $(SOLDFLAGS)
 
-cartesi/jsonrpc.so: $(LUACARTESI_JSONRPC_OBJS) libcartesi_jsonrpc.a libcartesi.a libcartesi_merkle_tree.a
+cartesi/jsonrpc.so: $(LUACARTESI_JSONRPC_OBJS) libcartesi_jsonrpc.a libcartesi.a
 	$(CXX) -o $@ $^ $(LUACARTESI_JSONRPC_LIBS) $(LDFLAGS) $(SOLDFLAGS)
 
 lint: $(CLANG_TIDY_TARGETS)
@@ -543,10 +546,10 @@ merkle-tree-hash: $(MERKLE_TREE_HASH_OBJS) libcartesi_merkle_tree.a
 
 grpc-interfaces: $(PROTO_SOURCES)
 
-remote-cartesi-machine: $(REMOTE_CARTESI_MACHINE_OBJS) libcartesi_grpc.a libcartesi.a libcartesi_merkle_tree.a
+remote-cartesi-machine: $(REMOTE_CARTESI_MACHINE_OBJS) libcartesi_grpc.a libcartesi.a
 	$(CXX) -o $@ $^ $(REMOTE_CARTESI_MACHINE_LIBS) $(LDFLAGS) $(EXELDFLAGS)
 
-jsonrpc-remote-cartesi-machine: $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) libcartesi_jsonrpc.a libcartesi.a libcartesi_merkle_tree.a
+jsonrpc-remote-cartesi-machine: $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) libcartesi_jsonrpc.a libcartesi.a
 	$(CXX) -o $@ $^ $(JSONRPC_REMOTE_CARTESI_MACHINE_LIBS) $(LDFLAGS) $(EXELDFLAGS)
 
 $(PROTOBUF_GEN_OBJS) $(GRPC_GEN_OBJS) protobuf-util.o grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o remote-cartesi-machine: CXXFLAGS += $(GRPC_PROTOBUF_INC)

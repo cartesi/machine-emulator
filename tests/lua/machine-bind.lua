@@ -861,6 +861,33 @@ test_util.make_do_test(build_machine, machine_type, { processor = { mcycle = 1 }
 
 print("\n\n testing reset uarch")
 
+test_util.make_do_test(build_machine, machine_type, { uarch = {} })(
+    "uarch reset using default uarch configuration ",
+    function(machine)
+        local initial_hash = machine:get_root_hash()
+        -- resetting immediately should not produce different hash
+        machine:reset_uarch()
+        local hash_after_immediate_reset = machine:get_root_hash()
+        assert(initial_hash == hash_after_immediate_reset)
+        -- hash should change after one step (shadow uarch change)
+        machine:log_uarch_step({})
+        local hash_after_step = machine:get_root_hash()
+        assert(hash_after_step ~= initial_hash)
+        -- reset should restore initial hash
+        machine:reset_uarch()
+        local hash_after_2nd_reset = machine:get_root_hash()
+        assert(hash_after_2nd_reset == initial_hash)
+        -- Modifying uarch ram changes hash
+        machine:write_memory(cartesi.UARCH_RAM_START_ADDRESS, string.rep("X", 1 << 8))
+        local hash_after_write = machine:get_root_hash()
+        assert(hash_after_write ~= initial_hash)
+        -- reset should restore initial hash
+        machine:reset_uarch()
+        local hash_after_3rd_reset = machine:get_root_hash()
+        assert(hash_after_3rd_reset == initial_hash)
+    end
+)
+
 local test_reset_uarch_config = {
     processor = {
         halt_flag = true,

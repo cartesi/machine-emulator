@@ -43,7 +43,10 @@
 #ifndef TRANSLATE_VIRTUAL_ADDRESS_H
 #define TRANSLATE_VIRTUAL_ADDRESS_H
 
+#include <cstdint>
+
 #include "compiler-defines.h"
+#include "riscv-constants.h"
 
 namespace cartesi {
 

@@ -14,6 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "jsonrpc-virtual-machine.h"
+
 #include <algorithm>
 #include <csignal>
 #include <cstdint>
@@ -21,11 +23,10 @@
 
 #include <mongoose.h>
 
-#include "jsonrpc-mg-mgr.h"
-#include "jsonrpc-virtual-machine.h"
-
 #include "base64.h"
+#include "htif.h"
 #include "json-util.h"
+#include "jsonrpc-mg-mgr.h"
 
 using namespace std::string_literals;
 using json = nlohmann::json;
@@ -48,8 +49,8 @@ std::string jsonrpc_post_data(const std::string &method, const std::tuple<Ts...>
 }
 
 struct http_request_data {
-    const std::string &url;
-    const std::string &post_data;
+    const std::string &url;       // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+    const std::string &post_data; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
     std::string status_code;
     std::string reason_phrase;
     std::string entity_body;
@@ -129,10 +130,10 @@ void jsonrpc_request(struct mg_mgr &mgr, const std::string &url, const std::stri
         throw std::runtime_error(R"(jsonrpc server error: invalid field "id" (expected 0))"s);
     }
     if (response.contains("error") && response.contains("result")) {
-        throw std::runtime_error(R"(jsonrpc server error: reponse contains both "error" and "result" fields)"s);
+        throw std::runtime_error(R"(jsonrpc server error: response contains both "error" and "result" fields)"s);
     }
     if (!response.contains("error") && !response.contains("result")) {
-        throw std::runtime_error(R"(jsonrpc server error: reponse contain no "error" or "result" fields)"s);
+        throw std::runtime_error(R"(jsonrpc server error: response contain no "error" or "result" fields)"s);
     }
     if (response.contains("error")) {
         const auto &jerror = response["error"];

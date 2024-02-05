@@ -22,7 +22,9 @@
 
 #include <cassert>
 
+#include "compiler-defines.h"
 #include "device-state-access.h"
+#include "htif.h"
 #include "i-state-access.h"
 #include "machine.h"
 #include "os.h"
@@ -36,7 +38,7 @@ namespace cartesi {
 /// \details The state_access class implements fast, direct
 /// access to the machine state. No logs are kept.
 class state_access : public i_state_access<state_access, pma_entry> {
-
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
     machine &m_m; ///< Associated machine
 
 public:
@@ -66,7 +68,7 @@ public:
     }
 
 private:
-    // Declare interface as friend to it can forward calls to the "overriden" methods.
+    // Declare interface as friend to it can forward calls to the "overridden" methods.
     friend i_state_access<state_access, pma_entry>;
 
     machine_state &do_get_naked_state(void) {

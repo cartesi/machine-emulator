@@ -17,7 +17,9 @@
 #ifndef CLUA_HTIF_H
 #define CLUA_HTIF_H
 
-#include "clua.h"
+extern "C" {
+#include <lua.h>
+}
 
 /// \file
 /// \brief HTIF device Lua interface

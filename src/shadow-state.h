@@ -17,11 +17,12 @@
 #ifndef SHADOW_STATE_H
 #define SHADOW_STATE_H
 
-#include "pma-driver.h"
-#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+
+#include "pma-driver.h"
+#include "riscv-constants.h"
 
 /// \file
 /// \brief Shadow device.

@@ -14,14 +14,13 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "json-util.h"
+
 #include <climits>
-#include <exception>
-#include <fstream>
-#include <iostream>
 #include <string>
 #include <unordered_map>
 
-#include "json-util.h"
+#include "base64.h"
 
 namespace cartesi {
 

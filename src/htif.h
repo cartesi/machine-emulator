@@ -17,11 +17,11 @@
 #ifndef HTIF_H
 #define HTIF_H
 
+#include <cstdint>
+
 #include "htif-defines.h"
 #include "pma-defines.h"
 #include "pma-driver.h"
-#include <array>
-#include <cstdint>
 
 /// \file
 /// \brief Host-Target interface device.

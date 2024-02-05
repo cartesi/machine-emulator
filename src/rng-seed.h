@@ -17,6 +17,8 @@
 #ifndef RNG_SEED_H
 #define RNG_SEED_H
 
+#include <cstdint>
+
 namespace cartesi {
 
 // Fixed entropy built in FDT, used by Linux to initialize its PRNG entropy

@@ -14,12 +14,10 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "keccak-256-hasher.h"
-
 #include "clua-i-virtual-machine.h"
-#include "clua-machine-util.h"
 #include "clua-machine.h"
 #include "clua.h"
+#include "keccak-256-hasher.h"
 #include "machine-c-api.h"
 #include "riscv-constants.h"
 #include "uarch-constants.h"

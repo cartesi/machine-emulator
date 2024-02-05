@@ -14,16 +14,14 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <array>
 #include <cassert>
-#include <cinttypes>
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <optional>
+#include <iostream>
 
 #include "back-merkle-tree.h"
 #include "keccak-256-hasher.h"
@@ -75,6 +73,7 @@ static void print_hash(const hash_type &hash, FILE *f) {
     (void) fprintf(f, "\n");
 }
 
+// NOLINTNEXTLINE
 #if 0 // Unused
 /// \brief Reads a hash in hex from file
 /// \param f File to read from

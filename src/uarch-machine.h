@@ -20,8 +20,6 @@
 /// \file
 /// \brief Cartesi microarchitecture machine
 
-#include <memory>
-
 #include "uarch-config.h"
 #include "uarch-state.h"
 

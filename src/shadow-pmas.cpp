@@ -15,6 +15,9 @@
 //
 
 #include "shadow-pmas.h"
+#include "i-device-state-access.h"
+
+#include <cstddef>
 
 namespace cartesi {
 

@@ -14,13 +14,13 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "back-merkle-tree.h"
-#include <iomanip>
-#include <iostream>
-#include <limits>
-
 /// \file
 /// \brief Back Merkle tree implementation.
+
+#include "back-merkle-tree.h"
+
+#include <cassert>
+#include <limits>
 
 namespace cartesi {
 

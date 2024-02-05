@@ -24,7 +24,6 @@
 #include <cstdint>
 #include <deque>
 #include <iosfwd>
-#include <type_traits>
 #include <unordered_map>
 
 #include "keccak-256-hasher.h"
@@ -44,7 +43,7 @@ namespace cartesi {
 ///
 /// To optimize for space, subtrees corresponding to pristine
 /// memory are represented by <tt>nullptr</tt> nodes.
-/// Additionaly, the tree is truncated below *page* nodes
+/// Additionally, the tree is truncated below *page* nodes
 /// subintending LOG2_PAGE_SIZE bits of address space.
 /// The trees corresponding to pages are rebuilt from the
 /// original data whenever needed and never stored.
@@ -158,7 +157,7 @@ private:
     /// \brief Maps a page_index to a node.
     /// \param page_index Page index.
     /// \param node Node subintending page.
-    /// \return 1 if succeeded, 0 othewise.
+    /// \return 1 if succeeded, 0 otherwise.
     int set_page_node_map(address_type page_index, tree_node *node);
 
     /// \brief Creates and returns a new tree node.

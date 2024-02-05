@@ -43,7 +43,7 @@ static void help(const char *name) {
 
   )" << name << R"( [options]
 
-Computes the hash of the pristine uarch state. 
+Computes the hash of the pristine uarch state.
 
 Options:
 

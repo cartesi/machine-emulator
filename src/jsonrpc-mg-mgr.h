@@ -18,7 +18,6 @@
 #define JSONRPC_MG_MGR_H
 
 #include <boost/container/static_vector.hpp>
-#include <exception>
 #include <mongoose.h>
 #include <string>
 
@@ -27,7 +26,7 @@ namespace cartesi {
 class jsonrpc_mg_mgr final {
 
     boost::container::static_vector<std::string, 2> m_address{};
-    struct mg_mgr m_mgr {}; // unecessary initialization to silince clang-tidy
+    struct mg_mgr m_mgr {}; // unnecessary initialization to silince clang-tidy
 
 public:
     explicit jsonrpc_mg_mgr(std::string remote_address);

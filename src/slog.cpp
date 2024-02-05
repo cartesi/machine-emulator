@@ -14,10 +14,9 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <cstring>
-#include <exception>
-
 #include "slog.h"
+
+#include <cstring>
 
 namespace slog {
 

@@ -32,7 +32,7 @@ namespace cartesi {
 /// i_state_access interface (which is not virtual).
 ///
 /// Since device access to state is not time critical, the
-/// i_device_state_access interace uses virtual methods.  A
+/// i_device_state_access interface uses virtual methods.  A
 /// template class device_state_access implements this
 /// virtual interface on top of any class that implements the
 /// i_state_access.

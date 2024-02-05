@@ -23,9 +23,9 @@
 #include "i-uarch-reset-state-access.h"
 #include "machine.h"
 #include "uarch-constants.h"
-#include "uarch-machine.h"
 #include "uarch-pristine-state-hash.h"
-#include "unique-c-ptr.h"
+
+#include <memory>
 
 namespace cartesi {
 
@@ -39,9 +39,9 @@ class uarch_record_reset_state_access : public i_uarch_reset_state_access<uarch_
     using proof_type = tree_type::proof_type;
 
     ///< uarch state
-    uarch_state &m_us;
+    uarch_state &m_us; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
     ///< big machine
-    machine &m_m;
+    machine &m_m; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
     ///< Pointer to access log
     std::shared_ptr<access_log> m_log;
 
@@ -117,7 +117,7 @@ public:
     };
 
 private:
-    // Declare interface as friend to it can forward calls to the "overriden" methods.
+    // Declare interface as friend to it can forward calls to the "overridden" methods.
     friend i_uarch_reset_state_access<uarch_record_reset_state_access>;
 
     void do_push_bracket(bracket_type &type, const char *text) {

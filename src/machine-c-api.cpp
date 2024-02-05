@@ -14,6 +14,9 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "machine-c-api.h"
+#include "machine-c-api-internal.h"
+
 #include <any>
 #include <cstring>
 #include <exception>
@@ -25,11 +28,8 @@
 #include <string>
 
 #include "i-virtual-machine.h"
-#include "machine-c-api-internal.h"
-#include "machine-c-api.h"
 #include "machine-config.h"
 #include "machine.h"
-#include "riscv-constants.h"
 #include "semantic-version.h"
 #include "virtual-machine.h"
 

@@ -23,14 +23,14 @@
 
 namespace cartesi {
 
-/// \brief Description of memory range used for instrospection (i.e., get_memory_ranges())
-struct machine_memory_range_descr {
-    uint64_t start = 0;        ///< Start of memory range
-    uint64_t length = 0;       ///< Length of memory range
-    std::string description{}; ///< User-friendly description for memory range
+/// \brief Description of memory range used for introspection (i.e., get_memory_ranges())
+struct machine_memory_range_descr { // NOLINT(bugprone-exception-escape)
+    uint64_t start = 0;             ///< Start of memory range
+    uint64_t length = 0;            ///< Length of memory range
+    std::string description{};      ///< User-friendly description for memory range
 };
 
-/// \brief List of memory range descriptions used for instrospection (i.e., get_memory_ranges())
+/// \brief List of memory range descriptions used for introspection (i.e., get_memory_ranges())
 using machine_memory_range_descrs = std::vector<machine_memory_range_descr>;
 
 } // namespace cartesi

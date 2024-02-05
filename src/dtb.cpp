@@ -14,15 +14,15 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <cinttypes>
-#include <sstream>
-#include <stdexcept>
-#include <string>
-
 /// \file
 /// \brief Device Tree Blob
 
 #include "dtb.h"
+
+#include <sstream>
+#include <stdexcept>
+#include <string>
+
 #include "fdt-builder.h"
 #include "machine-c-version.h"
 #include "pma-constants.h"

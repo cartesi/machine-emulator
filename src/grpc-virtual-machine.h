@@ -30,7 +30,6 @@
 
 #include "cartesi-machine-checkin.grpc.pb.h"
 #include "cartesi-machine.grpc.pb.h"
-#include "versioning.pb.h"
 #pragma GCC diagnostic pop
 
 #include "i-virtual-machine.h"

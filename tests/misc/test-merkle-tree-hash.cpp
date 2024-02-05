@@ -21,13 +21,18 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
+#include <iostream>
+#include <new>
+#include <vector>
 
-#include "back-merkle-tree.h"
-#include "complete-merkle-tree.h"
-#include "full-merkle-tree.h"
-#include "keccak-256-hasher.h"
-#include "merkle-tree-proof.h"
-#include "unique-c-ptr.h"
+#include <back-merkle-tree.h>
+#include <complete-merkle-tree.h>
+#include <full-merkle-tree.h>
+#include <i-hasher.h>
+#include <keccak-256-hasher.h>
+#include <merkle-tree-proof.h>
+#include <unique-c-ptr.h>
 
 using namespace cartesi;
 using hasher_type = keccak_256_hasher;
@@ -208,7 +213,7 @@ int main(int argc, char *argv[]) try {
     }
 
     // Allocate buffer for leaf data
-    uint64_t leaf_size = UINT64_C(1) << log2_leaf_size;
+    uint64_t leaf_size = UINT64_C(1) << log2_leaf_size; // NOLINT(misc-include-cleaner)
     auto leaf_buf = unique_calloc<unsigned char>(leaf_size, std::nothrow_t{});
     if (!leaf_buf) {
         error("unable to allocate leaf buffer\n");
@@ -223,7 +228,7 @@ int main(int argc, char *argv[]) try {
 
     std::vector<hash_type> leaf_hashes;
 
-    uint64_t max_leaves = UINT64_C(1) << (log2_root_size - log2_leaf_size);
+    uint64_t max_leaves = UINT64_C(1) << (log2_root_size - log2_leaf_size); // NOLINT(misc-include-cleaner)
     uint64_t leaf_count = 0;
     // Loop reading leaves from file until done or error
     // As each leaf is loaded, we check that all four implementations

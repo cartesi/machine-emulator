@@ -19,7 +19,6 @@
 #include "jsonrpc-mg-mgr.h"
 #include "jsonrpc-virtual-machine.h"
 #include "machine-c-api-internal.h"
-#include "virtual-machine.h"
 
 static const cartesi::jsonrpc_mg_mgr_ptr *convert_from_c(const cm_jsonrpc_mg_mgr *mgr) {
     if (mgr == nullptr) {
@@ -29,6 +28,7 @@ static const cartesi::jsonrpc_mg_mgr_ptr *convert_from_c(const cm_jsonrpc_mg_mgr
     return reinterpret_cast<const cartesi::jsonrpc_mg_mgr_ptr *>(mgr);
 }
 
+// NOLINTNEXTLINE
 #if 0 // Unused
 static cartesi::jsonrpc_mg_mgr_ptr *convert_from_c(cm_jsonrpc_mg_mgr *mgr) {
     if (mgr == nullptr) {

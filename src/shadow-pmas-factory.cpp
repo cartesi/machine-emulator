@@ -14,13 +14,11 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <cassert>
-#include <cinttypes>
+#include "shadow-pmas-factory.h"
+
 #include <cstring>
 
 #include "machine.h"
-#include "pma-driver.h"
-#include "shadow-pmas-factory.h"
 #include "shadow-pmas.h"
 
 namespace cartesi {

@@ -18,7 +18,6 @@
 #include "grpc-virtual-machine.h"
 #include "i-virtual-machine.h"
 #include "machine-c-api-internal.h"
-#include "virtual-machine.h"
 
 static const cartesi::grpc_machine_stub_ptr *convert_from_c(const cm_grpc_machine_stub *stub) {
     if (stub == nullptr) {
@@ -28,6 +27,7 @@ static const cartesi::grpc_machine_stub_ptr *convert_from_c(const cm_grpc_machin
     return reinterpret_cast<const cartesi::grpc_machine_stub_ptr *>(stub);
 }
 
+// NOLINTNEXTLINE
 #if 0 // Unused
 static cartesi::grpc_machine_stub_ptr *convert_from_c(cm_grpc_machine_stub *stub) {
     if (stub == nullptr) {

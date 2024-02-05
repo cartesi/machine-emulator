@@ -17,8 +17,6 @@
 #ifndef UARCH_BRIDGE_H
 #define UARCH_BRIDGE_H
 
-#include "clint.h"
-#include "htif.h"
 #include "machine-state.h"
 #include "riscv-constants.h"
 #include "shadow-state.h"
@@ -515,17 +513,21 @@ private:
         }
         const uint64_t tlboff = paddr - PMA_SHADOW_TLB_START;
         if (tlboff < offsetof(shadow_tlb_state, cold)) { // Hot entry
+            // NOLINTBEGIN(cppcoreguidelines-init-variables)
             const uint64_t etype = tlboff / sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>);
             const uint64_t etypeoff = tlboff % sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>);
             const uint64_t eidx = etypeoff / sizeof(tlb_hot_entry);
             const uint64_t fieldoff = etypeoff % sizeof(tlb_hot_entry);
+            // NOLINTEND(cppcoreguidelines-init-variables)
             return read_tlb_entry_field(s, true, etype, eidx, fieldoff, data);
         } else if (tlboff < sizeof(shadow_tlb_state)) { // Cold entry
+            // NOLINTBEGIN(cppcoreguidelines-init-variables)
             const uint64_t coldoff = tlboff - offsetof(shadow_tlb_state, cold);
             const uint64_t etype = coldoff / sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
             const uint64_t etypeoff = coldoff % sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
             const uint64_t eidx = etypeoff / sizeof(tlb_cold_entry);
             const uint64_t fieldoff = etypeoff % sizeof(tlb_cold_entry);
+            // NOLINTEND(cppcoreguidelines-init-variables)
             return read_tlb_entry_field(s, false, etype, eidx, fieldoff, data);
         }
         return false;

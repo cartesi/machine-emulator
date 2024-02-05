@@ -64,7 +64,6 @@ public:
     using sibling_hashes_type = std::vector<hash_type>;
     using proof_type = machine_merkle_tree::proof_type;
 
-public:
     void set_type(access_type type) {
         m_type = type;
     }
@@ -170,14 +169,14 @@ public:
             throw std::runtime_error("can't make proof if access doesn't have sibling hashes");
         }
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        const auto &sibiling_hashes = m_sibling_hashes.value();
-        auto log2_root_size = m_log2_size + sibiling_hashes.size();
+        const auto &sibling_hashes = m_sibling_hashes.value();
+        const int log2_root_size = m_log2_size + static_cast<int>(sibling_hashes.size());
         proof_type proof(log2_root_size, m_log2_size);
         proof.set_root_hash(root_hash);
         proof.set_target_address(m_address);
         proof.set_target_hash(m_read_hash);
-        for (size_t log2_size = m_log2_size; log2_size < log2_root_size; log2_size++) {
-            proof.set_sibling_hash(sibiling_hashes[log2_size - m_log2_size], log2_size);
+        for (int log2_size = m_log2_size; log2_size < log2_root_size; log2_size++) {
+            proof.set_sibling_hash(sibling_hashes[log2_size - m_log2_size], log2_size);
         }
         return proof;
     }
@@ -198,7 +197,7 @@ private:
     uint64_t m_address{0};                                 ///< Address of access
     int m_log2_size{0};                                    ///< Log2 of size of access
     std::optional<access_data> m_read{};                   ///< Data before access
-    hash_type m_read_hash;                                 ///< Hash of data before access
+    hash_type m_read_hash{};                               ///< Hash of data before access
     std::optional<access_data> m_written{};                ///< Written data
     std::optional<hash_type> m_written_hash{};             ///< Hash of written data
     std::optional<sibling_hashes_type> m_sibling_hashes{}; ///< Hashes of siblings in path from address to root
@@ -213,7 +212,7 @@ public:
         bool m_annotations; ///< Includes annotations
         bool m_large_data;  ///< Includes data bigger than 8 bytes
     public:
-        /// \brief Default constructur
+        /// \brief Default constructor
         /// \param proofs Include proofs
         /// \param annotations Include annotations (default false)
         explicit type(bool proofs, bool annotations = false, bool large_data = false) :

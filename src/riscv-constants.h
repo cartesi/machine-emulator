@@ -17,7 +17,7 @@
 #ifndef RISCV_CONSTANTS_H
 #define RISCV_CONSTANTS_H
 
-#include "machine-c-defines.h"
+#include "machine-c-version.h"
 #include "pma-constants.h"
 #include "pma-defines.h"
 #include <cstdint>
@@ -322,7 +322,7 @@ enum MENVCFG_RW_masks : uint64_t {
 };
 
 ///< senvcfg read/write masks. Zicbom/Zicboz extensions are not specified yet, thus ignoring
-///  the correspoding bits.
+///  the corresponding bits.
 enum SENVCFG_RW_masks : uint64_t {
     SENVCFG_W_MASK = SENVCFG_FIOM_MASK, ///< write mask for senvcfg
     SENVCFG_R_MASK = SENVCFG_FIOM_MASK, ///< read mask for senvcfg

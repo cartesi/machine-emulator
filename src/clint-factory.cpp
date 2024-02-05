@@ -15,12 +15,9 @@
 //
 
 #include "clint-factory.h"
-#include "i-device-state-access.h"
+#include "clint.h"
 #include "machine.h"
 #include "pma.h"
-#include "riscv-constants.h"
-#include "rtc.h"
-#include "strict-aliasing.h"
 
 namespace cartesi {
 

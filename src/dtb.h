@@ -26,9 +26,6 @@
 
 namespace cartesi {
 
-// Forward declarations
-struct machine_config;
-
 /// \brief Initializes flattened device tree from machine config on DTB
 /// \param c Machine configuration.
 /// \param dtb_start Pointer to start of DTB contiguous range in host memory

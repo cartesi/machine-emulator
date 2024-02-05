@@ -16,6 +16,8 @@
 
 #include "full-merkle-tree.h"
 
+#include <limits>
+
 /// \file
 /// \brief Full Merkle tree implementation.
 

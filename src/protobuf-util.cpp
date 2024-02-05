@@ -391,7 +391,7 @@ access_log get_proto_access_log(const CartesiMachine::AccessLog &proto_al) {
     auto pbr = proto_brackets.begin();
     auto pnt = proto_notes.begin();
     auto pac = proto_accesses.begin();
-    uint64_t iac = 0; // curent access index
+    uint64_t iac = 0; // current access index
     while (pac != proto_accesses.end()) {
         while (pbr != proto_brackets.end() && pbr->where() == iac) {
             // bracket note points to current access

@@ -20,10 +20,7 @@
 /// \file
 /// \brief Merkle tree proof structure
 
-#include <cassert>
 #include <cstdint>
-#include <exception>
-#include <iostream>
 #include <vector>
 
 namespace cartesi {

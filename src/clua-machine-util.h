@@ -17,13 +17,13 @@
 #ifndef CLUA_MACHINE_UTIL_H
 #define CLUA_MACHINE_UTIL_H
 
-#include "access-log.h"
-#include "clua.h"
-#include "grpc-machine-c-api.h"
+#include <utility>
+
+extern "C" {
+#include <lua.h>
+}
+
 #include "machine-c-api.h"
-#include "machine-merkle-tree.h"
-#include "machine.h"
-#include "semantic-version.h"
 
 /// \file
 /// \brief Cartesi machine Lua interface helper functions
@@ -32,7 +32,7 @@ namespace cartesi {
 
 constexpr size_t MAX_ERR_MSG_LEN = 1024;
 
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+// NOLINTBEGIN(cppcoreguidelines-macro-usage,cppcoreguidelines-avoid-do-while)
 #define TRY_EXECUTE(func_call)                                                                                         \
     do {                                                                                                               \
         char *err_msg_heap = nullptr;                                                                                  \
@@ -45,6 +45,7 @@ constexpr size_t MAX_ERR_MSG_LEN = 1024;
             return luaL_error(L, err_msg_stack.data());                                                                \
         }                                                                                                              \
     } while (0)
+// NOLINTEND(cppcoreguidelines-macro-usage,cppcoreguidelines-avoid-do-while)
 
 /// \brief Create overloaded deleters for C API objects
 template <typename T>
@@ -184,7 +185,7 @@ void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c);
 /// \param mrds Memory range description array to be pushed
 void clua_push_cm_memory_range_descr_array(lua_State *L, const cm_memory_range_descr_array *mrds);
 
-#if 0
+#if 0 // NOLINT
 /// \brief Pushes a cm_machine_runtime_config to the Lua stack
 /// \param L Lua state
 /// \param r C api machine runtime config to be pushed

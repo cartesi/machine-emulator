@@ -17,6 +17,8 @@
 #ifndef BASE64_H
 #define BASE64_H
 
+#include <string>
+
 namespace cartesi {
 
 std::string encode_base64(const std::string &input);

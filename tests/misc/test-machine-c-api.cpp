@@ -41,12 +41,13 @@
 #include <iostream>
 #include <thread>
 
-#include "grpc-machine-c-api.h"
-#include "machine-c-api.h"
-#include "riscv-constants.h"
+#include <grpc-machine-c-api.h>
+#include <machine-c-api.h>
+#include <riscv-constants.h>
+#include <uarch-constants.h>
+#include <uarch-solidity-compat.h>
+
 #include "test-utils.h"
-#include "uarch-constants.h"
-#include "uarch-solidity-compat.h"
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-do-while)
 

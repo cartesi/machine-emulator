@@ -17,7 +17,6 @@
 #ifndef SHADOW_UARCH_STATE_H
 #define SHADOW_UARCH_STATE_H
 
-#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>

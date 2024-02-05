@@ -19,7 +19,6 @@
 #include "pma-constants.h"
 #include "riscv-constants.h"
 #include "rtc.h"
-#include "strict-aliasing.h"
 
 namespace cartesi {
 

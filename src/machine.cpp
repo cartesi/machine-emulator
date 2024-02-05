@@ -14,8 +14,9 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "machine.h"
+
 #include <boost/range/adaptor/sliced.hpp>
-#include <cinttypes>
 #include <cstdio>
 #include <cstring>
 #include <iomanip>
@@ -24,10 +25,9 @@
 #include "clint-factory.h"
 #include "dtb.h"
 #include "htif-factory.h"
+#include "htif.h"
 #include "interpret.h"
-#include "machine.h"
 #include "riscv-constants.h"
-#include "rtc.h"
 #include "shadow-pmas-factory.h"
 #include "shadow-state-factory.h"
 #include "shadow-tlb-factory.h"
@@ -1525,7 +1525,7 @@ bool machine::update_merkle_tree(void) const {
 bool machine::update_merkle_tree_page(uint64_t address) {
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
         "PMA and machine_merkle_tree page sizes must match");
-    // Align address to begining of page
+    // Align address to beginning of page
     address &= ~(PMA_PAGE_SIZE - 1);
     pma_entry &pma = find_pma_entry(m_pmas, address, sizeof(uint64_t));
     const uint64_t page_start_in_range = address - pma.get_start();

@@ -18,10 +18,8 @@
 #define SHADOW_PMAS_H
 
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
 
-#include "i-device-state-access.h"
 #include "pma-constants.h"
 #include "pma-driver.h"
 

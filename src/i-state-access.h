@@ -23,7 +23,6 @@
 #include <cstdint>
 #include <type_traits>
 
-#include "machine-statistics.h"
 #include "meta.h"
 #include "shadow-tlb.h"
 

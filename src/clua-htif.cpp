@@ -15,8 +15,9 @@
 //
 
 #include "clua-htif.h"
-#include "clua.h"
 #include "htif.h"
+
+#include <array>
 
 namespace cartesi {
 

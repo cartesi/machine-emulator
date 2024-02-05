@@ -17,8 +17,9 @@
 #ifndef CLINT_H
 #define CLINT_H
 
-#include "pma-driver.h"
 #include <cstdint>
+
+#include "pma-driver.h"
 
 /// \file
 /// \brief Clock interruptor device.

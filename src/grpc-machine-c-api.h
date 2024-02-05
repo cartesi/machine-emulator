@@ -38,7 +38,7 @@ typedef struct cm_grpc_machine_stub_tag cm_grpc_machine_stub; // NOLINT(moderniz
 /// \param checkin_address Address of the local checkin server
 /// \param stub Receives new server stub instance
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_create_grpc_machine_stub(const char *remote_address, const char *checkin_address,
@@ -54,7 +54,7 @@ CM_API void cm_delete_grpc_machine_stub(const cm_grpc_machine_stub *stub);
 /// \param runtime_config Machine runtime configuration. Must be pointer to valid object
 /// \param new_machine Receives the pointer to new remote machine instance
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_create_grpc_machine(const cm_grpc_machine_stub *stub, const cm_machine_config *config,
@@ -66,7 +66,7 @@ CM_API int cm_create_grpc_machine(const cm_grpc_machine_stub *stub, const cm_mac
 /// \param runtime_config Machine runtime configuration. Must be pointer to valid object
 /// \param new_machine Receives the pointer to new remote machine instance
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_load_grpc_machine(const cm_grpc_machine_stub *stub, const char *dir,
@@ -76,7 +76,7 @@ CM_API int cm_load_grpc_machine(const cm_grpc_machine_stub *stub, const char *di
 /// \param stub Cartesi grpc machine stub. Must be pointer to valid object
 /// \param new_machine Receives the pointer to new remote machine instance
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_get_grpc_machine(const cm_grpc_machine_stub *stub, cm_machine **new_machine, char **err_msg);
@@ -85,7 +85,7 @@ CM_API int cm_get_grpc_machine(const cm_grpc_machine_stub *stub, cm_machine **ne
 /// \param stub Cartesi grpc machine stub. Must be pointer to valid object
 /// \param config Receives the default configuration
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_grpc_get_default_config(const cm_grpc_machine_stub *stub, const cm_machine_config **config,
@@ -97,7 +97,7 @@ CM_API int cm_grpc_get_default_config(const cm_grpc_machine_stub *stub, const cm
 /// \param runtime_config Machine runtime configuration. Must be pointer to valid object
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_7_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_grpc_verify_uarch_step_log(const cm_grpc_machine_stub *stub, const cm_access_log *log,
@@ -109,7 +109,7 @@ CM_API int cm_grpc_verify_uarch_step_log(const cm_grpc_machine_stub *stub, const
 /// \param runtime_config Machine runtime configuration. Must be pointer to valid object
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_7_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_grpc_verify_uarch_reset_log(const cm_grpc_machine_stub *stub, const cm_access_log *log,
@@ -123,9 +123,9 @@ CM_API int cm_grpc_verify_uarch_reset_log(const cm_grpc_machine_stub *stub, cons
 /// \param runtime_config Machine runtime configuration. Must be pointer to valid object
 /// \param one_based Use 1-based indices when reporting errors
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
-/// \returns 0 for successfull verification, non zero code for error
+/// \returns 0 for successful verification, non zero code for error
 CM_API int cm_grpc_verify_uarch_reset_state_transition(const cm_grpc_machine_stub *stub,
     const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after,
     const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
@@ -138,9 +138,9 @@ CM_API int cm_grpc_verify_uarch_reset_state_transition(const cm_grpc_machine_stu
 /// \param runtime_config Machine runtime configuration. Must be pointer to valid object
 /// \param one_based Use 1-based indices when reporting errors
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
-/// \returns 0 for successfull verification, non zero code for error
+/// \returns 0 for successful verification, non zero code for error
 CM_API int cm_grpc_verify_uarch_step_state_transition(const cm_grpc_machine_stub *stub, const cm_hash *root_hash_before,
     const cm_access_log *log, const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config,
     bool one_based, char **err_msg);
@@ -150,9 +150,9 @@ CM_API int cm_grpc_verify_uarch_step_state_transition(const cm_grpc_machine_stub
 /// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.
 /// \param val Receives address of the register
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
-/// \returns 0 for successfull verification, non zero code for error
+/// \returns 0 for successful verification, non zero code for error
 CM_API int cm_grpc_get_x_address(const cm_grpc_machine_stub *stub, int i, uint64_t *val, char **err_msg);
 
 /// \brief Gets the address of a general-purpose microarchitecture register from remote cartesi server
@@ -160,9 +160,9 @@ CM_API int cm_grpc_get_x_address(const cm_grpc_machine_stub *stub, int i, uint64
 /// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.
 /// \param val Receives address of the register
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
-/// \returns 0 for successfull verification, non zero code for error
+/// \returns 0 for successful verification, non zero code for error
 CM_API int cm_grpc_get_uarch_x_address(const cm_grpc_machine_stub *stub, int i, uint64_t *val, char **err_msg);
 
 /// \brief Gets the address of any CSR from remote server
@@ -170,27 +170,27 @@ CM_API int cm_grpc_get_uarch_x_address(const cm_grpc_machine_stub *stub, int i, 
 /// \param w The command and status register
 /// \param val Receives address of the register
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
-/// \returns 0 for successfull verification, non zero code for error
+/// \returns 0 for successful verification, non zero code for error
 CM_API int cm_grpc_get_csr_address(const cm_grpc_machine_stub *stub, CM_PROC_CSR w, uint64_t *val, char **err_msg);
 
 /// \brief Gets the semantic version of remote server machine
 /// \param stub Cartesi grpc machine stub. Must be pointer to valid object
 /// \param version Receives semantic version
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
-/// \returns 0 for successfull verification, non zero code for error
+/// \returns 0 for successful verification, non zero code for error
 CM_API int cm_grpc_get_semantic_version(const cm_grpc_machine_stub *stub, const cm_semantic_version **version,
     char **err_msg);
 
 /// \brief Performs shutdown
 /// \param stub Cartesi grpc machine stub. Must be pointer to valid object
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
-/// \returns 0 for successfull verification, non zero code for error
+/// \returns 0 for successful verification, non zero code for error
 CM_API int cm_grpc_shutdown(const cm_grpc_machine_stub *stub, char **err_msg);
 
 #ifdef __cplusplus

@@ -6,13 +6,13 @@ ARG SANITIZE=no
 
 RUN apt-get update && \
     DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends -y \
-    build-essential vim wget git clang-tidy-15 clang-format-15 lcov \
+    build-essential vim wget git clang-tidy-16 clang-format-16 lcov \
     libboost1.81-dev libssl-dev \
     ca-certificates pkg-config lua5.4 liblua5.4-dev \
     libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
     luarocks xxd procps && \
-    update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-15 120 && \
-    update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-15 120 && \
+    update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-16 120 && \
+    update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-16 120 && \
     rm -rf /var/lib/apt/lists/*
 
 
@@ -22,7 +22,7 @@ RUN luarocks install --lua-version=5.4 luasocket && \
     luarocks install --lua-version=5.4 lpeg && \
     luarocks install --lua-version=5.4 dkjson && \
     luarocks install --lua-version=5.4 luacheck && \
-    cargo install stylua@0.18.1 --features lua54
+    cargo install stylua@0.20.0 --features lua54
 
 # Environment has the riscv64-cartesi-linux-gnu-* toolchain
 ENV DEV_ENV_HAS_TOOLCHAIN=yes

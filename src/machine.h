@@ -20,10 +20,7 @@
 /// \file
 /// \brief Cartesi machine interface
 
-#include <memory>
-
 #include "access-log.h"
-#include "htif.h"
 #include "interpret.h"
 #include "machine-config.h"
 #include "machine-memory-range-descr.h"

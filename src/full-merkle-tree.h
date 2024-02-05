@@ -20,7 +20,6 @@
 #include "keccak-256-hasher.h"
 #include "merkle-tree-proof.h"
 #include "pristine-merkle-tree.h"
-#include <limits>
 
 /// \file
 /// \brief Full Merkle tree interface.

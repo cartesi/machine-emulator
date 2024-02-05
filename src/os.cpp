@@ -38,13 +38,11 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
-#include <iostream>
 #include <string>
 #include <system_error>
 #include <vector>
 
 #include "os.h"
-#include "unique-c-ptr.h"
 
 #ifdef HAVE_THREADS
 #include <future>

@@ -14,12 +14,13 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <algorithm>
+#include "grpc-virtual-machine.h"
+
 #include <cstdint>
 #include <string>
 
 #include "grpc-config.h"
-#include "grpc-virtual-machine.h"
+#include "htif.h"
 #include "protobuf-util.h"
 
 using grpc::ClientContext;

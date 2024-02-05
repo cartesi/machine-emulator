@@ -19,9 +19,11 @@
 
 #include <string>
 
+#include "access-log.h"
 #include "machine-c-api.h"
-#include "machine-c-defines.h"
-#include "machine.h"
+#include "machine-config.h"
+#include "machine-merkle-tree.h"
+#include "machine-runtime-config.h"
 #include "semantic-version.h"
 
 /// \brief Helper function that returns error result from C api function
@@ -51,7 +53,7 @@ cm_semantic_version *convert_to_c(const cartesi::semantic_version &cpp_version);
 /// \brief Helper function that parses hash from C api structure
 cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash);
 
-/// \brief Helper function that parses access log tyoe from C
+/// \brief Helper function that parses access log type from C
 cartesi::access_log::type convert_from_c(const cm_access_log_type *type);
 
 /// \brief Helper function that parses access log from C api structure

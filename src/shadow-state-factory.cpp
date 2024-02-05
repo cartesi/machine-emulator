@@ -14,17 +14,11 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <cassert>
-#include <cinttypes>
+#include "shadow-state-factory.h"
+
 #include <cstring>
 
-#include "clint.h"
-#include "htif.h"
-#include "i-device-state-access.h"
 #include "machine.h"
-#include "pma-driver.h"
-#include "shadow-state-factory.h"
-#include "strict-aliasing.h"
 
 namespace cartesi {
 

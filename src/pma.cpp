@@ -14,13 +14,14 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "pma.h"
+
 #include <cerrno>
 #include <cstring>
 #include <string>
 #include <system_error>
 
 #include "os.h"
-#include "pma.h"
 #include "unique-c-ptr.h"
 
 namespace cartesi {
@@ -193,7 +194,7 @@ static bool memory_peek(const pma_entry &pma, const machine &m, uint64_t page_ad
         memcpy(scratch, pma.get_memory().get_host_memory() + page_address, pma.get_length() - page_address);
         *page_data = scratch;
         return true;
-        // Otherwise, return pointer direclty into host memory
+        // Otherwise, return pointer directly into host memory
     } else {
         *page_data = pma.get_memory().get_host_memory() + page_address;
         return true;

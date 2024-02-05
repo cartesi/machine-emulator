@@ -48,7 +48,7 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 #### Debian Bookworm
 
 ```bash
-sudo apt-get install build-essential wget git clang-tidy-15 clang-format-15 \
+sudo apt-get install build-essential wget git clang-tidy-16 clang-format-16 \
         libboost1.81-dev libssl-dev \
         ca-certificates pkg-config lua5.4 liblua5.4-dev \
         libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
@@ -64,7 +64,7 @@ sudo luarocks install --lua-version=5.4 luaposix
 
 ##### MacPorts
 ```bash
-sudo port install clang-15 boost181 wget pkgconfig grpc lua54 lua-luarocks
+sudo port install clang-16 boost181 wget pkgconfig grpc lua54 lua-luarocks
 
 sudo luarocks install --lua-version=5.4 lpeg
 sudo luarocks install --lua-version=5.4 dkjson
@@ -176,11 +176,11 @@ We use clang-tidy 15 as the linter.
 
 #### Debian Bookworm
 
-You need to install the package clang-tidy-15 and set it as the default executable with update-alternatives.
+You need to install the package clang-tidy-16 and set it as the default executable with update-alternatives.
 
 ```bash
-apt install clang-tidy-15
-update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-15 120
+apt install clang-tidy-16
+update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-16 120
 ```
 
 ### Running Lint
@@ -197,11 +197,11 @@ We use clang-format to format the code base.
 
 #### Debian Bookworm
 
-You need to install the package clang-format-15 and set is as the default executable with update-alternatives.
+You need to install the package clang-format-16 and set is as the default executable with update-alternatives.
 
 ```bash
-apt install clang-format-15
-update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-15 120
+apt install clang-format-16
+update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-16 120
 ```
 
 ### Formatting code

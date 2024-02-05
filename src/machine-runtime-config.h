@@ -17,6 +17,8 @@
 #ifndef MACHINE_RUNTIME_CONFIG_H
 #define MACHINE_RUNTIME_CONFIG_H
 
+#include <cstdint>
+
 /// \file
 /// \brief Runtime configuration for machines.
 

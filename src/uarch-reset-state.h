@@ -27,6 +27,7 @@ void uarch_reset_state(STATE_ACCESS &a);
 
 class uarch_reset_state_access;
 class uarch_record_step_state_access;
+class uarch_record_reset_state_access;
 class uarch_replay_step_state_access;
 
 // Declaration of explicit instantiation in module uarch-reset-state.cpp

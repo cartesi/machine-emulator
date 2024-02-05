@@ -17,7 +17,6 @@
 #ifndef OS_H
 #define OS_H
 
-#include <cstddef>
 #include <cstdint>
 #include <functional>
 
@@ -37,7 +36,7 @@ void os_close_tty(void);
 void os_poll_tty(uint64_t wait);
 
 /// \brief Reads an input character from the console
-/// \return Charater read from console
+/// \return Character read from console
 int os_getchar(void);
 
 /// \brief Writes an output character to the console
@@ -70,7 +69,7 @@ struct parallel_for_mutex_guard {
     parallel_for_mutex_guard(const parallel_for_mutex &mutex) : mutex(mutex) {
         mutex.lock();
     }
-    ~parallel_for_mutex_guard() {
+    ~parallel_for_mutex_guard() { // NOLINT(bugprone-exception-escape)
         mutex.unlock();
     }
 

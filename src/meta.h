@@ -17,7 +17,6 @@
 #ifndef META_H
 #define META_H
 
-#include <cinttypes>
 #include <type_traits>
 
 /// \file
@@ -47,7 +46,7 @@ struct is_template_base_of_helper {
 /// \note (This is directly available in C++20.)
 template <typename T>
 struct remove_cvref {
-    using type = typename std::remove_reference<typename std::remove_cv<T>::type>::type;
+    using type = std::remove_reference_t<std::remove_cv_t<T>>;
 };
 
 /// \class is_template_base_of
@@ -56,8 +55,8 @@ struct remove_cvref {
 /// \tparam DERIVED Derived class.
 template <template <typename...> class BASE, typename DERIVED>
 using is_template_base_of = std::integral_constant<bool,
-    std::is_same<typename std::invoke_result<detail::is_template_base_of_helper<BASE, DERIVED>, const DERIVED &>::type,
-        typename detail::is_template_base_of_helper<BASE, DERIVED>::yes>::value>;
+    std::is_same_v<std::invoke_result_t<detail::is_template_base_of_helper<BASE, DERIVED>, const DERIVED &>,
+        typename detail::is_template_base_of_helper<BASE, DERIVED>::yes>>;
 
 /// \class log2_size
 /// \brief Provides an int member value with the log<sub>2</sub> of size of \p T

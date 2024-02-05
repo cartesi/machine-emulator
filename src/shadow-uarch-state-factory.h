@@ -23,7 +23,6 @@
 /// \brief Shadow uarch state device.
 
 #include "pma.h"
-#include "shadow-uarch-state.h"
 
 namespace cartesi {
 

@@ -44,7 +44,6 @@
 #define SOFT_FLOAT_H
 
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
@@ -132,10 +131,12 @@ static inline bool sqrtrem_u(UINT *pr, UINT ah, UINT al) {
     const ULONG a = (static_cast<ULONG>(ah) << UINT_SIZE) | al;
     ULONG u = static_cast<ULONG>(1) << ((l + 1) / 2);
     ULONG s = 0;
+    // NOLINTBEGIN(cppcoreguidelines-avoid-do-while)
     do {
         s = u;
         u = ((a / s) + s) / 2;
     } while (u < s);
+    // NOLINTEND(cppcoreguidelines-avoid-do-while)
     *pr = static_cast<UINT>(s);
     return (a - s * s) != 0;
 }
@@ -765,8 +766,8 @@ struct i_sfloat {
     /// \brief Conversion from float to integer.
     template <typename ICVT_INT>
     static ICVT_INT cvt_f_i(F_UINT a, FRM_modes rm, uint32_t *pfflags) {
-        using ICVT_UINT = typename std::make_unsigned<ICVT_INT>::type;
-        constexpr bool IS_UNSIGNED = std::is_unsigned<ICVT_INT>::value;
+        using ICVT_UINT = std::make_unsigned_t<ICVT_INT>;
+        constexpr bool IS_UNSIGNED = std::is_unsigned_v<ICVT_INT>;
         constexpr int ICVT_SIZE = sizeof(ICVT_UINT) * 8;
         uint32_t a_sign = a >> (F_SIZE - 1);
         int32_t a_exp = (a >> MANT_SIZE) & EXP_MASK;
@@ -844,8 +845,8 @@ struct i_sfloat {
     /// \brief Conversion from integer to float.
     template <typename ICVT_INT>
     static F_UINT cvt_i_f(ICVT_INT a, FRM_modes rm, uint32_t *pfflags) {
-        using ICVT_UINT = typename std::make_unsigned<ICVT_INT>::type;
-        constexpr bool IS_UNSIGNED = std::is_unsigned<ICVT_INT>::value;
+        using ICVT_UINT = std::make_unsigned_t<ICVT_INT>;
+        constexpr bool IS_UNSIGNED = std::is_unsigned_v<ICVT_INT>;
         constexpr int ICVT_SIZE = sizeof(ICVT_UINT) * 8;
         uint32_t a_sign = 0; // NOLINT(misc-const-correctness)
         ICVT_UINT r = static_cast<ICVT_UINT>(a);

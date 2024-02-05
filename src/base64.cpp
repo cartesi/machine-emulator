@@ -14,11 +14,11 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "base64.h"
+
 #include <cstdint>
 #include <cstring>
 #include <sstream>
-
-#include "base64.h"
 
 namespace cartesi {
 
@@ -37,7 +37,7 @@ static constexpr uint8_t b64unbase[] = {255, 255, 255, 255, 255, 255, 255, 255, 
     255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
     255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
 
-// Acumulates bytes in input buffer until 3 bytes are available.
+// Accumulates bytes in input buffer until 3 bytes are available.
 // Translate the 3 bytes into Base64 form and append to buffer.
 // Returns new number of bytes in buffer.
 static size_t b64encode(uint8_t c, uint8_t *input, size_t size, std::ostringstream &sout) {
@@ -98,7 +98,7 @@ static size_t b64pad(const uint8_t *input, size_t size, std::ostringstream &sout
     return 0;
 }
 
-// Acumulates bytes in input buffer until 4 bytes are available.
+// Accumulates bytes in input buffer until 4 bytes are available.
 // Translate the 4 bytes from Base64 form and append to buffer.
 // Returns new number of bytes in buffer.
 static size_t b64decode(uint8_t c, uint8_t *input, size_t size, std::ostringstream &sout) {

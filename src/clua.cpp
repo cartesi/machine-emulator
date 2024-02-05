@@ -14,8 +14,6 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <cctype>
-
 #include "clua.h"
 
 namespace cartesi {

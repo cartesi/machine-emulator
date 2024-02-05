@@ -17,8 +17,8 @@
 #ifndef HTIF_FACTORY_H
 #define HTIF_FACTORY_H
 
-#include "htif.h"
-#include "machine-config.h"
+#include <cstdint>
+
 #include "machine-runtime-config.h"
 #include "pma.h"
 

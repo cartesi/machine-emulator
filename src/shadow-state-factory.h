@@ -23,7 +23,6 @@
 /// \brief Shadow device.
 
 #include "pma.h"
-#include "shadow-state.h"
 
 namespace cartesi {
 

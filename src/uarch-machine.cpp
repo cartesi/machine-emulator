@@ -14,11 +14,12 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "uarch-machine.h"
+
 #include <utility>
 
 #include "shadow-uarch-state-factory.h"
 #include "uarch-constants.h"
-#include "uarch-machine.h"
 
 namespace cartesi {
 

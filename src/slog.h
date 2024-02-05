@@ -46,7 +46,7 @@ struct autoendl {
     autoendl &operator=(autoendl &&) = delete;
 
 private:
-    std::ostream &_out;
+    std::ostream &_out; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 };
 
 /// \brief Operation for log_level function
@@ -110,7 +110,9 @@ static inline std::ostream &operator<<(std::ostream &out, null_prefix) {
 #define SLOG(level)                                                                                                    \
     if (SLOG_DISABLE || slog::severity_level::level < slog::log_level(slog::level_operation::get)) {                   \
     } else                                                                                                             \
-        slog::autoendl(SLOG_OSTREAM) << SLOG_PREFIX { slog::severity_level::level }
+        slog::autoendl(SLOG_OSTREAM) << SLOG_PREFIX {                                                                  \
+            slog::severity_level::level                                                                                \
+        }
 
 } // namespace slog
 

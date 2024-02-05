@@ -17,12 +17,10 @@
 #ifndef PRISTINE_MERKLE_TREE_H
 #define PRISTINE_MERKLE_TREE_H
 
-#include <cassert>
 #include <cstdint>
 #include <vector>
 
 #include "keccak-256-hasher.h"
-#include "meta.h"
 
 /// \file
 /// \brief Pristine Merkle tree interface.

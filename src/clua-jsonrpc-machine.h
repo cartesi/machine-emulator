@@ -17,7 +17,9 @@
 #ifndef CLUA_JSONRPC_MACHINE_H
 #define CLUA_JSONRPC_MACHINE_H
 
-#include "clua.h"
+extern "C" {
+#include <lua.h>
+}
 
 /// \file
 /// \brief Remote Cartesi machine Lua interface

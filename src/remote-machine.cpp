@@ -150,7 +150,7 @@ class handler : public i_handler {
     using writer = ServerAsyncResponseWriter<RESPONSE>;
 
     writer m_writer;
-    bool m_waiting;
+    bool m_waiting{false};
 
     REQUEST m_request;
     sctx m_sctx;
@@ -223,7 +223,7 @@ public:
     handler &operator=(const handler &other) = delete;
     handler &operator=(handler &&other) noexcept = delete;
 
-    handler(void) : m_writer(&m_sctx), m_waiting(false) {
+    handler(void) : m_writer(&m_sctx) {
         ;
     }
 };
@@ -235,7 +235,7 @@ static void squash_parent(bool &forked) {
     // Wake parent up by signaling ourselves to stop.
     // Parent will wake us back up and then exit.
     if (forked) {
-        SLOG(trace) << "rasing SIGSTOP";
+        SLOG(trace) << "raising SIGSTOP";
         const int result = raise(SIGSTOP);
         if (result != 0) {
             // If raise SIGSTOP failed we should abort cause something went
@@ -1512,7 +1512,7 @@ static void server_loop(const char *server_address, const char *session_id, cons
                 break;
             case side_effect::shutdown:
                 SLOG(debug) << "Handling side effect side effect shutdown";
-                // Make sure we don't leave a snapshot burried
+                // Make sure we don't leave a snapshot buried
                 squash_parent(hctx.forked);
                 return;
         }

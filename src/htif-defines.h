@@ -16,7 +16,7 @@
 
 #ifndef HTIF_DEFINES_H
 #define HTIF_DEFINES_H
-
+// NOLINTBEGIN(cppcoreguidelines-macro-usage,modernize-macro-to-enum)
 #define HTIF_DEV_SHIFT_DEF 56
 #define HTIF_CMD_SHIFT_DEF 48
 #define HTIF_DATA_SHIFT_DEF 0
@@ -42,5 +42,5 @@
 #define HTIF_YIELD_REASON_TX_NOTICE_DEF 4
 #define HTIF_YIELD_REASON_TX_REPORT_DEF 5
 #define HTIF_YIELD_REASON_TX_EXCEPTION_DEF 6
-
+// NOLINTEND(cppcoreguidelines-macro-usage,modernize-macro-to-enum)
 #endif /* end of include guard: HTIF_DEFINES_H */

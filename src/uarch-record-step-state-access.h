@@ -24,8 +24,8 @@
 #include "machine-merkle-tree.h"
 #include "machine.h"
 #include "uarch-bridge.h"
-#include "uarch-constants.h"
-#include "uarch-machine.h"
+
+#include <memory>
 
 namespace cartesi {
 
@@ -34,9 +34,11 @@ class uarch_record_step_state_access : public i_uarch_step_state_access<uarch_re
     using hasher_type = machine_merkle_tree::hasher_type;
     using hash_type = machine_merkle_tree::hash_type;
 
+    // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     uarch_state &m_us;
     machine &m_m; ///< Macro machine
     machine_state &m_s;
+    // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
     std::shared_ptr<access_log> m_log; ///< Pointer to access log
 
     /// \brief Obtain Memory PMA entry that covers a given physical memory region
@@ -208,6 +210,7 @@ private:
         a.set_address(paligned);
         a.set_log2_size(machine_merkle_tree::get_log2_word_size());
 
+        // NOLINTBEGIN(bugprone-unchecked-optional-access)
         a.get_read().emplace();
         set_word_access_data(dest, a.get_read().value());
         get_hash(a.get_read().value(), a.get_read_hash());
@@ -216,6 +219,7 @@ private:
         set_word_access_data(val, a.get_written().value());
         a.get_written_hash().emplace();
         get_hash(a.get_written().value(), a.get_written_hash().value());
+        // NOLINTEND(bugprone-unchecked-optional-access)
 
         m_log->push_access(std::move(a), text);
     }
@@ -250,7 +254,7 @@ private:
         update_after_write(paligned);
     }
 
-    // Declare interface as friend to it can forward calls to the "overriden" methods.
+    // Declare interface as friend to it can forward calls to the "overridden" methods.
     friend i_uarch_step_state_access<uarch_record_step_state_access>;
 
     void do_push_bracket(bracket_type &type, const char *text) {

@@ -18,7 +18,6 @@
 #define UARCH_INTERPRET_SOLIDITY_COMPAT_H
 
 #include <cassert>
-#include <cinttypes>
 
 /// \file
 /// \brief Solidity Compatibility Layer
@@ -96,7 +95,7 @@ static inline void resetState(UarchState &a) {
     a.reset_state();
 }
 
-// Conversions and arithmentic functions
+// Conversions and arithmetic functions
 
 static inline int32 uint64ToInt32(uint64 v) {
     return static_cast<int32>(v);

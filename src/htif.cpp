@@ -18,8 +18,6 @@
 #include "i-device-state-access.h"
 #include "machine-runtime-config.h"
 #include "os.h"
-#include "pma-constants.h"
-#include "strict-aliasing.h"
 
 namespace cartesi {
 

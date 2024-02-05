@@ -14,11 +14,13 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "clua-machine-util.h"
+
 #include <cstring>
 #include <unordered_map>
 
-#include "clua-machine-util.h"
 #include "clua.h"
+#include "riscv-constants.h"
 
 namespace cartesi {
 
@@ -150,6 +152,7 @@ static uint64_t opt_uint_field(lua_State *L, int tabidx, const char *field, uint
     return static_cast<uint64_t>(val);
 }
 
+// NOLINTNEXTLINE
 #if 0 // Unused
 /// \brief Returns an optional string field indexed by string in a table.
 /// \param L Lua state.
@@ -746,11 +749,12 @@ cm_access_log_type clua_check_cm_log_type(lua_State *L, int tabidx) {
         clua_setintegerfield(L, p.regname, #regname, -1);                                                              \
     } while (0)
 
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+// NOLINTBEGIN(cppcoreguidelines-macro-usage,cppcoreguidelines-avoid-do-while)
 #define PUSH_CM_PROCESSOR_CONFIG_CSR(regname)                                                                          \
     do {                                                                                                               \
         clua_setintegerfield(L, p->regname, #regname, -1);                                                             \
     } while (0)
+// NOLINTEND(cppcoreguidelines-macro-usage,cppcoreguidelines-avoid-do-while)
 
 /// \brief Pushes a cm_processor_config to the Lua stack
 /// \param L Lua state.

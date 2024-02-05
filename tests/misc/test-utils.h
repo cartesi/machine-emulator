@@ -16,9 +16,9 @@
 
 #include <string>
 
-#include "back-merkle-tree.h"
-#include "keccak-256-hasher.h"
-#include "machine-c-api.h"
+#include <back-merkle-tree.h>
+#include <keccak-256-hasher.h>
+#include <machine-c-api.h>
 
 using hash_type = cartesi::keccak_256_hasher::hash_type;
 

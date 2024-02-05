@@ -15,12 +15,10 @@
 //
 
 #ifndef I_UARCH_STATE_ACCESS_H
-
 #define I_UARCH_STATE_ACCESS_H
 
 #include "bracket-note.h"
 #include "pma.h"
-#include <cinttypes>
 
 namespace cartesi {
 

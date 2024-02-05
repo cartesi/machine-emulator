@@ -20,7 +20,6 @@
 /// \file
 /// \brief Cartesi microarchitecture machine state structure definition.
 
-#include <cassert>
 #include <cstdint>
 
 #include "pma.h"

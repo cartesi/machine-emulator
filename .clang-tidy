@@ -16,6 +16,7 @@ Checks: >-
   misc*,
   -misc-no-recursion,
   -misc-non-private-member-variables-in-classes,
+  -misc-use-anonymous-namespace,
   modernize*,
   -modernize-redundant-void-arg,
   -modernize-use-default-member-init,

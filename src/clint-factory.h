@@ -19,7 +19,6 @@
 
 #include <cstdint>
 
-#include "clint.h"
 #include "pma.h"
 
 namespace cartesi {

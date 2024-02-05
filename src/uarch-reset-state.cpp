@@ -16,13 +16,10 @@
 
 // NOLINTBEGIN(google-readability-casting, misc-const-correctness)
 
-#include <stdexcept>
-
-#include "riscv-constants.h"
+#include "uarch-reset-state.h"
 #include "uarch-record-reset-state-access.h"
 #include "uarch-replay-reset-state-access.h"
 #include "uarch-reset-state-access.h"
-#include "uarch-reset-state.h"
 #include "uarch-solidity-compat.h"
 
 namespace cartesi {

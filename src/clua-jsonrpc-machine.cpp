@@ -16,7 +16,6 @@
 
 #include "clua-jsonrpc-machine.h"
 #include "clua-htif.h"
-#include "clua-i-virtual-machine.h"
 #include "clua-machine-util.h"
 #include "clua.h"
 #include "jsonrpc-machine-c-api.h"

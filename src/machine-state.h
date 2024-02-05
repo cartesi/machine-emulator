@@ -20,9 +20,7 @@
 /// \file
 /// \brief Cartesi machine state structure definition.
 
-#include <cassert>
 #include <cstdint>
-#include <iostream>
 
 #ifdef DUMP_HIST
 #include <unordered_map>
@@ -30,7 +28,6 @@
 
 #include <boost/container/static_vector.hpp>
 
-#include "machine-statistics.h"
 #include "pma.h"
 #include "riscv-constants.h"
 #include "shadow-tlb.h"

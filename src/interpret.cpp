@@ -14,15 +14,16 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include <cstdint>
+#include <utility>
+
 #ifdef MICROARCHITECTURE
 #include "uarch-machine-state-access.h"
 #include "uarch-runtime.h"
 #else
 #include "state-access.h"
 #endif
-#include <cinttypes>
-#include <cstdint>
-#include <utility>
+#include "machine-statistics.h"
 
 /// \file
 /// \brief Interpreter implementation.
@@ -139,7 +140,7 @@ static const char *sbi_ecall_name(uint64_t a7) {
         case 8:
             return "shutdown";
         default:
-            return "unkonwn";
+            return "unknown";
     }
 }
 

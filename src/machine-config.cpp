@@ -14,6 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "machine-config.h"
+
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -21,7 +23,6 @@
 #include <stdexcept>
 
 #include "json-util.h"
-#include "machine-config.h"
 #include "pma-constants.h"
 
 static constexpr uint32_t archive_version = 5;

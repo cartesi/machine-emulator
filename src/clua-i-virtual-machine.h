@@ -19,9 +19,11 @@
 
 #include <memory>
 
-#include "clua.h"
+extern "C" {
+#include <lua.h>
+}
+
 #include "i-virtual-machine.h"
-#include "machine-c-api.h"
 
 /// \file
 /// \brief Cartesi machine Lua interface

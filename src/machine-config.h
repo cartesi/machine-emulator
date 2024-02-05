@@ -74,7 +74,7 @@ struct ram_config final {         // NOLINT(bugprone-exception-escape)
 };
 
 /// \brief DTB state configuration
-struct dtb_config final {
+struct dtb_config final {         // NOLINT(bugprone-exception-escape)
     std::string bootargs{};       ///< Bootargs to pass to kernel
     std::string init{};           ///< Initialization commands to be executed as root on boot
     std::string entrypoint{};     ///< Commands to execute the main application

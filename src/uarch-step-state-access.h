@@ -19,16 +19,14 @@
 
 #include "i-uarch-step-state-access.h"
 #include "machine-state.h"
-#include "shadow-state.h"
 #include "uarch-bridge.h"
-#include "uarch-constants.h"
 #include "uarch-state.h"
 
 namespace cartesi {
 
 class uarch_step_state_access : public i_uarch_step_state_access<uarch_step_state_access> {
-    uarch_state &m_us;
-    machine_state &m_s;
+    uarch_state &m_us;  // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+    machine_state &m_s; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 
     /// \brief Obtain Memory PMA entry that covers a given physical memory region
     /// \param paddr Start of physical memory region.

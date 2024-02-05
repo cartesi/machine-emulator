@@ -17,7 +17,6 @@
 #ifndef VIRTUAL_MACHINE
 #define VIRTUAL_MACHINE
 
-#include "unique-c-ptr.h"
 #include <cstdint>
 
 #include "i-virtual-machine.h"

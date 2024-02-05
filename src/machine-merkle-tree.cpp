@@ -17,10 +17,7 @@
 #include "machine-merkle-tree.h"
 
 #include <cassert>
-#include <cinttypes>
-#include <cstdlib>
 #include <cstring>
-#include <functional>
 #include <iomanip>
 #include <iostream>
 

@@ -18,7 +18,7 @@
 #define UARCH_DEFINES_H
 
 #include "pma-defines.h"
-
+// NOLINTBEGIN(cppcoreguidelines-macro-usage,modernize-macro-to-enum)
 /// \brief Start address of the entire uarch memory range: shadow and ram
 #define UARCH_STATE_START_ADDRESS_DEF PMA_SHADOW_UARCH_STATE_START_DEF
 
@@ -35,12 +35,12 @@
 #define UARCH_MMIO_START_DEF 0x7ffff000 ///< Start of microarchitecture memory mapped IO addresses
 
 /// \brief Abort execution of microarchitecture by writing to this address
-#define UARCH_MMIO_ABORT_ADDR_DEF (UARCH_MMIO_START_DEF + 0) // NOLINT(cppcoreguidelines-macro-usage)
+#define UARCH_MMIO_ABORT_ADDR_DEF (UARCH_MMIO_START_DEF + 0)
 
 /// \brief The value that aborts execution of the micro machine when written to UARCH_MMIO_ABORT_ADDR_DEF
 #define UARCH_MMIO_ABORT_VALUE_DEF 1
 
 /// \brief Prints a character to to console when written to UARCH_MMIO_HALT_ADDR_DEF
-#define UARCH_MMIO_PUTCHAR_ADDR_DEF (UARCH_MMIO_START_DEF + 8) // NOLINT(cppcoreguidelines-macro-usage)
-
+#define UARCH_MMIO_PUTCHAR_ADDR_DEF (UARCH_MMIO_START_DEF + 8)
+// NOLINTEND(cppcoreguidelines-macro-usage,modernize-macro-to-enum)
 #endif /* end of include guard: UARCH_DEFINES_H */

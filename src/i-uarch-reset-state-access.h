@@ -18,8 +18,6 @@
 #define I_UARCH_RESET_STATE_ACCESS_H
 
 #include "bracket-note.h"
-#include "pma.h"
-#include <cinttypes>
 
 namespace cartesi {
 

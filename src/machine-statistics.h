@@ -59,16 +59,18 @@ struct machine_statistics {
 };
 
 #ifdef DUMP_COUNTERS
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+// NOLINTBEGIN(cppcoreguidelines-macro-usage,cppcoreguidelines-avoid-do-while)
 #define INC_COUNTER(stats, counter)                                                                                    \
     do {                                                                                                               \
         stats.counter++;                                                                                               \
     } while (0)
+// NOLINTEND(cppcoreguidelines-macro-usage,cppcoreguidelines-avoid-do-while)
 #else
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+// NOLINTBEGIN(cppcoreguidelines-macro-usage,cppcoreguidelines-avoid-do-while)
 #define INC_COUNTER(state, counter)                                                                                    \
     do {                                                                                                               \
     } while (0)
+// NOLINTEND(cppcoreguidelines-macro-usage,cppcoreguidelines-avoid-do-while)
 #endif
 
 } // namespace cartesi

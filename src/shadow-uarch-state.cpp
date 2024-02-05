@@ -14,14 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <cinttypes>
-
-#include "i-device-state-access.h"
-#include "pma-constants.h"
-#include "pma-driver.h"
-#include "riscv-constants.h"
 #include "shadow-uarch-state.h"
-#include "strict-aliasing.h"
+#include "pma-driver.h"
 
 namespace cartesi {
 

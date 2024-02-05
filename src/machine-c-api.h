@@ -23,7 +23,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #else
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #endif
@@ -69,7 +68,7 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_ERROR_FILESYSTEM_ERROR,
     CM_ERROR_ATOMIC_TX_ERROR,
     CM_ERROR_NONEXISTING_LOCAL_TIME,
-    CM_ERROR_AMBIGOUS_LOCAL_TIME,
+    CM_ERROR_AMBIGUOUS_LOCAL_TIME,
     CM_ERROR_FORMAT_ERROR,
     CM_RUNTIME_ERROR_END,
     // Other errors
@@ -1698,7 +1697,7 @@ CM_API int cm_write_uarch_cycle(cm_machine *m, uint64_t val, char **err_msg);
 /// \param m Pointer to valid machine instance
 /// \param val Receives value of the halt flag.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_uarch_halt_flag(const cm_machine *m, bool *val, char **err_msg);
@@ -1706,7 +1705,7 @@ CM_API int cm_read_uarch_halt_flag(const cm_machine *m, bool *val, char **err_ms
 /// \brief Sets the value of the microarchitecture halt flag.
 /// \param m Pointer to valid machine instance
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_set_uarch_halt_flag(cm_machine *m, char **err_msg);
@@ -1714,7 +1713,7 @@ CM_API int cm_set_uarch_halt_flag(cm_machine *m, char **err_msg);
 /// \brief Resets the value of the microarchitecture halt flag.
 /// \param m Pointer to valid machine instance
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_reset_uarch(cm_machine *m, char **err_msg);
@@ -1725,7 +1724,7 @@ CM_API int cm_reset_uarch(cm_machine *m, char **err_msg);
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param access_log Receives the state access log.
 /// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successfull function execution. In case of failure error_msg
+/// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_log_uarch_reset(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,

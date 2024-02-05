@@ -21,14 +21,13 @@
 /// \brief State access implementation that record and logs all accesses
 
 #include "i-uarch-reset-state-access.h"
-#include "uarch-constants.h"
-#include "uarch-machine.h"
+#include "uarch-state.h"
 
 namespace cartesi {
 
 /// \details The uarch_reset_state_access logs all access to the machine state.
 class uarch_reset_state_access : public i_uarch_reset_state_access<uarch_reset_state_access> {
-    uarch_state &m_us;
+    uarch_state &m_us; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 
 public:
     /// \brief Constructor from machine and uarch states.
@@ -48,7 +47,7 @@ public:
     ~uarch_reset_state_access() = default;
 
 private:
-    // Declare interface as friend to it can forward calls to the "overriden" methods.
+    // Declare interface as friend to it can forward calls to the "overridden" methods.
     friend i_uarch_reset_state_access<uarch_reset_state_access>;
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

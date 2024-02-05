@@ -18,7 +18,6 @@
 
 #include <stdexcept>
 
-#include "riscv-constants.h"
 #include "uarch-record-step-state-access.h"
 #include "uarch-replay-step-state-access.h"
 #include "uarch-solidity-compat.h"

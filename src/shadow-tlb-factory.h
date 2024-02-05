@@ -21,7 +21,6 @@
 /// \brief TLB device factory.
 
 #include "pma.h"
-#include "shadow-tlb.h"
 
 namespace cartesi {
 

@@ -15,6 +15,8 @@
 //
 
 #include "complete-merkle-tree.h"
+
+#include <cassert>
 #include <limits>
 #include <utility>
 

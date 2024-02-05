@@ -16,7 +16,6 @@
 
 #include "clua-grpc-machine.h"
 #include "clua-htif.h"
-#include "clua-i-virtual-machine.h"
 #include "clua-machine-util.h"
 #include "clua.h"
 #include "grpc-machine-c-api.h"

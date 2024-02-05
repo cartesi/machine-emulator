@@ -17,7 +17,9 @@
 #ifndef CLUA_MACHINE_H
 #define CLUA_MACHINE_H
 
-#include "clua.h"
+extern "C" {
+#include <lua.h>
+}
 
 /// \file
 /// \brief Cartesi machine Lua interface

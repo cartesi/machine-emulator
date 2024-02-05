@@ -16,21 +16,17 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
-#include <cinttypes>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
 #include <exception>
 #include <iostream>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
-#include <variant>
 
 #include <fcntl.h>
 #include <sys/types.h>
@@ -387,7 +383,7 @@ bool has_arg(const T &t) {
 /// \tparam T Type of argument
 /// \param t Argument
 /// \returns True if it has a value
-/// \details This is the overload for optional paramenters (i.e., wrapped in optional_param)
+/// \details This is the overload for optional parameters (i.e., wrapped in optional_param)
 template <typename T>
 bool has_arg(const cartesi::optional_param<T> &t) {
     return t.has_value();
@@ -424,7 +420,7 @@ size_t last_present_arg(const std::tuple<ARGS...> &tup, std::index_sequence<I...
 /// \brief Counts the number of arguments provided
 /// \tparam ARGS Parameter pack with parameter types
 /// \tparam I Parameter pack with indices of each parameter
-/// \param tup Tupple with all arguments
+/// \param tup Tuple with all arguments
 /// \param i Index sequence
 /// \returns Number of arguments provided
 template <typename... ARGS, size_t... I>
@@ -446,7 +442,7 @@ size_t count_args(const std::tuple<ARGS...> &tup, const std::index_sequence<I...
 
 /// \brief Counts the number of arguments provided
 /// \tparam ARGS Parameter pack with parameter types
-/// \param tup Tupple with all arguments
+/// \param tup Tuple with all arguments
 /// \returns Number of arguments provided
 template <typename... ARGS>
 size_t count_args(const std::tuple<ARGS...> &tup) {

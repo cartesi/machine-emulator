@@ -16,6 +16,7 @@
 
 #include "pristine-merkle-tree.h"
 
+#include <cassert>
 #include <stdexcept>
 
 /// \file

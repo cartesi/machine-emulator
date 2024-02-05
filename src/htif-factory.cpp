@@ -15,9 +15,8 @@
 //
 
 #include "htif-factory.h"
+#include "htif.h"
 #include "machine.h"
-#include "pma-driver.h"
-#include "strict-aliasing.h"
 
 namespace cartesi {
 

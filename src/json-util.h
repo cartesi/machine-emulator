@@ -22,10 +22,9 @@
 #include <type_traits>
 
 // Disable JSON filesystem support because it is not supported in some targets
-#define JSON_HAS_FILESYSTEM 0
+#define JSON_HAS_FILESYSTEM 0 // NOLINT(cppcoreguidelines-macro-usage)
 #include <json.hpp>
 
-#include "base64.h"
 #include "machine-merkle-tree.h"
 #include "machine.h"
 #include "semantic-version.h"
@@ -126,7 +125,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, semantic_version &v
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, machine::csr &value, const std::string &path = "params/");
 
-/// \brief Attempts to load an intepreter_break_reason name from a field in a JSON object
+/// \brief Attempts to load an interpreter_break_reason name from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
 /// \param key Key to load value from
@@ -136,7 +135,7 @@ template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, interpreter_break_reason &value,
     const std::string &path = "params/");
 
-/// \brief Attempts to load an uarch_intepreter_break_reason name from a field in a JSON object
+/// \brief Attempts to load an uarch_interpreter_break_reason name from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
 /// \param key Key to load value from

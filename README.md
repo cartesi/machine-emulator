@@ -73,6 +73,8 @@ sudo luarocks install --lua-version=5.4 luasec
 sudo luarocks install --lua-version=5.4 luaposix
 ```
 
+On MacPorts you need to have LuaRocks packages visible in `LUA_PATH` and `LUA_CPATH` environment variables, you can set them to the proper values by executing the command `eval $(luarocks path)` in your terminal session.
+
 ##### Homebrew
 ```bash
 brew install llvm@15 boost wget pkg-config grpc openssl lua luarocks

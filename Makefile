@@ -196,8 +196,8 @@ distclean: depclean
 env:
 	@echo $(LIBRARY_PATH)
 	@echo "export PATH='$(SRCDIR):$(TESTSDIR)/misc:${PATH}'"
-	@echo "export LUA_PATH_5_4='$(SRCDIR)/?.lua;$(TESTSDIR)/lua/?.lua;$${LUA_PATH_5_4:-;}'"
-	@echo "export LUA_CPATH_5_4='$(SRCDIR)/?.so;$${LUA_CPATH_5_4:-;}'"
+	@echo "export LUA_PATH_5_4='$(SRCDIR)/?.lua;$(TESTSDIR)/lua/?.lua;$${LUA_PATH_5_4:-$${LUA_PATH:-;}}'"
+	@echo "export LUA_CPATH_5_4='$(SRCDIR)/?.so;$${LUA_CPATH_5_4:-$${LUA_CPATH:-;}}'"
 
 doc:
 	cd doc && doxygen Doxyfile

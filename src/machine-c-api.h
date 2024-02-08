@@ -231,10 +231,10 @@ typedef struct {          // NOLINT(modernize-use-using)
 } cm_htif_config;
 
 /// \brief Cmio state configuration
-typedef struct {                           // NOLINT(modernize-use-using)
-    bool has_value;                        ///< Represents whether the rest of the struct have been filled
-    cm_memory_range_config rx_buffer;      ///< RX buffer memory range
-    cm_memory_range_config tx_buffer;      ///< TX buffer memory range
+typedef struct {                      // NOLINT(modernize-use-using)
+    bool has_value;                   ///< Represents whether the rest of the struct have been filled
+    cm_memory_range_config rx_buffer; ///< RX buffer memory range
+    cm_memory_range_config tx_buffer; ///< TX buffer memory range
 } cm_cmio_config;
 
 /// \brief microarchitecture RAM configuration

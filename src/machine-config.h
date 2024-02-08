@@ -117,24 +117,24 @@ struct htif_config final {
 };
 
 /// \brief Cmio configuration
-struct cmio_config {                                       // NOLINT(bugprone-exception-escape)
-    memory_range_config rx_buffer{0x60000000, 2 << 20};      ///< RX buffer
-    memory_range_config tx_buffer{0x60200000, 2 << 20};      ///< TX buffer
+struct cmio_config {                                    // NOLINT(bugprone-exception-escape)
+    memory_range_config rx_buffer{0x60000000, 2 << 20}; ///< RX buffer
+    memory_range_config tx_buffer{0x60200000, 2 << 20}; ///< TX buffer
 };
 
 /// \brief Machine state configuration
 /// NOLINTNEXTLINE(bugprone-exception-escape)
 struct machine_config final {
 
-    processor_config processor{};          ///< Processor state
-    ram_config ram{};                      ///< RAM state
-    dtb_config dtb{};                      ///< DTB state
-    flash_drive_configs flash_drive{};     ///< Flash drives state
-    tlb_config tlb{};                      ///< TLB device state
-    clint_config clint{};                  ///< CLINT device state
-    htif_config htif{};                    ///< HTIF device state
-    uarch_config uarch{};                  ///< microarchitecture configuration
-    std::optional<cmio_config> cmio{};     ///< Cmio state
+    processor_config processor{};      ///< Processor state
+    ram_config ram{};                  ///< RAM state
+    dtb_config dtb{};                  ///< DTB state
+    flash_drive_configs flash_drive{}; ///< Flash drives state
+    tlb_config tlb{};                  ///< TLB device state
+    clint_config clint{};              ///< CLINT device state
+    htif_config htif{};                ///< HTIF device state
+    uarch_config uarch{};              ///< microarchitecture configuration
+    std::optional<cmio_config> cmio{}; ///< Cmio state
 
     /// \brief Get the name where config will be stored in a directory
     static std::string get_config_filename(const std::string &dir);

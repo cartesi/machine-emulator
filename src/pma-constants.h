@@ -103,16 +103,16 @@ enum PMA_ISTART_masks : uint64_t {
 
 /// \brief PMA device ids
 enum class PMA_ISTART_DID {
-    memory = PMA_MEMORY_DID_DEF,                               ///< DID for memory
-    shadow_state = PMA_SHADOW_STATE_DID_DEF,                   ///< DID for shadow device
-    shadow_pmas = PMA_SHADOW_PMAS_DID_DEF,                     ///< DID for shadow pma array device
-    shadow_TLB = PMA_SHADOW_TLB_DID_DEF,                       ///< DID for shadow TLB device
-    flash_drive = PMA_FLASH_DRIVE_DID_DEF,                     ///< DID for drive device
-    CLINT = PMA_CLINT_DID_DEF,                                 ///< DID for CLINT device
-    HTIF = PMA_HTIF_DID_DEF,                                   ///< DID for HTIF device
-    cmio_rx_buffer = PMA_CMIO_RX_BUFFER_DID_DEF,               ///< DID for cmio receive buffer
-    cmio_tx_buffer = PMA_CMIO_TX_BUFFER_DID_DEF,               ///< DID for cmio transmit buffer
-    shadow_uarch = PMA_SHADOW_UARCH_STATE_DID_DEF,             ///< DID for shadow uarch state device
+    memory = PMA_MEMORY_DID_DEF,                   ///< DID for memory
+    shadow_state = PMA_SHADOW_STATE_DID_DEF,       ///< DID for shadow device
+    shadow_pmas = PMA_SHADOW_PMAS_DID_DEF,         ///< DID for shadow pma array device
+    shadow_TLB = PMA_SHADOW_TLB_DID_DEF,           ///< DID for shadow TLB device
+    flash_drive = PMA_FLASH_DRIVE_DID_DEF,         ///< DID for drive device
+    CLINT = PMA_CLINT_DID_DEF,                     ///< DID for CLINT device
+    HTIF = PMA_HTIF_DID_DEF,                       ///< DID for HTIF device
+    cmio_rx_buffer = PMA_CMIO_RX_BUFFER_DID_DEF,   ///< DID for cmio receive buffer
+    cmio_tx_buffer = PMA_CMIO_TX_BUFFER_DID_DEF,   ///< DID for cmio transmit buffer
+    shadow_uarch = PMA_SHADOW_UARCH_STATE_DID_DEF, ///< DID for shadow uarch state device
 };
 
 } // namespace cartesi

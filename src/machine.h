@@ -59,11 +59,11 @@ private:
     machine_runtime_config m_r;         ///< Copy of initialization runtime config
     machine_memory_range_descrs m_mrds; ///< List of memory ranges returned by get_memory_ranges().
 
-    static const pma_entry::flags m_dtb_flags;                   ///< PMA flags used for DTB
-    static const pma_entry::flags m_ram_flags;                   ///< PMA flags used for RAM
-    static const pma_entry::flags m_flash_drive_flags;           ///< PMA flags used for flash drives
-    static const pma_entry::flags m_cmio_rx_buffer_flags;        ///< PMA flags used for cmio rx buffer
-    static const pma_entry::flags m_cmio_tx_buffer_flags;        ///< PMA flags used for cmio tx buffer
+    static const pma_entry::flags m_dtb_flags;            ///< PMA flags used for DTB
+    static const pma_entry::flags m_ram_flags;            ///< PMA flags used for RAM
+    static const pma_entry::flags m_flash_drive_flags;    ///< PMA flags used for flash drives
+    static const pma_entry::flags m_cmio_rx_buffer_flags; ///< PMA flags used for cmio rx buffer
+    static const pma_entry::flags m_cmio_tx_buffer_flags; ///< PMA flags used for cmio tx buffer
 
     /// \brief Allocates a new PMA entry.
     /// \param pma PMA entry to add to machine.

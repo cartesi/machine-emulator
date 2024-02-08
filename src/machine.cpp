@@ -84,21 +84,21 @@ const pma_entry::flags machine::m_flash_drive_flags{
 };
 
 const pma_entry::flags machine::m_cmio_rx_buffer_flags{
-    true,                            // R
-    false,                           // W
-    false,                           // X
-    true,                            // IR
-    true,                            // IW
-    PMA_ISTART_DID::cmio_rx_buffer   // DID
+    true,                          // R
+    false,                         // W
+    false,                         // X
+    true,                          // IR
+    true,                          // IW
+    PMA_ISTART_DID::cmio_rx_buffer // DID
 };
 
 const pma_entry::flags machine::m_cmio_tx_buffer_flags{
-    true,                            // R
-    true,                            // W
-    false,                           // X
-    true,                            // IR
-    true,                            // IW
-    PMA_ISTART_DID::cmio_tx_buffer   // DID
+    true,                          // R
+    true,                          // W
+    false,                         // X
+    true,                          // IR
+    true,                          // IW
+    PMA_ISTART_DID::cmio_tx_buffer // DID
 };
 
 pma_entry machine::make_memory_range_pma_entry(const std::string &description, const memory_range_config &c) {
@@ -342,8 +342,8 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
         if (!m_c.htif.yield_automatic || !m_c.htif.yield_manual) {
             throw std::invalid_argument{"cmio device requires automatic and manual yield"};
         }
-        if (m_c.cmio->rx_buffer.length == 0 || m_c.cmio->rx_buffer.start == 0 ||
-            m_c.cmio->tx_buffer.length == 0 || m_c.cmio->tx_buffer.start == 0) {
+        if (m_c.cmio->rx_buffer.length == 0 || m_c.cmio->rx_buffer.start == 0 || m_c.cmio->tx_buffer.length == 0 ||
+            m_c.cmio->tx_buffer.start == 0) {
             throw std::invalid_argument{"incomplete cmio configuration"};
         }
         register_pma_entry(make_cmio_tx_buffer_pma_entry(m_c.cmio->tx_buffer));

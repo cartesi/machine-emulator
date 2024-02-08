@@ -882,11 +882,11 @@ static void push_cm_memory_range_config(lua_State *L, const cm_memory_range_conf
 /// \param L Lua state.
 /// \param r Cmio config to be pushed.
 static void push_cm_cmio_config(lua_State *L, const cm_cmio_config *r) {
-    lua_newtable(L);                                    // cmio
-    push_cm_memory_range_config(L, &r->rx_buffer);      // cmio rx_buffer
-    lua_setfield(L, -2, "rx_buffer");                   // cmio
-    push_cm_memory_range_config(L, &r->tx_buffer);      // cmio tx_buffer
-    lua_setfield(L, -2, "tx_buffer");                   // cmio
+    lua_newtable(L);                               // cmio
+    push_cm_memory_range_config(L, &r->rx_buffer); // cmio rx_buffer
+    lua_setfield(L, -2, "rx_buffer");              // cmio
+    push_cm_memory_range_config(L, &r->tx_buffer); // cmio tx_buffer
+    lua_setfield(L, -2, "tx_buffer");              // cmio
 }
 
 /// \brief Pushes cm_flash_drive_configs to the Lua stack
@@ -956,8 +956,8 @@ void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
     push_cm_uarch_config(L, &c->uarch);              // uarch
     lua_setfield(L, -2, "uarch");                    // config
     if (c->cmio.has_value) {
-        push_cm_cmio_config(L, &c->cmio);            // config cmio
-        lua_setfield(L, -2, "cmio");                 // config
+        push_cm_cmio_config(L, &c->cmio); // config cmio
+        lua_setfield(L, -2, "cmio");      // config
     }
 }
 

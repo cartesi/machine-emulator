@@ -47,17 +47,17 @@
 #define PMA_MAX_DEF 32            ///< Maximum number of PMAs
 #define PMA_TLB_SIZE_DEF 256      ///< Number for entries per TLB type
 
-#define PMA_MEMORY_DID_DEF 0                 ///< Device ID for memory
-#define PMA_SHADOW_STATE_DID_DEF 1           ///< Device ID for shadow state device
-#define PMA_SHADOW_PMAS_DID_DEF 2            ///< Device ID for shadow pma array device
-#define PMA_FLASH_DRIVE_DID_DEF 3            ///< Device ID for flash drive device
-#define PMA_CLINT_DID_DEF 4                  ///< Device ID for CLINT device
-#define PMA_HTIF_DID_DEF 5                   ///< Device ID for HTIF device
-#define PMA_SHADOW_TLB_DID_DEF 6             ///< Device ID for shadow TLB device
-#define PMA_CMIO_RX_BUFFER_DID_DEF 7         ///< Device ID for cmio RX buffer
-#define PMA_CMIO_TX_BUFFER_DID_DEF 8         ///< Device ID for cmio TX buffer
-#define PMA_DHD_DID_DEF 9                    ///< Device ID for DHD device
-#define PMA_SHADOW_UARCH_STATE_DID_DEF 10    ///< Device ID for uarch shadow state device
+#define PMA_MEMORY_DID_DEF 0              ///< Device ID for memory
+#define PMA_SHADOW_STATE_DID_DEF 1        ///< Device ID for shadow state device
+#define PMA_SHADOW_PMAS_DID_DEF 2         ///< Device ID for shadow pma array device
+#define PMA_FLASH_DRIVE_DID_DEF 3         ///< Device ID for flash drive device
+#define PMA_CLINT_DID_DEF 4               ///< Device ID for CLINT device
+#define PMA_HTIF_DID_DEF 5                ///< Device ID for HTIF device
+#define PMA_SHADOW_TLB_DID_DEF 6          ///< Device ID for shadow TLB device
+#define PMA_CMIO_RX_BUFFER_DID_DEF 7      ///< Device ID for cmio RX buffer
+#define PMA_CMIO_TX_BUFFER_DID_DEF 8      ///< Device ID for cmio TX buffer
+#define PMA_DHD_DID_DEF 9                 ///< Device ID for DHD device
+#define PMA_SHADOW_UARCH_STATE_DID_DEF 10 ///< Device ID for uarch shadow state device
 
 // helper for using UINT64_C with defines
 #ifndef EXPAND_UINT64_C

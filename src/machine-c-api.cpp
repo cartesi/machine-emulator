@@ -283,10 +283,8 @@ static std::optional<cartesi::cmio_config> convert_from_c(const cm_cmio_config *
     if (!c_config->has_value) {
         return {};
     }
-    cartesi::cmio_config new_cpp_cmio_config{
-        convert_from_c(&c_config->rx_buffer),
-        convert_from_c(&c_config->tx_buffer)
-    };
+    cartesi::cmio_config new_cpp_cmio_config{convert_from_c(&c_config->rx_buffer),
+        convert_from_c(&c_config->tx_buffer)};
     return new_cpp_cmio_config;
 }
 

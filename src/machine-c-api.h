@@ -298,11 +298,16 @@ typedef struct { // NOLINT(modernize-use-using)
     size_t count;
 } cm_virtio_config_array;
 
+/// \brief CMIO buffer configuration
+typedef struct {                // NOLINT(modernize-use-using)
+    bool shared;                ///< Target changes to range affect image file?
+    const char *image_filename; ///< Memory range image file name
+} cm_cmio_buffer_config;
+
 /// \brief Cmio state configuration
-typedef struct {                      // NOLINT(modernize-use-using)
-    bool has_value;                   ///< Represents whether the rest of the struct have been filled
-    cm_memory_range_config rx_buffer; ///< RX buffer memory range
-    cm_memory_range_config tx_buffer; ///< TX buffer memory range
+typedef struct {                     // NOLINT(modernize-use-using)
+    cm_cmio_buffer_config rx_buffer; ///< RX buffer configuration
+    cm_cmio_buffer_config tx_buffer; ///< TX buffer configuration
 } cm_cmio_config;
 
 /// \brief microarchitecture RAM configuration
@@ -1899,6 +1904,64 @@ CM_API int cm_get_memory_ranges(cm_machine *m, cm_memory_range_descr_array **mrd
 /// \param mrda Pointer to array of memory range descriptions to delete.
 /// \returns void
 CM_API void cm_delete_memory_range_descr_array(cm_memory_range_descr_array *mrda);
+
+/// \brief Sends cmio response
+/// \param m Pointer to valid machine instance
+/// \param reason Reason for sending the response.
+/// \param data Response data to send
+/// \param length Length of response data.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring
+/// \returns 0 for success, non zero code for error
+CM_API int cm_send_cmio_response(cm_machine *m, uint16_t reason, const unsigned char *data, size_t length,
+    char **err_msg);
+
+/// \brief Send cmio response and returns an access log
+/// \param m Pointer to valid machine instance
+/// \param reason Reason for sending the response.
+/// \param data Response data to send.
+/// \param length Length of response data.
+/// \param log_type Type of access log to generate.
+/// \param one_based Use 1-based indices when reporting errors.
+/// \param access_log Receives the state access log.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring
+/// \returns 0 for success, non zero code for error
+CM_API int cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const unsigned char *data, size_t length,
+    cm_access_log_type log_type, bool one_based, cm_access_log **access_log, char **err_msg);
+
+/// \brief Checks the internal consistency of an access log produced by cm_send_cmio_response
+/// \param reason Reason for sending the response.
+/// \param data The response sent when the log was generated.
+/// \param length Length of response.
+/// \param log State access log to be verified.
+/// \param runtime_config Runtime configuration of the machine.
+/// \param one_based Use 1-based indices when reporting errors.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring
+/// \returns 0 for success, non zero code for error
+CM_API int cm_verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, size_t length,
+    const cm_access_log *log, const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
+
+/// \brief Checks the validity of state transitions caused by cm_send_cmio_response
+/// \param reason Reason for sending the response.
+/// \param data The response sent when the log was generated.
+/// \param length Length of response
+/// \param root_hash_before State hash before load.
+/// \param log State access log to be verified.
+/// \param root_hash_after State hash after load.
+/// \param runtime_config Runtime configuration of the machine.
+/// \param one_based Use 1-based indices when reporting errors.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring
+/// \returns 0 for success, non zero code for error
+CM_API int cm_verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, size_t length,
+    const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after,
+    const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
 
 #ifdef __cplusplus
 }

@@ -266,4 +266,14 @@ function test_util.calculate_uarch_state_hash(machine)
     return tree:get_root_hash()
 end
 
+-- Executes a function and asserts that it throws an error and that the error message matches the expected pattern
+function test_util.assert_error(expected_error_text_pattern, fn)
+    local status, actual_error_text = pcall(fn)
+    assert(status == false, "Expected error to be thrown, but it was not")
+    assert(
+        actual_error_text:match(expected_error_text_pattern),
+        string.format("Expected error to match '%s', but it was '%s'", expected_error_text_pattern, actual_error_text)
+    )
+end
+
 return test_util

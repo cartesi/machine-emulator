@@ -263,6 +263,8 @@ local function build_machine_config(config_options)
         processor = config_options.processor or initial_csr_values,
         rom = { image_filename = test_util.images_path .. "rom.bin" },
         ram = { length = 1 << 20 },
+        htif = config_options.htif or nil,
+        cmio = config_options.cmio or nil,
         uarch = config_options.uarch or {
             processor = {
                 x = initial_uarch_xreg_values,
@@ -397,6 +399,14 @@ local function test_config_memory_range(range, name)
     )
 end
 
+local function test_cmio_buffer_config(buffer_config, name)
+    assert(buffer_config.shared == nil or type(buffer_config.shared) == "boolean", "invalid " .. name .. ".shared")
+    assert(
+        buffer_config.image_filename == nil or type(buffer_config.image_filename) == "string",
+        "invalid " .. name .. ".image_filename"
+    )
+end
+
 local function test_config(config)
     assert(type(config) == "table", "config not a table")
     for _, field in ipairs({ "processor", "htif", "clint", "plic", "flash_drive", "ram", "dtb" }) do
@@ -431,8 +441,8 @@ local function test_config(config)
     end
     local cmio = config.cmio
     if config.cmio then
-        test_config_memory_range(cmio.rx_buffer)
-        test_config_memory_range(cmio.tx_buffer)
+        test_cmio_buffer_config(cmio.rx_buffer, "cmio.rx_buffer")
+        test_cmio_buffer_config(cmio.tx_buffer, "cmio.tx_buffer")
     end
 end
 
@@ -933,6 +943,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
     "Testing reset_uarch without logging",
     function(machine) test_reset_uarch(machine, false, false, false) end
 )
+
 for _, with_proofs in ipairs({ true, false }) do
     for _, with_annotations in ipairs({ true, false }) do
         test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
@@ -1110,7 +1121,10 @@ do_test("Test unhappy paths of verify_uarch_step_state_transition", function(mac
         function(log) log.accesses[1].read_hash = bad_hash end
     )
     assert_error("hash length must be 32 bytes", function(log) log.accesses[#log.accesses].read_hash = nil end)
-    assert_error("access log was not fully consumed", function(log) log.accesses[#log.accesses + 1] = log.accesses[1] end)
+    assert_error(
+        "access log was not fully consumed",
+        function(log) log.accesses[#log.accesses + 1] = log.accesses[1] end
+    )
     assert_error("hash length must be 32 bytes", function(log) log.accesses[#log.accesses].written_hash = nil end)
     assert_error(
         "invalid written %(expected string with 2%^3 bytes%)",
@@ -1172,5 +1186,316 @@ do_test("uarch ecall putchar should print char to console", function()
     print("--------------------------")
     assert(output == expected_output, "Output does not match expected output:\n" .. expected_output)
 end)
+
+print("\n\ntesting send cmio response ")
+
+do_test("send_cmio_response fails if iflags.Y is not set", function(machine)
+    local reason = 1
+    local data = string.rep("a", 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
+    machine:reset_iflags_Y()
+    assert(machine:read_iflags_Y() == false)
+    test_util.assert_error("iflags.Y is not set", function() machine:send_cmio_response(reason, data) end)
+    test_util.assert_error("iflags.Y is not set", function() machine:log_send_cmio_response(reason, data, {}) end)
+end)
+
+do_test("send_cmio_response fails if data is too big", function(machine)
+    local reason = 1
+    local data_too_big = string.rep("a", 1 + (1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE))
+    machine:set_iflags_Y()
+    test_util.assert_error(
+        "address range not entirely in memory PMA",
+        function() machine:send_cmio_response(reason, data_too_big) end
+    )
+    test_util.assert_error(
+        "address range not entirely in memory PMA",
+        function() machine:log_send_cmio_response(reason, data_too_big, {}) end
+    )
+end)
+
+-- asserts that an access has the expected key  values
+local function assert_access(accesses, index, expected_key_and_values)
+    assert(index <= #accesses)
+    for k, v in pairs(expected_key_and_values) do
+        local a = accesses[index]
+        assert(a[k] == v, "access." .. tostring(index) .. " should be " .. tostring(v) .. " but is " .. tostring(a[k]))
+    end
+end
+
+local function test_send_cmio_input_with_different_arguments()
+    local data = string.rep("a", 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
+    local reason = 1
+    local max_rx_buffer_len = 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE
+    local data_hash = test_util.merkle_hash(data, 0, cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
+    local all_zeros = string.rep("\0", max_rx_buffer_len)
+    local all_zeros_hash = test_util.merkle_hash(all_zeros, 0, cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
+    -- prepares and asserts the state before send_cmio_response is called
+    local function assert_before_cmio_response_sent(machine)
+        machine:set_iflags_Y()
+        -- initial rx buffer should be all zeros
+        assert(machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, max_rx_buffer_len) == all_zeros)
+    end
+    -- asserts that the machine state is as expected after send_cmio_response is called
+    local function assert_after_cmio_response_sent(machine)
+        -- rx buffer should now contain the data
+        assert(machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, max_rx_buffer_len) == data)
+        -- iflags.Y should be cleared
+        assert(machine:read_iflags_Y() == false)
+        -- fromhost should reflect the reason and data length
+        local expected_fromhost = ((reason & 0xffff) << 32) | (#data & 0xffffffff)
+        assert(machine:read_htif_fromhost() == expected_fromhost)
+    end
+    do_test("send_cmio_response happy path", function(machine)
+        assert_before_cmio_response_sent(machine)
+        machine:send_cmio_response(reason, data)
+        assert_after_cmio_response_sent(machine)
+    end)
+    for _, proofs in ipairs({ false, true }) do
+        for _, large_data in ipairs({ false, true }) do
+            local annotations = true
+            do_test(
+                string.format(
+                    "log_send_cmio_response happy path with proofs=%s, annotations=%s, large_data=%s",
+                    proofs,
+                    annotations,
+                    large_data
+                ),
+                function(machine)
+                    local log_type = { proofs = proofs, annotations = annotations, large_data = large_data }
+                    local module = cartesi
+                    if machine_type ~= "local" then
+                        if not remote then remote = connect() end
+                        module = remote
+                    end
+                    assert_before_cmio_response_sent(machine)
+                    local root_hash_before = proofs and machine:get_root_hash() or nil
+                    local log = machine:log_send_cmio_response(reason, data, log_type)
+                    assert_after_cmio_response_sent(machine)
+                    local root_hash_after = proofs and machine:get_root_hash() or nil
+                    -- check log
+                    local accesses = log.accesses
+                    assert(#accesses == 5)
+                    assert_access(accesses, 1, {
+                        type = "read",
+                        address = module.machine.get_csr_address("iflags"),
+                        log2_size = 3,
+                    })
+                    assert_access(accesses, 2, {
+                        type = "write",
+                        address = cartesi.PMA_CMIO_RX_BUFFER_START,
+                        log2_size = cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE,
+                        read_hash = all_zeros_hash,
+                        read = large_data and all_zeros or nil,
+                        written_hash = data_hash,
+                        written = large_data and data or nil,
+                    })
+                    assert_access(accesses, 3, {
+                        type = "write",
+                        address = module.machine.get_csr_address("htif_fromhost"),
+                        log2_size = 3,
+                    })
+                    assert_access(accesses, 4, {
+                        type = "read",
+                        address = module.machine.get_csr_address("iflags"),
+                        log2_size = 3,
+                    })
+                    assert_access(accesses, 5, {
+                        type = "write",
+                        address = module.machine.get_csr_address("iflags"),
+                        log2_size = 3,
+                    })
+                    -- ask machine to verify the log
+                    module.machine.verify_send_cmio_response_log(reason, data, log, {})
+                    if proofs then
+                        -- ask machine to verify state transitions
+                        module.machine.verify_send_cmio_response_state_transition(
+                            reason,
+                            data,
+                            root_hash_before,
+                            log,
+                            root_hash_after,
+                            log_type,
+                            {}
+                        )
+                    end
+                end
+            )
+        end
+    end
+end
+test_send_cmio_input_with_different_arguments()
+
+do_test("Dump of log produced by send_cmio_response should match", function(machine)
+    machine:set_iflags_Y()
+    local data = "0123456789"
+    local reason = 7
+    local log = machine:log_send_cmio_response(reason, data, { proofs = true, annotations = true, large_data = false })
+    local expected_dump = "begin send cmio response\n"
+        .. "  1: read iflags.Y@0x2e8(744): 0x1a(26)\n"
+        .. '  2: write cmio rx buffer@0x60000000(1610612736): hash:"4d9470a8"(2^4 bytes) -> '
+        .. 'hash:"5d29fb90"(2^4 bytes)\n'
+        .. "  3: write htif.fromhost@0x318(792): 0x0(0) -> 0x70000000a(30064771082)\n"
+        .. "  4: read iflags.Y@0x2e8(744): 0x1a(26)\n"
+        .. "  5: write iflags.Y@0x2e8(744): 0x1a(26) -> 0x18(24)\n"
+        .. "end send cmio response\n"
+    local tmpname = os.tmpname()
+    local deleter = {}
+    setmetatable(deleter, { __gc = function() os.remove(tmpname) end })
+    local tmp <close> = io.open(tmpname, "w+")
+    util.dump_log(log, tmp)
+    tmp:seek("set", 0)
+    local actual_dump = tmp:read("*all")
+    print("Output of log_send_cmio_response dump:")
+    print("--------------------------")
+    print(actual_dump)
+    print("--------------------------")
+    assert(actual_dump == expected_dump, "Dump of uarch_reset_state does not match expected:\n" .. expected_dump)
+end)
+
+do_test("send_cmio_response with different data sizes", function(machine)
+    local test_cases = {
+        { data_len = 1, write_len = 8 },
+        { data_len = 8, write_len = 8 },
+        { data_len = 9, write_len = 16 },
+        { data_len = 16, write_len = 16 },
+        { data_len = 1 << 20, write_len = 1 << 20 },
+        { data_len = (1 << 20) + 1, write_len = 1 << 21 },
+        { data_len = 1 << 21, write_len = 1 << 21 },
+    }
+    local rx_buffer_size = 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE
+    local initial_rx_buffer = string.rep("x", rx_buffer_size)
+    local reason = 1
+    local function padded_data(data, len, padding) return data .. string.rep(padding, len - #data) end
+    for _, case in ipairs(test_cases) do
+        -- test logging and lo not logging
+        for _, logging in ipairs({ false, true }) do
+            print(
+                string.format(
+                    "   testing sending cmio response of %s bytes causing a write of %s bytes with logging=%s ",
+                    case.data_len,
+                    case.write_len,
+                    logging
+                )
+            )
+            machine:write_memory(cartesi.PMA_CMIO_RX_BUFFER_START, initial_rx_buffer)
+            assert(machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, rx_buffer_size) == initial_rx_buffer)
+            local data = string.rep("a", case.data_len)
+            machine:set_iflags_Y()
+            if logging then
+                local log = machine:log_send_cmio_response(reason, data, {})
+                assert(#log.accesses == 5, string.format("log should have 5 accesses, but it has %s", #log.accesses))
+                assert(log.accesses[2].type == "write", "access 2 should be a write")
+                assert(1 << log.accesses[2].log2_size == case.write_len, "log2_size of write access does not match")
+            else
+                machine:send_cmio_response(reason, data)
+            end
+            local expected_rx_buffer = padded_data(data, case.write_len, "\0")
+                .. string.rep("x", rx_buffer_size - case.write_len)
+            local new_rx_buffer = machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, rx_buffer_size)
+            assert(
+                new_rx_buffer == expected_rx_buffer,
+                string.format(
+                    "rx_buffer\n'%s...'\n of length %s does not match\nexpected\n'%s...' of length %s",
+                    string.sub(new_rx_buffer, 1, 80),
+                    #new_rx_buffer,
+                    string.sub(expected_rx_buffer, 1, 80),
+                    #expected_rx_buffer
+                )
+            )
+        end
+    end
+end)
+
+do_test("send_cmio_response of zero bytes", function(machine)
+    local module = cartesi
+    if machine_type ~= "local" then
+        if not remote then remote = connect() end
+        module = remote
+    end
+    local rx_buffer_size = 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE
+    local initial_rx_buffer = string.rep("x", rx_buffer_size)
+    machine:write_memory(cartesi.PMA_CMIO_RX_BUFFER_START, initial_rx_buffer)
+    assert(machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, rx_buffer_size) == initial_rx_buffer)
+    machine:set_iflags_Y()
+    local reason = 1
+    local data = ""
+    machine:send_cmio_response(reason, data)
+    local new_rx_buffer = machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, rx_buffer_size)
+    assert(new_rx_buffer == initial_rx_buffer, "rx_buffer should not have been modified")
+    assert(machine:read_iflags_Y() == false, "iflags.Y should be cleared")
+    -- log and verify
+    machine:set_iflags_Y()
+    local hash_before = machine:get_root_hash()
+    local log = machine:log_send_cmio_response(reason, data, { proofs = true })
+    assert(#log.accesses == 4, "log should have 4 accesses")
+    local hash_after = machine:get_root_hash()
+    module.machine.verify_send_cmio_response_log(reason, data, log, {})
+    module.machine.verify_send_cmio_response_state_transition(reason, data, hash_before, log, hash_after, {}, {})
+end)
+
+local function test_cmio_buffers_backed_by_files()
+    local rx_filename = os.tmpname()
+    local tx_filename = os.tmpname()
+    local rx_init_data = string.rep("R", 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
+    local tx_init_data = string.rep("T", 1 << cartesi.PMA_CMIO_TX_BUFFER_LOG2_SIZE)
+    local deleter = {}
+    setmetatable(deleter, {
+        __gc = function()
+            os.remove(rx_filename)
+            os.remove(tx_filename)
+        end,
+    })
+    -- initialize test cmio files
+    local rx = io.open(rx_filename, "w+")
+    rx:write(rx_init_data)
+    rx:close()
+    local tx = io.open(tx_filename, "w+")
+    tx:write(tx_init_data)
+    tx:close()
+    local tx_new_data = string.rep("x", 1 << cartesi.PMA_CMIO_TX_BUFFER_LOG2_SIZE)
+    local rx_new_data = string.rep("y", 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
+
+    test_util.make_do_test(build_machine, machine_type, {
+        cmio = {
+            rx_buffer = { image_filename = rx_filename, shared = false },
+            tx_buffer = { image_filename = tx_filename, shared = false },
+        },
+    })("cmio buffers initialized from backing files", function(machine)
+        local rx_data = machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
+        assert(rx_data == rx_init_data, "rx buffer data does not match")
+        local tx_data = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, 1 << cartesi.PMA_CMIO_TX_BUFFER_LOG2_SIZE)
+        assert(tx_data == tx_init_data, "tx buffer data does not match")
+        -- write new data to buffers to later assert that it was not written to the files
+        machine:write_memory(cartesi.PMA_CMIO_RX_BUFFER_START, rx_new_data)
+        machine:write_memory(cartesi.PMA_CMIO_TX_BUFFER_START, tx_new_data)
+    end)
+    -- the shared=false from last test should prevent saving the new data to files
+    test_util.make_do_test(build_machine, machine_type, {
+        cmio = {
+            rx_buffer = { image_filename = rx_filename, shared = true },
+            tx_buffer = { image_filename = tx_filename, shared = true },
+        },
+    })("cmio buffers initialized from backing files should not change", function(machine)
+        local rx_data = machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
+        assert(rx_data == rx_init_data, "rx buffer data does not match")
+        local tx_data = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, 1 << cartesi.PMA_CMIO_TX_BUFFER_LOG2_SIZE)
+        assert(tx_data == tx_init_data, "tx buffer data does not match")
+        -- write new data to buffers to later assert that it was written to the files
+        machine:write_memory(cartesi.PMA_CMIO_RX_BUFFER_START, rx_new_data)
+        machine:write_memory(cartesi.PMA_CMIO_TX_BUFFER_START, tx_new_data)
+    end)
+    -- the shared=true from last test should save memory changes to files
+    test_util.make_do_test(build_machine, machine_type, {
+        cmio = {
+            rx_buffer = { image_filename = rx_filename, shared = false },
+            tx_buffer = { image_filename = tx_filename, shared = false },
+        },
+    })("cmio buffer files should be modified by last write_memory", function(machine)
+        local rx_data = machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
+        assert(rx_data == rx_new_data, "rx buffer data does not match")
+        local tx_data = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, 1 << cartesi.PMA_CMIO_TX_BUFFER_LOG2_SIZE)
+        assert(tx_data == tx_new_data, "tx buffer data does not match")
+    end)
+end
+test_cmio_buffers_backed_by_files()
 
 print("\n\nAll machine binding tests for type " .. machine_type .. " passed")

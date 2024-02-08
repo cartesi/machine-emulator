@@ -217,7 +217,7 @@ const std::string &jsonrpc_mg_mgr::get_remote_parent_address(void) const {
 }
 
 void jsonrpc_mg_mgr::snapshot(void) {
-    // Simulate the snapshot operation as in the gRPC server
+    // Simulate the snapshot operation as in the jsonrpc server
     // If we are forked, we kill the parent server and replace its address with the child's,
     // then we behave as if we were not forked
     if (is_forked()) {
@@ -233,7 +233,7 @@ void jsonrpc_mg_mgr::snapshot(void) {
 }
 
 void jsonrpc_mg_mgr::rollback() {
-    // Simulate the rollback operation as in the gRPC server
+    // Simulate the rollback operation as in the jsonrpc server
     // If we are not forked, we throw an exception
     if (!is_forked()) {
         throw std::out_of_range("remote server is not forked");
@@ -942,6 +942,45 @@ machine_memory_range_descrs jsonrpc_virtual_machine::do_get_memory_ranges(void) 
     machine_memory_range_descrs result;
     jsonrpc_request(m_mgr->get_mgr(), m_mgr->get_remote_address(), "machine.get_memory_ranges", std::tie(), result);
     return result;
+}
+
+void jsonrpc_virtual_machine::do_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length) {
+    bool result = false;
+    std::string b64 = cartesi::encode_base64(data, length);
+    jsonrpc_request(m_mgr->get_mgr(), m_mgr->get_remote_address(), "machine.send_cmio_response", std::tie(reason, b64),
+        result);
+}
+
+access_log jsonrpc_virtual_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
+    const access_log::type &log_type, bool one_based) {
+    not_default_constructible<access_log> result;
+    std::string b64 = cartesi::encode_base64(data, length);
+    jsonrpc_request(m_mgr->get_mgr(), m_mgr->get_remote_address(), "machine.log_send_cmio_response",
+        std::tie(reason, b64, log_type, one_based), result);
+    if (!result.has_value()) {
+        throw std::runtime_error("jsonrpc server error: missing result");
+    }
+    return std::move(result).value();
+}
+
+void jsonrpc_virtual_machine::verify_send_cmio_response_log(const jsonrpc_mg_mgr_ptr &mgr, uint16_t reason,
+    const unsigned char *data, size_t length, const access_log &log, const machine_runtime_config &runtime,
+    bool one_based) {
+    bool result = false;
+    std::string b64_data = cartesi::encode_base64(data, length);
+    jsonrpc_request(mgr->get_mgr(), mgr->get_remote_address(), "machine.verify_send_cmio_response_log",
+        std::tie(reason, b64_data, log, runtime, one_based), result);
+}
+
+void jsonrpc_virtual_machine::verify_send_cmio_response_state_transition(const jsonrpc_mg_mgr_ptr &mgr, uint16_t reason,
+    const unsigned char *data, size_t length, const hash_type &root_hash_before, const access_log &log,
+    const hash_type &root_hash_after, const machine_runtime_config &runtime, bool one_based) {
+    bool result = false;
+    std::string b64_data = cartesi::encode_base64(data, length);
+    auto b64_root_hash_before = encode_base64(root_hash_before);
+    auto b64_root_hash_after = encode_base64(root_hash_after);
+    jsonrpc_request(mgr->get_mgr(), mgr->get_remote_address(), "machine.verify_send_cmio_response_state_transition",
+        std::tie(reason, b64_data, b64_root_hash_before, log, b64_root_hash_after, runtime, one_based), result);
 }
 
 #pragma GCC diagnostic pop

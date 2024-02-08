@@ -1619,6 +1619,137 @@ static json jsonrpc_machine_get_memory_ranges_handler(const json &j, mg_connecti
     return jsonrpc_response_ok(j, h->machine->get_memory_ranges());
 }
 
+/// \brief JSONRPC handler for the machine.send_cmio_response method
+/// \param j JSON request object
+/// \param con Mongoose connection
+/// \param h Handler data
+/// \returns JSON response object
+static json jsonrpc_machine_send_cmio_response_handler(const json &j, mg_connection *con, http_handler_data *h) {
+    (void) con;
+    if (!h->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    static const char *param_name[] = {"reason", "data"};
+    auto args = parse_args<uint16_t, std::string>(j, param_name);
+    auto bin = cartesi::decode_base64(std::get<1>(args));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    h->machine->send_cmio_response(std::get<0>(args), reinterpret_cast<unsigned char *>(bin.data()), bin.size());
+    return jsonrpc_response_ok(j);
+}
+
+static json jsonrpc_machine_log_send_cmio_response_handler(const json &j, mg_connection *con, http_handler_data *h) {
+    (void) con;
+    if (!h->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    static const char *param_name[] = {"reason", "data", "log_type", "one_based"};
+    auto args = parse_args<uint16_t, std::string, cartesi::not_default_constructible<cartesi::access_log::type>,
+        cartesi::optional_param<bool>>(j, param_name);
+    auto bin = cartesi::decode_base64(std::get<1>(args));
+    json s;
+    // NOLINTBEGIN(bugprone-unchecked-optional-access)
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
+    switch (count_args(args)) {
+        case 3:
+            s = jsonrpc_response_ok(j,
+                h->machine->log_send_cmio_response(std::get<0>(args), reinterpret_cast<unsigned char *>(bin.data()),
+                    bin.size(), std::get<2>(args).value()));
+            break;
+        case 4:
+            s = jsonrpc_response_ok(j,
+                h->machine->log_send_cmio_response(std::get<0>(args), reinterpret_cast<unsigned char *>(bin.data()),
+                    bin.size(), std::get<2>(args).value(), std::get<3>(args).value()));
+            break;
+        default:
+            throw std::runtime_error{"error detecting number of arguments"};
+    }
+    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
+    // NOLINTEND(bugprone-unchecked-optional-access)
+    return s;
+}
+
+/// \brief JSONRPC handler for the machine.verify_send_cmio_response_log method
+/// \param j JSON request object
+/// \param con Mongoose connection
+/// \param h Handler data
+/// \returns JSON response object
+static json jsonrpc_machine_verify_send_cmio_response_log_handler(const json &j, mg_connection *con,
+    http_handler_data *h) {
+    (void) con;
+    (void) h;
+    static const char *param_name[] = {"reason", "data", "log", "runtime", "one_based"};
+    auto args = parse_args<uint16_t, std::string, cartesi::not_default_constructible<cartesi::access_log>,
+        cartesi::optional_param<cartesi::machine_runtime_config>, cartesi::optional_param<bool>>(j, param_name);
+    auto bin = cartesi::decode_base64(std::get<1>(args));
+    ;
+    // NOLINTBEGIN(bugprone-unchecked-optional-access)
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
+    switch (count_args(args)) {
+        case 3:
+            cartesi::machine::verify_send_cmio_response_log(std::get<0>(args),
+                reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<2>(args).value());
+            break;
+        case 4:
+            cartesi::machine::verify_send_cmio_response_log(std::get<0>(args),
+                reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<2>(args).value(),
+                std::get<3>(args).value());
+            break;
+        case 5:
+            cartesi::machine::verify_send_cmio_response_log(std::get<0>(args),
+                reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<2>(args).value(),
+                std::get<3>(args).value(), std::get<4>(args).value());
+            break;
+        default:
+            throw std::runtime_error{"error detecting number of arguments"};
+    }
+    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
+    // NOLINTEND(bugprone-unchecked-optional-access)
+    return jsonrpc_response_ok(j);
+}
+
+/// \brief JSONRPC handler for the machine.verify_send_cmio_response_state_transition method
+/// \param j JSON request object
+/// \param con Mongoose connection
+/// \param h Handler data
+/// \returns JSON response object
+static json jsonrpc_machine_verify_send_cmio_response_state_transition_handler(const json &j, mg_connection *con,
+    http_handler_data *h) {
+    (void) con;
+    (void) h;
+    static const char *param_name[] = {"reason", "data", "root_hash_before", "log", "root_hash_after", "runtime",
+        "one_based"};
+    auto args = parse_args<uint16_t, std::string, cartesi::machine_merkle_tree::hash_type,
+        cartesi::not_default_constructible<cartesi::access_log>, cartesi::machine_merkle_tree::hash_type,
+        cartesi::optional_param<cartesi::machine_runtime_config>, cartesi::optional_param<bool>>(j, param_name);
+
+    auto bin = cartesi::decode_base64(std::get<1>(args));
+    ;
+    // NOLINTBEGIN(bugprone-unchecked-optional-access)
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
+    switch (count_args(args)) {
+        case 5:
+            cartesi::machine::verify_send_cmio_response_state_transition(std::get<0>(args),
+                reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<2>(args), std::get<3>(args).value(),
+                std::get<4>(args));
+            break;
+        case 6:
+            cartesi::machine::verify_send_cmio_response_state_transition(std::get<0>(args),
+                reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<2>(args), std::get<3>(args).value(),
+                std::get<4>(args), std::get<5>(args).value());
+            break;
+        case 7:
+            cartesi::machine::verify_send_cmio_response_state_transition(std::get<0>(args),
+                reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<2>(args), std::get<3>(args).value(),
+                std::get<4>(args), std::get<5>(args).value(), std::get<6>(args).value());
+            break;
+        default:
+            throw std::runtime_error{"error detecting number of arguments"};
+    }
+    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
+    // NOLINTEND(bugprone-unchecked-optional-access)
+    return jsonrpc_response_ok(j);
+}
+
 /// \brief Sends a JSONRPC response through the Mongoose connection
 /// \param con Mongoose connection
 /// \param j JSON response object
@@ -1699,6 +1830,11 @@ static json jsonrpc_dispatch_method(const json &j, mg_connection *con, http_hand
         {"machine.verify_merkle_tree", jsonrpc_machine_verify_merkle_tree_handler},
         {"machine.verify_dirty_page_maps", jsonrpc_machine_verify_dirty_page_maps_handler},
         {"machine.get_memory_ranges", jsonrpc_machine_get_memory_ranges_handler},
+        {"machine.send_cmio_response", jsonrpc_machine_send_cmio_response_handler},
+        {"machine.log_send_cmio_response", jsonrpc_machine_log_send_cmio_response_handler},
+        {"machine.verify_send_cmio_response_log", jsonrpc_machine_verify_send_cmio_response_log_handler},
+        {"machine.verify_send_cmio_response_state_transition",
+            jsonrpc_machine_verify_send_cmio_response_state_transition_handler},
     };
     auto method = j["method"].get<std::string>();
     SLOG(debug) << h->server_address << " handling \"" << method << "\" method";

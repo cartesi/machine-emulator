@@ -62,6 +62,7 @@ static int machine_class_index_verify_uarch_step_state_transition(lua_State *L) 
     managed_runtime_config.reset();
     return 1;
 }
+
 /// \brief This is the machine.verify_uarch_reset_log() method implementation.
 static int machine_class_index_verify_uarch_reset_log(lua_State *L) {
     lua_settop(L, 2);
@@ -129,6 +130,46 @@ static int machine_class_index_get_csr_address(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine.verify_send_cmio_response_log() method implementation.
+static int machine_class_index_verify_send_cmio_response_log(lua_State *L) {
+    lua_settop(L, 4);
+    const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 1));
+    size_t length{0};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &length));
+    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 3)));
+    auto &managed_runtime_config =
+        clua_push_to(L, clua_managed_cm_ptr<cm_machine_runtime_config>(clua_check_cm_machine_runtime_config(L, 4)));
+    TRY_EXECUTE(cm_verify_send_cmio_response_log(reason, data, length, managed_log.get(), managed_runtime_config.get(),
+        true, err_msg));
+    lua_pushnumber(L, 1);
+    managed_runtime_config.reset();
+    managed_log.reset();
+    return 1;
+}
+
+/// \brief This is the machine.verify_send_cmio_response_state_transition() method implementation.
+static int machine_class_index_verify_send_cmio_response_state_transition(lua_State *L) {
+    lua_settop(L, 6);
+    cm_hash root_hash{};
+    const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 1));
+    size_t length{0};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &length));
+    clua_check_cm_hash(L, 3, &root_hash);
+    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 4)));
+    cm_hash target_hash{};
+    clua_check_cm_hash(L, 5, &target_hash);
+    auto &managed_runtime_config =
+        clua_push_to(L, clua_managed_cm_ptr<cm_machine_runtime_config>(clua_check_cm_machine_runtime_config(L, 6)));
+    TRY_EXECUTE(cm_verify_send_cmio_response_state_transition(reason, data, length, &root_hash, managed_log.get(),
+        &target_hash, managed_runtime_config.get(), true, err_msg));
+    lua_pushnumber(L, 1);
+    managed_log.reset();
+    managed_runtime_config.reset();
+    return 1;
+}
+
 /// \brief Contents of the machine class metatable __index table.
 static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
     {"get_default_config", machine_class_index_get_default_config},
@@ -140,6 +181,8 @@ static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
     {"get_uarch_x_address", machine_class_index_get_uarch_x_address},
     {"get_f_address", machine_class_index_get_f_address},
     {"get_csr_address", machine_class_index_get_csr_address},
+    {"verify_send_cmio_response_log", machine_class_index_verify_send_cmio_response_log},
+    {"verify_send_cmio_response_state_transition", machine_class_index_verify_send_cmio_response_state_transition},
 });
 
 /// \brief This is the cartesi.machine() constructor implementation.

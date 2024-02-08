@@ -19,6 +19,7 @@
 
 #include "os.h"
 #include <cassert>
+#include <cmath>
 
 /// \file
 /// \brief Solidity Compatibility Layer
@@ -38,6 +39,7 @@ using int32 = int32_t;
 using uint32 = uint32_t;
 using int64 = int64_t;
 using uint64 = uint64_t;
+using bytes = const unsigned char *;
 
 // Wrapperfunctions used to access data from the uarch state accessor
 
@@ -94,6 +96,27 @@ static inline void writeX(UarchState &a, uint8 reg, uint64 val) {
 template <typename UarchState>
 static inline void resetState(UarchState &a) {
     a.reset_state();
+}
+
+template <typename UarchState>
+static inline bool readIflagsY(UarchState &a) {
+    return a.read_iflags_Y();
+}
+
+template <typename UarchState>
+static inline void resetIflagsY(UarchState &a) {
+    a.reset_iflags_Y();
+}
+
+template <typename UarchState>
+static inline void writeHtifFromhost(UarchState &a, uint64 val) {
+    a.write_htif_fromhost(val);
+}
+
+template <typename UarchState>
+static inline void writeMemoryWithPadding(UarchState &a, uint64 paddr, bytes data, uint64_t data_length,
+    int32 write_length_log2_size) {
+    a.write_memory_with_padding(paddr, data, data_length, write_length_log2_size);
 }
 
 template <typename UarchState>
@@ -178,6 +201,10 @@ static inline uint64 int16ToUint64(int16 v) {
 
 static inline uint64 int8ToUint64(int8 v) {
     return v;
+}
+
+static inline uint32 uint32Log2(uint32 v) {
+    return 31 - __builtin_clz(v);
 }
 
 template <typename T1, typename T2>

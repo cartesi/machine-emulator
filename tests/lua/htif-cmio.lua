@@ -36,23 +36,11 @@ local config_base = {
         yield_automatic = true,
         yield_manual = true,
     },
-    cmio = {
-        rx_buffer = {
-            start = 0x60000000,
-            length = 0x1000,
-            shared = false,
-        },
-        tx_buffer = {
-            start = 0x60001000,
-            length = 0x1000,
-            shared = false,
-        },
-    },
 }
 
 local function stderr(...) io.stderr:write(string.format(...)) end
 
-local final_mcycle = 3677
+local final_mcycle = 1835101
 local exit_payload = 0
 
 local function test(config)
@@ -60,14 +48,14 @@ local function test(config)
     local machine <close> = cartesi.machine(config)
 
     -- fill input with `pattern`
-    local rx = config.cmio.rx_buffer
-    machine:write_memory(rx.start, string.rep(pattern, rx.length / 8), rx.length)
+    local rx_length = 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE
+    machine:write_memory(cartesi.PMA_CMIO_RX_BUFFER_START, string.rep(pattern, rx_length / 8), rx_length)
 
     machine:run(math.maxinteger)
 
     -- check that buffers got filled in with `pattern`
-    local tx = config.cmio.tx_buffer
-    assert(string.rep(pattern, tx.length / 8) == machine:read_memory(tx.start, tx.length))
+    local tx_length = 1 << cartesi.PMA_CMIO_TX_BUFFER_LOG2_SIZE
+    assert(string.rep(pattern, tx_length / 8) == machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, tx_length))
 
     assert(machine:read_iflags_H())
 

@@ -210,6 +210,40 @@ CM_API int cm_jsonrpc_get_semantic_version(const cm_jsonrpc_mg_mgr *mgr, const c
 /// \returns 0 for successful verification, non zero code for error
 CM_API int cm_jsonrpc_shutdown(const cm_jsonrpc_mg_mgr *mgr, char **err_msg);
 
+/// \brief Checks the internal consistency of an access log produced by send_cmio_response
+/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
+/// \param reason Reason for sending response
+/// \param data Response data to send.
+/// \param length Length of data response data.
+/// \param log State access log to be verified.
+/// \param runtime_config Runtime config to be used
+/// \param one_based Use 1-based indices when reporting errors.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_7_error_message
+/// \returns 0 for success, non zero code for error
+CM_API int cm_jsonrpc_verify_send_cmio_response_log(const cm_jsonrpc_mg_mgr *mgr, uint16_t reason,
+    const unsigned char *data, size_t length, const cm_access_log *log, const cm_machine_runtime_config *runtime_config,
+    bool one_based, char **err_msg);
+
+/// \brief Checks the validity of a state transition caused by send_cmio_response
+/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
+/// \param reason Reason for sending response.
+/// \param data Response data to send.
+/// \param length Length of data response data.
+/// \param root_hash_before State hash before load.
+/// \param log State access log to be verified.
+/// \param root_hash_after State hash after load.
+/// \param runtime_config Runtime config to be used
+/// \param one_based Use 1-based indices when reporting errors
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring
+/// \returns 0 for successfull verification, non zero code for error
+CM_API int cm_jsonrpc_verify_send_cmio_response_state_transition(const cm_jsonrpc_mg_mgr *mgr, uint16_t reason,
+    const unsigned char *data, size_t length, const cm_hash *root_hash_before, const cm_access_log *log,
+    const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
+
 #ifdef __cplusplus
 }
 #endif

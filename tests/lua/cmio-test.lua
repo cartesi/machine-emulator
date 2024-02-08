@@ -128,12 +128,6 @@ local function load_machine(name)
     end
 end
 
-local function set_yield_data(machine, reason, data)
-    local m16 = (1 << 16) - 1
-    local m32 = (1 << 32) - 1
-    machine:write_htif_fromhost_data(((reason & m16) << 32) | (data & m32))
-end
-
 local function get_yield(machine)
     local m16 = (1 << 16) - 1
     local m32 = (1 << 32) - 1
@@ -143,24 +137,17 @@ local function get_yield(machine)
     return cmd, reason & m16, data & m32
 end
 
-local function next_input(machine, config, reason, data, override_length)
-    assert(machine:read_iflags_Y())
-    machine:replace_memory_range(config.cmio.rx_buffer) -- clear
-    machine:write_memory(config.cmio.rx_buffer.start, data)
-    local length = override_length or #data
-    set_yield_data(machine, reason, length)
-    machine:reset_iflags_Y()
-end
+local function next_input(machine, reason, data) machine:send_cmio_response(reason, data) end
 
-local function setup_advance(machine, config, data, override_length)
+local function setup_advance(machine, data)
     assert(data)
     local reason = cartesi.machine.HTIF_YIELD_REASON_ADVANCE_STATE
-    next_input(machine, config, reason, data, override_length)
+    next_input(machine, reason, data)
 end
 
-local function setup_inspect(machine, config, data, override_length)
+local function setup_inspect(machine, data)
     local reason = cartesi.machine.HTIF_YIELD_REASON_INSPECT_STATE
-    next_input(machine, config, reason, data, override_length)
+    next_input(machine, reason, data)
 end
 
 local function get_exit_code(machine)
@@ -168,12 +155,12 @@ local function get_exit_code(machine)
     return machine:read_htif_tohost_data() >> 1
 end
 
-local function check_output(machine, config, expected)
+local function check_output(machine, expected)
     assert(machine:read_iflags_X())
     local cmd, reason, length = get_yield(machine)
     assert(cmd == cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC)
     assert(reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT)
-    local output = machine:read_memory(config.cmio.tx_buffer.start, length)
+    local output = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
     if expected ~= output then
         local e <close> = assert(io.open("expected.bin", "wb"))
         local o <close> = assert(io.open("output.bin", "wb"))
@@ -185,21 +172,21 @@ local function check_output(machine, config, expected)
     return cartesi.keccak(output)
 end
 
-local function check_report(machine, config, expected)
+local function check_report(machine, expected)
     assert(machine:read_iflags_X())
     local cmd, reason, length = get_yield(machine)
     assert(cmd == cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC)
     assert(reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT)
-    local output = machine:read_memory(config.cmio.tx_buffer.start, length)
+    local output = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
     assert(expected == output)
 end
 
-local function check_exception(machine, config, expected)
+local function check_exception(machine, expected)
     assert(machine:read_iflags_Y())
     local cmd, reason, length = get_yield(machine)
     assert(cmd == cartesi.machine.HTIF_YIELD_CMD_MANUAL)
     assert(reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION)
-    local output = machine:read_memory(config.cmio.tx_buffer.start, length)
+    local output = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
     assert(expected == output, string.format("expected: %q, got: %q", expected, output))
 end
 
@@ -228,7 +215,7 @@ local function check_outputs_root_hash(root_hash, output_hashes)
     assert(root_hash == output_hashes[1], "output root hash mismatch")
 end
 
-local function check_finish(machine, config, output_hashes, expected_reason)
+local function check_finish(machine, output_hashes, expected_reason)
     local cmd, reason, length = get_yield(machine)
     assert(machine:read_iflags_Y())
     assert(cmd == cartesi.machine.HTIF_YIELD_CMD_MANUAL)
@@ -237,7 +224,7 @@ local function check_finish(machine, config, output_hashes, expected_reason)
     -- only check for output-hashes-root-hash if the input was accepted
     if expected_reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
         assert(length == OUTPUTS_ROOT_HASH_SIZE)
-        local output = machine:read_memory(config.cmio.tx_buffer.start, length)
+        local output = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
         check_outputs_root_hash(output, output_hashes)
     else
         assert(length == 0)
@@ -260,23 +247,23 @@ local function do_test(description, machine_name, fn, expected_exit_code)
     print("<<<<<<<<<<<<<<<< passed >>>>>>>>>>>>>>>")
 end
 
-do_test("catch exit when http-server shuts down", "http-server-error-machine", function(machine, config)
-    setup_advance(machine, config, test_data.valid_advance)
+do_test("catch exit when http-server shuts down", "http-server-error-machine", function(machine)
+    setup_advance(machine, test_data.valid_advance)
     machine:run(MAX_MCYCLE)
 end, 1)
 
-do_test("catch exception when dapp exits with failure", "fatal-error-machine", function(machine, config)
-    setup_advance(machine, config, test_data.valid_advance)
+do_test("catch exception when dapp exits with failure", "fatal-error-machine", function(machine)
+    setup_advance(machine, test_data.valid_advance)
 
     -- exception
     machine:run(MAX_MCYCLE)
-    check_exception(machine, config, "dapp exited with exit status: 2")
+    check_exception(machine, "dapp exited with exit status: 2")
 
     return 0
 end, 0)
 
-do_test("halt with exit code", "exception-machine", function(machine, config)
-    setup_advance(machine, config, test_data.valid_advance)
+do_test("halt with exit code", "exception-machine", function(machine)
+    setup_advance(machine, test_data.valid_advance)
     machine:run(MAX_MCYCLE)
 end, 1)
 
@@ -286,35 +273,35 @@ for _, dapp in pairs({ "ioctl", "http" }) do
     do_test(
         "merkle tree state must match and reset for each advance" .. desc,
         "advance-state-machine" .. suffix,
-        function(machine, config)
+        function(machine)
             for _ = 1, 2 do
                 local hashes = {}
-                setup_advance(machine, config, test_data.valid_advance)
+                setup_advance(machine, test_data.valid_advance)
 
                 -- 2 vouchers
                 machine:run(MAX_MCYCLE)
-                hashes[#hashes + 1] = check_output(machine, config, test_data.valid_advance_voucher_reply)
+                hashes[#hashes + 1] = check_output(machine, test_data.valid_advance_voucher_reply)
 
                 machine:run(MAX_MCYCLE)
-                hashes[#hashes + 1] = check_output(machine, config, test_data.valid_advance_voucher_reply)
+                hashes[#hashes + 1] = check_output(machine, test_data.valid_advance_voucher_reply)
 
                 -- 2 notices
                 machine:run(MAX_MCYCLE)
-                hashes[#hashes + 1] = check_output(machine, config, test_data.valid_advance_notice_reply)
+                hashes[#hashes + 1] = check_output(machine, test_data.valid_advance_notice_reply)
 
                 machine:run(MAX_MCYCLE)
-                hashes[#hashes + 1] = check_output(machine, config, test_data.valid_advance_notice_reply)
+                hashes[#hashes + 1] = check_output(machine, test_data.valid_advance_notice_reply)
 
                 -- 2 reports
                 machine:run(MAX_MCYCLE)
-                check_report(machine, config, test_data.valid_advance_report_reply)
+                check_report(machine, test_data.valid_advance_report_reply)
 
                 machine:run(MAX_MCYCLE)
-                check_report(machine, config, test_data.valid_advance_report_reply)
+                check_report(machine, test_data.valid_advance_report_reply)
 
                 -- finish
                 machine:run(MAX_MCYCLE)
-                check_finish(machine, config, hashes, cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+                check_finish(machine, hashes, cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
             end
 
             return 0
@@ -322,12 +309,12 @@ for _, dapp in pairs({ "ioctl", "http" }) do
         0
     )
 
-    do_test("inspect reply is the same as request" .. desc, "inspect-state-machine" .. suffix, function(machine, config)
-        setup_inspect(machine, config, test_data.valid_inspect)
+    do_test("inspect reply is the same as request" .. desc, "inspect-state-machine" .. suffix, function(machine)
+        setup_inspect(machine, test_data.valid_inspect)
 
         -- 1 reports
         machine:run(MAX_MCYCLE)
-        check_report(machine, config, test_data.valid_inspect_report_reply)
+        check_report(machine, test_data.valid_inspect_report_reply)
 
         return 0
     end, 0)
@@ -335,30 +322,30 @@ for _, dapp in pairs({ "ioctl", "http" }) do
     do_test(
         "merkle tree is pristine when input is rejected" .. desc,
         "advance-rejecting-machine" .. suffix,
-        function(machine, config)
+        function(machine)
             local hashes = {}
-            setup_advance(machine, config, test_data.valid_advance)
+            setup_advance(machine, test_data.valid_advance)
 
             -- 1 reports
             machine:run(MAX_MCYCLE)
-            check_report(machine, config, test_data.valid_advance_report_reply)
+            check_report(machine, test_data.valid_advance_report_reply)
 
             -- finish
             machine:run(MAX_MCYCLE)
-            check_finish(machine, config, hashes, cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
+            check_finish(machine, hashes, cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
 
             return 0
         end,
         0
     )
 
-    do_test("the other case" .. desc, "inspect-rejecting-machine" .. suffix, function(machine, config)
+    do_test("the other case" .. desc, "inspect-rejecting-machine" .. suffix, function(machine)
         local hashes = {}
-        setup_inspect(machine, config, test_data.valid_inspect)
+        setup_inspect(machine, test_data.valid_inspect)
 
         -- finish
         machine:run(MAX_MCYCLE)
-        check_finish(machine, config, hashes, cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
+        check_finish(machine, hashes, cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
 
         return 0
     end, 0)

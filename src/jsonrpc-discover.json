@@ -263,7 +263,7 @@
           "description": "State hash before transition described by access log",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/AccessLog"
+            "$ref": "#/components/schemas/Base64Hash"
           }
         }, {
           "name":"log",
@@ -277,7 +277,7 @@
           "description": "State hash after transition described by access log",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/AccessLog"
+            "$ref": "#/components/schemas/Base64Hash"
           }
         }, {
           "name":"runtime",
@@ -347,7 +347,7 @@
           "description": "State hash before transition described by access log",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/AccessLog"
+            "$ref": "#/components/schemas/Base64Hash"
           }
         }, {
           "name":"log",
@@ -361,7 +361,7 @@
           "description": "State hash after transition described by access log",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/AccessLog"
+            "$ref": "#/components/schemas/Base64Hash"
           }
         }, {
           "name":"runtime",
@@ -1159,7 +1159,190 @@
           "$ref": "#/components/schemas/MemoryRangeDescriptionArray"
         }
       }
+    },
+
+    {
+      "name": "machine.send_cmio_response",
+      "summary": "Sends cmio response.",
+      "params": [ {
+          "name":"reason",
+          "description": "Reason for sending response",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        },{
+          "name":"data",
+          "description": "Response data to send",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64String"
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "description": "True when operation succeeded",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+
+    {
+      "name": "machine.log_send_cmio_response and returns an access log",
+      "summary": "Sends cmio response. and returns an access log",
+      "params": [ {
+        "name":"reason",
+        "description": "Reason for sending response",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/UnsignedInteger"
+        }
+        }, {
+          "name":"data",
+          "description": "Response data to send",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64String"
+          }
+        },{
+          "name":"log_type",
+          "description": "The log type to generate",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/AccessLogType"
+          }
+        }, {
+          "name":"one_based",
+          "description": "Whether messages use 1-based or 0-based indeces",
+          "required": false,
+          "schema": {
+            "type": "boolean"
+          }
+        }
+      ],
+      "result": {
+        "name": "access_log",
+        "description": "Log of state accesses",
+        "schema": {
+          "$ref": "#/components/schemas/AccessLog"
+        }
+      }
+    },
+
+    {
+      "name": "machine.verify_send_cmio_response_log",
+      "summary": "Checks the internal consistency of an access log produced by send_cmio_response",
+      "params": [ {
+        "name":"reason",
+        "description": "Reason for sending response",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/UnsignedInteger"
+        }
+      }, {
+          "name":"data",
+          "description": "Response data sent when the log was generated.",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64String"
+          }
+        }, {
+          "name":"log",
+          "description": "Access log to verify",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/AccessLog"
+          }
+        }, {
+          "name":"runtime",
+          "description": "Machine runtime configuration",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/MachineRuntimeConfig"
+          }
+        }, {
+          "name":"one_based",
+          "description": "Whether messages use 1-based or 0-based indeces",
+          "required": false,
+          "schema": {
+            "type": "boolean"
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "description": "True when operation succeeded",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+
+    {
+      "name": "machine.verify_send_cmio_response_state_transition",
+      "summary": "Checks the validity of state transitions caused by send_cmio_response",
+      "params": [ {
+        "name":"reason",
+        "description": "Reason for sending response",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/UnsignedInteger"
+        }
+        },  {
+          "name":"data",
+          "description": "The response data sent when the log was generated.",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64String"
+          }
+        },  {
+          "name":"root_hash_before",
+          "description": "State hash before response was sent.",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64Hash"
+          }
+        }, {
+          "name":"log",
+          "description": "State access log to be verified.",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/AccessLog"
+          }
+        }, {
+          "name":"root_hash_after",
+          "description": "State hash after response was sent.",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64Hash"
+          }
+        }, {
+          "name":"runtime",
+          "description": "Machine runtime configuration",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/MachineRuntimeConfig"
+          }
+        }, {
+          "name":"one_based",
+          "description": "Whether messages use 1-based or 0-based indeces",
+          "required": false,
+          "schema": {
+            "type": "boolean"
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "description": "True when operation succeeded",
+        "schema": {
+          "type": "boolean"
+        }
+      }
     }
+
   ],
 
   "components": {
@@ -1631,6 +1814,19 @@
           }
         }
       },
+      
+      "CmioBufferConfig": {
+        "title": "CmioBufferConfig",
+        "type": "object",
+        "properties": {
+          "image_filename": {
+            "type": "string"
+          },
+          "shared": {
+            "type": "boolean"
+          }
+        }
+      },
 
       "FlashDriveConfigs": {
         "title": "FlashDriveConfigs",
@@ -1742,10 +1938,10 @@
         "type": "object",
         "properties": {
           "rx_buffer": {
-            "$ref": "#/components/schemas/MemoryRangeConfig"
+            "$ref": "#/components/schemas/CmioBufferConfig"
           },
           "tx_buffer": {
-            "$ref": "#/components/schemas/MemoryRangeConfig"
+            "$ref": "#/components/schemas/CmioBufferConfig"
           }
         }
       },

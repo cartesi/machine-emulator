@@ -680,6 +680,17 @@ public:
         return do_get_memory_ranges();
     }
 
+    /// \brief Sends cmio response.
+    void send_cmio_response(uint16_t reason, const unsigned char *data, size_t length) {
+        do_send_cmio_response(reason, data, length);
+    }
+
+    /// \brief Sends cmio response. and returns an access log
+    access_log log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
+        const access_log::type &log_type, bool one_based) {
+        return do_log_send_cmio_response(reason, data, length, log_type, one_based);
+    }
+
 private:
     virtual interpreter_break_reason do_run(uint64_t mcycle_end) = 0;
     virtual void do_store(const std::string &dir) = 0;
@@ -804,6 +815,9 @@ private:
     virtual access_log do_log_uarch_reset(const access_log::type &log_type, bool one_based = false) = 0;
     virtual uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) = 0;
     virtual machine_memory_range_descrs do_get_memory_ranges(void) const = 0;
+    virtual void do_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length) = 0;
+    virtual access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
+        const access_log::type &log_type, bool one_based) = 0;
 };
 
 } // namespace cartesi

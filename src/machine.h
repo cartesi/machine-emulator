@@ -90,14 +90,14 @@ private:
     static pma_entry make_flash_drive_pma_entry(const std::string &description, const memory_range_config &c);
 
     /// \brief Creates a new cmio rx buffer PMA entry.
-    /// \param c Memory range configuration.
+    // \param c Optional cmio configuration
     /// \returns New PMA entry with rx buffer flags already set.
-    static pma_entry make_cmio_rx_buffer_pma_entry(const memory_range_config &c);
+    static pma_entry make_cmio_rx_buffer_pma_entry(const cmio_config &cmio_config);
 
     /// \brief Creates a new cmio tx buffer PMA entry.
-    /// \param c Memory range configuration.
+    // \param c Optional cmio configuration
     /// \returns New PMA entry with tx buffer flags already set.
-    static pma_entry make_cmio_tx_buffer_pma_entry(const memory_range_config &c);
+    static pma_entry make_cmio_tx_buffer_pma_entry(const cmio_config &cmio_config);
 
     /// \brief Saves PMAs into files for serialization
     /// \param config Machine config to be stored
@@ -377,6 +377,12 @@ public:
     /// be inside the same PMA region. Moreover, this PMA must be a memory PMA,
     /// and not a device PMA.
     void write_memory(uint64_t address, const unsigned char *data, size_t length);
+
+    /// \brief Fills a memory range with a single byte.
+    /// \param address Physical address to start filling.
+    /// \param data Byte to fill memory with.
+    /// \param length Size of memory range to fill.
+    void fill_memory(uint64_t address, uint8_t data, size_t length);
 
     /// \brief Reads a chunk of data from the machine virtual memory.
     /// \param vaddr_start Virtual address to start reading.
@@ -845,6 +851,45 @@ public:
     /// \details The machine must contain an existing memory range
     /// matching the start and length specified in range.
     void replace_memory_range(const memory_range_config &range);
+
+    /// \brief Sends cmio response
+    /// \param reason Reason for sending response.
+    /// \param data Reponse data.
+    /// \param length Length of response data.
+    void send_cmio_response(uint16_t reason, const unsigned char *data, size_t length);
+
+    /// \brief Sends cmio response and returns an access log
+    /// \param reason Reason for sending response.
+    /// \param data Reponse data.
+    /// \param length Length of response data.
+    /// \param log_type Type of access log to generate.
+    /// \param one_based Use 1-based indices when reporting errors.
+    /// \return The state access log.
+    access_log log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
+        const access_log::type &log_type, bool one_based = false);
+
+    /// \brief Checks the internal consistency of an access log produced by log_send_cmio_response
+    /// \param reason Reason for sending response.
+    /// \param data The response sent when the log was generated.
+    /// \param length Length of response data.
+    /// \param log State access log to be verified.
+    /// \param runtime Machine runtime configuration to use during verification.
+    /// \param one_based Use 1-based indices when reporting errors.
+    static void verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, size_t length,
+        const access_log &log, const machine_runtime_config &runtime = {}, bool one_based = false);
+
+    /// \brief Checks the validity of state transitions caused by log_send_cmio_response
+    /// \param reason Reason for sending response.
+    /// \param data The response sent when the log was generated.
+    /// \param length Length of response
+    /// \param root_hash_before State hash before response was sent.
+    /// \param log Log containing the state accesses performed by the load operation
+    /// \param root_hash_after State hash after response was sent.
+    /// \param runtime Machine runtime configuration to use during verification.
+    /// @param one_based Use 1-based indices when reporting errors.
+    static void verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, size_t length,
+        const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after,
+        const machine_runtime_config &runtime = {}, bool one_based = false);
 
     /// \brief Reads the value of a microarchitecture register.
     /// \param index Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.

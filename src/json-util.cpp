@@ -322,10 +322,29 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uint32_t &value, co
     value = static_cast<uint32_t>(value64);
 }
 
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, uint16_t &value, const std::string &path) {
+    if (!contains(j, key)) {
+        return;
+    }
+    uint64_t value64 = 0;
+    ju_get_field(j, key, value64, path);
+    if (value64 > UINT16_MAX) {
+        throw std::invalid_argument("field \""s + path + to_string(key) + "\" out of range");
+    }
+    value = static_cast<uint16_t>(value64);
+}
+
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, uint32_t &value,
     const std::string &path);
 
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, uint16_t &value,
+    const std::string &path);
+
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, uint32_t &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, uint16_t &value,
     const std::string &path);
 
 template <typename K>
@@ -906,6 +925,23 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, cmio_buffer_config &value, const std::string &path) {
+    if (!contains(j, key)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    ju_get_opt_field(jconfig, "shared"s, value.shared, new_path);
+    ju_get_opt_field(jconfig, "image_filename"s, value.image_filename, new_path);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, cmio_buffer_config &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, cmio_buffer_config &value,
+    const std::string &path);
+
+template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, flash_drive_configs &value, const std::string &path) {
     if (!contains(j, key)) {
         return;
@@ -1013,27 +1049,6 @@ template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t
 
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, cmio_config &value,
     const std::string &path);
-
-template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, std::optional<cmio_config> &optional,
-    const std::string &path) {
-    optional.reset();
-    if (!contains(j, key)) {
-        return;
-    }
-    const auto &jconfig = j[key];
-    const auto new_path = path + to_string(key) + "/";
-    optional.emplace();
-    auto &value = optional.value();
-    ju_get_field(jconfig, "rx_buffer"s, value.rx_buffer, new_path);
-    ju_get_field(jconfig, "tx_buffer"s, value.tx_buffer, new_path);
-}
-
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
-    std::optional<cmio_config> &value, const std::string &path);
-
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
-    std::optional<cmio_config> &value, const std::string &path);
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_processor_config &value, const std::string &path) {
@@ -1235,6 +1250,10 @@ void to_json(nlohmann::json &j, const memory_range_config &config) {
         {"image_filename", config.image_filename}};
 }
 
+void to_json(nlohmann::json &j, const cmio_buffer_config &config) {
+    j = nlohmann::json{{"shared", config.shared}, {"image_filename", config.image_filename}};
+}
+
 void to_json(nlohmann::json &j, const processor_config &config) {
     j = nlohmann::json{{"x", config.x}, {"f", config.f}, {"pc", config.pc}, {"fcsr", config.fcsr},
         {"mvendorid", config.mvendorid}, {"marchid", config.marchid}, {"mimpid", config.mimpid},
@@ -1338,10 +1357,8 @@ void to_json(nlohmann::json &j, const machine_config &config) {
         {"plic", config.plic},
         {"htif", config.htif},
         {"uarch", config.uarch},
+        {"cmio", config.cmio},
     };
-    if (config.cmio.has_value()) {
-        j["cmio"] = config.cmio.value();
-    }
 }
 
 void to_json(nlohmann::json &j, const concurrency_runtime_config &config) {

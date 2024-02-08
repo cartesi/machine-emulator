@@ -50,11 +50,9 @@ static void adjust_image_filenames(machine_config &c, const std::string &dir) {
     for (auto &f : c.flash_drive) {
         f.image_filename = c.get_image_filename(dir, f);
     }
-    if (c.cmio.has_value()) {
-        auto &r = c.cmio.value();
-        r.rx_buffer.image_filename = c.get_image_filename(dir, r.rx_buffer);
-        r.tx_buffer.image_filename = c.get_image_filename(dir, r.tx_buffer);
-    }
+    c.uarch.ram.image_filename = c.get_image_filename(dir, PMA_UARCH_RAM_START, PMA_UARCH_RAM_LENGTH);
+    c.cmio.rx_buffer.image_filename = c.get_image_filename(dir, PMA_CMIO_RX_BUFFER_START, PMA_CMIO_RX_BUFFER_LENGTH);
+    c.cmio.tx_buffer.image_filename = c.get_image_filename(dir, PMA_CMIO_TX_BUFFER_START, PMA_CMIO_TX_BUFFER_LENGTH);
 }
 
 machine_config machine_config::load(const std::string &dir) {

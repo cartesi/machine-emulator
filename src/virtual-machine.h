@@ -162,6 +162,9 @@ private:
     bool do_read_uarch_halt_flag(void) const override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
     machine_memory_range_descrs do_get_memory_ranges(void) const override;
+    void do_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length) override;
+    access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
+        const access_log::type &log_type, bool one_based) override;
 };
 
 } // namespace cartesi

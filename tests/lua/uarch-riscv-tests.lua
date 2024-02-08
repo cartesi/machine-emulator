@@ -102,6 +102,9 @@ where options are:
   --create-uarch-reset-log
     create a json log file for a uarch reset operation
     valid only for the json-step-logs command
+--create-send-cmio-response-log
+    create a json log file for a send_cmio_response operation
+    valid only for the json-step-logs command
 and command can be:
   run
     run test and report errors
@@ -124,6 +127,7 @@ local test_pattern = ".*"
 local output_dir
 local proofs = false
 local create_uarch_rest_log = false
+local create_send_cmio_response_log = false
 local proofs_frequency = 1
 local total_steps_counter = 0
 
@@ -147,6 +151,14 @@ local options = {
         function(all)
             if not all then return false end
             create_uarch_rest_log = true
+            return true
+        end,
+    },
+    {
+        "^%-%-create%-send%-cmio%-response%-log$",
+        function(all)
+            if not all then return false end
+            create_send_cmio_response_log = true
             return true
         end,
     },
@@ -492,6 +504,30 @@ local function create_json_reset_log()
     return ctx
 end
 
+local function create_json_send_cmio_response_log()
+    local machine <close> = build_machine()
+    local test_name = "send-cmio-response"
+    local response_data = "This is a test cmio response"
+    local reason = 1
+    machine:set_iflags_Y()
+    local initial_root_hash = machine:get_root_hash()
+    local log = machine:log_send_cmio_response(reason, response_data, { proofs = proofs })
+    local out = create_json_log_file(test_name .. "-steps")
+    write_log_to_file(log, out, 0, true)
+    out:close()
+    local ctx = {
+        initial_root_hash = initial_root_hash,
+        final_root_hash = machine:get_root_hash(),
+        ram_image = "",
+        test_name = test_name,
+        expected_cycles = 1,
+        step_count = 1,
+        failed = false,
+        accesses_count = #log.accesses,
+    }
+    return ctx
+end
+
 local function json_step_logs(tests)
     assert(output_dir, "output-dir is required for json-logs")
     local errors, error_count = {}, 0
@@ -527,6 +563,7 @@ local function json_step_logs(tests)
         end
     end
     if create_uarch_rest_log then contexts[#contexts + 1] = create_json_reset_log() end
+    if create_send_cmio_response_log then contexts[#contexts + 1] = create_json_send_cmio_response_log() end
     if error_count > 0 then
         io.write(string.format("\nFAILED %d of %d tests:\n\n", error_count, #tests))
         for k, v in pairs(errors) do

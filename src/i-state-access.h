@@ -789,6 +789,16 @@ public:
         return derived().do_get_soft_yield();
     }
 
+    /// \brief Write a data buffer to memory padded with 0
+    /// \param paddr Destination physical address.
+    /// \param data Pointer to source data buffer.
+    /// \param data_length Length of data buffer.
+    /// \param write_length_log2_size Log2 size of the total write length.
+    void write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
+        int write_length_log2_size) {
+        return derived().do_write_memory_with_padding(paddr, data, data_length, write_length_log2_size);
+    }
+
 #ifdef DUMP_COUNTERS
     auto &get_statistics() {
         return derived().do_get_statistics();

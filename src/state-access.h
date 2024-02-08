@@ -668,6 +668,21 @@ private:
         return m_m.get_state().soft_yield;
     }
 
+    void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
+        int write_length_log2_size) {
+        if (!data) {
+            throw std::runtime_error("data is null");
+        }
+        const uint64_t write_length = static_cast<uint64_t>(1) << write_length_log2_size;
+        if (write_length < data_length) {
+            throw std::runtime_error("write_length is less than data_length");
+        }
+        m_m.write_memory(paddr, data, data_length);
+        if (write_length > data_length) {
+            m_m.fill_memory(paddr + data_length, 0, write_length - data_length);
+        }
+    }
+
 #ifdef DUMP_COUNTERS
     machine_statistics &do_get_statistics() {
         return m_m.get_state().stats;

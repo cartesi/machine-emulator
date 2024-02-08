@@ -154,23 +154,12 @@ where options are:
 
     <key>:<value> is one of
         filename:<filename>
-        start:<number>
-        length:<number>
         shared
 
-    semantics are the same as for the --flash-drive option with the following
-    difference: start and length are mandatory.
-
-  --no-cmio
-    do not define values for cmio-rx-buffer, cmio-tx-buffer, and htif yield
-    for use with cmios. default defined values are equivalent to the following
-    options:
-
-    --cmio-rx-buffer=start:0x60000000,length:2<<20
-    --cmio-tx-buffer=start:0x60200000,length:2<<20
+    semantics are the same as for the --flash-drive option.
 
   --cmio-advance-state=<key>:<value>[,<key>:<value>[,...]...]
-    advances the state of the machine through a number of inputs in an epoch
+    advances the state of the machine through a number of inputs.
 
     <key>:<value> is one of
         input:<filename-pattern>
@@ -577,11 +566,8 @@ local init_splash = true
 local append_bootargs = ""
 local append_init = ""
 local append_entrypoint = ""
-local cmio = {
-    rx_buffer = { start = 0x60000000, length = 2 << 20 },
-    tx_buffer = { start = 0x60200000, length = 2 << 20 },
-}
 local uarch
+local cmio
 local cmio_advance
 local cmio_inspect
 local concurrency_update_merkle_tree = 0
@@ -626,6 +612,18 @@ local function parse_memory_range(opts, what, all)
     assert(not f.shared or f.shared == true, "invalid " .. what .. " shared value in " .. all)
     f.start = assert(util.parse_number(f.start), "invalid " .. what .. " start in " .. all)
     f.length = assert(util.parse_number(f.length), "invalid " .. what .. " length in " .. all)
+    return f
+end
+
+local function parse_cmio_buffer(opts, what, all)
+    local f = util.parse_options(opts, {
+        filename = true,
+        shared = true,
+    })
+    f.image_filename = f.filename
+    f.filename = nil
+    if f.image_filename == true then f.image_filename = "" end
+    assert(not f.shared or f.shared == true, "invalid " .. what .. " shared value in " .. all)
     return f
 end
 
@@ -994,14 +992,6 @@ local options = {
         function(all)
             if not all then return false end
             htif_yield_automatic = false
-            return true
-        end,
-    },
-    {
-        "^%-%-no%-cmio$",
-        function(all)
-            if not all then return false end
-            cmio = nil
             return true
         end,
     },
@@ -1384,7 +1374,7 @@ local options = {
         function(all, opts)
             if not opts then return false end
             cmio = cmio or {}
-            cmio.rx_buffer = parse_memory_range(opts, "cmio rx buffer", all)
+            cmio.rx_buffer = parse_cmio_buffer(opts, "cmio rx buffer", all)
             return true
         end,
     },
@@ -1393,7 +1383,7 @@ local options = {
         function(all, opts)
             if not opts then return false end
             cmio = cmio or {}
-            cmio.tx_buffer = parse_memory_range(opts, "tx buffer", all)
+            cmio.tx_buffer = parse_cmio_buffer(opts, "tx buffer", all)
             return true
         end,
     },
@@ -1535,6 +1525,17 @@ local function store_memory_range(r, indent, output)
     output("%s},\n", indent)
 end
 
+local function store_cmio_buffer(r, indent, output)
+    local function comment_default(u, v) output(u == v and " -- default\n" or "\n") end
+    output("{\n")
+    if r.image_filename and r.image_filename ~= "" then
+        output("%s  image_filename = %q,\n", indent, r.image_filename)
+    end
+    output("%s  shared = %s,", indent, tostring(r.shared or false))
+    comment_default(false, r.shared)
+    output("%s},\n", indent)
+end
+
 local function store_value(key, value, indent, output)
     -- skip empty values
     if value == nil or (type(value) == "table" and next(value) == nil) then return end
@@ -1662,9 +1663,9 @@ local function store_machine_config(config, output)
     if config.cmio then
         output("  cmio = {\n")
         output("    rx_buffer = ")
-        store_memory_range(config.cmio.rx_buffer, "    ", output)
+        store_cmio_buffer(config.cmio.rx_buffer, "    ", output)
         output("    tx_buffer = ")
-        store_memory_range(config.cmio.tx_buffer, "    ", output)
+        store_cmio_buffer(config.cmio.tx_buffer, "    ", output)
         output("  },\n")
     end
     output("  uarch = {\n")
@@ -1923,45 +1924,10 @@ local htif_yield_mode = {
     [cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC] = "Automatic",
 }
 
-local function is_power_of_two(value) return value > 0 and ((value & (value - 1)) == 0) end
-
-local function ilog2(value)
-    value = assert(math.tointeger(value), "expected integer")
-    assert(value ~= 0, "expected non-zero integer")
-    local log = 0
-    while value > 1 do
-        log = log + 1
-        value = value >> 1
-    end
-    return log
-end
-
-local function check_cmio_memory_range_config(range, name)
-    assert(range, string.format("cmio range %s must be defined", name))
-    assert(not range.shared, string.format("cmio range %s cannot be shared", name))
-    assert(
-        is_power_of_two(range.length),
-        string.format("cmio range %s length not a power of two (%u)", name, range.length)
-    )
-    local log = ilog2(range.length)
-    local aligned_start = (range.start >> log) << log
-    assert(
-        aligned_start == range.start,
-        string.format("cmio range %s start not aligned to its power of two size", name)
-    )
-    range.image_filename = nil
-end
-
 local function check_cmio_htif_config(htif)
     assert(not htif.console_getchar, "console getchar must be disabled for cmio")
     assert(htif.yield_manual, "yield manual must be enabled for cmio")
     assert(htif.yield_automatic, "yield automatic must be enabled for cmio")
-end
-
-local function set_yield_data(machine, reason, data)
-    local m16 = (1 << 16) - 1
-    local m32 = (1 << 32) - 1
-    machine:write_htif_fromhost_data(((reason & m16) << 32) | (data & m32))
 end
 
 local function get_yield(machine)
@@ -2002,60 +1968,56 @@ local function instantiate_filename(pattern, values)
     return (string.gsub(pattern, "\0", "%"))
 end
 
-local function save_cmio_state_with_format(machine, config, advance, length, format, index)
+local function save_cmio_state_with_format(machine, advance, length, format, index)
     local values = { i = advance.next_input_index - 1, o = index }
     local name = instantiate_filename(format, values)
     stderr("Storing %s\n", name)
     local f = assert(io.open(name, "wb"))
-    local s = machine:read_memory(config.start, length)
+    local s = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
     assert(f:write(s))
     f:close()
     return s
 end
 
-local function save_cmio_report(machine, config, advance, length)
-    return save_cmio_state_with_format(machine, config, advance, length, advance.report, advance.report_index)
+local function save_cmio_report(machine, advance, length)
+    return save_cmio_state_with_format(machine, advance, length, advance.report, advance.report_index)
 end
 
-local function save_cmio_output(machine, config, advance, length)
-    return save_cmio_state_with_format(machine, config, advance, length, advance.output, advance.output_index)
+local function save_cmio_output(machine, advance, length)
+    return save_cmio_state_with_format(machine, advance, length, advance.output, advance.output_index)
 end
 
-local function save_cmio_output_hashes_root_hash(machine, config, advance, length)
-    return save_cmio_state_with_format(machine, config, advance, length, advance.output_hashes_root_hash)
+local function save_cmio_output_hashes_root_hash(machine, advance, length)
+    return save_cmio_state_with_format(machine, advance, length, advance.output_hashes_root_hash)
 end
 
-local function load_memory_range(machine, config, filename)
-    stderr("Loading %s\n", filename)
-    local f = assert(io.open(filename, "rb"))
-    local s = assert(f:read("*a"))
-    f:close()
-    machine:write_memory(config.start, s)
-    return #s
-end
-
-local function load_cmio_input(machine, config, advance)
+local function load_cmio_input(machine, advance)
     local values = { i = advance.next_input_index }
-    machine:replace_memory_range(config.rx_buffer) -- clear
-    return load_memory_range(machine, config.rx_buffer, instantiate_filename(advance.input, values))
+    local filename = instantiate_filename(advance.input, values)
+    local f = assert(io.open(filename, "rb"))
+    local data = assert(f:read("*a"))
+    f:close()
+    machine:send_cmio_response(cartesi.machine.HTIF_YIELD_REASON_ADVANCE_STATE, data)
 end
 
-local function load_cmio_query(machine, config, inspect)
-    machine:replace_memory_range(config.rx_buffer) -- clear
-    return load_memory_range(machine, config.rx_buffer, inspect.query) -- load query payload
+local function load_cmio_query(machine, inspect)
+    local f = assert(io.open(inspect.query, "rb"))
+    local data = assert(f:read("*a"))
+    f:close()
+    machine:send_cmio_response(cartesi.machine.HTIF_YIELD_REASON_INSPECT_STATE, data)
 end
 
-local function dump_exception(machine, config, length)
-    local payload = machine:read_memory(config.start, length)
+local function dump_exception(machine, length)
+    local payload = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
     stderr("cmio exception with payload: %q\n", payload)
 end
 
-local function save_cmio_inspect_state_report(machine, config, inspect, length)
+local function save_cmio_inspect_state_report(machine, inspect, length)
     local values = { o = inspect.report_index }
     local name = instantiate_filename(inspect.report, values)
     stderr("Storing %s\n", name)
     local f = assert(io.open(name, "wb"))
-    assert(f:write(machine:read_memory(config.start, length)))
+    assert(f:write(machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)))
     f:close()
 end
 
@@ -2117,10 +2079,7 @@ if config.processor.iunrep ~= 0 then stderr("Running in unreproducible mode!\n")
 if store_config == stderr then store_machine_config(config, stderr) end
 if cmio_advance or cmio_inspect then
     check_cmio_htif_config(config.htif)
-    assert(config.cmio, "cmio device must be present")
     assert(remote_address, "cmio requires --remote-address for snapshot/rollback")
-    check_cmio_memory_range_config(config.cmio.tx_buffer, "tx-buffer")
-    check_cmio_memory_range_config(config.cmio.rx_buffer, "rx-buffer")
 end
 local cycles = machine:read_mcycle()
 if initial_hash then
@@ -2170,7 +2129,7 @@ while math.ult(cycles, max_mcycle) do
         local _, reason, length = get_and_print_yield(machine, config.htif)
         -- there was an exception
         if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION then
-            dump_exception(machine, config.cmio.tx_buffer, length)
+            dump_exception(machine, length)
             exit_code = 1
         -- there are advance state inputs to feed
         elseif cmio_advance and cmio_advance.next_input_index < cmio_advance.input_index_end then
@@ -2179,8 +2138,7 @@ while math.ult(cycles, max_mcycle) do
                 -- save only if we have already run an input and have just accepted it
                 if cmio_advance.next_input_index > cmio_advance.input_index_begin then
                     assert(length == 32, "expected root hash in tx buffer")
-                    local root_hash =
-                        save_cmio_output_hashes_root_hash(machine, config.cmio.tx_buffer, cmio_advance, length)
+                    local root_hash = save_cmio_output_hashes_root_hash(machine, cmio_advance, length)
                     check_outputs_root_hash(root_hash, output_hashes)
                 end
             -- previous reason was a reject
@@ -2194,9 +2152,7 @@ while math.ult(cycles, max_mcycle) do
             stderr("\nBefore input %d\n", cmio_advance.next_input_index)
             if cmio_advance.hashes then print_root_hash(machine) end
             machine:snapshot()
-            local input_length = load_cmio_input(machine, config.cmio, cmio_advance)
-            machine:reset_iflags_Y()
-            set_yield_data(machine, cartesi.machine.HTIF_YIELD_REASON_ADVANCE_STATE, input_length)
+            load_cmio_input(machine, cmio_advance)
             if cmio_advance.hashes then print_root_hash(machine) end
             cmio_advance.output_index = 0
             cmio_advance.report_index = 0
@@ -2206,8 +2162,7 @@ while math.ult(cycles, max_mcycle) do
             if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
                 if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
                     assert(length == 32, "expected root hash in tx buffer")
-                    local root_hash =
-                        save_cmio_output_hashes_root_hash(machine, config.cmio.tx_buffer, cmio_advance, 32)
+                    local root_hash = save_cmio_output_hashes_root_hash(machine, cmio_advance, 32)
                     check_outputs_root_hash(root_hash, output_hashes)
                     output_hashes = {}
                     cmio_advance = nil
@@ -2220,9 +2175,7 @@ while math.ult(cycles, max_mcycle) do
                     stderr("\nBefore query\n")
                     if cmio_inspect.hashes then print_root_hash(machine) end
                     machine:snapshot()
-                    local input_length = load_cmio_query(machine, config.cmio, cmio_inspect)
-                    machine:reset_iflags_Y()
-                    set_yield_data(machine, cartesi.machine.HTIF_YIELD_REASON_INSPECT_STATE, input_length)
+                    load_cmio_query(machine, cmio_inspect)
                     if cmio_inspect.hashes then print_root_hash(machine) end
                     cmio_inspect.report_index = 0
                     cmio_inspect.query = nil
@@ -2240,19 +2193,19 @@ while math.ult(cycles, max_mcycle) do
         -- we have fed an advance state input
         if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
             if reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
-                local output = save_cmio_output(machine, config.cmio.tx_buffer, cmio_advance, length)
+                local output = save_cmio_output(machine, cmio_advance, length)
                 local output_hash = cartesi.keccak(output)
                 output_hashes[#output_hashes + 1] = output_hash
                 cmio_advance.output_index = cmio_advance.output_index + 1
             elseif reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT then
-                save_cmio_report(machine, config.cmio.tx_buffer, cmio_advance, length)
+                save_cmio_report(machine, cmio_advance, length)
                 cmio_advance.report_index = cmio_advance.report_index + 1
             end
         -- ignore other reasons
         -- we have feed the inspect state query
         elseif cmio_inspect and not cmio_inspect.query then
             if reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT then
-                save_cmio_inspect_state_report(machine, config.cmio.tx_buffer, cmio_inspect, length)
+                save_cmio_inspect_state_report(machine, cmio_inspect, length)
                 cmio_inspect.report_index = cmio_inspect.report_index + 1
             end
             -- ignore other reasons

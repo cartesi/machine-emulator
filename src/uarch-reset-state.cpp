@@ -14,6 +14,9 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+/// \file
+/// \brief This file is be converted to Solidity by the machine-solidity-step.
+
 // NOLINTBEGIN(google-readability-casting, misc-const-correctness)
 
 #include <stdexcept>
@@ -21,9 +24,9 @@
 #include "riscv-constants.h"
 #include "uarch-record-state-access.h"
 #include "uarch-replay-state-access.h"
-#include "uarch-state-access.h"
 #include "uarch-reset-state.h"
 #include "uarch-solidity-compat.h"
+#include "uarch-state-access.h"
 
 namespace cartesi {
 

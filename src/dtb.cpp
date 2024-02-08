@@ -184,24 +184,21 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
         }
 
         // cmio
-        if (c.cmio.has_value()) {
-            const auto &r = c.cmio.value();
-            fdt.begin_node("cmio");
-            fdt.prop_u32("#address-cells", 2);
-            fdt.prop_u32("#size-cells", 2);
-            fdt.prop_string("compatible", "ctsi-cmio");
-            { // rx_buffer
-                fdt.begin_node_num("rx_buffer", r.rx_buffer.start);
-                fdt.prop_u64_list<2>("reg", {r.rx_buffer.start, r.rx_buffer.length});
-                fdt.end_node();
-            }
-            { // tx_buffer
-                fdt.begin_node_num("tx_buffer", r.tx_buffer.start);
-                fdt.prop_u64_list<2>("reg", {r.tx_buffer.start, r.tx_buffer.length});
-                fdt.end_node();
-            }
+        fdt.begin_node("cmio");
+        fdt.prop_u32("#address-cells", 2);
+        fdt.prop_u32("#size-cells", 2);
+        fdt.prop_string("compatible", "ctsi-cmio");
+        { // rx_buffer
+            fdt.begin_node_num("rx_buffer", PMA_CMIO_RX_BUFFER_START);
+            fdt.prop_u64_list<2>("reg", {PMA_CMIO_RX_BUFFER_START, PMA_CMIO_RX_BUFFER_LENGTH});
             fdt.end_node();
         }
+        { // tx_buffer
+            fdt.begin_node_num("tx_buffer", PMA_CMIO_TX_BUFFER_START);
+            fdt.prop_u64_list<2>("reg", {PMA_CMIO_TX_BUFFER_START, PMA_CMIO_TX_BUFFER_LENGTH});
+            fdt.end_node();
+        }
+        fdt.end_node();
 
         // yield
         if (c.htif.yield_manual || c.htif.yield_automatic) {

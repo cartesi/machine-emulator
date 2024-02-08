@@ -167,10 +167,16 @@ using virtio_device_config = std::variant<virtio_console_config, ///< Console
 /// \brief List of VirtIO devices
 using virtio_configs = boost::container::static_vector<virtio_device_config, VIRTIO_DEVICE_MAX>;
 
+/// \brief cmio buffer configuration
+struct cmio_buffer_config final { // NOLINT(bugprone-exception-escape)
+    bool shared{false};           ///< Target changes to memory affect image file?
+    std::string image_filename{}; ///< Memory range image file name
+};
+
 /// \brief Cmio configuration
-struct cmio_config {                                    // NOLINT(bugprone-exception-escape)
-    memory_range_config rx_buffer{0x60000000, 2 << 20}; ///< RX buffer
-    memory_range_config tx_buffer{0x60200000, 2 << 20}; ///< TX buffer
+struct cmio_config {              // NOLINT(bugprone-exception-escape)
+    cmio_buffer_config rx_buffer; ///< RX buffer configuration
+    cmio_buffer_config tx_buffer; ///< TX buffer configuration
 };
 
 /// \brief Machine state configuration
@@ -186,7 +192,7 @@ struct machine_config final {
     htif_config htif{};                ///< HTIF device state
     virtio_configs virtio{};           ///< VirtIO devices state
     uarch_config uarch{};              ///< microarchitecture configuration
-    std::optional<cmio_config> cmio{}; ///< Cmio state
+    cmio_config cmio{};                ///< Cmio state
 
     /// \brief Get the name where config will be stored in a directory
     static std::string get_config_filename(const std::string &dir);

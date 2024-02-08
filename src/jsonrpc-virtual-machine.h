@@ -66,6 +66,13 @@ public:
         const access_log &log, const hash_type &root_hash_after, const machine_runtime_config &r = {},
         bool one_based = false);
 
+    static void verify_send_cmio_response_log(const jsonrpc_mg_mgr_ptr &mgr, uint16_t reason, const unsigned char *data,
+        size_t length, const access_log &log, const machine_runtime_config &r = {}, bool one_based = false);
+
+    static void verify_send_cmio_response_state_transition(const jsonrpc_mg_mgr_ptr &mgr, uint16_t reason,
+        const unsigned char *data, size_t length, const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after, const machine_runtime_config &r = {}, bool one_based = false);
+
     static std::string fork(const jsonrpc_mg_mgr_ptr &mgr);
     static uint64_t get_x_address(const jsonrpc_mg_mgr_ptr &mgr, int i);
     static uint64_t get_f_address(const jsonrpc_mg_mgr_ptr &mgr, int i);
@@ -197,7 +204,9 @@ private:
     void do_write_uarch_cycle(uint64_t val) override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
     machine_memory_range_descrs do_get_memory_ranges(void) const override;
-
+    void do_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length) override;
+    access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
+        const access_log::type &log_type, bool one_based) override;
     jsonrpc_mg_mgr_ptr m_mgr;
 };
 

@@ -133,23 +133,15 @@ local function create_default_config(images_dir, command)
             yield_automatic = true,
             yield_manual = true,
         },
+        cmio = {
+            rx_buffer = { shared = false },
+            tx_buffer = { shared = false },
+        },
         flash_drive = {
             {
                 start = 1 << 55,
                 length = get_file_length(images_dir .. "rootfs.ext2"),
                 image_filename = images_dir .. "rootfs.ext2",
-                shared = false, -- default
-            },
-        },
-        cmio = {
-            rx_buffer = {
-                start = 0x60000000,
-                length = 0x200000,
-                shared = false, -- default
-            },
-            tx_buffer = {
-                start = 0x60200000,
-                length = 0x200000,
                 shared = false, -- default
             },
         },

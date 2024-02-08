@@ -243,3 +243,32 @@ int cm_jsonrpc_shutdown(const cm_jsonrpc_mg_mgr *mgr, char **err_msg) try {
 } catch (...) {
     return cm_result_failure(err_msg);
 }
+
+int cm_jsonrpc_verify_send_cmio_response_log(const cm_jsonrpc_mg_mgr *mgr, uint16_t reason, const unsigned char *data,
+    size_t length, const cm_access_log *log, const cm_machine_runtime_config *runtime_config, bool one_based,
+    char **err_msg) try {
+    const auto *cpp_mgr = convert_from_c(mgr);
+    const cartesi::access_log cpp_log = convert_from_c(log);
+    const cartesi::machine_runtime_config cpp_runtime = convert_from_c(runtime_config);
+    cartesi::jsonrpc_virtual_machine::verify_send_cmio_response_log(*cpp_mgr, reason, data, length, cpp_log,
+        cpp_runtime, one_based);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_jsonrpc_verify_send_cmio_response_state_transition(const cm_jsonrpc_mg_mgr *mgr, uint16_t reason,
+    const unsigned char *data, size_t length, const cm_hash *root_hash_before, const cm_access_log *log,
+    const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config, bool one_based,
+    char **err_msg) try {
+    const auto *cpp_mgr = convert_from_c(mgr);
+    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::access_log cpp_log = convert_from_c(log);
+    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    const cartesi::machine_runtime_config cpp_runtime = convert_from_c(runtime_config);
+    cartesi::jsonrpc_virtual_machine::verify_send_cmio_response_state_transition(*cpp_mgr, reason, data, length,
+        cpp_root_hash_before, cpp_log, cpp_root_hash_after, cpp_runtime, one_based);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}

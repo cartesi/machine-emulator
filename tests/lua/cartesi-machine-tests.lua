@@ -602,10 +602,6 @@ local function build_machine(test_name)
             yield_automatic = true,
             yield_manual = true,
         },
-        cmio = {
-            rx_buffer = { start = 0x60000000, length = 2 << 20 },
-            tx_buffer = { start = 0x60200000, length = 2 << 20 },
-        },
         flash_drive = { {
             start = 0x80000000000000,
             length = 0x40000,

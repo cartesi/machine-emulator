@@ -106,6 +106,15 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uint64_t &value, co
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, uint32_t &value, const std::string &path = "params/");
 
+/// \brief Attempts to load an uint16_t from a field in a JSON object
+/// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
+/// \param j JSON object to load from
+/// \param key Key to load value from
+/// \param value Object to store value
+/// \param path Path to j
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, uint16_t &value, const std::string &path = "params/");
+
 /// \brief Attempts to load a semantic_version object from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
@@ -600,6 +609,8 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const std::string
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, uint32_t &value,
     const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, uint16_t &value,
+    const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, semantic_version &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, semantic_version &value,
@@ -661,6 +672,8 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &k
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key,
     not_default_constructible<access_log::type> &value, const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, uint32_t &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, uint16_t &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key,
     not_default_constructible<access_log> &value, const std::string &base = "params/");

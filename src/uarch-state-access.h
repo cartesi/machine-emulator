@@ -25,8 +25,10 @@
 namespace cartesi {
 
 class uarch_state_access : public i_uarch_state_access<uarch_state_access> {
+    // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     uarch_state &m_us;
     machine_state &m_s;
+    // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)1
 
     /// \brief Obtain Memory PMA entry that covers a given physical memory region
     /// \param paddr Start of physical memory region.
@@ -187,10 +189,9 @@ private:
         if (uarch_pristine_ram_len > m_us.ram.get_length()) {
             throw std::runtime_error("embedded uarch ram image does not fit in uarch ram pma");
         }
-        memset(m_us.ram.get_memory().get_host_memory(), 0, m_us.ram.get_length());
-        memcpy(m_us.ram.get_memory().get_host_memory(), uarch_pristine_ram, uarch_pristine_ram_len);
+        m_us.ram.fill_memory(m_us.ram.get_start(), 0, m_us.ram.get_length());
+        m_us.ram.write_memory(m_us.ram.get_start(), uarch_pristine_ram, uarch_pristine_ram_len);
     }
-
 };
 
 } // namespace cartesi

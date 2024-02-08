@@ -903,15 +903,26 @@ static void push_cm_virtio_hostfwd_config(lua_State *L, const cm_virtio_hostfwd_
     clua_setintegerfield(L, m->guest_port, "guest_port", -1);
 }
 
+/// \brief Pushes cm_cmio_buffer_config to the Lua stack
+/// \param L Lua state.
+/// \param m buffer to be pushed.
+static void push_cm_cmio_buffer_config(lua_State *L, const cm_cmio_buffer_config *m) {
+    lua_newtable(L);
+    if (m->image_filename != nullptr) {
+        clua_setstringfield(L, m->image_filename, "image_filename", -1);
+    }
+    clua_setbooleanfield(L, m->shared, "shared", -1);
+}
+
 /// \brief Pushes cm_cmio_config to the Lua stack
 /// \param L Lua state.
 /// \param r Cmio config to be pushed.
 static void push_cm_cmio_config(lua_State *L, const cm_cmio_config *r) {
-    lua_newtable(L);                               // cmio
-    push_cm_memory_range_config(L, &r->rx_buffer); // cmio rx_buffer
-    lua_setfield(L, -2, "rx_buffer");              // cmio
-    push_cm_memory_range_config(L, &r->tx_buffer); // cmio tx_buffer
-    lua_setfield(L, -2, "tx_buffer");              // cmio
+    lua_newtable(L);                              // cmio
+    push_cm_cmio_buffer_config(L, &r->rx_buffer); // buffer_config
+    lua_setfield(L, -2, "rx_buffer");             // cmio
+    push_cm_cmio_buffer_config(L, &r->tx_buffer); // buffer_config
+    lua_setfield(L, -2, "tx_buffer");             // cmio
 }
 
 /// \brief Pushes cm_flash_drive_configs to the Lua stack
@@ -1035,10 +1046,8 @@ void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
     lua_setfield(L, -2, "dtb");                      // config
     push_cm_uarch_config(L, &c->uarch);              // uarch
     lua_setfield(L, -2, "uarch");                    // config
-    if (c->cmio.has_value) {
-        push_cm_cmio_config(L, &c->cmio); // config cmio
-        lua_setfield(L, -2, "cmio");      // config
-    }
+    push_cm_cmio_config(L, &c->cmio);                // config cmio
+    lua_setfield(L, -2, "cmio");                     // config
 }
 
 #if 0
@@ -1108,21 +1117,32 @@ cm_virtio_hostfwd_config *clua_check_cm_virtio_hostfwd_config(lua_State *L, int 
     return m;
 }
 
+/// \brief Loads cm_cmio_buffer_config from Lua to cm_cmio_buffer_config
+cm_cmio_buffer_config *clua_check_cm_cmio_buffer_config(lua_State *L, int tabidx, cm_cmio_buffer_config *m,
+    const cm_cmio_buffer_config *def) {
+    if (!lua_istable(L, tabidx)) {
+        *m = *def;
+        return m;
+    }
+    m->shared = opt_boolean_field(L, tabidx, "shared");
+    m->image_filename = opt_copy_string_field(L, tabidx, "image_filename");
+    return m;
+}
+
 /// \brief Loads cmio config from Lua to cm_cmio_config
 /// \param L Lua state
 /// \param tabidx Config stack index
 /// \param r C api cmio config structure to receive results
-static void check_cm_cmio_config(lua_State *L, int tabidx, cm_cmio_config *r) {
+static void check_cm_cmio_config(lua_State *L, int tabidx, cm_cmio_config *r, const cm_cmio_config *def) {
     if (!opt_table_field(L, tabidx, "cmio")) {
-        r->has_value = false;
+        *r = *def;
         return;
     }
-    r->has_value = true;
     lua_getfield(L, -1, "rx_buffer");
-    clua_check_cm_memory_range_config(L, -1, "cmio rx buffer", &r->rx_buffer);
+    clua_check_cm_cmio_buffer_config(L, -1, &r->rx_buffer, &def->rx_buffer);
     lua_pop(L, 1);
     lua_getfield(L, -1, "tx_buffer");
-    clua_check_cm_memory_range_config(L, -1, "cmio tx buffer", &r->tx_buffer);
+    clua_check_cm_cmio_buffer_config(L, -1, &r->tx_buffer, &def->tx_buffer);
     lua_pop(L, 2);
 }
 
@@ -1435,7 +1455,7 @@ cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ct
     check_cm_clint_config(L, tabidx, &config->clint);
     check_cm_plic_config(L, tabidx, &config->plic);
     check_cm_uarch_config(L, tabidx, &config->uarch);
-    check_cm_cmio_config(L, tabidx, &config->cmio);
+    check_cm_cmio_config(L, tabidx, &config->cmio, &config->cmio);
     check_cm_flash_drive_configs(L, tabidx, &config->flash_drive);
     check_cm_virtio_configs(L, tabidx, &config->virtio);
     managed.release();

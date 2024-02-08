@@ -223,6 +223,24 @@ static cm_memory_range_config convert_to_c(const cartesi::memory_range_config &c
 }
 
 // ----------------------------------------------
+// CMIO buffer configuration conversion functions
+// ----------------------------------------------
+static cartesi::cmio_buffer_config convert_from_c(const cm_cmio_buffer_config *c_config) {
+    if (c_config == nullptr) {
+        throw std::invalid_argument("invalid memory range configuration");
+    }
+    cartesi::cmio_buffer_config new_cpp_cmio_buffer_config{c_config->shared, null_to_empty(c_config->image_filename)};
+    return new_cpp_cmio_buffer_config;
+}
+
+static cm_cmio_buffer_config convert_to_c(const cartesi::cmio_buffer_config &cpp_config) {
+    cm_cmio_buffer_config new_c_cmio_buffer_config{};
+    new_c_cmio_buffer_config.shared = cpp_config.shared;
+    new_c_cmio_buffer_config.image_filename = convert_to_c(cpp_config.image_filename);
+    return new_c_cmio_buffer_config;
+}
+
+// ----------------------------------------------
 // VirtIO host forward configuration conversion functions
 // ----------------------------------------------
 static cartesi::virtio_hostfwd_config convert_from_c(const cm_virtio_hostfwd_config *c_config) {
@@ -389,23 +407,17 @@ static cm_htif_config convert_to_c(const cartesi::htif_config &cpp_config) {
 // --------------------------------------------
 // cmio configuration conversion functions
 // --------------------------------------------
-static std::optional<cartesi::cmio_config> convert_from_c(const cm_cmio_config *c_config) {
-    if (!c_config->has_value) {
-        return {};
-    }
-    cartesi::cmio_config new_cpp_cmio_config{convert_from_c(&c_config->rx_buffer),
-        convert_from_c(&c_config->tx_buffer)};
+static cartesi::cmio_config convert_from_c(const cm_cmio_config *c_config) {
+    cartesi::cmio_config new_cpp_cmio_config;
+    new_cpp_cmio_config.rx_buffer = convert_from_c(&c_config->rx_buffer);
+    new_cpp_cmio_config.tx_buffer = convert_from_c(&c_config->tx_buffer);
     return new_cpp_cmio_config;
 }
 
-static cm_cmio_config convert_to_c(const std::optional<cartesi::cmio_config> &cpp_config) {
+static cm_cmio_config convert_to_c(const cartesi::cmio_config &cpp_config) {
     cm_cmio_config new_c_cmio_config{};
-    new_c_cmio_config.has_value = cpp_config.has_value();
-    if (!cpp_config.has_value()) {
-        return new_c_cmio_config;
-    }
-    new_c_cmio_config.rx_buffer = convert_to_c(cpp_config->rx_buffer);
-    new_c_cmio_config.tx_buffer = convert_to_c(cpp_config->tx_buffer);
+    new_c_cmio_config.rx_buffer = convert_to_c(cpp_config.rx_buffer);
+    new_c_cmio_config.tx_buffer = convert_to_c(cpp_config.tx_buffer);
     return new_c_cmio_config;
 }
 
@@ -1524,6 +1536,14 @@ void cm_delete_memory_range_config(const cm_memory_range_config *config) {
     delete config;
 }
 
+void cm_delete_cmio_buffer_config(const cm_cmio_buffer_config *config) {
+    if (config == nullptr) {
+        return;
+    }
+    delete[] config->image_filename;
+    delete config;
+}
+
 void cm_delete_cstring(const char *err_msg) {
     if (err_msg == nullptr) {
         return;
@@ -1597,4 +1617,52 @@ CM_API void cm_delete_memory_range_descr_array(cm_memory_range_descr_array *mrds
     }
     delete[] mrds->entry;
     delete mrds;
+}
+
+int cm_send_cmio_response(cm_machine *m, uint16_t reason, const unsigned char *data, size_t length,
+    char **err_msg) try {
+    auto *cpp_machine = convert_from_c(m);
+    cpp_machine->send_cmio_response(reason, data, length);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const unsigned char *data, size_t length,
+    cm_access_log_type log_type, bool one_based, cm_access_log **access_log, char **err_msg) try {
+    if (access_log == nullptr) {
+        throw std::invalid_argument("invalid access log output");
+    }
+    auto *cpp_machine = convert_from_c(m);
+    cartesi::access_log::type cpp_log_type{log_type.proofs, log_type.annotations, log_type.large_data};
+    cartesi::access_log cpp_access_log =
+        cpp_machine->log_send_cmio_response(reason, data, length, cpp_log_type, one_based);
+    *access_log = convert_to_c(cpp_access_log);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, size_t length,
+    const cm_access_log *log, const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg) try {
+    const cartesi::access_log cpp_log = convert_from_c(log);
+    const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
+    cartesi::machine::verify_send_cmio_response_log(reason, data, length, cpp_log, cpp_runtime_config, one_based);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, size_t length,
+    const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after,
+    const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg) try {
+    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    const cartesi::access_log cpp_log = convert_from_c(log);
+    const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
+    cartesi::machine::verify_send_cmio_response_state_transition(reason, data, length, cpp_root_hash_before, cpp_log,
+        cpp_root_hash_after, cpp_runtime_config, one_based);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
 }

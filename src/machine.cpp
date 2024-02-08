@@ -28,7 +28,10 @@
 #include "htif.h"
 #include "interpret.h"
 #include "plic-factory.h"
+#include "record-state-access.h"
+#include "replay-state-access.h"
 #include "riscv-constants.h"
+#include "send-cmio-response.h"
 #include "shadow-pmas-factory.h"
 #include "shadow-state-factory.h"
 #include "shadow-tlb-factory.h"
@@ -36,13 +39,10 @@
 #include "strict-aliasing.h"
 #include "translate-virtual-address.h"
 #include "uarch-interpret.h"
-#include "uarch-record-reset-state-access.h"
-#include "uarch-record-step-state-access.h"
-#include "uarch-replay-reset-state-access.h"
-#include "uarch-replay-step-state-access.h"
-#include "uarch-reset-state-access.h"
+#include "uarch-record-state-access.h"
+#include "uarch-replay-state-access.h"
 #include "uarch-reset-state.h"
-#include "uarch-step-state-access.h"
+#include "uarch-state-access.h"
 #include "uarch-step.h"
 #include "unique-c-ptr.h"
 #include "virtio-console.h"
@@ -119,12 +119,26 @@ pma_entry machine::make_flash_drive_pma_entry(const std::string &description, co
     return make_memory_range_pma_entry(description, c).set_flags(m_flash_drive_flags);
 }
 
-pma_entry machine::make_cmio_rx_buffer_pma_entry(const memory_range_config &c) {
-    return make_memory_range_pma_entry("cmio rx buffer memory range"s, c).set_flags(m_cmio_rx_buffer_flags);
+pma_entry machine::make_cmio_rx_buffer_pma_entry(const cmio_config &c) {
+    const auto description = "cmio rx buffer memory range"s;
+    if (!c.rx_buffer.image_filename.empty()) {
+        return make_mmapd_memory_pma_entry(description, PMA_CMIO_RX_BUFFER_START, PMA_CMIO_RX_BUFFER_LENGTH,
+            c.rx_buffer.image_filename, c.rx_buffer.shared)
+            .set_flags(m_cmio_rx_buffer_flags);
+    }
+    return make_callocd_memory_pma_entry(description, PMA_CMIO_RX_BUFFER_START, PMA_CMIO_RX_BUFFER_LENGTH)
+        .set_flags(m_cmio_rx_buffer_flags);
 }
 
-pma_entry machine::make_cmio_tx_buffer_pma_entry(const memory_range_config &c) {
-    return make_memory_range_pma_entry("cmio tx buffer memory range"s, c).set_flags(m_cmio_tx_buffer_flags);
+pma_entry machine::make_cmio_tx_buffer_pma_entry(const cmio_config &c) {
+    const auto description = "cmio tx buffer memory range"s;
+    if (!c.tx_buffer.image_filename.empty()) {
+        return make_mmapd_memory_pma_entry(description, PMA_CMIO_TX_BUFFER_START, PMA_CMIO_TX_BUFFER_LENGTH,
+            c.tx_buffer.image_filename, c.tx_buffer.shared)
+            .set_flags(m_cmio_tx_buffer_flags);
+    }
+    return make_callocd_memory_pma_entry(description, PMA_CMIO_TX_BUFFER_START, PMA_CMIO_TX_BUFFER_LENGTH)
+        .set_flags(m_cmio_tx_buffer_flags);
 }
 
 pma_entry &machine::register_pma_entry(pma_entry &&pma) {
@@ -346,17 +360,8 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     }
 
     // Register cmio memory ranges
-    if (m_c.cmio.has_value()) {
-        if (!m_c.htif.yield_automatic || !m_c.htif.yield_manual) {
-            throw std::invalid_argument{"cmio device requires automatic and manual yield"};
-        }
-        if (m_c.cmio->rx_buffer.length == 0 || m_c.cmio->rx_buffer.start == 0 || m_c.cmio->tx_buffer.length == 0 ||
-            m_c.cmio->tx_buffer.start == 0) {
-            throw std::invalid_argument{"incomplete cmio configuration"};
-        }
-        register_pma_entry(make_cmio_tx_buffer_pma_entry(m_c.cmio->tx_buffer));
-        register_pma_entry(make_cmio_rx_buffer_pma_entry(m_c.cmio->rx_buffer));
-    }
+    register_pma_entry(make_cmio_tx_buffer_pma_entry(m_c.cmio));
+    register_pma_entry(make_cmio_rx_buffer_pma_entry(m_c.cmio));
 
     // Register HTIF device
     register_pma_entry(make_htif_pma_entry(PMA_HTIF_START, PMA_HTIF_LENGTH, &m_r.htif));
@@ -641,11 +646,8 @@ machine_config machine::get_serialization_config(void) const {
     for (auto &f : c.flash_drive) {
         f.image_filename.clear();
     }
-    if (c.cmio.has_value()) {
-        auto &r = c.cmio.value();
-        r.rx_buffer.image_filename.clear();
-        r.tx_buffer.image_filename.clear();
-    }
+    c.cmio.rx_buffer.image_filename.clear();
+    c.cmio.tx_buffer.image_filename.clear();
     c.uarch.processor.cycle = read_uarch_cycle();
     c.uarch.processor.halt_flag = read_uarch_halt_flag();
     c.uarch.processor.pc = read_uarch_pc();
@@ -748,11 +750,8 @@ void machine::store_pmas(const machine_config &c, const std::string &dir) const 
     for (const auto &f : c.flash_drive) {
         store_memory_pma(find_pma_entry<uint64_t>(f.start), dir);
     }
-    if (c.cmio.has_value()) {
-        const auto &r = c.cmio.value();
-        store_memory_pma(find_pma_entry<uint64_t>(r.rx_buffer.start), dir);
-        store_memory_pma(find_pma_entry<uint64_t>(r.tx_buffer.start), dir);
-    }
+    store_memory_pma(find_pma_entry<uint64_t>(PMA_CMIO_RX_BUFFER_START), dir);
+    store_memory_pma(find_pma_entry<uint64_t>(PMA_CMIO_TX_BUFFER_START), dir);
     if (!m_uarch.get_state().ram.get_istart_E()) {
         store_memory_pma(m_uarch.get_state().ram, dir);
     }
@@ -1744,7 +1743,6 @@ void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length
         memcpy(data, pma.get_memory().get_host_memory() + (address - pma.get_start()), length);
         return;
     }
-
     auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
     // relative request address inside pma
     uint64_t shift = address - pma.get_start();
@@ -1795,6 +1793,17 @@ void machine::write_memory(uint64_t address, const unsigned char *data, size_t l
         throw std::invalid_argument{"address range not entirely in memory PMA"};
     }
     pma.write_memory(address, data, length);
+}
+
+void machine::fill_memory(uint64_t address, uint8_t data, size_t length) {
+    if (length == 0) {
+        return;
+    }
+    pma_entry &pma = find_pma_entry(m_pmas, address, length);
+    if (!pma.get_istart_M() || pma.get_istart_E()) {
+        throw std::invalid_argument{"address range not entirely in memory PMA"};
+    }
+    pma.fill_memory(address, data, length);
 }
 
 void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uint64_t length) {
@@ -1927,12 +1936,79 @@ bool machine::read_uarch_halt_flag(void) const {
     return m_uarch.read_halt_flag();
 }
 
+void machine::send_cmio_response(uint16_t reason, const unsigned char *data, size_t length) {
+    state_access a(*this);
+    cartesi::send_cmio_response(a, reason, data, length);
+}
+
+access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
+    const access_log::type &log_type, bool one_based) {
+    hash_type root_hash_before;
+    if (log_type.has_proofs()) {
+        get_root_hash(root_hash_before);
+    }
+    // Call send_cmio_response  with the recording state accessor
+    record_state_access a(*this, log_type);
+    a.push_bracket(bracket_type::begin, "send cmio response");
+    cartesi::send_cmio_response(a, reason, data, length);
+    a.push_bracket(bracket_type::end, "send cmio response");
+    // Verify access log before returning
+    if (log_type.has_proofs()) {
+        hash_type root_hash_after;
+        update_merkle_tree();
+        get_root_hash(root_hash_after);
+        verify_send_cmio_response_state_transition(reason, data, length, root_hash_before, *a.get_log(),
+            root_hash_after, m_r, one_based);
+    } else {
+        verify_send_cmio_response_log(reason, data, length, *a.get_log(), m_r, one_based);
+    }
+    return std::move(*a.get_log());
+}
+
+void machine::verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, size_t length,
+    const access_log &log, const machine_runtime_config &r, bool one_based) {
+    (void) r;
+    // There must be at least one access in log
+    if (log.get_accesses().empty()) {
+        throw std::invalid_argument{"too few accesses in log"};
+    }
+    replay_state_access a(log, false /* verify_proofs */, {} /* initial_hash */, one_based);
+    cartesi::send_cmio_response(a, reason, data, length);
+    a.finish();
+}
+
+void machine::verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, size_t length,
+    const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after,
+    const machine_runtime_config &r, bool one_based) {
+    (void) r;
+    // We need proofs in order to verify the state transition
+    if (!log.get_log_type().has_proofs()) {
+        throw std::invalid_argument{"log has no proofs"};
+    }
+    // There must be at least one access in log
+    if (log.get_accesses().empty()) {
+        throw std::invalid_argument{"too few accesses in log"};
+    }
+
+    // Verify all intermediate state transitions
+    replay_state_access a(log, true /* verify_proofs */, root_hash_before, one_based);
+    cartesi::send_cmio_response(a, reason, data, length);
+    a.finish();
+
+    // Make sure the access log ends at the same root hash as the state
+    hash_type obtained_root_hash;
+    a.get_root_hash(obtained_root_hash);
+    if (obtained_root_hash != root_hash_after) {
+        throw std::invalid_argument{"mismatch in root hash after replay"};
+    }
+}
+
 void machine::set_uarch_halt_flag() {
     m_uarch.set_halt_flag();
 }
 
 void machine::reset_uarch() {
-    uarch_reset_state_access a(m_uarch.get_state());
+    uarch_state_access a(m_uarch.get_state(), get_state());
     uarch_reset_state(a);
 }
 
@@ -1941,8 +2017,8 @@ access_log machine::log_uarch_reset(const access_log::type &log_type, bool one_b
     if (log_type.has_proofs()) {
         get_root_hash(root_hash_before);
     }
-    // Call uarch_reset_state with a uarch_record_reset_state_access object
-    uarch_record_reset_state_access a(m_uarch.get_state(), *this, log_type);
+    // Call uarch_reset_state with a uarch_record_state_access object
+    uarch_record_state_access a(m_uarch.get_state(), *this, log_type);
     a.push_bracket(bracket_type::begin, "reset uarch state");
     uarch_reset_state(a);
     a.push_bracket(bracket_type::end, "reset uarch state");
@@ -1964,7 +2040,7 @@ void machine::verify_uarch_reset_log(const access_log &log, const machine_runtim
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
     }
-    uarch_replay_reset_state_access a(log, false /* verify_proofs */, {} /* initial_hash */, one_based);
+    uarch_replay_state_access a(log, false /* verify_proofs */, {} /* initial_hash */, one_based);
     uarch_reset_state(a);
     a.finish();
 }
@@ -1981,7 +2057,7 @@ void machine::verify_uarch_reset_state_transition(const hash_type &root_hash_bef
         throw std::invalid_argument{"too few accesses in log"};
     }
     // Verify all intermediate state transitions
-    uarch_replay_reset_state_access a(log, true /* verify_proofs */, root_hash_before, one_based);
+    uarch_replay_state_access a(log, true /* verify_proofs */, root_hash_before, one_based);
     uarch_reset_state(a);
     a.finish();
     // Make sure the access log ends at the same root hash as the state
@@ -2001,7 +2077,7 @@ access_log machine::log_uarch_step(const access_log::type &log_type, bool one_ba
         get_root_hash(root_hash_before);
     }
     // Call interpret with a logged state access object
-    uarch_record_step_state_access a(m_uarch.get_state(), *this, log_type);
+    uarch_record_state_access a(m_uarch.get_state(), *this, log_type);
     a.push_bracket(bracket_type::begin, "step");
     uarch_step(a);
     a.push_bracket(bracket_type::end, "step");
@@ -2022,7 +2098,7 @@ void machine::verify_uarch_step_log(const access_log &log, const machine_runtime
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
     }
-    uarch_replay_step_state_access a(log, false /* verify proofs */, {} /* initial hash */, one_based);
+    uarch_replay_state_access a(log, false /* verify proofs */, {} /* initial hash */, one_based);
     uarch_step(a);
     a.finish();
 }
@@ -2039,7 +2115,7 @@ void machine::verify_uarch_step_state_transition(const hash_type &root_hash_befo
         throw std::invalid_argument{"too few accesses in log"};
     }
     // Verify all intermediate state transitions
-    uarch_replay_step_state_access a(log, true /* verify proofs! */, root_hash_before, one_based);
+    uarch_replay_state_access a(log, true /* verify proofs! */, root_hash_before, one_based);
     uarch_step(a);
     a.finish();
     // Make sure the access log ends at the same root hash as the state
@@ -2062,7 +2138,7 @@ uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
     if (m_uarch.get_state().ram.get_istart_E()) {
         throw std::runtime_error("microarchitecture RAM is not present");
     }
-    uarch_step_state_access a(m_uarch.get_state(), get_state());
+    uarch_state_access a(m_uarch.get_state(), get_state());
     return uarch_interpret(a, uarch_cycle_end);
 }
 

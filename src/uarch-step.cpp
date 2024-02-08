@@ -14,10 +14,12 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+/// \file
+/// \brief This file is be converted to Solidity by the machine-solidity-step.
+
 // NOLINTBEGIN(google-readability-casting, misc-const-correctness)
 
 #include <stdexcept>
-
 
 #include "riscv-constants.h"
 #include "uarch-record-state-access.h"

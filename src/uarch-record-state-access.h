@@ -454,7 +454,6 @@ private:
         memcpy(data.data() + ram_offset, m_us.ram.get_memory().get_host_memory(), m_us.ram.get_length());
         return data;
     }
-
 };
 
 } // namespace cartesi

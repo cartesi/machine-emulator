@@ -15,8 +15,8 @@
 # You should have received a copy of the GNU Lesser General Public License along
 # with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 #
-
+set -e
 mkdir -m 755 -p /tmp/uarch-riscv-tests-json-logs
-uarch-riscv-tests --output-dir=/tmp/logs --proofs --proofs-frequency=1 json-step-logs
-uarch-riscv-tests --output-dir=/tmp/logs --proofs json-reset-log
+uarch-riscv-tests --output-dir=/tmp/uarch-riscv-tests-json-logs --proofs --proofs-frequency=1 json-step-logs
+uarch-riscv-tests --output-dir=/tmp/uarch-riscv-tests-json-logs --proofs json-reset-log
 tar -czf uarch-riscv-tests-json-logs.tar.gz -C /tmp uarch-riscv-tests-json-logs

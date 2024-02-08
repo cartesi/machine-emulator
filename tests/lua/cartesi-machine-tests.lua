@@ -592,7 +592,7 @@ local function run_machine(machine, ctx, max_mcycle, advance_machine_fn)
         if machine:read_iflags_H() then break end
     end
     ctx.read_htif_tohost_data = machine:read_htif_tohost_data()
-    return machine:read_mcycle()
+    return machine:read_mcycle(), 0
 end
 
 local function advance_machine_with_uarch(machine)
@@ -600,7 +600,7 @@ local function advance_machine_with_uarch(machine)
 end
 
 local function run_machine_with_uarch(machine, ctx, max_mcycle)
-    return run_machine(machine, ctx, max_mcycle, advance_machine_with_uarch)
+    return run_machine(machine, ctx, max_mcycle, advance_machine_with_uarch), 0
 end
 
 local function connect()
@@ -683,89 +683,97 @@ local function print_machine(test_name, expected_cycles)
     end
 end
 
-local function add_error(ctx, msg, ...)
-    local e = string.format(msg, ...)
-    ctx.failed = true
-    ctx.errors[#ctx.errors + 1] = e
-end
-
-local function check_test_result(ctx)
+local function stderr(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
+local function check_and_print_result(ctx)
+    local errors = 0
     io.write(ctx.ram_image, ": ")
     if #ctx.expected_yield_payloads ~= (ctx.yield_payload_index - 1) then
-        add_error(ctx, "yielded %d times, expected %d", ctx.yield_payload_index - 1, #ctx.expected_yield_payloads)
+        stderr(
+            "%s: yielded %d times, expected %d\n",
+            ctx.ram_image,
+            ctx.yield_payload_index - 1,
+            #ctx.expected_yield_payloads
+        )
+        errors = errors + 1
     end
     if ctx.read_htif_tohost_data >> 1 ~= ctx.expected_halt_payload then
-        add_error(
-            ctx,
-            "returned halt payload %d, expected %d",
+        stderr(
+            "%s: returned halt payload %d, expected %d\n",
+            ctx.ram_image,
             ctx.read_htif_tohost_data >> 1,
             ctx.expected_halt_payload
         )
+        errors = errors + 1
     end
     if ctx.cycles ~= ctx.expected_cycles then
-        add_error(ctx, "terminated with mcycle = %d, expected %d", ctx.cycles, ctx.expected_cycles)
+        stderr("%s: terminated with mcycle = %d, expected %d\n", ctx.ram_image, ctx.cycles, ctx.expected_cycles)
+        errors = errors + 1
     end
-    if ctx.failed then
-        print("failed")
-        for _, e in pairs(ctx.errors) do
-            print(string.format("%s: %s", ctx.ram_image, e))
-        end
-    else
-        print("passed")
-    end
+    print(errors == 0 and "passed" or "failed")
+    return errors
 end
 
-local function run_parallel(contexts)
-    local unistd = require("posix.unistd")
-    local syswait = require("posix.sys.wait")
-    local pids = {}
-    local running_jobs = 0
-    -- sort to run slower tests first to maximize utilization of CPU cores
-    table.sort(contexts, function(a, b) return b.expected_cycles < a.expected_cycles end)
-    for _, ctx in ipairs(contexts) do
-        do -- run test in parallel
-            local pid = assert(unistd.fork())
-            if pid == 0 then -- child
-                local machine = ctx.target.build(ctx.ram_image)
-                ctx.cycles = ctx.target.run(machine, ctx, 2 * ctx.expected_cycles)
-                check_test_result(ctx)
-                ctx.target.destroy(machine)
-                unistd._exit(0)
-            else -- parent
-                pids[pid] = true
-                running_jobs = running_jobs + 1
-            end
-        end
-        while running_jobs >= jobs do
-            -- wait a child to finish
-            local pid, reason, exitcode = syswait.wait(-1)
-            if pid and pid > 0 and reason ~= "running" then
-                if not (reason == "exited" and exitcode == 0) then add_error("unexpected child process exit") end
-                pids[pid] = nil
-                running_jobs = running_jobs - 1
-                break
-            end
-        end
-    end
-    -- wait all children
-    for pid in pairs(pids) do
-        local retpid, reason, exitcode = syswait.wait(pid)
-        if not (retpid == pid and reason == "exited" and exitcode == 0) then
-            add_error("unexpected child process exit")
-        end
-        pids[pid] = nil
-        running_jobs = running_jobs - 1
-    end
-    assert(running_jobs == 0 and next(pids) == nil)
+local function run_single(ctx)
+    local machine = ctx.target.build(ctx.ram_image)
+    local cycles, failures = ctx.target.run(machine, ctx, 2 * ctx.expected_cycles)
+    ctx.cycles = cycles
+    local rc = check_and_print_result(ctx)
+    ctx.target.destroy(machine)
+    return (rc == 0 and failures == 0) and 0 or 1, rc
 end
 
 local function run_sync(contexts)
+    local failures = 0
     for _, ctx in pairs(contexts) do
-        local machine = ctx.target.build(ctx.ram_image)
-        ctx.cycles = ctx.target.run(machine, ctx, 2 * ctx.expected_cycles)
-        check_test_result(ctx)
-        ctx.target.destroy(machine)
+        failures = failures + run_single(ctx)
     end
+    return failures
+end
+
+local function run_parallel(contexts, limit)
+    local unistd = require("posix.unistd")
+    local syswait = require("posix.sys.wait")
+    -- sort to run slower tests first to maximize utilization of CPU cores
+    table.sort(contexts, function(a, b) return b.expected_cycles < a.expected_cycles end)
+    local ctx
+    local it, tb, i = ipairs(contexts)
+    local running = 0
+    local failures = 0
+
+    local function spawn(context)
+        local pid, err = unistd.fork()
+        if pid == nil then
+            error(err)
+        elseif pid == 0 then
+            os.exit(run_single(context))
+        end
+        return pid
+    end
+
+    local function drain(opt)
+        local ne = 0
+        local pid, reason, rc = syswait.wait(-1)
+        while pid and pid ~= (opt and 0) do
+            if reason == "exited" or reason == "killed" then -- ignore 'stopped'
+                if rc ~= 0 then ne = ne + 1 end
+                running = running - 1
+            end
+            pid, reason, rc = syswait.wait(-1, syswait[opt])
+        end
+        return ne
+    end
+
+    while true do
+        while running < limit do
+            i, ctx = it(tb, i)
+            if not ctx then goto done end
+            spawn(ctx)
+            running = running + 1
+        end
+        failures = failures + drain("WNOHANG")
+    end
+    ::done::
+    return failures + drain()
 end
 
 local function run_tests(tests, target)
@@ -781,23 +789,18 @@ local function run_tests(tests, target)
             yield_payload_index = 1,
             failed = false,
             cycles = 0,
-            errors = {},
         }
     end
+    local failures
     -- run
     if jobs > 1 then
-        run_parallel(contexts)
+        failures = run_parallel(contexts, jobs)
     else
-        run_sync(contexts)
-    end
-    -- collect results
-    local error_count = 0
-    for _, ctx in pairs(contexts) do
-        if ctx.failed then error_count = error_count + 1 end
+        failures = run_sync(contexts)
     end
     -- print summary
-    if error_count > 0 then
-        io.write(string.format("\nFAILED %d of %d tests\n\n", error_count, #tests))
+    if failures > 0 then
+        io.write(string.format("\nFAILED %d of %d tests\n\n", failures, #tests))
         os.exit(1, true)
     else
         io.write(string.format("\nPASSED all %d tests\n\n", #tests))
@@ -992,61 +995,63 @@ local function destroy_both_machines(target)
 end
 
 local function run_host_and_uarch_machines(target, ctx, max_mcycle)
+    local failures = 0
     local host_machine = target.host
     local uarch_machine = target.uarch
     local host_cycles = host_machine:read_mcycle()
     local uarch_cycles = uarch_machine:read_mcycle()
     assert(host_cycles == uarch_cycles)
     if host_cycles ~= uarch_cycles then
-        add_error(ctx, "host_cycles ~= uarch_cycles: %d ~= %d", host_cycles, uarch_cycles)
-        return 0
+        stderr("%s: host_cycles ~= uarch_cycles: %d ~= %d", ctx.ram_image, host_cycles, uarch_cycles)
+        failures = failures + 1
     end
     while math.ult(host_cycles, max_mcycle) do
         local host_hash = host_machine:get_root_hash()
         local uarch_hash = uarch_machine:get_root_hash()
         if host_hash ~= uarch_hash then
-            add_error(
-                ctx,
-                "Hash mismatch at mcycle %d: %s ~= %s",
+            stderr(
+                "%s: Hash mismatch at mcycle %d: %s ~= %s",
+                ctx.ram_image,
                 host_cycles,
                 util.hexhash(host_hash),
                 util.hexhash(uarch_hash)
             )
-            break
+            failures = failures + 1
         end
         host_machine:run(1 + host_cycles)
         advance_machine_with_uarch(uarch_machine)
         host_cycles = host_machine:read_mcycle()
         uarch_cycles = uarch_machine:read_mcycle()
         if host_cycles ~= uarch_cycles then
-            add_error(ctx, "host_cycles ~= uarch_cycles: %d ~= %d", host_cycles, uarch_cycles)
-            break
+            stderr("%s: host_cycles ~= uarch_cycles: %d ~= %d", ctx.ram_image, host_cycles, uarch_cycles)
+            failures = failures + 1
         end
         local host_iflags_H = host_machine:read_iflags_H()
         local uarch_iflags_H = uarch_machine:read_iflags_H()
         if host_iflags_H ~= uarch_iflags_H then
-            add_error(
-                ctx,
-                "host_iflags_H ~= uarch_iflags_H: %s ~= %s",
+            stderr(
+                "%s: host_iflags_H ~= uarch_iflags_H: %s ~= %s",
+                ctx.ram_image,
                 tostring(host_iflags_H),
                 tostring(uarch_iflags_H)
             )
-            break
+            failures = failures + 1
         end
         if host_iflags_H then break end
     end
     local host_htif_tohost_data = host_machine:read_htif_tohost_data()
     local uarch_htif_tohost_data = uarch_machine:read_htif_tohost_data()
     if host_htif_tohost_data ~= uarch_htif_tohost_data then
-        add_error(
-            ctx,
-            "host_htif_tohost_data ~= uarch_htif_tohost_data: %d ~= %d",
+        stderr(
+            "%s: host_htif_tohost_data ~= uarch_htif_tohost_data: %d ~= %d",
+            ctx.ram_image,
             host_htif_tohost_data,
             uarch_htif_tohost_data
         )
+        failures = failures + 1
     end
     ctx.read_htif_tohost_data = host_htif_tohost_data
-    return host_cycles
+    return host_cycles, failures
 end
 
 local targets = {

@@ -6,13 +6,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+## [0.16.0] - 2024-02-09
+### Added
+- Implemented the UARCH reset feature
+- Added soft yield runtime configuration using hints of the SRAIW instruction
+- Added shadow uarch state
+- Embedded the uarch RAM binary
+- Added instructions on how to build `libcartesi.a` in standalone
+- Supported compiling `libcartesi_jsonrpc.a` static library
+- Added file mapping and terminal support for Windows
+- Added the possibility to compile `libcartesi` without `mmap()`
+- Supported compiling `libcartesi` as a static library
+- Added memory range introspection
+- Introduced `-it` option for colored and bigger interactive terminal
+- Replaced MTD drives with PMEM drives
+- Initialized random entropy from the device tree
+- Added root hashes to `catalog.json`
+- Replaced proof with `sibling_hashes`
 
-- Changed stored machine configs from protobuf to JSON
-- Build device tree automatically into machine's ROM, eliminating the need for a ROM image
+### Changed
+- Built device tree automatically into the machine's ROM, eliminating the need for a ROM image
 - Enabled rollup by default
 - Updated libboost version to 1.81
+- Changed stored machine configs from protobuf to JSON
 - Removed remote-cartesi-machine-proxy
+- Moved uarch generated files to the uarch source directory
+- Organized all tests under the tests directory
+- Added emulator major and minor versions to the device tree
+- Used new rootfs provided by the tools repository
+- Used static libraries when compiling executables
+- Made it possible to compile `libcartesi` without threading support
+- Reimplemented a portable OS time function
+- Allowed compiling `libcartesi` without GRPC or Lua installed
+- Didn't expose internal symbols in the public C API
+- Added support for cross-compiling libcartesi
+- Removed `std::filesystem` use from `libcartesi` (unsupported by WASI)
+- Made `termios` non-mandatory in `libcartesi` (unsupported by WASI)
+- Improved makefile for packaging
+- Adjusted bootargs and renamed bootargs command line option
+- Introduced machine init and entrypoint config and options
+- Removed dump_pmas method
+- Removed Lua `md5` dependency by using keccak instead
+- Simplified machine hash computation in tests
+- Replaced ROM with DTB
+- Bumped kernel and rootfs versions
+- Replaced crypto++ with tiny sha3 to compute Keccak hash
+- Replaced boost filesystem with std filesystem
+- Updated mongoose to 7.12 and refactored how it's bundled
+- Bundled nlohmann-json into third-party
+- Replaced libb64 with a custom base64 implementation
+- Removed the unused `--json-steps` option
+- Added support for compiling libcartesi to WebAssembly
+
+### Fixed
+- Made append options work when empty
+- Included missing `climits` in `json-util.cpp`
+- Correctly counted optional arguments
+- Fixed `protoc` compile errors on Ubuntu
+- Fixed the build on MacOS with Homebrew
+- Reserved memory for firmware M-mode code in FDT
+- Fixed lint errors and warnings
+
+## [0.15.3] - 2024-01-25
+### Fixed
+
+- Fixed missing lua modules in docker image
+- Fixed upload and download of artifacts on CI
+- Fixed protoc compile errors on Ubuntu
+- Fixed build on MacOS with homebrew
 
 ## [0.15.2] - 2023-08-21
 ### Changed
@@ -243,7 +304,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated clang-format version to 14
 - Updated clang-tidy version to 14
 - Updated libboost version to 1.74
-- Improved clua\_dumpstack to limit size of diplayed string data and to escape unprintable chars
+- Improved clua\_dumpstack to limit size of displayed string data and to escape unprintable chars
 - Improved machine\_merkle\_tree::dump\_merkle\_tree() to indent and print base address of each node
 - Removed active epoch index parameter from server-manager InspectRequest GRPC interface
 - Test rollup-init error handling in server-manager tests
@@ -296,7 +357,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed missing method to get CSR addresses in Lua bind
 - Fixed missing DHD CSRs in Lua bind
 - Fixed potential mcycle overflow in emulator
-- Fixed machine::step by moving RTC interrup handling from machine::run to interpret
+- Fixed machine::step by moving RTC interrupt handling from machine::run to interpret
 - Fixed gRPC threading by stopping/restarting server before/after fork in remote-cartesi-machine
 - Fixed terminal configuration in remote-cartesi-machine
 
@@ -325,7 +386,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [0.2.0]
 - [0.1.0]
 
-[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.15.2...HEAD
+[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.16.0
+[0.15.3]: https://github.com/cartesi/machine-emulator/releases/tag/v0.15.3
 [0.15.2]: https://github.com/cartesi/machine-emulator/releases/tag/v0.15.2
 [0.15.1]: https://github.com/cartesi/machine-emulator/releases/tag/v0.15.1
 [0.15.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.15.0

@@ -795,6 +795,45 @@ public:
     /// matching the start and length specified in range.
     void replace_memory_range(const memory_range_config &range);
 
+    /// \brief Load CMIO input from a data buffer
+    /// \param reason Reason for loading data.
+    /// \param data Data to be loaded.
+    /// \param length Length of data.
+    void load_cmio_input(uint16_t reason, const unsigned char *data, size_t length);
+
+    /// \brief Load CMIO input from a data buffer and returns an access log
+    /// \param reason Reason for loading data.
+    /// \param data Data to be loaded.
+    /// \param length Length of data.
+    /// \param log_type Type of access log to generate.
+    /// \param one_based Use 1-based indices when reporting errors.
+    /// \return The state access log.
+    access_log log_load_cmio_input(uint16_t reason, const unsigned char *data, size_t length,
+        const access_log::type &log_type, bool one_based = false);
+
+    /// \brief Checks the internal consistency of an access log produced by log_load_cmio_input
+    /// \param reason Reason for loading data.
+    /// \param data The data loaded when the log was generated.
+    /// \param length Length of data
+    /// \param log State access log to be verified.
+    /// \param runtime Machine runtime configuration to use during verification.
+    /// \param one_based Use 1-based indices when reporting errors.
+    static void verify_load_cmio_input_log(uint16_t reason, const unsigned char *data, size_t length,
+        const access_log &log, const machine_runtime_config &runtime = {}, bool one_based = false);
+
+    /// \brief Checks the validity of state transitions caused by log_load_cmio_input
+    /// \param reason Reason for loading data.
+    /// \param data The data loaded when the log was generated.
+    /// \param length Length of data
+    /// \param root_hash_before State hash before load.
+    /// \param log Log containing the state accesses performed by the load operation
+    /// \param root_hash_after State hash after load.
+    /// \param runtime Machine runtime configuration to use during verification.
+    /// @param one_based Use 1-based indices when reporting errors.
+    static void verify_load_cmio_input_state_transition(uint16_t reason, const unsigned char *data, size_t length,
+        const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after,
+        const machine_runtime_config &runtime = {}, bool one_based = false);
+
     /// \brief Reads the value of a microarchitecture register.
     /// \param index Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
     /// \returns The value of the register.

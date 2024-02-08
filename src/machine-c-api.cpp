@@ -1446,3 +1446,50 @@ CM_API void cm_delete_memory_range_descr_array(cm_memory_range_descr_array *mrds
     delete[] mrds->entry;
     delete mrds;
 }
+
+int cm_load_cmio_input(cm_machine *m, uint16_t reason, const unsigned char *data, size_t length, char **err_msg) try {
+    auto *cpp_machine = convert_from_c(m);
+    cpp_machine->load_cmio_input(reason, data, length);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_log_load_cmio_input(cm_machine *m, uint16_t reason, const unsigned char *data, size_t length,
+    cm_access_log_type log_type, bool one_based, cm_access_log **access_log, char **err_msg) try {
+    if (access_log == nullptr) {
+        throw std::invalid_argument("invalid access log output");
+    }
+    auto *cpp_machine = convert_from_c(m);
+    cartesi::access_log::type cpp_log_type{log_type.proofs, log_type.annotations, log_type.large_data};
+    cartesi::access_log cpp_access_log =
+        cpp_machine->log_load_cmio_input(reason, data, length, cpp_log_type, one_based);
+    *access_log = convert_to_c(cpp_access_log);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_verify_load_cmio_input_log(uint16_t reason, const unsigned char *data, size_t length, const cm_access_log *log,
+    const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg) try {
+    const cartesi::access_log cpp_log = convert_from_c(log);
+    const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
+    cartesi::machine::verify_load_cmio_input_log(reason, data, length, cpp_log, cpp_runtime_config, one_based);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_verify_load_cmio_input_state_transition(uint16_t reason, const unsigned char *data, size_t length,
+    const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after,
+    const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg) try {
+    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    const cartesi::access_log cpp_log = convert_from_c(log);
+    const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
+    cartesi::machine::verify_load_cmio_input_state_transition(reason, data, length, cpp_root_hash_before, cpp_log,
+        cpp_root_hash_after, cpp_runtime_config, one_based);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}

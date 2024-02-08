@@ -40,7 +40,12 @@
 #define PMA_PLIC_LENGTH_DEF 0x00400000            ///< Length of PLIC range (RESERVED)
 #define PMA_DTB_START_DEF 0x7ff00000              ///< DTB start address
 #define PMA_DTB_LENGTH_DEF 0x100000               ///< DTB length in bytes
-#define PMA_RAM_START_DEF 0x80000000              ///< RAM start address
+#define PMA_CMIO_RX_BUFFER_START_DEF 0x60000000   ///< CMIO RX buffer start address
+#define PMA_CMIO_RX_BUFFER_LOG2_SIZE_DEF 21       ///< log<sub>2</sub> of CMIO RX buffer length in bytes
+#define PMA_CMIO_TX_BUFFER_START_DEF 0x60800000   ///< CMIO TX buffer start address
+#define PMA_CMIO_TX_BUFFER_LOG2_SIZE_DEF 21       ///< log<sub>2</sub> of CMIO TX buffer length in bytes
+
+#define PMA_RAM_START_DEF 0x80000000 ///< RAM start address
 
 #define PMA_PAGE_SIZE_LOG2_DEF 12 ///< log<sub>2</sub> of physical memory page size.
 #define PMA_WORD_SIZE_DEF 8       ///< Physical memory word size.

@@ -734,6 +734,13 @@ public:
         return derived().do_get_soft_yield();
     }
 
+    /// \brief Replaces the CMIO RX buffer with provided data, padded with zeros
+    /// \param data Data to be written to the CMIO RX buffer
+    /// \param length Length of data to be written to the CMIO RX buffer
+    void replace_cmio_rx_buffer(const unsigned char *data, uint64_t length) {
+        return derived().do_replace_cmio_rx_buffer(data, length);
+    }
+
 #ifdef DUMP_COUNTERS
     auto &get_statistics() {
         return derived().do_get_statistics();

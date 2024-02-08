@@ -329,7 +329,8 @@ LIBCARTESI_OBJS:= \
 	machine-c-api.o \
 	uarch-pristine-ram.o \
 	uarch-pristine-state-hash.o \
-	uarch-pristine-hash.o
+	uarch-pristine-hash.o \
+	load-cmio-input.o
 
 CARTESI_CLUA_OBJS:= \
 	clua.o \

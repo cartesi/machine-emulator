@@ -1761,6 +1761,63 @@ CM_API int cm_get_memory_ranges(cm_machine *m, cm_memory_range_descr_array **mrd
 /// \returns void
 CM_API void cm_delete_memory_range_descr_array(cm_memory_range_descr_array *mrda);
 
+/// \brief Load CMIO input from a data buffer
+/// \param m Pointer to valid machine instance
+/// \param reason Reason for loading the data.
+/// \param data Data to be loaded.
+/// \param length Length of data.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring
+/// \returns 0 for success, non zero code for error
+CM_API int cm_load_cmio_input(cm_machine *m, uint16_t reason, const unsigned char *data, size_t length, char **err_msg);
+
+/// \brief Load CMIO input from a data buffer
+/// \param m Pointer to valid machine instance
+/// \param reason Reason for loading the data.
+/// \param data Data to be loaded.
+/// \param length Length of data.
+/// \param log_type Type of access log to generate.
+/// \param one_based Use 1-based indices when reporting errors.
+/// \param access_log Receives the state access log.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring
+/// \returns 0 for success, non zero code for error
+CM_API int cm_log_load_cmio_input(cm_machine *m, uint16_t reason, const unsigned char *data, size_t length,
+    cm_access_log_type log_type, bool one_based, cm_access_log **access_log, char **err_msg);
+
+/// \brief Checks the internal consistency of an access log produced by cm_load_cmio_input
+/// \param reason Reason for loading the data.
+/// \param data The data loaded when the log was generated.
+/// \param length Length of data
+/// \param log State access log to be verified.
+/// \param runtime_config Runtime configuration of the machine.
+/// \param one_based Use 1-based indices when reporting errors.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring
+/// \returns 0 for success, non zero code for error
+CM_API int cm_verify_load_cmio_input_log(uint16_t reason, const unsigned char *data, size_t length,
+    const cm_access_log *log, const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
+
+/// \brief Checks the validity of state transitions caused by cm_load_cmio_input
+/// \param reason Reason for loading the data.
+/// \param data The data loaded when the log was generated.
+/// \param length Length of data
+/// \param root_hash_before State hash before load.
+/// \param log State access log to be verified.
+/// \param root_hash_after State hash after load.
+/// \param runtime_config Runtime configuration of the machine.
+/// \param one_based Use 1-based indices when reporting errors.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successfull function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring
+/// \returns 0 for success, non zero code for error
+CM_API int cm_verify_load_cmio_input_state_transition(uint16_t reason, const unsigned char *data, size_t length,
+    const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after,
+    const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
+
 #ifdef __cplusplus
 }
 #endif

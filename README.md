@@ -60,9 +60,13 @@ sudo luarocks install --lua-version=5.4 luasocket
 sudo luarocks install --lua-version=5.4 luasec
 sudo luarocks install --lua-version=5.4 luaposix
 ```
+
+For more information, see the [Configuring Lua 5.4](#configuring-lua-54) section.
+
 #### MacOS
 
 ##### MacPorts
+
 ```bash
 sudo port install clang-16 boost181 wget pkgconfig grpc lua54 lua-luarocks
 
@@ -73,9 +77,13 @@ sudo luarocks install --lua-version=5.4 luasec
 sudo luarocks install --lua-version=5.4 luaposix
 ```
 
+For more information, see the [Configuring Lua 5.4](#configuring-lua-54) section.
+
 ##### Homebrew
+
 ```bash
-brew install llvm@15 boost wget pkg-config grpc openssl lua luarocks
+brew install llvm@16 boost wget pkg-config grpc openssl lua luarocks
+
 luarocks --lua-dir=$(brew --prefix)/opt/lua install lpeg
 luarocks --lua-dir=$(brew --prefix)/opt/lua install dkjson
 luarocks --lua-dir=$(brew --prefix)/opt/lua install luasocket
@@ -83,7 +91,27 @@ luarocks --lua-dir=$(brew --prefix)/opt/lua install luasec
 luarocks --lua-dir=$(brew --prefix)/opt/lua install luaposix
 ```
 
-For emulator scripts to work it is expected that `lua5.4` binary is available in the system PATH. If operating system/package manager that you are using provides only `lua` or lua binary named in a different way (e.g. on `Homebrew`), please create symbolic link or alias `lua5.4`.
+For more information, see the [Configuring Lua 5.4](#configuring-lua-54) section.
+
+##### Configuring Lua 5.4
+
+For emulator scripts to function properly, it is necessary for the lua5.4 binary to be available in the system PATH. If your operating system or package manager provides a Lua binary under a different name (e.g., lua instead of lua5.4, which is common on Homebrew), you will need to create a symbolic link or an alias named lua5.4. This can be done as follows:
+
+```bash
+ln -s $(which lua) /usr/local/bin/lua5.4  # Create a symbolic link (adjust as needed for your system)
+# or
+alias lua5.4='lua'  # Create an alias (add this line to your shell profile file like .bashrc or .zshrc)
+```
+
+###### Setting Up LuaRocks Modules
+
+To use features that require LuaRocks modules, you must ensure your environment is configured to find these modules. Export the output of `luarocks path --lua-version=5.4` to your environment by executing them or adding it to your .bashrc or .zshrc file. E.g.:
+
+```bash
+eval "$(luarocks path --lua-version=5.4)"
+```
+
+This command adjusts the environment variables for your shell sessions, ensuring LuaRocks-installed modules are correctly discovered by Lua scripts.
 
 ### Build
 

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 cartesi_machine=${1:-cartesi-machine}
 
 mkdir -m 755 -p /tmp/snapshots

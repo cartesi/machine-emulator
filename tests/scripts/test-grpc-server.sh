@@ -16,6 +16,8 @@
 # with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 #
 
+set -e
+
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 remote_cartesi_machine=$1
 cartesi_machine=$2

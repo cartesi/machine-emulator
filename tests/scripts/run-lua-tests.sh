@@ -16,6 +16,8 @@
 # with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 #
 
+set -e
+
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 LUA=${1:-lua5.4}

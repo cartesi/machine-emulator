@@ -32,6 +32,8 @@ BUILDDIR ?= $(abspath ./build)
 TEST_NAMES = $(addprefix rv64ui-uarch-, $(TESTS))
 TESTS_BIN_NAMES = $(addsuffix .bin, $(TEST_NAMES))
 TESTS_DUMP_NAMES = $(addsuffix .dump, $(TEST_NAMES))
+TESTS_SOURCES = $(addprefix $(SRC_DIR)/, $(addsuffix .S, $(TESTS)))
+TESTS_PREFIX = $(BUILDDIR)/rv64ui-uarch-
 TARGET_TESTS = $(addprefix $(BUILDDIR)/, $(TEST_NAMES))
 
 # Tests provided by third party riscv tests
@@ -54,18 +56,18 @@ THIRDPARTY_TESTS = \
 	xor xori
 
 THIRDPARTY_SRC_DIR := $(abspath ../../third-party/riscv-tests/isa/rv64ui)
-THIRDPARTY_BUILDDIR := $(abspath $(BUILDDIR))
 THIRDPARTY_TEST_NAMES = $(addprefix rv64ui-uarch-, $(THIRDPARTY_TESTS))
 THIRDPARTY_TESTS_BIN_NAMES = $(addsuffix .bin, $(THIRDPARTY_TEST_NAMES))
 THIRDPARTY_TESTS_DUMP_NAMES = $(addsuffix .dump, $(THIRDPARTY_TEST_NAMES))
-TARGET_THIRDPARTY_TESTS = $(addprefix $(THIRDPARTY_BUILDDIR)/, $(THIRDPARTY_TEST_NAMES))
+THIRDPARTY_TESTS_SOURCES = $(addprefix $(THIRDPARTY_SRC_DIR)/, $(addsuffix .S, $(THIRDPARTY_TESTS)))
+TARGET_THIRDPARTY_TESTS = $(addprefix $(BUILDDIR)/, $(THIRDPARTY_TEST_NAMES))
 
 TARGET_TEST_BINS  = \
-	$(addprefix $(THIRDPARTY_BUILDDIR)/, $(THIRDPARTY_TESTS_BIN_NAMES)) \
+	$(addprefix $(BUILDDIR)/, $(THIRDPARTY_TESTS_BIN_NAMES)) \
 	$(addprefix $(BUILDDIR)/, $(TESTS_BIN_NAMES))
 
 TARGET_TEST_DUMPS = \
-	$(addprefix $(THIRDPARTY_BUILDDIR)/, $(THIRDPARTY_TESTS_DUMP_NAMES)) \
+	$(addprefix $(BUILDDIR)/, $(THIRDPARTY_TESTS_DUMP_NAMES)) \
 	$(addprefix $(BUILDDIR)/, $(TESTS_DUMP_NAMES))
 
 TARGETS =  \
@@ -74,30 +76,27 @@ TARGETS =  \
 	$(TARGET_TEST_BINS) \
 	$(TARGET_TEST_DUMPS)
 
-all: $(TARGETS)
+all: $(TARGETS) catalog
 
 clean:
-	@rm -rf $(TARGETS) $(BUILDDIR) $(THIRDPARTY_BUILDDIR)
+	@rm -rf $(TARGETS) $(BUILDDIR)
 
-install:
-	mkdir -p $(INSTALLDIR)
-	cp -a $(BUILDDIR)/* $(INSTALLDIR)
-	cp -a $(THIRDPARTY_BUILDDIR)/* $(INSTALLDIR)
-	cp rv64ui-uarch-catalog.json $(INSTALLDIR)
+catalog:
+	cp rv64ui-uarch-catalog.json $(BUILDDIR)/
 
-$(THIRDPARTY_BUILDDIR)/rv64ui-uarch-%: $(THIRDPARTY_BUILDDIR) $(THIRDPARTY_SRC_DIR)/%.S
+$(TARGET_THIRDPARTY_TESTS): $(BUILDDIR) $(THIRDPARTY_TESTS_SOURCES)
 	$(RISCV_GCC) $(RISCV_GCC_OPTS) -I$(UARCH_ENV_DIR) \
 		-I$(THIRDPARTY_SRC_DIR)/../macros/scalar \
 		-I$(EMULATOR_SRC_DIR) \
 		-T$(UARCH_ENV_DIR)/link.ld \
-		$(THIRDPARTY_SRC_DIR)/$*.S -o $(THIRDPARTY_BUILDDIR)/rv64ui-uarch-$*
+		$(subst $(TESTS_PREFIX),$(THIRDPARTY_SRC_DIR)/,$@).S -o $@
 
-$(BUILDDIR)/rv64ui-uarch-%: $(BUILDDIR) $(SRC_DIR)/%.S
+$(TARGET_TESTS): $(BUILDDIR) $(TESTS_SOURCES)
 	$(RISCV_GCC) $(RISCV_GCC_OPTS) -I$(UARCH_ENV_DIR) \
 		-I$(THIRDPARTY_SRC_DIR)/../macros/scalar \
 		-I$(EMULATOR_SRC_DIR) \
 		-T$(UARCH_ENV_DIR)/link.ld \
-		$(SRC_DIR)/$*.S -o $(BUILDDIR)/rv64ui-uarch-$*
+		$(subst $(TESTS_PREFIX),$(SRC_DIR)/,$@).S -o $@
 
 %.bin: %
 	$(RISCV_OBJCOPY) $* $*.bin
@@ -105,6 +104,6 @@ $(BUILDDIR)/rv64ui-uarch-%: $(BUILDDIR) $(SRC_DIR)/%.S
 %.dump: %
 	$(RISCV_OBJDUMP) $* > $*.dump
 
-$(BUILDDIR) $(THIRDPARTY_BUILDDIR):
+$(BUILDDIR):
 	mkdir -p $@
 

@@ -23,7 +23,7 @@
 
 // Disable JSON filesystem support because it is not supported in some targets
 #define JSON_HAS_FILESYSTEM 0 // NOLINT(cppcoreguidelines-macro-usage)
-#include <json.hpp>
+#include <nlohmann/json.hpp>
 
 #include "machine-merkle-tree.h"
 #include "machine.h"

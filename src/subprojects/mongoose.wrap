@@ -1,0 +1,9 @@
+[wrap-file]
+directory = mongoose-7.12
+source_url = https://github.com/cesanta/mongoose/archive/refs/tags/7.12.tar.gz
+source_filename = 7.12.tar.gz
+source_hash = 91e719e164816b349be3cb71293927f3f6abbe3fb02187e2d9b5e56f542c2063
+patch_directory = mongoose
+
+[provide]
+mongoose = mongoose_dep

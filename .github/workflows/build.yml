@@ -197,10 +197,6 @@ jobs:
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/run-lua-tests.sh
 
-      - name: Run grpc lua test scripts
-        run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-grpc-server.sh remote-cartesi-machine cartesi-machine cartesi-machine-tests
-
       - name: Run jsonrpc lua test scripts
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests
@@ -363,10 +359,6 @@ jobs:
       - name: Run test scripts
         run: |
           docker run --platform linux/arm64 --rm -t -e "CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE=1" ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/run-lua-tests.sh
-
-      - name: Run grpc lua test scripts
-        run: |
-          docker run --platform linux/arm64 --rm -t -e "CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE=1" ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-grpc-server.sh remote-cartesi-machine cartesi-machine cartesi-machine-tests
 
       - name: Run jsonrpc lua test scripts
         run: |
@@ -549,7 +541,7 @@ jobs:
 
       - name: Run coverage
         run: |
-          docker run --name coverage-report -t ${{ github.repository_owner }}/machine-emulator:coverage make -j1 test-save-and-load test-machine test-hash test-lua test-grpc test-jsonrpc test-c-api coverage-machine test-uarch-rv64ui test-uarch-interpreter coverage-uarch coverage-report coverage=yes
+          docker run --name coverage-report -t ${{ github.repository_owner }}/machine-emulator:coverage make -j1 test-save-and-load test-machine test-hash test-lua test-jsonrpc test-c-api coverage-machine test-uarch-rv64ui test-uarch-interpreter coverage-uarch coverage-report coverage=yes
           docker cp coverage-report:/usr/src/emulator/tests/build/coverage .
           docker rm coverage-report
 
@@ -631,7 +623,7 @@ jobs:
 
       - name: Run tests with sanitizer
         run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:sanitizer make sanitize=yes test-save-and-load test-machine test-hash test-lua test-grpc test-jsonrpc test-c-api coverage-machine test-uarch-rv64ui test-uarch-interpreter coverage-uarch
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:sanitizer make sanitize=yes test-save-and-load test-machine test-hash test-lua test-jsonrpc test-c-api coverage-machine test-uarch-rv64ui test-uarch-interpreter coverage-uarch
 
   publish_artifacts:
     name: Publish artifacts

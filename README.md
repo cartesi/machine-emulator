@@ -39,7 +39,6 @@ Cleaning targets:
 
 - C++ Compiler with support for C++17 (tested with GCC >= 8+ and Clang >= 8.x).
 - GNU Make >= 3.81
-- GRPC >= 1.45.0
 - Lua >= 5.4.4
 - Boost >= 1.81
 
@@ -51,7 +50,6 @@ Obs: Please note that Apple Clang Version number does not follow upstream LLVM/C
 sudo apt-get install build-essential wget git clang-tidy-16 clang-format-16 \
         libboost1.81-dev libssl-dev \
         ca-certificates pkg-config lua5.4 liblua5.4-dev \
-        libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
         luarocks
 
 sudo luarocks install --lua-version=5.4 lpeg
@@ -68,7 +66,7 @@ For more information, see the [Configuring Lua 5.4](#configuring-lua-54) section
 ##### MacPorts
 
 ```bash
-sudo port install clang-16 boost181 wget pkgconfig grpc lua54 lua-luarocks
+sudo port install clang-16 boost181 wget pkgconfig lua54 lua-luarocks
 
 sudo luarocks install --lua-version=5.4 lpeg
 sudo luarocks install --lua-version=5.4 dkjson
@@ -82,7 +80,7 @@ For more information, see the [Configuring Lua 5.4](#configuring-lua-54) section
 ##### Homebrew
 
 ```bash
-brew install llvm@16 boost wget pkg-config grpc openssl lua luarocks
+brew install llvm@16 boost wget pkg-config openssl lua luarocks
 
 luarocks --lua-dir=$(brew --prefix)/opt/lua install lpeg
 luarocks --lua-dir=$(brew --prefix)/opt/lua install dkjson
@@ -307,7 +305,6 @@ The `machine-emulator` repository and all contributions to it are licensed under
 
 This project includes several submodules and dependencies, each with its own licensing:
 
-- `lib/grpc-interfaces`: Licensed under the Apache License 2.0. The license details can be found in [lib/grpc-interfaces/LICENSE](lib/grpc-interfaces/LICENSE).
 - `tests/machine`: Licensed under the Apache License 2.0. See the license terms in [tests/machine/LICENSE](tests/machine/LICENSE).
 - `tests/uarch`: Licensed under the Apache License 2.0. Licensing details are available in [tests/uarch/LICENSE](tests/uarch/LICENSE).
 - `third-party/llvm-flang-uint128`: Licensed under the Apache License 2.0 with LLVM exceptions. The license can be found at [third-party/llvm-flang-uint128/LICENSE](third-party/llvm-flang-uint128/LICENSE).

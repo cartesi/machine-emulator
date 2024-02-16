@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Removed gRPC features
+
 ## [0.16.0] - 2024-02-09
 ### Added
 - Implemented the UARCH reset feature

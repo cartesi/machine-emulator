@@ -27,11 +27,6 @@ TARGET_OS?=$(shell uname)
 LUA_INC=$(shell pkg-config --cflags-only-I lua5.4)
 LUA_LIB=$(shell pkg-config --libs lua5.4)
 LUA_BIN=lua5.4
-GRPC_DIR=../lib/grpc-interfaces
-
-PROTOC=protoc
-PROTOC_FLAGS=--experimental_allow_proto3_optional
-GRPC_CPP_PLUGIN=$(shell which grpc_cpp_plugin)
 
 # Are we on an environment that has the riscv64-cartesi-linux-gnu-* toolchain?
 DEV_ENV_HAS_TOOLCHAIN ?= no
@@ -79,16 +74,12 @@ ifneq (,$(shell which brew))
 BREW_PREFIX = $(shell brew --prefix)
 BOOST_LIB_DIR=-L$(BREW_PREFIX)/lib
 BOOST_INC=-I$(BREW_PREFIX)/include
-GRPC_PROTOBUF_INC=$(shell pkg-config --cflags-only-I grpc++ protobuf)
-GRPC_PROTOBUF_LIB=$(shell pkg-config --libs grpc++ protobuf)
 
 # Macports installation
 else ifneq (,$(shell which port))
 PORT_PREFIX = /opt/local
 BOOST_LIB_DIR=-L$(PORT_PREFIX)/libexec/boost/1.81/lib
 BOOST_INC=-I$(PORT_PREFIX)/libexec/boost/1.81/include
-GRPC_PROTOBUF_INC=-I$(PORT_PREFIX)/include
-GRPC_PROTOBUF_LIB=-L$(PORT_PREFIX)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
 else
 $(error Neither Homebrew nor MacPorts is installed)
 endif
@@ -97,8 +88,6 @@ LIBCARTESI=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
 LIBCARTESI_LDFLAGS=-install_name '@rpath/$(LIBCARTESI)'
 LIBCARTESI_MERKLE_TREE=libcartesi_merkle_tree-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
 LIBCARTESI_MERKLE_TREE_LDFLAGS=-install_name '@rpath/$(LIBCARTESI_MERKLE_TREE)'
-LIBCARTESI_GRPC=libcartesi_grpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
-LIBCARTESI_GRPC_LDFLAGS=-install_name '@rpath/$(LIBCARTESI_GRPC)'
 LIBCARTESI_JSONRPC=libcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
 LIBCARTESI_JSONRPC_LDFLAGS=-install_name '@rpath/$(LIBCARTESI_JSONRPC)'
 PROFILE_DATA=default.profdata
@@ -119,14 +108,10 @@ AR=ar rcs
 INCS=
 
 BOOST_INC=
-GRPC_PROTOBUF_INC=$(shell pkg-config --cflags-only-I grpc++ protobuf)
-GRPC_PROTOBUF_LIB=$(shell pkg-config --libs grpc++ protobuf)
 LIBCARTESI=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
 LIBCARTESI_LDFLAGS=
 LIBCARTESI_MERKLE_TREE=libcartesi_merkle_tree-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
 LIBCARTESI_MERKLE_TREE_LDFLAGS=
-LIBCARTESI_GRPC=libcartesi_grpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
-LIBCARTESI_GRPC_LDFLAGS=
 LIBCARTESI_JSONRPC=libcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
 LIBCARTESI_JSONRPC_LDFLAGS=
 PROFILE_DATA=
@@ -135,14 +120,11 @@ endif
 
 LIBCARTESI_LIBS=
 LIBCARTESI_MERKLE_TREE_LIBS=
-LIBCARTESI_GRPC_LIBS=$(GRPC_PROTOBUF_LIB)
 LIBCARTESI_JSONRPC_LIBS=
 LUACARTESI_LIBS=
-LUACARTESI_GRPC_LIBS=$(GRPC_PROTOBUF_LIB)
 LUACARTESI_JSONRPC_LIBS=
-REMOTE_CARTESI_MACHINE_LIBS=$(GRPC_PROTOBUF_LIB)
 JSONRPC_REMOTE_CARTESI_MACHINE_LIBS=
-TEST_MACHINE_C_API_LIBS=$(GRPC_PROTOBUF_LIB)
+TEST_MACHINE_C_API_LIBS=
 HASH_LIBS=
 
 #DEFS+= -DMT_ALL_DIRTY
@@ -245,7 +227,7 @@ PGO_WORKLOAD=\
 	whetstone 25000
 
 LINTER_IGNORE_SOURCES=
-LINTER_IGNORE_HEADERS=%.pb.h
+LINTER_IGNORE_HEADERS=
 LINTER_SOURCES=$(filter-out $(LINTER_IGNORE_SOURCES),$(strip $(wildcard *.cpp) $(wildcard *.c)))
 LINTER_HEADERS=$(filter-out $(LINTER_IGNORE_HEADERS),$(strip $(wildcard *.hpp) $(wildcard *.h)))
 
@@ -257,7 +239,7 @@ CLANG_FORMAT_UARCH_FILES:=$(wildcard ../uarch/*.cpp)
 CLANG_FORMAT_UARCH_FILES:=$(filter-out %uarch-printf%,$(strip $(CLANG_FORMAT_UARCH_FILES)))
 CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.c) $(wildcard *.h) $(wildcard *.hpp) $(CLANG_FORMAT_UARCH_FILES)
 CLANG_FORMAT_IGNORE_FILES:=
-CLANG_FORMAT_FILES:=$(filter-out %.pb.h,$(strip $(CLANG_FORMAT_FILES)))
+CLANG_FORMAT_FILES:=$(strip $(CLANG_FORMAT_FILES))
 CLANG_FORMAT_FILES:=$(filter-out $(CLANG_FORMAT_IGNORE_FILES),$(strip $(CLANG_FORMAT_FILES)))
 
 STYLUA=stylua
@@ -302,19 +284,17 @@ SOLDFLAGS+=$(MYSOLDFLAGS)
 LIBLDFLAGS+=$(MYLIBLDFLAGS)
 EXELDFLAGS+=$(MYEXELDFLAGS)
 
-all: libcartesi.a libcartesi_merkle_tree.a libcartesi_jsonrpc.a c-api luacartesi jsonrpc-remote-cartesi-machine grpc hash
+all: libcartesi.a libcartesi_merkle_tree.a libcartesi_jsonrpc.a c-api luacartesi jsonrpc-remote-cartesi-machine hash
 
-luacartesi: cartesi.so cartesi/grpc.so cartesi/jsonrpc.so
-
-grpc: cartesi/jsonrpc.so cartesi/grpc.so remote-cartesi-machine
+luacartesi: cartesi.so cartesi/jsonrpc.so
 
 jsonrpc: cartesi/jsonrpc.so jsonrpc-remote-cartesi-machine
 
 hash: merkle-tree-hash
 
-c-api: $(LIBCARTESI) $(LIBCARTESI_MERKLE_TREE) $(LIBCARTESI_GRPC) $(LIBCARTESI_JSONRPC)
+c-api: $(LIBCARTESI) $(LIBCARTESI_MERKLE_TREE) $(LIBCARTESI_JSONRPC)
 
-.PHONY: all generate use clean lint format format-lua check-format check-format-lua luacartesi grpc hash c-api compile_flags.txt
+.PHONY: all generate use clean lint format format-lua check-format check-format-lua luacartesi hash c-api compile_flags.txt
 
 LIBCARTESI_OBJS:= \
 	pma-driver.o \
@@ -365,15 +345,6 @@ LUACARTESI_OBJS:= \
 	clua-machine.o \
 	$(CARTESI_CLUA_OBJS)
 
-PROTOBUF_GEN_OBJS:= \
-	versioning.pb.o \
-	cartesi-machine.pb.o \
-	cartesi-machine-checkin.pb.o
-
-GRPC_GEN_OBJS:= \
-	cartesi-machine.grpc.pb.o \
-	cartesi-machine-checkin.grpc.pb.o
-
 LIBCARTESI_MERKLE_TREE_OBJS:= \
 	sha3.o \
 	machine-merkle-tree.o \
@@ -385,13 +356,6 @@ LIBCARTESI_MERKLE_TREE_OBJS:= \
 MERKLE_TREE_HASH_OBJS:= \
 	merkle-tree-hash.o
 
-LIBCARTESI_GRPC_OBJS:= \
-	grpc-virtual-machine.o \
-	grpc-machine-c-api.o \
-	protobuf-util.o \
-	$(GRPC_GEN_OBJS) \
-	$(PROTOBUF_GEN_OBJS)
-
 LIBCARTESI_JSONRPC_OBJS:= \
 	jsonrpc-virtual-machine.o \
 	jsonrpc-machine-c-api.o \
@@ -400,30 +364,10 @@ LIBCARTESI_JSONRPC_OBJS:= \
 	uarch-pristine-state-hash.o \
 	uarch-pristine-hash.o
 
-LUACARTESI_GRPC_OBJS:= \
-	clua-cartesi-grpc.o \
-	clua-grpc-machine.o \
-	$(CARTESI_CLUA_OBJS)
-
 LUACARTESI_JSONRPC_OBJS:= \
 	clua-cartesi-jsonrpc.o \
 	clua-jsonrpc-machine.o \
 	$(CARTESI_CLUA_OBJS)
-
-PROTO_OBJS:= \
-	$(PROTOBUF_GEN_OBJS) \
-	$(GRPC_GEN_OBJS)
-
-$(PROTO_OBJS): CXXFLAGS +=  -Wno-zero-length-array -Wno-unused-parameter -Wno-deprecated-declarations -Wno-deprecated-copy -Wno-type-limits
-
-PROTO_SOURCES:=$(PROTO_OBJS:.o=.cc)
-
-REMOTE_CARTESI_MACHINE_OBJS:= \
-	remote-machine.o \
-	slog.o \
-	uarch-pristine-ram.o \
-	uarch-pristine-state-hash.o \
-	uarch-pristine-hash.o
 
 JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	jsonrpc-remote-machine.o \
@@ -438,10 +382,8 @@ ifeq ($(gperf),yes)
 DEFS+=-DGPERF
 LIBCARTESI_LIBS+=-lprofiler
 LIBCARTESI_MERKLE_TREE_LIBS+=-lprofiler
-LIBCARTESI_GRPC_LIBS+=-lprofiler
 LIBCARTESI_JSONRPC_LIBS+=-lprofiler
 LUACARTESI_LIBS+=-lprofiler
-LUACARTESI_GRPC_LIBS+=-lprofiler
 LUACARTESI_JSONRPC_LIBS+=-lprofiler
 endif
 
@@ -455,8 +397,6 @@ libcartesi: libcartesi.a $(LIBCARTESI)
 libcartesi.so: $(LIBCARTESI) $(LIBCARTESI_MERKLE_TREE)
 libcartesi_merkle_tree: libcartesi_merkle_tree.a $(LIBCARTESI_MERKLE_TREE)
 libcartesi_merkle_tree.so: $(LIBCARTESI_MERKLE_TREE)
-libcartesi_grpc: libcartesi_grpc.a $(LIBCARTESI_GRPC)
-libcartesi_grpc.so: $(LIBCARTESI_GRPC)
 libcartesi_jsonrpc: libcartesi_jsonrpc.a $(LIBCARTESI_JSONRPC)
 libcartesi_jsonrpc.so: $(LIBCARTESI_JSONRPC)
 
@@ -464,9 +404,6 @@ libcartesi.a: $(LIBCARTESI_OBJS)
 	$(AR) $@ $^
 
 libcartesi_merkle_tree.a: $(LIBCARTESI_MERKLE_TREE_OBJS)
-	$(AR) $@ $^
-
-libcartesi_grpc.a: $(LIBCARTESI_GRPC_OBJS)
 	$(AR) $@ $^
 
 libcartesi_jsonrpc.a: $(LIBCARTESI_JSONRPC_OBJS)
@@ -478,17 +415,11 @@ $(LIBCARTESI_MERKLE_TREE): $(LIBCARTESI_MERKLE_TREE_OBJS)
 $(LIBCARTESI): $(LIBCARTESI_OBJS)
 	$(CXX) -o $@ $^ $(LIBCARTESI_LIBS) $(LDFLAGS) $(LIBCARTESI_LDFLAGS) $(LIBLDFLAGS)
 
-$(LIBCARTESI_GRPC): $(LIBCARTESI_GRPC_OBJS) libcartesi.a
-	$(CXX) -o $@ $^ $(LIBCARTESI_GRPC_LIBS) $(LDFLAGS) $(LIBCARTESI_GRPC_LDFLAGS) $(LIBLDFLAGS)
-
 $(LIBCARTESI_JSONRPC): $(LIBCARTESI_JSONRPC_OBJS) libcartesi.a
 	$(CXX) -o $@ $^ $(LIBCARTESI_JSONRPC_LIBS) $(LDFLAGS) $(LIBCARTESI_JSONRPC_LDFLAGS) $(LIBLDFLAGS)
 
 cartesi.so: $(LUACARTESI_OBJS) libcartesi.a
 	$(CXX) -o $@ $^ $(LUACARTESI_LIBS) $(LDFLAGS) $(SOLDFLAGS)
-
-cartesi/grpc.so: $(LUACARTESI_GRPC_OBJS) libcartesi_grpc.a libcartesi.a
-	$(CXX) -o $@ $^ $(LUACARTESI_GRPC_LIBS) $(LDFLAGS) $(SOLDFLAGS)
 
 cartesi/jsonrpc.so: $(LUACARTESI_JSONRPC_OBJS) libcartesi_jsonrpc.a libcartesi.a
 	$(CXX) -o $@ $^ $(LUACARTESI_JSONRPC_LIBS) $(LDFLAGS) $(SOLDFLAGS)
@@ -544,29 +475,10 @@ endif
 merkle-tree-hash: $(MERKLE_TREE_HASH_OBJS) libcartesi_merkle_tree.a
 	$(CXX) -o $@ $^ $(HASH_LIBS) $(LDFLAGS) $(EXELDFLAGS)
 
-grpc-interfaces: $(PROTO_SOURCES)
-
-remote-cartesi-machine: $(REMOTE_CARTESI_MACHINE_OBJS) libcartesi_grpc.a libcartesi.a
-	$(CXX) -o $@ $^ $(REMOTE_CARTESI_MACHINE_LIBS) $(LDFLAGS) $(EXELDFLAGS)
-
 jsonrpc-remote-cartesi-machine: $(JSONRPC_REMOTE_CARTESI_MACHINE_OBJS) libcartesi_jsonrpc.a libcartesi.a
 	$(CXX) -o $@ $^ $(JSONRPC_REMOTE_CARTESI_MACHINE_LIBS) $(LDFLAGS) $(EXELDFLAGS)
 
-$(PROTOBUF_GEN_OBJS) $(GRPC_GEN_OBJS) protobuf-util.o grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o remote-cartesi-machine: CXXFLAGS += $(GRPC_PROTOBUF_INC)
-
 clua-%.o clua.o: CXXFLAGS += $(LUA_INC)
-
-.PRECIOUS: %.grpc.pb.cc %.grpc.pb.h %.pb.cc %.pb.h
-
-%.grpc.pb.cc: $(GRPC_DIR)/%.proto
-	$(PROTOC) $(PROTOC_FLAGS) -I$(<D) --grpc_out=. --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN) $<
-
-%.pb.cc: $(GRPC_DIR)/%.proto
-	$(PROTOC) $(PROTOC_FLAGS) -I$(GRPC_DIR) --cpp_out=. $<
-
-protobuf-util.o: $(PROTOBUF_GEN_OBJS)
-
-grpc-virtual-machine.o grpc-machine-c-api.o remote-machine.o: $(GRPC_GEN_OBJS) $(PROTOBUF_GEN_OBJS)
 
 machine-c-version.h: ../tools/template/machine-c-version.h.template
 	sed "s|EMULATOR_MARCHID|$(EMULATOR_MARCHID)|g;s|EMULATOR_VERSION_MAJOR|$(EMULATOR_VERSION_MAJOR)|g;s|EMULATOR_VERSION_MINOR|$(EMULATOR_VERSION_MINOR)|g;s|EMULATOR_VERSION_PATCH|$(EMULATOR_VERSION_PATCH)|g;s|EMULATOR_VERSION_LABEL|$(EMULATOR_VERSION_LABEL)|g" $< > $@
@@ -579,12 +491,12 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	echo ')json";' >> jsonrpc-discover.cpp
 	echo '} // namespace cartesi' >> jsonrpc-discover.cpp
 
-%.clang-tidy: %.cpp $(PROTO_SOURCES) machine-c-version.h
-	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CXXFLAGS) $(LUA_INC) $(GRPC_PROTOBUF_INC) 2>/dev/null
-	@$(CXX) $(CXXFLAGS) $(LUA_INC) $(GRPC_PROTOBUF_INC) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
+%.clang-tidy: %.cpp machine-c-version.h
+	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CXXFLAGS) $(LUA_INC) 2>/dev/null
+	@$(CXX) $(CXXFLAGS) $(LUA_INC) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
-%.clang-tidy: %.c $(PROTO_SOURCES)
+%.clang-tidy: %.c
 	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CFLAGS) 2>/dev/null
 	@$(CC) $(CFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
@@ -604,9 +516,6 @@ uarch-pristine-hash.o: $(UARCH_PRISTINE_HASH_C)
 %.o: %.cpp machine-c-version.h
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-%.o: %.cc $(PROTO_SOURCES)
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
-
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
@@ -621,13 +530,10 @@ ifeq (,$(wildcard ../uarch/uarch-pristine-hash.c))
 	fi
 endif
 
-clean: clean-auto-generated clean-coverage clean-profile clean-proto-sources clean-tidy clean-libcartesi clean-executables
+clean: clean-auto-generated clean-coverage clean-profile clean-tidy clean-libcartesi clean-executables
 
 clean-auto-generated:
 	@rm -f jsonrpc-discover.cpp machine-c-version.h
-
-clean-proto-sources:
-	@rm -f *.pb.cc *.pb.h
 
 clean-tidy:
 	@rm -f *.clang-tidy
@@ -639,7 +545,7 @@ clean-libcartesi: clean-objs
 	@rm -f *.so *.a cartesi/*.so *.dylib
 
 clean-executables:
-	@rm -f jsonrpc-remote-cartesi-machine remote-cartesi-machine merkle-tree-hash compute-uarch-pristine-hash
+	@rm -f jsonrpc-remote-cartesi-machine merkle-tree-hash compute-uarch-pristine-hash
 
 clean-coverage:
 	@rm -f *.profdata *.profraw *.gcda *.gcov coverage.info coverage.txt

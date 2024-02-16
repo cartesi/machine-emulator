@@ -42,13 +42,11 @@ export CARTESI_TESTS_UARCH_PATH
 TARGET_OS ?= $(shell uname -s)
 ifeq ($(TARGET_OS),Darwin)
 LIBCARTESI_SO=libcartesi-$(MACHINE_EMULATOR_SO_VERSION).dylib
-LIBCARTESI_SO_GRPC=libcartesi_grpc-$(MACHINE_EMULATOR_SO_VERSION).dylib
 LIBCARTESI_SO_JSONRPC=libcartesi_jsonrpc-$(MACHINE_EMULATOR_SO_VERSION).dylib
 
 NUM_JOBS := $(shell sysctl -n hw.ncpu)
 else
 LIBCARTESI_SO=libcartesi-$(MACHINE_EMULATOR_SO_VERSION).so
-LIBCARTESI_SO_GRPC=libcartesi_grpc-$(MACHINE_EMULATOR_SO_VERSION).so
 LIBCARTESI_SO_JSONRPC=libcartesi_jsonrpc-$(MACHINE_EMULATOR_SO_VERSION).so
 
 NUM_JOBS := $(shell nproc)
@@ -189,9 +187,6 @@ test-uarch-interpreter:
 test-hash:
 	$(LD_PRELOAD_PREFIX) ./build/misc/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=build/misc/test-merkle-tree-hash
 
-test-grpc: | $(CARTESI_IMAGES)
-	./scripts/test-grpc-server.sh ../src/remote-cartesi-machine '$(LUA) ../src/cartesi-machine.lua' '$(LUA) ./lua/cartesi-machine-tests.lua' '$(LUA)'
-
 test-jsonrpc: | $(CARTESI_IMAGES)
 	./scripts/test-jsonrpc-server.sh ../src/jsonrpc-remote-cartesi-machine '$(LUA) ../src/cartesi-machine.lua' '$(LUA) ./lua/cartesi-machine-tests.lua' '$(LUA)'
 
@@ -237,18 +232,15 @@ coverage-report: $(COVERAGE_OUTPUT_DIR)
 	llvm-profdata merge -sparse $(shell find . -name 'coverage*.profraw') -o coverage.profdata
 	llvm-cov show -format=html -output-dir=$(COVERAGE_OUTPUT_DIR)/clang -instr-profile=coverage.profdata \
 		../src/cartesi.so \
-		-object ../src/cartesi/grpc.so \
 		-object ../src/cartesi/jsonrpc.so \
 		-object ../src/$(LIBCARTESI_SO) \
-		-object ../src/$(LIBCARTESI_SO_GRPC) \
-		-object ../src/remote-cartesi-machine \
 		-object ../src/jsonrpc-remote-cartesi-machine \
 		$(COVERAGE_SOURCES)
 
 export LLVM_PROFILE_FILE=coverage-%p.profraw
 endif
 
-test: test-save-and-load test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-grpc test-jsonrpc test-c-api test-hash
+test: test-save-and-load test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-hash
 
 lint format check-format:
 	@$(MAKE) -C misc $@

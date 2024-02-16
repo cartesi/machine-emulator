@@ -332,17 +332,9 @@ where options are:
     uarch cycle. Only take effect with hash and step commands.
     (default: none)
 
-  --remote-protocol=<protocol>
-    select protocol to use with remote cartesi machine.
-    can be "jsonrpc" or "grpc" (default: "grpc").
-
   --remote-address=<address>
-    use a remote cartesi machine listenning to <address> instead of
+    use a remote cartesi machine listening to <address> instead of
     running a local cartesi machine.
-    (if remote-protocol="grpc", option requires --checkin-address)
-
-  --checkin-address=<address>
-    address of the local checkin server to run
 
   --output=<filename>
     write the output of hash and step commands to the file at
@@ -401,9 +393,8 @@ end
 local test_path = test_util.tests_path
 local test_pattern = ".*"
 local protocol
-local remote_protocol = "grpc"
+local remote_protocol = "jsonrpc"
 local remote_address
-local checkin_address
 local remote
 local output
 local jobs = 1
@@ -441,22 +432,6 @@ local options = {
         function(o)
             if not o or #o < 1 then return false end
             remote_address = o
-            return true
-        end,
-    },
-    {
-        "^%-%-remote%-protocol%=(.*)$",
-        function(o)
-            if not o or #o < 1 then return false end
-            remote_protocol = o
-            return true
-        end,
-    },
-    {
-        "^%-%-checkin%-address%=(.*)$",
-        function(o)
-            if not o or #o < 1 then return false end
-            checkin_address = o
             return true
         end,
     },
@@ -576,10 +551,7 @@ end
 local command = assert(values[1], "missing command")
 assert(test_path, "missing test path")
 
-if remote_address then
-    protocol = require("cartesi." .. remote_protocol)
-    if remote_protocol == "grpc" then assert(checkin_address, "checkin address missing") end
-end
+if remote_address then protocol = require("cartesi." .. remote_protocol) end
 
 local function advance_machine(machine, max_mcycle) return machine:run(max_mcycle) end
 
@@ -604,7 +576,7 @@ local function run_machine_with_uarch(machine, ctx, max_mcycle)
 end
 
 local function connect()
-    local remote_stub = protocol.stub(remote_address, checkin_address)
+    local remote_stub = protocol.stub(remote_address)
     local version =
         assert(remote_stub.get_version(), "could not connect to remote cartesi machine at " .. remote_address)
     local shutdown = function() remote_stub.shutdown() end

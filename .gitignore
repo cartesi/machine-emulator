@@ -11,7 +11,6 @@ build
 pkg
 third-party/downloads
 third-party/mongoose-*
-src/remote-cartesi-machine
 src/jsonrpc-remote-cartesi-machine
 src/merkle-tree-hash
 src/tests/test-machine-c-api

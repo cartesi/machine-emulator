@@ -36,16 +36,12 @@ ifneq (,$(shell which brew))
 BREW_PREFIX = $(shell brew --prefix)
 BOOST_LIB_DIR=-L$(BREW_PREFIX)/lib
 BOOST_INC=-I$(BREW_PREFIX)/include
-GRPC_PROTOBUF_INC=$(shell pkg-config --cflags-only-I grpc++ protobuf)
-GRPC_PROTOBUF_LIB=$(shell pkg-config --libs grpc++ protobuf)
 
 # Macports installation
 else ifneq (,$(shell which port))
 PORT_PREFIX = /opt/local
 BOOST_LIB_DIR=-L$(PORT_PREFIX)/libexec/boost/1.81/lib
 BOOST_INC=-I$(PORT_PREFIX)/libexec/boost/1.81/include
-GRPC_PROTOBUF_INC=-I$(PORT_PREFIX)/include
-GRPC_PROTOBUF_LIB=-L$(PORT_PREFIX)/lib -lgrpc++ -lgrpc -lgpr -lprotobuf -lpthread -labsl_synchronization
 else
 $(error Neither Homebrew nor MacPorts is installed)
 endif
@@ -54,8 +50,6 @@ endif
 else
 CC=gcc
 CXX=g++
-GRPC_PROTOBUF_INC=$(shell pkg-config --cflags-only-I grpc++ protobuf)
-GRPC_PROTOBUF_LIB=$(shell pkg-config --libs grpc++ protobuf)
 endif
 
 ifeq ($(coverage),yes)
@@ -103,15 +97,15 @@ CXXFLAGS+=-O2 -g -std=gnu++17 -fvisibility=hidden $(INCS) $(UBFLAGS) $(WARNS)
 
 all: $(BUILDDIR)/test-merkle-tree-hash $(BUILDDIR)/test-machine-c-api
 
-../../src/libcartesi_grpc.a ../../src/libcartesi.a ../../src/libcartesi_merkle_tree.a:
-	$(info libcartesi.a and/or libcartesi_grpc.a were not found! Build them first.)
+../../src/libcartesi.a ../../src/libcartesi_merkle_tree.a:
+	$(info libcartesi.a and/or libcartesi_merkle_tree.a were not found! Build them first.)
 	@exit 1
 
 $(BUILDDIR)/test-merkle-tree-hash: test-merkle-tree-hash.cpp ../../src/libcartesi.a ../../src/libcartesi_merkle_tree.a
 	$(CXX) -o $@ $^ $(CXXFLAGS)
 
-$(BUILDDIR)/test-machine-c-api: test-machine-c-api.cpp ../../src/libcartesi_grpc.a ../../src/libcartesi.a ../../src/libcartesi_merkle_tree.a
-	$(CXX) -o $@ $^ $(GRPC_PROTOBUF_LIB) $(CXXFLAGS) $(BOOST_INC)
+$(BUILDDIR)/test-machine-c-api: test-machine-c-api.cpp ../../src/libcartesi.a ../../src/libcartesi_merkle_tree.a
+	$(CXX) -o $@ $^ $(CXXFLAGS) $(BOOST_INC)
 
 %.clang-tidy: %.cpp
 	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CXXFLAGS) $(BOOST_INC) 2>/dev/null

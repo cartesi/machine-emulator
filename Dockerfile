@@ -9,7 +9,6 @@ RUN apt-get update && \
     build-essential vim wget git clang-tidy-16 clang-format-16 lcov \
     libboost1.81-dev libssl-dev \
     ca-certificates pkg-config lua5.4 liblua5.4-dev \
-    libgrpc++-dev libprotobuf-dev protobuf-compiler-grpc \
     luarocks xxd procps && \
     update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-16 120 && \
     update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-16 120 && \
@@ -70,4 +69,4 @@ EXPOSE 5002
 
 USER cartesi
 
-CMD [ "/usr/bin/remote-cartesi-machine", "--server-address=0.0.0.0:5002"]
+CMD [ "/usr/bin/jsonrpc-remote-cartesi-machine", "--server-address=0.0.0.0:5002"]

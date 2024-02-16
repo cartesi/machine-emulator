@@ -21,7 +21,6 @@ local util = require("cartesi.util")
 local test_util = require("cartesi.tests.util")
 
 local remote_address
-local checkin_address
 local test_path = "./"
 local cleanup = {}
 local concurrency_update_merkle_tree = util.parse_number(os.getenv("CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE")) or 0
@@ -43,15 +42,11 @@ Usage:
 where options are:
 
   --remote-address=<address>
-    run tests on a remote cartesi machine (when machine type is grpc or jsonrpc).
-    (grcp requires --checkin-address to be defined as well)
-
-  --checkin-address=<address>
-    address of the local checkin server to run
+    run tests on a remote cartesi machine (when machine type is jsonrpc).
 
   --test-path=<dir>
-    path to test execution folder. In case of grpc tests, path must be
-    working directory of remote-cartesi-machine and must be locally readable
+    path to test execution folder. In case of jsonrpc tests, path must be
+    working directory of jsonrpc-remote-cartesi-machine and must be locally readable
     (default: "./")
 
   --concurrency=<key>:<value>[,<key>:<value>[,...]...]
@@ -96,14 +91,6 @@ local options = {
         function(o)
             if not o or #o < 1 then return false end
             remote_address = o
-            return true
-        end,
-    },
-    {
-        "^%-%-checkin%-address%=(.*)$",
-        function(o)
-            if not o or #o < 1 then return false end
-            checkin_address = o
             return true
         end,
     },
@@ -241,17 +228,8 @@ local function get_cpu_csr_test_values()
 end
 
 local machine_type = assert(arguments[1], "missing machine type")
-assert(
-    machine_type == "local" or machine_type == "grpc" or machine_type == "jsonrpc",
-    "unknown machine type, should be 'local', 'grpc', or 'jsonrpc'"
-)
+assert(machine_type == "local" or machine_type == "jsonrpc", "unknown machine type, should be 'local' or 'jsonrpc'")
 local protocol
-if machine_type == "grpc" then
-    assert(remote_address ~= nil, "remote cartesi machine address is missing")
-    assert(checkin_address, "missing checkin address")
-    assert(test_path ~= nil, "test path must be provided and must be working directory of remote cartesi machine")
-    protocol = require("cartesi.grpc")
-end
 if machine_type == "jsonrpc" then
     assert(remote_address ~= nil, "remote cartesi machine address is missing")
     assert(test_path ~= nil, "test path must be provided and must be working directory of remote cartesi machine")
@@ -259,7 +237,7 @@ if machine_type == "jsonrpc" then
 end
 
 local function connect()
-    local remote = protocol.stub(remote_address, checkin_address)
+    local remote = protocol.stub(remote_address)
     local version = assert(remote.get_version(), "could not connect to remote cartesi machine at " .. remote_address)
     local shutdown = function() remote.shutdown() end
     local mt = { __gc = function() pcall(shutdown) end }
@@ -399,10 +377,6 @@ print("\n\ntesting get_x_uarch_address function binding")
 do_test("should return address value for uarch x registers", function()
     local SHADOW_UARCH_XBASE = cartesi.UARCH_SHADOW_START_ADDRESS + 24
     local module = cartesi
-    if machine_type == "grpc" then
-        if not remote then remote = connect() end
-        module = remote
-    end
     -- Check x address
     for i = 0, 31 do
         assert(module.machine.get_uarch_x_address(i) == SHADOW_UARCH_XBASE + i * 8, "invalid return for uarch x" .. i)

@@ -41,17 +41,13 @@ TESTS_DATA_DOC_RUNTIME_PATH= $(PREFIX)/doc/cartesi-machine-tests-data
 
 ifeq ($(TARGET_OS),Darwin)
 LIBCARTESI=libcartesi.dylib
-LIBCARTESI_GRPC=libcartesi_grpc.dylib
 LIBCARTESI_JSONRPC=libcartesi_jsonrpc.dylib
 LIBCARTESI_SO=libcartesi-$(MACHINE_EMULATOR_SO_VERSION).dylib
-LIBCARTESI_SO_GRPC=libcartesi_grpc-$(MACHINE_EMULATOR_SO_VERSION).dylib
 LIBCARTESI_SO_JSONRPC=libcartesi_jsonrpc-$(MACHINE_EMULATOR_SO_VERSION).dylib
 else
 LIBCARTESI=libcartesi.so
-LIBCARTESI_GRPC=libcartesi_grpc.so
 LIBCARTESI_JSONRPC=libcartesi_jsonrpc.so
 LIBCARTESI_SO=libcartesi-$(MACHINE_EMULATOR_SO_VERSION).so
-LIBCARTESI_SO_GRPC=libcartesi_grpc-$(MACHINE_EMULATOR_SO_VERSION).so
 LIBCARTESI_SO_JSONRPC=libcartesi_jsonrpc-$(MACHINE_EMULATOR_SO_VERSION).so
 endif
 
@@ -81,14 +77,14 @@ STRIP_BINARY= $(STRIP)
 STRIP_SHARED= $(STRIP) -S -x
 STRIP_STATIC= $(STRIP) -S
 
-EMU_TO_BIN= src/jsonrpc-remote-cartesi-machine src/remote-cartesi-machine src/merkle-tree-hash
-EMU_TO_LIB= src/$(LIBCARTESI_SO) src/$(LIBCARTESI_SO_GRPC) src/$(LIBCARTESI_SO_JSONRPC)
-EMU_TO_LIB_A= src/libcartesi.a src/libcartesi_grpc.a src/libcartesi_jsonrpc.a
+EMU_TO_BIN= src/jsonrpc-remote-cartesi-machine src/merkle-tree-hash
+EMU_TO_LIB= src/$(LIBCARTESI_SO) src/$(LIBCARTESI_SO_JSONRPC)
+EMU_TO_LIB_A= src/libcartesi.a src/libcartesi_jsonrpc.a
 EMU_LUA_TO_BIN= src/cartesi-machine.lua src/cartesi-machine-stored-hash.lua src/rollup-memory-range.lua
 EMU_TO_LUA_PATH= src/cartesi/util.lua src/cartesi/proof.lua src/cartesi/gdbstub.lua
 EMU_TO_LUA_CPATH= src/cartesi.so
-EMU_TO_LUA_CARTESI_CPATH= src/cartesi/grpc.so src/cartesi/jsonrpc.so
-EMU_TO_INC= $(addprefix src/,jsonrpc-machine-c-api.h grpc-machine-c-api.h machine-c-api.h \
+EMU_TO_LUA_CARTESI_CPATH= src/cartesi/jsonrpc.so
+EMU_TO_INC= $(addprefix src/,jsonrpc-machine-c-api.h machine-c-api.h \
 	    machine-c-defines.h machine-c-version.h pma-defines.h rtc-defines.h htif-defines.h uarch-defines.h)
 UARCH_TO_SHARE= uarch-ram.bin
 
@@ -107,7 +103,6 @@ TESTSDIR = $(abspath tests)
 DOWNLOADDIR = $(DEPDIR)/downloads
 DEPDIRS = $(DEPDIR)/mongoose-$(MONGOOSE_VERSION)
 SUBCLEAN = $(addsuffix .clean,$(SRCDIR) uarch tests)
-COREPROTO = lib/grpc-interfaces/core.proto
 
 # Docker image tag
 TAG ?= devel
@@ -228,16 +223,10 @@ dep: $(DEPDIRS)
 submodules:
 	git submodule update --init --recursive
 
-$(COREPROTO):
-	$(info grpc-interfaces submodule not initialized!)
-	@exit 1
-
-grpc: | $(COREPROTO)
-
-hash luacartesi grpc:
+hash luacartesi:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
 
-libcartesi libcartesi_grpc libcartesi_jsonrpc libcartesi.a libcartesi_grpc.a libcartesi_jsonrpc.a libcartesi.so libcartesi_grpc.so libcartesi_jsonrpc.so:
+libcartesi libcartesi_jsonrpc libcartesi.a libcartesi_jsonrpc.a libcartesi.so libcartesi_jsonrpc.so:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) $@
 
 version:
@@ -347,7 +336,6 @@ install-static-libs: $(LIB_INSTALL_PATH)
 install-shared-libs: $(LIB_INSTALL_PATH)
 	$(INSTALL_EXEC) $(EMU_TO_LIB) $(LIB_INSTALL_PATH)
 	$(SYMLINK) $(LIBCARTESI_SO) $(LIB_INSTALL_PATH)/$(LIBCARTESI)
-	$(SYMLINK) $(LIBCARTESI_SO_GRPC) $(LIB_INSTALL_PATH)/$(LIBCARTESI_GRPC)
 	$(SYMLINK) $(LIBCARTESI_SO_JSONRPC) $(LIB_INSTALL_PATH)/$(LIBCARTESI_JSONRPC)
 	$(STRIP_SHARED) $(subst src/,$(LIB_INSTALL_PATH)/,$(EMU_TO_LIB))
 
@@ -407,7 +395,7 @@ tests-debian-package: install-tests
 	sed 's|ARG_VERSION|$(MACHINE_EMULATOR_VERSION)|g;s|ARG_ARCH|$(DEB_ARCH)|g' tools/template/tests-control.template > $(DESTDIR)/DEBIAN/control
 	dpkg-deb -Zxz --root-owner-group --build $(DESTDIR) $(TESTS_DEB_FILENAME)
 
-.SECONDARY: $(DOWNLOADDIR) $(DEPDIRS) $(COREPROTO)
+.SECONDARY: $(DOWNLOADDIR) $(DEPDIRS)
 
-.PHONY: help all submodules doc clean distclean downloads checksum src luacartesi grpc hash uarch \
+.PHONY: help all submodules doc clean distclean downloads checksum src luacartesi hash uarch \
 	$(SUBDIRS) $(SUBCLEAN)

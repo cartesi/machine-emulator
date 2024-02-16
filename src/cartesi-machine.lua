@@ -45,17 +45,9 @@ where options are:
   --version-json
     display cartesi machine semantic version and exit.
 
-  --remote-protocol=<protocol>
-    select protocol to use with remote cartesi machine.
-    can be "jsonrpc" or "grpc" (default: "grpc").
-
   --remote-address=<address>
-    use a remote cartesi machine listenning to <address> instead of
+    use a remote cartesi machine listening to <address> instead of
     running a local cartesi machine.
-    (if remote-protocol="grpc", option requires --checkin-address)
-
-  --checkin-address=<address>
-    address of the local checkin server to run.
 
   --remote-shutdown
     shutdown the remote cartesi machine after the execution.
@@ -423,9 +415,8 @@ or a left shift (e.g., 2 << 20).
 end
 
 local remote
-local remote_protocol = "grpc"
+local remote_protocol = "jsonrpc"
 local remote_address
-local checkin_address
 local remote_shutdown = false
 local remote_create = true
 local remote_destroy = true
@@ -989,22 +980,6 @@ local options = {
         end,
     },
     {
-        "^%-%-remote%-protocol%=(.*)$",
-        function(o)
-            if not o or #o < 1 then return false end
-            remote_protocol = o
-            return true
-        end,
-    },
-    {
-        "^%-%-checkin%-address%=(.*)$",
-        function(o)
-            if not o or #o < 1 then return false end
-            checkin_address = o
-            return true
-        end,
-    },
-    {
         "^%-%-remote%-shutdown$",
         function(o)
             if not o then return false end
@@ -1415,11 +1390,7 @@ local remote_shutdown_deleter = {}
 if remote_address then
     stderr("Connecting to %s remote cartesi machine at '%s'\n", remote_protocol, remote_address)
     local protocol = require("cartesi." .. remote_protocol)
-    if remote_protocol == "grpc" then
-        assert(checkin_address, "checkin address missing")
-        stderr("Listening for checkin at '%s'\n", checkin_address)
-    end
-    remote = assert(protocol.stub(remote_address, checkin_address))
+    remote = assert(protocol.stub(remote_address))
     local v = assert(remote.get_version())
     stderr("Connected: remote version is %d.%d.%d\n", v.major, v.minor, v.patch)
     local shutdown = function() remote.shutdown() end
@@ -1908,8 +1879,8 @@ while math.ult(cycles, max_mcycle) do
                 save_rollup_advance_state_report(machine, config.rollup.tx_buffer, rollup_advance)
                 rollup_advance.report_index = rollup_advance.report_index + 1
             end
-            -- ignore other reasons
-            -- we have feed the inspect state query
+        -- ignore other reasons
+        -- we have feed the inspect state query
         elseif rollup_inspect and not rollup_inspect.query then
             if reason == cartesi.machine.HTIF_YIELD_REASON_TX_REPORT then
                 save_rollup_inspect_state_report(machine, config.rollup.tx_buffer, rollup_inspect)

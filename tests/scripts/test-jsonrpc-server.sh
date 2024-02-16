@@ -28,16 +28,16 @@ test_path=${CARTESI_TESTS_PATH}
 server_address=127.0.0.1:6001
 
 tests=(
-    "$cartesi_machine_tests --remote-address=$server_address --remote-protocol="jsonrpc" --test-path=\"$test_path\" --test='.*' run"
+    "$cartesi_machine_tests --remote-address=$server_address --test-path=\"$test_path\" --test='.*' run"
     "$lua $script_dir/../lua/machine-bind.lua jsonrpc --remote-address=$server_address"
     "$lua $script_dir/../lua/machine-test.lua jsonrpc --remote-address=$server_address"
-    "$cartesi_machine --remote-address=$server_address --remote-protocol="jsonrpc" --remote-shutdown"
+    "$cartesi_machine --remote-address=$server_address --remote-shutdown"
     "$lua $script_dir/../lua/test-jsonrpc-fork.lua --remote-address=$server_address"
 )
 
 is_server_running () {
-    echo $cartesi_machine --remote-address=$server_address --remote-protocol="jsonrpc" --max-mcycle=0
-    eval $cartesi_machine --remote-address=$server_address --remote-protocol="jsonrpc" --max-mcycle=0 &> /dev/null
+    echo $cartesi_machine --remote-address=$server_address --max-mcycle=0
+    eval $cartesi_machine --remote-address=$server_address --max-mcycle=0 &> /dev/null
 }
 
 wait_for_server () {

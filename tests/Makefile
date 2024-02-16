@@ -119,8 +119,8 @@ $(BUILDDIR)/%:
 $(CARTESI_IMAGES) &: | $(CARTESI_IMAGES_PATH)
 	@wget -nc -i dependencies -P $(CARTESI_IMAGES_PATH)
 	@shasum -ca 256 dependencies.sha256
-	@cd $(CARTESI_IMAGES_PATH) && ln -s rootfs-tools-v0.14.1.ext2 rootfs.ext2
-	@cd $(CARTESI_IMAGES_PATH) && ln -s linux-6.5.9-ctsi-1-v0.19.1.bin linux.bin
+	@cd $(CARTESI_IMAGES_PATH) && ln -s rootfs-tools-v0.15.0-dev.ext2 rootfs.ext2
+	@cd $(CARTESI_IMAGES_PATH) && ln -s linux-6.5.9-ctsi-2-output-unification-test1-v0.20.0.bin linux.bin
 
 images: | $(CARTESI_IMAGES)
 

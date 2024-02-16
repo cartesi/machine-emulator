@@ -1,2 +1,2 @@
-1dc36e05bf04d3fff097e51408556cef4d5ac09792e245b37c470d9188a4c173  build/images/linux-6.5.9-ctsi-1-v0.19.1.bin
-7301ec8a9d3704ad65fce17626a6a36881e215fc8c769392d8a5d6e599fe1dc7  build/images/rootfs-tools-v0.14.1.ext2
+26dfdf316f2c93bb64666d6fd2c76f3e3dd84533d555a1dfec2b823a05db7b71  build/images/linux-6.5.9-ctsi-2-output-unification-test1-v0.20.0.bin
+755c61f74b2d02b99709935a8019514097fa29d25f01dc0be6f4cebf844e1737  build/images/rootfs-tools-v0.15.0-dev.ext2

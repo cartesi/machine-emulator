@@ -606,6 +606,22 @@ private:
         return m_m.get_state().soft_yield;
     }
 
+    void do_replace_cmio_rx_buffer(const unsigned char *data, uint64_t length) {
+        if (!data) {
+            throw std::runtime_error("data is null");
+        }
+        if (length > PMA_CMIO_RX_BUFFER_LENGTH) {
+            throw std::runtime_error("length exceeds CMIO RX buffer size");
+        }
+        auto &pma = m_m.find_pma_entry(PMA_CMIO_RX_BUFFER_START, PMA_CMIO_RX_BUFFER_LENGTH);
+        if (pma.get_istart_E()) {
+            throw std::runtime_error("CMIO RX buffer memory range was not found");
+        }
+        pma.fill_memory(PMA_CMIO_RX_BUFFER_START, 0, PMA_CMIO_RX_BUFFER_LENGTH);
+        pma.write_memory(PMA_CMIO_RX_BUFFER_START, data, length);
+        //??P calloc instead of explicit 0 fill
+    }
+
 #ifdef DUMP_COUNTERS
     machine_statistics &do_get_statistics() {
         return m_m.get_state().stats;

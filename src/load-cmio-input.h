@@ -14,32 +14,34 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef UARCH_RESET_STATE_H
-#define UARCH_RESET_STATE_H
+#ifndef LOAD_CMIO_INPUT_H
+#define LOAD_CMIO_INPUT_H
 
 namespace cartesi {
 
-/// \brief  Reset uarch to pristine state
-/// \tparam STATE_ACCESS state accessor type
-/// \param a state accessor instance
+/// \brief Load CMIO input from a buffer
+/// \tparam STATE_ACCESS State accessor type
+/// \param a State accessor
+/// \param reason Reason code
+/// \param data Data buffer
+/// \param length Data buffer length
 template <typename STATE_ACCESS>
-void uarch_reset_state(STATE_ACCESS &a);
+void load_cmio_input(STATE_ACCESS &a, uint16_t reason, const unsigned char *data, uint32_t length);
 
-class uarch_state_access;
-class uarch_record_state_access;
-class uarch_replay_state_access;
+class state_access;
+class record_state_access;
+class replay_state_access;
 
-// Declaration of explicit instantiation in module uarch-reset-state.cpp
-extern template void uarch_reset_state(uarch_state_access &a);
-
-// Declaration of explicit instantiation in module uarch-reset-state.cpp
-extern template void uarch_reset_state(uarch_state_access &a);
+// Declaration of explicit instantiation in module load_cmio_input.cpp
+extern template void load_cmio_input(state_access &a, uint16_t reason, const unsigned char *data, uint32_t length);
 
 // Declaration of explicit instantiation in module uarch-reset-state.cpp
-extern template void uarch_reset_state(uarch_record_state_access &a);
+extern template void load_cmio_input(record_state_access &a, uint16_t reason, const unsigned char *data,
+    uint32_t length);
 
 // Declaration of explicit instantiation in module uarch-reset-state.cpp
-extern template void uarch_reset_state(uarch_replay_state_access &a);
+extern template void load_cmio_input(replay_state_access &a, uint16_t reason, const unsigned char *data,
+    uint32_t length);
 
 } // namespace cartesi
 

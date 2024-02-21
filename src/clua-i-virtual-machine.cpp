@@ -539,6 +539,35 @@ static int machine_obj_index_rollback(lua_State *L) {
     return 0;
 }
 
+/// \brief This is the machine:load_cmio_input() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_load_cmio_input(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 2));
+    size_t length{0};
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
+    TRY_EXECUTE(cm_load_cmio_input(m.get(), reason, data, length, err_msg));
+    lua_pushboolean(L, true);
+    return 1;
+}
+
+/// \brief This is the machine:log_load_cmio_input() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_log_load_cmio_input(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    size_t length{0};
+    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(nullptr));
+    const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 2));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
+    TRY_EXECUTE(cm_log_load_cmio_input(m.get(), reason, data, length, clua_check_cm_log_type(L, 4), true,
+        &managed_log.get(), err_msg));
+    clua_push_cm_access_log(L, managed_log.get());
+    managed_log.reset();
+    return 1;
+}
+
 /// \brief Contents of the machine object metatable __index table.
 static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"get_proof", machine_obj_index_get_proof},
@@ -657,6 +686,8 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"get_memory_ranges", machine_obj_index_get_memory_ranges},
     {"reset_uarch", machine_obj_index_reset_uarch},
     {"log_uarch_reset", machine_obj_index_log_uarch_reset},
+    {"load_cmio_input", machine_obj_index_load_cmio_input},
+    {"log_load_cmio_input", machine_obj_index_log_load_cmio_input},
 });
 
 /// \brief This is the machine __close metamethod implementation.

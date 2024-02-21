@@ -313,10 +313,29 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uint32_t &value, co
     value = static_cast<uint32_t>(value64);
 }
 
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, uint16_t &value, const std::string &path) {
+    if (!contains(j, key)) {
+        return;
+    }
+    uint64_t value64 = 0;
+    ju_get_field(j, key, value64, path);
+    if (value64 > UINT16_MAX) {
+        throw std::invalid_argument("field \""s + path + to_string(key) + "\" out of range");
+    }
+    value = static_cast<uint16_t>(value64);
+}
+
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, uint32_t &value,
     const std::string &path);
 
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, uint16_t &value,
+    const std::string &path);
+
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, uint32_t &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, uint16_t &value,
     const std::string &path);
 
 template <typename K>

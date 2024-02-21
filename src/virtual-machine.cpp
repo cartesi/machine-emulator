@@ -492,4 +492,13 @@ machine_memory_range_descrs virtual_machine::do_get_memory_ranges(void) const {
     return m_machine->get_memory_ranges();
 }
 
+void virtual_machine::do_load_cmio_input(uint16_t reason, const unsigned char *data, size_t length) {
+    m_machine->load_cmio_input(reason, data, length);
+}
+
+access_log virtual_machine::do_log_load_cmio_input(uint16_t reason, const unsigned char *data, size_t length,
+    const access_log::type &log_type, bool one_based) {
+    return m_machine->log_load_cmio_input(reason, data, length, log_type, one_based);
+}
+
 } // namespace cartesi

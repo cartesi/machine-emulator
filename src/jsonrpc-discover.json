@@ -263,7 +263,7 @@
           "description": "State hash before transition described by access log",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/AccessLog"
+            "$ref": "#/components/schemas/Base64Hash"
           }
         }, {
           "name":"log",
@@ -277,7 +277,7 @@
           "description": "State hash after transition described by access log",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/AccessLog"
+            "$ref": "#/components/schemas/Base64Hash"
           }
         }, {
           "name":"runtime",
@@ -347,7 +347,7 @@
           "description": "State hash before transition described by access log",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/AccessLog"
+            "$ref": "#/components/schemas/Base64Hash"
           }
         }, {
           "name":"log",
@@ -361,7 +361,7 @@
           "description": "State hash after transition described by access log",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/AccessLog"
+            "$ref": "#/components/schemas/Base64Hash"
           }
         }, {
           "name":"runtime",
@@ -1138,7 +1138,190 @@
           "$ref": "#/components/schemas/MemoryRangeDescriptionArray"
         }
       }
+    },
+
+    {
+      "name": "machine.load_cmio_input",
+      "summary": "Load CMIO input from a data buffer",
+      "params": [ {
+          "name":"reason",
+          "description": "Reason for loading data",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        },{
+          "name":"data",
+          "description": "Data to load",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64String"
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "description": "True when operation succeeded",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+
+    {
+      "name": "machine.log_load_cmio_input and returns an access log",
+      "summary": "Load CMIO input from a data buffer and returns an access log",
+      "params": [ {
+        "name":"reason",
+        "description": "Reason for loading data",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/UnsignedInteger"
+        }
+        }, {
+          "name":"data",
+          "description": "Data to load",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64String"
+          }
+        },{
+          "name":"log_type",
+          "description": "The log type to generate",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/AccessLogType"
+          }
+        }, {
+          "name":"one_based",
+          "description": "Whether messages use 1-based or 0-based indeces",
+          "required": false,
+          "schema": {
+            "type": "boolean"
+          }
+        }
+      ],
+      "result": {
+        "name": "access_log",
+        "description": "Log of state accesses",
+        "schema": {
+          "$ref": "#/components/schemas/AccessLog"
+        }
+      }
+    },
+
+    {
+      "name": "machine.verify_load_cmio_input_log",
+      "summary": "Checks the internal consistency of an access log produced by cm_load_cmio_input",
+      "params": [ {
+        "name":"reason",
+        "description": "Reason for loading data",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/UnsignedInteger"
+        }
+      }, {
+          "name":"data",
+          "description": "The data loaded when the log was generated.",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64String"
+          }
+        }, {
+          "name":"log",
+          "description": "Access log to verify",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/AccessLog"
+          }
+        }, {
+          "name":"runtime",
+          "description": "Machine runtime configuration",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/MachineRuntimeConfig"
+          }
+        }, {
+          "name":"one_based",
+          "description": "Whether messages use 1-based or 0-based indeces",
+          "required": false,
+          "schema": {
+            "type": "boolean"
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "description": "True when operation succeeded",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+
+    {
+      "name": "machine.verify_load_cmio_input_state_transition",
+      "summary": "Checks the validity of state transitions caused by cm_load_cmio_input",
+      "params": [ {
+        "name":"reason",
+        "description": "Reason for loading data",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/UnsignedInteger"
+        }
+        },  {
+          "name":"data",
+          "description": "The data loaded when the log was generated.",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64String"
+          }
+        },  {
+          "name":"root_hash_before",
+          "description": "State hash before load.",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64Hash"
+          }
+        }, {
+          "name":"log",
+          "description": "State access log to be verified.",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/AccessLog"
+          }
+        }, {
+          "name":"root_hash_after",
+          "description": "State hash after load.",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64Hash"
+          }
+        }, {
+          "name":"runtime",
+          "description": "Machine runtime configuration",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/MachineRuntimeConfig"
+          }
+        }, {
+          "name":"one_based",
+          "description": "Whether messages use 1-based or 0-based indeces",
+          "required": false,
+          "schema": {
+            "type": "boolean"
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "description": "True when operation succeeded",
+        "schema": {
+          "type": "boolean"
+        }
+      }
     }
+
   ],
 
   "components": {

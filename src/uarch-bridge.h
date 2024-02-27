@@ -24,6 +24,7 @@
 #include "strict-aliasing.h"
 #include "uarch-constants.h"
 #include "uarch-state.h"
+#include "os.h"
 
 namespace cartesi {
 
@@ -727,7 +728,7 @@ private:
 
     /// \brief Writes a character to the console
     static void uarch_putchar(uint64_t data) {
-        putchar(static_cast<char>(data));
+        os_putchar(static_cast<char>(data));
     }
 
     /// \brief Halt  request received from uarch

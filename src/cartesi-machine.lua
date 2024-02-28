@@ -575,7 +575,7 @@ local memory_range_replace = {}
 local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 128 << 20 -- 128MB
 local dtb_image_filename = nil
-local bootargs = "quiet earlycon=sbi console=hvc0"
+local bootargs = "no4lvl quiet earlycon=sbi console=hvc0"
     -- rootfs related arguments must come at the end to be replaced by --no-root-flash-drive
     .. " rootfstype=ext2 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"
 local init_splash = true
@@ -2112,7 +2112,7 @@ if store_config == stderr then store_machine_config(config, stderr) end
 if rollup_advance or rollup_inspect then
     check_rollup_htif_config(config.htif)
     assert(config.rollup, "rollup device must be present")
-    assert(remote_address, "rollup requires --remote-address for snapshot/rollback")
+    --assert(remote_address, "rollup requires --remote-address for snapshot/rollback")
     check_rollup_memory_range_config(config.rollup.tx_buffer, "tx-buffer")
     check_rollup_memory_range_config(config.rollup.rx_buffer, "rx-buffer")
     check_rollup_memory_range_config(config.rollup.input_metadata, "input-metadata")
@@ -2172,19 +2172,23 @@ while math.ult(cycles, max_mcycle) do
         elseif rollup_advance and rollup_advance.next_input_index < rollup_advance.input_index_end then
             -- save only if we have already run an input
             if rollup_advance.next_input_index > rollup_advance.input_index_begin then
-                save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup_advance)
+                --save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup_advance)
             end
             if reason == cartesi.machine.HTIF_YIELD_REASON_RX_REJECTED then
-                machine:rollback()
+                --machine:rollback()
                 cycles = machine:read_mcycle()
             else
                 assert(reason == cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED, "invalid manual yield reason")
             end
             stderr("\nEpoch %d before input %d\n", rollup_advance.epoch_index, rollup_advance.next_input_index)
-            if rollup_advance.hashes then print_root_hash(machine) end
-            machine:snapshot()
+            if rollup_advance.hashes then
+                print_root_hash(machine, stderr_unsilenceable)
+            end
+            --machine:snapshot()
             load_rollup_input_and_metadata(machine, config.rollup, rollup_advance)
-            if rollup_advance.hashes then print_root_hash(machine) end
+            if rollup_advance.hashes then
+                print_root_hash(machine, stderr_unsilenceable)
+            end
             machine:reset_iflags_Y()
             machine:write_htif_fromhost_data(0) -- tell machine it is an rollup_advance state, but this is default
             rollup_advance.voucher_index = 0
@@ -2194,7 +2198,7 @@ while math.ult(cycles, max_mcycle) do
         else
             -- there are outputs of a prevous advance state to save
             if rollup_advance and rollup_advance.next_input_index > rollup_advance.input_index_begin then
-                save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup_advance)
+                -- save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup_advance)
             end
             -- there is an inspect state query to feed
             if rollup_inspect and rollup_inspect.query then
@@ -2213,20 +2217,20 @@ while math.ult(cycles, max_mcycle) do
         -- we have fed an advance state input
         if rollup_advance and rollup_advance.next_input_index > rollup_advance.input_index_begin then
             if reason == cartesi.machine.HTIF_YIELD_REASON_TX_VOUCHER then
-                save_rollup_advance_state_voucher(machine, config.rollup.tx_buffer, rollup_advance)
+                --save_rollup_advance_state_voucher(machine, config.rollup.tx_buffer, rollup_advance)
                 rollup_advance.voucher_index = rollup_advance.voucher_index + 1
             elseif reason == cartesi.machine.HTIF_YIELD_REASON_TX_NOTICE then
-                save_rollup_advance_state_notice(machine, config.rollup.tx_buffer, rollup_advance)
+                --save_rollup_advance_state_notice(machine, config.rollup.tx_buffer, rollup_advance)
                 rollup_advance.notice_index = rollup_advance.notice_index + 1
             elseif reason == cartesi.machine.HTIF_YIELD_REASON_TX_REPORT then
-                save_rollup_advance_state_report(machine, config.rollup.tx_buffer, rollup_advance)
+                --save_rollup_advance_state_report(machine, config.rollup.tx_buffer, rollup_advance)
                 rollup_advance.report_index = rollup_advance.report_index + 1
             end
         -- ignore other reasons
         -- we have feed the inspect state query
         elseif rollup_inspect and not rollup_inspect.query then
             if reason == cartesi.machine.HTIF_YIELD_REASON_TX_REPORT then
-                save_rollup_inspect_state_report(machine, config.rollup.tx_buffer, rollup_inspect)
+                --save_rollup_inspect_state_report(machine, config.rollup.tx_buffer, rollup_inspect)
                 rollup_inspect.report_index = rollup_inspect.report_index + 1
             end
             -- ignore other reasons

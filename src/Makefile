@@ -83,8 +83,8 @@ else ifneq (,$(shell which port))
 PORT_PREFIX = /opt/local
 BOOST_LIB_DIR=-L$(PORT_PREFIX)/libexec/boost/1.81/lib
 BOOST_INC=-I$(PORT_PREFIX)/libexec/boost/1.81/include
-SLIRP_LIB=-L$(PORT_PREFIX)/libslirp/lib -lslirp
-SLIRP_INC=-I$(PORT_PREFIX)/libslirp/include
+SLIRP_LIB=-L$(PORT_PREFIX)/lib -lslirp
+SLIRP_INC=-I$(PORT_PREFIX)/include
 else
 $(error Neither Homebrew nor MacPorts is installed)
 endif
@@ -126,7 +126,10 @@ PROFILE_DATA=
 endif
 
 ifeq ($(slirp),yes)
-INCS+=$(SLIRP_INC)
+# Workaround for building with macports lua-luarocks installation
+machine.o: INCS+=$(SLIRP_INC)
+virtio-net-carrier-slirp.o: INCS+=$(SLIRP_INC)
+#INCS+=$(SLIRP_INC)
 LIBCARTESI_COMMON_LIBS+=$(SLIRP_LIB)
 else
 DEFS+=-DNO_SLIRP

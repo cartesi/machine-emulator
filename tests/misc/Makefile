@@ -44,7 +44,7 @@ else ifneq (,$(shell which port))
 PORT_PREFIX = /opt/local
 BOOST_LIB_DIR=-L$(PORT_PREFIX)/libexec/boost/1.81/lib
 BOOST_INC=-I$(PORT_PREFIX)/libexec/boost/1.81/include
-SLIRP_LIB=-L$(PORT_PREFIX)/libslirp/lib -lslirp
+SLIRP_LIB=-L$(PORT_PREFIX)/lib -lslirp
 else
 $(error Neither Homebrew nor MacPorts is installed)
 endif

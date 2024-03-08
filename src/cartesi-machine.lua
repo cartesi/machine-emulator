@@ -580,7 +580,7 @@ local bootargs = "quiet earlycon=sbi console=hvc0"
     .. " rootfstype=ext2 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"
 local init_splash = true
 local append_bootargs = ""
-local default_init = "USER=dapp\n"
+local default_init = "busybox stty -onlcr\nUSER=dapp\n"
 local append_init = ""
 local append_entrypoint = ""
 local rollup = {
@@ -1801,7 +1801,7 @@ else
     if init_splash then
         config.dtb.init = config.dtb.init
             .. ([[
-echo "
+busybox stty -onlcr; cat <<EOF
          .
         / \
       /    \
@@ -1811,7 +1811,8 @@ echo "
        \    / CARTESI
         \ /   MACHINE
          '
-"
+
+EOF
 ]]):gsub("\\", "\\\\")
     end
 

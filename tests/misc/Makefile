@@ -37,7 +37,7 @@ ifneq (,$(shell which brew))
 BREW_PREFIX = $(shell brew --prefix)
 BOOST_LIB_DIR=-L$(BREW_PREFIX)/lib
 BOOST_INC=-I$(BREW_PREFIX)/include
-SLIRP_LIB=-L$(BREW_PREFIX)/libslirp/lib -lslirp
+SLIRP_LIB=-L$(BREW_PREFIX)/lib -lslirp
 
 # Macports installation
 else ifneq (,$(shell which port))

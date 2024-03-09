@@ -17,6 +17,7 @@
 #ifndef UARCH_INTERPRET_SOLIDITY_COMPAT_H
 #define UARCH_INTERPRET_SOLIDITY_COMPAT_H
 
+#include "os.h"
 #include <cassert>
 
 /// \file
@@ -93,6 +94,18 @@ static inline void writeX(UarchState &a, uint8 reg, uint64 val) {
 template <typename UarchState>
 static inline void resetState(UarchState &a) {
     a.reset_state();
+}
+
+template <typename UarchState>
+static inline void throwRuntimeError(UarchState &a, const char *message) {
+    (void) a;
+    throw std::runtime_error(message);
+}
+
+template <typename UarchState>
+static inline void putChar(UarchState &a, unsigned char c) {
+    (void) a;
+    os_putchar(c);
 }
 
 // Conversions and arithmetic functions

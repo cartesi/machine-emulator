@@ -615,7 +615,7 @@ do_test("advance micro cycles until halt", function(machine)
     assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
     local status = machine:run_uarch()
     assert(status == cartesi.UARCH_BREAK_REASON_UARCH_HALTED)
-    assert(machine:read_uarch_cycle() == 4, "uarch cycle should be 4")
+    assert(machine:read_uarch_cycle() == 3, "uarch cycle should be 4")
     assert(machine:read_uarch_halt_flag() == true, "uarch should be halted")
 end)
 
@@ -688,7 +688,7 @@ do_test("dumped step log content should match", function()
         .. "  1: read uarch.cycle@0x400008(4194312): 0x0(0)\n"
         .. "  2: read uarch.halt_flag@0x400000(4194304): 0x0(0)\n"
         .. "  3: read uarch.pc@0x400010(4194320): 0x600000(6291456)\n"
-        .. "  4: read memory@0x600000(6291456): 0x4002b707b00513(18017383640728851)\n"
+        .. "  4: read memory@0x600000(6291456): 0x10089307b00513(4513027209561363)\n"
         .. "  begin addi\n"
         .. "    5: read uarch.x@0x400018(4194328): 0x0(0)\n"
         .. "    6: write uarch.x@0x400068(4194408): 0x0(0) -> 0x7b(123)\n"
@@ -1128,37 +1128,9 @@ end)
 
 print("\n\n testing unsupported uarch instructions ")
 
-local uarch_ecall_program = {
-    0x00000073, -- ecall
-}
-
-local uarch_ebreak_program = {
-    0x00100073, -- ebreak
-}
-
 local uarch_illegal_insn_program = {
     0x00000000, -- some illegal instruction
 }
-
-test_util.make_do_test(build_machine, machine_type, {
-    uarch = {
-        ram = { image_filename = test_util.create_test_uarch_program(uarch_ecall_program) },
-    },
-})("Detect unsupported ECALL instruction", function(machine)
-    local success, err = pcall(machine.run_uarch, machine)
-    assert(success == false)
-    assert(err:match("ECALL is not supported"))
-end)
-
-test_util.make_do_test(build_machine, machine_type, {
-    uarch = {
-        ram = { image_filename = test_util.create_test_uarch_program(uarch_ebreak_program) },
-    },
-})("Detect unsupported EBREAK instruction", function(machine)
-    local success, err = pcall(machine.run_uarch, machine)
-    assert(success == false)
-    assert(err:match("EBREAK is not supported"))
-end)
 
 test_util.make_do_test(build_machine, machine_type, {
     uarch = {
@@ -1168,6 +1140,40 @@ test_util.make_do_test(build_machine, machine_type, {
     local success, err = pcall(machine.run_uarch, machine)
     assert(success == false)
     assert(err:match("illegal instruction"))
+end)
+
+do_test("uarch ecall putchar should print char to console", function()
+    local lua_code = [[ "
+                                 local cartesi = require 'cartesi'
+                                 local test_util = require 'cartesi.tests.util'
+                                 local cartesi_util = require 'cartesi.util'
+                                 local initial_csr_values = {}
+                                 local program = {
+                                    (cartesi.UARCH_ECALL_FN_PUTCHAR << 20) | 0x00893, -- li	a7,putchar
+                                    0x05800813, -- li	a6,'X''
+                                    0x00000073, -- ecall
+                                }
+                                 local uarch_ram_path = test_util.create_test_uarch_program(program)
+                                 local machine = cartesi.machine {
+                                 processor = initial_csr_values,
+                                 ram = {length = 1 << 20},
+                                 uarch = {
+                                    ram = { image_filename = uarch_ram_path }
+                                 }
+                                 }
+                                 os.remove(uarch_ram_path)
+                                 local log_type = {proofs = false, annotations = true}
+                                 machine:run_uarch(3) -- run 3 instructions
+                                 " 2>&1]]
+    local p = io.popen(lua_cmd .. lua_code)
+    local output = p:read(2000)
+    p:close()
+    local expected_output = "X"
+    print("Output of uarch ecall putchar:")
+    print("--------------------------")
+    print(output)
+    print("--------------------------")
+    assert(output == expected_output, "Output does not match expected output:\n" .. expected_output)
 end)
 
 print("\n\nAll machine binding tests for type " .. machine_type .. " passed")

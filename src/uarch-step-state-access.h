@@ -146,7 +146,7 @@ private:
     /// \param paddr Address of the state register
     /// \param data Pointer receiving register value
     uint64_t read_register(uint64_t paddr) {
-        return uarch_bridge::read_register(paddr, m_s, m_us);
+        return uarch_bridge::read_register(paddr, m_s);
     }
 
     /// \brief Fallback to error on all other word sizes
@@ -173,7 +173,7 @@ private:
     /// \param paddr Address of the state register
     /// \param data New register value
     void write_register(uint64_t paddr, uint64_t data) {
-        return uarch_bridge::write_register(paddr, m_s, m_us, data);
+        return uarch_bridge::write_register(paddr, m_s, data);
     }
 };
 

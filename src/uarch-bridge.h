@@ -37,7 +37,7 @@ public:
     /// \details \{
     /// An exception is thrown if paddr can't me mapped to a valid state register.
     //// \}
-    static void write_register(uint64_t paddr, machine_state &s, uarch_state &us, uint64_t data) {
+    static void write_register(uint64_t paddr, machine_state &s, uint64_t data) {
         if (try_write_x(s, paddr, data)) {
             return;
         }
@@ -45,9 +45,6 @@ public:
             return;
         }
         if (try_write_tlb(s, paddr, data)) {
-            return;
-        }
-        if (try_write_uarch_state(us, paddr, data)) {
             return;
         }
         switch (static_cast<shadow_state_csr>(paddr)) {
@@ -150,27 +147,17 @@ public:
             default:
                 break;
         }
-        switch (static_cast<uarch_mmio_address>(paddr)) {
-            case uarch_mmio_address::putchar:
-                return uarch_putchar(data);
-            case uarch_mmio_address::abort:
-                if (data != uarch_mmio_abort_value) {
-                    throw std::runtime_error("invalid write attempt to microarchitecture abort address");
-                }
-                return uarch_abort();
-        }
         throw std::runtime_error("invalid write memory access from microarchitecture");
     }
 
     /// \brief Reads a machine state register.
     /// \param s Machine state.
-    /// \param us Microarchitecture (uarch) state.
     /// \param paddr Address that identifies the machine register to be read.
     /// \param data Receives the state register value.
     /// \details \{
     /// An exception is thrown if paddr can't me mapped to a valid state register.
     //// \}
-    static uint64_t read_register(uint64_t paddr, machine_state &s, uarch_state &us) {
+    static uint64_t read_register(uint64_t paddr, machine_state &s) {
         uint64_t data = 0;
         if (try_read_x(s, paddr, &data)) {
             return data;
@@ -182,9 +169,6 @@ public:
             return data;
         }
         if (try_read_pma(s, paddr, &data)) {
-            return data;
-        }
-        if (try_read_uarch_state(us, paddr, &data)) {
             return data;
         }
         switch (static_cast<shadow_state_csr>(paddr)) {
@@ -266,12 +250,6 @@ public:
                 return s.htif.iyield;
             default:
                 break;
-        }
-        switch (static_cast<uarch_mmio_address>(paddr)) {
-            case uarch_mmio_address::putchar:
-                return 0;
-            case uarch_mmio_address::abort:
-                return 0;
         }
         throw std::runtime_error("invalid read memory access from microarchitecture");
     }
@@ -359,21 +337,6 @@ public:
                 return "htif.iyield";
             default:
                 break;
-        }
-        switch (static_cast<uarch_mmio_address>(paddr)) {
-            case uarch_mmio_address::putchar:
-                return "uarch.putchar";
-            case uarch_mmio_address::abort:
-                return "uarch.abort";
-        }
-        if (paddr >= PMA_SHADOW_UARCH_STATE_START &&
-            paddr < PMA_SHADOW_UARCH_STATE_START + PMA_SHADOW_UARCH_STATE_LENGTH) {
-            switch (static_cast<shadow_uarch_state_csr>(paddr - PMA_SHADOW_UARCH_STATE_START)) {
-                case shadow_uarch_state_csr::halt_flag:
-                    return "uarch.halt_flag";
-                default:
-                    break;
-            }
         }
         if (paddr >= shadow_state_get_x_abs_addr(0) && paddr <= shadow_state_get_x_abs_addr(X_REG_COUNT - 1) &&
             (paddr & 0b111) == 0) {
@@ -662,48 +625,6 @@ private:
         }
     }
 
-    /// \brief Tries to read a uarch CSR
-    /// \param us uarch state.
-    /// \param paddr Absolute address of the TLB entry fieldwithin shadow TLB range
-    /// \param data Pointer to word receiving value.
-    /// \return true if the register was successfully read
-    static bool try_read_uarch_state(uarch_state &us, uint64_t paddr, uint64_t *data) {
-        if (paddr < PMA_SHADOW_UARCH_STATE_START ||
-            paddr >= PMA_SHADOW_UARCH_STATE_START + PMA_SHADOW_UARCH_STATE_LENGTH) {
-            return false;
-        }
-        switch (static_cast<shadow_uarch_state_csr>(paddr - PMA_SHADOW_UARCH_STATE_START)) {
-            case shadow_uarch_state_csr::halt_flag:
-                *data = us.halt_flag;
-                return true;
-            default:
-                break;
-        }
-        return false;
-    }
-
-    /// \brief Tries to write a uarch CSR
-    /// \param us uarch state.
-    /// \param paddr Absolute address of the PMA entry property within shadow PMAs range
-    /// \param data Data to write
-    /// \return true if the register was successfully written
-    static bool try_write_uarch_state(uarch_state &us, uint64_t paddr, uint64_t data) {
-        if (paddr < PMA_SHADOW_UARCH_STATE_START ||
-            paddr >= PMA_SHADOW_UARCH_STATE_START + PMA_SHADOW_UARCH_STATE_LENGTH) {
-            return false;
-        }
-
-        if (static_cast<shadow_uarch_state_csr>(paddr - PMA_SHADOW_UARCH_STATE_START) ==
-            shadow_uarch_state_csr::halt_flag) {
-            if (data != uarch_halt_flag_halt_value) {
-                throw std::runtime_error("invalid value written microarchitecture halt flag");
-            }
-            uarch_halt(us);
-            return true;
-        }
-        return false;
-    }
-
     /// \brief Obtain PMA entry that covers a given physical memory region
     /// \tparam T Type of word.
     /// \param s Mmachine state.
@@ -723,21 +644,6 @@ private:
         }
         // Last PMA is always the empty range
         return s.pmas.back();
-    }
-
-    /// \brief Writes a character to the console
-    static void uarch_putchar(uint64_t data) {
-        putchar(static_cast<char>(data));
-    }
-
-    /// \brief Halt  request received from uarch
-    static void uarch_halt(uarch_state &us) {
-        us.halt_flag = true;
-    }
-
-    /// \brief Abort request received from uarch
-    static void uarch_abort() {
-        throw std::runtime_error("microarchitecture execution aborted");
     }
 };
 

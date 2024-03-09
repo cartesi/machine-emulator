@@ -25,22 +25,9 @@
 /// \brief Log2 size of the entire uarch memory range: shadow and ram
 #define UARCH_STATE_LOG2_SIZE_DEF 22
 
-/// \brief The address of uarch halt flag is the first dword in shadow uarch state
-#define UARCH_HALT_FLAG_SHADOW_ADDR_DEF PMA_SHADOW_UARCH_STATE_START_DEF
+// microarchitecture ecall function codes
+#define UARCH_ECALL_FN_HALT_DEF 1    // halt uarch
+#define UARCH_ECALL_FN_PUTCHAR_DEF 2 // putchar
 
-/// \brief The value that halts the microarchitecture when written to UARCH_HALT_FLAG_SHADOW_ADDR_DEF
-#define UARCH_HALT_FLAG_HALT_VALUE_DEF 1
-
-/// \brief Base of microarchitecture special addresses
-#define UARCH_MMIO_START_DEF 0x7ffff000 ///< Start of microarchitecture memory mapped IO addresses
-
-/// \brief Abort execution of microarchitecture by writing to this address
-#define UARCH_MMIO_ABORT_ADDR_DEF (UARCH_MMIO_START_DEF + 0)
-
-/// \brief The value that aborts execution of the micro machine when written to UARCH_MMIO_ABORT_ADDR_DEF
-#define UARCH_MMIO_ABORT_VALUE_DEF 1
-
-/// \brief Prints a character to to console when written to UARCH_MMIO_HALT_ADDR_DEF
-#define UARCH_MMIO_PUTCHAR_ADDR_DEF (UARCH_MMIO_START_DEF + 8)
 // NOLINTEND(cppcoreguidelines-macro-usage,modernize-macro-to-enum)
 #endif /* end of include guard: UARCH_DEFINES_H */

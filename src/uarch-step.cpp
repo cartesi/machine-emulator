@@ -958,6 +958,31 @@ static inline void executeSD(UarchState &a, uint32 insn, uint64 pc) {
     return advancePc(a, pc);
 }
 
+template <typename UarchState>
+static inline void executeECALL(UarchState &a, uint32 insn, uint64 pc) {
+    dumpInsn(a, pc, insn, "ecall");
+    auto note = a.make_scoped_note("ecall");
+    (void) note;
+    uint64 function = readX(a, 17); // a7 contains the function number
+    if (function == UARCH_ECALL_FN_HALT) {
+        setHaltFlag(a);
+    } else if (function == UARCH_ECALL_FN_PUTCHAR) {
+        uint64 character = readX(a, 16); // a6 contains the character to print
+        putChar(a, uint8(character));
+    } else {
+        throwRuntimeError(a, "unsupported ecall function");
+    }
+    return advancePc(a, pc);
+}
+
+template <typename UarchState>
+static inline void executeEBREAK(UarchState &a, uint32 insn, uint64 pc) {
+    dumpInsn(a, pc, insn, "ebreak");
+    auto note = a.make_scoped_note("ebreak");
+    (void) note;
+    throwRuntimeError(a, "uarch aborted");
+}
+
 /// \brief Returns true if the opcode field of an instruction matches the provided argument
 static inline bool insnMatchOpcode(uint32 insn, uint32 opcode) {
     return ((insn & 0x7f)) == opcode;
@@ -1086,11 +1111,11 @@ static inline void executeInsn(UarchState &a, uint32 insn, uint64 pc) {
     } else if (insnMatchOpcodeFunct3(insn, 0xf, 0x0)) {
         return executeFENCE(a, insn, pc);
     } else if (insn == uint32(0x73)) {
-        throw std::runtime_error("ECALL is not supported");
+        return executeECALL(a, insn, pc);
     } else if (insn == uint32(0x100073)) {
-        throw std::runtime_error("EBREAK is not supported");
+        return executeEBREAK(a, insn, pc);
     }
-    throw std::runtime_error("illegal instruction");
+    throwRuntimeError(a, "illegal instruction");
 }
 
 template <typename UarchState>

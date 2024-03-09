@@ -46,15 +46,10 @@ end
 
 local ZERO_PAGE = string.rep("\x00", PAGE_SIZE)
 
--- Encodes: li t0, UARCH_HALT_FLAG_SHADOW_ADDR
--- The halt flag is located at the first dword starting from UARCH_SHADOW_START_ADDRESS
-local li_t0_UARCH_SHADOW_START_ADDRESS = ((cartesi.UARCH_SHADOW_START_ADDRESS >> 12) << 12) | 0x02b7
-
 test_util.uarch_programs = {
     halt = {
-        li_t0_UARCH_SHADOW_START_ADDRESS, --   li	t0,UARCH_HALT_FLAG_SHADOW_ADDR
-        0x00100313, --   li	t1,1                             UARCH_MMIO_HALT_VALUE
-        0x0062b023, --   sd	t1,0(t0)                         Halt uarch
+        (cartesi.UARCH_ECALL_FN_HALT << 20) | 0x00893, -- li a7,halt
+        0x00000073, -- ecall
     },
 }
 

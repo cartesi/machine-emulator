@@ -330,7 +330,7 @@ private:
     /// \param paddr Address of the state register
     /// \param data Pointer receiving register value
     uint64_t read_register(uint64_t paddr) {
-        auto data = uarch_bridge::read_register(paddr, m_s, m_us);
+        auto data = uarch_bridge::read_register(paddr, m_s);
         const auto *name = uarch_bridge::get_register_name(paddr);
         log_read(paddr, data, name);
         return data;
@@ -376,10 +376,10 @@ private:
     /// \param paddr Address of the state register
     /// \param data New register value
     void write_register(uint64_t paddr, uint64_t data) {
-        auto old_data = uarch_bridge::read_register(paddr, m_s, m_us);
+        auto old_data = uarch_bridge::read_register(paddr, m_s);
         const auto *name = uarch_bridge::get_register_name(paddr);
         log_before_write(paddr, old_data, data, name);
-        uarch_bridge::write_register(paddr, m_s, m_us, data);
+        uarch_bridge::write_register(paddr, m_s, data);
         update_after_write(paddr);
     }
 

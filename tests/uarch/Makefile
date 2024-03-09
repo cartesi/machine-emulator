@@ -26,7 +26,7 @@ RISCV_OBJDUMP ?= $(RISCV_PREFIX)objdump --disassemble-all --disassemble-zeroes -
 RISCV_OBJCOPY ?= $(RISCV_PREFIX)objcopy -S -O binary
 
 # Tests provided by us
-TESTS = fence
+TESTS = fence ebreak ecall-putchar ecall-unsupported
 SRC_DIR = $(abspath .)
 BUILDDIR ?= $(abspath ./build)
 TEST_NAMES = $(addprefix rv64ui-uarch-, $(TESTS))

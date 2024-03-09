@@ -66,13 +66,22 @@ extern "C" void *memset(void *ptr, int value, size_t num) {
 }
 
 extern "C" void _putchar(char c) {
-    volatile uint64_t *p = reinterpret_cast<uint64_t *>(cartesi::uarch_mmio_address::putchar);
-    *p = c;
+    asm volatile("mv a7, %0\n"
+                 "mv a6, %1\n"
+                 "ecall\n"
+                 : // no output
+                 : "r"(cartesi::uarch_ecall_functions::UARCH_ECALL_FN_PUTCHAR),
+                 "r"(c)       // character to print
+                 : "a7", "a6" // modified registers
+    );
 }
 
 extern "C" NO_RETURN void abort(void) {
-    volatile char *p = reinterpret_cast<char *>(cartesi::uarch_mmio_address::abort);
-    *p = uarch_mmio_abort_value;
+    asm volatile("ebreak"
+                 : // no output
+                 : // no input
+                 : // no affected registers
+    );
     // execution will never reach this point
     __builtin_trap();
 }

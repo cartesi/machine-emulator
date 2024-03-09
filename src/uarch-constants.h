@@ -61,17 +61,11 @@ static_assert((UARCH_SHADOW_LENGTH & (PMA_PAGE_SIZE - 1)) == 0,
     "UARCH_SHADOW_LENGTH must be multiple of PMA_PAGE_SIZE");
 static_assert((UARCH_RAM_LENGTH & (PMA_PAGE_SIZE - 1)) == 0, "UARCH_RAM_LENGTH must be multiple of PMA_PAGE_SIZE");
 
-/// \briefThe value that halts the microarchitecture when written to shadow_state_csr::uarch_halt_flag:
-constexpr uint64_t uarch_halt_flag_halt_value = UARCH_HALT_FLAG_HALT_VALUE_DEF;
-
-/// \brief Memory addresses with special meaning to the microarchitecture
-enum class uarch_mmio_address : uint64_t {
-    putchar = UARCH_MMIO_PUTCHAR_ADDR_DEF, ///< Write to this address for printing characters to the console
-    abort = UARCH_MMIO_ABORT_ADDR_DEF,     ///< Write to this address to abort execution of the micro machine
+/// \brief ecall function codes
+enum uarch_ecall_functions : uint64_t {
+    UARCH_ECALL_FN_HALT = EXPAND_UINT64_C(UARCH_ECALL_FN_HALT_DEF),       ///< halt  uarch execution
+    UARCH_ECALL_FN_PUTCHAR = EXPAND_UINT64_C(UARCH_ECALL_FN_PUTCHAR_DEF), //< putchar
 };
-
-/// \briefThe value that aborts the micro machine execution written to uarch_mmio_address::abort
-constexpr uint64_t uarch_mmio_abort_value = UARCH_MMIO_ABORT_VALUE_DEF;
 
 } // namespace cartesi
 

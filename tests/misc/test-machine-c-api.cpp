@@ -1838,15 +1838,10 @@ public:
         _log_type = {true, true, false};
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
 
-        // Encodes: li t0, UARCH_HALT_FLAG_SHADOW_ADDR
-        uint32_t li_t0_UARCH_SHADOW_START_ADDRESS =
-            ((UARCH_HALT_FLAG_SHADOW_ADDR_DEF >> 12) << 12) | static_cast<uint32_t>(0x02b7);
-
         uint32_t test_uarch_ram[] = {
-            0x07b00513,                       //  li	a0,123
-            li_t0_UARCH_SHADOW_START_ADDRESS, //  li t0,UARCH_HALT_FLAG_SHADOW_ADDR
-            0x00100313,                       //  li	t1,1
-            0x0062b023,                       //  sd	t1,0(t0)  Halt microarchitecture at uarch cycle 4
+            0x07b00513,                                                            //  li	a0,123
+            (cartesi::uarch_ecall_functions::UARCH_ECALL_FN_HALT << 20) | 0x00893, // li a7,halt
+            0x00000073,                                                            // ecall
         };
         std::ofstream of(_uarch_ram_path, std::ios::binary);
         of.write(static_cast<char *>(static_cast<void *>(&test_uarch_ram)), sizeof(test_uarch_ram));
@@ -2083,7 +2078,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_uarch_step_until_halt, access_log_machine_fix
     // at micro cycle 4
     error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(cycle, 4);
+    BOOST_REQUIRE_EQUAL(cycle, 3);
 
     // halted
     error_code = cm_read_csr(_machine, CM_PROC_UARCH_HALT_FLAG, &halt, nullptr);
@@ -2297,7 +2292,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_until_halt, access_log_
     error_code = cm_read_csr(_machine, CM_PROC_UARCH_CYCLE, &cycle, nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
-    BOOST_REQUIRE_EQUAL(cycle, 4);
+    BOOST_REQUIRE_EQUAL(cycle, 3);
 
     // assert halt flag is set
     error_code = cm_read_csr(_machine, CM_PROC_UARCH_HALT_FLAG, &halt, &err_msg);

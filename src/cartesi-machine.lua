@@ -575,7 +575,7 @@ local memory_range_replace = {}
 local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 128 << 20 -- 128MB
 local dtb_image_filename = nil
-local bootargs = "quiet earlycon=sbi console=hvc0"
+local bootargs = "no4lvl quiet earlycon=sbi console=hvc0"
     -- rootfs related arguments must come at the end to be replaced by --no-root-flash-drive
     .. " rootfstype=ext2 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"
 local init_splash = true

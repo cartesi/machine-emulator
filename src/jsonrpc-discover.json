@@ -1648,7 +1648,7 @@
           },
           "girqsrvd": {
             "$ref": "#/components/schemas/UnsignedInteger"
-          },
+          }
         }
       },
 

@@ -219,6 +219,7 @@ where options are:
     <key>:<value> is one of
         query:<filename>
         report:<filename-pattern>
+        hashes
 
         query (default: "query.bin")
         the name of the file from which to read the query.
@@ -226,6 +227,9 @@ where options are:
         report (default: "query-report-%%o.bin")
         the pattern that derives the name of the file written for report %%o
         of the query.
+
+        hashes
+        print out hashes before every query.
 
     while the query is processed, "%%o" is replaced by the current report index.
 
@@ -1102,6 +1106,7 @@ local options = {
             local r = util.parse_options(opts, {
                 query = true,
                 report = true,
+                hashes = true,
             })
             r.query = r.query or "query.bin"
             r.report = r.report or "query-report-%o.bin"
@@ -1963,7 +1968,7 @@ end
 local function set_yield_data(machine, reason, data)
     local m16 = (1 << 16) - 1
     local m32 = (1 << 32) - 1
-    machine:write_htif_fromhost_data((reason & (m16 << 32)) | (data & m32))
+    machine:write_htif_fromhost_data(((reason & m16) << 32) | (data & m32))
 end
 
 local function get_yield(machine)
@@ -2154,26 +2159,37 @@ while math.ult(cycles, max_mcycle) do
             if cmio_advance.hashes then print_root_hash(machine) end
             machine:snapshot()
             local input_length = load_cmio_input(machine, config.cmio, cmio_advance)
-            if cmio_advance.hashes then print_root_hash(machine) end
             machine:reset_iflags_Y()
             set_yield_data(machine, cartesi.machine.HTIF_YIELD_REASON_ADVANCE_STATE, input_length)
+            if cmio_advance.hashes then print_root_hash(machine) end
             cmio_advance.output_index = 0
             cmio_advance.report_index = 0
             cmio_advance.next_input_index = cmio_advance.next_input_index + 1
         else
-            -- there are outputs of a prevous advance state to save
+            -- there are outputs of a previous advance state to save
             if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
                 save_cmio_outputs_root_hash(machine, config.cmio.tx_buffer, cmio_advance, 32)
-            end
-            -- there is an inspect state query to feed
-            if cmio_inspect and cmio_inspect.query then
-                stderr("\nBefore query\n")
-                local input_length = load_cmio_query(machine, config.cmio, cmio_inspect)
-                machine:reset_iflags_Y()
-                set_yield_data(machine, cartesi.machine.HTIF_YIELD_REASON_INSPECT_STATE, input_length)
-                cmio_inspect.report_index = 0
-                cmio_inspect.query = nil
                 cmio_advance = nil
+            end
+            -- not done with inspect state query
+            if cmio_inspect then
+                -- haven't even fed it
+                if cmio_inspect.query then
+                    stderr("\nBefore query\n")
+                    if cmio_inspect.hashes then print_root_hash(machine) end
+                    machine:snapshot()
+                    local input_length = load_cmio_query(machine, config.cmio, cmio_inspect)
+                    machine:reset_iflags_Y()
+                    set_yield_data(machine, cartesi.machine.HTIF_YIELD_REASON_INSPECT_STATE, input_length)
+                    if cmio_inspect.hashes then print_root_hash(machine) end
+                    cmio_inspect.report_index = 0
+                    cmio_inspect.query = nil
+                -- fed it already
+                else
+                    stderr("\nAfter query\n")
+                    machine:rollback()
+                    cmio_inspect = nil
+                end
             end
         end
     -- deal with yield automatic

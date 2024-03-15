@@ -621,6 +621,9 @@ jobs:
             SANITIZE=yes
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
 
+      - name: MMAP rnd_bits workaround for the new GitHub ubuntu-22 runner
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
       - name: Run tests with sanitizer
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:sanitizer make sanitize=yes test-save-and-load test-machine test-hash test-lua test-jsonrpc test-c-api coverage-machine test-uarch-rv64ui test-uarch-interpreter coverage-uarch

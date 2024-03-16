@@ -202,8 +202,7 @@ test-save-and-load: | $(CARTESI_IMAGES)
 test-misc: test-c-api test-hash test-save-and-load
 
 test-generate-uarch-logs: $(BUILDDIR)/uarch-riscv-tests-json-logs
-	$(LUA) ./lua/uarch-riscv-tests.lua --output-dir=$(BUILDDIR)/uarch-riscv-tests-json-logs --proofs --proofs-frequency=1 json-step-logs
-	$(LUA) ./lua/uarch-riscv-tests.lua --output-dir=$(BUILDDIR)/uarch-riscv-tests-json-logs --proofs json-reset-log
+	$(LUA) ./lua/uarch-riscv-tests.lua --output-dir=$(BUILDDIR)/uarch-riscv-tests-json-logs --proofs --proofs-frequency=1 --create-uarch-reset-log json-step-logs
 	tar -czf uarch-riscv-tests-json-logs.tar.gz -C $(BUILDDIR) uarch-riscv-tests-json-logs
 
 coverage-machine:

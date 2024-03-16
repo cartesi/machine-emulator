@@ -99,7 +99,9 @@ where options are:
   --proofs-frequency=<number>
     write proof of every <number> uarch cycles
     (default: 1, i.e., all accesses)
-
+  --create-uarch-reset-log
+    create a json log file for a uarch reset operation
+    valid only for the json-step-logs command
 and command can be:
   run
     run test and report errors
@@ -111,12 +113,6 @@ and command can be:
     generate json log files for every step of the selected tests
     the files are written to the directory specified by --output-dir
     these log files are used by Solidity unit tests
-
-  json-reset-log
-    generate the file uarch-reset.json containing the log of a uarch reset operation
-    the file is written to the directory specified by --output-dir
-    this log file is used by Solidity unit tests
-
 ]=],
         arg[0]
     ))
@@ -127,6 +123,7 @@ local test_path = test_util.tests_uarch_path
 local test_pattern = ".*"
 local output_dir
 local proofs = false
+local create_uarch_rest_log = false
 local proofs_frequency = 1
 local total_steps_counter = 0
 
@@ -143,6 +140,14 @@ local options = {
         function(all)
             if not all then return false end
             help()
+        end,
+    },
+    {
+        "^%-%-create%-uarch%-reset%-log$",
+        function(all)
+            if not all then return false end
+            create_uarch_rest_log = true
+            return true
         end,
     },
     {
@@ -464,6 +469,28 @@ local function run_machine_writing_json_logs(machine, ctx)
     out:close()
 end
 
+local function create_json_reset_log()
+    local machine <close> = build_machine()
+    local test_name = "uarch-reset"
+    machine:set_uarch_halt_flag()
+    local initial_root_hash = machine:get_root_hash()
+    local log = machine:log_uarch_reset({ proofs = proofs })
+    local out = create_json_log_file(test_name .. "-steps")
+    write_log_to_file(log, out, 0, true)
+    out:close()
+    local ctx = {
+        initial_root_hash = initial_root_hash,
+        final_root_hash = machine:get_root_hash(),
+        ram_image = "",
+        test_name = test_name,
+        expected_cycles = 1,
+        step_count = 1,
+        failed = false,
+        accesses_count = #log.accesses,
+    }
+    return ctx
+end
+
 local function json_step_logs(tests)
     assert(output_dir, "output-dir is required for json-logs")
     local errors, error_count = {}, 0
@@ -498,6 +525,7 @@ local function json_step_logs(tests)
             print("passed")
         end
     end
+    if create_uarch_rest_log then contexts[#contexts + 1] = create_json_reset_log() end
     if error_count > 0 then
         io.write(string.format("\nFAILED %d of %d tests:\n\n", error_count, #tests))
         for k, v in pairs(errors) do
@@ -513,14 +541,6 @@ local function json_step_logs(tests)
     end
 end
 
-local function json_reset_log()
-    local machine <close> = build_machine()
-    local log = machine:log_uarch_reset({ proofs = proofs })
-    local out = create_json_log_file("uarch-reset")
-    write_log_to_file(log, out, 0, true)
-    out:close()
-end
-
 local selected_tests = {}
 for _, test in ipairs(riscv_tests) do
     if select_test(test[1], test_pattern) then selected_tests[#selected_tests + 1] = test end
@@ -534,8 +554,6 @@ elseif command == "list" then
     list(selected_tests)
 elseif command == "json-step-logs" then
     json_step_logs(selected_tests)
-elseif command == "json-reset-log" then
-    json_reset_log()
 else
     error("command not found")
 end

@@ -365,13 +365,13 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     write_htif_tohost(m_c.htif.tohost);
     write_htif_fromhost(m_c.htif.fromhost);
     // Only command in halt device is command 0 and it is always available
-    const uint64_t htif_ihalt = static_cast<uint64_t>(true) << HTIF_HALT_HALT;
+    const uint64_t htif_ihalt = static_cast<uint64_t>(true) << HTIF_HALT_CMD_HALT;
     write_htif_ihalt(htif_ihalt);
-    const uint64_t htif_iconsole = static_cast<uint64_t>(m_c.htif.console_getchar) << HTIF_CONSOLE_GETCHAR |
-        static_cast<uint64_t>(true) << HTIF_CONSOLE_PUTCHAR;
+    const uint64_t htif_iconsole = static_cast<uint64_t>(m_c.htif.console_getchar) << HTIF_CONSOLE_CMD_GETCHAR |
+        static_cast<uint64_t>(true) << HTIF_CONSOLE_CMD_PUTCHAR;
     write_htif_iconsole(htif_iconsole);
-    const uint64_t htif_iyield = static_cast<uint64_t>(m_c.htif.yield_manual) << HTIF_YIELD_MANUAL |
-        static_cast<uint64_t>(m_c.htif.yield_automatic) << HTIF_YIELD_AUTOMATIC;
+    const uint64_t htif_iyield = static_cast<uint64_t>(m_c.htif.yield_manual) << HTIF_YIELD_CMD_MANUAL |
+        static_cast<uint64_t>(m_c.htif.yield_automatic) << HTIF_YIELD_CMD_AUTOMATIC;
     write_htif_iyield(htif_iyield);
 
     // Register CLINT device
@@ -570,7 +570,7 @@ bool machine::has_virtio_console() const {
 }
 
 bool machine::has_htif_console() const {
-    return static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
+    return static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_CMD_GETCHAR));
 }
 
 machine_config machine::get_serialization_config(void) const {
@@ -626,9 +626,9 @@ machine_config machine::get_serialization_config(void) const {
     c.htif.tohost = read_htif_tohost();
     c.htif.fromhost = read_htif_fromhost();
     // c.htif.halt = read_htif_ihalt(); // hard-coded to true
-    c.htif.console_getchar = static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_GETCHAR));
-    c.htif.yield_manual = static_cast<bool>(read_htif_iyield() & (1 << HTIF_YIELD_MANUAL));
-    c.htif.yield_automatic = static_cast<bool>(read_htif_iyield() & (1 << HTIF_YIELD_AUTOMATIC));
+    c.htif.console_getchar = static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_CMD_GETCHAR));
+    c.htif.yield_manual = static_cast<bool>(read_htif_iyield() & (1 << HTIF_YIELD_CMD_MANUAL));
+    c.htif.yield_automatic = static_cast<bool>(read_htif_iyield() & (1 << HTIF_YIELD_CMD_AUTOMATIC));
     // Ensure we don't mess with DTB by writing the original bootargs
     // over the potentially modified memory region we serialize
     c.dtb.bootargs.clear();

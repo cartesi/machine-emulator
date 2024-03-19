@@ -119,33 +119,33 @@ local config = {
 
 if uarch then config.uarch = uarch end
 
-local YIELD_MANUAL = cartesi.machine.HTIF_YIELD_MANUAL
-local YIELD_AUTOMATIC = cartesi.machine.HTIF_YIELD_AUTOMATIC
+local YIELD_MANUAL = cartesi.machine.HTIF_YIELD_CMD_MANUAL
+local YIELD_AUTOMATIC = cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC
 
-local REASON_PROGRESS = cartesi.machine.HTIF_YIELD_REASON_PROGRESS
-local REASON_RX_ACCEPTED = cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED
-local REASON_RX_REJECTED = cartesi.machine.HTIF_YIELD_REASON_RX_REJECTED
-local REASON_TX_OUTPUT = cartesi.machine.HTIF_YIELD_REASON_TX_OUTPUT
-local REASON_TX_REPORT = cartesi.machine.HTIF_YIELD_REASON_TX_REPORT
-local REASON_TX_EXCEPTION = cartesi.machine.HTIF_YIELD_REASON_TX_EXCEPTION
+local REASON_PROGRESS = cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_PROGRESS
+local REASON_TX_OUTPUT = cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT
+local REASON_TX_REPORT = cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT
+local REASON_RX_ACCEPTED = cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
+local REASON_RX_REJECTED = cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED
+local REASON_TX_EXCEPTION = cartesi.machine.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION
 
 local yields = {
-    { mcycle = 9, data = 10, cmd = YIELD_MANUAL, reason = REASON_PROGRESS },
-    { mcycle = 40, data = 11, cmd = YIELD_MANUAL, reason = REASON_PROGRESS },
-    { mcycle = 71, data = 12, cmd = YIELD_MANUAL, reason = REASON_PROGRESS },
-    { mcycle = 103, data = 13, cmd = YIELD_MANUAL, reason = REASON_RX_ACCEPTED },
-    { mcycle = 135, data = 14, cmd = YIELD_MANUAL, reason = REASON_RX_REJECTED },
-    { mcycle = 167, data = 15, cmd = YIELD_MANUAL, reason = REASON_TX_OUTPUT },
-    { mcycle = 199, data = 16, cmd = YIELD_MANUAL, reason = REASON_TX_REPORT },
-    { mcycle = 231, data = 17, cmd = YIELD_MANUAL, reason = REASON_TX_EXCEPTION },
+    { mcycle = 10, data = 10, cmd = YIELD_MANUAL, reason = REASON_PROGRESS },
+    { mcycle = 42, data = 11, cmd = YIELD_MANUAL, reason = REASON_PROGRESS },
+    { mcycle = 74, data = 12, cmd = YIELD_MANUAL, reason = REASON_PROGRESS },
+    { mcycle = 106, data = 13, cmd = YIELD_MANUAL, reason = REASON_RX_ACCEPTED },
+    { mcycle = 138, data = 14, cmd = YIELD_MANUAL, reason = REASON_RX_REJECTED },
+    { mcycle = 170, data = 15, cmd = YIELD_MANUAL, reason = REASON_TX_OUTPUT },
+    { mcycle = 202, data = 16, cmd = YIELD_MANUAL, reason = REASON_TX_REPORT },
+    { mcycle = 234, data = 17, cmd = YIELD_MANUAL, reason = REASON_TX_EXCEPTION },
 
-    { mcycle = 262, data = 20, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
-    { mcycle = 293, data = 21, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
-    { mcycle = 324, data = 22, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
-    { mcycle = 356, data = 23, cmd = YIELD_AUTOMATIC, reason = REASON_RX_ACCEPTED },
-    { mcycle = 388, data = 24, cmd = YIELD_AUTOMATIC, reason = REASON_RX_REJECTED },
-    { mcycle = 420, data = 25, cmd = YIELD_AUTOMATIC, reason = REASON_TX_OUTPUT },
-    { mcycle = 452, data = 26, cmd = YIELD_AUTOMATIC, reason = REASON_TX_REPORT },
+    { mcycle = 266, data = 20, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
+    { mcycle = 298, data = 21, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
+    { mcycle = 330, data = 22, cmd = YIELD_AUTOMATIC, reason = REASON_PROGRESS },
+    { mcycle = 362, data = 23, cmd = YIELD_AUTOMATIC, reason = REASON_RX_ACCEPTED },
+    { mcycle = 394, data = 24, cmd = YIELD_AUTOMATIC, reason = REASON_RX_REJECTED },
+    { mcycle = 426, data = 25, cmd = YIELD_AUTOMATIC, reason = REASON_TX_OUTPUT },
+    { mcycle = 458, data = 26, cmd = YIELD_AUTOMATIC, reason = REASON_TX_REPORT },
 }
 
 local function run_machine_with_uarch(machine)
@@ -177,7 +177,7 @@ end
 
 local function stderr(...) io.stderr:write(string.format(...)) end
 
-local final_mcycle = 493
+local final_mcycle = 500
 local exit_payload = 42
 local progress_enable = false
 

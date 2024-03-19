@@ -485,8 +485,9 @@ where options are:
   --no-init-splash
     don't show cartesi machine splash on boot.
 
-  --no-default-init
-    don't use cartesi machine default init value (USER=dapp)
+  -u=<name> or --user=<name>
+    appends to init the user who should execute the entrypoint command.
+    when omitted, the user is set to "dapp" by rootfs init script.
 
   --append-init=<string>
     append <string> to the machine's init script, to execute as root.
@@ -580,7 +581,6 @@ local bootargs = "no4lvl quiet earlycon=sbi console=hvc0"
     .. " rootfstype=ext2 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"
 local init_splash = true
 local append_bootargs = ""
-local default_init = "USER=dapp\n"
 local append_init = ""
 local append_entrypoint = ""
 local rollup = {
@@ -670,6 +670,12 @@ local function handle_htif_console_getchar(all)
     if not all then return false end
     htif_console_getchar = true
     unreproducible = true
+    return true
+end
+
+local function handle_user(user)
+    if not user then return false end
+    append_init = append_init .. "USER=" .. user .. "\n"
     return true
 end
 
@@ -1415,12 +1421,12 @@ local options = {
         end,
     },
     {
-        "^%-%-no%-default%-init$",
-        function(all)
-            if not all then return false end
-            default_init = ""
-            return true
-        end,
+        "^%-%-u%=(.*)$",
+        handle_user,
+    },
+    {
+        "^%-%-user%=(.*)$",
+        handle_user,
     },
     {
         "^%-%-append%-init%=(.*)$",
@@ -1862,7 +1868,6 @@ echo "
     end
 
     if #append_bootargs > 0 then config.dtb.bootargs = config.dtb.bootargs .. " " .. append_bootargs end
-    if #default_init > 0 then config.dtb.init = config.dtb.init .. default_init end
     if #append_init > 0 then config.dtb.init = config.dtb.init .. append_init end
     if #append_entrypoint > 0 then config.dtb.entrypoint = config.dtb.entrypoint .. append_entrypoint end
     if #exec_arguments > 0 then config.dtb.entrypoint = config.dtb.entrypoint .. table.concat(exec_arguments, " ") end

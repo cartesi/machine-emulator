@@ -61,13 +61,12 @@ static bool htif_read(void *context, i_device_state_access *a, uint64_t offset, 
 
 static execute_status htif_halt(i_device_state_access *a, uint64_t cmd, uint64_t data) {
     (void) a;
-    if (cmd == HTIF_HALT_HALT && (data & 1)) {
+    if (cmd == HTIF_HALT_CMD_HALT && (data & 1)) {
         a->set_iflags_H();
         return execute_status::success_and_halt;
     }
     //??D Write acknowledgement to fromhost???
-    // a->write_htif_fromhost(htif_build(HTIF_DEVICE_HALT,
-    //     HTIF_HALT_HALT, cmd))
+    // a->write_htif_fromhost(htif_build(HTIF_DEV_HALT, HTIF_HALT_CMD_HALT, cmd))
     return execute_status::success;
 }
 
@@ -76,14 +75,14 @@ static execute_status htif_yield(i_device_state_access *a, uint64_t cmd, uint64_
     execute_status status = execute_status::success;
     // If yield command is enabled, yield and acknowledge
     if (cmd < 64 && (a->read_htif_iyield() >> cmd) & 1) {
-        if (cmd == HTIF_YIELD_MANUAL) {
+        if (cmd == HTIF_YIELD_CMD_MANUAL) {
             a->set_iflags_Y();
             status = execute_status::success_and_yield;
-            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_YIELD, cmd, 0));
-        } else if (cmd == HTIF_YIELD_AUTOMATIC) {
+            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_YIELD, cmd, 0));
+        } else if (cmd == HTIF_YIELD_CMD_AUTOMATIC) {
             a->set_iflags_X();
             status = execute_status::success_and_yield;
-            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_YIELD, cmd, 0));
+            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_YIELD, cmd, 0));
         }
     }
     // Otherwise, silently ignore it
@@ -94,22 +93,22 @@ static execute_status htif_console(htif_runtime_config *runtime_config, i_device
     uint64_t data) {
     // If console command is enabled, perform it and acknowledge
     if (cmd < 64 && (a->read_htif_iconsole() >> cmd) & 1) {
-        if (cmd == HTIF_CONSOLE_PUTCHAR) {
+        if (cmd == HTIF_CONSOLE_CMD_PUTCHAR) {
             const uint8_t ch = data & 0xff;
             // In microarchitecture runtime_config will always be nullptr,
             // therefore the HTIF runtime config is actually ignored.
             if (!runtime_config || !runtime_config->no_console_putchar) {
                 os_putchar(ch);
             }
-            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE, cmd, 0));
-        } else if (cmd == HTIF_CONSOLE_GETCHAR) {
+            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_CONSOLE, cmd, 0));
+        } else if (cmd == HTIF_CONSOLE_CMD_GETCHAR) {
             // In blockchain, this command will never be enabled as there is no way to input the same character
             // to every participant in a dispute: where would c come from? So if the code reached here in the
             // blockchain, there must be some serious bug
             // In interactive mode, we just get the next character from the console and send it back in the ack
             os_poll_tty(0);
             const int c = os_getchar() + 1;
-            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEVICE_CONSOLE, cmd, c));
+            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_CONSOLE, cmd, c));
         }
     }
     // Otherwise, silently ignore it
@@ -126,11 +125,11 @@ static execute_status htif_write_tohost(htif_runtime_config *runtime_config, i_d
     a->write_htif_tohost(tohost);
     // Handle devices
     switch (device) {
-        case HTIF_DEVICE_HALT:
+        case HTIF_DEV_HALT:
             return htif_halt(a, cmd, data);
-        case HTIF_DEVICE_CONSOLE:
+        case HTIF_DEV_CONSOLE:
             return htif_console(runtime_config, a, cmd, data);
-        case HTIF_DEVICE_YIELD:
+        case HTIF_DEV_YIELD:
             return htif_yield(a, cmd, data);
         //??D Unknown HTIF devices are silently ignored
         default:

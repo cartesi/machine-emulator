@@ -52,7 +52,7 @@ _start:
 
     // HTIF halt with invalid commands is silently ignored
     li t0, PMA_HTIF_START_DEF;
-    li t1, htif_const(HTIF_DEVICE_HALT_DEF, 0xff, 3);
+    li t1, htif_const(HTIF_DEV_HALT_DEF, 0xff, 3);
     sd zero, O_FROMHOST(t0);
     sd t1, O_TOHOST(t0);
     ld t2, O_FROMHOST(t0);
@@ -60,7 +60,7 @@ _start:
 
     // HTIF halt with exit least-signed bit unset is silently ignored
     li t0, PMA_HTIF_START_DEF;
-    li t1, htif_const(HTIF_DEVICE_HALT_DEF, HTIF_HALT_HALT_DEF, 2);
+    li t1, htif_const(HTIF_DEV_HALT_DEF, HTIF_HALT_CMD_HALT_DEF, 2);
     sd zero, O_FROMHOST(t0);
     sd t1, O_TOHOST(t0);
     ld t2, O_FROMHOST(t0);

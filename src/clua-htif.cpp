@@ -28,22 +28,22 @@ int clua_htif_export(lua_State *L, int ctxidx) {
         const char *name;
     };
     const std::array constants{
-        named_constant{HTIF_DEVICE_HALT, "HTIF_DEVICE_HALT"},
-        named_constant{HTIF_DEVICE_CONSOLE, "HTIF_DEVICE_CONSOLE"},
-        named_constant{HTIF_DEVICE_YIELD, "HTIF_DEVICE_YIELD"},
-        named_constant{HTIF_HALT_HALT, "HTIF_HALT_HALT"},
-        named_constant{HTIF_YIELD_AUTOMATIC, "HTIF_YIELD_AUTOMATIC"},
-        named_constant{HTIF_YIELD_MANUAL, "HTIF_YIELD_MANUAL"},
-        named_constant{HTIF_YIELD_REASON_PROGRESS, "HTIF_YIELD_REASON_PROGRESS"},
-        named_constant{HTIF_YIELD_REASON_RX_ACCEPTED, "HTIF_YIELD_REASON_RX_ACCEPTED"},
-        named_constant{HTIF_YIELD_REASON_RX_REJECTED, "HTIF_YIELD_REASON_RX_REJECTED"},
-        named_constant{HTIF_YIELD_REASON_TX_OUTPUT, "HTIF_YIELD_REASON_TX_OUTPUT"},
-        named_constant{HTIF_YIELD_REASON_TX_REPORT, "HTIF_YIELD_REASON_TX_REPORT"},
-        named_constant{HTIF_YIELD_REASON_TX_EXCEPTION, "HTIF_YIELD_REASON_TX_EXCEPTION"},
+        named_constant{HTIF_DEV_HALT, "HTIF_DEV_HALT"},
+        named_constant{HTIF_DEV_CONSOLE, "HTIF_DEV_CONSOLE"},
+        named_constant{HTIF_DEV_YIELD, "HTIF_DEV_YIELD"},
+        named_constant{HTIF_HALT_CMD_HALT, "HTIF_HALT_CMD_HALT"},
+        named_constant{HTIF_YIELD_CMD_AUTOMATIC, "HTIF_YIELD_CMD_AUTOMATIC"},
+        named_constant{HTIF_YIELD_CMD_MANUAL, "HTIF_YIELD_CMD_MANUAL"},
+        named_constant{HTIF_YIELD_AUTOMATIC_REASON_PROGRESS, "HTIF_YIELD_AUTOMATIC_REASON_PROGRESS"},
+        named_constant{HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT, "HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT"},
+        named_constant{HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT, "HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT"},
+        named_constant{HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED, "HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED"},
+        named_constant{HTIF_YIELD_MANUAL_REASON_RX_REJECTED, "HTIF_YIELD_MANUAL_REASON_RX_REJECTED"},
+        named_constant{HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION, "HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION"},
         named_constant{HTIF_YIELD_REASON_ADVANCE_STATE, "HTIF_YIELD_REASON_ADVANCE_STATE"},
         named_constant{HTIF_YIELD_REASON_INSPECT_STATE, "HTIF_YIELD_REASON_INSPECT_STATE"},
-        named_constant{HTIF_CONSOLE_GETCHAR, "HTIF_CONSOLE_GETCHAR"},
-        named_constant{HTIF_CONSOLE_PUTCHAR, "HTIF_CONSOLE_PUTCHAR"},
+        named_constant{HTIF_CONSOLE_CMD_GETCHAR, "HTIF_CONSOLE_CMD_GETCHAR"},
+        named_constant{HTIF_CONSOLE_CMD_PUTCHAR, "HTIF_CONSOLE_CMD_PUTCHAR"},
     };
     for (const auto &c : constants) {
         lua_pushinteger(L, static_cast<lua_Integer>(c.value));

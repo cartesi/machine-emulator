@@ -1911,23 +1911,21 @@ if type(store_config) == "string" then
     store_config:close()
 end
 
-local htif_yield_reason_guest_to_host = {
-    [cartesi.machine.HTIF_YIELD_REASON_PROGRESS] = "progress",
-    [cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED] = "rx-accepted",
-    [cartesi.machine.HTIF_YIELD_REASON_RX_REJECTED] = "rx-rejected",
-    [cartesi.machine.HTIF_YIELD_REASON_TX_OUTPUT] = "tx-output",
-    [cartesi.machine.HTIF_YIELD_REASON_TX_REPORT] = "tx-report",
-    [cartesi.machine.HTIF_YIELD_REASON_TX_EXCEPTION] = "tx-exception",
+local htif_yield_automatic_reason_tohost = {
+    [cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_PROGRESS] = "progress",
+    [cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT] = "tx-output",
+    [cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT] = "tx-report",
 }
 
--- local htif_yield_reason_host_to_guest = {
---     [cartesi.machine.HTIF_YIELD_REASON_ADVANCE_STATE] = "advance-state",
---     [cartesi.machine.HTIF_YIELD_REASON_INSPECT_STATE] = "inspect-state",
--- }
+local htif_yield_manual_reason_tohost = {
+    [cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED] = "rx-accepted",
+    [cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED] = "rx-rejected",
+    [cartesi.machine.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION] = "tx-exception",
+}
 
 local htif_yield_mode = {
-    [cartesi.machine.HTIF_YIELD_MANUAL] = "Manual",
-    [cartesi.machine.HTIF_YIELD_AUTOMATIC] = "Automatic",
+    [cartesi.machine.HTIF_YIELD_CMD_MANUAL] = "Manual",
+    [cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC] = "Automatic",
 }
 
 local function is_power_of_two(value) return value > 0 and ((value & (value - 1)) == 0) end
@@ -1982,14 +1980,21 @@ end
 
 local function get_and_print_yield(machine, htif)
     local cmd, reason, data = get_yield(machine)
-    if cmd == cartesi.machine.HTIF_YIELD_AUTOMATIC and reason == cartesi.machine.HTIF_YIELD_REASON_PROGRESS then
+    if cmd == cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC
+        and reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_PROGRESS
+    then
         stderr("Progress: %6.2f" .. (htif.console_getchar and "\n" or "\r"), data / 10)
-    else
-        local cmd_str = htif_yield_mode[cmd] or "Unknown"
-        local reason_str = htif_yield_reason_guest_to_host[reason] or "unknown"
-        stderr("\n%s yield %s (0x%06x data)\n", cmd_str, reason_str, data)
-        stderr("Cycles: %u\n", machine:read_mcycle())
+        return cmd, reason, data
     end
+    local cmd_str = htif_yield_mode[cmd] or "Unknown"
+    local reason_str = "unknown"
+    if cmd == cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC then
+        reason_str = htif_yield_automatic_reason_tohost[reason] or reason_str
+    elseif cmd == cartesi.machine.HTIF_YIELD_CMD_MANUAL then
+        reason_str = htif_yield_manual_reason_tohost[reason] or reason_str
+    end
+    stderr("\n%s yield %s (%d) (0x%06x data)\n", cmd_str, reason_str, reason, data)
+    stderr("Cycles: %u\n", machine:read_mcycle())
     return cmd, reason, data
 end
 
@@ -2141,7 +2146,7 @@ while math.ult(cycles, max_mcycle) do
     elseif machine:read_iflags_Y() then
         local _, reason, data = get_and_print_yield(machine, config.htif)
         -- there are advance state inputs to feed
-        if reason == cartesi.machine.HTIF_YIELD_REASON_TX_EXCEPTION then
+        if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION then
             dump_exception(machine, config.cmio.tx_buffer, data)
             exit_code = 1
         elseif cmio_advance and cmio_advance.next_input_index < cmio_advance.input_index_end then
@@ -2149,11 +2154,11 @@ while math.ult(cycles, max_mcycle) do
             if cmio_advance.next_input_index > cmio_advance.input_index_begin then
                 save_cmio_outputs_root_hash(machine, config.cmio.tx_buffer, cmio_advance, 32)
             end
-            if reason == cartesi.machine.HTIF_YIELD_REASON_RX_REJECTED then
+            if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
                 machine:rollback()
                 cycles = machine:read_mcycle()
             else
-                assert(reason == cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED, "invalid manual yield reason")
+                assert(reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED, "invalid manual yield reason")
             end
             stderr("\nEpoch %d before input %d\n", cmio_advance.epoch_index, cmio_advance.next_input_index)
             if cmio_advance.hashes then print_root_hash(machine) end
@@ -2197,17 +2202,17 @@ while math.ult(cycles, max_mcycle) do
         local _, reason, length = get_and_print_yield(machine, config.htif)
         -- we have fed an advance state input
         if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
-            if reason == cartesi.machine.HTIF_YIELD_REASON_TX_OUTPUT then
+            if reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
                 save_cmio_output(machine, config.cmio.tx_buffer, cmio_advance, length)
                 cmio_advance.output_index = cmio_advance.output_index + 1
-            elseif reason == cartesi.machine.HTIF_YIELD_REASON_TX_REPORT then
+            elseif reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT then
                 save_cmio_report(machine, config.cmio.tx_buffer, cmio_advance, length)
                 cmio_advance.report_index = cmio_advance.report_index + 1
             end
         -- ignore other reasons
         -- we have feed the inspect state query
         elseif cmio_inspect and not cmio_inspect.query then
-            if reason == cartesi.machine.HTIF_YIELD_REASON_TX_REPORT then
+            if reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT then
                 save_cmio_inspect_state_report(machine, config.cmio.tx_buffer, cmio_inspect, length)
                 cmio_inspect.report_index = cmio_inspect.report_index + 1
             end
@@ -2256,7 +2261,12 @@ dump_value_proofs(machine, final_proof, config)
 if store_dir then store_machine(machine, config, store_dir) end
 if assert_rolling_template then
     local cmd, reason = get_yield(machine)
-    if not (cmd == cartesi.machine.HTIF_YIELD_MANUAL and reason == cartesi.machine.HTIF_YIELD_REASON_RX_ACCEPTED) then
+    if
+        not (
+            cmd == cartesi.machine.HTIF_YIELD_MANUAL
+            and reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
+        )
+    then
         exit_code = 2
     end
 end

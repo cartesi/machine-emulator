@@ -2057,7 +2057,7 @@ if store_config == stderr then store_machine_config(config, stderr) end
 if cmio_advance or cmio_inspect then
     check_cmio_htif_config(config.htif)
     assert(config.cmio, "cmio device must be present")
-    assert(remote_address, "cmio requires --remote-address for snapshot/rollback")
+    assert(remote_address, "cmio requires --remote-address for snapshot/commit/rollback")
     check_cmio_memory_range_config(config.cmio.tx_buffer, "tx-buffer")
     check_cmio_memory_range_config(config.cmio.rx_buffer, "rx-buffer")
 end
@@ -2113,6 +2113,7 @@ while math.ult(cycles, max_mcycle) do
             exit_code = 1
         elseif cmio_advance and cmio_advance.next_input_index < cmio_advance.input_index_end then
             if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+                machine:commit()
                 -- save only if we have already run an input and have just accepted it
                 if cmio_advance.next_input_index > cmio_advance.input_index_begin then
                     assert(length == 32, "expected root hash in tx buffer")

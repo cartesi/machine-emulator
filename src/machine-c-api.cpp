@@ -1589,6 +1589,14 @@ int cm_snapshot(cm_machine *m, char **err_msg) try {
     return cm_result_failure(err_msg);
 }
 
+int cm_commit(cm_machine *m, char **err_msg) try {
+    auto *cpp_machine = convert_from_c(m);
+    cpp_machine->commit();
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
 int cm_rollback(cm_machine *m, char **err_msg) try {
     auto *cpp_machine = convert_from_c(m);
     cpp_machine->rollback();

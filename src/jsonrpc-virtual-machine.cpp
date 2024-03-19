@@ -217,28 +217,37 @@ const std::string &jsonrpc_mg_mgr::get_remote_parent_address(void) const {
 }
 
 void jsonrpc_mg_mgr::snapshot(void) {
-    // Simulate the snapshot operation as in the jsonrpc server
-    // If we are forked, we kill the parent server and replace its address with the child's,
-    // then we behave as if we were not forked
+    // If we are forked, discard the pending snapshot
     if (is_forked()) {
-        bool result = false;
-        jsonrpc_request(get_mgr(), get_remote_parent_address(), "shutdown", std::tie(), result);
-        std::swap(m_address[0], m_address[1]);
-        m_address.pop_back();
+        commit();
     }
-    // If we are not forked, we fork a new server as the child and get its remote address
+
+    // To create a snapshot, we fork a new server as the child and get its remote address
     std::string child_address;
     jsonrpc_request(get_mgr(), get_remote_address(), "fork", std::tie(), child_address);
     m_address.push_back(std::move(child_address));
 }
 
-void jsonrpc_mg_mgr::rollback() {
-    // Simulate the rollback operation as in the jsonrpc server
-    // If we are not forked, we throw an exception
+void jsonrpc_mg_mgr::commit() {
+    // If we are not forked, there is no pending snapshot to discard, therefore we are already committed
     if (!is_forked()) {
-        throw std::out_of_range("remote server is not forked");
+        return;
     }
-    // If we are forked, we kill the child and expose the parent server
+
+    // To commit, we kill the parent server and replace its address with the child's
+    bool result = false;
+    jsonrpc_request(get_mgr(), get_remote_parent_address(), "shutdown", std::tie(), result);
+    std::swap(m_address[0], m_address[1]);
+    m_address.pop_back();
+}
+
+void jsonrpc_mg_mgr::rollback() {
+    // If we are not forked, there is no snapshot to rollback to
+    if (!is_forked()) {
+        throw std::out_of_range("remote server has no pending snapshot to rollback to");
+    }
+
+    // To rollback, we kill the child and expose the parent server
     bool result = false;
     jsonrpc_request(get_mgr(), get_remote_address(), "shutdown", std::tie(), result);
     m_address.pop_back();
@@ -925,6 +934,10 @@ void jsonrpc_virtual_machine::do_write_uarch_cycle(uint64_t val) {
 
 void jsonrpc_virtual_machine::do_snapshot(void) {
     m_mgr->snapshot();
+}
+
+void jsonrpc_virtual_machine::do_commit(void) {
+    m_mgr->commit();
 }
 
 void jsonrpc_virtual_machine::do_rollback(void) {

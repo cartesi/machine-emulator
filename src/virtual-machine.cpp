@@ -468,6 +468,10 @@ void virtual_machine::do_snapshot(void) {
     throw std::runtime_error("snapshot is not supported");
 }
 
+void virtual_machine::do_commit(void) {
+    throw std::runtime_error("commit is not supported");
+}
+
 void virtual_machine::do_rollback(void) {
     throw std::runtime_error("rollback is not supported");
 }

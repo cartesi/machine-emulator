@@ -2079,7 +2079,7 @@ if config.processor.iunrep ~= 0 then stderr("Running in unreproducible mode!\n")
 if store_config == stderr then store_machine_config(config, stderr) end
 if cmio_advance or cmio_inspect then
     check_cmio_htif_config(config.htif)
-    assert(remote_address, "cmio requires --remote-address for snapshot/rollback")
+    assert(remote_address, "cmio requires --remote-address for snapshot/commit/rollback")
 end
 local cycles = machine:read_mcycle()
 if initial_hash then
@@ -2135,6 +2135,7 @@ while math.ult(cycles, max_mcycle) do
         elseif cmio_advance and cmio_advance.next_input_index < cmio_advance.input_index_end then
             -- previous reason was an accept
             if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+                machine:commit()
                 -- save only if we have already run an input and have just accepted it
                 if cmio_advance.next_input_index > cmio_advance.input_index_begin then
                     assert(length == 32, "expected root hash in tx buffer")

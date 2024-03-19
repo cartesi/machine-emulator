@@ -149,6 +149,7 @@ private:
     machine_config do_get_initial_config(void) const override;
     void do_snapshot() override;
     void do_destroy() override;
+    void do_commit() override;
     void do_rollback() override;
     uint64_t do_read_uarch_x(int i) const override;
     void do_write_uarch_x(int i, uint64_t val) override;

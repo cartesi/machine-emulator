@@ -156,14 +156,19 @@ public:
         return do_get_initial_config();
     }
 
+    /// \brief destroy
+    void destroy(void) {
+        do_destroy();
+    }
+
     /// \brief snapshot
     void snapshot(void) {
         do_snapshot();
     }
 
-    /// \brief destroy
-    void destroy(void) {
-        do_destroy();
+    /// \brief commit
+    void commit(void) {
+        do_commit();
     }
 
     /// \brief rollback
@@ -802,6 +807,7 @@ private:
     virtual machine_config do_get_initial_config(void) const = 0;
     virtual void do_snapshot() = 0;
     virtual void do_destroy() = 0;
+    virtual void do_commit() = 0;
     virtual void do_rollback() = 0;
     virtual uint64_t do_read_uarch_x(int i) const = 0;
     virtual void do_write_uarch_x(int i, uint64_t val) = 0;

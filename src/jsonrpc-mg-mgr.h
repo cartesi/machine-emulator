@@ -42,6 +42,7 @@ public:
     const std::string &get_remote_address(void) const;
     const std::string &get_remote_parent_address(void) const;
     void snapshot(void);
+    void commit(void);
     void rollback(void);
     void shutdown(void);
 };

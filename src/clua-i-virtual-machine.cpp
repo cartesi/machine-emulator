@@ -545,6 +545,14 @@ static int machine_obj_index_snapshot(lua_State *L) {
     return 0;
 }
 
+/// \brief This is the machine:commit() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_commit(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_commit(m.get(), err_msg));
+    return 0;
+}
+
 /// \brief This is the machine:rollback() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_rollback(lua_State *L) {
@@ -701,6 +709,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"replace_memory_range", machine_obj_index_replace_memory_range},
     {"destroy", machine_obj_index_destroy},
     {"snapshot", machine_obj_index_snapshot},
+    {"commit", machine_obj_index_commit},
     {"rollback", machine_obj_index_rollback},
     {"read_uarch_halt_flag", machine_obj_index_read_uarch_halt_flag},
     {"set_uarch_halt_flag", machine_obj_index_set_uarch_halt_flag},

@@ -192,6 +192,7 @@ private:
     access_log do_log_uarch_step(const access_log::type &log_type, bool /*one_based = false*/) override;
     void do_destroy() override;
     void do_snapshot() override;
+    void do_commit() override;
     void do_rollback() override;
     bool do_verify_dirty_page_maps(void) const override;
     uint64_t do_read_word(uint64_t address) const override;

@@ -1769,7 +1769,15 @@ CM_API int cm_destroy(cm_machine *m, char **err_msg);
 /// \returns 0 for success, non zero code for error
 CM_API int cm_snapshot(cm_machine *m, char **err_msg);
 
-/// \brief Performs rollback
+/// \brief Performs commit of the machine, discarding last snapshot.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successful function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring.
+/// err_msg can be NULL, meaning the error message won't be received.
+/// \returns 0 for success, non zero code for error
+CM_API int cm_commit(cm_machine *m, char **err_msg);
+
+/// \brief Performs rollback of the machine, restoring last snapshot.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring.

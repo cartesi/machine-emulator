@@ -223,11 +223,18 @@ void jsonrpc_mg_mgr::commit() {
         return;
     }
 
+    const std::string parent_address = m_address[0];
+
     // To commit, we kill the parent server and replace its address with the child's
     bool result = false;
     jsonrpc_request(get_mgr(), get_remote_parent_address(), "shutdown", std::tie(), result);
     std::swap(m_address[0], m_address[1]);
     m_address.pop_back();
+
+    // Rebind the remote server to continue listening in the original port
+    result = false;
+    jsonrpc_request(get_mgr(), get_remote_address(), "rebind", std::tie(parent_address), result);
+    m_address[0] = parent_address;
 }
 
 void jsonrpc_mg_mgr::rollback() {
@@ -387,6 +394,11 @@ std::string jsonrpc_virtual_machine::fork(const jsonrpc_mg_mgr_ptr &mgr) {
     std::string result;
     jsonrpc_request(mgr->get_mgr(), mgr->get_remote_address(), "fork", std::tie(), result);
     return result;
+}
+
+void jsonrpc_virtual_machine::rebind(const jsonrpc_mg_mgr_ptr &mgr, const std::string &address) {
+    bool result = false;
+    jsonrpc_request(mgr->get_mgr(), mgr->get_remote_address(), "rebind", std::tie(address), result);
 }
 
 uint64_t jsonrpc_virtual_machine::do_read_f(int i) const {

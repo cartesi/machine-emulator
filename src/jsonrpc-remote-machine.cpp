@@ -202,6 +202,7 @@ struct http_handler_data {
     std::unique_ptr<cartesi::machine> machine; ///< Cartesi Machine, if any
     http_handler_status status;                ///< Status of last request
     mg_mgr event_manager;                      ///< Mongoose event manager
+    mg_connection *listen_connection;          ///< Listen connection
     struct http_handler_data *child;           ///< Pointer to handler data for forked child now running, if any
 };
 
@@ -628,6 +629,7 @@ static json jsonrpc_fork_handler(const json &j, mg_connection *con, http_handler
         h->child = nullptr;
         return jsonrpc_response_server_error(j, "failed listening");
     }
+    h->child->listen_connection = new_con;
     const std::string new_server_address = replace_port(h->server_address, static_cast<int>(ntohs(new_con->loc.port)));
     // Done initializing, so we fork
     auto ret = fork();
@@ -655,6 +657,31 @@ static json jsonrpc_fork_handler(const json &j, mg_connection *con, http_handler
     delete h->child;
     h->child = nullptr;
     return jsonrpc_response_ok(j, new_server_address);
+}
+
+/// \brief JSONRPC handler for the rebind method
+/// \param j JSON request object
+/// \param con Mongoose connection
+/// \param h Handler data
+/// \returns JSON response object
+/// \details Changes the address the server is listening to.
+/// After this call, all new connections should be established using the new server address.
+static json jsonrpc_rebind_handler(const json &j, mg_connection *con, http_handler_data *h) {
+    (void) con;
+    static const char *param_name[] = {"address"};
+    auto args = parse_args<std::string>(j, param_name);
+    const std::string new_server_address = std::get<0>(args);
+    // Listen in the new port
+    auto *new_listen_connection = mg_http_listen(&h->event_manager, new_server_address.c_str(), http_handler, h);
+    if (!new_listen_connection) {
+        return jsonrpc_response_server_error(j, "rebind failed listening on "s + new_server_address);
+    }
+    // Mark previous listen connection to be closed
+    h->listen_connection->is_closing = 1;
+    // Set the new listen connection
+    h->server_address = new_server_address;
+    h->listen_connection = new_listen_connection;
+    return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.machine.directory method
@@ -1777,6 +1804,7 @@ using jsonrpc_handler = json (*)(const json &ji, mg_connection *con, http_handle
 static json jsonrpc_dispatch_method(const json &j, mg_connection *con, http_handler_data *h) try {
     static const std::unordered_map<std::string, jsonrpc_handler> dispatch = {
         {"fork", jsonrpc_fork_handler},
+        {"rebind", jsonrpc_rebind_handler},
         {"shutdown", jsonrpc_shutdown_handler},
         {"get_version", jsonrpc_get_version_handler},
         {"rpc.discover", jsonrpc_rpc_discover_handler},
@@ -2085,13 +2113,14 @@ int main(int argc, char *argv[]) try {
     }
 #endif
 
-    const auto *con = mg_http_listen(&h->event_manager, server_address, http_handler, h);
+    auto *con = mg_http_listen(&h->event_manager, server_address, http_handler, h);
     if (!con) {
         mg_mgr_free(&h->event_manager);
         delete h;
         SLOG(fatal) << "failed listening";
         exit(1);
     }
+    h->listen_connection = con;
     h->server_address = server_address;
 
     SLOG(info) << "initial server bound to port " << ntohs(con->loc.port);

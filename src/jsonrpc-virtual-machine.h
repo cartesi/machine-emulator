@@ -74,6 +74,7 @@ public:
         const hash_type &root_hash_after, const machine_runtime_config &r = {}, bool one_based = false);
 
     static std::string fork(const jsonrpc_mg_mgr_ptr &mgr);
+    static void rebind(const jsonrpc_mg_mgr_ptr &mgr, const std::string &address);
     static uint64_t get_x_address(const jsonrpc_mg_mgr_ptr &mgr, int i);
     static uint64_t get_f_address(const jsonrpc_mg_mgr_ptr &mgr, int i);
     static uint64_t get_uarch_x_address(const jsonrpc_mg_mgr_ptr &mgr, int i);

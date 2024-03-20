@@ -152,6 +152,15 @@ CM_API int cm_jsonrpc_verify_uarch_step_state_transition(const cm_jsonrpc_mg_mgr
 /// \returns 0 for successful verification, non zero code for error
 CM_API int cm_jsonrpc_fork(const cm_jsonrpc_mg_mgr *mgr, char **address, char **err_msg);
 
+/// \brief Changes the address the server is listening to
+/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
+/// \param address New address that the remote server should bind to
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successful function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring
+/// \returns 0 for successful verification, non zero code for error
+CM_API int cm_jsonrpc_rebind(const cm_jsonrpc_mg_mgr *mgr, const char *address, char **err_msg);
+
 /// \brief Gets the address of a general-purpose register from remote cartesi server
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
 /// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.

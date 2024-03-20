@@ -35,6 +35,27 @@
     },
 
     {
+      "name": "rebind",
+      "summary": "Changes the address the server is listening to",
+      "params": [ {
+          "name": "address",
+          "description": "URL of the new address",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      ],
+      "result": {
+        "name": "address",
+        "description": "URL of rebound server",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+
+    {
       "name": "shutdown",
       "summary": "Causes the server to shutdown and exit",
       "params": [],

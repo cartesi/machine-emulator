@@ -39,6 +39,7 @@ struct machine_runtime_config {
     concurrency_runtime_config concurrency{};
     htif_runtime_config htif{};
     bool skip_root_hash_check{};
+    bool skip_root_hash_store{};
     bool skip_version_check{};
     bool soft_yield{};
 };

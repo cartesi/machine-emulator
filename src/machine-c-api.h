@@ -436,6 +436,7 @@ typedef struct { // NOLINT(modernize-use-using)
     cm_concurrency_runtime_config concurrency;
     cm_htif_runtime_config htif;
     bool skip_root_hash_check;
+    bool skip_root_hash_store;
     bool skip_version_check;
     bool soft_yield;
 } cm_machine_runtime_config;

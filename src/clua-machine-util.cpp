@@ -1490,6 +1490,7 @@ cm_machine_runtime_config *clua_check_cm_machine_runtime_config(lua_State *L, in
     check_cm_concurrency_runtime_config(L, tabidx, &config->concurrency);
     check_cm_htif_runtime_config(L, tabidx, &config->htif);
     config->skip_root_hash_check = opt_boolean_field(L, tabidx, "skip_root_hash_check");
+    config->skip_root_hash_store = opt_boolean_field(L, tabidx, "skip_root_hash_store");
     config->skip_version_check = opt_boolean_field(L, tabidx, "skip_version_check");
     config->soft_yield = opt_boolean_field(L, tabidx, "soft_yield");
     managed.release();

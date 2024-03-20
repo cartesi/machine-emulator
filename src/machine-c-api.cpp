@@ -477,6 +477,7 @@ cartesi::machine_runtime_config convert_from_c(const cm_machine_runtime_config *
         cartesi::concurrency_runtime_config{c_config->concurrency.update_merkle_tree};
     new_cpp_machine_runtime_config.htif = cartesi::htif_runtime_config{c_config->htif.no_console_putchar};
     new_cpp_machine_runtime_config.skip_root_hash_check = c_config->skip_root_hash_check;
+    new_cpp_machine_runtime_config.skip_root_hash_store = c_config->skip_root_hash_store;
     new_cpp_machine_runtime_config.skip_version_check = c_config->skip_version_check;
     new_cpp_machine_runtime_config.soft_yield = c_config->soft_yield;
     return new_cpp_machine_runtime_config;

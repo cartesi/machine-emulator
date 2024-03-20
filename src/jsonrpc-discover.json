@@ -1808,6 +1808,9 @@
           "skip_root_hash_check": {
             "type": "boolean"
           },
+          "skip_root_hash_store": {
+            "type": "boolean"
+          },
           "skip_version_check": {
             "type": "boolean"
           },

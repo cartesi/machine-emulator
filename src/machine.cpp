@@ -832,9 +832,11 @@ void machine::store(const std::string &dir) const {
     if (!update_merkle_tree()) {
         throw std::runtime_error{"error updating Merkle tree"};
     }
-    hash_type h;
-    m_t.get_root_hash(h);
-    store_hash(h, dir);
+    if (!m_r.skip_root_hash_store) {
+        hash_type h;
+        m_t.get_root_hash(h);
+        store_hash(h, dir);
+    }
     auto c = get_serialization_config();
     c.store(dir);
     store_pmas(c, dir);

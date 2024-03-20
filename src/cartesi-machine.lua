@@ -315,7 +315,7 @@ where options are:
 
   -v or --volume=<host_directory>:<guest_directory>
     like --virtio-9p, but also appends init commands to auto mount the
-    host directory in the guest.
+    host directory in the guest directory.
     mount tags are incrementally set to "vfs0", "vfs1", ...
 
     this option implies --sync-init-date.
@@ -660,6 +660,7 @@ local function handle_volume_option(host_directory, guest_directory)
     local tag = "vfs" .. virtio_volume_count
     virtio_volume_count = virtio_volume_count + 1
     table.insert(virtio, { type = "p9fs", tag = tag, host_directory = host_directory })
+    append_init = append_init .. "busybox mkdir -p " .. guest_directory .. " && "
     append_init = append_init .. "busybox mount -t 9p " .. tag .. " " .. guest_directory .. "\n"
     -- sync guest date with host date, otherwise file system updates will have wrong dates
     handle_sync_init_date(true)

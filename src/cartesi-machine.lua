@@ -1422,7 +1422,7 @@ local options = {
         end,
     },
     {
-        "^%-%-u%=(.*)$",
+        "^%-u%=(.*)$",
         handle_user,
     },
     {

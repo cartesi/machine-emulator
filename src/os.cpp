@@ -26,6 +26,7 @@
 
 #include "os-features.h"
 #include "os.h"
+#include "unique-c-ptr.h"
 
 #ifdef HAVE_SIGACTION
 #include <csignal>

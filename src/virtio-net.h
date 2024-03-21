@@ -19,7 +19,7 @@
 
 #include "os-features.h"
 
-#ifdef HAVE_SLIRP
+#if defined(HAVE_SLIRP) || defined(HAVE_TUNTAP)
 
 #include "virtio-device.h"
 #include <memory>
@@ -116,6 +116,6 @@ private:
 
 } // namespace cartesi
 
-#endif // HAVE_SLIRP
+#endif // defined(HAVE_SLIRP) || defined(HAVE_TUNTAP)
 
 #endif

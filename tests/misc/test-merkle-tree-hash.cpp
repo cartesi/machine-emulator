@@ -293,7 +293,7 @@ int main(int argc, char *argv[]) try {
         }
         // Add new leaf to complete tree
         complete_tree.push_back(leaf_hash);
-        // Compare the root hash for the coimplete tree and the tree
+        // Compare the root hash for the complete tree and the tree
         // from scratch
         if (complete_tree.get_root_hash() != tree_from_scratch.get_root_hash()) {
             error("mismatch in root hash for complete tree and "

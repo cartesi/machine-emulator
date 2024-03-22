@@ -19,7 +19,7 @@ typedef struct {
 // Compression function.
 void sha3_keccakf(uint64_t st[25]);
 
-// OpenSSL - like interfece
+// OpenSSL - like interface
 int sha3_init(sha3_ctx_t *c, int mdlen, int dsuffix);    // mdlen = hash output in bytes
 int sha3_update(sha3_ctx_t *c, const void *data, size_t len);
 int sha3_final(void *md, sha3_ctx_t *c);    // digest goes to md

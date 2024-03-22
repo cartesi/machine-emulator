@@ -26,7 +26,7 @@ namespace cartesi {
 class jsonrpc_mg_mgr final {
 
     boost::container::static_vector<std::string, 2> m_address{};
-    struct mg_mgr m_mgr {}; // unnecessary initialization to silince clang-tidy
+    struct mg_mgr m_mgr {}; // unnecessary initialization to silence clang-tidy
 
 public:
     explicit jsonrpc_mg_mgr(std::string remote_address);

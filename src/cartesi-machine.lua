@@ -27,6 +27,8 @@ local function adjust_images_path(path)
     return string.gsub(path, "/*$", "") .. "/"
 end
 
+local output_hashes = {}
+
 -- Print help and exit
 local function help()
     stderr(
@@ -2011,8 +2013,10 @@ local function save_cmio_state_with_format(machine, config, advance, length, for
     local name = instantiate_filename(format, values)
     stderr("Storing %s\n", name)
     local f = assert(io.open(name, "wb"))
-    assert(f:write(machine:read_memory(config.start, length)))
+    local s = machine:read_memory(config.start, length)
+    assert(f:write(s))
     f:close()
+    return s
 end
 
 local function save_cmio_report(machine, config, advance, length)
@@ -2059,6 +2063,35 @@ local function save_cmio_inspect_state_report(machine, config, inspect, length)
     local f = assert(io.open(name, "wb"))
     assert(f:write(machine:read_memory(config.start, length)))
     f:close()
+end
+
+local function check_outputs_root_hash(root_hash, output_hashes)
+    local z = string.rep("\0", 32)
+    if #output_hashes == 0 then
+        output_hashes = { z }
+    end
+    for i = 1, 64 do
+        local parent_output_hashes = {}
+        local child = 1
+        local parent = 1
+        while true do
+            local c1 = output_hashes[child]
+            if not c1 then
+                break
+            end
+            local c2 = output_hashes[child+1]
+            if c2 then
+                parent_output_hashes[parent] = cartesi.keccak(c1, c2)
+            else
+                parent_output_hashes[parent] = cartesi.keccak(c1, z)
+            end
+            parent = parent + 1
+            child = child + 2
+        end
+        z = cartesi.keccak(z, z)
+        output_hashes = parent_output_hashes
+    end
+    assert(root_hash == output_hashes[1], "output root hash mismatch")
 end
 
 local function store_machine(machine, config, dir)
@@ -2144,21 +2177,25 @@ while math.ult(cycles, max_mcycle) do
         break
     -- deal with yield manual
     elseif machine:read_iflags_Y() then
-        local _, reason, data = get_and_print_yield(machine, config.htif)
+        local _, reason, length = get_and_print_yield(machine, config.htif)
         -- there are advance state inputs to feed
         if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION then
-            dump_exception(machine, config.cmio.tx_buffer, data)
+            dump_exception(machine, config.cmio.tx_buffer, length)
             exit_code = 1
         elseif cmio_advance and cmio_advance.next_input_index < cmio_advance.input_index_end then
-            -- save only if we have already run an input
-            if cmio_advance.next_input_index > cmio_advance.input_index_begin then
-                save_cmio_outputs_root_hash(machine, config.cmio.tx_buffer, cmio_advance, 32)
-            end
-            if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
+            if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+                -- save only if we have already run an input and have just accepted it
+                if cmio_advance.next_input_index > cmio_advance.input_index_begin then
+                    assert(length == 32, "expected root hash in tx buffer")
+                    local root_hash = save_cmio_outputs_root_hash(machine, config.cmio.tx_buffer, cmio_advance, length)
+                    check_outputs_root_hash(root_hash, output_hashes)
+                    output_hashes = {}
+                end
+            elseif reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
                 machine:rollback()
                 cycles = machine:read_mcycle()
             else
-                assert(reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED, "invalid manual yield reason")
+                error("unexpected manual yield reason")
             end
             stderr("\nEpoch %d before input %d\n", cmio_advance.epoch_index, cmio_advance.next_input_index)
             if cmio_advance.hashes then print_root_hash(machine) end
@@ -2173,7 +2210,9 @@ while math.ult(cycles, max_mcycle) do
         else
             -- there are outputs of a previous advance state to save
             if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
-                save_cmio_outputs_root_hash(machine, config.cmio.tx_buffer, cmio_advance, 32)
+                local root_hash = save_cmio_outputs_root_hash(machine, config.cmio.tx_buffer, cmio_advance, 32)
+                check_outputs_root_hash(root_hash, output_hashes)
+                output_hashes = {}
                 cmio_advance = nil
             end
             -- not done with inspect state query
@@ -2203,7 +2242,9 @@ while math.ult(cycles, max_mcycle) do
         -- we have fed an advance state input
         if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
             if reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
-                save_cmio_output(machine, config.cmio.tx_buffer, cmio_advance, length)
+                local output = save_cmio_output(machine, config.cmio.tx_buffer, cmio_advance, length)
+                local output_hash = cartesi.keccak(output)
+                output_hashes[#output_hashes+1] = output_hash
                 cmio_advance.output_index = cmio_advance.output_index + 1
             elseif reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT then
                 save_cmio_report(machine, config.cmio.tx_buffer, cmio_advance, length)

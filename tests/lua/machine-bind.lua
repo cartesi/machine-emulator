@@ -513,7 +513,7 @@ do_test("should return expected values", function(machine)
 end)
 
 print("\n\n read and write x registers")
-do_test("writen and expected register values should match", function(machine)
+do_test("written and expected register values should match", function(machine)
     local initial_xreg_values = get_cpu_xreg_test_values()
     -- Write/Read X registers
     local x1_initial_value = machine:read_x(1)
@@ -528,7 +528,7 @@ do_test("writen and expected register values should match", function(machine)
 end)
 
 print("\n\n read and write uarch x registers")
-do_test("writen and expected register values should match", function(machine)
+do_test("written and expected register values should match", function(machine)
     local initial_xreg_values = get_cpu_uarch_xreg_test_values()
     -- Write/Read uarch X registers
     local x1_initial_value = machine:read_uarch_x(1)
@@ -543,7 +543,7 @@ do_test("writen and expected register values should match", function(machine)
 end)
 
 print("\n\n read and write csr registers")
-do_test("writen and expected register values should match", function(machine)
+do_test("written and expected register values should match", function(machine)
     -- Check csr register write
     local sscratch_initial_value = machine:read_csr("sscratch")
     assert(machine:read_sscratch() == sscratch_initial_value, "error reading csr sscratch")

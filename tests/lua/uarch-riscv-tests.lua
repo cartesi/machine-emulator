@@ -21,7 +21,7 @@ local util = require("cartesi.util")
 local test_util = require("cartesi.tests.util")
 
 -- Tests Cases
--- format {"ram_image_file", number_of_uarch_cycles, expectd_error_pattern}
+-- format {"ram_image_file", number_of_uarch_cycles, expected_error_pattern}
 local riscv_tests = {
     { "rv64ui-uarch-simple.bin", 11 },
     { "rv64ui-uarch-add.bin", 440 },
@@ -75,7 +75,7 @@ local riscv_tests = {
     { "rv64ui-uarch-xori.bin", 177 },
     { "rv64ui-uarch-fence.bin", 12 },
     { "rv64ui-uarch-ecall-putchar.bin", 14 },
-    { "rv64ui-uarch-ecall-unsupported.bin", 1, "unsupported ecall functio" },
+    { "rv64ui-uarch-ecall-unsupported.bin", 1, "unsupported ecall function" },
     { "rv64ui-uarch-ebreak.bin", 1, "uarch aborted" },
 }
 

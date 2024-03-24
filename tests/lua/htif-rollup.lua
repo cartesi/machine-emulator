@@ -27,7 +27,7 @@ local config_base = {
     },
     ram = {
         -- This test will fetch the rollup buffers from the PMA entries; check
-        -- that `rx_buffer` and `input_metadata` are filled with a byte patern;
+        -- that `rx_buffer` and `input_metadata` are filled with a byte pattern;
         -- then write a byte pattern into `tx_buffer`, `voucher_hashes` and
         -- `notice_hashes`.
         image_filename = test_util.tests_path .. "htif_rollup.bin",

@@ -37,7 +37,7 @@ JSON object to stdout.
 [what] can be:
 
     input-metadata
-      the JSON repsentation is
+      the JSON representation is
         {
           "msg_sender": <msg-sender>,
           "epoch_index": <number>,

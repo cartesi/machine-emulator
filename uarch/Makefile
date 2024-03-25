@@ -24,21 +24,10 @@ CXX := $(TOOLCHAIN_PREFIX)g++
 OBJCOPY := $(TOOLCHAIN_PREFIX)objcopy
 OBJDUMP := $(TOOLCHAIN_PREFIX)objdump
 
-#
-ifeq ($(relwithdebinfo),yes)
-OPTFLAGS+=-O2 -DNDEBUG -g
-else ifeq ($(release),yes)
-OPTFLAGS+=-O2 -DNDEBUG -g0
-else ifeq ($(debug),yes)
-OPTFLAGS+=-Og -g
-else
-OPTFLAGS+=-O2 -g0
-endif
+OPTFLAGS=-O2 -g0
 
-# Link time optimizations
-ifeq ($(lto),yes)
-OPTFLAGS+=-flto=auto
-endif
+# Asserts are always enabled by now, but in the far future we should disable them
+# OPTFLAGS+=-DNDEBUG
 
 # Flags to minimize undefined behavior
 UBFLAGS := -fno-strict-aliasing -fno-strict-overflow -fno-delete-null-pointer-checks

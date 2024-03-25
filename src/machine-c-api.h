@@ -1842,7 +1842,7 @@ CM_API int cm_read_uarch_halt_flag(const cm_machine *m, bool *val, char **err_ms
 /// \returns 0 for success, non zero code for error
 CM_API int cm_set_uarch_halt_flag(cm_machine *m, char **err_msg);
 
-/// \brief Resets the value of the microarchitecture halt flag.
+/// \brief Resets the entire uarch state to pristine values.
 /// \param m Pointer to valid machine instance
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg

@@ -231,7 +231,7 @@ public:
     /// \returns The state access log.
     access_log log_uarch_step(const access_log::type &log_type, bool one_based = false);
 
-    /// \brief Resets the microarchitecture state
+    /// \brief Resets the entire uarch state to pristine values.
     void reset_uarch();
 
     /// \brief Resets the microarchitecture state and returns an access log

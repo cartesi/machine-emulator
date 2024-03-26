@@ -51,6 +51,9 @@ where options are:
     use a remote cartesi machine listening to <address> instead of
     running a local cartesi machine.
 
+  --remote-fork
+    fork the remote cartesi machine before the execution.
+
   --remote-shutdown
     shutdown the remote cartesi machine after the execution.
 
@@ -60,6 +63,13 @@ where options are:
 
   --no-remote-destroy
     do not destroy the cartesi machine in the remote server after the execution.
+
+  --no-rollback
+    disable rollback for advance and inspect states.
+    this allows to perform advance and inspect states on local cartesi machines,
+    however the state is never reverted, even in case inspects or rejected advances.
+
+    DON'T USE THIS OPTION IN PRODUCTION
 
   --ram-image=<filename>
     name of file containing RAM image (default: "linux.bin").
@@ -537,9 +547,11 @@ end
 local remote
 local remote_protocol = "jsonrpc"
 local remote_address
+local remote_fork = false
 local remote_shutdown = false
 local remote_create = true
 local remote_destroy = true
+local perform_rollbacks = true
 local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
 local flash_image_filename = { root = images_path .. "rootfs.ext2" }
 local flash_label_order = { "root" }
@@ -1292,6 +1304,14 @@ local options = {
         end,
     },
     {
+        "^%-%-remote%-fork$",
+        function(o)
+            if not o then return false end
+            remote_fork = true
+            return true
+        end,
+    },
+    {
         "^%-%-remote%-shutdown$",
         function(o)
             if not o then return false end
@@ -1312,6 +1332,14 @@ local options = {
         function(o)
             if not o then return false end
             remote_destroy = false
+            return true
+        end,
+    },
+    {
+        "^%-%-no%-rollback$",
+        function(o)
+            if not o then return false end
+            perform_rollbacks = false
             return true
         end,
     },
@@ -1745,6 +1773,7 @@ if remote_address then
     remote = assert(protocol.stub(remote_address))
     local v = assert(remote.get_version())
     stderr("Connected: remote version is %d.%d.%d\n", v.major, v.minor, v.patch)
+    if remote_fork then remote = assert(protocol.stub(remote.fork())) end
     local shutdown = function() remote.shutdown() end
     if remote_shutdown then
         setmetatable(remote_shutdown_deleter, {
@@ -2079,9 +2108,8 @@ if config.processor.iunrep ~= 0 then stderr("Running in unreproducible mode!\n")
 if store_config == stderr then store_machine_config(config, stderr) end
 if cmio_advance or cmio_inspect then
     check_cmio_htif_config(config.htif)
-    assert(remote_address, "cmio requires --remote-address for snapshot/commit/rollback")
+    assert(remote_address or not perform_rollbacks, "cmio requires --remote-address for snapshot/commit/rollback")
 end
-local cycles = machine:read_mcycle()
 if initial_hash then
     assert(config.processor.iunrep == 0, "hashes are meaningless in unreproducible mode")
     print_root_hash(machine, stderr_unsilenceable)
@@ -2094,6 +2122,33 @@ if periodic_hashes_start ~= 0 then
 else
     next_hash_mcycle = periodic_hashes_period
 end
+
+-- proxy functions to snapshot/commit/rollback
+local forked_snapshot = false
+local function do_snapshot(mach)
+    if perform_rollbacks then mach:snapshot() end
+    forked_snapshot = true
+end
+local function do_commit(mach)
+    if perform_rollbacks then mach:commit() end
+    forked_snapshot = false
+end
+local function do_rollback(mach)
+    assert(forked_snapshot, "no snapshot to rollback to")
+    forked_snapshot = false
+    if perform_rollbacks then mach:rollback() end
+end
+
+-- make sure we always destroy forked snapshots before exiting,
+-- otherwise we would leave zombies remote cartesi machines listening
+local function close_snapshot()
+    -- if last snapshot exists, then we probably raised an error, rollback in this case
+    if forked_snapshot then do_rollback(machine) end
+end
+-- luacheck: push ignore 211
+local snapshot_closer <close> = setmetatable({}, { __close = close_snapshot })
+-- luacheck: pop
+
 -- the loop runs at most until max_mcycle. iterations happen because
 --   1) we stopped to print a hash
 --   2) the machine halted, so iflags_H is set
@@ -2106,14 +2161,13 @@ end
 -- once all inputs for advance state have been consumed, we check if the user selected cmio inspect state
 -- if so, we feed the query, reset iflags_Y, and resume the machine
 -- the machine can now continue processing and may yield automatic to produce reports we save
-while math.ult(cycles, max_mcycle) do
+while math.ult(machine:read_mcycle(), max_mcycle) do
     local next_mcycle = math.min(next_hash_mcycle, max_mcycle)
     if gdb_stub and gdb_stub:is_connected() then
         gdb_stub:run(next_mcycle)
     else
         machine:run(next_mcycle)
     end
-    cycles = machine:read_mcycle()
     -- deal with halt
     if machine:read_iflags_H() then
         exit_code = machine:read_htif_tohost_data() >> 1
@@ -2122,7 +2176,7 @@ while math.ult(cycles, max_mcycle) do
         else
             stderr("\nHalted\n")
         end
-        stderr("Cycles: %u\n", cycles)
+        stderr("Cycles: %u\n", machine:read_mcycle())
         break
     -- deal with yield manual
     elseif machine:read_iflags_Y() then
@@ -2131,11 +2185,13 @@ while math.ult(cycles, max_mcycle) do
         if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION then
             dump_exception(machine, length)
             exit_code = 1
+            do_rollback(machine)
+            break
         -- there are advance state inputs to feed
         elseif cmio_advance and cmio_advance.next_input_index < cmio_advance.input_index_end then
             -- previous reason was an accept
             if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
-                machine:commit()
+                do_commit(machine)
                 -- save only if we have already run an input and have just accepted it
                 if cmio_advance.next_input_index > cmio_advance.input_index_begin then
                     assert(length == 32, "expected root hash in tx buffer")
@@ -2144,15 +2200,14 @@ while math.ult(cycles, max_mcycle) do
                 end
             -- previous reason was a reject
             elseif reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
-                machine:rollback()
-                cycles = machine:read_mcycle()
+                do_rollback(machine)
             else
                 error("unexpected manual yield reason")
             end
             output_hashes = {}
             stderr("\nBefore input %d\n", cmio_advance.next_input_index)
             if cmio_advance.hashes then print_root_hash(machine) end
-            machine:snapshot()
+            do_snapshot(machine)
             load_cmio_input(machine, cmio_advance)
             if cmio_advance.hashes then print_root_hash(machine) end
             cmio_advance.output_index = 0
@@ -2175,7 +2230,7 @@ while math.ult(cycles, max_mcycle) do
                 if cmio_inspect.query then
                     stderr("\nBefore query\n")
                     if cmio_inspect.hashes then print_root_hash(machine) end
-                    machine:snapshot()
+                    do_snapshot(machine)
                     load_cmio_query(machine, cmio_inspect)
                     if cmio_inspect.hashes then print_root_hash(machine) end
                     cmio_inspect.report_index = 0
@@ -2183,7 +2238,7 @@ while math.ult(cycles, max_mcycle) do
                 -- fed it already
                 else
                     stderr("\nAfter query\n")
-                    machine:rollback()
+                    do_rollback(machine)
                     cmio_inspect = nil
                 end
             end
@@ -2213,8 +2268,12 @@ while math.ult(cycles, max_mcycle) do
         end
         -- otherwise ignore
     end
-    if machine:read_iflags_Y() then break end
-    if cycles == next_hash_mcycle then
+    if machine:read_iflags_Y() then
+        -- commit any pending snapshot
+        do_commit(machine)
+        break
+    end
+    if machine:read_mcycle() == next_hash_mcycle then
         print_root_hash(machine)
         next_hash_mcycle = next_hash_mcycle + periodic_hashes_period
     end

@@ -51,6 +51,9 @@ where options are:
     use a remote cartesi machine listening to <address> instead of
     running a local cartesi machine.
 
+  --remote-fork
+    fork the remote cartesi machine before the execution.
+
   --remote-shutdown
     shutdown the remote cartesi machine after the execution.
 
@@ -60,6 +63,13 @@ where options are:
 
   --no-remote-destroy
     do not destroy the cartesi machine in the remote server after the execution.
+
+  --no-rollback
+    disable rollback for advance and inspect states.
+    this allows to perform advance and inspect states on local cartesi machines,
+    however the state is never reverted, even in case inspects or rejected advances.
+
+    DON'T USE THIS OPTION IN PRODUCTION
 
   --ram-image=<filename>
     name of file containing RAM image (default: "linux.bin").
@@ -537,9 +547,11 @@ end
 local remote
 local remote_protocol = "jsonrpc"
 local remote_address
+local remote_fork = false
 local remote_shutdown = false
 local remote_create = true
 local remote_destroy = true
+local perform_rollbacks = true
 local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
 local flash_image_filename = { root = images_path .. "rootfs.ext2" }
 local flash_label_order = { "root" }
@@ -1266,6 +1278,14 @@ local options = {
         end,
     },
     {
+        "^%-%-remote%-fork$",
+        function(o)
+            if not o then return false end
+            remote_fork = true
+            return true
+        end,
+    },
+    {
         "^%-%-remote%-shutdown$",
         function(o)
             if not o then return false end
@@ -1286,6 +1306,14 @@ local options = {
         function(o)
             if not o then return false end
             remote_destroy = false
+            return true
+        end,
+    },
+    {
+        "^%-%-no%-rollback$",
+        function(o)
+            if not o then return false end
+            perform_rollbacks = false
             return true
         end,
     },
@@ -1684,6 +1712,7 @@ if remote_address then
     remote = assert(protocol.stub(remote_address))
     local v = assert(remote.get_version())
     stderr("Connected: remote version is %d.%d.%d\n", v.major, v.minor, v.patch)
+    if remote_fork then remote = assert(protocol.stub(remote.fork())) end
     local shutdown = function() remote.shutdown() end
     if remote_shutdown then
         setmetatable(remote_shutdown_deleter, {
@@ -2057,7 +2086,7 @@ if store_config == stderr then store_machine_config(config, stderr) end
 if cmio_advance or cmio_inspect then
     check_cmio_htif_config(config.htif)
     assert(config.cmio, "cmio device must be present")
-    assert(remote_address, "cmio requires --remote-address for snapshot/commit/rollback")
+    assert(remote_address or not perform_rollbacks, "cmio requires --remote-address for snapshot/commit/rollback")
     check_cmio_memory_range_config(config.cmio.tx_buffer, "tx-buffer")
     check_cmio_memory_range_config(config.cmio.rx_buffer, "rx-buffer")
 end
@@ -2074,6 +2103,22 @@ if periodic_hashes_start ~= 0 then
 else
     next_hash_mcycle = periodic_hashes_period
 end
+
+-- make sure we always destroy forked snapshots before exiting,
+-- otherwise we would leave zombies remote cartesi machines listening
+local forked_snapshot = false
+local function close_snapshot()
+    -- if last snapshot is set we probably raised an error,
+    -- rollback the remote machine in this case
+    if forked_snapshot then
+        forked_snapshot = false
+        machine:rollback()
+    end
+end
+-- luacheck: push ignore 211
+local snapshot_closer <close> = setmetatable({}, { __close = close_snapshot })
+-- luacheck: pop
+
 -- the loop runs at most until max_mcycle. iterations happen because
 --   1) we stopped to print a hash
 --   2) the machine halted, so iflags_H is set
@@ -2113,7 +2158,10 @@ while math.ult(cycles, max_mcycle) do
             exit_code = 1
         elseif cmio_advance and cmio_advance.next_input_index < cmio_advance.input_index_end then
             if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
-                machine:commit()
+                if forked_snapshot then
+                    forked_snapshot = false
+                    machine:commit()
+                end
                 -- save only if we have already run an input and have just accepted it
                 if cmio_advance.next_input_index > cmio_advance.input_index_begin then
                     assert(length == 32, "expected root hash in tx buffer")
@@ -2129,7 +2177,10 @@ while math.ult(cycles, max_mcycle) do
             end
             stderr("\nEpoch %d before input %d\n", cmio_advance.epoch_index, cmio_advance.next_input_index)
             if cmio_advance.hashes then print_root_hash(machine) end
-            machine:snapshot()
+            if perform_rollbacks then
+                machine:snapshot()
+                forked_snapshot = true
+            end
             local input_length = load_cmio_input(machine, config.cmio, cmio_advance)
             machine:reset_iflags_Y()
             set_yield_data(machine, cartesi.machine.HTIF_YIELD_REASON_ADVANCE_STATE, input_length)
@@ -2151,7 +2202,10 @@ while math.ult(cycles, max_mcycle) do
                 if cmio_inspect.query then
                     stderr("\nBefore query\n")
                     if cmio_inspect.hashes then print_root_hash(machine) end
-                    machine:snapshot()
+                    if perform_rollbacks then
+                        machine:snapshot()
+                        forked_snapshot = true
+                    end
                     local input_length = load_cmio_query(machine, config.cmio, cmio_inspect)
                     machine:reset_iflags_Y()
                     set_yield_data(machine, cartesi.machine.HTIF_YIELD_REASON_INSPECT_STATE, input_length)
@@ -2161,7 +2215,10 @@ while math.ult(cycles, max_mcycle) do
                 -- fed it already
                 else
                     stderr("\nAfter query\n")
-                    machine:rollback()
+                    if forked_snapshot then
+                        forked_snapshot = false
+                        machine:rollback()
+                    end
                     cmio_inspect = nil
                 end
             end

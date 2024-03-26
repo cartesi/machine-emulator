@@ -171,15 +171,6 @@ jsonrpc_mg_mgr::jsonrpc_mg_mgr(std::string remote_address) {
 }
 
 jsonrpc_mg_mgr::~jsonrpc_mg_mgr() {
-    // Discard pending snapshots to not leave zombie remote servers
-    if (is_forked()) {
-        // Avoid throwing exceptions in destructors
-        try {
-            commit();
-        } catch (std::exception &e) {
-            (void) fprintf(stderr, "error while committing snapshot in ~jsonrpc_mg_mgr: %s\n", e.what());
-        }
-    }
     mg_mgr_free(&m_mgr);
 }
 

@@ -63,6 +63,7 @@ jobs:
           cache-from: type=gha,scope=debian
           cache-to: type=gha,mode=max,scope=debian
           build-args: |
+            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
             GIT_COMMIT=${GITHUB_SHA}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
           project: ${{ vars.DEPOT_PROJECT }}

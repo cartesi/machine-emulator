@@ -2218,6 +2218,7 @@ while math.ult(cycles, max_mcycle) do
                     if forked_snapshot then
                         forked_snapshot = false
                         machine:rollback()
+                        cycles = machine:read_mcycle()
                     end
                     cmio_inspect = nil
                 end
@@ -2248,7 +2249,26 @@ while math.ult(cycles, max_mcycle) do
         end
         -- otherwise ignore
     end
-    if machine:read_iflags_Y() then break end
+    if machine:read_iflags_Y() then
+        -- commit/rollback depends on the status of last yield request
+        local _, reason, length = get_yield(machine)
+        if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION then
+            dump_exception(machine, config.cmio.tx_buffer, length)
+            exit_code = 1
+        elseif reason == cartesi.machine.HTIF_YIELD_REASON_RX_REJECTED then
+            if forked_snapshot then
+                forked_snapshot = false
+                machine:rollback()
+                cycles = machine:read_mcycle()
+            end
+        else -- accepted
+            if forked_snapshot then
+                forked_snapshot = false
+                machine:commit()
+            end
+        end
+        break
+    end
     if cycles == next_hash_mcycle then
         print_root_hash(machine)
         next_hash_mcycle = next_hash_mcycle + periodic_hashes_period

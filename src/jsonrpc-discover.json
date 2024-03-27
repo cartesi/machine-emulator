@@ -35,6 +35,27 @@
     },
 
     {
+      "name": "rebind",
+      "summary": "Rebinds the server",
+      "params": [ {
+          "name": "address",
+          "description": "URL to rebind",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      ],
+      "result": {
+        "name": "address",
+        "description": "URL of rebound server",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+
+    {
       "name": "shutdown",
       "summary": "Causes the server to shutdown and exit",
       "params": [],

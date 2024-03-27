@@ -67,6 +67,7 @@ public:
         bool one_based = false);
 
     static std::string fork(const jsonrpc_mg_mgr_ptr &mgr);
+    static void rebind(const jsonrpc_mg_mgr_ptr &mgr, const std::string &address);
     static uint64_t get_x_address(const jsonrpc_mg_mgr_ptr &mgr, int i);
     static uint64_t get_f_address(const jsonrpc_mg_mgr_ptr &mgr, int i);
     static uint64_t get_uarch_x_address(const jsonrpc_mg_mgr_ptr &mgr, int i);
@@ -184,6 +185,7 @@ private:
     access_log do_log_uarch_step(const access_log::type &log_type, bool /*one_based = false*/) override;
     void do_destroy() override;
     void do_snapshot() override;
+    void do_commit() override;
     void do_rollback() override;
     bool do_verify_dirty_page_maps(void) const override;
     uint64_t do_read_word(uint64_t address) const override;

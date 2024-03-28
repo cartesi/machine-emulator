@@ -402,6 +402,15 @@ if machine_type ~= "local" then
         assert(ret == false)
         assert(err:match("no machine"))
     end)
+
+    do_test("jsonrpc connection error 49 after rapid successive requests ", function(machine)
+        -- On a Mac, this loop will break with  EADDRNOTAVAIL(49)
+        -- Setting up the SO_LINGER to 0 fixed this issue
+        for _ = 1, 16384 do
+            local data = machine:read_memory(0, 4096)
+            assert(#data == 4096)
+        end
+    end)
 end
 
 print("\n\nAll tests of machine lua API for type " .. machine_type .. "  passed")

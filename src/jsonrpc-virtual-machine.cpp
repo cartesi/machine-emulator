@@ -57,10 +57,27 @@ struct http_request_data {
     bool done;
 };
 
+// Performs additional client socket configuration
+static void setup_client_socket(struct mg_connection *c) {
+#if defined(SO_LINGER)
+    // Minimize socket close time: by setting the linger time to 0.
+    // Avoid accumulating socket in TIME_WAIT state in rapid successive requests, which can consume all available ports.
+    // It is safe to do this because this client decides to close the connection, after all data is received.
+    struct linger so_linger {};
+    so_linger.l_onoff = 1;
+    so_linger.l_linger = 0; // do not wait
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto socket = static_cast<MG_SOCKET_TYPE>(reinterpret_cast<size_t>(c->fd));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    (void) setsockopt(socket, SOL_SOCKET, SO_LINGER, reinterpret_cast<char *>(&so_linger), sizeof(so_linger));
+#endif
+}
+
 // Print HTTP response and signal that we're done
 static void json_post_fn(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
     http_request_data *data = static_cast<http_request_data *>(fn_data);
     if (ev == MG_EV_CONNECT) {
+        setup_client_socket(c);
         const struct mg_str host = mg_url_host(data->url.c_str());
         mg_printf(c,
             "POST %s HTTP/1.0\r\n"

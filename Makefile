@@ -80,7 +80,7 @@ STRIP_STATIC= $(STRIP) -S
 EMU_TO_BIN= src/jsonrpc-remote-cartesi-machine src/merkle-tree-hash
 EMU_TO_LIB= src/$(LIBCARTESI_SO) src/$(LIBCARTESI_SO_JSONRPC)
 EMU_TO_LIB_A= src/libcartesi.a src/libcartesi_jsonrpc.a
-EMU_LUA_TO_BIN= src/cartesi-machine.lua src/cartesi-machine-stored-hash.lua src/rollup-memory-range.lua
+EMU_LUA_TO_BIN= src/cartesi-machine.lua src/cartesi-machine-stored-hash.lua
 EMU_TO_LUA_PATH= src/cartesi/util.lua src/cartesi/proof.lua src/cartesi/gdbstub.lua
 EMU_TO_LUA_CPATH= src/cartesi.so
 EMU_TO_LUA_CARTESI_CPATH= src/cartesi/jsonrpc.so
@@ -354,8 +354,7 @@ install-bins: $(BIN_INSTALL_PATH)
 install-lua-bins: $(BIN_INSTALL_PATH)
 	cat tools/template/cartesi-machine.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_IMAGES_PATH|$(IMAGES_RUNTIME_PATH)|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/cartesi-machine
 	cat tools/template/cartesi-machine-stored-hash.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/cartesi-machine-stored-hash
-	cat tools/template/rollup-memory-range.template | sed 's|ARG_LUA_PATH|$(LUA_RUNTIME_PATH)/?.lua|g;s|ARG_LUA_CPATH|$(LUA_RUNTIME_CPATH)/?.so|g;s|ARG_LUA_RUNTIME_PATH|$(LUA_RUNTIME_PATH)|g' > $(BIN_INSTALL_PATH)/rollup-memory-range
-	$(CHMOD_EXEC) $(BIN_INSTALL_PATH)/cartesi-machine $(BIN_INSTALL_PATH)/cartesi-machine-stored-hash $(BIN_INSTALL_PATH)/rollup-memory-range
+	$(CHMOD_EXEC) $(BIN_INSTALL_PATH)/cartesi-machine $(BIN_INSTALL_PATH)/cartesi-machine-stored-hash
 
 install-shared-files: $(IMAGES_INSTALL_PATH)
 	$(INSTALL_DIR) tools/gdb $(SHARE_INSTALL_PATH)/gdb

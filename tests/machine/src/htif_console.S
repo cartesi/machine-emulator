@@ -72,7 +72,7 @@ wait:
 is_console_getchar_enabled:
     li t0, PMA_HTIF_START_DEF; \
     ld t0, O_ICONSOLE (t0); \
-    srli t0, t0, HTIF_CONSOLE_GETCHAR_DEF; \
+    srli t0, t0, HTIF_CONSOLE_CMD_GETCHAR_DEF; \
     andi a0, t0, 1;
     ret
 

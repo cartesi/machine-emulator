@@ -44,23 +44,23 @@
 // Issue a HTIF yield call with `cmd`, `reason` and `data` as a constants.
 // Result in a0
 #define htif_yield(cmd, reason, data) \
-    li t1, htif_const(HTIF_DEVICE_YIELD_DEF, cmd, htif_yield_const(reason, data)); \
+    li t1, htif_const(HTIF_DEV_YIELD_DEF, cmd, htif_yield_const(reason, data)); \
     htif_call(t0, t1, a0)
 
 // Issue a HTIF exit call with `retval` as a constant.
 #define htif_exit(retval) \
-    li t1, htif_const(HTIF_DEVICE_HALT_DEF, HTIF_HALT_HALT_DEF, ((retval) << 1) | 0x01); \
+    li t1, htif_const(HTIF_DEV_HALT_DEF, HTIF_HALT_CMD_HALT_DEF, ((retval) << 1) | 0x01); \
     htif_call(t0, t1, a0)
 
 // Issue a HTIF putchar with `data` as a constant.
 #define htif_console_putchar(data) \
-    li t1, htif_const(HTIF_DEVICE_CONSOLE_DEF, HTIF_CONSOLE_PUTCHAR_DEF, data); \
+    li t1, htif_const(HTIF_DEV_CONSOLE_DEF, HTIF_CONSOLE_CMD_PUTCHAR_DEF, data); \
     htif_call(t0, t1, a0)
 
 // Issue a HTIF getchar
 // Result in a0
 #define htif_console_getchar() \
-    li t1, htif_const(HTIF_DEVICE_CONSOLE_DEF, HTIF_CONSOLE_GETCHAR_DEF, 0); \
+    li t1, htif_const(HTIF_DEV_CONSOLE_DEF, HTIF_CONSOLE_CMD_GETCHAR_DEF, 0); \
     htif_call(t0, t1, a0); \
     andi a0, a0, 0xFF; \
     addi a0, a0, -1

@@ -183,13 +183,13 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
             fdt.end_node();
         }
 
-        // rollup
-        if (c.rollup.has_value()) {
-            const auto &r = c.rollup.value();
-            fdt.begin_node("rollup");
+        // cmio
+        if (c.cmio.has_value()) {
+            const auto &r = c.cmio.value();
+            fdt.begin_node("cmio");
             fdt.prop_u32("#address-cells", 2);
             fdt.prop_u32("#size-cells", 2);
-            fdt.prop_string("compatible", "ctsi-rollup");
+            fdt.prop_string("compatible", "ctsi-cmio");
             { // rx_buffer
                 fdt.begin_node_num("rx_buffer", r.rx_buffer.start);
                 fdt.prop_u64_list<2>("reg", {r.rx_buffer.start, r.rx_buffer.length});
@@ -198,21 +198,6 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
             { // tx_buffer
                 fdt.begin_node_num("tx_buffer", r.tx_buffer.start);
                 fdt.prop_u64_list<2>("reg", {r.tx_buffer.start, r.tx_buffer.length});
-                fdt.end_node();
-            }
-            { // input_metadata
-                fdt.begin_node_num("input_metadata", r.input_metadata.start);
-                fdt.prop_u64_list<2>("reg", {r.input_metadata.start, r.input_metadata.length});
-                fdt.end_node();
-            }
-            { // voucher_hashes
-                fdt.begin_node_num("voucher_hashes", r.voucher_hashes.start);
-                fdt.prop_u64_list<2>("reg", {r.voucher_hashes.start, r.voucher_hashes.length});
-                fdt.end_node();
-            }
-            { // notice_hashes
-                fdt.begin_node_num("notice_hashes", r.notice_hashes.start);
-                fdt.prop_u64_list<2>("reg", {r.notice_hashes.start, r.notice_hashes.length});
                 fdt.end_node();
             }
             fdt.end_node();

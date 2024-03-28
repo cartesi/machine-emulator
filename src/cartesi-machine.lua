@@ -2178,25 +2178,28 @@ while math.ult(cycles, max_mcycle) do
     -- deal with yield manual
     elseif machine:read_iflags_Y() then
         local _, reason, length = get_and_print_yield(machine, config.htif)
-        -- there are advance state inputs to feed
+        -- there was an exception
         if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION then
             dump_exception(machine, config.cmio.tx_buffer, length)
             exit_code = 1
+        -- there are advance state inputs to feed
         elseif cmio_advance and cmio_advance.next_input_index < cmio_advance.input_index_end then
+            -- previous reason was an accept
             if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
                 -- save only if we have already run an input and have just accepted it
                 if cmio_advance.next_input_index > cmio_advance.input_index_begin then
                     assert(length == 32, "expected root hash in tx buffer")
                     local root_hash = save_cmio_outputs_root_hash(machine, config.cmio.tx_buffer, cmio_advance, length)
                     check_outputs_root_hash(root_hash, output_hashes)
-                    output_hashes = {}
                 end
+            -- previous reason was a reject
             elseif reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
                 machine:rollback()
                 cycles = machine:read_mcycle()
             else
                 error("unexpected manual yield reason")
             end
+            output_hashes = {}
             stderr("\nEpoch %d before input %d\n", cmio_advance.epoch_index, cmio_advance.next_input_index)
             if cmio_advance.hashes then print_root_hash(machine) end
             machine:snapshot()
@@ -2209,11 +2212,14 @@ while math.ult(cycles, max_mcycle) do
             cmio_advance.next_input_index = cmio_advance.next_input_index + 1
         else
             -- there are outputs of a previous advance state to save
-            if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
-                local root_hash = save_cmio_outputs_root_hash(machine, config.cmio.tx_buffer, cmio_advance, 32)
-                check_outputs_root_hash(root_hash, output_hashes)
-                output_hashes = {}
-                cmio_advance = nil
+            if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+                if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
+                    assert(length == 32, "expected root hash in tx buffer")
+                    local root_hash = save_cmio_outputs_root_hash(machine, config.cmio.tx_buffer, cmio_advance, 32)
+                    check_outputs_root_hash(root_hash, output_hashes)
+                    output_hashes = {}
+                    cmio_advance = nil
+                end
             end
             -- not done with inspect state query
             if cmio_inspect then

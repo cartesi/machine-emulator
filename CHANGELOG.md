@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.1] - 2024-03-28
+### Fixed
+- Fixed amd64 debian package build in release mode
+
+### Changed
+- Made uarch compilation independent of release/debug build settings
+
 ## [0.16.0] - 2024-02-09
 ### Added
 - Implemented the UARCH reset feature
@@ -386,7 +393,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [0.2.0]
 - [0.1.0]
 
-[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.16.1...HEAD
+[0.16.1]: https://github.com/cartesi/machine-emulator/releases/tag/v0.16.1
 [0.16.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.16.0
 [0.15.3]: https://github.com/cartesi/machine-emulator/releases/tag/v0.15.3
 [0.15.2]: https://github.com/cartesi/machine-emulator/releases/tag/v0.15.2

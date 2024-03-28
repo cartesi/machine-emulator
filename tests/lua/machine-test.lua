@@ -404,4 +404,11 @@ if machine_type ~= "local" then
     end)
 end
 
+do_test("jsonrpc connection error 49 after successive requests ", function(machine)
+    for i = 1, 81920 do
+        local data = machine:read_memory(0, 4096)
+        assert(#data == 4096)
+    end
+end)
+
 print("\n\nAll tests of machine lua API for type " .. machine_type .. "  passed")

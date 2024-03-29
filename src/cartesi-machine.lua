@@ -496,6 +496,15 @@ where options are:
     appends to init the user who should execute the entrypoint command.
     when omitted, the user is set to "dapp" by rootfs init script.
 
+  -e=<name>=<value> or --env=<name>=<value>
+    appends to init an environment variable export.
+
+  -w=<dir> or --workdir=<dir>
+    appends to init the entrypoint working directory.
+
+  -h=<name> or --hostname=<name>
+    appends to init a machine hostname change.
+
   --append-init=<string>
     append <string> to the machine's init script, to execute as root.
     <string> is executed on boot after mounting flash drives but before
@@ -685,6 +694,24 @@ end
 local function handle_user(user)
     if not user then return false end
     append_init = append_init .. "USER=" .. user .. "\n"
+    return true
+end
+
+local function handle_env(name, value)
+    if not name or not value then return false end
+    append_init = append_init .. "export " .. name .. "=" .. value .. "\n"
+    return true
+end
+
+local function handle_workdir(value)
+    if not value then return false end
+    append_init = append_init .. "WORKDIR=" .. value .. "\n"
+    return true
+end
+
+local function handle_hostname(name)
+    if not name then return false end
+    append_init = append_init .. "busybox hostname " .. name .. "\n"
     return true
 end
 
@@ -1444,6 +1471,30 @@ local options = {
     {
         "^%-%-user%=(.*)$",
         handle_user,
+    },
+    {
+        "^%-e%=([%w_]+)%=(.*)$",
+        handle_env,
+    },
+    {
+        "^%-%-env%=([%w_]+)%=(.*)$",
+        handle_env,
+    },
+    {
+        "^%-w%=(.*)$",
+        handle_workdir,
+    },
+    {
+        "^%-%-workdir%=(.*)$",
+        handle_workdir,
+    },
+    {
+        "^%-h%=(.*)$",
+        handle_hostname,
+    },
+    {
+        "^%-%-hostname%=(.*)$",
+        handle_hostname,
     },
     {
         "^%-%-append%-init%=(.*)$",

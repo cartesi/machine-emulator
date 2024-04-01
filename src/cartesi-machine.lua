@@ -514,6 +514,10 @@ where options are:
   --append-entrypoint-file=<filename>
     like --append-entrypoint, but read contents from a file.
 
+  --bench-cpu
+    print CPU execution speed before exiting,
+    the output will in MIPS (million instructions per second).
+
   --gdb[=<address>]
     listen at <address> and wait for a GDB connection to debug the machine.
     if <address> is omitted, '127.0.0.1:1234' is used by default.
@@ -610,6 +614,7 @@ local htif_yield_automatic = true
 local htif_yield_manual = true
 local initial_hash = false
 local final_hash = false
+local bench_cpu = false
 local initial_proof = {}
 local final_proof = {}
 local periodic_hashes_period = math.maxinteger
@@ -1499,6 +1504,14 @@ local options = {
         end,
     },
     {
+        "^%-%-bench%-cpu$",
+        function(o)
+            if not o then return false end
+            bench_cpu = true
+            return true
+        end,
+    },
+    {
         ".*",
         function(all)
             if not all then return false end
@@ -2155,6 +2168,9 @@ if periodic_hashes_start ~= 0 then
 else
     next_hash_mcycle = periodic_hashes_period
 end
+local start_cycles = cycles
+local start_clock
+if bench_cpu then start_clock = os.clock() end
 -- the loop runs at most until max_mcycle. iterations happen because
 --   1) we stopped to print a hash
 --   2) the machine halted, so iflags_H is set
@@ -2278,6 +2294,12 @@ if max_uarch_cycle > 0 then
         end
     end
 end
+if bench_cpu then
+    local elapsed_clock = os.clock() - start_clock
+    local mips = (machine:read_mcycle() - start_cycles) / (1000000 * elapsed_clock)
+    stderr("CPU Speed: %.3f MIPS\n", mips)
+end
+
 if gdb_stub then gdb_stub:close() end
 if log_uarch_step then
     assert(config.processor.iunrep == 0, "micro step proof is meaningless in unreproducible mode")

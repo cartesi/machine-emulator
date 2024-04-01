@@ -408,6 +408,11 @@ public:
     /// \param length Size of chunk.
     void write_virtual_memory(uint64_t vaddr_start, const unsigned char *data, size_t length);
 
+    /// \brief Translates a virtual memory address to its corresponding physical memory address.
+    /// \param vaddr Virtual address to translate.
+    /// \returns The corresponding physical address.
+    uint64_t translate_virtual_address(uint64_t vaddr);
+
     /// \brief Reads the value of a general-purpose register.
     /// \param index Register index. Between 0 and X_REG_COUNT-1, inclusive.
     /// \returns The value of the register.

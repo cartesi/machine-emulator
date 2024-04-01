@@ -1146,6 +1146,22 @@ static json jsonrpc_machine_write_virtual_memory_handler(const json &j, mg_conne
     return jsonrpc_response_ok(j);
 }
 
+/// \brief JSONRPC handler for the machine.translate_virtual_address method
+/// \param j JSON request object
+/// \param con Mongoose connection
+/// \param h Handler data
+/// \returns JSON response object
+static json jsonrpc_machine_translate_virtual_address_handler(const json &j, mg_connection *con, http_handler_data *h) {
+    (void) con;
+    if (!h->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    static const char *param_name[] = {"vaddr"};
+    auto args = parse_args<uint64_t>(j, param_name);
+    auto vaddr = std::get<0>(args);
+    return jsonrpc_response_ok(j, h->machine->translate_virtual_address(vaddr));
+}
+
 /// \brief JSONRPC handler for the machine.replace_memory_range method
 /// \param j JSON request object
 /// \param con Mongoose connection
@@ -1653,6 +1669,7 @@ static json jsonrpc_dispatch_method(const json &j, mg_connection *con, http_hand
         {"machine.write_memory", jsonrpc_machine_write_memory_handler},
         {"machine.read_virtual_memory", jsonrpc_machine_read_virtual_memory_handler},
         {"machine.write_virtual_memory", jsonrpc_machine_write_virtual_memory_handler},
+        {"machine.translate_virtual_address", jsonrpc_machine_translate_virtual_address_handler},
         {"machine.replace_memory_range", jsonrpc_machine_replace_memory_range_handler},
         {"machine.read_csr", jsonrpc_machine_read_csr_handler},
         {"machine.write_csr", jsonrpc_machine_write_csr_handler},

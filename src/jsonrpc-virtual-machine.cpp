@@ -447,6 +447,13 @@ void jsonrpc_virtual_machine::do_write_virtual_memory(uint64_t address, const un
         std::tie(address, b64), result);
 }
 
+uint64_t jsonrpc_virtual_machine::do_translate_virtual_address(uint64_t vaddr) const {
+    uint64_t result = 0;
+    jsonrpc_request(m_mgr->get_mgr(), m_mgr->get_remote_address(), "machine.translate_virtual_address", std::tie(vaddr),
+        result);
+    return result;
+}
+
 uint64_t jsonrpc_virtual_machine::do_read_pc(void) const {
     return read_csr(csr::pc);
 }

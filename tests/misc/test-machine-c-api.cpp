@@ -1002,6 +1002,12 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_virtual_memory_basic_test, ordinary_ma
     BOOST_REQUIRE_EQUAL(err_msg, nullptr);
     memcpy(&read_value, read_data.data(), read_data.size());
     BOOST_CHECK_EQUAL(read_value, write_value);
+
+    uint64_t paddr = 0;
+    error_code = cm_translate_virtual_address(_machine, address, &paddr, &err_msg);
+    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_REQUIRE_EQUAL(err_msg, nullptr);
+    BOOST_REQUIRE_EQUAL(paddr, address);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_virtual_memory_scattered_data, ordinary_machine_fixture) {

@@ -499,6 +499,16 @@ static int machine_obj_index_write_virtual_memory(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:translate_virtual_address() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_translate_virtual_address(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    uint64_t paddr_value{0};
+    TRY_EXECUTE(cm_translate_virtual_address(m.get(), luaL_checkinteger(L, 2), &paddr_value, err_msg));
+    lua_pushinteger(L, static_cast<lua_Integer>(paddr_value));
+    return 1;
+}
+
 /// \brief Replaces a memory range.
 /// \param L Lua state.
 static int machine_obj_index_replace_memory_range(lua_State *L) {
@@ -657,6 +667,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"write_stvec", machine_obj_index_write_stvec},
     {"write_x", machine_obj_index_write_x},
     {"write_f", machine_obj_index_write_f},
+    {"translate_virtual_address", machine_obj_index_translate_virtual_address},
     {"replace_memory_range", machine_obj_index_replace_memory_range},
     {"destroy", machine_obj_index_destroy},
     {"snapshot", machine_obj_index_snapshot},

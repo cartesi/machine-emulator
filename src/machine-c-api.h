@@ -739,6 +739,17 @@ CM_API int cm_read_virtual_memory(const cm_machine *m, uint64_t address, unsigne
 CM_API int cm_write_virtual_memory(cm_machine *m, uint64_t address, const unsigned char *data, size_t length,
     char **err_msg);
 
+/// \brief Translates a virtual memory address to its corresponding physical memory address.
+/// \param m Pointer to valid machine instance
+/// \param vaddr Virtual address to translate.
+/// \param paddr Receives the physical memory address.
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successful function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring.
+/// err_msg can be NULL, meaning the error message won't be received.
+/// \returns 0 for success, non zero code for error
+CM_API int cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *paddr, char **err_msg);
+
 /// \brief Reads the value of a general-purpose register.
 /// \param m Pointer to valid machine instance
 /// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.

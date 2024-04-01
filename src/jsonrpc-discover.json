@@ -591,6 +591,27 @@
     },
 
     {
+      "name": "machine.translate_virtual_address",
+      "summary": "Translates a virtual memory address to its corresponding physical memory address",
+      "params": [ {
+          "name":"vaddr",
+          "description": "Virtual address to translate",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      ],
+      "result": {
+        "name": "value",
+        "description": "Value of corresponding physical address (little-endian)",
+        "schema": {
+          "$ref": "#/components/schemas/UnsignedInteger"
+        }
+      }
+    },
+
+    {
       "name": "machine.replace_memory_range",
       "summary": "Replaces a memory range",
       "params": [ {

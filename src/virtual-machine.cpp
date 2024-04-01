@@ -76,6 +76,10 @@ void virtual_machine::do_write_virtual_memory(uint64_t address, const unsigned c
     m_machine->write_virtual_memory(address, data, length);
 }
 
+uint64_t virtual_machine::do_translate_virtual_address(uint64_t vaddr) const {
+    return m_machine->translate_virtual_address(vaddr);
+}
+
 uint64_t virtual_machine::do_read_x(int i) const {
     return m_machine->read_x(i);
 }

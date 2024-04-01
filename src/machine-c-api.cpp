@@ -1254,6 +1254,14 @@ int cm_write_virtual_memory(cm_machine *m, uint64_t address, const unsigned char
     return cm_result_failure(err_msg);
 }
 
+int cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *paddr, char **err_msg) try {
+    const auto *cpp_machine = convert_from_c(m);
+    *paddr = cpp_machine->translate_virtual_address(vaddr);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
 int cm_read_x(const cm_machine *m, int i, uint64_t *val, char **err_msg) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");

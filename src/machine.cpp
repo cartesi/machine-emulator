@@ -1870,7 +1870,7 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
     // copy page by page, because we need to perform address translation again for each page
     for (uint64_t vaddr_page = vaddr_page_start; vaddr_page < vaddr_page_limit; vaddr_page += PMA_PAGE_SIZE) {
         uint64_t paddr_page = 0;
-        if (!translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
+        if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
             throw std::invalid_argument{"page fault"};
         }
         uint64_t paddr = paddr_page;
@@ -1903,7 +1903,7 @@ void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *da
         uint64_t paddr_page = 0;
         // perform address translation using read access mode,
         // so we can write any reachable virtual memory range
-        if (!translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
+        if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
             throw std::invalid_argument{"page fault"};
         }
         uint64_t paddr = paddr_page;
@@ -1918,6 +1918,16 @@ void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *da
         const uint64_t chunkoff = vaddr - vaddr_start;
         write_memory(paddr, data + chunkoff, chunklen);
     }
+}
+
+uint64_t machine::translate_virtual_address(uint64_t vaddr) {
+    state_access a(*this);
+    // perform address translation using read access mode
+    uint64_t paddr = 0;
+    if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr, vaddr, PTE_XWR_R_SHIFT)) {
+        throw std::invalid_argument{"page fault"};
+    }
+    return paddr;
 }
 
 uint64_t machine::read_word(uint64_t word_address) const {

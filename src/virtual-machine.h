@@ -51,6 +51,7 @@ private:
     void do_write_memory(uint64_t address, const unsigned char *data, size_t length) override;
     void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const override;
     void do_write_virtual_memory(uint64_t address, const unsigned char *data, size_t length) override;
+    uint64_t do_translate_virtual_address(uint64_t vaddr) const override;
     uint64_t do_read_x(int i) const override;
     void do_write_x(int i, uint64_t val) override;
     uint64_t do_read_f(int i) const override;

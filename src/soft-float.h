@@ -98,12 +98,22 @@ static inline UINT mul_u(UINT *plow, UINT a, UINT b) {
 /// \param pr is used to store the remainder.
 /// \returns the quotient.
 template <typename UINT>
-static inline UINT divrem_u(UINT *pr, UINT ah, UINT al, UINT b) {
+static inline UINT divrem_u(UINT *pr, UINT ah, UINT al, UINT bl) {
     using ULONG = typename make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
     const ULONG a = (static_cast<ULONG>(ah) << UINT_SIZE) | al;
-    *pr = static_cast<UINT>(a % b);
-    return static_cast<UINT>(a / b);
+    const ULONG b = static_cast<ULONG>(bl);
+    const ULONG quo = a / b;
+#ifdef MICROARCHITECTURE
+    // on microarchitecture, it's faster to compute the remainder using the quotient
+    const ULONG rem = a - (b * quo);
+#else
+    // on some architectures (e.g x86_64) a division followed by a remainder operation
+    // should be optimized as a single instruction
+    const ULONG rem = a % b;
+#endif
+    *pr = static_cast<UINT>(rem);
+    return static_cast<UINT>(quo);
 }
 
 /// \brief Compute sqrt(a) with a = ah*2^UINT_SIZE+al and a < 2^(UINT_SIZE - 2).
@@ -134,7 +144,8 @@ static inline bool sqrtrem_u(UINT *pr, UINT ah, UINT al) {
     // NOLINTBEGIN(cppcoreguidelines-avoid-do-while)
     do {
         s = u;
-        u = ((a / s) + s) / 2;
+        // here we divide by two by shifting 1 bit to the right as an optimization
+        u = ((a / s) + s) >> 1;
     } while (u < s);
     // NOLINTEND(cppcoreguidelines-avoid-do-while)
     *pr = static_cast<UINT>(s);

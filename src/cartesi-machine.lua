@@ -786,7 +786,7 @@ local function handle_network_option(opts)
 busybox ip link set dev eth0 up
 busybox ip addr add 10.0.2.15/24 dev eth0
 busybox ip route add default via 10.0.2.2 dev eth0
-echo 'nameserver 10.0.2.3' > /etc/resolv.conf
+[ -w /etc/resolv.conf ] && echo 'nameserver 10.0.2.3' > /etc/resolv.conf
 ]]
     -- sync guest date with host date, otherwise SSL connections may fail to validate certificates
     handle_sync_init_date(true)

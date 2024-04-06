@@ -148,12 +148,12 @@ public:
 
 // Provides access to the state of the big emulator from microcode
 class uarch_machine_state_access : public i_state_access<uarch_machine_state_access, uarch_pma_entry> {
-    std::array<std::optional<uarch_pma_entry>, PMA_MAX> m_pmas;
+    std::array<std::optional<uarch_pma_entry>, PMA_MAX> &m_pmas; //NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 
 public:
-    uarch_machine_state_access() = default;
-    uarch_machine_state_access(const uarch_machine_state_access &other) = delete;
-    uarch_machine_state_access(uarch_machine_state_access &&other) = delete;
+    explicit uarch_machine_state_access(std::array<std::optional<uarch_pma_entry>, PMA_MAX>& pmas) : m_pmas(pmas) {}
+    uarch_machine_state_access(const uarch_machine_state_access &other) = default;
+    uarch_machine_state_access(uarch_machine_state_access &&other) = default;
     uarch_machine_state_access &operator=(const uarch_machine_state_access &other) = delete;
     uarch_machine_state_access &operator=(uarch_machine_state_access &&other) = delete;
     ~uarch_machine_state_access() = default;
@@ -534,7 +534,7 @@ private:
     std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t /*mcycle_max*/) {
         return {mcycle, false};
     }
-    
+
     uint64_t do_read_pma_istart(int i) {
         return raw_read_memory<uint64_t>(shadow_pmas_get_pma_abs_addr(i));
     }

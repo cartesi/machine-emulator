@@ -29,7 +29,7 @@ namespace cartesi {
 /// \param paddr Target physical address of word.
 /// \returns PMA entry where word falls, or empty sentinel.
 template <typename T, typename STATE_ACCESS>
-auto &find_pma_entry(STATE_ACCESS &a, uint64_t paddr) {
+static FORCE_INLINE auto &find_pma_entry(STATE_ACCESS a, uint64_t paddr) {
     uint64_t index = 0;
     while (true) {
         auto &pma = a.read_pma_entry(index);

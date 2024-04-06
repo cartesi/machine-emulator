@@ -58,7 +58,7 @@ namespace cartesi {
 /// \param val Value to write.
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
-static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t val) {
+static FORCE_INLINE bool write_ram_uint64(STATE_ACCESS a, uint64_t paddr, uint64_t val) {
     auto &pma = find_pma_entry<uint64_t>(a, paddr);
     if (unlikely(!pma.get_istart_M() || !pma.get_istart_W())) {
         return false;
@@ -80,7 +80,7 @@ static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t va
 /// \param pval Pointer to word.
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
-static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pval) {
+static FORCE_INLINE bool read_ram_uint64(STATE_ACCESS a, uint64_t paddr, uint64_t *pval) {
     auto &pma = find_pma_entry<uint64_t>(a, paddr);
     if (unlikely(!pma.get_istart_M() || !pma.get_istart_R())) {
         return false;
@@ -103,7 +103,7 @@ static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pv
 /// \details This function is outlined to minimize host CPU code cache pressure.
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS, bool UPDATE_PTE = true>
-static NO_INLINE bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift) {
+static NO_INLINE bool translate_virtual_address(STATE_ACCESS a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift) {
     auto prv = a.read_iprv();
     const uint64_t mstatus = a.read_mstatus();
 

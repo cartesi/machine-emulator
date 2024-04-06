@@ -32,7 +32,7 @@
 namespace cartesi {
 
 template <typename STATE_ACCESS>
-void send_cmio_response(STATE_ACCESS &a, uint16 reason, bytes data, uint32 dataLength) {
+void send_cmio_response(STATE_ACCESS a, uint16 reason, bytes data, uint32 dataLength) {
     if (!readIflagsY(a)) {
         throwRuntimeError(a, "iflags.Y is not set");
     }
@@ -61,14 +61,14 @@ void send_cmio_response(STATE_ACCESS &a, uint16 reason, bytes data, uint32 dataL
 }
 
 // Explicit instantiation for state_access
-template void send_cmio_response(state_access &a, uint16_t reason, const unsigned char *data, uint32 length);
+template void send_cmio_response(state_access a, uint16_t reason, const unsigned char *data, uint32 length);
 
 // Explicit instantiation for record_state_access
-template void send_cmio_response(record_send_cmio_state_access &a, uint16_t reason, const unsigned char *data,
+template void send_cmio_response(record_send_cmio_state_access a, uint16_t reason, const unsigned char *data,
     uint32 length);
 
 // Explicit instantiation for replay_state_access
-template void send_cmio_response(replay_send_cmio_state_access &a, uint16_t reason, const unsigned char *data,
+template void send_cmio_response(replay_send_cmio_state_access a, uint16_t reason, const unsigned char *data,
     uint32 length);
 
 } // namespace cartesi

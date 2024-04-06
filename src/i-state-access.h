@@ -24,6 +24,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "compiler-defines.h"
 #include "meta.h"
 #include "shadow-tlb.h"
 
@@ -712,7 +713,7 @@ public:
     }
 
     /// \brief Invalidates all TLB entries of all types.
-    void flush_all_tlb() {
+    NO_INLINE void flush_all_tlb() {
         derived().template flush_tlb_type<TLB_CODE>();
         derived().template flush_tlb_type<TLB_READ>();
         derived().template flush_tlb_type<TLB_WRITE>();
@@ -720,7 +721,7 @@ public:
 
     /// \brief Invalidates TLB entries for a specific virtual address.
     /// \param vaddr Target virtual address.
-    void flush_tlb_vaddr(uint64_t vaddr) {
+    NO_INLINE void flush_tlb_vaddr(uint64_t vaddr) {
         return derived().do_flush_tlb_vaddr(vaddr);
     }
 

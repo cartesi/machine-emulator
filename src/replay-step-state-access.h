@@ -199,12 +199,10 @@ static_assert(sizeof(shadow_tlb_state::hot) + sizeof(shadow_tlb_state::cold) == 
 // \brief Provides machine state from a step log file
 class replay_step_state_access : public i_state_access<replay_step_state_access, mock_pma_entry> {
 public:
-    using hash_type = std::array<unsigned char, interop_machine_hash_byte_size>;
-    static_assert(sizeof(hash_type) == interop_machine_hash_byte_size);
-
-private:
     using address_type = uint64_t;
     using data_type = unsigned char[PMA_PAGE_SIZE];
+    using hash_type = std::array<unsigned char, interop_machine_hash_byte_size>;
+    static_assert(sizeof(hash_type) == interop_machine_hash_byte_size);
 
     struct PACKED page_type {
         address_type index;
@@ -212,19 +210,27 @@ private:
         hash_type hash;
     };
 
-    uint64_t m_page_count{0};                                    ///< Number of pages in the step log
-    page_type *m_pages{nullptr};                                 ///< Array of page data
-    uint64_t m_sibling_count{0};                                 ///< Number of sibling hashes in the step log
-    hash_type *m_sibling_hashes{nullptr};                        ///< Array of sibling hashes
-    std::array<std::optional<mock_pma_entry>, PMA_MAX> m_pmas{}; ///< Array of PMA entries
+    struct context {
+        uint64_t page_count{0};                                    ///< Number of pages in the step log
+        page_type *pages{nullptr};                                 ///< Array of page data
+        uint64_t sibling_count{0};                                 ///< Number of sibling hashes in the step log
+        hash_type *sibling_hashes{nullptr};                        ///< Array of sibling hashes
+        std::array<std::optional<mock_pma_entry>, PMA_MAX> pmas{}; ///< Array of PMA entries
+    };
+
+private:
+    context &m_context; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
 
 public:
     // \brief Construct a replay_step_state_access object from a log image and expected initial root hash
+    // \param context The context object to be filled with the replay step log data
     // \param log_image Image of the step log file
     // \param log_size The size of the log data
     // \param root_hash_before The expected machine root hash before the replay
     // \throw runtime_error if the initial root hash does not match or the log data is invalid
-    replay_step_state_access(unsigned char *log_image, uint64_t log_size, const hash_type &root_hash_before) {
+    replay_step_state_access(context &context, unsigned char *log_image, uint64_t log_size,
+        const hash_type &root_hash_before) :
+        m_context(context) {
         // relevant offsets in the log data
         uint64_t first_page_offset{};
         uint64_t first_siblng_offset{};
@@ -237,36 +243,36 @@ public:
         }
 
         // set page count
-        if (!validate_and_advance_offset(log_size, 0, sizeof(m_page_count), 1, &first_page_offset)) {
+        if (!validate_and_advance_offset(log_size, 0, sizeof(m_context.page_count), 1, &first_page_offset)) {
             interop_throw_runtime_error("page count past end of step log");
         }
-        memcpy(&m_page_count, log_image, sizeof(m_page_count));
-        if (m_page_count == 0) {
+        memcpy(&m_context.page_count, log_image, sizeof(m_context.page_count));
+        if (m_context.page_count == 0) {
             interop_throw_runtime_error("page count is zero");
         }
 
         // set page data
-        if (!validate_and_advance_offset(log_size, first_page_offset, sizeof(page_type), m_page_count,
+        if (!validate_and_advance_offset(log_size, first_page_offset, sizeof(page_type), m_context.page_count,
                 &sibling_count_offset)) {
             interop_throw_runtime_error("page data past end of step log");
         }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        m_pages = reinterpret_cast<page_type *>(log_image + first_page_offset);
+        m_context.pages = reinterpret_cast<page_type *>(log_image + first_page_offset);
 
         // set sibling count and hashes
-        if (!validate_and_advance_offset(log_size, sibling_count_offset, sizeof(m_sibling_count), 1,
+        if (!validate_and_advance_offset(log_size, sibling_count_offset, sizeof(m_context.sibling_count), 1,
                 &first_siblng_offset)) {
             interop_throw_runtime_error("sibling count past end of step log");
         }
-        memcpy(&m_sibling_count, log_image + sibling_count_offset, sizeof(m_sibling_count));
+        memcpy(&m_context.sibling_count, log_image + sibling_count_offset, sizeof(m_context.sibling_count));
 
         // set sibling hashes
-        if (!validate_and_advance_offset(log_size, first_siblng_offset, sizeof(hash_type), m_sibling_count,
+        if (!validate_and_advance_offset(log_size, first_siblng_offset, sizeof(hash_type), m_context.sibling_count,
                 &end_offset)) {
             interop_throw_runtime_error("sibling hashes past end of step log");
         }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        m_sibling_hashes = reinterpret_cast<hash_type *>(log_image + first_siblng_offset);
+        m_context.sibling_hashes = reinterpret_cast<hash_type *>(log_image + first_siblng_offset);
 
         // ensure that we read exactly the expected log size
         if (end_offset != log_size) {
@@ -276,11 +282,11 @@ public:
         // ensure that the page indexes are in increasing order
         // and that the scratch hash area is all zeros
         static const hash_type all_zeros{};
-        for (uint64_t i = 0; i < m_page_count; i++) {
-            if (i > 0 && m_pages[i - 1].index >= m_pages[i].index) {
+        for (uint64_t i = 0; i < m_context.page_count; i++) {
+            if (i > 0 && m_context.pages[i - 1].index >= m_context.pages[i].index) {
                 interop_throw_runtime_error("invalid log format: page index is not in increasing order");
             }
-            if (m_pages[i].hash != all_zeros) {
+            if (m_context.pages[i].hash != all_zeros) {
                 interop_throw_runtime_error("invalid log format: page scratch hash area is not zero");
             }
         }
@@ -295,12 +301,6 @@ public:
         relocate_all_tlb_vh_offset<TLB_READ>();
         relocate_all_tlb_vh_offset<TLB_WRITE>();
     }
-
-    replay_step_state_access(const replay_step_state_access &) = delete;
-    replay_step_state_access(replay_step_state_access &&) = delete;
-    replay_step_state_access &operator=(const replay_step_state_access &) = delete;
-    replay_step_state_access &operator=(replay_step_state_access &&) = delete;
-    ~replay_step_state_access() = default;
 
     // \brief Finish the replay and check the final machine root hash
     // \param final_root_hash The expected final machine root hash
@@ -378,13 +378,13 @@ private:
     page_type *try_find_page(uint64_t address) const {
         const auto page_index = address >> PMA_PAGE_SIZE_LOG2;
         uint64_t min{0};
-        uint64_t max{m_page_count};
+        uint64_t max{m_context.page_count};
         while (min < max) {
             auto mid = (min + max) >> 1;
-            if (m_pages[mid].index == page_index) {
-                return &m_pages[mid];
+            if (m_context.pages[mid].index == page_index) {
+                return &m_context.pages[mid];
             }
-            if (m_pages[mid].index < page_index) {
+            if (m_context.pages[mid].index < page_index) {
                 min = mid + 1;
             } else {
                 max = mid;
@@ -454,20 +454,20 @@ private:
 
     // \brief Compute the current machine root hash
     hash_type compute_root_hash() {
-        for (uint64_t i = 0; i < m_page_count; i++) {
-            interop_merkle_tree_hash(m_pages[i].data, PMA_PAGE_SIZE,
+        for (uint64_t i = 0; i < m_context.page_count; i++) {
+            interop_merkle_tree_hash(m_context.pages[i].data, PMA_PAGE_SIZE,
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-                reinterpret_cast<interop_hash_type>(&m_pages[i].hash));
+                reinterpret_cast<interop_hash_type>(&m_context.pages[i].hash));
         }
 
         size_t next_page = 0;
         size_t next_sibling = 0;
         auto root_hash =
             compute_root_hash_impl(0, interop_log2_root_size - PMA_PAGE_SIZE_LOG2, next_page, next_sibling);
-        if (next_page != m_page_count) {
-            interop_throw_runtime_error("compute_root_hash: next_page != m_page_count");
+        if (next_page != m_context.page_count) {
+            interop_throw_runtime_error("compute_root_hash: next_page != m_context.page_count");
         }
-        if (next_sibling != m_sibling_count) {
+        if (next_sibling != m_context.sibling_count) {
             interop_throw_runtime_error("compute_root_hash: sibling hashes not totally consumed");
         }
         return root_hash;
@@ -483,12 +483,12 @@ private:
         size_t &next_sibling) {
         // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast))
         auto page_count = UINT64_C(1) << page_count_log2_size;
-        if (next_page >= m_page_count || page_index + page_count <= m_pages[next_page].index) {
-            if (next_sibling >= m_sibling_count) {
+        if (next_page >= m_context.page_count || page_index + page_count <= m_context.pages[next_page].index) {
+            if (next_sibling >= m_context.sibling_count) {
                 interop_throw_runtime_error(
                     "compute_root_hash_impl: trying to access beyond sibling count while skipping range");
             }
-            return m_sibling_hashes[next_sibling++];
+            return m_context.sibling_hashes[next_sibling++];
         }
         if (page_count_log2_size > 0) {
             auto left = compute_root_hash_impl(page_index, page_count_log2_size - 1, next_page, next_sibling);
@@ -499,13 +499,13 @@ private:
                 reinterpret_cast<interop_hash_type>(&hash));
             return hash;
         }
-        if (m_pages[next_page].index == page_index) {
-            return m_pages[next_page++].hash;
+        if (m_context.pages[next_page].index == page_index) {
+            return m_context.pages[next_page++].hash;
         }
-        if (next_sibling >= m_sibling_count) {
+        if (next_sibling >= m_context.sibling_count) {
             interop_throw_runtime_error("compute_root_hash_impl: trying to access beyond sibling count");
         }
-        return m_sibling_hashes[next_sibling++];
+        return m_context.sibling_hashes[next_sibling++];
         // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast))
     }
 
@@ -896,13 +896,11 @@ private:
         assert(index < PMA_MAX);
         const uint64_t istart = read_pma_istart(index);
         const uint64_t ilength = read_pma_ilength(index);
-        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
-        const int i = static_cast<int>(index);
-        if (!m_pmas[i]) {
-            m_pmas[i] = mock_pma_entry(index, istart, ilength);
+        if (!m_context.pmas[index]) {
+            m_context.pmas[index] = mock_pma_entry(index, istart, ilength);
         }
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        return m_pmas[i].value();
+        return m_context.pmas[index].value();
     }
 
     unsigned char *do_get_host_memory(mock_pma_entry &pma) { // NOLINT(readability-convert-member-functions-to-static)

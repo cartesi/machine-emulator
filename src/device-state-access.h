@@ -36,7 +36,7 @@ namespace cartesi {
 template <typename STATE_ACCESS>
 class device_state_access : public i_device_state_access {
 public:
-    explicit device_state_access(STATE_ACCESS &a, uint64_t mcycle) : m_a(a), m_mcycle(mcycle) {
+    explicit device_state_access(STATE_ACCESS a, uint64_t mcycle) : m_a(a), m_mcycle(mcycle) {
         static_assert(is_an_i_state_access<STATE_ACCESS>::value, "not an i_state_access");
     }
 
@@ -52,7 +52,7 @@ public:
     ~device_state_access() override = default;
 
 private:
-    STATE_ACCESS &m_a; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+    STATE_ACCESS m_a;
     uint64_t m_mcycle;
 
     void do_set_mip(uint64_t mask) override {

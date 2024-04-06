@@ -214,17 +214,24 @@ SHA3_CFLAGS=-O3
 
 # Optimization flags for the interpreter
 ifneq (,$(filter yes,$(relwithdebinfo) $(release)))
-ifneq (,$(filter gcc,$(CC)))
-# The following flag helps GCC to eliminate more redundant computations in the interpret loop,
-# saving some host instructions and improving performance.
-# This flag is usually enabled by default at -O3,
-# but we don't use -O3 because it enables some other flags that are not worth for the interpreter.
-INTERPRET_CXXFLAGS+=-fgcse-after-reload -fpredictive-commoning -fsplit-paths -ftree-partial-pre
+ifneq (,$(findstring gcc,$(CC)))
+# The following improves computed goto dispatch as stated in GCC manual
+INTERPRET_CXXFLAGS+=-fno-gcse
+# The following remove extra jumps in the computed goto dispatch
+# INTERPRET_CXXFLAGS+=-fno-crossjumping
+# The interpreter dispatch loop performs better as a big inlined function
+INTERPRET_CXXFLAGS+=-finline-limit=1024
+# The interpreter hot loop is big and puts pressure on register allocation, this improves register use
+INTERPRET_CXXFLAGS+=-frename-registers -fweb
+# The interpreter instruction dispatch is big, the following reduces its size minimizing CPU cache pressure
+INTERPRET_CXXFLAGS+=-freorder-blocks-algorithm=simple
+# Some distributions enables stack protector by default, make sure it's disabled
+INTERPRET_CXXFLAGS+=-fno-stack-protector
 endif
-# Disable jump tables, because it degrades the instruction decoding performance in the interpret loop,
-# since it generates a memory indirection that has a high cost in opcode switches.
-INTERPRET_CXXFLAGS+=-fno-jump-tables
 endif
+
+# Make testing new optimization options easier
+INTERPRET_CXXFLAGS+=$(MYINTERPRET_CXXFLAGS)
 
 # Link time optimizations
 ifeq ($(lto),yes)
@@ -262,7 +269,7 @@ PGO_WORKLOAD=\
 	whetstone 25000
 
 LINTER_IGNORE_SOURCES=
-LINTER_IGNORE_HEADERS=
+LINTER_IGNORE_HEADERS=interpret-jump-table.h
 LINTER_SOURCES=$(filter-out $(LINTER_IGNORE_SOURCES),$(strip $(wildcard *.cpp) $(wildcard *.c)))
 LINTER_HEADERS=$(filter-out $(LINTER_IGNORE_HEADERS),$(strip $(wildcard *.hpp) $(wildcard *.h)))
 
@@ -273,7 +280,7 @@ CLANG_FORMAT=clang-format
 CLANG_FORMAT_UARCH_FILES:=$(wildcard ../uarch/*.cpp)
 CLANG_FORMAT_UARCH_FILES:=$(filter-out %uarch-printf%,$(strip $(CLANG_FORMAT_UARCH_FILES)))
 CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.c) $(wildcard *.h) $(wildcard *.hpp) $(CLANG_FORMAT_UARCH_FILES)
-CLANG_FORMAT_IGNORE_FILES:=
+CLANG_FORMAT_IGNORE_FILES:=interpret-jump-table.h
 CLANG_FORMAT_FILES:=$(strip $(CLANG_FORMAT_FILES))
 CLANG_FORMAT_FILES:=$(filter-out $(CLANG_FORMAT_IGNORE_FILES),$(strip $(CLANG_FORMAT_FILES)))
 
@@ -541,13 +548,13 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	echo ')json";' >> jsonrpc-discover.cpp
 	echo '} // namespace cartesi' >> jsonrpc-discover.cpp
 
-%.clang-tidy: %.cpp machine-c-version.h
-	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- $(CXXFLAGS) $(LUA_INC) 2>/dev/null
+%.clang-tidy: %.cpp machine-c-version.h interpret-jump-table.h
+	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- $(CXXFLAGS) $(LUA_INC) -DCLANG_TIDY_LINT 2>/dev/null
 	@$(CXX) $(CXXFLAGS) $(LUA_INC) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
 %.clang-tidy: %.c
-	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- $(CFLAGS) 2>/dev/null
+	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- $(CFLAGS) -DCLANG_TIDY_LINT 2>/dev/null
 	@$(CC) $(CFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
@@ -560,7 +567,10 @@ uarch-pristine-ram.o: $(UARCH_PRISTINE_RAM_C)
 uarch-pristine-hash.o: $(UARCH_PRISTINE_HASH_C)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-interpret.o: interpret.cpp machine-c-version.h
+interpret-jump-table.h: ../tools/gen-interpret-jump-table.lua
+	$< > $@
+
+interpret.o: interpret.cpp machine-c-version.h interpret-jump-table.h
 	$(CXX) $(CXXFLAGS) $(INTERPRET_CXXFLAGS) -c -o $@ $<
 
 %.o: %.cpp machine-c-version.h
@@ -571,7 +581,7 @@ interpret.o: interpret.cpp machine-c-version.h
 
 ../uarch/uarch-pristine-ram.c ../uarch/uarch-pristine-hash.c: generate-uarch-pristine
 
-generate-uarch-pristine:
+generate-uarch-pristine: machine-c-version.h interpret-jump-table.h
 ifeq (,$(wildcard ../uarch/uarch-pristine-hash.c))
 	@if [ "$(DEV_ENV_HAS_TOOLCHAIN)" = "yes" ]; then \
 		$(MAKE) -C .. uarch; \
@@ -583,7 +593,7 @@ endif
 clean: clean-auto-generated clean-coverage clean-profile clean-tidy clean-libcartesi clean-executables
 
 clean-auto-generated:
-	@rm -f jsonrpc-discover.cpp machine-c-version.h
+	@rm -f jsonrpc-discover.cpp machine-c-version.h interpret-jump-table.h
 
 clean-tidy:
 	@rm -f *.clang-tidy

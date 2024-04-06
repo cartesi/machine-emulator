@@ -103,6 +103,7 @@ jobs:
             uarch-pristine-ram.c
             uarch-pristine-hash.c
             machine-c-version.h
+            interpret-jump-table.h
             cartesi-machine-v${{ env.MACHINE_EMULATOR_VERSION }}_amd64.deb
             cartesi-machine-v${{ env.MACHINE_EMULATOR_VERSION }}_arm64.deb
 
@@ -723,6 +724,7 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
           mv artifacts/machine-c-version.h src
+          mv artifacts/interpret-jump-table.h src
           mv artifacts/uarch-pristine-ram.c uarch
           mv artifacts/uarch-pristine-hash.c uarch
           make create-generated-files-patch

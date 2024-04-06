@@ -5472,48 +5472,61 @@ static FORCE_INLINE fetch_status fetch_translate_pc(STATE_ACCESS &a, uint64_t &p
 template <typename STATE_ACCESS>
 static FORCE_INLINE fetch_status fetch_insn(STATE_ACCESS &a, uint64_t &pc, uint32_t &insn, uint64_t &fetch_vaddr_page,
     uint64_t &fetch_vh_offset) {
-    unsigned char *hptr = nullptr;
-    const uint64_t vaddr_page = pc & ~PAGE_OFFSET_MASK;
-    // If pc is in the same page as the last pc fetch,
-    // we can just reuse last fetch translation, skipping TLB or slow address translation altogether.
-    if (likely(vaddr_page == fetch_vaddr_page)) {
-        hptr = cast_addr_to_ptr<unsigned char *>(pc + fetch_vh_offset);
+    // Efficiently checks if current pc is in the same page as last pc fetch
+    // and it's not crossing a page boundary.
+    if (likely((pc ^ fetch_vaddr_page) < (PMA_PAGE_SIZE - 2))) {
+        // Fetch pc is in the same page as the last pc fetch and it's not crossing a page boundary,
+        // we can just reuse last fetch translation, skipping TLB or slow address translation altogether.
+        const unsigned char *hptr = cast_addr_to_ptr<unsigned char *>(pc + fetch_vh_offset);
+
+        // Here we are sure that reading 4 bytes won't cross a page boundary.
+        // However pc may not be 4 byte aligned, at best it can only be 2-byte aligned,
+        // therefore we must perform a misaligned 4 byte read on a 2 byte aligned pointer.
+        // In case pc holds a compressed instruction, insn will store 2 additional bytes,
+        // but this is fine because later the instruction decoder will discard them.
+        insn = aliased_unaligned_read<uint32_t, uint16_t>(hptr);
+        return fetch_status::success;
     } else {
-        // Not in the same page as last the fetch, we need to perform address translation
+        // Fetch pc is either not the same as last cache or crossing a page boundary.
+
+        // Perform address translation
+        unsigned char *hptr = nullptr;
         if (unlikely(fetch_translate_pc(a, pc, pc, &hptr) == fetch_status::exception)) {
             return fetch_status::exception;
         }
         // Update fetch address translation cache
-        fetch_vaddr_page = vaddr_page;
+        fetch_vaddr_page = pc & ~PAGE_OFFSET_MASK;
         fetch_vh_offset = cast_ptr_to_addr<uint64_t>(hptr) - pc;
-    }
-    // The following code assumes pc is always 2-byte aligned, this is guaranteed by RISC-V spec.
-    // If pc is pointing to the very last 2 bytes of a page, it's crossing a page boundary.
-    if (unlikely(((~pc & PAGE_OFFSET_MASK) >> 1) == 0)) {
-        // Here we are crossing page boundary, this is unlikely (1 in 2048 possible cases)
-        insn = aliased_aligned_read<uint16_t>(hptr);
-        // If not a compressed instruction, we must read 2 additional bytes from the next page.
-        if (unlikely((insn & 3) == 3)) {
-            // We have to perform a new address translation to read the next 2 bytes since we changed pages.
-            const uint64_t vaddr = pc + 2;
-            if (unlikely(fetch_translate_pc(a, pc, vaddr, &hptr) == fetch_status::exception)) {
-                return fetch_status::exception;
+
+        // The following code assumes pc is always 2-byte aligned, this is guaranteed by RISC-V spec.
+        // If pc is pointing to the very last 2 bytes of a page, it's crossing a page boundary.
+        if (unlikely(((~pc & PAGE_OFFSET_MASK) >> 1) == 0)) {
+            // Here we are crossing page boundary, this is unlikely (1 in 2048 possible cases)
+            insn = aliased_aligned_read<uint16_t>(hptr);
+            // If not a compressed instruction, we must read 2 additional bytes from the next page.
+            if (unlikely((insn & 3) == 3)) {
+                // We have to perform a new address translation to read the next 2 bytes since we changed pages.
+                const uint64_t vaddr = pc + 2;
+                if (unlikely(fetch_translate_pc(a, pc, vaddr, &hptr) == fetch_status::exception)) {
+                    return fetch_status::exception;
+                }
+                // Update fetch translation cache
+                fetch_vaddr_page = vaddr;
+                fetch_vh_offset = cast_ptr_to_addr<uint64_t>(hptr) - vaddr;
+                // Produce the final 4-byte instruction
+                insn |= aliased_aligned_read<uint16_t>(hptr) << 16;
             }
-            // Update fetch translation cache
-            fetch_vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
-            fetch_vh_offset = cast_ptr_to_addr<uint64_t>(hptr) - vaddr;
-            // Produce the final 4-byte instruction
-            insn |= aliased_aligned_read<uint16_t>(hptr) << 16;
+            return fetch_status::success;
         }
+
+        // Here we are sure that reading 4 bytes won't cross a page boundary.
+        // However pc may not be 4 byte aligned, at best it can only be 2-byte aligned,
+        // therefore we must perform a misaligned 4 byte read on a 2 byte aligned pointer.
+        // In case pc holds a compressed instruction, insn will store 2 additional bytes,
+        // but this is fine because later the instruction decoder will discard them.
+        insn = aliased_unaligned_read<uint32_t, uint16_t>(hptr);
         return fetch_status::success;
     }
-    // Here we are sure that reading 4 bytes won't cross a page boundary.
-    // However pc may not be 4 byte aligned, at best it can only be 2-byte aligned,
-    // therefore we must perform a misaligned 4 byte read on a 2 byte aligned pointer.
-    // In case pc holds a compressed instruction, insn will store 2 additional bytes,
-    // but this is fine because later the instruction decoder will discard them.
-    insn = aliased_unaligned_read<uint32_t, uint16_t>(hptr);
-    return fetch_status::success;
 }
 
 /// \brief Checks that false brk is consistent with rest of state
@@ -5542,7 +5555,7 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
     uint64_t pc = a.read_pc();
 
     // Initialize fetch address translation cache invalidated
-    uint64_t fetch_vaddr_page = PAGE_OFFSET_MASK;
+    uint64_t fetch_vaddr_page = ~pc;
     uint64_t fetch_vh_offset = 0;
 
     // The outer loop continues until there is an interruption that should be handled
@@ -5592,7 +5605,7 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
                     // due to MRET/SRET instructions (execute_status::success_and_serve_interrupts)
                     // As a simplification (and optimization), the next line will also invalidate in more cases,
                     // but this it's fine.
-                    fetch_vaddr_page = PAGE_OFFSET_MASK;
+                    fetch_vaddr_page = ~pc;
                     // All status above execute_status::success_and_serve_interrupts will require breaking the loop
                     if (unlikely(status >= execute_status::success_and_serve_interrupts)) {
                         // Increment the cycle counter mcycle

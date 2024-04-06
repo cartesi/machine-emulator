@@ -59,9 +59,10 @@ struct machine_state {
 
     // The following state fields are very hot,
     // and are carefully ordered to have better data locality in the interpreter loop.
+    // The X registers are the very first to optimize access of registers in the interpreter.
+    std::array<uint64_t, X_REG_COUNT> x{}; ///< Register file
     uint64_t mcycle{};                     ///< CSR mcycle.
     uint64_t pc{};                         ///< Program counter.
-    std::array<uint64_t, X_REG_COUNT> x{}; ///< Register file.
     uint64_t fcsr{};                       ///< CSR fcsr.
     std::array<uint64_t, F_REG_COUNT> f{}; ///< Floating-point register file.
 

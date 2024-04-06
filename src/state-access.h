@@ -56,17 +56,6 @@ public:
         ;
     }
 
-    /// \brief No copy constructor
-    state_access(const state_access &) = delete;
-    /// \brief No copy assignment
-    state_access &operator=(const state_access &) = delete;
-    /// \brief No move constructor
-    state_access(state_access &&) = delete;
-    /// \brief No move assignment
-    state_access &operator=(state_access &&) = delete;
-    /// \brief Default destructor
-    ~state_access() = default;
-
     const machine &get_naked_machine() const {
         return m_m;
     }
@@ -496,8 +485,7 @@ private:
 
     pma_entry &do_read_pma_entry(uint64_t index) {
         assert(index < PMA_MAX);
-        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
-        return m_m.get_state().pmas[static_cast<int>(index)];
+        return m_m.get_state().pmas[index];
     }
 
     template <TLB_entry_type ETYPE, typename T>

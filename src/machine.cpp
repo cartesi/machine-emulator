@@ -18,12 +18,14 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <type_traits>
@@ -848,7 +850,7 @@ machine::~machine() {
 #ifdef DUMP_HIST
     std::ignore = fprintf(stderr, "\nInstruction Histogram:\n");
     for (auto v : m_s.insn_hist) {
-        std::ignore = fprintf(stderr, "%s: %" PRIu64 "\n", v.first.c_str(), v.second);
+        std::ignore = fprintf(stderr, "%12" PRIu64 "  %s\n", v.second, v.first.c_str());
     }
 #endif
 #if DUMP_COUNTERS
@@ -1993,7 +1995,7 @@ void machine::fill_memory(uint64_t address, uint8_t data, uint64_t length) {
 }
 
 void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uint64_t length) {
-    state_access a(*this);
+    const state_access a(*this);
     if (length == 0) {
         return;
     }
@@ -2024,7 +2026,7 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
 }
 
 void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *data, uint64_t length) {
-    state_access a(*this);
+    const state_access a(*this);
     if (length == 0) {
         return;
     }
@@ -2057,7 +2059,7 @@ void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *da
 }
 
 uint64_t machine::translate_virtual_address(uint64_t vaddr) {
-    state_access a(*this);
+    const state_access a(*this);
     // perform address translation using read access mode
     uint64_t paddr = 0;
     if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr, vaddr, PTE_XWR_R_SHIFT)) {
@@ -2092,7 +2094,7 @@ uint64_t machine::read_word(uint64_t word_address) const {
 }
 
 void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {
-    state_access a(*this);
+    const state_access a(*this);
     cartesi::send_cmio_response(a, reason, data, length);
 }
 
@@ -2100,8 +2102,9 @@ access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char 
     const access_log::type &log_type) {
     hash_type root_hash_before;
     get_root_hash(root_hash_before);
+    access_log log(log_type);
     // Call send_cmio_response  with the recording state accessor
-    record_send_cmio_state_access a(*this, log_type);
+    record_send_cmio_state_access a(*this, log);
     a.push_bracket(bracket_type::begin, "send cmio response");
     cartesi::send_cmio_response(a, reason, data, length);
     a.push_bracket(bracket_type::end, "send cmio response");
@@ -2109,8 +2112,8 @@ access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char 
     hash_type root_hash_after;
     update_merkle_tree();
     get_root_hash(root_hash_after);
-    verify_send_cmio_response(reason, data, length, root_hash_before, *a.get_log(), root_hash_after);
-    return std::move(*a.get_log());
+    verify_send_cmio_response(reason, data, length, root_hash_before, log, root_hash_after);
+    return log;
 }
 
 void machine::verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
@@ -2119,9 +2122,9 @@ void machine::verify_send_cmio_response(uint16_t reason, const unsigned char *da
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
     }
-
+    replay_send_cmio_state_access::context context(log, root_hash_before);
     // Verify all intermediate state transitions
-    replay_send_cmio_state_access a(log, root_hash_before);
+    replay_send_cmio_state_access a(context);
     cartesi::send_cmio_response(a, reason, data, length);
     a.finish();
 
@@ -2242,7 +2245,8 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
     }
     hash_type root_hash_before;
     get_root_hash(root_hash_before);
-    record_step_state_access a(*this, filename);
+    record_step_state_access::context context(filename);
+    record_step_state_access a(context, *this);
     uint64_t mcycle_end{};
     if (__builtin_add_overflow(a.read_mcycle(), mcycle_count, &mcycle_end)) {
         mcycle_end = UINT64_MAX;
@@ -2259,7 +2263,8 @@ interpreter_break_reason machine::verify_step(const hash_type &root_hash_before,
     uint64_t mcycle_count, const hash_type &root_hash_after) {
     auto data_length = os_get_file_length(filename.c_str(), "step log file");
     auto *data = os_map_file(filename.c_str(), data_length, false /* not shared */);
-    replay_step_state_access a(data, data_length, root_hash_before);
+    replay_step_state_access::context context;
+    replay_step_state_access a(context, data, data_length, root_hash_before);
     uint64_t mcycle_end{};
     if (__builtin_add_overflow(a.read_mcycle(), mcycle_count, &mcycle_end)) {
         mcycle_end = UINT64_MAX;
@@ -2274,7 +2279,7 @@ interpreter_break_reason machine::run(uint64_t mcycle_end) {
     if (mcycle_end < read_reg(reg::mcycle)) {
         throw std::invalid_argument{"mcycle is past"};
     }
-    state_access a(*this);
+    const state_access a(*this);
     return interpret(a, mcycle_end);
 }
 

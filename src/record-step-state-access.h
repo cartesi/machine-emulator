@@ -33,6 +33,7 @@ namespace cartesi {
 /// \class record_step_state_access
 /// \brief Records machine state access into a step log file
 class record_step_state_access : public i_state_access<record_step_state_access, pma_entry> {
+public:
     constexpr static int TREE_LOG2_ROOT_SIZE = machine_merkle_tree::get_log2_root_size();
     constexpr static int TREE_LOG2_PAGE_SIZE = machine_merkle_tree::get_log2_page_size();
     constexpr static uint64_t TREE_PAGE_SIZE = UINT64_C(1) << TREE_LOG2_PAGE_SIZE;
@@ -44,32 +45,38 @@ class record_step_state_access : public i_state_access<record_step_state_access,
     using sibling_hashes_type = std::vector<hash_type>;
     using page_indices_type = std::vector<address_type>;
 
-    // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
-    machine &m_m;                       ///<  reference to machine
-    std::string m_filename;             ///<  where to save the log
-    mutable pages_type m_touched_pages; ///<  copy of all pages touched during execution
+    struct context {
+        /// \brief Constructor of record step state access context
+        /// \param filename where to save the log
+        explicit context(std::string filename) : filename(std::move(filename)) {
+            ;
+        }
+        std::string filename;             ///<  where to save the log
+        mutable pages_type touched_pages; ///<  copy of all pages touched during execution
+    };
+
+private:
+    // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
+    context &m_context; ///<  context for the recording
+    machine &m_m;       ///<  reference to machine
+    // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 
 public:
-    /// \brief Constructor
+    /// \brief Constructor of record step state access
+    /// \param context Context for the recording with the log filename
     /// \param m reference to machine
-    /// \param filename where to save the log
     /// \details The log file is saved when finish() is called
-    record_step_state_access(machine &m, const std::string &filename) : m_m(m), m_filename(filename) {
-        if (os_file_exists(filename.c_str())) {
+    record_step_state_access(context &context, machine &m) : m_context(context), m_m(m) {
+        if (os_file_exists(m_context.filename.c_str())) {
             throw std::runtime_error("file already exists");
         }
     }
-    record_step_state_access(const record_step_state_access &) = delete;
-    record_step_state_access(record_step_state_access &&) = delete;
-    record_step_state_access &operator=(const record_step_state_access &) = delete;
-    record_step_state_access &operator=(record_step_state_access &&) = delete;
-    ~record_step_state_access() = default;
 
     /// \brief Finish recording and save the log file
     void finish() {
         // get sibling hashes of all touched pages
         auto sibling_hashes = get_sibling_hashes();
-        uint64_t page_count = m_touched_pages.size();
+        uint64_t page_count = m_context.touched_pages.size();
         uint64_t sibling_count = sibling_hashes.size();
 
         // Write log file.
@@ -78,11 +85,11 @@ public:
         // We store the page index, instead of the page address.
         // Scratch area is used by the replay to store page hashes, which change during replay
         // This is to work around the lack of dynamic memory allocation when replaying the log in microarchitectures
-        auto fp = unique_fopen(m_filename.c_str(), "wb");
+        auto fp = unique_fopen(m_context.filename.c_str(), "wb");
         if (fwrite(&page_count, sizeof(page_count), 1, fp.get()) != 1) {
             throw std::runtime_error("Could not write page count to log file");
         }
-        for (auto &[address, data] : m_touched_pages) {
+        for (auto &[address, data] : m_context.touched_pages) {
             const auto page_index = address >> TREE_LOG2_PAGE_SIZE;
             if (fwrite(&page_index, sizeof(page_index), 1, fp.get()) != 1) {
                 throw std::runtime_error("Could not write page index to log file");
@@ -112,10 +119,10 @@ private:
     /// \param address address of the page
     void touch_page(address_type address) const {
         auto page = address & ~(TREE_PAGE_SIZE - 1);
-        if (m_touched_pages.find(page) != m_touched_pages.end()) {
+        if (m_context.touched_pages.find(page) != m_context.touched_pages.end()) {
             return; // already saved
         }
-        auto [it, _] = m_touched_pages.emplace(page, page_data_type());
+        auto [it, _] = m_context.touched_pages.emplace(page, page_data_type());
         m_m.read_memory(page, it->second.data(), it->second.size());
     }
 
@@ -125,7 +132,7 @@ private:
         // page address are converted to page indices, in order to avoid overflows
         page_indices_type page_indices{};
         // iterate in ascending order of page addresses (the container is ordered by key)
-        for (const auto &[address, _] : m_touched_pages) {
+        for (const auto &[address, _] : m_context.touched_pages) {
             page_indices.push_back(address >> TREE_LOG2_PAGE_SIZE);
         }
         auto next_page_index = page_indices.cbegin();
@@ -627,8 +634,7 @@ private:
     pma_entry &do_read_pma_entry(uint64_t index) {
         assert(index < PMA_MAX);
         touch_page(shadow_pmas_get_pma_abs_addr(index));
-        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
-        return m_m.get_state().pmas[static_cast<int>(index)];
+        return m_m.get_state().pmas[index];
     }
 
     template <TLB_entry_type ETYPE, typename T>

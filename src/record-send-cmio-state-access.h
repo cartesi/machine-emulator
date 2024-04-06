@@ -45,10 +45,9 @@ class record_send_cmio_state_access : public i_state_access<record_send_cmio_sta
     using hasher_type = machine_merkle_tree::hasher_type;
     using hash_type = machine_merkle_tree::hash_type;
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
-    machine &m_m; ///< Associated machine
-    machine_state &m_s;
+    machine &m_m;      ///< Associated machine
+    access_log &m_log; ///< Pointer to access log
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
-    std::shared_ptr<access_log> m_log; ///< Pointer to access log
 
     static void get_hash(const access_data &data, hash_type &hash) {
         hasher_type hasher;
@@ -57,33 +56,10 @@ class record_send_cmio_state_access : public i_state_access<record_send_cmio_sta
 
 public:
     /// \brief Constructor from machine state.
-    /// \param m Pointer to machine state.
-    explicit record_send_cmio_state_access(machine &m, access_log::type log_type) :
-        m_m(m),
-        m_s(m.get_state()),
-        m_log(std::make_shared<access_log>(log_type)) {
+    /// \param m Reference to machine state.
+    /// \param log Reference to access log.
+    explicit record_send_cmio_state_access(machine &m, access_log &log) : m_m(m), m_log(log) {
         ;
-    }
-
-    /// \brief No copy constructor
-    record_send_cmio_state_access(const record_send_cmio_state_access &) = delete;
-    /// \brief No copy assignment
-    record_send_cmio_state_access &operator=(const record_send_cmio_state_access &) = delete;
-    /// \brief No move constructor
-    record_send_cmio_state_access(record_send_cmio_state_access &&) = delete;
-    /// \brief No move assignment
-    record_send_cmio_state_access &operator=(record_send_cmio_state_access &&) = delete;
-    /// \brief Default destructor
-    ~record_send_cmio_state_access() = default;
-
-    /// \brief Returns const pointer to access log.
-    std::shared_ptr<const access_log> get_log() const {
-        return m_log;
-    }
-
-    /// \brief Returns pointer to access log.
-    std::shared_ptr<access_log> get_log() {
-        return m_log;
     }
 
 private:
@@ -119,7 +95,7 @@ private:
         m_m.read_memory(pleaf_aligned, a.get_read().value().data(), machine_merkle_tree::get_word_size());
         get_hash(a.get_read().value(), a.get_read_hash());
         // NOLINTEND(bugprone-unchecked-optional-access)
-        m_log->push_access(std::move(a), text);
+        m_log.push_access(std::move(a), text);
     }
 
     /// \brief Logs a write access before it happens.
@@ -162,7 +138,7 @@ private:
         a.get_written_hash().emplace();
         get_hash(a.get_written().value(), a.get_written_hash().value());
         // NOLINTEND(bugprone-unchecked-optional-access)
-        m_log->push_access(std::move(a), text);
+        m_log.push_access(std::move(a), text);
     }
 
     /// \brief Updates the Merkle tree after the modification of a word in the machine state.
@@ -196,7 +172,7 @@ private:
     friend i_state_access<record_send_cmio_state_access, pma_entry>;
 
     void do_push_bracket(bracket_type &type, const char *text) {
-        m_log->push_bracket(type, text);
+        m_log.push_bracket(type, text);
     }
 
     void do_write_iflags_Y(uint64_t val) {
@@ -243,7 +219,7 @@ private:
         auto proof = m_m.get_proof(paddr, write_length_log2_size);
         // log hash and data before write
         a.set_read_hash(proof.get_target_hash());
-        if (m_log->get_log_type().has_large_data()) {
+        if (m_log.get_log_type().has_large_data()) {
             access_data &data = a.get_read().emplace(write_length);
             memcpy(data.data(), pma.get_memory().get_host_memory(), write_length);
         }
@@ -265,12 +241,12 @@ private:
         hasher_type hasher{};
         get_merkle_tree_hash(hasher, pma.get_memory().get_host_memory(), write_length,
             machine_merkle_tree::get_word_size(), a.get_written_hash().value());
-        if (m_log->get_log_type().has_large_data()) {
+        if (m_log.get_log_type().has_large_data()) {
             access_data &data = a.get_written().emplace(write_length);
             memcpy(data.data(), pma.get_memory().get_host_memory(), write_length);
         }
         // NOLINTEND(bugprone-unchecked-optional-access)
-        m_log->push_access(a, "cmio rx buffer");
+        m_log.push_access(a, "cmio rx buffer");
     }
 };
 

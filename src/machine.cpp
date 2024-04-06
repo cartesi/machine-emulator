@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -833,7 +834,7 @@ machine::~machine() {
 #ifdef DUMP_HIST
     std::ignore = fprintf(stderr, "\nInstruction Histogram:\n");
     for (auto v : m_s.insn_hist) {
-        std::ignore = fprintf(stderr, "%s: %" PRIu64 "\n", v.first.c_str(), v.second);
+        std::ignore = fprintf(stderr, "%12" PRIu64 "  %s\n", v.second, v.first.c_str());
     }
 #endif
 #if DUMP_COUNTERS
@@ -2245,7 +2246,7 @@ void machine::fill_memory(uint64_t address, uint8_t data, uint64_t length) {
 }
 
 void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uint64_t length) {
-    state_access a(*this);
+    const state_access a(*this);
     if (length == 0) {
         return;
     }
@@ -2276,7 +2277,7 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
 }
 
 void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *data, uint64_t length) {
-    state_access a(*this);
+    const state_access a(*this);
     if (length == 0) {
         return;
     }
@@ -2309,7 +2310,7 @@ void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *da
 }
 
 uint64_t machine::translate_virtual_address(uint64_t vaddr) {
-    state_access a(*this);
+    const state_access a(*this);
     // perform address translation using read access mode
     uint64_t paddr = 0;
     if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr, vaddr, PTE_XWR_R_SHIFT)) {
@@ -2486,7 +2487,7 @@ interpreter_break_reason machine::run(uint64_t mcycle_end) {
     if (mcycle_end < read_reg(reg::mcycle)) {
         throw std::invalid_argument{"mcycle is past"};
     }
-    state_access a(*this);
+    const state_access a(*this);
     return interpret(a, mcycle_end);
 }
 

@@ -194,7 +194,7 @@ struct i_sfloat {
 
     /// \brief Right shift that takes rounding in account, used for adjust mantissa.
     static F_UINT mant_rshift_rnd(F_UINT a, int d) {
-        if (d != 0) {
+        if (d > 0) {
             if (d >= F_SIZE) {
                 return (a != 0);
             }

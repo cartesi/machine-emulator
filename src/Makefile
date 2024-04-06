@@ -218,11 +218,12 @@ ifneq (,$(filter gcc,$(CC)))
 # saving some host instructions and improving performance.
 # This flag is usually enabled by default at -O3,
 # but we don't use -O3 because it enables some other flags that are not worth for the interpreter.
-INTERPRET_CXXFLAGS+=-fgcse-after-reload -fpredictive-commoning -fsplit-paths -ftree-partial-pre
+INTERPRET_CXXFLAGS+=-fgcse-after-reload -fpredictive-commoning -fsplit-paths -ftree-partial-pre -fpeel-loops
+# GCC manual says that we should disable gcse when using computed gotos
+INTERPRET_CXXFLAGS+=-fno-gcse
+# The interpreter dispatch loop performs better as a big inlined function
+INTERPRET_CXXFLAGS+=-finline-limit=1024
 endif
-# Disable jump tables, because it degrades the instruction decoding performance in the interpret loop,
-# since it generates a memory indirection that has a high cost in opcode switches.
-INTERPRET_CXXFLAGS+=-fno-jump-tables
 endif
 
 # Link time optimizations

@@ -533,10 +533,10 @@ static inline void set_rtc_interrupt(STATE_ACCESS &a, uint64_t mcycle) {
     }
 }
 
-/// \brief Obtains the funct3 and opcode fields an instruction.
+/// \brief Obtains the id fields an instruction.
 /// \param insn Instruction.
-static FORCE_INLINE uint32_t insn_get_funct3_opcode(uint32_t insn) {
-    return ((insn >> 5) & 0b111'0000000) | (insn & 0b1111111);
+static FORCE_INLINE uint32_t insn_get_id(uint32_t insn) {
+    return ((insn >> 5) & 0b1111'0000000) | (insn & 0b1111111);
 }
 
 /// \brief Obtains the funct3 and trailing 0 bits from an instruction.
@@ -656,12 +656,6 @@ static FORCE_INLINE uint32_t insn_get_rm(uint32_t insn, uint32_t fcsr) {
 /// \param insn Instruction.
 static inline uint32_t insn_get_rs3(uint32_t insn) {
     return (insn >> 27);
-}
-
-/// \brief Obtains the compressed instruction funct3 and opcode fields an instruction.
-/// \param insn Instruction.
-static FORCE_INLINE uint32_t insn_get_c_funct3(uint32_t insn) {
-    return ((insn >> 11) & 0b111'00) | (insn & 0b11);
 }
 
 /// \brief Obtains the compressed instruction funct6, funct2 and opcode fields an instruction.
@@ -5128,18 +5122,20 @@ static FORCE_INLINE execute_status execute_C_Q2_SET0(STATE_ACCESS &a, uint64_t &
     const uint32_t rs1 = insn_get_rd(insn);
     const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
     if (insn & 0b0001000000000000) {
-        if (rs2 == 0) {
-            if (rs1 == 0) {
-                return execute_C_EBREAK(a, pc, insn);
-            }
+        if (rs2 != 0) {
+            return execute_C_ADD(a, pc, insn, rs1, rs2);
+        } else if (rs1 != 0) {
             return execute_C_JALR(a, pc, insn, rs1);
+        } else {
+            return execute_C_EBREAK(a, pc, insn);
         }
-        return execute_C_ADD(a, pc, insn, rs1, rs2);
+    } else {
+        if (rs2 != 0) {
+            return execute_C_MV(a, pc, insn, rs1, rs2);
+        } else {
+            return execute_C_JR(a, pc, insn, rs1);
+        }
     }
-    if (rs2 == 0) {
-        return execute_C_JR(a, pc, insn, rs1);
-    }
-    return execute_C_MV(a, pc, insn, rs1, rs2);
 }
 
 /// \brief Implementation of the C.FSDSP instruction.
@@ -5172,265 +5168,6 @@ static FORCE_INLINE execute_status execute_C_SDSP(STATE_ACCESS &a, uint64_t &pc,
     const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
     const int32_t imm = insn_get_C_FSDSP_SDSP_imm(insn);
     return execute_C_S<uint64_t>(a, pc, mcycle, rs2, 0x2, imm);
-}
-
-/// \brief Decodes and executes an instruction.
-/// \tparam STATE_ACCESS Class of machine state accessor object.
-/// \param a Machine state accessor object.
-/// \param pc Current pc.
-/// \param insn Instruction.
-/// \return execute_status::failure if an exception was raised, or
-///  execute_status::success otherwise.
-/// \details The execute_insn function decodes the instruction in multiple levels. When we know for sure that
-///  the instruction could only be a &lt;FOO&gt;, a function with the name execute_&lt;FOO&gt; will be called.
-///  See [RV32/64G Instruction Set
-///  Listings](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#chapter.19) and [Instruction
-///  listings for RISC-V](https://content.riscv.org/wp-content/uploads/2017/05/riscv-spec-v2.2.pdf#table.19.2).
-template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_insn(STATE_ACCESS &a, uint64_t &pc, uint64_t &mcycle, uint32_t insn) {
-    // Is compressed instruction
-    if ((insn & 3) != 3) {
-        // The fetch may read 4 bytes as an optimization,
-        // but the compressed instruction uses only the 2 less significant bytes
-        insn = static_cast<uint16_t>(insn);
-        auto c_funct3 = static_cast<insn_c_funct3>(insn_get_c_funct3(insn));
-        switch (c_funct3) {
-            case insn_c_funct3::C_ADDI4SPN:
-                return execute_C_ADDI4SPN(a, pc, insn);
-            case insn_c_funct3::C_LW:
-                return execute_C_LW(a, pc, mcycle, insn);
-            case insn_c_funct3::C_LD:
-                return execute_C_LD(a, pc, mcycle, insn);
-            case insn_c_funct3::C_SW:
-                return execute_C_SW(a, pc, mcycle, insn);
-            case insn_c_funct3::C_SD:
-                return execute_C_SD(a, pc, mcycle, insn);
-            case insn_c_funct3::C_Q1_SET0:
-                return execute_C_Q1_SET0(a, pc, insn);
-            case insn_c_funct3::C_ADDIW:
-                return execute_C_ADDIW(a, pc, insn);
-            case insn_c_funct3::C_LI:
-                return execute_C_LI(a, pc, insn);
-            case insn_c_funct3::C_Q1_SET1:
-                return execute_C_Q1_SET1(a, pc, insn);
-            case insn_c_funct3::C_Q1_SET2:
-                return execute_C_Q1_SET2(a, pc, insn);
-            case insn_c_funct3::C_J:
-                return execute_C_J(a, pc, insn);
-            case insn_c_funct3::C_BEQZ:
-                return execute_C_BEQZ(a, pc, insn);
-            case insn_c_funct3::C_BNEZ:
-                return execute_C_BNEZ(a, pc, insn);
-            case insn_c_funct3::C_SLLI:
-                return execute_C_SLLI(a, pc, insn);
-            case insn_c_funct3::C_LWSP:
-                return execute_C_LWSP(a, pc, mcycle, insn);
-            case insn_c_funct3::C_LDSP:
-                return execute_C_LDSP(a, pc, mcycle, insn);
-            case insn_c_funct3::C_Q2_SET0:
-                return execute_C_Q2_SET0(a, pc, insn);
-            case insn_c_funct3::C_SWSP:
-                return execute_C_SWSP(a, pc, mcycle, insn);
-            case insn_c_funct3::C_SDSP:
-                return execute_C_SDSP(a, pc, mcycle, insn);
-            case insn_c_funct3::C_FLD:
-                return execute_C_FLD(a, pc, mcycle, insn);
-            case insn_c_funct3::C_FSD:
-                return execute_C_FSD(a, pc, mcycle, insn);
-            case insn_c_funct3::C_FLDSP:
-                return execute_C_FLDSP(a, pc, mcycle, insn);
-            case insn_c_funct3::C_FSDSP:
-                return execute_C_FSDSP(a, pc, mcycle, insn);
-            default:
-                return raise_illegal_insn_exception(a, pc, insn);
-        }
-    } else {
-        auto funct3_opcode = static_cast<insn_funct3_opcode>(insn_get_funct3_opcode(insn));
-        // This switch will be optimized as a single jump in conjuction with GCC flags
-        // -fjump-tables --param jump-table-max-growth-ratio-for-speed=4096
-        switch (funct3_opcode) {
-            case insn_funct3_opcode::LB:
-                return execute_LB(a, pc, mcycle, insn);
-            case insn_funct3_opcode::LH:
-                return execute_LH(a, pc, mcycle, insn);
-            case insn_funct3_opcode::LW:
-                return execute_LW(a, pc, mcycle, insn);
-            case insn_funct3_opcode::LD:
-                return execute_LD(a, pc, mcycle, insn);
-            case insn_funct3_opcode::LBU:
-                return execute_LBU(a, pc, mcycle, insn);
-            case insn_funct3_opcode::LHU:
-                return execute_LHU(a, pc, mcycle, insn);
-            case insn_funct3_opcode::LWU:
-                return execute_LWU(a, pc, mcycle, insn);
-            case insn_funct3_opcode::SB:
-                return execute_SB(a, pc, mcycle, insn);
-            case insn_funct3_opcode::SH:
-                return execute_SH(a, pc, mcycle, insn);
-            case insn_funct3_opcode::SW:
-                return execute_SW(a, pc, mcycle, insn);
-            case insn_funct3_opcode::SD:
-                return execute_SD(a, pc, mcycle, insn);
-            case insn_funct3_opcode::FENCE:
-                return execute_FENCE(a, pc, insn);
-            case insn_funct3_opcode::FENCE_I:
-                return execute_FENCE_I(a, pc, insn);
-            case insn_funct3_opcode::ADDI:
-                return execute_ADDI(a, pc, insn);
-            case insn_funct3_opcode::SLLI:
-                return execute_SLLI(a, pc, insn);
-            case insn_funct3_opcode::SLTI:
-                return execute_SLTI(a, pc, insn);
-            case insn_funct3_opcode::SLTIU:
-                return execute_SLTIU(a, pc, insn);
-            case insn_funct3_opcode::XORI:
-                return execute_XORI(a, pc, insn);
-            case insn_funct3_opcode::ORI:
-                return execute_ORI(a, pc, insn);
-            case insn_funct3_opcode::ANDI:
-                return execute_ANDI(a, pc, insn);
-            case insn_funct3_opcode::ADDIW:
-                return execute_ADDIW(a, pc, insn);
-            case insn_funct3_opcode::SLLIW:
-                return execute_SLLIW(a, pc, insn);
-            case insn_funct3_opcode::SLLW:
-                return execute_SLLW(a, pc, insn);
-            case insn_funct3_opcode::DIVW:
-                return execute_DIVW(a, pc, insn);
-            case insn_funct3_opcode::REMW:
-                return execute_REMW(a, pc, insn);
-            case insn_funct3_opcode::REMUW:
-                return execute_REMUW(a, pc, insn);
-            case insn_funct3_opcode::BEQ:
-                return execute_BEQ(a, pc, insn);
-            case insn_funct3_opcode::BNE:
-                return execute_BNE(a, pc, insn);
-            case insn_funct3_opcode::BLT:
-                return execute_BLT(a, pc, insn);
-            case insn_funct3_opcode::BGE:
-                return execute_BGE(a, pc, insn);
-            case insn_funct3_opcode::BLTU:
-                return execute_BLTU(a, pc, insn);
-            case insn_funct3_opcode::BGEU:
-                return execute_BGEU(a, pc, insn);
-            case insn_funct3_opcode::JALR:
-                return execute_JALR(a, pc, insn);
-            case insn_funct3_opcode::CSRRW:
-                return execute_CSRRW(a, pc, mcycle, insn);
-            case insn_funct3_opcode::CSRRS:
-                return execute_CSRRS(a, pc, mcycle, insn);
-            case insn_funct3_opcode::CSRRC:
-                return execute_CSRRC(a, pc, mcycle, insn);
-            case insn_funct3_opcode::CSRRWI:
-                return execute_CSRRWI(a, pc, mcycle, insn);
-            case insn_funct3_opcode::CSRRSI:
-                return execute_CSRRSI(a, pc, mcycle, insn);
-            case insn_funct3_opcode::CSRRCI:
-                return execute_CSRRCI(a, pc, mcycle, insn);
-            case insn_funct3_opcode::AUIPC_000:
-            case insn_funct3_opcode::AUIPC_001:
-            case insn_funct3_opcode::AUIPC_010:
-            case insn_funct3_opcode::AUIPC_011:
-            case insn_funct3_opcode::AUIPC_100:
-            case insn_funct3_opcode::AUIPC_101:
-            case insn_funct3_opcode::AUIPC_110:
-            case insn_funct3_opcode::AUIPC_111:
-                return execute_AUIPC(a, pc, insn);
-            case insn_funct3_opcode::LUI_000:
-            case insn_funct3_opcode::LUI_001:
-            case insn_funct3_opcode::LUI_010:
-            case insn_funct3_opcode::LUI_011:
-            case insn_funct3_opcode::LUI_100:
-            case insn_funct3_opcode::LUI_101:
-            case insn_funct3_opcode::LUI_110:
-            case insn_funct3_opcode::LUI_111:
-                return execute_LUI(a, pc, insn);
-            case insn_funct3_opcode::JAL_000:
-            case insn_funct3_opcode::JAL_001:
-            case insn_funct3_opcode::JAL_010:
-            case insn_funct3_opcode::JAL_011:
-            case insn_funct3_opcode::JAL_100:
-            case insn_funct3_opcode::JAL_101:
-            case insn_funct3_opcode::JAL_110:
-            case insn_funct3_opcode::JAL_111:
-                return execute_JAL(a, pc, insn);
-            case insn_funct3_opcode::SRLI_SRAI:
-                return execute_SRLI_SRAI(a, pc, insn);
-            case insn_funct3_opcode::SRLIW_SRAIW:
-                return execute_SRLIW_SRAIW(a, pc, insn);
-            case insn_funct3_opcode::AMO_W:
-                return execute_AMO_W(a, pc, mcycle, insn);
-            case insn_funct3_opcode::AMO_D:
-                return execute_AMO_D(a, pc, mcycle, insn);
-            case insn_funct3_opcode::ADD_MUL_SUB:
-                return execute_ADD_MUL_SUB(a, pc, insn);
-            case insn_funct3_opcode::SLL_MULH:
-                return execute_SLL_MULH(a, pc, insn);
-            case insn_funct3_opcode::SLT_MULHSU:
-                return execute_SLT_MULHSU(a, pc, insn);
-            case insn_funct3_opcode::SLTU_MULHU:
-                return execute_SLTU_MULHU(a, pc, insn);
-            case insn_funct3_opcode::XOR_DIV:
-                return execute_XOR_DIV(a, pc, insn);
-            case insn_funct3_opcode::SRL_DIVU_SRA:
-                return execute_SRL_DIVU_SRA(a, pc, insn);
-            case insn_funct3_opcode::OR_REM:
-                return execute_OR_REM(a, pc, insn);
-            case insn_funct3_opcode::AND_REMU:
-                return execute_AND_REMU(a, pc, insn);
-            case insn_funct3_opcode::ADDW_MULW_SUBW:
-                return execute_ADDW_MULW_SUBW(a, pc, insn);
-            case insn_funct3_opcode::SRLW_DIVUW_SRAW:
-                return execute_SRLW_DIVUW_SRAW(a, pc, insn);
-            case insn_funct3_opcode::PRIVILEGED:
-                return execute_privileged(a, pc, mcycle, insn);
-            case insn_funct3_opcode::FSW:
-                return execute_FSW(a, pc, mcycle, insn);
-            case insn_funct3_opcode::FSD:
-                return execute_FSD(a, pc, mcycle, insn);
-            case insn_funct3_opcode::FLW:
-                return execute_FLW(a, pc, mcycle, insn);
-            case insn_funct3_opcode::FLD:
-                return execute_FLD(a, pc, mcycle, insn);
-            case insn_funct3_opcode::FMADD_RNE:
-            case insn_funct3_opcode::FMADD_RTZ:
-            case insn_funct3_opcode::FMADD_RDN:
-            case insn_funct3_opcode::FMADD_RUP:
-            case insn_funct3_opcode::FMADD_RMM:
-            case insn_funct3_opcode::FMADD_DYN:
-                return execute_FMADD(a, pc, insn);
-            case insn_funct3_opcode::FMSUB_RNE:
-            case insn_funct3_opcode::FMSUB_RTZ:
-            case insn_funct3_opcode::FMSUB_RDN:
-            case insn_funct3_opcode::FMSUB_RUP:
-            case insn_funct3_opcode::FMSUB_RMM:
-            case insn_funct3_opcode::FMSUB_DYN:
-                return execute_FMSUB(a, pc, insn);
-            case insn_funct3_opcode::FNMSUB_RNE:
-            case insn_funct3_opcode::FNMSUB_RTZ:
-            case insn_funct3_opcode::FNMSUB_RDN:
-            case insn_funct3_opcode::FNMSUB_RUP:
-            case insn_funct3_opcode::FNMSUB_RMM:
-            case insn_funct3_opcode::FNMSUB_DYN:
-                return execute_FNMSUB(a, pc, insn);
-            case insn_funct3_opcode::FNMADD_RNE:
-            case insn_funct3_opcode::FNMADD_RTZ:
-            case insn_funct3_opcode::FNMADD_RDN:
-            case insn_funct3_opcode::FNMADD_RUP:
-            case insn_funct3_opcode::FNMADD_RMM:
-            case insn_funct3_opcode::FNMADD_DYN:
-                return execute_FNMADD(a, pc, insn);
-            case insn_funct3_opcode::FD_000:
-            case insn_funct3_opcode::FD_001:
-            case insn_funct3_opcode::FD_010:
-            case insn_funct3_opcode::FD_011:
-            case insn_funct3_opcode::FD_100:
-            case insn_funct3_opcode::FD_111:
-                return execute_FD(a, pc, insn);
-            default:
-                return raise_illegal_insn_exception(a, pc, insn);
-        }
-    }
 }
 
 /// \brief Instruction fetch status code
@@ -5625,8 +5362,292 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
 
             // Try to fetch the next instruction
             if (likely(fetch_insn(a, pc, insn, fetch_vaddr_page, fetch_vh_offset) == fetch_status::success)) {
-                // Try to execute it
-                const execute_status status = execute_insn(a, pc, mcycle, insn);
+                // clang-format off
+
+                // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
+                execute_status status; // explicit uninitialized as an optimization
+
+                // This header define the instruction jump table table, which is very large.
+                // It also defines the jump table related macros used in the next big switch.
+                #include "interpret-jump-table.h"
+
+                // This will use computed goto on supported compilers,
+                // otherwise normal switch in unsupported platforms.
+                INSN_SWITCH(insn_get_id(insn)) {
+                    INSN_CASE(LB):
+                        status = execute_LB(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(LH):
+                        status = execute_LH(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(LW):
+                        status = execute_LW(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(LD):
+                        status = execute_LD(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(LBU):
+                        status = execute_LBU(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(LHU):
+                        status = execute_LHU(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(LWU):
+                        status = execute_LWU(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SB):
+                        status = execute_SB(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SH):
+                        status = execute_SH(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SW):
+                        status = execute_SW(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SD):
+                        status = execute_SD(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(FENCE):
+                        status = execute_FENCE(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(FENCE_I):
+                        status = execute_FENCE_I(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(ADDI):
+                        status = execute_ADDI(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SLLI):
+                        status = execute_SLLI(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SLTI):
+                        status = execute_SLTI(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SLTIU):
+                        status = execute_SLTIU(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(XORI):
+                        status = execute_XORI(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(ORI):
+                        status = execute_ORI(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(ANDI):
+                        status = execute_ANDI(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(ADDIW):
+                        status = execute_ADDIW(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SLLIW):
+                        status = execute_SLLIW(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SLLW):
+                        status = execute_SLLW(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(DIVW):
+                        status = execute_DIVW(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(REMW):
+                        status = execute_REMW(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(REMUW):
+                        status = execute_REMUW(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(BEQ):
+                        status = execute_BEQ(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(BNE):
+                        status = execute_BNE(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(BLT):
+                        status = execute_BLT(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(BGE):
+                        status = execute_BGE(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(BLTU):
+                        status = execute_BLTU(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(BGEU):
+                        status = execute_BGEU(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(JALR):
+                        status = execute_JALR(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(CSRRW):
+                        status = execute_CSRRW(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(CSRRS):
+                        status = execute_CSRRS(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(CSRRC):
+                        status = execute_CSRRC(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(CSRRWI):
+                        status = execute_CSRRWI(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(CSRRSI):
+                        status = execute_CSRRSI(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(CSRRCI):
+                        status = execute_CSRRCI(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(AUIPC):
+                        status = execute_AUIPC(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(LUI):
+                        status = execute_LUI(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(JAL):
+                        status = execute_JAL(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SRLI_SRAI):
+                        status = execute_SRLI_SRAI(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SRLIW_SRAIW):
+                        status = execute_SRLIW_SRAIW(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(AMO_W):
+                        status = execute_AMO_W(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(AMO_D):
+                        status = execute_AMO_D(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(ADD_MUL_SUB):
+                        status = execute_ADD_MUL_SUB(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SLL_MULH):
+                        status = execute_SLL_MULH(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SLT_MULHSU):
+                        status = execute_SLT_MULHSU(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SLTU_MULHU):
+                        status = execute_SLTU_MULHU(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(XOR_DIV):
+                        status = execute_XOR_DIV(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SRL_DIVU_SRA):
+                        status = execute_SRL_DIVU_SRA(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(OR_REM):
+                        status = execute_OR_REM(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(AND_REMU):
+                        status = execute_AND_REMU(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(ADDW_MULW_SUBW):
+                        status = execute_ADDW_MULW_SUBW(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SRLW_DIVUW_SRAW):
+                        status = execute_SRLW_DIVUW_SRAW(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(PRIVILEGED):
+                        status = execute_privileged(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(FSW):
+                        status = execute_FSW(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(FSD):
+                        status = execute_FSD(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(FLW):
+                        status = execute_FLW(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(FLD):
+                        status = execute_FLD(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(FMADD):
+                        status = execute_FMADD(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(FMSUB):
+                        status = execute_FMSUB(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(FNMSUB):
+                        status = execute_FNMSUB(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(FNMADD):
+                        status = execute_FNMADD(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(FD):
+                        status = execute_FD(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(C_ADDI4SPN):
+                        status = execute_C_ADDI4SPN(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_LW):
+                        status = execute_C_LW(a, pc, mcycle, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_LD):
+                        status = execute_C_LD(a, pc, mcycle, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_SW):
+                        status = execute_C_SW(a, pc, mcycle, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_SD):
+                        status = execute_C_SD(a, pc, mcycle, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_Q1_SET0):
+                        status = execute_C_Q1_SET0(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_ADDIW):
+                        status = execute_C_ADDIW(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_LI):
+                        status = execute_C_LI(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_Q1_SET1):
+                        status = execute_C_Q1_SET1(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_Q1_SET2):
+                        status = execute_C_Q1_SET2(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_J):
+                        status = execute_C_J(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_BEQZ):
+                        status = execute_C_BEQZ(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_BNEZ):
+                        status = execute_C_BNEZ(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_SLLI):
+                        status = execute_C_SLLI(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_LWSP):
+                        status = execute_C_LWSP(a, pc, mcycle, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_LDSP):
+                        status = execute_C_LDSP(a, pc, mcycle, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_Q2_SET0):
+                        status = execute_C_Q2_SET0(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_SWSP):
+                        status = execute_C_SWSP(a, pc, mcycle, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_SDSP):
+                        status = execute_C_SDSP(a, pc, mcycle, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_FLD):
+                        status = execute_C_FLD(a, pc, mcycle, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_FSD):
+                        status = execute_C_FSD(a, pc, mcycle, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_FLDSP):
+                        status = execute_C_FLDSP(a, pc, mcycle, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_FSDSP):
+                        status = execute_C_FSDSP(a, pc, mcycle, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(ILLEGAL):
+                        status = raise_illegal_insn_exception(a, pc, ((insn & 3) != 3) ? static_cast<uint16_t>(insn) : insn);
+                        INSN_BREAK();
+                }
+                INSN_SWITCH_OUT();
+
+                // clang-format on
 
                 // When execute status is above success, we have to deal with special loop conditions,
                 // this is very unlikely to happen most of the time

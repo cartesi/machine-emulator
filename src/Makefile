@@ -198,8 +198,6 @@ ifneq (,$(filter gcc,$(CC)))
 # but we don't use -O3 because it enables some other flags that are not worth for the interpreter.
 OPTFLAGS+=-fgcse-after-reload -fpredictive-commoning -fsplit-paths -ftree-partial-pre
 endif
-# Enable large jump tables to improve performance of instruction decoding in interpret.cpp
-OPTFLAGS+=-fjump-tables --param jump-table-max-growth-ratio-for-speed=4096
 endif
 
 # Link time optimizations

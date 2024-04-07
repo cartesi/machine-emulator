@@ -17,6 +17,7 @@
 #include "machine.h"
 
 #include <boost/range/adaptor/sliced.hpp>
+#include <cinttypes>
 #include <cstdio>
 #include <cstring>
 #include <iomanip>

@@ -535,8 +535,8 @@ static inline void set_rtc_interrupt(STATE_ACCESS &a, uint64_t mcycle) {
 
 /// \brief Obtains the funct3 and opcode fields an instruction.
 /// \param insn Instruction.
-static inline uint32_t insn_get_funct3_00000_opcode(uint32_t insn) {
-    return insn & 0b111000001111111;
+static FORCE_INLINE uint32_t insn_get_funct3_opcode(uint32_t insn) {
+    return ((insn >> 5) & 0b111'0000000) | (insn & 0b1111111);
 }
 
 /// \brief Obtains the funct3 and trailing 0 bits from an instruction.
@@ -660,8 +660,8 @@ static inline uint32_t insn_get_rs3(uint32_t insn) {
 
 /// \brief Obtains the compressed instruction funct3 and opcode fields an instruction.
 /// \param insn Instruction.
-static inline uint32_t insn_get_c_funct3(uint32_t insn) {
-    return insn & 0b1110000000000011;
+static FORCE_INLINE uint32_t insn_get_c_funct3(uint32_t insn) {
+    return ((insn >> 11) & 0b111'00) | (insn & 0b11);
 }
 
 /// \brief Obtains the compressed instruction funct6, funct2 and opcode fields an instruction.
@@ -3624,12 +3624,20 @@ static FORCE_INLINE execute_status execute_FS(STATE_ACCESS &a, uint64_t &pc, uin
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSW(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "fsw");
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
     return execute_FS<uint32_t>(a, pc, mcycle, insn);
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSD(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "fsd");
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
     return execute_FS<uint64_t>(a, pc, mcycle, insn);
 }
 
@@ -3652,12 +3660,20 @@ static FORCE_INLINE execute_status execute_FL(STATE_ACCESS &a, uint64_t &pc, uin
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FLW(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "flw");
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
     return execute_FL<uint32_t>(a, pc, mcycle, insn);
 }
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FLD(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "fld");
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
     return execute_FL<uint64_t>(a, pc, mcycle, insn);
 }
 
@@ -3681,6 +3697,10 @@ static FORCE_INLINE execute_status execute_FMADD_D(STATE_ACCESS &a, uint64_t &pc
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMADD(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
     switch (static_cast<insn_FM_funct2_0000000000000000000000000>(insn_get_funct2_0000000000000000000000000(insn))) {
         case insn_FM_funct2_0000000000000000000000000::S:
             return execute_FMADD_S(a, pc, insn);
@@ -3711,6 +3731,10 @@ static FORCE_INLINE execute_status execute_FMSUB_D(STATE_ACCESS &a, uint64_t &pc
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FMSUB(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
     switch (static_cast<insn_FM_funct2_0000000000000000000000000>(insn_get_funct2_0000000000000000000000000(insn))) {
         case insn_FM_funct2_0000000000000000000000000::S:
             return execute_FMSUB_S(a, pc, insn);
@@ -3743,6 +3767,10 @@ static FORCE_INLINE execute_status execute_FNMADD_D(STATE_ACCESS &a, uint64_t &p
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FNMADD(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
     switch (static_cast<insn_FM_funct2_0000000000000000000000000>(insn_get_funct2_0000000000000000000000000(insn))) {
         case insn_FM_funct2_0000000000000000000000000::S:
             return execute_FNMADD_S(a, pc, insn);
@@ -3773,6 +3801,10 @@ static FORCE_INLINE execute_status execute_FNMSUB_D(STATE_ACCESS &a, uint64_t &p
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FNMSUB(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
     switch (static_cast<insn_FM_funct2_0000000000000000000000000>(insn_get_funct2_0000000000000000000000000(insn))) {
         case insn_FM_funct2_0000000000000000000000000::S:
             return execute_FNMSUB_S(a, pc, insn);
@@ -4492,6 +4524,10 @@ static FORCE_INLINE execute_status execute_FCVT_FMV_FCLASS(STATE_ACCESS &a, uint
 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FD(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
     switch (static_cast<insn_FD_funct7>(insn_get_funct7(insn))) {
         case insn_FD_funct7::FADD_S:
             return execute_FADD_S(a, pc, insn);
@@ -4613,6 +4649,11 @@ static FORCE_INLINE execute_status execute_C_ADDI4SPN(STATE_ACCESS &a, uint64_t 
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_FLD(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.fld");
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction
+    // exception.
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
     const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
     const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     const int32_t imm = insn_get_CL_CS_imm(insn);
@@ -4643,6 +4684,11 @@ static FORCE_INLINE execute_status execute_C_LD(STATE_ACCESS &a, uint64_t &pc, u
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_FSD(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.fsd");
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction
+    // exception.
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
     const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     const uint32_t rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
     const int32_t imm = insn_get_CL_CS_imm(insn);
@@ -4983,6 +5029,11 @@ static FORCE_INLINE execute_status execute_C_SLLI(STATE_ACCESS &a, uint64_t &pc,
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_FLDSP(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.fldsp");
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction
+    // exception.
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
     const uint32_t rd = insn_get_rd(insn);
     const int32_t imm = insn_get_C_FLDSP_LDSP_imm(insn);
     return execute_C_FL<uint64_t>(a, pc, mcycle, rd, 0x2, imm);
@@ -5095,6 +5146,11 @@ static FORCE_INLINE execute_status execute_C_Q2_SET0(STATE_ACCESS &a, uint64_t &
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_FSDSP(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.fsdsp");
+    // If FS is OFF, attempts to read or write the float state will cause an illegal instruction
+    // exception.
+    if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
+        return raise_illegal_insn_exception(a, pc, insn);
+    }
     const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
     const int32_t imm = insn_get_C_FSDSP_SDSP_imm(insn);
     return execute_C_FS<uint64_t>(a, pc, mcycle, rs2, 0x2, imm);
@@ -5177,227 +5233,202 @@ static FORCE_INLINE execute_status execute_insn(STATE_ACCESS &a, uint64_t &pc, u
                 return execute_C_SWSP(a, pc, mcycle, insn);
             case insn_c_funct3::C_SDSP:
                 return execute_C_SDSP(a, pc, mcycle, insn);
-            default: {
-                // Here we are sure that the next instruction, at best, can only be a floating point instruction,
-                // or, at worst, an illegal instruction.
-                // Since all float instructions try to read the float state,
-                // we can put the next check before all of them.
-                // If FS is OFF, attempts to read or write the float state will cause an illegal instruction
-                // exception.
-                if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-                    return raise_illegal_insn_exception(a, pc, insn);
-                }
-                switch (c_funct3) {
-                    case insn_c_funct3::C_FLD:
-                        return execute_C_FLD(a, pc, mcycle, insn);
-                    case insn_c_funct3::C_FSD:
-                        return execute_C_FSD(a, pc, mcycle, insn);
-                    case insn_c_funct3::C_FLDSP:
-                        return execute_C_FLDSP(a, pc, mcycle, insn);
-                    case insn_c_funct3::C_FSDSP:
-                        return execute_C_FSDSP(a, pc, mcycle, insn);
-                    default:
-                        return raise_illegal_insn_exception(a, pc, insn);
-                }
-            }
+            case insn_c_funct3::C_FLD:
+                return execute_C_FLD(a, pc, mcycle, insn);
+            case insn_c_funct3::C_FSD:
+                return execute_C_FSD(a, pc, mcycle, insn);
+            case insn_c_funct3::C_FLDSP:
+                return execute_C_FLDSP(a, pc, mcycle, insn);
+            case insn_c_funct3::C_FSDSP:
+                return execute_C_FSDSP(a, pc, mcycle, insn);
+            default:
+                return raise_illegal_insn_exception(a, pc, insn);
         }
     } else {
-        //??D We should probably try doing the first branch on the combined opcode, funct3, and funct7.
-        //    Maybe it reduces the number of levels needed to decode most instructions.
-        auto funct3_00000_opcode = static_cast<insn_funct3_00000_opcode>(insn_get_funct3_00000_opcode(insn));
-        switch (funct3_00000_opcode) {
-            case insn_funct3_00000_opcode::LB:
+        auto funct3_opcode = static_cast<insn_funct3_opcode>(insn_get_funct3_opcode(insn));
+        // This switch will be optimized as a single jump in conjuction with GCC flags
+        // -fjump-tables --param jump-table-max-growth-ratio-for-speed=4096
+        switch (funct3_opcode) {
+            case insn_funct3_opcode::LB:
                 return execute_LB(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::LH:
+            case insn_funct3_opcode::LH:
                 return execute_LH(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::LW:
+            case insn_funct3_opcode::LW:
                 return execute_LW(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::LD:
+            case insn_funct3_opcode::LD:
                 return execute_LD(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::LBU:
+            case insn_funct3_opcode::LBU:
                 return execute_LBU(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::LHU:
+            case insn_funct3_opcode::LHU:
                 return execute_LHU(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::LWU:
+            case insn_funct3_opcode::LWU:
                 return execute_LWU(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::SB:
+            case insn_funct3_opcode::SB:
                 return execute_SB(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::SH:
+            case insn_funct3_opcode::SH:
                 return execute_SH(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::SW:
+            case insn_funct3_opcode::SW:
                 return execute_SW(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::SD:
+            case insn_funct3_opcode::SD:
                 return execute_SD(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::FENCE:
+            case insn_funct3_opcode::FENCE:
                 return execute_FENCE(a, pc, insn);
-            case insn_funct3_00000_opcode::FENCE_I:
+            case insn_funct3_opcode::FENCE_I:
                 return execute_FENCE_I(a, pc, insn);
-            case insn_funct3_00000_opcode::ADDI:
+            case insn_funct3_opcode::ADDI:
                 return execute_ADDI(a, pc, insn);
-            case insn_funct3_00000_opcode::SLLI:
+            case insn_funct3_opcode::SLLI:
                 return execute_SLLI(a, pc, insn);
-            case insn_funct3_00000_opcode::SLTI:
+            case insn_funct3_opcode::SLTI:
                 return execute_SLTI(a, pc, insn);
-            case insn_funct3_00000_opcode::SLTIU:
+            case insn_funct3_opcode::SLTIU:
                 return execute_SLTIU(a, pc, insn);
-            case insn_funct3_00000_opcode::XORI:
+            case insn_funct3_opcode::XORI:
                 return execute_XORI(a, pc, insn);
-            case insn_funct3_00000_opcode::ORI:
+            case insn_funct3_opcode::ORI:
                 return execute_ORI(a, pc, insn);
-            case insn_funct3_00000_opcode::ANDI:
+            case insn_funct3_opcode::ANDI:
                 return execute_ANDI(a, pc, insn);
-            case insn_funct3_00000_opcode::ADDIW:
+            case insn_funct3_opcode::ADDIW:
                 return execute_ADDIW(a, pc, insn);
-            case insn_funct3_00000_opcode::SLLIW:
+            case insn_funct3_opcode::SLLIW:
                 return execute_SLLIW(a, pc, insn);
-            case insn_funct3_00000_opcode::SLLW:
+            case insn_funct3_opcode::SLLW:
                 return execute_SLLW(a, pc, insn);
-            case insn_funct3_00000_opcode::DIVW:
+            case insn_funct3_opcode::DIVW:
                 return execute_DIVW(a, pc, insn);
-            case insn_funct3_00000_opcode::REMW:
+            case insn_funct3_opcode::REMW:
                 return execute_REMW(a, pc, insn);
-            case insn_funct3_00000_opcode::REMUW:
+            case insn_funct3_opcode::REMUW:
                 return execute_REMUW(a, pc, insn);
-            case insn_funct3_00000_opcode::BEQ:
+            case insn_funct3_opcode::BEQ:
                 return execute_BEQ(a, pc, insn);
-            case insn_funct3_00000_opcode::BNE:
+            case insn_funct3_opcode::BNE:
                 return execute_BNE(a, pc, insn);
-            case insn_funct3_00000_opcode::BLT:
+            case insn_funct3_opcode::BLT:
                 return execute_BLT(a, pc, insn);
-            case insn_funct3_00000_opcode::BGE:
+            case insn_funct3_opcode::BGE:
                 return execute_BGE(a, pc, insn);
-            case insn_funct3_00000_opcode::BLTU:
+            case insn_funct3_opcode::BLTU:
                 return execute_BLTU(a, pc, insn);
-            case insn_funct3_00000_opcode::BGEU:
+            case insn_funct3_opcode::BGEU:
                 return execute_BGEU(a, pc, insn);
-            case insn_funct3_00000_opcode::JALR:
+            case insn_funct3_opcode::JALR:
                 return execute_JALR(a, pc, insn);
-            case insn_funct3_00000_opcode::CSRRW:
+            case insn_funct3_opcode::CSRRW:
                 return execute_CSRRW(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::CSRRS:
+            case insn_funct3_opcode::CSRRS:
                 return execute_CSRRS(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::CSRRC:
+            case insn_funct3_opcode::CSRRC:
                 return execute_CSRRC(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::CSRRWI:
+            case insn_funct3_opcode::CSRRWI:
                 return execute_CSRRWI(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::CSRRSI:
+            case insn_funct3_opcode::CSRRSI:
                 return execute_CSRRSI(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::CSRRCI:
+            case insn_funct3_opcode::CSRRCI:
                 return execute_CSRRCI(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::AUIPC_000:
-            case insn_funct3_00000_opcode::AUIPC_001:
-            case insn_funct3_00000_opcode::AUIPC_010:
-            case insn_funct3_00000_opcode::AUIPC_011:
-            case insn_funct3_00000_opcode::AUIPC_100:
-            case insn_funct3_00000_opcode::AUIPC_101:
-            case insn_funct3_00000_opcode::AUIPC_110:
-            case insn_funct3_00000_opcode::AUIPC_111:
+            case insn_funct3_opcode::AUIPC_000:
+            case insn_funct3_opcode::AUIPC_001:
+            case insn_funct3_opcode::AUIPC_010:
+            case insn_funct3_opcode::AUIPC_011:
+            case insn_funct3_opcode::AUIPC_100:
+            case insn_funct3_opcode::AUIPC_101:
+            case insn_funct3_opcode::AUIPC_110:
+            case insn_funct3_opcode::AUIPC_111:
                 return execute_AUIPC(a, pc, insn);
-            case insn_funct3_00000_opcode::LUI_000:
-            case insn_funct3_00000_opcode::LUI_001:
-            case insn_funct3_00000_opcode::LUI_010:
-            case insn_funct3_00000_opcode::LUI_011:
-            case insn_funct3_00000_opcode::LUI_100:
-            case insn_funct3_00000_opcode::LUI_101:
-            case insn_funct3_00000_opcode::LUI_110:
-            case insn_funct3_00000_opcode::LUI_111:
+            case insn_funct3_opcode::LUI_000:
+            case insn_funct3_opcode::LUI_001:
+            case insn_funct3_opcode::LUI_010:
+            case insn_funct3_opcode::LUI_011:
+            case insn_funct3_opcode::LUI_100:
+            case insn_funct3_opcode::LUI_101:
+            case insn_funct3_opcode::LUI_110:
+            case insn_funct3_opcode::LUI_111:
                 return execute_LUI(a, pc, insn);
-            case insn_funct3_00000_opcode::JAL_000:
-            case insn_funct3_00000_opcode::JAL_001:
-            case insn_funct3_00000_opcode::JAL_010:
-            case insn_funct3_00000_opcode::JAL_011:
-            case insn_funct3_00000_opcode::JAL_100:
-            case insn_funct3_00000_opcode::JAL_101:
-            case insn_funct3_00000_opcode::JAL_110:
-            case insn_funct3_00000_opcode::JAL_111:
+            case insn_funct3_opcode::JAL_000:
+            case insn_funct3_opcode::JAL_001:
+            case insn_funct3_opcode::JAL_010:
+            case insn_funct3_opcode::JAL_011:
+            case insn_funct3_opcode::JAL_100:
+            case insn_funct3_opcode::JAL_101:
+            case insn_funct3_opcode::JAL_110:
+            case insn_funct3_opcode::JAL_111:
                 return execute_JAL(a, pc, insn);
-            case insn_funct3_00000_opcode::SRLI_SRAI:
+            case insn_funct3_opcode::SRLI_SRAI:
                 return execute_SRLI_SRAI(a, pc, insn);
-            case insn_funct3_00000_opcode::SRLIW_SRAIW:
+            case insn_funct3_opcode::SRLIW_SRAIW:
                 return execute_SRLIW_SRAIW(a, pc, insn);
-            case insn_funct3_00000_opcode::AMO_W:
+            case insn_funct3_opcode::AMO_W:
                 return execute_AMO_W(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::AMO_D:
+            case insn_funct3_opcode::AMO_D:
                 return execute_AMO_D(a, pc, mcycle, insn);
-            case insn_funct3_00000_opcode::ADD_MUL_SUB:
+            case insn_funct3_opcode::ADD_MUL_SUB:
                 return execute_ADD_MUL_SUB(a, pc, insn);
-            case insn_funct3_00000_opcode::SLL_MULH:
+            case insn_funct3_opcode::SLL_MULH:
                 return execute_SLL_MULH(a, pc, insn);
-            case insn_funct3_00000_opcode::SLT_MULHSU:
+            case insn_funct3_opcode::SLT_MULHSU:
                 return execute_SLT_MULHSU(a, pc, insn);
-            case insn_funct3_00000_opcode::SLTU_MULHU:
+            case insn_funct3_opcode::SLTU_MULHU:
                 return execute_SLTU_MULHU(a, pc, insn);
-            case insn_funct3_00000_opcode::XOR_DIV:
+            case insn_funct3_opcode::XOR_DIV:
                 return execute_XOR_DIV(a, pc, insn);
-            case insn_funct3_00000_opcode::SRL_DIVU_SRA:
+            case insn_funct3_opcode::SRL_DIVU_SRA:
                 return execute_SRL_DIVU_SRA(a, pc, insn);
-            case insn_funct3_00000_opcode::OR_REM:
+            case insn_funct3_opcode::OR_REM:
                 return execute_OR_REM(a, pc, insn);
-            case insn_funct3_00000_opcode::AND_REMU:
+            case insn_funct3_opcode::AND_REMU:
                 return execute_AND_REMU(a, pc, insn);
-            case insn_funct3_00000_opcode::ADDW_MULW_SUBW:
+            case insn_funct3_opcode::ADDW_MULW_SUBW:
                 return execute_ADDW_MULW_SUBW(a, pc, insn);
-            case insn_funct3_00000_opcode::SRLW_DIVUW_SRAW:
+            case insn_funct3_opcode::SRLW_DIVUW_SRAW:
                 return execute_SRLW_DIVUW_SRAW(a, pc, insn);
-            case insn_funct3_00000_opcode::PRIVILEGED:
+            case insn_funct3_opcode::PRIVILEGED:
                 return execute_privileged(a, pc, mcycle, insn);
-            default: {
-                // Here we are sure that the next instruction, at best, can only be a floating point instruction,
-                // or, at worst, an illegal instruction.
-                // Since all float instructions try to read the float state,
-                // we can put the next check before all of them.
-                // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
-                if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
-                    return raise_illegal_insn_exception(a, pc, insn);
-                }
-                switch (funct3_00000_opcode) {
-                    case insn_funct3_00000_opcode::FSW:
-                        return execute_FSW(a, pc, mcycle, insn);
-                    case insn_funct3_00000_opcode::FSD:
-                        return execute_FSD(a, pc, mcycle, insn);
-                    case insn_funct3_00000_opcode::FLW:
-                        return execute_FLW(a, pc, mcycle, insn);
-                    case insn_funct3_00000_opcode::FLD:
-                        return execute_FLD(a, pc, mcycle, insn);
-                    case insn_funct3_00000_opcode::FMADD_RNE:
-                    case insn_funct3_00000_opcode::FMADD_RTZ:
-                    case insn_funct3_00000_opcode::FMADD_RDN:
-                    case insn_funct3_00000_opcode::FMADD_RUP:
-                    case insn_funct3_00000_opcode::FMADD_RMM:
-                    case insn_funct3_00000_opcode::FMADD_DYN:
-                        return execute_FMADD(a, pc, insn);
-                    case insn_funct3_00000_opcode::FMSUB_RNE:
-                    case insn_funct3_00000_opcode::FMSUB_RTZ:
-                    case insn_funct3_00000_opcode::FMSUB_RDN:
-                    case insn_funct3_00000_opcode::FMSUB_RUP:
-                    case insn_funct3_00000_opcode::FMSUB_RMM:
-                    case insn_funct3_00000_opcode::FMSUB_DYN:
-                        return execute_FMSUB(a, pc, insn);
-                    case insn_funct3_00000_opcode::FNMSUB_RNE:
-                    case insn_funct3_00000_opcode::FNMSUB_RTZ:
-                    case insn_funct3_00000_opcode::FNMSUB_RDN:
-                    case insn_funct3_00000_opcode::FNMSUB_RUP:
-                    case insn_funct3_00000_opcode::FNMSUB_RMM:
-                    case insn_funct3_00000_opcode::FNMSUB_DYN:
-                        return execute_FNMSUB(a, pc, insn);
-                    case insn_funct3_00000_opcode::FNMADD_RNE:
-                    case insn_funct3_00000_opcode::FNMADD_RTZ:
-                    case insn_funct3_00000_opcode::FNMADD_RDN:
-                    case insn_funct3_00000_opcode::FNMADD_RUP:
-                    case insn_funct3_00000_opcode::FNMADD_RMM:
-                    case insn_funct3_00000_opcode::FNMADD_DYN:
-                        return execute_FNMADD(a, pc, insn);
-                    case insn_funct3_00000_opcode::FD_000:
-                    case insn_funct3_00000_opcode::FD_001:
-                    case insn_funct3_00000_opcode::FD_010:
-                    case insn_funct3_00000_opcode::FD_011:
-                    case insn_funct3_00000_opcode::FD_100:
-                    case insn_funct3_00000_opcode::FD_111:
-                        return execute_FD(a, pc, insn);
-                    default:
-                        return raise_illegal_insn_exception(a, pc, insn);
-                }
-            }
+            case insn_funct3_opcode::FSW:
+                return execute_FSW(a, pc, mcycle, insn);
+            case insn_funct3_opcode::FSD:
+                return execute_FSD(a, pc, mcycle, insn);
+            case insn_funct3_opcode::FLW:
+                return execute_FLW(a, pc, mcycle, insn);
+            case insn_funct3_opcode::FLD:
+                return execute_FLD(a, pc, mcycle, insn);
+            case insn_funct3_opcode::FMADD_RNE:
+            case insn_funct3_opcode::FMADD_RTZ:
+            case insn_funct3_opcode::FMADD_RDN:
+            case insn_funct3_opcode::FMADD_RUP:
+            case insn_funct3_opcode::FMADD_RMM:
+            case insn_funct3_opcode::FMADD_DYN:
+                return execute_FMADD(a, pc, insn);
+            case insn_funct3_opcode::FMSUB_RNE:
+            case insn_funct3_opcode::FMSUB_RTZ:
+            case insn_funct3_opcode::FMSUB_RDN:
+            case insn_funct3_opcode::FMSUB_RUP:
+            case insn_funct3_opcode::FMSUB_RMM:
+            case insn_funct3_opcode::FMSUB_DYN:
+                return execute_FMSUB(a, pc, insn);
+            case insn_funct3_opcode::FNMSUB_RNE:
+            case insn_funct3_opcode::FNMSUB_RTZ:
+            case insn_funct3_opcode::FNMSUB_RDN:
+            case insn_funct3_opcode::FNMSUB_RUP:
+            case insn_funct3_opcode::FNMSUB_RMM:
+            case insn_funct3_opcode::FNMSUB_DYN:
+                return execute_FNMSUB(a, pc, insn);
+            case insn_funct3_opcode::FNMADD_RNE:
+            case insn_funct3_opcode::FNMADD_RTZ:
+            case insn_funct3_opcode::FNMADD_RDN:
+            case insn_funct3_opcode::FNMADD_RUP:
+            case insn_funct3_opcode::FNMADD_RMM:
+            case insn_funct3_opcode::FNMADD_DYN:
+                return execute_FNMADD(a, pc, insn);
+            case insn_funct3_opcode::FD_000:
+            case insn_funct3_opcode::FD_001:
+            case insn_funct3_opcode::FD_010:
+            case insn_funct3_opcode::FD_011:
+            case insn_funct3_opcode::FD_100:
+            case insn_funct3_opcode::FD_111:
+                return execute_FD(a, pc, insn);
+            default:
+                return raise_illegal_insn_exception(a, pc, insn);
         }
     }
 }

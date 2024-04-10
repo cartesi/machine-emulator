@@ -43,7 +43,7 @@ RUN make -j$(nproc) git_commit=$GIT_COMMIT release=$RELEASE coverage=$COVERAGE s
 FROM --platform=$TARGETPLATFORM builder as debian-packager
 ARG MACHINE_EMULATOR_VERSION=0.0.0
 
-RUN make install-uarch debian-package DESTDIR=$PWD/_install
+RUN make uarch install-uarch debian-package DESTDIR=$PWD/_install
 
 FROM --platform=$TARGETPLATFORM debian:bookworm-20230725-slim
 ARG MACHINE_EMULATOR_VERSION=0.0.0

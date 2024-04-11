@@ -1982,7 +1982,8 @@ end
 
 local function get_and_print_yield(machine, htif)
     local cmd, reason, data = get_yield(machine)
-    if cmd == cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC
+    if
+        cmd == cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC
         and reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_PROGRESS
     then
         stderr("Progress: %6.2f" .. (htif.console_getchar and "\n" or "\r"), data / 10)
@@ -2067,18 +2068,14 @@ end
 
 local function check_outputs_root_hash(root_hash, hashes)
     local z = string.rep("\0", 32)
-    if #hashes == 0 then
-        hashes = { z }
-    end
+    if #hashes == 0 then hashes = { z } end
     for _ = 1, 64 do
         local parent_output_hashes = {}
         local child = 1
         local parent = 1
         while true do
             local c1 = hashes[child]
-            if not c1 then
-                break
-            end
+            if not c1 then break end
             local c2 = hashes[child + 1]
             if c2 then
                 parent_output_hashes[parent] = cartesi.keccak(c1, c2)
@@ -2250,7 +2247,7 @@ while math.ult(cycles, max_mcycle) do
             if reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
                 local output = save_cmio_output(machine, config.cmio.tx_buffer, cmio_advance, length)
                 local output_hash = cartesi.keccak(output)
-                output_hashes[#output_hashes+1] = output_hash
+                output_hashes[#output_hashes + 1] = output_hash
                 cmio_advance.output_index = cmio_advance.output_index + 1
             elseif reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT then
                 save_cmio_report(machine, config.cmio.tx_buffer, cmio_advance, length)

@@ -20,9 +20,7 @@ local PAGE_LOG2_SIZE = 12
 local PAGE_SIZE = 1 << PAGE_LOG2_SIZE
 local WORD_LOG2_SIZE = 3
 
-local function adjust_path(path)
-    return string.gsub(path or ".", "/*$", "") .. "/"
-end
+local function adjust_path(path) return string.gsub(path or ".", "/*$", "") .. "/" end
 
 local test_util = {
     images_path = adjust_path(os.getenv("CARTESI_IMAGES_PATH")),

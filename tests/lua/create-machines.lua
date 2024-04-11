@@ -16,26 +16,20 @@
 -- limitations under the License.
 --
 
-local cartesi = require "cartesi"
-local util = require "cartesi.util"
+local cartesi = require("cartesi")
+local util = require("cartesi.util")
 
-local function stderr_unsilenceable(fmt, ...)
-    io.stderr:write(string.format(fmt, ...))
-end
-
+local function stderr_unsilenceable(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
 local stderr = stderr_unsilenceable
 
-local function adjust_images_path(path)
-    return string.gsub(path or ".", "/*$", "") .. "/"
-end
-
-local IMAGES_DIR = adjust_images_path(os.getenv('CARTESI_IMAGES_PATH') or "build/images")
-local ROOT_DIR = "build/machines/"
-local MACHINES_DIR = ROOT_DIR .. "tests/"
+local function adjust_images_path(path) return string.gsub(path or ".", "/*$", "") .. "/" end
+local IMAGES_DIR = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH") or "build/images")
+local MACHINES_DIR = adjust_images_path(os.getenv("CARTESI_MACHINES_PATH") or "build/machines/")
 
 -- Print help and exit
 local function help()
-    stderr([=[
+    stderr(
+        [=[
 Usage:
 
   %s [options]
@@ -48,7 +42,9 @@ where options are:
    --rollup-init
     uses rollup-init echo-dapp instead of the ioctl-echo-loop on machines
 
-]=], arg[0])
+]=],
+        arg[0]
+    )
     os.exit()
 end
 
@@ -62,39 +58,49 @@ local cmdline_opts_finished = false
 --     if callback returns true, the option is accepted.
 --     if callback returns false, the option is rejected.
 local options = {
-    { "^%-h$", function(all)
-        if not all then return false end
-        help()
-        return true
-    end },
-    { "^%-%-help$", function(all)
-        if not all then return false end
-        help()
-        return true
-    end },
-    { "^%-%-rollup%-init$", function(all)
-        if not all then return false end
-        rollup_init = true
-        return true
-    end },
-    { ".*", function(all)
-        if not all then return false end
-        local not_option = all:sub(1, 1) ~= "-"
-        if not_option or all == "--" then
-            cmdline_opts_finished = true
+    {
+        "^%-h$",
+        function(all)
+            if not all then return false end
+            help()
             return true
-        end
-        error("unrecognized option " .. all)
-    end }
+        end,
+    },
+    {
+        "^%-%-help$",
+        function(all)
+            if not all then return false end
+            help()
+            return true
+        end,
+    },
+    {
+        "^%-%-rollup%-init$",
+        function(all)
+            if not all then return false end
+            rollup_init = true
+            return true
+        end,
+    },
+    {
+        ".*",
+        function(all)
+            if not all then return false end
+            local not_option = all:sub(1, 1) ~= "-"
+            if not_option or all == "--" then
+                cmdline_opts_finished = true
+                return true
+            end
+            error("unrecognized option " .. all)
+        end,
+    },
 }
 
 -- Process command line options
 for _, a in ipairs(arg) do
     if not cmdline_opts_finished then
         for _, option in ipairs(options) do
-            if option[2](a:match(option[1])) then
-                break
-            end
+            if option[2](a:match(option[1])) then break end
         end
     end
 end
@@ -160,9 +166,7 @@ end
 local function instantiate_filename(pattern, values)
     -- replace escaped % with something safe
     pattern = string.gsub(pattern, "%\\%%", "\0")
-    pattern = string.gsub(pattern, "%%(%a)", function(s)
-        return values[s] or s
-    end)
+    pattern = string.gsub(pattern, "%%(%a)", function(s) return values[s] or s end)
     -- restore escaped %
     return (string.gsub(pattern, "\0", "%"))
 end
@@ -182,48 +186,51 @@ local function create_machine(machine_name, command, config_func)
     store_machine(machine, MACHINES_DIR .. machine_name)
 end
 
-create_directory(ROOT_DIR)
 create_directory(MACHINES_DIR)
 
 -- Basic cases
 if rollup_init then
-    create_machine("advance-state-machine", "rollup-init echo-dapp --vouchers=2 --notices=2 --reports=2 --verbose");
-    create_machine("inspect-state-machine", "rollup-init echo-dapp --reports=2 --verbose");
-    create_machine("one-notice-machine", "rollup-init echo-dapp --vouchers=0 --notices=1 --reports=0 --verbose");
-    create_machine("one-report-machine", "rollup-init echo-dapp --vouchers=0 --notices=0 --reports=1 --verbose");
-    create_machine("one-voucher-machine", "rollup-init echo-dapp --vouchers=1 --notices=0 --reports=0 --verbose");
-    create_machine("advance-rejecting-machine", "rollup-init echo-dapp --reject=0 --verbose");
-    create_machine("inspect-rejecting-machine", "rollup-init echo-dapp --reports=0 --reject-inspects --verbose");
+    create_machine("advance-state-machine", "rollup-init echo-dapp --vouchers=2 --notices=2 --reports=2 --verbose")
+    create_machine("inspect-state-machine", "rollup-init echo-dapp --reports=2 --verbose")
+    create_machine("one-notice-machine", "rollup-init echo-dapp --vouchers=0 --notices=1 --reports=0 --verbose")
+    create_machine("one-report-machine", "rollup-init echo-dapp --vouchers=0 --notices=0 --reports=1 --verbose")
+    create_machine("one-voucher-machine", "rollup-init echo-dapp --vouchers=1 --notices=0 --reports=0 --verbose")
+    create_machine("advance-rejecting-machine", "rollup-init echo-dapp --reject=0 --verbose")
+    create_machine("inspect-rejecting-machine", "rollup-init echo-dapp --reports=0 --reject-inspects --verbose")
 else
-    create_machine("advance-state-machine", "ioctl-echo-loop --vouchers=2 --notices=2 --reports=2 --verbose=1");
-    create_machine("inspect-state-machine", "ioctl-echo-loop --reports=2 --verbose=1");
-    create_machine("one-notice-machine", "ioctl-echo-loop --vouchers=0 --notices=1 --reports=0 --verbose=1");
-    create_machine("one-report-machine", "ioctl-echo-loop --vouchers=0 --notices=0 --reports=1 --verbose=1");
-    create_machine("one-voucher-machine", "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0 --verbose=1");
-    create_machine("advance-rejecting-machine", "ioctl-echo-loop --reject=0 --verbose=1");
-    create_machine("inspect-rejecting-machine", "ioctl-echo-loop --reports=0 --reject-inspects --verbose=1");
+    create_machine("advance-state-machine", "ioctl-echo-loop --vouchers=2 --notices=2 --reports=2 --verbose=1")
+    create_machine("inspect-state-machine", "ioctl-echo-loop --reports=2 --verbose=1")
+    create_machine("one-notice-machine", "ioctl-echo-loop --vouchers=0 --notices=1 --reports=0 --verbose=1")
+    create_machine("one-report-machine", "ioctl-echo-loop --vouchers=0 --notices=0 --reports=1 --verbose=1")
+    create_machine("one-voucher-machine", "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0 --verbose=1")
+    create_machine("advance-rejecting-machine", "ioctl-echo-loop --reject=0 --verbose=1")
+    create_machine("inspect-rejecting-machine", "ioctl-echo-loop --reports=0 --reject-inspects --verbose=1")
 end
 
-create_machine("exception-machine", "rollup accept; echo '{\"payload\":\"test payload\"}' | rollup exception");
+create_machine("exception-machine", 'rollup accept; echo \'{"payload":"test payload"}\' | rollup exception')
 
-create_machine("fatal-error-machine", [[
+create_machine(
+    "fatal-error-machine",
+    [[
 echo '
 curl -vv -H "Content-Type: application/json" -d "{\"status\":\"accept\"}" http://127.0.0.1:5004/finish;
 exit 2' > /home/dapp/s.sh;
 chmod +x /home/dapp/s.sh;
 rollup-init bash /home/dapp/s.sh
-]]);
+]]
+)
 
-create_machine("http-server-error-machine", [[
+create_machine(
+    "http-server-error-machine",
+    [[
 echo 'curl -vv -H "Content-Type: application/json" -d "{\"status\":\"accept\"}" http://127.0.0.1:5004/finish;
 killall rollup-http-server;
 sleep 86400' > /home/dapp/s.sh;
 chmod +x /home/dapp/s.sh;
 rollup-init bash /home/dapp/s.sh
-]]);
+]]
+)
 
 -- Should not work with shared buffers
-create_machine("shared-rx-buffer-machine", "rollup accept",
-    function(config) config.cmio.rx_buffer.shared = true end);
-create_machine("shared-tx-buffer-machine", "rollup accept",
-    function(config) config.cmio.tx_buffer.shared = true end);
+create_machine("shared-rx-buffer-machine", "rollup accept", function(config) config.cmio.rx_buffer.shared = true end)
+create_machine("shared-tx-buffer-machine", "rollup accept", function(config) config.cmio.tx_buffer.shared = true end)

@@ -160,7 +160,7 @@ local function check_output(machine, config, expected)
     assert(expected == output)
 
     return cartesi.keccak(output)
- end
+end
 
 local function check_report(machine, config, expected)
     assert(machine:read_iflags_X())
@@ -178,23 +178,19 @@ local function check_exception(machine, config, expected)
     assert(reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION)
     local output = machine:read_memory(config.cmio.tx_buffer.start, length)
     assert(expected == output, string.format("expected: %q, got: %q", expected, output))
- end
+end
 
 local function check_outputs_root_hash(root_hash, output_hashes)
     local z = string.rep("\0", 32)
-    if #output_hashes == 0 then
-        output_hashes = { z }
-    end
+    if #output_hashes == 0 then output_hashes = { z } end
     for _ = 1, 64 do
         local parent_output_hashes = {}
         local child = 1
         local parent = 1
         while true do
             local c1 = output_hashes[child]
-            if not c1 then
-                break
-            end
-            local c2 = output_hashes[child+1]
+            if not c1 then break end
+            local c2 = output_hashes[child + 1]
             if c2 then
                 parent_output_hashes[parent] = cartesi.keccak(c1, c2)
             else
@@ -227,8 +223,10 @@ local function do_test(description, machine_name, fn, expected_exit_code)
 
     -- accommodate tests to machines that don't halt
     local exit_code = fn(machine, config) or get_exit_code(machine)
-    assert(expected_exit_code == exit_code,
-        string.format("expected exit code: %d, got: %d", expected_exit_code, exit_code))
+    assert(
+        expected_exit_code == exit_code,
+        string.format("expected exit code: %d, got: %d", expected_exit_code, exit_code)
+    )
 
     print("<<<<<<<<<<<<<<<< passed >>>>>>>>>>>>>>>")
 end
@@ -262,9 +260,8 @@ do_test("inspect reply is the same as request", "inspect-state-machine", functio
     return 0
 end, 0)
 
-do_test("merkle tree state must match and reset for each input",
-"advance-state-machine", function(machine, config)
-    for _=1, 2 do
+do_test("merkle tree state must match and reset for each input", "advance-state-machine", function(machine, config)
+    for _ = 1, 2 do
         local hashes = {}
         setup_advance(machine, config, test_data.valid_advance)
 

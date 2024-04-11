@@ -32,12 +32,12 @@ MACHINE_EMULATOR_SO_VERSION= $(shell make -sC ../src so-version)
 TARGETS_WITH_TOOLCHAIN = $(addsuffix -with-toolchain,build-tests-machine build-tests-uarch machine uarch misc riscv-tests riscv-arch-test)
 
 CARTESI_IMAGES_PATH ?= $(abspath ./build/images)
-CARTESI_DATA_PATH ?= $(abspath ./build/data)
+CARTESI_MACHINES_PATH ?= $(abspath ./build/machines)
 CARTESI_TESTS_PATH ?= $(abspath ./build/machine)
 CARTESI_TESTS_UARCH_PATH ?= $(abspath ./build/uarch)
 
 export CARTESI_IMAGES_PATH
-export CARTESI_DATA_PATH
+export CARTESI_MACHINES_PATH
 export CARTESI_TESTS_PATH
 export CARTESI_TESTS_UARCH_PATH
 
@@ -176,14 +176,11 @@ $(TARGETS_WITH_TOOLCHAIN):
 build-tests-misc-with-builder-image:
 	$(MAKE) emulator-builder-exec CONTAINER_COMMAND="make -j\$$(nproc) build-tests-misc"
 
-create-machines:
+create-machines $(CARTESI_MACHINES_PATH):
 	@./lua/create-machines.lua $(CREATE_MACHINES_OPTS)
 
 clean-machines:
 	@rm -rf build/machines/tests
-
-clean-machines-data:
-	@rm -rf $(CARTESI_DATA_PATH)
 
 test-machine:
 	$(LUA) ./lua/cartesi-machine-tests.lua --jobs=$(NUM_JOBS) run
@@ -203,7 +200,7 @@ test-uarch-interpreter:
 test-hash:
 	$(LD_PRELOAD_PREFIX) ./build/misc/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=build/misc/test-merkle-tree-hash
 
-test-jsonrpc: | $(CARTESI_IMAGES)
+test-jsonrpc: | $(CARTESI_IMAGES) $(CARTESI_MACHINES_PATH)
 	./scripts/test-jsonrpc-server.sh ../src/jsonrpc-remote-cartesi-machine '$(LUA) ../src/cartesi-machine.lua' '$(LUA) ./lua/cartesi-machine-tests.lua' '$(LUA)'
 
 test-lua: | $(CARTESI_IMAGES)

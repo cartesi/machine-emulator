@@ -26,13 +26,12 @@ end
 local stderr = stderr_unsilenceable
 
 local function adjust_images_path(path)
-    if not path then return "" end
-    return string.gsub(path, "/*$", "") .. "/"
+    return string.gsub(path or ".", "/*$", "") .. "/"
 end
 
-local IMAGES_DIR = adjust_images_path(os.getenv('CARTESI_IMAGES_PATH') or "/usr/share/cartesi-machine/images")
-local ROOT_DIR = "/tmp/server-manager-root"
-local MACHINES_DIR = ROOT_DIR .. "/tests"
+local IMAGES_DIR = adjust_images_path(os.getenv('CARTESI_IMAGES_PATH') or "build/images")
+local ROOT_DIR = "build/machines/"
+local MACHINES_DIR = ROOT_DIR .. "tests/"
 
 -- Print help and exit
 local function help()
@@ -143,7 +142,7 @@ local function create_default_config(images_dir, command)
                 shared = false, -- default
             },
         },
-        rollup = {
+        cmio = {
             rx_buffer = {
                 start = 0x60000000,
                 length = 0x200000,
@@ -151,21 +150,6 @@ local function create_default_config(images_dir, command)
             },
             tx_buffer = {
                 start = 0x60200000,
-                length = 0x200000,
-                shared = false, -- default
-            },
-            input_metadata = {
-                start = 0x60400000,
-                length = 0x1000,
-                shared = false, -- default
-            },
-            voucher_hashes = {
-                start = 0x60600000,
-                length = 0x200000,
-                shared = false, -- default
-            },
-            notice_hashes = {
-                start = 0x60800000,
                 length = 0x200000,
                 shared = false, -- default
             },
@@ -195,7 +179,7 @@ local function create_machine(machine_name, command, config_func)
     if config_func then config_func(config) end
     local machine = cartesi.machine(config)
     machine:run(math.maxinteger)
-    store_machine(machine, MACHINES_DIR .. "/" .. machine_name)
+    store_machine(machine, MACHINES_DIR .. machine_name)
 end
 
 
@@ -221,13 +205,7 @@ else
     create_machine("inspect-rejecting-machine", "ioctl-echo-loop --reports=0 --reject-inspects --verbose=1");
 end
 
--- Some edge cases
-create_machine("no-output-machine", "while true; do rollup accept; done");
-create_machine("infinite-loop-machine", "rollup accept; while true; do :; done");
-create_machine("halting-machine", "rollup accept");
-create_machine("init-exception-machine", "echo '{\"payload\":\"test payload\"}' | rollup exception");
 create_machine("exception-machine", "rollup accept; echo '{\"payload\":\"test payload\"}' | rollup exception");
-
 
 create_machine("fatal-error-machine", [[
 echo 'curl -vv -H "Content-Type: application/json" -d "{\"status\":\"accept\"}" http://127.0.0.1:5004/finish ; exit 2' > /home/dapp/s.sh;
@@ -247,19 +225,11 @@ create_machine("notice-on-inspect-machine",
     "rollup accept; echo '{\"payload\":\"test payload\"}' | rollup notice; rollup accept");
 
 -- Should not work with no rollup or misconfigured htif
-create_machine("console-getchar-machine", "rollup accept",
-    function(config) config.htif.console_getchar = true end);
 create_machine("no-rollup-machine", "yield manual rx-accepted 0",
-    function(config) config.rollup = nil end);
+    function(config) config.cmio = nil end);
 
 -- Should not work with shared buffers
 create_machine("shared-rx-buffer-machine", "rollup accept",
-    function(config) config.rollup.rx_buffer.shared = true end);
+    function(config) config.cmio.rx_buffer.shared = true end);
 create_machine("shared-tx-buffer-machine", "rollup accept",
-    function(config) config.rollup.tx_buffer.shared = true end);
-create_machine("shared-input-metadata-machine", "rollup accept",
-    function(config) config.rollup.input_metadata.shared = true end);
-create_machine("shared-voucher-hashes-machine", "rollup accept",
-    function(config) config.rollup.voucher_hashes.shared = true end);
-create_machine("shared-notice-hashes-machine", "rollup accept",
-    function(config) config.rollup.notice_hashes.shared = true end);
+    function(config) config.cmio.tx_buffer.shared = true end);

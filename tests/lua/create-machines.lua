@@ -182,7 +182,6 @@ local function create_machine(machine_name, command, config_func)
     store_machine(machine, MACHINES_DIR .. machine_name)
 end
 
-
 create_directory(ROOT_DIR)
 create_directory(MACHINES_DIR)
 
@@ -208,25 +207,20 @@ end
 create_machine("exception-machine", "rollup accept; echo '{\"payload\":\"test payload\"}' | rollup exception");
 
 create_machine("fatal-error-machine", [[
-echo 'curl -vv -H "Content-Type: application/json" -d "{\"status\":\"accept\"}" http://127.0.0.1:5004/finish ; exit 2' > /home/dapp/s.sh;
+echo '
+curl -vv -H "Content-Type: application/json" -d "{\"status\":\"accept\"}" http://127.0.0.1:5004/finish;
+exit 2' > /home/dapp/s.sh;
 chmod +x /home/dapp/s.sh;
 rollup-init bash /home/dapp/s.sh
 ]]);
 
 create_machine("http-server-error-machine", [[
-echo 'curl -vv -H "Content-Type: application/json" -d "{\"status\":\"accept\"}" http://127.0.0.1:5004/finish ; killall rollup-http-server; sleep 86400' > /home/dapp/s.sh;
+echo 'curl -vv -H "Content-Type: application/json" -d "{\"status\":\"accept\"}" http://127.0.0.1:5004/finish;
+killall rollup-http-server;
+sleep 86400' > /home/dapp/s.sh;
 chmod +x /home/dapp/s.sh;
 rollup-init bash /home/dapp/s.sh
 ]]);
-
-create_machine("voucher-on-inspect-machine",
-    "rollup accept; echo '{\"address\":\"fafafafafafafafafafafafafafafafafafafafa\",\"payload\":\"test payload\"}' | rollup voucher; rollup accept");
-create_machine("notice-on-inspect-machine",
-    "rollup accept; echo '{\"payload\":\"test payload\"}' | rollup notice; rollup accept");
-
--- Should not work with no rollup or misconfigured htif
-create_machine("no-rollup-machine", "yield manual rx-accepted 0",
-    function(config) config.cmio = nil end);
 
 -- Should not work with shared buffers
 create_machine("shared-rx-buffer-machine", "rollup accept",

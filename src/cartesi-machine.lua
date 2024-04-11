@@ -2065,21 +2065,21 @@ local function save_cmio_inspect_state_report(machine, config, inspect, length)
     f:close()
 end
 
-local function check_outputs_root_hash(root_hash, output_hashes)
+local function check_outputs_root_hash(root_hash, hashes)
     local z = string.rep("\0", 32)
-    if #output_hashes == 0 then
-        output_hashes = { z }
+    if #hashes == 0 then
+        hashes = { z }
     end
-    for i = 1, 64 do
+    for _ = 1, 64 do
         local parent_output_hashes = {}
         local child = 1
         local parent = 1
         while true do
-            local c1 = output_hashes[child]
+            local c1 = hashes[child]
             if not c1 then
                 break
             end
-            local c2 = output_hashes[child+1]
+            local c2 = hashes[child + 1]
             if c2 then
                 parent_output_hashes[parent] = cartesi.keccak(c1, c2)
             else
@@ -2089,9 +2089,9 @@ local function check_outputs_root_hash(root_hash, output_hashes)
             child = child + 2
         end
         z = cartesi.keccak(z, z)
-        output_hashes = parent_output_hashes
+        hashes = parent_output_hashes
     end
-    assert(root_hash == output_hashes[1], "output root hash mismatch")
+    assert(root_hash == hashes[1], "output root hash mismatch")
 end
 
 local function store_machine(machine, config, dir)

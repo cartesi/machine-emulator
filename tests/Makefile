@@ -179,9 +179,6 @@ build-tests-misc-with-builder-image:
 create-machines:
 	@./lua/create-machines.lua $(CREATE_MACHINES_OPTS)
 
-create-machines-data: $(CARTESI_DATA_PATH)
-	@./scripts/create-machines-data.sh
-
 clean-machines:
 	@rm -rf build/machines/tests
 

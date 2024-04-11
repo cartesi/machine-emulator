@@ -33,6 +33,7 @@ tests=(
     "$lua $script_dir/../lua/machine-test.lua jsonrpc --remote-address=$server_address"
     "$cartesi_machine --remote-address=$server_address --remote-shutdown"
     "$lua $script_dir/../lua/test-jsonrpc-fork.lua --remote-address=$server_address"
+    "$lua $script_dir/../lua/machines-test.lua --remote-address=$server_address"
 )
 
 is_server_running () {

@@ -32,10 +32,12 @@ MACHINE_EMULATOR_SO_VERSION= $(shell make -sC ../src so-version)
 TARGETS_WITH_TOOLCHAIN = $(addsuffix -with-toolchain,build-tests-machine build-tests-uarch machine uarch misc riscv-tests riscv-arch-test)
 
 CARTESI_IMAGES_PATH ?= $(abspath ./build/images)
+CARTESI_DATA_PATH ?= $(abspath ./build/data)
 CARTESI_TESTS_PATH ?= $(abspath ./build/machine)
 CARTESI_TESTS_UARCH_PATH ?= $(abspath ./build/uarch)
 
 export CARTESI_IMAGES_PATH
+export CARTESI_DATA_PATH
 export CARTESI_TESTS_PATH
 export CARTESI_TESTS_UARCH_PATH
 
@@ -54,6 +56,11 @@ endif
 
 ifeq ($(coverage),yes)
 NUM_JOBS = 1
+endif
+
+CREATE_MACHINES_OPTS ?=
+ifeq ($(rollup_init),yes)
+CREATE_MACHINES_OPTS += --rollup-init
 endif
 
 COVERAGE_TOOLCHAIN?=gcc
@@ -168,6 +175,18 @@ $(TARGETS_WITH_TOOLCHAIN):
 
 build-tests-misc-with-builder-image:
 	$(MAKE) emulator-builder-exec CONTAINER_COMMAND="make -j\$$(nproc) build-tests-misc"
+
+create-machines:
+	@./lua/create-machines.lua $(CREATE_MACHINES_OPTS)
+
+create-machines-data: $(CARTESI_DATA_PATH)
+	@./scripts/create-machines-data.sh
+
+clean-machines:
+	@rm -rf build/machines/tests
+
+clean-machines-data:
+	@rm -rf $(CARTESI_DATA_PATH)
 
 test-machine:
 	$(LUA) ./lua/cartesi-machine-tests.lua --jobs=$(NUM_JOBS) run

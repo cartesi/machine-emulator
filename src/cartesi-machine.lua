@@ -173,21 +173,16 @@ where options are:
     advances the state of the machine through a number of inputs in an epoch
 
     <key>:<value> is one of
-        epoch_index:<number>
         input:<filename-pattern>
         input_index_begin:<number>
         input_index_end:<number>
         output:<filename-pattern>
         report:<filename-pattern>
-        outputs_root_hash:<filename-pattern>
+        output_hashes_root_hash:<filename-pattern>
         hashes
 
-        epoch_index
-        the index of the epoch (the value of %%e).
-
-        input (default: "epoch-%%e-input-%%i.bin")
-        the pattern that derives the name of the file read for input %%i
-        of epoch index %%e.
+        input (default: "input-%%i.bin")
+        the pattern that derives the name of the file read for input %%i.
 
         input_index_begin (default: 0)
         index of first input to advance (the first value of %%i).
@@ -195,24 +190,24 @@ where options are:
         input_index_end (default: 0)
         one past index of last input to advance (one past last value of %%i).
 
-        output (default: "epoch-%%e-input-%%i-output-%%o.bin")
+        output (default: "input-%%i-output-%%o.bin")
         the pattern that derives the name of the file written for output %%o
-        of input %%i of epoch %%e.
+        of input %%i.
 
-        report (default: "epoch-%%e-input-%%i-report-%%o.bin")
+        report (default: "input-%%i-report-%%o.bin")
         the pattern that derives the name of the file written for report %%o
-        of input %%i of epoch %%e.
+        of input %%i.
 
-        outputs_root_hash (default: "epoch-%%e-input-%%i-outputs-root-hash.bin")
+        outputs_root_hash (default: "input-%%i-output-hashes-root-hash.bin")
         the pattern that derives the name of the file written for outputs root
-        hash of input %%i of epoch %%e.
+        hash of input %%i.
 
         hashes
         print out hashes before every input.
 
     the input index ranges in {input_index_begin, ..., input_index_end-1}.
-    for each input, "%%e" is replaced by the epoch index, "%%i" by the
-    input index, and "%%o" by the output or report index.
+    for each input, "%%i" is replaced by the input index, and "%%o" by the output
+    or report index.
 
   --cmio-inspect-state=<key>:<value>[,<key>:<value>[,...]...]
     inspect the state of the machine with a query.
@@ -1077,25 +1072,23 @@ local options = {
         function(all, opts)
             if not opts then return false end
             local r = util.parse_options(opts, {
-                epoch_index = true,
                 input = true,
                 input_index_begin = true,
                 input_index_end = true,
-                outputs_root_hash = true,
+                output_hashes_root_hash = true,
                 output = true,
                 report = true,
                 hashes = true,
             })
             assert(not r.hashes or r.hashes == true, "invalid hashes value in " .. all)
-            r.epoch_index = assert(util.parse_number(r.epoch_index), "invalid epoch index in " .. all)
-            r.input = r.input or "epoch-%e-input-%i.bin"
+            r.input = r.input or "input-%i.bin"
             r.input_index_begin = r.input_index_begin or 0
             r.input_index_begin = assert(util.parse_number(r.input_index_begin), "invalid input index begin in " .. all)
             r.input_index_end = r.input_index_end or 0
             r.input_index_end = assert(util.parse_number(r.input_index_end), "invalid input index end in " .. all)
-            r.output = r.output or "epoch-%e-input-%i-output-%o.bin"
-            r.report = r.report or "epoch-%e-input-%i-report-%o.bin"
-            r.outputs_root_hash = r.outputs_root_hash or "epoch-%e-input-%i-outputs_root_hash.bin"
+            r.output = r.output or "input-%i-output-%o.bin"
+            r.report = r.report or "input-%i-report-%o.bin"
+            r.output_hashes_root_hash = r.output_hashes_root_hash or "input-%i-output-hahes-root-hash.bin"
             r.next_input_index = r.input_index_begin
             cmio_advance = r
             return true
@@ -2010,7 +2003,7 @@ local function instantiate_filename(pattern, values)
 end
 
 local function save_cmio_state_with_format(machine, config, advance, length, format, index)
-    local values = { e = advance.epoch_index, i = advance.next_input_index - 1, o = index }
+    local values = { i = advance.next_input_index - 1, o = index }
     local name = instantiate_filename(format, values)
     stderr("Storing %s\n", name)
     local f = assert(io.open(name, "wb"))
@@ -2042,7 +2035,7 @@ local function load_memory_range(machine, config, filename)
 end
 
 local function load_cmio_input(machine, config, advance)
-    local values = { e = advance.epoch_index, i = advance.next_input_index }
+    local values = { i = advance.next_input_index }
     machine:replace_memory_range(config.rx_buffer) -- clear
     return load_memory_range(machine, config.rx_buffer, instantiate_filename(advance.input, values))
 end
@@ -2197,7 +2190,7 @@ while math.ult(cycles, max_mcycle) do
                 error("unexpected manual yield reason")
             end
             output_hashes = {}
-            stderr("\nEpoch %d before input %d\n", cmio_advance.epoch_index, cmio_advance.next_input_index)
+            stderr("\nBefore input %d\n", cmio_advance.next_input_index)
             if cmio_advance.hashes then print_root_hash(machine) end
             machine:snapshot()
             local input_length = load_cmio_input(machine, config.cmio, cmio_advance)

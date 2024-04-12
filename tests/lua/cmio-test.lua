@@ -20,17 +20,11 @@ local cartesi = require("cartesi")
 local test_util = require("cartesi.tests.util")
 local test_data = require("cartesi.tests.data")
 
--- Note: for this test to work, jsonrpc-remote-cartesi-machine must
--- run on the same computer and jsonrpc-remote-cartesi-machine execution path
--- must be provided
+local function adjust_images_path(path) return string.gsub(path or ".", "/*$", "") .. "/" end
+local MACHINES_DIR = adjust_images_path(test_util.cmio_path)
 
--- There is no UINT64_MAX in Lua, so we have to use the signed representation
-local MAX_MCYCLE = -1
-local OUTPUTS_ROOT_HASH_SIZE = 32
-
-local cleanup = {}
 local remote_address
-local MACHINES_DIR = test_util.machines_path
+local cleanup = {}
 
 -- Print help and exit
 local function help()
@@ -43,10 +37,7 @@ Usage:
 where options are:
 
   --remote-address=<address>
-    address of the jsonrpc-remote-cartesi-machine.
-
-  --help
-    print this help message with usage and available options
+    run tests on a remote cartesi machine (when machine type is jsonrpc).
 
 <address> is one of the following formats:
   <host>:<port>
@@ -60,6 +51,13 @@ where options are:
 end
 
 local options = {
+    {
+        "^%-%-h$",
+        function(all)
+            if not all then return false end
+            help()
+        end,
+    },
     {
         "^%-%-help$",
         function(all)
@@ -90,26 +88,44 @@ for _, argument in ipairs({ ... }) do
     end
 end
 
-assert(not arguments[1])
-assert(remote_address ~= nil, "remote cartesi machine address is missing")
+local machine_type = assert(arguments[1], "missing machine type")
+assert(machine_type == "local" or machine_type == "jsonrpc", "unknown machine type, should be 'local' or 'jsonrpc'")
+
+local protocol
+if machine_type == "jsonrpc" then
+    assert(remote_address ~= nil, "remote cartesi machine address is missing")
+    protocol = require("cartesi.jsonrpc")
+end
 
 local function connect()
-    local remote = require("cartesi.jsonrpc").stub(remote_address)
+    local remote = protocol.stub(remote_address)
     local version = assert(remote.get_version(), "could not connect to remote cartesi machine at " .. remote_address)
     local shutdown = function() remote.shutdown() end
     local mt = { __gc = function() pcall(shutdown) end }
     setmetatable(cleanup, mt)
     return remote, version
 end
-local remote = connect()
+
+local remote
+
+-- There is no UINT64_MAX in Lua, so we have to use the signed representation
+local MAX_MCYCLE = -1
+local OUTPUTS_ROOT_HASH_SIZE = 32
 
 local function load_machine(name)
     local runtime = {
         concurrency = {
             update_merkle_tree = 0,
         },
+        skip_root_hash_check = true,
+        skip_root_hash_store = true,
     }
-    return assert(remote).machine(MACHINES_DIR .. name, runtime)
+    if machine_type ~= "local" then
+        if not remote then remote = connect() end
+        return assert(remote.machine(MACHINES_DIR .. name, runtime))
+    else
+        return assert(cartesi.machine(MACHINES_DIR .. name, runtime))
+    end
 end
 
 local function set_yield_data(machine, reason, data)
@@ -158,6 +174,12 @@ local function check_output(machine, config, expected)
     assert(cmd == cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC)
     assert(reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT)
     local output = machine:read_memory(config.cmio.tx_buffer.start, length)
+    if expected ~= output then
+        local e <close> = assert(io.open("expected.bin", "wb"))
+        local o <close> = assert(io.open("output.bin", "wb"))
+        e:write(expected)
+        o:write(output)
+    end
     assert(expected == output)
 
     return cartesi.keccak(output)
@@ -206,14 +228,20 @@ local function check_outputs_root_hash(root_hash, output_hashes)
     assert(root_hash == output_hashes[1], "output root hash mismatch")
 end
 
-local function check_finish(machine, config, output_hashes)
+local function check_finish(machine, config, output_hashes, expected_reason)
     local cmd, reason, length = get_yield(machine)
     assert(machine:read_iflags_Y())
     assert(cmd == cartesi.machine.HTIF_YIELD_CMD_MANUAL)
-    assert(reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
-    assert(length == OUTPUTS_ROOT_HASH_SIZE)
-    local output = machine:read_memory(config.cmio.tx_buffer.start, length)
-    check_outputs_root_hash(output, output_hashes)
+    assert(reason == expected_reason)
+
+    -- only check for output-hashes-root-hash if the input was accepted
+    if expected_reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+        assert(length == OUTPUTS_ROOT_HASH_SIZE)
+        local output = machine:read_memory(config.cmio.tx_buffer.start, length)
+        check_outputs_root_hash(output, output_hashes)
+    else
+        assert(length == 0)
+    end
 end
 
 local function do_test(description, machine_name, fn, expected_exit_code)
@@ -252,45 +280,88 @@ do_test("halt with exit code", "exception-machine", function(machine, config)
     machine:run(MAX_MCYCLE)
 end, 1)
 
-do_test("inspect reply is the same as request", "inspect-state-machine", function(machine, config)
-    local message = "hello world"
-    setup_inspect(machine, config, message)
-    machine:run(MAX_MCYCLE)
+for _, dapp in pairs({ "ioctl", "http" }) do
+    local suffix = "-" .. dapp
+    local desc = " (" .. machine_type .. "," .. dapp .. ")"
+    do_test(
+        "merkle tree state must match and reset for each advance" .. desc,
+        "advance-state-machine" .. suffix,
+        function(machine, config)
+            for _ = 1, 2 do
+                local hashes = {}
+                setup_advance(machine, config, test_data.valid_advance)
 
-    check_report(machine, config, message)
-    return 0
-end, 0)
+                -- 2 vouchers
+                machine:run(MAX_MCYCLE)
+                hashes[#hashes + 1] = check_output(machine, config, test_data.valid_advance_voucher_reply)
 
-do_test("merkle tree state must match and reset for each input", "advance-state-machine", function(machine, config)
-    for _ = 1, 2 do
+                machine:run(MAX_MCYCLE)
+                hashes[#hashes + 1] = check_output(machine, config, test_data.valid_advance_voucher_reply)
+
+                -- 2 notices
+                machine:run(MAX_MCYCLE)
+                hashes[#hashes + 1] = check_output(machine, config, test_data.valid_advance_notice_reply)
+
+                machine:run(MAX_MCYCLE)
+                hashes[#hashes + 1] = check_output(machine, config, test_data.valid_advance_notice_reply)
+
+                -- 2 reports
+                machine:run(MAX_MCYCLE)
+                check_report(machine, config, test_data.valid_advance_report_reply)
+
+                machine:run(MAX_MCYCLE)
+                check_report(machine, config, test_data.valid_advance_report_reply)
+
+                -- finish
+                machine:run(MAX_MCYCLE)
+                check_finish(machine, config, hashes, cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+            end
+
+            return 0
+        end,
+        0
+    )
+
+    do_test("inspect reply is the same as request" .. desc, "inspect-state-machine" .. suffix, function(machine, config)
+        setup_inspect(machine, config, test_data.valid_inspect)
+
+        -- 1 reports
+        machine:run(MAX_MCYCLE)
+        check_report(machine, config, test_data.valid_inspect_report_reply)
+
+        return 0
+    end, 0)
+
+    do_test(
+        "merkle tree is pristine when input is rejected" .. desc,
+        "advance-rejecting-machine" .. suffix,
+        function(machine, config)
+            local hashes = {}
+            setup_advance(machine, config, test_data.valid_advance)
+
+            -- 1 reports
+            machine:run(MAX_MCYCLE)
+            check_report(machine, config, test_data.valid_advance_report_reply)
+
+            -- finish
+            machine:run(MAX_MCYCLE)
+            check_finish(machine, config, hashes, cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
+
+            return 0
+        end,
+        0
+    )
+
+    do_test("the other case" .. desc, "inspect-rejecting-machine" .. suffix, function(machine, config)
         local hashes = {}
-        setup_advance(machine, config, test_data.valid_advance)
-
-        -- 2 vouchers
-        machine:run(MAX_MCYCLE)
-        hashes[#hashes + 1] = check_output(machine, config, test_data.valid_advance_voucher_reply)
-
-        machine:run(MAX_MCYCLE)
-        hashes[#hashes + 1] = check_output(machine, config, test_data.valid_advance_voucher_reply)
-
-        -- 2 notices
-        machine:run(MAX_MCYCLE)
-        hashes[#hashes + 1] = check_output(machine, config, test_data.valid_advance_notice_reply)
-
-        machine:run(MAX_MCYCLE)
-        hashes[#hashes + 1] = check_output(machine, config, test_data.valid_advance_notice_reply)
-
-        -- 2 reports
-        machine:run(MAX_MCYCLE)
-        check_report(machine, config, test_data.valid_advance_report_reply)
-
-        machine:run(MAX_MCYCLE)
-        check_report(machine, config, test_data.valid_advance_report_reply)
+        setup_inspect(machine, config, test_data.valid_inspect)
 
         -- finish
         machine:run(MAX_MCYCLE)
-        check_finish(machine, config, hashes)
-    end
+        check_finish(machine, config, hashes, cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
 
-    return 0
-end, 0)
+        return 0
+    end, 0)
+end
+
+print("\n\nAll tests of cmio API for type " .. machine_type .. " passed")

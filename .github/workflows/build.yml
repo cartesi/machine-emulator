@@ -202,6 +202,14 @@ jobs:
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests
 
+      - name: Create cmio templates
+        run: |
+          docker run --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/lua/create-machines.lua
+
+      - name: Run cmio lua test scripts
+        run: |
+          docker run --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-cmio.sh jsonrpc-remote-cartesi-machine cartesi-machine lua
+
       - name: Run Merkle tree tests
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash
@@ -364,6 +372,14 @@ jobs:
       - name: Run jsonrpc lua test scripts
         run: |
           docker run --platform linux/arm64 --rm -t -e "CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE=1" ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests
+
+      - name: Create cmio templates
+        run: |
+          docker run --platform linux/arm64 --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/lua/create-machines.lua
+
+      - name: Run cmio lua test scripts
+        run: |
+          docker run --platform linux/arm64 --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-cmio.sh jsonrpc-remote-cartesi-machine cartesi-machine lua
 
       - name: Run Merkle tree tests
         run: |

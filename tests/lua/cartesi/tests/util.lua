@@ -23,10 +23,10 @@ local WORD_LOG2_SIZE = 3
 local function adjust_path(path) return string.gsub(path or ".", "/*$", "") .. "/" end
 
 local test_util = {
-    images_path = adjust_path(os.getenv("CARTESI_IMAGES_PATH")),
-    tests_path = adjust_path(os.getenv("CARTESI_TESTS_PATH")),
-    machines_path = adjust_path(os.getenv("CARTESI_MACHINES_PATH")),
-    tests_uarch_path = adjust_path(os.getenv("CARTESI_TESTS_UARCH_PATH")),
+    images_path = adjust_path(assert(os.getenv("CARTESI_IMAGES_PATH"))),
+    tests_path = adjust_path(assert(os.getenv("CARTESI_TESTS_PATH"))),
+    cmio_path = adjust_path(assert(os.getenv("CARTESI_CMIO_PATH"))),
+    tests_uarch_path = adjust_path(assert(os.getenv("CARTESI_TESTS_UARCH_PATH"))),
 }
 
 local zero_keccak_hash_table = {

@@ -2021,8 +2021,8 @@ local function save_cmio_output(machine, config, advance, length)
     return save_cmio_state_with_format(machine, config, advance, length, advance.output, advance.output_index)
 end
 
-local function save_cmio_outputs_root_hash(machine, config, advance, length)
-    return save_cmio_state_with_format(machine, config, advance, length, advance.outputs_root_hash)
+local function save_cmio_output_hashes_root_hash(machine, config, advance, length)
+    return save_cmio_state_with_format(machine, config, advance, length, advance.output_hashes_root_hash)
 end
 
 local function load_memory_range(machine, config, filename)
@@ -2062,7 +2062,7 @@ end
 local function check_outputs_root_hash(root_hash, hashes)
     local z = string.rep("\0", 32)
     if #hashes == 0 then hashes = { z } end
-    for _ = 1, 64 do
+    for _ = 1, 16 do
         local parent_output_hashes = {}
         local child = 1
         local parent = 1
@@ -2179,7 +2179,8 @@ while math.ult(cycles, max_mcycle) do
                 -- save only if we have already run an input and have just accepted it
                 if cmio_advance.next_input_index > cmio_advance.input_index_begin then
                     assert(length == 32, "expected root hash in tx buffer")
-                    local root_hash = save_cmio_outputs_root_hash(machine, config.cmio.tx_buffer, cmio_advance, length)
+                    local root_hash =
+                        save_cmio_output_hashes_root_hash(machine, config.cmio.tx_buffer, cmio_advance, length)
                     check_outputs_root_hash(root_hash, output_hashes)
                 end
             -- previous reason was a reject
@@ -2205,7 +2206,8 @@ while math.ult(cycles, max_mcycle) do
             if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
                 if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
                     assert(length == 32, "expected root hash in tx buffer")
-                    local root_hash = save_cmio_outputs_root_hash(machine, config.cmio.tx_buffer, cmio_advance, 32)
+                    local root_hash =
+                        save_cmio_output_hashes_root_hash(machine, config.cmio.tx_buffer, cmio_advance, 32)
                     check_outputs_root_hash(root_hash, output_hashes)
                     output_hashes = {}
                     cmio_advance = nil

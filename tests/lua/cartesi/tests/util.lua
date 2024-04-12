@@ -24,8 +24,8 @@ local function adjust_path(path) return string.gsub(path or ".", "/*$", "") .. "
 
 local test_util = {
     images_path = adjust_path(os.getenv("CARTESI_IMAGES_PATH")),
-    data_path = adjust_path(os.getenv("CARTESI_DATA_PATH")),
     tests_path = adjust_path(os.getenv("CARTESI_TESTS_PATH")),
+    machines_path = adjust_path(os.getenv("CARTESI_MACHINES_PATH")),
     tests_uarch_path = adjust_path(os.getenv("CARTESI_TESTS_UARCH_PATH")),
 }
 

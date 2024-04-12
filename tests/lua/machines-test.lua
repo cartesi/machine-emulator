@@ -17,6 +17,7 @@
 --
 
 local cartesi = require("cartesi")
+local test_util = require("cartesi.tests.util")
 local test_data = require("cartesi.tests.data")
 
 -- Note: for this test to work, jsonrpc-remote-cartesi-machine must
@@ -29,7 +30,7 @@ local OUTPUTS_ROOT_HASH_SIZE = 32
 
 local cleanup = {}
 local remote_address
-local MACHINES_DIR = "build/machines/"
+local MACHINES_DIR = test_util.machines_path
 
 -- Print help and exit
 local function help()
@@ -183,7 +184,7 @@ end
 local function check_outputs_root_hash(root_hash, output_hashes)
     local z = string.rep("\0", 32)
     if #output_hashes == 0 then output_hashes = { z } end
-    for _ = 1, 64 do
+    for _ = 1, 16 do
         local parent_output_hashes = {}
         local child = 1
         local parent = 1

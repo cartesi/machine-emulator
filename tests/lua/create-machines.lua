@@ -18,13 +18,18 @@
 
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
+local test_util = require("cartesi.tests.util")
 
 local function stderr_unsilenceable(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
 local stderr = stderr_unsilenceable
 
 local function adjust_images_path(path) return string.gsub(path or ".", "/*$", "") .. "/" end
-local IMAGES_DIR = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH") or "build/images")
-local MACHINES_DIR = adjust_images_path(os.getenv("CARTESI_MACHINES_PATH") or "build/machines/")
+local function basedir(s)
+    s = string.gsub(s, "/$", "")
+    return string.match(s, "/.+[^/]+/") or "."
+end
+local IMAGES_DIR = adjust_images_path(test_util.images_path)
+local MACHINES_DIR = adjust_images_path(test_util.cmio_path)
 
 -- Print help and exit
 local function help()
@@ -39,16 +44,12 @@ where options are:
    -h or --help
     print this help message and exit
 
-   --rollup-init
-    uses rollup-init echo-dapp instead of the ioctl-echo-loop on machines
-
 ]=],
         arg[0]
     )
     os.exit()
 end
 
-local rollup_init = false
 local cmdline_opts_finished = false
 -- List of supported options
 -- Options are processed in order
@@ -71,14 +72,6 @@ local options = {
         function(all)
             if not all then return false end
             help()
-            return true
-        end,
-    },
-    {
-        "^%-%-rollup%-init$",
-        function(all)
-            if not all then return false end
-            rollup_init = true
             return true
         end,
     },
@@ -186,26 +179,24 @@ local function create_machine(machine_name, command, config_func)
     store_machine(machine, MACHINES_DIR .. machine_name)
 end
 
+create_directory(basedir(MACHINES_DIR))
 create_directory(MACHINES_DIR)
 
 -- Basic cases
-if rollup_init then
-    create_machine("advance-state-machine", "rollup-init echo-dapp --vouchers=2 --notices=2 --reports=2 --verbose")
-    create_machine("inspect-state-machine", "rollup-init echo-dapp --reports=2 --verbose")
-    create_machine("one-notice-machine", "rollup-init echo-dapp --vouchers=0 --notices=1 --reports=0 --verbose")
-    create_machine("one-report-machine", "rollup-init echo-dapp --vouchers=0 --notices=0 --reports=1 --verbose")
-    create_machine("one-voucher-machine", "rollup-init echo-dapp --vouchers=1 --notices=0 --reports=0 --verbose")
-    create_machine("advance-rejecting-machine", "rollup-init echo-dapp --reject=0 --verbose")
-    create_machine("inspect-rejecting-machine", "rollup-init echo-dapp --reports=0 --reject-inspects --verbose")
-else
-    create_machine("advance-state-machine", "ioctl-echo-loop --vouchers=2 --notices=2 --reports=2 --verbose=1")
-    create_machine("inspect-state-machine", "ioctl-echo-loop --reports=2 --verbose=1")
-    create_machine("one-notice-machine", "ioctl-echo-loop --vouchers=0 --notices=1 --reports=0 --verbose=1")
-    create_machine("one-report-machine", "ioctl-echo-loop --vouchers=0 --notices=0 --reports=1 --verbose=1")
-    create_machine("one-voucher-machine", "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0 --verbose=1")
-    create_machine("advance-rejecting-machine", "ioctl-echo-loop --reject=0 --verbose=1")
-    create_machine("inspect-rejecting-machine", "ioctl-echo-loop --reports=0 --reject-inspects --verbose=1")
-end
+create_machine("advance-rejecting-machine-http", "rollup-init echo-dapp --reject=0 --verbose")
+create_machine("advance-rejecting-machine-ioctl", "ioctl-echo-loop --reject=0 --verbose=1")
+create_machine("advance-state-machine-http", "rollup-init echo-dapp --vouchers=2 --notices=2 --reports=2 --verbose")
+create_machine("advance-state-machine-ioctl", "ioctl-echo-loop --vouchers=2 --notices=2 --reports=2 --verbose=1")
+create_machine("inspect-rejecting-machine-http", "rollup-init echo-dapp --reports=0 --reject-inspects --verbose")
+create_machine("inspect-rejecting-machine-ioctl", "ioctl-echo-loop --reports=0 --reject-inspects --verbose=1")
+create_machine("inspect-state-machine-http", "rollup-init echo-dapp --reports=2 --verbose")
+create_machine("inspect-state-machine-ioctl", "ioctl-echo-loop --reports=2 --verbose=1")
+create_machine("one-notice-machine-http", "rollup-init echo-dapp --vouchers=0 --notices=1 --reports=0 --verbose")
+create_machine("one-notice-machine-ioctl", "ioctl-echo-loop --vouchers=0 --notices=1 --reports=0 --verbose=1")
+create_machine("one-report-machine-http", "rollup-init echo-dapp --vouchers=0 --notices=0 --reports=1 --verbose")
+create_machine("one-report-machine-ioctl", "ioctl-echo-loop --vouchers=0 --notices=0 --reports=1 --verbose=1")
+create_machine("one-voucher-machine-http", "rollup-init echo-dapp --vouchers=1 --notices=0 --reports=0 --verbose")
+create_machine("one-voucher-machine-ioctl", "ioctl-echo-loop --vouchers=1 --notices=0 --reports=0 --verbose=1")
 
 create_machine("exception-machine", 'rollup accept; echo \'{"payload":"test payload"}\' | rollup exception')
 

@@ -30,16 +30,22 @@ FROM --platform=$TARGETPLATFORM cartesi/machine-emulator:$TAG
 ARG MACHINE_EMULATOR_VERSION=0.0.0
 ARG TARGETARCH
 
-USER root
-
-COPY --from=tests-debian-packager /usr/src/emulator/cartesi-machine-tests-*.deb .
-RUN apt-get update && DEBIAN_FRONTEND="noninteractive" apt-get install -y \
-    ./cartesi-machine-tests-*.deb \
-    && rm -rf /var/lib/apt/lists/* \
-    && rm cartesi-machine-tests-*.deb
-
-USER cartesi
-
 ENV CARTESI_IMAGES_PATH=/usr/share/cartesi-machine/tests/data/images
 ENV CARTESI_TESTS_PATH=/usr/share/cartesi-machine/tests/data/machine
 ENV CARTESI_TESTS_UARCH_PATH=/usr/share/cartesi-machine/tests/data/uarch
+ENV CARTESI_CMIO_PATH=/tmp/cartesi-machine/tests/data/cmio
+
+USER root
+
+COPY --from=tests-debian-packager /usr/src/emulator/cartesi-machine-tests-*.deb .
+RUN <<EOF
+set -e
+export DEBIAN_FRONTEND="noninteractive"
+apt-get update
+apt-get install -y ./cartesi-machine-tests-*.deb
+rm -rf /var/lib/apt/lists/* cartesi-machine-tests-*.deb
+mkdir -p ${CARTESI_CMIO_PATH}
+chown -R cartesi:cartesi ${CARTESI_CMIO_PATH}
+EOF
+
+USER cartesi

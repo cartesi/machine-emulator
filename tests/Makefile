@@ -32,12 +32,12 @@ MACHINE_EMULATOR_SO_VERSION= $(shell make -sC ../src so-version)
 TARGETS_WITH_TOOLCHAIN = $(addsuffix -with-toolchain,build-tests-machine build-tests-uarch machine uarch misc riscv-tests riscv-arch-test)
 
 CARTESI_IMAGES_PATH ?= $(abspath ./build/images)
-CARTESI_MACHINES_PATH ?= $(abspath ./build/machines)
+CARTESI_CMIO_PATH ?= $(abspath ./build/cmio)
 CARTESI_TESTS_PATH ?= $(abspath ./build/machine)
 CARTESI_TESTS_UARCH_PATH ?= $(abspath ./build/uarch)
 
 export CARTESI_IMAGES_PATH
-export CARTESI_MACHINES_PATH
+export CARTESI_CMIO_PATH
 export CARTESI_TESTS_PATH
 export CARTESI_TESTS_UARCH_PATH
 
@@ -92,7 +92,7 @@ CARTESI_IMAGES = $(CARTESI_IMAGES_PATH)/linux.bin
 STYLUA=stylua
 STYLUA_FLAGS=--indent-type Spaces --collapse-simple-statement Always
 
-build-tests-all: misc build-tests-machine-with-toolchain build-tests-uarch-with-toolchain images
+build-tests-all: misc build-tests-machine-with-toolchain build-tests-uarch-with-toolchain images create-machines
 
 build-tests-machine: machine riscv-tests
 
@@ -176,11 +176,14 @@ $(TARGETS_WITH_TOOLCHAIN):
 build-tests-misc-with-builder-image:
 	$(MAKE) emulator-builder-exec CONTAINER_COMMAND="make -j\$$(nproc) build-tests-misc"
 
-create-machines $(CARTESI_MACHINES_PATH):
-	@./lua/create-machines.lua $(CREATE_MACHINES_OPTS)
+create-machines $(CARTESI_CMIO_PATH): | $(CARTESI_IMAGES)
+	$(LUA) ./lua/create-machines.lua $(CREATE_MACHINES_OPTS)
 
 clean-machines:
-	@rm -rf build/machines/tests
+	@rm -rf $(CARTESI_CMIO_PATH)
+
+test-cmio: | $(CARTESI_CMIO_PATH)
+	@./scripts/test-cmio.sh ../src/jsonrpc-remote-cartesi-machine '$(LUA) ../src/cartesi-machine.lua'
 
 test-machine:
 	$(LUA) ./lua/cartesi-machine-tests.lua --jobs=$(NUM_JOBS) run
@@ -200,7 +203,7 @@ test-uarch-interpreter:
 test-hash:
 	$(LD_PRELOAD_PREFIX) ./build/misc/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=build/misc/test-merkle-tree-hash
 
-test-jsonrpc: | $(CARTESI_IMAGES) $(CARTESI_MACHINES_PATH)
+test-jsonrpc:
 	./scripts/test-jsonrpc-server.sh ../src/jsonrpc-remote-cartesi-machine '$(LUA) ../src/cartesi-machine.lua' '$(LUA) ./lua/cartesi-machine-tests.lua' '$(LUA)'
 
 test-lua: | $(CARTESI_IMAGES)
@@ -252,7 +255,7 @@ coverage-report: $(COVERAGE_OUTPUT_DIR)
 export LLVM_PROFILE_FILE=coverage-%p.profraw
 endif
 
-test: test-save-and-load test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-hash
+test: test-save-and-load test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-hash test-cmio
 
 lint format check-format:
 	@$(MAKE) -C misc $@

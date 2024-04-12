@@ -21,18 +21,15 @@ set -e
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 remote_cartesi_machine=$1
 cartesi_machine=$2
-cartesi_machine_tests=$3
-lua=$4
+lua=$3
 test_path=${CARTESI_TESTS_PATH}
+cmio_path=${CARTESI_CMIO_PATH}
 
-server_address=127.0.0.1:6001
+server_address=127.0.0.1:6010
 
 tests=(
-    "$cartesi_machine_tests --remote-address=$server_address --test-path=\"$test_path\" --test='.*' run"
-    "$lua $script_dir/../lua/machine-bind.lua jsonrpc --remote-address=$server_address"
-    "$lua $script_dir/../lua/machine-test.lua jsonrpc --remote-address=$server_address"
-    "$cartesi_machine --remote-address=$server_address --remote-shutdown"
-    "$lua $script_dir/../lua/test-jsonrpc-fork.lua --remote-address=$server_address"
+    "$lua $script_dir/../lua/cmio-test.lua jsonrpc --remote-address=$server_address"
+    "$lua $script_dir/../lua/cmio-test.lua local"
 )
 
 is_server_running () {
@@ -41,8 +38,7 @@ is_server_running () {
 }
 
 wait_for_server () {
-    for i in $(seq 1 10)
-    do
+    for i in $(seq 1 10); do
         if is_server_running
         then
             return 0
@@ -55,9 +51,16 @@ wait_for_server () {
 
 wait_for_shutdown () {
     pid=$1
-    sleep 1
-    if ps -p $pid > /dev/null
-    then
+
+    for i in $(seq 1 10); do
+        if ps -p $pid > /dev/null; then
+            kill $pid
+            echo "waiting for pid: $pid..."
+            sleep 1
+        fi
+    done
+
+    if ps -p $pid > /dev/null; then
         kill $pid
         echo "$0 killed $pid (server was still running after shutdown)" >&2
         exit 1

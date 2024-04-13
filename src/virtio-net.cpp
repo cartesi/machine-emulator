@@ -16,7 +16,7 @@
 
 #include "virtio-net.h"
 
-#ifdef HAVE_SLIRP
+#if defined(HAVE_SLIRP) || defined(HAVE_TUNTAP)
 
 namespace cartesi {
 
@@ -141,4 +141,4 @@ bool virtio_net::read_next_packet_from_host(i_device_state_access *a) {
 
 } // namespace cartesi
 
-#endif // HAVE_SLIRP
+#endif // defined(HAVE_SLIRP) || defined(HAVE_TUNTAP)

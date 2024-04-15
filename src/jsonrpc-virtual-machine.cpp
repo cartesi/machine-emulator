@@ -59,10 +59,12 @@ struct http_request_data {
 
 // Performs additional client socket configuration
 static void setup_client_socket(struct mg_connection *c) {
+#if defined(__APPLE__)
 #if defined(SO_LINGER)
-    // Minimize socket close time: by setting the linger time to 0.
-    // Avoid accumulating socket in TIME_WAIT state in rapid successive requests, which can consume all available ports.
-    // It is safe to do this because this client decides to close the connection, after all data is received.
+    // Minimize socket close time by setting the linger time to 0.
+    // On macOS, it avoids accumulating socket in TIME_WAIT state, after rapid successive requests, which can consume
+    // all available ports. It is safe to do this because it is the client who decides to close the connection, after
+    // all data is received.
     struct linger so_linger {};
     so_linger.l_onoff = 1;
     so_linger.l_linger = 0; // do not wait
@@ -70,6 +72,7 @@ static void setup_client_socket(struct mg_connection *c) {
     auto socket = static_cast<MG_SOCKET_TYPE>(reinterpret_cast<size_t>(c->fd));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     (void) setsockopt(socket, SOL_SOCKET, SO_LINGER, reinterpret_cast<char *>(&so_linger), sizeof(so_linger));
+#endif
 #endif
 }
 

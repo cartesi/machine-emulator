@@ -419,13 +419,14 @@ local function create_catalog_json_log(contexts)
     util.indentout(out, 0, "[\n")
     local n = #contexts
     for i, ctx in ipairs(contexts) do
-        local path = make_json_log_file_name(ctx.test_name, "-steps")
+        local logFilename = make_json_log_file_name(ctx.test_name, "-steps")
         util.indentout(
             out,
             1,
-            '{"path": "%s", "steps": %d, "proofs":%s, "proofsFrequency":%d, '
+            '{"logFilename": "%s", "binaryFilename": "%s", "steps": %d, "proofs":%s, "proofsFrequency":%d, '
                 .. '"initialRootHash": "%s", "finalRootHash": "%s"}',
-            path,
+            logFilename,
+            ctx.ram_image or "",
             ctx.step_count,
             proofs,
             proofs_frequency,

@@ -1929,11 +1929,11 @@ local function ilog2(value)
     value = assert(math.tointeger(value), "expected integer")
     assert(value ~= 0, "expected non-zero integer")
     local log = 0
-    while value ~= 0 do
+    while value > 1 do
         log = log + 1
         value = value >> 1
     end
-    return value
+    return log
 end
 
 local function check_cmio_memory_range_config(range, name)

@@ -58,11 +58,6 @@ ifeq ($(coverage),yes)
 NUM_JOBS = 1
 endif
 
-CREATE_MACHINES_OPTS ?=
-ifeq ($(rollup_init),yes)
-CREATE_MACHINES_OPTS += --rollup-init
-endif
-
 COVERAGE_TOOLCHAIN?=gcc
 COVERAGE_OUTPUT_DIR=$(BUILDDIR)/coverage
 COVERAGE_WORKLOAD=\
@@ -92,7 +87,7 @@ CARTESI_IMAGES = $(CARTESI_IMAGES_PATH)/linux.bin
 STYLUA=stylua
 STYLUA_FLAGS=--indent-type Spaces --collapse-simple-statement Always
 
-build-tests-all: misc build-tests-machine-with-toolchain build-tests-uarch-with-toolchain images create-machines
+build-tests-all: misc build-tests-machine-with-toolchain build-tests-uarch-with-toolchain images $(CARTESI_CMIO_PATH)
 
 build-tests-machine: machine riscv-tests
 
@@ -177,7 +172,8 @@ build-tests-misc-with-builder-image:
 	$(MAKE) emulator-builder-exec CONTAINER_COMMAND="make -j\$$(nproc) build-tests-misc"
 
 create-machines $(CARTESI_CMIO_PATH): | $(CARTESI_IMAGES)
-	$(LUA) ./lua/create-machines.lua $(CREATE_MACHINES_OPTS)
+	@rm -rf $(CARTESI_CMIO_PATH)
+	$(LUA) ./lua/create-machines.lua
 
 clean-machines:
 	@rm -rf $(CARTESI_CMIO_PATH)

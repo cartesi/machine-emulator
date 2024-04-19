@@ -16,10 +16,7 @@ src/merkle-tree-hash
 src/tests/test-machine-c-api
 src/tests/test-merkle-tree-hash
 
-doc/html
-doc/api.md
-doc/html/
-doc/xml/
+doc/doxygen/html
 
 .venv
 .vscode

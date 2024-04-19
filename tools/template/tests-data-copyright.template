@@ -50,12 +50,12 @@ Copyright: 2020. RISC-V International.
 Source: https://github.com/cartesi/riscv-arch-test
 License: BSD-3-Clause
 
-Files: /usr/share/cartesi-machine/tests/data/images/linux-6.5.9-ctsi-1-v0.19.1.bin
+Files: /usr/share/cartesi-machine/tests/data/images/linux-6.5.13-ctsi-1-v0.20.0.bin
 Copyright: Various authors, see below
 Source: https://github.com/cartesi/linux/
 License: GPL-2.0-only
 
-Files: /usr/share/cartesi-machine/tests/data/images/rootfs-tools-v0.14.1.ext2
+Files: /usr/share/cartesi-machine/tests/data/images/rootfs-tools-v0.15.0.ext2
 Copyright: Various authors, see below
 Source: https://github.com/cartesi/machine-emulator-tools/
 License: Various, see below

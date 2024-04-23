@@ -74,9 +74,9 @@ using json = nlohmann::json;
 /// \brief Server semantic version major
 static constexpr uint32_t server_version_major = 0;
 /// \brief Server semantic version minor
-static constexpr uint32_t server_version_minor = 1;
+static constexpr uint32_t server_version_minor = 4;
 /// \brief Server semantic version patch
-static constexpr uint32_t server_version_patch = 1;
+static constexpr uint32_t server_version_patch = 0;
 /// \brief Server semantic version pre_release
 static constexpr const char *server_version_pre_release = "";
 /// \brief Server semantic version build

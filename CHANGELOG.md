@@ -6,8 +6,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2024-04-23
+### Added
+- Added `--no-rollback` and `--remote-fork` options
+- Added `rebind()` API to JSONRPC
+- Added `commit()` API for discarding machine snapshots
+- Added `send_cmio_response` function
+- Added integration tests
+- Added C API to translate virtual address
+- Added optimizations for `fdiv` and `fsqrt` instructions for uarch
+- Added `--env`, `--workdir`, and `--hostname` command line options
+- Added new runtime option to skip storing machine root hash
+- Introduced the `--user` command line option
+- Used Sv39 address spacing by default to support nodejs and improve performance
+- Decoded uarch ECALL and EBREAK
+- Added support for VirtIO
+- Added VirtIO command line options
+- Added support for binding different host addresses in VirtIO net device
+- Added iunrep CSR for unreproducible machines, VirtIO configs to C/Lua APIs, VirtIO net device, VirtIO 9P device, VirtIO console device, and PLIC device
+- Made `--volume` create guest directory before mounting
+
 ### Changed
+- Simplified solidity step generation
+- Split reasons for manual and auto yields
+- Reworked rollup and renamed it to cmio
+- Optimized out state accessor initialization in uarch interpret
+- Replaced uarch mmio with ecall
+- Included uarch-reset log in catalog.json
+- Combined uarch state accessors
+
+### Removed
 - Removed gRPC features
+- Removed unmaintained and broken benchmarks script
+
+### Fixed
+- Fixed ilog2 function which was always returning 0
+- Aligned output merkle tree depth with solidity
+- Corrected compile error with `slirp=no` on Linux
+- Allowed using `--network` in read-only filesystems
+- Resolved compile errors with WASI toolchain
+- Corrected `reset_uarch` documentation
+- Removed trailing comma in `jsonrpc-discover.json`
+- Fixed Homebrew libslirp options
+- Resolved build issue on macOS with macports lua-luarocks
+- Set `yield_data` typo
+- Fixed `EADDRNOTAVAIL` on rapid successive requests
+
+### Continuous Integration
+- Sped up uarch testing in CI.
+- Implemented vm.mmap_rnd_bits workaround for the ubuntu-22.04 runner.
+
+## [0.16.1] - 2024-03-28
+### Fixed
+- Fixed amd64 debian package build in release mode
+
+### Changed
+- Made uarch compilation independent of release/debug build settings
 
 ## [0.16.0] - 2024-02-09
 ### Added
@@ -389,7 +443,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [0.2.0]
 - [0.1.0]
 
-[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.17.0
+[0.16.1]: https://github.com/cartesi/machine-emulator/releases/tag/v0.16.1
 [0.16.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.16.0
 [0.15.3]: https://github.com/cartesi/machine-emulator/releases/tag/v0.15.3
 [0.15.2]: https://github.com/cartesi/machine-emulator/releases/tag/v0.15.2

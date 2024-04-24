@@ -1784,6 +1784,7 @@ static json jsonrpc_machine_verify_send_cmio_response_state_transition_handler(c
 /// \param j JSON response object
 void jsonrpc_http_reply(mg_connection *con, http_handler_data *h, const json &j) {
     SLOG(trace) << h->server_address << " response is " << j.dump().data();
+    con->is_draining = 1;
     return mg_http_reply(con, 200, "Access-Control-Allow-Origin: *\r\nContent-Type: application/json\r\n", "%s",
         j.dump().data());
 }
@@ -1792,6 +1793,7 @@ void jsonrpc_http_reply(mg_connection *con, http_handler_data *h, const json &j)
 /// \param con Mongoose connection
 void jsonrpc_send_empty_reply(mg_connection *con, http_handler_data *h) {
     SLOG(trace) << h->server_address << " response is empty";
+    con->is_draining = 1;
     return mg_http_reply(con, 200, "Access-Control-Allow-Origin: *\r\nContent-Type: application/json\r\n", "");
 }
 
@@ -1897,6 +1899,7 @@ static void http_handler(mg_connection *con, int ev, void *ev_data, void *h_data
             headers += "Access-Control-Allow-Methods: *\r\n";
             headers += "Access-Control-Allow-Headers: *\r\n";
             headers += "Access-Control-Max-Age: 0\r\n";
+            con->is_draining = 1;
             mg_http_reply(con, 204, headers.c_str(), "");
             return;
         }
@@ -1905,6 +1908,7 @@ static void http_handler(mg_connection *con, int ev, void *ev_data, void *h_data
             std::string headers;
             headers += "Access-Control-Allow-Origin: *\r\n";
             SLOG(trace) << h->server_address << " rejected unexpected \"" << method << "\" request";
+            con->is_draining = 1;
             mg_http_reply(con, 405, headers.c_str(), "method not allowed");
             return;
         }
@@ -1914,6 +1918,7 @@ static void http_handler(mg_connection *con, int ev, void *ev_data, void *h_data
         if (uri != "/") {
             // anything else
             SLOG(trace) << h->server_address << " rejected unexpected \"" << uri << "\" uri";
+            con->is_draining = 1;
             mg_http_reply(con, 404, "Access-Control-Allow-Origin: *\r\n", "not found");
             return;
         }

@@ -539,6 +539,8 @@ static json jsonrpc_shutdown_handler(const json &j, mg_connection *con, http_han
     jsonrpc_check_no_params(j);
     con->is_draining = 1;
     con->data[0] = 'X';
+    // Mark listen connection to be closed immediately so its port can be reused in subsequent rebind call
+    h->listen_connection->is_closing = 1;
     return jsonrpc_response_ok(j);
 }
 

@@ -469,7 +469,7 @@ void virtual_machine::do_snapshot(void) {
 }
 
 void virtual_machine::do_commit(void) {
-    throw std::runtime_error("commit is not supported");
+    // no-op, we are always committed
 }
 
 void virtual_machine::do_rollback(void) {

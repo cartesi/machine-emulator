@@ -72,6 +72,9 @@ private:
     static const pma_entry::flags m_cmio_rx_buffer_flags; ///< PMA flags used for cmio rx buffer
     static const pma_entry::flags m_cmio_tx_buffer_flags; ///< PMA flags used for cmio tx buffer
 
+    /// \brief Build PMA list from machine state and uarch machine state.
+    void build_pma_list();
+
     /// \brief Allocates a new PMA entry.
     /// \param pma PMA entry to add to machine.
     /// \returns Reference to corresponding entry in machine state.
@@ -186,8 +189,8 @@ public:
 
     /// \brief No default constructor
     machine(void) = delete;
-    /// \brief No copy constructor
-    machine(const machine &other) = delete;
+    /// \brief Copy constructor
+    machine(const machine &other);
     /// \brief No move constructor
     machine(machine &&other) = delete;
     /// \brief No copy assignment

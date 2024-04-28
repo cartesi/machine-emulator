@@ -1592,29 +1592,24 @@ BOOST_AUTO_TEST_CASE_NOLINT(snapshot_null_machine_test) {
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(snapshot_basic_test, ordinary_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(snapshot_rollback_basic_test, ordinary_machine_fixture) {
     char *err_msg = nullptr;
     int error_code = cm_snapshot(_machine, &err_msg);
-    std::string result = err_msg;
-    std::string origin("snapshot is not supported");
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
-    BOOST_CHECK_EQUAL(origin, result);
-    cm_delete_cstring(err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+    error_code = cm_rollback(_machine, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
 }
 
-BOOST_AUTO_TEST_CASE_NOLINT(rollback_null_machine_test) {
-    int error_code = cm_rollback(nullptr, nullptr);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(rollback_basic_test, ordinary_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(snapshot_commit_basic_test, ordinary_machine_fixture) {
     char *err_msg = nullptr;
-    int error_code = cm_rollback(_machine, &err_msg);
-    std::string result = err_msg;
-    std::string origin("rollback is not supported");
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
-    BOOST_CHECK_EQUAL(origin, result);
-    cm_delete_cstring(err_msg);
+    int error_code = cm_snapshot(_machine, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+    error_code = cm_commit(_machine, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(read_x_null_machine_test) {

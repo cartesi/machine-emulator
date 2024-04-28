@@ -28,6 +28,7 @@ namespace cartesi {
 class virtual_machine : public i_virtual_machine {
     using machine = cartesi::machine;
     machine *m_machine;
+    machine *m_forked_machine = nullptr;
 
 public:
     virtual_machine(const machine_config &c, const machine_runtime_config &r = {});

@@ -40,8 +40,8 @@ public:
 
     /// \brief No default constructor
     uarch_machine(void) = delete;
-    /// \brief No copy constructor
-    uarch_machine(const uarch_machine &other) = delete;
+    /// \brief Copy constructor
+    uarch_machine(const uarch_machine &other) = default;
     /// \brief No move constructor
     uarch_machine(uarch_machine &&other) = delete;
     /// \brief No copy assignment

@@ -26,6 +26,7 @@ virtual_machine::virtual_machine(const std::string &dir, const machine_runtime_c
 
 virtual_machine::~virtual_machine(void) {
     delete m_machine;
+    delete m_forked_machine;
 }
 
 void virtual_machine::do_store(const std::string &dir) {
@@ -465,15 +466,26 @@ void virtual_machine::do_destroy() {
 }
 
 void virtual_machine::do_snapshot(void) {
-    throw std::runtime_error("snapshot is not supported");
+    // Copy current machine
+    m_forked_machine = new machine(*m_machine);
 }
 
 void virtual_machine::do_commit(void) {
-    throw std::runtime_error("commit is not supported");
+    // Discard forked machine
+    if (m_forked_machine) {
+        delete m_forked_machine;
+        m_forked_machine = nullptr;
+    }
 }
 
 void virtual_machine::do_rollback(void) {
-    throw std::runtime_error("rollback is not supported");
+    if (!m_forked_machine) {
+        throw std::runtime_error("no machine snapshot to rollback to");
+    }
+    // Replace current machine with the forked machine
+    delete m_machine;
+    m_machine = m_forked_machine;
+    m_forked_machine = nullptr;
 }
 
 uint64_t virtual_machine::do_read_uarch_x(int i) const {

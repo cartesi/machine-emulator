@@ -28,6 +28,10 @@
 #include "json-util.h"
 #include "jsonrpc-mg-mgr.h"
 
+// We need to keep 2 connections alive to save one reconnection in snapshot/commit
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage,modernize-macro-to-enum)
+#define MAX_KEEP_ALIVE_POOL 2
+
 using namespace std::string_literals;
 using json = nlohmann::json;
 
@@ -54,6 +58,7 @@ struct http_request_data {
     std::string status_code;
     std::string reason_phrase;
     std::string entity_body;
+    bool keep_alive;
     bool done;
 };
 
@@ -74,48 +79,133 @@ static void setup_client_socket(struct mg_connection *c) {
 #endif
 }
 
-// Print HTTP response and signal that we're done
-static void json_post_fn(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
-    http_request_data *data = static_cast<http_request_data *>(fn_data);
-    if (ev == MG_EV_CONNECT) {
-        setup_client_socket(c);
-        const struct mg_str host = mg_url_host(data->url.c_str());
-        mg_printf(c,
-            "POST %s HTTP/1.0\r\n"
+// Sends an HTTP POST to connection socket
+static bool send_http_post(struct mg_connection *c, const http_request_data *data) {
+    const struct mg_str host = mg_url_host(data->url.c_str());
+    // Write HTTP header
+    if (mg_printf(c,
+            "POST %s HTTP/1.1\r\n"
             "Host: %.*s\r\n"
+            "Connection: keep-alive\r\n"
             "Content-Type: application/json\r\n"
             "Content-Length: %d\r\n"
             "\r\n",
-            mg_url_uri(data->url.c_str()), static_cast<int>(host.len), host.ptr, data->post_data.size());
-        mg_send(c, data->post_data.data(), data->post_data.size());
+            mg_url_uri(data->url.c_str()), static_cast<int>(host.len), host.ptr, data->post_data.size()) <= 0) {
+        return false;
+    }
+    // Write HTTP body
+    if (!mg_send(c, data->post_data.data(), data->post_data.size())) {
+        return false;
+    }
+    return true;
+}
+
+// Returns the amount of connections in the keep alive connection pool
+static int get_keepalive_count(const struct mg_mgr *mgr) {
+    int count = 0;
+    for (struct mg_connection *c = mgr->conns; c != nullptr; c = c->next) {
+        if (c->is_client &&                      // is a client connection
+            !c->is_closing && !c->is_draining && // not closing
+            c->fn_data == nullptr                // has no ongoing request
+        ) {
+            count++;
+        }
+    }
+    return count;
+}
+
+// Print HTTP response and signal that we're done
+static void json_post_fn(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
+    http_request_data *data = static_cast<http_request_data *>(fn_data);
+    if (!data) {
+        // Event on a keep alive connection with no request data associated,
+        // we have nothing to do.
+        return;
+    }
+    if (ev == MG_EV_CONNECT) {
+        setup_client_socket(c);
+        if (!send_http_post(c, data)) {
+            data->entity_body.clear();
+            data->status_code.clear();
+            data->reason_phrase = "http post send failed";
+            data->done = true;
+            c->is_closing = 1;
+            c->fn_data = nullptr;
+        }
     } else if (ev == MG_EV_HTTP_MSG) {
         struct mg_http_message *hm = static_cast<struct mg_http_message *>(ev_data);
         data->entity_body = std::string_view(hm->body.ptr, hm->body.len);
         data->status_code = std::string_view(hm->uri.ptr, hm->uri.len);
         data->reason_phrase = std::string_view(hm->proto.ptr, hm->proto.len);
-        c->is_closing = 1;
         data->done = true;
+        c->fn_data = nullptr;
+        // Keep the connection alive only if:
+        // - The HTTP request is successful (status 200)
+        // - The request itself can use HTTP pipelining (shutdown/rebind cannot)
+        // - We have not exhausted the size of our keep alive connection pool.
+        if (data->status_code != "200" || !data->keep_alive || get_keepalive_count(c->mgr) > MAX_KEEP_ALIVE_POOL) {
+            // Marking the connection to be closed, so it's out of the keep alive connection pool
+            c->is_closing = 1;
+        }
     } else if (ev == MG_EV_ERROR) {
         data->entity_body.clear();
         data->status_code = "503";
         data->reason_phrase = static_cast<char *>(ev_data);
         data->done = true;
+        c->fn_data = nullptr;
     } else if (ev == MG_EV_CLOSE && !data->done) {
         data->entity_body.clear();
         data->status_code.clear();
         data->reason_phrase = "connection closed";
         data->done = true;
+        c->fn_data = nullptr;
     }
 }
 
-static std::string json_post(struct mg_mgr &mgr, const std::string &url, const std::string &post_data) {
-    http_request_data data{url, post_data, "", "", "", false};
-    if (!mg_http_connect(&mgr, url.c_str(), json_post_fn, &data)) {
-        throw std::runtime_error("connection to '"s + url + "' failed"s);
+static struct mg_connection *find_keepalive_conn(struct mg_mgr &mgr, const std::string &url) {
+    // Resolve remote address from URL
+    struct mg_addr rem {};
+    rem.port = mg_htons(mg_url_port(url.c_str()));
+    if (!mg_aton(mg_url_host(url.c_str()), &rem)) {
+        throw std::runtime_error("failed to resolve remote address for '"s + url + "'"s);
     }
+    // Try to find an already connected keep alive connection for the URL
+    for (struct mg_connection *c = mgr.conns; c != nullptr; c = c->next) {
+        if (c->is_client &&                                    // is a client connection
+            !c->is_closing && !c->is_draining &&               // not closing
+            c->fn_data == nullptr &&                           // has no ongoing request
+            memcmp(&rem, &c->rem, sizeof(struct mg_addr)) == 0 // has same remote address
+        ) {
+            return c;
+        }
+    }
+    return nullptr;
+}
+
+static std::string json_post(struct mg_mgr &mgr, const std::string &url, const std::string &post_data,
+    bool keep_alive) {
+    http_request_data data{url, post_data, "", "", "", keep_alive, false};
+    // Try to reused a keep alive connection, otherwise we have to create a new connection
+    mg_connection *c = find_keepalive_conn(mgr, url);
+    if (c) { // Reusing previous keep alive connection
+        // Set next request data in the connection
+        c->fn_data = &data;
+        // Send request
+        if (!send_http_post(c, &data)) {
+            throw std::runtime_error("failed to send http for '"s + url + "' in keep alive connection"s);
+        }
+    } else {
+        // No keep alive connection found, open a new one
+        c = mg_http_connect(&mgr, url.c_str(), json_post_fn, &data);
+        if (!c) {
+            throw std::runtime_error("connection to '"s + url + "' failed"s);
+        }
+    }
+    // Wait request to complete
     while (!data.done) {
         mg_mgr_poll(&mgr, 1000);
     }
+    // Process response
     if (data.status_code.empty()) {
         throw std::runtime_error("http error: "s + data.reason_phrase);
     }
@@ -127,11 +217,11 @@ static std::string json_post(struct mg_mgr &mgr, const std::string &url, const s
 
 template <typename R, typename... Ts>
 void jsonrpc_request(struct mg_mgr &mgr, const std::string &url, const std::string &method, const std::tuple<Ts...> &tp,
-    R &result) {
+    R &result, bool keep_alive = true) {
     auto request = jsonrpc_post_data(method, tp);
     json response;
     try {
-        response = json::parse(json_post(mgr, url, request));
+        response = json::parse(json_post(mgr, url, request, keep_alive));
     } catch (std::exception &x) {
         throw std::runtime_error("jsonrpc server error: invalid response ("s + x.what() + ")"s);
     }
@@ -234,11 +324,11 @@ void jsonrpc_mg_mgr::commit() {
 
     // To commit, we kill the parent server and replace its address with the child's
     bool result = false;
-    jsonrpc_request(get_mgr(), get_remote_parent_address(), "shutdown", std::tie(), result);
+    jsonrpc_request(get_mgr(), get_remote_parent_address(), "shutdown", std::tie(), result, false);
 
     // Rebind the remote server to continue listening in the original port
     result = false;
-    jsonrpc_request(get_mgr(), get_remote_address(), "rebind", std::tie(m_address[0]), result);
+    jsonrpc_request(get_mgr(), get_remote_address(), "rebind", std::tie(m_address[0]), result, false);
     m_address.pop_back();
 }
 
@@ -250,7 +340,7 @@ void jsonrpc_mg_mgr::rollback() {
 
     // To rollback, we kill the child and expose the parent server
     bool result = false;
-    jsonrpc_request(get_mgr(), get_remote_address(), "shutdown", std::tie(), result);
+    jsonrpc_request(get_mgr(), get_remote_address(), "shutdown", std::tie(), result, false);
     m_address.pop_back();
 }
 
@@ -261,9 +351,9 @@ bool jsonrpc_mg_mgr::is_forked(void) const {
 void jsonrpc_mg_mgr::shutdown(void) {
     bool result = false;
     if (is_forked()) {
-        jsonrpc_request(get_mgr(), get_remote_parent_address(), "shutdown", std::tie(), result);
+        jsonrpc_request(get_mgr(), get_remote_parent_address(), "shutdown", std::tie(), result, false);
     }
-    jsonrpc_request(get_mgr(), get_remote_address(), "shutdown", std::tie(), result);
+    jsonrpc_request(get_mgr(), get_remote_address(), "shutdown", std::tie(), result, false);
     m_address.clear();
 }
 
@@ -403,7 +493,7 @@ std::string jsonrpc_virtual_machine::fork(const jsonrpc_mg_mgr_ptr &mgr) {
 
 void jsonrpc_virtual_machine::rebind(const jsonrpc_mg_mgr_ptr &mgr, const std::string &address) {
     bool result = false;
-    jsonrpc_request(mgr->get_mgr(), mgr->get_remote_address(), "rebind", std::tie(address), result);
+    jsonrpc_request(mgr->get_mgr(), mgr->get_remote_address(), "rebind", std::tie(address), result, false);
 }
 
 uint64_t jsonrpc_virtual_machine::do_read_f(int i) const {

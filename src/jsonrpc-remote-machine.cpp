@@ -658,6 +658,7 @@ static json jsonrpc_fork_handler(const json &j, mg_connection *con, http_handler
     mg_mgr_free_ours(&h->child->event_manager);
     delete h->child;
     h->child = nullptr;
+    con->is_draining = 1;
     return jsonrpc_response_ok(j, new_server_address);
 }
 
@@ -669,7 +670,6 @@ static json jsonrpc_fork_handler(const json &j, mg_connection *con, http_handler
 /// \details Changes the address the server is listening to.
 /// After this call, all new connections should be established using the new server address.
 static json jsonrpc_rebind_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
     static const char *param_name[] = {"address"};
     auto args = parse_args<std::string>(j, param_name);
     const std::string new_server_address = std::get<0>(args);
@@ -678,6 +678,8 @@ static json jsonrpc_rebind_handler(const json &j, mg_connection *con, http_handl
     if (!new_listen_connection) {
         return jsonrpc_response_server_error(j, "rebind failed listening on "s + new_server_address);
     }
+    // Mark connection to be drained
+    con->is_draining = 1;
     // Mark previous listen connection to be closed
     h->listen_connection->is_closing = 1;
     // Set the new listen connection
@@ -1784,7 +1786,6 @@ static json jsonrpc_machine_verify_send_cmio_response_state_transition_handler(c
 /// \param j JSON response object
 void jsonrpc_http_reply(mg_connection *con, http_handler_data *h, const json &j) {
     SLOG(trace) << h->server_address << " response is " << j.dump().data();
-    con->is_draining = 1;
     return mg_http_reply(con, 200, "Access-Control-Allow-Origin: *\r\nContent-Type: application/json\r\n", "%s",
         j.dump().data());
 }
@@ -1793,7 +1794,6 @@ void jsonrpc_http_reply(mg_connection *con, http_handler_data *h, const json &j)
 /// \param con Mongoose connection
 void jsonrpc_send_empty_reply(mg_connection *con, http_handler_data *h) {
     SLOG(trace) << h->server_address << " response is empty";
-    con->is_draining = 1;
     return mg_http_reply(con, 200, "Access-Control-Allow-Origin: *\r\nContent-Type: application/json\r\n", "");
 }
 

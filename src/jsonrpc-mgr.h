@@ -14,31 +14,37 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef JSONRPC_MG_MGR_H
-#define JSONRPC_MG_MGR_H
+#ifndef JSONRPC_MGR_H
+#define JSONRPC_MGR_H
 
-#include <boost/container/static_vector.hpp>
-#include <mongoose.h>
 #include <string>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#include "asio-config.h" // must be included before any ASIO header
+#include <boost/asio/io_context.hpp>
+#include <boost/beast/core/tcp_stream.hpp>
+#include <boost/container/static_vector.hpp>
+#pragma GCC diagnostic pop
 
 namespace cartesi {
 
-class jsonrpc_mg_mgr final {
-
+class jsonrpc_mgr final {
+    boost::asio::io_context m_ioc{1};         // The io_context is required for all I/O
+    boost::beast::tcp_stream m_stream{m_ioc}; // TCP stream for keep alive connections
     boost::container::static_vector<std::string, 2> m_address{};
-    struct mg_mgr m_mgr {}; // unnecessary initialization to silince clang-tidy
 
 public:
-    explicit jsonrpc_mg_mgr(std::string remote_address);
-    jsonrpc_mg_mgr(const jsonrpc_mg_mgr &other) = delete;
-    jsonrpc_mg_mgr(jsonrpc_mg_mgr &&other) noexcept = delete;
-    jsonrpc_mg_mgr &operator=(const jsonrpc_mg_mgr &other) = delete;
-    jsonrpc_mg_mgr &operator=(jsonrpc_mg_mgr &&other) noexcept = delete;
-    ~jsonrpc_mg_mgr();
+    explicit jsonrpc_mgr(std::string remote_address);
+    jsonrpc_mgr(const jsonrpc_mgr &other) = delete;
+    jsonrpc_mgr(jsonrpc_mgr &&other) noexcept = delete;
+    jsonrpc_mgr &operator=(const jsonrpc_mgr &other) = delete;
+    jsonrpc_mgr &operator=(jsonrpc_mgr &&other) noexcept = delete;
+    ~jsonrpc_mgr();
     bool is_forked(void) const;
     bool is_shutdown(void) const;
-    struct mg_mgr &get_mgr(void);
-    const struct mg_mgr &get_mgr(void) const;
+    boost::beast::tcp_stream &get_stream(void);
+    const boost::beast::tcp_stream &get_stream(void) const;
     const std::string &get_remote_address(void) const;
     const std::string &get_remote_parent_address(void) const;
     void snapshot(void);

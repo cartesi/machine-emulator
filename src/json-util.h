@@ -39,7 +39,7 @@ std::string to_string(const std::string &s);
 std::string to_string(const char *s);
 
 // Generate a new optional-like type
-template <int I, typename T>
+template <int N, typename T>
 struct new_optional : public std::optional<T> {};
 
 // Optional-like type used by parse_args function to identify an optional parameter
@@ -56,10 +56,10 @@ template <typename T, typename K>
 void ju_get_field(const nlohmann::json &j, const K &key, T &value, const std::string &path = "params/");
 
 // Allows use contains when the index is an integer and j contains an array
-template <typename I>
-inline std::enable_if_t<std::is_integral_v<I>, bool> contains(const nlohmann::json &j, I i) {
-    if constexpr (std::is_signed_v<I>) {
-        return j.is_array() && i >= 0 && i < static_cast<I>(j.size());
+template <typename T>
+inline std::enable_if_t<std::is_integral_v<T>, bool> contains(const nlohmann::json &j, T i) {
+    if constexpr (std::is_signed_v<T>) {
+        return j.is_array() && i >= 0 && i < static_cast<T>(j.size());
     } else {
         return j.is_array() && i < j.size();
     }

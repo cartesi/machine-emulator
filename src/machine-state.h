@@ -44,16 +44,16 @@ struct unpacked_iflags {
 /// \brief Machine state.
 /// \details The machine_state structure contains the entire
 /// state of a Cartesi machine.
-struct machine_state {
-
-    ~machine_state() {
-        ;
-    } // Due to bug in clang++
-
-    /// \brief No copy or move constructor or assignment
-    machine_state(const machine_state &other) = delete;
+struct machine_state final {
+    /// \brief Destructor
+    ~machine_state() = default;
+    /// \brief Copy constructor
+    machine_state(const machine_state &other) = default;
+    /// \brief No move constructor
     machine_state(machine_state &&other) = delete;
+    /// \brief No copy assignment
     machine_state &operator=(const machine_state &other) = delete;
+    /// \brief No move assignment
     machine_state &operator=(machine_state &&other) = delete;
 
     // The following state fields are very hot,

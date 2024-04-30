@@ -24,6 +24,7 @@
 #include <variant>
 #include <vector>
 
+#include "os.h"
 #include "pma-constants.h"
 #include "pma-driver.h"
 
@@ -91,26 +92,21 @@ public:
 
 /// \brief Data for memory ranges.
 class pma_memory final {
-
-    uint64_t m_length;            ///< Length of memory range (copy of PMA length field).
-    unsigned char *m_host_memory; ///< Start of associated memory region in host.
-    bool m_mmapped;               ///< True if memory was mapped from a file.
+    mmapd m_mem; ///< Memory map entry
 
     /// \brief Close file and/or release memory.
     void release(void);
 
 public:
-    /// \brief Mmap'd range data (shared or not).
-    struct mmapd {
-        bool shared;
-    };
+    /// \brief Destructor
+    ~pma_memory(void);
 
     /// \brief Constructor for mmap'd ranges.
     /// \param description Informative description of PMA entry for use in error messages
     /// \param length Length of range.
     /// \param path Path for backing file.
     /// \param m Mmap'd range data (shared or not).
-    pma_memory(const std::string &description, uint64_t length, const std::string &path, const mmapd &m);
+    pma_memory(const std::string &description, uint64_t length, const std::string &path, bool shared);
 
     /// \brief Calloc'd range data (just a tag).
     struct callocd {};
@@ -137,34 +133,42 @@ public:
     /// \param m Mock'd range data (just a tag).
     pma_memory(const std::string &description, uint64_t length, const mockd &m);
 
-    /// \brief No copy constructor
-    pma_memory(const pma_memory &) = delete;
+    /// \brief Copy constructor.
+    /// \details Performs a SHALLOW copy.
+    pma_memory(const pma_memory &other) = default;
 
-    /// \brief No copy assignment
-    pma_memory &operator=(const pma_memory &) = delete;
+    /// \brief Copy assignment.
+    /// \details Performs a SHALLOW copy.
+    pma_memory &operator=(const pma_memory &other) = default;
 
-    /// \brief Move constructor
-    pma_memory(pma_memory &&) noexcept;
+    /// \brief Move constructor.
+    pma_memory(pma_memory &&other) noexcept {
+        std::swap(m_mem, other.m_mem);
+    }
 
-    /// \brief Move assignment
-    pma_memory &operator=(pma_memory &&) noexcept;
+    /// \brief Move assignment.
+    pma_memory &operator=(pma_memory &&other) noexcept {
+        release();
+        std::swap(m_mem, other.m_mem);
+        return *this;
+    }
 
-    /// \brief Destructor
-    ~pma_memory(void);
-
-    /// \brief Returns start of associated memory region in host
-    unsigned char *get_host_memory(void) {
-        return m_host_memory;
+    /// \brief Replace current mapped memory with the mapped memory from another PMA.
+    /// \details It takes ownership of the other PMA memory,
+    /// however it DOES NOT release currently mapped memory.
+    void replace(pma_memory &&other) noexcept {
+        m_mem = std::move(other.m_mem);
+        other.m_mem = mmapd{};
     }
 
     /// \brief Returns start of associated memory region in host
-    const unsigned char *get_host_memory(void) const {
-        return m_host_memory;
+    unsigned char *get_host_memory(void) const {
+        return m_mem.host_memory;
     }
 
     /// \brief Returns copy of PMA length field (needed for munmap).
     uint64_t get_length(void) const {
-        return m_length;
+        return m_mem.length;
     }
 };
 
@@ -207,14 +211,14 @@ private:
         m_data;
 
 public:
-    /// \brief No copy constructor
-    pma_entry(const pma_entry &) = delete;
-    /// \brief No copy assignment
-    pma_entry &operator=(const pma_entry &) = delete;
+    /// \brief Default copy constructor
+    pma_entry(const pma_entry &) = default;
+    /// \brief Default copy assignment
+    pma_entry &operator=(const pma_entry &) = default;
     /// \brief Default move constructor
-    pma_entry(pma_entry &&) = default; // NOLINT(bugprone-exception-escape)
+    pma_entry(pma_entry &&) noexcept = default;
     /// \brief Default move assignment
-    pma_entry &operator=(pma_entry &&) = default; // NOLINT(bugprone-exception-escape)
+    pma_entry &operator=(pma_entry &&) noexcept = default;
     /// \bried Default destructor
     ~pma_entry() = default;
 
@@ -479,6 +483,11 @@ public:
     /// \brief Marks all pages in range as clean
     void mark_pages_clean(void) {
         return std::fill(m_dirty_page_map.begin(), m_dirty_page_map.end(), 0);
+    }
+
+    /// \brief Marks all pages in range as dirty
+    void mark_pages_dirty(void) {
+        return m_dirty_page_map.clear();
     }
 
     /// \brief Returns PMA description as a string

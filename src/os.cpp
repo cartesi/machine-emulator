@@ -524,7 +524,29 @@ int os_mkdir(const char *path, int mode) {
 #endif // HAVE_MKDIR
 }
 
-unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
+mmapd os_mmap_mem(uint64_t length) {
+    if (length == 0) {
+        return {nullptr, 0, -1, false};
+    }
+
+#ifdef HAVE_MMAP
+    auto *host_memory =
+        static_cast<unsigned char *>(mmap(nullptr, length, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+    if (host_memory == MAP_FAILED) { // NOLINT(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr)
+        throw std::system_error{errno, std::generic_category(), "could not map memory file"s};
+    }
+    return {host_memory, length, -1, false};
+
+#else
+    // Use calloc to improve performance and to initialize it to zeros.
+    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-prefer-member-initializer)
+    auto *host_memory = static_cast<unsigned char *>(std::calloc(1, length));
+    return {host_memory, length, -1, false};
+
+#endif // HAVE_MMAP
+}
+
+mmapd os_mmap_file(const char *path, uint64_t length, bool shared) {
     if (!path || *path == '\0') {
         throw std::runtime_error{"image file path must be specified"s};
     }
@@ -563,9 +585,7 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
         throw std::system_error{errno, std::generic_category(), "could not map image file '"s + path + "' to memory"s};
     }
 
-    // We can close the file after mapping it, because the OS will retain a reference of the file on its own
-    close(backing_file);
-    return host_memory;
+    return {host_memory, length, backing_file, shared};
 
 #elif defined(_WIN32)
     const int oflag = (shared ? _O_RDWR : _O_RDONLY) | _O_BINARY;
@@ -609,9 +629,7 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
         throw std::system_error{errno, std::generic_category(), "could not map image file '"s + path + "' to memory"s};
     }
 
-    // We can close the file after mapping it, because the OS will retain a reference of the file on its own
-    _close(backing_file);
-    return host_memory;
+    return {host_memory, length, backing_file, shared};
 
 #else
     if (shared) {
@@ -637,7 +655,7 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
         throw std::runtime_error{"image file '"s + path + "' of "s + " is too large for range"s};
     }
 
-    // use calloc to improve performance
+    // Use calloc to improve performance and to initialize it to zeros.
     // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-prefer-member-initializer)
     auto host_memory = static_cast<unsigned char *>(std::calloc(1, length));
     if (!host_memory) {
@@ -650,22 +668,27 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
     if (ferror(fp.get())) {
         throw std::system_error{errno, std::generic_category(), "error reading from image file '"s + path + "'"s};
     }
-    return host_memory;
+    return {host_memory, length, -1, false};
 
 #endif // HAVE_MMAP
 }
 
-void os_unmap_file(unsigned char *host_memory, uint64_t length) {
+void os_munmap(const mmapd &mem) {
 #ifdef HAVE_MMAP
-    munmap(host_memory, length);
+    munmap(mem.host_memory, mem.length);
+    if (mem.backing_file != -1) {
+        close(mem.backing_file);
+    }
 
 #elif defined(_WIN32)
     (void) length;
-    UnmapViewOfFile(host_memory);
+    UnmapViewOfFile(mem.host_memory);
+    if (mem.backing_file != -1) {
+        _close(mem.backing_file);
+    }
 
 #else
-    (void) length;
-    std::free(host_memory);
+    std::free(mem.host_memory);
 
 #endif // HAVE_MMAP
 }

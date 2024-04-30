@@ -29,47 +29,27 @@ namespace cartesi {
 using namespace std::string_literals;
 
 void pma_memory::release(void) {
-    if (m_mmapped) {
-        os_unmap_file(m_host_memory, m_length);
-        m_mmapped = false;
-    } else {
-        std::free(m_host_memory); // NOLINT(cppcoreguidelines-no-malloc)
+    if (m_mem.length > 0) {
+        os_munmap(m_mem);
     }
-    m_host_memory = nullptr;
-    m_length = 0;
+    m_mem = mmapd{};
 }
 
 pma_memory::~pma_memory() {
     release();
 }
 
-pma_memory::pma_memory(pma_memory &&other) noexcept :
-    m_length{std::move(other.m_length)},
-    m_host_memory{std::move(other.m_host_memory)},
-    m_mmapped{std::move(other.m_mmapped)} {
-    // set other to safe state
-    other.m_host_memory = nullptr;
-    other.m_mmapped = false;
-    other.m_length = 0;
-}
-
-pma_memory::pma_memory(const std::string &description, uint64_t length, const callocd &c) :
-    m_length{length},
-    m_host_memory{nullptr},
-    m_mmapped{false} {
+pma_memory::pma_memory(const std::string &description, uint64_t length, const callocd &c) {
     (void) c;
-    // use calloc to improve performance
-    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-prefer-member-initializer)
-    m_host_memory = static_cast<unsigned char *>(std::calloc(1, length));
-    if (!m_host_memory) {
-        throw std::runtime_error{"error allocating memory for "s + description};
+    try {
+        m_mem = os_mmap_mem(length);
+    } catch (std::exception &e) {
+        throw std::runtime_error{e.what() + " when initializing "s + description};
     }
 }
 
-pma_memory::pma_memory(const std::string &description, uint64_t length, const mockd &m) :
-    m_length{length},
-    m_host_memory{nullptr},
-    m_mmapped{false} {
+pma_memory::pma_memory(const std::string &description, uint64_t length, const mockd &m) {
+    m_mem.length = length;
     (void) m;
     (void) description;
 }
@@ -98,7 +78,7 @@ pma_memory::pma_memory(const std::string &description, uint64_t length, const st
             throw std::runtime_error{"image file '"s + path + "' of "s + description + " is too large for range"s};
         }
         // Read to host memory
-        auto read = fread(m_host_memory, 1, length, fp.get());
+        auto read = fread(m_mem.host_memory, 1, length, fp.get());
         (void) read;
         if (ferror(fp.get())) {
             throw std::system_error{errno, std::generic_category(),
@@ -107,29 +87,12 @@ pma_memory::pma_memory(const std::string &description, uint64_t length, const st
     }
 }
 
-pma_memory::pma_memory(const std::string &description, uint64_t length, const std::string &path, const mmapd &m) :
-    m_length{length},
-    m_host_memory{nullptr},
-    m_mmapped{false} {
+pma_memory::pma_memory(const std::string &description, uint64_t length, const std::string &path, bool shared) {
     try {
-        m_host_memory = os_map_file(path.c_str(), length, m.shared);
-        m_mmapped = true;
+        m_mem = os_mmap_file(path.c_str(), length, shared);
     } catch (std::exception &e) {
         throw std::runtime_error{e.what() + " when initializing "s + description};
     }
-}
-
-pma_memory &pma_memory::operator=(pma_memory &&other) noexcept {
-    release();
-    // copy from other
-    m_host_memory = std::move(other.m_host_memory);
-    m_mmapped = std::move(other.m_mmapped);
-    m_length = std::move(other.m_length);
-    // set other to safe state
-    other.m_host_memory = nullptr;
-    other.m_mmapped = false;
-    other.m_length = 0;
-    return *this;
 }
 
 uint64_t pma_entry::get_istart(void) const {
@@ -206,8 +169,7 @@ pma_entry make_mmapd_memory_pma_entry(const std::string &description, uint64_t s
     if (length == 0) {
         throw std::invalid_argument{description + " length cannot be zero"s};
     }
-    return pma_entry{description, start, length, pma_memory{description, length, path, pma_memory::mmapd{shared}},
-        memory_peek};
+    return pma_entry{description, start, length, pma_memory{description, length, path, shared}, memory_peek};
 }
 
 pma_entry make_callocd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length) {

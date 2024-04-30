@@ -28,15 +28,16 @@
 
 namespace cartesi {
 
-struct uarch_state {
-    ~uarch_state() {
-        ;
-    }
-
-    /// \brief No copy or move constructor or assignment
-    uarch_state(const uarch_state &other) = delete;
+struct uarch_state final {
+    /// \brief Destructor
+    ~uarch_state() = default;
+    /// \brief Copy constructor
+    uarch_state(const uarch_state &other) = default;
+    /// \brief No move constructor
     uarch_state(uarch_state &&other) = delete;
+    /// \brief No copy assignment
     uarch_state &operator=(const uarch_state &other) = delete;
+    /// \brief No move assignment
     uarch_state &operator=(uarch_state &&other) = delete;
 
     uint64_t pc;                               ///< Program counter.

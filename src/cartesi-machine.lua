@@ -2106,10 +2106,7 @@ if gdb_address then
 end
 if config.processor.iunrep ~= 0 then stderr("Running in unreproducible mode!\n") end
 if store_config == stderr then store_machine_config(config, stderr) end
-if cmio_advance or cmio_inspect then
-    check_cmio_htif_config(config.htif)
-    assert(remote_address or not perform_rollbacks, "cmio requires --remote-address for snapshot/commit/rollback")
-end
+if cmio_advance or cmio_inspect then check_cmio_htif_config(config.htif) end
 if initial_hash then
     assert(config.processor.iunrep == 0, "hashes are meaningless in unreproducible mode")
     print_root_hash(machine, stderr_unsilenceable)

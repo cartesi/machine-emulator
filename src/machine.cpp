@@ -191,6 +191,11 @@ static bool DID_is_protected(PMA_ISTART_DID DID) {
     }
 }
 
+static uint64_t get_task_concurrency(uint64_t value) {
+    const uint64_t concurrency = value > 0 ? value : std::max(os_get_concurrency(), UINT64_C(1));
+    return std::min(concurrency, static_cast<uint64_t>(THREADS_MAX));
+}
+
 void machine::replace_memory_range(const memory_range_config &range) {
     for (auto &pma : m_s.pmas) {
         if (pma.get_start() == range.start && pma.get_length() == range.length) {
@@ -248,6 +253,49 @@ static void init_tlb_entry(machine &m, uint64_t eidx) {
     tlbhe.vh_offset = 0;
     tlbce.paddr_page = TLB_INVALID_PAGE;
     tlbce.pma_index = TLB_INVALID_PMA;
+}
+
+template <TLB_entry_type ETYPE>
+static void adjust_tlb_entry(machine &m, uint64_t eidx) {
+    tlb_hot_entry &tlbhe = m.get_state().tlb.hot[ETYPE][eidx];
+    const tlb_cold_entry &tlbce = m.get_state().tlb.cold[ETYPE][eidx];
+    auto vaddr_page = tlbhe.vaddr_page;
+    auto paddr_page = tlbce.paddr_page;
+    auto pma_index = tlbce.pma_index;
+    if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
+        if ((vaddr_page & ~PAGE_OFFSET_MASK) != vaddr_page) {
+            throw std::invalid_argument{"misaligned virtual page address in TLB entry"};
+        }
+        if ((paddr_page & ~PAGE_OFFSET_MASK) != paddr_page) {
+            throw std::invalid_argument{"misaligned physical page address in TLB entry"};
+        }
+        const pma_entry &pma = m.find_pma_entry<uint64_t>(paddr_page);
+        // Checks if the PMA still valid
+        if (pma.get_length() == 0 || !pma.get_istart_M() || pma_index >= m.get_state().pmas.size() ||
+            &pma != &m.get_state().pmas[pma_index]) {
+            throw std::invalid_argument{"invalid PMA for TLB entry"};
+        }
+        const unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
+        // Valid TLB entry
+        tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - vaddr_page;
+    } else {
+        tlbhe.vh_offset = 0;
+    }
+}
+
+void machine::build_pma_list() {
+    // Initialize the vector of the pmas used by the merkle tree to compute hashes.
+    // First, add the pmas visible to the big machine, except the sentinel
+    for (auto &pma : m_s.pmas | sliced(0, m_s.pmas.size() - 1)) {
+        m_pmas.push_back(&pma);
+    }
+
+    // Second, push uarch pmas that are visible only to the microarchitecture interpreter
+    m_pmas.push_back(&m_uarch.get_state().shadow_state);
+    m_pmas.push_back(&m_uarch.get_state().ram);
+
+    // Last, add sentinel
+    m_pmas.push_back(&m_s.empty_pma);
 }
 
 machine::machine(const machine_config &c, const machine_runtime_config &r) :
@@ -462,18 +510,8 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     // Add sentinel to PMA vector
     register_pma_entry(make_empty_pma_entry("sentinel"s, 0, 0));
 
-    // Initialize the vector of the pmas used by the merkle tree to compute hashes.
-    // First, add the pmas visible to the big machine, except the sentinel
-    for (auto &pma : m_s.pmas | sliced(0, m_s.pmas.size() - 1)) {
-        m_pmas.push_back(&pma);
-    }
-
-    // Second, push uarch pmas that are visible only to the microarchitecture interpreter
-    m_pmas.push_back(&m_uarch.get_state().shadow_state);
-    m_pmas.push_back(&m_uarch.get_state().ram);
-
-    // Last, add sentinel
-    m_pmas.push_back(&m_s.empty_pma);
+    // Populate m_pmas
+    build_pma_list();
 
     // Initialize TLB device
     // this must be done after all PMA entries are already registered, so we can lookup page addresses
@@ -540,6 +578,83 @@ machine::machine(const std::string &dir, const machine_runtime_config &r) : mach
     m_t.get_root_hash(hrestored);
     if (hstored != hrestored) {
         throw std::runtime_error{"stored and restored hashes do not match"};
+    }
+}
+
+machine::machine(const machine &other) :
+    m_s(other.m_s),
+    m_t(),
+    m_pmas(),
+    m_c(other.m_c),
+    m_uarch(other.m_uarch),
+    m_r(other.m_r),
+    m_mrds(other.m_mrds) {
+
+    // Cannot copy machine with VirtIO devices
+    if (!other.m_vdevs.empty()) {
+        throw std::runtime_error{"cannot copy machine with VirtIO devices"};
+    }
+
+    // Populate m_pmas
+    build_pma_list();
+
+    // ??(edubart) Mark all pages as dirty for now, we need to implement a deep copy for merkle tree later.
+    for (auto *pma : m_pmas) {
+        pma->mark_pages_dirty();
+    }
+
+    // Clone memory mapped PMAs
+    for (auto *pma : m_pmas) {
+        // Need to remap only memory
+        if (pma->get_istart_M()) {
+            auto &mem = pma->get_memory();
+
+            // Map a new PMA memory with the same size
+            pma_memory cloned_mem(pma->get_description(), mem.get_length(), pma_memory::callocd{});
+            const unsigned char *data = mem.get_host_memory();
+            unsigned char *cloned_data = cloned_mem.get_host_memory();
+
+            // Copy memory from the old PMA to the new PMA memory
+            const uint64_t num_threads = get_task_concurrency(m_r.concurrency.update_merkle_tree);
+            if (num_threads == 1) {
+                memcpy(cloned_data, data, mem.get_length());
+            } else { // Use multiple threads to copy the memory
+                const uint64_t pages_in_range = (pma->get_length() + PMA_PAGE_SIZE - 1) / PMA_PAGE_SIZE;
+                const uint64_t pages_per_thread = pages_in_range / num_threads;
+                if (pages_per_thread == 0) {
+                    memcpy(cloned_mem.get_host_memory(), mem.get_host_memory(), mem.get_length());
+                } else {
+                    const uint64_t rest_pages = pages_per_thread % num_threads;
+                    const uint64_t chunk_len = pages_per_thread * PMA_PAGE_SIZE;
+                    // Let each thread copy a chunk of memory
+                    const bool succeeded =
+                        os_parallel_for(num_threads, [&](int i, const parallel_for_mutex &mutex) -> bool {
+                            (void) mutex;
+                            const uint64_t page_start = i * chunk_len;
+                            memcpy(cloned_data + page_start, data + page_start, chunk_len);
+                            return true;
+                        });
+                    if (!succeeded) {
+                        throw std::runtime_error{"copy memory parallel for failed"};
+                    }
+                    // Copy remaining pages
+                    if (rest_pages > 0) {
+                        const uint64_t page_start = num_threads * chunk_len;
+                        memcpy(cloned_data, data, mem.get_length() - page_start);
+                    }
+                }
+            }
+
+            // Replace the PMA with the new mapped PMA
+            mem.replace(std::move(cloned_mem));
+        }
+    }
+
+    // Adjust TLB offsets to host memory pointers
+    for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
+        adjust_tlb_entry<TLB_CODE>(*this, i);
+        adjust_tlb_entry<TLB_READ>(*this, i);
+        adjust_tlb_entry<TLB_WRITE>(*this, i);
     }
 }
 
@@ -1548,11 +1663,6 @@ bool machine::verify_dirty_page_maps(void) const {
         }
     }
     return !broken;
-}
-
-static uint64_t get_task_concurrency(uint64_t value) {
-    const uint64_t concurrency = value > 0 ? value : std::max(os_get_concurrency(), UINT64_C(1));
-    return std::min(concurrency, static_cast<uint64_t>(THREADS_MAX));
 }
 
 bool machine::update_merkle_tree(void) const {

@@ -88,11 +88,22 @@ void os_putchars(const uint8_t *data, size_t len);
 /// \brief Creates a new directory
 int os_mkdir(const char *path, int mode);
 
-/// \brief Maps a file to memory
-unsigned char *os_map_file(const char *path, uint64_t length, bool shared);
+/// \brief Mapped memory entry
+struct mmapd {
+    unsigned char *host_memory = nullptr; ///< Start of associated memory region in host.
+    uint64_t length = 0;                  ///< Length of memory range (copy of PMA length field).
+    int backing_file = -1;                ///< File descriptor backing the memory
+    bool shared = false;                  ///< True when the memory is shared with the file descriptor
+};
 
-/// \brief Unmaps a file from memory
-void os_unmap_file(unsigned char *host_memory, uint64_t length);
+/// \brief Maps memory
+mmapd os_mmap_mem(uint64_t length);
+
+/// \brief Maps memory from a file
+mmapd os_mmap_file(const char *path, uint64_t length, bool shared);
+
+/// \brief Unmaps memory
+void os_munmap(const mmapd &m);
 
 /// \brief Get time elapsed since its first call with microsecond precision
 int64_t os_now_us();

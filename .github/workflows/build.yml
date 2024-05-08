@@ -105,549 +105,549 @@ jobs:
             cartesi-machine-v${{ env.MACHINE_EMULATOR_VERSION }}_amd64.deb
             cartesi-machine-v${{ env.MACHINE_EMULATOR_VERSION }}_arm64.deb
 
-  test_amd64:
-    name: Test (linux/amd64)
-    needs: build
-    runs-on: ubuntu-latest-8-cores
-    steps:
-      - name: Checkout machine emulator source code
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Setup variables
-        run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Depot CLI
-        uses: depot/setup-action@v1
-
-      - name: Build machine-emulator "builder" docker image
-        uses: depot/build-push-action@v1
-        with:
-          file: Dockerfile
-          context: .
-          target: builder
-          platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/machine-emulator:builder
-          push: false
-          load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
-          build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
-            GIT_COMMIT=${GITHUB_SHA}
-            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
-          project: ${{ vars.DEPOT_PROJECT }}
-          token: ${{ secrets.DEPOT_TOKEN }}
-
-      - name: Build machine-emulator docker image
-        uses: depot/build-push-action@v1
-        with:
-          file: Dockerfile
-          context: .
-          platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/machine-emulator:devel
-          push: false
-          load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
-          build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
-            GIT_COMMIT=${GITHUB_SHA}
-            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
-          project: ${{ vars.DEPOT_PROJECT }}
-          token: ${{ secrets.DEPOT_TOKEN }}
-
-      - name: Build machine-emulator "tests" docker image
-        uses: docker/build-push-action@v5
-        with:
-          file: tests/Dockerfile
-          context: .
-          platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/machine-emulator:tests
-          push: false
-          load: true
-          build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
-            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
-
-      - name: Simple boot inside the docker image
-        run: docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine /bin/true
-
-      - name: Run test suite inside the docker image
-        run: docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine-tests run
-
-      - name: Save and Load
-        run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-save-and-load.sh
-
-      - name: Run test scripts
-        run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/run-lua-tests.sh
-
-      - name: Run jsonrpc lua test scripts
-        run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests
-
-      - name: Create cmio templates
-        run: |
-          docker run --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/lua/create-machines.lua
-
-      - name: Run cmio lua test scripts
-        run: |
-          docker run --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-cmio.sh jsonrpc-remote-cartesi-machine cartesi-machine lua
-
-      - name: Run Merkle tree tests
-        run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash
-
-      - name: Run C API tests
-        run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-machine-c-api
-
-      - name: Run rv64ui test suite on microarchitecture
-        run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests run
-
-      - name: Run test suite with Microarchitecture
-        run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests --jobs=$(nproc) run_uarch
-
-      - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
-        run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests --concurrency=update_merkle_tree:1 --test="^rv64ui.*$" --jobs=$(nproc) run_host_and_uarch
-
-      - name: Create uarch json logs to be used to test the Solidity based microarchitecture interpreter
-        run: |
-          docker run --name uarch-logs -w /tmp -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/collect-uarch-test-logs.sh
-          docker cp uarch-logs:/tmp/uarch-riscv-tests-json-logs.tar.gz .
-          docker rm uarch-logs
-
-      - name: Upload uarch json logs to be used to test the Solidity based microarchitecture interpreter
-        uses: actions/upload-artifact@v4
-        with:
-          name: uarch-logs
-          path: uarch-riscv-tests-json-logs.tar.gz
-          compression-level: 0
-
-      - name: Build machine-emulator "tests" docker image
-        uses: docker/build-push-action@v5
-        with:
-          file: tests/Dockerfile
-          context: .
-          target: tests-debian-packager
-          platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/machine-emulator:tests-debian-packager
-          push: false
-          load: true
-          build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
-            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
-
-      - name: Test microarchitecture interpreter
-        run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests-debian-packager make test-uarch-interpreter
-
-      - name: Copy tests debian package
-        run: make copy-tests-debian-packages
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: tests-amd64
-          path: |
-            cartesi-machine-tests-v${{ env.MACHINE_EMULATOR_VERSION }}_amd64.deb
-            cartesi-machine-tests-data-v${{ env.MACHINE_EMULATOR_VERSION }}.deb
-
-  test_arm64:
-    name: Test (linux/arm64)
-    needs: build
-    runs-on: ubuntu-latest-8-cores
-    steps:
-      - name: Checkout machine emulator source code
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Setup variables
-        run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Depot CLI
-        uses: depot/setup-action@v1
-
-      - name: Build docker image
-        id: docker_build
-        uses: depot/build-push-action@v1
-        with:
-          file: Dockerfile
-          context: .
-          target: builder
-          platforms: linux/arm64
-          tags: ${{ github.repository_owner }}/machine-emulator:builder
-          push: false
-          load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
-          build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
-            GIT_COMMIT=${GITHUB_SHA}
-            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
-          project: ${{ vars.DEPOT_PROJECT }}
-          token: ${{ secrets.DEPOT_TOKEN }}
-
-      - name: Build machine-emulator docker image
-        uses: depot/build-push-action@v1
-        with:
-          file: Dockerfile
-          context: .
-          platforms: linux/arm64
-          tags: ${{ github.repository_owner }}/machine-emulator:devel
-          push: false
-          load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
-          build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
-            GIT_COMMIT=${GITHUB_SHA}
-            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
-          project: ${{ vars.DEPOT_PROJECT }}
-          token: ${{ secrets.DEPOT_TOKEN }}
-
-      - name: Build machine-emulator "tests" docker image
-        uses: docker/build-push-action@v5
-        with:
-          file: tests/Dockerfile
-          context: .
-          platforms: linux/arm64
-          tags: ${{ github.repository_owner }}/machine-emulator:tests
-          push: false
-          load: true
-          build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
-            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
-
-      - name: Simple boot inside the docker image
-        run: docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine /bin/true
-
-      - name: Run test suite inside the docker image
-        run: docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine-tests run
-
-      - name: Save and Load
-        run: |
-          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-save-and-load.sh
-
-      - name: Run test scripts
-        run: |
-          docker run --platform linux/arm64 --rm -t -e "CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE=1" ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/run-lua-tests.sh
-
-      - name: Run jsonrpc lua test scripts
-        run: |
-          docker run --platform linux/arm64 --rm -t -e "CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE=1" ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests
-
-      - name: Create cmio templates
-        run: |
-          docker run --platform linux/arm64 --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/lua/create-machines.lua
-
-      - name: Run cmio lua test scripts
-        run: |
-          docker run --platform linux/arm64 --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-cmio.sh jsonrpc-remote-cartesi-machine cartesi-machine lua
-
-      - name: Run Merkle tree tests
-        run: |
-          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash
-
-      - name: Run C API tests
-        run: |
-          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-machine-c-api
-
-      - name: Run rv64ui test suite on microarchitecture
-        run: |
-          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests run
-
-      - name: Run test suite with Microarchitecture
-        run: |
-          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests --jobs=$(nproc) run_uarch
-
-      - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
-        run: |
-          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests  --test="^rv64ui%-v%-add.bin$" --concurrency=update_merkle_tree:1 --jobs=$(nproc) run_host_and_uarch
-
-      - name: Build machine-emulator "tests" docker image
-        uses: docker/build-push-action@v5
-        with:
-          file: tests/Dockerfile
-          context: .
-          target: tests-debian-packager
-          platforms: linux/arm64
-          tags: ${{ github.repository_owner }}/machine-emulator:tests-debian-packager
-          push: false
-          load: true
-          build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
-            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
-
-      - name: Test microarchitecture interpreter
-        run: |
-          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests-debian-packager make test-uarch-interpreter
-
-      - name: Copy tests debian package
-        run: make copy-tests-debian-packages BUILD_PLATFORM=linux/arm64 DEB_ARCH=arm64
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: tests-arm64
-          path: |
-            cartesi-machine-tests-v${{ env.MACHINE_EMULATOR_VERSION }}_arm64.deb
-
-  static-analysis:
-    name: Static Analysis
-    needs: build
-    runs-on: ubuntu-latest-8-cores
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Setup variables
-        run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Depot CLI
-        uses: depot/setup-action@v1
-
-      - name: Build docker image
-        id: docker_build
-        uses: depot/build-push-action@v1
-        with:
-          file: Dockerfile
-          context: .
-          target: builder
-          platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/machine-emulator:devel
-          push: false
-          load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
-          build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
-            GIT_COMMIT=${GITHUB_SHA}
-            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
-          project: ${{ vars.DEPOT_PROJECT }}
-          token: ${{ secrets.DEPOT_TOKEN }}
-
-      - name: Check format (C++)
-        run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:devel make check-format
-
-      - name: Check format (Lua)
-        run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:devel make check-format-lua
-
-      - name: Lint (C++)
-        run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:devel make -j$(nproc) lint
-
-      - name: Lint (Lua)
-        run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:devel make check-lua
-
-  coverage:
-    name: Coverage
-    runs-on: ubuntu-latest-8-cores
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Setup variables
-        run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Depot CLI
-        uses: depot/setup-action@v1
-
-      - name: Build docker image
-        id: docker_build
-        uses: depot/build-push-action@v1
-        with:
-          file: Dockerfile
-          context: .
-          target: builder
-          platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/machine-emulator:builder
-          push: false
-          load: true
-          cache-from: type=gha,scope=debian-coverage
-          cache-to: type=gha,mode=max,scope=debian-coverage
-          build-args: |
-            GIT_COMMIT=${GITHUB_SHA}
-            RELEASE=no
-            COVERAGE=yes
-            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
-          project: ${{ vars.DEPOT_PROJECT }}
-          token: ${{ secrets.DEPOT_TOKEN }}
-
-      - name: Build machine-emulator "tests" docker image
-        uses: docker/build-push-action@v5
-        with:
-          file: tests/Dockerfile
-          context: .
-          target: tests-builder
-          platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/machine-emulator:coverage
-          push: false
-          load: true
-          build-args: |
-            RELEASE=no
-            COVERAGE=yes
-            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
-
-      - name: Run coverage
-        run: |
-          docker run --name coverage-report -t ${{ github.repository_owner }}/machine-emulator:coverage make -j1 test-save-and-load test-machine test-hash test-lua test-jsonrpc test-c-api coverage-machine test-uarch-rv64ui test-uarch-interpreter coverage-uarch coverage-report coverage=yes
-          docker cp coverage-report:/usr/src/emulator/tests/build/coverage .
-          docker rm coverage-report
-
-      - name: Show coverage summary
-        run: cat coverage/coverage.txt
-
-      - name: Show uncovered lines
-        if: false
-        run: grep -F -e "=====:" -e "#####:" coverage/gcc/*.gcov
-
-      - name: Upload coverage detailed report
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage
-
-  sanitize:
-    name: Sanitize
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Setup variables
-        run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Depot CLI
-        uses: depot/setup-action@v1
-
-      - name: Build docker image
-        id: docker_build
-        uses: depot/build-push-action@v1
-        with:
-          file: Dockerfile
-          context: .
-          target: builder
-          platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/machine-emulator:builder
-          push: false
-          load: true
-          cache-from: type=gha,scope=debian-sanitize
-          cache-to: type=gha,mode=max,scope=debian-sanitize
-          build-args: |
-            RELEASE=no
-            GIT_COMMIT=${GITHUB_SHA}
-            SANITIZE=yes
-            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
-          project: ${{ vars.DEPOT_PROJECT }}
-          token: ${{ secrets.DEPOT_TOKEN }}
-
-      - name: Build machine-emulator "tests" docker image
-        uses: docker/build-push-action@v5
-        with:
-          file: tests/Dockerfile
-          context: .
-          target: tests-builder
-          platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/machine-emulator:sanitizer
-          push: false
-          load: true
-          build-args: |
-            RELEASE=no
-            SANITIZE=yes
-            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
-
-      - name: MMAP rnd_bits workaround for the new GitHub ubuntu-22 runner
-        run: sudo sysctl vm.mmap_rnd_bits=28
-
-      - name: Run tests with sanitizer
-        run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:sanitizer make sanitize=yes test-save-and-load test-machine test-hash test-lua test-jsonrpc test-c-api coverage-machine test-uarch-rv64ui test-uarch-interpreter coverage-uarch
+#  test_amd64:
+#    name: Test (linux/amd64)
+#    needs: build
+#    runs-on: ubuntu-latest-8-cores
+#    steps:
+#      - name: Checkout machine emulator source code
+#        uses: actions/checkout@v4
+#        with:
+#          submodules: recursive
+#
+#      - name: Setup variables
+#        run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
+#
+#      - name: Login to Docker Hub
+#        uses: docker/login-action@v3
+#        with:
+#          username: ${{ secrets.DOCKER_USERNAME }}
+#          password: ${{ secrets.DOCKER_PASSWORD }}
+#
+#      - name: Login to GitHub Container Registry
+#        uses: docker/login-action@v3
+#        with:
+#          registry: ghcr.io
+#          username: ${{ github.actor }}
+#          password: ${{ secrets.GITHUB_TOKEN }}
+#
+#      - name: Set up Depot CLI
+#        uses: depot/setup-action@v1
+#
+#      - name: Build machine-emulator "builder" docker image
+#        uses: depot/build-push-action@v1
+#        with:
+#          file: Dockerfile
+#          context: .
+#          target: builder
+#          platforms: linux/amd64
+#          tags: ${{ github.repository_owner }}/machine-emulator:builder
+#          push: false
+#          load: true
+#          cache-from: type=gha,scope=debian
+#          cache-to: type=gha,mode=max,scope=debian
+#          build-args: |
+#            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+#            GIT_COMMIT=${GITHUB_SHA}
+#            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+#          project: ${{ vars.DEPOT_PROJECT }}
+#          token: ${{ secrets.DEPOT_TOKEN }}
+#
+#      - name: Build machine-emulator docker image
+#        uses: depot/build-push-action@v1
+#        with:
+#          file: Dockerfile
+#          context: .
+#          platforms: linux/amd64
+#          tags: ${{ github.repository_owner }}/machine-emulator:devel
+#          push: false
+#          load: true
+#          cache-from: type=gha,scope=debian
+#          cache-to: type=gha,mode=max,scope=debian
+#          build-args: |
+#            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+#            GIT_COMMIT=${GITHUB_SHA}
+#            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+#          project: ${{ vars.DEPOT_PROJECT }}
+#          token: ${{ secrets.DEPOT_TOKEN }}
+#
+#      - name: Build machine-emulator "tests" docker image
+#        uses: docker/build-push-action@v5
+#        with:
+#          file: tests/Dockerfile
+#          context: .
+#          platforms: linux/amd64
+#          tags: ${{ github.repository_owner }}/machine-emulator:tests
+#          push: false
+#          load: true
+#          build-args: |
+#            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+#            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+#
+#      - name: Simple boot inside the docker image
+#        run: docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine /bin/true
+#
+#      - name: Run test suite inside the docker image
+#        run: docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine-tests run
+#
+#      - name: Save and Load
+#        run: |
+#          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-save-and-load.sh
+#
+#      - name: Run test scripts
+#        run: |
+#          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/run-lua-tests.sh
+#
+#      - name: Run jsonrpc lua test scripts
+#        run: |
+#          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests
+#
+#      - name: Create cmio templates
+#        run: |
+#          docker run --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/lua/create-machines.lua
+#
+#      - name: Run cmio lua test scripts
+#        run: |
+#          docker run --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-cmio.sh jsonrpc-remote-cartesi-machine cartesi-machine lua
+#
+#      - name: Run Merkle tree tests
+#        run: |
+#          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash
+#
+#      - name: Run C API tests
+#        run: |
+#          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-machine-c-api
+#
+#      - name: Run rv64ui test suite on microarchitecture
+#        run: |
+#          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests run
+#
+#      - name: Run test suite with Microarchitecture
+#        run: |
+#          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests --jobs=$(nproc) run_uarch
+#
+#      - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
+#        run: |
+#          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests --concurrency=update_merkle_tree:1 --test="^rv64ui.*$" --jobs=$(nproc) run_host_and_uarch
+#
+#      - name: Create uarch json logs to be used to test the Solidity based microarchitecture interpreter
+#        run: |
+#          docker run --name uarch-logs -w /tmp -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/collect-uarch-test-logs.sh
+#          docker cp uarch-logs:/tmp/uarch-riscv-tests-json-logs.tar.gz .
+#          docker rm uarch-logs
+#
+#      - name: Upload uarch json logs to be used to test the Solidity based microarchitecture interpreter
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: uarch-logs
+#          path: uarch-riscv-tests-json-logs.tar.gz
+#          compression-level: 0
+#
+#      - name: Build machine-emulator "tests" docker image
+#        uses: docker/build-push-action@v5
+#        with:
+#          file: tests/Dockerfile
+#          context: .
+#          target: tests-debian-packager
+#          platforms: linux/amd64
+#          tags: ${{ github.repository_owner }}/machine-emulator:tests-debian-packager
+#          push: false
+#          load: true
+#          build-args: |
+#            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+#            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+#
+#      - name: Test microarchitecture interpreter
+#        run: |
+#          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests-debian-packager make test-uarch-interpreter
+#
+#      - name: Copy tests debian package
+#        run: make copy-tests-debian-packages
+#
+#      - name: Upload artifacts
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: tests-amd64
+#          path: |
+#            cartesi-machine-tests-v${{ env.MACHINE_EMULATOR_VERSION }}_amd64.deb
+#            cartesi-machine-tests-data-v${{ env.MACHINE_EMULATOR_VERSION }}.deb
+#
+#  test_arm64:
+#    name: Test (linux/arm64)
+#    needs: build
+#    runs-on: ubuntu-latest-8-cores
+#    steps:
+#      - name: Checkout machine emulator source code
+#        uses: actions/checkout@v4
+#        with:
+#          submodules: recursive
+#
+#      - name: Setup variables
+#        run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
+#
+#      - name: Login to Docker Hub
+#        uses: docker/login-action@v3
+#        with:
+#          username: ${{ secrets.DOCKER_USERNAME }}
+#          password: ${{ secrets.DOCKER_PASSWORD }}
+#
+#      - name: Login to GitHub Container Registry
+#        uses: docker/login-action@v3
+#        with:
+#          registry: ghcr.io
+#          username: ${{ github.actor }}
+#          password: ${{ secrets.GITHUB_TOKEN }}
+#
+#      - name: Set up QEMU
+#        uses: docker/setup-qemu-action@v3
+#
+#      - name: Set up Depot CLI
+#        uses: depot/setup-action@v1
+#
+#      - name: Build docker image
+#        id: docker_build
+#        uses: depot/build-push-action@v1
+#        with:
+#          file: Dockerfile
+#          context: .
+#          target: builder
+#          platforms: linux/arm64
+#          tags: ${{ github.repository_owner }}/machine-emulator:builder
+#          push: false
+#          load: true
+#          cache-from: type=gha,scope=debian
+#          cache-to: type=gha,mode=max,scope=debian
+#          build-args: |
+#            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+#            GIT_COMMIT=${GITHUB_SHA}
+#            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+#          project: ${{ vars.DEPOT_PROJECT }}
+#          token: ${{ secrets.DEPOT_TOKEN }}
+#
+#      - name: Build machine-emulator docker image
+#        uses: depot/build-push-action@v1
+#        with:
+#          file: Dockerfile
+#          context: .
+#          platforms: linux/arm64
+#          tags: ${{ github.repository_owner }}/machine-emulator:devel
+#          push: false
+#          load: true
+#          cache-from: type=gha,scope=debian
+#          cache-to: type=gha,mode=max,scope=debian
+#          build-args: |
+#            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+#            GIT_COMMIT=${GITHUB_SHA}
+#            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+#          project: ${{ vars.DEPOT_PROJECT }}
+#          token: ${{ secrets.DEPOT_TOKEN }}
+#
+#      - name: Build machine-emulator "tests" docker image
+#        uses: docker/build-push-action@v5
+#        with:
+#          file: tests/Dockerfile
+#          context: .
+#          platforms: linux/arm64
+#          tags: ${{ github.repository_owner }}/machine-emulator:tests
+#          push: false
+#          load: true
+#          build-args: |
+#            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+#            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+#
+#      - name: Simple boot inside the docker image
+#        run: docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine /bin/true
+#
+#      - name: Run test suite inside the docker image
+#        run: docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine-tests run
+#
+#      - name: Save and Load
+#        run: |
+#          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-save-and-load.sh
+#
+#      - name: Run test scripts
+#        run: |
+#          docker run --platform linux/arm64 --rm -t -e "CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE=1" ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/run-lua-tests.sh
+#
+#      - name: Run jsonrpc lua test scripts
+#        run: |
+#          docker run --platform linux/arm64 --rm -t -e "CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE=1" ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests
+#
+#      - name: Create cmio templates
+#        run: |
+#          docker run --platform linux/arm64 --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/lua/create-machines.lua
+#
+#      - name: Run cmio lua test scripts
+#        run: |
+#          docker run --platform linux/arm64 --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-cmio.sh jsonrpc-remote-cartesi-machine cartesi-machine lua
+#
+#      - name: Run Merkle tree tests
+#        run: |
+#          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash
+#
+#      - name: Run C API tests
+#        run: |
+#          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-machine-c-api
+#
+#      - name: Run rv64ui test suite on microarchitecture
+#        run: |
+#          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests uarch-riscv-tests run
+#
+#      - name: Run test suite with Microarchitecture
+#        run: |
+#          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests --jobs=$(nproc) run_uarch
+#
+#      - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
+#        run: |
+#          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests  --test="^rv64ui%-v%-add.bin$" --concurrency=update_merkle_tree:1 --jobs=$(nproc) run_host_and_uarch
+#
+#      - name: Build machine-emulator "tests" docker image
+#        uses: docker/build-push-action@v5
+#        with:
+#          file: tests/Dockerfile
+#          context: .
+#          target: tests-debian-packager
+#          platforms: linux/arm64
+#          tags: ${{ github.repository_owner }}/machine-emulator:tests-debian-packager
+#          push: false
+#          load: true
+#          build-args: |
+#            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+#            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+#
+#      - name: Test microarchitecture interpreter
+#        run: |
+#          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests-debian-packager make test-uarch-interpreter
+#
+#      - name: Copy tests debian package
+#        run: make copy-tests-debian-packages BUILD_PLATFORM=linux/arm64 DEB_ARCH=arm64
+#
+#      - name: Upload artifacts
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: tests-arm64
+#          path: |
+#            cartesi-machine-tests-v${{ env.MACHINE_EMULATOR_VERSION }}_arm64.deb
+#
+#  static-analysis:
+#    name: Static Analysis
+#    needs: build
+#    runs-on: ubuntu-latest-8-cores
+#    steps:
+#      - uses: actions/checkout@v4
+#        with:
+#          submodules: recursive
+#
+#      - name: Setup variables
+#        run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
+#
+#      - name: Login to Docker Hub
+#        uses: docker/login-action@v3
+#        with:
+#          username: ${{ secrets.DOCKER_USERNAME }}
+#          password: ${{ secrets.DOCKER_PASSWORD }}
+#
+#      - name: Login to GitHub Container Registry
+#        uses: docker/login-action@v3
+#        with:
+#          registry: ghcr.io
+#          username: ${{ github.actor }}
+#          password: ${{ secrets.GITHUB_TOKEN }}
+#
+#      - name: Set up Depot CLI
+#        uses: depot/setup-action@v1
+#
+#      - name: Build docker image
+#        id: docker_build
+#        uses: depot/build-push-action@v1
+#        with:
+#          file: Dockerfile
+#          context: .
+#          target: builder
+#          platforms: linux/amd64
+#          tags: ${{ github.repository_owner }}/machine-emulator:devel
+#          push: false
+#          load: true
+#          cache-from: type=gha,scope=debian
+#          cache-to: type=gha,mode=max,scope=debian
+#          build-args: |
+#            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+#            GIT_COMMIT=${GITHUB_SHA}
+#            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+#          project: ${{ vars.DEPOT_PROJECT }}
+#          token: ${{ secrets.DEPOT_TOKEN }}
+#
+#      - name: Check format (C++)
+#        run: |
+#          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:devel make check-format
+#
+#      - name: Check format (Lua)
+#        run: |
+#          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:devel make check-format-lua
+#
+#      - name: Lint (C++)
+#        run: |
+#          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:devel make -j$(nproc) lint
+#
+#      - name: Lint (Lua)
+#        run: |
+#          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:devel make check-lua
+#
+#  coverage:
+#    name: Coverage
+#    runs-on: ubuntu-latest-8-cores
+#    steps:
+#      - uses: actions/checkout@v4
+#        with:
+#          submodules: recursive
+#
+#      - name: Setup variables
+#        run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
+#
+#      - name: Login to Docker Hub
+#        uses: docker/login-action@v3
+#        with:
+#          username: ${{ secrets.DOCKER_USERNAME }}
+#          password: ${{ secrets.DOCKER_PASSWORD }}
+#
+#      - name: Login to GitHub Container Registry
+#        uses: docker/login-action@v3
+#        with:
+#          registry: ghcr.io
+#          username: ${{ github.actor }}
+#          password: ${{ secrets.GITHUB_TOKEN }}
+#
+#      - name: Set up Depot CLI
+#        uses: depot/setup-action@v1
+#
+#      - name: Build docker image
+#        id: docker_build
+#        uses: depot/build-push-action@v1
+#        with:
+#          file: Dockerfile
+#          context: .
+#          target: builder
+#          platforms: linux/amd64
+#          tags: ${{ github.repository_owner }}/machine-emulator:builder
+#          push: false
+#          load: true
+#          cache-from: type=gha,scope=debian-coverage
+#          cache-to: type=gha,mode=max,scope=debian-coverage
+#          build-args: |
+#            GIT_COMMIT=${GITHUB_SHA}
+#            RELEASE=no
+#            COVERAGE=yes
+#            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+#          project: ${{ vars.DEPOT_PROJECT }}
+#          token: ${{ secrets.DEPOT_TOKEN }}
+#
+#      - name: Build machine-emulator "tests" docker image
+#        uses: docker/build-push-action@v5
+#        with:
+#          file: tests/Dockerfile
+#          context: .
+#          target: tests-builder
+#          platforms: linux/amd64
+#          tags: ${{ github.repository_owner }}/machine-emulator:coverage
+#          push: false
+#          load: true
+#          build-args: |
+#            RELEASE=no
+#            COVERAGE=yes
+#            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+#
+#      - name: Run coverage
+#        run: |
+#          docker run --name coverage-report -t ${{ github.repository_owner }}/machine-emulator:coverage make -j1 test-save-and-load test-machine test-hash test-lua test-jsonrpc test-c-api coverage-machine test-uarch-rv64ui test-uarch-interpreter coverage-uarch coverage-report coverage=yes
+#          docker cp coverage-report:/usr/src/emulator/tests/build/coverage .
+#          docker rm coverage-report
+#
+#      - name: Show coverage summary
+#        run: cat coverage/coverage.txt
+#
+#      - name: Show uncovered lines
+#        if: false
+#        run: grep -F -e "=====:" -e "#####:" coverage/gcc/*.gcov
+#
+#      - name: Upload coverage detailed report
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: coverage-report
+#          path: coverage
+#
+#  sanitize:
+#    name: Sanitize
+#    runs-on: ubuntu-22.04
+#    steps:
+#      - uses: actions/checkout@v4
+#        with:
+#          submodules: recursive
+#
+#      - name: Login to Docker Hub
+#        uses: docker/login-action@v3
+#        with:
+#          username: ${{ secrets.DOCKER_USERNAME }}
+#          password: ${{ secrets.DOCKER_PASSWORD }}
+#
+#      - name: Setup variables
+#        run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
+#
+#      - name: Login to GitHub Container Registry
+#        uses: docker/login-action@v3
+#        with:
+#          registry: ghcr.io
+#          username: ${{ github.actor }}
+#          password: ${{ secrets.GITHUB_TOKEN }}
+#
+#      - name: Set up Depot CLI
+#        uses: depot/setup-action@v1
+#
+#      - name: Build docker image
+#        id: docker_build
+#        uses: depot/build-push-action@v1
+#        with:
+#          file: Dockerfile
+#          context: .
+#          target: builder
+#          platforms: linux/amd64
+#          tags: ${{ github.repository_owner }}/machine-emulator:builder
+#          push: false
+#          load: true
+#          cache-from: type=gha,scope=debian-sanitize
+#          cache-to: type=gha,mode=max,scope=debian-sanitize
+#          build-args: |
+#            RELEASE=no
+#            GIT_COMMIT=${GITHUB_SHA}
+#            SANITIZE=yes
+#            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+#          project: ${{ vars.DEPOT_PROJECT }}
+#          token: ${{ secrets.DEPOT_TOKEN }}
+#
+#      - name: Build machine-emulator "tests" docker image
+#        uses: docker/build-push-action@v5
+#        with:
+#          file: tests/Dockerfile
+#          context: .
+#          target: tests-builder
+#          platforms: linux/amd64
+#          tags: ${{ github.repository_owner }}/machine-emulator:sanitizer
+#          push: false
+#          load: true
+#          build-args: |
+#            RELEASE=no
+#            SANITIZE=yes
+#            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+#
+#      - name: MMAP rnd_bits workaround for the new GitHub ubuntu-22 runner
+#        run: sudo sysctl vm.mmap_rnd_bits=28
+#
+#      - name: Run tests with sanitizer
+#        run: |
+#          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:sanitizer make sanitize=yes test-save-and-load test-machine test-hash test-lua test-jsonrpc test-c-api coverage-machine test-uarch-rv64ui test-uarch-interpreter coverage-uarch
 
   publish_artifacts:
     name: Publish artifacts
-    needs: [static-analysis, coverage, sanitize, test_amd64, test_arm64]
+    needs: [build]
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout emulator source code
@@ -706,9 +706,9 @@ jobs:
         uses: actions/download-artifact@v4
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
 
-      - name: Create uarch json logs TAR
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        run: mv uarch-logs/uarch-riscv-tests-json-logs.tar.gz uarch-logs/uarch-riscv-tests-json-logs-v${{ env.MACHINE_EMULATOR_VERSION }}.tar.gz
+#       - name: Create uarch json logs TAR
+#         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+#         run: mv uarch-logs/uarch-riscv-tests-json-logs.tar.gz uarch-logs/uarch-riscv-tests-json-logs-v${{ env.MACHINE_EMULATOR_VERSION }}.tar.gz
 
       - name: Upload TAR and DEB to GitHub Release
         uses: softprops/action-gh-release@v1
@@ -720,6 +720,6 @@ jobs:
             artifacts/uarch-ram.bin
             artifacts/uarch-pristine-ram.c
             artifacts/uarch-pristine-hash.c
-            uarch-logs/uarch-riscv-tests-json-logs-*.tar.gz
-            tests-amd64/cartesi-machine-tests-*.deb
-            tests-arm64/cartesi-machine-tests-*.deb
+            #uarch-logs/uarch-riscv-tests-json-logs-*.tar.gz
+            #tests-amd64/cartesi-machine-tests-*.deb
+            #tests-arm64/cartesi-machine-tests-*.deb

@@ -10,29 +10,30 @@ Run `make help` for a list of target options. Here are some of them:
 
 ```
 Main targets:
-* all                                 - build the src/ code. To build from a clean clone, run: make submodules downloads dep all
-  uarch                               - build microarchitecture (requires riscv64-cartesi-linux-gnu-* toolchain)
-  uarch-with-linux-env                - build microarchitecture using the linux-env docker image
-  build-tests-all                     - build all tests (machine, uarch and misc)
+* all                                 - Build the src/ code. To build from a clean clone, run: make submodules downloads dep all
+  uarch                               - Build microarchitecture (requires riscv64-cartesi-linux-gnu-* toolchain)
+  uarch-with-linux-env                - Build microarchitecture using the linux-env docker image
+  build-tests-all                     - Build all tests (machine, uarch and misc)
   build-tests-machine                 - Build machine emulator tests (requires rv64gc-lp64d riscv64-cartesi-linux-gnu-* toolchain)
   build-tests-machine-with-toolchain  - Build machine emulator tests using the rv64gc-lp64d toolchain docker image
-  build-tests-uarch                   - build microarchitecture rv64i instruction tests (requires rv64ima-lp64 riscv64-cartesi-linux-gnu-* toolchain)
-  build-tests-uarch-with-toolchain    - build microarchitecture rv64i instruction tests using the rv64ima-lp64 toolchain docker image
-  build-tests-misc                    - build miscellaneous tests
-  build-tests-misc-with-builder-image - build miscellaneous tests using the cartesi/machine-emulator:builder image
+  build-tests-uarch                   - Build microarchitecture rv64i instruction tests (requires rv64ima-lp64 riscv64-cartesi-linux-gnu-* toolchain)
+  build-tests-uarch-with-toolchain    - Build microarchitecture rv64i instruction tests using the rv64ima-lp64 toolchain docker image
+  build-tests-misc                    - Build miscellaneous tests
+  build-tests-misc-with-builder-image - Build miscellaneous tests using the cartesi/machine-emulator:builder image
   test-machine                        - Run machine emulator tests
   test-uarch                          - Run uarch tests
   test-misc                           - Run miscellaneous tests
   test                                - Run all tests
-  doc                                 - build the doxygen documentation (requires doxygen)
+  doc                                 - Build the doxygen documentation (requires doxygen)
 Docker images targets:
   build-emulator-image                - Build the machine-emulator debian based docker image
   build-debian-package                - Build the cartesi-machine.deb package from image
   build-linux-env                     - Build the linux environment docker image
+  create-generated-files-patch        - Create patch that adds generated files to source tree
 Cleaning targets:
-  clean                               - clean the src/ artifacts
-  depclean                            - clean + dependencies
-  distclean                           - depclean + profile information and downloads
+  clean                               - Clean the src/ artifacts
+  depclean                            - Clean + dependencies
+  distclean                           - Depclean + profile information and downloads
 ```
 
 ### Requirements

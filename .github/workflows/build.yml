@@ -102,6 +102,7 @@ jobs:
             uarch-ram.bin
             uarch-pristine-ram.c
             uarch-pristine-hash.c
+            machine-c-version.h
             cartesi-machine-v${{ env.MACHINE_EMULATOR_VERSION }}_amd64.deb
             cartesi-machine-v${{ env.MACHINE_EMULATOR_VERSION }}_arm64.deb
 
@@ -647,7 +648,7 @@ jobs:
 
   publish_artifacts:
     name: Publish artifacts
-    needs: [static-analysis, coverage, sanitize, test_amd64, test_arm64]
+    needs: [build, static-analysis, coverage, sanitize, test_amd64, test_arm64]
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout emulator source code
@@ -710,7 +711,15 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: mv uarch-logs/uarch-riscv-tests-json-logs.tar.gz uarch-logs/uarch-riscv-tests-json-logs-v${{ env.MACHINE_EMULATOR_VERSION }}.tar.gz
 
-      - name: Upload TAR and DEB to GitHub Release
+      - name: Create generated files patch
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          mv artifacts/machine-c-version.h src
+          mv artifacts/uarch-pristine-ram.c uarch
+          mv artifacts/uarch-pristine-hash.c uarch
+          make create-generated-files-patch
+
+      - name: Upload products to GitHub Release
         uses: softprops/action-gh-release@v1
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         with:
@@ -718,8 +727,7 @@ jobs:
           files: |
             artifacts/cartesi-machine-*.deb
             artifacts/uarch-ram.bin
-            artifacts/uarch-pristine-ram.c
-            artifacts/uarch-pristine-hash.c
+            add-generated-files.diff
             uarch-logs/uarch-riscv-tests-json-logs-*.tar.gz
             tests-amd64/cartesi-machine-tests-*.deb
             tests-arm64/cartesi-machine-tests-*.deb

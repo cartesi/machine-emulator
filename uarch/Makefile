@@ -77,11 +77,10 @@ COMPUTE_UARCH_C_SOURCES=\
 
 UARCH_OBJS = $(patsubst %.c,%.uarch_c.o,$(patsubst %.cpp,%.uarch_cpp.o,$(UARCH_SOURCES)))
 EMULATOR_OBJS = $(patsubst %.c,%.emulator_c.o,$(patsubst %.cpp,%.emulator_cpp.o,$(EMULATOR_SOURCES)))
-TARGETS=$(UARCH_OBJS) $(EMULATOR_OBJS)
 
 .PHONY: all clean
 
-all: $(TARGETS) uarch-ram.bin uarch-pristine-ram.c uarch-pristine-hash.c
+all: uarch-ram.bin uarch-pristine-ram.c uarch-pristine-hash.c
 
 compute-uarch-pristine-hash: $(COMPUTE_UARCH_CPP_SOURCES) $(COMPUTE_UARCH_C_SOURCES)
 	$(HOST_CXX) $(HOST_CFLAGS) -o $@ -x c $(COMPUTE_UARCH_C_SOURCES) -x c++ $(COMPUTE_UARCH_CPP_SOURCES)

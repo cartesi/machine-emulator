@@ -102,6 +102,7 @@ jobs:
             uarch-ram.bin
             uarch-pristine-ram.c
             uarch-pristine-hash.c
+            machine-c-version.h
             cartesi-machine-v${{ env.MACHINE_EMULATOR_VERSION }}_amd64.deb
             cartesi-machine-v${{ env.MACHINE_EMULATOR_VERSION }}_arm64.deb
 
@@ -718,6 +719,7 @@ jobs:
           files: |
             artifacts/cartesi-machine-*.deb
             artifacts/uarch-ram.bin
+            artifacts/machine-c-version.h
             artifacts/uarch-pristine-ram.c
             artifacts/uarch-pristine-hash.c
             #uarch-logs/uarch-riscv-tests-json-logs-*.tar.gz

@@ -286,6 +286,7 @@ copy-tests-debian-packages:
 copy:
 	docker create --name uarch-ram-bin $(DOCKER_PLATFORM) $(DEBIAN_IMG)
 	docker cp uarch-ram-bin:/usr/src/emulator/$(DEB_FILENAME) .
+	docker cp uarch-ram-bin:/usr/src/emulator/src/machine-c-version.h .
 	docker cp uarch-ram-bin:/usr/src/emulator/uarch/uarch-ram.bin .
 	docker cp uarch-ram-bin:/usr/src/emulator/uarch/uarch-pristine-ram.c .
 	docker cp uarch-ram-bin:/usr/src/emulator/uarch/uarch-pristine-hash.c .

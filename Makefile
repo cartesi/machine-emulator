@@ -148,39 +148,44 @@ SHA1SUM=sha1sum
 
 endif
 
+GENERATED_FILES= uarch/uarch-pristine-hash.c uarch/uarch-pristine-ram.c src/machine-c-version.h
+ADD_GENERATED_FILES_DIFF= add-generated-files.diff
+
 all: source-default
 
 help:
 	@echo 'Main targets:'
-	@echo '* all                                 - build the src/ code. To build from a clean clone, run: make submodules downloads dep all'
-	@echo '  uarch                               - build microarchitecture (requires riscv64-cartesi-linux-gnu-* toolchain)'
-	@echo '  uarch-with-linux-env                - build microarchitecture using the linux-env docker image'
-	@echo '  build-tests-all                     - build all tests (machine, uarch and misc)'
+	@echo '* all                                 - Build the src/ code. To build from a clean clone, run: make submodules downloads dep all'
+	@echo '  uarch                               - Build microarchitecture (requires riscv64-cartesi-linux-gnu-* toolchain)'
+	@echo '  uarch-with-linux-env                - Build microarchitecture using the linux-env docker image'
+	@echo '  build-tests-all                     - Build all tests (machine, uarch and misc)'
 	@echo '  build-tests-machine                 - Build machine emulator tests (requires rv64gc-lp64d riscv64-cartesi-linux-gnu-* toolchain)'
 	@echo '  build-tests-machine-with-toolchain  - Build machine emulator tests using the rv64gc-lp64d toolchain docker image'
-	@echo '  build-tests-uarch                   - build microarchitecture rv64i instruction tests (requires rv64ima-lp64 riscv64-cartesi-linux-gnu-* toolchain)'
-	@echo '  build-tests-uarch-with-toolchain    - build microarchitecture rv64i instruction tests using the rv64ima-lp64 toolchain docker image'
-	@echo '  build-tests-misc                    - build miscellaneous tests'
-	@echo '  build-tests-misc-with-builder-image - build miscellaneous tests using the cartesi/machine-emulator:builder image'
+	@echo '  build-tests-uarch                   - Build microarchitecture rv64i instruction tests (requires rv64ima-lp64 riscv64-cartesi-linux-gnu-* toolchain)'
+	@echo '  build-tests-uarch-with-toolchain    - Build microarchitecture rv64i instruction tests using the rv64ima-lp64 toolchain docker image'
+	@echo '  build-tests-misc                    - Build miscellaneous tests'
+	@echo '  build-tests-misc-with-builder-image - Build miscellaneous tests using the cartesi/machine-emulator:builder image'
 	@echo '  test-machine                        - Run machine emulator tests'
 	@echo '  test-uarch                          - Run uarch tests'
 	@echo '  test-misc                           - Run miscellaneous tests'
 	@echo '  test                                - Run all tests'
-	@echo '  doc                                 - build the doxygen documentation (requires doxygen)'
+	@echo '  doc                                 - Build the doxygen documentation (requires doxygen)'
 	@echo 'Docker images targets:'
 	@echo '  build-emulator-image                - Build the machine-emulator debian based docker image'
 	@echo '  build-debian-package                - Build the cartesi-machine.deb package from image'
 	@echo '  build-linux-env                     - Build the linux environment docker image'
+	@echo '  create-generated-files-patch        - Create patch that adds generated files to source tree'
 	@echo 'Cleaning targets:'
-	@echo '  clean                               - clean the src/ artifacts'
-	@echo '  depclean                            - clean + dependencies'
-	@echo '  distclean                           - depclean + profile information and downloads'
+	@echo '  clean                               - Clean the src/ artifacts'
+	@echo '  depclean                            - Clean + dependencies'
+	@echo '  distclean                           - Depclean + profile information and downloads'
 
 $(SUBCLEAN): %.clean:
 	@$(MAKE) -C $* clean
 
 clean: $(SUBCLEAN)
 	@rm -rf cartesi-machine-*.deb
+	@rm -rf $(ADD_GENERATED_FILES_DIFF)
 
 depclean: clean
 	@rm -rf $(DEPDIRS)
@@ -286,6 +291,7 @@ copy-tests-debian-packages:
 copy:
 	docker create --name uarch-ram-bin $(DOCKER_PLATFORM) $(DEBIAN_IMG)
 	docker cp uarch-ram-bin:/usr/src/emulator/$(DEB_FILENAME) .
+	docker cp uarch-ram-bin:/usr/src/emulator/src/machine-c-version.h .
 	docker cp uarch-ram-bin:/usr/src/emulator/uarch/uarch-ram.bin .
 	docker cp uarch-ram-bin:/usr/src/emulator/uarch/uarch-pristine-ram.c .
 	docker cp uarch-ram-bin:/usr/src/emulator/uarch/uarch-pristine-hash.c .
@@ -394,7 +400,14 @@ tests-debian-package: install-tests
 	sed 's|ARG_VERSION|$(MACHINE_EMULATOR_VERSION)|g;s|ARG_ARCH|$(DEB_ARCH)|g' tools/template/tests-control.template > $(DESTDIR)/DEBIAN/control
 	dpkg-deb -Zxz --root-owner-group --build $(DESTDIR) $(TESTS_DEB_FILENAME)
 
+create-generated-files-patch: $(ADD_GENERATED_FILES_DIFF)
+
+$(ADD_GENERATED_FILES_DIFF): $(GENERATED_FILES)
+	git add -f $(GENERATED_FILES)
+	git diff --no-prefix --staged --output=$(ADD_GENERATED_FILES_DIFF)
+	git reset -- $(GENERATED_FILES)
+
 .SECONDARY: $(DOWNLOADDIR) $(DEPDIRS)
 
 .PHONY: help all submodules doc clean distclean downloads checksum src luacartesi hash uarch \
-	$(SUBDIRS) $(SUBCLEAN)
+	create-generated-files-patch $(SUBDIRS) $(SUBCLEAN)

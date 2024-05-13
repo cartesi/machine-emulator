@@ -66,27 +66,30 @@ CXX=clang++
 AR=libtool -static -o
 INCS=
 
+BREW_PREFIX=$(shell which brew)
+PORT_PREFIX=$(shell which port)
+
 ifeq ($(MACOSX_DEPLOYMENT_TARGET),)
 export MACOSX_DEPLOYMENT_TARGET := $(shell sw_vers -productVersion | sed -E "s/([[:digit:]]+)\.([[:digit:]]+)\..+/\1.\2.0/")
 endif
 
 # Homebrew installation
-ifneq (,$(shell which brew))
-BREW_PREFIX = $(shell brew --prefix)
+ifneq (,$(BREW_PREFIX))
 BOOST_LIB_DIR=-L$(BREW_PREFIX)/lib
 BOOST_INC=-I$(BREW_PREFIX)/include
 SLIRP_LIB=-L$(BREW_PREFIX)/lib -lslirp
 SLIRP_INC=-I$(BREW_PREFIX)/libslirp/include
 
 # Macports installation
-else ifneq (,$(shell which port))
-PORT_PREFIX = /opt/local
-BOOST_LIB_DIR=-L$(PORT_PREFIX)/libexec/boost/1.81/lib
-BOOST_INC=-I$(PORT_PREFIX)/libexec/boost/1.81/include
-SLIRP_LIB=-L$(PORT_PREFIX)/lib -lslirp
-SLIRP_INC=-I$(PORT_PREFIX)/include
+else ifneq (,$(PORT_PREFIX))
+INSTALL_PREFIX=/opt/local
+BOOST_LIB_DIR=-L$(INSTALL_PREFIX)/libexec/boost/1.81/lib
+BOOST_INC=-I$(INSTALL_PREFIX)/libexec/boost/1.81/include
+SLIRP_LIB=-L$(INSTALL_PREFIX)/lib -lslirp
+SLIRP_INC=-I$(INSTALL_PREFIX)/include
+
 else
-$(error Neither Homebrew nor MacPorts is installed)
+$(warning Neither Homebrew nor MacPorts prefix found)
 endif
 
 LIBCARTESI=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib

@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Makefile target `create-generated-files-patch` to generate `add-generated-files.diff` patch
+- CI now creates and uploads `add-generated-files.diff` as artifact on tagged releases
+- CI uploads `machine-c-api.h` as artifact on tagged releases
+
 ## [0.17.0] - 2024-04-23
 ### Added
 - Added `--no-rollback` and `--remote-fork` options

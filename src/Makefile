@@ -152,7 +152,6 @@ INCS+= \
 	-I../third-party/llvm-flang-uint128 \
 	-I../third-party/tiny_sha3 \
 	-I../third-party/downloads \
-	-I../third-party/mongoose-7.12 \
 	$(BOOST_INC)
 
 # Use 64-bit offsets for file operations in POSIX APIs
@@ -188,16 +187,9 @@ ifneq ($(git_commit),)
 DEFS+=-DGIT_COMMIT='"$(git_commit)"'
 endif
 
-# Allow mongoose to receive large messages
-# The biggest message is reset uarch with large_data: 2x 4MB + small data + overhad
-MONGOOSE_DEFS+=-DMG_MAX_RECV_SIZE=12582912
-
 # Optimization flags
 ifneq (,$(filter yes,$(relwithdebinfo) $(release)))
 DEFS+=-DNDEBUG
-## Mongoose log is disabled because it generates code using __FILE__ macro,
-## which is reported as an error when packaging in some Linux distributions.
-MONGOOSE_DEFS+=-DMG_ENABLE_LOG=0
 ifneq (,$(filter gcc,$(CC)))
 # The following flag helps GCC to eliminate more redundant computations in the interpret loop,
 # saving some host instructions and improving performance.
@@ -388,7 +380,6 @@ MERKLE_TREE_HASH_OBJS:= \
 LIBCARTESI_JSONRPC_OBJS:= \
 	jsonrpc-virtual-machine.o \
 	jsonrpc-machine-c-api.o \
-	mongoose.o \
 	uarch-pristine-ram.o \
 	uarch-pristine-state-hash.o \
 	uarch-pristine-hash.o
@@ -401,7 +392,6 @@ LUACARTESI_JSONRPC_OBJS:= \
 JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	jsonrpc-remote-machine.o \
 	jsonrpc-discover.o \
-	mongoose.o \
 	slog.o \
 	uarch-pristine-ram.o \
 	uarch-pristine-state-hash.o \
@@ -529,9 +519,6 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CFLAGS) 2>/dev/null
 	@$(CC) $(CFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
-
-mongoose.o: ../third-party/mongoose-7.12/mongoose.c
-	$(CC) $(CFLAGS) $(MONGOOSE_DEFS) -c -o $@ $<
 
 sha3.o: ../third-party/tiny_sha3/sha3.c
 	$(CC) $(CFLAGS) -c -o $@ $<

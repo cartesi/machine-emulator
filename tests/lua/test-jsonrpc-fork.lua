@@ -84,8 +84,8 @@ end
 -- So the ith child will have registers x1-xi set to 1
 -- Each child will then do the same, but child i will
 
-local FANOUT = 3
-local MAXDEPTH = 3
+local FANOUT = 2
+local MAXDEPTH = 2
 
 local function clone_x(x)
     local y = {}

@@ -33,7 +33,15 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include <mongoose.h>
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#include "asio-config.h" // must be included before any ASIO header
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/signal_set.hpp>
+#include <boost/beast/core.hpp>
+#include <boost/beast/http.hpp>
+#include <boost/beast/version.hpp>
+#pragma GCC diagnostic pop
 
 #include "base64.h"
 #include "json-util.h"
@@ -46,6 +54,11 @@
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define PROGRAM_NAME "jsonrpc-remote-cartesi-machine"
+
+namespace beast = boost::beast; // from <boost/beast.hpp>
+namespace http = beast::http;   // from <boost/beast/http.hpp>
+namespace asio = boost::asio;   // from <boost/asio.hpp>
+using tcp = asio::ip::tcp;      // from <boost/asio/ip/tcp.hpp>
 
 /// \brief Type for printing time, log severity level, program name, pid, and ppid prefix to each log line
 struct log_prefix {
@@ -74,63 +87,13 @@ using json = nlohmann::json;
 /// \brief Server semantic version major
 static constexpr uint32_t server_version_major = 0;
 /// \brief Server semantic version minor
-static constexpr uint32_t server_version_minor = 4;
+static constexpr uint32_t server_version_minor = 5;
 /// \brief Server semantic version patch
 static constexpr uint32_t server_version_patch = 0;
 /// \brief Server semantic version pre_release
 static constexpr const char *server_version_pre_release = "";
 /// \brief Server semantic version build
 static constexpr const char *server_version_build = "";
-
-/// \brief Volatile variable to abort server loop in case of signal
-static volatile bool abort_due_to_signal = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-
-/// \brief Volatile variables to report relevant signals that were observed
-static volatile bool SIGTERM_caught = false; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-static volatile bool SIGINT_caught = false;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-static volatile bool SIGBUS_caught = false;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
-
-/// \brief Name and pointer to caught-Boolean for a signal
-/// \detail Using std::pair would have been easier but its default constructor
-/// is not marked as noexcept
-struct signal_to_log {
-    const char *name;
-    volatile bool *caught;
-};
-
-/// \brief Signals to log when caught
-static const std::array<signal_to_log, 3> signals_to_log = {
-    {{"SIGTERM", &SIGTERM_caught}, {"SIGINT", &SIGINT_caught}, {"SIGBUS", &SIGBUS_caught}}};
-
-/// \brief Signal handler installed for SIGTERM
-/// \param signal Signal number (will be SIGTERM)
-static void signal_handler_SIGTERM(int signal) {
-    (void) signal;
-    // Set variable to report signal in log
-    SIGTERM_caught = true;
-    // Set variable to break out from server loop
-    abort_due_to_signal = true;
-}
-
-/// \brief Signal handler installed for SIGINT
-/// \param signal Signal number (will be SIGINT)
-static void signal_handler_SIGINT(int signal) {
-    (void) signal;
-    // Set variable to report signal in log
-    SIGINT_caught = true;
-    // Set variable to break out from server loop
-    abort_due_to_signal = true;
-}
-
-/// \brief Signal handler installed for SIGBUS
-/// \param signal Signal number (will be SIGBUS)
-static void signal_handler_SIGBUS(int signal) {
-    (void) signal;
-    // Set variable to report signal in log
-    SIGBUS_caught = true;
-    // Set variable to break out from server loop
-    abort_due_to_signal = true;
-}
 
 /// \brief Installs a signal handler
 template <typename HANDLER>
@@ -146,8 +109,8 @@ static void install_signal_handler(int signum, HANDLER handler) {
     }
 }
 
-/// \brief Installs all signal handlers
-static void install_signal_handlers(void) {
+/// \brief Installs signal handlers that should not stop read()/write() primitives.
+static void install_restart_signal_handlers(void) {
     // Prevent dead children from becoming zombies
     install_signal_handler(SIGCHLD, SIG_IGN);
     // Prevent this process from suspending after issuing a SIGTTOU when trying
@@ -158,56 +121,247 @@ static void install_signal_handlers(void) {
     install_signal_handler(SIGTTOU, SIG_IGN);
     // Prevent this process from crashing on SIGPIPE when remote connection is closed
     install_signal_handler(SIGPIPE, SIG_IGN);
-    // Set variable to break server loop and exit
-    install_signal_handler(SIGTERM, signal_handler_SIGTERM);
-    install_signal_handler(SIGINT, signal_handler_SIGINT);
-    install_signal_handler(SIGBUS, signal_handler_SIGBUS);
 }
 
-/// \brief Log all signals caught
-/// \detail If a signal that is currently marked for reporting is caught while this function is executing,
-/// the second signal instance might get lost. Solving this potential issue is not worth the excruciating trouble
-static void log_signals(void) {
-    for (const auto &signal : signals_to_log) {
-        if (*signal.caught) {
-            SLOG(trace) << signal.name << " caught";
-            *signal.caught = false;
+//------------------------------------------------------------------------------
+
+struct http_handler;
+struct http_session;
+static http::message_generator handle_request(http::request<http::string_body> &&req,
+    const std::shared_ptr<http_session> &session);
+
+// Handles a HTTP session
+struct http_session : std::enable_shared_from_this<http_session> {
+    beast::tcp_stream stream;
+    beast::flat_buffer buffer;
+    std::unique_ptr<http::request_parser<http::string_body>> req_parser;
+    std::shared_ptr<http_handler> handler;
+
+    // Take ownership of the stream
+    http_session(tcp::socket &&socket, std::shared_ptr<http_handler> handler) :
+        stream(std::move(socket)),
+        handler(std::move(handler)) {}
+
+    // Begins an asynchronous read for the entire HTTP request
+    void do_read_request() {
+        // Create a new request parser
+        req_parser = std::make_unique<http::request_parser<http::string_body>>();
+        req_parser->eager(true);
+        req_parser->body_limit(16777216U); // can receive up to 16MB
+
+        // Read a request
+        http::async_read(stream, buffer, *req_parser,
+            beast::bind_front_handler(&http_session::on_read_request, shared_from_this()));
+    }
+
+    // Receives a complete HTTP request
+    void on_read_request(beast::error_code ec, std::size_t bytes_transferred) {
+        (void) bytes_transferred;
+
+        // Take ownership of request parser, so it can be freed on this scope termination
+        auto parser = std::move(req_parser);
+
+        // Check error code
+        if (ec == asio::error::operation_aborted) { // Operation may be aborted
+            return;
+        } else if (ec == http::error::end_of_stream) { // This means the connection was closed by the client
+            shutdown_send();
+            return;
+        } else if (ec) { // Unexpected error
+            SLOG(error) << "read request error:" << ec.what();
+            return;
+        }
+
+        // Retrieve the request
+        auto req = parser->release();
+
+        // Process the request
+        auto res = handle_request(std::move(req), shared_from_this());
+
+        // The stream may be closed during fork() requests, in that case we have nothing to reply
+        if (!stream.socket().is_open()) {
+            return;
+        }
+
+        // Send the response
+        send_response(std::move(res));
+    }
+
+    // Sends a HTTP response
+    void send_response(http::message_generator &&msg) {
+        const bool keep_alive = msg.keep_alive();
+
+        // Write the response
+        beast::async_write(stream, std::move(msg),
+            beast::bind_front_handler(&http_session::on_send_response, shared_from_this(), keep_alive));
+    }
+
+    // Called when HTTP response is fully sent
+    void on_send_response(bool keep_alive, beast::error_code ec, std::size_t bytes_transferred) {
+        (void) bytes_transferred;
+
+        // Check error code
+        if (ec == asio::error::operation_aborted) { // Operation may be aborted
+            return;
+        } else if (ec) { // Unexpected error
+            SLOG(error) << "send response error:" << ec.what();
+            shutdown_send();
+            return;
+        }
+
+        if (keep_alive) {
+            // Read next request for this session
+            do_read_request();
+        } else {
+            // This means we should close the connection, usually because
+            // the response indicated the "Connection: close" semantic.
+            shutdown_send();
         }
     }
-}
 
-/// \brief Closes event manager without interfering with other processes
-/// \param event_manager Pointer to event manager to close
-/// \detail Mongoose's mg_mgr_free removes all sockets from the epoll_fd, which affects other processes.
-/// We close the epoll_fd first to prevent this problem
-static void mg_mgr_free_ours(mg_mgr *event_manager) {
-#ifdef MG_ENABLE_EPOLL
-    // Prevent destruction of manager from affecting the epoll state of parent
-    close(event_manager->epoll_fd);
-    event_manager->epoll_fd = -1;
-#endif
-    mg_mgr_free(event_manager);
-}
+    // Called we are done with this HTTP session
+    void shutdown_send() {
+        // Here, we deliberately shutdowns only the outgoing traffic,
+        // so the server does not becomes full of TCP connections in TIME_WAIT state.
 
-/// \brief HTTP handler status
-enum class http_handler_status {
-    ready_for_next, ///< Ready for next request in loop
-    forked_child,   ///< Previous request forked a child and the child is continuing the loop
-    shutdown        ///< Previous request was for shutdown
+        // Send a TCP send shutdown.
+        beast::error_code ec;
+        stream.socket().shutdown(tcp::socket::shutdown_send, ec);
+
+        // At this point the connection is closed gracefully
+    }
+
+    // Called by HTTP handler to cancel asynchronous operations and close the session
+    void close() {
+        beast::error_code ec;
+        stream.socket().cancel(ec);
+        stream.socket().close(ec);
+    }
 };
 
-/// \brief HTTP handler data
-struct http_handler_data {
-    std::string server_address;                ///< Address server receives requests at
-    std::unique_ptr<cartesi::machine> machine; ///< Cartesi Machine, if any
-    http_handler_status status;                ///< Status of last request
-    mg_mgr event_manager;                      ///< Mongoose event manager
-    mg_connection *listen_connection;          ///< Listen connection
-    struct http_handler_data *child;           ///< Pointer to handler data for forked child now running, if any
+//------------------------------------------------------------------------------
+
+// Bind and listen to a local TCP port and return its acceptor
+static tcp::acceptor make_listen_acceptor(asio::io_context &ioc, const tcp::endpoint &local_endpoint) {
+    tcp::acceptor acceptor(ioc);
+    // Open the acceptor
+    acceptor.open(local_endpoint.protocol());
+    // Allow address reuse
+    acceptor.set_option(asio::socket_base::reuse_address(true));
+    // Bind to the server address
+    acceptor.bind(local_endpoint);
+    // Start listening for connections
+    acceptor.listen(asio::socket_base::max_listen_connections);
+    return acceptor;
+}
+
+// Accepts incoming connections and launches HTTP sessions
+struct http_handler : std::enable_shared_from_this<http_handler> {
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
+    asio::io_context &ioc;                             ///< IO context
+    asio::signal_set signals;                          ///< Signal set used for process termination notifications
+    tcp::acceptor acceptor;                            ///< TCP connection acceptor
+    tcp::endpoint local_endpoint;                      ///< Address server receives requests at
+    std::unique_ptr<cartesi::machine> machine;         ///< Cartesi Machine, if any
+    std::vector<std::weak_ptr<http_session>> sessions; ///< HTTP sessions
+
+    http_handler(asio::io_context &ioc, const tcp::endpoint &endpoint) :
+        ioc(ioc),
+        signals(ioc),
+        acceptor(make_listen_acceptor(ioc, endpoint)),
+        local_endpoint(acceptor.local_endpoint()) {
+        SLOG(info) << "remote machine bound to " << local_endpoint;
+    }
+
+    // Installs all handlers that should stop the HTTP server
+    void install_termination_signal_handlers() {
+        signals.add(SIGINT);
+        signals.add(SIGTERM);
+        signals.add(SIGBUS);
+        signals.async_wait(beast::bind_front_handler(&http_handler::on_signal, shared_from_this()));
+    }
+
+    // Begins an asynchronous accept
+    void next_accept() {
+        acceptor.async_accept(ioc, beast::bind_front_handler(&http_handler::on_accept, shared_from_this()));
+    }
+
+    // Bind the HTTP server to a new TCP port
+    void rebind(tcp::acceptor &&new_acceptor) {
+        // Stop asynchronous accept and close the acceptor
+        beast::error_code ec;
+        acceptor.cancel(ec);
+        acceptor.close(ec);
+        // Replace current acceptor with the new one
+        acceptor = std::move(new_acceptor);
+        local_endpoint = acceptor.local_endpoint();
+        next_accept();
+    }
+
+    // Stop accepting new connections
+    void stop() {
+        beast::error_code ec;
+        acceptor.close(ec);
+        acceptor.cancel(ec);
+        signals.cancel(ec);
+        signals.clear(ec);
+    }
+
+    // Close open sessions
+    void close_sessions() {
+        for (const auto &weak_session : sessions) {
+            auto session = weak_session.lock();
+            if (session) {
+                session->close();
+            }
+        }
+    }
+
+private:
+    // Receives a termination signal
+    void on_signal(const beast::error_code &ec, int signum) {
+        // Operation may be aborted (e.g stop() was called)
+        if (ec == asio::error::operation_aborted) {
+            return;
+        }
+        SLOG(info) << local_endpoint << " http handler terminated due to signal " << signum;
+        stop();
+    }
+
+    // Receives an incoming TCP connection
+    void on_accept(const beast::error_code ec, tcp::socket socket) {
+        // Operation may be aborted (e.g rebind() or stop() was called)
+        if (ec == asio::error::operation_aborted) {
+            return;
+        } else if (ec) {
+            SLOG(error) << local_endpoint << " accept error: " << ec.what();
+            return;
+        }
+
+        // Disable Nagle's algorithm to minimize TCP connection latency
+        const boost::asio::ip::tcp::no_delay no_delay_option(true);
+        socket.set_option(no_delay_option);
+
+        // Create the session
+        auto session = std::make_shared<http_session>(std::move(socket), shared_from_this());
+
+        // Remove previous expired sessions
+        sessions.erase(std::remove_if(sessions.begin(), sessions.end(),
+                           [](const std::weak_ptr<http_session> &weak_session) { return weak_session.expired(); }),
+            sessions.end());
+
+        // Keep track of the new session
+        sessions.push_back(session);
+
+        // Run the session
+        session->do_read_request();
+
+        // Accept next connection
+        next_accept();
+    }
 };
 
-/// \brief Forward declaration of http handler
-static void http_handler(mg_connection *con, int ev, void *ev_data, void *h_data);
+//------------------------------------------------------------------------------
 
 /// \brief Names for JSONRPC error codes
 enum jsonrpc_error_code : int {
@@ -531,40 +685,35 @@ std::tuple<ARGS...> parse_args(const json &j, const char *(&param_name)[sizeof..
 
 /// \brief JSONRPC handler for the shutdown method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_shutdown_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) h;
+static json jsonrpc_shutdown_handler(const json &j, const std::shared_ptr<http_session> &session) {
     jsonrpc_check_no_params(j);
-    con->is_draining = 1;
-    con->data[0] = 'X';
-    // Mark listen connection to be closed immediately so its port can be reused in subsequent rebind call
-    h->listen_connection->is_closing = 1;
+    // Close acceptor right-away so the port can be immediately reused after request response.
+    // This will also stop the IO main loop when all connections are closed,
+    // because the IO context will run out of pending events to execute.
+    session->handler->stop();
+    SLOG(trace) << session->handler->local_endpoint << " shutting down";
     return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for rpc.discover method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
 /// \details This RPC allows a client to download the entire schema of the service
-static json jsonrpc_rpc_discover_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) h;
-    (void) con;
+static json jsonrpc_rpc_discover_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    (void) session;
     const static json schema = json::parse(cartesi::jsonrpc_discover_json);
     return jsonrpc_response_ok(j, schema);
 }
 
 /// \brief JSONRPC handler for the get_version method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_get_version_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) h;
-    (void) con;
+static json jsonrpc_get_version_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    (void) session;
     jsonrpc_check_no_params(j);
     return jsonrpc_response_ok(j,
         {
@@ -576,137 +725,113 @@ static json jsonrpc_get_version_handler(const json &j, mg_connection *con, http_
         });
 }
 
-/// \brief Replaces the port specification (i.e., after ':') in an address with a new port
-/// \param address Original address
-/// \param port New port
-/// \return New address with replaced port
-static std::string replace_port(const std::string &address, int port) {
-    auto pos = address.find_last_of(':');
-    // If already has a port, replace
-    if (pos != std::string::npos) {
-        return address.substr(0, pos) + ":" + std::to_string(port);
-        // Otherwise, concatenate
-    } else {
-        return address + ":" + std::to_string(port);
+/// \brief Parse a address from a string to an endpoint.
+/// \param address Address string (e.g "127.0.0.1:8000")
+/// \returns Endpoint address
+static tcp::endpoint address_to_endpoint(const std::string &address) {
+    try {
+        const auto pos = address.find_last_of(':');
+        const std::string ip = address.substr(0, pos);
+        const int port = std::stoi(address.substr(pos + 1));
+        if (port < 0 || port > 65535) {
+            throw std::runtime_error{"invalid port"};
+        }
+        return {asio::ip::make_address(ip), static_cast<uint16_t>(port)};
+    } catch (std::exception &e) {
+        throw std::runtime_error{"invalid endpoint address \"" + address + "\""};
     }
+}
+
+static std::string endpoint_to_string(const tcp::endpoint &endpoint) {
+    std::ostringstream ss;
+    ss << endpoint;
+    return ss.str();
 }
 
 /// \brief JSONRPC handler for the fork method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
 /// \details Here we allocate a new server that will be used by the child, then we fork.
 /// The child will later destroy the old server it inherited from the parent and replace it with the new one.
 /// The parent reports the address of the new server back to the client, and destroys its copy of the child's new
 /// server. The parent goes on to continue serving from the old server. The child goes on to start serving from the new
 /// server.
-static json jsonrpc_fork_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
+static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_session> &session) {
     jsonrpc_check_no_params(j);
-    // Initialize child's server before fork so failures happen still in parent, who can directly report them to client
-    h->child = new (std::nothrow) http_handler_data{};
-    if (!h->child) {
-        SLOG(fatal) << h->server_address << " out of memory";
-        return jsonrpc_response_server_error(j, "out of memory");
-    }
-    mg_mgr_init(&h->child->event_manager);
-#if MG_ENABLE_EPOLL
-    // Event manager initialization does not return whether it failed or not
-    // It could only fail if the epoll_fd allocation failed
-    if (h->child->event_manager.epoll_fd < 0) {
-        SLOG(error) << h->server_address << " failed creating event manager";
-        mg_mgr_free(&h->child->event_manager);
-        delete h->child;
-        h->child = nullptr;
-        return jsonrpc_response_server_error(j, "failed creating event manager");
-    }
-#endif
-    const std::string any_port_address = replace_port(h->server_address, 0);
-    mg_connection *new_con = mg_http_listen(&h->child->event_manager, any_port_address.c_str(), http_handler, h->child);
-    if (!new_con) {
-        SLOG(error) << h->server_address << " failed listening";
-        mg_mgr_free(&h->child->event_manager);
-        delete h->child;
-        h->child = nullptr;
-        return jsonrpc_response_server_error(j, "failed listening");
-    }
-    h->child->listen_connection = new_con;
-    const std::string new_server_address = replace_port(h->server_address, static_cast<int>(ntohs(new_con->loc.port)));
+    // Listen in desired port before fork so failures happen still in parent,
+    // who can directly report them to client
+    auto acceptor =
+        make_listen_acceptor(session->handler->ioc, tcp::endpoint{session->handler->local_endpoint.address(), 0});
+    const std::string new_server_address = endpoint_to_string(acceptor.local_endpoint());
+    // Notify ASIO that we are about to fork
+    session->handler->ioc.notify_fork(asio::io_context::fork_prepare);
     // Done initializing, so we fork
-    auto ret = fork();
-    if (ret == -1) { // failed forking
-        auto errno_copy = errno;
-        SLOG(error) << h->server_address << " fork failed (" << strerror(errno_copy) << ")";
-        mg_mgr_free(&h->child->event_manager);
-        delete h->child;
-        h->child = nullptr;
+    const int ret = fork();
+    if (ret == 0) { // child
+        // Notify to ASIO that we are the child
+        session->handler->ioc.notify_fork(asio::io_context::fork_child);
+        // Close all sessions that were initiated by the parent
+        session->handler->close_sessions();
+        // Swap current handler acceptor with the new one
+        session->handler->rebind(std::move(acceptor));
+        SLOG(trace) << session->handler->local_endpoint << " fork child";
+    } else if (ret > 0) { // parent and fork() succeeded
+        // Notify to ASIO that we are the parent
+        session->handler->ioc.notify_fork(asio::io_context::fork_parent);
+        // Note that the parent doesn't need the server that will be used by the child,
+        // we can close it.
+        beast::error_code ec;
+        acceptor.close(ec);
+        SLOG(trace) << session->handler->local_endpoint << " fork parent";
+    } else { // parent and fork() failed
+        const int errno_copy = errno;
+        SLOG(error) << session->handler->local_endpoint << " fork failed (" << strerror(errno_copy) << ")";
         return jsonrpc_response_server_error(j, "fork failed ("s + strerror(errno_copy) + ")"s);
     }
-    if (ret == 0) { // child
-        // The child doesn't need the event_manager it inherited from the parent.
-        // However, it would be impolite to destroy it here, since it would be somewhat unexpected (reentrant?).
-        // I.e., we are currently in a function that was invoked from within mg_mgr_poll.
-        // So we return with a status and destroy the event_manager only after mg_mgr_poll returns in our loop.
-        h->status = http_handler_status::forked_child;
-        h->child->server_address = new_server_address;
-        h->child->machine = std::move(h->machine);
-        return json{};
-    }
-    // parent
-    // The parent doesn't need the server that will be used by the child
-    mg_mgr_free_ours(&h->child->event_manager);
-    delete h->child;
-    h->child = nullptr;
-    con->is_draining = 1;
     return jsonrpc_response_ok(j, new_server_address);
 }
 
 /// \brief JSONRPC handler for the rebind method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
 /// \details Changes the address the server is listening to.
 /// After this call, all new connections should be established using the new server address.
-static json jsonrpc_rebind_handler(const json &j, mg_connection *con, http_handler_data *h) {
+static json jsonrpc_rebind_handler(const json &j, const std::shared_ptr<http_session> &session) {
     static const char *param_name[] = {"address"};
     auto args = parse_args<std::string>(j, param_name);
     const std::string new_server_address = std::get<0>(args);
-    // Listen in the new port
-    auto *new_listen_connection = mg_http_listen(&h->event_manager, new_server_address.c_str(), http_handler, h);
-    if (!new_listen_connection) {
-        return jsonrpc_response_server_error(j, "rebind failed listening on "s + new_server_address);
+    const tcp::endpoint new_local_endpoint = address_to_endpoint(new_server_address);
+    if (new_local_endpoint.port() == 0) {
+        throw std::runtime_error{"rebind cannot be performed on port 0"};
     }
-    // Mark connection to be drained
-    con->is_draining = 1;
-    // Mark previous listen connection to be closed
-    h->listen_connection->is_closing = 1;
-    // Set the new listen connection
-    h->server_address = new_server_address;
-    h->listen_connection = new_listen_connection;
+    if (new_local_endpoint != session->handler->local_endpoint) {
+        SLOG(trace) << session->handler->local_endpoint << " rebind to " << new_local_endpoint;
+        session->handler->rebind(make_listen_acceptor(session->handler->ioc, new_local_endpoint));
+    } else {
+        SLOG(trace) << session->handler->local_endpoint << " rebind skipped";
+    }
     return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.machine.directory method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_machine_directory_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (h->machine) {
+static json jsonrpc_machine_machine_directory_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "machine exists");
     }
     static const char *param_name[] = {"directory", "runtime"};
     auto args = parse_args<std::string, cartesi::optional_param<cartesi::machine_runtime_config>>(j, param_name);
     switch (count_args(args)) {
         case 1:
-            h->machine = std::make_unique<cartesi::machine>(std::get<0>(args));
+            session->handler->machine = std::make_unique<cartesi::machine>(std::get<0>(args));
             break;
         case 2:
-            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            h->machine = std::make_unique<cartesi::machine>(std::get<0>(args), std::get<1>(args).value());
+            session->handler->machine = std::make_unique<cartesi::machine>(std::get<0>(args),
+                std::get<1>(args).value()); // NOLINT(bugprone-unchecked-optional-access)
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};
@@ -716,12 +841,10 @@ static json jsonrpc_machine_machine_directory_handler(const json &j, mg_connecti
 
 /// \brief JSONRPC handler for the machine.machine.config method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_machine_config_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (h->machine) {
+static json jsonrpc_machine_machine_config_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "machine exists");
     }
     static const char *param_name[] = {"config", "runtime"};
@@ -729,11 +852,11 @@ static json jsonrpc_machine_machine_config_handler(const json &j, mg_connection 
         parse_args<cartesi::machine_config, cartesi::optional_param<cartesi::machine_runtime_config>>(j, param_name);
     switch (count_args(args)) {
         case 1:
-            h->machine = std::make_unique<cartesi::machine>(std::get<0>(args));
+            session->handler->machine = std::make_unique<cartesi::machine>(std::get<0>(args));
             break;
         case 2:
-            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            h->machine = std::make_unique<cartesi::machine>(std::get<0>(args), std::get<1>(args).value());
+            session->handler->machine = std::make_unique<cartesi::machine>(std::get<0>(args),
+                std::get<1>(args).value()); // // NOLINT(bugprone-unchecked-optional-access)
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};
@@ -743,29 +866,25 @@ static json jsonrpc_machine_machine_config_handler(const json &j, mg_connection 
 
 /// \brief JSONRPC handler for the machine.destroy method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_destroy_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
+static json jsonrpc_machine_destroy_handler(const json &j, const std::shared_ptr<http_session> &session) {
     jsonrpc_check_no_params(j);
-    h->machine.reset();
+    session->handler->machine.reset();
     return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.store method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_store_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_store_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"directory"};
     auto args = parse_args<std::string>(j, param_name);
-    h->machine->store(std::get<0>(args));
+    session->handler->machine->store(std::get<0>(args));
     return jsonrpc_response_ok(j);
 }
 
@@ -793,17 +912,15 @@ static std::string interpreter_break_reason_name(cartesi::interpreter_break_reas
 
 /// \brief JSONRPC handler for the machine.run method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_run_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_run_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"mcycle_end"};
     auto args = parse_args<uint64_t>(j, param_name);
-    auto reason = h->machine->run(std::get<0>(args));
+    auto reason = session->handler->machine->run(std::get<0>(args));
     return jsonrpc_response_ok(j, interpreter_break_reason_name(reason));
 }
 
@@ -823,28 +940,24 @@ static std::string uarch_interpreter_break_reason_name(cartesi::uarch_interprete
 
 /// \brief JSONRPC handler for the machine.run_uarch method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_run_uarch_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_run_uarch_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"uarch_cycle_end"};
     auto args = parse_args<uint64_t>(j, param_name);
-    auto reason = h->machine->run_uarch(std::get<0>(args));
+    auto reason = session->handler->machine->run_uarch(std::get<0>(args));
     return jsonrpc_response_ok(j, uarch_interpreter_break_reason_name(reason));
 }
 
 /// \brief JSONRPC handler for the machine.log_uarch_step method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_log_uarch_step_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_log_uarch_step_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"log_type", "one_based"};
@@ -855,12 +968,12 @@ static json jsonrpc_machine_log_uarch_step_handler(const json &j, mg_connection 
     switch (count_args(args)) {
         case 1:
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            s = jsonrpc_response_ok(j, h->machine->log_uarch_step(std::get<0>(args).value()));
+            s = jsonrpc_response_ok(j, session->handler->machine->log_uarch_step(std::get<0>(args).value()));
             break;
         case 2:
             s = jsonrpc_response_ok(j,
                 // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-                h->machine->log_uarch_step(std::get<0>(args).value(), std::get<1>(args).value()));
+                session->handler->machine->log_uarch_step(std::get<0>(args).value(), std::get<1>(args).value()));
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};
@@ -870,12 +983,10 @@ static json jsonrpc_machine_log_uarch_step_handler(const json &j, mg_connection 
 
 /// \brief JSONRPC handler for the machine.verify_uarch_step_log method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_uarch_step_log_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    (void) h;
+static json jsonrpc_machine_verify_uarch_step_log_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    (void) session;
     static const char *param_name[] = {"log", "runtime", "one_based"};
     auto args = parse_args<cartesi::not_default_constructible<cartesi::access_log>,
         cartesi::optional_param<cartesi::machine_runtime_config>, cartesi::optional_param<bool>>(j, param_name);
@@ -902,12 +1013,11 @@ static json jsonrpc_machine_verify_uarch_step_log_handler(const json &j, mg_conn
 
 /// \brief JSONRPC handler for the machine.verify_uarch_reset_log method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_uarch_reset_log_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    (void) h;
+static json jsonrpc_machine_verify_uarch_reset_log_handler(const json &j,
+    const std::shared_ptr<http_session> &session) {
+    (void) session;
     static const char *param_name[] = {"log", "runtime", "one_based"};
     auto args = parse_args<cartesi::not_default_constructible<cartesi::access_log>,
         cartesi::optional_param<cartesi::machine_runtime_config>, cartesi::optional_param<bool>>(j, param_name);
@@ -934,12 +1044,10 @@ static json jsonrpc_machine_verify_uarch_reset_log_handler(const json &j, mg_con
 
 /// \brief JSONRPC handler for the machine.log_uarch_step method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_log_uarch_reset_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_log_uarch_reset_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"log_type", "one_based"};
@@ -950,12 +1058,12 @@ static json jsonrpc_machine_log_uarch_reset_handler(const json &j, mg_connection
     switch (count_args(args)) {
         case 1:
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            s = jsonrpc_response_ok(j, h->machine->log_uarch_reset(std::get<0>(args).value()));
+            s = jsonrpc_response_ok(j, session->handler->machine->log_uarch_reset(std::get<0>(args).value()));
             break;
         case 2:
             s = jsonrpc_response_ok(j,
                 // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-                h->machine->log_uarch_reset(std::get<0>(args).value(), std::get<1>(args).value()));
+                session->handler->machine->log_uarch_reset(std::get<0>(args).value(), std::get<1>(args).value()));
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};
@@ -965,13 +1073,11 @@ static json jsonrpc_machine_log_uarch_reset_handler(const json &j, mg_connection
 
 /// \brief JSONRPC handler for the machine.verify_uarch_step_state_transition method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_uarch_step_state_transition_handler(const json &j, mg_connection *con,
-    http_handler_data *h) {
-    (void) con;
-    (void) h;
+static json jsonrpc_machine_verify_uarch_step_state_transition_handler(const json &j,
+    const std::shared_ptr<http_session> &session) {
+    (void) session;
     static const char *param_name[] = {"root_hash_before", "log", "root_hash_after", "runtime", "one_based"};
     auto args = parse_args<cartesi::machine_merkle_tree::hash_type,
         cartesi::not_default_constructible<cartesi::access_log>, cartesi::machine_merkle_tree::hash_type,
@@ -1002,13 +1108,11 @@ static json jsonrpc_machine_verify_uarch_step_state_transition_handler(const jso
 
 /// \brief JSONRPC handler for the machine.verify_uarch_reset_state_transition method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_uarch_reset_state_transition_handler(const json &j, mg_connection *con,
-    http_handler_data *h) {
-    (void) con;
-    (void) h;
+static json jsonrpc_machine_verify_uarch_reset_state_transition_handler(const json &j,
+    const std::shared_ptr<http_session> &session) {
+    (void) session;
     static const char *param_name[] = {"root_hash_before", "log", "root_hash_after", "runtime", "one_based"};
     auto args = parse_args<cartesi::machine_merkle_tree::hash_type,
         cartesi::not_default_constructible<cartesi::access_log>, cartesi::machine_merkle_tree::hash_type,
@@ -1039,12 +1143,10 @@ static json jsonrpc_machine_verify_uarch_reset_state_transition_handler(const js
 
 /// \brief JSONRPC handler for the machine.get_proof method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_get_proof_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_get_proof_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"address", "log2_size"};
@@ -1052,63 +1154,56 @@ static json jsonrpc_machine_get_proof_handler(const json &j, mg_connection *con,
     if (std::get<1>(args) > INT_MAX) {
         throw std::domain_error("log2_size is out of range");
     }
-    return jsonrpc_response_ok(j, h->machine->get_proof(std::get<0>(args), static_cast<int>(std::get<1>(args))));
+    return jsonrpc_response_ok(j,
+        session->handler->machine->get_proof(std::get<0>(args), static_cast<int>(std::get<1>(args))));
 }
 
 /// \brief JSONRPC handler for the machine.verify_merkle_tree method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_merkle_tree_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_verify_merkle_tree_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    return jsonrpc_response_ok(j, h->machine->verify_merkle_tree());
+    return jsonrpc_response_ok(j, session->handler->machine->verify_merkle_tree());
 }
 
 /// \brief JSONRPC handler for the machine.get_root_hash method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_get_root_hash_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_get_root_hash_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
     cartesi::machine_merkle_tree::hash_type hash;
-    h->machine->get_root_hash(hash);
+    session->handler->machine->get_root_hash(hash);
     return jsonrpc_response_ok(j, cartesi::encode_base64(hash));
 }
 
 /// \brief JSONRPC handler for the machine.read_word method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_read_word_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_read_word_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"address"};
     auto args = parse_args<uint64_t>(j, param_name);
     auto address = std::get<0>(args);
-    return jsonrpc_response_ok(j, h->machine->read_word(address));
+    return jsonrpc_response_ok(j, session->handler->machine->read_word(address));
 }
 
 /// \brief JSONRPC handler for the machine.read_memory method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_read_memory_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_read_memory_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"address", "length"};
@@ -1116,18 +1211,16 @@ static json jsonrpc_machine_read_memory_handler(const json &j, mg_connection *co
     auto address = std::get<0>(args);
     auto length = std::get<1>(args);
     auto data = cartesi::unique_calloc<unsigned char>(length);
-    h->machine->read_memory(address, data.get(), length);
+    session->handler->machine->read_memory(address, data.get(), length);
     return jsonrpc_response_ok(j, cartesi::encode_base64(data.get(), length));
 }
 
 /// \brief JSONRPC handler for the machine.write_memory method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_write_memory_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_write_memory_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"address", "data"};
@@ -1135,18 +1228,16 @@ static json jsonrpc_machine_write_memory_handler(const json &j, mg_connection *c
     auto address = std::get<0>(args);
     auto bin = cartesi::decode_base64(std::get<1>(args));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    h->machine->write_memory(address, reinterpret_cast<unsigned char *>(bin.data()), bin.size());
+    session->handler->machine->write_memory(address, reinterpret_cast<unsigned char *>(bin.data()), bin.size());
     return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.read_virtual_memory method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_read_virtual_memory_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_read_virtual_memory_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"address", "length"};
@@ -1154,18 +1245,16 @@ static json jsonrpc_machine_read_virtual_memory_handler(const json &j, mg_connec
     auto address = std::get<0>(args);
     auto length = std::get<1>(args);
     auto data = cartesi::unique_calloc<unsigned char>(length);
-    h->machine->read_virtual_memory(address, data.get(), length);
+    session->handler->machine->read_virtual_memory(address, data.get(), length);
     return jsonrpc_response_ok(j, cartesi::encode_base64(data.get(), length));
 }
 
 /// \brief JSONRPC handler for the machine.write_virtual_memory method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_write_virtual_memory_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_write_virtual_memory_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"address", "data"};
@@ -1173,81 +1262,72 @@ static json jsonrpc_machine_write_virtual_memory_handler(const json &j, mg_conne
     auto address = std::get<0>(args);
     auto bin = cartesi::decode_base64(std::get<1>(args));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    h->machine->write_virtual_memory(address, reinterpret_cast<unsigned char *>(bin.data()), bin.size());
+    session->handler->machine->write_virtual_memory(address, reinterpret_cast<unsigned char *>(bin.data()), bin.size());
     return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.translate_virtual_address method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_translate_virtual_address_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_translate_virtual_address_handler(const json &j,
+    const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"vaddr"};
     auto args = parse_args<uint64_t>(j, param_name);
     auto vaddr = std::get<0>(args);
-    return jsonrpc_response_ok(j, h->machine->translate_virtual_address(vaddr));
+    return jsonrpc_response_ok(j, session->handler->machine->translate_virtual_address(vaddr));
 }
 
 /// \brief JSONRPC handler for the machine.replace_memory_range method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_replace_memory_range_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_replace_memory_range_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"range"};
     auto args = parse_args<cartesi::memory_range_config>(j, param_name);
-    h->machine->replace_memory_range(std::get<0>(args));
+    session->handler->machine->replace_memory_range(std::get<0>(args));
     return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.read_csr method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_read_csr_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_read_csr_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"csr"};
     auto args = parse_args<cartesi::machine::csr>(j, param_name);
-    return jsonrpc_response_ok(j, h->machine->read_csr(std::get<0>(args)));
+    return jsonrpc_response_ok(j, session->handler->machine->read_csr(std::get<0>(args)));
 }
 
 /// \brief JSONRPC handler for the machine.write_csr method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_write_csr_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_write_csr_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"csr", "value"};
     auto args = parse_args<cartesi::machine::csr, uint64_t>(j, param_name);
-    h->machine->write_csr(std::get<0>(args), std::get<1>(args));
+    session->handler->machine->write_csr(std::get<0>(args), std::get<1>(args));
     return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.read_x method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_read_x_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_read_x_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"index"};
@@ -1256,17 +1336,15 @@ static json jsonrpc_machine_read_x_handler(const json &j, mg_connection *con, ht
     if (i >= cartesi::X_REG_COUNT) {
         throw std::domain_error{"index out of range"};
     }
-    return jsonrpc_response_ok(j, h->machine->read_x(i));
+    return jsonrpc_response_ok(j, session->handler->machine->read_x(i));
 }
 
 /// \brief JSONRPC handler for the machine.write_x method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_write_x_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_write_x_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"index", "value"};
@@ -1275,18 +1353,16 @@ static json jsonrpc_machine_write_x_handler(const json &j, mg_connection *con, h
     if (i >= cartesi::X_REG_COUNT || i == 0) {
         throw std::domain_error{"index out of range"};
     }
-    h->machine->write_x(i, std::get<1>(args));
+    session->handler->machine->write_x(i, std::get<1>(args));
     return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.read_f method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_read_f_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_read_f_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"index"};
@@ -1295,17 +1371,15 @@ static json jsonrpc_machine_read_f_handler(const json &j, mg_connection *con, ht
     if (i >= cartesi::F_REG_COUNT) {
         throw std::domain_error{"index out of range"};
     }
-    return jsonrpc_response_ok(j, h->machine->read_f(i));
+    return jsonrpc_response_ok(j, session->handler->machine->read_f(i));
 }
 
 /// \brief JSONRPC handler for the machine.write_f method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_write_f_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_write_f_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"index", "value"};
@@ -1314,18 +1388,16 @@ static json jsonrpc_machine_write_f_handler(const json &j, mg_connection *con, h
     if (i >= cartesi::F_REG_COUNT) {
         throw std::domain_error{"index out of range"};
     }
-    h->machine->write_f(i, std::get<1>(args));
+    session->handler->machine->write_f(i, std::get<1>(args));
     return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.read_uarch_x method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_read_uarch_x_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_read_uarch_x_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"index"};
@@ -1334,17 +1406,15 @@ static json jsonrpc_machine_read_uarch_x_handler(const json &j, mg_connection *c
     if (i >= cartesi::UARCH_X_REG_COUNT) {
         throw std::domain_error{"index out of range"};
     }
-    return jsonrpc_response_ok(j, h->machine->read_uarch_x(i));
+    return jsonrpc_response_ok(j, session->handler->machine->read_uarch_x(i));
 }
 
 /// \brief JSONRPC handler for the machine.write_uarch_x method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_write_uarch_x_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_write_uarch_x_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"index", "value"};
@@ -1353,18 +1423,16 @@ static json jsonrpc_machine_write_uarch_x_handler(const json &j, mg_connection *
     if (i >= cartesi::UARCH_X_REG_COUNT || i == 0) {
         throw std::domain_error{"index out of range"};
     }
-    h->machine->write_uarch_x(i, std::get<1>(args));
+    session->handler->machine->write_uarch_x(i, std::get<1>(args));
     return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.get_csr_address method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_get_csr_address_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    (void) h;
+static json jsonrpc_machine_get_csr_address_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    (void) session;
     static const char *param_name[] = {"csr"};
     auto args = parse_args<cartesi::machine::csr>(j, param_name);
     return jsonrpc_response_ok(j, cartesi::machine::get_csr_address(std::get<0>(args)));
@@ -1372,12 +1440,10 @@ static json jsonrpc_machine_get_csr_address_handler(const json &j, mg_connection
 
 /// \brief JSONRPC handler for the machine.get_x_address method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_get_x_address_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    (void) h;
+static json jsonrpc_machine_get_x_address_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    (void) session;
     static const char *param_name[] = {"index"};
     auto args = parse_args<uint64_t>(j, param_name);
     const int i = static_cast<int>(std::get<0>(args));
@@ -1389,12 +1455,10 @@ static json jsonrpc_machine_get_x_address_handler(const json &j, mg_connection *
 
 /// \brief JSONRPC handler for the machine.get_f_address method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_get_f_address_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    (void) h;
+static json jsonrpc_machine_get_f_address_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    (void) session;
     static const char *param_name[] = {"index"};
     auto args = parse_args<uint64_t>(j, param_name);
     const int i = static_cast<int>(std::get<0>(args));
@@ -1406,12 +1470,10 @@ static json jsonrpc_machine_get_f_address_handler(const json &j, mg_connection *
 
 /// \brief JSONRPC handler for the machine.get_uarch_x_address method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_get_uarch_x_address_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    (void) h;
+static json jsonrpc_machine_get_uarch_x_address_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    (void) session;
     static const char *param_name[] = {"index"};
     auto args = parse_args<uint64_t>(j, param_name);
     const int i = static_cast<int>(std::get<0>(args));
@@ -1423,254 +1485,222 @@ static json jsonrpc_machine_get_uarch_x_address_handler(const json &j, mg_connec
 
 /// \brief JSONRPC handler for the machine.reset_iflags_Y method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_reset_iflags_Y_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_reset_iflags_Y_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    h->machine->reset_iflags_Y();
+    session->handler->machine->reset_iflags_Y();
     return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.set_iflags_Y method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_set_iflags_Y_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_set_iflags_Y_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    h->machine->set_iflags_Y();
+    session->handler->machine->set_iflags_Y();
     return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.read_iflags_Y method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_read_iflags_Y_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_read_iflags_Y_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    return jsonrpc_response_ok(j, h->machine->read_iflags_Y());
+    return jsonrpc_response_ok(j, session->handler->machine->read_iflags_Y());
 }
 
 /// \brief JSONRPC handler for the machine.set_iflags_X method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_set_iflags_X_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_set_iflags_X_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    h->machine->set_iflags_X();
+    session->handler->machine->set_iflags_X();
     return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.reset_iflags_X method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_reset_iflags_X_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_reset_iflags_X_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    h->machine->reset_iflags_X();
+    session->handler->machine->reset_iflags_X();
     return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.read_iflags_X method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_read_iflags_X_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_read_iflags_X_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    return jsonrpc_response_ok(j, h->machine->read_iflags_X());
+    return jsonrpc_response_ok(j, session->handler->machine->read_iflags_X());
 }
 
 /// \brief JSONRPC handler for the machine.set_iflags_H method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_set_iflags_H_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_set_iflags_H_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    h->machine->set_iflags_H();
+    session->handler->machine->set_iflags_H();
     return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.read_iflags_H method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_read_iflags_H_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_read_iflags_H_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    return jsonrpc_response_ok(j, h->machine->read_iflags_H());
+    return jsonrpc_response_ok(j, session->handler->machine->read_iflags_H());
 }
 
 /// \brief JSONRPC handler for the machine.read_iflags_PRV method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_read_iflags_PRV_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_read_iflags_PRV_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    return jsonrpc_response_ok(j, static_cast<uint64_t>(h->machine->read_iflags_PRV()));
+    return jsonrpc_response_ok(j, static_cast<uint64_t>(session->handler->machine->read_iflags_PRV()));
 }
 
 /// \brief JSONRPC handler for the machine.set_uarch_halt_flag method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_set_uarch_halt_flag_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_set_uarch_halt_flag_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    h->machine->set_uarch_halt_flag();
+    session->handler->machine->set_uarch_halt_flag();
     return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.reset_uarch method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_reset_uarch_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_reset_uarch_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    h->machine->reset_uarch();
+    session->handler->machine->reset_uarch();
     return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.read_uarch_halt_flag method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_read_uarch_halt_flag_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_read_uarch_halt_flag_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    return jsonrpc_response_ok(j, h->machine->read_uarch_halt_flag());
+    return jsonrpc_response_ok(j, session->handler->machine->read_uarch_halt_flag());
 }
 
 /// \brief JSONRPC handler for the machine.get_initial_config method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_get_initial_config_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_get_initial_config_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    return jsonrpc_response_ok(j, h->machine->get_initial_config());
+    return jsonrpc_response_ok(j, session->handler->machine->get_initial_config());
 }
 
 /// \brief JSONRPC handler for the machine.get_default_config method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_get_default_config_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) h;
-    (void) con;
+static json jsonrpc_machine_get_default_config_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    (void) session;
     jsonrpc_check_no_params(j);
     return jsonrpc_response_ok(j, cartesi::machine::get_default_config());
 }
 
 /// \brief JSONRPC handler for the machine.verify_dirty_page_maps method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_dirty_page_maps_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_verify_dirty_page_maps_handler(const json &j,
+    const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    return jsonrpc_response_ok(j, h->machine->verify_dirty_page_maps());
+    return jsonrpc_response_ok(j, session->handler->machine->verify_dirty_page_maps());
 }
 
 /// \brief JSONRPC handler for the machine.get_memory_ranges method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_get_memory_ranges_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_get_memory_ranges_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    return jsonrpc_response_ok(j, h->machine->get_memory_ranges());
+    return jsonrpc_response_ok(j, session->handler->machine->get_memory_ranges());
 }
 
 /// \brief JSONRPC handler for the machine.send_cmio_response method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_send_cmio_response_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_send_cmio_response_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"reason", "data"};
     auto args = parse_args<uint16_t, std::string>(j, param_name);
     auto bin = cartesi::decode_base64(std::get<1>(args));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    h->machine->send_cmio_response(std::get<0>(args), reinterpret_cast<unsigned char *>(bin.data()), bin.size());
+    session->handler->machine->send_cmio_response(std::get<0>(args), reinterpret_cast<unsigned char *>(bin.data()),
+        bin.size());
     return jsonrpc_response_ok(j);
 }
 
-static json jsonrpc_machine_log_send_cmio_response_handler(const json &j, mg_connection *con, http_handler_data *h) {
-    (void) con;
-    if (!h->machine) {
+static json jsonrpc_machine_log_send_cmio_response_handler(const json &j,
+    const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     static const char *param_name[] = {"reason", "data", "log_type", "one_based"};
@@ -1683,13 +1713,14 @@ static json jsonrpc_machine_log_send_cmio_response_handler(const json &j, mg_con
     switch (count_args(args)) {
         case 3:
             s = jsonrpc_response_ok(j,
-                h->machine->log_send_cmio_response(std::get<0>(args), reinterpret_cast<unsigned char *>(bin.data()),
-                    bin.size(), std::get<2>(args).value()));
+                session->handler->machine->log_send_cmio_response(std::get<0>(args),
+                    reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<2>(args).value()));
             break;
         case 4:
             s = jsonrpc_response_ok(j,
-                h->machine->log_send_cmio_response(std::get<0>(args), reinterpret_cast<unsigned char *>(bin.data()),
-                    bin.size(), std::get<2>(args).value(), std::get<3>(args).value()));
+                session->handler->machine->log_send_cmio_response(std::get<0>(args),
+                    reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<2>(args).value(),
+                    std::get<3>(args).value()));
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};
@@ -1701,13 +1732,11 @@ static json jsonrpc_machine_log_send_cmio_response_handler(const json &j, mg_con
 
 /// \brief JSONRPC handler for the machine.verify_send_cmio_response_log method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_send_cmio_response_log_handler(const json &j, mg_connection *con,
-    http_handler_data *h) {
-    (void) con;
-    (void) h;
+static json jsonrpc_machine_verify_send_cmio_response_log_handler(const json &j,
+    const std::shared_ptr<http_session> &session) {
+    (void) session;
     static const char *param_name[] = {"reason", "data", "log", "runtime", "one_based"};
     auto args = parse_args<uint16_t, std::string, cartesi::not_default_constructible<cartesi::access_log>,
         cartesi::optional_param<cartesi::machine_runtime_config>, cartesi::optional_param<bool>>(j, param_name);
@@ -1740,13 +1769,11 @@ static json jsonrpc_machine_verify_send_cmio_response_log_handler(const json &j,
 
 /// \brief JSONRPC handler for the machine.verify_send_cmio_response_state_transition method
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h Handler data
+/// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_send_cmio_response_state_transition_handler(const json &j, mg_connection *con,
-    http_handler_data *h) {
-    (void) con;
-    (void) h;
+static json jsonrpc_machine_verify_send_cmio_response_state_transition_handler(const json &j,
+    const std::shared_ptr<http_session> &session) {
+    (void) session;
     static const char *param_name[] = {"reason", "data", "root_hash_before", "log", "root_hash_after", "runtime",
         "one_based"};
     auto args = parse_args<uint16_t, std::string, cartesi::machine_merkle_tree::hash_type,
@@ -1781,31 +1808,48 @@ static json jsonrpc_machine_verify_send_cmio_response_state_transition_handler(c
     return jsonrpc_response_ok(j);
 }
 
-/// \brief Sends a JSONRPC response through the Mongoose connection
-/// \param con Mongoose connection
+/// \brief Prepares a JSONRPC response
+/// \param req HTTP request object
 /// \param j JSON response object
-void jsonrpc_http_reply(mg_connection *con, http_handler_data *h, const json &j) {
-    SLOG(trace) << h->server_address << " response is " << j.dump().data();
-    return mg_http_reply(con, 200, "Access-Control-Allow-Origin: *\r\nContent-Type: application/json\r\n", "%s",
-        j.dump().data());
+/// \param session HTTP session
+/// \returns HTTP response message
+http::message_generator jsonrpc_http_reply(const http::request<http::string_body> &req, const json &j,
+    const std::shared_ptr<http_session> &session) {
+    std::string body = j.dump();
+    SLOG(trace) << session->handler->local_endpoint << " response is " << body;
+    http::response<http::string_body> res{http::status::ok, req.version()};
+    res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
+    res.set(http::field::access_control_allow_origin, "*");
+    res.set(http::field::content_type, "application/json");
+    res.body() = std::move(body);
+    res.prepare_payload();
+    res.keep_alive(req.keep_alive());
+    return res;
 }
 
-/// \brief Sends an empty response through the Mongoose connection
-/// \param con Mongoose connection
-void jsonrpc_send_empty_reply(mg_connection *con, http_handler_data *h) {
-    SLOG(trace) << h->server_address << " response is empty";
-    return mg_http_reply(con, 200, "Access-Control-Allow-Origin: *\r\nContent-Type: application/json\r\n", "");
+/// \brief Prepares an empty JSONRPC response
+/// \param req HTTP request object
+/// \param session HTTP session
+/// \returns HTTP response message
+http::message_generator jsonrpc_http_empty_reply(const http::request<http::string_body> &req,
+    const std::shared_ptr<http_session> &session) {
+    SLOG(trace) << session->handler->local_endpoint << " response is empty";
+    http::response<http::empty_body> res{http::status::ok, req.version()};
+    res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
+    res.set(http::field::access_control_allow_origin, "*");
+    res.set(http::field::content_type, "application/json");
+    res.keep_alive(req.keep_alive());
+    return res;
 }
 
 /// \brief jsonrpc handler is a function pointer
-using jsonrpc_handler = json (*)(const json &ji, mg_connection *con, http_handler_data *h);
+using jsonrpc_handler = json (*)(const json &ji, const std::shared_ptr<http_session> &session);
 
 /// \brief Dispatch request to appropriate JSONRPC handler
 /// \param j JSON request object
-/// \param con Mongoose connection
-/// \param h_data Handler data
+/// \param session HTTP session
 /// \returns JSON with response
-static json jsonrpc_dispatch_method(const json &j, mg_connection *con, http_handler_data *h) try {
+static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_session> &session) try {
     static const std::unordered_map<std::string, jsonrpc_handler> dispatch = {
         {"fork", jsonrpc_fork_handler},
         {"rebind", jsonrpc_rebind_handler},
@@ -1869,10 +1913,10 @@ static json jsonrpc_dispatch_method(const json &j, mg_connection *con, http_hand
             jsonrpc_machine_verify_send_cmio_response_state_transition_handler},
     };
     auto method = j["method"].get<std::string>();
-    SLOG(debug) << h->server_address << " handling \"" << method << "\" method";
+    SLOG(debug) << session->handler->local_endpoint << " handling \"" << method << "\" method";
     auto found = dispatch.find(method);
     if (found != dispatch.end()) {
-        return found->second(j, con, h);
+        return found->second(j, session);
     }
     return jsonrpc_response_method_not_found(j, method);
 } catch (std::invalid_argument &x) {
@@ -1881,124 +1925,108 @@ static json jsonrpc_dispatch_method(const json &j, mg_connection *con, http_hand
     return jsonrpc_response_internal_error(j, x.what());
 }
 
+//------------------------------------------------------------------------------
+
 /// \brief Handler for HTTP requests
-/// \param con Mongoose connection
-/// \param ev Mongoose event
-/// \param ev_data Mongoose event data
-/// \param h_data Handler data
-static void http_handler(mg_connection *con, int ev, void *ev_data, void *h_data) {
-    auto *h = static_cast<http_handler_data *>(h_data);
-    if (ev == MG_EV_HTTP_MSG) {
-        auto *hm = static_cast<mg_http_message *>(ev_data);
-        const std::string_view method{hm->method.ptr, hm->method.len};
-        // Answer OPTIONS request to support cross origin resource sharing (CORS) preflighted browser requests
-        if (method == "OPTIONS") {
-            SLOG(trace) << h->server_address << " serving \"" << method << "\" request";
-            std::string headers;
-            headers += "Access-Control-Allow-Origin: *\r\n";
-            headers += "Access-Control-Allow-Methods: *\r\n";
-            headers += "Access-Control-Allow-Headers: *\r\n";
-            headers += "Access-Control-Max-Age: 0\r\n";
-            con->is_draining = 1;
-            mg_http_reply(con, 204, headers.c_str(), "");
-            return;
+/// \param req HTTP request
+/// \param session HTTP session
+// Return a response for the given request.
+http::message_generator handle_request(http::request<http::string_body> &&req,
+    const std::shared_ptr<http_session> &session) {
+    // Answer OPTIONS request to support cross origin resource sharing (CORS) preflighted browser requests
+    if (req.method() == http::verb::options) {
+        SLOG(trace) << session->handler->local_endpoint << " serving \"" << req.method_string() << "\" request";
+        http::response<http::empty_body> res{http::status::no_content, req.version()};
+        res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
+        res.set(http::field::access_control_allow_origin, "*");
+        res.set(http::field::access_control_allow_methods, "*");
+        res.set(http::field::access_control_allow_headers, "*");
+        res.set(http::field::access_control_max_age, "0");
+        res.keep_alive(req.keep_alive());
+        return res;
+    }
+    // Only accept POST requests
+    if (req.method() != http::verb::post) {
+        SLOG(trace) << session->handler->local_endpoint << " rejected unexpected \"" << req.method_string()
+                    << "\" request";
+        http::response<http::empty_body> res{http::status::method_not_allowed, req.version()};
+        res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
+        res.set(http::field::access_control_allow_origin, "*");
+        res.keep_alive(req.keep_alive());
+        return res;
+    }
+    // Only accept / URI
+    if (req.target() != "/") {
+        SLOG(trace) << session->handler->local_endpoint << " rejected unexpected \"" << req.target() << "\" uri";
+        http::response<http::empty_body> res{http::status::not_found, req.version()};
+        res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
+        res.set(http::field::access_control_allow_origin, "*");
+        res.keep_alive(req.keep_alive());
+        return res;
+    }
+    SLOG(trace) << session->handler->local_endpoint << " request is " << req.target();
+    // Parse request body into a JSON object
+    json j;
+    try {
+        j = json::parse(req.body().data());
+    } catch (std::exception &x) {
+        return jsonrpc_http_reply(req, jsonrpc_response_parse_error(x.what()), session);
+    }
+    // JSONRPC allows batch requests, each an entry in an array
+    // We deal uniformly with batch and singleton requests by wrapping the singleton into a batch
+    auto was_array = j.is_array();
+    if (!was_array) {
+        j = json::array({std::move(j)});
+    }
+    if (j.empty()) {
+        return jsonrpc_http_reply(req, jsonrpc_response_invalid_request(j, "empty batch request array"), session);
+    }
+    json jr;
+    // Obtain response to each request in batch
+    for (auto ji : j) {
+        if (!ji.is_object()) {
+            jr.push_back(jsonrpc_response_invalid_request(ji, "request not an object"));
+            continue;
         }
-        // Only accept POST requests
-        if (method != "POST") {
-            std::string headers;
-            headers += "Access-Control-Allow-Origin: *\r\n";
-            SLOG(trace) << h->server_address << " rejected unexpected \"" << method << "\" request";
-            con->is_draining = 1;
-            mg_http_reply(con, 405, headers.c_str(), "method not allowed");
-            return;
+        if (!ji.contains("jsonrpc")) {
+            jr.push_back(jsonrpc_response_invalid_request(ji, "missing field \"jsonrpc\""));
+            continue;
         }
-        // Only accept / URI
-        const std::string_view uri{hm->uri.ptr, hm->uri.len};
-        SLOG(trace) << h->server_address << " request is " << std::string_view{hm->body.ptr, hm->body.len};
-        if (uri != "/") {
-            // anything else
-            SLOG(trace) << h->server_address << " rejected unexpected \"" << uri << "\" uri";
-            con->is_draining = 1;
-            mg_http_reply(con, 404, "Access-Control-Allow-Origin: *\r\n", "not found");
-            return;
+        if (!ji["jsonrpc"].is_string() || ji["jsonrpc"] != "2.0") {
+            jr.push_back(jsonrpc_response_invalid_request(ji, R"(invalid field "jsonrpc" (expected "2.0"))"));
+            continue;
         }
-        // Parse request body into a JSON object
-        json j;
-        try {
-            j = json::parse(hm->body.ptr, hm->body.ptr + hm->body.len);
-        } catch (std::exception &x) {
-            return jsonrpc_http_reply(con, h, jsonrpc_response_parse_error(x.what()));
+        if (!ji.contains("method")) {
+            jr.push_back(jsonrpc_response_invalid_request(ji, "missing field \"method\""));
+            continue;
         }
-        // JSONRPC allows batch requests, each an entry in an array
-        // We deal uniformly with batch and singleton requests by wrapping the singleton into a batch
-        auto was_array = j.is_array();
-        if (!was_array) {
-            j = json::array({std::move(j)});
+        if (!ji["method"].is_string() || ji["method"].get<std::string>().empty()) {
+            jr.push_back(jsonrpc_response_invalid_request(ji, "invalid field \"method\" (expected non-empty string)"));
+            continue;
         }
-        if (j.empty()) {
-            return jsonrpc_http_reply(con, h, jsonrpc_response_invalid_request(j, "empty batch request array"));
-        }
-        json jr;
-        // Obtain response to each request in batch
-        for (auto ji : j) {
-            if (!ji.is_object()) {
-                jr.push_back(jsonrpc_response_invalid_request(ji, "request not an object"));
-                continue;
-            }
-            if (!ji.contains("jsonrpc")) {
-                jr.push_back(jsonrpc_response_invalid_request(ji, "missing field \"jsonrpc\""));
-                continue;
-            }
-            if (!ji["jsonrpc"].is_string() || ji["jsonrpc"] != "2.0") {
-                jr.push_back(jsonrpc_response_invalid_request(ji, R"(invalid field "jsonrpc" (expected "2.0"))"));
-                continue;
-            }
-            if (!ji.contains("method")) {
-                jr.push_back(jsonrpc_response_invalid_request(ji, "missing field \"method\""));
-                continue;
-            }
-            if (!ji["method"].is_string() || ji["method"].get<std::string>().empty()) {
+        // check for valid id
+        if (ji.contains("id")) {
+            const auto &jiid = ji["id"];
+            if (!jiid.is_string() && !jiid.is_number() && !jiid.is_null()) {
                 jr.push_back(
-                    jsonrpc_response_invalid_request(ji, "invalid field \"method\" (expected non-empty string)"));
-                continue;
-            }
-            // check for valid id
-            if (ji.contains("id")) {
-                const auto &jiid = ji["id"];
-                if (!jiid.is_string() && !jiid.is_number() && !jiid.is_null()) {
-                    jr.push_back(jsonrpc_response_invalid_request(ji,
-                        "invalid field \"id\" (expected string, number, or null)"));
-                }
-            }
-            json jri = jsonrpc_dispatch_method(ji, con, h);
-            if (h->status == http_handler_status::forked_child) {
-                return;
-            }
-            // Except for errors, do not add result of "notification" requests
-            if (ji.contains("id")) {
-                jr.push_back(std::move(jri));
+                    jsonrpc_response_invalid_request(ji, "invalid field \"id\" (expected string, number, or null)"));
             }
         }
-        // Unwrap singleton request from batch, if it was indeed a singleton
-        // Otherwise, just send the response
-        if (!jr.empty()) {
-            if (was_array) {
-                return jsonrpc_http_reply(con, h, jr);
-            }
-            return jsonrpc_http_reply(con, h, jr[0]);
-        }
-        return jsonrpc_send_empty_reply(con, h);
-    }
-    if (ev == MG_EV_CLOSE) {
-        if (con->data[0] == 'X') {
-            h->status = http_handler_status::shutdown;
-            return;
+        json jri = jsonrpc_dispatch_method(ji, session);
+        // Except for errors, do not add result of "notification" requests
+        if (ji.contains("id")) {
+            jr.push_back(std::move(jri));
         }
     }
-    if (ev == MG_EV_ERROR) {
-        SLOG(debug) << h->server_address << " " << static_cast<char *>(ev_data);
-        return;
+    // Unwrap singleton request from batch, if it was indeed a singleton
+    // Otherwise, just send the response
+    if (!jr.empty()) {
+        if (was_array) {
+            return jsonrpc_http_reply(req, jr, session);
+        }
+        return jsonrpc_http_reply(req, jr[0], session);
     }
+    return jsonrpc_http_empty_reply(req, session);
 }
 
 /// \brief Prints help message
@@ -2067,7 +2095,7 @@ static void init_logger(const char *strlevel) {
 }
 
 int main(int argc, char *argv[]) try {
-    const char *server_address = "localhost:0";
+    const char *server_address = "127.0.0.1:0";
     const char *log_level = nullptr;
     const char *program_name = PROGRAM_NAME;
 
@@ -2095,69 +2123,29 @@ int main(int argc, char *argv[]) try {
 
     init_logger(log_level);
 
-    SLOG(info) << "server version is " << server_version_major << "." << server_version_minor << "."
+    SLOG(info) << "remote machine version is " << server_version_major << "." << server_version_minor << "."
                << server_version_patch;
 
-    SLOG(info) << "'" << server_address << "' requested as initial server address";
+    // Parse local endpoint to listen to
+    auto local_endpoint = address_to_endpoint(server_address);
+    SLOG(info) << "'" << local_endpoint << "' requested as initial server address";
 
-    install_signal_handlers();
+    install_restart_signal_handlers();
 
-    http_handler_data *h = new (std::nothrow) http_handler_data{};
-    if (!h) {
-        SLOG(fatal) << "out of memory";
-        exit(1);
-    }
+    // IO context that will process async events
+    asio::io_context ioc{1};
+    // Create and launch a listener
+    auto handler = std::make_shared<http_handler>(ioc, local_endpoint);
+    // Begin asynchronous operation that will be fired on next process termination signal
+    handler->install_termination_signal_handlers();
+    // Begin asynchronous operation that will be fired on next accept
+    handler->next_accept();
 
-    mg_mgr_init(&h->event_manager);
-#if MG_ENABLE_EPOLL
-    // Event manager initialization does not return whether it failed or not
-    // It could only fail if the epoll_fd allocation failed
-    if (h->event_manager.epoll_fd < 0) {
-        mg_mgr_free(&h->event_manager);
-        delete h;
-        SLOG(fatal) << "failed creating event manager";
-        exit(1);
-    }
-#endif
+    // Run until there is no pending asynchronous events anymore,
+    // e.g, there is no more clients connected and the handler is not accepting new connections.
+    ioc.run();
 
-    auto *con = mg_http_listen(&h->event_manager, server_address, http_handler, h);
-    if (!con) {
-        mg_mgr_free(&h->event_manager);
-        delete h;
-        SLOG(fatal) << "failed listening";
-        exit(1);
-    }
-    h->listen_connection = con;
-    h->server_address = server_address;
-
-    SLOG(info) << "initial server bound to port " << ntohs(con->loc.port);
-
-    while (!abort_due_to_signal) {
-        log_signals();
-        h->status = http_handler_status::ready_for_next;
-        mg_mgr_poll(&h->event_manager, 10000);
-        switch (h->status) {
-            case http_handler_status::shutdown:
-                mg_mgr_free(&h->event_manager);
-                delete h;
-                return 0;
-            case http_handler_status::forked_child: {
-                // The child doesn't need the old server it inherited from the parent.
-                // So we release it and make the new one current.
-                http_handler_data *old_h = h;
-                mg_mgr_free_ours(&h->event_manager);
-                h = h->child;
-                delete old_h;
-                break;
-            }
-            case http_handler_status::ready_for_next:
-            default:
-                break;
-        }
-    }
-    log_signals();
-    mg_mgr_free(&h->event_manager);
-    delete h;
+    SLOG(trace) << "remote machine terminated";
     return 0;
 } catch (std::exception &e) {
     std::cerr << "Caught exception: " << e.what() << '\n';

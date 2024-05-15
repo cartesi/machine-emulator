@@ -94,14 +94,12 @@ TESTS_LUA_TO_TEST_LUA_PATH=$(wildcard tests/lua/*.lua)
 TESTS_SCRIPTS_TO_TEST_SCRIPTS_PATH=$(wildcard tests/scripts/*.sh)
 TESTS_DATA_TO_TESTS_DATA_PATH= tests/build/machine tests/build/uarch tests/build/uarch-riscv-arch-test tests/build/images
 
-MONGOOSE_VERSION=7.12
-
 # Build settings
 DEPDIR = third-party
 SRCDIR = $(abspath src)
 TESTSDIR = $(abspath tests)
 DOWNLOADDIR = $(DEPDIR)/downloads
-DEPDIRS = $(DEPDIR)/mongoose-$(MONGOOSE_VERSION)
+DEPDIRS =
 SUBCLEAN = $(addsuffix .clean,$(SRCDIR) uarch tests)
 
 # Docker image tag
@@ -211,10 +209,6 @@ $(DOWNLOADDIR):
 	$(MAKE) checksum
 
 downloads: $(DOWNLOADDIR)
-
-$(DEPDIR)/downloads/$(MONGOOSE_VERSION).tar.gz: | downloads
-$(DEPDIR)/mongoose-$(MONGOOSE_VERSION): $(DEPDIR)/downloads/$(MONGOOSE_VERSION).tar.gz
-	tar -C $(DEPDIR) -xzf $< mongoose-$(MONGOOSE_VERSION)/mongoose.c mongoose-$(MONGOOSE_VERSION)/mongoose.h
 
 bundle-boost: $(DEPDIR)/downloads/boost
 $(DEPDIR)/downloads/boost: | downloads

@@ -17,6 +17,7 @@
 #ifndef PMA_H
 #define PMA_H
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <stdexcept>

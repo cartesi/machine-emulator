@@ -46,11 +46,102 @@
 #ifdef __APPLE__
 #include <sys/mount.h>
 #include <sys/param.h>
+#elif defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <direct.h>
+#include <sys/utime.h>
+#include <windows.h>
 #else
 #include <sys/statfs.h>
 #include <sys/sysmacros.h>
 #endif
 #include <unistd.h>
+
+#ifdef _WIN32
+#define lstat stat
+int fsync(int fd) {
+    HANDLE h = (HANDLE) _get_osfhandle(fd);
+    if (h == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    if (!FlushFileBuffers(h)) {
+        return -1;
+    }
+    return 0;
+}
+
+static inline void timespec_to_filetime(const struct timespec tv, FILETIME *ft) {
+    long long winTime = tv.tv_sec * 10000000LL + tv.tv_nsec / 100LL + 116444736000000000LL;
+    ft->dwLowDateTime = winTime;
+    ft->dwHighDateTime = winTime >> 32;
+}
+
+ssize_t pread(int fd, void *buf, size_t count, uint64_t offset) {
+    HANDLE hFile = (HANDLE) _get_osfhandle(fd);
+    DWORD dwBytesRead = 0;
+    OVERLAPPED ovl = {0};
+    ovl.Offset = (DWORD) offset;
+    ovl.OffsetHigh = (DWORD) (offset >> 32);
+    SetLastError(0);
+    if (!ReadFile(hFile, buf, (DWORD) count, &dwBytesRead, &ovl) && GetLastError() != ERROR_HANDLE_EOF) {
+        errno = GetLastError();
+        return -1;
+    }
+    return dwBytesRead;
+}
+
+ssize_t pwrite(int fd, const void *buf, size_t count, uint64_t offset) {
+    HANDLE hFile = (HANDLE) _get_osfhandle(fd);
+    DWORD dwBytesWritten = 0;
+    OVERLAPPED ovl = {0};
+    ovl.Offset = (DWORD) offset;
+    ovl.OffsetHigh = (DWORD) (offset >> 32);
+    SetLastError(0);
+    if (!WriteFile(hFile, buf, (DWORD) count, &dwBytesWritten, &ovl) && GetLastError() != ERROR_HANDLE_EOF) {
+        errno = GetLastError();
+        return -1;
+    }
+    return dwBytesWritten;
+}
+
+#define UTIME_NOW -1
+#define UTIME_OMIT -2
+
+static int futimens(int fd, const struct timespec times[2]) {
+    HANDLE hFile = (HANDLE) _get_osfhandle(fd);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        errno = EBADF;
+        return -1;
+    }
+    FILETIME now{}, aft{}, mft{};
+    FILETIME *pft[2] = {&aft, &mft};
+    GetSystemTimeAsFileTime(&now);
+    if (times) {
+        for (int i = 0; i < 2; ++i) {
+            if (times[i].tv_nsec == UTIME_NOW) {
+                *pft[i] = now;
+            } else if (times[i].tv_nsec == UTIME_OMIT) {
+                pft[i] = NULL;
+            } else if (times[i].tv_nsec >= 0 && times[i].tv_nsec < 1000000000L) {
+                long long winTime = times[i].tv_sec * 10000000LL + times[i].tv_nsec / 100LL + 116444736000000000LL;
+                pft[i]->dwLowDateTime = winTime;
+                pft[i]->dwHighDateTime = winTime >> 32;
+            } else {
+                errno = EINVAL;
+                return -1;
+            }
+        }
+    } else {
+        aft = mft = now;
+    }
+    if (!SetFileTime(hFile, NULL, pft[0], pft[1])) {
+        errno = GetLastError();
+        return -1;
+    }
+    return 0;
+}
+
+#endif // _WIN32
 
 namespace cartesi {
 
@@ -63,272 +154,535 @@ static p9_error host_errno_to_p9(int err) {
     switch (err) {
         case 0:
             return P9_EOK;
+#if defined(EPERM)
         case EPERM:
             return P9_EPERM;
+#endif
+#if defined(ENOENT)
         case ENOENT:
             return P9_ENOENT;
+#endif
+#if defined(ESRCH)
         case ESRCH:
             return P9_ESRCH;
+#endif
+#if defined(EINTR)
         case EINTR:
             return P9_EINTR;
+#endif
+#if defined(EIO)
         case EIO:
             return P9_EIO;
+#endif
+#if defined(ENXIO)
         case ENXIO:
             return P9_ENXIO;
+#endif
+#if defined(E2BIG)
         case E2BIG:
             return P9_E2BIG;
+#endif
+#if defined(ENOEXEC)
         case ENOEXEC:
             return P9_ENOEXEC;
+#endif
+#if defined(EBADF)
         case EBADF:
             return P9_EBADF;
+#endif
+#if defined(ECHILD)
         case ECHILD:
             return P9_ECHILD;
+#endif
+#if defined(EAGAIN)
         case EAGAIN:
             return P9_EAGAIN;
+#endif
+#if defined(ENOMEM)
         case ENOMEM:
             return P9_ENOMEM;
+#endif
+#if defined(EACCES)
         case EACCES:
             return P9_EACCES;
+#endif
+#if defined(EFAULT)
         case EFAULT:
             return P9_EFAULT;
+#endif
+#if defined(ENOTBLK)
         case ENOTBLK:
             return P9_ENOTBLK;
+#endif
+#if defined(EBUSY)
         case EBUSY:
             return P9_EBUSY;
+#endif
+#if defined(EEXIST)
         case EEXIST:
             return P9_EEXIST;
+#endif
+#if defined(EXDEV)
         case EXDEV:
             return P9_EXDEV;
+#endif
+#if defined(ENODEV)
         case ENODEV:
             return P9_ENODEV;
+#endif
+#if defined(ENOTDIR)
         case ENOTDIR:
             return P9_ENOTDIR;
+#endif
+#if defined(EISDIR)
         case EISDIR:
             return P9_EISDIR;
+#endif
+#if defined(EINVAL)
         case EINVAL:
             return P9_EINVAL;
+#endif
+#if defined(ENFILE)
         case ENFILE:
             return P9_ENFILE;
+#endif
+#if defined(EMFILE)
         case EMFILE:
             return P9_EMFILE;
+#endif
+#if defined(ENOTTY)
         case ENOTTY:
             return P9_ENOTTY;
+#endif
+#if defined(ETXTBSY)
         case ETXTBSY:
             return P9_ETXTBSY;
+#endif
+#if defined(EFBIG)
         case EFBIG:
             return P9_EFBIG;
+#endif
+#if defined(ENOSPC)
         case ENOSPC:
             return P9_ENOSPC;
+#endif
+#if defined(ESPIPE)
         case ESPIPE:
             return P9_ESPIPE;
+#endif
+#if defined(EROFS)
         case EROFS:
             return P9_EROFS;
+#endif
+#if defined(EMLINK)
         case EMLINK:
             return P9_EMLINK;
+#endif
+#if defined(EPIPE)
         case EPIPE:
             return P9_EPIPE;
+#endif
+#if defined(EDOM)
         case EDOM:
             return P9_EDOM;
+#endif
+#if defined(ERANGE)
         case ERANGE:
             return P9_ERANGE;
+#endif
+#if defined(EDEADLK)
         case EDEADLK:
             return P9_EDEADLK;
+#endif
+#if defined(ENAMETOOLONG)
         case ENAMETOOLONG:
             return P9_ENAMETOOLONG;
+#endif
+#if defined(ENOLCK)
         case ENOLCK:
             return P9_ENOLCK;
+#endif
+#if defined(ENOSYS)
         case ENOSYS:
             return P9_ENOSYS;
+#endif
+#if defined(ENOTEMPTY)
         case ENOTEMPTY:
             return P9_ENOTEMPTY;
+#endif
+#if defined(ELOOP)
         case ELOOP:
             return P9_ELOOP;
+#endif
+#if defined(ENOMSG)
         case ENOMSG:
             return P9_ENOMSG;
+#endif
+#if defined(EIDRM)
         case EIDRM:
             return P9_EIDRM;
+#endif
+#if defined(ENOSTR)
         case ENOSTR:
             return P9_ENOSTR;
+#endif
+#if defined(ENODATA)
         case ENODATA:
             return P9_ENODATA;
+#endif
+#if defined(ETIME)
         case ETIME:
             return P9_ETIME;
+#endif
+#if defined(ENOSR)
         case ENOSR:
             return P9_ENOSR;
+#endif
+#if defined(EREMOTE)
         case EREMOTE:
             return P9_EREMOTE;
+#endif
+#if defined(ENOLINK)
         case ENOLINK:
             return P9_ENOLINK;
+#endif
+#if defined(EPROTO)
         case EPROTO:
             return P9_EPROTO;
+#endif
+#if defined(EMULTIHOP)
         case EMULTIHOP:
             return P9_EMULTIHOP;
+#endif
+#if defined(EBADMSG)
         case EBADMSG:
             return P9_EBADMSG;
+#endif
+#if defined(EOVERFLOW)
         case EOVERFLOW:
             return P9_EOVERFLOW;
+#endif
+#if defined(EILSEQ)
         case EILSEQ:
             return P9_EILSEQ;
+#endif
+#if defined(EUSERS)
         case EUSERS:
             return P9_EUSERS;
+#endif
+#if defined(ENOTSOCK)
         case ENOTSOCK:
             return P9_ENOTSOCK;
+#endif
+#if defined(EDESTADDRREQ)
         case EDESTADDRREQ:
             return P9_EDESTADDRREQ;
+#endif
+#if defined(EMSGSIZE)
         case EMSGSIZE:
             return P9_EMSGSIZE;
+#endif
+#if defined(EPROTOTYPE)
         case EPROTOTYPE:
             return P9_EPROTOTYPE;
+#endif
+#if defined(ENOPROTOOPT)
         case ENOPROTOOPT:
             return P9_ENOPROTOOPT;
+#endif
+#if defined(EPROTONOSUPPORT)
         case EPROTONOSUPPORT:
             return P9_EPROTONOSUPPORT;
+#endif
+#if defined(ESOCKTNOSUPPORT)
         case ESOCKTNOSUPPORT:
             return P9_ESOCKTNOSUPPORT;
+#endif
+#if defined(EOPNOTSUPP)
         case EOPNOTSUPP:
             return P9_EOPNOTSUPP;
+#endif
+#if defined(EPFNOSUPPORT)
         case EPFNOSUPPORT:
             return P9_EPFNOSUPPORT;
+#endif
+#if defined(EAFNOSUPPORT)
         case EAFNOSUPPORT:
             return P9_EAFNOSUPPORT;
+#endif
+#if defined(EADDRINUSE)
         case EADDRINUSE:
             return P9_EADDRINUSE;
+#endif
+#if defined(EADDRNOTAVAIL)
         case EADDRNOTAVAIL:
             return P9_EADDRNOTAVAIL;
+#endif
+#if defined(ENETDOWN)
         case ENETDOWN:
             return P9_ENETDOWN;
+#endif
+#if defined(ENETUNREACH)
         case ENETUNREACH:
             return P9_ENETUNREACH;
+#endif
+#if defined(ENETRESET)
         case ENETRESET:
             return P9_ENETRESET;
+#endif
+#if defined(ECONNABORTED)
         case ECONNABORTED:
             return P9_ECONNABORTED;
+#endif
+#if defined(ECONNRESET)
         case ECONNRESET:
             return P9_ECONNRESET;
+#endif
+#if defined(ENOBUFS)
         case ENOBUFS:
             return P9_ENOBUFS;
+#endif
+#if defined(EISCONN)
         case EISCONN:
             return P9_EISCONN;
+#endif
+#if defined(ENOTCONN)
         case ENOTCONN:
             return P9_ENOTCONN;
+#endif
+#if defined(ESHUTDOWN)
         case ESHUTDOWN:
             return P9_ESHUTDOWN;
+#endif
+#if defined(ETOOMANYREFS)
         case ETOOMANYREFS:
             return P9_ETOOMANYREFS;
+#endif
+#if defined(ETIMEDOUT)
         case ETIMEDOUT:
             return P9_ETIMEDOUT;
+#endif
+#if defined(ECONNREFUSED)
         case ECONNREFUSED:
             return P9_ECONNREFUSED;
+#endif
+#if defined(EHOSTDOWN)
         case EHOSTDOWN:
             return P9_EHOSTDOWN;
+#endif
+#if defined(EHOSTUNREACH)
         case EHOSTUNREACH:
             return P9_EHOSTUNREACH;
+#endif
+#if defined(EALREADY)
         case EALREADY:
             return P9_EALREADY;
+#endif
+#if defined(EINPROGRESS)
         case EINPROGRESS:
             return P9_EINPROGRESS;
+#endif
+#if defined(ESTALE)
         case ESTALE:
             return P9_ESTALE;
+#endif
+#if defined(EDQUOT)
         case EDQUOT:
             return P9_EDQUOT;
+#endif
+#if defined(ECANCELED)
         case ECANCELED:
             return P9_ECANCELED;
+#endif
+#if defined(EOWNERDEAD)
         case EOWNERDEAD:
             return P9_EOWNERDEAD;
+#endif
+#if defined(ENOTRECOVERABLE)
         case ENOTRECOVERABLE:
             return P9_ENOTRECOVERABLE;
-#ifdef __APPLE__
+#endif
+#if defined(ENOATTR)
         case ENOATTR:
             return P9_ENODATA;
+#endif
+#if defined(ENOTSUP) && (!defined(EOPNOTSUPP) || EOPNOTSUPP != ENOTSUP)
         case ENOTSUP:
             return P9_EOPNOTSUPP;
-#else
+#endif
+#if defined(ECHRNG)
         case ECHRNG:
             return P9_ECHRNG;
+#endif
+#if defined(EL2NSYNC)
         case EL2NSYNC:
             return P9_EL2NSYNC;
+#endif
+#if defined(EL3HLT)
         case EL3HLT:
             return P9_EL3HLT;
+#endif
+#if defined(EL3RST)
         case EL3RST:
             return P9_EL3RST;
+#endif
+#if defined(ELNRNG)
         case ELNRNG:
             return P9_ELNRNG;
+#endif
+#if defined(EUNATCH)
         case EUNATCH:
             return P9_EUNATCH;
+#endif
+#if defined(ENOCSI)
         case ENOCSI:
             return P9_ENOCSI;
+#endif
+#if defined(EL2HLT)
         case EL2HLT:
             return P9_EL2HLT;
+#endif
+#if defined(EBADE)
         case EBADE:
             return P9_EBADE;
+#endif
+#if defined(EBADR)
         case EBADR:
             return P9_EBADR;
+#endif
+#if defined(EXFULL)
         case EXFULL:
             return P9_EXFULL;
+#endif
+#if defined(ENOANO)
         case ENOANO:
             return P9_ENOANO;
+#endif
+#if defined(EBADRQC)
         case EBADRQC:
             return P9_EBADRQC;
+#endif
+#if defined(EBADSLT)
         case EBADSLT:
             return P9_EBADSLT;
+#endif
+#if defined(EBFONT)
         case EBFONT:
             return P9_EBFONT;
+#endif
+#if defined(ENONET)
         case ENONET:
             return P9_ENONET;
+#endif
+#if defined(ENOPKG)
         case ENOPKG:
             return P9_ENOPKG;
+#endif
+#if defined(EADV)
         case EADV:
             return P9_EADV;
+#endif
+#if defined(ESRMNT)
         case ESRMNT:
             return P9_ESRMNT;
+#endif
+#if defined(ECOMM)
         case ECOMM:
             return P9_ECOMM;
+#endif
+#if defined(EDOTDOT)
         case EDOTDOT:
             return P9_EDOTDOT;
+#endif
+#if defined(ENOTUNIQ)
         case ENOTUNIQ:
             return P9_ENOTUNIQ;
+#endif
+#if defined(EBADFD)
         case EBADFD:
             return P9_EBADFD;
+#endif
+#if defined(EREMCHG)
         case EREMCHG:
             return P9_EREMCHG;
+#endif
+#if defined(ELIBACC)
         case ELIBACC:
             return P9_ELIBACC;
+#endif
+#if defined(ELIBBAD)
         case ELIBBAD:
             return P9_ELIBBAD;
+#endif
+#if defined(ELIBSCN)
         case ELIBSCN:
             return P9_ELIBSCN;
+#endif
+#if defined(ELIBMAX)
         case ELIBMAX:
             return P9_ELIBMAX;
+#endif
+#if defined(ELIBEXEC)
         case ELIBEXEC:
             return P9_ELIBEXEC;
+#endif
+#if defined(ERESTART)
         case ERESTART:
             return P9_ERESTART;
+#endif
+#if defined(ESTRPIPE)
         case ESTRPIPE:
             return P9_ESTRPIPE;
+#endif
+#if defined(EUCLEAN)
         case EUCLEAN:
             return P9_EUCLEAN;
+#endif
+#if defined(ENOTNAM)
         case ENOTNAM:
             return P9_ENOTNAM;
+#endif
+#if defined(ENAVAIL)
         case ENAVAIL:
             return P9_ENAVAIL;
+#endif
+#if defined(EISNAM)
         case EISNAM:
             return P9_EISNAM;
+#endif
+#if defined(EREMOTEIO)
         case EREMOTEIO:
             return P9_EREMOTEIO;
+#endif
+#if defined(ENOMEDIUM)
         case ENOMEDIUM:
             return P9_ENOMEDIUM;
+#endif
+#if defined(EMEDIUMTYPE)
         case EMEDIUMTYPE:
             return P9_EMEDIUMTYPE;
+#endif
+#if defined(ENOKEY)
         case ENOKEY:
             return P9_ENOKEY;
+#endif
+#if defined(EKEYEXPIRED)
         case EKEYEXPIRED:
             return P9_EKEYEXPIRED;
+#endif
+#if defined(EKEYREVOKED)
         case EKEYREVOKED:
             return P9_EKEYREVOKED;
+#endif
+#if defined(EKEYREJECTED)
         case EKEYREJECTED:
             return P9_EKEYREJECTED;
+#endif
+#if defined(ERFKILL)
         case ERFKILL:
             return P9_ERFKILL;
+#endif
+#if defined(EHWPOISON)
         case EHWPOISON:
             return P9_EHWPOISON;
 #endif
@@ -357,43 +711,63 @@ static int p9_open_flags_to_host(uint32_t flags) {
                 case P9_O_EXCL:
                     oflags |= O_EXCL;
                     break;
-                case P9_O_NOCTTY:
-                    oflags |= O_NOCTTY;
-                    break;
                 case P9_O_TRUNC:
                     oflags |= O_TRUNC;
                     break;
                 case P9_O_APPEND:
                     oflags |= O_APPEND;
                     break;
+#if defined(O_NOCTTY)
+                case P9_O_NOCTTY:
+                    oflags |= O_NOCTTY;
+                    break;
+#endif
+#if defined(O_NONBLOCK)
                 case P9_O_NONBLOCK:
                     oflags |= O_NONBLOCK;
                     break;
+#endif
+#if defined(O_DSYNC)
                 case P9_O_DSYNC:
                     oflags |= O_DSYNC;
                     break;
+#endif
+#if defined(FASYNC)
                 case P9_O_FASYNC:
                     oflags |= FASYNC;
                     break;
+#endif
+#if defined(O_DIRECTORY)
                 case P9_O_DIRECTORY:
                     oflags |= O_DIRECTORY;
                     break;
+#endif
+#if defined(O_NOFOLLOW)
                 case P9_O_NOFOLLOW:
                     oflags |= O_NOFOLLOW;
                     break;
+#endif
+#if defined(O_CLOEXEC)
                 case P9_O_CLOEXEC:
                     oflags |= O_CLOEXEC;
                     break;
+#endif
+#if defined(O_SYNC)
                 case P9_O_SYNC:
                     oflags |= O_SYNC;
                     break;
-#ifndef __APPLE__
+#endif
+#if defined(O_DIRECT)
                 case P9_O_DIRECT:
                     oflags |= O_DIRECT;
                     break;
+#endif
+#if defined(O_LARGEFILE)
                 case P9_O_LARGEFILE:
                     oflags |= O_LARGEFILE;
                     break;
+#endif
+#if defined(O_NOATIME)
                 case P9_O_NOATIME:
                     oflags |= O_NOATIME;
                     break;
@@ -403,11 +777,22 @@ static int p9_open_flags_to_host(uint32_t flags) {
             }
         }
     }
+    // On always open as binary on windows
+#ifdef _WIN32
+    oflags |= O_BINARY;
+#endif
     // Filter non-supported flags
-    oflags &= ~(O_NOCTTY | O_ASYNC | O_CREAT);
+#ifdef O_NOCTTY
+    oflags &= ~O_NOCTTY;
+#endif
+#ifdef O_ASYNC
+    oflags &= ~O_ASYNC;
+#endif
+    oflags &= ~O_CREAT;
     return oflags;
 }
 
+#if defined(F_SETLK) && defined(F_SETLKW)
 static short p9_lock_type_to_host(uint8_t type) {
     switch (type) {
         case P9_LOCK_TYPE_RDLCK:
@@ -433,6 +818,16 @@ static uint8_t host_lock_type_to_p9(short type) {
             return 0xff;
     }
 }
+#endif
+
+static uint32_t host_mode_to_p9(mode_t mode) {
+#ifdef _WIN32
+    // On Windows there we have to show files as executable to be able to execute them
+    return static_cast<uint32_t>(mode) | 0b001001001;
+#else
+    return static_cast<uint32_t>(mode);
+#endif
+}
 
 static p9_qid stat_to_qid(const stat_t &st) {
     p9_qid qid{};
@@ -440,11 +835,17 @@ static p9_qid stat_to_qid(const stat_t &st) {
     if (S_ISDIR(st.st_mode)) {
         qid.type |= P9_QID_DIR;
     }
+#ifdef _WIN32
+    // On Windows there is no concept of inode for stat(), so we have to fake it.
+    static uint64_t fake_inode = 0;
+    qid.inode = ++fake_inode;
+#else
+    qid.inode = st.st_ino;
     if (S_ISLNK(st.st_mode)) {
         qid.type |= P9_QID_SYMLINK;
     }
+#endif
     qid.version = 0; // No caching
-    qid.path = st.st_ino;
     return qid;
 }
 
@@ -660,6 +1061,7 @@ bool virtio_p9fs_device::op_statfs(virtq_unserializer &&msg, uint16_t tag) {
 #ifdef DEBUG_VIRTIO_P9FS
     (void) fprintf(stderr, "p9fs statfs: tag=%d fid=%d\n", tag, fid);
 #endif
+#ifndef _WIN32
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
     if (!fidp) {
@@ -699,6 +1101,9 @@ bool virtio_p9fs_device::op_statfs(virtq_unserializer &&msg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
     return send_reply(std::move(out_msg), tag, P9_RSTATFS);
+#else
+    return send_error(msg, tag, P9_EOPNOTSUPP);
+#endif
 }
 
 bool virtio_p9fs_device::op_lopen(virtq_unserializer &&msg, uint16_t tag) {
@@ -722,25 +1127,53 @@ bool virtio_p9fs_device::op_lopen(virtq_unserializer &&msg, uint16_t tag) {
     // Open the file
     const int oflags = p9_open_flags_to_host(flags);
     const int fd = open(fidp->path.c_str(), oflags);
+    const int open_errno = errno;
+    // On Windows open may fail for directories, so ignore it
+#ifndef _WIN32
     if (fd < 0) {
-        return send_error(msg, tag, host_errno_to_p9(errno));
+        return send_error(msg, tag, host_errno_to_p9(open_errno));
     }
-    // Get the path qid
-    stat_t st{};
-    if (fstat(fd, &st) != 0) {
-        (void) close(fd);
-        return send_error(msg, tag, host_errno_to_p9(errno));
+#endif
+    // Get the file qid
+    p9_qid qid{};
+    if (fd >= 0) {
+        stat_t st{};
+        // Get the path qid from fd
+        if (fstat(fd, &st) != 0) {
+            (void) close(fd);
+            return send_error(msg, tag, host_errno_to_p9(open_errno));
+        }
+        qid = stat_to_qid(st);
     }
-    p9_qid qid = stat_to_qid(st);
+#ifdef _WIN32
+    // In case file could not be open, on Windows assume it's a directory
+    if (fd < 0 && flags & P9_O_DIRECTORY) {
+        // Get the path qid from path
+        const std::string path = fidp->path;
+        stat_t st{};
+        if (lstat(path.c_str(), &st) != 0) {
+            return send_error(msg, tag, host_errno_to_p9(open_errno));
+        }
+        qid = stat_to_qid(st);
+        // Fail in case it's not a directory
+        if (qid.type != P9_QID_DIR) {
+            return send_error(msg, tag, host_errno_to_p9(open_errno));
+        }
+    }
+#endif
     // Reply
     uint32_t iounit = get_iounit();
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&qid, &iounit)) {
-        (void) close(fd);
+        if (fd >= 0) {
+            (void) close(fd);
+        }
         return send_error(msg, tag, P9_EPROTO);
     }
     if (!send_reply(std::move(out_msg), tag, P9_RLOPEN)) {
-        (void) close(fd);
+        if (fd >= 0) {
+            (void) close(fd);
+        }
         return false;
     }
     // Update fid
@@ -782,10 +1215,12 @@ bool virtio_p9fs_device::op_lcreate(virtq_unserializer &&msg, uint16_t tag) {
     if (fd < 0) {
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
+#ifndef _WIN32
     // If we fail to change ownership, we silent ignore the error
     if (fchown(fd, static_cast<uid_t>(fidp->uid), static_cast<gid_t>(gid)) != 0) {
         errno = 0;
     }
+#endif
     // Get the path qid
     stat_t st{};
     if (fstat(fd, &st) != 0) {
@@ -824,6 +1259,7 @@ bool virtio_p9fs_device::op_symlink(virtq_unserializer &&msg, uint16_t tag) {
 #ifdef DEBUG_VIRTIO_P9FS
     (void) fprintf(stderr, "p9fs symlink: tag=%d dfid=%d name=%s symtgt=%s gid=%d\n", tag, dfid, name, symtgt, gid);
 #endif
+#ifndef _WIN32
     // Check if name is valid
     if (!is_name_legal(name)) {
         return send_error(msg, tag, P9_ENOENT);
@@ -860,6 +1296,9 @@ bool virtio_p9fs_device::op_symlink(virtq_unserializer &&msg, uint16_t tag) {
         return false;
     }
     return true;
+#else
+    return send_error(msg, tag, P9_EOPNOTSUPP);
+#endif
 }
 
 bool virtio_p9fs_device::op_mknod(virtq_unserializer &&msg, uint16_t tag) {
@@ -876,6 +1315,7 @@ bool virtio_p9fs_device::op_mknod(virtq_unserializer &&msg, uint16_t tag) {
     (void) fprintf(stderr, "p9fs mknod: tag=%d dfid=%d name=%s mode=%d major=%d minor=%d gid=%d\n", tag, dfid, name,
         mode, major, minor, gid);
 #endif
+#ifndef _WIN32
     // Check if name is valid
     if (!is_name_legal(name)) {
         return send_error(msg, tag, P9_ENOENT);
@@ -913,6 +1353,9 @@ bool virtio_p9fs_device::op_mknod(virtq_unserializer &&msg, uint16_t tag) {
         return false;
     }
     return true;
+#else
+    return send_error(msg, tag, P9_EOPNOTSUPP);
+#endif
 }
 
 bool virtio_p9fs_device::op_setattr(virtq_unserializer &&msg, uint16_t tag) {
@@ -943,6 +1386,7 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&msg, uint16_t tag) {
     bool ctime_updated = false;
     // Modify ownership
     if (mask & (P9_SETATTR_UID | P9_SETATTR_GID)) {
+#ifndef _WIN32
         const uid_t newuid = (mask & P9_SETATTR_UID) ? static_cast<uid_t>(uid) : -1;
         const gid_t newgid = (mask & P9_SETATTR_GID) ? static_cast<gid_t>(gid) : -1;
         // Use fd when available, because its path might have been removed while fd still open
@@ -956,9 +1400,13 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&msg, uint16_t tag) {
             }
         }
         ctime_updated = true;
+#else
+        return send_error(msg, tag, P9_EOPNOTSUPP);
+#endif
     }
     // Modify mode
     if (mask & P9_SETATTR_MODE) {
+#ifndef _WIN32
         // Use fd when available, because its path might have been removed while fd still open
         if (fidp->fd >= 0) {
             if (fchmod(fidp->fd, static_cast<mode_t>(mode)) != 0) {
@@ -970,6 +1418,9 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&msg, uint16_t tag) {
             }
         }
         ctime_updated = true;
+#else
+        return send_error(msg, tag, P9_EOPNOTSUPP);
+#endif
     }
     // Modify size
     if (mask & P9_SETATTR_SIZE) {
@@ -1018,14 +1469,19 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&msg, uint16_t tag) {
                 return send_error(msg, tag, host_errno_to_p9(errno));
             }
         } else {
+#ifdef _WIN32
+            // Silently ignore directory access time changes on Windows
+#else
             if (utimensat(AT_FDCWD, fidp->path.c_str(), ts, AT_SYMLINK_NOFOLLOW) != 0) {
                 return send_error(msg, tag, host_errno_to_p9(errno));
             }
+#endif
         }
         ctime_updated = true;
     }
     // Modify change time
     if ((mask & P9_SETATTR_CTIME) && !ctime_updated) {
+#ifndef _WIN32
         // Use fd when available, because its path might have been removed while fd still open
         if (fidp->fd >= 0) {
             if (fchown(fidp->fd, -1, -1) != 0) {
@@ -1036,6 +1492,7 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&msg, uint16_t tag) {
                 return send_error(msg, tag, host_errno_to_p9(errno));
             }
         }
+#endif
     }
     // Reply
     return send_ok(msg, tag, P9_RSETATTR);
@@ -1049,6 +1506,7 @@ bool virtio_p9fs_device::op_readlink(virtq_unserializer &&msg, uint16_t tag) {
 #ifdef DEBUG_VIRTIO_P9FS
     (void) fprintf(stderr, "p9fs readlink: tag=%d fid=%d\n", tag, fid);
 #endif
+#ifndef _WIN32
     // Get the fid state
     const p9_fid_state *fidp = get_fid_state(fid);
     if (!fidp) {
@@ -1067,6 +1525,9 @@ bool virtio_p9fs_device::op_readlink(virtq_unserializer &&msg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
     return send_reply(std::move(out_msg), tag, P9_RREADLINK);
+#else
+    return send_error(msg, tag, P9_EOPNOTSUPP);
+#endif
 }
 
 bool virtio_p9fs_device::op_getattr(virtq_unserializer &&msg, uint16_t tag) {
@@ -1101,7 +1562,7 @@ bool virtio_p9fs_device::op_getattr(virtq_unserializer &&msg, uint16_t tag) {
     // Fill stat attributes
     p9_stat rstat{};
     if (mask & P9_GETATTR_MODE) {
-        rstat.mode = st.st_mode;
+        rstat.mode = host_mode_to_p9(st.st_mode);
     }
     if (mask & P9_GETATTR_UID) {
         rstat.uid = st.st_uid;
@@ -1119,8 +1580,14 @@ bool virtio_p9fs_device::op_getattr(virtq_unserializer &&msg, uint16_t tag) {
         rstat.size = st.st_size;
     }
     if (mask & P9_GETATTR_BLOCKS) {
+#ifdef _WIN32
+        // Windows has no blocks, fake it
+        rstat.blksize = 512;
+        rstat.blocks = (st.st_size + 511) / 512;
+#else
         rstat.blksize = st.st_blksize;
         rstat.blocks = st.st_blocks;
+#endif
     }
 #ifdef __APPLE__
     if (mask & P9_GETATTR_ATIME) {
@@ -1134,6 +1601,19 @@ bool virtio_p9fs_device::op_getattr(virtq_unserializer &&msg, uint16_t tag) {
     if (mask & P9_GETATTR_CTIME) {
         rstat.ctime_sec = st.st_ctimespec.tv_sec;
         rstat.ctime_nsec = st.st_ctimespec.tv_nsec;
+    }
+#elif defined(_WIN32)
+    if (mask & P9_GETATTR_ATIME) {
+        rstat.atime_sec = static_cast<uint64_t>(st.st_atime);
+        rstat.atime_nsec = 0;
+    }
+    if (mask & P9_GETATTR_MTIME) {
+        rstat.mtime_sec = static_cast<uint64_t>(st.st_mtime);
+        rstat.mtime_nsec = 0;
+    }
+    if (mask & P9_GETATTR_CTIME) {
+        rstat.ctime_sec = static_cast<uint64_t>(st.st_ctime);
+        rstat.ctime_nsec = 0;
     }
 #else
     if (mask & P9_GETATTR_ATIME) {
@@ -1174,6 +1654,7 @@ bool virtio_p9fs_device::op_lock(virtq_unserializer &&msg, uint16_t tag) {
     (void) fprintf(stderr, "p9fs lock: tag=%d fid=%d type=%d flags=%d start=%ld length=%ld proc_id=%d client_id=%s\n",
         tag, fid, type, flags, start, length, proc_id, client_id);
 #endif
+#if defined(F_SETLK) && defined(F_SETLKW)
     // Only block flag is supported
     if (flags > P9_LOCK_FLAGS_BLOCK) {
         return send_error(msg, tag, P9_EINVAL);
@@ -1209,6 +1690,9 @@ bool virtio_p9fs_device::op_lock(virtq_unserializer &&msg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
     return send_reply(std::move(out_msg), tag, P9_RLOCK);
+#else
+    return send_error(msg, tag, P9_EOPNOTSUPP);
+#endif
 }
 
 bool virtio_p9fs_device::op_getlock(virtq_unserializer &&msg, uint16_t tag) {
@@ -1225,6 +1709,7 @@ bool virtio_p9fs_device::op_getlock(virtq_unserializer &&msg, uint16_t tag) {
     (void) fprintf(stderr, "p9fs getlock: tag=%d fid=%d type=%d start=%ld length=%ld proc_id=%d client_id=%s\n", tag,
         fid, type, start, length, proc_id, client_id);
 #endif
+#if defined(F_SETLK) && defined(F_SETLKW)
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
     if (!fidp || fidp->fd < 0) {
@@ -1248,6 +1733,9 @@ bool virtio_p9fs_device::op_getlock(virtq_unserializer &&msg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
     return send_reply(std::move(out_msg), tag, P9_RGETLOCK);
+#else
+    return send_error(msg, tag, P9_EOPNOTSUPP);
+#endif
 }
 
 bool virtio_p9fs_device::op_readdir(virtq_unserializer &&msg, uint16_t tag) {
@@ -1299,7 +1787,7 @@ bool virtio_p9fs_device::op_readdir(virtq_unserializer &&msg, uint16_t tag) {
         // Check if there is enough space to add this entry
         const uint32_t data_len = out_msg.offset - start_offset;
         const uint32_t entry_len =
-            sizeof(p9_qid) + sizeof(uint64_t) + sizeof(uint8_t) + +sizeof(uint16_t) + strlen(name);
+            sizeof(p9_qid) + sizeof(uint64_t) + sizeof(uint8_t) + sizeof(uint16_t) + strlen(name);
         if (data_len + entry_len > count) {
             break;
         }
@@ -1313,9 +1801,25 @@ bool virtio_p9fs_device::op_readdir(virtq_unserializer &&msg, uint16_t tag) {
         }
         // Get entry qid and type
         p9_qid qid{};
-        uint8_t type = dir_entry->d_type;
+        bool take_qid_from_stat = false;
+        uint8_t type = 0;
+#if defined(DT_UNKNOWN) && defined(DT_DIR) && defined(DT_LNK)
         // In some filesystems dtype may be DT_UNKNOWN as an optimization to save lstat() calls
-        if (type == DT_UNKNOWN) {
+        if (dir_entry->d_type == DT_UNKNOWN) {
+            take_qid_from_stat = true;
+        } else {
+            type = dir_entry->d_type;
+            if (type == DT_DIR) {
+                qid.type = P9_QID_DIR;
+            } else if (type == DT_LNK) {
+                qid.type = P9_QID_SYMLINK;
+            } else {
+                qid.type = P9_QID_FILE;
+            }
+            qid.inode = dir_entry->d_ino;
+        }
+#endif
+        if (take_qid_from_stat) {
             stat_t st{};
             const std::string path = join_path_name(fidp->path, dir_entry->d_name);
             if (lstat(path.c_str(), &st) < 0) {
@@ -1324,17 +1828,8 @@ bool virtio_p9fs_device::op_readdir(virtq_unserializer &&msg, uint16_t tag) {
                 }
                 break;
             }
-            type = st.st_mode >> 12;
+            type = host_mode_to_p9(st.st_mode) >> 12;
             qid = stat_to_qid(st);
-        } else {
-            if (type == DT_DIR) {
-                qid.type = P9_QID_DIR;
-            } else if (type == DT_LNK) {
-                qid.type = P9_QID_SYMLINK;
-            } else {
-                qid.type = P9_QID_FILE;
-            }
-            qid.path = dir_entry->d_ino;
         }
         // Add the entry to our reply
         uint64_t off = static_cast<uint64_t>(entry_off);
@@ -1382,6 +1877,7 @@ bool virtio_p9fs_device::op_link(virtq_unserializer &&msg, uint16_t tag) {
 #ifdef DEBUG_VIRTIO_P9FS
     (void) fprintf(stderr, "p9fs link: tag=%d dfid=%d fid=%d name=%s\n", tag, dfid, fid, name);
 #endif
+#ifndef _WIN32
     // Check if name is valid
     if (!is_name_legal(name)) {
         return send_error(msg, tag, P9_ENOENT);
@@ -1403,6 +1899,9 @@ bool virtio_p9fs_device::op_link(virtq_unserializer &&msg, uint16_t tag) {
         return false;
     }
     return true;
+#else
+    return send_error(msg, tag, P9_EOPNOTSUPP);
+#endif
 }
 
 bool virtio_p9fs_device::op_mkdir(virtq_unserializer &&msg, uint16_t tag) {
@@ -1427,6 +1926,11 @@ bool virtio_p9fs_device::op_mkdir(virtq_unserializer &&msg, uint16_t tag) {
     }
     // Create the directory
     const std::string path = join_path_name(dfidp->path, name);
+#ifdef _WIN32
+    if (_mkdir(path.c_str()) != 0) {
+        return send_error(msg, tag, host_errno_to_p9(errno));
+    }
+#else
     if (mkdir(path.c_str(), static_cast<mode_t>(mode)) != 0) {
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
@@ -1434,6 +1938,7 @@ bool virtio_p9fs_device::op_mkdir(virtq_unserializer &&msg, uint16_t tag) {
     if (lchown(path.c_str(), static_cast<uid_t>(dfidp->uid), static_cast<gid_t>(gid)) != 0) {
         errno = 0;
     }
+#endif
     // Get the path qid
     stat_t st{};
     if (lstat(path.c_str(), &st) != 0) {

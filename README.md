@@ -10,7 +10,7 @@ Run `make help` for a list of target options. Here are some of them:
 
 ```
 Main targets:
-* all                                 - Build the src/ code. To build from a clean clone, run: make submodules downloads dep all
+* all                                 - Build the src/ code. To build from a clean clone, run: make submodules all
   uarch                               - Build microarchitecture (requires riscv64-cartesi-linux-gnu-* toolchain)
   uarch-with-linux-env                - Build microarchitecture using the linux-env docker image
   build-tests-all                     - Build all tests (machine, uarch and misc)
@@ -145,7 +145,6 @@ sudo make install PREFIX=/usr/local
 Both `libcartesi` and `libcartes_jsonrpc` C libraries can be compiled in standalone, either as static or shared library:
 
 ```bash
-make dep
 make bundle-boost
 make -C src release=yes libcartesi.a libcartesi_jsonrpc.a libcartesi.so libcartesi_jsonrpc.so
 ```
@@ -314,6 +313,7 @@ This project includes several submodules and dependencies, each with its own lic
 - `third-party/riscv-tests`: Licensed under the BSD 3-Clause "New" or "Revised" License. See [third-party/riscv-tests/LICENSE](third-party/riscv-tests/LICENSE) for license details.
 - `third-party/riscv-tests/env`: Licensed under the BSD 3-Clause "New" or "Revised" License. License details are in [third-party/riscv-tests/env/LICENSE](third-party/riscv-tests/env/LICENSE).
 - `third-party/tiny_sha3`: Licensed under the MIT License. The license can be found at [third-party/tiny_sha3/LICENSE](third-party/tiny_sha3/LICENSE).
+- `third-party/nlohmann-json`: Licensed under the MIT License. The license can be found at [third-party/nlohmann-json/LICENSE.MIT](third-party/nlohmann-json/LICENSE.MIT).
 
 ### Debian Packages
 

@@ -33,8 +33,6 @@ FROM --platform=$TARGETPLATFORM linux-env as dep-builder
 COPY Makefile .
 COPY third-party third-party
 
-RUN make -j$(nproc) dep
-
 FROM --platform=$TARGETPLATFORM dep-builder as builder
 
 COPY . .

@@ -99,7 +99,6 @@ DEPDIR = third-party
 SRCDIR = $(abspath src)
 TESTSDIR = $(abspath tests)
 DOWNLOADDIR = $(DEPDIR)/downloads
-DEPDIRS =
 SUBCLEAN = $(addsuffix .clean,$(SRCDIR) uarch tests)
 
 # Docker image tag
@@ -129,20 +128,17 @@ ifeq ($(TARGET_OS),Darwin)
 export CC = clang
 export CXX = clang++
 LIBRARY_PATH = "export DYLD_LIBRARY_PATH="
-SHA1SUM=shasum
 
 # Linux specific settings
 else ifeq ($(TARGET_OS),Linux)
 export CC=gcc
 export CXX=g++
 LIBRARY_PATH = "export LD_LIBRARY_PATH=$(SRCDIR)"
-SHA1SUM=sha1sum
 
 # Other system
 else
 export CC=gcc
 export CXX=g++
-SHA1SUM=sha1sum
 
 endif
 
@@ -153,7 +149,7 @@ all: source-default
 
 help:
 	@echo 'Main targets:'
-	@echo '* all                                 - Build the src/ code. To build from a clean clone, run: make submodules downloads dep all'
+	@echo '* all                                 - Build the src/ code. To build from a clean clone, run: make submodules all'
 	@echo '  uarch                               - Build microarchitecture (requires riscv64-cartesi-linux-gnu-* toolchain)'
 	@echo '  uarch-with-linux-env                - Build microarchitecture using the linux-env docker image'
 	@echo '  build-tests-all                     - Build all tests (machine, uarch and misc)'
@@ -186,10 +182,9 @@ clean: $(SUBCLEAN)
 	@rm -rf $(ADD_GENERATED_FILES_DIFF)
 
 depclean: clean
-	@rm -rf $(DEPDIRS)
+	@rm -rf $(DOWNLOADDIR)
 
 distclean: depclean
-	@rm -rf $(DOWNLOADDIR)
 
 env:
 	@echo $(LIBRARY_PATH)
@@ -200,24 +195,13 @@ env:
 doc:
 	cd doc && doxygen Doxyfile
 
-checksum:
-	@cd $(DEPDIR) && $(SHA1SUM) -c shasumfile
-
-$(DOWNLOADDIR):
-	@mkdir -p $(DOWNLOADDIR)
-	@wget -nc -i $(DEPDIR)/dependencies -P $(DOWNLOADDIR)
-	$(MAKE) checksum
-
-downloads: $(DOWNLOADDIR)
-
 bundle-boost: $(DEPDIR)/downloads/boost
-$(DEPDIR)/downloads/boost: | downloads
+$(DEPDIR)/downloads/boost:
+	mkdir -p $(DOWNLOADDIR)
 	wget -O $(DEPDIR)/downloads/boost_1_81_0.tar.gz https://boostorg.jfrog.io/artifactory/main/release/1.81.0/source/boost_1_81_0.tar.gz
 	tar -C $(DEPDIR)/downloads -xzf $(DEPDIR)/downloads/boost_1_81_0.tar.gz boost_1_81_0/boost
 	mv $(DEPDIR)/downloads/boost_1_81_0/boost $(DEPDIR)/downloads/boost
 	rm -rf $(DEPDIR)/downloads/boost_1_81_0.tar.gz $(DEPDIR)/downloads/boost_1_81_0
-
-dep: $(DEPDIRS)
 
 submodules:
 	git submodule update --init --recursive
@@ -245,7 +229,7 @@ lint check-format format check-format-lua check-lua format-lua:
 lint-% check-format-% format-% check-format-lua-% check-lua-% format-lua-%:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(if $(findstring -src,$@),src,tests) $(subst -src,,$(subst -tests,,$@))
 
-source-default: dep
+source-default:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR)
 
 uarch: $(SRCDIR)/machine-c-version.h
@@ -401,7 +385,6 @@ $(ADD_GENERATED_FILES_DIFF): $(GENERATED_FILES)
 	git diff --no-prefix --staged --output=$(ADD_GENERATED_FILES_DIFF)
 	git reset -- $(GENERATED_FILES)
 
-.SECONDARY: $(DOWNLOADDIR) $(DEPDIRS)
-
-.PHONY: help all submodules doc clean distclean downloads checksum src luacartesi hash uarch \
+.PHONY: help all submodules doc clean distclean src luacartesi hash uarch \
 	create-generated-files-patch $(SUBDIRS) $(SUBCLEAN)
+

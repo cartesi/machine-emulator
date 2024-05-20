@@ -151,6 +151,7 @@ WARNS=-Wall -Wpedantic
 INCS+= \
 	-I../third-party/llvm-flang-uint128 \
 	-I../third-party/tiny_sha3 \
+	-I../third-party/nlohmann-json \
 	-I../third-party/downloads \
 	$(BOOST_INC)
 

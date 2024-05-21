@@ -350,7 +350,7 @@ enum p9_lock_type : uint8_t {
 struct p9_qid {
     uint8_t type;     ///< File type (directory/symlink/file)
     uint32_t version; ///< Cache version
-    uint64_t path;    ///< The inode representing the path
+    uint64_t inode;   ///< The inode representing the path
 };
 
 /// \brief 9P2000.L file stat

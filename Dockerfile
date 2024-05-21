@@ -50,7 +50,7 @@ ARG MACHINE_EMULATOR_VERSION=0.0.0
 ARG TARGETARCH
 
 COPY --from=debian-packager \
-    /usr/src/emulator/cartesi-machine-v${MACHINE_EMULATOR_VERSION}_${TARGETARCH}.deb \
+    /usr/src/emulator/cartesi-machine-${TARGETARCH}.deb \
     cartesi-machine.deb
 COPY --from=debian-packager /usr/local/lib/lua /usr/local/lib/lua
 COPY --from=debian-packager /usr/local/share/lua /usr/local/share/lua

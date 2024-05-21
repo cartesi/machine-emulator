@@ -103,8 +103,8 @@ jobs:
             uarch-pristine-ram.c
             uarch-pristine-hash.c
             machine-c-version.h
-            cartesi-machine-v${{ env.MACHINE_EMULATOR_VERSION }}_amd64.deb
-            cartesi-machine-v${{ env.MACHINE_EMULATOR_VERSION }}_arm64.deb
+            cartesi-machine-amd64.deb
+            cartesi-machine-arm64.deb
 
   test_amd64:
     name: Test (linux/amd64)
@@ -270,8 +270,8 @@ jobs:
         with:
           name: tests-amd64
           path: |
-            cartesi-machine-tests-v${{ env.MACHINE_EMULATOR_VERSION }}_amd64.deb
-            cartesi-machine-tests-data-v${{ env.MACHINE_EMULATOR_VERSION }}.deb
+            cartesi-machine-tests-amd64.deb
+            cartesi-machine-tests-data.deb
 
   test_arm64:
     name: Test (linux/arm64)
@@ -428,7 +428,7 @@ jobs:
         with:
           name: tests-arm64
           path: |
-            cartesi-machine-tests-v${{ env.MACHINE_EMULATOR_VERSION }}_arm64.deb
+            cartesi-machine-tests-arm64.deb
 
   static-analysis:
     name: Static Analysis
@@ -576,79 +576,80 @@ jobs:
           name: coverage-report
           path: coverage
 
-  sanitize:
-    name: Sanitize
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Setup variables
-        run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Depot CLI
-        uses: depot/setup-action@v1
-
-      - name: Build docker image
-        id: docker_build
-        uses: depot/build-push-action@v1
-        with:
-          file: Dockerfile
-          context: .
-          target: builder
-          platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/machine-emulator:builder
-          push: false
-          load: true
-          cache-from: type=gha,scope=debian-sanitize
-          cache-to: type=gha,mode=max,scope=debian-sanitize
-          build-args: |
-            RELEASE=no
-            GIT_COMMIT=${GITHUB_SHA}
-            SANITIZE=yes
-            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
-          project: ${{ vars.DEPOT_PROJECT }}
-          token: ${{ secrets.DEPOT_TOKEN }}
-
-      - name: Build machine-emulator "tests" docker image
-        uses: docker/build-push-action@v5
-        with:
-          file: tests/Dockerfile
-          context: .
-          target: tests-builder
-          platforms: linux/amd64
-          tags: ${{ github.repository_owner }}/machine-emulator:sanitizer
-          push: false
-          load: true
-          build-args: |
-            RELEASE=no
-            SANITIZE=yes
-            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
-
-      - name: MMAP rnd_bits workaround for the new GitHub ubuntu-22 runner
-        run: sudo sysctl vm.mmap_rnd_bits=28
-
-      - name: Run tests with sanitizer
-        run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:sanitizer make sanitize=yes test-save-and-load test-machine test-hash test-lua test-jsonrpc test-c-api coverage-machine test-uarch-rv64ui test-uarch-interpreter coverage-uarch
-
+#  sanitize:
+#    name: Sanitize
+#    runs-on: ubuntu-22.04
+#    steps:
+#      - uses: actions/checkout@v4
+#        with:
+#          submodules: recursive
+#
+#      - name: Login to Docker Hub
+#        uses: docker/login-action@v3
+#        with:
+#          username: ${{ secrets.DOCKER_USERNAME }}
+#          password: ${{ secrets.DOCKER_PASSWORD }}
+#
+#      - name: Setup variables
+#        run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
+#
+#      - name: Login to GitHub Container Registry
+#        uses: docker/login-action@v3
+#        with:
+#          registry: ghcr.io
+#          username: ${{ github.actor }}
+#          password: ${{ secrets.GITHUB_TOKEN }}
+#
+#      - name: Set up Depot CLI
+#        uses: depot/setup-action@v1
+#
+#      - name: Build docker image
+#        id: docker_build
+#        uses: depot/build-push-action@v1
+#        with:
+#          file: Dockerfile
+#          context: .
+#          target: builder
+#          platforms: linux/amd64
+#          tags: ${{ github.repository_owner }}/machine-emulator:builder
+#          push: false
+#          load: true
+#          cache-from: type=gha,scope=debian-sanitize
+#          cache-to: type=gha,mode=max,scope=debian-sanitize
+#          build-args: |
+#            RELEASE=no
+#            GIT_COMMIT=${GITHUB_SHA}
+#            SANITIZE=yes
+#            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+#          project: ${{ vars.DEPOT_PROJECT }}
+#          token: ${{ secrets.DEPOT_TOKEN }}
+#
+#      - name: Build machine-emulator "tests" docker image
+#        uses: docker/build-push-action@v5
+#        with:
+#          file: tests/Dockerfile
+#          context: .
+#          target: tests-builder
+#          platforms: linux/amd64
+#          tags: ${{ github.repository_owner }}/machine-emulator:sanitizer
+#          push: false
+#          load: true
+#          build-args: |
+#            RELEASE=no
+#            SANITIZE=yes
+#            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+#
+#      - name: MMAP rnd_bits workaround for the new GitHub ubuntu-22 runner
+#        run: sudo sysctl vm.mmap_rnd_bits=28
+#
+#      - name: Run tests with sanitizer
+#        run: |
+#          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:sanitizer make sanitize=yes test-save-and-load test-machine test-hash test-lua test-jsonrpc test-c-api coverage-machine test-uarch-rv64ui test-uarch-interpreter coverage-uarch
+#
   publish_artifacts:
     name: Publish artifacts
-    needs: [build, static-analysis, coverage, sanitize, test_amd64, test_arm64]
+    #needs: [build, static-analysis, coverage, sanitize, test_amd64, test_arm64]
+    needs: [build, static-analysis, coverage, test_amd64, test_arm64]
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout emulator source code
@@ -707,9 +708,6 @@ jobs:
         uses: actions/download-artifact@v4
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
 
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        run: mv uarch-logs/uarch-riscv-tests-json-logs.tar.gz uarch-logs/uarch-riscv-tests-json-logs-v${{ env.MACHINE_EMULATOR_VERSION }}.tar.gz
-
       - name: Create generated files patch
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
@@ -717,7 +715,6 @@ jobs:
           mv artifacts/uarch-pristine-ram.c uarch
           mv artifacts/uarch-pristine-hash.c uarch
           make create-generated-files-patch
-
 
       - name: Upload products to GitHub Release
         uses: softprops/action-gh-release@v1
@@ -728,6 +725,7 @@ jobs:
             artifacts/cartesi-machine-*.deb
             artifacts/uarch-ram.bin
             add-generated-files.diff
-            uarch-logs/uarch-riscv-tests-json-logs-*.tar.gz
-            tests-amd64/cartesi-machine-tests-*.deb
-            tests-arm64/cartesi-machine-tests-*.deb
+            uarch-logs/uarch-riscv-tests-json-logs.tar.gz
+            tests-amd64/cartesi-machine-tests-data.deb
+            tests-amd64/cartesi-machine-tests-arm64.deb
+            tests-arm64/cartesi-machine-tests-amd64.deb

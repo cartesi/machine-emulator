@@ -22,6 +22,7 @@
 #include "uarch-runtime.h"
 #else
 #include "state-access.h"
+#include <dlfcn.h>
 #endif
 #include "machine-statistics.h"
 
@@ -2979,6 +2980,207 @@ static FORCE_INLINE execute_status execute_SRLIW(STATE_ACCESS &a, uint64_t &pc, 
     });
 }
 
+#ifndef MICROARCHITECTURE
+template <typename STATE_ACCESS>
+static unsigned char *get_host_ptr(STATE_ACCESS &a, uint64_t paddr) {
+    pma_entry &pma = (a.template find_pma_entry<uint8_t>(paddr));
+    if (pma.get_istart_M()) {
+        return pma.get_memory().get_host_memory() + (paddr - pma.get_start());
+    }
+    return nullptr;
+}
+#endif
+
+template <typename STATE_ACCESS>
+static NO_INLINE execute_status execute_kernel(STATE_ACCESS &a, uint64_t &pc) {
+    // TODO: we need to actually save/restore TLB state
+    a.flush_all_tlb();
+#ifndef MICROARCHITECTURE
+    typedef void (*KernelProc)(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+    static KernelProc kernel = nullptr;
+    static bool checked_kernel = false;
+    if (!checked_kernel) {
+        // Load kernel procedure from a host shared library
+        checked_kernel = true;
+        if (!kernel) {
+            const char *kernel_libname = getenv("CM_HOST_KERNEL");
+            if (kernel_libname) {
+                void *kernel_lib = dlopen(kernel_libname, RTLD_LOCAL | RTLD_LAZY);
+                if (kernel_lib) {
+                    kernel = reinterpret_cast<KernelProc>(dlsym(kernel_lib, "kernel_entry"));
+                    if (!kernel) {
+                        (void) fprintf(stderr, "failed to load 'kernel_entry' proc from %s\n", kernel_libname);
+                    }
+                } else {
+                    (void) fprintf(stderr, "failed to load accelerated kernel %s\n", kernel_libname);
+                }
+            }
+        }
+    }
+    if (kernel) {
+        // We need to translate to host pointers the first 5 arguments in the matmul experimentation
+        const uint64_t a0 = reinterpret_cast<uintptr_t>(get_host_ptr(a, a.read_x(10)));
+        const uint64_t a1 = reinterpret_cast<uintptr_t>(get_host_ptr(a, a.read_x(11)));
+        const uint64_t a2 = reinterpret_cast<uintptr_t>(get_host_ptr(a, a.read_x(12)));
+        const uint64_t a3 = reinterpret_cast<uintptr_t>(get_host_ptr(a, a.read_x(13)));
+        const uint64_t a4 = reinterpret_cast<uintptr_t>(get_host_ptr(a, a.read_x(14)));
+        const uint64_t a5 = a.read_x(15);
+        const uint64_t a6 = a.read_x(16);
+        const uint64_t a7 = a.read_x(17);
+        kernel(a0, a1, a2, a3, a4, a5, a6, a7);
+        return advance_to_next_insn(a, pc, execute_status::success);
+    }
+#endif
+
+    const uint64_t kernel_pc = 0x80040000 - 4096;     // FIXED for the matmul experimentation
+    const uint64_t max_mcycle = 1024 * 1024 * 1024UL; // Upper bound to not let things explode
+
+    // Save state
+    uint64_t x[32];
+    for (int i = 1; i < 32; ++i) {
+        x[i] = a.read_x(i);
+    }
+    uint64_t f[32];
+    for (int i = 0; i < 32; ++i) {
+        f[i] = a.read_f(i);
+    }
+    uint64_t prev_fcsr = a.read_fcsr();
+    uint64_t prev_icycleinstret = a.read_icycleinstret();
+    uint64_t prev_iflags = a.read_iflags();
+    uint64_t prev_ilrsc = a.read_ilrsc();
+    uint64_t prev_iunrep = a.read_iunrep();
+    uint64_t prev_mcause = a.read_mcause();
+    uint64_t prev_mcounteren = a.read_mcounteren();
+    uint64_t prev_mcycle = a.read_mcycle();
+    uint64_t prev_medeleg = a.read_medeleg();
+    uint64_t prev_menvcfg = a.read_menvcfg();
+    uint64_t prev_mepc = a.read_mepc();
+    uint64_t prev_mideleg = a.read_mideleg();
+    uint64_t prev_mie = a.read_mie();
+    uint64_t prev_mip = a.read_mip();
+    uint64_t prev_mscratch = a.read_mscratch();
+    uint64_t prev_mstatus = a.read_mstatus();
+    uint64_t prev_mtval = a.read_mtval();
+    uint64_t prev_mtvec = a.read_mtvec();
+    uint64_t prev_pc = a.read_pc();
+    uint64_t prev_satp = a.read_satp();
+    uint64_t prev_scause = a.read_scause();
+    uint64_t prev_scounteren = a.read_scounteren();
+    uint64_t prev_senvcfg = a.read_senvcfg();
+    uint64_t prev_sepc = a.read_sepc();
+    uint64_t prev_sscratch = a.read_sscratch();
+    uint64_t prev_stval = a.read_stval();
+    uint64_t prev_stvec = a.read_stvec();
+    uint64_t prev_clint_mtimecmp = a.read_clint_mtimecmp();
+    uint64_t prev_plic_girqpend = a.read_plic_girqpend();
+    uint64_t prev_plic_girqsrvd = a.read_plic_girqsrvd();
+    uint64_t prev_htif_tohost = a.read_htif_tohost();
+    uint64_t prev_htif_fromhost = a.read_htif_fromhost();
+
+    // Reset state for the kernel
+    for (int i = 1; i < 32; ++i) {
+        // Forward a0-a7 registers to the kernel
+        if (i < 10 || i > 17) {
+            a.write_x(i, 0);
+        }
+    }
+    for (int i = 0; i < 32; ++i) {
+        a.write_f(i, 0);
+    }
+    a.write_fcsr(0x0);
+    a.write_icycleinstret(0x0);
+    a.write_iflags(0x18);
+    a.write_ilrsc(0xffffffffffffffff);
+    a.write_iunrep(0x0);
+    a.write_mcause(0x0);
+    a.write_mcounteren(0x0);
+    a.write_mcycle(0x0);
+    a.write_medeleg(0x0);
+    a.write_menvcfg(0x0);
+    a.write_mepc(0x0);
+    a.write_mideleg(0x0);
+    a.write_mie(0x0);
+    a.write_mip(0x0);
+    a.write_mscratch(0x0);
+    a.write_mstatus(0xa00000000 | (3 << 13)); // enable floating point
+    a.write_mtval(0x0);
+    a.write_mtvec(0x0);
+    a.write_pc(kernel_pc);
+    a.write_satp(0x0);
+    a.write_scause(0x0);
+    a.write_scounteren(0x0);
+    a.write_senvcfg(0x0);
+    a.write_sepc(0x0);
+    a.write_sscratch(0x0);
+    a.write_stval(0x0);
+    a.write_stvec(0x0);
+    a.write_clint_mtimecmp(0x0);
+    a.write_plic_girqpend(0x0);
+    a.write_plic_girqsrvd(0x0);
+    a.write_htif_tohost(0x0);
+    a.write_htif_fromhost(0x0);
+
+    // We reuse the same machine as a hack to share memory with the machine kernel.
+    // So we can only run kernel that we trust for now,
+    // kernel code has machine privilege and could break original machine state.
+    // Ideally we would instantiate a new machine sharing PMAs in the future.
+
+    // Run the kernel until the machine halts
+    interpreter_break_reason break_reason = interpret(a, max_mcycle);
+
+    // Restore state
+    for (int i = 1; i < 32; ++i) {
+        a.write_x(i, x[i]);
+    }
+    for (int i = 0; i < 32; ++i) {
+        a.write_f(i, f[i]);
+    }
+    a.write_fcsr(prev_fcsr);
+    a.write_icycleinstret(prev_icycleinstret);
+    a.write_iflags(prev_iflags);
+    a.write_ilrsc(prev_ilrsc);
+    a.write_iunrep(prev_iunrep);
+    a.write_mcause(prev_mcause);
+    a.write_mcounteren(prev_mcounteren);
+    a.write_mcycle(prev_mcycle);
+    a.write_medeleg(prev_medeleg);
+    a.write_menvcfg(prev_menvcfg);
+    a.write_mepc(prev_mepc);
+    a.write_mideleg(prev_mideleg);
+    a.write_mie(prev_mie);
+    a.write_mip(prev_mip);
+    a.write_mscratch(prev_mscratch);
+    a.write_mstatus(prev_mstatus);
+    a.write_mtval(prev_mtval);
+    a.write_mtvec(prev_mtvec);
+    a.write_pc(prev_pc);
+    a.write_satp(prev_satp);
+    a.write_scause(prev_scause);
+    a.write_scounteren(prev_scounteren);
+    a.write_senvcfg(prev_senvcfg);
+    a.write_sepc(prev_sepc);
+    a.write_sscratch(prev_sscratch);
+    a.write_stval(prev_stval);
+    a.write_stvec(prev_stvec);
+    a.write_clint_mtimecmp(prev_clint_mtimecmp);
+    a.write_plic_girqpend(prev_plic_girqpend);
+    a.write_plic_girqsrvd(prev_plic_girqsrvd);
+    a.write_htif_tohost(prev_htif_tohost);
+    a.write_htif_fromhost(prev_htif_fromhost);
+
+    // TODO: we need to actually save/restore TLB state instead of this
+    // this is not 100% safe yet wrt machine root hashes
+    a.flush_all_tlb();
+
+    if (break_reason == interpreter_break_reason::halted) {
+        return advance_to_next_insn(a, pc, execute_status::success);
+    } else {
+        // Kernel execution failed
+        pc = raise_exception(a, pc, MCAUSE_ILLEGAL_INSN, pc);
+        return advance_to_raised_exception(a, pc);
+    }
+}
+
 /// \brief Implementation of the SRAIW instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRAIW(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
@@ -2988,6 +3190,12 @@ static FORCE_INLINE execute_status execute_SRAIW(STATE_ACCESS &a, uint64_t &pc, 
         // Force the main interpreter loop to break
         return advance_to_next_insn(a, pc, execute_status::success_and_yield);
     }
+
+    // When rd=0 the instruction is a HINT, and we consider it as a new machine kernel execution when rs1 == 30
+    if (unlikely(insn_get_rd(insn) == 0 && insn_get_rs1(insn) == 30)) {
+        return execute_kernel(a, pc);
+    }
+
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         const int32_t rs1w = static_cast<int32_t>(rs1) >> (imm & 0b11111);
         return static_cast<uint64_t>(rs1w);

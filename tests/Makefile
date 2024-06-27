@@ -130,7 +130,7 @@ dependencies.sha256:
 	@shasum -a 256 $(BUILDDIR)/images/* > $@
 
 clean:
-	@$(MAKE) -C ../third-party/riscv-arch-test/riscv-target/cartesi clean
+	@$(MAKE) -C ../third-party/riscv-arch-test/riscv-target/cartesi clean || true
 	@$(MAKE) -C misc clean
 	@rm -f *.profdata *.profraw *.gcda *.gcov
 	@rm -rf $(BUILDDIR)

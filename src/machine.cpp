@@ -1496,7 +1496,13 @@ void machine::mark_write_tlb_dirty_pages(void) const {
         const tlb_hot_entry &tlbhe = m_s.tlb.hot[TLB_WRITE][i];
         if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
             const tlb_cold_entry &tlbce = m_s.tlb.cold[TLB_WRITE][i];
+            if (tlbce.pma_index >= m_s.pmas.size()) {
+                throw std::runtime_error{"could not mark dirty page for a TLB entry: TLB is corrupt"};
+            }
             pma_entry &pma = m_s.pmas[tlbce.pma_index];
+            if (!pma.contains(tlbce.paddr_page, PMA_PAGE_SIZE)) {
+                throw std::runtime_error{"could not mark dirty page for a TLB entry: TLB is corrupt"};
+            }
             pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
         }
     }

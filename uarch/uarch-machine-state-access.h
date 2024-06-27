@@ -709,8 +709,8 @@ private:
     template <TLB_entry_type ETYPE>
     unsigned char *do_replace_tlb_entry(uint64_t vaddr, uint64_t paddr, uarch_pma_entry &pma) {
         uint64_t eidx = tlb_get_entry_index(vaddr);
-        volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
         volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
+        volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
         // Mark page that was on TLB as dirty so we know to update the Merkle tree
         if constexpr (ETYPE == TLB_WRITE) {
             if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
@@ -720,11 +720,16 @@ private:
         }
         uint64_t vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
         uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        tlbhe.vaddr_page = vaddr_page;
-        // The paddr_must field must be written only after vaddr_page is written,
-        // because the uarch memory bridge reads vaddr_page to compute vh_offset when updating paddr_page.
-        tlbce.paddr_page = paddr_page;
+        // Both pma_index and paddr_page MUST BE written while its state is invalidated,
+        // otherwise TLB entry may be read in an incomplete state when computing root hash
+        // while stepping over this function.
+        // To do this we first invalidate TLB state before these fields are written to "lock",
+        // and "unlock" by writing a valid vaddr_page.
+        tlbhe.vaddr_page = TLB_INVALID_PAGE; // "lock", DO NOT OPTIMIZE OUT THIS LINE
         tlbce.pma_index = static_cast<uint64_t>(pma.get_index());
+        tlbce.paddr_page = paddr_page;
+        // The write to vaddr_page MUST BE the last TLB entry write.
+        tlbhe.vaddr_page = vaddr_page; // "unlock"
         // Note that we can't write here the correct vh_offset value, because it depends in a host pointer,
         // however the uarch memory bridge will take care of updating it.
         return cast_addr_to_ptr<unsigned char*>(paddr_page);

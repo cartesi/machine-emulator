@@ -1,0 +1,15 @@
+usr/bin/cartesi-machine
+usr/bin/cartesi-machine-stored-hash
+usr/bin/jsonrpc-remote-cartesi-machine
+usr/bin/merkle-tree-hash
+usr/include/cartesi-machine/*
+usr/lib/lib*.a
+usr/lib/lib*.so
+usr/share/cartesi-machine/*
+usr/share/cartesi-machine/gdb/gdb.md
+usr/share/cartesi-machine/gdb/gdbinit
+usr/share/lua/5.4/cartesi-machine-stored-hash.lua
+usr/share/lua/5.4/cartesi-machine.lua
+usr/share/lua/5.4/cartesi/gdbstub.lua
+usr/share/lua/5.4/cartesi/proof.lua
+usr/share/lua/5.4/cartesi/util.lua

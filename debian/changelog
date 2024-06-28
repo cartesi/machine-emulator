@@ -1,0 +1,5 @@
+machine-emulator (0.17.0-dfaff6b-1) UNRELEASED; urgency=medium
+
+  * Initial release. (Closes: #nnnn)  <nnnn is the bug number of your ITP>
+
+ -- root <root@unknown>  Fri, 28 Jun 2024 15:46:07 +0000

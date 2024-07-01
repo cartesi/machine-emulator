@@ -44,7 +44,7 @@ jobs:
           cache-from: type=gha,scope=debian
           cache-to: type=gha,mode=max,scope=debian
           build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
           project: ${{ vars.DEPOT_PROJECT }}
@@ -63,7 +63,7 @@ jobs:
           cache-from: type=gha,scope=debian
           cache-to: type=gha,mode=max,scope=debian
           build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
           project: ${{ vars.DEPOT_PROJECT }}
@@ -85,7 +85,7 @@ jobs:
           cache-from: type=gha,scope=debian
           cache-to: type=gha,mode=max,scope=debian
           build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
           project: ${{ vars.DEPOT_PROJECT }}
@@ -148,7 +148,7 @@ jobs:
           cache-from: type=gha,scope=debian
           cache-to: type=gha,mode=max,scope=debian
           build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
           project: ${{ vars.DEPOT_PROJECT }}
@@ -166,7 +166,7 @@ jobs:
           cache-from: type=gha,scope=debian
           cache-to: type=gha,mode=max,scope=debian
           build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
           project: ${{ vars.DEPOT_PROJECT }}
@@ -182,7 +182,7 @@ jobs:
           push: false
           load: true
           build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
 
       - name: Simple boot inside the docker image
@@ -255,7 +255,7 @@ jobs:
           push: false
           load: true
           build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
 
       - name: Test microarchitecture interpreter
@@ -319,7 +319,7 @@ jobs:
           cache-from: type=gha,scope=debian
           cache-to: type=gha,mode=max,scope=debian
           build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
           project: ${{ vars.DEPOT_PROJECT }}
@@ -337,7 +337,7 @@ jobs:
           cache-from: type=gha,scope=debian
           cache-to: type=gha,mode=max,scope=debian
           build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
           project: ${{ vars.DEPOT_PROJECT }}
@@ -353,7 +353,7 @@ jobs:
           push: false
           load: true
           build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
 
       - name: Simple boot inside the docker image
@@ -413,7 +413,7 @@ jobs:
           push: false
           load: true
           build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
 
       - name: Test microarchitecture interpreter
@@ -472,7 +472,7 @@ jobs:
           cache-from: type=gha,scope=debian
           cache-to: type=gha,mode=max,scope=debian
           build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
           project: ${{ vars.DEPOT_PROJECT }}
@@ -536,7 +536,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=debian-coverage
           build-args: |
             GIT_COMMIT=${GITHUB_SHA}
-            RELEASE=no
+            DEBUG=yes
             COVERAGE=yes
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
           project: ${{ vars.DEPOT_PROJECT }}
@@ -553,7 +553,7 @@ jobs:
           push: false
           load: true
           build-args: |
-            RELEASE=no
+            DEBUG=yes
             COVERAGE=yes
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
 
@@ -617,7 +617,7 @@ jobs:
           cache-from: type=gha,scope=debian-sanitize
           cache-to: type=gha,mode=max,scope=debian-sanitize
           build-args: |
-            RELEASE=no
+            DEBUG=yes
             GIT_COMMIT=${GITHUB_SHA}
             SANITIZE=yes
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
@@ -635,7 +635,7 @@ jobs:
           push: false
           load: true
           build-args: |
-            RELEASE=no
+            DEBUG=yes
             SANITIZE=yes
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
 
@@ -697,7 +697,7 @@ jobs:
           cache-from: type=gha,scope=debian
           cache-to: type=gha,mode=max,scope=debian
           build-args: |
-            RELEASE=${{ (startsWith(github.ref, 'refs/tags/v') && 'yes' || 'no') }}
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
           project: ${{ vars.DEPOT_PROJECT }}

@@ -1,6 +1,6 @@
 FROM --platform=$TARGETPLATFORM cartesi/toolchain:0.17.0-rv64ima-lp64 as linux-env
 ARG GIT_COMMIT=""
-ARG RELEASE=no
+ARG DEBUG=no
 ARG COVERAGE=no
 ARG SANITIZE=no
 
@@ -36,7 +36,7 @@ COPY third-party third-party
 FROM --platform=$TARGETPLATFORM dep-builder as builder
 
 COPY . .
-RUN make -j$(nproc) git_commit=$GIT_COMMIT release=$RELEASE coverage=$COVERAGE sanitize=$SANITIZE
+RUN make -j$(nproc) git_commit=$GIT_COMMIT debug=$DEBUG coverage=$COVERAGE sanitize=$SANITIZE
 
 FROM --platform=$TARGETPLATFORM builder as debian-packager
 ARG MACHINE_EMULATOR_VERSION=0.0.0

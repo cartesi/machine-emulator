@@ -175,16 +175,22 @@ DEFS+=-DDUMP_HIST
 #DEFS+=-DDUMP_COUNTERS
 endif
 
+# By default we compile in release with debug information,
+# so the emulator is packaged correctly by default.
+ifeq (,$(filter yes,$(relwithdebinfo) $(release) $(debug) $(sanitize)))
+relwithdebinfo=yes
+endif
+
 ifeq ($(relwithdebinfo),yes)
 OPTFLAGS+=-O2 -g
+INTERPRET_CXXFLAGS+=-DNDEBUG # disable asserts only for interpret.cpp
 else ifeq ($(release),yes)
 OPTFLAGS+=-O2
+DEFS+=-DNDEBUG # disable all asserts
 else ifeq ($(debug),yes)
 OPTFLAGS+=-Og -g
 else ifeq ($(sanitize),yes)
-OPTFLAGS+=-Og -g
-else
-OPTFLAGS+=-O2 -g
+OPTFLAGS+=-O1 -g
 endif
 
 # Git commit hash (for releases)
@@ -192,19 +198,21 @@ ifneq ($(git_commit),)
 DEFS+=-DGIT_COMMIT='"$(git_commit)"'
 endif
 
-# Optimization flags
+# The SHA3 is third party library we always want to compile with O3
+SHA3_CFLAGS=-O3
+
+# Optimization flags for the interpreter
 ifneq (,$(filter yes,$(relwithdebinfo) $(release)))
-DEFS+=-DNDEBUG
 ifneq (,$(filter gcc,$(CC)))
 # The following flag helps GCC to eliminate more redundant computations in the interpret loop,
 # saving some host instructions and improving performance.
 # This flag is usually enabled by default at -O3,
 # but we don't use -O3 because it enables some other flags that are not worth for the interpreter.
-OPTFLAGS+=-fgcse-after-reload -fpredictive-commoning -fsplit-paths -ftree-partial-pre
+INTERPRET_CXXFLAGS+=-fgcse-after-reload -fpredictive-commoning -fsplit-paths -ftree-partial-pre
 endif
 # Disable jump tables, because it degrades the instruction decoding performance in the interpret loop,
 # since it generates a memory indirection that has a high cost in opcode switches.
-OPTFLAGS+=-fno-jump-tables
+INTERPRET_CXXFLAGS+=-fno-jump-tables
 endif
 
 # Link time optimizations
@@ -526,13 +534,16 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	@touch $@
 
 sha3.o: ../third-party/tiny_sha3/sha3.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(SHA3_CFLAGS) -c -o $@ $<
 
 uarch-pristine-ram.o: $(UARCH_PRISTINE_RAM_C)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 uarch-pristine-hash.o: $(UARCH_PRISTINE_HASH_C)
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+interpret.o: interpret.cpp machine-c-version.h
+	$(CXX) $(CXXFLAGS) $(INTERPRET_CXXFLAGS) -c -o $@ $<
 
 %.o: %.cpp machine-c-version.h
 	$(CXX) $(CXXFLAGS) -c -o $@ $<

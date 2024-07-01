@@ -146,7 +146,7 @@ Both `libcartesi` and `libcartes_jsonrpc` C libraries can be compiled in standal
 
 ```bash
 make bundle-boost
-make -C src release=yes libcartesi.a libcartesi_jsonrpc.a libcartesi.so libcartesi_jsonrpc.so
+make -C src libcartesi.a libcartesi_jsonrpc.a libcartesi.so libcartesi_jsonrpc.so
 ```
 
 The `.a` and `.so` files will be available in `src` directory, you can use any of them to link your application.
@@ -155,17 +155,17 @@ You can even use other toolchains to cross compile targeting other platforms:
 
 ```bash
 # Target WASM with Emscripten toolchain
-make -C src release=yes \
+make -C src \
   CC=emcc CXX=em++ AR="emar rcs" \
   libcartesi.a
 
 # Target WASM with WASI SDK toolchain
-make -C src release=yes \
+make -C src \
   CC=/opt/wasi-sdk/bin/clang CXX=/opt/wasi-sdk/bin/clang++ AR="/opt/wasi-sdk/bin/llvm-ar rcs" \
   libcartesi.a
 
 # Target Windows with mingw-w64 toolchain
-make -C src release=yes \
+make -C src \
   CC=x86_64-w64-mingw32-gcc \
   CXX=x86_64-w64-mingw32-g++ \
   AR="x86_64-w64-mingw32-ar rcs" \

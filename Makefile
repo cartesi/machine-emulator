@@ -113,10 +113,21 @@ DOCKER_PLATFORM=--platform $(BUILD_PLATFORM)
 endif
 
 # Code instrumentation
+debug?=no
+relwithdebinfo?=no
 release?=no
 sanitize?=no
 coverage?=no
+
+# If not build type is chosen, set the default to release with debug information,
+# so the emulator is packaged correctly by default.
+ifeq (,$(filter yes,$(relwithdebinfo) $(release) $(debug) $(sanitize)))
+relwithdebinfo=yes
+endif
+
 export sanitize
+export debug
+export relwithdebinfo
 export release
 export coverage
 
@@ -239,22 +250,22 @@ $(SRCDIR)/machine-c-version.h:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) machine-c-version.h
 
 build-emulator-builder-image:
-	docker build $(DOCKER_PLATFORM) --build-arg RELEASE=$(release) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --target builder -t cartesi/machine-emulator:builder -f Dockerfile .
+	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --target builder -t cartesi/machine-emulator:builder -f Dockerfile .
 
 build-emulator-linux-env-image build-linux-env:
 	docker build $(DOCKER_PLATFORM) --target linux-env -t cartesi/machine-emulator:linux-env -f Dockerfile .
 
 build-emulator-image:
-	docker build $(DOCKER_PLATFORM) --build-arg RELEASE=$(release) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) -t cartesi/machine-emulator:$(TAG) -f Dockerfile .
+	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) -t cartesi/machine-emulator:$(TAG) -f Dockerfile .
 
 build-emulator-tests-image: build-emulator-builder-image build-emulator-image
-	docker build $(DOCKER_PLATFORM) --build-arg RELEASE=$(release) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests -f tests/Dockerfile .
+	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests -f tests/Dockerfile .
 
 build-emulator-tests-builder-image: build-emulator-builder-image
-	docker build $(DOCKER_PLATFORM) --target tests-builder --build-arg RELEASE=$(release) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests-builder -f tests/Dockerfile .
+	docker build $(DOCKER_PLATFORM) --target tests-builder --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests-builder -f tests/Dockerfile .
 
 build-debian-package:
-	docker build $(DOCKER_PLATFORM) --target debian-packager --build-arg RELEASE=$(release) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) -t $(DEBIAN_IMG) -f Dockerfile .
+	docker build $(DOCKER_PLATFORM) --target debian-packager --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) -t $(DEBIAN_IMG) -f Dockerfile .
 
 build-tests-debian-packages: build-emulator-builder-image
 	docker build $(DOCKER_PLATFORM) --target tests-debian-packager --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests-debian-packager -f tests/Dockerfile .

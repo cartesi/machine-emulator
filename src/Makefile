@@ -181,8 +181,10 @@ OPTFLAGS+=-O2
 else ifeq ($(debug),yes)
 OPTFLAGS+=-Og -g
 else ifeq ($(sanitize),yes)
-OPTFLAGS+=-Og -g
+OPTFLAGS+=-O1 -g
 else
+# by default we compile in release with debug information to make packaging easier
+relwithdebinfo=yes
 OPTFLAGS+=-O2 -g
 endif
 
@@ -514,18 +516,22 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	echo ')json";' >> jsonrpc-discover.cpp
 	echo '} // namespace cartesi' >> jsonrpc-discover.cpp
 
+# remove optimization flags that may not work with clang
+CLANGTIDY_CXXFLAGS=$(filter-out $(OPTFLAGS), $(CXXFLAGS))
+CLANGTIDY_CFLAGS=$(filter-out $(OPTFLAGS), $(CFLAGS))
+
 %.clang-tidy: %.cpp machine-c-version.h
-	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CXXFLAGS) $(LUA_INC) 2>/dev/null
-	@$(CXX) $(CXXFLAGS) $(LUA_INC) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
+	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CLANGTIDY_CXXFLAGS) $(LUA_INC) 2>/dev/null
+	@$(CXX) $(CLANGTIDY_CXXFLAGS) $(LUA_INC) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
 %.clang-tidy: %.c
-	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CFLAGS) 2>/dev/null
-	@$(CC) $(CFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
+	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CLANGTIDY_CFLAGS) 2>/dev/null
+	@$(CC) $(CLANGTIDY_CFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
 sha3.o: ../third-party/tiny_sha3/sha3.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -O3 -c -o $@ $<
 
 uarch-pristine-ram.o: $(UARCH_PRISTINE_RAM_C)
 	$(CC) $(CFLAGS) -c -o $@ $<

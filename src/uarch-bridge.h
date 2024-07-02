@@ -598,6 +598,14 @@ private:
             switch (fieldoff) {
                 case offsetof(tlb_hot_entry, vaddr_page):
                     tlbhe.vaddr_page = val;
+                    // Update vh_offset
+                    if (val != TLB_INVALID_PAGE) {
+                        const pma_entry &pma = find_pma_entry<uint64_t>(s, tlbce.paddr_page);
+                        assert(pma.get_istart_M()); // TLB only works for memory mapped PMAs
+                        const unsigned char *hpage =
+                            pma.get_memory().get_host_memory() + (tlbce.paddr_page - pma.get_start());
+                        tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - tlbhe.vaddr_page;
+                    }
                     return true;
                 default:
                     // Other fields like vh_offset contains host data, and cannot be written
@@ -605,17 +613,9 @@ private:
             }
         } else {
             switch (fieldoff) {
-                case offsetof(tlb_cold_entry, paddr_page): {
+                case offsetof(tlb_cold_entry, paddr_page):
                     tlbce.paddr_page = val;
-                    // Update vh_offset
-                    const pma_entry &pma = find_pma_entry<uint64_t>(s, tlbce.paddr_page);
-                    assert(pma.get_istart_M()); // TLB only works for memory mapped PMAs
-                    const unsigned char *hpage =
-                        pma.get_memory().get_host_memory() + (tlbce.paddr_page - pma.get_start());
-                    tlb_hot_entry &tlbhe = s.tlb.hot[etype][eidx];
-                    tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - tlbhe.vaddr_page;
                     return true;
-                }
                 case offsetof(tlb_cold_entry, pma_index):
                     tlbce.pma_index = val;
                     return true;

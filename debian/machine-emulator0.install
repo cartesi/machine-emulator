@@ -1,0 +1,3 @@
+usr/lib/lib*.so
+usr/lib/lua/5.4/cartesi.so
+usr/lib/lua/5.4/cartesi/jsonrpc.so

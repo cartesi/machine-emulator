@@ -1,0 +1,43 @@
+Source: machine-emulator
+Section: libs
+Priority: optional
+Maintainer: root <root@unknown>
+Rules-Requires-Root: no
+Build-Depends:
+ debhelper-compat (= 13),
+ libboost1.81-dev,
+ liblua5.4-dev,
+ libslirp-dev,
+ lua-dkjson,
+ lua-lpeg,
+ lua-posix-dev,
+ lua-sec-dev,
+ lua-socket-dev,
+ lua5.4,
+Standards-Version: 4.6.2
+Homepage: <insert the upstream URL, if relevant>
+#Vcs-Browser: https://salsa.debian.org/debian/machine-emulator
+#Vcs-Git: https://salsa.debian.org/debian/machine-emulator.git
+
+Package: machine-emulator-dev
+Section: libdevel
+Architecture: any
+Multi-Arch: same
+Depends:
+ libboost1.81-dev,
+ liblua5.4-dev,
+ libslirp-dev,
+ lua5.4,
+ machine-emulator0 (= ${binary:Version}),
+ ${misc:Depends},
+Description: <insert up to 60 chars description>
+ <Insert long description, indented with spaces.>
+
+Package: machine-emulator0
+Architecture: any
+Multi-Arch: same
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+Description: <insert up to 60 chars description>
+ <Insert long description, indented with spaces.>

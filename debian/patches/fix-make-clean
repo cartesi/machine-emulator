@@ -1,0 +1,35 @@
+Description: Fix make clean when working with tarballs
+ make clean assumes the existance of third-party directories that only
+ get populated when git submodules are used. As a consequence, it fails
+ when the directory is not present.
+ .
+ machine-emulator (0.17.0-dfaff6b-1) UNRELEASED; urgency=medium
+ .
+   * Initial release. (Closes: #nnnn)  <nnnn is the bug number of your ITP>
+Author: root <root@unknown>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout https://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: (upstream|backport|vendor|other), (<patch-url>|commit:<commit-id>)
+Bug: <upstream-bugtracker-url>
+Bug-Debian: https://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: (no|not-needed|<patch-forwarded-url>)
+Applied-Upstream: <version>, (<commit-url>|commit:<commid-id>)
+Reviewed-By: <name and email of someone who approved/reviewed the patch>
+Last-Update: 2024-06-28
+
+--- machine-emulator-0.17.0-dfaff6b.orig/tests/Makefile
++++ machine-emulator-0.17.0-dfaff6b/tests/Makefile
+@@ -130,7 +130,7 @@ dependencies.sha256:
+ 	@shasum -a 256 $(BUILDDIR)/images/* > $@
+ 
+ clean:
+-	@$(MAKE) -C ../third-party/riscv-arch-test/riscv-target/cartesi clean
++	-@$(MAKE) -C ../third-party/riscv-arch-test/riscv-target/cartesi clean
+ 	@$(MAKE) -C misc clean
+ 	@rm -f *.profdata *.profraw *.gcda *.gcov
+ 	@rm -rf $(BUILDDIR)

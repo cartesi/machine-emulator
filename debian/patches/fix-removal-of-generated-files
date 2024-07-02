@@ -1,0 +1,35 @@
+Description: stop cleaning generated files on make clean
+ make clean is doing the job of distclean when removing generated and patched
+ files, stop it.
+ .
+ machine-emulator (0.17.0-dfaff6b-1) UNRELEASED; urgency=medium
+ .
+   * Initial release. (Closes: #nnnn)  <nnnn is the bug number of your ITP>
+Author: root <root@unknown>
+
+---
+The information above should follow the Patch Tagging Guidelines, please
+checkout https://dep.debian.net/deps/dep3/ to learn about the format. Here
+are templates for supplementary fields that you might want to add:
+
+Origin: (upstream|backport|vendor|other), (<patch-url>|commit:<commit-id>)
+Bug: <upstream-bugtracker-url>
+Bug-Debian: https://bugs.debian.org/<bugnumber>
+Bug-Ubuntu: https://launchpad.net/bugs/<bugnumber>
+Forwarded: (no|not-needed|<patch-forwarded-url>)
+Applied-Upstream: <version>, (<commit-url>|commit:<commid-id>)
+Reviewed-By: <name and email of someone who approved/reviewed the patch>
+Last-Update: 2024-06-28
+
+--- machine-emulator-0.17.0-dfaff6b.orig/uarch/Makefile
++++ machine-emulator-0.17.0-dfaff6b/uarch/Makefile
+@@ -118,8 +118,5 @@ uarch-ram-entry.o: uarch-ram-entry.S
+ clean-executables:
+ 	@rm -f compute-uarch-pristine-hash
+ 
+-clean-auto-generated:
+-	@rm -f uarch-pristine-hash.c uarch-pristine-ram.c
+-
+-clean: clean-executables clean-auto-generated
++clean: clean-executables
+ 	@rm -f *.ld *.elf *.bin *.tmp link.ld *.o

@@ -1,0 +1,3 @@
+fix-make-clean
+add-generated-files
+fix-removal-of-generated-files

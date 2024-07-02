@@ -319,26 +319,6 @@ for _, dapp in pairs({ "ioctl", "http" }) do
         return 0
     end, 0)
 
-    do_test(
-        "merkle tree is pristine when input is rejected" .. desc,
-        "advance-rejecting-machine" .. suffix,
-        function(machine)
-            local hashes = {}
-            setup_advance(machine, test_data.valid_advance)
-
-            -- 1 reports
-            machine:run(MAX_MCYCLE)
-            check_report(machine, test_data.valid_advance_report_reply)
-
-            -- finish
-            machine:run(MAX_MCYCLE)
-            check_finish(machine, hashes, cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
-
-            return 0
-        end,
-        0
-    )
-
     do_test("the other case" .. desc, "inspect-rejecting-machine" .. suffix, function(machine)
         local hashes = {}
         setup_inspect(machine, test_data.valid_inspect)

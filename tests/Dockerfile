@@ -1,6 +1,6 @@
 ARG TAG=devel
 FROM --platform=$TARGETPLATFORM cartesi/toolchain:0.17.0 as machine-tests-builder
-ARG RELEASE=no
+ARG DEBUG=no
 ARG COVERAGE=no
 ARG SANITIZE=no
 
@@ -8,16 +8,16 @@ COPY . /usr/src/emulator
 
 WORKDIR /usr/src/emulator
 
-RUN make -j$(nproc) build-tests-machine release=$RELEASE coverage=$COVERAGE sanitize=$SANITIZE
+RUN make -j$(nproc) build-tests-machine debug=$DEBUG coverage=$COVERAGE sanitize=$SANITIZE
 
 FROM --platform=$TARGETPLATFORM cartesi/machine-emulator:builder as tests-builder
-ARG RELEASE=no
+ARG DEBUG=no
 ARG COVERAGE=no
 ARG SANITIZE=no
 
 COPY --from=machine-tests-builder /usr/src/emulator/tests/build/machine /usr/src/emulator/tests/build/machine
 
-RUN make -j$(nproc) build-tests-misc build-tests-uarch build-tests-images release=$RELEASE coverage=$COVERAGE sanitize=$SANITIZE
+RUN make -j$(nproc) build-tests-misc build-tests-uarch build-tests-images debug=$DEBUG coverage=$COVERAGE sanitize=$SANITIZE
 
 FROM tests-builder as tests-debian-packager
 ARG MACHINE_EMULATOR_VERSION=0.0.0

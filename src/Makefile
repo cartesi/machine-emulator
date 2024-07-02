@@ -93,11 +93,9 @@ else
 $(warning Neither Homebrew nor MacPorts prefix found)
 endif
 
-LIBCARTESI=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
+SO_EXT=dylib
 LIBCARTESI_LDFLAGS=-install_name '@rpath/$(LIBCARTESI)'
-LIBCARTESI_MERKLE_TREE=libcartesi_merkle_tree-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
 LIBCARTESI_MERKLE_TREE_LDFLAGS=-install_name '@rpath/$(LIBCARTESI_MERKLE_TREE)'
-LIBCARTESI_JSONRPC=libcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).dylib
 LIBCARTESI_JSONRPC_LDFLAGS=-install_name '@rpath/$(LIBCARTESI_JSONRPC)'
 PROFILE_DATA=default.profdata
 
@@ -119,15 +117,17 @@ INCS=
 BOOST_INC=
 SLIRP_INC=
 SLIRP_LIB=-lslirp
-LIBCARTESI=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
+SO_EXT=so
 LIBCARTESI_LDFLAGS=
-LIBCARTESI_MERKLE_TREE=libcartesi_merkle_tree-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
 LIBCARTESI_MERKLE_TREE_LDFLAGS=
-LIBCARTESI_JSONRPC=libcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).so
 LIBCARTESI_JSONRPC_LDFLAGS=
 PROFILE_DATA=
 
 endif
+
+LIBCARTESI=libcartesi-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).$(SO_EXT)
+LIBCARTESI_MERKLE_TREE=libcartesi_merkle_tree-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).$(SO_EXT)
+LIBCARTESI_JSONRPC=libcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR).$(SO_EXT)
 
 ifeq ($(slirp),yes)
 # Workaround for building with macports lua-luarocks installation
@@ -308,7 +308,7 @@ SOLDFLAGS+=$(MYSOLDFLAGS)
 LIBLDFLAGS+=$(MYLIBLDFLAGS)
 EXELDFLAGS+=$(MYEXELDFLAGS)
 
-all: libcartesi.a libcartesi_merkle_tree.a libcartesi_jsonrpc.a c-api luacartesi jsonrpc-remote-cartesi-machine hash
+all: libcartesi libcartesi_merkle_tree libcartesi_jsonrpc c-api luacartesi jsonrpc-remote-cartesi-machine hash
 
 luacartesi: cartesi.so cartesi/jsonrpc.so
 
@@ -425,12 +425,15 @@ version:
 so-version:
 	@echo $(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSION_MINOR)
 
-libcartesi: libcartesi.a $(LIBCARTESI)
-libcartesi.so: $(LIBCARTESI) $(LIBCARTESI_MERKLE_TREE)
-libcartesi_merkle_tree: libcartesi_merkle_tree.a $(LIBCARTESI_MERKLE_TREE)
-libcartesi_merkle_tree.so: $(LIBCARTESI_MERKLE_TREE)
-libcartesi_jsonrpc: libcartesi_jsonrpc.a $(LIBCARTESI_JSONRPC)
-libcartesi_jsonrpc.so: $(LIBCARTESI_JSONRPC)
+libcartesi: libcartesi.a libcartesi.$(SO_EXT)
+libcartesi.$(SO_EXT): $(LIBCARTESI) $(LIBCARTESI_MERKLE_TREE)
+	ln -sf $< $@
+libcartesi_merkle_tree: libcartesi_merkle_tree.a libcartesi_merkle_tree.$(SO_EXT)
+libcartesi_merkle_tree.$(SO_EXT): $(LIBCARTESI_MERKLE_TREE)
+	ln -sf $< $@
+libcartesi_jsonrpc: libcartesi_jsonrpc.a libcartesi_jsonrpc.$(SO_EXT)
+libcartesi_jsonrpc.$(SO_EXT): $(LIBCARTESI_JSONRPC)
+	ln -sf $< $@
 
 libcartesi.a: $(LIBCARTESI_OBJS)
 	$(AR) $@ $^

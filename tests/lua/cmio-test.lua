@@ -193,7 +193,7 @@ end
 local function check_outputs_root_hash(root_hash, output_hashes)
     local z = string.rep("\0", 32)
     if #output_hashes == 0 then output_hashes = { z } end
-    for _ = 1, 16 do
+    for _ = 1, 63 do
         local parent_output_hashes = {}
         local child = 1
         local parent = 1
@@ -271,11 +271,11 @@ for _, dapp in pairs({ "ioctl", "http" }) do
     local suffix = "-" .. dapp
     local desc = " (" .. machine_type .. "," .. dapp .. ")"
     do_test(
-        "merkle tree state must match and reset for each advance" .. desc,
+        "merkle tree state must match and not reset for each advance" .. desc,
         "advance-state-machine" .. suffix,
         function(machine)
+            local hashes = {}
             for _ = 1, 2 do
-                local hashes = {}
                 setup_advance(machine, test_data.valid_advance)
 
                 -- 2 vouchers

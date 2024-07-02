@@ -2053,7 +2053,7 @@ end
 local function check_outputs_root_hash(root_hash, hashes)
     local z = string.rep("\0", 32)
     if #hashes == 0 then hashes = { z } end
-    for _ = 1, 16 do
+    for _ = 1, 63 do
         local parent_output_hashes = {}
         local child = 1
         local parent = 1

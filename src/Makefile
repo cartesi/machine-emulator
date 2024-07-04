@@ -66,7 +66,7 @@ CXX=clang++
 AR=libtool -static -o
 INCS=
 
-BREW_PREFIX=$(shell which brew)
+BREW_PREFIX=$(shell brew --prefix)
 PORT_PREFIX=$(shell which port)
 
 ifeq ($(MACOSX_DEPLOYMENT_TARGET),)

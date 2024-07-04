@@ -207,9 +207,8 @@ CM_API int cm_store(cm_machine *m, const char *dir);
 /// \brief Returns the machine initial config.
 /// \param m Pointer to a valid machine instance.
 /// \param config Receives the initial configuration as a JSON string,
-/// remains valid until the machine is destroyed.
+/// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
-/// The string returned by this function must not be changed nor deallocated.
 CM_API int cm_get_initial_config(const cm_machine *m, const char **config);
 
 /// \brief Replaces a memory range.
@@ -266,7 +265,7 @@ CM_API int cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_
 /// \param log_type Type of access log to generate, must be bitwise OR of CM_ACCESS_LOG_TYPE enum.
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param access_log Receives the state access log as a JSON string,
-/// remains valid until this same function is called again for the same machine.
+/// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API int cm_log_step_uarch(cm_machine *m, int log_type, bool one_based, const char **access_log);
 
@@ -280,7 +279,7 @@ CM_API int cm_reset_uarch(cm_machine *m);
 /// \param log_type Type of access log to generate, must be bitwise OR of CM_ACCESS_LOG_TYPE enum.
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param access_log Receives the state access log as a JSON string,
-/// remains valid until this same function is called again for the same machine.
+/// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API int cm_log_reset_uarch(cm_machine *m, int log_type, bool one_based, const char **access_log);
 
@@ -300,7 +299,7 @@ CM_API int cm_send_cmio_response(cm_machine *m, uint16_t reason, const unsigned 
 /// \param log_type Type of access log to generate, must be bitwise OR of CM_ACCESS_LOG_TYPE enum.
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param access_log Receives the state access log as a JSON string,
-/// remains valid until this same function is called again for the same machine.
+/// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API int cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const unsigned char *data, size_t length,
     int log_type, bool one_based, const char **access_log);
@@ -323,7 +322,7 @@ CM_API int cm_verify_dirty_page_maps(const cm_machine *m, bool *result);
 /// \param log2_size log2 of size subintended by target node.
 /// Must be between 3 (for a word) and 64 (for the entire address space), inclusive.
 /// \param proof Receives the proof as a JSON string,
-/// remains valid until this same function is called again for the same machine.
+/// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
 /// \details If the node is smaller than a page size,
 /// then it must lie entirely inside the same PMA range.
@@ -435,6 +434,29 @@ CM_API int cm_read_mcycle(const cm_machine *m, uint64_t *val);
 /// \returns 0 for success, non zero code for error.
 CM_API int cm_write_mcycle(cm_machine *m, uint64_t val);
 
+/// \brief Checks the value of the iflags.H flag.
+/// \param m Pointer to a valid machine instance.
+/// \param val Receives the flag value.
+/// \returns 0 for success, non zero code for error.
+CM_API int cm_read_iflags_H(const cm_machine *m, bool *val);
+
+/// \brief Checks the value of the iflags.X flag.
+/// \param m Pointer to a valid machine instance.
+/// \param val Receives the flag value.
+/// \returns 0 for success, non zero code for error.
+CM_API int cm_read_iflags_X(const cm_machine *m, bool *val);
+
+/// \brief Checks the value of the iflags.Y flag.
+/// \param m Pointer to a valid machine instance.
+/// \param val Receives the flag value.
+/// \returns 0 for success, non zero code for error.
+CM_API int cm_read_iflags_Y(const cm_machine *m, bool *val);
+
+/// \brief Resets the value of the iflags.Y flag.
+/// \param m Pointer to a valid machine instance.
+/// \returns 0 for success, non zero code for error.
+CM_API int cm_reset_iflags_Y(cm_machine *m);
+
 /// \brief Reads the value of a microarchitecture general-purpose register.
 /// \param m Pointer to a valid machine instance.
 /// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
@@ -499,11 +521,11 @@ CM_API int cm_get_memory_range(cm_machine *m, int i, uint64_t *start, uint64_t *
 // Getting
 
 /// \brief Returns the error message set by the very last C API call.
-/// \returns A C string, remains valid until next C API call that can return error codes.
-/// \details It uses a thread local variable, so it's safe to call from different threads.
-/// The string returned by this function must not be changed nor deallocated.
-/// In case the last API call was successful it returns an empty string.
-/// The error message is only updated by functions that can return a CM_ERROR code.
+/// \returns A C string, remains valid until next C API call.
+/// \details The string returned by this function must not be changed nor deallocated,
+/// and remains valid until next C API function that can return a CM_ERROR code is called.
+/// In case the last call was successful it returns an empty string.
+/// It uses a thread local variable, so it's safe to call from different threads.
 CM_API const char *cm_get_last_error_message();
 
 /// \brief Returns a JSON string for the default machine config.

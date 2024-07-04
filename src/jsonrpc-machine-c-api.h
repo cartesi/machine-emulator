@@ -46,8 +46,8 @@ CM_API int cm_jsonrpc_destroy_mgr(const cm_jsonrpc_mgr *mgr);
 
 /// \brief Forks the server.
 /// \param mgr Pointer to a valid jsonrpc connection manager.
-/// \param address Receives address of new server if function execution succeeds or NULL otherwise.
-/// Remains valid until this same function is called again for the same jsonrpc connection manager instance.
+/// \param address Receives address of new server if function execution succeeds or NULL otherwise,
+/// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address);
 
@@ -65,7 +65,7 @@ CM_API int cm_jsonrpc_shutdown(const cm_jsonrpc_mgr *mgr);
 /// \brief Gets the semantic version of remote server machine
 /// \param mgr Pointer to a valid jsonrpc connection manager.
 /// \param semantic_version Receives the semantic version as a JSON string.
-/// remains valid until the jsonrpc connection manager is destroyed.
+/// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API int cm_jsonrpc_get_semantic_version(const cm_jsonrpc_mgr *mgr, const char **semantic_version);
 
@@ -103,10 +103,10 @@ CM_API int cm_jsonrpc_get_machine(const cm_jsonrpc_mgr *mgr, cm_machine **new_ma
 /// \param mgr Pointer to a valid jsonrpc connection manager.
 /// \param err_msg Receives the error message.
 /// \returns 0 for success, non zero code for error.
-/// \details It uses a thread local variable, so it's safe to call from different threads.
-/// The string returned by this function must not be changed nor deallocated.
-/// In case the last API call was successful it returns an empty string.
-/// The error message is only updated by functions that can return a CM_ERROR code.
+/// \details  The string returned by this function must not be changed nor deallocated,
+/// and remains valid until next C API function that can return a CM_ERROR code is called.
+/// In case the last call was successful it returns an empty string.
+/// It uses a thread local variable, so it's safe to call from different threads.
 CM_API int cm_jsonrpc_get_last_error_message(const cm_jsonrpc_mgr *mgr, const char **err_msg);
 
 /// \brief Get default machine config from server.

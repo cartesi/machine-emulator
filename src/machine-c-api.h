@@ -501,21 +501,12 @@ CM_API int cm_set_uarch_halt_flag(cm_machine *m);
 /// \returns 0 for success, non zero code for error.
 CM_API int cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *paddr);
 
-/// \brief Returns count of memory ranges in the machine.
+/// \brief Returns memory ranges in the machine.
 /// \param m Pointer to a valid machine instance.
-/// \param count Receives the memory range count.
+/// \param ranges Receives the memory ranges as a JSON string,
+/// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
-CM_API int cm_get_memory_range_count(cm_machine *m, int *count);
-
-/// \brief Returns memory range in the machine at given index.
-/// \param m Pointer to a valid machine instance.
-/// \param i Index of the memory range, must be less than cm_get_memory_range_count().
-/// \param start Receives the memory range start address.
-/// \param length Receives the memory range length.
-/// \param description Receives the memory range description.
-/// Should not be modified or deallocated, remains valid until the machine is destroyed.
-/// \returns 0 for success, non zero code for error.
-CM_API int cm_get_memory_range(cm_machine *m, int i, uint64_t *start, uint64_t *length, const char **description);
+CM_API int cm_get_memory_ranges(cm_machine *m, const char **ranges);
 
 // -------------------------------------
 // Getting

@@ -140,9 +140,7 @@ typedef enum CM_CSR {
     CM_CSR_SCOUNTEREN,
     CM_CSR_SENVCFG,
     CM_CSR_ILRSC,
-    CM_CSR_YIELD_MANUAL_FLAG,
-    CM_CSR_YIELD_AUTOMATIC_FLAG,
-    CM_CSR_HALT_FLAG,
+    CM_CSR_IFLAGS,
     CM_CSR_IUNREP,
     CM_CSR_CLINT_MTIMECMP,
     CM_CSR_PLIC_GIRQPEND,
@@ -163,6 +161,10 @@ typedef enum CM_CSR {
     CM_CSR_HTIF_FROMHOST_DEV,  ///< View of DEV field from HTIF_FROMHOST
     CM_CSR_HTIF_FROMHOST_CMD,  ///< View of CMD field from HTIF_FROMHOST
     CM_CSR_HTIF_FROMHOST_DATA, ///< View of DATA field from HTIF_FROMHOST
+    CM_CSR_IFLAGS_PRV,         ///< View of PRV field from IFLAGS
+    CM_CSR_IFLAGS_X,           ///< View of X field from IFLAGS
+    CM_CSR_IFLAGS_Y,           ///< View of Y field from IFLAGS
+    CM_CSR_IFLAGS_H,           ///< View of H field from IFLAGS
 } CM_CSR;
 
 /// \brief Machine instance handle.
@@ -215,7 +217,8 @@ CM_API int cm_get_initial_config(const cm_machine *m, const char **config);
 /// \param start Memory start physical address.
 /// \param length Memory length.
 /// \param shared If true changes by the machine will be shared to the image file.
-/// \param image_filename Image file name to load into the range.
+/// \param image_filename Image file name to load into the range,
+/// in case it's NULL the memory range is cleared with zeros.
 /// \returns 0 for success, non zero code for error.
 /// \details The machine must contain an existing memory range matching the start and length
 /// specified in new range.
@@ -265,7 +268,7 @@ CM_API int cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_
 /// \param access_log Receives the state access log as a JSON string,
 /// remains valid until this same function is called again for the same machine.
 /// \returns 0 for success, non zero code for error.
-CM_API int cm_log_uarch_step(cm_machine *m, int log_type, bool one_based, const char **access_log);
+CM_API int cm_log_step_uarch(cm_machine *m, int log_type, bool one_based, const char **access_log);
 
 /// \brief Resets the entire uarch state to pristine values.
 /// \param m Pointer to a valid machine instance.
@@ -281,7 +284,7 @@ CM_API int cm_reset_uarch(cm_machine *m);
 /// \returns 0 for success, non zero code for error.
 CM_API int cm_log_reset_uarch(cm_machine *m, int log_type, bool one_based, const char **access_log);
 
-/// \brief Sends cmio response
+/// \brief Sends cmio response.
 /// \param m Pointer to a valid machine instance.
 /// \param reason Reason for sending the response.
 /// \param data Response data to send
@@ -289,7 +292,7 @@ CM_API int cm_log_reset_uarch(cm_machine *m, int log_type, bool one_based, const
 /// \returns 0 for success, non zero code for error.
 CM_API int cm_send_cmio_response(cm_machine *m, uint16_t reason, const unsigned char *data, size_t length);
 
-/// \brief Send cmio response and returns an access log
+/// \brief Send cmio response and returns an access log.
 /// \param m Pointer to a valid machine instance.
 /// \param reason Reason for sending the response.
 /// \param data Response data to send.
@@ -378,14 +381,6 @@ CM_API int cm_write_virtual_memory(cm_machine *m, uint64_t address, const unsign
 /// \warning The current implementation of this function is very slow!
 CM_API int cm_read_word(const cm_machine *m, uint64_t address, uint64_t *value);
 
-/// \brief Write the value of a word in the machine state.
-/// \param m Pointer to a valid machine instance.
-/// \param address Physical address (aligned to 64-bit boundary).
-/// \param value New word value.
-/// \returns 0 for success, non zero code for error.
-/// \warning The current implementation of this function is very slow!
-CM_API int cm_write_word(const cm_machine *m, uint64_t address, uint64_t value);
-
 /// \brief Reads the value of a general-purpose register.
 /// \param m Pointer to a valid machine instance.
 /// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.
@@ -428,18 +423,6 @@ CM_API int cm_read_csr(const cm_machine *m, CM_CSR csr, uint64_t *val);
 /// \returns 0 for success, non zero code for error.
 CM_API int cm_write_csr(cm_machine *m, CM_CSR csr, uint64_t val);
 
-/// \brief Reads the value of the pc register.
-/// \param m Pointer to a valid machine instance.
-/// \param val Receives the value of the register
-/// \returns 0 for success, non zero code for error.
-CM_API int cm_read_pc(const cm_machine *m, uint64_t *val);
-
-/// \brief Writes the value of the pc register.
-/// \param m Pointer to a valid machine instance.
-/// \param val New register value.
-/// \returns 0 for success, non zero code for error.
-CM_API int cm_write_pc(cm_machine *m, uint64_t val);
-
 /// \brief Reads the value of the mcycle register.
 /// \param m Pointer to a valid machine instance.
 /// \param val Receives value of the register.
@@ -465,18 +448,6 @@ CM_API int cm_read_uarch_x(const cm_machine *m, int i, uint64_t *val);
 /// \param val New register value.
 /// \returns 0 for success, non zero code for error.
 CM_API int cm_write_uarch_x(cm_machine *m, int i, uint64_t val);
-
-/// \brief Reads the value of the microarchitecture pc register.
-/// \param m Pointer to a valid machine instance.
-/// \param val Receives the value of the register
-/// \returns 0 for success, non zero code for error.
-CM_API int cm_read_uarch_pc(const cm_machine *m, uint64_t *val);
-
-/// \brief Writes the value of the microarchitecture pc register.
-/// \param m Pointer to a valid machine instance.
-/// \param val New register value.
-/// \returns 0 for success, non zero code for error.
-CM_API int cm_write_uarch_pc(cm_machine *m, uint64_t val);
 
 /// \brief Reads the value of the microarchitecture cycle register.
 /// \param m Pointer to a valid machine instance.
@@ -570,19 +541,19 @@ CM_API uint64_t cm_get_uarch_x_address(int i);
 // -------------------------------------
 // Verifying
 
-/// \brief Checks the internal consistency of an access log produced by cm_log_uarch_step.
+/// \brief Checks the internal consistency of an access log produced by cm_log_step_uarch.
 /// \param access_log State access log to be verified as a JSON string.
 /// \param one_based Use 1-based indices when reporting errors.
 /// \returns 0 for success, non zero code for error.
-CM_API int cm_verify_uarch_step_log(const char *access_log, bool one_based);
+CM_API int cm_verify_step_uarch_log(const char *access_log, bool one_based);
 
-/// \brief Checks the validity of a state transition produced by cm_log_uarch_step.
+/// \brief Checks the validity of a state transition produced by cm_log_step_uarch.
 /// \param root_hash_before State hash before step.
 /// \param access_log State access log to be verified as a JSON string.
 /// \param root_hash_after State hash after step.
 /// \param one_based Use 1-based indices when reporting errors.
 /// \returns 0 for successful verification, non zero code for error.
-CM_API int cm_verify_uarch_step_state_transition(const cm_hash *root_hash_before, const char *access_log,
+CM_API int cm_verify_step_uarch_state_transition(const cm_hash *root_hash_before, const char *access_log,
     const cm_hash *root_hash_after, bool one_based);
 
 /// \brief Checks the internal consistency of an access log produced by cm_log_reset_uarch.

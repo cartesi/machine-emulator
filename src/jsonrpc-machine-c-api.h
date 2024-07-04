@@ -64,16 +64,10 @@ CM_API int cm_jsonrpc_shutdown(const cm_jsonrpc_mgr *mgr);
 
 /// \brief Gets the semantic version of remote server machine
 /// \param mgr Pointer to a valid jsonrpc connection manager.
-/// \param major Receives semantic major version.
-/// \param minor Receives semantic minor version.
-/// \param patch Receives semantic patch version.
-/// \param pre_release Receives pre release string,
-/// remains valid until this same function is called again for the same machine.
-/// \param build Receives build string,
-/// remains valid until this same function is called again for the same machine.
+/// \param semantic_version Receives the semantic version as a JSON string.
+/// remains valid until the jsonrpc connection manager is destroyed.
 /// \returns 0 for success, non zero code for error.
-CM_API int cm_jsonrpc_get_semantic_version(const cm_jsonrpc_mgr *mgr, uint32_t *major, uint32_t *minor, uint32_t *patch,
-    const char **pre_release, const char **build);
+CM_API int cm_jsonrpc_get_semantic_version(const cm_jsonrpc_mgr *mgr, const char **semantic_version);
 
 // -------------------------------------
 // Machine related
@@ -163,7 +157,7 @@ CM_API int cm_jsonrpc_get_uarch_x_address(const cm_jsonrpc_mgr *mgr, int i, uint
 /// \param access_log State access log to be verified as a JSON string.
 /// \param one_based Use 1-based indices when reporting errors.
 /// \returns 0 for success, non zero code for error.
-CM_API int cm_jsonrpc_verify_uarch_step_log(const cm_jsonrpc_mgr *mgr, const char *access_log, bool one_based);
+CM_API int cm_jsonrpc_verify_step_uarch_log(const cm_jsonrpc_mgr *mgr, const char *access_log, bool one_based);
 
 /// \brief Checks the validity of a state transition.
 /// \param mgr Pointer to a valid jsonrpc connection manager.
@@ -172,7 +166,7 @@ CM_API int cm_jsonrpc_verify_uarch_step_log(const cm_jsonrpc_mgr *mgr, const cha
 /// \param root_hash_after State hash after step.
 /// \param one_based Use 1-based indices when reporting errors.
 /// \returns 0 for success, non zero code for error.
-CM_API int cm_jsonrpc_verify_uarch_step_state_transition(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
+CM_API int cm_jsonrpc_verify_step_uarch_state_transition(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
     const char *access_log, const cm_hash *root_hash_after, bool one_based);
 
 /// \brief Checks the internal consistency of an access log produced by cm_jsonrpc_log_reset_uarch.

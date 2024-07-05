@@ -88,7 +88,9 @@ for _, proofs in ipairs({ true, false }) do
         assert(#log.accesses == 1)
         assert(log.accesses[1].type == "read")
         assert(log.accesses[1].address == cartesi.UARCH_SHADOW_START_ADDRESS + 8) -- address of uarch_cycle
-        assert(log.accesses[1].read == string.pack("J", MAX_UARCH_CYCLE))
+        assert(#log.accesses[1].read == 32)
+        -- log data has 32 bytes. The uarch_cycle is the 2nd 8-byte word
+        assert(log.accesses[1].read:sub(9, 16) == string.pack("J", MAX_UARCH_CYCLE))
         assert((log.accesses[1].sibling_hashes ~= nil) == proofs)
     end)
 end

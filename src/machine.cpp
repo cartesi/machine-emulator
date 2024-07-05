@@ -767,7 +767,7 @@ static void store_hash(const machine::hash_type &h, const std::string &dir) {
 
 void machine::store(const std::string &dir) const {
     if (os_mkdir(dir.c_str(), 0700)) {
-        throw std::runtime_error{"error creating directory '" + dir + "'"};
+        throw std::system_error{errno, std::generic_category(), "error creating directory '"s + dir + "'"s};
     }
     if (!update_merkle_tree()) {
         throw std::runtime_error{"error updating Merkle tree"};

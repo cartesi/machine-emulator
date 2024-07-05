@@ -60,7 +60,7 @@ machine_config machine_config::load(const std::string &dir) {
     auto name = machine_config::get_config_filename(dir);
     std::ifstream ifs(name, std::ios::binary);
     if (!ifs) {
-        throw std::runtime_error{"unable to open '" + name + "' for reading"};
+        throw std::system_error{errno, std::generic_category(), "unable to open '" + name + "' for reading"};
     }
     try {
         auto j = nlohmann::json::parse(ifs);
@@ -90,7 +90,7 @@ void machine_config::store(const std::string &dir) const {
     j["config"] = *this;
     std::ofstream ofs(name, std::ios::binary);
     if (!ofs) {
-        throw std::runtime_error{"unable to open '" + name + "' for writing"};
+        throw std::system_error{errno, std::generic_category(), "unable to open '" + name + "' for writing"};
     }
     ofs << j;
 }

@@ -117,8 +117,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_unknown_dir_test, default_machine_fi
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
 
     std::string result = err_msg;
-    std::string origin("unable to open '/unknown_dir/config.json' for reading");
-    BOOST_CHECK_EQUAL(origin, result);
+    BOOST_REQUIRE(result.find("unable to open '/unknown_dir/config.json' for reading") == 0);
 
     cm_delete_cstring(err_msg);
 }
@@ -129,8 +128,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_path_test, default_machine_fixt
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
 
     std::string result = err_msg;
-    std::string origin("unable to open '/config.json' for reading");
-    BOOST_CHECK_EQUAL(origin, result);
+    BOOST_REQUIRE(result.find("unable to open '/config.json' for reading") == 0);
 
     cm_delete_cstring(err_msg);
 }
@@ -562,8 +560,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_dir_path_test, ordinary_machine_fixtur
     int error_code = cm_store(_machine, nullptr, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     std::string result = err_msg;
-    std::string origin("error creating directory ''");
-    BOOST_CHECK_EQUAL(origin, result);
+    BOOST_REQUIRE(result.find("error creating directory") == 0);
 
     cm_delete_cstring(err_msg);
 }

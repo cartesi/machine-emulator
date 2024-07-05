@@ -19,18 +19,19 @@
 
 /// \file
 /// \brief State access implementation that record and logs all accesses
-
 #include <memory>
 
 #include "i-uarch-state-access.h"
 #include "machine-merkle-tree.h"
+
 #include "machine.h"
 #include "uarch-bridge.h"
 #include "uarch-constants.h"
 #include "uarch-machine.h"
-#include "uarch-pristine-state-hash.h"
-#include "unique-c-ptr.h"
 
+#include "uarch-pristine-state-hash.h"
+#include "uarch-solidity-compat.h"
+#include "unique-c-ptr.h"
 namespace cartesi {
 
 /// \details The uarch_record_state_access logs all access to the machine state.
@@ -73,7 +74,7 @@ class uarch_record_state_access : public i_uarch_state_access<uarch_record_state
 
     static void get_hash(const access_data &data, hash_type &hash) {
         hasher_type hasher;
-        get_merkle_tree_hash(hasher, data.data(), data.size(), sizeof(uint64_t), hash);
+        get_merkle_tree_hash(hasher, data.data(), data.size(), machine_merkle_tree::get_word_size(), hash);
     }
 
 public:
@@ -145,7 +146,7 @@ public:
 
         /// \brief Destructor adds the "end" bracketting note
         /// if the log shared_ptr is not empty
-        /// NOLINTNEXTLINE(bugprone-exception-escape)
+
         ~scoped_note() {
             if (m_log) {
                 m_log->push_bracket(bracket_type::end, m_text.c_str());
@@ -154,77 +155,88 @@ public:
     };
 
 private:
-    /// \brief Logs a read access.
+    /// \brief Logs a read access of a uint64_t word from the machine state.
     /// \param paligned Physical address in the machine state, aligned to a 64-bit word.
     /// \param val Value read.
     /// \param text Textual description of the access.
     uint64_t log_read(uint64_t paligned, uint64_t val, const char *text) const {
-        static_assert(machine_merkle_tree::get_log2_word_size() == log2_size<uint64_t>::value,
-            "Machine and machine_merkle_tree word sizes must match");
-        assert((paligned & (sizeof(uint64_t) - 1)) == 0);
+        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size<uint64_t>::value,
+            "Merkle tree word size must be at least as large as a machine word");
+        if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
+            throw std::invalid_argument{"paligned is not aligned to word size"};
+        }
+        const uint64_t pleaf_aligned = paligned & ~(machine_merkle_tree::get_word_size() - 1);
         access a;
         if (m_log->get_log_type().has_proofs()) {
             // We can skip updating the merkle tree while getting the proof because we assume that:
             // 1) A full merkle tree update was called at the beginning of machine::log_uarch_step()
             // 2) We called update_merkle_tree_page on all write accesses
             const auto proof =
-                m_m.get_proof(paligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
-
+                m_m.get_proof(pleaf_aligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
             // We just store the sibling hashes in the access because this is the only missing piece of data needed to
             // reconstruct the proof
             a.set_sibling_hashes(proof.get_sibling_hashes());
         }
         a.set_type(access_type::read);
         a.set_address(paligned);
-        a.set_log2_size(machine_merkle_tree::get_log2_word_size());
+        a.set_log2_size(log2_size<uint64_t>::value);
+        // NOLINTBEGIN(bugprone-unchecked-optional-access)
+        // we log the leaf data at pleaf_aligned that contains the word at paligned
         a.get_read().emplace();
-        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        set_word_access_data(val, a.get_read().value());
-
-        hash_type read_hash;
-        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        get_hash(a.get_read().value(), read_hash);
-        a.set_read_hash(read_hash);
-
+        a.get_read().value().resize(machine_merkle_tree::get_word_size());
+        // read the entire leaf where the word is located
+        m_m.read_memory(pleaf_aligned, a.get_read().value().data(), machine_merkle_tree::get_word_size());
+        get_hash(a.get_read().value(), a.get_read_hash());
+        // ensure that the read data is the same as the value read
+        const int word_offset = static_cast<int>(paligned - pleaf_aligned); // offset of word in leaf
+        const uint64_t logged_val = get_word_access_data(a.get_read().value(), word_offset);
+        if (val != logged_val) {
+            throw std::runtime_error("read value does not match logged value");
+        }
+        // NOLINTEND(bugprone-unchecked-optional-access)
         m_log->push_access(std::move(a), text);
         return val;
     }
 
-    /// \brief Logs a write access before it happens.
+    /// \brief Logs a write access to a uint64_t word before it happens.
     /// \param paligned Physical address of the word in the machine state (Must be aligned to a 64-bit word).
-    /// \param dest Value before writing.
     /// \param val Value to write.
     /// \param text Textual description of the access.
-    void log_before_write(uint64_t paligned, uint64_t dest, uint64_t val, const char *text) {
-        static_assert(machine_merkle_tree::get_log2_word_size() == log2_size<uint64_t>::value,
-            "Machine and machine_merkle_tree word sizes must match");
-        assert((paligned & (sizeof(uint64_t) - 1)) == 0);
+    void log_before_write(uint64_t paligned, uint64_t word, const char *text) {
+        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size<uint64_t>::value,
+            "Merkle tree word size must be at least as large as a machine word");
+        if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
+            throw std::invalid_argument{"paligned is not aligned to word size"};
+        }
+        const uint64_t pleaf_aligned = paligned & ~(machine_merkle_tree::get_word_size() - 1);
         access a;
         if (m_log->get_log_type().has_proofs()) {
             // We can skip updating the merkle tree while getting the proof because we assume that:
             // 1) A full merkle tree update was called at the beginning of machine::log_uarch_step()
             // 2) We called update_merkle_tree_page on all write accesses
             const auto proof =
-                m_m.get_proof(paligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
+                m_m.get_proof(pleaf_aligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
             // We just store the sibling hashes in the access because this is the only missing piece of data needed to
             // reconstruct the proof
             a.set_sibling_hashes(proof.get_sibling_hashes());
         }
         a.set_type(access_type::write);
         a.set_address(paligned);
-        a.set_log2_size(machine_merkle_tree::get_log2_word_size());
-
+        a.set_log2_size(log2_size<uint64_t>::value);
         // NOLINTBEGIN(bugprone-unchecked-optional-access)
+        // we log the leaf data at pleaf_aligned that contains the word at paligned
         a.get_read().emplace();
-        set_word_access_data(dest, a.get_read().value());
+        a.get_read().value().resize(machine_merkle_tree::get_word_size());
+        m_m.read_memory(pleaf_aligned, a.get_read().value().data(), machine_merkle_tree::get_word_size());
         get_hash(a.get_read().value(), a.get_read_hash());
-
-        a.get_written().emplace();
-        set_word_access_data(val, a.get_written().value());
+        // the logged written data is the same as the read data, but with the word at paligned replaced by word
+        a.set_written(access_data(a.get_read().value()));                     // copy the read data
+        const int word_offset = static_cast<int>(paligned - pleaf_aligned);   // offset of word in leaf
+        replace_word_access_data(word, a.get_written().value(), word_offset); // replace the word
+        // compute the hash of the written data
         a.get_written_hash().emplace();
         get_hash(a.get_written().value(), a.get_written_hash().value());
         // NOLINTEND(bugprone-unchecked-optional-access)
-
         m_log->push_access(std::move(a), text);
     }
 
@@ -244,10 +256,10 @@ private:
     /// \param dest Reference to value before writing.
     /// \param val Value to write to \p dest.
     /// \param text Textual description of the access.
-    void log_before_write_write_and_update(uint64_t paligned, uint64_t &dest, uint64_t val, const char *text) {
+    void log_before_write_write_and_update(uint64_t paligned, uint64_t &dest, uint64_t word, const char *text) {
         assert((paligned & (sizeof(uint64_t) - 1)) == 0);
-        log_before_write(paligned, dest, val, text);
-        dest = val;
+        log_before_write(paligned, word, text);
+        dest = word;
         update_after_write(paligned);
     }
 
@@ -359,9 +371,8 @@ private:
         const uint64_t hoffset = paddr - pma.get_start();
         unsigned char *hmem = pma.get_memory().get_host_memory();
         void *hdata = hmem + hoffset;
-        auto old_data = aliased_aligned_read<uint64_t>(hdata);
         // Log the write access
-        log_before_write(paddr, old_data, data, "memory");
+        log_before_write(paddr, data, "memory");
         // Actually modify the state
         aliased_aligned_write<uint64_t>(hdata, data);
 
@@ -380,9 +391,8 @@ private:
     /// \param paddr Address of the state register
     /// \param data New register value
     void write_register(uint64_t paddr, uint64_t data) {
-        auto old_data = uarch_bridge::read_register(paddr, m_s);
         const auto *name = uarch_bridge::get_register_name(paddr);
-        log_before_write(paddr, old_data, data, name);
+        log_before_write(paddr, data, name);
         uarch_bridge::write_register(paddr, m_s, data);
         update_after_write(paddr);
     }

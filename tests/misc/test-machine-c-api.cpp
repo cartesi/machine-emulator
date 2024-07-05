@@ -44,9 +44,9 @@
 #include <machine-c-api.h>
 #include <riscv-constants.h>
 #include <uarch-constants.h>
-#include <uarch-solidity-compat.h>
 
 #include "test-utils.h"
+#include "uarch-solidity-compat.h"
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-do-while)
 
@@ -718,7 +718,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_inconsistent_tree_test, ordinary_machin
 
     // merkle tree is always consistent now as it updates on access
 
-    error_code = cm_get_proof(_machine, 0, 3, &proof, &err_msg);
+    error_code = cm_get_proof(_machine, 0, CM_TREE_LOG2_PAGE_SIZE, &proof, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     cm_delete_merkle_tree_proof(proof);
 }

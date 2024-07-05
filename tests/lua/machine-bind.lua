@@ -338,14 +338,14 @@ do_test("should provide proof for values in registers", function(machine)
 
     -- Check proofs
     for _, v in pairs(initial_csr_values) do
-        for el = 3, 63 do
+        for el = cartesi.TREE_LOG2_WORD_SIZE, cartesi.TREE_LOG2_ROOT_SIZE - 1 do
             local a = test_util.align(v, el)
             assert(test_util.check_proof(assert(machine:get_proof(a, el)), "no proof"), "proof failed")
         end
     end
 
     for _, v in pairs(initial_xreg_values) do
-        for el = 3, 63 do
+        for el = cartesi.TREE_LOG2_WORD_SIZE, cartesi.TREE_LOG2_ROOT_SIZE - 1 do
             local a = test_util.align(v, el)
             assert(test_util.check_proof(assert(machine:get_proof(a, el), "no proof")), "proof failed")
         end
@@ -666,31 +666,13 @@ do_test("written and read values should match", function(machine)
 end)
 
 print("\n\n dump step log  to console")
-do_test("dumped step log content should match", function()
-    -- Dump log and check values
-    local lua_code = [[ "
-                                 local cartesi = require 'cartesi'
-                                 local test_util = require 'cartesi.tests.util'
-                                 local cartesi_util = require 'cartesi.util'
-
-                                 local initial_csr_values = {}
-                                 local uarch_ram_path = test_util.create_test_uarch_program()
-                                 local machine = cartesi.machine {
-                                 processor = initial_csr_values,
-                                 ram = {length = 1 << 20},
-                                 uarch = {
-                                    ram = { image_filename = uarch_ram_path }
-                                 }
-                                 }
-                                 os.remove(uarch_ram_path)
-                                 local log_type = {proofs = false, annotations = true}
-                                 local log = machine:log_uarch_step(log_type)
-                                 cartesi_util.dump_log(log, io.stdout)
-                                 " 2>&1]]
-
-    local p = io.popen(lua_cmd .. lua_code)
-    local output = p:read(2000)
-    p:close()
+do_test("dumped step log content should match", function(machine)
+    local log_type = { proofs = false, annotations = true }
+    local log = machine:log_uarch_step(log_type)
+    local temp_file <close> = test_util.new_temp_file()
+    util.dump_log(log, temp_file)
+    local log_output = temp_file:read_all()
+    -- luacheck: push no max line length
     local expected_output = "begin step\n"
         .. "  1: read uarch.cycle@0x400008(4194312): 0x0(0)\n"
         .. "  2: read uarch.halt_flag@0x400000(4194304): 0x0(0)\n"
@@ -698,17 +680,17 @@ do_test("dumped step log content should match", function()
         .. "  4: read memory@0x600000(6291456): 0x10089307b00513(4513027209561363)\n"
         .. "  begin addi\n"
         .. "    5: read uarch.x@0x400018(4194328): 0x0(0)\n"
-        .. "    6: write uarch.x@0x400068(4194408): 0x0(0) -> 0x7b(123)\n"
+        .. "    6: write uarch.x@0x400068(4194408): 0x10050(65616) -> 0x7b(123)\n"
         .. "    7: write uarch.pc@0x400010(4194320): 0x600000(6291456) -> 0x600004(6291460)\n"
         .. "  end addi\n"
         .. "  8: write uarch.cycle@0x400008(4194312): 0x0(0) -> 0x1(1)\n"
         .. "end step\n"
-
-    print("Output of dump log:")
+    -- luacheck: pop
+    print("Log output:")
     print("--------------------------")
-    print(output)
+    print(log_output)
     print("--------------------------")
-    assert(output == expected_output, "Output does not match expected output:\n" .. expected_output)
+    assert(log_output == expected_output, "Output does not match expected output:\n" .. expected_output)
 end)
 
 print("\n\ntesting step and verification")
@@ -756,7 +738,7 @@ do_test("Step log must contain conssitent data hashes", function(machine)
     -- ensure that verification fails with wrong written hash
     write_access.written_hash = wrong_hash
     _, err = pcall(module.machine.verify_uarch_step_log, log, {})
-    assert(err:match("value being written to uarch.cycle does not hash to the logged written hash at access 8"))
+    assert(err:match("logged written data of uarch.cycle does not hash to the logged written hash at access 8"))
 end)
 
 do_test("step when uarch cycle is max", function(machine)
@@ -1112,10 +1094,13 @@ do_test("Test unhappy paths of verify_uarch_step_state_transition", function(mac
     end
     assert_error("too few accesses in log", function(log) log.accesses = {} end)
     assert_error("expected access 1 to read uarch.uarch_cycle", function(log) log.accesses[1].address = 0 end)
-    assert_error("invalid log2_size", function(log) log.accesses[1].log2_size = 2 end)
-    assert_error("invalid log2_size", function(log) log.accesses[1].log2_size = 65 end)
+    assert_error(
+        "expected access 1 to read 2%^5 bytes from uarch.uarch_cycle",
+        function(log) log.accesses[1].log2_size = 2 end
+    )
+    assert_error("target size cannot be greater than root size", function(log) log.accesses[1].log2_size = 65 end)
     assert_error("missing read uarch.uarch_cycle data at access 1", function(log) log.accesses[1].read = nil end)
-    assert_error("invalid read %(expected string with 2%^3 bytes%)", function(log) log.accesses[1].read = "\0" end)
+    assert_error("invalid read %(expected string with 2%^5 bytes%)", function(log) log.accesses[1].read = "\0" end)
     assert_error(
         "logged read data of uarch.uarch_cycle data does not hash to the logged read hash at access 1",
         function(log) log.accesses[1].read_hash = bad_hash end
@@ -1127,12 +1112,12 @@ do_test("Test unhappy paths of verify_uarch_step_state_transition", function(mac
     )
     assert_error("hash length must be 32 bytes", function(log) log.accesses[#log.accesses].written_hash = nil end)
     assert_error(
-        "invalid written %(expected string with 2%^3 bytes%)",
+        "invalid written %(expected string with 2%^5 bytes%)",
         function(log) log.accesses[#log.accesses].written = "\0" end
     )
     assert_error(
         "logged written data of uarch.cycle does not hash to the logged written hash at access 7",
-        function(log) log.accesses[#log.accesses].written = "\0\0\0\0\0\0\0\0" end
+        function(log) log.accesses[#log.accesses].written = string.rep("\0", 32) end
     )
     assert_error("Mismatch in root hash of access 1", function(log) log.accesses[1].sibling_hashes[1] = bad_hash end)
 end)
@@ -1329,21 +1314,18 @@ do_test("Dump of log produced by send_cmio_response should match", function(mach
     local data = "0123456789"
     local reason = 7
     local log = machine:log_send_cmio_response(reason, data, { proofs = true, annotations = true, large_data = false })
+    -- luacheck: push no max line length
     local expected_dump = "begin send cmio response\n"
         .. "  1: read iflags.Y@0x2e8(744): 0x1a(26)\n"
-        .. '  2: write cmio rx buffer@0x60000000(1610612736): hash:"4d9470a8"(2^4 bytes) -> '
-        .. 'hash:"5d29fb90"(2^4 bytes)\n'
+        .. '  2: write cmio rx buffer@0x60000000(1610612736): hash:"290decd9"(2^5 bytes) -> hash:"555b1f6d"(2^5 bytes)\n'
         .. "  3: write htif.fromhost@0x318(792): 0x0(0) -> 0x70000000a(30064771082)\n"
         .. "  4: read iflags.Y@0x2e8(744): 0x1a(26)\n"
         .. "  5: write iflags.Y@0x2e8(744): 0x1a(26) -> 0x18(24)\n"
         .. "end send cmio response\n"
-    local tmpname = os.tmpname()
-    local deleter = {}
-    setmetatable(deleter, { __gc = function() os.remove(tmpname) end })
-    local tmp <close> = io.open(tmpname, "w+")
-    util.dump_log(log, tmp)
-    tmp:seek("set", 0)
-    local actual_dump = tmp:read("*all")
+    -- luacheck: pop
+    local temp_file <close> = test_util.new_temp_file()
+    util.dump_log(log, temp_file)
+    local actual_dump = temp_file:read_all()
     print("Output of log_send_cmio_response dump:")
     print("--------------------------")
     print(actual_dump)
@@ -1353,10 +1335,10 @@ end)
 
 do_test("send_cmio_response with different data sizes", function(machine)
     local test_cases = {
-        { data_len = 1, write_len = 8 },
-        { data_len = 8, write_len = 8 },
-        { data_len = 9, write_len = 16 },
-        { data_len = 16, write_len = 16 },
+        { data_len = 1, write_len = 32 },
+        { data_len = 32, write_len = 32 },
+        { data_len = 33, write_len = 64 },
+        { data_len = 64, write_len = 64 },
         { data_len = 1 << 20, write_len = 1 << 20 },
         { data_len = (1 << 20) + 1, write_len = 1 << 21 },
         { data_len = 1 << 21, write_len = 1 << 21 },
@@ -1497,5 +1479,83 @@ local function test_cmio_buffers_backed_by_files()
     end)
 end
 test_cmio_buffers_backed_by_files()
+
+local uarch_store_double_in_t0_to_t1 = {
+    0x00533023, -- sd	t0,0(t1)
+}
+test_util.make_do_test(build_machine, machine_type, {
+    uarch = {
+        ram = { image_filename = test_util.create_test_uarch_program(uarch_store_double_in_t0_to_t1) },
+    },
+})("Log of word access unaligned to merkle tree leaf ", function(machine)
+    local leaf_size = 1 << cartesi.TREE_LOG2_WORD_SIZE
+    local word_size = 8
+    local t0 = 5 -- x5 register
+    local t1 = t0 + 1 -- x6 register
+    local function make_leaf(w1, w2, w3, w4)
+        return string.rep(w1, word_size)
+            .. string.rep(w2, word_size)
+            .. string.rep(w3, word_size)
+            .. string.rep(w4, word_size)
+    end
+    -- write initial leaf data
+    local leaf_data = make_leaf("\x11", "\x22", "\x33", "\x44")
+    assert(#leaf_data == leaf_size)
+    local leaf_address = cartesi.UARCH_RAM_START_ADDRESS + (1 << cartesi.TREE_LOG2_WORD_SIZE)
+    machine:write_memory(leaf_address, leaf_data, leaf_size)
+
+    -- step and log one instruction that stores the word in t0 to the address in t1
+    -- returns raw and formatted log
+    local function log_step()
+        local log_type = { proofs = true, annotations = true }
+        local log = machine:log_uarch_step(log_type)
+        local temp_file <close> = test_util.new_temp_file()
+        util.dump_log(log, temp_file)
+        return log, temp_file:read_all()
+    end
+
+    -- write to the first word
+    machine:write_uarch_x(t1, leaf_address)
+    machine:write_uarch_x(t0, 0xaaaaaaaaaaaaaaaa)
+    local log, dump = log_step()
+    assert(dump:match("7: write memory@0x%x+%(%d+%): 0x1111111111111111%(%d+%) %-> 0xaaaaaaaaaaaaaaaa%(%d+%)"))
+    assert(log.accesses[7].read == leaf_data)
+    leaf_data = machine:read_memory(leaf_address, leaf_size) -- read and check written data
+    assert(leaf_data == make_leaf("\xaa", "\x22", "\x33", "\x44"))
+    assert(log.accesses[7].written == leaf_data)
+
+    -- restart program and write to second leaf word
+    machine:write_uarch_pc(cartesi.UARCH_RAM_START_ADDRESS)
+    machine:write_uarch_x(t1, machine:read_uarch_x(t1) + word_size)
+    machine:write_uarch_x(t0, 0xbbbbbbbbbbbbbbbb)
+    log, dump = log_step()
+    assert(dump:match("7: write memory@0x%x+%(%d+%): 0x2222222222222222%(%d+%) %-> 0xbbbbbbbbbbbbbbbb%(%d+%)"))
+    assert(log.accesses[7].read == leaf_data)
+    leaf_data = machine:read_memory(leaf_address, leaf_size)
+    assert(leaf_data == make_leaf("\xaa", "\xbb", "\x33", "\x44"))
+    assert(log.accesses[7].written == leaf_data)
+
+    -- restart program and write to third leaf word
+    machine:write_uarch_pc(cartesi.UARCH_RAM_START_ADDRESS)
+    machine:write_uarch_x(t1, machine:read_uarch_x(t1) + word_size)
+    machine:write_uarch_x(t0, 0xcccccccccccccccc)
+    log, dump = log_step()
+    assert(dump:match("7: write memory@0x%x+%(%d+%): 0x3333333333333333%(%d+%) %-> 0xcccccccccccccccc%(%d+%)"))
+    assert(log.accesses[7].read == leaf_data)
+    leaf_data = machine:read_memory(leaf_address, leaf_size)
+    assert(leaf_data == make_leaf("\xaa", "\xbb", "\xcc", "\x44"))
+    assert(log.accesses[7].written == leaf_data)
+
+    -- restart program and write to fourth leaf word
+    machine:write_uarch_pc(cartesi.UARCH_RAM_START_ADDRESS)
+    machine:write_uarch_x(t1, machine:read_uarch_x(t1) + word_size)
+    machine:write_uarch_x(t0, 0xdddddddddddddddd)
+    log, dump = log_step()
+    assert(dump:match("7: write memory@0x%x+%(%d+%): 0x4444444444444444%(%d+%) %-> 0xdddddddddddddddd%(%d+%)"))
+    assert(log.accesses[7].read == leaf_data)
+    leaf_data = machine:read_memory(leaf_address, leaf_size)
+    assert(leaf_data == make_leaf("\xaa", "\xbb", "\xcc", "\xdd"))
+    assert(log.accesses[7].written == leaf_data)
+end)
 
 print("\n\nAll machine binding tests for type " .. machine_type .. " passed")

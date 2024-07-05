@@ -18,7 +18,7 @@ EMULATOR_MARCHID=17
 
 # Every new emulator release should bump these constants
 EMULATOR_VERSION_MAJOR=0
-EMULATOR_VERSION_MINOR=17
+EMULATOR_VERSION_MINOR=18
 EMULATOR_VERSION_PATCH=0
 EMULATOR_VERSION_LABEL=
 
@@ -66,7 +66,7 @@ CXX=clang++
 AR=libtool -static -o
 INCS=
 
-BREW_PREFIX=$(shell brew --prefix)
+BREW_PREFIX=$(shell which brew)
 PORT_PREFIX=$(shell which port)
 
 ifeq ($(MACOSX_DEPLOYMENT_TARGET),)

@@ -24,10 +24,12 @@
 #include <iomanip>
 #include <sstream>
 
+#include "access-log.h"
 #include "i-state-access.h"
 #include "machine-merkle-tree.h"
 #include "machine.h"
 #include "shadow-state.h"
+#include "uarch-solidity-compat.h"
 #include "unique-c-ptr.h"
 
 namespace cartesi {
@@ -107,16 +109,7 @@ private:
 
     static void get_hash(machine_merkle_tree::hasher_type &hasher, const access_data &data,
         machine_merkle_tree::hash_type &hash) {
-        get_merkle_tree_hash(hasher, data.data(), data.size(), sizeof(uint64_t), hash);
-    }
-
-    /// \brief Checks a logged word read and advances log.
-    /// \param paligned Physical address in the machine state,
-    /// aligned to 64-bits.
-    /// \param text Textual description of the access.
-    /// \returns Value read.
-    uint64_t check_read_word(uint64_t paligned, const char *text) {
-        return get_word_access_data(check_read(paligned, 3, text));
+        get_merkle_tree_hash(hasher, data.data(), data.size(), machine_merkle_tree::get_word_size(), hash);
     }
 
     /// \brief Checks a logged read and advances log.
@@ -125,43 +118,44 @@ private:
     /// \param log2_size Log2 of access size.
     /// \param text Textual description of the access.
     /// \returns Value read.
-    const access_data &check_read(uint64_t paligned, int log2_size, const char *text) {
+    uint64_t check_read(uint64_t paligned, const char *text) {
+        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size<uint64_t>::value,
+            "Merkle tree word size must be at least as large as a machine word");
+        if (paligned & (sizeof(uint64_t) - 1)) {
+            throw std::invalid_argument{"address not aligned to word size"};
+        }
         if (m_next_access >= m_accesses.size()) {
             throw std::invalid_argument{"too few accesses in log"};
         }
         const auto &access = m_accesses[m_next_access];
-        if ((paligned & ((UINT64_C(1) << log2_size) - 1)) != 0) {
-            throw std::invalid_argument{"access address not aligned to size"};
+        if (access.get_type() != access_type::read) {
+            throw std::invalid_argument{"expected access " + std::to_string(access_to_report()) + " to read " + text};
         }
         if (access.get_address() != paligned) {
             std::ostringstream err;
-            err << "expected access " << access_to_report() << " to read " << text << " at address 0x" << std::hex
+            err << "expected access " << access_to_report() << " to read " << text << " address 0x" << std::hex
                 << paligned << "(" << std::dec << paligned << ")";
             throw std::invalid_argument{err.str()};
         }
-        if (log2_size < 3 || log2_size > 63) {
-            throw std::invalid_argument{"invalid access size"};
-        }
-        if (access.get_log2_size() != log2_size) {
+        if (access.get_log2_size() != log2_size<uint64_t>::value) {
             throw std::invalid_argument{"expected access " + std::to_string(access_to_report()) + " to read 2^" +
-                std::to_string(log2_size) + " bytes from " + text};
-        }
-        if (access.get_type() != access_type::read) {
-            throw std::invalid_argument{"expected access " + std::to_string(access_to_report()) + " to read " + text};
+                std::to_string(machine_merkle_tree::get_log2_word_size()) + " bytes from " + text};
         }
         if (!access.get_read().has_value()) {
             throw std::invalid_argument{
                 "missing read " + std::string(text) + " data at access " + std::to_string(access_to_report())};
         }
-        const auto &value_read = access.get_read().value(); // NOLINT(bugprone-unchecked-optional-access)
-        if (value_read.size() != UINT64_C(1) << log2_size) {
+        // NOLINTBEGIN(bugprone-unchecked-optional-access)
+        const auto &read_data = access.get_read().value();
+        if (read_data.size() != machine_merkle_tree::get_word_size()) {
             throw std::invalid_argument{"expected read " + std::string(text) + " data to contain 2^" +
-                std::to_string(log2_size) + " bytes at access " + std::to_string(access_to_report())};
+                std::to_string(machine_merkle_tree::get_log2_word_size()) + " bytes at access " +
+                std::to_string(access_to_report())};
         }
         // check if logged read data hashes to the logged read hash
-        hash_type computed_hash{};
-        get_hash(m_hasher, value_read, computed_hash);
-        if (access.get_read_hash() != computed_hash) {
+        hash_type computed_read_hash{};
+        get_hash(m_hasher, read_data, computed_read_hash);
+        if (access.get_read_hash() != computed_read_hash) {
             throw std::invalid_argument{"logged read data of " + std::string(text) +
                 " data does not hash to the logged read hash at access " + std::to_string(access_to_report())};
         }
@@ -171,9 +165,11 @@ private:
                 throw std::invalid_argument{"Mismatch in root hash of access " + std::to_string(access_to_report())};
             }
         }
+        // NOLINTEND(bugprone-unchecked-optional-access)
         m_next_access++;
-        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        return access.get_read().value();
+        const uint64_t pleaf_aligned = paligned & ~(machine_merkle_tree::get_word_size() - 1);
+        const int word_offset = static_cast<int>(paligned - pleaf_aligned);
+        return get_word_access_data(read_data, word_offset);
     }
 
     /// \brief Checks a logged word write and advances log.
@@ -181,82 +177,87 @@ private:
     /// aligned to a 64-bit word.
     /// \param word Word value to write.
     /// \param text Textual description of the access.
-    /// \returns Value read.
-    void check_write_word(uint64_t paligned, uint64_t word, const char *text) {
-        access_data val;
-        set_word_access_data(word, val);
-        check_write(paligned, val, 3, text);
-    }
-
-    /// \brief Checks a logged write and advances log.
-    /// \param paligned Physical address in the machine state,
-    /// aligned to the access size.
-    /// \param val Value to write.
-    /// \param log2_size Log2 of access size.
-    /// \param text Textual description of the access.
-    void check_write(uint64_t paligned, const access_data &val, int log2_size, const char *text) {
+    void check_write(uint64_t paligned, uint64_t word, const char *text) {
+        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size<uint64_t>::value,
+            "Merkle tree word size must be at least as large as a machine word");
+        if (paligned & (sizeof(uint64_t) - 1)) {
+            throw std::invalid_argument{"paligned not aligned to word size"};
+        }
         if (m_next_access >= m_accesses.size()) {
             throw std::invalid_argument{"too few accesses in log"};
         }
         const auto &access = m_accesses[m_next_access];
-        if ((paligned & ((UINT64_C(1) << log2_size) - 1)) != 0) {
-            throw std::invalid_argument{"access address not aligned to size"};
-        }
-        if (access.get_address() != paligned) {
-            std::ostringstream err;
-            err << "expected access " << access_to_report() << " to write " << text << " at address 0x" << std::hex
-                << paligned << "(" << std::dec << paligned << ")";
-            throw std::invalid_argument{err.str()};
-        }
-        if (log2_size < 3 || log2_size > 63) {
-            throw std::invalid_argument{"invalid access size"};
-        }
-        if (access.get_log2_size() != log2_size) {
-            throw std::invalid_argument{"expected access " + std::to_string(access_to_report()) + " to write 2^" +
-                std::to_string(log2_size) + " bytes from " + text};
-        }
         if (access.get_type() != access_type::write) {
             throw std::invalid_argument{"expected access " + std::to_string(access_to_report()) + " to write " + text};
         }
-        if (access.get_read().has_value()) {
-            const auto &value_read = access.get_read().value(); // NOLINT(bugprone-unchecked-optional-access)
-            if (value_read.size() != UINT64_C(1) << log2_size) {
-                throw std::invalid_argument{"expected overwritten data from " + std::string(text) + " to contain 2^" +
-                    std::to_string(log2_size) + " bytes at access " + std::to_string(access_to_report())};
-            }
-            // check if read data hashes to the logged read hash
-            hash_type computed_hash{};
-            get_hash(m_hasher, value_read, computed_hash);
-            if (access.get_read_hash() != computed_hash) {
-                throw std::invalid_argument{"logged read data of " + std::string(text) +
-                    " does not hash to the logged read hash at access " + std::to_string(access_to_report())};
-            }
+        if (access.get_address() != paligned) {
+            std::ostringstream err;
+            err << "expected access " << access_to_report() << " to write " << text << " to address 0x" << std::hex
+                << paligned << "(" << std::dec << paligned << ")";
+            throw std::invalid_argument{err.str()};
         }
+        if (access.get_log2_size() != log2_size<uint64_t>::value) {
+            throw std::invalid_argument{"expected access " + std::to_string(access_to_report()) + " to write 2^" +
+                std::to_string(machine_merkle_tree::get_log2_word_size()) + " bytes to " + text};
+        }
+        // NOLINTBEGIN(bugprone-unchecked-optional-access)
+        // check read
+        if (!access.get_read().has_value()) {
+            throw std::invalid_argument{
+                "missing read " + std::string(text) + " data at access " + std::to_string(access_to_report())};
+        }
+        const auto &read_data = access.get_read().value();
+        if (read_data.size() != machine_merkle_tree::get_word_size()) {
+            throw std::invalid_argument{"expected overwritten data from " + std::string(text) + " to contain 2^" +
+                std::to_string(access.get_log2_size()) + " bytes at access " + std::to_string(access_to_report())};
+        }
+        // check if read data hashes to the logged read hash
+        hash_type computed_read_hash{};
+        get_hash(m_hasher, read_data, computed_read_hash);
+        if (access.get_read_hash() != computed_read_hash) {
+            throw std::invalid_argument{"logged read data of " + std::string(text) +
+                " does not hash to the logged read hash at access " + std::to_string(access_to_report())};
+        }
+        // check write
         if (!access.get_written_hash().has_value()) {
             throw std::invalid_argument{
                 "missing written " + std::string(text) + " hash at access " + std::to_string(access_to_report())};
         }
-        const auto &written_hash = access.get_written_hash().value(); // NOLINT(bugprone-unchecked-optional-access)
-        // check if value being written hashes to the logged written hash
-        hash_type computed_hash{};
-        get_hash(m_hasher, val, computed_hash);
-        if (written_hash != computed_hash) {
-            throw std::invalid_argument{"value being written to " + std::string(text) +
+        const auto &written_hash = access.get_written_hash().value();
+        if (!access.get_written().has_value()) {
+            throw std::invalid_argument{
+                "missing written " + std::string(text) + " data at access " + std::to_string(access_to_report())};
+        }
+        const auto &written_data = access.get_written().value();
+        if (written_data.size() != read_data.size()) {
+            throw std::invalid_argument{"expected written " + std::string(text) + " data to contain 2^" +
+                std::to_string(access.get_log2_size()) + " bytes at access " + std::to_string(access_to_report())};
+        }
+        // check if written data hashes to the logged written hash
+        hash_type computed_written_hash{};
+        get_hash(m_hasher, written_data, computed_written_hash);
+        if (written_hash != computed_written_hash) {
+            throw std::invalid_argument{"logged written data of " + std::string(text) +
                 " does not hash to the logged written hash at access " + std::to_string(access_to_report())};
         }
-        if (access.get_written().has_value()) {
-            const auto &value_written = access.get_written().value(); // NOLINT(bugprone-unchecked-optional-access)
-            if (value_written.size() != UINT64_C(1) << log2_size) {
-                throw std::invalid_argument{"expected written " + std::string(text) + " data to contain 2^" +
-                    std::to_string(log2_size) + " bytes at access " + std::to_string(access_to_report())};
-            }
-            // check if written data hashes to the logged written hash
-            get_hash(m_hasher, value_written, computed_hash);
-            if (written_hash != computed_hash) {
-                throw std::invalid_argument{"logged written data of " + std::string(text) +
-                    " does not hash to the logged written hash at access " + std::to_string(access_to_report())};
-            }
+        // check if word being written matches the logged data
+        const uint64_t pleaf_aligned = paligned & ~(machine_merkle_tree::get_word_size() - 1);
+        const int word_offset = static_cast<int>(paligned - pleaf_aligned);
+        const uint64_t logged_word = get_word_access_data(written_data, word_offset);
+        if (word != logged_word) {
+            throw std::invalid_argument{"value being written to " + std::string(text) +
+                " does not match the logged written value at access " + std::to_string(access_to_report())};
         }
+        // check if logged written data differs from the logged read data only by the written word
+        access_data expected_written_data(read_data);                       // make a copy of read data
+        replace_word_access_data(word, expected_written_data, word_offset); // patch with written word
+        if (written_data != expected_written_data) {
+            throw std::invalid_argument{"logged written data of " + std::string(text) +
+                " doesn't differ from the logged read data only by the written word at access " +
+                std::to_string(access_to_report())};
+        }
+        // NOLINTEND(bugprone-unchecked-optional-access)
+        // check proof
         if (m_verify_proofs) {
             auto proof = access.make_proof(m_root_hash);
             if (!proof.verify(m_hasher)) {
@@ -271,18 +272,18 @@ private:
     void do_push_bracket(bracket_type &type, const char *text) {}
 
     void do_reset_iflags_Y(void) {
-        auto old_iflags = check_read_word(shadow_state_get_csr_abs_addr(shadow_state_csr::iflags), "iflags.Y");
+        auto old_iflags = check_read(shadow_state_get_csr_abs_addr(shadow_state_csr::iflags), "iflags.Y");
         auto new_iflags = old_iflags & (~IFLAGS_Y_MASK);
-        check_write_word(shadow_state_get_csr_abs_addr(shadow_state_csr::iflags), new_iflags, "iflags.Y");
+        check_write(shadow_state_get_csr_abs_addr(shadow_state_csr::iflags), new_iflags, "iflags.Y");
     }
 
     bool do_read_iflags_Y(void) {
-        auto iflags = check_read_word(shadow_state_get_csr_abs_addr(shadow_state_csr::iflags), "iflags.Y");
+        auto iflags = check_read(shadow_state_get_csr_abs_addr(shadow_state_csr::iflags), "iflags.Y");
         return (iflags & IFLAGS_Y_MASK) != 0;
     }
 
     void do_write_htif_fromhost(uint64_t val) {
-        check_write_word(shadow_state_get_csr_abs_addr(shadow_state_csr::htif_fromhost), val, "htif.fromhost");
+        check_write(shadow_state_get_csr_abs_addr(shadow_state_csr::htif_fromhost), val, "htif.fromhost");
     }
 
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
@@ -312,9 +313,9 @@ private:
             throw std::invalid_argument{"expected access " + std::to_string(access_to_report()) + " to write " + text};
         }
         // if read data is available then its hash and the logged read hash must match
+        // NOLINTBEGIN(bugprone-unchecked-optional-access)
         if (access.get_read().has_value()) {
             hash_type computed_logged_data_hash{};
-            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
             get_hash(hasher, access.get_read().value(), computed_logged_data_hash);
             if (computed_logged_data_hash != access.get_read_hash()) {
                 throw std::invalid_argument{"hash of read data and read hash at access " +
@@ -324,7 +325,7 @@ private:
         if (!access.get_written_hash().has_value()) {
             throw std::invalid_argument{"write access " + std::to_string(access_to_report()) + " has no written hash"};
         }
-        const auto &written_hash = access.get_written_hash().value(); // NOLINT(bugprone-unchecked-optional-access)
+        const auto &written_hash = access.get_written_hash().value();
         // compute hash of data argument padded with zeroes
         hash_type computed_data_hash{};
         auto scratch = unique_calloc<unsigned char>(write_length, std::nothrow_t{});
@@ -335,7 +336,8 @@ private:
         if (write_length > data_length) {
             memset(scratch.get() + data_length, 0, write_length - data_length);
         }
-        get_merkle_tree_hash(hasher, scratch.get(), write_length, sizeof(uint64_t), computed_data_hash);
+        get_merkle_tree_hash(hasher, scratch.get(), write_length, machine_merkle_tree::get_word_size(),
+            computed_data_hash);
         // check if logged written hash matches the computed data hash
         if (written_hash != computed_data_hash) {
             throw std::invalid_argument{"logged written hash of " + text +
@@ -344,7 +346,7 @@ private:
         if (access.get_written().has_value()) {
             // if written data is available then its hash and the logged written hash must match
             hash_type computed_hash;
-            get_hash(hasher, access.get_written().value(), computed_hash); // NOLINT(bugprone-unchecked-optional-access)
+            get_hash(hasher, access.get_written().value(), computed_hash);
             if (computed_hash != written_hash) {
                 throw std::invalid_argument{
                     "written hash and written data mismatch at access " + std::to_string(access_to_report())};
@@ -358,6 +360,7 @@ private:
             m_root_hash = proof.bubble_up(m_hasher, written_hash);
         }
         m_next_access++;
+        // NOLINTEND(bugprone-unchecked-optional-access)
     }
 };
 

@@ -349,6 +349,9 @@ static void check_sibling_cm_hashes(lua_State *L, int idx, size_t log2_target_si
     cm_hash_array *sibling_hashes) {
     luaL_checktype(L, idx, LUA_TTABLE);
     memset(sibling_hashes, 0, sizeof(cm_hash_array));
+    if (log2_target_size > log2_root_size) {
+        luaL_error(L, "target size cannot be greater than root size");
+    }
     const size_t sibling_hashes_count = log2_root_size - log2_target_size;
     if (sibling_hashes_count > 64) {
         luaL_error(L, "too many sibling hashes (expected max %d, got %d)", 64, static_cast<int>(sibling_hashes_count));
@@ -433,19 +436,14 @@ static void check_cm_access(lua_State *L, int tabidx, bool proofs, cm_access *a,
     a->type = check_cm_access_type_field(L, tabidx, "type");
     a->address = check_uint_field(L, tabidx, "address");
     a->log2_size = check_int_field(L, tabidx, "log2_size");
-    if (a->log2_size < CM_TREE_LOG2_WORD_SIZE || a->log2_size > CM_TREE_LOG2_ROOT_SIZE) {
-        luaL_error(L, "invalid log2_size (expected integer in {%d..%d})", CM_TREE_LOG2_WORD_SIZE,
-            CM_TREE_LOG2_ROOT_SIZE);
-    }
-
+    const int expected_data_log2_size = std::max(a->log2_size, CM_TREE_LOG2_WORD_SIZE);
     if (opt_table_field(L, tabidx, "sibling_hashes")) {
         a->sibling_hashes = new cm_hash_array{};
-        check_sibling_cm_hashes(L, -1, a->log2_size, CM_TREE_LOG2_ROOT_SIZE, a->sibling_hashes);
+        check_sibling_cm_hashes(L, -1, expected_data_log2_size, CM_TREE_LOG2_ROOT_SIZE, a->sibling_hashes);
         lua_pop(L, 1);
     } else if (proofs) {
         luaL_error(L, "missing sibling_hashes");
     }
-
     lua_getfield(L, tabidx, "read_hash");
     clua_check_cm_hash(L, -1, &a->read_hash);
     lua_pop(L, 1);
@@ -454,8 +452,8 @@ static void check_cm_access(lua_State *L, int tabidx, bool proofs, cm_access *a,
         clua_check_cm_hash(L, -1, &a->written_hash);
         lua_pop(L, 1);
     }
-    a->read_data = opt_cm_access_data_field(L, tabidx, "read", a->log2_size, &a->read_data_size);
-    a->written_data = opt_cm_access_data_field(L, tabidx, "written", a->log2_size, &a->written_data_size);
+    a->read_data = opt_cm_access_data_field(L, tabidx, "read", expected_data_log2_size, &a->read_data_size);
+    a->written_data = opt_cm_access_data_field(L, tabidx, "written", expected_data_log2_size, &a->written_data_size);
 }
 
 cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx, int ctxidx) {
@@ -662,9 +660,10 @@ void clua_push_cm_access_log(lua_State *L, const cm_access_log *log) {
         }
         if (log->log_type.proofs && a->sibling_hashes != nullptr) {
             lua_newtable(L);
-            for (size_t log2_size = a->log2_size; log2_size < CM_TREE_LOG2_ROOT_SIZE; log2_size++) {
-                clua_push_cm_hash(L, &a->sibling_hashes->entry[log2_size - a->log2_size]);
-                lua_rawseti(L, -2, static_cast<lua_Integer>(log2_size - a->log2_size) + 1);
+            const int proof_log2_size = std::max(a->log2_size, CM_TREE_LOG2_WORD_SIZE);
+            for (size_t log2_size = proof_log2_size; log2_size < CM_TREE_LOG2_ROOT_SIZE; log2_size++) {
+                clua_push_cm_hash(L, &a->sibling_hashes->entry[log2_size - proof_log2_size]);
+                lua_rawseti(L, -2, static_cast<lua_Integer>(log2_size - proof_log2_size) + 1);
             }
             lua_setfield(L, -2, "sibling_hashes");
         }

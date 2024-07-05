@@ -37,10 +37,10 @@ void send_cmio_response(STATE_ACCESS &a, uint16 reason, bytes data, uint32 dataL
     }
     // A zero length data is a valid response. We just skip writing to the rx buffer.
     if (dataLength > 0) {
-        // Find the write length: the smallest power of 2 that is >= length and >= word size
+        // Find the write length: the smallest power of 2 that is >= dataLength and >= tree leaf size
         uint32 writeLengthLog2Size = uint32Log2(dataLength);
-        if (writeLengthLog2Size < 3) {
-            writeLengthLog2Size = 3; // minimum write size is a word
+        if (writeLengthLog2Size < machine_merkle_tree::get_log2_word_size()) {
+            writeLengthLog2Size = 5; // minimum write size is the tree leaf size
         }
         if (uint32ShiftLeft(1, writeLengthLog2Size) < dataLength) {
             writeLengthLog2Size += 1;

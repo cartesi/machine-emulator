@@ -46,10 +46,17 @@ static inline void set_word_access_data(uint64_t w, access_data &ad) {
     ad.insert(ad.end(), p, p + sizeof(w));
 }
 
-static inline uint64_t get_word_access_data(const access_data &ad) {
-    assert(ad.size() == 8);
+static inline void replace_word_access_data(uint64_t w, access_data &ad, int offset = 0) {
+    assert(ad.size() >= offset + sizeof(uint64_t));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto *p = reinterpret_cast<uint8_t *>(&w);
+    memcpy(ad.data() + offset, p, sizeof(w));
+}
+
+static inline uint64_t get_word_access_data(const access_data &ad, int offset = 0) {
+    assert(ad.size() >= offset + sizeof(uint64_t));
     uint64_t w = 0;
-    memcpy(&w, ad.data(), sizeof(w));
+    memcpy(&w, ad.data() + offset, sizeof(w));
     return w;
 }
 
@@ -165,18 +172,29 @@ public:
     /// \param root_hash Hash to be used as the root of the proof.
     /// \return The corresponding proof
     proof_type make_proof(const hash_type root_hash) const {
+        // the access can be of data smaller than the merkle tree word size
+        // however, the proof must be at least as big as the merkle tree word size
+        const int proof_log2_size = std::max(m_log2_size, machine_merkle_tree::get_log2_word_size());
+        // the proof address is the access address aligned to the merkle tree word size
+        const uint64_t proof_address = m_address & ~(machine_merkle_tree::get_word_size() - 1);
         if (!m_sibling_hashes.has_value()) {
             throw std::runtime_error("can't make proof if access doesn't have sibling hashes");
         }
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         const auto &sibling_hashes = m_sibling_hashes.value();
-        const int log2_root_size = m_log2_size + static_cast<int>(sibling_hashes.size());
-        proof_type proof(log2_root_size, m_log2_size);
+        const int log2_root_size = proof_log2_size + static_cast<int>(sibling_hashes.size());
+        if (m_read.has_value() && m_read.value().size() != (static_cast<uint64_t>(1) << proof_log2_size)) {
+            throw std::runtime_error("access read data size is inconsistent with proof size");
+        }
+        if (m_written.has_value() && m_written.value().size() != (static_cast<uint64_t>(1) << proof_log2_size)) {
+            throw std::runtime_error("access written data size is inconsistent with proof size");
+        }
+        proof_type proof(log2_root_size, proof_log2_size);
         proof.set_root_hash(root_hash);
-        proof.set_target_address(m_address);
+        proof.set_target_address(proof_address);
         proof.set_target_hash(m_read_hash);
-        for (int log2_size = m_log2_size; log2_size < log2_root_size; log2_size++) {
-            proof.set_sibling_hash(sibling_hashes[log2_size - m_log2_size], log2_size);
+        for (int log2_size = proof_log2_size; log2_size < log2_root_size; log2_size++) {
+            proof.set_sibling_hash(sibling_hashes[log2_size - proof_log2_size], log2_size);
         }
         return proof;
     }

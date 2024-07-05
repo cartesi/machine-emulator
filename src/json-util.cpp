@@ -21,6 +21,7 @@
 #include <unordered_map>
 
 #include "base64.h"
+#include "machine-merkle-tree.h"
 
 namespace cartesi {
 
@@ -649,6 +650,9 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, con
         throw std::domain_error("field \""s + new_path + "log2_size\" is out of bounds");
     }
     access.set_log2_size(static_cast<int>(log2_size));
+    // Minimum logged data size is merkle tree word size
+    const uint64_t data_log2_size =
+        std::max(log2_size, static_cast<uint64_t>(machine_merkle_tree::get_log2_word_size()));
     uint64_t address = 0;
     ju_get_field(jk, "address"s, address, new_path);
     access.set_address(address);
@@ -665,7 +669,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, con
     std::optional<access_data> read;
     ju_get_opt_field(jk, "read"s, read, new_path);
     if (read.has_value()) {
-        if (read.value().size() != (UINT64_C(1) << log2_size)) {
+        if (read.value().size() != (UINT64_C(1) << data_log2_size)) {
             throw std::invalid_argument("field \""s + new_path + "written\" has wrong length");
         }
         access.set_read(std::move(read.value()));
@@ -674,20 +678,18 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, con
         std::optional<access_data> written;
         ju_get_opt_field(jk, "written"s, written, new_path);
         if (written.has_value()) {
-            if (written.value().size() != (UINT64_C(1) << log2_size)) {
+            if (written.value().size() != (UINT64_C(1) << data_log2_size)) {
                 throw std::invalid_argument("field \""s + new_path + "written\" has wrong length");
             }
             access.set_written(std::move(written.value()));
         }
     }
-    not_default_constructible<machine_merkle_tree::proof_type> proof;
-    ju_get_opt_field(jk, "proof"s, proof, new_path);
     if (contains(jk, "sibling_hashes")) {
         access.get_sibling_hashes().emplace();
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         auto &sibling_hashes = access.get_sibling_hashes().value();
         ju_get_vector_like_field(jk, "sibling_hashes"s, sibling_hashes, new_path);
-        auto expected_depth = static_cast<size_t>(machine_merkle_tree::get_log2_root_size() - access.get_log2_size());
+        auto expected_depth = static_cast<size_t>(machine_merkle_tree::get_log2_root_size() - data_log2_size);
         if (sibling_hashes.size() != expected_depth) {
             throw std::invalid_argument("field \""s + new_path + "sibling_hashes\" has wrong length");
         }
@@ -1208,7 +1210,9 @@ void to_json(nlohmann::json &j, const access &a) {
     if (a.get_sibling_hashes().has_value()) {
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         const auto &sibling_hashes = a.get_sibling_hashes().value();
-        auto depth = machine_merkle_tree::get_log2_root_size() - a.get_log2_size();
+        // Minimum logged data size is merkle tree word size
+        auto data_log2_size = std::max(a.get_log2_size(), machine_merkle_tree::get_log2_word_size());
+        auto depth = machine_merkle_tree::get_log2_root_size() - data_log2_size;
         nlohmann::json s = nlohmann::json::array();
         for (int i = 0; i < depth; i++) {
             s.push_back(encode_base64(sibling_hashes[i]));

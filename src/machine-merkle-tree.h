@@ -71,7 +71,7 @@ private:
     /// \brief LOG2_WORD_SIZE Number of bits covered by a word.
     /// I.e., log<sub>2</sub> of number of bytes subintended by the
     /// the deepest tree nodes.
-    static constexpr int LOG2_WORD_SIZE = 3;
+    static constexpr int LOG2_WORD_SIZE = 5;
     /// \brief DEPTH Depth of Merkle tree.
     static constexpr int DEPTH = LOG2_ROOT_SIZE - LOG2_WORD_SIZE;
 

@@ -16,9 +16,10 @@
 
 local cartesi = require("cartesi")
 
+local ROOT_LOG2_SIZE = 64
 local PAGE_LOG2_SIZE = 12
 local PAGE_SIZE = 1 << PAGE_LOG2_SIZE
-local WORD_LOG2_SIZE = 3
+local WORD_LOG2_SIZE = 5
 
 local function adjust_path(path) return string.gsub(path or ".", "/*$", "") .. "/" end
 
@@ -35,8 +36,8 @@ local zero_keccak_hash_table = {
 }
 
 do
-    local hash = cartesi.keccak(string.rep("\0", 8))
-    for i = 3, 63 do
+    local hash = cartesi.keccak(string.rep("\0", 1 << WORD_LOG2_SIZE))
+    for i = WORD_LOG2_SIZE, ROOT_LOG2_SIZE - 1 do
         zero_keccak_hash_table[i] = hash
         hash = cartesi.keccak(hash, hash)
     end
@@ -274,6 +275,30 @@ function test_util.assert_error(expected_error_text_pattern, fn)
         actual_error_text:match(expected_error_text_pattern),
         string.format("Expected error to match '%s', but it was '%s'", expected_error_text_pattern, actual_error_text)
     )
+end
+
+-- temporary file
+local temp_file_meta = { __index = {} }
+
+function temp_file_meta.__index:write(...) self.file:write(...) end
+
+function temp_file_meta.__index:read_all()
+    self.file:seek("set", 0)
+    return self.file:read("*all")
+end
+
+function temp_file_meta.__index:close()
+    self.file:close()
+    os.remove(self.file_name)
+end
+
+function temp_file_meta:__close() self:close() end
+
+function test_util.new_temp_file()
+    local self = {}
+    self.file_name = os.tmpname()
+    self.file = io.open(self.file_name, "w+")
+    return setmetatable(self, temp_file_meta)
 end
 
 return test_util

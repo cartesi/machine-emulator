@@ -14,6 +14,8 @@
 -- with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 --
 
+local cartesi = require("cartesi")
+
 local _M = {}
 
 local function indentout(f, indent, fmt, ...) f:write(string.rep("  ", indent), string.format(fmt, ...)) end
@@ -197,8 +199,16 @@ end
 
 local function hexhash8(hash) return string.sub(hexhash(hash), 1, 8) end
 
-local function accessdatastring(data, data_hash, log2_size)
-    if log2_size == 3 then
+local function accessdatastring(data, data_hash, data_log2_size, address)
+    local data_size = 1 << data_log2_size
+    if data_log2_size == 3 then
+        if data_size < #data then
+            -- access data is  smaller than the tree leaf size
+            -- the logged data is the entire tree leaf, but we only need the data that was accessed
+            local leaf_aligned_addrss = address & ~((1 << cartesi.TREE_LOG2_WORD_SIZE) - 1)
+            local word_offset = address - leaf_aligned_addrss
+            data = data:sub(word_offset + 1, word_offset + data_size)
+        end
         data = string.unpack("<I8", data)
         return string.format("0x%x(%u)", data, data)
     else
@@ -209,7 +219,7 @@ local function accessdatastring(data, data_hash, log2_size)
             data_snippet = data_snippet
                 .. string.format("%s...%s", hexstring(data:sub(1, 3)), hexstring(data:sub(-3, -1)))
         end
-        return string.format("%s(2^%d bytes)", data_snippet, log2_size)
+        return string.format("%s(2^%d bytes)", data_snippet, data_log2_size)
     end
 end
 
@@ -237,12 +247,12 @@ function _M.dump_log(log, out)
             j = j + 1
         -- Otherwise, output access
         elseif ai then
-            local read = accessdatastring(ai.read, ai.read_hash, ai.log2_size)
+            local read = accessdatastring(ai.read, ai.read_hash, ai.log2_size, ai.address)
             if ai.type == "read" then
                 indentout(out, indent, "%d: read %s@0x%x(%u): %s\n", i, notes[i] or "", ai.address, ai.address, read)
             else
                 assert(ai.type == "write", "unknown access type")
-                local written = accessdatastring(ai.written, ai.written_hash, ai.log2_size)
+                local written = accessdatastring(ai.written, ai.written_hash, ai.log2_size, ai.address)
                 indentout(
                     out,
                     indent,

@@ -25,7 +25,7 @@ using hash_type = cartesi::keccak_256_hasher::hash_type;
 // Calculate root hash for data buffer of log2_size
 namespace detail {
 
-constexpr int WORD_LOG2_SIZE = 3;
+constexpr int WORD_LOG2_SIZE = 5;
 constexpr int MERKLE_PAGE_LOG2_SIZE = 12;
 constexpr int MERKLE_PAGE_SIZE = (UINT64_C(1) << MERKLE_PAGE_LOG2_SIZE);
 
@@ -84,7 +84,7 @@ static hash_type calculate_proof_root_hash(const cm_merkle_tree_proof *proof) {
 }
 
 static hash_type calculate_emulator_hash(cm_machine *machine) {
-    cartesi::back_merkle_tree tree(64, 12, 3);
+    cartesi::back_merkle_tree tree(CM_TREE_LOG2_ROOT_SIZE, CM_TREE_LOG2_PAGE_SIZE, CM_TREE_LOG2_WORD_SIZE);
     std::string page;
     page.resize(detail::MERKLE_PAGE_SIZE);
     cm_memory_range_descr_array *mrds = nullptr;

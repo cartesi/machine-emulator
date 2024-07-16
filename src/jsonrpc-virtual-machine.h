@@ -52,26 +52,22 @@ public:
 
     static machine_config get_default_config(const jsonrpc_mgr_ptr &mgr);
 
-    static void verify_uarch_step_log(const jsonrpc_mgr_ptr &mgr, const access_log &log,
-        const machine_runtime_config &r = {}, bool one_based = false);
+    static void verify_uarch_step_log(const jsonrpc_mgr_ptr &mgr, const access_log &log, bool one_based = false);
 
     static void verify_uarch_step_state_transition(const jsonrpc_mgr_ptr &mgr, const hash_type &root_hash_before,
-        const access_log &log, const hash_type &root_hash_after, const machine_runtime_config &r = {},
-        bool one_based = false);
+        const access_log &log, const hash_type &root_hash_after, bool one_based = false);
 
-    static void verify_uarch_reset_log(const jsonrpc_mgr_ptr &mgr, const access_log &log,
-        const machine_runtime_config &r = {}, bool one_based = false);
+    static void verify_uarch_reset_log(const jsonrpc_mgr_ptr &mgr, const access_log &log, bool one_based = false);
 
     static void verify_uarch_reset_state_transition(const jsonrpc_mgr_ptr &mgr, const hash_type &root_hash_before,
-        const access_log &log, const hash_type &root_hash_after, const machine_runtime_config &r = {},
-        bool one_based = false);
+        const access_log &log, const hash_type &root_hash_after, bool one_based = false);
 
     static void verify_send_cmio_response_log(const jsonrpc_mgr_ptr &mgr, uint16_t reason, const unsigned char *data,
-        size_t length, const access_log &log, const machine_runtime_config &r = {}, bool one_based = false);
+        size_t length, const access_log &log, bool one_based = false);
 
     static void verify_send_cmio_response_state_transition(const jsonrpc_mgr_ptr &mgr, uint16_t reason,
         const unsigned char *data, size_t length, const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after, const machine_runtime_config &r = {}, bool one_based = false);
+        const hash_type &root_hash_after, bool one_based = false);
 
     static std::string fork(const jsonrpc_mgr_ptr &mgr);
     static void rebind(const jsonrpc_mgr_ptr &mgr, const std::string &address);

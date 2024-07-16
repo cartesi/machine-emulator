@@ -17,21 +17,45 @@
 #ifndef CM_C_API_H
 #define CM_C_API_H
 
-#ifndef __cplusplus
-#include <assert.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-#else
-#include <cstddef>
-#include <cstdint>
-#endif
-
-#include "machine-c-defines.h"
+#include "machine-c-version.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+// -----------------------------------------------------------------------------
+// API definitions
+// -----------------------------------------------------------------------------
+
+// Compiler visibility definition
+#ifndef CM_API
+#define CM_API __attribute__((visibility("default"))) // NOLINT(cppcoreguidelines-macro-usage)
+#endif
+
+#define CM_MCYCLE_MAX UINT64_MAX
+
+// -----------------------------------------------------------------------------
+// API enums
+// -----------------------------------------------------------------------------
+
+/// \brief Constants.
+enum {
+    CM_MACHINE_HASH_BYTE_SIZE = 32,
+    CM_MACHINE_X_REG_COUNT = 32,
+    CM_MACHINE_F_REG_COUNT = 32,
+    CM_MACHINE_UARCH_X_REG_COUNT = 32,
+    CM_TREE_LOG2_WORD_SIZE = 5,
+    CM_TREE_LOG2_PAGE_SIZE = 12,
+    CM_TREE_LOG2_ROOT_SIZE = 64,
+
+    CM_FLASH_DRIVE_CONFIGS_MAX_SIZE = 8,
+    CM_VIRTIO_CONFIGS_MAX_SIZE = 16,
+    CM_VIRTIO_HOSTFWD_CONFIGS_MAX_SIZE = 16,
+};
 
 // ---------------------------------
 // API Structures
@@ -99,50 +123,50 @@ typedef enum { // NOLINT(modernize-use-using)
 
 /// \brief List of CSRs to use with read_csr and write_csr
 typedef enum { // NOLINT(modernize-use-using)
-    CM_PROC_PC,
-    CM_PROC_FCSR,
-    CM_PROC_MVENDORID,
-    CM_PROC_MARCHID,
-    CM_PROC_MIMPID,
-    CM_PROC_MCYCLE,
-    CM_PROC_ICYCLEINSTRET,
-    CM_PROC_MSTATUS,
-    CM_PROC_MTVEC,
-    CM_PROC_MSCRATCH,
-    CM_PROC_MEPC,
-    CM_PROC_MCAUSE,
-    CM_PROC_MTVAL,
-    CM_PROC_MISA,
-    CM_PROC_MIE,
-    CM_PROC_MIP,
-    CM_PROC_MEDELEG,
-    CM_PROC_MIDELEG,
-    CM_PROC_MCOUNTEREN,
-    CM_PROC_MENVCFG,
-    CM_PROC_STVEC,
-    CM_PROC_SSCRATCH,
-    CM_PROC_SEPC,
-    CM_PROC_SCAUSE,
-    CM_PROC_STVAL,
-    CM_PROC_SATP,
-    CM_PROC_SCOUNTEREN,
-    CM_PROC_SENVCFG,
-    CM_PROC_ILRSC,
-    CM_PROC_IFLAGS,
-    CM_PROC_IUNREP,
-    CM_PROC_CLINT_MTIMECMP,
-    CM_PROC_PLIC_GIRQPEND,
-    CM_PROC_PLIC_GIRQSRVD,
-    CM_PROC_HTIF_TOHOST,
-    CM_PROC_HTIF_FROMHOST,
-    CM_PROC_HTIF_IHALT,
-    CM_PROC_HTIF_ICONSOLE,
-    CM_PROC_HTIF_IYIELD,
-    CM_PROC_UARCH_PC,
-    CM_PROC_UARCH_CYCLE,
-    CM_PROC_UARCH_HALT_FLAG,
-    CM_PROC_UNKNOWN
-} CM_PROC_CSR;
+    CM_CSR_PC,
+    CM_CSR_FCSR,
+    CM_CSR_MVENDORID,
+    CM_CSR_MARCHID,
+    CM_CSR_MIMPID,
+    CM_CSR_MCYCLE,
+    CM_CSR_ICYCLEINSTRET,
+    CM_CSR_MSTATUS,
+    CM_CSR_MTVEC,
+    CM_CSR_MSCRATCH,
+    CM_CSR_MEPC,
+    CM_CSR_MCAUSE,
+    CM_CSR_MTVAL,
+    CM_CSR_MISA,
+    CM_CSR_MIE,
+    CM_CSR_MIP,
+    CM_CSR_MEDELEG,
+    CM_CSR_MIDELEG,
+    CM_CSR_MCOUNTEREN,
+    CM_CSR_MENVCFG,
+    CM_CSR_STVEC,
+    CM_CSR_SSCRATCH,
+    CM_CSR_SEPC,
+    CM_CSR_SCAUSE,
+    CM_CSR_STVAL,
+    CM_CSR_SATP,
+    CM_CSR_SCOUNTEREN,
+    CM_CSR_SENVCFG,
+    CM_CSR_ILRSC,
+    CM_CSR_IFLAGS,
+    CM_CSR_IUNREP,
+    CM_CSR_CLINT_MTIMECMP,
+    CM_CSR_PLIC_GIRQPEND,
+    CM_CSR_PLIC_GIRQSRVD,
+    CM_CSR_HTIF_TOHOST,
+    CM_CSR_HTIF_FROMHOST,
+    CM_CSR_HTIF_IHALT,
+    CM_CSR_HTIF_ICONSOLE,
+    CM_CSR_HTIF_IYIELD,
+    CM_CSR_UARCH_PC,
+    CM_CSR_UARCH_CYCLE,
+    CM_CSR_UARCH_HALT_FLAG,
+    CM_CSR_UNKNOWN
+} CM_CSR;
 
 /// \brief Return values of uarch_interpret
 typedef enum { // NOLINT(modernize-use-using)
@@ -498,7 +522,7 @@ CM_API void cm_delete_machine_config(const cm_machine_config *config);
 /// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
+CM_API int cm_create(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
     cm_machine **new_machine, char **err_msg);
 
 /// \brief Create machine instance from previously serialized directory
@@ -510,7 +534,7 @@ CM_API int cm_create_machine(const cm_machine_config *config, const cm_machine_r
 /// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_load_machine(const char *dir, const cm_machine_runtime_config *runtime_config, cm_machine **new_machine,
+CM_API int cm_load(const char *dir, const cm_machine_runtime_config *runtime_config, cm_machine **new_machine,
     char **err_msg);
 
 /// \brief Serialize entire state to directory
@@ -537,7 +561,7 @@ CM_API void cm_delete_machine(cm_machine *m);
 /// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason_result, char **err_msg);
+CM_API int cm_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason_result, char **err_msg);
 
 /// \brief Runs the machine for one micro cycle logging all accesses to the state.
 /// \param m Pointer to valid machine instance
@@ -549,7 +573,7 @@ CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *b
 /// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_log_uarch_step(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
+CM_API int cm_log_step_uarch(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
     char **err_msg);
 
 /// \brief  Deletes the instance of cm_access_log acquired from cm_step
@@ -565,38 +589,35 @@ CM_API void cm_delete_access_log(cm_access_log *acc_log);
 /// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_verify_uarch_step_log(const cm_access_log *log, const cm_machine_runtime_config *runtime_config,
-    bool one_based, char **err_msg);
+CM_API int cm_verify_step_uarch_log(const cm_access_log *log, bool one_based, char **err_msg);
 
 /// \brief Checks the validity of a state transition
 /// \param root_hash_before State hash before step
 /// \param log Step state access log
 /// \param root_hash_after State hash after step
-/// \param runtime_config Machine runtime configuration to use during verification. Must be pointer to valid object
 /// \param one_based Use 1-based indices when reporting errors
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for successful verification, non zero code for error
-CM_API int cm_verify_uarch_step_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
-    const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
+CM_API int cm_verify_step_uarch_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
+    const cm_hash *root_hash_after, bool one_based, char **err_msg);
 
 /// \brief Checks the validity of a state transition caused by a uarch state reset
 /// \param root_hash_before State hash before step
-/// \param log Step state access log produced by cm_log_uarch_reset
+/// \param log Step state access log produced by cm_log_reset_uarch
 /// \param root_hash_after State hash after step
-/// \param runtime_config Machine runtime configuration to use during verification. Must be pointer to valid object
 /// \param one_based Use 1-based indices when reporting errors
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for successful verification, non zero code for error
-CM_API int cm_verify_uarch_reset_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
-    const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
+CM_API int cm_verify_reset_uarch_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
+    const cm_hash *root_hash_after, bool one_based, char **err_msg);
 
-/// \brief Checks the internal consistency of an access log produced by cm_log_uarch_reset
+/// \brief Checks the internal consistency of an access log produced by cm_log_reset_uarch
 /// \param log State access log to be verified
 /// \param r Machine runtime configuration to use during verification. Must be pointer to valid object
 /// \param one_based Use 1-based indices when reporting errors
@@ -605,8 +626,7 @@ CM_API int cm_verify_uarch_reset_state_transition(const cm_hash *root_hash_befor
 /// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_verify_uarch_reset_log(const cm_access_log *log, const cm_machine_runtime_config *runtime_config,
-    bool one_based, char **err_msg);
+CM_API int cm_verify_reset_uarch_log(const cm_access_log *log, bool one_based, char **err_msg);
 
 /// \brief Obtains the proof for a node in the Merkle tree
 /// \param m Pointer to valid machine instance
@@ -656,7 +676,7 @@ CM_API int cm_verify_merkle_tree(const cm_machine *m, bool *result, char **err_m
 /// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_read_csr(const cm_machine *m, CM_PROC_CSR r, uint64_t *val, char **err_msg);
+CM_API int cm_read_csr(const cm_machine *m, CM_CSR r, uint64_t *val, char **err_msg);
 
 /// \brief Write the value of any CSR
 /// \param m Pointer to valid machine instance
@@ -667,12 +687,12 @@ CM_API int cm_read_csr(const cm_machine *m, CM_PROC_CSR r, uint64_t *val, char *
 /// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val, char **err_msg);
+CM_API int cm_write_csr(cm_machine *m, CM_CSR w, uint64_t val, char **err_msg);
 
 /// \brief Gets the address of any CSR
 /// \param w The CSR
 /// \returns The address of the specified CSR
-CM_API uint64_t cm_get_csr_address(CM_PROC_CSR w);
+CM_API uint64_t cm_get_csr_address(CM_CSR w);
 
 /// \brief Read the value of a word in the machine state.
 /// \param m Pointer to valid machine instance
@@ -1881,7 +1901,7 @@ CM_API int cm_reset_uarch(cm_machine *m, char **err_msg);
 /// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
-CM_API int cm_log_uarch_reset(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
+CM_API int cm_log_reset_uarch(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
     char **err_msg);
 
 /// \brief Runs the machine in the microarchitecture until the mcycle advances by one unit or the micro cycles counter
@@ -1894,8 +1914,7 @@ CM_API int cm_log_uarch_reset(cm_machine *m, cm_access_log_type log_type, bool o
 /// must be deleted by the function caller using cm_delete_cstring.
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_machine_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *status_result,
-    char **err_msg);
+CM_API int cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *status_result, char **err_msg);
 
 /// \brief Returns an array with the description of each memory range in the machine.
 /// \param m Pointer to valid machine instance
@@ -1945,14 +1964,13 @@ CM_API int cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const unsig
 /// \param data The response sent when the log was generated.
 /// \param length Length of response.
 /// \param log State access log to be verified.
-/// \param runtime_config Runtime configuration of the machine.
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, size_t length,
-    const cm_access_log *log, const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
+    const cm_access_log *log, bool one_based, char **err_msg);
 
 /// \brief Checks the validity of state transitions caused by cm_send_cmio_response
 /// \param reason Reason for sending the response.
@@ -1961,15 +1979,14 @@ CM_API int cm_verify_send_cmio_response_log(uint16_t reason, const unsigned char
 /// \param root_hash_before State hash before load.
 /// \param log State access log to be verified.
 /// \param root_hash_after State hash after load.
-/// \param runtime_config Runtime configuration of the machine.
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
 CM_API int cm_verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, size_t length,
-    const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after,
-    const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
+    const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after, bool one_based,
+    char **err_msg);
 
 #ifdef __cplusplus
 }

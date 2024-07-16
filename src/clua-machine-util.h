@@ -196,7 +196,7 @@ void clua_push_cm_machine_runtime_config(lua_State *L, const cm_machine_runtime_
 /// \param L Lua state
 /// \param idx Index in stack
 /// \returns C API CSR selector. Lua argument error if unknown
-CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx);
+CM_CSR clua_check_cm_proc_csr(lua_State *L, int idx);
 
 /// \brief Pushes an C api access log to the Lua stack
 /// \param L Lua state

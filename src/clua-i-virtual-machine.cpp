@@ -327,7 +327,7 @@ static int machine_obj_index_run(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t mcycle_end = luaL_optinteger(L, 2, UINT64_MAX);
     CM_BREAK_REASON break_reason = CM_BREAK_REASON_FAILED;
-    TRY_EXECUTE(cm_machine_run(m.get(), mcycle_end, &break_reason, err_msg));
+    TRY_EXECUTE(cm_run(m.get(), mcycle_end, &break_reason, err_msg));
     lua_pushinteger(L, static_cast<lua_Integer>(break_reason));
     return 1;
 }
@@ -374,7 +374,7 @@ static int machine_obj_index_get_memory_ranges(lua_State *L) {
 static int machine_obj_index_log_uarch_reset(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(nullptr));
-    TRY_EXECUTE(cm_log_uarch_reset(m.get(), clua_check_cm_log_type(L, 2), true, &managed_log.get(), err_msg));
+    TRY_EXECUTE(cm_log_reset_uarch(m.get(), clua_check_cm_log_type(L, 2), true, &managed_log.get(), err_msg));
     clua_push_cm_access_log(L, managed_log.get());
     managed_log.reset();
     return 1;
@@ -386,7 +386,7 @@ static int machine_obj_index_run_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t cycle_end = luaL_optinteger(L, 2, UINT64_MAX);
     CM_UARCH_BREAK_REASON status = CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE;
-    TRY_EXECUTE(cm_machine_run_uarch(m.get(), cycle_end, &status, err_msg));
+    TRY_EXECUTE(cm_run_uarch(m.get(), cycle_end, &status, err_msg));
     lua_pushinteger(L, static_cast<lua_Integer>(status));
     return 1;
 }
@@ -396,7 +396,7 @@ static int machine_obj_index_run_uarch(lua_State *L) {
 static int machine_obj_index_log_uarch_step(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(nullptr));
-    TRY_EXECUTE(cm_log_uarch_step(m.get(), clua_check_cm_log_type(L, 2), true, &managed_log.get(), err_msg));
+    TRY_EXECUTE(cm_log_step_uarch(m.get(), clua_check_cm_log_type(L, 2), true, &managed_log.get(), err_msg));
     clua_push_cm_access_log(L, managed_log.get());
     managed_log.reset();
     return 1;

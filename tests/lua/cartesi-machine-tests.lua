@@ -832,7 +832,7 @@ local function step(tests)
             if not periodic_action or total_uarch_cycles == next_action_uarch_cycle then
                 local init_mcycle = machine:read_mcycle()
                 init_uarch_cycle = machine:read_uarch_cycle()
-                local log = machine:log_uarch_step(log_type)
+                local log = machine:log_step_uarch(log_type)
                 local final_mcycle = machine:read_mcycle()
                 final_uarch_cycle = machine:read_uarch_cycle()
                 if total_logged_steps > 0 then

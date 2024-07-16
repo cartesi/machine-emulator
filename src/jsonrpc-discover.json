@@ -214,7 +214,7 @@
     },
 
     {
-      "name": "machine.log_uarch_step",
+      "name": "machine.log_step_uarch",
       "summary": "Runs the small emulator for one cycle and return a log of state accesses",
       "params": [ {
           "name":"log_type",
@@ -242,7 +242,7 @@
     },
 
     {
-      "name": "machine.verify_uarch_step_log",
+      "name": "machine.verify_step_uarch_log",
       "summary": "Verifies an access log",
       "params": [ {
           "name":"log",
@@ -277,7 +277,7 @@
     },
 
     {
-      "name": "machine.verify_uarch_step_state_transition",
+      "name": "machine.verify_step_uarch_state_transition",
       "summary": "Verifies a state transition",
       "params": [ {
           "name":"root_hash_before",
@@ -326,8 +326,8 @@
     },
 
     {
-      "name": "machine.verify_uarch_reset_log",
-      "summary": "Verifies an access log produced by a log_uarch_reset",
+      "name": "machine.verify_reset_uarch_log",
+      "summary": "Verifies an access log produced by a log_reset_uarch",
       "params": [ {
           "name":"log",
           "description": "Access log to verify",
@@ -361,8 +361,8 @@
     },
 
     {
-      "name": "machine.verify_uarch_reset_state_transition",
-      "summary": "Verifies a state transition caused by log_uarch_reset",
+      "name": "machine.verify_reset_uarch_state_transition",
+      "summary": "Verifies a state transition caused by log_reset_uarch",
       "params": [ {
           "name":"root_hash_before",
           "description": "State hash before transition described by access log",
@@ -1090,7 +1090,7 @@
     },
 
     {
-      "name": "machine.log_uarch_reset",
+      "name": "machine.log_reset_uarch",
       "summary": "Reset uarch to pristine state and return a log of state accesses",
       "params": [ {
           "name":"log_type",

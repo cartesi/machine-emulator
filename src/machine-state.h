@@ -34,12 +34,13 @@
 
 namespace cartesi {
 
+/// \brief Cartesi-specific unpacked CSR iflags.
 struct unpacked_iflags {
     uint8_t PRV; ///< Privilege level.
     bool X;      ///< CPU has yielded with automatic reset.
     bool Y;      ///< CPU has yielded with manual reset.
     bool H;      ///< CPU has been permanently halted.
-};               ///< Cartesi-specific unpacked CSR iflags.
+};
 
 /// \brief Machine state.
 /// \details The machine_state structure contains the entire

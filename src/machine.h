@@ -211,7 +211,7 @@ public:
     /// \param log_type Type of access log to generate.
     /// \param one_based Use 1-based indices when reporting errors.
     /// \returns The state access log.
-    access_log log_uarch_step(const access_log::type &log_type, bool one_based = false);
+    access_log log_step_uarch(const access_log::type &log_type, bool one_based = false);
 
     /// \brief Resets the entire uarch state to pristine values.
     void reset_uarch();
@@ -221,39 +221,33 @@ public:
     /// \param one_based Use 1-based indices when reporting errors.
     /// \param log_data If true, access data is recorded in the log, otherwise only hashes. The default is false.
     /// \returns The state access log.
-    access_log log_uarch_reset(const access_log::type &log_type, bool one_based = false);
+    access_log log_reset_uarch(const access_log::type &log_type, bool one_based = false);
 
     /// \brief Checks the internal consistency of an access log.
     /// \param log State access log to be verified.
-    /// \param runtime Machine runtime configuration to use during verification.
     /// \param one_based Use 1-based indices when reporting errors.
-    static void verify_uarch_step_log(const access_log &log, const machine_runtime_config &runtime = {},
-        bool one_based = false);
+    static void verify_step_uarch_log(const access_log &log, bool one_based = false);
 
     /// \brief Checks the validity of a state transition.
     /// \param root_hash_before State hash before step.
     /// \param log Step state access log.
     /// \param root_hash_after State hash after step.
-    /// \param runtime Machine runtime configuration to use during verification.
     /// \param one_based Use 1-based indices when reporting errors.
-    static void verify_uarch_step_state_transition(const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after, const machine_runtime_config &runtime = {}, bool one_based = false);
+    static void verify_step_uarch_state_transition(const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after, bool one_based = false);
 
-    /// \brief Checks the internal consistency of an access log produced by log_uarch_reset
+    /// \brief Checks the internal consistency of an access log produced by log_reset_uarch
     /// \param log State access log to be verified.
-    /// \param runtime Machine runtime configuration to use during verification.
     /// \param one_based Use 1-based indices when reporting errors.
-    static void verify_uarch_reset_log(const access_log &log, const machine_runtime_config &runtime = {},
-        bool one_based = false);
+    static void verify_reset_uarch_log(const access_log &log, bool one_based = false);
 
-    /// \brief Checks the validity of a state transition. caused by log_uarch_reset
+    /// \brief Checks the validity of a state transition. caused by log_reset_uarch
     /// \param root_hash_before State hash before uarch reset
     /// \param log Step state access log.
     /// \param root_hash_after State hash after uarch reset.
-    /// \param runtime Machine runtime configuration to use during verification.
     /// \param one_based Use 1-based indices when reporting errors.
-    static void verify_uarch_reset_state_transition(const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after, const machine_runtime_config &runtime = {}, bool one_based = false);
+    static void verify_reset_uarch_state_transition(const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after, bool one_based = false);
 
     static machine_config get_default_config(void);
 
@@ -873,10 +867,9 @@ public:
     /// \param data The response sent when the log was generated.
     /// \param length Length of response data.
     /// \param log State access log to be verified.
-    /// \param runtime Machine runtime configuration to use during verification.
     /// \param one_based Use 1-based indices when reporting errors.
     static void verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, size_t length,
-        const access_log &log, const machine_runtime_config &runtime = {}, bool one_based = false);
+        const access_log &log, bool one_based = false);
 
     /// \brief Checks the validity of state transitions caused by log_send_cmio_response
     /// \param reason Reason for sending response.
@@ -885,11 +878,10 @@ public:
     /// \param root_hash_before State hash before response was sent.
     /// \param log Log containing the state accesses performed by the load operation
     /// \param root_hash_after State hash after response was sent.
-    /// \param runtime Machine runtime configuration to use during verification.
     /// @param one_based Use 1-based indices when reporting errors.
     static void verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, size_t length,
         const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after,
-        const machine_runtime_config &runtime = {}, bool one_based = false);
+        bool one_based = false);
 
     /// \brief Reads the value of a microarchitecture register.
     /// \param index Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.

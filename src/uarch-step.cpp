@@ -1072,7 +1072,7 @@ static inline void executeInsn(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 UArchStepStatus uarch_step(UarchState &a) {
-    // This must be the first read in order to match the first log access in machine::verify_uarch_step_state_transition
+    // This must be the first read in order to match the first log access in machine::verify_step_uarch_state_transition
     uint64 cycle = readCycle(a);
     // do not advance if cycle will overflow
     if (cycle == UINT64_MAX) {

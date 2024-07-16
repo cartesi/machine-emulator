@@ -169,7 +169,7 @@ private:
         access a;
         if (m_log->get_log_type().has_proofs()) {
             // We can skip updating the merkle tree while getting the proof because we assume that:
-            // 1) A full merkle tree update was called at the beginning of machine::log_uarch_step()
+            // 1) A full merkle tree update was called at the beginning of machine::log_step_uarch()
             // 2) We called update_merkle_tree_page on all write accesses
             const auto proof =
                 m_m.get_proof(pleaf_aligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
@@ -212,7 +212,7 @@ private:
         access a;
         if (m_log->get_log_type().has_proofs()) {
             // We can skip updating the merkle tree while getting the proof because we assume that:
-            // 1) A full merkle tree update was called at the beginning of machine::log_uarch_step()
+            // 1) A full merkle tree update was called at the beginning of machine::log_step_uarch()
             // 2) We called update_merkle_tree_page on all write accesses
             const auto proof =
                 m_m.get_proof(pleaf_aligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);

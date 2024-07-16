@@ -17,12 +17,7 @@
 #ifndef CM_JSONRPC_C_API_H
 #define CM_JSONRPC_C_API_H
 
-#ifndef __cplusplus
-#include <stdbool.h>
-#endif
-
 #include "machine-c-api.h"
-#include "machine-c-defines.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,11 +33,11 @@ typedef struct cm_jsonrpc_mgr_tag cm_jsonrpc_mgr; // NOLINT(modernize-use-using)
 /// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
-CM_API int cm_create_jsonrpc_mgr(const char *remote_address, cm_jsonrpc_mgr **mgr, char **err_msg);
+CM_API int cm_jsonrpc_create_mgr(const char *remote_address, cm_jsonrpc_mgr **mgr, char **err_msg);
 
 /// \brief Deletes a connection manager instance
 /// \param m Valid pointer to the existing jsonrpc mgr instance
-CM_API void cm_delete_jsonrpc_mgr(const cm_jsonrpc_mgr *mgr);
+CM_API void cm_jsonrpc_destroy_mgr(const cm_jsonrpc_mgr *mgr);
 
 /// \brief Create remote machine instance
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
@@ -53,7 +48,7 @@ CM_API void cm_delete_jsonrpc_mgr(const cm_jsonrpc_mgr *mgr);
 /// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
-CM_API int cm_create_jsonrpc_machine(const cm_jsonrpc_mgr *mgr, const cm_machine_config *config,
+CM_API int cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const cm_machine_config *config,
     const cm_machine_runtime_config *runtime_config, cm_machine **new_machine, char **err_msg);
 
 /// \brief Create remote machine instance from previously serialized directory
@@ -65,7 +60,7 @@ CM_API int cm_create_jsonrpc_machine(const cm_jsonrpc_mgr *mgr, const cm_machine
 /// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
-CM_API int cm_load_jsonrpc_machine(const cm_jsonrpc_mgr *mgr, const char *dir,
+CM_API int cm_jsonrpc_load_machine(const cm_jsonrpc_mgr *mgr, const char *dir,
     const cm_machine_runtime_config *runtime_config, cm_machine **new_machine, char **err_msg);
 
 /// \brief Get remote machine instance that was previously created in the server
@@ -75,7 +70,7 @@ CM_API int cm_load_jsonrpc_machine(const cm_jsonrpc_mgr *mgr, const char *dir,
 /// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for success, non zero code for error
-CM_API int cm_get_jsonrpc_machine(const cm_jsonrpc_mgr *mgr, cm_machine **new_machine, char **err_msg);
+CM_API int cm_jsonrpc_get_machine(const cm_jsonrpc_mgr *mgr, cm_machine **new_machine, char **err_msg);
 
 /// \brief Ged default machine config from server
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
@@ -89,56 +84,50 @@ CM_API int cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const cm_mac
 /// \brief Checks the internal consistency of an access log
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
 /// \param log State access log to be verified.
-/// \param runtime_config Runtime config to be used
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_7_error_message
 /// \returns 0 for success, non zero code for error
-CM_API int cm_jsonrpc_verify_uarch_step_log(const cm_jsonrpc_mgr *mgr, const cm_access_log *log,
-    const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
+CM_API int cm_jsonrpc_verify_step_uarch_log(const cm_jsonrpc_mgr *mgr, const cm_access_log *log, bool one_based,
+    char **err_msg);
 
-/// \brief Checks the internal consistency of an access log produced by cm_jsonrpc_log_uarch_reset
+/// \brief Checks the internal consistency of an access log produced by a reset uarch.
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
 /// \param log State access log to be verified.
-/// \param runtime_config Runtime config to be used
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_7_error_message
 /// \returns 0 for success, non zero code for error
-CM_API int cm_jsonrpc_verify_uarch_reset_log(const cm_jsonrpc_mgr *mgr, const cm_access_log *log,
-    const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
+CM_API int cm_jsonrpc_verify_reset_uarch_log(const cm_jsonrpc_mgr *mgr, const cm_access_log *log, bool one_based,
+    char **err_msg);
 
-/// \brief Checks the validity of a state transition caused by uarch state reset
+/// \brief Checks the validity of a state transition caused by a reset uarch.
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
 /// \param root_hash_before State hash before step
-/// \param log Step state access log created by cm_jsonrpc_log_uarch_reset
+/// \param log State access log to be verified.
 /// \param root_hash_after State hash after step
-/// \param runtime_config Runtime config to be used
 /// \param one_based Use 1-based indices when reporting errors
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for successful verification, non zero code for error
-CM_API int cm_jsonrpc_verify_uarch_reset_state_transition(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
-    const cm_access_log *log, const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config,
-    bool one_based, char **err_msg);
+CM_API int cm_jsonrpc_verify_reset_uarch_state_transition(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
+    const cm_access_log *log, const cm_hash *root_hash_after, bool one_based, char **err_msg);
 
 /// \brief Checks the validity of a state transition
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
 /// \param root_hash_before State hash before step
 /// \param log Step state access log
 /// \param root_hash_after State hash after step
-/// \param runtime_config Runtime config to be used
 /// \param one_based Use 1-based indices when reporting errors
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for successful verification, non zero code for error
-CM_API int cm_jsonrpc_verify_uarch_step_state_transition(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
-    const cm_access_log *log, const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config,
-    bool one_based, char **err_msg);
+CM_API int cm_jsonrpc_verify_step_uarch_state_transition(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
+    const cm_access_log *log, const cm_hash *root_hash_after, bool one_based, char **err_msg);
 
 /// \brief Forks the server
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
@@ -198,7 +187,7 @@ CM_API int cm_jsonrpc_get_uarch_x_address(const cm_jsonrpc_mgr *mgr, int i, uint
 /// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for successful verification, non zero code for error
-CM_API int cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_PROC_CSR w, uint64_t *val, char **err_msg);
+CM_API int cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_CSR w, uint64_t *val, char **err_msg);
 
 /// \brief Gets the semantic version of remote server machine
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
@@ -224,15 +213,13 @@ CM_API int cm_jsonrpc_shutdown(const cm_jsonrpc_mgr *mgr, char **err_msg);
 /// \param data Response data to send.
 /// \param length Length of data response data.
 /// \param log State access log to be verified.
-/// \param runtime_config Runtime config to be used
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_7_error_message
 /// \returns 0 for success, non zero code for error
 CM_API int cm_jsonrpc_verify_send_cmio_response_log(const cm_jsonrpc_mgr *mgr, uint16_t reason,
-    const unsigned char *data, size_t length, const cm_access_log *log, const cm_machine_runtime_config *runtime_config,
-    bool one_based, char **err_msg);
+    const unsigned char *data, size_t length, const cm_access_log *log, bool one_based, char **err_msg);
 
 /// \brief Checks the validity of a state transition caused by send_cmio_response
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
@@ -242,7 +229,6 @@ CM_API int cm_jsonrpc_verify_send_cmio_response_log(const cm_jsonrpc_mgr *mgr, u
 /// \param root_hash_before State hash before load.
 /// \param log State access log to be verified.
 /// \param root_hash_after State hash after load.
-/// \param runtime_config Runtime config to be used
 /// \param one_based Use 1-based indices when reporting errors
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successfull function execution. In case of failure error_msg
@@ -250,7 +236,7 @@ CM_API int cm_jsonrpc_verify_send_cmio_response_log(const cm_jsonrpc_mgr *mgr, u
 /// \returns 0 for successfull verification, non zero code for error
 CM_API int cm_jsonrpc_verify_send_cmio_response_state_transition(const cm_jsonrpc_mgr *mgr, uint16_t reason,
     const unsigned char *data, size_t length, const cm_hash *root_hash_before, const cm_access_log *log,
-    const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg);
+    const cm_hash *root_hash_after, bool one_based, char **err_msg);
 
 #ifdef __cplusplus
 }

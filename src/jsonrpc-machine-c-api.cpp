@@ -53,7 +53,7 @@ static inline cartesi::i_virtual_machine *get_jsonrpc_virtual_machine(const cart
     return new cartesi::jsonrpc_virtual_machine(mgr);
 }
 
-int cm_create_jsonrpc_mgr(const char *remote_address, cm_jsonrpc_mgr **mgr, char **err_msg) try {
+int cm_jsonrpc_create_mgr(const char *remote_address, cm_jsonrpc_mgr **mgr, char **err_msg) try {
     if (mgr == nullptr) {
         throw std::invalid_argument("invalid stub output");
     }
@@ -65,7 +65,7 @@ int cm_create_jsonrpc_mgr(const char *remote_address, cm_jsonrpc_mgr **mgr, char
     return cm_result_failure(err_msg);
 }
 
-void cm_delete_jsonrpc_mgr(const cm_jsonrpc_mgr *mgr) {
+void cm_jsonrpc_destroy_mgr(const cm_jsonrpc_mgr *mgr) {
     if (mgr == nullptr) {
         return;
     }
@@ -74,7 +74,7 @@ void cm_delete_jsonrpc_mgr(const cm_jsonrpc_mgr *mgr) {
     delete mgr_wrapper;
 }
 
-int cm_create_jsonrpc_machine(const cm_jsonrpc_mgr *mgr, const cm_machine_config *config,
+int cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const cm_machine_config *config,
     const cm_machine_runtime_config *runtime_config, cm_machine **new_machine, char **err_msg) try {
     if (new_machine == nullptr) {
         throw std::invalid_argument("invalid new machine output");
@@ -89,7 +89,7 @@ int cm_create_jsonrpc_machine(const cm_jsonrpc_mgr *mgr, const cm_machine_config
     return cm_result_failure(err_msg);
 }
 
-int cm_load_jsonrpc_machine(const cm_jsonrpc_mgr *mgr, const char *dir, const cm_machine_runtime_config *runtime_config,
+int cm_jsonrpc_load_machine(const cm_jsonrpc_mgr *mgr, const char *dir, const cm_machine_runtime_config *runtime_config,
     cm_machine **new_machine, char **err_msg) try {
     if (new_machine == nullptr) {
         throw std::invalid_argument("invalid new machine output");
@@ -103,7 +103,7 @@ int cm_load_jsonrpc_machine(const cm_jsonrpc_mgr *mgr, const char *dir, const cm
     return cm_result_failure(err_msg);
 }
 
-int cm_get_jsonrpc_machine(const cm_jsonrpc_mgr *mgr, cm_machine **new_machine, char **err_msg) try {
+int cm_jsonrpc_get_machine(const cm_jsonrpc_mgr *mgr, cm_machine **new_machine, char **err_msg) try {
     if (new_machine == nullptr) {
         throw std::invalid_argument("invalid new machine output");
     }
@@ -127,53 +127,47 @@ int cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const cm_machine_co
     return cm_result_failure(err_msg);
 }
 
-int cm_jsonrpc_verify_uarch_step_log(const cm_jsonrpc_mgr *mgr, const cm_access_log *log,
-    const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg) try {
+int cm_jsonrpc_verify_step_uarch_log(const cm_jsonrpc_mgr *mgr, const cm_access_log *log, bool one_based,
+    char **err_msg) try {
     const auto *cpp_mgr = convert_from_c(mgr);
     const cartesi::access_log cpp_log = convert_from_c(log);
-    const cartesi::machine_runtime_config cpp_runtime = convert_from_c(runtime_config);
-    cartesi::jsonrpc_virtual_machine::verify_uarch_step_log(*cpp_mgr, cpp_log, cpp_runtime, one_based);
+    cartesi::jsonrpc_virtual_machine::verify_step_uarch_log(*cpp_mgr, cpp_log, one_based);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
 }
 
-int cm_jsonrpc_verify_uarch_step_state_transition(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
-    const cm_access_log *log, const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config,
-    bool one_based, char **err_msg) try {
+int cm_jsonrpc_verify_step_uarch_state_transition(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
+    const cm_access_log *log, const cm_hash *root_hash_after, bool one_based, char **err_msg) try {
     const auto *cpp_mgr = convert_from_c(mgr);
     const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
     const cartesi::access_log cpp_log = convert_from_c(log);
     const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
-    const cartesi::machine_runtime_config cpp_runtime = convert_from_c(runtime_config);
-    cartesi::jsonrpc_virtual_machine::verify_uarch_step_state_transition(*cpp_mgr, cpp_root_hash_before, cpp_log,
-        cpp_root_hash_after, cpp_runtime, one_based);
+    cartesi::jsonrpc_virtual_machine::verify_step_uarch_state_transition(*cpp_mgr, cpp_root_hash_before, cpp_log,
+        cpp_root_hash_after, one_based);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
 }
 
-int cm_jsonrpc_verify_uarch_reset_log(const cm_jsonrpc_mgr *mgr, const cm_access_log *log,
-    const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg) try {
+int cm_jsonrpc_verify_reset_uarch_log(const cm_jsonrpc_mgr *mgr, const cm_access_log *log, bool one_based,
+    char **err_msg) try {
     const auto *cpp_mgr = convert_from_c(mgr);
     const cartesi::access_log cpp_log = convert_from_c(log);
-    const cartesi::machine_runtime_config cpp_runtime = convert_from_c(runtime_config);
-    cartesi::jsonrpc_virtual_machine::verify_uarch_reset_log(*cpp_mgr, cpp_log, cpp_runtime, one_based);
+    cartesi::jsonrpc_virtual_machine::verify_reset_uarch_log(*cpp_mgr, cpp_log, one_based);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
 }
 
-int cm_jsonrpc_verify_uarch_reset_state_transition(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
-    const cm_access_log *log, const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config,
-    bool one_based, char **err_msg) try {
+int cm_jsonrpc_verify_reset_uarch_state_transition(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
+    const cm_access_log *log, const cm_hash *root_hash_after, bool one_based, char **err_msg) try {
     const auto *cpp_mgr = convert_from_c(mgr);
     const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
     const cartesi::access_log cpp_log = convert_from_c(log);
     const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
-    const cartesi::machine_runtime_config cpp_runtime = convert_from_c(runtime_config);
-    cartesi::jsonrpc_virtual_machine::verify_uarch_reset_state_transition(*cpp_mgr, cpp_root_hash_before, cpp_log,
-        cpp_root_hash_after, cpp_runtime, one_based);
+    cartesi::jsonrpc_virtual_machine::verify_reset_uarch_state_transition(*cpp_mgr, cpp_root_hash_before, cpp_log,
+        cpp_root_hash_after, one_based);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
@@ -221,7 +215,7 @@ int cm_jsonrpc_get_uarch_x_address(const cm_jsonrpc_mgr *mgr, int i, uint64_t *v
     return cm_result_failure(err_msg);
 }
 
-int cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_PROC_CSR w, uint64_t *val, char **err_msg) try {
+int cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_CSR w, uint64_t *val, char **err_msg) try {
     const auto *cpp_mgr = convert_from_c(mgr);
     const auto cpp_csr = static_cast<cartesi::machine::csr>(w);
     *val = cartesi::jsonrpc_virtual_machine::get_csr_address(*cpp_mgr, cpp_csr);
@@ -252,13 +246,10 @@ int cm_jsonrpc_shutdown(const cm_jsonrpc_mgr *mgr, char **err_msg) try {
 }
 
 int cm_jsonrpc_verify_send_cmio_response_log(const cm_jsonrpc_mgr *mgr, uint16_t reason, const unsigned char *data,
-    size_t length, const cm_access_log *log, const cm_machine_runtime_config *runtime_config, bool one_based,
-    char **err_msg) try {
+    size_t length, const cm_access_log *log, bool one_based, char **err_msg) try {
     const auto *cpp_mgr = convert_from_c(mgr);
     const cartesi::access_log cpp_log = convert_from_c(log);
-    const cartesi::machine_runtime_config cpp_runtime = convert_from_c(runtime_config);
-    cartesi::jsonrpc_virtual_machine::verify_send_cmio_response_log(*cpp_mgr, reason, data, length, cpp_log,
-        cpp_runtime, one_based);
+    cartesi::jsonrpc_virtual_machine::verify_send_cmio_response_log(*cpp_mgr, reason, data, length, cpp_log, one_based);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
@@ -266,15 +257,13 @@ int cm_jsonrpc_verify_send_cmio_response_log(const cm_jsonrpc_mgr *mgr, uint16_t
 
 int cm_jsonrpc_verify_send_cmio_response_state_transition(const cm_jsonrpc_mgr *mgr, uint16_t reason,
     const unsigned char *data, size_t length, const cm_hash *root_hash_before, const cm_access_log *log,
-    const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config, bool one_based,
-    char **err_msg) try {
+    const cm_hash *root_hash_after, bool one_based, char **err_msg) try {
     const auto *cpp_mgr = convert_from_c(mgr);
     const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
     const cartesi::access_log cpp_log = convert_from_c(log);
     const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
-    const cartesi::machine_runtime_config cpp_runtime = convert_from_c(runtime_config);
     cartesi::jsonrpc_virtual_machine::verify_send_cmio_response_state_transition(*cpp_mgr, reason, data, length,
-        cpp_root_hash_before, cpp_log, cpp_root_hash_after, cpp_runtime, one_based);
+        cpp_root_hash_before, cpp_log, cpp_root_hash_after, one_based);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);

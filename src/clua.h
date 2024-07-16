@@ -277,7 +277,8 @@ void clua_setmethods(lua_State *L, const luaL_Reg *methods, int nup, int ctxidx)
         lua_newtable(L);      // up1 .. upn meta index
         lua_pushvalue(L, -1); // up1 .. upn meta index index
         lua_setfield(L, -3, "__index");
-    }                                   // up1 .. upn meta index
+    }
+    // up1 .. upn meta index
     lua_insert(L, -nup - 2);            // index up1 .. upn meta
     lua_pop(L, 1);                      // index up1 .. upn
     lua_pushvalue(L, ctxidx);           // index up1 .. upn ctxtab

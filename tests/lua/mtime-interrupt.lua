@@ -57,9 +57,9 @@ do_test("machine:run should interrupt for mtime", function(machine)
     check_state(machine)
 end)
 
-test_util.disabled_test("machine:log_uarch_step should interrupt for mtime", function(machine)
+test_util.disabled_test("machine:log_step_uarch should interrupt for mtime", function(machine)
     for _ = 1, EXPECTED_MCYCLE do
-        machine:log_uarch_step({})
+        machine:log_step_uarch({})
         if machine:read_iflags_H() then
             break
         end

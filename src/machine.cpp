@@ -1964,16 +1964,15 @@ access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char 
         update_merkle_tree();
         get_root_hash(root_hash_after);
         verify_send_cmio_response_state_transition(reason, data, length, root_hash_before, *a.get_log(),
-            root_hash_after, m_r, one_based);
+            root_hash_after, one_based);
     } else {
-        verify_send_cmio_response_log(reason, data, length, *a.get_log(), m_r, one_based);
+        verify_send_cmio_response_log(reason, data, length, *a.get_log(), one_based);
     }
     return std::move(*a.get_log());
 }
 
 void machine::verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, size_t length,
-    const access_log &log, const machine_runtime_config &r, bool one_based) {
-    (void) r;
+    const access_log &log, bool one_based) {
     // There must be at least one access in log
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
@@ -1984,9 +1983,7 @@ void machine::verify_send_cmio_response_log(uint16_t reason, const unsigned char
 }
 
 void machine::verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, size_t length,
-    const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after,
-    const machine_runtime_config &r, bool one_based) {
-    (void) r;
+    const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after, bool one_based) {
     // We need proofs in order to verify the state transition
     if (!log.get_log_type().has_proofs()) {
         throw std::invalid_argument{"log has no proofs"};
@@ -2018,7 +2015,7 @@ void machine::reset_uarch() {
     uarch_reset_state(a);
 }
 
-access_log machine::log_uarch_reset(const access_log::type &log_type, bool one_based) {
+access_log machine::log_reset_uarch(const access_log::type &log_type, bool one_based) {
     hash_type root_hash_before;
     if (log_type.has_proofs()) {
         get_root_hash(root_hash_before);
@@ -2033,15 +2030,14 @@ access_log machine::log_uarch_reset(const access_log::type &log_type, bool one_b
         hash_type root_hash_after;
         update_merkle_tree();
         get_root_hash(root_hash_after);
-        verify_uarch_reset_state_transition(root_hash_before, *a.get_log(), root_hash_after, m_r, one_based);
+        verify_reset_uarch_state_transition(root_hash_before, *a.get_log(), root_hash_after, one_based);
     } else {
-        verify_uarch_reset_log(*a.get_log(), m_r, one_based);
+        verify_reset_uarch_log(*a.get_log(), one_based);
     }
     return std::move(*a.get_log());
 }
 
-void machine::verify_uarch_reset_log(const access_log &log, const machine_runtime_config &r, bool one_based) {
-    (void) r;
+void machine::verify_reset_uarch_log(const access_log &log, bool one_based) {
     // There must be at least one access in log
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
@@ -2051,9 +2047,8 @@ void machine::verify_uarch_reset_log(const access_log &log, const machine_runtim
     a.finish();
 }
 
-void machine::verify_uarch_reset_state_transition(const hash_type &root_hash_before, const access_log &log,
-    const hash_type &root_hash_after, const machine_runtime_config &r, bool one_based) {
-    (void) r;
+void machine::verify_reset_uarch_state_transition(const hash_type &root_hash_before, const access_log &log,
+    const hash_type &root_hash_after, bool one_based) {
     // We need proofs in order to verify the state transition
     if (!log.get_log_type().has_proofs()) {
         throw std::invalid_argument{"log has no proofs"};
@@ -2074,7 +2069,7 @@ void machine::verify_uarch_reset_state_transition(const hash_type &root_hash_bef
     }
 }
 
-access_log machine::log_uarch_step(const access_log::type &log_type, bool one_based) {
+access_log machine::log_step_uarch(const access_log::type &log_type, bool one_based) {
     if (m_uarch.get_state().ram.get_istart_E()) {
         throw std::runtime_error("microarchitecture RAM is not present");
     }
@@ -2091,15 +2086,14 @@ access_log machine::log_uarch_step(const access_log::type &log_type, bool one_ba
     if (log_type.has_proofs()) {
         hash_type root_hash_after;
         get_root_hash(root_hash_after);
-        verify_uarch_step_state_transition(root_hash_before, *a.get_log(), root_hash_after, m_r, one_based);
+        verify_step_uarch_state_transition(root_hash_before, *a.get_log(), root_hash_after, one_based);
     } else {
-        verify_uarch_step_log(*a.get_log(), m_r, one_based);
+        verify_step_uarch_log(*a.get_log(), one_based);
     }
     return std::move(*a.get_log());
 }
 
-void machine::verify_uarch_step_log(const access_log &log, const machine_runtime_config &r, bool one_based) {
-    (void) r;
+void machine::verify_step_uarch_log(const access_log &log, bool one_based) {
     // There must be at least one access in log
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
@@ -2109,9 +2103,8 @@ void machine::verify_uarch_step_log(const access_log &log, const machine_runtime
     a.finish();
 }
 
-void machine::verify_uarch_step_state_transition(const hash_type &root_hash_before, const access_log &log,
-    const hash_type &root_hash_after, const machine_runtime_config &r, bool one_based) {
-    (void) r;
+void machine::verify_step_uarch_state_transition(const hash_type &root_hash_before, const access_log &log,
+    const hash_type &root_hash_after, bool one_based) {
     // We need proofs in order to verify the state transition
     if (!log.get_log_type().has_proofs()) {
         throw std::invalid_argument{"log has no proofs"};

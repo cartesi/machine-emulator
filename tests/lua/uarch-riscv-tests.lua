@@ -103,7 +103,7 @@ where options are:
   --proofs-frequency=<number>
     write proof of every <number> uarch cycles
     (default: 1, i.e., all accesses)
-  --create-uarch-reset-log
+  --create-reset-uarch-log
     create a json log file for a uarch reset operation
     valid only for the json-step-logs command
 --create-send-cmio-response-log
@@ -156,7 +156,7 @@ local options = {
         end,
     },
     {
-        "^%-%-create%-uarch%-reset%-log$",
+        "^%-%-create%-reset%-uarch%-log$",
         function(all)
             if not all then
                 return false
@@ -517,7 +517,7 @@ local function run_machine_writing_json_logs(machine, ctx)
     local step_count = 0
     while math.ult(machine:read_uarch_cycle(), max_cycle) do
         local log_type = { proofs = should_log_proofs() }
-        local log = machine:log_uarch_step(log_type)
+        local log = machine:log_step_uarch(log_type)
         total_steps_counter = total_steps_counter + 1
         step_count = step_count + 1
         local halted = machine:read_uarch_halt_flag()
@@ -534,10 +534,10 @@ end
 
 local function create_json_reset_log()
     local machine <close> = build_machine()
-    local test_name = "uarch-reset"
+    local test_name = "reset-uarch"
     machine:set_uarch_halt_flag()
     local initial_root_hash = machine:get_root_hash()
-    local log = machine:log_uarch_reset({ proofs = proofs })
+    local log = machine:log_reset_uarch({ proofs = proofs })
     local out = create_json_log_file(test_name .. "-steps")
     write_log_to_file(log, out, 0, true)
     out:close()

@@ -434,13 +434,13 @@ where options are:
     this option implies --initial-hash and --final-hash.
     (default: none)
 
-  --log-uarch-step
+  --log-step-uarch
     advance one micro step and print access log.
 
-  --log-uarch-reset
+  --log-reset-uarch
     reset the microarchitecture state and print the access log.
 
-  --auto-uarch-reset
+  --auto-reset-uarch
     reset uarch automatically after halt.
 
   --store-config[=<filename>]
@@ -599,9 +599,9 @@ local periodic_hashes_start = 0
 local dump_memory_ranges = false
 local max_mcycle = math.maxinteger
 local max_uarch_cycle = 0
-local log_uarch_step = false
-local auto_uarch_reset = false
-local log_uarch_reset = false
+local log_step_uarch = false
+local auto_reset_uarch = false
+local log_reset_uarch = false
 local store_dir
 local load_dir
 local cmdline_opts_finished = false
@@ -1240,18 +1240,18 @@ local options = {
         end,
     },
     {
-        "^%-%-log%-uarch%-step$",
+        "^%-%-log%-step%-uarch$",
         function(all)
             if not all then return false end
-            log_uarch_step = true
+            log_step_uarch = true
             return true
         end,
     },
     {
-        "^%-%-log%-uarch%-reset$",
+        "^%-%-log%-reset%-uarch$",
         function(all)
             if not all then return false end
-            log_uarch_reset = true
+            log_reset_uarch = true
             return true
         end,
     },
@@ -1272,10 +1272,10 @@ local options = {
         end,
     },
     {
-        "^%-%-auto%-uarch%-reset$",
+        "^%-%-auto%-reset%-uarch$",
         function(all)
             if not all then return false end
-            auto_uarch_reset = true
+            auto_reset_uarch = true
             return true
         end,
     },
@@ -2291,7 +2291,7 @@ if max_uarch_cycle > 0 then
         -- The mcycle counter was incremented, unless the machine was already halted
         if machine:read_iflags_H() and not previously_halted then stderr("Halted\n") end
         stderr("Cycles: %u\n", machine:read_mcycle())
-        if auto_uarch_reset then
+        if auto_reset_uarch then
             machine:reset_uarch()
         else
             stderr("uCycles: %u\n", machine:read_uarch_cycle())
@@ -2299,14 +2299,14 @@ if max_uarch_cycle > 0 then
     end
 end
 if gdb_stub then gdb_stub:close() end
-if log_uarch_step then
+if log_step_uarch then
     assert(config.processor.iunrep == 0, "micro step proof is meaningless in unreproducible mode")
     stderr("Gathering micro step log: please wait\n")
-    util.dump_log(machine:log_uarch_step({ proofs = true, annotations = true }), io.stderr)
+    util.dump_log(machine:log_step_uarch({ proofs = true, annotations = true }), io.stderr)
 end
-if log_uarch_reset then
+if log_reset_uarch then
     stderr("Resetting microarchitecture state: please wait\n")
-    util.dump_log(machine:log_uarch_reset({ proofs = true, annotations = true }), io.stderr)
+    util.dump_log(machine:log_reset_uarch({ proofs = true, annotations = true }), io.stderr)
 end
 if dump_memory_ranges then dump_pmas(machine) end
 if final_hash then

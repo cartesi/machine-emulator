@@ -925,7 +925,7 @@ static inline cartesi::i_virtual_machine *load_virtual_machine(const char *dir,
     return new cartesi::virtual_machine(null_to_empty(dir), r);
 }
 
-int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
+int cm_create(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
     cm_machine **new_machine, char **err_msg) try {
     if (new_machine == nullptr) {
         throw std::invalid_argument("invalid new machine output");
@@ -939,7 +939,7 @@ int cm_create_machine(const cm_machine_config *config, const cm_machine_runtime_
     return cm_result_failure(err_msg);
 }
 
-int cm_load_machine(const char *dir, const cm_machine_runtime_config *runtime_config, cm_machine **new_machine,
+int cm_load(const char *dir, const cm_machine_runtime_config *runtime_config, cm_machine **new_machine,
     char **err_msg) try {
     if (new_machine == nullptr) {
         throw std::invalid_argument("invalid new machine output");
@@ -968,7 +968,7 @@ int cm_store(cm_machine *m, const char *dir, char **err_msg) try {
     return cm_result_failure(err_msg);
 }
 
-int cm_machine_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason_result, char **err_msg) try {
+int cm_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason_result, char **err_msg) try {
     auto *cpp_machine = convert_from_c(m);
     cartesi::interpreter_break_reason break_reason = cpp_machine->run(mcycle_end);
     if (break_reason_result) {
@@ -1025,22 +1025,21 @@ CM_API int cm_reset_uarch(cm_machine *m, char **err_msg) try {
     return cm_result_failure(err_msg);
 }
 
-int cm_log_uarch_reset(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
+int cm_log_reset_uarch(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
     char **err_msg) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log output");
     }
     auto *cpp_machine = convert_from_c(m);
     cartesi::access_log::type cpp_log_type{log_type.proofs, log_type.annotations, log_type.large_data};
-    cartesi::access_log cpp_access_log = cpp_machine->log_uarch_reset(cpp_log_type, one_based);
+    cartesi::access_log cpp_access_log = cpp_machine->log_reset_uarch(cpp_log_type, one_based);
     *access_log = convert_to_c(cpp_access_log);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
 }
 
-int cm_machine_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *status_result,
-    char **err_msg) try {
+int cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *status_result, char **err_msg) try {
     auto *cpp_machine = convert_from_c(m);
     auto status = cpp_machine->run_uarch(uarch_cycle_end);
     if (status_result) {
@@ -1051,14 +1050,14 @@ int cm_machine_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK
     return cm_result_failure(err_msg);
 }
 
-int cm_log_uarch_step(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
+int cm_log_step_uarch(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log,
     char **err_msg) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log output");
     }
     auto *cpp_machine = convert_from_c(m);
     cartesi::access_log::type cpp_log_type{log_type.proofs, log_type.annotations};
-    cartesi::access_log cpp_access_log = cpp_machine->log_uarch_step(cpp_log_type, one_based);
+    cartesi::access_log cpp_access_log = cpp_machine->log_step_uarch(cpp_log_type, one_based);
     *access_log = convert_to_c(cpp_access_log);
     return cm_result_success(err_msg);
 } catch (...) {
@@ -1085,49 +1084,40 @@ void cm_delete_access_log(cm_access_log *acc_log) {
     delete acc_log;
 }
 
-int cm_verify_uarch_step_log(const cm_access_log *log, const cm_machine_runtime_config *runtime_config, bool one_based,
-    char **err_msg) try {
+int cm_verify_step_uarch_log(const cm_access_log *log, bool one_based, char **err_msg) try {
     const cartesi::access_log cpp_log = convert_from_c(log);
-    const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
-    cartesi::machine::verify_uarch_step_log(cpp_log, cpp_runtime_config, one_based);
+    cartesi::machine::verify_step_uarch_log(cpp_log, one_based);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
 }
 
-int cm_verify_uarch_reset_log(const cm_access_log *log, const cm_machine_runtime_config *runtime_config, bool one_based,
-    char **err_msg) try {
+int cm_verify_reset_uarch_log(const cm_access_log *log, bool one_based, char **err_msg) try {
     const cartesi::access_log cpp_log = convert_from_c(log);
-    const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
-    cartesi::machine::verify_uarch_reset_log(cpp_log, cpp_runtime_config, one_based);
+    cartesi::machine::verify_reset_uarch_log(cpp_log, one_based);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
 }
 
-int cm_verify_uarch_step_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
-    const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config, bool one_based,
-    char **err_msg) try {
+int cm_verify_step_uarch_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
+    const cm_hash *root_hash_after, bool one_based, char **err_msg) try {
     const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
     const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
     const cartesi::access_log cpp_log = convert_from_c(log);
-    const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
-    cartesi::machine::verify_uarch_step_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after,
-        cpp_runtime_config, one_based);
+    cartesi::machine::verify_step_uarch_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after, one_based);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
 }
 
-int cm_verify_uarch_reset_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
-    const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config, bool one_based,
-    char **err_msg) try {
+int cm_verify_reset_uarch_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
+    const cm_hash *root_hash_after, bool one_based, char **err_msg) try {
     const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
     const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
     const cartesi::access_log cpp_log = convert_from_c(log);
-    const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
-    cartesi::machine::verify_uarch_reset_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after,
-        cpp_runtime_config, one_based);
+    cartesi::machine::verify_reset_uarch_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after,
+        one_based);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
@@ -1188,7 +1178,7 @@ int cm_verify_merkle_tree(const cm_machine *m, bool *result, char **err_msg) try
     return cm_result_failure(err_msg);
 }
 
-int cm_read_csr(const cm_machine *m, CM_PROC_CSR r, uint64_t *val, char **err_msg) try {
+int cm_read_csr(const cm_machine *m, CM_CSR r, uint64_t *val, char **err_msg) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");
     }
@@ -1200,7 +1190,7 @@ int cm_read_csr(const cm_machine *m, CM_PROC_CSR r, uint64_t *val, char **err_ms
     return cm_result_failure(err_msg);
 }
 
-int cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val, char **err_msg) try {
+int cm_write_csr(cm_machine *m, CM_CSR w, uint64_t val, char **err_msg) try {
     auto *cpp_machine = convert_from_c(m);
     auto cpp_csr = static_cast<cartesi::machine::csr>(w);
     cpp_machine->write_csr(cpp_csr, val);
@@ -1209,7 +1199,7 @@ int cm_write_csr(cm_machine *m, CM_PROC_CSR w, uint64_t val, char **err_msg) try
     return cm_result_failure(err_msg);
 }
 
-uint64_t cm_get_csr_address(CM_PROC_CSR w) {
+uint64_t cm_get_csr_address(CM_CSR w) {
     auto cpp_csr = static_cast<cartesi::machine::csr>(w);
     return cartesi::machine::get_csr_address(cpp_csr);
 }
@@ -1652,24 +1642,22 @@ int cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const unsigned cha
 }
 
 int cm_verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, size_t length,
-    const cm_access_log *log, const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg) try {
+    const cm_access_log *log, bool one_based, char **err_msg) try {
     const cartesi::access_log cpp_log = convert_from_c(log);
-    const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
-    cartesi::machine::verify_send_cmio_response_log(reason, data, length, cpp_log, cpp_runtime_config, one_based);
+    cartesi::machine::verify_send_cmio_response_log(reason, data, length, cpp_log, one_based);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);
 }
 
 int cm_verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, size_t length,
-    const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after,
-    const cm_machine_runtime_config *runtime_config, bool one_based, char **err_msg) try {
+    const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after, bool one_based,
+    char **err_msg) try {
     const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
     const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
     const cartesi::access_log cpp_log = convert_from_c(log);
-    const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
     cartesi::machine::verify_send_cmio_response_state_transition(reason, data, length, cpp_root_hash_before, cpp_log,
-        cpp_root_hash_after, cpp_runtime_config, one_based);
+        cpp_root_hash_after, one_based);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);

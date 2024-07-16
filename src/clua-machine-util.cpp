@@ -436,7 +436,7 @@ static void check_cm_access(lua_State *L, int tabidx, bool proofs, cm_access *a,
     a->type = check_cm_access_type_field(L, tabidx, "type");
     a->address = check_uint_field(L, tabidx, "address");
     a->log2_size = check_int_field(L, tabidx, "log2_size");
-    const int expected_data_log2_size = std::max(a->log2_size, CM_TREE_LOG2_WORD_SIZE);
+    const int expected_data_log2_size = std::max<int>(a->log2_size, CM_TREE_LOG2_WORD_SIZE);
     if (opt_table_field(L, tabidx, "sibling_hashes")) {
         a->sibling_hashes = new cm_hash_array{};
         check_sibling_cm_hashes(L, -1, expected_data_log2_size, CM_TREE_LOG2_ROOT_SIZE, a->sibling_hashes);
@@ -523,52 +523,52 @@ void clua_check_cm_hash(lua_State *L, int idx, cm_hash *c_hash) {
     }
 }
 
-CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
+CM_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
     /// \brief Mapping between CSR names and C API constants
-    const static std::unordered_map<std::string, CM_PROC_CSR> g_cm_proc_csr_name = {
+    const static std::unordered_map<std::string, CM_CSR> g_cm_proc_csr_name = {
         // clang-format off
-        {"pc", CM_PROC_PC},
-        {"fcsr", CM_PROC_FCSR},
-        {"mvendorid", CM_PROC_MVENDORID},
-        {"marchid", CM_PROC_MARCHID},
-        {"mimpid", CM_PROC_MIMPID},
-        {"mcycle", CM_PROC_MCYCLE},
-        {"icycleinstret", CM_PROC_ICYCLEINSTRET},
-        {"mstatus", CM_PROC_MSTATUS},
-        {"mtvec", CM_PROC_MTVEC},
-        {"mscratch", CM_PROC_MSCRATCH},
-        {"mepc", CM_PROC_MEPC},
-        {"mcause", CM_PROC_MCAUSE},
-        {"mtval", CM_PROC_MTVAL},
-        {"misa", CM_PROC_MISA},
-        {"mie", CM_PROC_MIE},
-        {"mip", CM_PROC_MIP},
-        {"medeleg", CM_PROC_MEDELEG},
-        {"mideleg", CM_PROC_MIDELEG},
-        {"mcounteren", CM_PROC_MCOUNTEREN},
-        {"menvcfg", CM_PROC_MENVCFG},
-        {"stvec", CM_PROC_STVEC},
-        {"sscratch", CM_PROC_SSCRATCH},
-        {"sepc", CM_PROC_SEPC},
-        {"scause", CM_PROC_SCAUSE},
-        {"stval", CM_PROC_STVAL},
-        {"satp", CM_PROC_SATP},
-        {"scounteren", CM_PROC_SCOUNTEREN},
-        {"senvcfg", CM_PROC_SENVCFG},
-        {"ilrsc", CM_PROC_ILRSC},
-        {"iflags", CM_PROC_IFLAGS},
-        {"iunrep", CM_PROC_IUNREP},
-        {"clint_mtimecmp", CM_PROC_CLINT_MTIMECMP},
-        {"plic_girqpend", CM_PROC_PLIC_GIRQPEND},
-        {"plic_girqsrvd", CM_PROC_PLIC_GIRQSRVD},
-        {"htif_tohost", CM_PROC_HTIF_TOHOST},
-        {"htif_fromhost", CM_PROC_HTIF_FROMHOST},
-        {"htif_ihalt", CM_PROC_HTIF_IHALT},
-        {"htif_iconsole", CM_PROC_HTIF_ICONSOLE},
-        {"htif_iyield", CM_PROC_HTIF_IYIELD},
-        {"uarch_pc", CM_PROC_UARCH_PC},
-        {"uarch_cycle", CM_PROC_UARCH_CYCLE},
-        {"uarch_halt_flag", CM_PROC_UARCH_HALT_FLAG},
+        {"pc", CM_CSR_PC},
+        {"fcsr", CM_CSR_FCSR},
+        {"mvendorid", CM_CSR_MVENDORID},
+        {"marchid", CM_CSR_MARCHID},
+        {"mimpid", CM_CSR_MIMPID},
+        {"mcycle", CM_CSR_MCYCLE},
+        {"icycleinstret", CM_CSR_ICYCLEINSTRET},
+        {"mstatus", CM_CSR_MSTATUS},
+        {"mtvec", CM_CSR_MTVEC},
+        {"mscratch", CM_CSR_MSCRATCH},
+        {"mepc", CM_CSR_MEPC},
+        {"mcause", CM_CSR_MCAUSE},
+        {"mtval", CM_CSR_MTVAL},
+        {"misa", CM_CSR_MISA},
+        {"mie", CM_CSR_MIE},
+        {"mip", CM_CSR_MIP},
+        {"medeleg", CM_CSR_MEDELEG},
+        {"mideleg", CM_CSR_MIDELEG},
+        {"mcounteren", CM_CSR_MCOUNTEREN},
+        {"menvcfg", CM_CSR_MENVCFG},
+        {"stvec", CM_CSR_STVEC},
+        {"sscratch", CM_CSR_SSCRATCH},
+        {"sepc", CM_CSR_SEPC},
+        {"scause", CM_CSR_SCAUSE},
+        {"stval", CM_CSR_STVAL},
+        {"satp", CM_CSR_SATP},
+        {"scounteren", CM_CSR_SCOUNTEREN},
+        {"senvcfg", CM_CSR_SENVCFG},
+        {"ilrsc", CM_CSR_ILRSC},
+        {"iflags", CM_CSR_IFLAGS},
+        {"iunrep", CM_CSR_IUNREP},
+        {"clint_mtimecmp", CM_CSR_CLINT_MTIMECMP},
+        {"plic_girqpend", CM_CSR_PLIC_GIRQPEND},
+        {"plic_girqsrvd", CM_CSR_PLIC_GIRQSRVD},
+        {"htif_tohost", CM_CSR_HTIF_TOHOST},
+        {"htif_fromhost", CM_CSR_HTIF_FROMHOST},
+        {"htif_ihalt", CM_CSR_HTIF_IHALT},
+        {"htif_iconsole", CM_CSR_HTIF_ICONSOLE},
+        {"htif_iyield", CM_CSR_HTIF_IYIELD},
+        {"uarch_pc", CM_CSR_UARCH_PC},
+        {"uarch_cycle", CM_CSR_UARCH_CYCLE},
+        {"uarch_halt_flag", CM_CSR_UARCH_HALT_FLAG},
         // clang-format on
     };
     const char *name = luaL_checkstring(L, idx);
@@ -579,10 +579,10 @@ CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
     return got->second;
 } catch (const std::exception &e) {
     luaL_error(L, e.what());
-    return CM_PROC_UNKNOWN; // will not be reached
+    return CM_CSR_UNKNOWN; // will not be reached
 } catch (...) {
     luaL_error(L, "unknown error with csr type conversion");
-    return CM_PROC_UNKNOWN; // will not be reached
+    return CM_CSR_UNKNOWN; // will not be reached
 }
 
 /// \brief Pushes C array of data to the Lua stack
@@ -660,7 +660,7 @@ void clua_push_cm_access_log(lua_State *L, const cm_access_log *log) {
         }
         if (log->log_type.proofs && a->sibling_hashes != nullptr) {
             lua_newtable(L);
-            const int proof_log2_size = std::max(a->log2_size, CM_TREE_LOG2_WORD_SIZE);
+            const int proof_log2_size = std::max<int>(a->log2_size, CM_TREE_LOG2_WORD_SIZE);
             for (size_t log2_size = proof_log2_size; log2_size < CM_TREE_LOG2_ROOT_SIZE; log2_size++) {
                 clua_push_cm_hash(L, &a->sibling_hashes->entry[log2_size - proof_log2_size]);
                 lua_rawseti(L, -2, static_cast<lua_Integer>(log2_size - proof_log2_size) + 1);

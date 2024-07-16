@@ -952,11 +952,11 @@ static json jsonrpc_machine_run_uarch_handler(const json &j, const std::shared_p
     return jsonrpc_response_ok(j, uarch_interpreter_break_reason_name(reason));
 }
 
-/// \brief JSONRPC handler for the machine.log_uarch_step method
+/// \brief JSONRPC handler for the machine.log_step_uarch method
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_log_uarch_step_handler(const json &j, const std::shared_ptr<http_session> &session) {
+static json jsonrpc_machine_log_step_uarch_handler(const json &j, const std::shared_ptr<http_session> &session) {
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
@@ -968,12 +968,12 @@ static json jsonrpc_machine_log_uarch_step_handler(const json &j, const std::sha
     switch (count_args(args)) {
         case 1:
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            s = jsonrpc_response_ok(j, session->handler->machine->log_uarch_step(std::get<0>(args).value()));
+            s = jsonrpc_response_ok(j, session->handler->machine->log_step_uarch(std::get<0>(args).value()));
             break;
         case 2:
             s = jsonrpc_response_ok(j,
                 // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-                session->handler->machine->log_uarch_step(std::get<0>(args).value(), std::get<1>(args).value()));
+                session->handler->machine->log_step_uarch(std::get<0>(args).value(), std::get<1>(args).value()));
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};
@@ -981,29 +981,24 @@ static json jsonrpc_machine_log_uarch_step_handler(const json &j, const std::sha
     return s;
 }
 
-/// \brief JSONRPC handler for the machine.verify_uarch_step_log method
+/// \brief JSONRPC handler for the machine.verify_step_uarch_log method
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_uarch_step_log_handler(const json &j, const std::shared_ptr<http_session> &session) {
+static json jsonrpc_machine_verify_step_uarch_log_handler(const json &j, const std::shared_ptr<http_session> &session) {
     (void) session;
-    static const char *param_name[] = {"log", "runtime", "one_based"};
-    auto args = parse_args<cartesi::not_default_constructible<cartesi::access_log>,
-        cartesi::optional_param<cartesi::machine_runtime_config>, cartesi::optional_param<bool>>(j, param_name);
+    static const char *param_name[] = {"log", "one_based"};
+    auto args = parse_args<cartesi::not_default_constructible<cartesi::access_log>, cartesi::optional_param<bool>>(j,
+        param_name);
     switch (count_args(args)) {
         case 1:
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_uarch_step_log(std::get<0>(args).value());
+            cartesi::machine::verify_step_uarch_log(std::get<0>(args).value());
             break;
         case 2:
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_uarch_step_log(std::get<0>(args).value(), std::get<1>(args).value());
+            cartesi::machine::verify_step_uarch_log(std::get<0>(args).value(), std::get<1>(args).value());
             break;
-        case 3:
-            // NOLINTBEGIN(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_uarch_step_log(std::get<0>(args).value(), std::get<1>(args).value(),
-                std::get<2>(args).value());
-            // NOLINTEND(bugprone-unchecked-optional-access)
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};
@@ -1011,30 +1006,24 @@ static json jsonrpc_machine_verify_uarch_step_log_handler(const json &j, const s
     return jsonrpc_response_ok(j);
 }
 
-/// \brief JSONRPC handler for the machine.verify_uarch_reset_log method
+/// \brief JSONRPC handler for the machine.verify_reset_uarch_log method
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_uarch_reset_log_handler(const json &j,
+static json jsonrpc_machine_verify_reset_uarch_log_handler(const json &j,
     const std::shared_ptr<http_session> &session) {
     (void) session;
-    static const char *param_name[] = {"log", "runtime", "one_based"};
-    auto args = parse_args<cartesi::not_default_constructible<cartesi::access_log>,
-        cartesi::optional_param<cartesi::machine_runtime_config>, cartesi::optional_param<bool>>(j, param_name);
+    static const char *param_name[] = {"log", "one_based"};
+    auto args = parse_args<cartesi::not_default_constructible<cartesi::access_log>, cartesi::optional_param<bool>>(j,
+        param_name);
     switch (count_args(args)) {
         case 1:
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_uarch_reset_log(std::get<0>(args).value());
+            cartesi::machine::verify_reset_uarch_log(std::get<0>(args).value());
             break;
         case 2:
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_uarch_reset_log(std::get<0>(args).value(), std::get<1>(args).value());
-            break;
-        case 3:
-            // NOLINTBEGIN(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_uarch_reset_log(std::get<0>(args).value(), std::get<1>(args).value(),
-                std::get<2>(args).value());
-            // NOLINTEND(bugprone-unchecked-optional-access)
+            cartesi::machine::verify_reset_uarch_log(std::get<0>(args).value(), std::get<1>(args).value());
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};
@@ -1042,11 +1031,11 @@ static json jsonrpc_machine_verify_uarch_reset_log_handler(const json &j,
     return jsonrpc_response_ok(j);
 }
 
-/// \brief JSONRPC handler for the machine.log_uarch_step method
+/// \brief JSONRPC handler for the machine.log_step_uarch method
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_log_uarch_reset_handler(const json &j, const std::shared_ptr<http_session> &session) {
+static json jsonrpc_machine_log_reset_uarch_handler(const json &j, const std::shared_ptr<http_session> &session) {
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
@@ -1058,12 +1047,12 @@ static json jsonrpc_machine_log_uarch_reset_handler(const json &j, const std::sh
     switch (count_args(args)) {
         case 1:
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            s = jsonrpc_response_ok(j, session->handler->machine->log_uarch_reset(std::get<0>(args).value()));
+            s = jsonrpc_response_ok(j, session->handler->machine->log_reset_uarch(std::get<0>(args).value()));
             break;
         case 2:
             s = jsonrpc_response_ok(j,
                 // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-                session->handler->machine->log_uarch_reset(std::get<0>(args).value(), std::get<1>(args).value()));
+                session->handler->machine->log_reset_uarch(std::get<0>(args).value(), std::get<1>(args).value()));
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};
@@ -1071,33 +1060,27 @@ static json jsonrpc_machine_log_uarch_reset_handler(const json &j, const std::sh
     return s;
 }
 
-/// \brief JSONRPC handler for the machine.verify_uarch_step_state_transition method
+/// \brief JSONRPC handler for the machine.verify_step_uarch_state_transition method
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_uarch_step_state_transition_handler(const json &j,
+static json jsonrpc_machine_verify_step_uarch_state_transition_handler(const json &j,
     const std::shared_ptr<http_session> &session) {
     (void) session;
-    static const char *param_name[] = {"root_hash_before", "log", "root_hash_after", "runtime", "one_based"};
-    auto args = parse_args<cartesi::machine_merkle_tree::hash_type,
-        cartesi::not_default_constructible<cartesi::access_log>, cartesi::machine_merkle_tree::hash_type,
-        cartesi::optional_param<cartesi::machine_runtime_config>, cartesi::optional_param<bool>>(j, param_name);
+    static const char *param_name[] = {"root_hash_before", "log", "root_hash_after", "one_based"};
+    auto args =
+        parse_args<cartesi::machine_merkle_tree::hash_type, cartesi::not_default_constructible<cartesi::access_log>,
+            cartesi::machine_merkle_tree::hash_type, cartesi::optional_param<bool>>(j, param_name);
     switch (count_args(args)) {
         case 3:
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_uarch_step_state_transition(std::get<0>(args), std::get<1>(args).value(),
+            cartesi::machine::verify_step_uarch_state_transition(std::get<0>(args), std::get<1>(args).value(),
                 std::get<2>(args));
             break;
         case 4:
             // NOLINTBEGIN(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_uarch_step_state_transition(std::get<0>(args), std::get<1>(args).value(),
+            cartesi::machine::verify_step_uarch_state_transition(std::get<0>(args), std::get<1>(args).value(),
                 std::get<2>(args), std::get<3>(args).value());
-            // NOLINTEND(bugprone-unchecked-optional-access)
-            break;
-        case 5:
-            // NOLINTBEGIN(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_uarch_step_state_transition(std::get<0>(args), std::get<1>(args).value(),
-                std::get<2>(args), std::get<3>(args).value(), std::get<4>(args).value());
             // NOLINTEND(bugprone-unchecked-optional-access)
             break;
         default:
@@ -1106,33 +1089,27 @@ static json jsonrpc_machine_verify_uarch_step_state_transition_handler(const jso
     return jsonrpc_response_ok(j);
 }
 
-/// \brief JSONRPC handler for the machine.verify_uarch_reset_state_transition method
+/// \brief JSONRPC handler for the machine.verify_reset_uarch_state_transition method
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_uarch_reset_state_transition_handler(const json &j,
+static json jsonrpc_machine_verify_reset_uarch_state_transition_handler(const json &j,
     const std::shared_ptr<http_session> &session) {
     (void) session;
-    static const char *param_name[] = {"root_hash_before", "log", "root_hash_after", "runtime", "one_based"};
-    auto args = parse_args<cartesi::machine_merkle_tree::hash_type,
-        cartesi::not_default_constructible<cartesi::access_log>, cartesi::machine_merkle_tree::hash_type,
-        cartesi::optional_param<cartesi::machine_runtime_config>, cartesi::optional_param<bool>>(j, param_name);
+    static const char *param_name[] = {"root_hash_before", "log", "root_hash_after", "one_based"};
+    auto args =
+        parse_args<cartesi::machine_merkle_tree::hash_type, cartesi::not_default_constructible<cartesi::access_log>,
+            cartesi::machine_merkle_tree::hash_type, cartesi::optional_param<bool>>(j, param_name);
     switch (count_args(args)) {
         case 3:
             // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_uarch_reset_state_transition(std::get<0>(args), std::get<1>(args).value(),
+            cartesi::machine::verify_reset_uarch_state_transition(std::get<0>(args), std::get<1>(args).value(),
                 std::get<2>(args));
             break;
         case 4:
             // NOLINTBEGIN(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_uarch_reset_state_transition(std::get<0>(args), std::get<1>(args).value(),
+            cartesi::machine::verify_reset_uarch_state_transition(std::get<0>(args), std::get<1>(args).value(),
                 std::get<2>(args), std::get<3>(args).value());
-            // NOLINTEND(bugprone-unchecked-optional-access)
-            break;
-        case 5:
-            // NOLINTBEGIN(bugprone-unchecked-optional-access)
-            cartesi::machine::verify_uarch_reset_state_transition(std::get<0>(args), std::get<1>(args).value(),
-                std::get<2>(args), std::get<3>(args).value(), std::get<4>(args).value());
             // NOLINTEND(bugprone-unchecked-optional-access)
             break;
         default:
@@ -1737,9 +1714,9 @@ static json jsonrpc_machine_log_send_cmio_response_handler(const json &j,
 static json jsonrpc_machine_verify_send_cmio_response_log_handler(const json &j,
     const std::shared_ptr<http_session> &session) {
     (void) session;
-    static const char *param_name[] = {"reason", "data", "log", "runtime", "one_based"};
+    static const char *param_name[] = {"reason", "data", "log", "one_based"};
     auto args = parse_args<uint16_t, std::string, cartesi::not_default_constructible<cartesi::access_log>,
-        cartesi::optional_param<cartesi::machine_runtime_config>, cartesi::optional_param<bool>>(j, param_name);
+        cartesi::optional_param<bool>>(j, param_name);
     auto bin = cartesi::decode_base64(std::get<1>(args));
     ;
     // NOLINTBEGIN(bugprone-unchecked-optional-access)
@@ -1753,11 +1730,6 @@ static json jsonrpc_machine_verify_send_cmio_response_log_handler(const json &j,
             cartesi::machine::verify_send_cmio_response_log(std::get<0>(args),
                 reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<2>(args).value(),
                 std::get<3>(args).value());
-            break;
-        case 5:
-            cartesi::machine::verify_send_cmio_response_log(std::get<0>(args),
-                reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<2>(args).value(),
-                std::get<3>(args).value(), std::get<4>(args).value());
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};
@@ -1774,11 +1746,10 @@ static json jsonrpc_machine_verify_send_cmio_response_log_handler(const json &j,
 static json jsonrpc_machine_verify_send_cmio_response_state_transition_handler(const json &j,
     const std::shared_ptr<http_session> &session) {
     (void) session;
-    static const char *param_name[] = {"reason", "data", "root_hash_before", "log", "root_hash_after", "runtime",
-        "one_based"};
+    static const char *param_name[] = {"reason", "data", "root_hash_before", "log", "root_hash_after", "one_based"};
     auto args = parse_args<uint16_t, std::string, cartesi::machine_merkle_tree::hash_type,
         cartesi::not_default_constructible<cartesi::access_log>, cartesi::machine_merkle_tree::hash_type,
-        cartesi::optional_param<cartesi::machine_runtime_config>, cartesi::optional_param<bool>>(j, param_name);
+        cartesi::optional_param<bool>>(j, param_name);
 
     auto bin = cartesi::decode_base64(std::get<1>(args));
     ;
@@ -1794,11 +1765,6 @@ static json jsonrpc_machine_verify_send_cmio_response_state_transition_handler(c
             cartesi::machine::verify_send_cmio_response_state_transition(std::get<0>(args),
                 reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<2>(args), std::get<3>(args).value(),
                 std::get<4>(args), std::get<5>(args).value());
-            break;
-        case 7:
-            cartesi::machine::verify_send_cmio_response_state_transition(std::get<0>(args),
-                reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<2>(args), std::get<3>(args).value(),
-                std::get<4>(args), std::get<5>(args).value(), std::get<6>(args).value());
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};
@@ -1862,13 +1828,13 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.store", jsonrpc_machine_store_handler},
         {"machine.run", jsonrpc_machine_run_handler},
         {"machine.run_uarch", jsonrpc_machine_run_uarch_handler},
-        {"machine.log_uarch_step", jsonrpc_machine_log_uarch_step_handler},
+        {"machine.log_step_uarch", jsonrpc_machine_log_step_uarch_handler},
         {"machine.reset_uarch", jsonrpc_machine_reset_uarch_handler},
-        {"machine.log_uarch_reset", jsonrpc_machine_log_uarch_reset_handler},
-        {"machine.verify_uarch_reset_log", jsonrpc_machine_verify_uarch_reset_log_handler},
-        {"machine.verify_uarch_reset_state_transition", jsonrpc_machine_verify_uarch_reset_state_transition_handler},
-        {"machine.verify_uarch_step_log", jsonrpc_machine_verify_uarch_step_log_handler},
-        {"machine.verify_uarch_step_state_transition", jsonrpc_machine_verify_uarch_step_state_transition_handler},
+        {"machine.log_reset_uarch", jsonrpc_machine_log_reset_uarch_handler},
+        {"machine.verify_reset_uarch_log", jsonrpc_machine_verify_reset_uarch_log_handler},
+        {"machine.verify_reset_uarch_state_transition", jsonrpc_machine_verify_reset_uarch_state_transition_handler},
+        {"machine.verify_step_uarch_log", jsonrpc_machine_verify_step_uarch_log_handler},
+        {"machine.verify_step_uarch_state_transition", jsonrpc_machine_verify_step_uarch_state_transition_handler},
         {"machine.get_proof", jsonrpc_machine_get_proof_handler},
         {"machine.get_root_hash", jsonrpc_machine_get_root_hash_handler},
         {"machine.read_word", jsonrpc_machine_read_word_handler},

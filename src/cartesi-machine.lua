@@ -1879,7 +1879,10 @@ while math.ult(cycles, max_mcycle) do
             rollup_advance.next_input_index = rollup_advance.next_input_index + 1
         else
             -- there are outputs of a prevous advance state to save
-            if rollup_advance and rollup_advance.next_input_index > rollup_advance.input_index_begin then
+            if rollup_advance and rollup_advance.next_input_index == rollup_advance.input_index_end and
+               reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
+                machine:rollback()
+            elseif rollup_advance and rollup_advance.next_input_index > rollup_advance.input_index_begin then
                 save_rollup_voucher_and_notice_hashes(machine, config.rollup, rollup_advance)
             end
             -- there is an inspect state query to feed

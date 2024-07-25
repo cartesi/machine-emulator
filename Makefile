@@ -256,6 +256,9 @@ build-emulator-tests-builder-image: build-emulator-builder-image
 build-debian-package:
 	docker build $(DOCKER_PLATFORM) --target debian-packager --build-arg RELEASE=$(release) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) -t $(DEBIAN_IMG) -f Dockerfile .
 
+build-debian-source-package:
+	docker build $(DOCKER_PLATFORM) --target debian-source-package --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) -t $(DEBIAN_IMG) -f Dockerfile .
+
 build-tests-debian-packages: build-emulator-builder-image
 	docker build $(DOCKER_PLATFORM) --target tests-debian-packager --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests-debian-packager -f tests/Dockerfile .
 	$(MAKE) copy-tests-debian-packages

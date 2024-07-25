@@ -1,0 +1,8 @@
+#!/usr/bin/make -f
+
+export DEV_ENV_HAS_TOOLCHAIN=yes
+
+%:
+	dh $@
+
+override_dh_auto_test:

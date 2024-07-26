@@ -1,0 +1,6 @@
+// This file is auto-generated and should not be modified
+namespace cartesi {
+extern char const *const jsonrpc_discover_json = R"json(
+@jsonrpc-discover@
+)json";
+} // namespace cartesi

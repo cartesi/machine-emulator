@@ -28,6 +28,15 @@ ENV DEV_ENV_HAS_TOOLCHAIN=yes
 
 WORKDIR /usr/src/emulator
 
+FROM --platform=$TARGETPLATFORM cartesi/toolchain:0.17.0-rv64ima-lp64 as debian-source-package
+WORKDIR /usr/src/emulator
+COPY debian debian
+RUN apt update && \
+    apt build-dep --no-install-recommends -y .
+COPY . .
+RUN dch -v `make -s version` "Release `make -s version`" && \
+    dpkg-buildpackage
+
 FROM --platform=$TARGETPLATFORM linux-env as dep-builder
 
 COPY Makefile .

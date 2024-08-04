@@ -389,19 +389,18 @@ local function write_access_to_log(access, out, indent, last)
     util.indentout(out, indent + 1, '"type": "%s",\n', access.type)
     util.indentout(out, indent + 1, '"address": %u,\n', access.address)
     util.indentout(out, indent + 1, '"log2_size": %u,\n', access.log2_size)
+    local read_value = "" -- Solidity JSON parser breaks, if this field is null
+    if access.read then read_value = util.hexstring(access.read) end
+    util.indentout(out, indent + 1, '"read_value": "%s",\n', read_value)
+    util.indentout(out, indent + 1, '"read_hash": "%s",\n', util.hexhash(access.read_hash))
+    local written_value = ""
+    local written_hash = ""
     if access.type == "write" then
-        local value = "null"
-        if access.written then value = '"' .. util.hexstring(access.written) .. '"' end
-        util.indentout(out, indent + 1, '"value": %s,', value)
-        util.indentout(out, indent + 1, '"hash": "%s",', util.hexhash(access.written_hash))
-        util.indentout(out, indent + 1, '"read_hash": "%s"', util.hexhash(access.read_hash))
-    else
-        local value = "null"
-        if access.read then value = '"' .. util.hexstring(access.read) .. '"' end
-        util.indentout(out, indent + 1, '"value": %s,', value)
-        util.indentout(out, indent + 1, '"hash": "%s",', util.hexhash(access.read_hash))
-        util.indentout(out, indent + 1, '"read_hash": "%s"', util.hexhash(access.read_hash))
+        written_hash = util.hexhash(access.written_hash)
+        if access.written then written_value = util.hexstring(access.written) end
     end
+    util.indentout(out, indent + 1, '"written_value": "%s",\n', written_value)
+    util.indentout(out, indent + 1, '"written_hash": "%s"', written_hash)
     if access.sibling_hashes then
         out:write(",\n")
         write_sibling_hashes_to_log(access.sibling_hashes, out, indent + 2)

@@ -5,13 +5,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Changed
-- Update test rootfs to 0.16.0
-- Update outputs merkle height (for output unification v2)
 
+## [0.18.0] - 2024-08-08
 ### Added
 - Makefile target `create-generated-files-patch` to generate `add-generated-files.diff` patch
 - CI now creates and uploads `add-generated-files.diff` as artifact on tagged releases
+- Added unversioned symlinks to shared libraries in src directory
+
+### Changed
+- Updated test rootfs to 0.16.0
+- Updated outputs merkle height (for output unification v2)
+- Updated makefile to make it compatible with a homebrew formulae
+- Changed listening port to close immediately in JSONRPC shutdown
+- Bundled nlohmann JSON into third party directory
+- Rewritten jsonrpc-remote-machine using Boost ASIO
+- Updated test data due to input contract prev_randao field
+- Bumped MARCHID version to 18
+- Changed compile to release mode with debug info by default
+- Changed layout of uarch json logs
+
+### Fixed
+- Fixed regression saving snapshots on first machine yield
+- Fixed TIME_WAIT connections accumulation on Linux
+- Fixed Homebrew build
+- Ensured make clean target works with no submodules
+- Fixed TLB reads while computing hash with uarch
+- Fixed rollback remote machine for rejected advance state via the cli
+- Fixed prefix when brew is present in the system
+- Fixed system error when loading or saving snapshots
 
 ## [0.17.0] - 2024-04-23
 ### Added
@@ -450,7 +471,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [0.2.0]
 - [0.1.0]
 
-[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.18.0
 [0.17.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.17.0
 [0.16.1]: https://github.com/cartesi/machine-emulator/releases/tag/v0.16.1
 [0.16.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.16.0

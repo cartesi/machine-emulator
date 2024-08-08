@@ -46,6 +46,8 @@
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define PROGRAM_NAME "remote-cartesi-machine"
 
+extern void grpc_maybe_wait_for_async_shutdown();
+
 using namespace cartesi;
 using hash_type = keccak_256_hasher::hash_type;
 using namespace CartesiMachine;
@@ -89,6 +91,8 @@ static constexpr const char *server_version_build = "";
 
 // Check-in deadline/timeout in milliseconds
 static constexpr uint64_t checkin_deadline = 5000;
+// gRPC shutdown deadline/timeout in milliseconds
+static constexpr uint64_t shutdown_deadline = 5000;
 // Check-in max number of retry attempts
 static constexpr uint64_t checkin_retry_attempts = 3;
 // Check-in retry wait time before next attempt
@@ -1406,6 +1410,9 @@ static void server_loop(const char *server_address, const char *session_id, cons
         hctx.checkin.emplace(session_id, checkin_address);
     }
     for (;;) {
+        // Initialize gRPC
+        grpc_init();
+
         auto server = build_server(server_address, hctx);
         if (!server) {
             SLOG(fatal) << "Server creation failed";
@@ -1495,6 +1502,27 @@ static void server_loop(const char *server_address, const char *session_id, cons
         server.reset(nullptr);
         hctx.s.reset(nullptr);
         hctx.cq.reset(nullptr);
+
+        // Begin shutting-down gRPC asynchronously
+        grpc_shutdown();
+        // Wait gRPC to start shutting down
+        auto grpc_shutdown_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(shutdown_deadline);
+        while (grpc_is_initialized()) {
+            grpc_maybe_wait_for_async_shutdown();
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            if (std::chrono::steady_clock::now() >= grpc_shutdown_deadline) {
+                SLOG(fatal) << "gRPC shutdown timeout";
+                exit(1);
+            }
+        }
+        // At this point gRPC is shutting down in a background thread,
+        // the following call will wait the shutdown thread to signal it's done,
+        // but it doesn't join the thread yet.
+        grpc_maybe_wait_for_async_shutdown();
+        // The shutdown thread might not have joined and unlocked gRPC mutex yet.
+        // Unfortunately we have no track of the threads,
+        // so just sleep and hope that the thread joins in few milliseconds.
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
         // Handle side effect
         switch (s_effect) {

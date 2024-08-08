@@ -212,7 +212,10 @@ test-c-api: | $(CARTESI_IMAGES)
 test-save-and-load: | $(CARTESI_IMAGES)
 	./scripts/test-save-and-load.sh '$(LUA) ../src/cartesi-machine.lua'
 
-test-misc: test-c-api test-hash test-save-and-load
+test-yield-and-save: | $(CARTESI_IMAGES)
+	./scripts/test-yield-and-save.sh '$(LUA) ../src/cartesi-machine.lua'
+
+test-misc: test-c-api test-hash test-save-and-load test-yield-and-save
 
 test-generate-uarch-logs: $(BUILDDIR)/uarch-riscv-tests-json-logs
 	$(LUA) ./lua/uarch-riscv-tests.lua --output-dir=$(BUILDDIR)/uarch-riscv-tests-json-logs --proofs --proofs-frequency=1 --create-uarch-reset-log --create-send-cmio-response-log json-step-logs
@@ -252,7 +255,7 @@ coverage-report: $(COVERAGE_OUTPUT_DIR)
 export LLVM_PROFILE_FILE=coverage-%p.profraw
 endif
 
-test: test-save-and-load test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-hash test-cmio
+test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-hash test-cmio
 
 lint format check-format:
 	@$(MAKE) -C misc $@

@@ -195,6 +195,10 @@ jobs:
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-save-and-load.sh
 
+      - name: Yield and Save
+        run: |
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-yield-and-save.sh
+
       - name: Run test scripts
         run: |
           docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/run-lua-tests.sh
@@ -365,6 +369,10 @@ jobs:
       - name: Save and Load
         run: |
           docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-save-and-load.sh
+
+      - name: Yield and Save
+        run: |
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-yield-and-save.sh
 
       - name: Run test scripts
         run: |

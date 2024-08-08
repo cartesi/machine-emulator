@@ -14,7 +14,7 @@
 # with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 #
 
-EMULATOR_MARCHID=17
+EMULATOR_MARCHID=18
 
 # Every new emulator release should bump these constants
 EMULATOR_VERSION_MAJOR=0

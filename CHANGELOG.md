@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.1] - 2024-08-12
+### Changed
+- Updated test rootfs to 0.16.1
+
 ## [0.18.0] - 2024-08-08
 ### Added
 - Makefile target `create-generated-files-patch` to generate `add-generated-files.diff` patch
@@ -471,7 +475,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [0.2.0]
 - [0.1.0]
 
-[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/cartesi/machine-emulator/releases/tag/v0.18.1
 [0.18.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.18.0
 [0.17.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.17.0
 [0.16.1]: https://github.com/cartesi/machine-emulator/releases/tag/v0.16.1

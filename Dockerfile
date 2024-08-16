@@ -43,7 +43,7 @@ ARG MACHINE_EMULATOR_VERSION=0.0.0
 
 RUN make install-uarch debian-package DESTDIR=$PWD/_install
 
-FROM --platform=$TARGETPLATFORM debian:bookworm-20230725-slim
+FROM --platform=$TARGETPLATFORM debian:bookworm-20240812-slim
 ARG MACHINE_EMULATOR_VERSION=0.0.0
 ARG TARGETARCH
 

@@ -524,6 +524,11 @@ CM_API int cm_load_machine(const char *dir, const cm_machine_runtime_config *run
 /// \returns 0 for success, non zero code for error
 CM_API int cm_store(cm_machine *m, const char *dir, char **err_msg);
 
+CM_API int cm_log_steps(cm_machine *m, int mcycle_end, const char *dir, char **err_msg);
+CM_API int cm_replay_steps(int mcycle_end, const char *dir, char **err_msg);
+
+
+
 /// \brief Deletes machine instance
 /// \param m Valid pointer to the existing machine instance
 CM_API void cm_delete_machine(cm_machine *m);

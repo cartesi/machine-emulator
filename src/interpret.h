@@ -56,17 +56,26 @@ enum class interpreter_break_reason {
 template <typename STATE_ACCESS>
 interpreter_break_reason interpret(STATE_ACCESS &a, uint64_t mcycle_end);
 
-#ifdef MICROARCHITECTURE
+#if defined(MICROARCHITECTURE)
 class uarch_machine_state_access;
 // Declaration of explicit instantiation in module interpret.cpp when compiled with microarchitecture
 extern template interpreter_break_reason interpret(uarch_machine_state_access &a, uint64_t mcycle_end);
+#elif defined(ZKARCHITECTURE)
+class replay_multi_step_state_access;
+extern template interpreter_break_reason interpret(replay_multi_step_state_access &a, uint64_t mcycle_end);
 #else
 // Forward declarations
 class state_access;
+class record_multi_step_state_access;
+class replay_multi_step_state_access;
 class machine;
 
 // Declaration of explicit instantiation in module interpret.cpp
 extern template interpreter_break_reason interpret(state_access &a, uint64_t mcycle_end);
+
+extern template interpreter_break_reason interpret(record_multi_step_state_access &a, uint64_t mcycle_end);
+extern template interpreter_break_reason interpret(replay_multi_step_state_access &a, uint64_t mcycle_end);
+
 
 #endif // MICROARCHITECTURE
 } // namespace cartesi

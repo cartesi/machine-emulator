@@ -85,6 +85,7 @@ private:
 
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
     void do_store(const std::string &dir) override;
+    void do_log_steps(uint64_t mcycle_end, const std::string &directory) override;
     uint64_t do_read_csr(csr r) const override;
     void do_write_csr(csr w, uint64_t val) override;
     uint64_t do_read_x(int i) const override;

@@ -419,6 +419,9 @@ where options are:
     store machine to <directory>, where "%%h" is substituted by the
     state hash in the directory name.
 
+--log-steps=<steps>,<directory>
+    log <steps> and save affected pages to <directory>.
+
   --load=<directory>
     load machine previously stored in <directory>.
 
@@ -603,6 +606,8 @@ local log_uarch_step = false
 local auto_uarch_reset = false
 local log_uarch_reset = false
 local store_dir
+local log_steps_steps
+local log_steps_dir
 local load_dir
 local cmdline_opts_finished = false
 local store_config = false
@@ -1292,6 +1297,15 @@ local options = {
         function(o)
             if not o or #o < 1 then return false end
             store_dir = o
+            return true
+        end,
+    },
+    {
+        "^%-%-log%-steps%=(.*),(.*)$",
+        function(s, d)
+            if (not s) or (not d) then return false end
+            log_steps_steps = assert(util.parse_number(s), "invalid steps " .. s)
+            log_steps_dir = d
             return true
         end,
     },
@@ -2298,6 +2312,14 @@ if max_uarch_cycle > 0 then
     end
 end
 if gdb_stub then gdb_stub:close() end
+if log_steps_steps then
+    stderr(string.format("Saving %d steps to %s\n", log_steps_steps, log_steps_dir))
+    local mcycle_end = machine:read_mcycle() + log_steps_steps
+    machine:log_steps(mcycle_end, log_steps_dir)
+    -- TODO: consider remote
+    cartesi.machine.replay_steps(mcycle_end, log_steps_dir)
+    
+end
 if log_uarch_step then
     assert(config.processor.iunrep == 0, "micro step proof is meaningless in unreproducible mode")
     stderr("Gathering micro step log: please wait\n")

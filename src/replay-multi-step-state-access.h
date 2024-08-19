@@ -14,10 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef uarch_machine_state_access_H
-#define uarch_machine_state_access_H
-
-#include "uarch-runtime.h" // must be included first, because of assert
+#ifndef REPLAY_MULTI_STEP_STATE_ACCESS_H
+#define REPLAY_MULTI_STEP_STATE_ACCESS_H
 
 #include "clint.h"
 #include "plic.h"
@@ -37,19 +35,13 @@
 
 namespace cartesi {
 
-template <typename T>
-static T raw_read_memory(uint64_t paddr) {
-    volatile T *p = reinterpret_cast<T *>(paddr);
-    return *p;
-}
+struct page_info {
+    uint64_t address;
+    char data[PMA_PAGE_SIZE];
+    page_info *next;
+};
 
-template <typename T>
-static void raw_write_memory(uint64_t paddr, T val) {
-    volatile T *p = reinterpret_cast<T *>(paddr);
-    *p = val;
-}
-
-class uarch_pma_entry final {
+class mock_pma_entry final {
 public:
     struct flags {
         bool M;
@@ -72,7 +64,7 @@ private:
     void *m_device_context;
 
 public:
-    uarch_pma_entry(int pma_index, uint64_t start, uint64_t length, flags flags,
+    mock_pma_entry(int pma_index, uint64_t start, uint64_t length, flags flags,
         const pma_driver *pma_driver = nullptr, void *device_context = nullptr) :
         m_pma_index{pma_index},
         m_start{start},
@@ -81,7 +73,7 @@ public:
         m_device_driver{pma_driver},
         m_device_context{device_context} {}
 
-    uarch_pma_entry(void) : uarch_pma_entry(-1, 0, 0, {false, false, true /* empty */}) {
+    mock_pma_entry(void) : mock_pma_entry(-1, 0, 0, {false, false, true /* empty */}) {
         ;
     }
 
@@ -145,19 +137,65 @@ public:
 };
 
 // Provides access to the state of the big emulator from microcode
-class uarch_machine_state_access : public i_state_access<uarch_machine_state_access, uarch_pma_entry> {
-    std::array<std::optional<uarch_pma_entry>, PMA_MAX> m_pmas;
+class replay_multi_step_state_access : public i_state_access<replay_multi_step_state_access, mock_pma_entry> {
+    page_info *m_pages;
+    std::array<std::optional<mock_pma_entry>, PMA_MAX> m_pmas;
 
 public:
-    uarch_machine_state_access() {}
-    uarch_machine_state_access(const uarch_machine_state_access &) = delete;
-    uarch_machine_state_access(uarch_machine_state_access &&) = delete;
-    uarch_machine_state_access &operator=(const uarch_machine_state_access &) = delete;
-    uarch_machine_state_access &operator=(uarch_machine_state_access &&) = delete;
-    ~uarch_machine_state_access() = default;
+    replay_multi_step_state_access(page_info *pages) : m_pages{pages} {
+        ;
+    }
+    replay_multi_step_state_access(const replay_multi_step_state_access &) = delete;
+    replay_multi_step_state_access(replay_multi_step_state_access &&) = delete;
+    replay_multi_step_state_access &operator=(const replay_multi_step_state_access &) = delete;
+    replay_multi_step_state_access &operator=(replay_multi_step_state_access &&) = delete;
+    ~replay_multi_step_state_access() = default;
 
 private:
-    friend i_state_access<uarch_machine_state_access, uarch_pma_entry>;
+    friend i_state_access<replay_multi_step_state_access, mock_pma_entry>;
+
+    page_info *find_page(uint64_t address) const {
+        for (auto *p = m_pages; p; p = p->next) {
+            if (p->address == address) {
+                return p;
+            }
+        }
+        __builtin_trap();
+        abort();
+    }
+
+    page_info *find_page(uint64_t address)  {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
+        return const_cast<page_info *>(static_cast<const replay_multi_step_state_access *>(this)->find_page(address));
+    }
+
+    template <typename T>
+    T raw_read_memory(uint64_t paddr) const {
+        auto page = paddr & ~(PMA_PAGE_SIZE - 1);
+        auto data = find_page(page);
+        auto offset = paddr - page;
+        auto *p = data->data + offset;
+        auto *q = const_cast<T *>(reinterpret_cast<const T *>(p)); 
+        auto res =  *q;
+        return res;
+    }
+
+    void raw_read_memory(uint64_t paddr, int size, char *dest) const {
+        for(int i = 0; i < size; i++) {
+            ((char*)dest)[i] = raw_read_memory<uint8_t>(paddr + i);
+        }
+    }
+
+
+    template <typename T>
+    void raw_write_memory(uint64_t paddr, T val) {
+        auto page = paddr & ~(PMA_PAGE_SIZE - 1);
+        auto data = find_page(page);
+        auto offset = paddr - page;
+        auto *p = data->data + offset;
+        auto *q = const_cast<T *>(reinterpret_cast<const T *>(p)); 
+        *q = val;
+    }
 
     void do_push_bracket(bracket_type type, const char *text) {
         (void) type;
@@ -549,6 +587,18 @@ private:
         *pval = raw_read_memory<T>(paddr);
     }
 
+   template <typename T, typename U>
+    T do_aliased_unaligned_read(const void *host_ptr, uint64_t paddr) {
+        (void) host_ptr;
+        return raw_read_memory<T>(paddr);
+    } 
+
+    template <typename T>
+    T do_aliased_aligned_read(const void *host_ptr, uint64_t paddr) {
+        (void) host_ptr;
+        return raw_read_memory<T>(paddr);
+    }
+
     bool do_read_memory(uint64_t paddr, unsigned char *data, uint64_t length) {
         // This is not implemented yet because it's not being used
         abort();
@@ -569,7 +619,7 @@ private:
     }
 
     template <typename T>
-    uarch_pma_entry &do_find_pma_entry(uint64_t paddr) {
+    mock_pma_entry &do_find_pma_entry(uint64_t paddr) {
         for (int i = 0; i < m_pmas.size(); i++) {
             auto &pma = get_pma_entry(i);
             if (pma.get_istart_E()) {
@@ -582,32 +632,32 @@ private:
         abort();
     }
 
-    uarch_pma_entry &do_get_pma_entry(int index) {
+    mock_pma_entry &do_get_pma_entry(int index) {
         uint64_t istart = read_pma_istart(index);
         uint64_t ilength = read_pma_ilength(index);
         if (!m_pmas[index]) {
-            m_pmas[index] = build_uarch_pma_entry(index, istart, ilength);
+            m_pmas[index] = build_mock_pma_entry(index, istart, ilength);
         }
         return m_pmas[index].value();
     }
 
-    unsigned char *do_get_host_memory(uarch_pma_entry &pma) {
+    unsigned char *do_get_host_memory(mock_pma_entry &pma) {
         return nullptr;
     }
 
-    bool do_read_device(uarch_pma_entry &pma, uint64_t mcycle, uint64_t offset, uint64_t *pval, int log2_size) {
+    bool do_read_device(mock_pma_entry &pma, uint64_t mcycle, uint64_t offset, uint64_t *pval, int log2_size) {
         device_state_access da(*this, mcycle);
         return pma.get_device_driver()->read(pma.get_device_context(), &da, offset, pval, log2_size);
     }
 
-    execute_status do_write_device(uarch_pma_entry &pma, uint64_t mcycle, uint64_t offset, uint64_t val, int log2_size) {
+    execute_status do_write_device(mock_pma_entry &pma, uint64_t mcycle, uint64_t offset, uint64_t val, int log2_size) {
         device_state_access da(*this, mcycle);
         return pma.get_device_driver()->write(pma.get_device_context(), &da, offset, val, log2_size);
     }
 
-    uarch_pma_entry build_uarch_pma_entry(int index, uint64_t istart, uint64_t ilength) {
+    mock_pma_entry build_mock_pma_entry(int index, uint64_t istart, uint64_t ilength) {
         uint64_t start;
-        uarch_pma_entry::flags flags;
+        mock_pma_entry::flags flags;
         split_istart(istart, start, flags);
         const pma_driver *driver = nullptr;
         void *device_ctx = nullptr;
@@ -637,10 +687,10 @@ private:
                     break;
             }
         }
-        return uarch_pma_entry{index, start, ilength, flags, driver, device_ctx};
+        return mock_pma_entry{index, start, ilength, flags, driver, device_ctx};
     }
 
-    static constexpr void split_istart(uint64_t istart, uint64_t &start, uarch_pma_entry::flags &f) {
+    static constexpr void split_istart(uint64_t istart, uint64_t &start, mock_pma_entry::flags &f) {
         f.M = (istart & PMA_ISTART_M_MASK) >> PMA_ISTART_M_SHIFT;
         f.IO = (istart & PMA_ISTART_IO_MASK) >> PMA_ISTART_IO_SHIFT;
         f.E = (istart & PMA_ISTART_E_MASK) >> PMA_ISTART_E_SHIFT;
@@ -653,18 +703,35 @@ private:
         start = istart & PMA_ISTART_START_MASK;
     }
 
-    template <TLB_entry_type ETYPE>
-    volatile tlb_hot_entry& do_get_tlb_hot_entry(uint64_t eidx) {
-        // Volatile is used, so the compiler does not optimize out, or do of order writes.
-        volatile tlb_hot_entry *tlbe = reinterpret_cast<tlb_hot_entry *>(tlb_get_entry_hot_abs_addr<ETYPE>(eidx));
-        return *tlbe;
-    }
+    tlb_hot_entry m_loxa;
 
     template <TLB_entry_type ETYPE>
-    volatile tlb_cold_entry& do_get_tlb_entry_cold(uint64_t eidx) {
+    volatile tlb_hot_entry& do_get_tlb_hot_entry(uint64_t eidx) {
+        tlb_hot_entry res{};
+        auto addr = tlb_get_entry_hot_abs_addr<ETYPE>(eidx);
+        auto size = sizeof(tlb_hot_entry);
+        raw_read_memory(addr, size, (char*)&res);
+        m_loxa = res;
+        return m_loxa;
+
         // Volatile is used, so the compiler does not optimize out, or do of order writes.
-        volatile tlb_cold_entry *tlbe = reinterpret_cast<tlb_cold_entry *>(tlb_get_entry_cold_abs_addr<ETYPE>(eidx));
-        return *tlbe;
+        // volatile tlb_hot_entry *tlbe = reinterpret_cast<tlb_hot_entry *>(tlb_get_entry_hot_abs_addr<ETYPE>(eidx));
+        // return *tlbe;
+    }
+
+    tlb_cold_entry loxa_cold;
+    template <TLB_entry_type ETYPE>
+    volatile tlb_cold_entry& do_get_tlb_entry_cold(uint64_t eidx) {
+        auto addr = tlb_get_entry_cold_abs_addr<ETYPE>(eidx);
+        auto size = sizeof(tlb_cold_entry);
+        tlb_cold_entry res{};
+        raw_read_memory(addr, size, (char*)&res);
+        loxa_cold = res;
+        return loxa_cold;;
+        
+        // Volatile is used, so the compiler does not optimize out, or do of order writes.
+        // volatile tlb_cold_entry *tlbe = reinterpret_cast<tlb_cold_entry *>(tlb_get_entry_cold_abs_addr<ETYPE>(eidx));
+        // return *tlbe;
     }
 
     template <TLB_entry_type ETYPE, typename T>
@@ -693,18 +760,6 @@ private:
         return false;
     }
 
-    template <typename T, typename U>
-    T do_aliased_unaligned_read(const void *host_ptr, uint64_t paddr) {
-        (void) host_ptr;
-        return raw_read_memory<T>(paddr);
-    }
-
-    template <typename T>
-    T do_aliased_aligned_read(const void *host_ptr, uint64_t paddr) {
-        (void) host_ptr;
-        return raw_read_memory<T>(paddr);
-    }
-
     template <TLB_entry_type ETYPE, typename T>
     bool do_write_memory_word_via_tlb(uint64_t vaddr, T val) {
         uint64_t eidx = tlb_get_entry_index(vaddr);
@@ -719,29 +774,24 @@ private:
     }
 
     template <TLB_entry_type ETYPE>
-    unsigned char *do_replace_tlb_entry(uint64_t vaddr, uint64_t paddr, uarch_pma_entry &pma) {
+    unsigned char *do_replace_tlb_entry(uint64_t vaddr, uint64_t paddr, mock_pma_entry &pma) {
         uint64_t eidx = tlb_get_entry_index(vaddr);
-        volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
         volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
+        volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
         // Mark page that was on TLB as dirty so we know to update the Merkle tree
         if constexpr (ETYPE == TLB_WRITE) {
             if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
-                uarch_pma_entry &pma = do_get_pma_entry(static_cast<int>(tlbce.pma_index));
+                mock_pma_entry &pma = do_get_pma_entry(static_cast<int>(tlbce.pma_index));
                 pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
             }
         }
         uint64_t vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
         uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        // Both pma_index and paddr_page MUST BE written while its state is invalidated,
-        // otherwise TLB entry may be read in an incomplete state when computing root hash
-        // while stepping over this function.
-        // To do this we first invalidate TLB state before these fields are written to "lock",
-        // and "unlock" by writing a valid vaddr_page.
-        tlbhe.vaddr_page = TLB_INVALID_PAGE; // "lock", DO NOT OPTIMIZE OUT THIS LINE
-        tlbce.pma_index = static_cast<uint64_t>(pma.get_index());
+        tlbhe.vaddr_page = vaddr_page;
+        // The paddr_must field must be written only after vaddr_page is written,
+        // because the uarch memory bridge reads vaddr_page to compute vh_offset when updating paddr_page.
         tlbce.paddr_page = paddr_page;
-        // The write to vaddr_page MUST BE the last TLB entry write.
-        tlbhe.vaddr_page = vaddr_page; // "unlock"
+        tlbce.pma_index = static_cast<uint64_t>(pma.get_index());
         // Note that we can't write here the correct vh_offset value, because it depends in a host pointer,
         // however the uarch memory bridge will take care of updating it.
         return cast_addr_to_ptr<unsigned char*>(paddr_page);
@@ -755,7 +805,7 @@ private:
             if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
                 tlbhe.vaddr_page = TLB_INVALID_PAGE;
                 volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
-                uarch_pma_entry &pma = do_get_pma_entry(static_cast<int>(tlbce.pma_index));
+                mock_pma_entry &pma = do_get_pma_entry(static_cast<int>(tlbce.pma_index));
                 pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
             } else {
                 tlbhe.vaddr_page = TLB_INVALID_PAGE;

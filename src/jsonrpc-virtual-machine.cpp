@@ -447,6 +447,12 @@ void jsonrpc_virtual_machine::do_store(const std::string &directory) {
     jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.store", std::tie(directory), result);
 }
 
+void jsonrpc_virtual_machine::do_log_steps(uint64_t mcycle_end, const std::string &directory) {
+    bool result = false;
+    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.log_steps", std::tie(mcycle_end, directory),
+        result);
+}
+
 uint64_t jsonrpc_virtual_machine::do_read_csr(csr r) const {
     uint64_t result = 0;
     jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.read_csr", std::tie(r), result);

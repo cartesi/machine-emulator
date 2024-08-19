@@ -170,6 +170,12 @@ static int machine_class_index_verify_send_cmio_response_state_transition(lua_St
     return 1;
 }
 
+static int machine_class_index_replay_steps(lua_State *L) {
+    lua_settop(L, 2);
+    TRY_EXECUTE(cm_replay_steps(luaL_checkinteger(L, 1), luaL_checkstring(L, 2), err_msg));
+    return 1;
+}
+
 /// \brief Contents of the machine class metatable __index table.
 static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
     {"get_default_config", machine_class_index_get_default_config},
@@ -183,6 +189,7 @@ static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
     {"get_csr_address", machine_class_index_get_csr_address},
     {"verify_send_cmio_response_log", machine_class_index_verify_send_cmio_response_log},
     {"verify_send_cmio_response_state_transition", machine_class_index_verify_send_cmio_response_state_transition},
+    {"replay_steps", machine_class_index_replay_steps},
 });
 
 /// \brief This is the cartesi.machine() constructor implementation.

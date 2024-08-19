@@ -32,6 +32,10 @@ void virtual_machine::do_store(const std::string &dir) {
     m_machine->store(dir);
 }
 
+void virtual_machine::do_log_steps(uint64_t mcycle_end, const std::string &directory) {
+    m_machine->log_steps(mcycle_end, directory);
+}
+
 interpreter_break_reason virtual_machine::do_run(uint64_t mcycle_end) {
     return m_machine->run(mcycle_end);
 }

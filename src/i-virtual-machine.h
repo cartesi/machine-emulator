@@ -61,6 +61,10 @@ public:
         do_store(dir);
     }
 
+     void log_steps(uint64_t mcycle_end, const std::string &directory) {
+        do_log_steps(mcycle_end, directory);
+    }
+
     /// \brief Runs the machine for one micro cycle logging all accesses to the state.
     access_log log_uarch_step(const access_log::type &log_type, bool one_based = false) {
         return do_log_uarch_step(log_type, one_based);
@@ -809,6 +813,7 @@ private:
     virtual void do_destroy() = 0;
     virtual void do_commit() = 0;
     virtual void do_rollback() = 0;
+    virtual void do_log_steps(uint64_t steps, const std::string &directory) = 0;
     virtual uint64_t do_read_uarch_x(int i) const = 0;
     virtual void do_write_uarch_x(int i, uint64_t val) = 0;
     virtual uint64_t do_read_uarch_pc(void) const = 0;

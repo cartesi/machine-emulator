@@ -65,7 +65,9 @@ inline int clz(uint32_t x) {
 
 template <>
 inline int clz(uint64_t x) {
-    return x == 0 ? 64 : __builtin_clzll(x);
+    abort();
+    // fix undefined symbol __clzdi2 with risczero guest
+    //return x == 0 ? 64 : __builtin_clzll(x);
 }
 
 /// \brief Retrieves an unsigned type with double width.
@@ -104,7 +106,7 @@ static inline UINT divrem_u(UINT *pr, UINT ah, UINT al, UINT bl) {
     const ULONG a = (static_cast<ULONG>(ah) << UINT_SIZE) | al;
     const ULONG b = static_cast<ULONG>(bl);
     const ULONG quo = a / b;
-#ifdef MICROARCHITECTURE
+#if defined(MICROARCHITECTURE) || defined (ZKARCHITECTURE)
     // on microarchitecture, it's faster to compute the remainder using the quotient
     const ULONG rem = a - (b * quo);
 #else

@@ -21,6 +21,8 @@
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <filesystem>
+#include  <cstdlib>
 
 #include "clint-factory.h"
 #include "dtb.h"
@@ -29,6 +31,7 @@
 #include "interpret.h"
 #include "plic-factory.h"
 #include "record-state-access.h"
+#include "replay-multi-step-state-access.h"
 #include "replay-state-access.h"
 #include "riscv-constants.h"
 #include "send-cmio-response.h"
@@ -36,6 +39,7 @@
 #include "shadow-state-factory.h"
 #include "shadow-tlb-factory.h"
 #include "state-access.h"
+#include "record-multi-step-state-access.h"
 #include "strict-aliasing.h"
 #include "translate-virtual-address.h"
 #include "uarch-interpret.h"
@@ -669,6 +673,9 @@ static void store_device_pma(const machine &m, const pma_entry &pma, const std::
         const unsigned char *page_data = nullptr;
         auto peek = pma.get_peek();
         if (!peek(pma, m, page_start_in_range, &page_data, scratch.get())) {
+            printf("---> peek failed page_start_in_range=%llx", page_start_in_range);
+            __builtin_trap();
+            abort();
             throw std::runtime_error{"peek failed"};
         } else {
             if (!page_data) {
@@ -1719,6 +1726,8 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
             const uint64_t page_start_in_range = (address - pma.get_start()) & (~(PMA_PAGE_SIZE - 1));
             auto peek = pma.get_peek();
             if (!peek(pma, *this, page_start_in_range, &page_data, scratch.get())) {
+                printf("---> peek failed page_start_in_range=%llx", page_start_in_range);
+                __builtin_trap();
                 throw std::runtime_error{"PMA peek failed"};
             }
         }
@@ -1766,6 +1775,8 @@ void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length
         // avoid copying to the intermediate buffer when getting the whole page
         if (bytes_to_write == PMA_PAGE_SIZE) {
             if (!peek(pma, *this, page_address, &page_data, data)) {
+                printf("---> peek failed page_address=%llx", page_address);
+                __builtin_trap();
                 throw std::runtime_error{"peek failed"};
             } else if (!page_data) {
                 memset(data, 0, bytes_to_write);
@@ -1945,6 +1956,56 @@ bool machine::read_uarch_halt_flag(void) const {
 void machine::send_cmio_response(uint16_t reason, const unsigned char *data, size_t length) {
     state_access a(*this);
     cartesi::send_cmio_response(a, reason, data, length);
+}
+
+void machine::log_steps(uint64_t mcycle_end, const std::string &directory) {
+    // if (os_mkdir(directory.c_str(), 0700)) {
+    //     throw std::system_error{errno, std::generic_category(), "error creating directory '"s + dir + "'"s};
+    // }
+    if (!update_merkle_tree()) {
+        throw std::runtime_error{"error updating Merkle tree"};
+    }
+    record_multi_step_state_access a(*this, directory);
+    interpret(a, mcycle_end);
+}
+
+namespace fs = std::filesystem;
+
+void machine::replay_steps(uint64_t steps, const std::string &directory) {
+    printf("---> replay steps=%llx, directory=%s\n", steps, directory.c_str());
+    fs::path dir(directory);
+    if (!fs::exists(dir) || !fs::is_directory(dir)) {
+        throw std::invalid_argument{"directory does not exist"};
+    }
+    page_info *head = nullptr;
+    page_info *tail = nullptr;
+    for (const auto& entry : fs::directory_iterator(directory)) {
+        if (fs::is_regular_file(entry.status())) {
+            auto name = entry.path().filename().string();
+            page_info *page = new page_info;
+            page->next = nullptr;
+            page->address = std::strtoull(name.c_str(), nullptr, 16);
+            auto fp = unique_fopen(entry.path().c_str(), "rb");
+            if (!fp) {
+                throw std::runtime_error("Could not open page file for reading");
+            }
+            if (fread(&page->data, 1, PMA_PAGE_SIZE, fp.get()) != PMA_PAGE_SIZE) {
+                throw std::runtime_error("Could not read page data");
+            }
+            if (!head) {
+                head = page;
+                tail = page;
+            } else {
+                tail->next = page;
+                tail = page;
+            }
+            std::cout << entry.path().filename() << std::endl;
+        }
+    }
+    replay_multi_step_state_access a(head);
+    auto current_mcycle = a.read_mcycle();
+    uint64_t mcycle_end = current_mcycle + steps;
+    interpret(a, mcycle_end);
 }
 
 access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,

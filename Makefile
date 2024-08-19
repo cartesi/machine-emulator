@@ -163,6 +163,7 @@ help:
 	@echo '* all                                 - Build the src/ code. To build from a clean clone, run: make submodules all'
 	@echo '  uarch                               - Build microarchitecture (requires riscv64-cartesi-linux-gnu-* toolchain)'
 	@echo '  uarch-with-linux-env                - Build microarchitecture using the linux-env docker image'
+	@echo '  zkarch-with-linux-env               - Build zk microarchitecture using the linux-env docker image'
 	@echo '  build-tests-all                     - Build all tests (machine, uarch and misc)'
 	@echo '  build-tests-machine                 - Build machine emulator tests (requires rv64gc-lp64d riscv64-cartesi-linux-gnu-* toolchain)'
 	@echo '  build-tests-machine-with-toolchain  - Build machine emulator tests using the rv64gc-lp64d toolchain docker image'
@@ -246,6 +247,9 @@ source-default:
 uarch: $(SRCDIR)/machine-c-version.h
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C uarch
 
+zkarch: $(SRCDIR)/machine-c-version.h
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C zkarch
+
 $(SRCDIR)/machine-c-version.h:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) machine-c-version.h
 
@@ -316,6 +320,9 @@ linux-env-exec: check-linux-env
 
 uarch-with-linux-env:
 	@$(MAKE) linux-env-exec CONTAINER_COMMAND="make uarch"
+
+zkarch-with-linux-env:
+	@$(MAKE) linux-env-exec CONTAINER_COMMAND="make zkarch"
 
 # Create install directories
 $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH) $(UARCH_INSTALL_PATH) $(TESTS_DATA_INSTALL_PATH) $(TESTS_SCRIPTS_INSTALL_PATH) $(TESTS_LUA_INSTALL_PATH):
@@ -396,6 +403,6 @@ $(ADD_GENERATED_FILES_DIFF): $(GENERATED_FILES)
 	git diff --no-prefix --staged --output=$(ADD_GENERATED_FILES_DIFF)
 	git reset -- $(GENERATED_FILES)
 
-.PHONY: help all submodules doc clean distclean src luacartesi hash uarch \
+.PHONY: help all submodules doc clean distclean src luacartesi hash uarch zkarch \
 	create-generated-files-patch $(SUBDIRS) $(SUBCLEAN)
 

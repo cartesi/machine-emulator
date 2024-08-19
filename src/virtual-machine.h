@@ -166,6 +166,7 @@ private:
     void do_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length) override;
     access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
         const access_log::type &log_type, bool one_based) override;
+    void do_log_steps(uint64_t mcycle_end, const std::string &directory) override;
 };
 
 } // namespace cartesi

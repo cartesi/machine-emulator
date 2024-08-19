@@ -410,6 +410,12 @@ static int machine_obj_index_store(lua_State *L) {
     return 0;
 }
 
+static int machine_obj_index_log_steps(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    TRY_EXECUTE(cm_log_steps(m.get(), luaL_checkinteger(L, 2), luaL_checkstring(L, 3), err_msg));
+    return 0;
+}
+
 /// \brief This is the machine:verify_dirty_page_maps() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_verify_dirty_page_maps(lua_State *L) {
@@ -718,6 +724,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"log_uarch_reset", machine_obj_index_log_uarch_reset},
     {"send_cmio_response", machine_obj_index_send_cmio_response},
     {"log_send_cmio_response", machine_obj_index_log_send_cmio_response},
+    {"log_steps", machine_obj_index_log_steps},
 });
 
 /// \brief This is the machine __close metamethod implementation.

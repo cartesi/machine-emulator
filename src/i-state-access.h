@@ -680,6 +680,16 @@ public:
         return derived().template do_read_memory_word<T>(paddr, hpage, hoffset, pval);
     }
 
+    template <typename T, typename U>
+    T aliased_unaligned_read(const void *host_ptr, uint64_t paddr) {
+        return derived().template do_aliased_unaligned_read<T, U>(host_ptr, paddr);
+    }
+
+    template <typename T>
+    inline T aliased_aligned_read(const void *host_ptr, uint64_t paddr) {
+        return derived().template do_aliased_aligned_read<T>(host_ptr, paddr);
+    }
+
     /// \brief Writes a word to memory.
     /// \tparam T Type of word to write.
     /// \param paddr Target physical address.

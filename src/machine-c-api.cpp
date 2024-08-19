@@ -968,6 +968,14 @@ int cm_store(cm_machine *m, const char *dir, char **err_msg) try {
     return cm_result_failure(err_msg);
 }
 
+int cm_log_steps(cm_machine *m, int mcycle_end, const char *dir, char **err_msg) try {
+    auto *cpp_machine = convert_from_c(m);
+    cpp_machine->log_steps(mcycle_end, null_to_empty(dir));
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
 int cm_machine_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason_result, char **err_msg) try {
     auto *cpp_machine = convert_from_c(m);
     cartesi::interpreter_break_reason break_reason = cpp_machine->run(mcycle_end);
@@ -1114,6 +1122,13 @@ int cm_verify_uarch_step_state_transition(const cm_hash *root_hash_before, const
     const cartesi::machine_runtime_config cpp_runtime_config = convert_from_c(runtime_config);
     cartesi::machine::verify_uarch_step_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after,
         cpp_runtime_config, one_based);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_replay_steps(int mcycle_end, const char *dir, char **err_msg)  try {
+    cartesi::machine::replay_steps(mcycle_end, dir);
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);

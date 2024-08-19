@@ -923,6 +923,9 @@ public:
     /// \brief Writes the value ofthe microarchitecture cycle counter register.
     /// \param value New register value.
     void write_uarch_cycle(uint64_t value);
+
+    void log_steps(uint64_t mcycle_end, const std::string &directory);    
+    static void replay_steps(uint64_t steps, const std::string &directory);
 };
 
 } // namespace cartesi

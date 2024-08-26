@@ -2078,8 +2078,9 @@ end
 local function store_machine(machine, config, dir)
     assert(config.processor.iunrep == 0, "hashes are meaningless in unreproducible mode")
     stderr("Storing machine: please wait\n")
-    local h = util.hexhash(machine:get_root_hash())
-    local name = instantiate_filename(dir, { h = h })
+    local values = {}
+    if dir:find("%%h") then values.h = util.hexhash(machine:get_root_hash()) end
+    local name = instantiate_filename(dir, values)
     machine:store(name)
 end
 

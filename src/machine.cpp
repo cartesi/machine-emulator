@@ -769,10 +769,10 @@ void machine::store(const std::string &dir) const {
     if (os_mkdir(dir.c_str(), 0700)) {
         throw std::system_error{errno, std::generic_category(), "error creating directory '"s + dir + "'"s};
     }
-    if (!update_merkle_tree()) {
-        throw std::runtime_error{"error updating Merkle tree"};
-    }
     if (!m_r.skip_root_hash_store) {
+        if (!update_merkle_tree()) {
+            throw std::runtime_error{"error updating Merkle tree"};
+        }
         hash_type h;
         m_t.get_root_hash(h);
         store_hash(h, dir);

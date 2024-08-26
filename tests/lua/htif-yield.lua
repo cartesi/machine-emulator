@@ -210,16 +210,13 @@ local function test(machine_config, yield_automatic_enable, yield_manual_enable)
         yield_manual = yield_manual_enable,
     }
     local machine <close> = cartesi.machine(machine_config)
-    local break_reason
     for _, v in ipairs(yields) do
         if
             (v.reason == REASON_PROGRESS and progress_enable)
             or (v.cmd == YIELD_MANUAL and yield_manual_enable)
             or (v.cmd == YIELD_AUTOMATIC and yield_automatic_enable)
         then
-            while not machine:read_iflags_Y() and not machine:read_iflags_X() and not machine:read_iflags_H() do
-                break_reason = run_machine(machine)
-            end
+            local break_reason = run_machine(machine)
 
             -- mcycle should be as expected
             local mcycle = machine:read_mcycle()
@@ -256,13 +253,10 @@ local function test(machine_config, yield_automatic_enable, yield_manual_enable)
             end
             -- now reset it so the machine can be advanced
             machine:reset_iflags_Y()
-            machine:reset_iflags_X()
         end
     end
     -- finally run to completion
-    while not machine:read_iflags_Y() and not machine:read_iflags_H() do
-        break_reason = run_machine(machine)
-    end
+    local break_reason = run_machine(machine)
     -- should be halted
     assert(break_reason == cartesi.BREAK_REASON_HALTED)
     assert(machine:read_iflags_H(), "expected iflags_H set")

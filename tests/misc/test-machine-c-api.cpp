@@ -1226,21 +1226,6 @@ BOOST_AUTO_TEST_CASE_NOLINT(reset_iflags_y_null_machine_test) {
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_AUTO_TEST_CASE_NOLINT(set_iflags_x_null_machine_test) {
-    int error_code = cm_set_iflags_X(nullptr, nullptr);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
-BOOST_AUTO_TEST_CASE_NOLINT(reset_iflags_x_null_machine_test) {
-    int error_code = cm_reset_iflags_X(nullptr, nullptr);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
-BOOST_AUTO_TEST_CASE_NOLINT(set_iflags_h_null_machine_test) {
-    int error_code = cm_set_iflags_H(nullptr, nullptr);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
 BOOST_AUTO_TEST_CASE_NOLINT(packed_iflags_test) {
     uint64_t iflags = cm_packed_iflags(0, 0, 0, 0);
     BOOST_CHECK_EQUAL(0, iflags);
@@ -1277,27 +1262,18 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(iflags_read_write_complex_test, ordinary_machine_
     error_code = cm_set_iflags_Y(_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    error_code = cm_set_iflags_X(_machine, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
     error_code = cm_read_iflags(_machine, &read_value, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(read_value, static_cast<uint64_t>(0x1e));
+    BOOST_CHECK_EQUAL(read_value, static_cast<uint64_t>(0x1a));
 
     error_code = cm_reset_iflags_Y(_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    error_code = cm_reset_iflags_X(_machine, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-    error_code = cm_set_iflags_H(_machine, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
     error_code = cm_read_iflags(_machine, &read_value, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(read_value, static_cast<uint64_t>(0x19));
+    BOOST_CHECK_EQUAL(read_value, static_cast<uint64_t>(0x18));
 
     error_code = cm_write_iflags(_machine, write_value, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);

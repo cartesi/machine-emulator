@@ -115,11 +115,8 @@ private:
     bool do_read_iflags_H(void) const override;
     bool do_read_iflags_Y(void) const override;
     bool do_read_iflags_X(void) const override;
-    void do_set_iflags_H(void) override;
     void do_set_iflags_Y(void) override;
-    void do_set_iflags_X(void) override;
     void do_reset_iflags_Y(void) override;
-    void do_reset_iflags_X(void) override;
     void do_write_iflags(uint64_t val) override;
     uint64_t do_read_iunrep(void) const override;
     void do_write_iunrep(uint64_t val) override;

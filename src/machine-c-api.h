@@ -1635,24 +1635,6 @@ CM_API int cm_write_plic_girqsrvd(cm_machine *m, uint64_t val, char **err_msg);
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_iflags_X(const cm_machine *m, bool *val, char **err_msg);
 
-/// \brief Resets the value of the iflags_X flag.
-/// \param m Pointer to valid machine instance
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_cstring.
-/// err_msg can be NULL, meaning the error message won't be received.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_reset_iflags_X(cm_machine *m, char **err_msg);
-
-/// \brief Sets the iflags_X flag.
-/// \param m Pointer to valid machine instance
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_cstring.
-/// err_msg can be NULL, meaning the error message won't be received.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_set_iflags_X(cm_machine *m, char **err_msg);
-
 /// \brief Checks the value of the iflags_Y flag.
 /// \param m Pointer to valid machine instance
 /// \param val Receives the flag value
@@ -1690,15 +1672,6 @@ CM_API int cm_set_iflags_Y(cm_machine *m, char **err_msg);
 /// err_msg can be NULL, meaning the error message won't be received.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_iflags_H(const cm_machine *m, bool *val, char **err_msg);
-
-/// \brief Sets the iflags_H flag.
-/// \param m Pointer to valid machine instance
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_cstring.
-/// err_msg can be NULL, meaning the error message won't be received.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_set_iflags_H(cm_machine *m, char **err_msg);
 
 /// \brief Verify if dirty page maps are consistent.
 /// \param m Pointer to valid machine instance

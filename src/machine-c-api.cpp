@@ -1440,36 +1440,12 @@ int cm_read_iflags_X(const cm_machine *m, bool *val, char **err_msg) try {
     return cm_result_failure(err_msg);
 }
 
-int cm_reset_iflags_X(cm_machine *m, char **err_msg) try {
-    auto *cpp_machine = convert_from_c(m);
-    cpp_machine->reset_iflags_X();
-    return cm_result_success(err_msg);
-} catch (...) {
-    return cm_result_failure(err_msg);
-}
-
-int cm_set_iflags_X(cm_machine *m, char **err_msg) try {
-    auto *cpp_machine = convert_from_c(m);
-    cpp_machine->set_iflags_X();
-    return cm_result_success(err_msg);
-} catch (...) {
-    return cm_result_failure(err_msg);
-}
-
 int cm_read_iflags_H(const cm_machine *m, bool *val, char **err_msg) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");
     }
     const auto *cpp_machine = convert_from_c(m);
     *val = cpp_machine->read_iflags_H();
-    return cm_result_success(err_msg);
-} catch (...) {
-    return cm_result_failure(err_msg);
-}
-
-int cm_set_iflags_H(cm_machine *m, char **err_msg) try {
-    auto *cpp_machine = convert_from_c(m);
-    cpp_machine->set_iflags_H();
     return cm_result_success(err_msg);
 } catch (...) {
     return cm_result_failure(err_msg);

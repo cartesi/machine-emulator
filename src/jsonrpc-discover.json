@@ -973,51 +973,12 @@
     },
 
     {
-      "name": "machine.set_iflags_X",
-      "summary": "Sets iflags.X to true",
-      "params": [],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.reset_iflags_X",
-      "summary": "Sets iflags.X to false",
-      "params": [],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
       "name": "machine.read_iflags_X",
       "summary": "Returns value of iflags.X",
       "params": [],
       "result": {
         "name": "value",
         "description": "Value of flag",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.set_iflags_H",
-      "summary": "Sets iflags.H to true",
-      "params": [],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
         "schema": {
           "type": "boolean"
         }

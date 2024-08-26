@@ -795,29 +795,14 @@ bool jsonrpc_virtual_machine::do_read_iflags_X(void) const {
     return result;
 }
 
-void jsonrpc_virtual_machine::do_set_iflags_H(void) {
-    bool result = false;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.set_iflags_H", std::tie(), result);
-}
-
 void jsonrpc_virtual_machine::do_set_iflags_Y(void) {
     bool result = false;
     jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.set_iflags_Y", std::tie(), result);
 }
 
-void jsonrpc_virtual_machine::do_set_iflags_X(void) {
-    bool result = false;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.set_iflags_X", std::tie(), result);
-}
-
 void jsonrpc_virtual_machine::do_reset_iflags_Y(void) {
     bool result = false;
     jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.reset_iflags_Y", std::tie(), result);
-}
-
-void jsonrpc_virtual_machine::do_reset_iflags_X(void) {
-    bool result = false;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.reset_iflags_X", std::tie(), result);
 }
 
 uint64_t jsonrpc_virtual_machine::do_read_iunrep(void) const {

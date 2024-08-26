@@ -472,29 +472,14 @@ public:
         return do_read_iflags_X();
     }
 
-    /// \brief Sets the H iflag
-    void set_iflags_H(void) {
-        return do_set_iflags_H();
-    }
-
     /// \brief Sets the Y iflag
     void set_iflags_Y(void) {
         return do_set_iflags_Y();
     }
 
-    /// \brief Sets the X iflag
-    void set_iflags_X(void) {
-        return do_set_iflags_X();
-    }
-
     /// \brief Resets the Y iflag
     void reset_iflags_Y(void) {
         return do_reset_iflags_Y();
-    }
-
-    /// \brief Resets the X iflag
-    void reset_iflags_X(void) {
-        return do_reset_iflags_X();
     }
 
     /// \brief Writes the iflags register
@@ -773,11 +758,8 @@ private:
     virtual bool do_read_iflags_H(void) const = 0;
     virtual bool do_read_iflags_Y(void) const = 0;
     virtual bool do_read_iflags_X(void) const = 0;
-    virtual void do_set_iflags_H(void) = 0;
     virtual void do_set_iflags_Y(void) = 0;
-    virtual void do_set_iflags_X(void) = 0;
     virtual void do_reset_iflags_Y(void) = 0;
-    virtual void do_reset_iflags_X(void) = 0;
     virtual void do_write_iflags(uint64_t val) = 0;
     virtual uint64_t do_read_iunrep(void) const = 0;
     virtual void do_write_iunrep(uint64_t val) = 0;

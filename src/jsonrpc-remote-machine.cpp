@@ -1498,32 +1498,6 @@ static json jsonrpc_machine_read_iflags_Y_handler(const json &j, const std::shar
     return jsonrpc_response_ok(j, session->handler->machine->read_iflags_Y());
 }
 
-/// \brief JSONRPC handler for the machine.set_iflags_X method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_set_iflags_X_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    if (!session->handler->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    jsonrpc_check_no_params(j);
-    session->handler->machine->set_iflags_X();
-    return jsonrpc_response_ok(j);
-}
-
-/// \brief JSONRPC handler for the machine.reset_iflags_X method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_reset_iflags_X_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    if (!session->handler->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    jsonrpc_check_no_params(j);
-    session->handler->machine->reset_iflags_X();
-    return jsonrpc_response_ok(j);
-}
-
 /// \brief JSONRPC handler for the machine.read_iflags_X method
 /// \param j JSON request object
 /// \param session HTTP session
@@ -1534,19 +1508,6 @@ static json jsonrpc_machine_read_iflags_X_handler(const json &j, const std::shar
     }
     jsonrpc_check_no_params(j);
     return jsonrpc_response_ok(j, session->handler->machine->read_iflags_X());
-}
-
-/// \brief JSONRPC handler for the machine.set_iflags_H method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_set_iflags_H_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    if (!session->handler->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    jsonrpc_check_no_params(j);
-    session->handler->machine->set_iflags_H();
-    return jsonrpc_response_ok(j);
 }
 
 /// \brief JSONRPC handler for the machine.read_iflags_H method
@@ -1859,10 +1820,7 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.set_iflags_Y", jsonrpc_machine_set_iflags_Y_handler},
         {"machine.reset_iflags_Y", jsonrpc_machine_reset_iflags_Y_handler},
         {"machine.read_iflags_Y", jsonrpc_machine_read_iflags_Y_handler},
-        {"machine.set_iflags_X", jsonrpc_machine_set_iflags_X_handler},
-        {"machine.reset_iflags_X", jsonrpc_machine_reset_iflags_X_handler},
         {"machine.read_iflags_X", jsonrpc_machine_read_iflags_X_handler},
-        {"machine.set_iflags_H", jsonrpc_machine_set_iflags_H_handler},
         {"machine.read_iflags_H", jsonrpc_machine_read_iflags_H_handler},
         {"machine.read_iflags_PRV", jsonrpc_machine_read_iflags_PRV_handler},
         {"machine.read_uarch_halt_flag", jsonrpc_machine_read_uarch_halt_flag_handler},

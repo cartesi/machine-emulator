@@ -340,7 +340,7 @@ function GDBStub:_handle_read_all_regs()
         table.insert(res, reg2hex(self.machine:read_x(i)))
     end
     -- read program counter
-    table.insert(res, reg2hex(self.machine:read_pc()))
+    table.insert(res, reg2hex(self.machine:read_csr("pc")))
     res = table.concat(res)
     return self:_send(res)
 end
@@ -363,7 +363,7 @@ function GDBStub:_handle_write_all_regs(payload)
         self.machine:write_x(i, regs[i])
     end
     -- write program counter
-    self.machine:write_pc(regs[32])
+    self.machine:write_csr("pc", regs[32])
     return self:_send_ok()
 end
 
@@ -407,7 +407,7 @@ function GDBStub:_handle_continue()
         -- need to run cycle by cycle, while checking breakpoints
         while ult(mcycle, mcycle_end) do
             machine:run(mcycle + 1)
-            if breakpoints[machine:read_pc()] then -- breakpoint reached
+            if breakpoints[machine:read_csr("pc")] then -- breakpoint reached
                 return self:_send_signal(signals.SIGTRAP)
             elseif machine:read_iflags_H() then -- machined halted
                 return self:_send_signal(signals.SIGTERM)

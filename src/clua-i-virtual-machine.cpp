@@ -23,14 +23,6 @@
 
 namespace cartesi {
 
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define PRINT_PROCESSOR_CSR(machine, regname)                                                                          \
-    do {                                                                                                               \
-        uint64_t val{0};                                                                                               \
-        TRY_EXECUTE(cm_read_##regname(machine, &val, err_msg));                                                        \
-        (void) fprintf(stderr, #regname " = %" PRIx64 "\n", val);                                                      \
-    } while (0)
-
 /// \brief This is the machine:get_proof() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_get_proof(lua_State *L) {
@@ -101,51 +93,14 @@ static int machine_obj_index_get_root_hash(lua_State *L) {
         return 0;                                                                                                      \
     }
 
-IMPL_MACHINE_OBJ_READ_WRITE(pc)
-IMPL_MACHINE_OBJ_READ_WRITE(fcsr)
-IMPL_MACHINE_OBJ_READ(mvendorid)
-IMPL_MACHINE_OBJ_READ(marchid)
-IMPL_MACHINE_OBJ_READ(mimpid)
 IMPL_MACHINE_OBJ_READ_WRITE(mcycle)
-IMPL_MACHINE_OBJ_READ_WRITE(icycleinstret)
-IMPL_MACHINE_OBJ_READ_WRITE(mstatus)
-IMPL_MACHINE_OBJ_READ_WRITE(mtvec)
-IMPL_MACHINE_OBJ_READ_WRITE(mscratch)
-IMPL_MACHINE_OBJ_READ_WRITE(mepc)
-IMPL_MACHINE_OBJ_READ_WRITE(mcause)
-IMPL_MACHINE_OBJ_READ_WRITE(mtval)
-IMPL_MACHINE_OBJ_READ_WRITE(misa)
-IMPL_MACHINE_OBJ_READ_WRITE(mie)
-IMPL_MACHINE_OBJ_READ_WRITE(mip)
-IMPL_MACHINE_OBJ_READ_WRITE(medeleg)
-IMPL_MACHINE_OBJ_READ_WRITE(mideleg)
-IMPL_MACHINE_OBJ_READ_WRITE(mcounteren)
-IMPL_MACHINE_OBJ_READ_WRITE(menvcfg)
-IMPL_MACHINE_OBJ_READ_WRITE(stvec)
-IMPL_MACHINE_OBJ_READ_WRITE(sscratch)
-IMPL_MACHINE_OBJ_READ_WRITE(sepc)
-IMPL_MACHINE_OBJ_READ_WRITE(scause)
-IMPL_MACHINE_OBJ_READ_WRITE(stval)
-IMPL_MACHINE_OBJ_READ_WRITE(satp)
-IMPL_MACHINE_OBJ_READ_WRITE(scounteren)
-IMPL_MACHINE_OBJ_READ_WRITE(senvcfg)
-IMPL_MACHINE_OBJ_READ_WRITE(ilrsc)
-IMPL_MACHINE_OBJ_READ_WRITE(iflags)
-IMPL_MACHINE_OBJ_READ_WRITE(iunrep)
 IMPL_MACHINE_OBJ_READ_WRITE(htif_tohost)
 IMPL_MACHINE_OBJ_READ(htif_tohost_dev)
 IMPL_MACHINE_OBJ_READ(htif_tohost_cmd)
 IMPL_MACHINE_OBJ_READ(htif_tohost_data)
 IMPL_MACHINE_OBJ_READ_WRITE(htif_fromhost)
 IMPL_MACHINE_OBJ_WRITE(htif_fromhost_data)
-IMPL_MACHINE_OBJ_READ_WRITE(htif_ihalt)
-IMPL_MACHINE_OBJ_READ_WRITE(htif_iconsole)
-IMPL_MACHINE_OBJ_READ_WRITE(htif_iyield)
-IMPL_MACHINE_OBJ_READ_WRITE(clint_mtimecmp)
-IMPL_MACHINE_OBJ_READ_WRITE(plic_girqpend)
-IMPL_MACHINE_OBJ_READ_WRITE(plic_girqsrvd)
 IMPL_MACHINE_OBJ_READ_WRITE(uarch_cycle)
-IMPL_MACHINE_OBJ_READ_WRITE(uarch_pc)
 
 /// \brief This is the machine:read_csr() method implementation.
 /// \param L Lua state.
@@ -571,59 +526,22 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"get_proof", machine_obj_index_get_proof},
     {"get_initial_config", machine_obj_index_get_initial_config},
     {"get_root_hash", machine_obj_index_get_root_hash},
-    {"read_clint_mtimecmp", machine_obj_index_read_clint_mtimecmp},
-    {"read_plic_girqpend", machine_obj_index_read_plic_girqpend},
-    {"read_plic_girqsrvd", machine_obj_index_read_plic_girqsrvd},
     {"read_csr", machine_obj_index_read_csr},
     {"read_htif_fromhost", machine_obj_index_read_htif_fromhost},
     {"read_htif_tohost", machine_obj_index_read_htif_tohost},
     {"read_htif_tohost_dev", machine_obj_index_read_htif_tohost_dev},
     {"read_htif_tohost_cmd", machine_obj_index_read_htif_tohost_cmd},
     {"read_htif_tohost_data", machine_obj_index_read_htif_tohost_data},
-    {"read_htif_ihalt", machine_obj_index_read_htif_ihalt},
-    {"read_htif_iconsole", machine_obj_index_read_htif_iconsole},
-    {"read_htif_iyield", machine_obj_index_read_htif_iyield},
     {"read_uarch_cycle", machine_obj_index_read_uarch_cycle},
-    {"read_uarch_pc", machine_obj_index_read_uarch_pc},
     {"read_uarch_x", machine_obj_index_read_uarch_x},
-    {"read_iflags", machine_obj_index_read_iflags},
     {"read_iflags_H", machine_obj_index_read_iflags_H},
     {"read_iflags_Y", machine_obj_index_read_iflags_Y},
     {"read_iflags_X", machine_obj_index_read_iflags_X},
     {"set_iflags_Y", machine_obj_index_set_iflags_Y},
     {"reset_iflags_Y", machine_obj_index_reset_iflags_Y},
-    {"read_iunrep", machine_obj_index_read_iunrep},
-    {"read_ilrsc", machine_obj_index_read_ilrsc},
-    {"read_marchid", machine_obj_index_read_marchid},
-    {"read_mcause", machine_obj_index_read_mcause},
-    {"read_mcounteren", machine_obj_index_read_mcounteren},
-    {"read_menvcfg", machine_obj_index_read_menvcfg},
     {"read_mcycle", machine_obj_index_read_mcycle},
-    {"read_medeleg", machine_obj_index_read_medeleg},
     {"read_memory", machine_obj_index_read_memory},
     {"read_virtual_memory", machine_obj_index_read_virtual_memory},
-    {"read_mepc", machine_obj_index_read_mepc},
-    {"read_mideleg", machine_obj_index_read_mideleg},
-    {"read_mie", machine_obj_index_read_mie},
-    {"read_mimpid", machine_obj_index_read_mimpid},
-    {"read_icycleinstret", machine_obj_index_read_icycleinstret},
-    {"read_mip", machine_obj_index_read_mip},
-    {"read_misa", machine_obj_index_read_misa},
-    {"read_mscratch", machine_obj_index_read_mscratch},
-    {"read_mstatus", machine_obj_index_read_mstatus},
-    {"read_mtval", machine_obj_index_read_mtval},
-    {"read_mtvec", machine_obj_index_read_mtvec},
-    {"read_mvendorid", machine_obj_index_read_mvendorid},
-    {"read_pc", machine_obj_index_read_pc},
-    {"read_fcsr", machine_obj_index_read_fcsr},
-    {"read_satp", machine_obj_index_read_satp},
-    {"read_scause", machine_obj_index_read_scause},
-    {"read_scounteren", machine_obj_index_read_scounteren},
-    {"read_senvcfg", machine_obj_index_read_senvcfg},
-    {"read_sepc", machine_obj_index_read_sepc},
-    {"read_sscratch", machine_obj_index_read_sscratch},
-    {"read_stval", machine_obj_index_read_stval},
-    {"read_stvec", machine_obj_index_read_stvec},
     {"read_word", machine_obj_index_read_word},
     {"read_x", machine_obj_index_read_x},
     {"read_f", machine_obj_index_read_f},
@@ -633,49 +551,15 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"store", machine_obj_index_store},
     {"verify_dirty_page_maps", machine_obj_index_verify_dirty_page_maps},
     {"verify_merkle_tree", machine_obj_index_verify_merkle_tree},
-    {"write_clint_mtimecmp", machine_obj_index_write_clint_mtimecmp},
-    {"write_plic_girqpend", machine_obj_index_write_plic_girqpend},
-    {"write_plic_girqsrvd", machine_obj_index_write_plic_girqsrvd},
     {"write_csr", machine_obj_index_write_csr},
     {"write_htif_fromhost", machine_obj_index_write_htif_fromhost},
     {"write_htif_fromhost_data", machine_obj_index_write_htif_fromhost_data},
     {"write_htif_tohost", machine_obj_index_write_htif_tohost},
-    {"write_htif_ihalt", machine_obj_index_write_htif_ihalt},
-    {"write_htif_iconsole", machine_obj_index_write_htif_iconsole},
-    {"write_htif_iyield", machine_obj_index_write_htif_iyield},
     {"write_uarch_cycle", machine_obj_index_write_uarch_cycle},
-    {"write_uarch_pc", machine_obj_index_write_uarch_pc},
     {"write_uarch_x", machine_obj_index_write_uarch_x},
-    {"write_iflags", machine_obj_index_write_iflags},
-    {"write_iunrep", machine_obj_index_write_iunrep},
-    {"write_ilrsc", machine_obj_index_write_ilrsc},
-    {"write_mcause", machine_obj_index_write_mcause},
-    {"write_mcounteren", machine_obj_index_write_mcounteren},
-    {"write_menvcfg", machine_obj_index_write_menvcfg},
     {"write_mcycle", machine_obj_index_write_mcycle},
-    {"write_medeleg", machine_obj_index_write_medeleg},
     {"write_memory", machine_obj_index_write_memory},
     {"write_virtual_memory", machine_obj_index_write_virtual_memory},
-    {"write_mepc", machine_obj_index_write_mepc},
-    {"write_mideleg", machine_obj_index_write_mideleg},
-    {"write_mie", machine_obj_index_write_mie},
-    {"write_icycleinstret", machine_obj_index_write_icycleinstret},
-    {"write_mip", machine_obj_index_write_mip},
-    {"write_misa", machine_obj_index_write_misa},
-    {"write_mscratch", machine_obj_index_write_mscratch},
-    {"write_mstatus", machine_obj_index_write_mstatus},
-    {"write_mtval", machine_obj_index_write_mtval},
-    {"write_mtvec", machine_obj_index_write_mtvec},
-    {"write_pc", machine_obj_index_write_pc},
-    {"write_fcsr", machine_obj_index_write_fcsr},
-    {"write_satp", machine_obj_index_write_satp},
-    {"write_scause", machine_obj_index_write_scause},
-    {"write_scounteren", machine_obj_index_write_scounteren},
-    {"write_senvcfg", machine_obj_index_write_senvcfg},
-    {"write_sepc", machine_obj_index_write_sepc},
-    {"write_sscratch", machine_obj_index_write_sscratch},
-    {"write_stval", machine_obj_index_write_stval},
-    {"write_stvec", machine_obj_index_write_stvec},
     {"write_x", machine_obj_index_write_x},
     {"write_f", machine_obj_index_write_f},
     {"translate_virtual_address", machine_obj_index_translate_virtual_address},

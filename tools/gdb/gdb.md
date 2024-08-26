@@ -27,7 +27,7 @@ The following is a list of all custom GDB commands contained in `tools/gdb/gdbin
 - `csr <name>=1` set CSR value, .e.g. `csr mcycle=0`
 - `hash` print machine hash in the current state
 - `store <dir>` store machine state into `dir`
-- `lua "<code>"` execute an arbitrary machine Lua code, e.g. `lua "print(machine:read_pc())"`
+- `lua "<code>"` execute an arbitrary machine Lua code, e.g. `lua "print(machine:read_mcycle())"`
 - `breakpc <address>` toggle a hardware breakpoint at PC
 
 Aliases:

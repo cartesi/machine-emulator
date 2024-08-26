@@ -270,7 +270,7 @@ do_test("mcycle and root hash should match", function(machine)
     local halt_bytecode = "\x93\x02\x10\x00" -- li t0,1
         .. "\x37\x83\x00\x40" -- lui t1,0x40008
         .. "\x23\x30\x53\x00" -- sd t0,0(t1) # 40008000
-    machine:write_memory(machine:read_pc(), halt_bytecode)
+    machine:write_memory(machine:read_csr("pc"), halt_bytecode)
 
     machine:run(MAX_MCYCLE)
     -- Check machine is halted
@@ -300,7 +300,7 @@ if machine_type == "local" then
         end
         local soft_yield_insn = sraiw(0, 31, 7)
 
-        machine:write_memory(machine:read_pc(), string.pack("<I4", soft_yield_insn))
+        machine:write_memory(machine:read_csr("pc"), string.pack("<I4", soft_yield_insn))
 
         assert(machine:run(1000) == cartesi.BREAK_REASON_YIELDED_SOFTLY)
 
@@ -311,7 +311,7 @@ if machine_type == "local" then
         assert(not machine:read_iflags_X())
 
         -- Check if previous instruction match
-        local prev_insn = string.unpack("<I4", machine:read_virtual_memory(machine:read_pc() - 4, 4))
+        local prev_insn = string.unpack("<I4", machine:read_virtual_memory(machine:read_csr("pc") - 4, 4))
         assert(prev_insn == soft_yield_insn)
     end)
 end
@@ -408,13 +408,13 @@ end)
 
 print("\n\n check for relevant register values after step 1")
 do_test("register values should match", function(machine)
-    local uarch_pc_before = machine:read_uarch_pc()
+    local uarch_pc_before = machine:read_csr("uarch_pc")
     local uarch_cycle_before = machine:read_uarch_cycle()
 
     local log_type = {}
     machine:log_step_uarch(log_type)
 
-    local uarch_pc_after = machine:read_uarch_pc()
+    local uarch_pc_after = machine:read_csr("uarch_pc")
     local uarch_cycle_after = machine:read_uarch_cycle()
 
     assert(uarch_pc_before + 4 == uarch_pc_after, "wrong uarch_pc value")

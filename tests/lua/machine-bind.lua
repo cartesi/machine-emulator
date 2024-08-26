@@ -550,14 +550,13 @@ do_test("should return expected values", function(machine)
     }
     for k in pairs(cpu_csr_addr) do
         if not to_ignore[k] then
-            local method_name = "read_" .. k
-            assert(machine[method_name](machine) == initial_csr_values[k], "wrong " .. k .. " value")
+            assert(machine:read_csr(k) == initial_csr_values[k], "wrong " .. k .. " value")
         end
     end
 end)
 
 print("\n\n read and write x registers")
-do_test("writen and expected register values should match", function(machine)
+do_test("written and expected register values should match", function(machine)
     local initial_xreg_values = get_cpu_xreg_test_values()
     -- Write/Read X registers
     local x1_initial_value = machine:read_x(1)
@@ -566,13 +565,13 @@ do_test("writen and expected register values should match", function(machine)
     assert(machine:read_x(1) == 0x1122, "error with writing to x1 register")
     machine:write_x(1, x1_initial_value)
     assert(machine:read_x(1) == x1_initial_value)
-    -- Read unexsisting register
+    -- Read invalid register
     local status_invalid_reg = pcall(machine.read_x, machine, 1000)
     assert(status_invalid_reg == false, "no error reading invalid x register")
 end)
 
 print("\n\n read and write uarch x registers")
-do_test("writen and expected register values should match", function(machine)
+do_test("written and expected register values should match", function(machine)
     local initial_xreg_values = get_cpu_uarch_xreg_test_values()
     -- Write/Read uarch X registers
     local x1_initial_value = machine:read_uarch_x(1)
@@ -581,21 +580,21 @@ do_test("writen and expected register values should match", function(machine)
     assert(machine:read_uarch_x(1) == 0x1122, "error with writing to uarch x1 register")
     machine:write_uarch_x(1, x1_initial_value)
     assert(machine:read_uarch_x(1) == x1_initial_value)
-    -- Read unexsisting uarch register
+    -- Read invalid uarch register
     local status_invalid_reg = pcall(machine.read_uarch_x, machine, 1000)
     assert(status_invalid_reg == false, "no error reading invalid uarch x register")
 end)
 
 print("\n\n read and write csr registers")
-do_test("writen and expected register values should match", function(machine)
+do_test("written and expected register values should match", function(machine)
     -- Check csr register write
     local sscratch_initial_value = machine:read_csr("sscratch")
-    assert(machine:read_sscratch() == sscratch_initial_value, "error reading csr sscratch")
+    assert(machine:read_csr("sscratch") == sscratch_initial_value, "error reading csr sscratch")
     machine:write_csr("sscratch", 0x1122)
     assert(machine:read_csr("sscratch") == 0x1122)
     machine:write_csr("sscratch", sscratch_initial_value)
 
-    -- Read unexsisting register
+    -- Read invalid register
     local status_invalid_reg = pcall(machine.read_csr, machine, "invalidreg")
     assert(status_invalid_reg == false, "no error reading invalid csr register")
 end)
@@ -694,8 +693,8 @@ do_test("htif register values should match", function(machine)
     machine:write_htif_fromhost(0x12345678)
     assert(machine:read_htif_fromhost() == 0x12345678, "error writing htif fromhost")
     machine:write_htif_fromhost_data(0x123456789A)
-    assert(machine:read_htif_ihalt(), "error reading htif ihalt")
-    assert(machine:read_htif_iyield(), "error reading htif yield")
+    assert(machine:read_csr("htif_ihalt"), "error reading htif ihalt")
+    assert(machine:read_csr("htif_iyield"), "error reading htif yield")
 end)
 
 print("\n\n check memory reading/writing")
@@ -922,7 +921,7 @@ local function test_reset_uarch(machine, with_log, with_proofs, with_annotations
     -- assert initial fixture state
     assert(machine:read_uarch_halt_flag() == true)
     assert(machine:read_uarch_cycle() == 1)
-    assert(machine:read_uarch_pc() == 0)
+    assert(machine:read_csr("uarch_pc") == 0)
     local xreg_test_values = get_cpu_uarch_xreg_test_values()
     for i = 1, 31 do
         assert(machine:read_uarch_x(i) == xreg_test_values[i])
@@ -956,7 +955,7 @@ local function test_reset_uarch(machine, with_log, with_proofs, with_annotations
     --- assert registers are reset to pristine values
     assert(machine:read_uarch_halt_flag() == false)
     assert(machine:read_uarch_cycle() == 0)
-    assert(machine:read_uarch_pc() == cartesi.UARCH_RAM_START_ADDRESS)
+    assert(machine:read_csr("uarch_pc") == cartesi.UARCH_RAM_START_ADDRESS)
     for i = 1, 31 do
         assert(machine:read_uarch_x(i) == 0)
     end
@@ -1620,7 +1619,7 @@ test_util.make_do_test(build_machine, machine_type, {
     assert(log.accesses[7].written == leaf_data)
 
     -- restart program and write to second leaf word
-    machine:write_uarch_pc(cartesi.UARCH_RAM_START_ADDRESS)
+    machine:write_csr("uarch_pc", cartesi.UARCH_RAM_START_ADDRESS)
     machine:write_uarch_x(t1, machine:read_uarch_x(t1) + word_size)
     machine:write_uarch_x(t0, 0xbbbbbbbbbbbbbbbb)
     log, dump = log_step()
@@ -1631,7 +1630,7 @@ test_util.make_do_test(build_machine, machine_type, {
     assert(log.accesses[7].written == leaf_data)
 
     -- restart program and write to third leaf word
-    machine:write_uarch_pc(cartesi.UARCH_RAM_START_ADDRESS)
+    machine:write_csr("uarch_pc", cartesi.UARCH_RAM_START_ADDRESS)
     machine:write_uarch_x(t1, machine:read_uarch_x(t1) + word_size)
     machine:write_uarch_x(t0, 0xcccccccccccccccc)
     log, dump = log_step()
@@ -1642,7 +1641,7 @@ test_util.make_do_test(build_machine, machine_type, {
     assert(log.accesses[7].written == leaf_data)
 
     -- restart program and write to fourth leaf word
-    machine:write_uarch_pc(cartesi.UARCH_RAM_START_ADDRESS)
+    machine:write_csr("uarch_pc", cartesi.UARCH_RAM_START_ADDRESS)
     machine:write_uarch_x(t1, machine:read_uarch_x(t1) + word_size)
     machine:write_uarch_x(t0, 0xdddddddddddddddd)
     log, dump = log_step()

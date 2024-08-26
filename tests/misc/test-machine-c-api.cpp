@@ -27,7 +27,6 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <boost/endian/conversion.hpp>
 #include <boost/process.hpp>
-#include <boost/process/search_path.hpp>
 #include <boost/test/included/unit_test.hpp>
 #pragma GCC diagnostic pop
 
@@ -1064,50 +1063,13 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_virtual_memory_massive_test, ordinary_
     }
 
 // clang-format off
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, pc)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, fcsr)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, mcycle)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, icycleinstret)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, mstatus)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, mtvec)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, mscratch)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, mepc)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, mcause)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, mtval)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, misa)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, mie)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, mip)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, medeleg)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, mideleg)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, mcounteren)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, menvcfg)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, stvec)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, sscratch)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, sepc)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, scause)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, stval)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, satp)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, scounteren)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, senvcfg)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, ilrsc)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, iflags)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, iunrep)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_tohost)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_tohost_dev)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_tohost_cmd)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_tohost_data)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_fromhost)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_ihalt)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_iconsole)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_iyield)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, clint_mtimecmp)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, plic_girqpend)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, plic_girqsrvd)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, mvendorid)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, marchid)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, mimpid)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, uarch_cycle)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, uarch_pc)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(bool, iflags_Y)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(bool, iflags_X)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(bool, iflags_H)
@@ -1121,45 +1083,11 @@ CHECK_READER_FAILS_ON_nullptr_MACHINE(bool, iflags_H)
     }
 
     // clang-format off
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(pc)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(fcsr)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mcycle)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(icycleinstret)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mstatus)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mtvec)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mscratch)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mepc)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mcause)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mtval)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(misa)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mie)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mip)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(medeleg)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mideleg)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mcounteren)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(menvcfg)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(stvec)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(sscratch)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(sepc)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(scause)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(stval)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(satp)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(scounteren)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(senvcfg)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(ilrsc)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(iflags)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(iunrep)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_tohost)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_fromhost)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_fromhost_data)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_ihalt)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_iconsole)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_iyield)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(clint_mtimecmp)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(plic_girqpend)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(plic_girqsrvd)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(uarch_cycle)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(uarch_pc)
 // clang-format on
 
 // NOLINTNEXTLINE
@@ -1177,43 +1105,10 @@ CHECK_WRITER_FAILS_ON_nullptr_MACHINE(uarch_pc)
     }
 
     // clang-format off
-CHECK_REGISTER_READ_WRITE(pc)
-CHECK_REGISTER_READ_WRITE(fcsr)
 CHECK_REGISTER_READ_WRITE(mcycle)
-CHECK_REGISTER_READ_WRITE(icycleinstret)
-CHECK_REGISTER_READ_WRITE(mstatus)
-CHECK_REGISTER_READ_WRITE(mtvec)
-CHECK_REGISTER_READ_WRITE(mscratch)
-CHECK_REGISTER_READ_WRITE(mepc)
-CHECK_REGISTER_READ_WRITE(mcause)
-CHECK_REGISTER_READ_WRITE(mtval)
-CHECK_REGISTER_READ_WRITE(misa)
-CHECK_REGISTER_READ_WRITE(mie)
-CHECK_REGISTER_READ_WRITE(mip)
-CHECK_REGISTER_READ_WRITE(medeleg)
-CHECK_REGISTER_READ_WRITE(mideleg)
-CHECK_REGISTER_READ_WRITE(mcounteren)
-CHECK_REGISTER_READ_WRITE(menvcfg)
-CHECK_REGISTER_READ_WRITE(stvec)
-CHECK_REGISTER_READ_WRITE(sscratch)
-CHECK_REGISTER_READ_WRITE(sepc)
-CHECK_REGISTER_READ_WRITE(scause)
-CHECK_REGISTER_READ_WRITE(stval)
-CHECK_REGISTER_READ_WRITE(satp)
-CHECK_REGISTER_READ_WRITE(scounteren)
-CHECK_REGISTER_READ_WRITE(senvcfg)
-CHECK_REGISTER_READ_WRITE(ilrsc)
-CHECK_REGISTER_READ_WRITE(iunrep)
 CHECK_REGISTER_READ_WRITE(htif_tohost)
 CHECK_REGISTER_READ_WRITE(htif_fromhost)
-CHECK_REGISTER_READ_WRITE(htif_ihalt)
-CHECK_REGISTER_READ_WRITE(htif_iconsole)
-CHECK_REGISTER_READ_WRITE(htif_iyield)
-CHECK_REGISTER_READ_WRITE(clint_mtimecmp)
-CHECK_REGISTER_READ_WRITE(plic_girqpend)
-CHECK_REGISTER_READ_WRITE(plic_girqsrvd)
 CHECK_REGISTER_READ_WRITE(uarch_cycle)
-CHECK_REGISTER_READ_WRITE(uarch_pc)
     // clang-format on
 
     BOOST_AUTO_TEST_CASE_NOLINT(set_iflags_y_null_machine_test) {
@@ -1234,11 +1129,10 @@ BOOST_AUTO_TEST_CASE_NOLINT(packed_iflags_test) {
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(iflags_read_write_complex_test, ordinary_machine_fixture) {
-    uint64_t write_value = 0x0b;
     uint64_t read_value = 0;
     char *err_msg{};
 
-    int error_code = cm_read_iflags(_machine, &read_value, &err_msg);
+    int error_code = cm_read_csr(_machine, CM_CSR_IFLAGS, &read_value, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(read_value, static_cast<uint64_t>(0x18));
@@ -1262,7 +1156,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(iflags_read_write_complex_test, ordinary_machine_
     error_code = cm_set_iflags_Y(_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    error_code = cm_read_iflags(_machine, &read_value, &err_msg);
+    error_code = cm_read_csr(_machine, CM_CSR_IFLAGS, &read_value, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(read_value, static_cast<uint64_t>(0x1a));
@@ -1270,18 +1164,10 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(iflags_read_write_complex_test, ordinary_machine_
     error_code = cm_reset_iflags_Y(_machine, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    error_code = cm_read_iflags(_machine, &read_value, &err_msg);
+    error_code = cm_read_csr(_machine, CM_CSR_IFLAGS, &read_value, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(read_value, static_cast<uint64_t>(0x18));
-
-    error_code = cm_write_iflags(_machine, write_value, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-    error_code = cm_read_iflags(_machine, &read_value, &err_msg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(read_value, write_value);
 }
 BOOST_FIXTURE_TEST_CASE_NOLINT(ids_read_test, ordinary_machine_fixture) {
     char *err_msg{};
@@ -1289,17 +1175,17 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(ids_read_test, ordinary_machine_fixture) {
     uint64_t archid{};
     uint64_t impid{};
 
-    int error_code = cm_read_mvendorid(_machine, &vendorid, &err_msg);
+    int error_code = cm_read_csr(_machine, CM_CSR_MVENDORID, &vendorid, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(vendorid, static_cast<uint64_t>(cartesi::MVENDORID_INIT));
 
-    error_code = cm_read_marchid(_machine, &archid, &err_msg);
+    error_code = cm_read_csr(_machine, CM_CSR_MARCHID, &archid, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(archid, static_cast<uint64_t>(cartesi::MARCHID_INIT));
 
-    error_code = cm_read_mimpid(_machine, &impid, &err_msg);
+    error_code = cm_read_csr(_machine, CM_CSR_MIMPID, &impid, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(impid, static_cast<uint64_t>(cartesi::MIMPID_INIT));

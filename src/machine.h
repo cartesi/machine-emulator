@@ -167,6 +167,10 @@ public:
         uarch_halt_flag,
         last,
         // CSR views
+        iflags_prv,
+        iflags_x,
+        iflags_y,
+        iflags_h,
         htif_tohost_dev,
         htif_tohost_cmd,
         htif_tohost_data,

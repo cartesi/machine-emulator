@@ -1299,6 +1299,14 @@ uint64_t machine::read_csr(csr r) const {
             return read_uarch_halt_flag();
         case csr::uarch_pc:
             return read_uarch_pc();
+        case csr::iflags_prv:
+            return read_iflags_PRV();
+        case csr::iflags_x:
+            return read_iflags_X();
+        case csr::iflags_y:
+            return read_iflags_Y();
+        case csr::iflags_h:
+            return read_iflags_H();
         case csr::htif_tohost_dev:
             return read_htif_tohost_dev();
         case csr::htif_tohost_cmd:
@@ -1403,6 +1411,14 @@ void machine::write_csr(csr csr, uint64_t value) {
             [[fallthrough]];
         case csr::mimpid:
             throw std::invalid_argument{"CSR is read-only"};
+        // case csr::iflags_prv:
+        //     return write_iflags_PRV(value);
+        // case csr::iflags_x:
+        //     return write_iflags_X(value);
+        // case csr::iflags_y:
+        //     return write_iflags_Y(value);
+        // case csr::iflags_h:
+        //     return write_iflags_H(value);
         case csr::htif_tohost_dev:
             return write_htif_tohost_dev(value);
         case csr::htif_tohost_cmd:

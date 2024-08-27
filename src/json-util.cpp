@@ -83,6 +83,10 @@ static auto csr_from_name(const std::string &name) {
         {"senvcfg", csr::senvcfg},
         {"ilrsc", csr::ilrsc},
         {"iflags", csr::iflags},
+        {"iflags_prv", csr::iflags_prv},
+        {"iflags_x", csr::iflags_x},
+        {"iflags_y", csr::iflags_y},
+        {"iflags_h", csr::iflags_h},
         {"iunrep", csr::iunrep},
         {"clint_mtimecmp", csr::clint_mtimecmp},
         {"plic_girqpend", csr::plic_girqpend},
@@ -172,6 +176,14 @@ static auto csr_to_name(machine::csr reg) {
             return "ilrsc";
         case csr::iflags:
             return "iflags";
+        case csr::iflags_prv:
+            return "iflags_prv";
+        case csr::iflags_x:
+            return "iflags_x";
+        case csr::iflags_y:
+            return "iflags_y";
+        case csr::iflags_h:
+            return "iflags_h";
         case csr::iunrep:
             return "iunrep";
         case csr::clint_mtimecmp:

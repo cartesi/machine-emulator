@@ -167,6 +167,10 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_CSR_UARCH_HALT_FLAG,
     CM_CSR_UNKNOWN,
     // Views
+    CM_CSR_IFLAGS_PRV,
+    CM_CSR_IFLAGS_X,
+    CM_CSR_IFLAGS_Y,
+    CM_CSR_IFLAGS_H,
     CM_CSR_HTIF_TOHOST_DEV,
     CM_CSR_HTIF_TOHOST_CMD,
     CM_CSR_HTIF_TOHOST_DATA,

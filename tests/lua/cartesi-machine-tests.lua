@@ -604,7 +604,7 @@ local function run_machine(machine, ctx, max_mcycle, advance_machine_fn)
             break
         end
     end
-    ctx.read_htif_tohost_data = machine:read_htif_tohost_data()
+    ctx.read_htif_tohost_data = machine:read_csr("htif_tohost_data")
 end
 
 local function advance_machine_with_uarch(machine)
@@ -705,7 +705,7 @@ local function fatal(fmt, ...)
     error(string.format(fmt, ...))
 end
 local function check_and_print_result(machine, ctx)
-    local halt_payload = machine:read_htif_tohost_data() >> 1
+    local halt_payload = machine:read_csr("htif_tohost_data") >> 1
     local expected_halt_payload = ctx.expected_halt_payload or 0
     if halt_payload ~= expected_halt_payload then
         fatal("%s: failed. returned halt payload %d, expected %d\n", ctx.ram_image, halt_payload, expected_halt_payload)
@@ -759,7 +759,10 @@ local function hash(tests)
                 end
             end
         end
-        if machine:read_htif_tohost_data() >> 1 ~= expected_payload or machine:read_mcycle() ~= expected_cycles then
+        if
+            machine:read_csr("htif_tohost_data") >> 1 ~= expected_payload
+            or machine:read_mcycle() ~= expected_cycles
+        then
             os.exit(1, true)
         end
         out:write(
@@ -855,7 +858,10 @@ local function step(tests)
         else
             indentout(out, 1, "}\n")
         end
-        if machine:read_htif_tohost_data() >> 1 ~= expected_payload or machine:read_mcycle() ~= expected_cycles then
+        if
+            machine:read_csr("htif_tohost_data") >> 1 ~= expected_payload
+            or machine:read_mcycle() ~= expected_cycles
+        then
             os.exit(1, true)
         end
         machine:destroy()
@@ -954,8 +960,8 @@ local function run_host_and_uarch_machines(target, ctx, max_mcycle)
             break
         end
     end
-    local host_htif_tohost_data = host_machine:read_htif_tohost_data()
-    local uarch_htif_tohost_data = uarch_machine:read_htif_tohost_data()
+    local host_htif_tohost_data = host_machine:read_csr("htif_tohost_data")
+    local uarch_htif_tohost_data = uarch_machine:read_csr("htif_tohost_data")
     if host_htif_tohost_data ~= uarch_htif_tohost_data then
         fatal(
             "%s: host_htif_tohost_data ~= uarch_htif_tohost_data: %d ~= %d",

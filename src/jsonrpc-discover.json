@@ -1373,7 +1373,13 @@
           "htif_iconsole",
           "htif_iyield",
           "uarch_pc",
-          "uarch_cycle"
+          "uarch_cycle",
+          "htif_tohost_dev",
+          "htif_tohost_cmd",
+          "htif_tohost_data",
+          "htif_fromhost_dev",
+          "htif_fromhost_cmd",
+          "htif_fromhost_data"
         ]
       },
 

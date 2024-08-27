@@ -63,6 +63,14 @@ static constexpr uint64_t HTIF_DATA_FIELD(uint64_t reg) {
     return (reg & HTIF_DATA_MASK) >> HTIF_DATA_SHIFT;
 }
 
+static constexpr uint64_t HTIF_REPLACE_DEV(uint64_t reg, uint64_t dev) {
+    return (reg & (~HTIF_DEV_MASK)) | ((dev << HTIF_DEV_SHIFT) & HTIF_DEV_MASK);
+}
+
+static constexpr uint64_t HTIF_REPLACE_CMD(uint64_t reg, uint64_t cmd) {
+    return (reg & (~HTIF_CMD_MASK)) | ((cmd << HTIF_CMD_SHIFT) & HTIF_CMD_MASK);
+}
+
 static constexpr uint64_t HTIF_REPLACE_DATA(uint64_t reg, uint64_t data) {
     return (reg & (~HTIF_DATA_MASK)) | ((data << HTIF_DATA_SHIFT) & HTIF_DATA_MASK);
 }

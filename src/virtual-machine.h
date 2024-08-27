@@ -63,14 +63,6 @@ private:
     bool do_read_iflags_X(void) const override;
     void do_set_iflags_Y(void) override;
     void do_reset_iflags_Y(void) override;
-    uint64_t do_read_htif_tohost(void) const override;
-    uint64_t do_read_htif_tohost_dev(void) const override;
-    uint64_t do_read_htif_tohost_cmd(void) const override;
-    uint64_t do_read_htif_tohost_data(void) const override;
-    void do_write_htif_tohost(uint64_t val) override;
-    uint64_t do_read_htif_fromhost(void) const override;
-    void do_write_htif_fromhost(uint64_t val) override;
-    void do_write_htif_fromhost_data(uint64_t val) override;
     void do_replace_memory_range(const memory_range_config &new_range) override;
     uint64_t do_read_word(uint64_t address) const override;
     bool do_verify_dirty_page_maps(void) const override;

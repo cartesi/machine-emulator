@@ -64,7 +64,7 @@ local function test(config)
     local mcycle = machine:read_mcycle()
     assert(mcycle == final_mcycle, "[mcycle] expected:" .. final_mcycle .. " got: " .. mcycle)
 
-    local exit = machine:read_htif_tohost_data() >> 1
+    local exit = machine:read_csr("htif_tohost_data") >> 1
     assert(exit == exit_payload, "[exit] expected: " .. exit_payload .. " got: " .. exit)
 
     stderr("    passed\n")

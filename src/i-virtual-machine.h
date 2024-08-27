@@ -211,46 +211,6 @@ public:
         return do_reset_iflags_Y();
     }
 
-    /// \brief Reads htif's tohost
-    uint64_t read_htif_tohost(void) const {
-        return do_read_htif_tohost();
-    }
-
-    /// \brief Reads htif's tohost dev
-    uint64_t read_htif_tohost_dev(void) const {
-        return do_read_htif_tohost_dev();
-    }
-
-    /// \brief Reads htif's tohost cmd
-    uint64_t read_htif_tohost_cmd(void) const {
-        return do_read_htif_tohost_cmd();
-    }
-
-    /// \brief Reads htif's tohost data
-    uint64_t read_htif_tohost_data(void) const {
-        return do_read_htif_tohost_data();
-    }
-
-    /// \brief Writes htif's tohost
-    void write_htif_tohost(uint64_t val) {
-        do_write_htif_tohost(val);
-    }
-
-    /// \brief Reads htif's fromhost
-    uint64_t read_htif_fromhost(void) const {
-        return do_read_htif_fromhost();
-    }
-
-    /// \brief Writes htif's fromhost
-    void write_htif_fromhost(uint64_t val) {
-        do_write_htif_fromhost(val);
-    }
-
-    /// \brief Writes htif's fromhost data
-    void write_htif_fromhost_data(uint64_t val) {
-        do_write_htif_fromhost_data(val);
-    }
-
     /// \brief Reads the value of a microarchitecture register.
     /// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
     /// \returns The value of the register.
@@ -348,14 +308,6 @@ private:
     virtual bool do_read_iflags_X(void) const = 0;
     virtual void do_set_iflags_Y(void) = 0;
     virtual void do_reset_iflags_Y(void) = 0;
-    virtual uint64_t do_read_htif_tohost(void) const = 0;
-    virtual uint64_t do_read_htif_tohost_dev(void) const = 0;
-    virtual uint64_t do_read_htif_tohost_cmd(void) const = 0;
-    virtual uint64_t do_read_htif_tohost_data(void) const = 0;
-    virtual void do_write_htif_tohost(uint64_t val) = 0;
-    virtual uint64_t do_read_htif_fromhost(void) const = 0;
-    virtual void do_write_htif_fromhost(uint64_t val) = 0;
-    virtual void do_write_htif_fromhost_data(uint64_t val) = 0;
     virtual void do_replace_memory_range(const memory_range_config &new_range) = 0;
     virtual uint64_t do_read_word(uint64_t address) const = 0;
     virtual bool do_verify_dirty_page_maps(void) const = 0;

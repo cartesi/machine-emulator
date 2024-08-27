@@ -52,8 +52,8 @@ local function test(config, console_getchar_enable)
 
     -- with the expected payload
     assert(
-        (machine:read_htif_tohost_data() >> 1) == exit_payload,
-        string.format("exit payload: expected %u, got %u\n", exit_payload, machine:read_htif_tohost_data() >> 1)
+        (machine:read_csr("htif_tohost_data") >> 1) == exit_payload,
+        string.format("exit payload: expected %u, got %u\n", exit_payload, machine:read_csr("htif_tohost_data") >> 1)
     )
 
     -- at the expected mcycle

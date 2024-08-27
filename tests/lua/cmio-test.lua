@@ -154,8 +154,8 @@ end
 local function get_yield(machine)
     local m16 = (1 << 16) - 1
     local m32 = (1 << 32) - 1
-    local cmd = machine:read_htif_tohost_cmd()
-    local data = machine:read_htif_tohost_data()
+    local cmd = machine:read_csr("htif_tohost_cmd")
+    local data = machine:read_csr("htif_tohost_data")
     local reason = data >> 32
     return cmd, reason & m16, data & m32
 end
@@ -177,7 +177,7 @@ end
 
 local function get_exit_code(machine)
     assert(machine:read_iflags_H())
-    return machine:read_htif_tohost_data() >> 1
+    return machine:read_csr("htif_tohost_data") >> 1
 end
 
 local function check_output(machine, expected)

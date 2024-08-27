@@ -88,7 +88,13 @@ static auto csr_from_name(const std::string &name) {
         {"plic_girqpend", csr::plic_girqpend},
         {"plic_girqsrvd", csr::plic_girqsrvd},
         {"htif_tohost", csr::htif_tohost},
+        {"htif_tohost_dev", csr::htif_tohost_dev},
+        {"htif_tohost_cmd", csr::htif_tohost_cmd},
+        {"htif_tohost_data", csr::htif_tohost_data},
         {"htif_fromhost", csr::htif_fromhost},
+        {"htif_fromhost_dev", csr::htif_fromhost_dev},
+        {"htif_fromhost_cmd", csr::htif_fromhost_cmd},
+        {"htif_fromhost_data", csr::htif_fromhost_data},
         {"htif_ihalt", csr::htif_ihalt},
         {"htif_iconsole", csr::htif_iconsole},
         {"htif_iyield", csr::htif_iyield},
@@ -176,8 +182,20 @@ static auto csr_to_name(machine::csr reg) {
             return "plic_girqsrvd";
         case csr::htif_tohost:
             return "htif_tohost";
+        case csr::htif_tohost_dev:
+            return "htif_tohost_dev";
+        case csr::htif_tohost_cmd:
+            return "htif_tohost_cmd";
+        case csr::htif_tohost_data:
+            return "htif_tohost_data";
         case csr::htif_fromhost:
             return "htif_fromhost";
+        case csr::htif_fromhost_dev:
+            return "htif_fromhost_dev";
+        case csr::htif_fromhost_cmd:
+            return "htif_fromhost_cmd";
+        case csr::htif_fromhost_data:
+            return "htif_fromhost_data";
         case csr::htif_ihalt:
             return "htif_ihalt";
         case csr::htif_iconsole:

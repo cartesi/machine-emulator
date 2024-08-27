@@ -165,7 +165,14 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_CSR_UARCH_PC,
     CM_CSR_UARCH_CYCLE,
     CM_CSR_UARCH_HALT_FLAG,
-    CM_CSR_UNKNOWN
+    CM_CSR_UNKNOWN,
+    // Views
+    CM_CSR_HTIF_TOHOST_DEV,
+    CM_CSR_HTIF_TOHOST_CMD,
+    CM_CSR_HTIF_TOHOST_DATA,
+    CM_CSR_HTIF_FROMHOST_DEV,
+    CM_CSR_HTIF_FROMHOST_CMD,
+    CM_CSR_HTIF_FROMHOST_DATA,
 } CM_CSR;
 
 /// \brief Return values of uarch_interpret
@@ -854,86 +861,6 @@ CM_API int cm_write_mcycle(cm_machine *m, uint64_t val, char **err_msg);
 /// \brief Returns packed iflags from its component fields.
 /// \param val Receives value of the register.
 CM_API uint64_t cm_packed_iflags(int PRV, int X, int Y, int H);
-
-/// \brief Reads the value of HTIF's tohost register.
-/// \param m Pointer to valid machine instance
-/// \param val Receives value of the register.
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_cstring.
-/// err_msg can be NULL, meaning the error message won't be received.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_read_htif_tohost(const cm_machine *m, uint64_t *val, char **err_msg);
-
-/// \brief Reads the value of the device field of HTIF's tohost register.
-/// \param m Pointer to valid machine instance
-/// \param val Receives the value of the field
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_cstring.
-/// err_msg can be NULL, meaning the error message won't be received.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_read_htif_tohost_dev(const cm_machine *m, uint64_t *val, char **err_msg);
-
-/// \brief Reads the value of the command field of HTIF's tohost register.
-/// \param m Pointer to valid machine instance
-/// \param val Receives the value of the field
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_cstring.
-/// err_msg can be NULL, meaning the error message won't be received.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_read_htif_tohost_cmd(const cm_machine *m, uint64_t *val, char **err_msg);
-
-/// \brief Reads the value of the data field of HTIF's tohost register.
-/// \param m Pointer to valid machine instance
-/// \param val Receives the value of the field
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_cstring.
-/// err_msg can be NULL, meaning the error message won't be received.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_read_htif_tohost_data(const cm_machine *m, uint64_t *val, char **err_msg);
-
-/// \brief Writes the value of HTIF's tohost register.
-/// \param m Pointer to valid machine instance
-/// \param val New register value.
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_cstring.
-/// err_msg can be NULL, meaning the error message won't be received.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_write_htif_tohost(cm_machine *m, uint64_t val, char **err_msg);
-
-/// \brief Reads the value of HTIF's fromhost register.
-/// \param m Pointer to valid machine instance
-/// \param val Receives value of the register.
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_cstring.
-/// err_msg can be NULL, meaning the error message won't be received.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_read_htif_fromhost(const cm_machine *m, uint64_t *val, char **err_msg);
-
-/// \brief Writes the value of HTIF's fromhost register.
-/// \param m Pointer to valid machine instance
-/// \param val New register value.
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_cstring.
-/// err_msg can be NULL, meaning the error message won't be received.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_write_htif_fromhost(cm_machine *m, uint64_t val, char **err_msg);
-
-/// \brief Writes the value of the data field in HTIF's fromhost register.
-/// \param m Pointer to valid machine instance
-/// \param val New value for the field.
-/// \param err_msg Receives the error message if function execution fails
-/// or NULL in case of successful function execution. In case of failure error_msg
-/// must be deleted by the function caller using cm_delete_cstring.
-/// err_msg can be NULL, meaning the error message won't be received.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_write_htif_fromhost_data(cm_machine *m, uint64_t val, char **err_msg);
 
 /// \brief Checks the value of the iflags_X flag.
 /// \param m Pointer to valid machine instance

@@ -1121,12 +1121,44 @@ void machine::write_htif_tohost(uint64_t val) {
     m_s.htif.tohost = val;
 }
 
+void machine::write_htif_tohost_dev(uint64_t val) {
+    m_s.htif.tohost = HTIF_REPLACE_DEV(m_s.htif.tohost, val);
+}
+
+void machine::write_htif_tohost_cmd(uint64_t val) {
+    m_s.htif.tohost = HTIF_REPLACE_CMD(m_s.htif.tohost, val);
+}
+
+void machine::write_htif_tohost_data(uint64_t val) {
+    m_s.htif.tohost = HTIF_REPLACE_DATA(m_s.htif.tohost, val);
+}
+
 uint64_t machine::read_htif_fromhost(void) const {
     return m_s.htif.fromhost;
 }
 
+uint64_t machine::read_htif_fromhost_dev(void) const {
+    return HTIF_DEV_FIELD(m_s.htif.fromhost);
+}
+
+uint64_t machine::read_htif_fromhost_cmd(void) const {
+    return HTIF_CMD_FIELD(m_s.htif.fromhost);
+}
+
+uint64_t machine::read_htif_fromhost_data(void) const {
+    return HTIF_DATA_FIELD(m_s.htif.fromhost);
+}
+
 void machine::write_htif_fromhost(uint64_t val) {
     m_s.htif.fromhost = val;
+}
+
+void machine::write_htif_fromhost_dev(uint64_t val) {
+    m_s.htif.fromhost = HTIF_REPLACE_DEV(m_s.htif.fromhost, val);
+}
+
+void machine::write_htif_fromhost_cmd(uint64_t val) {
+    m_s.htif.fromhost = HTIF_REPLACE_CMD(m_s.htif.fromhost, val);
 }
 
 void machine::write_htif_fromhost_data(uint64_t val) {
@@ -1267,6 +1299,18 @@ uint64_t machine::read_csr(csr r) const {
             return read_uarch_halt_flag();
         case csr::uarch_pc:
             return read_uarch_pc();
+        case csr::htif_tohost_dev:
+            return read_htif_tohost_dev();
+        case csr::htif_tohost_cmd:
+            return read_htif_tohost_cmd();
+        case csr::htif_tohost_data:
+            return read_htif_tohost_data();
+        case csr::htif_fromhost_dev:
+            return read_htif_fromhost_dev();
+        case csr::htif_fromhost_cmd:
+            return read_htif_fromhost_cmd();
+        case csr::htif_fromhost_data:
+            return read_htif_fromhost_data();
         default:
             throw std::invalid_argument{"unknown CSR"};
             return 0; // never reached
@@ -1359,6 +1403,18 @@ void machine::write_csr(csr csr, uint64_t value) {
             [[fallthrough]];
         case csr::mimpid:
             throw std::invalid_argument{"CSR is read-only"};
+        case csr::htif_tohost_dev:
+            return write_htif_tohost_dev(value);
+        case csr::htif_tohost_cmd:
+            return write_htif_tohost_cmd(value);
+        case csr::htif_tohost_data:
+            return write_htif_tohost_data(value);
+        case csr::htif_fromhost_dev:
+            return write_htif_fromhost_dev(value);
+        case csr::htif_fromhost_cmd:
+            return write_htif_fromhost_cmd(value);
+        case csr::htif_fromhost_data:
+            return write_htif_fromhost_data(value);
         default:
             throw std::invalid_argument{"unknown CSR"};
     }

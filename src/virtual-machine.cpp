@@ -124,38 +124,6 @@ void virtual_machine::do_reset_iflags_Y(void) {
     return m_machine->reset_iflags_Y();
 }
 
-uint64_t virtual_machine::do_read_htif_tohost(void) const {
-    return m_machine->read_htif_tohost();
-}
-
-uint64_t virtual_machine::do_read_htif_tohost_dev(void) const {
-    return m_machine->read_htif_tohost_dev();
-}
-
-uint64_t virtual_machine::do_read_htif_tohost_cmd(void) const {
-    return m_machine->read_htif_tohost_cmd();
-}
-
-uint64_t virtual_machine::do_read_htif_tohost_data(void) const {
-    return m_machine->read_htif_tohost_data();
-}
-
-void virtual_machine::do_write_htif_tohost(uint64_t val) {
-    return m_machine->write_htif_tohost(val);
-}
-
-uint64_t virtual_machine::do_read_htif_fromhost(void) const {
-    return m_machine->read_htif_fromhost();
-}
-
-void virtual_machine::do_write_htif_fromhost(uint64_t val) {
-    return m_machine->write_htif_fromhost(val);
-}
-
-void virtual_machine::do_write_htif_fromhost_data(uint64_t val) {
-    return m_machine->write_htif_fromhost_data(val);
-}
-
 void virtual_machine::do_replace_memory_range(const memory_range_config &new_range) {
     m_machine->replace_memory_range(new_range);
 }

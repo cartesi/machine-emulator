@@ -94,12 +94,6 @@ static int machine_obj_index_get_root_hash(lua_State *L) {
     }
 
 IMPL_MACHINE_OBJ_READ_WRITE(mcycle)
-IMPL_MACHINE_OBJ_READ_WRITE(htif_tohost)
-IMPL_MACHINE_OBJ_READ(htif_tohost_dev)
-IMPL_MACHINE_OBJ_READ(htif_tohost_cmd)
-IMPL_MACHINE_OBJ_READ(htif_tohost_data)
-IMPL_MACHINE_OBJ_READ_WRITE(htif_fromhost)
-IMPL_MACHINE_OBJ_WRITE(htif_fromhost_data)
 IMPL_MACHINE_OBJ_READ_WRITE(uarch_cycle)
 
 /// \brief This is the machine:read_csr() method implementation.
@@ -527,11 +521,6 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"get_initial_config", machine_obj_index_get_initial_config},
     {"get_root_hash", machine_obj_index_get_root_hash},
     {"read_csr", machine_obj_index_read_csr},
-    {"read_htif_fromhost", machine_obj_index_read_htif_fromhost},
-    {"read_htif_tohost", machine_obj_index_read_htif_tohost},
-    {"read_htif_tohost_dev", machine_obj_index_read_htif_tohost_dev},
-    {"read_htif_tohost_cmd", machine_obj_index_read_htif_tohost_cmd},
-    {"read_htif_tohost_data", machine_obj_index_read_htif_tohost_data},
     {"read_uarch_cycle", machine_obj_index_read_uarch_cycle},
     {"read_uarch_x", machine_obj_index_read_uarch_x},
     {"read_iflags_H", machine_obj_index_read_iflags_H},
@@ -552,9 +541,6 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"verify_dirty_page_maps", machine_obj_index_verify_dirty_page_maps},
     {"verify_merkle_tree", machine_obj_index_verify_merkle_tree},
     {"write_csr", machine_obj_index_write_csr},
-    {"write_htif_fromhost", machine_obj_index_write_htif_fromhost},
-    {"write_htif_fromhost_data", machine_obj_index_write_htif_fromhost_data},
-    {"write_htif_tohost", machine_obj_index_write_htif_tohost},
     {"write_uarch_cycle", machine_obj_index_write_uarch_cycle},
     {"write_uarch_x", machine_obj_index_write_uarch_x},
     {"write_mcycle", machine_obj_index_write_mcycle},

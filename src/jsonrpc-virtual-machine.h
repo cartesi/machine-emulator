@@ -103,14 +103,6 @@ private:
     void do_set_uarch_halt_flag(void) override;
     void do_reset_uarch(void) override;
     access_log do_log_reset_uarch(const access_log::type &log_type, bool /*one_based = false*/) override;
-    uint64_t do_read_htif_tohost(void) const override;
-    uint64_t do_read_htif_tohost_dev(void) const override;
-    uint64_t do_read_htif_tohost_cmd(void) const override;
-    uint64_t do_read_htif_tohost_data(void) const override;
-    void do_write_htif_tohost(uint64_t val) override;
-    uint64_t do_read_htif_fromhost(void) const override;
-    void do_write_htif_fromhost(uint64_t val) override;
-    void do_write_htif_fromhost_data(uint64_t val) override;
     void do_get_root_hash(hash_type &hash) const override;
     machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const override;
     void do_replace_memory_range(const memory_range_config &new_range) override;

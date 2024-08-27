@@ -238,13 +238,13 @@ local function test(machine_config, yield_automatic_enable, yield_manual_enable)
             end
 
             -- data should be as expected
-            local data = machine:read_htif_tohost_data()
+            local data = machine:read_csr("htif_tohost_data")
             local reason = data >> 32
             data = data << 32 >> 32
             assert(data == v.data, string.format("data: expected %d, got %d", v.data, data))
             assert(reason == v.reason, string.format("reason: expected %d, got %d", v.reason, reason))
             -- cmd should be as expected
-            assert(machine:read_htif_tohost_cmd() == v.cmd)
+            assert(machine:read_csr("htif_tohost_cmd") == v.cmd)
             -- trying to run it without resetting iflags.Y should not advance
             if machine:read_iflags_Y() then
                 run_machine(machine)
@@ -267,8 +267,8 @@ local function test(machine_config, yield_automatic_enable, yield_manual_enable)
     )
     -- with the expected payload
     assert(
-        (machine:read_htif_tohost_data() >> 1) == exit_payload,
-        string.format("exit payload: expected %u, got %u\n", exit_payload, machine:read_htif_tohost_data() >> 1)
+        (machine:read_csr("htif_tohost_data") >> 1) == exit_payload,
+        string.format("exit payload: expected %u, got %u\n", exit_payload, machine:read_csr("htif_tohost_data") >> 1)
     )
     stderr("    passed\n")
 end

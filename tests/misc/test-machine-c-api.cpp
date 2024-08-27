@@ -1064,11 +1064,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_virtual_memory_massive_test, ordinary_
 
 // clang-format off
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, mcycle)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_tohost)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_tohost_dev)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_tohost_cmd)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_tohost_data)
-CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, htif_fromhost)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, uarch_cycle)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(bool, iflags_Y)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(bool, iflags_X)
@@ -1084,9 +1079,6 @@ CHECK_READER_FAILS_ON_nullptr_MACHINE(bool, iflags_H)
 
     // clang-format off
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mcycle)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_tohost)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_fromhost)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(htif_fromhost_data)
 CHECK_WRITER_FAILS_ON_nullptr_MACHINE(uarch_cycle)
 // clang-format on
 
@@ -1106,8 +1098,6 @@ CHECK_WRITER_FAILS_ON_nullptr_MACHINE(uarch_cycle)
 
     // clang-format off
 CHECK_REGISTER_READ_WRITE(mcycle)
-CHECK_REGISTER_READ_WRITE(htif_tohost)
-CHECK_REGISTER_READ_WRITE(htif_fromhost)
 CHECK_REGISTER_READ_WRITE(uarch_cycle)
     // clang-format on
 
@@ -1193,24 +1183,24 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(ids_read_test, ordinary_machine_fixture) {
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_tohost_read_complex_test, ordinary_machine_fixture) {
     char *err_msg{};
-    int error_code = cm_write_htif_tohost(_machine, 0x1111111111111111, &err_msg);
+    int error_code = cm_write_csr(_machine, CM_CSR_HTIF_TOHOST, 0x1111111111111111, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
     uint64_t htif_dev{};
     uint64_t htif_cmd{};
     uint64_t htif_data{};
-    error_code = cm_read_htif_tohost_dev(_machine, &htif_dev, &err_msg);
+    error_code = cm_read_csr(_machine, CM_CSR_HTIF_TOHOST_DEV, &htif_dev, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(htif_dev, static_cast<uint64_t>(0x11));
 
-    error_code = cm_read_htif_tohost_cmd(_machine, &htif_cmd, &err_msg);
+    error_code = cm_read_csr(_machine, CM_CSR_HTIF_TOHOST_CMD, &htif_cmd, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(htif_cmd, static_cast<uint64_t>(0x11));
 
-    error_code = cm_read_htif_tohost_data(_machine, &htif_data, &err_msg);
+    error_code = cm_read_csr(_machine, CM_CSR_HTIF_TOHOST_DATA, &htif_data, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(htif_data, static_cast<uint64_t>(0x0000111111111111));
@@ -1219,17 +1209,17 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_tohost_read_complex_test, ordinary_mach
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_fromhost_read_complex_test, ordinary_machine_fixture) {
     char *err_msg{};
     uint64_t write_data = 0x0;
-    int error_code = cm_write_htif_fromhost(_machine, write_data, &err_msg);
+    int error_code = cm_write_csr(_machine, CM_CSR_HTIF_FROMHOST, write_data, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
     write_data = 0x1111111111111111;
-    error_code = cm_write_htif_fromhost_data(_machine, write_data, &err_msg);
+    error_code = cm_write_csr(_machine, CM_CSR_HTIF_FROMHOST_DATA, write_data, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
     uint64_t htif_data{};
-    error_code = cm_read_htif_fromhost(_machine, &htif_data, &err_msg);
+    error_code = cm_read_csr(_machine, CM_CSR_HTIF_FROMHOST, &htif_data, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(htif_data, static_cast<uint64_t>(0x0000111111111111));

@@ -1352,12 +1352,6 @@ uint64_t cm_get_f_address(int i) {
 
 // clang-format-off
 IMPL_MACHINE_READ_WRITE(mcycle)
-IMPL_MACHINE_READ_WRITE(htif_tohost)
-IMPL_MACHINE_READ(htif_tohost_dev)
-IMPL_MACHINE_READ(htif_tohost_cmd)
-IMPL_MACHINE_READ(htif_tohost_data)
-IMPL_MACHINE_READ_WRITE(htif_fromhost)
-IMPL_MACHINE_WRITE(htif_fromhost_data)
 IMPL_MACHINE_READ_WRITE(uarch_cycle)
 // clang-format-on
 

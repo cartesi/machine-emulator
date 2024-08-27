@@ -165,7 +165,14 @@ public:
         uarch_pc,
         uarch_cycle,
         uarch_halt_flag,
-        last
+        last,
+        // CSR views
+        htif_tohost_dev,
+        htif_tohost_cmd,
+        htif_tohost_data,
+        htif_fromhost_dev,
+        htif_fromhost_cmd,
+        htif_fromhost_data,
     };
 
     static constexpr auto num_csr = static_cast<int>(csr::last);
@@ -702,13 +709,45 @@ public:
     /// \param value New register value.
     void write_htif_tohost(uint64_t value);
 
+    /// \brief Writes the value of the dev field in HTIF's tohost register.
+    /// \param value New value for the field.
+    void write_htif_tohost_dev(uint64_t value);
+
+    /// \brief Writes the value of the cmd field in HTIF's tohost register.
+    /// \param value New value for the field.
+    void write_htif_tohost_cmd(uint64_t value);
+
+    /// \brief Writes the value of the data field in HTIF's tohost register.
+    /// \param value New value for the field.
+    void write_htif_tohost_data(uint64_t value);
+
     /// \brief Reads the value of HTIF's fromhost register.
     /// \returns The value of the register.
     uint64_t read_htif_fromhost(void) const;
 
+    /// \brief Reads the value of the device field of HTIF's fromhost register.
+    /// \returns The value of the field.
+    uint64_t read_htif_fromhost_dev(void) const;
+
+    /// \brief Reads the value of the command field of HTIF's fromhost register.
+    /// \returns The value of the field.
+    uint64_t read_htif_fromhost_cmd(void) const;
+
+    /// \brief Reads the value of the data field of HTIF's fromhost register.
+    /// \returns The value of the field.
+    uint64_t read_htif_fromhost_data(void) const;
+
     /// \brief Writes the value of HTIF's fromhost register.
     /// \param value New register value.
     void write_htif_fromhost(uint64_t value);
+
+    /// \brief Writes the value of the dev field in HTIF's fromhost register.
+    /// \param value New value for the field.
+    void write_htif_fromhost_dev(uint64_t value);
+
+    /// \brief Writes the value of the cmd field in HTIF's fromhost register.
+    /// \param value New value for the field.
+    void write_htif_fromhost_cmd(uint64_t value);
 
     /// \brief Writes the value of the data field in HTIF's fromhost register.
     /// \param value New value for the field.

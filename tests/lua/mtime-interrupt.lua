@@ -41,7 +41,7 @@ local EXPECTED_MCYCLE = RTC_FREQ_DIV * 2 + 20
 
 local function check_state(machine)
     assert(machine:read_iflags_H(), "machine did not halt")
-    assert(machine:read_htif_tohost_data() >> 1 == 0, "invalid return code")
+    assert(machine:read_csr("htif_tohost_data") >> 1 == 0, "invalid return code")
     assert(machine:read_mcycle() == EXPECTED_MCYCLE, "invalid mcycle")
 end
 

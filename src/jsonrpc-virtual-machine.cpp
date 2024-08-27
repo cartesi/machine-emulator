@@ -617,38 +617,6 @@ access_log jsonrpc_virtual_machine::do_log_reset_uarch(const access_log::type &l
     return std::move(result).value();
 }
 
-uint64_t jsonrpc_virtual_machine::do_read_htif_tohost(void) const {
-    return read_csr(csr::htif_tohost);
-}
-
-uint64_t jsonrpc_virtual_machine::do_read_htif_tohost_dev(void) const {
-    return HTIF_DEV_FIELD(read_htif_tohost());
-}
-
-uint64_t jsonrpc_virtual_machine::do_read_htif_tohost_cmd(void) const {
-    return HTIF_CMD_FIELD(read_htif_tohost());
-}
-
-uint64_t jsonrpc_virtual_machine::do_read_htif_tohost_data(void) const {
-    return HTIF_DATA_FIELD(read_htif_tohost());
-}
-
-void jsonrpc_virtual_machine::do_write_htif_tohost(uint64_t val) {
-    write_csr(csr::htif_tohost, val);
-}
-
-uint64_t jsonrpc_virtual_machine::do_read_htif_fromhost(void) const {
-    return read_csr(csr::htif_fromhost);
-}
-
-void jsonrpc_virtual_machine::do_write_htif_fromhost(uint64_t val) {
-    write_csr(csr::htif_fromhost, val);
-}
-
-void jsonrpc_virtual_machine::do_write_htif_fromhost_data(uint64_t val) {
-    write_htif_fromhost(HTIF_REPLACE_DATA(read_htif_fromhost(), val));
-}
-
 void jsonrpc_virtual_machine::do_get_root_hash(hash_type &hash) const {
     jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.get_root_hash", std::tie(), hash);
 }

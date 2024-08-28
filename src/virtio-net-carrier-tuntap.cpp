@@ -62,6 +62,7 @@
 #include <net/if.h>
 #include <sched.h>
 #include <sys/ioctl.h>
+#include <sys/select.h>
 #include <unistd.h>
 
 // Include TUN/TAP headers

@@ -310,7 +310,7 @@ EXELDFLAGS+=$(MYEXELDFLAGS)
 
 all: libcartesi libcartesi_merkle_tree libcartesi_jsonrpc c-api luacartesi jsonrpc-remote-cartesi-machine hash
 
-luacartesi: cartesi.so cartesi/jsonrpc.so
+luacartesi: libluacartesi.a cartesi.so libluacartesi_jsonrpc.a cartesi/jsonrpc.so
 
 jsonrpc: cartesi/jsonrpc.so jsonrpc-remote-cartesi-machine
 
@@ -442,6 +442,12 @@ libcartesi_merkle_tree.a: $(LIBCARTESI_MERKLE_TREE_OBJS)
 	$(AR) $@ $^
 
 libcartesi_jsonrpc.a: $(LIBCARTESI_JSONRPC_OBJS)
+	$(AR) $@ $^
+
+libluacartesi.a: $(LUACARTESI_OBJS)
+	$(AR) $@ $^
+
+libluacartesi_jsonrpc.a: $(LUACARTESI_JSONRPC_OBJS)
 	$(AR) $@ $^
 
 $(LIBCARTESI_MERKLE_TREE): $(LIBCARTESI_MERKLE_TREE_OBJS)

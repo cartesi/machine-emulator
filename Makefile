@@ -79,7 +79,7 @@ STRIP_STATIC= $(STRIP) -S
 
 EMU_TO_BIN= src/jsonrpc-remote-cartesi-machine src/merkle-tree-hash
 EMU_TO_LIB= src/$(LIBCARTESI_SO) src/$(LIBCARTESI_SO_JSONRPC)
-EMU_TO_LIB_A= src/libcartesi.a src/libcartesi_jsonrpc.a
+EMU_TO_LIB_A= src/libcartesi.a src/libcartesi_jsonrpc.a src/libluacartesi.a src/libluacartesi_jsonrpc.a
 EMU_LUA_TO_BIN= src/cartesi-machine.lua src/cartesi-machine-stored-hash.lua
 EMU_TO_LUA_PATH= src/cartesi/util.lua src/cartesi/proof.lua src/cartesi/gdbstub.lua
 EMU_TO_LUA_CPATH= src/cartesi.so

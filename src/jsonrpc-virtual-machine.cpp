@@ -37,6 +37,7 @@
 #include "htif.h"
 #include "json-util.h"
 #include "jsonrpc-mgr.h"
+#include "os.h"
 
 using namespace std::string_literals;
 using json = nlohmann::json;
@@ -257,10 +258,7 @@ namespace cartesi {
 jsonrpc_mgr::jsonrpc_mgr(std::string remote_address) {
     m_address.push_back(std::move(remote_address));
     // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
-    struct sigaction sa {};
-    sa.sa_handler = SIG_IGN;
-    sa.sa_flags = 0;
-    sigaction(SIGPIPE, &sa, nullptr);
+    os_disable_sigpipe();
 }
 
 jsonrpc_mgr::~jsonrpc_mgr() {

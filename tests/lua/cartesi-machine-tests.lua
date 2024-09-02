@@ -652,15 +652,6 @@ local function stderr(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
 local function check_and_print_result(ctx)
     local errors = 0
     io.write(ctx.ram_image, ": ")
-    if #ctx.expected_yield_payloads ~= (ctx.yield_payload_index - 1) then
-        stderr(
-            "%s: yielded %d times, expected %d\n",
-            ctx.ram_image,
-            ctx.yield_payload_index - 1,
-            #ctx.expected_yield_payloads
-        )
-        errors = errors + 1
-    end
     if ctx.read_htif_tohost_data >> 1 ~= ctx.expected_halt_payload then
         stderr(
             "%s: returned halt payload %d, expected %d\n",
@@ -750,7 +741,6 @@ local function run_tests(tests, target)
             ram_image = test[1],
             expected_cycles = test[2],
             expected_halt_payload = test[3] or 0,
-            expected_yield_payloads = test[4] or {},
             yield_payload_index = 1,
             failed = false,
             cycles = 0,

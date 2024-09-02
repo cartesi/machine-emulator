@@ -19,6 +19,7 @@
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
 local test_util = require("cartesi.tests.util")
+local tabular = require("cartesi.tabular")
 local parallel = require("cartesi.parallel")
 
 -- Tests Cases
@@ -565,7 +566,6 @@ local function run_machine(machine, ctx, max_mcycle, advance_machine_fn)
         if machine:read_iflags_H() then break end
     end
     ctx.read_htif_tohost_data = machine:read_htif_tohost_data()
-    return machine:read_mcycle(), 0
 end
 
 local function advance_machine_with_uarch(machine)
@@ -573,7 +573,7 @@ local function advance_machine_with_uarch(machine)
 end
 
 local function run_machine_with_uarch(machine, ctx, max_mcycle)
-    return run_machine(machine, ctx, max_mcycle, advance_machine_with_uarch), 0
+    run_machine(machine, ctx, max_mcycle, advance_machine_with_uarch)
 end
 
 local function connect()
@@ -586,7 +586,7 @@ local function connect()
     return remote_stub, version
 end
 
-local function build_machine(test_name)
+local function build_machine(ram_image)
     local config = {
         processor = {
             -- Request automatic default values for versioning CSRs
@@ -596,7 +596,7 @@ local function build_machine(test_name)
         },
         ram = {
             length = 32 << 20,
-            image_filename = test_path .. "/" .. test_name,
+            image_filename = test_path .. "/" .. ram_image,
         },
         htif = {
             console_getchar = false,
@@ -620,8 +620,6 @@ local function build_machine(test_name)
     end
     return assert(cartesi.machine(config, runtime))
 end
-
-local function destroy_machine(machine) machine:destroy() end
 
 local function print_machine(test_name, expected_cycles)
     if not uarch then
@@ -653,51 +651,18 @@ local function stderr(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
 local function fatal(fmt, ...) error(string.format(fmt, ...)) end
 local function check_and_print_result(machine, ctx)
     local halt_payload = machine:read_htif_tohost_data() >> 1
-    if halt_payload ~= ctx.expected_halt_payload then
-        fatal(
-            "%s: failed. returned halt payload %d, expected %d\n",
-            ctx.ram_image,
-            halt_payload,
-            ctx.expected_halt_payload
-        )
+    local expected_halt_payload = ctx.expected_halt_payload or 0
+    if halt_payload ~= expected_halt_payload then
+        fatal("%s: failed. returned halt payload %d, expected %d\n", ctx.ram_image, halt_payload, expected_halt_payload)
     end
 
     local cycles = machine:read_mcycle()
-    if cycles ~= ctx.expected_cycles then
-        fatal("%s: failed. terminated with mcycle = %d, expected %d\n", ctx.ram_image, cycles, ctx.expected_cycles)
+    local expected_cycles = ctx.expected_cycles or 0
+    if cycles ~= expected_cycles then
+        fatal("%s: failed. terminated with mcycle = %d, expected %d\n", ctx.ram_image, cycles, expected_cycles)
     end
 
     stderr("%s: passed\n", ctx.ram_image)
-end
-
-local function run_tests(tests, target)
-    -- construct contexts
-    local contexts = {}
-    for _, test in ipairs(tests) do
-        contexts[#contexts + 1] = {
-            target = target,
-            ram_image = test[1],
-            expected_cycles = test[2],
-            expected_halt_payload = test[3] or 0,
-        }
-    end
-
-    -- run
-    local failures = parallel.run(contexts, jobs, function(row)
-        local machine = row.target.build(row.ram_image)
-        row.target.run(machine, row, 2 * row.expected_cycles)
-        check_and_print_result(machine, row)
-        row.target.destroy(machine)
-    end)
-
-    -- print summary
-    if failures > 0 then
-        io.write(string.format("\nFAILED %d of %d tests\n\n", failures, #tests))
-        os.exit(1, true)
-    else
-        io.write(string.format("\nPASSED all %d tests\n\n", #tests))
-        os.exit(0, true)
-    end
 end
 
 local function hash(tests)
@@ -874,18 +839,6 @@ for _, test in ipairs(riscv_tests) do
     if select_test(test[1], test_pattern) then selected_tests[#selected_tests + 1] = test end
 end
 
-local function build_both_machines(test_name)
-    return {
-        host = build_machine(test_name),
-        uarch = build_machine(test_name),
-    }
-end
-
-local function destroy_both_machines(target)
-    destroy_machine(target.host)
-    destroy_machine(target.uarch)
-end
-
 local function run_host_and_uarch_machines(target, ctx, max_mcycle)
     local host_machine = target.host
     local uarch_machine = target.uarch
@@ -940,35 +893,35 @@ local function run_host_and_uarch_machines(target, ctx, max_mcycle)
     return host_cycles
 end
 
-local targets = {
-    -- Run test on host-based emulator
-    host = {
-        build = build_machine,
-        run = run_machine,
-        destroy = destroy_machine,
-    },
-    -- Run test on microarchitecture-based emulator
-    uarch = {
-        build = build_machine,
-        run = run_machine_with_uarch,
-        destroy = destroy_machine,
-    },
-    -- Run test on both architectures: macro and micro; comparing root hashes after every mcycle
-    host_and_uarch = {
-        build = build_both_machines,
-        run = run_host_and_uarch_machines,
-        destroy = destroy_both_machines,
-    },
-}
+local failures = nil
+local contexts = tabular.expand({ "ram_image", "expected_cycles", "expected_halt_payload" }, selected_tests)
 
 if #selected_tests < 1 then
     error("no test selected")
 elseif command == "run" then
-    run_tests(selected_tests, targets.host)
+    failures = parallel.run(contexts, jobs, function(row)
+        local machine = build_machine(row.ram_image)
+        run_machine(machine, row, 2 * row.expected_cycles)
+        check_and_print_result(machine, row)
+        machine:destroy()
+    end)
 elseif command == "run_uarch" then
-    run_tests(selected_tests, targets.uarch)
+    failures = parallel.run(contexts, jobs, function(row)
+        local machine = build_machine(row.ram_image)
+        run_machine_with_uarch(machine, row, 2 * row.expected_cycles)
+        check_and_print_result(machine, row)
+        machine:destroy()
+    end)
 elseif command == "run_host_and_uarch" then
-    run_tests(selected_tests, targets.host_and_uarch)
+    failures = parallel.run(contexts, jobs, function(row)
+        local targets = {
+            host = build_machine(row.ram_image),
+            uarch = build_machine(row.ram_image),
+        }
+        run_host_and_uarch_machines(targets, row, 2 * row.expected_cycles)
+        targets.host:destroy()
+        targets.uarch:destroy()
+    end)
 elseif command == "hash" then
     hash(selected_tests)
 elseif command == "step" then
@@ -981,4 +934,15 @@ elseif command == "machine" then
     print_machines(selected_tests)
 else
     error("command not found")
+end
+
+-- print summary
+if failures ~= nil then
+    if failures > 0 then
+        io.write(string.format("\nFAILED %d of %d tests\n\n", failures, #selected_tests))
+        os.exit(1, true)
+    else
+        io.write(string.format("\nPASSED all %d tests\n\n", #selected_tests))
+        os.exit(0, true)
+    end
 end

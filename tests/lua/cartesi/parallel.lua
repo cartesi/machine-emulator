@@ -54,9 +54,9 @@ local function parallel(list, jobs, fn)
 end
 
 M.run = function(list, jobs, fn)
-    assert(jobs >= 1)
-    assert(list)
-    assert(fn)
+    assert(list, "expected at least one entry")
+    assert(jobs >= 1, "expected at least one job at a time")
+    assert((fn ~= nil) and (type(fn) == "function"), "expected a function")
 
     if jobs > 1 then
         return parallel(list, jobs, fn)

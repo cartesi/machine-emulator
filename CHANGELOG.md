@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- Added a "--jobs" option to "uarch-riscv-tests.lua" test
 
 ### Fixed
 - Fixed --skip-root-hash-store not skipping root hash computation when using the cli

@@ -63,7 +63,7 @@ M.run = function(list, jobs, fn)
     else -- special case that doesn't need the `posix` library
         local failures = 0
         for _, row in ipairs(list) do
-            -- change to traceback to debug for a shell instead
+            -- change traceback to debug for a shell instead
             local ok, err = xpcall(fn, require("debug").traceback, row)
             if not ok then
                 failures = failures + 1

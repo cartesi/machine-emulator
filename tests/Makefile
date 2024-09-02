@@ -192,7 +192,7 @@ test-uarch-compare:
 	$(LUA) ./lua/cartesi-machine-tests.lua --test="^rv64ui.*$$" --concurrency=update_merkle_tree:1 --jobs=$(NUM_JOBS) run_host_and_uarch
 
 test-uarch-rv64ui:
-	$(LUA) ./lua/uarch-riscv-tests.lua run
+	$(LUA) ./lua/uarch-riscv-tests.lua --jobs=$(NUM_JOBS) run
 
 test-uarch-interpreter:
 	$(MAKE) -C ../third-party/riscv-arch-test verify XLEN=64 RISCV_TARGET=cartesi RISCV_ISA=rv64i RISCV_DEVICE=I WORK=$(BUILDDIR)/uarch-riscv-arch-test RUN_ARCH_TEST='$(RUN_ARCH_TEST)'
@@ -218,7 +218,7 @@ test-yield-and-save: | $(CARTESI_IMAGES)
 test-misc: test-c-api test-hash test-save-and-load test-yield-and-save
 
 test-generate-uarch-logs: $(BUILDDIR)/uarch-riscv-tests-json-logs
-	$(LUA) ./lua/uarch-riscv-tests.lua --output-dir=$(BUILDDIR)/uarch-riscv-tests-json-logs --proofs --proofs-frequency=1 --create-uarch-reset-log --create-send-cmio-response-log json-step-logs
+	$(LUA) ./lua/uarch-riscv-tests.lua --output-dir=$(BUILDDIR)/uarch-riscv-tests-json-logs --proofs --proofs-frequency=1 --create-uarch-reset-log --create-send-cmio-response-log --jobs=$(NUM_JOBS) json-step-logs
 	tar -czf uarch-riscv-tests-json-logs.tar.gz -C $(BUILDDIR) uarch-riscv-tests-json-logs
 
 coverage-machine:

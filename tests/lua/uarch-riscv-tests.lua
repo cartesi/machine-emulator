@@ -19,6 +19,7 @@
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
 local test_util = require("cartesi.tests.util")
+local parallel = require("cartesi.parallel")
 
 -- Tests Cases
 -- format {"ram_image_file", number_of_uarch_cycles, expectd_error_pattern}
@@ -92,6 +93,9 @@ where options are:
   --test=<pattern>
     select tests to run based on a Lua string <pattern>
     (default: ".*", i.e., all tests)
+  --jobs=<N>
+    run N tests in parallel
+    (default: 1, i.e., run tests sequentially)
   --output-dir=<directory-path>
     write json logs to this  directory
   --proofs
@@ -125,8 +129,9 @@ end
 local test_path = test_util.tests_uarch_path
 local test_pattern = ".*"
 local output_dir
+local jobs = 1
 local proofs = false
-local create_uarch_rest_log = false
+local create_uarch_reset_log = false
 local create_send_cmio_response_log = false
 local proofs_frequency = 1
 local total_steps_counter = 0
@@ -150,7 +155,7 @@ local options = {
         "^%-%-create%-uarch%-reset%-log$",
         function(all)
             if not all then return false end
-            create_uarch_rest_log = true
+            create_uarch_reset_log = true
             return true
         end,
     },
@@ -183,6 +188,15 @@ local options = {
         function(o)
             if not o or #o < 1 then return false end
             test_pattern = o
+            return true
+        end,
+    },
+    {
+        "^%-%-jobs%=([0-9]+)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            jobs = tonumber(o)
+            assert(jobs and jobs >= 1, "invalid number of jobs")
             return true
         end,
     },
@@ -222,6 +236,9 @@ end
 local command = assert(values[1], "missing command")
 assert(test_path, "missing test path")
 
+local function stderr(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
+local function fatal(fmt, ...) error(string.format(fmt, ...)) end
+
 local function build_machine(test_name)
     local uarch_ram = {}
     if test_name then uarch_ram.image_filename = test_path .. "/" .. test_name end
@@ -237,82 +254,71 @@ local function build_machine(test_name)
     return assert(cartesi.machine(config, runtime))
 end
 
-local function add_error(errors, ram_image, msg, ...)
-    local e = string.format(msg, ...)
-    if not errors[ram_image] then errors[ram_image] = {} end
-    local ram_image_errors = errors[ram_image]
-    ram_image_errors[#ram_image_errors + 1] = e
-end
-
 local TEST_STATUS_X = 1 -- When test finishes executing,the value of this register contains the test result code
 local FAILED_TEST_CASE_X = 3 -- If test fails, the value of this register contains the failed test case
 local TEST_SUCCEEDED = 0xbe1e7aaa -- Value indicating that test has passed
 local TEST_FAILED = 0xdeadbeef -- Value indicating that test has failed
 
-local function check_test_result(machine, ctx, errors)
-    ctx.failed = true
+local function read_all(path)
+    local file <close> = assert(io.open(path, "rb"))
+    local contents = file:read("*a")
+    file:close()
+    return contents
+end
+
+local function check_test_result(machine, ctx)
     local actual_cycle = machine:read_uarch_cycle()
     if ctx.uarch_run_success then
         if ctx.expected_error_pattern then
-            return add_error(
-                errors,
+            fatal(
+                "%s: failed. run_uarch was expected to fail with error `%s`, but it succeeded\n",
                 ctx.ram_image,
-                string.format(
-                    "run_uarch was expected to fail with error `%s`, but it succeeded",
-                    ctx.expected_error_pattern
-                )
+                ctx.expected_error_pattern
             )
         end
     else
         if not ctx.expected_error_pattern then
-            return add_error(errors, ctx.ram_image, "run_uarch failed unexpectedly with error: %s", ctx.actual_error)
+            fatal("%s: failed. run_uarch failed unexpectedly with error: %s\n", ctx.ram_image, ctx.actual_error)
         end
         if not ctx.actual_error:match(ctx.expected_error_pattern) then
-            return add_error(
-                errors,
+            fatal(
+                "%s: failed. error `%s` does not match `%s`",
                 ctx.ram_image,
-                string.format(
-                    "run_uarch failed, but error `%s` does not match `%s`",
-                    ctx.actual_error,
-                    ctx.expected_error_pattern
-                )
+                ctx.actual_error,
+                ctx.expected_error_pattern
             )
         end
         if actual_cycle ~= ctx.expected_cycles then
-            return add_error(
-                errors,
+            fatal(
+                "%s: failed. unexpected cycle count: %d, expected: %d",
                 ctx.ram_image,
-                "run_uarch failed with unexpected cycle count: %d, expected: %d",
                 actual_cycle,
                 ctx.expected_cycles
             )
         end
-        ctx.failed = false
         return -- failed with the expected error at the expected cycle
     end
     local test_status = machine:read_uarch_x(TEST_STATUS_X)
     if test_status == TEST_FAILED then
         local failed_test_case = machine:read_uarch_x(FAILED_TEST_CASE_X)
-        return add_error(errors, ctx.ram_image, "failed test case %d", failed_test_case)
+        fatal("%s: failed. test case is: %d\n", failed_test_case)
     end
     if test_status ~= TEST_SUCCEEDED then
-        return add_error(errors, ctx.ram_image, "Unrecognized test status %x", test_status)
+        fatal("%s: failed. unrecognized test status %x\n", ctx.ram_image, test_status)
     end
     if actual_cycle ~= ctx.expected_cycles then
-        return add_error(
-            errors,
+        fatal(
+            "%s: failed. unexpected final cycle count %d, expected: %d\n",
             ctx.ram_image,
-            "Unexpected final cycle count: %d, expected: %d",
             actual_cycle,
             ctx.expected_cycles
         )
     end
-    ctx.failed = false
+    stderr("%s: passed.\n", ctx.ram_image)
 end
 
 local function run(tests)
-    local errors, error_count = {}, 0
-    for _, test in ipairs(tests) do
+    local failures = parallel.run(tests, jobs, function(test)
         local ctx = {
             ram_image = test[1],
             expected_cycles = test[2],
@@ -323,29 +329,21 @@ local function run(tests)
             uarch_run_success = false,
         }
         local machine <close> = build_machine(ctx.ram_image)
-        io.write(ctx.ram_image, ": ")
         local uarch_run_success, err = pcall(function() machine:run_uarch(2 * ctx.expected_cycles) end)
         ctx.uarch_run_success = uarch_run_success
         if not uarch_run_success then ctx.actual_error = err end
-        check_test_result(machine, ctx, errors)
-        if ctx.failed then
-            print("failed")
-            error_count = error_count + 1
+        check_test_result(machine, ctx)
+    end)
+
+    -- print summary
+    if failures ~= nil then
+        if failures > 0 then
+            stderr(string.format("\nFAILED %d of %d tests\n\n", failures, #tests))
+            os.exit(1)
         else
-            print("passed")
+            stderr(string.format("\nPASSED all %d tests\n\n", #tests))
+            os.exit(0)
         end
-    end
-    if error_count > 0 then
-        io.write(string.format("\nFAILED %d of %d tests:\n\n", error_count, #tests))
-        for k, v in pairs(errors) do
-            for _, e in ipairs(v) do
-                io.write(string.format("\t%s: %s\n", k, e))
-            end
-        end
-        os.exit(1, true)
-    else
-        io.write(string.format("\nPASSED all %d tests\n\n", #tests))
-        os.exit(0, true)
     end
 end
 
@@ -425,32 +423,28 @@ local function write_log_to_file(log, out, indent, last)
     out:write("\n")
 end
 
-local function create_catalog_json_log(contexts)
-    local out = create_json_log_file("catalog")
-    util.indentout(out, 0, "[\n")
-    local n = #contexts
-    for i, ctx in ipairs(contexts) do
-        local logFilename = make_json_log_file_name(ctx.test_name, "-steps")
-        util.indentout(
-            out,
-            1,
-            '{"logFilename": "%s", "binaryFilename": "%s", "steps": %d, "proofs":%s, "proofsFrequency":%d, '
-                .. '"initialRootHash": "%s", "finalRootHash": "%s"}',
-            logFilename,
-            ctx.ram_image or "",
-            ctx.step_count,
-            proofs,
-            proofs_frequency,
-            util.hexhash(ctx.initial_root_hash),
-            util.hexhash(ctx.final_root_hash)
-        )
-        if i < n then
-            out:write(",\n")
-        else
-            out:write("\n")
-        end
-    end
-    util.indentout(out, 0, "]\n")
+local function catalog_entry_file_name(name) return output_dir .. "/" .. make_json_log_file_name(name, "-catalog-entry") end
+
+local function write_catalog_json_log_entry(out, logFilename, ctx)
+    util.indentout(
+        out,
+        1,
+        '{"logFilename": "%s", "binaryFilename": "%s", "steps": %d, "proofs":%s, "proofsFrequency":%d, '
+            .. '"initialRootHash": "%s", "finalRootHash": "%s"}',
+        logFilename,
+        ctx.ram_image or "",
+        ctx.step_count,
+        proofs,
+        proofs_frequency,
+        util.hexhash(ctx.initial_root_hash),
+        util.hexhash(ctx.final_root_hash)
+    )
+end
+
+local function create_catalog_json_log_entry(ctx)
+    local out <close> = create_json_log_file(ctx.test_name, "-catalog-entry")
+    local logFilename = make_json_log_file_name(ctx.test_name, "-steps")
+    write_catalog_json_log_entry(out, logFilename, ctx)
     out:close()
 end
 
@@ -529,8 +523,6 @@ end
 
 local function json_step_logs(tests)
     assert(output_dir, "output-dir is required for json-logs")
-    local errors, error_count = {}, 0
-    local contexts = {}
     -- filter out tests that intentionally produce runtime errors
     -- They represent bug conditions that are not supposed to be logged
     local loggable_tests = {}
@@ -538,7 +530,9 @@ local function json_step_logs(tests)
         local expected_error_pattern = test[3]
         if not expected_error_pattern then loggable_tests[#loggable_tests + 1] = test end
     end
-    for _, test in ipairs(loggable_tests) do
+
+    -- note: function may run in a separate process
+    local failures = parallel.run(loggable_tests, jobs, function(test)
         local ctx = {
             ram_image = test[1],
             test_name = test[1]:gsub(".bin$", ""),
@@ -547,34 +541,62 @@ local function json_step_logs(tests)
             step_count = 0,
             accesses_count = 0,
         }
-        contexts[#contexts + 1] = ctx
         local machine <close> = build_machine(ctx.ram_image)
-        io.write(ctx.ram_image, ": ")
         ctx.initial_root_hash = machine:get_root_hash()
         run_machine_writing_json_logs(machine, ctx)
         ctx.final_root_hash = machine:get_root_hash()
-        check_test_result(machine, ctx, errors)
-        if ctx.failed then
-            print("failed")
-            error_count = error_count + 1
+        check_test_result(machine, ctx)
+        create_catalog_json_log_entry(ctx)
+    end)
+
+    -- create additional logs not in the `tests` list
+    local contexts = {}
+    if create_uarch_reset_log then
+        local ctx = create_json_reset_log()
+        contexts[#contexts + 1] = ctx
+    end
+    if create_send_cmio_response_log then
+        local ctx = create_json_send_cmio_response_log()
+        contexts[#contexts + 1] = ctx
+    end
+
+    -- build catalog
+
+    -- gather catalog entries from files
+    local out <close> = create_json_log_file("catalog")
+    out:write("[\n")
+    for _, test in ipairs(loggable_tests) do
+        local test_name = test[1]:gsub(".bin$", "")
+        local filename = catalog_entry_file_name(test_name)
+        local contents = read_all(filename)
+        out:write(contents)
+        out:write(",\n")
+        os.remove(filename)
+    end
+
+    -- gather remaining entries
+    for i, ctx in ipairs(contexts) do
+        local logFilename = make_json_log_file_name(ctx.test_name, "-steps")
+        write_catalog_json_log_entry(out, logFilename, ctx)
+        if i == #contexts then
+            out:write("\n")
         else
-            print("passed")
+            out:write(",\n")
         end
     end
-    if create_uarch_rest_log then contexts[#contexts + 1] = create_json_reset_log() end
-    if create_send_cmio_response_log then contexts[#contexts + 1] = create_json_send_cmio_response_log() end
-    if error_count > 0 then
-        io.write(string.format("\nFAILED %d of %d tests:\n\n", error_count, #tests))
-        for k, v in pairs(errors) do
-            for _, e in ipairs(v) do
-                io.write(string.format("\t%s: %s\n", k, e))
-            end
+
+    out:write("]\n")
+    out:close()
+
+    -- print summary
+    if failures ~= nil then
+        if failures > 0 then
+            stderr("\nFAILED %d of %d tests\n\n", failures, #loggable_tests)
+            os.exit(1)
+        else
+            stderr("\nPASSED all %d tests\n\n", #loggable_tests)
+            os.exit(0)
         end
-        os.exit(1, true)
-    else
-        io.write(string.format("\nPASSED all %d tests\n\n", #tests))
-        create_catalog_json_log(contexts)
-        os.exit(0, true)
     end
 end
 

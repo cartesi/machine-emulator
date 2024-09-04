@@ -75,21 +75,27 @@ local options = {
     {
         "^%-%-h$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             help()
         end,
     },
     {
         "^%-%-help$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             help()
         end,
     },
     {
         "^%-%-remote%-address%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             remote_address = o
             return true
         end,
@@ -97,16 +103,22 @@ local options = {
     {
         "^%-%-test%-path%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             test_path = o
-            if string.sub(test_path, -1, -1) ~= "/" then error("test-path must end in '/'") end
+            if string.sub(test_path, -1, -1) ~= "/" then
+                error("test-path must end in '/'")
+            end
             return true
         end,
     },
     {
         "^(%-%-concurrency%=(.+))$",
         function(all, opts)
-            if not opts then return false end
+            if not opts then
+                return false
+            end
             local c = util.parse_options(opts, {
                 update_merkle_tree = true,
             })
@@ -116,7 +128,12 @@ local options = {
             return true
         end,
     },
-    { ".*", function(all) error("unrecognized option " .. all) end },
+    {
+        ".*",
+        function(all)
+            error("unrecognized option " .. all)
+        end,
+    },
 }
 
 -- Process command line options
@@ -124,7 +141,9 @@ local arguments = {}
 for _, argument in ipairs({ ... }) do
     if argument:sub(1, 1) == "-" then
         for _, option in ipairs(options) do
-            if option[2](argument:match(option[1])) then break end
+            if option[2](argument:match(option[1])) then
+                break
+            end
         end
     else
         arguments[#arguments + 1] = argument
@@ -243,8 +262,14 @@ end
 local function connect()
     local remote = protocol.stub(remote_address)
     local version = assert(remote.get_version(), "could not connect to remote cartesi machine at " .. remote_address)
-    local shutdown = function() remote.shutdown() end
-    local mt = { __gc = function() pcall(shutdown) end }
+    local shutdown = function()
+        remote.shutdown()
+    end
+    local mt = {
+        __gc = function()
+            pcall(shutdown)
+        end,
+    }
     setmetatable(cleanup, mt)
     return remote, version
 end
@@ -252,7 +277,9 @@ end
 local remote
 
 local function build_machine_config(config_options)
-    if not config_options then config_options = {} end
+    if not config_options then
+        config_options = {}
+    end
 
     -- Create new machine
     local initial_csr_values = get_cpu_csr_test_values()
@@ -287,12 +314,16 @@ local function build_machine(type, config_options)
     local config, runtime = build_machine_config(config_options)
     local new_machine
     if type ~= "local" then
-        if not remote then remote = connect() end
+        if not remote then
+            remote = connect()
+        end
         new_machine = assert(remote.machine(config, runtime))
     else
         new_machine = assert(cartesi.machine(config, runtime))
     end
-    if config.uarch.ram and config.uarch.ram.image_filename then os.remove(config.uarch.ram.image_filename) end
+    if config.uarch.ram and config.uarch.ram.image_filename then
+        os.remove(config.uarch.ram.image_filename)
+    end
     return new_machine
 end
 
@@ -356,7 +387,9 @@ print("\n\ntesting get_csr_address function binding")
 do_test("should return address value for csr register", function()
     local module = cartesi
     if machine_type ~= "local" then
-        if not remote then remote = connect() end
+        if not remote then
+            remote = connect()
+        end
         module = remote
     end
     -- Check CSR address
@@ -370,7 +403,9 @@ print("\n\ntesting get_x_address function binding")
 do_test("should return address value for x registers", function()
     local module = cartesi
     if machine_type ~= "local" then
-        if not remote then remote = connect() end
+        if not remote then
+            remote = connect()
+        end
         module = remote
     end
     -- Check x address
@@ -450,7 +485,9 @@ print("\n\ntesting get_default_config function binding")
 do_test("should return default machine config", function()
     local module = cartesi
     if machine_type ~= "local" then
-        if not remote then remote = connect() end
+        if not remote then
+            remote = connect()
+        end
         module = remote
     end
     test_config(module.machine.get_default_config())
@@ -578,7 +615,9 @@ end)
 do_test("should error if target mcycle is smaller than current mcycle", function(machine)
     machine:write_mcycle(MAX_MCYCLE)
     assert(machine:read_mcycle() == MAX_MCYCLE)
-    local success, err = pcall(function() machine:run(MAX_MCYCLE - 1) end)
+    local success, err = pcall(function()
+        machine:run(MAX_MCYCLE - 1)
+    end)
     assert(success == false)
     assert(err:match("mcycle is past"))
     assert(machine:read_mcycle() == MAX_MCYCLE)
@@ -587,7 +626,9 @@ end)
 do_test("should error if target uarch_cycle is smaller than current uarch_cycle", function(machine)
     machine:write_uarch_cycle(MAX_UARCH_CYCLE)
     assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
-    local success, err = pcall(function() machine:run_uarch(MAX_UARCH_CYCLE - 1) end)
+    local success, err = pcall(function()
+        machine:run_uarch(MAX_UARCH_CYCLE - 1)
+    end)
     assert(success == false)
     assert(err:match("uarch_cycle is past"))
     assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
@@ -697,7 +738,9 @@ print("\n\ntesting step and verification")
 do_test("machine step should pass verifications", function(machine)
     local module = cartesi
     if machine_type ~= "local" then
-        if not remote then remote = connect() end
+        if not remote then
+            remote = connect()
+        end
         module = remote
     end
     local initial_hash = machine:get_root_hash()
@@ -712,7 +755,9 @@ do_test("Step log must contain conssitent data hashes", function(machine)
     local wrong_hash = string.rep("\0", 32)
     local module = cartesi
     if machine_type ~= "local" then
-        if not remote then remote = connect() end
+        if not remote then
+            remote = connect()
+        end
         module = remote
     end
     local log = machine:log_uarch_step({ proofs = false, annotations = false })
@@ -744,7 +789,9 @@ end)
 do_test("step when uarch cycle is max", function(machine)
     local module = cartesi
     if machine_type ~= "local" then
-        if not remote then remote = connect() end
+        if not remote then
+            remote = connect()
+        end
         module = remote
     end
     machine:write_uarch_cycle(MAX_UARCH_CYCLE)
@@ -923,7 +970,9 @@ end
 
 test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
     "Testing reset_uarch without logging",
-    function(machine) test_reset_uarch(machine, false, false, false) end
+    function(machine)
+        test_reset_uarch(machine, false, false, false)
+    end
 )
 
 for _, with_proofs in ipairs({ true, false }) do
@@ -933,7 +982,9 @@ for _, with_proofs in ipairs({ true, false }) do
                 .. tostring(with_proofs)
                 .. ", annotations="
                 .. tostring(with_annotations),
-            function(machine) test_reset_uarch(machine, true, with_proofs, with_annotations) end
+            function(machine)
+                test_reset_uarch(machine, true, with_proofs, with_annotations)
+            end
         )
     end
 end
@@ -942,7 +993,9 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
     "Testing verify_uarch_reset_state_transition",
     function(machine)
         local module = cartesi
-        if machine_type ~= "local" then module = remote end
+        if machine_type ~= "local" then
+            module = remote
+        end
         local initial_hash = machine:get_root_hash()
         local log = machine:log_uarch_reset({ proofs = true, annotations = true })
         local final_hash = machine:get_root_hash()
@@ -962,7 +1015,9 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
     "Testing verify_uarch_reset_log",
     function(machine)
         local module = cartesi
-        if machine_type ~= "local" then module = remote end
+        if machine_type ~= "local" then
+            module = remote
+        end
         local log = machine:log_uarch_reset({ proofs = true, annotations = true })
         module.machine.verify_uarch_reset_log(log, {})
     end
@@ -979,7 +1034,11 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
 
         local tmpname = os.tmpname()
         local deleter = {}
-        setmetatable(deleter, { __gc = function() os.remove(tmpname) end })
+        setmetatable(deleter, {
+            __gc = function()
+                os.remove(tmpname)
+            end,
+        })
         local tmp <close> = io.open(tmpname, "w+")
         util.dump_log(log, tmp)
         tmp:seek("set", 0)
@@ -1000,7 +1059,9 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
     "Log uarch reset with large_data option set must have consistent read and written data",
     function(machine)
         local module = cartesi
-        if machine_type ~= "local" then module = remote end
+        if machine_type ~= "local" then
+            module = remote
+        end
         -- reset uarch and get log
         local log = machine:log_uarch_reset({ proofs = true, annotations = true, large_data = true })
         assert(#log.accesses == 1, "log should have 1 access")
@@ -1028,7 +1089,9 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
 do_test("Test unhappy paths of verify_uarch_reset_state_transition", function(machine)
     local module = cartesi
     if machine_type ~= "local" then
-        if not remote then remote = connect() end
+        if not remote then
+            remote = connect()
+        end
         module = remote
     end
     local bad_hash = string.rep("\0", 32)
@@ -1044,39 +1107,46 @@ do_test("Test unhappy paths of verify_uarch_reset_state_transition", function(ma
             'Error text "' .. err .. '"  does not match expected "' .. expected_error .. '"'
         )
     end
-    assert_error("too few accesses in log", function(log) log.accesses = {} end)
-    assert_error(
-        "expected address of access 1 to be the start address of the uarch state",
-        function(log) log.accesses[1].address = 0 end
-    )
+    assert_error("too few accesses in log", function(log)
+        log.accesses = {}
+    end)
+    assert_error("expected address of access 1 to be the start address of the uarch state", function(log)
+        log.accesses[1].address = 0
+    end)
 
-    assert_error(
-        "expected access 1 to write 2%^22 bytes to uarchState",
-        function(log) log.accesses[1].log2_size = 64 end
-    )
+    assert_error("expected access 1 to write 2%^22 bytes to uarchState", function(log)
+        log.accesses[1].log2_size = 64
+    end)
 
-    assert_error("hash length must be 32 bytes", function(log) log.accesses[#log.accesses].read_hash = nil end)
-    assert_error("Mismatch in root hash of access 1", function(log) log.accesses[1].read_hash = bad_hash end)
-    assert_error(
-        "access log was not fully consumed",
-        function(log) log.accesses[#log.accesses + 1] = log.accesses[1] end
-    )
-    assert_error("hash length must be 32 bytes", function(log) log.accesses[#log.accesses].written_hash = nil end)
-    assert_error(
-        "invalid written %(expected% string with 2%^22 bytes%)",
-        function(log) log.accesses[#log.accesses].written = "\0" end
-    )
-    assert_error(
-        "written hash and written data mismatch at access 1",
-        function(log) log.accesses[#log.accesses].written = string.rep("\0", 2 ^ 22) end
-    )
-    assert_error("Mismatch in root hash of access 1", function(log) log.accesses[1].sibling_hashes[1] = bad_hash end)
+    assert_error("hash length must be 32 bytes", function(log)
+        log.accesses[#log.accesses].read_hash = nil
+    end)
+    assert_error("Mismatch in root hash of access 1", function(log)
+        log.accesses[1].read_hash = bad_hash
+    end)
+    assert_error("access log was not fully consumed", function(log)
+        log.accesses[#log.accesses + 1] = log.accesses[1]
+    end)
+    assert_error("hash length must be 32 bytes", function(log)
+        log.accesses[#log.accesses].written_hash = nil
+    end)
+    assert_error("invalid written %(expected% string with 2%^22 bytes%)", function(log)
+        log.accesses[#log.accesses].written = "\0"
+    end)
+    assert_error("written hash and written data mismatch at access 1", function(log)
+        log.accesses[#log.accesses].written = string.rep("\0", 2 ^ 22)
+    end)
+    assert_error("Mismatch in root hash of access 1", function(log)
+        log.accesses[1].sibling_hashes[1] = bad_hash
+    end)
 end)
 
 do_test("Test unhappy paths of verify_uarch_step_state_transition", function(machine)
     local module = cartesi
     if machine_type ~= "local" then
-        if not remote then remote = connect() end
+        if not remote then
+            remote = connect()
+        end
         module = remote
     end
     local bad_hash = string.rep("\0", 32)
@@ -1092,34 +1162,51 @@ do_test("Test unhappy paths of verify_uarch_step_state_transition", function(mac
             'Error text "' .. err .. '"  does not match expected "' .. expected_error .. '"'
         )
     end
-    assert_error("too few accesses in log", function(log) log.accesses = {} end)
-    assert_error("expected access 1 to read uarch.uarch_cycle", function(log) log.accesses[1].address = 0 end)
-    assert_error(
-        "expected access 1 to read 2%^5 bytes from uarch.uarch_cycle",
-        function(log) log.accesses[1].log2_size = 2 end
-    )
-    assert_error("target size cannot be greater than root size", function(log) log.accesses[1].log2_size = 65 end)
-    assert_error("missing read uarch.uarch_cycle data at access 1", function(log) log.accesses[1].read = nil end)
-    assert_error("invalid read %(expected string with 2%^5 bytes%)", function(log) log.accesses[1].read = "\0" end)
+    assert_error("too few accesses in log", function(log)
+        log.accesses = {}
+    end)
+    assert_error("expected access 1 to read uarch.uarch_cycle", function(log)
+        log.accesses[1].address = 0
+    end)
+    assert_error("expected access 1 to read 2%^5 bytes from uarch.uarch_cycle", function(log)
+        log.accesses[1].log2_size = 2
+    end)
+    assert_error("target size cannot be greater than root size", function(log)
+        log.accesses[1].log2_size = 65
+    end)
+    assert_error("missing read uarch.uarch_cycle data at access 1", function(log)
+        log.accesses[1].read = nil
+    end)
+    assert_error("invalid read %(expected string with 2%^5 bytes%)", function(log)
+        log.accesses[1].read = "\0"
+    end)
     assert_error(
         "logged read data of uarch.uarch_cycle data does not hash to the logged read hash at access 1",
-        function(log) log.accesses[1].read_hash = bad_hash end
+        function(log)
+            log.accesses[1].read_hash = bad_hash
+        end
     )
-    assert_error("hash length must be 32 bytes", function(log) log.accesses[#log.accesses].read_hash = nil end)
-    assert_error(
-        "access log was not fully consumed",
-        function(log) log.accesses[#log.accesses + 1] = log.accesses[1] end
-    )
-    assert_error("hash length must be 32 bytes", function(log) log.accesses[#log.accesses].written_hash = nil end)
-    assert_error(
-        "invalid written %(expected string with 2%^5 bytes%)",
-        function(log) log.accesses[#log.accesses].written = "\0" end
-    )
+    assert_error("hash length must be 32 bytes", function(log)
+        log.accesses[#log.accesses].read_hash = nil
+    end)
+    assert_error("access log was not fully consumed", function(log)
+        log.accesses[#log.accesses + 1] = log.accesses[1]
+    end)
+    assert_error("hash length must be 32 bytes", function(log)
+        log.accesses[#log.accesses].written_hash = nil
+    end)
+    assert_error("invalid written %(expected string with 2%^5 bytes%)", function(log)
+        log.accesses[#log.accesses].written = "\0"
+    end)
     assert_error(
         "logged written data of uarch.cycle does not hash to the logged written hash at access 7",
-        function(log) log.accesses[#log.accesses].written = string.rep("\0", 32) end
+        function(log)
+            log.accesses[#log.accesses].written = string.rep("\0", 32)
+        end
     )
-    assert_error("Mismatch in root hash of access 1", function(log) log.accesses[1].sibling_hashes[1] = bad_hash end)
+    assert_error("Mismatch in root hash of access 1", function(log)
+        log.accesses[1].sibling_hashes[1] = bad_hash
+    end)
 end)
 
 print("\n\n testing unsupported uarch instructions ")
@@ -1179,22 +1266,24 @@ do_test("send_cmio_response fails if iflags.Y is not set", function(machine)
     local data = string.rep("a", 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
     machine:reset_iflags_Y()
     assert(machine:read_iflags_Y() == false)
-    test_util.assert_error("iflags.Y is not set", function() machine:send_cmio_response(reason, data) end)
-    test_util.assert_error("iflags.Y is not set", function() machine:log_send_cmio_response(reason, data, {}) end)
+    test_util.assert_error("iflags.Y is not set", function()
+        machine:send_cmio_response(reason, data)
+    end)
+    test_util.assert_error("iflags.Y is not set", function()
+        machine:log_send_cmio_response(reason, data, {})
+    end)
 end)
 
 do_test("send_cmio_response fails if data is too big", function(machine)
     local reason = 1
     local data_too_big = string.rep("a", 1 + (1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE))
     machine:set_iflags_Y()
-    test_util.assert_error(
-        "address range not entirely in memory PMA",
-        function() machine:send_cmio_response(reason, data_too_big) end
-    )
-    test_util.assert_error(
-        "address range not entirely in memory PMA",
-        function() machine:log_send_cmio_response(reason, data_too_big, {}) end
-    )
+    test_util.assert_error("address range not entirely in memory PMA", function()
+        machine:send_cmio_response(reason, data_too_big)
+    end)
+    test_util.assert_error("address range not entirely in memory PMA", function()
+        machine:log_send_cmio_response(reason, data_too_big, {})
+    end)
 end)
 
 -- asserts that an access has the expected key  values
@@ -1248,7 +1337,9 @@ local function test_send_cmio_input_with_different_arguments()
                     local log_type = { proofs = proofs, annotations = annotations, large_data = large_data }
                     local module = cartesi
                     if machine_type ~= "local" then
-                        if not remote then remote = connect() end
+                        if not remote then
+                            remote = connect()
+                        end
                         module = remote
                     end
                     assert_before_cmio_response_sent(machine)
@@ -1346,7 +1437,9 @@ do_test("send_cmio_response with different data sizes", function(machine)
     local rx_buffer_size = 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE
     local initial_rx_buffer = string.rep("x", rx_buffer_size)
     local reason = 1
-    local function padded_data(data, len, padding) return data .. string.rep(padding, len - #data) end
+    local function padded_data(data, len, padding)
+        return data .. string.rep(padding, len - #data)
+    end
     for _, case in ipairs(test_cases) do
         -- test logging and lo not logging
         for _, logging in ipairs({ false, true }) do
@@ -1390,7 +1483,9 @@ end)
 do_test("send_cmio_response of zero bytes", function(machine)
     local module = cartesi
     if machine_type ~= "local" then
-        if not remote then remote = connect() end
+        if not remote then
+            remote = connect()
+        end
         module = remote
     end
     local rx_buffer_size = 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE

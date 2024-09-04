@@ -20,10 +20,14 @@ local cartesi = require("cartesi")
 local util = require("cartesi.util")
 local test_util = require("cartesi.tests.util")
 
-local function stderr_unsilenceable(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
+local function stderr_unsilenceable(fmt, ...)
+    io.stderr:write(string.format(fmt, ...))
+end
 local stderr = stderr_unsilenceable
 
-local function adjust_images_path(path) return string.gsub(path or ".", "/*$", "") .. "/" end
+local function adjust_images_path(path)
+    return string.gsub(path or ".", "/*$", "") .. "/"
+end
 local function basedir(s)
     s = string.gsub(s, "/$", "")
     return string.match(s, "/.+[^/]+/") or "."
@@ -62,7 +66,9 @@ local options = {
     {
         "^%-h$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             help()
             return true
         end,
@@ -70,7 +76,9 @@ local options = {
     {
         "^%-%-help$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             help()
             return true
         end,
@@ -78,7 +86,9 @@ local options = {
     {
         ".*",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             local not_option = all:sub(1, 1) ~= "-"
             if not_option or all == "--" then
                 cmdline_opts_finished = true
@@ -93,7 +103,9 @@ local options = {
 for _, a in ipairs(arg) do
     if not cmdline_opts_finished then
         for _, option in ipairs(options) do
-            if option[2](a:match(option[1])) then break end
+            if option[2](a:match(option[1])) then
+                break
+            end
         end
     end
 end
@@ -111,7 +123,9 @@ end
 
 local function get_file_length(file_path)
     local file = io.open(file_path, "rb")
-    if file == nil then error("File not found: " .. file_path) end
+    if file == nil then
+        error("File not found: " .. file_path)
+    end
     local size = file:seek("end")
     file:close()
     return size
@@ -151,7 +165,9 @@ end
 local function instantiate_filename(pattern, values)
     -- replace escaped % with something safe
     pattern = string.gsub(pattern, "%\\%%", "\0")
-    pattern = string.gsub(pattern, "%%(%a)", function(s) return values[s] or s end)
+    pattern = string.gsub(pattern, "%%(%a)", function(s)
+        return values[s] or s
+    end)
     -- restore escaped %
     return (string.gsub(pattern, "\0", "%"))
 end
@@ -165,7 +181,9 @@ end
 local function create_machine(machine_name, command, config_func)
     stderr("Creating machine: " .. machine_name .. " ...\n")
     local config = create_default_config(IMAGES_DIR, command)
-    if config_func then config_func(config) end
+    if config_func then
+        config_func(config)
+    end
     local machine = cartesi.machine(config)
     machine:run(math.maxinteger)
     store_machine(machine, MACHINES_DIR .. machine_name)
@@ -215,5 +233,9 @@ rollup-init bash /home/dapp/s.sh
 )
 
 -- Should not work with shared buffers
-create_machine("shared-rx-buffer-machine", "rollup accept", function(config) config.cmio.rx_buffer.shared = true end)
-create_machine("shared-tx-buffer-machine", "rollup accept", function(config) config.cmio.tx_buffer.shared = true end)
+create_machine("shared-rx-buffer-machine", "rollup accept", function(config)
+    config.cmio.rx_buffer.shared = true
+end)
+create_machine("shared-tx-buffer-machine", "rollup accept", function(config)
+    config.cmio.tx_buffer.shared = true
+end)

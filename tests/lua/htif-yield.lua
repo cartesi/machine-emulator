@@ -59,14 +59,18 @@ local options = {
     {
         "^%-%-help$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             help()
         end,
     },
     {
         "^%-%-uarch$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             run_with_uarch = true
             return true
         end,
@@ -74,7 +78,9 @@ local options = {
     {
         "^%-%-uarch%-ram%-image%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             uarch = uarch or {}
             uarch.ram = uarch.ram or {}
             uarch.ram.image_filename = o
@@ -84,14 +90,18 @@ local options = {
     {
         "^%-%-test%-path%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             test_path = o
             return true
         end,
     },
     {
         ".*",
-        function(all) error("unrecognized option " .. all .. ". Use --help to obtain a list of supported options.") end,
+        function(all)
+            error("unrecognized option " .. all .. ". Use --help to obtain a list of supported options.")
+        end,
     },
 }
 
@@ -99,7 +109,9 @@ local options = {
 for _, argument in ipairs({ ... }) do
     if argument:sub(1, 1) == "-" then
         for _, option in ipairs(options) do
-            if option[2](argument:match(option[1])) then break end
+            if option[2](argument:match(option[1])) then
+                break
+            end
         end
     end
 end
@@ -117,7 +129,9 @@ local config = {
     },
 }
 
-if uarch then config.uarch = uarch end
+if uarch then
+    config.uarch = uarch
+end
 
 local YIELD_MANUAL = cartesi.machine.HTIF_YIELD_CMD_MANUAL
 local YIELD_AUTOMATIC = cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC
@@ -171,11 +185,15 @@ local function run_machine_with_uarch(machine)
 end
 
 local function run_machine(machine)
-    if run_with_uarch then return run_machine_with_uarch(machine) end
+    if run_with_uarch then
+        return run_machine_with_uarch(machine)
+    end
     return machine:run()
 end
 
-local function stderr(...) io.stderr:write(string.format(...)) end
+local function stderr(...)
+    io.stderr:write(string.format(...))
+end
 
 local final_mcycle = 500
 local exit_payload = 42

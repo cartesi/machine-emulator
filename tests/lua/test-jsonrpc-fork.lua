@@ -41,33 +41,46 @@ local options = {
     {
         "^%-%-h$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             help()
         end,
     },
     {
         "^%-%-help$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             help()
         end,
     },
     {
         "^%-%-remote%-address%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             remote_address = o
             return true
         end,
     },
-    { ".*", function(all) error("unrecognized option " .. all) end },
+    {
+        ".*",
+        function(all)
+            error("unrecognized option " .. all)
+        end,
+    },
 }
 
 -- Process command line options
 for _, argument in ipairs({ ... }) do
     if argument:sub(1, 1) == "-" then
         for _, option in ipairs(options) do
-            if option[2](argument:match(option[1])) then break end
+            if option[2](argument:match(option[1])) then
+                break
+            end
         end
     else
         error("unrecognized argument " .. argument)
@@ -138,13 +151,17 @@ local function check_tree(root)
         local x = node.x
         io.write(string.rep("  ", depth), "{", table.concat(node.x, ","), "}\n")
         for i = 1, 31 do
-            if machine:read_x(i) ~= x[i] then error("mismatch in x[" .. i .. "]") end
+            if machine:read_x(i) ~= x[i] then
+                error("mismatch in x[" .. i .. "]")
+            end
         end
     end)
 end
 
 local function kill_tree(root)
-    pre_order(root, function(node) node.stub.shutdown() end)
+    pre_order(root, function(node)
+        node.stub.shutdown()
+    end)
 end
 
 local tree = fork_tree(remote_address, nil, 0)

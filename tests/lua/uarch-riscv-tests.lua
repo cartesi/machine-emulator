@@ -140,21 +140,27 @@ local options = {
     {
         "^%-%-h$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             help()
         end,
     },
     {
         "^%-%-help$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             help()
         end,
     },
     {
         "^%-%-create%-uarch%-reset%-log$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             create_uarch_reset_log = true
             return true
         end,
@@ -162,7 +168,9 @@ local options = {
     {
         "^%-%-create%-send%-cmio%-response%-log$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             create_send_cmio_response_log = true
             return true
         end,
@@ -170,7 +178,9 @@ local options = {
     {
         "^%-%-output%-dir%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             output_dir = o
             return true
         end,
@@ -178,7 +188,9 @@ local options = {
     {
         "^%-%-test%-path%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             test_path = o
             return true
         end,
@@ -186,7 +198,9 @@ local options = {
     {
         "^%-%-test%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             test_pattern = o
             return true
         end,
@@ -194,7 +208,9 @@ local options = {
     {
         "^%-%-jobs%=([0-9]+)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             jobs = tonumber(o)
             assert(jobs and jobs >= 1, "invalid number of jobs")
             return true
@@ -203,7 +219,9 @@ local options = {
     {
         "^%-%-proofs$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             proofs = true
             return true
         end,
@@ -211,13 +229,20 @@ local options = {
     {
         "^%-%-proofs%-frequency%=(.+)$",
         function(n)
-            if not n then return false end
+            if not n then
+                return false
+            end
             proofs_frequency = assert(util.parse_number(n), "invalid proofs frequency " .. n)
             assert(proofs_frequency > 0, "proofs frequency must be > 0")
             return true
         end,
     },
-    { ".*", function(all) error("unrecognized option " .. all) end },
+    {
+        ".*",
+        function(all)
+            error("unrecognized option " .. all)
+        end,
+    },
 }
 
 local values = {}
@@ -226,7 +251,9 @@ local values = {}
 for _, argument in ipairs({ ... }) do
     if argument:sub(1, 1) == "-" then
         for _, option in ipairs(options) do
-            if option[2](argument:match(option[1])) then break end
+            if option[2](argument:match(option[1])) then
+                break
+            end
         end
     else
         values[#values + 1] = argument
@@ -236,12 +263,18 @@ end
 local command = assert(values[1], "missing command")
 assert(test_path, "missing test path")
 
-local function stderr(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
-local function fatal(fmt, ...) error(string.format(fmt, ...)) end
+local function stderr(fmt, ...)
+    io.stderr:write(string.format(fmt, ...))
+end
+local function fatal(fmt, ...)
+    error(string.format(fmt, ...))
+end
 
 local function build_machine(test_name)
     local uarch_ram = {}
-    if test_name then uarch_ram.image_filename = test_path .. "/" .. test_name end
+    if test_name then
+        uarch_ram.image_filename = test_path .. "/" .. test_name
+    end
     local config = {
         ram = {
             length = 0x20000,
@@ -329,9 +362,13 @@ local function run(tests)
             uarch_run_success = false,
         }
         local machine <close> = build_machine(ctx.ram_image)
-        local uarch_run_success, err = pcall(function() machine:run_uarch(2 * ctx.expected_cycles) end)
+        local uarch_run_success, err = pcall(function()
+            machine:run_uarch(2 * ctx.expected_cycles)
+        end)
         ctx.uarch_run_success = uarch_run_success
-        if not uarch_run_success then ctx.actual_error = err end
+        if not uarch_run_success then
+            ctx.actual_error = err
+        end
         check_test_result(machine, ctx)
     end)
 
@@ -355,19 +392,25 @@ end
 
 local function select_test(test_name, patt)
     local i, j = test_name:find(patt)
-    if i == 1 and j == #test_name then return true end
+    if i == 1 and j == #test_name then
+        return true
+    end
     i, j = test_name:find(patt, 1, true)
     return i == 1 and j == #test_name
 end
 
-local function make_json_log_file_name(test_name, suffix) return test_name .. (suffix or "") .. ".json" end
+local function make_json_log_file_name(test_name, suffix)
+    return test_name .. (suffix or "") .. ".json"
+end
 
 local function create_json_log_file(test_name, suffix)
     local file_path = output_dir .. "/" .. make_json_log_file_name(test_name, suffix)
     return assert(io.open(file_path, "w"), "error opening file " .. file_path)
 end
 
-local function open_steps_json_log(test_name) return create_json_log_file(test_name, "-steps") end
+local function open_steps_json_log(test_name)
+    return create_json_log_file(test_name, "-steps")
+end
 
 local function write_sibling_hashes_to_log(sibling_hashes, out, indent)
     util.indentout(out, indent, '"sibling_hashes": [\n')
@@ -388,14 +431,18 @@ local function write_access_to_log(access, out, indent, last)
     util.indentout(out, indent + 1, '"address": %u,\n', access.address)
     util.indentout(out, indent + 1, '"log2_size": %u,\n', access.log2_size)
     local read_value = "" -- Solidity JSON parser breaks, if this field is null
-    if access.read then read_value = util.hexstring(access.read) end
+    if access.read then
+        read_value = util.hexstring(access.read)
+    end
     util.indentout(out, indent + 1, '"read_value": "%s",\n', read_value)
     util.indentout(out, indent + 1, '"read_hash": "%s",\n', util.hexhash(access.read_hash))
     local written_value = ""
     local written_hash = ""
     if access.type == "write" then
         written_hash = util.hexhash(access.written_hash)
-        if access.written then written_value = util.hexstring(access.written) end
+        if access.written then
+            written_value = util.hexstring(access.written)
+        end
     end
     util.indentout(out, indent + 1, '"written_value": "%s",\n', written_value)
     util.indentout(out, indent + 1, '"written_hash": "%s"', written_hash)
@@ -406,7 +453,9 @@ local function write_access_to_log(access, out, indent, last)
         out:write("\n")
     end
     util.indentout(out, indent, "}")
-    if not last then out:write(",") end
+    if not last then
+        out:write(",")
+    end
     out:write("\n")
 end
 
@@ -419,11 +468,15 @@ local function write_log_to_file(log, out, indent, last)
     end
     util.indentout(out, indent + 1, "]\n")
     util.indentout(out, indent, "}")
-    if not last then out:write(",") end
+    if not last then
+        out:write(",")
+    end
     out:write("\n")
 end
 
-local function catalog_entry_file_name(name) return output_dir .. "/" .. make_json_log_file_name(name, "-catalog-entry") end
+local function catalog_entry_file_name(name)
+    return output_dir .. "/" .. make_json_log_file_name(name, "-catalog-entry")
+end
 
 local function write_catalog_json_log_entry(out, logFilename, ctx)
     util.indentout(
@@ -449,7 +502,9 @@ local function create_catalog_json_log_entry(ctx)
 end
 
 local function should_log_proofs()
-    if not proofs then return false end
+    if not proofs then
+        return false
+    end
     return (total_steps_counter % proofs_frequency) == 0
 end
 
@@ -467,7 +522,9 @@ local function run_machine_writing_json_logs(machine, ctx)
         step_count = step_count + 1
         local halted = machine:read_uarch_halt_flag()
         write_log_to_file(log, out, indent + 1, halted)
-        if halted then break end
+        if halted then
+            break
+        end
     end
     ctx.step_count = step_count
     ctx.uarch_run_success = true
@@ -528,7 +585,9 @@ local function json_step_logs(tests)
     local loggable_tests = {}
     for _, test in ipairs(tests) do
         local expected_error_pattern = test[3]
-        if not expected_error_pattern then loggable_tests[#loggable_tests + 1] = test end
+        if not expected_error_pattern then
+            loggable_tests[#loggable_tests + 1] = test
+        end
     end
 
     -- note: function may run in a separate process
@@ -602,7 +661,9 @@ end
 
 local selected_tests = {}
 for _, test in ipairs(riscv_tests) do
-    if select_test(test[1], test_pattern) then selected_tests[#selected_tests + 1] = test end
+    if select_test(test[1], test_pattern) then
+        selected_tests[#selected_tests + 1] = test
+    end
 end
 
 if #selected_tests < 1 then

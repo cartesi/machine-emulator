@@ -418,21 +418,27 @@ local options = {
     {
         "^%-%-h$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             help()
         end,
     },
     {
         "^%-%-help$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             help()
         end,
     },
     {
         "^%-%-remote%-address%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             remote_address = o
             return true
         end,
@@ -440,7 +446,9 @@ local options = {
     {
         "^%-%-output%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             output = o
             return true
         end,
@@ -448,7 +456,9 @@ local options = {
     {
         "^%-%-json%-test%-list$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             json_list = true
             return true
         end,
@@ -456,7 +466,9 @@ local options = {
     {
         "^%-%-test%-path%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             test_path = o
             return true
         end,
@@ -464,7 +476,9 @@ local options = {
     {
         "^%-%-test%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             test_pattern = o
             return true
         end,
@@ -472,7 +486,9 @@ local options = {
     {
         "^%-%-jobs%=([0-9]+)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             jobs = tonumber(o)
             assert(jobs and jobs >= 1, "invalid number of jobs")
             return true
@@ -481,7 +497,9 @@ local options = {
     {
         "^%-%-log%-proofs$",
         function(o)
-            if not o then return false end
+            if not o then
+                return false
+            end
             log_proofs = true
             return true
         end,
@@ -489,7 +507,9 @@ local options = {
     {
         "^%-%-log%-annotations$",
         function(o)
-            if not o then return false end
+            if not o then
+                return false
+            end
             log_annotations = true
             return true
         end,
@@ -497,7 +517,9 @@ local options = {
     {
         "^(%-%-periodic%-action%=(.*))$",
         function(all, v)
-            if not v then return false end
+            if not v then
+                return false
+            end
             string.gsub(v, "^([^%,]+),(.+)$", function(p, s)
                 periodic_action_period = assert(util.parse_number(p), "invalid period " .. all)
                 periodic_action_start = assert(util.parse_number(s), "invalid start " .. all)
@@ -514,7 +536,9 @@ local options = {
     {
         "^(%-%-concurrency%=(.+))$",
         function(all, opts)
-            if not opts then return false end
+            if not opts then
+                return false
+            end
             local c = util.parse_options(opts, {
                 update_merkle_tree = true,
             })
@@ -527,14 +551,21 @@ local options = {
     {
         "^%-%-uarch%-ram%-image%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             uarch = uarch or {}
             uarch.ram = uarch.ram or {}
             uarch.ram.image_filename = o
             return true
         end,
     },
-    { ".*", function(all) error("unrecognized option " .. all) end },
+    {
+        ".*",
+        function(all)
+            error("unrecognized option " .. all)
+        end,
+    },
 }
 
 local values = {}
@@ -543,7 +574,9 @@ local values = {}
 for _, argument in ipairs({ ... }) do
     if argument:sub(1, 1) == "-" then
         for _, option in ipairs(options) do
-            if option[2](argument:match(option[1])) then break end
+            if option[2](argument:match(option[1])) then
+                break
+            end
         end
     else
         values[#values + 1] = argument
@@ -553,9 +586,13 @@ end
 local command = assert(values[1], "missing command")
 assert(test_path, "missing test path")
 
-if remote_address then protocol = require("cartesi." .. remote_protocol) end
+if remote_address then
+    protocol = require("cartesi." .. remote_protocol)
+end
 
-local function advance_machine(machine, max_mcycle) return machine:run(max_mcycle) end
+local function advance_machine(machine, max_mcycle)
+    return machine:run(max_mcycle)
+end
 
 local function run_machine(machine, ctx, max_mcycle, advance_machine_fn)
     advance_machine_fn = advance_machine_fn or advance_machine
@@ -563,13 +600,17 @@ local function run_machine(machine, ctx, max_mcycle, advance_machine_fn)
     while math.ult(mcycle, max_mcycle) do
         advance_machine_fn(machine, max_mcycle)
         mcycle = machine:read_mcycle()
-        if machine:read_iflags_H() then break end
+        if machine:read_iflags_H() then
+            break
+        end
     end
     ctx.read_htif_tohost_data = machine:read_htif_tohost_data()
 end
 
 local function advance_machine_with_uarch(machine)
-    if machine:run_uarch() == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then machine:reset_uarch() end
+    if machine:run_uarch() == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
+        machine:reset_uarch()
+    end
 end
 
 local function run_machine_with_uarch(machine, ctx, max_mcycle)
@@ -580,8 +621,14 @@ local function connect()
     local remote_stub = protocol.stub(remote_address)
     local version =
         assert(remote_stub.get_version(), "could not connect to remote cartesi machine at " .. remote_address)
-    local shutdown = function() remote_stub.shutdown() end
-    local mt = { __gc = function() pcall(shutdown) end }
+    local shutdown = function()
+        remote_stub.shutdown()
+    end
+    local mt = {
+        __gc = function()
+            pcall(shutdown)
+        end,
+    }
     setmetatable(cleanup, mt)
     return remote_stub, version
 end
@@ -608,14 +655,18 @@ local function build_machine(ram_image)
             length = 0x40000,
         } },
     }
-    if uarch then config.uarch = uarch end
+    if uarch then
+        config.uarch = uarch
+    end
     local runtime = {
         concurrency = {
             update_merkle_tree = concurrency_update_merkle_tree,
         },
     }
     if remote_address then
-        if not remote then remote = connect() end
+        if not remote then
+            remote = connect()
+        end
         return assert(remote.machine(config, runtime))
     end
     return assert(cartesi.machine(config, runtime))
@@ -647,8 +698,12 @@ local function print_machine(test_name, expected_cycles)
     end
 end
 
-local function stderr(fmt, ...) io.stderr:write(string.format(fmt, ...)) end
-local function fatal(fmt, ...) error(string.format(fmt, ...)) end
+local function stderr(fmt, ...)
+    io.stderr:write(string.format(fmt, ...))
+end
+local function fatal(fmt, ...)
+    error(string.format(fmt, ...))
+end
 local function check_and_print_result(machine, ctx)
     local halt_payload = machine:read_htif_tohost_data() >> 1
     local expected_halt_payload = ctx.expected_halt_payload or 0
@@ -667,7 +722,9 @@ end
 
 local function hash(tests)
     local out = io.stdout
-    if output then out = assert(io.open(output, "w"), "error opening file: " .. output) end
+    if output then
+        out = assert(io.open(output, "w"), "error opening file: " .. output)
+    end
     for _, test in ipairs(tests) do
         local ram_image = test[1]
         local expected_cycles = test[2]
@@ -697,7 +754,9 @@ local function hash(tests)
             end
             if status == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
                 machine:reset_uarch()
-                if machine:read_iflags_H() then break end
+                if machine:read_iflags_H() then
+                    break
+                end
             end
         end
         if machine:read_htif_tohost_data() >> 1 ~= expected_payload or machine:read_mcycle() ~= expected_cycles then
@@ -725,7 +784,9 @@ end
 
 local function step(tests)
     local out = io.stdout
-    if output then out = assert(io.open(output, "w"), "error opening file: " .. output) end
+    if output then
+        out = assert(io.open(output, "w"), "error opening file: " .. output)
+    end
     local indentout = util.indentout
     local log_type = { annotations = log_annotations, proofs = log_proofs }
     out:write("[\n")
@@ -764,7 +825,9 @@ local function step(tests)
             total_uarch_cycles = total_uarch_cycles + (final_uarch_cycle - init_uarch_cycle)
             if machine:read_uarch_halt_flag() then
                 machine:reset_uarch()
-                if machine:read_iflags_H() then break end
+                if machine:read_iflags_H() then
+                    break
+                end
             end
             if not periodic_action or total_uarch_cycles == next_action_uarch_cycle then
                 local init_mcycle = machine:read_mcycle()
@@ -772,13 +835,17 @@ local function step(tests)
                 local log = machine:log_uarch_step(log_type)
                 local final_mcycle = machine:read_mcycle()
                 final_uarch_cycle = machine:read_uarch_cycle()
-                if total_logged_steps > 0 then out:write(",\n") end
+                if total_logged_steps > 0 then
+                    out:write(",\n")
+                end
                 util.dump_json_log(log, init_mcycle, init_uarch_cycle, final_mcycle, final_uarch_cycle, out, 3)
                 total_uarch_cycles = total_uarch_cycles + 1
                 total_logged_steps = total_logged_steps + 1
                 if machine:read_uarch_halt_flag() then
                     machine:reset_uarch()
-                    if machine:read_iflags_H() then break end
+                    if machine:read_iflags_H() then
+                        break
+                    end
                 end
             end
         end
@@ -813,7 +880,9 @@ local function list(tests)
         local indentout = util.indentout
         out:write('{\n  "tests": [\n')
         for i, test in ipairs(tests) do
-            if i ~= 1 then out:write(",\n") end
+            if i ~= 1 then
+                out:write(",\n")
+            end
             indentout(out, 2, "{\n")
             indentout(out, 3, '"file": "' .. test[1] .. '",\n')
             indentout(out, 3, '"mcycle": ' .. test[2] .. "\n")
@@ -829,14 +898,18 @@ end
 
 local function select_test(test_name, patt)
     local i, j = test_name:find(patt)
-    if i == 1 and j == #test_name then return true end
+    if i == 1 and j == #test_name then
+        return true
+    end
     i, j = test_name:find(patt, 1, true)
     return i == 1 and j == #test_name
 end
 
 local selected_tests = {}
 for _, test in ipairs(riscv_tests) do
-    if select_test(test[1], test_pattern) then selected_tests[#selected_tests + 1] = test end
+    if select_test(test[1], test_pattern) then
+        selected_tests[#selected_tests + 1] = test
+    end
 end
 
 local function run_host_and_uarch_machines(target, ctx, max_mcycle)
@@ -877,7 +950,9 @@ local function run_host_and_uarch_machines(target, ctx, max_mcycle)
                 tostring(uarch_iflags_H)
             )
         end
-        if host_iflags_H then break end
+        if host_iflags_H then
+            break
+        end
     end
     local host_htif_tohost_data = host_machine:read_htif_tohost_data()
     local uarch_htif_tohost_data = uarch_machine:read_htif_tohost_data()

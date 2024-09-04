@@ -21,7 +21,9 @@ local PAGE_LOG2_SIZE = 12
 local PAGE_SIZE = 1 << PAGE_LOG2_SIZE
 local WORD_LOG2_SIZE = 5
 
-local function adjust_path(path) return string.gsub(path or ".", "/*$", "") .. "/" end
+local function adjust_path(path)
+    return string.gsub(path or ".", "/*$", "") .. "/"
+end
 
 local test_util = {
     images_path = adjust_path(assert(os.getenv("CARTESI_IMAGES_PATH"))),
@@ -58,7 +60,9 @@ test_util.uarch_programs.default = {
 }
 
 function test_util.create_test_uarch_program(instructions)
-    if not instructions then instructions = test_util.uarch_programs.default end
+    if not instructions then
+        instructions = test_util.uarch_programs.default
+    end
     local file_path = os.tmpname()
     local f <close> = io.open(file_path, "wb")
     for _, insn in pairs(instructions) do
@@ -76,7 +80,9 @@ function test_util.make_do_test(build_machine, type, config, runtime_config)
     end
 end
 
-function test_util.disabled_test(description) print("Disabled test - " .. description) end
+function test_util.disabled_test(description)
+    print("Disabled test - " .. description)
+end
 
 local back_merkle_tree_meta = { __index = {} }
 
@@ -106,7 +112,9 @@ function back_merkle_tree_meta.__index:pad_back(new_leaf_count)
     local j = 0
     while j <= depth do
         local j_span = 0x1 << j
-        if j_span > new_leaf_count then break end
+        if j_span > new_leaf_count then
+            break
+        end
         -- is our smallest tree at depth j?
         if (self.m_leaf_count & j_span) ~= 0x0 then
             -- if so, we can add 2^j pristine leaves directly
@@ -176,15 +184,21 @@ function test_util.file_exists(name)
 end
 
 function test_util.tohex(str)
-    return (str:gsub(".", function(c) return string.format("%02X", string.byte(c)) end))
+    return (str:gsub(".", function(c)
+        return string.format("%02X", string.byte(c))
+    end))
 end
 
 function test_util.fromhex(str)
-    return (str:gsub("..", function(cc) return string.char(tonumber(cc, 16)) end))
+    return (str:gsub("..", function(cc)
+        return string.char(tonumber(cc, 16))
+    end))
 end
 
 function test_util.split_string(inputstr, sep)
-    if sep == nil then sep = "%s" end
+    if sep == nil then
+        sep = "%s"
+    end
     local t = {}
     for str in string.gmatch(inputstr, "([^" .. sep .. "]+)") do
         table.insert(t, str)
@@ -207,7 +221,9 @@ function test_util.check_proof(proof)
     return hash == proof.root_hash
 end
 
-function test_util.align(v, el) return (v >> el << el) end
+function test_util.align(v, el)
+    return (v >> el << el)
+end
 
 function test_util.load_file(filename)
     local fd <close> = assert(io.open(filename, "rb"))
@@ -280,7 +296,9 @@ end
 -- temporary file
 local temp_file_meta = { __index = {} }
 
-function temp_file_meta.__index:write(...) self.file:write(...) end
+function temp_file_meta.__index:write(...)
+    self.file:write(...)
+end
 
 function temp_file_meta.__index:read_all()
     self.file:seek("set", 0)
@@ -292,7 +310,9 @@ function temp_file_meta.__index:close()
     os.remove(self.file_name)
 end
 
-function temp_file_meta:__close() self:close() end
+function temp_file_meta:__close()
+    self:close()
+end
 
 function test_util.new_temp_file()
     local self = {}

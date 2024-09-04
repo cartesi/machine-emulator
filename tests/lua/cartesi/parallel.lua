@@ -46,7 +46,9 @@ local function parallel(list, jobs, fn)
         local pid, reason, rc = syswait.wait(any_children)
         while pid and pid ~= (opt and 0) do
             if reason == "exited" or reason == "killed" then -- ignore 'stopped'
-                if rc ~= 0 then num_errors = num_errors + 1 end
+                if rc ~= 0 then
+                    num_errors = num_errors + 1
+                end
                 running = running - 1
             end
             pid, reason, rc = syswait.wait(any_children, syswait[opt])
@@ -59,7 +61,9 @@ local function parallel(list, jobs, fn)
     while true do
         while running < jobs do
             i, row = iter(list, i)
-            if not row then goto done end
+            if not row then
+                goto done
+            end
             spawn_run_one(row)
             running = running + 1
         end

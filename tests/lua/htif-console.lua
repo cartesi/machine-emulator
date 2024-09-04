@@ -32,7 +32,9 @@ local config_base = {
     },
 }
 
-local function stderr(...) io.stderr:write(string.format(...)) end
+local function stderr(...)
+    io.stderr:write(string.format(...))
+end
 
 local final_mcycle = 2137
 local exit_payload = 42

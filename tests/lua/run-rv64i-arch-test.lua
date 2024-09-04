@@ -74,6 +74,8 @@ for i = 1, #sig, 4 do
 end
 
 -- pad fill output file
-if (#sig % 16) ~= 0 then fd:write("00000000\n00000000\n") end
+if (#sig % 16) ~= 0 then
+    fd:write("00000000\n00000000\n")
+end
 
 fd:close()

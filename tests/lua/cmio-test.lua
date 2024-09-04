@@ -20,7 +20,9 @@ local cartesi = require("cartesi")
 local test_util = require("cartesi.tests.util")
 local test_data = require("cartesi.tests.data")
 
-local function adjust_images_path(path) return string.gsub(path or ".", "/*$", "") .. "/" end
+local function adjust_images_path(path)
+    return string.gsub(path or ".", "/*$", "") .. "/"
+end
 local MACHINES_DIR = adjust_images_path(test_util.cmio_path)
 
 local remote_address
@@ -54,26 +56,37 @@ local options = {
     {
         "^%-%-h$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             help()
         end,
     },
     {
         "^%-%-help$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             help()
         end,
     },
     {
         "^%-%-remote%-address%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             remote_address = o
             return true
         end,
     },
-    { ".*", function(all) error("unrecognized option " .. all) end },
+    {
+        ".*",
+        function(all)
+            error("unrecognized option " .. all)
+        end,
+    },
 }
 
 -- Process command line options
@@ -81,7 +94,9 @@ local arguments = {}
 for _, argument in ipairs({ ... }) do
     if argument:sub(1, 1) == "-" then
         for _, option in ipairs(options) do
-            if option[2](argument:match(option[1])) then break end
+            if option[2](argument:match(option[1])) then
+                break
+            end
         end
     else
         arguments[#arguments + 1] = argument
@@ -100,8 +115,14 @@ end
 local function connect()
     local remote = protocol.stub(remote_address)
     local version = assert(remote.get_version(), "could not connect to remote cartesi machine at " .. remote_address)
-    local shutdown = function() remote.shutdown() end
-    local mt = { __gc = function() pcall(shutdown) end }
+    local shutdown = function()
+        remote.shutdown()
+    end
+    local mt = {
+        __gc = function()
+            pcall(shutdown)
+        end,
+    }
     setmetatable(cleanup, mt)
     return remote, version
 end
@@ -121,7 +142,9 @@ local function load_machine(name)
         skip_root_hash_store = true,
     }
     if machine_type ~= "local" then
-        if not remote then remote = connect() end
+        if not remote then
+            remote = connect()
+        end
         return assert(remote.machine(MACHINES_DIR .. name, runtime))
     else
         return assert(cartesi.machine(MACHINES_DIR .. name, runtime))
@@ -137,7 +160,9 @@ local function get_yield(machine)
     return cmd, reason & m16, data & m32
 end
 
-local function next_input(machine, reason, data) machine:send_cmio_response(reason, data) end
+local function next_input(machine, reason, data)
+    machine:send_cmio_response(reason, data)
+end
 
 local function setup_advance(machine, data)
     assert(data)
@@ -192,14 +217,18 @@ end
 
 local function check_outputs_root_hash(root_hash, output_hashes)
     local z = string.rep("\0", 32)
-    if #output_hashes == 0 then output_hashes = { z } end
+    if #output_hashes == 0 then
+        output_hashes = { z }
+    end
     for _ = 1, 63 do
         local parent_output_hashes = {}
         local child = 1
         local parent = 1
         while true do
             local c1 = output_hashes[child]
-            if not c1 then break end
+            if not c1 then
+                break
+            end
             local c2 = output_hashes[child + 1]
             if c2 then
                 parent_output_hashes[parent] = cartesi.keccak(c1, c2)

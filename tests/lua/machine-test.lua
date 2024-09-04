@@ -63,21 +63,27 @@ local options = {
     {
         "^%-%-h$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             help()
         end,
     },
     {
         "^%-%-help$",
         function(all)
-            if not all then return false end
+            if not all then
+                return false
+            end
             help()
         end,
     },
     {
         "^%-%-remote%-address%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             remote_address = o
             return true
         end,
@@ -85,13 +91,22 @@ local options = {
     {
         "^%-%-test%-path%=(.*)$",
         function(o)
-            if not o or #o < 1 then return false end
+            if not o or #o < 1 then
+                return false
+            end
             test_path = o
-            if string.sub(test_path, -1, -1) ~= "/" then error("test-path must end in '/'") end
+            if string.sub(test_path, -1, -1) ~= "/" then
+                error("test-path must end in '/'")
+            end
             return true
         end,
     },
-    { ".*", function(all) error("unrecognized option " .. all) end },
+    {
+        ".*",
+        function(all)
+            error("unrecognized option " .. all)
+        end,
+    },
 }
 
 -- Process command line options
@@ -99,7 +114,9 @@ local arguments = {}
 for _, argument in ipairs({ ... }) do
     if argument:sub(1, 1) == "-" then
         for _, option in ipairs(options) do
-            if option[2](argument:match(option[1])) then break end
+            if option[2](argument:match(option[1])) then
+                break
+            end
         end
     else
         arguments[#arguments + 1] = argument
@@ -118,8 +135,14 @@ end
 local function connect()
     local remote = protocol.stub(remote_address)
     local version = assert(remote.get_version(), "could not connect to remote cartesi machine at " .. remote_address)
-    local shutdown = function() remote.shutdown() end
-    local mt = { __gc = function() pcall(shutdown) end }
+    local shutdown = function()
+        remote.shutdown()
+    end
+    local mt = {
+        __gc = function()
+            pcall(shutdown)
+        end,
+    }
     setmetatable(cleanup, mt)
     return remote, version
 end
@@ -136,7 +159,9 @@ local function build_machine(type, config, runtime_config)
     }
     local new_machine
     if type ~= "local" then
-        if not remote then remote = connect() end
+        if not remote then
+            remote = connect()
+        end
         new_machine = assert(remote.machine(config, runtime_config))
     else
         new_machine = assert(cartesi.machine(config, runtime_config))
@@ -199,7 +224,9 @@ do_test("proof check should pass", function(machine)
     -- Find ram memory range
     local ram
     for _, v in ipairs(machine:get_memory_ranges()) do
-        if v.description == "RAM" then ram = v end
+        if v.description == "RAM" then
+            ram = v
+        end
     end
     -- Ccalculate hash of ram
     local ram_log2_size = math.ceil(math.log(ram.length, 2))
@@ -268,7 +295,9 @@ if machine_type == "local" then
         soft_yield = true,
     })("check soft yield", function(machine)
         -- The following is a RISC-V bytecode that cause a soft yield immediately,
-        local function sraiw(rd, rs1, shamt) return 0x4000501b | (rd << 7) | (rs1 << 15) | (shamt << 20) end
+        local function sraiw(rd, rs1, shamt)
+            return 0x4000501b | (rd << 7) | (rs1 << 15) | (shamt << 20)
+        end
         local soft_yield_insn = sraiw(0, 31, 7)
 
         machine:write_memory(machine:read_pc(), string.pack("<I4", soft_yield_insn))
@@ -398,7 +427,9 @@ if machine_type ~= "local" then
         local machine_2 = remote.get_machine()
         assert(machine:get_root_hash() == machine_2:get_root_hash())
         machine_2:destroy()
-        local ret, err = pcall(function() machine:get_root_hash() end)
+        local ret, err = pcall(function()
+            machine:get_root_hash()
+        end)
         assert(ret == false)
         assert(err:match("no machine"))
     end)

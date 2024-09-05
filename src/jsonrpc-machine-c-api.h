@@ -47,15 +47,17 @@ CM_API int cm_jsonrpc_destroy_mgr(const cm_jsonrpc_mgr *mgr);
 /// \brief Forks the server.
 /// \param mgr Pointer to a valid jsonrpc connection manager.
 /// \param address Receives address of new server if function execution succeeds or NULL otherwise,
+/// \param pid Receives the forked child process id if function execution succeeds or 0 otherwise.
 /// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
-CM_API int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address);
+CM_API int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address, int *pid);
 
 /// \brief Changes the address the server is listening to
 /// \param mgr Pointer to a valid jsonrpc connection manager.
 /// \param address New address that the remote server should bind to
+/// \param new_address New address that the remote server actually bound to.
 /// \returns 0 for success, non zero code for error.
-CM_API int cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address);
+CM_API int cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, char **new_address);
 
 /// \brief Performs shutdown
 /// \param mgr Pointer to a valid jsonrpc connection manager.

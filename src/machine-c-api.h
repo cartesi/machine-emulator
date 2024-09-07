@@ -806,12 +806,18 @@ CM_API int cm_get_initial_config(const cm_machine *m, const cm_machine_config **
 /// must be deleted with cm_delete_machine_config
 CM_API int cm_get_default_config(const cm_machine_config **config);
 
-/// \brief Replaces a memory range
-/// \param m Pointer to valid machine instance
-/// \param new_range Configuration of the new memory range
-/// \returns 0 for success, non zero code for error
-/// \details The machine must contain an existing memory range matching the start and length specified in new_range
-CM_API int cm_replace_memory_range(cm_machine *m, const cm_memory_range_config *new_range);
+/// \brief Replaces a memory range.
+/// \param m Pointer to a valid machine instance.
+/// \param start Memory start physical address.
+/// \param length Memory length.
+/// \param shared If true changes by the machine will be shared to the image file.
+/// \param image_filename Image file name to load into the range,
+/// in case it's NULL the memory range is cleared with zeros.
+/// \returns 0 for success, non zero code for error.
+/// \details The machine must contain an existing memory range matching the start and length
+/// specified in new range.
+CM_API int cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,
+    const char *image_filename);
 
 /// \brief Deletes a machine memory range config
 /// \returns void

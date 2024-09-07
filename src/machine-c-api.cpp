@@ -1412,9 +1412,14 @@ int cm_get_default_config(const cm_machine_config **config) try {
     return cm_result_failure();
 }
 
-int cm_replace_memory_range(cm_machine *m, const cm_memory_range_config *new_range) try {
+int cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,
+    const char *image_filename) try {
     auto *cpp_machine = convert_from_c(m);
-    cartesi::memory_range_config cpp_range = convert_from_c(new_range);
+    cartesi::memory_range_config cpp_range;
+    cpp_range.start = start;
+    cpp_range.length = length;
+    cpp_range.shared = shared;
+    cpp_range.image_filename = image_filename ? image_filename : "";
     cpp_machine->replace_memory_range(cpp_range);
     return cm_result_success();
 } catch (...) {

@@ -1927,7 +1927,7 @@ end
 local main_config = main_machine:get_initial_config()
 
 for _, r in ipairs(memory_range_replace) do
-    main_machine:replace_memory_range(r)
+    main_machine:replace_memory_range(r.start, r.length, r.shared, r.image_filename)
 end
 
 if type(store_config) == "string" then

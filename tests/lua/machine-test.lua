@@ -390,16 +390,10 @@ test_util.make_do_test(build_machine, machine_type, {
     p:close()
 
     local flash_address_start = 0x80000000000000
-    local flash_drive_config = {
-        start = flash_address_start,
-        length = rootfs_length,
-        image_filename = input_path,
-        shared = true,
-    }
 
     machine:read_memory(flash_address_start, 20)
 
-    machine:replace_memory_range(flash_drive_config)
+    machine:replace_memory_range(flash_address_start, rootfs_length, true, input_path)
 
     local flash_data = machine:read_memory(flash_address_start, 20)
     assert(flash_data == "test data 1234567890", "data read from replaced flash failed")

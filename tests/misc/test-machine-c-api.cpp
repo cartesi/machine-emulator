@@ -1199,35 +1199,32 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_dirty_page_maps_success_test, ordinary_mac
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_flash_config_test, ordinary_machine_fixture) {
-    int error_code = cm_replace_memory_range(_machine, nullptr);
+    int error_code = cm_replace_memory_range(_machine, 0, 0, false, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    std::string origin("invalid memory range configuration");
+    std::string origin("attempt to replace a protected range sentinel");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
 class flash_drive_machine_fixture : public machine_flash_simple_fixture {
 public:
-    flash_drive_machine_fixture() : _flash_config{}, _flash_data{"test data 1234567890"} {
+    flash_drive_machine_fixture() :
+        _flash_size{0x3c00000},
+        _flash_file{"/tmp/data.bin"},
+        _flash_data{"test data 1234567890"} {
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
         cm_create(&_machine_config, &_runtime_config, &_machine);
-
-        size_t flash_size = 0x3c00000;
-        std::string flash_file = "/tmp/data.bin";
-        std::ofstream flash_stream(flash_file);
+        std::ofstream flash_stream(_flash_file);
         flash_stream << _flash_data;
         flash_stream.close();
-        std::filesystem::resize_file(flash_file, flash_size);
-
-        _flash_config = {0x80000000000000, flash_size, true, new_cstr(flash_file.c_str())};
+        std::filesystem::resize_file(_flash_file, _flash_size);
     }
 
     ~flash_drive_machine_fixture() {
         std::filesystem::remove_all(_machine_dir_path);
         cm_delete_machine(_machine);
-        std::filesystem::remove(std::string{_flash_config.image_filename});
-        delete[] _flash_config.image_filename;
+        std::filesystem::remove(_flash_file);
     }
 
     flash_drive_machine_fixture(const flash_drive_machine_fixture &other) = delete;
@@ -1236,7 +1233,8 @@ public:
     flash_drive_machine_fixture &operator=(flash_drive_machine_fixture &&other) noexcept = delete;
 
 protected:
-    cm_memory_range_config _flash_config;
+    size_t _flash_size;
+    std::string _flash_file;
     std::string _flash_data;
     std::string _machine_dir_path;
 };
@@ -1252,19 +1250,17 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_initial_config_flash_drive_test, flash_drive_
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_machine_test, flash_drive_machine_fixture) {
-    int error_code = cm_replace_memory_range(nullptr, &_flash_config);
+    int error_code = cm_replace_memory_range(nullptr, 0, 0, false, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_error_placeholder_test, flash_drive_machine_fixture) {
-    int error_code = cm_replace_memory_range(_machine, &_flash_config);
+    int error_code = cm_replace_memory_range(_machine, 0x80000000000000, _flash_size, true, _flash_file.c_str());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_pma_test, flash_drive_machine_fixture) {
-    _flash_config.start = 0x9000000000000;
-
-    int error_code = cm_replace_memory_range(_machine, &_flash_config);
+    int error_code = cm_replace_memory_range(_machine, 0x9000000000000, _flash_size, true, _flash_file.c_str());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -1273,10 +1269,10 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_pma_test, flash_driv
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_length_test, flash_drive_machine_fixture) {
-    _flash_config.length = 0x3c00;
-    std::filesystem::resize_file(_flash_config.image_filename, _flash_config.length);
+    _flash_size = 0x3c00;
+    std::filesystem::resize_file(_flash_file, _flash_size);
 
-    int error_code = cm_replace_memory_range(_machine, &_flash_config);
+    int error_code = cm_replace_memory_range(_machine, 0x80000000000000, _flash_size, true, _flash_file.c_str());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -1285,9 +1281,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_length_test, flash_d
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_file_length_mismatch_test, flash_drive_machine_fixture) {
-    _flash_config.length = 0x3c00;
+    _flash_size = 0x3c00;
 
-    int error_code = cm_replace_memory_range(_machine, &_flash_config);
+    int error_code = cm_replace_memory_range(_machine, 0x80000000000000, _flash_size, true, _flash_file.c_str());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -1296,9 +1292,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_file_length_mismatch_test, f
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_zero_length_test, flash_drive_machine_fixture) {
-    _flash_config.length = 0x0;
+    _flash_size = 0x0;
 
-    int error_code = cm_replace_memory_range(_machine, &_flash_config);
+    int error_code = cm_replace_memory_range(_machine, 0x80000000000000, _flash_size, true, _flash_file.c_str());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -1307,12 +1303,12 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_zero_length_test, flash_driv
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_basic_test, flash_drive_machine_fixture) {
-    int error_code = cm_replace_memory_range(_machine, &_flash_config);
+    int error_code = cm_replace_memory_range(_machine, 0x80000000000000, _flash_size, true, _flash_file.c_str());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
     std::array<uint8_t, 20> read_data{};
-    error_code = cm_read_memory(_machine, _flash_config.start, read_data.data(), read_data.size());
+    error_code = cm_read_memory(_machine, 0x80000000000000, read_data.data(), read_data.size());
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
 

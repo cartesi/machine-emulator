@@ -970,16 +970,16 @@ int cm_store(cm_machine *m, const char *dir) try {
     return cm_result_failure();
 }
 
-int cm_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason_result) try {
+int cm_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason) try {
     auto *cpp_machine = convert_from_c(m);
-    cartesi::interpreter_break_reason break_reason = cpp_machine->run(mcycle_end);
-    if (break_reason_result) {
-        *break_reason_result = static_cast<CM_BREAK_REASON>(break_reason);
+    const auto status = cpp_machine->run(mcycle_end);
+    if (break_reason) {
+        *break_reason = static_cast<CM_BREAK_REASON>(status);
     }
     return cm_result_success();
 } catch (...) {
-    if (break_reason_result) {
-        *break_reason_result = CM_BREAK_REASON_FAILED;
+    if (break_reason) {
+        *break_reason = CM_BREAK_REASON_FAILED;
     }
     return cm_result_failure();
 }
@@ -1040,11 +1040,11 @@ int cm_log_reset_uarch(cm_machine *m, cm_access_log_type log_type, bool one_base
     return cm_result_failure();
 }
 
-int cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *status_result) try {
+int cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *break_reason) try {
     auto *cpp_machine = convert_from_c(m);
-    auto status = cpp_machine->run_uarch(uarch_cycle_end);
-    if (status_result) {
-        *status_result = static_cast<CM_UARCH_BREAK_REASON>(status);
+    const auto status = cpp_machine->run_uarch(uarch_cycle_end);
+    if (break_reason) {
+        *break_reason = static_cast<CM_UARCH_BREAK_REASON>(status);
     }
     return cm_result_success();
 } catch (...) {
@@ -1177,38 +1177,38 @@ int cm_verify_merkle_tree(const cm_machine *m, bool *result) try {
     return cm_result_failure();
 }
 
-int cm_read_csr(const cm_machine *m, CM_CSR r, uint64_t *val) try {
+int cm_read_csr(const cm_machine *m, CM_CSR csr, uint64_t *val) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");
     }
     const auto *cpp_machine = convert_from_c(m);
-    auto cpp_csr = static_cast<cartesi::machine::csr>(r);
+    auto cpp_csr = static_cast<cartesi::machine::csr>(csr);
     *val = cpp_machine->read_csr(cpp_csr);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
 }
 
-int cm_write_csr(cm_machine *m, CM_CSR w, uint64_t val) try {
+int cm_write_csr(cm_machine *m, CM_CSR csr, uint64_t val) try {
     auto *cpp_machine = convert_from_c(m);
-    auto cpp_csr = static_cast<cartesi::machine::csr>(w);
+    auto cpp_csr = static_cast<cartesi::machine::csr>(csr);
     cpp_machine->write_csr(cpp_csr, val);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
 }
 
-uint64_t cm_get_csr_address(CM_CSR w) {
-    auto cpp_csr = static_cast<cartesi::machine::csr>(w);
+uint64_t cm_get_csr_address(CM_CSR csr) {
+    auto cpp_csr = static_cast<cartesi::machine::csr>(csr);
     return cartesi::machine::get_csr_address(cpp_csr);
 }
 
-int cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *word_value) try {
-    if (word_value == nullptr) {
+int cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val) try {
+    if (val == nullptr) {
         throw std::invalid_argument("invalid word output");
     }
     const auto *cpp_machine = convert_from_c(m);
-    *word_value = cpp_machine->read_word(word_address);
+    *val = cpp_machine->read_word(address);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();

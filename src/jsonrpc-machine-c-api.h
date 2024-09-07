@@ -136,10 +136,10 @@ CM_API int cm_jsonrpc_get_uarch_x_address(const cm_jsonrpc_mgr *mgr, int i, uint
 
 /// \brief Gets the address of any CSR from remote server
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
-/// \param w The command and status register
+/// \param csr The command and status register
 /// \param val Receives address of the register
 /// \returns 0 for successful verification, non zero code for error
-CM_API int cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_CSR w, uint64_t *val);
+CM_API int cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_CSR csr, uint64_t *val);
 
 /// \brief Gets the semantic version of remote server machine
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object

@@ -549,7 +549,7 @@ CM_API void cm_delete_machine(cm_machine *m);
 /// \param mcycle_end End cycle value
 /// \param break_reason Receives reason for machine run interruption when not NULL
 /// \returns 0 for success, non zero code for error
-CM_API int cm_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason_result);
+CM_API int cm_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason);
 
 /// \brief Runs the machine for one micro cycle logging all accesses to the state.
 /// \param m Pointer to valid machine instance
@@ -626,27 +626,27 @@ CM_API int cm_verify_merkle_tree(const cm_machine *m, bool *result);
 /// \param m Pointer to valid machine instance
 /// \param val Receives value read from the CSR
 /// \returns 0 for success, non zero code for error
-CM_API int cm_read_csr(const cm_machine *m, CM_CSR r, uint64_t *val);
+CM_API int cm_read_csr(const cm_machine *m, CM_CSR csr, uint64_t *val);
 
 /// \brief Write the value of any CSR
 /// \param m Pointer to valid machine instance
 /// \param w CSR to write
 /// \param val Value to write
 /// \returns 0 for success, non zero code for error
-CM_API int cm_write_csr(cm_machine *m, CM_CSR w, uint64_t val);
+CM_API int cm_write_csr(cm_machine *m, CM_CSR csr, uint64_t val);
 
 /// \brief Gets the address of any CSR
 /// \param w The CSR
 /// \returns The address of the specified CSR
-CM_API uint64_t cm_get_csr_address(CM_CSR w);
+CM_API uint64_t cm_get_csr_address(CM_CSR csr);
 
 /// \brief Read the value of a word in the machine state.
 /// \param m Pointer to valid machine instance
-/// \param word_address Word address (aligned to 64-bit boundary).
-/// \param word_value Receives word value.
+/// \param address Word address (aligned to 64-bit boundary).
+/// \param val Receives word value.
 /// \returns 0 for success, non zero code for error
 /// \warning The current implementation of this function is very slow!
-CM_API int cm_read_word(const cm_machine *m, uint64_t word_address, uint64_t *word_value);
+CM_API int cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val);
 
 /// \brief Reads a chunk of data from the machine memory.
 /// \param m Pointer to valid machine instance
@@ -909,9 +909,9 @@ CM_API int cm_log_reset_uarch(cm_machine *m, cm_access_log_type log_type, bool o
 /// (uarch_cycle) reaches uarch_cycle_end
 /// \param m Pointer to valid machine instance
 /// \param mcycle_end End cycle value
-/// \param status_result Receives status of machine run_uarch when not NULL
+/// \param break_reason Receives status of machine run_uarch when not NULL
 /// \returns 0 for success, non zero code for error
-CM_API int cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *status_result);
+CM_API int cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *break_reason);
 
 /// \brief Returns an array with the description of each memory range in the machine.
 /// \param m Pointer to valid machine instance

@@ -215,9 +215,9 @@ int cm_jsonrpc_get_uarch_x_address(const cm_jsonrpc_mgr *mgr, int i, uint64_t *v
     return cm_result_failure();
 }
 
-int cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_CSR w, uint64_t *val) try {
+int cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_CSR csr, uint64_t *val) try {
     const auto *cpp_mgr = convert_from_c(mgr);
-    const auto cpp_csr = static_cast<cartesi::machine::csr>(w);
+    const auto cpp_csr = static_cast<cartesi::machine::csr>(csr);
     *val = cartesi::jsonrpc_virtual_machine::get_csr_address(*cpp_mgr, cpp_csr);
     return cm_result_success();
 } catch (...) {

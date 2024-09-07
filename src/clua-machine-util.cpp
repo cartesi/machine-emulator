@@ -26,8 +26,8 @@ namespace cartesi {
 
 /// \brief Deleter for C string
 template <>
-void cm_delete<char>(char *ptr) {
-    cm_delete_cstring(ptr);
+void cm_delete<char>(char *ptr) { // NOLINT(readability-non-const-parameter)
+    delete[] ptr;
 }
 
 /// \brief Deleter for C data buffer

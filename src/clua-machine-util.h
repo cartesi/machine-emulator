@@ -30,23 +30,6 @@ extern "C" {
 
 namespace cartesi {
 
-constexpr size_t MAX_ERR_MSG_LEN = 1024;
-
-// NOLINTBEGIN(cppcoreguidelines-macro-usage,cppcoreguidelines-avoid-do-while)
-#define TRY_EXECUTE(func_call)                                                                                         \
-    do {                                                                                                               \
-        char *err_msg_heap = nullptr;                                                                                  \
-        char **err_msg = &err_msg_heap;                                                                                \
-        if ((func_call) != 0) {                                                                                        \
-            std::array<char, MAX_ERR_MSG_LEN> err_msg_stack{};                                                         \
-            strncpy(err_msg_stack.data(), err_msg_heap, MAX_ERR_MSG_LEN - 1);                                          \
-            err_msg_stack[MAX_ERR_MSG_LEN - 1] = '\0';                                                                 \
-            cm_delete_cstring(err_msg_heap);                                                                           \
-            return luaL_error(L, err_msg_stack.data());                                                                \
-        }                                                                                                              \
-    } while (0)
-// NOLINTEND(cppcoreguidelines-macro-usage,cppcoreguidelines-avoid-do-while)
-
 /// \brief Create overloaded deleters for C API objects
 template <typename T>
 void cm_delete(T *ptr);

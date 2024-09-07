@@ -90,11 +90,8 @@ static hash_type calculate_emulator_hash(cm_machine *machine) {
     cm_memory_range_descr_array *mrds = nullptr;
     auto mrds_deleter = [](cm_memory_range_descr_array **mrds) { cm_delete_memory_range_descr_array(*mrds); };
     std::unique_ptr<cm_memory_range_descr_array *, decltype(mrds_deleter)> auto_mrds(&mrds, mrds_deleter);
-    char *err_msg = nullptr;
-    auto err_msg_deleter = [](char **str) { cm_delete_cstring(*str); };
-    std::unique_ptr<char *, decltype(err_msg_deleter)> auto_err_msg(&err_msg, err_msg_deleter);
-    if (cm_get_memory_ranges(machine, &mrds, &err_msg) != 0) {
-        throw std::runtime_error{err_msg};
+    if (cm_get_memory_ranges(machine, &mrds) != 0) {
+        throw std::runtime_error{cm_get_last_error_message()};
     }
     uint64_t last = 0;
     for (size_t i = 0; i < mrds->count; ++i) {
@@ -103,9 +100,8 @@ static hash_type calculate_emulator_hash(cm_machine *machine) {
         auto end = m.start + m.length;
         for (uint64_t s = m.start; s < end; s += detail::MERKLE_PAGE_SIZE) {
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-            if (cm_read_memory(machine, s, reinterpret_cast<unsigned char *>(page.data()), page.size(), &err_msg) !=
-                0) {
-                throw std::runtime_error{err_msg};
+            if (cm_read_memory(machine, s, reinterpret_cast<unsigned char *>(page.data()), page.size()) != 0) {
+                throw std::runtime_error{cm_get_last_error_message()};
             }
             auto page_hash = merkle_hash(page, detail::MERKLE_PAGE_LOG2_SIZE);
             tree.push_back(page_hash);

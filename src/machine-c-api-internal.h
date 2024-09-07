@@ -26,14 +26,18 @@
 #include "machine-runtime-config.h"
 #include "semantic-version.h"
 
+void cm_set_last_error_message(const std::string &err_msg);
+
 /// \brief Helper function that returns error result from C api function
-int cm_result_failure(char **err_msg);
+int cm_result_failure();
 
 /// \brief Helper function that returns success result from C api function
-int cm_result_success(char **err_msg);
+int cm_result_success();
 
-/// \brief Helper function that create empty string in case
-/// that C string is NULL
+/// \brief Helper function that copies a C++ string over to C string buffer
+char *string_to_buf(char *dest, size_t maxlen, const std::string &src);
+
+/// \brief Helper function that create empty string in case that C string is NULL
 std::string null_to_empty(const char *s);
 
 /// \brief Helper function that parses machine configuration cartesi::machine_config

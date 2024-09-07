@@ -1111,13 +1111,6 @@ BOOST_AUTO_TEST_CASE_NOLINT(reset_iflags_y_null_machine_test) {
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_AUTO_TEST_CASE_NOLINT(packed_iflags_test) {
-    uint64_t iflags = cm_packed_iflags(0, 0, 0, 0);
-    BOOST_CHECK_EQUAL(0, iflags);
-    iflags = cm_packed_iflags(1, 1, 1, 1);
-    BOOST_CHECK_EQUAL(0xf, iflags);
-}
-
 BOOST_FIXTURE_TEST_CASE_NOLINT(iflags_read_write_complex_test, ordinary_machine_fixture) {
     uint64_t read_value = 0;
     char *err_msg{};

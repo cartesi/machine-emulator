@@ -856,10 +856,6 @@ CM_API int cm_read_mcycle(const cm_machine *m, uint64_t *val, char **err_msg);
 /// \returns 0 for success, non zero code for error
 CM_API int cm_write_mcycle(cm_machine *m, uint64_t val, char **err_msg);
 
-/// \brief Returns packed iflags from its component fields.
-/// \param val Receives value of the register.
-CM_API uint64_t cm_packed_iflags(int PRV, int X, int Y, int H);
-
 /// \brief Checks the value of the iflags_X flag.
 /// \param m Pointer to valid machine instance
 /// \param val Receives the flag value

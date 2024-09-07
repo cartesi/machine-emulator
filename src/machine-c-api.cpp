@@ -1355,10 +1355,6 @@ IMPL_MACHINE_READ_WRITE(mcycle)
 IMPL_MACHINE_READ_WRITE(uarch_cycle)
 // clang-format-on
 
-uint64_t cm_packed_iflags(int PRV, int X, int Y, int H) {
-    return cartesi::machine_state::packed_iflags(PRV, X, Y, H);
-}
-
 int cm_read_iflags_Y(const cm_machine *m, bool *val, char **err_msg) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");

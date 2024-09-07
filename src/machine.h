@@ -173,9 +173,11 @@ public:
         iflags_h,
         htif_tohost_dev,
         htif_tohost_cmd,
+        htif_tohost_reason,
         htif_tohost_data,
         htif_fromhost_dev,
         htif_fromhost_cmd,
+        htif_fromhost_reason,
         htif_fromhost_data,
     };
 
@@ -705,6 +707,10 @@ public:
     /// \returns The value of the field.
     uint64_t read_htif_tohost_cmd(void) const;
 
+    /// \brief Reads the value of the reason field of HTIF's tohost register.
+    /// \returns The value of the field.
+    uint64_t read_htif_tohost_reason(void) const;
+
     /// \brief Reads the value of the data field of HTIF's tohost register.
     /// \returns The value of the field.
     uint64_t read_htif_tohost_data(void) const;
@@ -720,6 +726,10 @@ public:
     /// \brief Writes the value of the cmd field in HTIF's tohost register.
     /// \param value New value for the field.
     void write_htif_tohost_cmd(uint64_t value);
+
+    /// \brief Writes the value of the reason field in HTIF's tohost register.
+    /// \param value New value for the field.
+    void write_htif_tohost_reason(uint64_t value);
 
     /// \brief Writes the value of the data field in HTIF's tohost register.
     /// \param value New value for the field.
@@ -737,6 +747,10 @@ public:
     /// \returns The value of the field.
     uint64_t read_htif_fromhost_cmd(void) const;
 
+    /// \brief Reads the value of the reason field of HTIF's fromhost register.
+    /// \returns The value of the field.
+    uint64_t read_htif_fromhost_reason(void) const;
+
     /// \brief Reads the value of the data field of HTIF's fromhost register.
     /// \returns The value of the field.
     uint64_t read_htif_fromhost_data(void) const;
@@ -752,6 +766,10 @@ public:
     /// \brief Writes the value of the cmd field in HTIF's fromhost register.
     /// \param value New value for the field.
     void write_htif_fromhost_cmd(uint64_t value);
+
+    /// \brief Writes the value of the reason field in HTIF's fromhost register.
+    /// \param value New value for the field.
+    void write_htif_fromhost_reason(uint64_t value);
 
     /// \brief Writes the value of the data field in HTIF's fromhost register.
     /// \param value New value for the field.

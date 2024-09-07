@@ -152,12 +152,10 @@ local function load_machine(name)
 end
 
 local function get_yield(machine)
-    local m16 = (1 << 16) - 1
-    local m32 = (1 << 32) - 1
     local cmd = machine:read_csr("htif_tohost_cmd")
+    local reason = machine:read_csr("htif_tohost_reason")
     local data = machine:read_csr("htif_tohost_data")
-    local reason = data >> 32
-    return cmd, reason & m16, data & m32
+    return cmd, reason, data
 end
 
 local function next_input(machine, reason, data)

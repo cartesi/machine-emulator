@@ -1113,6 +1113,10 @@ uint64_t machine::read_htif_tohost_cmd(void) const {
     return HTIF_CMD_FIELD(m_s.htif.tohost);
 }
 
+uint64_t machine::read_htif_tohost_reason(void) const {
+    return HTIF_REASON_FIELD(m_s.htif.tohost);
+}
+
 uint64_t machine::read_htif_tohost_data(void) const {
     return HTIF_DATA_FIELD(m_s.htif.tohost);
 }
@@ -1127,6 +1131,10 @@ void machine::write_htif_tohost_dev(uint64_t val) {
 
 void machine::write_htif_tohost_cmd(uint64_t val) {
     m_s.htif.tohost = HTIF_REPLACE_CMD(m_s.htif.tohost, val);
+}
+
+void machine::write_htif_tohost_reason(uint64_t val) {
+    m_s.htif.tohost = HTIF_REPLACE_REASON(m_s.htif.tohost, val);
 }
 
 void machine::write_htif_tohost_data(uint64_t val) {
@@ -1145,6 +1153,10 @@ uint64_t machine::read_htif_fromhost_cmd(void) const {
     return HTIF_CMD_FIELD(m_s.htif.fromhost);
 }
 
+uint64_t machine::read_htif_fromhost_reason(void) const {
+    return HTIF_REASON_FIELD(m_s.htif.fromhost);
+}
+
 uint64_t machine::read_htif_fromhost_data(void) const {
     return HTIF_DATA_FIELD(m_s.htif.fromhost);
 }
@@ -1159,6 +1171,10 @@ void machine::write_htif_fromhost_dev(uint64_t val) {
 
 void machine::write_htif_fromhost_cmd(uint64_t val) {
     m_s.htif.fromhost = HTIF_REPLACE_CMD(m_s.htif.fromhost, val);
+}
+
+void machine::write_htif_fromhost_reason(uint64_t val) {
+    m_s.htif.fromhost = HTIF_REPLACE_REASON(m_s.htif.fromhost, val);
 }
 
 void machine::write_htif_fromhost_data(uint64_t val) {
@@ -1311,12 +1327,16 @@ uint64_t machine::read_csr(csr r) const {
             return read_htif_tohost_dev();
         case csr::htif_tohost_cmd:
             return read_htif_tohost_cmd();
+        case csr::htif_tohost_reason:
+            return read_htif_tohost_reason();
         case csr::htif_tohost_data:
             return read_htif_tohost_data();
         case csr::htif_fromhost_dev:
             return read_htif_fromhost_dev();
         case csr::htif_fromhost_cmd:
             return read_htif_fromhost_cmd();
+        case csr::htif_fromhost_reason:
+            return read_htif_fromhost_reason();
         case csr::htif_fromhost_data:
             return read_htif_fromhost_data();
         default:
@@ -1423,12 +1443,16 @@ void machine::write_csr(csr csr, uint64_t value) {
             return write_htif_tohost_dev(value);
         case csr::htif_tohost_cmd:
             return write_htif_tohost_cmd(value);
+        case csr::htif_tohost_reason:
+            return write_htif_tohost_reason(value);
         case csr::htif_tohost_data:
             return write_htif_tohost_data(value);
         case csr::htif_fromhost_dev:
             return write_htif_fromhost_dev(value);
         case csr::htif_fromhost_cmd:
             return write_htif_fromhost_cmd(value);
+        case csr::htif_fromhost_reason:
+            return write_htif_fromhost_reason(value);
         case csr::htif_fromhost_data:
             return write_htif_fromhost_data(value);
         default:

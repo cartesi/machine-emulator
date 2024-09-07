@@ -1380,9 +1380,11 @@
           "iflags_h",
           "htif_tohost_dev",
           "htif_tohost_cmd",
+          "htif_tohost_reason",
           "htif_tohost_data",
           "htif_fromhost_dev",
           "htif_fromhost_cmd",
+          "htif_fromhost_reason",
           "htif_fromhost_data"
         ]
       },

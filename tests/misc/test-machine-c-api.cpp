@@ -1200,10 +1200,15 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_tohost_read_complex_test, ordinary_mach
     BOOST_CHECK_EQUAL(err_msg, nullptr);
     BOOST_CHECK_EQUAL(htif_cmd, static_cast<uint64_t>(0x11));
 
+    error_code = cm_read_csr(_machine, CM_CSR_HTIF_TOHOST_REASON, &htif_data, &err_msg);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(err_msg, nullptr);
+    BOOST_CHECK_EQUAL(htif_data, static_cast<uint64_t>(0x1111));
+
     error_code = cm_read_csr(_machine, CM_CSR_HTIF_TOHOST_DATA, &htif_data, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(htif_data, static_cast<uint64_t>(0x0000111111111111));
+    BOOST_CHECK_EQUAL(htif_data, static_cast<uint64_t>(0x11111111));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_fromhost_read_complex_test, ordinary_machine_fixture) {
@@ -1213,16 +1218,16 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_fromhost_read_complex_test, ordinary_ma
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
-    write_data = 0x1111111111111111;
+    write_data = 0x11111111;
     error_code = cm_write_csr(_machine, CM_CSR_HTIF_FROMHOST_DATA, write_data, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
 
     uint64_t htif_data{};
-    error_code = cm_read_csr(_machine, CM_CSR_HTIF_FROMHOST, &htif_data, &err_msg);
+    error_code = cm_read_csr(_machine, CM_CSR_HTIF_FROMHOST_DATA, &htif_data, &err_msg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(err_msg, nullptr);
-    BOOST_CHECK_EQUAL(htif_data, static_cast<uint64_t>(0x0000111111111111));
+    BOOST_CHECK_EQUAL(htif_data, static_cast<uint64_t>(0x11111111));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(get_initial_config_null_machine_test) {

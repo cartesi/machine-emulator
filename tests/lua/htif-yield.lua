@@ -239,8 +239,7 @@ local function test(machine_config, yield_automatic_enable, yield_manual_enable)
 
             -- data should be as expected
             local data = machine:read_csr("htif_tohost_data")
-            local reason = data >> 32
-            data = data << 32 >> 32
+            local reason = machine:read_csr("htif_tohost_reason")
             assert(data == v.data, string.format("data: expected %d, got %d", v.data, data))
             assert(reason == v.reason, string.format("reason: expected %d, got %d", v.reason, reason))
             -- cmd should be as expected

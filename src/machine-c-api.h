@@ -73,16 +73,12 @@ typedef struct { // NOLINT(modernize-use-using)
 /// brief Error codes returned from machine emulator C API
 typedef enum { // NOLINT(modernize-use-using)
     CM_ERROR_OK = 0,
-    // Logic errors
     CM_ERROR_INVALID_ARGUMENT,
     CM_ERROR_DOMAIN_ERROR,
     CM_ERROR_LENGTH_ERROR,
     CM_ERROR_OUT_OF_RANGE,
     CM_ERROR_LOGIC_ERROR,
-    CM_LOGIC_ERROR_END,
-    // Bad optional access error
     CM_ERROR_BAD_OPTIONAL_ACCESS,
-    // Runtime errors
     CM_ERROR_RUNTIME_ERROR,
     CM_ERROR_RANGE_ERROR,
     CM_ERROR_OVERFLOW_ERROR,
@@ -94,8 +90,6 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_ERROR_NONEXISTING_LOCAL_TIME,
     CM_ERROR_AMBIGUOUS_LOCAL_TIME,
     CM_ERROR_FORMAT_ERROR,
-    CM_RUNTIME_ERROR_END,
-    // Other errors
     CM_ERROR_BAD_TYPEID,
     CM_ERROR_BAD_CAST,
     CM_ERROR_BAD_ANY_CAST,
@@ -106,8 +100,6 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_ERROR_BAD_EXCEPTION,
     CM_ERROR_BAD_VARIANT_ACCESS,
     CM_ERROR_EXCEPTION,
-    CM_OTHER_ERROR_END,
-    // C API Errors
     CM_ERROR_UNKNOWN
 } CM_ERROR;
 

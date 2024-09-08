@@ -330,8 +330,14 @@ static int jsonrpc_server_class_rebind(lua_State *L) {
     auto &managed_jsonrpc_mgr =
         clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     const char *address = luaL_checkstring(L, 1);
-    if (cm_jsonrpc_rebind(managed_jsonrpc_mgr.get(), address) != 0) {
+    char *new_address = nullptr;
+    if (cm_jsonrpc_rebind(managed_jsonrpc_mgr.get(), address, &new_address) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    if (new_address) {
+        lua_pushstring(L, new_address);
+    } else {
+        lua_pushnil(L);
     }
     return 1;
 }

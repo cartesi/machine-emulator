@@ -321,7 +321,7 @@ void jsonrpc_mgr::commit() {
     }
 
     // Rebind the remote server to continue listening in the original port
-    bool result = false;
+    std::string result;
     jsonrpc_request(get_stream(), get_remote_address(), "rebind", std::tie(m_address[0]), result, false);
     m_address.pop_back();
 }
@@ -482,9 +482,10 @@ fork_result jsonrpc_virtual_machine::fork(const jsonrpc_mgr_ptr &mgr) {
     return result;
 }
 
-void jsonrpc_virtual_machine::rebind(const jsonrpc_mgr_ptr &mgr, const std::string &address) {
-    bool result = false;
+std::string jsonrpc_virtual_machine::rebind(const jsonrpc_mgr_ptr &mgr, const std::string &address) {
+    std::string result;
     jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "rebind", std::tie(address), result, false);
+    return result;
 }
 
 uint64_t jsonrpc_virtual_machine::do_read_f(int i) const {

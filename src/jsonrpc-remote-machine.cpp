@@ -804,16 +804,15 @@ static json jsonrpc_rebind_handler(const json &j, const std::shared_ptr<http_ses
     auto args = parse_args<std::string>(j, param_name);
     const std::string new_server_address = std::get<0>(args);
     const tcp::endpoint new_local_endpoint = address_to_endpoint(new_server_address);
-    if (new_local_endpoint.port() == 0) {
-        throw std::runtime_error{"rebind cannot be performed on port 0"};
-    }
     if (new_local_endpoint != session->handler->local_endpoint) {
-        SLOG(trace) << session->handler->local_endpoint << " rebind to " << new_local_endpoint;
+        SLOG(trace) << session->handler->local_endpoint << " rebinding to " << new_local_endpoint;
         session->handler->rebind(make_listen_acceptor(session->handler->ioc, new_local_endpoint));
+        SLOG(trace) << session->handler->local_endpoint << " rebound to " << session->handler->local_endpoint;
     } else {
         SLOG(trace) << session->handler->local_endpoint << " rebind skipped";
     }
-    return jsonrpc_response_ok(j);
+    const std::string result = endpoint_to_string(session->handler->local_endpoint);
+    return jsonrpc_response_ok(j, result);
 }
 
 /// \brief JSONRPC handler for the machine.machine.directory method

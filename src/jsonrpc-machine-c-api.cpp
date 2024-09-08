@@ -195,11 +195,18 @@ int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address, int *pid) try {
     return cm_result_failure();
 }
 
-int cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address) try {
+int cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, char **new_address) try {
     const auto *cpp_mgr = convert_from_c(mgr);
-    cartesi::jsonrpc_virtual_machine::rebind(*cpp_mgr, address);
+    const std::string cpp_new_address = cartesi::jsonrpc_virtual_machine::rebind(*cpp_mgr, address);
+    if (new_address) {
+        static THREAD_LOCAL char new_address_buf[64];
+        *new_address = string_to_buf(new_address_buf, sizeof(new_address_buf), cpp_new_address);
+    }
     return cm_result_success();
 } catch (...) {
+    if (new_address) {
+        *new_address = nullptr;
+    }
     return cm_result_failure();
 }
 

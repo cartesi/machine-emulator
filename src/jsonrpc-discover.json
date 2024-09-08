@@ -48,7 +48,7 @@
       ],
       "result": {
         "name": "address",
-        "description": "URL of rebound server",
+        "description": "URL of the rebound address",
         "schema": {
           "type": "string"
         }

@@ -102,17 +102,22 @@ CM_API int cm_jsonrpc_verify_step_uarch_state_transition(const cm_jsonrpc_mgr *m
 
 /// \brief Forks the server
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
-/// \param address Receives address of new server if function execution succeeds or NULL otherwise,
+/// \param address Receives address of new server if function execution succeeds,
 /// remains valid until the next time this same function is called on the same thread.
-/// \param pid Receives the forked child process id if function execution succeeds or 0 otherwise.
+/// In case of failure receives NULL.
+/// \param pid Receives the forked child process id.
+/// In case of failure receives 0.
 /// \returns 0 for successful verification, non zero code for error
 CM_API int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address, int *pid);
 
 /// \brief Changes the address the server is listening to
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
 /// \param address New address that the remote server should bind to
+/// \param new_address Receives the new address that the remote server actually bound to,
+/// remains valid until the next time this same function is called on the same thread.
+/// In case of failure receives NULL.
 /// \returns 0 for successful verification, non zero code for error
-CM_API int cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address);
+CM_API int cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, char **new_address);
 
 /// \brief Gets the address of a general-purpose register from remote cartesi server
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object

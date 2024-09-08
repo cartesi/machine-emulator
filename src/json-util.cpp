@@ -1196,6 +1196,23 @@ template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
     machine_memory_range_descrs &value, const std::string &path);
 
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, fork_result &value, const std::string &path) {
+    if (!contains(j, key)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    ju_get_opt_field(jconfig, "address"s, value.address, new_path);
+    ju_get_opt_field(jconfig, "pid"s, value.pid, new_path);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, fork_result &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, fork_result &value,
+    const std::string &path);
+
 void to_json(nlohmann::json &j, const machine::csr &csr) {
     j = csr_to_name(csr);
 }
@@ -1432,6 +1449,10 @@ void to_json(nlohmann::json &j, const machine_memory_range_descrs &mrds) {
     j = nlohmann::json::array();
     std::transform(mrds.cbegin(), mrds.cend(), std::back_inserter(j),
         [](const auto &a) -> nlohmann::json { return a; });
+}
+
+void to_json(nlohmann::json &j, const fork_result &fork_result) {
+    j = nlohmann::json{{"address", fork_result.address}, {"pid", fork_result.pid}};
 }
 
 } // namespace cartesi

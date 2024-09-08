@@ -341,11 +341,13 @@ static int jsonrpc_server_class_fork(lua_State *L) {
     auto &managed_jsonrpc_mgr =
         clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     char *address = nullptr;
-    if (cm_jsonrpc_fork(managed_jsonrpc_mgr.get(), &address) != 0) {
+    int pid = 0;
+    if (cm_jsonrpc_fork(managed_jsonrpc_mgr.get(), &address, &pid) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     lua_pushstring(L, address);
-    return 1;
+    lua_pushinteger(L, pid);
+    return 2;
 }
 
 /// \brief JSONRPC server static methods

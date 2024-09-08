@@ -26,10 +26,10 @@
       "summary": "Forks the server",
       "params": [],
       "result": {
-        "name": "address",
-        "description": "URL of forked server",
+        "name": "fork_result",
+        "description": "Result of the fork containing address and pid",
         "schema": {
-          "type": "string"
+          "$ref": "#/components/schemas/ForkResult"
         }
       }
     },
@@ -2044,8 +2044,20 @@
         "items": {
           "$ref": "#/components/schemas/MemoryRangeDescription"
         }
-      }
+      },
 
+      "ForkResult": {
+        "title": "ForkResult",
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "pid": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      }
     }
   }
 }

@@ -767,8 +767,8 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
     // Notify ASIO that we are about to fork
     session->handler->ioc.notify_fork(asio::io_context::fork_prepare);
     // Done initializing, so we fork
-    const int ret = fork();
-    if (ret == 0) { // child
+    const int pid = fork();
+    if (pid == 0) { // child
         // Notify to ASIO that we are the child
         session->handler->ioc.notify_fork(asio::io_context::fork_child);
         // Close all sessions that were initiated by the parent
@@ -776,7 +776,7 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
         // Swap current handler acceptor with the new one
         session->handler->rebind(std::move(acceptor));
         SLOG(trace) << session->handler->local_endpoint << " fork child";
-    } else if (ret > 0) { // parent and fork() succeeded
+    } else if (pid > 0) { // parent and fork() succeeded
         // Notify to ASIO that we are the parent
         session->handler->ioc.notify_fork(asio::io_context::fork_parent);
         // Note that the parent doesn't need the server that will be used by the child,
@@ -789,7 +789,8 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
         SLOG(error) << session->handler->local_endpoint << " fork failed (" << strerror(errno_copy) << ")";
         return jsonrpc_response_server_error(j, "fork failed ("s + strerror(errno_copy) + ")"s);
     }
-    return jsonrpc_response_ok(j, new_server_address);
+    const cartesi::fork_result result{new_server_address, static_cast<uint32_t>(pid)};
+    return jsonrpc_response_ok(j, result);
 }
 
 /// \brief JSONRPC handler for the rebind method

@@ -16,6 +16,7 @@
 
 #include "jsonrpc-machine-c-api.h"
 #include "i-virtual-machine.h"
+#include "json-util.h"
 #include "jsonrpc-mgr.h"
 #include "jsonrpc-virtual-machine.h"
 #include "machine-c-api-internal.h"
@@ -172,14 +173,25 @@ int cm_jsonrpc_verify_reset_uarch_state_transition(const cm_jsonrpc_mgr *mgr, co
     return cm_result_failure();
 }
 
-int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address) try {
+int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address, int *pid) try {
+    if (address == nullptr) {
+        throw std::invalid_argument("invalid address output");
+    }
     const auto *cpp_mgr = convert_from_c(mgr);
-    auto cpp_address = cartesi::jsonrpc_virtual_machine::fork(*cpp_mgr);
+    const auto result = cartesi::jsonrpc_virtual_machine::fork(*cpp_mgr);
     static THREAD_LOCAL char address_buf[64];
-    *address = string_to_buf(address_buf, sizeof(address_buf), cpp_address);
+    *address = string_to_buf(address_buf, sizeof(address_buf), result.address);
+    if (pid) {
+        *pid = static_cast<int>(result.pid);
+    }
     return cm_result_success();
 } catch (...) {
-    *address = nullptr;
+    if (address) {
+        *address = nullptr;
+    }
+    if (pid) {
+        *pid = 0;
+    }
     return cm_result_failure();
 }
 

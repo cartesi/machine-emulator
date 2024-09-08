@@ -299,9 +299,9 @@ void jsonrpc_mgr::snapshot(void) {
     }
 
     // To create a snapshot, we fork a new server as the child and get its remote address
-    std::string child_address;
-    jsonrpc_request(get_stream(), get_remote_address(), "fork", std::tie(), child_address, false);
-    m_address.push_back(std::move(child_address));
+    fork_result result{};
+    jsonrpc_request(get_stream(), get_remote_address(), "fork", std::tie(), result, false);
+    m_address.push_back(std::move(result.address));
 }
 
 void jsonrpc_mgr::commit() {
@@ -476,8 +476,8 @@ uint64_t jsonrpc_virtual_machine::get_x_address(const jsonrpc_mgr_ptr &mgr, int 
     return result;
 }
 
-std::string jsonrpc_virtual_machine::fork(const jsonrpc_mgr_ptr &mgr) {
-    std::string result;
+fork_result jsonrpc_virtual_machine::fork(const jsonrpc_mgr_ptr &mgr) {
+    fork_result result{};
     jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "fork", std::tie(), result, false);
     return result;
 }

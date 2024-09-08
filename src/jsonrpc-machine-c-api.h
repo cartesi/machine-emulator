@@ -104,8 +104,9 @@ CM_API int cm_jsonrpc_verify_step_uarch_state_transition(const cm_jsonrpc_mgr *m
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
 /// \param address Receives address of new server if function execution succeeds or NULL otherwise,
 /// remains valid until the next time this same function is called on the same thread.
+/// \param pid Receives the forked child process id if function execution succeeds or 0 otherwise.
 /// \returns 0 for successful verification, non zero code for error
-CM_API int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address);
+CM_API int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address, int *pid);
 
 /// \brief Changes the address the server is listening to
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object

@@ -26,6 +26,7 @@
 
 #include "machine.h"
 #include "uarch-bridge.h"
+#include "shadow-uarch-state.h"
 #include "uarch-constants.h"
 #include "uarch-machine.h"
 

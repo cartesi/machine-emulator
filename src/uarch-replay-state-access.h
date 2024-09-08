@@ -30,6 +30,7 @@
 #include "machine.h"
 #include "shadow-state.h"
 #include "uarch-bridge.h"
+#include "shadow-uarch-state.h"
 
 namespace cartesi {
 

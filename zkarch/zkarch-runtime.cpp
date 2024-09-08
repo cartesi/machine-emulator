@@ -17,25 +17,24 @@
 #include "zkarch-runtime.h"
 #include "os.h"
 #include <algorithm>
+#include <cstdio>
 
 using namespace cartesi;
 
-extern "C" void __cxa_pure_virtual() {
-    abort();
-}
-
+extern "C" void __cxa_pure_virtual() {}
 void operator delete(void *, unsigned long) {}
 void operator delete(void *, unsigned int) {}
 
 extern "C" void __assert_func(const char *file, int line, const char *, const char *e) {}
 
 extern "C" void __assert_fail(const char *__assertion, const char *__file, unsigned int __line,
-    // TODO: implement in rust risc0 guest mode and panic
-    const char *__function) {}
+    const char *__function) {
+    abort();
 
+}
 
 extern "C" NO_RETURN void abort(void) {
-    // TODO: implement in rust risc0 guest and panic
+    abort_from_c();
     __builtin_trap();
 }
 
@@ -55,15 +54,13 @@ int os_getchar(void) {
 }
 
 void os_putchar(uint8_t ch) {
-    // TODO: implement in rust risc0 guest mode
+    abort();
 }
 
 #include <stdint.h>
 
 // The __ucmpdi2 function performs an unsigned comparison between two 64-bit integers.
 // It returns 0 if a == b, a positive value if a > b, and a negative value if a < b.
-
-
 extern "C" int __ucmpdi2(uint64_t a, uint64_t b) {
     uint32_t a_high = a >> 32;
     uint32_t b_high = b >> 32;

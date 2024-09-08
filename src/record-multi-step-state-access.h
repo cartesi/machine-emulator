@@ -27,12 +27,9 @@
 #include "shadow-state.h"
 #include "shadow-uarch-state.h"
 #include "shadow-pmas.h"
-#include "uarch-constants.h"
-#include "uarch-defines.h"
-#include "strict-aliasing.h"
 #include "compiler-defines.h"
 #include "unique-c-ptr.h"
-#include <set>
+#include <map>
 #include <iomanip>
 #include <sstream>
 #include <cstdlib>
@@ -43,7 +40,8 @@ namespace cartesi {
 class record_multi_step_state_access : public i_state_access<record_multi_step_state_access, pma_entry> {
     machine &m_m;
     const std::string &m_directory;
-    mutable std::set<uint64_t> m_saved_pages;
+    using page_data = std::array<unsigned char, PMA_PAGE_SIZE>;
+    mutable std::map<uint64_t, page_data> m_saved_pages;
 public:
     record_multi_step_state_access(machine &m, const std::string &directory) : m_m(m), m_directory(directory) {
     }
@@ -53,50 +51,46 @@ public:
     record_multi_step_state_access &operator=(record_multi_step_state_access &&) = delete;
     ~record_multi_step_state_access() = default;
 
+    void finish() {
+        auto fp_before = unique_fopen((m_directory + "/" + "pages-before").c_str(), "wb");
+        if (!fp_before) {
+            throw std::runtime_error("Could not open pages-before file for writing");
+        }
+        auto fp_after = unique_fopen((m_directory + "/" + "pages-after").c_str(), "wb");
+        if (!fp_after) {
+            throw std::runtime_error("Could not open pages-after file for writing");
+        }
+        uint32_t page_count = m_saved_pages.size();
+        fwrite(&page_count, 1, sizeof(page_count), fp_before.get());
+        fwrite(&page_count, 1, sizeof(page_count), fp_after.get());
+        page_data scratch;
+        for (auto &p : m_saved_pages) {
+            fwrite(&p.first, 1, sizeof(p.first), fp_before.get());
+            fwrite(p.second.data(), 1, PMA_PAGE_SIZE, fp_before.get()); 
+            m_m.read_memory(p.first, scratch.data(), PMA_PAGE_SIZE);
+            fwrite(&p.first, 1, sizeof(p.first), fp_after.get());
+            fwrite(scratch.data(), 1, PMA_PAGE_SIZE, fp_after.get());
+        }
+
+    }
 private:
     friend i_state_access<record_multi_step_state_access, pma_entry>;
 
     void save_page(uint64_t paddr) const {
         uint64_t page = paddr & ~(PMA_PAGE_SIZE - 1);
         if (m_saved_pages.find(page) != m_saved_pages.end()) {
-            return;
+            return; // already saved
         }
-        auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
-        if (!scratch) {
-            throw std::runtime_error("Could not allocate scratch memory");
+        auto [it, inserted] = m_saved_pages.emplace(page, page_data());
+        if (!inserted) {
+            throw std::runtime_error("Could not insert page into saved pages");
         }
-        m_m.read_memory(page, scratch.get(), PMA_PAGE_SIZE);
-        auto fp = unique_fopen(get_page_file_name(page).c_str(), "wb");
-        if (!fp) {
-            throw std::runtime_error("Could not open page file for writing");
-        }
-        if (fwrite(scratch.get(), 1, PMA_PAGE_SIZE, fp.get()) != PMA_PAGE_SIZE) {
-            throw std::runtime_error("Could not write page file");
-        }
-        m_saved_pages.insert(page);
+        m_m.read_memory(page, it->second.data(), PMA_PAGE_SIZE);
     }
 
-    void save_page(uint64_t paddr) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
-        const_cast<const record_multi_step_state_access *>(this)->save_page(paddr);
-    }
-
-    void save_page(uint64_t paddr, int length) const {
-        uint64_t page = paddr & ~(PMA_PAGE_SIZE - 1);
-        const uint64_t last_page = (paddr + length - 1) & ~(PMA_PAGE_SIZE - 1);
-        for (; page <= last_page; page += PMA_PAGE_SIZE) {
-            save_page(page);
-        }
-    }
-
-    void save_page(uint64_t paddr, int length)  {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
-        const_cast<const record_multi_step_state_access *>(this)->save_page(paddr, length);
-    }
-
-    std::string get_page_file_name(uint64_t page) const {
+    std::string get_page_file_name(uint64_t page, const char* prefix) const {
         std::ostringstream sout;
-        sout << m_directory << "/" << std::hex << std::setw(16) << std::setfill('0') << page;
+        sout << m_directory << "/" << prefix << std::hex << std::setw(16) << std::setfill('0') << page;
         return sout.str();
     }
 
@@ -164,24 +158,12 @@ private:
     }
 
     uint64_t do_read_mvendorid(void) const { // NOLINT(readability-convert-member-functions-to-static)
-    save_page(shadow_state_get_csr_abs_addr(shadow_state_csr::mvendorid));
+        save_page(shadow_state_get_csr_abs_addr(shadow_state_csr::mvendorid));
         return MVENDORID_INIT;
     }
 
-    template <typename T, typename U>
-    T do_aliased_unaligned_read(const void *host_ptr, uint64_t paddr) {
-        save_page(paddr);
-        return cartesi::aliased_unaligned_read<T, U>(host_ptr);
-    }
-
-    template <typename T>
-    T do_aliased_aligned_read(const void *host_ptr, uint64_t paddr) {
-        save_page(paddr);
-        return cartesi::aliased_aligned_read<T>(host_ptr);
-    }
-
     uint64_t do_read_marchid(void) const { // NOLINT(readability-convert-member-functions-to-static)
-    save_page(shadow_state_get_csr_abs_addr(shadow_state_csr::marchid));
+        save_page(shadow_state_get_csr_abs_addr(shadow_state_csr::marchid));
         return MARCHID_INIT;
     }
 
@@ -546,41 +528,7 @@ private:
     }
 
     NO_INLINE std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
-        const bool interrupt_raised = false;
-        // Only poll external interrupts if we are in unreproducible mode
-        if (unlikely(do_read_iunrep())) {
-            // Convert the relative interval of cycles we can wait to the interval of host time we can wait
-            uint64_t timeout_us = (mcycle_max - mcycle) / RTC_CYCLES_PER_US;
-            int64_t start_us = 0;
-            if (timeout_us > 0) {
-                start_us = os_now_us();
-            }
-            device_state_access da(*this, mcycle);
-            // Poll virtio for events (e.g console stdin, network sockets)
-            // Timeout may be decremented in case a device has deadline timers (e.g network device)
-            if (m_m.has_virtio_devices() && m_m.has_virtio_console()) { // VirtIO + VirtIO console
-                m_m.poll_virtio_devices(&timeout_us, &da);
-                // VirtIO console device will poll TTY
-            } else if (m_m.has_virtio_devices()) { // VirtIO without a console
-                m_m.poll_virtio_devices(&timeout_us, &da);
-                if (m_m.has_htif_console()) { // VirtIO + HTIF console
-                    // Poll tty without waiting more time, because the pool above should have waited enough time
-                    os_poll_tty(0);
-                }
-            } else if (m_m.has_htif_console()) { // Only HTIF console
-                os_poll_tty(timeout_us);
-            } else if (timeout_us > 0) { // No interrupts to check, just keep the CPU idle
-                os_sleep_us(timeout_us);
-            }
-            // If timeout is greater than zero, we should also increment mcycle relative to the elapsed time
-            if (timeout_us > 0) {
-                const int64_t end_us = os_now_us();
-                const uint64_t elapsed_us = static_cast<uint64_t>(std::max(end_us - start_us, INT64_C(0)));
-                const uint64_t next_mcycle = mcycle + (elapsed_us * RTC_CYCLES_PER_US);
-                mcycle = std::min(std::max(next_mcycle, mcycle), mcycle_max);
-            }
-        }
-        return {mcycle, interrupt_raised};
+        return {mcycle, false};
     }
 
     uint64_t do_read_pma_istart(int i) const {
@@ -620,27 +568,11 @@ private:
     }
 
     bool do_read_memory(uint64_t paddr, unsigned char *data, uint64_t length) const {
-        save_page(paddr, length);
-        //??(edubart): Treating exceptions here is not ideal, we should probably
-        // move read_memory() method implementation inside state access later
-        try {
-            m_m.read_memory(paddr, data, length);
-            return true;
-        } catch (...) {
-            return false;
-        }
+        throw std::runtime_error("Unexpected call to do_read_memory");
     }
 
     bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
-        save_page(paddr, length);
-        //??(edubart): Treating exceptions here is not ideal, we should probably
-        // move write_memory() method implementation inside state access later
-        try {
-            m_m.write_memory(paddr, data, length);
-            return true;
-        } catch (...) {
-            return false;
-        }
+        throw std::runtime_error("Unexpected call to do_write_memory");
     }
 
     template <typename T>
@@ -662,6 +594,7 @@ private:
             // Since length is at least 4096 (an entire page), there is no
             // chance of overflow in the second subtraction.
             if (paddr >= pma.get_start() && paddr - pma.get_start() <= pma.get_length() - sizeof(T)) {
+                save_page(paddr);
                 return pma;
             }
             i++;
@@ -706,6 +639,7 @@ private:
 
     template <TLB_entry_type ETYPE, typename T>
     inline bool do_translate_vaddr_via_tlb(uint64_t vaddr, unsigned char **phptr) {
+        //// printf("record: do_translate_vaddr_via_tlb %llx\n", vaddr);
         const uint64_t eidx = tlb_get_entry_index(vaddr);
         save_page(tlb_get_entry_hot_abs_addr<ETYPE>(eidx));
         save_page(tlb_get_entry_cold_abs_addr<ETYPE>(eidx));
@@ -714,35 +648,43 @@ private:
             return false;
         }
         *phptr = cast_addr_to_ptr<unsigned char *>(tlbhe.vh_offset + vaddr);
+        const tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[ETYPE][eidx];
+        save_page(tlbce.paddr_page);
         return true;
     }
 
     template <TLB_entry_type ETYPE, typename T>
     inline bool do_read_memory_word_via_tlb(uint64_t vaddr, T *pval) {
+        //// printf("record: do_read_memory_word_via_tlb %llx\n", vaddr);
         const uint64_t eidx = tlb_get_entry_index(vaddr);
         const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
+        const tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[ETYPE][eidx];
         save_page(tlb_get_entry_hot_abs_addr<ETYPE>(eidx));
+        save_page(tlb_get_entry_cold_abs_addr<ETYPE>(eidx)); // save cold entry to allow reconstruction of paddr during playback
         if (unlikely(!tlb_is_hit<T>(tlbhe.vaddr_page, vaddr))) {
             return false;
         }
         const auto *h = cast_addr_to_ptr<const unsigned char *>(tlbhe.vh_offset + vaddr);
         *pval = cartesi::aliased_aligned_read<T>(h);
-        save_page(tlb_get_entry_cold_abs_addr<ETYPE>(eidx)); // save cold entry to allow reconstruction of paddr during playback
+        save_page(tlbce.paddr_page);
+        
         return true;
     }
 
     template <TLB_entry_type ETYPE, typename T>
     inline bool do_write_memory_word_via_tlb(uint64_t vaddr, T val) {
+        //// printf("record: do_write_memory_word_via_tlb %llx\n", vaddr);
         const uint64_t eidx = tlb_get_entry_index(vaddr);
+        //printf("---> do_write_memory_word_via_tlb  vaddr=%llx, eidx=%d\n", vaddr, eidx);
         const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
         save_page(tlb_get_entry_hot_abs_addr<ETYPE>(eidx));
+        save_page(tlb_get_entry_cold_abs_addr<ETYPE>(eidx));
         if (unlikely(!tlb_is_hit<T>(tlbhe.vaddr_page, vaddr))) {
             return false;
         }
         save_page(tlb_get_entry_cold_abs_addr<ETYPE>(eidx)); // save cold entry to allow reconstruction of paddr during playback
-        uint64_t poffset = vaddr & PAGE_OFFSET_MASK;
         const tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[ETYPE][eidx];
-        save_page(tlbce.paddr_page + poffset);
+        save_page(tlbce.paddr_page);
 
         auto *h = cast_addr_to_ptr<unsigned char *>(tlbhe.vh_offset + vaddr);
         aliased_aligned_write(h, val);
@@ -751,6 +693,7 @@ private:
 
     template <TLB_entry_type ETYPE>
     unsigned char *do_replace_tlb_entry(uint64_t vaddr, uint64_t paddr, pma_entry &pma) {
+        //// printf("record: do_replace_tlb_entry %llx\n", vaddr);
         const uint64_t eidx = tlb_get_entry_index(vaddr);
         save_page(tlb_get_entry_hot_abs_addr<ETYPE>(eidx));
         save_page(tlb_get_entry_cold_abs_addr<ETYPE>(eidx)); // save cold entry to allow reconstruction of paddr during playback
@@ -765,17 +708,18 @@ private:
         }
         const uint64_t vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
         const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        save_page(paddr_page);
         unsigned char *hpage = pma.get_memory_noexcept().get_host_memory() + (paddr_page - pma.get_start());
         tlbhe.vaddr_page = vaddr_page;
         tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - vaddr_page;
         tlbce.paddr_page = paddr_page;
         tlbce.pma_index = static_cast<uint64_t>(pma.get_index());
+        save_page(tlbce.paddr_page);
         return hpage;
     }
 
     template <TLB_entry_type ETYPE>
     void do_flush_tlb_entry(uint64_t eidx) {
+        //// printf("record: do_flush_tlb_entry %llx\n", eidx);
         save_page(tlb_get_entry_hot_abs_addr<ETYPE>(eidx));
         save_page(tlb_get_entry_cold_abs_addr<ETYPE>(eidx)); // save cold entry to allow reconstruction of paddr during playback
         tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
@@ -802,6 +746,7 @@ private:
     }
 
     void do_flush_tlb_vaddr(uint64_t vaddr) {
+        //// printf("record: do_flush_tlb_vaddr %llx\n", vaddr);
         (void) vaddr;
         // We can't flush just one TLB entry for that specific virtual address,
         // because megapages/gigapages may be in use while this TLB implementation ignores it,
@@ -812,40 +757,9 @@ private:
     }
 
     bool do_get_soft_yield() {
-        // loxa ?
         return m_m.get_state().soft_yield;
     }
 
-    void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
-        int write_length_log2_size) {
-        if (!data) {
-            throw std::runtime_error("data is null");
-        }
-        save_page(paddr, 1 << write_length_log2_size);
-        const uint64_t write_length = static_cast<uint64_t>(1) << write_length_log2_size;
-        if (write_length < data_length) {
-            throw std::runtime_error("write_length is less than data_length");
-        }
-        m_m.write_memory(paddr, data, data_length);
-        if (write_length > data_length) {
-            m_m.fill_memory(paddr + data_length, 0, write_length - data_length);
-        }
-    }
-
-#ifdef DUMP_COUNTERS
-    machine_statistics &do_get_statistics() {
-        return m_m.get_state().stats;
-    }
-#endif
-
-    
-
-    
-
-   
-    
-
-    
 };
 
 } // namespace cartesi

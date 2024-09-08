@@ -21,8 +21,8 @@
 #include <cstring>
 #include <iomanip>
 #include <iostream>
-#include <filesystem>
 #include  <cstdlib>
+#include <uarch-solidity-compat.h>
 
 #include "clint-factory.h"
 #include "dtb.h"
@@ -1967,45 +1967,69 @@ void machine::log_steps(uint64_t mcycle_end, const std::string &directory) {
     }
     record_multi_step_state_access a(*this, directory);
     interpret(a, mcycle_end);
+    a.finish();
 }
 
-namespace fs = std::filesystem;
-
-void machine::replay_steps(uint64_t steps, const std::string &directory) {
-    printf("---> replay steps=%llx, directory=%s\n", steps, directory.c_str());
-    fs::path dir(directory);
-    if (!fs::exists(dir) || !fs::is_directory(dir)) {
-        throw std::invalid_argument{"directory does not exist"};
+void machine::replay_steps(uint64_t mcycle_end, const std::string &directory) {
+    printf("---> replay mcycle_end=%lld, directory=%s\n", mcycle_end, directory.c_str());
+    auto fp_before = unique_fopen((directory + "/" + "pages-before").c_str(), "rb");
+    if (!fp_before) {
+        throw std::runtime_error("Could not open pages-before file for writing");
     }
-    page_info *head = nullptr;
-    page_info *tail = nullptr;
-    for (const auto& entry : fs::directory_iterator(directory)) {
-        if (fs::is_regular_file(entry.status())) {
-            auto name = entry.path().filename().string();
-            page_info *page = new page_info;
-            page->next = nullptr;
-            page->address = std::strtoull(name.c_str(), nullptr, 16);
-            auto fp = unique_fopen(entry.path().c_str(), "rb");
-            if (!fp) {
-                throw std::runtime_error("Could not open page file for reading");
-            }
-            if (fread(&page->data, 1, PMA_PAGE_SIZE, fp.get()) != PMA_PAGE_SIZE) {
-                throw std::runtime_error("Could not read page data");
-            }
-            if (!head) {
-                head = page;
-                tail = page;
-            } else {
-                tail->next = page;
-                tail = page;
-            }
-            std::cout << entry.path().filename() << std::endl;
+    auto fp_after = unique_fopen((directory + "/" + "pages-after").c_str(), "rb");
+    if (!fp_after) {
+        throw std::runtime_error("Could not open pages-after file for writing");
+    }
+    uint32_t page_count_before = 0;
+    uint32_t page_count_after = 0;
+    if (fread(&page_count_before, 1, sizeof(page_count_before), fp_before.get()) != sizeof(page_count_before)) {
+        throw std::runtime_error("Could not read page count before");
+    }
+    if (fread(&page_count_after, 1, sizeof(page_count_after), fp_after.get()) != sizeof(page_count_after)) {
+        throw std::runtime_error("Could not read page count after");
+    }
+    if (page_count_before != page_count_after) {
+        throw std::runtime_error("Page count mismatch");
+    }
+    auto page_infos_before = unique_calloc<page_info>(page_count_before);
+    if (!page_infos_before) {
+        throw std::runtime_error("Could not allocate page infos before");
+    }
+    if (fread(page_infos_before.get(), sizeof(page_info), page_count_before, fp_before.get()) != page_count_before) {
+        throw std::runtime_error("Could not read page infos before");
+    }
+    auto page_infos_after = unique_calloc<page_info>(page_count_after);
+    if (!page_infos_after) {
+        throw std::runtime_error("Could not allocate page infos after");
+    }
+    if (fread(page_infos_after.get(), sizeof(page_info), page_count_after, fp_after.get()) != page_count_after) {
+        throw std::runtime_error("Could not read page infos after");
+    }
+    
+    replay_multi_step_state_access a(page_infos_before.get(), page_count_before);
+    auto current_mcycle = a.read_mcycle();
+    printf("mcycle = %lld, mcycle_end = %lld\n", current_mcycle, mcycle_end);
+    interpret(a, mcycle_end);
+    a.finish();
+    // // print compare pages
+    bool ok = true;
+    printf("Comparing pages....\n");
+    for(uint32_t i=0; i<page_count_before; i++) {
+        page_info *before = &page_infos_before.get()[i];
+        page_info *after = &page_infos_after.get()[i];
+        printf("%016llx ", before->address);
+        if (memcmp(before->data, after->data, PMA_PAGE_SIZE) != 0) {
+            ok = false;
+            printf("FAIL @ %d\n", i);
+        } else {
+            printf("OK\n");
         }
     }
-    replay_multi_step_state_access a(head);
-    auto current_mcycle = a.read_mcycle();
-    uint64_t mcycle_end = current_mcycle + steps;
-    interpret(a, mcycle_end);
+    if (ok) {
+        printf("All pages match\n");
+    } else {
+        printf("Some pages do not match\n");
+    }
 }
 
 access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,

@@ -23,11 +23,13 @@
 
 using namespace cartesi;
 
-extern "C" uint64_t zkarch_replay_steps(uint64_t steps, page_info *pages) {
-    replay_multi_step_state_access a(pages);
+extern "C" uint64_t zkarch_replay_steps(uint64_t steps, page_info *pages, uint32_t page_count) {
+    print_from_c("Testing print from C!");
+    replay_multi_step_state_access a(pages, page_count);
     auto current_mcycle = a.read_mcycle();
     auto mcycle_end = current_mcycle + steps;
     interpret(a, mcycle_end);
     current_mcycle = a.read_mcycle();
-    return (int)current_mcycle;
+    a.finish();
+    return current_mcycle;
 }

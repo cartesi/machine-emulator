@@ -20,10 +20,7 @@
 #include "machine-state.h"
 #include "riscv-constants.h"
 #include "shadow-state.h"
-#include "shadow-uarch-state.h"
 #include "strict-aliasing.h"
-#include "uarch-constants.h"
-#include "uarch-state.h"
 
 namespace cartesi {
 

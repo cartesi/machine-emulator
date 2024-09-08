@@ -22,8 +22,10 @@
 #include <inttypes.h>
 #include <stddef.h>
 
-// #define printf(a, ...) ;
-// #define fprintf(a, ...) printf(__VA_ARGS__)
+
+// Methods implemented inrisc0 guest
+extern "C" void print_from_c(const char *text);
+extern "C" void abort_from_c();
 
 #define assert(a)                                                                                                      \
     if (!(a)) {                                                                                                        \

@@ -32,13 +32,14 @@
 #include "strict-aliasing.h"
 #include "compiler-defines.h"
 #include <optional>
+#include <shadow-tlb.h>
+#include <stdlib.h>
 
 namespace cartesi {
 
 struct page_info {
     uint64_t address;
     char data[PMA_PAGE_SIZE];
-    page_info *next;
 };
 
 class mock_pma_entry final {
@@ -136,14 +137,25 @@ public:
     }
 };
 
+static_assert(sizeof(shadow_tlb_state::hot[0]) == PMA_PAGE_SIZE, "Each element of 'hot' must be 4096 bytes.");
+static_assert(sizeof(shadow_tlb_state::cold[0]) == PMA_PAGE_SIZE, "Each element of 'hot' must be 4096 bytes.");
+static_assert(
+    sizeof(shadow_tlb_state::hot) + sizeof(shadow_tlb_state::cold) == sizeof(shadow_tlb_state),
+     "size of shadow tlb state");
+
+
 // Provides access to the state of the big emulator from microcode
 class replay_multi_step_state_access : public i_state_access<replay_multi_step_state_access, mock_pma_entry> {
     page_info *m_pages;
+    uint32_t m_page_count;
     std::array<std::optional<mock_pma_entry>, PMA_MAX> m_pmas;
 
 public:
-    replay_multi_step_state_access(page_info *pages) : m_pages{pages} {
-        ;
+    replay_multi_step_state_access(page_info *pages, uint32_t page_count) : m_pages{pages}, m_page_count{page_count} {
+        relocate_all_tlb_vh_offset<TLB_CODE>();
+        relocate_all_tlb_vh_offset<TLB_READ>();
+        relocate_all_tlb_vh_offset<TLB_WRITE>();
+
     }
     replay_multi_step_state_access(const replay_multi_step_state_access &) = delete;
     replay_multi_step_state_access(replay_multi_step_state_access &&) = delete;
@@ -151,13 +163,66 @@ public:
     replay_multi_step_state_access &operator=(replay_multi_step_state_access &&) = delete;
     ~replay_multi_step_state_access() = default;
 
+    void finish() {
+        reset_all_tlb_vh_offset<TLB_CODE>();
+        reset_all_tlb_vh_offset<TLB_READ>();
+        reset_all_tlb_vh_offset<TLB_WRITE>();
+    }
+
 private:
     friend i_state_access<replay_multi_step_state_access, mock_pma_entry>;
 
+template <TLB_entry_type ETYPE>
+    void reset_all_tlb_vh_offset() {
+        for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
+            auto addr = tlb_get_entry_hot_abs_addr<ETYPE>(i);
+            auto page = addr & ~(PMA_PAGE_SIZE - 1);
+            auto *page_info = try_find_page(page);
+            if (page_info) {
+                auto offset = addr - page;
+                volatile tlb_hot_entry *tlbhe = reinterpret_cast<tlb_hot_entry *>(page_info->data + offset);
+                tlbhe->vh_offset = 0;
+                
+            }
+        }
+    }
+
+    template <TLB_entry_type ETYPE>
+    void relocate_all_tlb_vh_offset() {
+        for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
+            auto addr_hot = tlb_get_entry_hot_abs_addr<ETYPE>(i);
+            auto page_hot = addr_hot & ~(PMA_PAGE_SIZE - 1);
+            auto *page_info_hot = try_find_page(page_hot);
+            if (page_info_hot) {
+                auto offset_hot = addr_hot - page_hot;
+                volatile tlb_hot_entry *tlbhe = reinterpret_cast<tlb_hot_entry *>(page_info_hot->data + offset_hot);
+                assert(tlbhe->vh_offset == 0);
+                auto addr_cold = tlb_get_entry_cold_abs_addr<ETYPE>(i);
+                auto page_cold = addr_cold & ~(PMA_PAGE_SIZE - 1);
+                auto *page_info_cold = find_page(page_cold);
+                auto offset_cold = addr_cold - page_cold;
+                volatile tlb_cold_entry *tlbce = reinterpret_cast<tlb_cold_entry *>(page_info_cold->data + offset_cold);
+                auto *page_info_data = try_find_page(tlbce->paddr_page);
+                if (page_info_data) {
+                    tlbhe->vh_offset = cast_ptr_to_addr<uint64_t>(page_info_data->data) - tlbhe->vaddr_page;
+                }
+            }
+        }
+    }
+
+    page_info *try_find_page(uint64_t address) const {
+        for(size_t i=0; i < m_page_count; i++) {
+            if (m_pages[i].address == address) {
+                return &m_pages[i];
+            }
+        }
+        return nullptr;
+    }
+
     page_info *find_page(uint64_t address) const {
-        for (auto *p = m_pages; p; p = p->next) {
-            if (p->address == address) {
-                return p;
+        for (size_t i = 0; i < m_page_count; i++) {
+            if (m_pages[i].address == address) {
+                return &m_pages[i];
             }
         }
         __builtin_trap();
@@ -169,32 +234,32 @@ private:
         return const_cast<page_info *>(static_cast<const replay_multi_step_state_access *>(this)->find_page(address));
     }
 
+    void* get_raw_memory_pointer(uint64_t paddr, int size) const {
+        auto page = paddr & ~(PMA_PAGE_SIZE - 1);
+        auto offset = paddr - page;
+        auto end_page = (paddr + size - 1) & ~(PMA_PAGE_SIZE - 1);
+        if (end_page != page) {
+            __builtin_trap();
+            //throw std::runtime_error("get_raw_memory_pointer: paddr crosses page boundary");
+            abort(); // TODO
+        }
+        auto data = find_page(page);
+        auto *p = data->data + offset;
+        return p;
+    }
+
     template <typename T>
     T raw_read_memory(uint64_t paddr) const {
-        auto page = paddr & ~(PMA_PAGE_SIZE - 1);
-        auto data = find_page(page);
-        auto offset = paddr - page;
-        auto *p = data->data + offset;
-        auto *q = const_cast<T *>(reinterpret_cast<const T *>(p)); 
-        auto res =  *q;
-        return res;
+        auto size = sizeof(T);
+        volatile T *ptr = reinterpret_cast<T *>(get_raw_memory_pointer(paddr, size));
+        return *ptr;
     }
-
-    void raw_read_memory(uint64_t paddr, int size, char *dest) const {
-        for(int i = 0; i < size; i++) {
-            ((char*)dest)[i] = raw_read_memory<uint8_t>(paddr + i);
-        }
-    }
-
 
     template <typename T>
     void raw_write_memory(uint64_t paddr, T val) {
-        auto page = paddr & ~(PMA_PAGE_SIZE - 1);
-        auto data = find_page(page);
-        auto offset = paddr - page;
-        auto *p = data->data + offset;
-        auto *q = const_cast<T *>(reinterpret_cast<const T *>(p)); 
-        *q = val;
+        auto size = sizeof(T);
+        volatile T *ptr = reinterpret_cast<T *>(get_raw_memory_pointer(paddr, size));
+        *ptr = val;
     }
 
     void do_push_bracket(bracket_type type, const char *text) {
@@ -588,15 +653,13 @@ private:
     }
 
    template <typename T, typename U>
-    T do_aliased_unaligned_read(const void *host_ptr, uint64_t paddr) {
-        (void) host_ptr;
-        return raw_read_memory<T>(paddr);
+    T do_aliased_unaligned_read(const void *host_ptr) {
+        return raw_read_memory<T>(cast_ptr_to_addr<uint64_t>(host_ptr));
     } 
 
     template <typename T>
-    T do_aliased_aligned_read(const void *host_ptr, uint64_t paddr) {
-        (void) host_ptr;
-        return raw_read_memory<T>(paddr);
+    T do_aliased_aligned_read(const void *host_ptr) {
+        return raw_read_memory<T>(cast_ptr_to_addr<uint64_t>(host_ptr));
     }
 
     bool do_read_memory(uint64_t paddr, unsigned char *data, uint64_t length) {
@@ -703,35 +766,21 @@ private:
         start = istart & PMA_ISTART_START_MASK;
     }
 
-    tlb_hot_entry m_loxa;
-
     template <TLB_entry_type ETYPE>
     volatile tlb_hot_entry& do_get_tlb_hot_entry(uint64_t eidx) {
-        tlb_hot_entry res{};
         auto addr = tlb_get_entry_hot_abs_addr<ETYPE>(eidx);
         auto size = sizeof(tlb_hot_entry);
-        raw_read_memory(addr, size, (char*)&res);
-        m_loxa = res;
-        return m_loxa;
-
-        // Volatile is used, so the compiler does not optimize out, or do of order writes.
-        // volatile tlb_hot_entry *tlbe = reinterpret_cast<tlb_hot_entry *>(tlb_get_entry_hot_abs_addr<ETYPE>(eidx));
-        // return *tlbe;
+        volatile tlb_hot_entry *tlbe = reinterpret_cast<tlb_hot_entry *>(get_raw_memory_pointer(addr, size));
+        return *tlbe;
     }
 
-    tlb_cold_entry loxa_cold;
+
     template <TLB_entry_type ETYPE>
     volatile tlb_cold_entry& do_get_tlb_entry_cold(uint64_t eidx) {
         auto addr = tlb_get_entry_cold_abs_addr<ETYPE>(eidx);
         auto size = sizeof(tlb_cold_entry);
-        tlb_cold_entry res{};
-        raw_read_memory(addr, size, (char*)&res);
-        loxa_cold = res;
-        return loxa_cold;;
-        
-        // Volatile is used, so the compiler does not optimize out, or do of order writes.
-        // volatile tlb_cold_entry *tlbe = reinterpret_cast<tlb_cold_entry *>(tlb_get_entry_cold_abs_addr<ETYPE>(eidx));
-        // return *tlbe;
+        volatile tlb_cold_entry *tlbe = reinterpret_cast<tlb_cold_entry *>(get_raw_memory_pointer(addr, size));
+        return *tlbe;
     }
 
     template <TLB_entry_type ETYPE, typename T>
@@ -739,9 +788,7 @@ private:
         uint64_t eidx = tlb_get_entry_index(vaddr);
         const volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
         if (tlb_is_hit<T>(tlbhe.vaddr_page, vaddr)) {
-            uint64_t poffset = vaddr & PAGE_OFFSET_MASK;
-            const volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
-            *phptr = cast_addr_to_ptr<unsigned char *>(tlbce.paddr_page + poffset);
+            *phptr = cast_addr_to_ptr<unsigned char *>(tlbhe.vh_offset + vaddr);
             return true;
         }
         return false;
@@ -778,7 +825,6 @@ private:
         uint64_t eidx = tlb_get_entry_index(vaddr);
         volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
         volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
-        // Mark page that was on TLB as dirty so we know to update the Merkle tree
         if constexpr (ETYPE == TLB_WRITE) {
             if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
                 mock_pma_entry &pma = do_get_pma_entry(static_cast<int>(tlbce.pma_index));
@@ -787,14 +833,15 @@ private:
         }
         uint64_t vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
         uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+
+        auto *page_info = find_page(paddr_page);
+        auto *hpage = page_info->data;
+
         tlbhe.vaddr_page = vaddr_page;
-        // The paddr_must field must be written only after vaddr_page is written,
-        // because the uarch memory bridge reads vaddr_page to compute vh_offset when updating paddr_page.
+        tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - vaddr_page;
         tlbce.paddr_page = paddr_page;
         tlbce.pma_index = static_cast<uint64_t>(pma.get_index());
-        // Note that we can't write here the correct vh_offset value, because it depends in a host pointer,
-        // however the uarch memory bridge will take care of updating it.
-        return cast_addr_to_ptr<unsigned char*>(paddr_page);
+        return (unsigned char*)hpage;
     }
 
     template <TLB_entry_type ETYPE>

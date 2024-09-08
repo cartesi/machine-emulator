@@ -681,13 +681,13 @@ public:
     }
 
     template <typename T, typename U>
-    T aliased_unaligned_read(const void *host_ptr, uint64_t paddr) {
-        return derived().template do_aliased_unaligned_read<T, U>(host_ptr, paddr);
+    T aliased_unaligned_read(const void *host_ptr) {
+        return derived().template do_aliased_unaligned_read<T, U>(host_ptr);
     }
 
     template <typename T>
-    inline T aliased_aligned_read(const void *host_ptr, uint64_t paddr) {
-        return derived().template do_aliased_aligned_read<T>(host_ptr, paddr);
+    inline T aliased_aligned_read(const void *host_ptr) {
+        return derived().template do_aliased_aligned_read<T>(host_ptr);
     }
 
     /// \brief Writes a word to memory.

@@ -694,15 +694,13 @@ private:
     }
 
     template <typename T, typename U>
-    T do_aliased_unaligned_read(const void *host_ptr, uint64_t paddr) {
-        (void) host_ptr;
-        return raw_read_memory<T>(paddr);
+    T do_aliased_unaligned_read(const void *host_ptr) {
+        return cartesi::aliased_unaligned_read<T, U>(host_ptr);
     }
 
     template <typename T>
-    T do_aliased_aligned_read(const void *host_ptr, uint64_t paddr) {
-        (void) host_ptr;
-        return raw_read_memory<T>(paddr);
+    T do_aliased_aligned_read(const void *host_ptr) {
+        return cartesi::aliased_aligned_read<T>(host_ptr);
     }
 
     template <TLB_entry_type ETYPE, typename T>

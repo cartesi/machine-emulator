@@ -5495,7 +5495,7 @@ static FORCE_INLINE fetch_status fetch_insn(STATE_ACCESS &a, uint64_t &pc, uint3
     // If pc is pointing to the very last 2 bytes of a page, it's crossing a page boundary.
     if (unlikely(((~pc & PAGE_OFFSET_MASK) >> 1) == 0)) {
         // Here we are crossing page boundary, this is unlikely (1 in 2048 possible cases)
-        insn = a.template aliased_aligned_read<uint16_t>(hptr, pc);
+        insn = aliased_aligned_read<uint16_t>(hptr);
         // If not a compressed instruction, we must read 2 additional bytes from the next page.
         if (unlikely((insn & 3) == 3)) {
             // We have to perform a new address translation to read the next 2 bytes since we changed pages.
@@ -5507,7 +5507,7 @@ static FORCE_INLINE fetch_status fetch_insn(STATE_ACCESS &a, uint64_t &pc, uint3
             fetch_vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
             fetch_vh_offset = cast_ptr_to_addr<uint64_t>(hptr) - vaddr;
             // Produce the final 4-byte instruction
-            insn |= a.template aliased_aligned_read<uint16_t>(hptr, pc) << 16;
+            insn |= aliased_aligned_read<uint16_t>(hptr) << 16;
         }
         return fetch_status::success;
     }
@@ -5516,7 +5516,7 @@ static FORCE_INLINE fetch_status fetch_insn(STATE_ACCESS &a, uint64_t &pc, uint3
     // therefore we must perform a misaligned 4 byte read on a 2 byte aligned pointer.
     // In case pc holds a compressed instruction, insn will store 2 additional bytes,
     // but this is fine because later the instruction decoder will discard them.
-    insn = a.template aliased_unaligned_read<uint32_t, uint16_t>(hptr, pc);
+    insn = aliased_unaligned_read<uint32_t, uint16_t>(hptr);
     return fetch_status::success;
 }
 

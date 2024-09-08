@@ -42,8 +42,8 @@ CM_API void cm_jsonrpc_destroy_mgr(const cm_jsonrpc_mgr *mgr);
 /// \param runtime_config Machine runtime configuration. Must be pointer to valid object
 /// \param new_machine Receives the pointer to new remote machine instance
 /// \returns 0 for success, non zero code for error
-CM_API int cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const cm_machine_config *config,
-    const cm_machine_runtime_config *runtime_config, cm_machine **new_machine);
+CM_API int cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const char *config, const char *runtime_config,
+    cm_machine **new_machine);
 
 /// \brief Create remote machine instance from previously serialized directory
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
@@ -51,8 +51,8 @@ CM_API int cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const cm_machine
 /// \param runtime_config Machine runtime configuration. Must be pointer to valid object
 /// \param new_machine Receives the pointer to new remote machine instance
 /// \returns 0 for success, non zero code for error
-CM_API int cm_jsonrpc_load_machine(const cm_jsonrpc_mgr *mgr, const char *dir,
-    const cm_machine_runtime_config *runtime_config, cm_machine **new_machine);
+CM_API int cm_jsonrpc_load_machine(const cm_jsonrpc_mgr *mgr, const char *dir, const char *runtime_config,
+    cm_machine **new_machine);
 
 /// \brief Get remote machine instance that was previously created in the server
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
@@ -64,7 +64,7 @@ CM_API int cm_jsonrpc_get_machine(const cm_jsonrpc_mgr *mgr, cm_machine **new_ma
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
 /// \param config Receives the default configuration
 /// \returns 0 for success, non zero code for error
-CM_API int cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const cm_machine_config **config);
+CM_API int cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const char **config);
 
 /// \brief Checks the internal consistency of an access log
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object

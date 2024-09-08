@@ -441,48 +441,6 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_memory_rang
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, fork_result &value, const std::string &path = "params/");
 
-/// \brief Attempts to load an array from a field in a JSON object
-/// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
-/// \param j JSON object to load from
-/// \param key Key to load value from
-/// \param value Object to store value
-/// \param path Path to j
-template <typename K, typename T, size_t N>
-void ju_get_opt_array_like_field(const nlohmann::json &j, const K &key, std::array<T, N> &value,
-    const std::string &path = "params/") {
-    if (!contains(j, key)) {
-        return;
-    }
-    const auto &jarray = j[key];
-    if (!jarray.is_array()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not an array"s);
-    }
-    if (jarray.size() != N) {
-        throw std::invalid_argument(
-            "field \""s + path + to_string(key) + "\" should have "s + to_string(N) + " entries"s);
-    }
-    const auto new_path = path + to_string(key) + "/";
-    for (uint64_t i = 0; i < N; ++i) {
-        ju_get_field(jarray, i, value[i], new_path);
-    }
-}
-
-/// \brief Loads an array from a field in a JSON object
-/// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
-/// \param j JSON object to load from
-/// \param key Key to load value from
-/// \param value Object to store value
-/// \param path Path to j
-/// \detail Throws error if field is missing
-template <typename K, typename T, size_t N>
-void ju_get_array_like_field(const nlohmann::json &j, const K &key, std::array<T, N> &value,
-    const std::string &path = "params/") {
-    if (!contains(j, key)) {
-        throw std::invalid_argument("missing field \""s + path + to_string(key) + "\""s);
-    }
-    return ju_get_opt_array_like_field(j, key, value, path);
-}
-
 /// \brief Attempts to load a vector from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
@@ -762,6 +720,23 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &k
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, fork_result &value,
     const std::string &base = "params/");
+
+template <typename T>
+nlohmann::json to_json(const T &v) {
+    nlohmann::json j;
+    to_json(j, v);
+    return j;
+}
+
+template <typename T>
+T from_json(const char *s) {
+    T value{};
+    if (s) {
+        const nlohmann::json j = nlohmann::json{{"value", nlohmann::json::parse(s)}};
+        ju_get_field(j, "value"s, value, ""s);
+    }
+    return value;
+}
 
 } // namespace cartesi
 

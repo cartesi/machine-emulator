@@ -30,6 +30,7 @@
 #include <utility>
 
 #include "i-virtual-machine.h"
+#include "json-util.h"
 #include "machine-config.h"
 #include "machine.h"
 #include "os-features.h"
@@ -44,7 +45,7 @@ const char *cm_get_last_error_message() {
 }
 
 void cm_set_last_error_message(const std::string &err_msg) {
-    string_to_buf(last_err_msg, sizeof(last_err_msg), err_msg);
+    last_err_msg[err_msg.copy(last_err_msg, sizeof(last_err_msg) - 1)] = 0;
 }
 
 static char *copy_cstring(const char *str) {
@@ -55,6 +56,11 @@ static char *copy_cstring(const char *str) {
 }
 
 char *string_to_buf(char *dest, size_t maxlen, const std::string &src) {
+    using namespace std::string_literals;
+    if (src.length() + 1 > maxlen) {
+        throw std::runtime_error("cannot store a string of length "s + std::to_string(maxlen) +
+            " into a buffer of length "s + std::to_string(src.length() + 1));
+    }
     dest[src.copy(dest, maxlen - 1)] = 0;
     return dest;
 }
@@ -144,420 +150,6 @@ static const cartesi::i_virtual_machine *convert_from_c(const cm_machine *m) {
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return reinterpret_cast<const cartesi::i_virtual_machine *>(m);
-}
-
-// --------------------------------------------
-// Processor configuration conversion functions
-// --------------------------------------------
-static cartesi::processor_config convert_from_c(const cm_processor_config *c_config) {
-    cartesi::processor_config new_cpp_config{};
-    // Both C and C++ structs contain only aligned uint64_t values
-    // so it is safe to do copy
-    static_assert(sizeof(cm_processor_config) == sizeof(new_cpp_config));
-    memcpy(&new_cpp_config.x, c_config, sizeof(cm_processor_config));
-    return new_cpp_config;
-}
-
-static cm_processor_config convert_to_c(const cartesi::processor_config &cpp_config) {
-    cm_processor_config new_c_config{};
-    static_assert(sizeof(new_c_config) == sizeof(cpp_config));
-    memcpy(&new_c_config, &cpp_config.x, sizeof(cm_processor_config));
-    return new_c_config;
-}
-
-// --------------------------------------------
-// Ram configuration conversion functions
-// --------------------------------------------
-static cartesi::ram_config convert_from_c(const cm_ram_config *c_config) {
-    cartesi::ram_config new_cpp_ram_config{};
-    new_cpp_ram_config.length = c_config->length;
-    new_cpp_ram_config.image_filename = null_to_empty(c_config->image_filename);
-    return new_cpp_ram_config;
-}
-
-static cm_ram_config convert_to_c(const cartesi::ram_config &cpp_config) {
-    cm_ram_config new_c_ram_config{};
-    new_c_ram_config.length = cpp_config.length;
-    new_c_ram_config.image_filename = convert_to_c(cpp_config.image_filename);
-    return new_c_ram_config;
-}
-
-// --------------------------------------------
-// DTB configuration conversion functions
-// --------------------------------------------
-
-static cartesi::dtb_config convert_from_c(const cm_dtb_config *c_config) {
-    cartesi::dtb_config new_cpp_dtb_config{};
-    new_cpp_dtb_config.bootargs = null_to_empty(c_config->bootargs);
-    new_cpp_dtb_config.init = null_to_empty(c_config->init);
-    new_cpp_dtb_config.entrypoint = null_to_empty(c_config->entrypoint);
-    new_cpp_dtb_config.image_filename = null_to_empty(c_config->image_filename);
-    return new_cpp_dtb_config;
-}
-
-static cm_dtb_config convert_to_c(const cartesi::dtb_config &cpp_config) {
-    cm_dtb_config new_c_dtb_config{};
-    new_c_dtb_config.bootargs = convert_to_c(cpp_config.bootargs);
-    new_c_dtb_config.init = convert_to_c(cpp_config.init);
-    new_c_dtb_config.entrypoint = convert_to_c(cpp_config.entrypoint);
-    new_c_dtb_config.image_filename = convert_to_c(cpp_config.image_filename);
-    return new_c_dtb_config;
-}
-
-// ----------------------------------------------
-// Memory range configuration conversion functions
-// ----------------------------------------------
-static cartesi::memory_range_config convert_from_c(const cm_memory_range_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("invalid memory range configuration");
-    }
-    cartesi::memory_range_config new_cpp_memory_range_config{c_config->start, c_config->length, c_config->shared,
-        null_to_empty(c_config->image_filename)};
-    return new_cpp_memory_range_config;
-}
-
-static cm_memory_range_config convert_to_c(const cartesi::memory_range_config &cpp_config) {
-    cm_memory_range_config new_c_memory_range_config{};
-    new_c_memory_range_config.start = cpp_config.start;
-    new_c_memory_range_config.length = cpp_config.length;
-    new_c_memory_range_config.shared = cpp_config.shared;
-    new_c_memory_range_config.image_filename = convert_to_c(cpp_config.image_filename);
-    return new_c_memory_range_config;
-}
-
-// ----------------------------------------------
-// CMIO buffer configuration conversion functions
-// ----------------------------------------------
-static cartesi::cmio_buffer_config convert_from_c(const cm_cmio_buffer_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("invalid memory range configuration");
-    }
-    cartesi::cmio_buffer_config new_cpp_cmio_buffer_config{c_config->shared, null_to_empty(c_config->image_filename)};
-    return new_cpp_cmio_buffer_config;
-}
-
-static cm_cmio_buffer_config convert_to_c(const cartesi::cmio_buffer_config &cpp_config) {
-    cm_cmio_buffer_config new_c_cmio_buffer_config{};
-    new_c_cmio_buffer_config.shared = cpp_config.shared;
-    new_c_cmio_buffer_config.image_filename = convert_to_c(cpp_config.image_filename);
-    return new_c_cmio_buffer_config;
-}
-
-// ----------------------------------------------
-// VirtIO host forward configuration conversion functions
-// ----------------------------------------------
-static cartesi::virtio_hostfwd_config convert_from_c(const cm_virtio_hostfwd_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("invalid memory range configuration");
-    }
-    cartesi::virtio_hostfwd_config new_cpp_virtio_hostfwd_config{c_config->is_udp, c_config->host_ip,
-        c_config->guest_ip, c_config->host_port, c_config->guest_port};
-    return new_cpp_virtio_hostfwd_config;
-}
-
-static cm_virtio_hostfwd_config convert_to_c(const cartesi::virtio_hostfwd_config &cpp_config) {
-    cm_virtio_hostfwd_config new_c_virtio_hostfwd_config{};
-    new_c_virtio_hostfwd_config.is_udp = cpp_config.is_udp;
-    new_c_virtio_hostfwd_config.host_ip = cpp_config.host_ip;
-    new_c_virtio_hostfwd_config.guest_ip = cpp_config.guest_ip;
-    new_c_virtio_hostfwd_config.host_port = cpp_config.host_port;
-    new_c_virtio_hostfwd_config.guest_port = cpp_config.guest_port;
-    return new_c_virtio_hostfwd_config;
-}
-
-// ----------------------------------------------
-// VirtIO device configuration conversion functions
-// ----------------------------------------------
-static cartesi::virtio_device_config convert_from_c(const cm_virtio_device_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("invalid virtio device configuration");
-    }
-    switch (c_config->type) {
-        case CM_VIRTIO_DEVICE_CONSOLE:
-            return cartesi::virtio_console_config{};
-        case CM_VIRTIO_DEVICE_P9FS: {
-            cartesi::virtio_p9fs_config new_cpp_virtio_device_config{};
-            new_cpp_virtio_device_config.tag = null_to_empty(c_config->device.p9fs.tag);
-            new_cpp_virtio_device_config.host_directory = null_to_empty(c_config->device.p9fs.host_directory);
-            return new_cpp_virtio_device_config;
-        }
-        case CM_VIRTIO_DEVICE_NET_USER: {
-            cartesi::virtio_net_user_config new_cpp_virtio_device_config{};
-            for (size_t i = 0; i < c_config->device.net_user.hostfwd.count; ++i) {
-                new_cpp_virtio_device_config.hostfwd.push_back(
-                    convert_from_c(&(c_config->device.net_user.hostfwd.entry[i])));
-            }
-            return new_cpp_virtio_device_config;
-        }
-        case CM_VIRTIO_DEVICE_NET_TUNTAP: {
-            cartesi::virtio_net_tuntap_config new_cpp_virtio_device_config{};
-            new_cpp_virtio_device_config.iface = null_to_empty(c_config->device.net_tuntap.iface);
-            return new_cpp_virtio_device_config;
-        }
-        default:
-            throw std::invalid_argument("invalid virtio device configuration");
-    }
-}
-
-static cm_virtio_device_config convert_to_c(const cartesi::virtio_device_config &cpp_config) {
-    return std::visit(
-        [](const auto &cpp_virtio_device_config) -> cm_virtio_device_config {
-            using T = std::decay_t<decltype(cpp_virtio_device_config)>;
-            cm_virtio_device_config new_c_virtio_device_config{};
-            if constexpr (std::is_same_v<T, cartesi::virtio_console_config>) {
-                new_c_virtio_device_config.type = CM_VIRTIO_DEVICE_CONSOLE;
-            } else if constexpr (std::is_same_v<T, cartesi::virtio_p9fs_config>) {
-                new_c_virtio_device_config.type = CM_VIRTIO_DEVICE_P9FS;
-                new_c_virtio_device_config.device.p9fs.tag = convert_to_c(cpp_virtio_device_config.tag);
-                new_c_virtio_device_config.device.p9fs.host_directory =
-                    convert_to_c(cpp_virtio_device_config.host_directory);
-            } else if constexpr (std::is_same_v<T, cartesi::virtio_net_user_config>) {
-                cm_virtio_hostfwd_config_array new_c_hostfdw;
-                new_c_hostfdw.count = cpp_virtio_device_config.hostfwd.size();
-                new_c_hostfdw.entry = new cm_virtio_hostfwd_config[new_c_hostfdw.count];
-                memset(new_c_hostfdw.entry, 0, sizeof(cm_virtio_hostfwd_config) * new_c_hostfdw.count);
-                for (size_t i = 0; i < new_c_hostfdw.count; ++i) {
-                    new_c_hostfdw.entry[i] = convert_to_c(cpp_virtio_device_config.hostfwd[i]);
-                }
-
-                new_c_virtio_device_config.type = CM_VIRTIO_DEVICE_NET_USER;
-                new_c_virtio_device_config.device.net_user.hostfwd = new_c_hostfdw;
-            } else if constexpr (std::is_same_v<T, cartesi::virtio_net_tuntap_config>) {
-                new_c_virtio_device_config.type = CM_VIRTIO_DEVICE_NET_TUNTAP;
-                new_c_virtio_device_config.device.net_tuntap.iface = convert_to_c(cpp_virtio_device_config.iface);
-            } else {
-                throw std::invalid_argument("invalid virtio device configuration");
-            }
-            return new_c_virtio_device_config;
-        },
-        cpp_config);
-}
-
-// ----------------------------------------------
-// TLB configuration conversion functions
-// ----------------------------------------------
-static cartesi::tlb_config convert_from_c(const cm_tlb_config *c_config) {
-    cartesi::tlb_config new_cpp_config{};
-    new_cpp_config.image_filename = null_to_empty(c_config->image_filename);
-    return new_cpp_config;
-}
-
-static cm_tlb_config convert_to_c(const cartesi::tlb_config &cpp_config) {
-    cm_tlb_config new_c_config{};
-    new_c_config.image_filename = convert_to_c(cpp_config.image_filename);
-    return new_c_config;
-}
-
-// ----------------------------------------------
-// CLINT configuration conversion functions
-// ----------------------------------------------
-static cartesi::clint_config convert_from_c(const cm_clint_config *c_config) {
-    cartesi::clint_config new_cpp_clint_config{};
-    new_cpp_clint_config.mtimecmp = c_config->mtimecmp;
-    return new_cpp_clint_config;
-}
-
-static cm_clint_config convert_to_c(const cartesi::clint_config &cpp_config) {
-    cm_clint_config new_c_clint_config{};
-    memset(&new_c_clint_config, 0, sizeof(cm_clint_config));
-    new_c_clint_config.mtimecmp = cpp_config.mtimecmp;
-    return new_c_clint_config;
-}
-
-// ----------------------------------------------
-// PLIC configuration conversion functions
-// ----------------------------------------------
-static cartesi::plic_config convert_from_c(const cm_plic_config *c_config) {
-    cartesi::plic_config new_cpp_plic_config{};
-    new_cpp_plic_config.girqpend = c_config->girqpend;
-    new_cpp_plic_config.girqsrvd = c_config->girqsrvd;
-    return new_cpp_plic_config;
-}
-
-static cm_plic_config convert_to_c(const cartesi::plic_config &cpp_config) {
-    cm_plic_config new_c_plic_config{};
-    memset(&new_c_plic_config, 0, sizeof(cm_plic_config));
-    new_c_plic_config.girqpend = cpp_config.girqpend;
-    new_c_plic_config.girqsrvd = cpp_config.girqsrvd;
-    return new_c_plic_config;
-}
-
-// ----------------------------------------------
-// HTIF configuration conversion functions
-// ----------------------------------------------
-static cartesi::htif_config convert_from_c(const cm_htif_config *c_config) {
-    cartesi::htif_config new_cpp_htif_config{};
-    new_cpp_htif_config.fromhost = c_config->fromhost;
-    new_cpp_htif_config.tohost = c_config->tohost;
-    new_cpp_htif_config.console_getchar = c_config->console_getchar;
-    new_cpp_htif_config.yield_manual = c_config->yield_manual;
-    new_cpp_htif_config.yield_automatic = c_config->yield_automatic;
-
-    return new_cpp_htif_config;
-}
-
-static cm_htif_config convert_to_c(const cartesi::htif_config &cpp_config) {
-    cm_htif_config new_c_htif_config{};
-    memset(&new_c_htif_config, 0, sizeof(cm_htif_config));
-    new_c_htif_config.fromhost = cpp_config.fromhost;
-    new_c_htif_config.tohost = cpp_config.tohost;
-    new_c_htif_config.console_getchar = cpp_config.console_getchar;
-    new_c_htif_config.yield_manual = cpp_config.yield_manual;
-    new_c_htif_config.yield_automatic = cpp_config.yield_automatic;
-    return new_c_htif_config;
-}
-
-// --------------------------------------------
-// cmio configuration conversion functions
-// --------------------------------------------
-static cartesi::cmio_config convert_from_c(const cm_cmio_config *c_config) {
-    cartesi::cmio_config new_cpp_cmio_config;
-    new_cpp_cmio_config.rx_buffer = convert_from_c(&c_config->rx_buffer);
-    new_cpp_cmio_config.tx_buffer = convert_from_c(&c_config->tx_buffer);
-    return new_cpp_cmio_config;
-}
-
-static cm_cmio_config convert_to_c(const cartesi::cmio_config &cpp_config) {
-    cm_cmio_config new_c_cmio_config{};
-    new_c_cmio_config.rx_buffer = convert_to_c(cpp_config.rx_buffer);
-    new_c_cmio_config.tx_buffer = convert_to_c(cpp_config.tx_buffer);
-    return new_c_cmio_config;
-}
-
-// --------------------------------------------
-// Microarchitecture configuration conversion functions
-// --------------------------------------------
-
-static cartesi::uarch_ram_config convert_from_c(const cm_uarch_ram_config *c_config) {
-    cartesi::uarch_ram_config new_cpp_uarch_ram_config{};
-    new_cpp_uarch_ram_config.image_filename = null_to_empty(c_config->image_filename);
-    return new_cpp_uarch_ram_config;
-}
-
-static cm_uarch_ram_config convert_to_c(const cartesi::uarch_ram_config &cpp_config) {
-    cm_uarch_ram_config new_c_uarch_ram_config{};
-    new_c_uarch_ram_config.image_filename = convert_to_c(cpp_config.image_filename);
-    return new_c_uarch_ram_config;
-}
-
-static cartesi::uarch_processor_config convert_from_c(const cm_uarch_processor_config *c_config) {
-    cartesi::uarch_processor_config new_cpp_config{};
-    new_cpp_config.pc = c_config->pc;
-    new_cpp_config.cycle = c_config->cycle;
-    new_cpp_config.halt_flag = c_config->halt_flag;
-    for (size_t i = 0; i < CM_MACHINE_UARCH_X_REG_COUNT; i++) {
-        new_cpp_config.x[i] = c_config->x[i];
-    }
-    return new_cpp_config;
-}
-
-static cm_uarch_processor_config convert_to_c(const cartesi::uarch_processor_config &cpp_config) {
-    cm_uarch_processor_config new_c_config{};
-    new_c_config.pc = cpp_config.pc;
-    new_c_config.cycle = cpp_config.cycle;
-    new_c_config.halt_flag = cpp_config.halt_flag;
-    for (size_t i = 0; i < CM_MACHINE_UARCH_X_REG_COUNT; i++) {
-        new_c_config.x[i] = cpp_config.x[i];
-    }
-    return new_c_config;
-}
-
-static cartesi::uarch_config convert_from_c(const cm_uarch_config *c_config) {
-    cartesi::uarch_config new_cpp_uarch_config{};
-    new_cpp_uarch_config.processor = convert_from_c(&c_config->processor);
-    new_cpp_uarch_config.ram = convert_from_c(&c_config->ram);
-    return new_cpp_uarch_config;
-}
-
-static cm_uarch_config convert_to_c(const cartesi::uarch_config &cpp_config) {
-    cm_uarch_config new_c_uarch_config{};
-    new_c_uarch_config.processor = convert_to_c(cpp_config.processor);
-    new_c_uarch_config.ram = convert_to_c(cpp_config.ram);
-    return new_c_uarch_config;
-}
-
-// ----------------------------------------------
-// Runtime configuration conversion functions
-// ----------------------------------------------
-cartesi::machine_runtime_config convert_from_c(const cm_machine_runtime_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("invalid machine runtime configuration");
-    }
-    cartesi::machine_runtime_config new_cpp_machine_runtime_config{};
-    new_cpp_machine_runtime_config.concurrency =
-        cartesi::concurrency_runtime_config{c_config->concurrency.update_merkle_tree};
-    new_cpp_machine_runtime_config.htif = cartesi::htif_runtime_config{c_config->htif.no_console_putchar};
-    new_cpp_machine_runtime_config.skip_root_hash_check = c_config->skip_root_hash_check;
-    new_cpp_machine_runtime_config.skip_root_hash_store = c_config->skip_root_hash_store;
-    new_cpp_machine_runtime_config.skip_version_check = c_config->skip_version_check;
-    new_cpp_machine_runtime_config.soft_yield = c_config->soft_yield;
-    return new_cpp_machine_runtime_config;
-}
-
-// ----------------------------------------------
-// Machine configuration conversion functions
-// ----------------------------------------------
-cartesi::machine_config convert_from_c(const cm_machine_config *c_config) {
-    if (c_config == nullptr) {
-        throw std::invalid_argument("invalid machine configuration");
-    }
-    cartesi::machine_config new_cpp_machine_config{};
-    new_cpp_machine_config.processor = convert_from_c(&c_config->processor);
-    new_cpp_machine_config.ram = convert_from_c(&c_config->ram);
-    new_cpp_machine_config.dtb = convert_from_c(&c_config->dtb);
-    new_cpp_machine_config.tlb = convert_from_c(&c_config->tlb);
-    new_cpp_machine_config.clint = convert_from_c(&c_config->clint);
-    new_cpp_machine_config.plic = convert_from_c(&c_config->plic);
-    new_cpp_machine_config.htif = convert_from_c(&c_config->htif);
-    new_cpp_machine_config.uarch = convert_from_c(&c_config->uarch);
-    new_cpp_machine_config.cmio = convert_from_c(&c_config->cmio);
-
-    for (size_t i = 0; i < c_config->flash_drive.count; ++i) {
-        new_cpp_machine_config.flash_drive.push_back(convert_from_c(&(c_config->flash_drive.entry[i])));
-    }
-
-    for (size_t i = 0; i < c_config->virtio.count; ++i) {
-        new_cpp_machine_config.virtio.push_back(convert_from_c(&(c_config->virtio.entry[i])));
-    }
-
-    return new_cpp_machine_config;
-}
-
-cm_memory_range_config_array convert_to_c(const cartesi::flash_drive_configs &flash_drive) {
-    cm_memory_range_config_array new_flash_drive;
-    new_flash_drive.count = flash_drive.size();
-    new_flash_drive.entry = new cm_memory_range_config[flash_drive.size()];
-    memset(new_flash_drive.entry, 0, sizeof(cm_memory_range_config) * new_flash_drive.count);
-    for (size_t i = 0; i < new_flash_drive.count; ++i) {
-        new_flash_drive.entry[i] = convert_to_c(flash_drive[i]);
-    }
-    return new_flash_drive;
-}
-
-cm_virtio_config_array convert_to_c(const cartesi::virtio_configs &virtio) {
-    cm_virtio_config_array new_virtio;
-    new_virtio.count = virtio.size();
-    new_virtio.entry = new cm_virtio_device_config[virtio.size()]{};
-    for (size_t i = 0; i < new_virtio.count; ++i) {
-        new_virtio.entry[i] = convert_to_c(virtio[i]);
-    }
-    return new_virtio;
-}
-
-cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config) {
-    auto *new_machine_config = new cm_machine_config{};
-    new_machine_config->processor = convert_to_c(cpp_config.processor);
-    new_machine_config->ram = convert_to_c(cpp_config.ram);
-    new_machine_config->dtb = convert_to_c(cpp_config.dtb);
-    new_machine_config->flash_drive = convert_to_c(cpp_config.flash_drive);
-    new_machine_config->virtio = convert_to_c(cpp_config.virtio);
-    new_machine_config->tlb = convert_to_c(cpp_config.tlb);
-    new_machine_config->clint = convert_to_c(cpp_config.clint);
-    new_machine_config->plic = convert_to_c(cpp_config.plic);
-    new_machine_config->htif = convert_to_c(cpp_config.htif);
-    new_machine_config->uarch = convert_to_c(cpp_config.uarch);
-    new_machine_config->cmio = convert_to_c(cpp_config.cmio);
-    return new_machine_config;
 }
 
 // ----------------------------------------------
@@ -869,55 +461,6 @@ cm_memory_range_descr_array *convert_to_c(const cartesi::machine_memory_range_de
 // -----------------------------------------------------
 // Public API functions for generation of default configs
 // -----------------------------------------------------
-const cm_machine_config *cm_new_default_machine_config(void) try {
-    cartesi::machine_config cpp_config = cartesi::machine::get_default_config();
-    return convert_to_c(cpp_config);
-} catch (...) {
-    return nullptr;
-}
-
-void cm_delete_machine_config(const cm_machine_config *config) {
-    if (config == nullptr) {
-        return;
-    }
-
-    for (size_t i = 0; i < config->flash_drive.count; ++i) {
-        delete[] config->flash_drive.entry[i].image_filename;
-    }
-    delete[] config->flash_drive.entry;
-
-    for (size_t i = 0; i < config->virtio.count; ++i) {
-        const cm_virtio_device_config &entry = config->virtio.entry[i];
-        switch (entry.type) {
-            case CM_VIRTIO_DEVICE_NET_USER:
-                delete[] entry.device.net_user.hostfwd.entry;
-                break;
-            case CM_VIRTIO_DEVICE_P9FS:
-                delete[] entry.device.p9fs.tag;
-                delete[] entry.device.p9fs.host_directory;
-                break;
-            case CM_VIRTIO_DEVICE_NET_TUNTAP:
-                delete[] entry.device.net_tuntap.iface;
-                break;
-            default:
-                break;
-        }
-    }
-    delete[] config->virtio.entry;
-
-    delete[] config->dtb.image_filename;
-    delete[] config->dtb.bootargs;
-    delete[] config->dtb.init;
-    delete[] config->dtb.entrypoint;
-    delete[] config->ram.image_filename;
-    delete[] config->tlb.image_filename;
-    delete[] config->cmio.rx_buffer.image_filename;
-    delete[] config->cmio.tx_buffer.image_filename;
-    delete[] config->uarch.ram.image_filename;
-
-    delete config;
-}
-
 static inline cartesi::i_virtual_machine *create_virtual_machine(const cartesi::machine_config &c,
     const cartesi::machine_runtime_config &r) {
     return new cartesi::virtual_machine(c, r);
@@ -928,13 +471,15 @@ static inline cartesi::i_virtual_machine *load_virtual_machine(const char *dir,
     return new cartesi::virtual_machine(null_to_empty(dir), r);
 }
 
-int cm_create(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
-    cm_machine **new_machine) try {
+int cm_create(const char *config, const char *runtime_config, cm_machine **new_machine) try {
+    if (config == nullptr) {
+        throw std::invalid_argument("invalid machine configuration");
+    }
     if (new_machine == nullptr) {
         throw std::invalid_argument("invalid new machine output");
     }
-    const cartesi::machine_config c = convert_from_c(config);
-    const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
+    const auto c = cartesi::from_json<cartesi::machine_config>(config);
+    const auto r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     *new_machine = reinterpret_cast<cm_machine *>(create_virtual_machine(c, r));
     return cm_result_success();
@@ -942,11 +487,11 @@ int cm_create(const cm_machine_config *config, const cm_machine_runtime_config *
     return cm_result_failure();
 }
 
-int cm_load(const char *dir, const cm_machine_runtime_config *runtime_config, cm_machine **new_machine) try {
+int cm_load(const char *dir, const char *runtime_config, cm_machine **new_machine) try {
     if (new_machine == nullptr) {
         throw std::invalid_argument("invalid new machine output");
     }
-    const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
+    const auto r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     *new_machine = reinterpret_cast<cm_machine *>(load_virtual_machine(dir, r));
     return cm_result_success();
@@ -1389,27 +934,28 @@ int cm_verify_dirty_page_maps(const cm_machine *m, bool *result) try {
     return cm_result_failure();
 }
 
-int cm_get_initial_config(const cm_machine *m, const cm_machine_config **config) try {
+int cm_get_initial_config(const cm_machine *m, const char **config) try {
     if (config == nullptr) {
         throw std::invalid_argument("invalid config output");
     }
     const auto *cpp_machine = convert_from_c(m);
-    cartesi::machine_config cpp_config = cpp_machine->get_initial_config();
-    *config = convert_to_c(cpp_config);
+    const cartesi::machine_config cpp_config = cpp_machine->get_initial_config();
+    static THREAD_LOCAL char config_buf[CM_MAX_CONFIG_LENGTH];
+    *config = string_to_buf(config_buf, sizeof(config_buf), cartesi::to_json(cpp_config).dump());
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
 }
 
-int cm_get_default_config(const cm_machine_config **config) try {
-    if (config == nullptr) {
-        throw std::invalid_argument("invalid config output");
-    }
+const char *cm_get_default_config() try {
     const cartesi::machine_config cpp_config = cartesi::machine::get_default_config();
-    *config = convert_to_c(cpp_config);
-    return cm_result_success();
+    static THREAD_LOCAL char config_buf[CM_MAX_CONFIG_LENGTH];
+    const char *config = string_to_buf(config_buf, sizeof(config_buf), cartesi::to_json(cpp_config).dump());
+    cm_result_success();
+    return config;
 } catch (...) {
-    return cm_result_failure();
+    cm_result_failure();
+    return nullptr;
 }
 
 int cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,
@@ -1424,44 +970,6 @@ int cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
-}
-
-void cm_delete_memory_range_config(const cm_memory_range_config *config) {
-    if (config == nullptr) {
-        return;
-    }
-    delete[] config->image_filename;
-    delete config;
-}
-
-void cm_delete_cmio_buffer_config(const cm_cmio_buffer_config *config) {
-    if (config == nullptr) {
-        return;
-    }
-    delete[] config->image_filename;
-    delete config;
-}
-
-void cm_delete_machine_runtime_config(const cm_machine_runtime_config *config) {
-    if (config == nullptr) {
-        return;
-    }
-    delete config;
-}
-
-void cm_delete_uarch_ram_config(const cm_uarch_ram_config *config) {
-    if (config == nullptr) {
-        return;
-    }
-    delete[] config->image_filename;
-    delete config;
-}
-
-void cm_delete_uarch_config(const cm_uarch_config *config) {
-    if (config == nullptr) {
-        return;
-    }
-    delete config;
 }
 
 int cm_destroy(cm_machine *m) try {

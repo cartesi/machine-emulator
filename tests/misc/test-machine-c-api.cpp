@@ -54,10 +54,6 @@
 // NOLINTNEXTLINE
 #define BOOST_FIXTURE_TEST_CASE_NOLINT(...) BOOST_FIXTURE_TEST_CASE(__VA_ARGS__)
 
-BOOST_AUTO_TEST_CASE_NOLINT(delete_machine_config_null_test) {
-    BOOST_CHECK_NO_THROW(cm_delete_machine_config(nullptr));
-}
-
 BOOST_AUTO_TEST_CASE_NOLINT(delete_access_log_null_test) {
     BOOST_CHECK_NO_THROW(cm_delete_access_log(nullptr));
 }
@@ -70,33 +66,19 @@ BOOST_AUTO_TEST_CASE_NOLINT(delete_proof_null_test) {
     BOOST_CHECK_NO_THROW(cm_delete_merkle_tree_proof(nullptr));
 }
 
-BOOST_AUTO_TEST_CASE_NOLINT(new_default_machine_config_basic_test) {
-    const cm_machine_config *config = cm_new_default_machine_config();
-    BOOST_TEST_CHECK(config != nullptr);
-    cm_delete_machine_config(config);
-}
-
-BOOST_AUTO_TEST_CASE_NOLINT(get_default_machine_config_null_output_test) {
-    int error_code = cm_get_default_config(nullptr);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
 BOOST_AUTO_TEST_CASE_NOLINT(get_default_machine_config_basic_test) {
-    const cm_machine_config *config{};
-    int error_code = cm_get_default_config(&config);
+    const char *config = cm_get_default_config();
     BOOST_TEST_CHECK(config != nullptr);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    cm_delete_machine_config(config);
 }
 
 class default_machine_fixture {
 public:
-    default_machine_fixture() : _default_machine_config(cm_new_default_machine_config()) {}
-
-    ~default_machine_fixture() {
-        cm_delete_machine_config(_default_machine_config);
+    default_machine_fixture() {
+        _default_machine_config = cm_get_default_config();
     }
+
+    ~default_machine_fixture() {}
 
     default_machine_fixture(const default_machine_fixture &other) = delete;
     default_machine_fixture(default_machine_fixture &&other) noexcept = delete;
@@ -104,13 +86,12 @@ public:
     default_machine_fixture &operator=(default_machine_fixture &&other) noexcept = delete;
 
 protected:
-    cm_machine_runtime_config _runtime_config{};
     cm_machine *_machine{};
-    const cm_machine_config *_default_machine_config;
+    const char *_default_machine_config{};
 };
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_unknown_dir_test, default_machine_fixture) {
-    int error_code = cm_load("/unknown_dir", &_runtime_config, &_machine);
+    int error_code = cm_load("/unknown_dir", nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
 
     std::string result = cm_get_last_error_message();
@@ -118,7 +99,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_unknown_dir_test, default_machine_fi
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_path_test, default_machine_fixture) {
-    int error_code = cm_load(nullptr, &_runtime_config, &_machine);
+    int error_code = cm_load(nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
 
     std::string result = cm_get_last_error_message();
@@ -126,7 +107,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_path_test, default_machine_fixt
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_config_test, default_machine_fixture) {
-    int error_code = cm_create(nullptr, &_runtime_config, &_machine);
+    int error_code = cm_create(nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
     std::string origin("invalid machine configuration");
@@ -136,44 +117,21 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_config_test, default_machine_
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_rt_config_test, default_machine_fixture) {
     int error_code = cm_create(_default_machine_config, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-    std::string result = cm_get_last_error_message();
-    std::string origin("invalid machine runtime configuration");
-    BOOST_CHECK_EQUAL(origin, result);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_error_placeholder_test, default_machine_fixture) {
-    int error_code = cm_create(_default_machine_config, nullptr, &_machine);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string("RAM length cannot be zero"));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_default_machine_test, default_machine_fixture) {
-    int error_code = cm_create(_default_machine_config, &_runtime_config, &_machine);
+    int error_code = cm_create(_default_machine_config, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-
-    std::string result = cm_get_last_error_message();
-    std::string origin("RAM length cannot be zero");
-    BOOST_CHECK_EQUAL(origin, result);
+    BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string("RAM length cannot be zero"));
 }
-
-namespace {
-char *new_cstr(const char *str) {
-    auto size = strlen(str) + 1;
-    auto *copy = new char[size];
-    strncpy(copy, str, size);
-    return copy;
-}
-} // namespace
 
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class incomplete_machine_fixture : public default_machine_fixture {
 public:
     incomplete_machine_fixture() : _machine_config{} {
-        _clone_machine_config(_default_machine_config, &_machine_config);
-        _machine_config.ram.length = 1 << 20;
-    }
-
-    ~incomplete_machine_fixture() {
-        _cleanup_machine_config(&_machine_config);
+        _machine_config = nlohmann::json::parse(cm_get_default_config());
+        _machine_config["ram"]["length"] = 1 << 20;
     }
 
     incomplete_machine_fixture(const incomplete_machine_fixture &other) = delete;
@@ -182,81 +140,11 @@ public:
     incomplete_machine_fixture &operator=(incomplete_machine_fixture &&other) noexcept = delete;
 
 protected:
-    cm_machine_config _machine_config;
-
-    static void _clone_machine_config(const cm_machine_config *source, cm_machine_config *target) {
-        target->processor = source->processor;
-        target->ram.length = source->ram.length;
-        target->ram.image_filename = new_cstr(source->ram.image_filename);
-
-        target->dtb.bootargs = new_cstr(source->dtb.bootargs);
-        target->dtb.init = new_cstr(source->dtb.init);
-        target->dtb.entrypoint = new_cstr(source->dtb.entrypoint);
-        target->dtb.image_filename = new_cstr(source->dtb.image_filename);
-
-        target->flash_drive.count = source->flash_drive.count;
-        target->flash_drive.entry = new cm_memory_range_config[source->flash_drive.count]{};
-        for (size_t i = 0; i < target->flash_drive.count; ++i) {
-            target->flash_drive.entry[i] = source->flash_drive.entry[i];
-            target->flash_drive.entry[i].image_filename = new_cstr(source->flash_drive.entry[i].image_filename);
-        }
-
-        target->tlb.image_filename = new_cstr(source->tlb.image_filename);
-        target->clint = source->clint;
-        target->plic = source->plic;
-        target->htif = source->htif;
-        target->cmio = source->cmio;
-
-        target->uarch.processor = source->uarch.processor;
-        target->uarch.ram.image_filename = new_cstr(source->uarch.ram.image_filename);
-    }
-
-    static void _cleanup_machine_config(cm_machine_config *config) {
-        for (size_t i = 0; i < config->flash_drive.count; ++i) {
-            delete[] config->flash_drive.entry[i].image_filename;
-        }
-        delete[] config->tlb.image_filename;
-        delete[] config->flash_drive.entry;
-        delete[] config->dtb.image_filename;
-        delete[] config->dtb.bootargs;
-        delete[] config->dtb.init;
-        delete[] config->dtb.entrypoint;
-        delete[] config->ram.image_filename;
-        delete[] config->uarch.ram.image_filename;
-    }
-
-    void _setup_flash(std::list<cm_memory_range_config> &&config_list) {
-        std::list<cm_memory_range_config> configs = std::move(config_list);
-        _machine_config.flash_drive.count = configs.size();
-        delete[] _machine_config.flash_drive.entry;
-        _machine_config.flash_drive.entry = new cm_memory_range_config[configs.size()];
-
-        for (auto [cfg_it, i] = std::tuple{configs.begin(), 0}; cfg_it != configs.end(); ++cfg_it, ++i) {
-            std::ofstream flash_stream(cfg_it->image_filename);
-            flash_stream << "aaaa";
-            flash_stream.close();
-            std::filesystem::resize_file(cfg_it->image_filename, cfg_it->length);
-
-            _machine_config.flash_drive.entry[i].start = cfg_it->start;
-            _machine_config.flash_drive.entry[i].length = cfg_it->length;
-            _machine_config.flash_drive.entry[i].shared = cfg_it->shared;
-            _machine_config.flash_drive.entry[i].image_filename = new_cstr(cfg_it->image_filename);
-        }
-    }
-
-    void _setup_flash(const std::string &flash_path) {
-        cm_memory_range_config flash_cfg = {0x80000000000000, 0x3c00000, true, flash_path.c_str()};
-        _setup_flash({flash_cfg});
-    }
-
-    void _set_uarch_ram_image(const std::string &image_name) {
-        delete[] _machine_config.uarch.ram.image_filename;
-        _machine_config.uarch.ram.image_filename = new_cstr(image_name.c_str());
-    }
+    nlohmann::json _machine_config{};
 };
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_machine_test, incomplete_machine_fixture) {
-    int error_code = cm_create(&_machine_config, &_runtime_config, nullptr);
+    int error_code = cm_create(_machine_config.dump().c_str(), nullptr, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -264,31 +152,13 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_machine_test, incomplete_mach
     BOOST_CHECK_EQUAL(origin, result);
 }
 
-class machine_flash_fixture : public incomplete_machine_fixture {
-public:
-    machine_flash_fixture() {
-        cm_memory_range_config flash1_cfg = {0x80000000000000, 0x3c00000, true, _flash1_path.c_str()};
-        cm_memory_range_config flash2_cfg = {0x7ffffffffff000, 0x2000, true, _flash2_path.c_str()};
-        _setup_flash({flash1_cfg, flash2_cfg});
-    }
-
-    ~machine_flash_fixture() {
-        std::filesystem::remove(_flash1_path);
-        std::filesystem::remove(_flash2_path);
-    }
-
-    machine_flash_fixture(const machine_flash_fixture &other) = delete;
-    machine_flash_fixture(machine_flash_fixture &&other) noexcept = delete;
-    machine_flash_fixture &operator=(const machine_flash_fixture &other) = delete;
-    machine_flash_fixture &operator=(machine_flash_fixture &&other) noexcept = delete;
-
-private:
-    const std::string _flash1_path = "/tmp/flash1.bin";
-    const std::string _flash2_path = "/tmp/flash2.bin";
-};
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, machine_flash_fixture) {
-    int error_code = cm_create(&_machine_config, &_runtime_config, &_machine);
+BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, incomplete_machine_fixture) {
+    _machine_config["flash_drive"] =
+        nlohmann::json{nlohmann::json{nlohmann::json{"start", 0x80000000000000}, nlohmann::json{"length", 0x3c00000},
+                           nlohmann::json{"shared", true}},
+            nlohmann::json{nlohmann::json{"start", 0x7ffffffffff000}, nlohmann::json{"length", 0x2000},
+                nlohmann::json{"shared", true}}};
+    int error_code = cm_create(_machine_config.dump().c_str(), nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -299,26 +169,20 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, machin
 class machine_flash_simple_fixture : public incomplete_machine_fixture {
 public:
     machine_flash_simple_fixture() {
-        _setup_flash(_flash_path);
-    }
-
-    ~machine_flash_simple_fixture() {
-        std::filesystem::remove(_flash_path);
+        _machine_config["flash_drive"] = nlohmann::json{nlohmann::json{nlohmann::json{"start", 0x80000000000000},
+            nlohmann::json{"length", 0x3c00000}, nlohmann::json{"shared", true}, nlohmann::json{"image_filename", ""}}};
     }
 
     machine_flash_simple_fixture(const machine_flash_simple_fixture &other) = delete;
     machine_flash_simple_fixture(machine_flash_simple_fixture &&other) noexcept = delete;
     machine_flash_simple_fixture &operator=(const machine_flash_simple_fixture &other) = delete;
     machine_flash_simple_fixture &operator=(machine_flash_simple_fixture &&other) noexcept = delete;
-
-protected:
-    const std::string _flash_path = "/tmp/flash.bin";
 };
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_alignment_test, machine_flash_simple_fixture) {
-    _machine_config.flash_drive.entry[0].start -= 1;
+    _machine_config["flash_drive"][0]["start"] = 0x80000000000000 - 1;
 
-    int error_code = cm_create(&_machine_config, &_runtime_config, &_machine);
+    int error_code = cm_create(_machine_config.dump().c_str(), nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -327,10 +191,10 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_alignment_test, mach
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_not_addressable_test, machine_flash_simple_fixture) {
-    _machine_config.flash_drive.entry[0].start = 0x100000000000000 - 0x3c00000 + 4096;
-    _machine_config.flash_drive.entry[0].length = 0x3c00000;
+    _machine_config["flash_drive"][0]["start"] = 0x100000000000000 - 0x3c00000 + 4096;
+    _machine_config["flash_drive"][0]["length"] = 0x3c00000;
 
-    int error_code = cm_create(&_machine_config, &_runtime_config, &_machine);
+    int error_code = cm_create(_machine_config.dump().c_str(), nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -342,7 +206,7 @@ class ordinary_machine_fixture : public incomplete_machine_fixture {
 public:
     ordinary_machine_fixture() {
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
-        cm_create(&_machine_config, &_runtime_config, &_machine);
+        cm_create(_machine_config.dump().c_str(), nullptr, &_machine);
     }
     ~ordinary_machine_fixture() {
         std::filesystem::remove_all(_machine_dir_path);
@@ -357,65 +221,6 @@ public:
 protected:
     std::string _machine_dir_path;
 };
-
-bool operator==(const cm_processor_config &lhs, const cm_processor_config &rhs) {
-    for (int i = 0; i < CM_MACHINE_X_REG_COUNT; i++) {
-        if (lhs.x[i] != rhs.x[i]) {
-            return false;
-        }
-    }
-    for (int i = 0; i < CM_MACHINE_F_REG_COUNT; i++) {
-        if (lhs.f[i] != rhs.f[i]) {
-            return false;
-        }
-    }
-    return lhs.pc == rhs.pc && lhs.fcsr == rhs.fcsr && lhs.mvendorid == rhs.mvendorid && lhs.marchid == rhs.marchid &&
-        lhs.mimpid == rhs.mimpid && lhs.mcycle == rhs.mcycle && lhs.icycleinstret == rhs.icycleinstret &&
-        lhs.mstatus == rhs.mstatus && lhs.mtvec == rhs.mtvec && lhs.mscratch == rhs.mscratch && lhs.mepc == rhs.mepc &&
-        lhs.mcause == rhs.mcause && lhs.mtval == rhs.mtval && lhs.misa == rhs.misa && lhs.mie == rhs.mie &&
-        lhs.mip == rhs.mip && lhs.medeleg == rhs.medeleg && lhs.mideleg == rhs.mideleg &&
-        lhs.mcounteren == rhs.mcounteren && lhs.menvcfg == rhs.menvcfg && lhs.stvec == rhs.stvec &&
-        lhs.sscratch == rhs.sscratch && lhs.sepc == rhs.sepc && lhs.scause == rhs.scause && lhs.stval == rhs.stval &&
-        lhs.satp == rhs.satp && lhs.scounteren == rhs.scounteren && lhs.senvcfg == rhs.senvcfg &&
-        lhs.ilrsc == rhs.ilrsc && lhs.iflags == rhs.iflags && lhs.iunrep == rhs.iunrep;
-}
-
-bool operator==(const cm_ram_config &lhs, const cm_ram_config &rhs) {
-    return (lhs.length == rhs.length && (strcmp(lhs.image_filename, rhs.image_filename) == 0));
-}
-
-bool operator==(const cm_dtb_config &lhs, const cm_dtb_config &rhs) {
-    return ((strcmp(lhs.bootargs, rhs.bootargs) == 0) && (strcmp(lhs.init, rhs.init) == 0) &&
-        (strcmp(lhs.entrypoint, rhs.entrypoint) == 0) && (strcmp(lhs.image_filename, rhs.image_filename) == 0));
-}
-
-bool operator==(const cm_tlb_config &lhs, const cm_tlb_config &rhs) {
-    return (strcmp(lhs.image_filename, rhs.image_filename) == 0);
-}
-
-bool operator==(const cm_clint_config &lhs, const cm_clint_config &rhs) {
-    return (lhs.mtimecmp == rhs.mtimecmp);
-}
-
-bool operator==(const cm_plic_config &lhs, const cm_plic_config &rhs) {
-    return (lhs.girqpend == rhs.girqpend && lhs.girqsrvd == rhs.girqsrvd);
-}
-
-bool operator==(const cm_htif_config &lhs, const cm_htif_config &rhs) {
-    return (lhs.fromhost == rhs.fromhost && lhs.tohost == rhs.tohost && lhs.console_getchar == rhs.console_getchar &&
-        lhs.yield_manual == rhs.yield_manual && lhs.yield_automatic == rhs.yield_automatic);
-}
-
-bool operator==(const cm_machine_config &lhs, const cm_machine_config &rhs) {
-    return ((lhs.processor == rhs.processor) && (lhs.dtb == rhs.dtb) && (lhs.ram == rhs.ram) && (lhs.tlb == rhs.tlb) &&
-        (lhs.clint == rhs.clint) && (lhs.plic == rhs.plic) && (lhs.htif == rhs.htif));
-}
-
-std::ostream &boost_test_print_type(std::ostream &ostr, const cm_machine_config &rhs) {
-    (void) rhs; // suppress 'unused param' warning
-    ostr << "configs not equal\n";
-    return ostr;
-}
 
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class serialized_machine_fixture : public ordinary_machine_fixture {
@@ -463,7 +268,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_invalid_config_version_test, seriali
     std::stringstream expected_err;
     expected_err << "expected \"archive_version\" " << v << " (got " << v + 1 << ")";
 
-    int error_code = cm_load(_machine_config_path.c_str(), &_runtime_config, &_machine);
+    int error_code = cm_load(_machine_config_path.c_str(), nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), expected_err.str());
 }
@@ -525,39 +330,12 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_dir_path_test, ordinary_machine_fixtur
     BOOST_REQUIRE(result.find("error creating directory") == 0);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_error_placeholder_test, ordinary_machine_fixture) {
-    int error_code = cm_store(_machine, _machine_dir_path.c_str());
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_rtc_test, ordinary_machine_fixture) {
-    int error_code = cm_store(_machine, _machine_dir_path.c_str());
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-
-    error_code = cm_load(_machine_dir_path.c_str(), nullptr, &_machine);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-    std::string result = cm_get_last_error_message();
-    std::string origin("invalid machine runtime configuration");
-    BOOST_CHECK_EQUAL(origin, result);
-}
-
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_machine_test, ordinary_machine_fixture) {
     int error_code = cm_store(_machine, _machine_dir_path.c_str());
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
-    error_code = cm_load(_machine_dir_path.c_str(), &_runtime_config, nullptr);
+    error_code = cm_load(_machine_dir_path.c_str(), nullptr, nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_error_placeholder_test, ordinary_machine_fixture) {
-    int error_code = cm_store(_machine, _machine_dir_path.c_str());
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-
-    cm_machine *restored_machine{};
-    error_code = cm_load(_machine_dir_path.c_str(), &_runtime_config, &restored_machine);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-
-    cm_delete_machine(restored_machine);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(serde_complex_test, ordinary_machine_fixture) {
@@ -566,7 +344,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(serde_complex_test, ordinary_machine_fixture) {
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
     cm_machine *restored_machine{};
-    error_code = cm_load(_machine_dir_path.c_str(), &_runtime_config, &restored_machine);
+    error_code = cm_load(_machine_dir_path.c_str(), nullptr, &restored_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
@@ -590,9 +368,6 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_root_hash_null_machine_test) {
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_null_test) {
-    cm_delete_memory_range_config(nullptr);
-    cm_delete_machine_runtime_config(nullptr);
-    cm_delete_machine_config(nullptr);
     cm_delete_machine(nullptr);
     cm_delete_access_log(nullptr);
     cm_delete_merkle_tree_proof(nullptr);
@@ -603,14 +378,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_null_hash_test, ordinary_machine_fi
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_null_error_placeholder_test, ordinary_machine_fixture) {
-    cm_hash result_hash;
-    int error_code = cm_get_root_hash(_machine, &result_hash);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-}
-
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_machine_hash_test, ordinary_machine_fixture) {
-
     cm_hash result_hash;
     int error_code = cm_get_root_hash(_machine, &result_hash);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
@@ -671,14 +439,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_null_proof_test, ordinary_machine_fixtu
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_null_error_placeholder_test, ordinary_machine_fixture) {
-    cm_merkle_tree_proof *proof{};
-    int error_code = cm_get_proof(_machine, 0, 12, &proof);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-
-    cm_delete_merkle_tree_proof(proof);
-}
-
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_machine_hash_test, ordinary_machine_fixture) {
 
     cm_merkle_tree_proof *p{};
@@ -719,13 +479,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_null_output_test, default_machine_fixtu
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_null_error_placeholder_test, ordinary_machine_fixture) {
-    uint64_t word_value = 0;
-    int error_code = cm_read_word(_machine, cm_get_csr_address(CM_CSR_PC), &word_value);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(word_value, static_cast<uint64_t>(0x80000000));
-}
-
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_basic_test, ordinary_machine_fixture) {
     uint64_t word_value = 0;
     int error_code = cm_read_word(_machine, cm_get_csr_address(CM_CSR_PC), &word_value);
@@ -763,11 +516,6 @@ BOOST_AUTO_TEST_CASE_NOLINT(write_memory_null_machine_test) {
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_memory_null_error_placeholder_test, ordinary_machine_fixture) {
-    int error_code = cm_write_memory(_machine, 0x80000000, nullptr, 0);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-}
-
 BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_zero_data_test, ordinary_machine_fixture) {
     int error_code = cm_write_memory(_machine, 0x80000000, nullptr, 0);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -777,21 +525,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_zero_data_test, ordinary_machine_fix
 BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_null_data_size_mismatch_test, ordinary_machine_fixture) {
     int error_code = cm_write_memory(_machine, 0x80000000, nullptr, 1);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_null_error_placeholder_test, ordinary_machine_fixture) {
-    uint64_t read_value = 0;
-    uint64_t write_value = 0x1234;
-    uint64_t address = 0x80000000;
-    std::array<uint8_t, sizeof(uint64_t)> write_data{};
-    memcpy(write_data.data(), &write_value, write_data.size());
-
-    int error_code = cm_write_memory(_machine, address, write_data.data(), write_data.size());
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-
-    error_code = cm_read_word(_machine, address, &read_value);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(read_value, write_value);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_virtual_memory_null_data_test, ordinary_machine_fixture) {
@@ -1143,7 +876,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_fromhost_read_complex_test, ordinary_ma
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(get_initial_config_null_machine_test) {
-    const cm_machine_config *cfg{};
+    const char *cfg{};
     int error_code = cm_get_initial_config(nullptr, &cfg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
@@ -1153,23 +886,15 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_initial_config_null_output_test, ordinary_mac
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(get_initial_config_null_error_placeholder_test, ordinary_machine_fixture) {
-    const cm_machine_config *cfg{};
-    int error_code = cm_get_initial_config(_machine, &cfg);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    cm_delete_machine_config(cfg);
-}
-
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_initial_config_basic_test, ordinary_machine_fixture) {
-    const cm_machine_config *cfg{};
+    const char *cfg{};
     int error_code = cm_get_initial_config(_machine, &cfg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
     // flash_drive comparison is not performed here
     // 'cause it's not a part of the initial config
-    BOOST_CHECK_EQUAL(*cfg, _machine_config);
-    cm_delete_machine_config(cfg);
+    BOOST_CHECK_EQUAL(std::string(cfg), _machine_config.dump());
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(verify_dirty_page_maps_null_machine_test) {
@@ -1181,13 +906,6 @@ BOOST_AUTO_TEST_CASE_NOLINT(verify_dirty_page_maps_null_machine_test) {
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_dirty_page_maps_null_output_test, ordinary_machine_fixture) {
     int error_code = cm_verify_dirty_page_maps(_machine, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_dirty_page_maps_null_error_placeholder_test, ordinary_machine_fixture) {
-    bool result{};
-    int error_code = cm_verify_dirty_page_maps(_machine, &result);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK(result);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_dirty_page_maps_success_test, ordinary_machine_fixture) {
@@ -1214,7 +932,7 @@ public:
         _flash_file{"/tmp/data.bin"},
         _flash_data{"test data 1234567890"} {
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
-        cm_create(&_machine_config, &_runtime_config, &_machine);
+        cm_create(_machine_config.dump().c_str(), nullptr, &_machine);
         std::ofstream flash_stream(_flash_file);
         flash_stream << _flash_data;
         flash_stream.close();
@@ -1222,8 +940,8 @@ public:
     }
 
     ~flash_drive_machine_fixture() {
-        std::filesystem::remove_all(_machine_dir_path);
         cm_delete_machine(_machine);
+        std::filesystem::remove_all(_machine_dir_path);
         std::filesystem::remove(_flash_file);
     }
 
@@ -1240,23 +958,16 @@ protected:
 };
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_initial_config_flash_drive_test, flash_drive_machine_fixture) {
-    const cm_machine_config *cfg{};
+    const char *cfg{};
     int error_code = cm_get_initial_config(_machine, &cfg);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    BOOST_CHECK_EQUAL(*cfg, _machine_config);
-    BOOST_CHECK_EQUAL(cfg->flash_drive.count, 1);
-    cm_delete_machine_config(cfg);
+    BOOST_CHECK_EQUAL(std::string(cfg), _machine_config.dump());
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_machine_test, flash_drive_machine_fixture) {
     int error_code = cm_replace_memory_range(nullptr, 0, 0, false, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_error_placeholder_test, flash_drive_machine_fixture) {
-    int error_code = cm_replace_memory_range(_machine, 0x80000000000000, _flash_size, true, _flash_file.c_str());
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_pma_test, flash_drive_machine_fixture) {
@@ -1365,20 +1076,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_x_null_output_test, ordinary_machine_fixture
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(read_x_null_error_placeholder_test, ordinary_machine_fixture) {
-    uint64_t val{};
-    int error_code = cm_read_x(_machine, 4, &val);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-}
-
 BOOST_AUTO_TEST_CASE_NOLINT(write_x_null_machine_test) {
     int error_code = cm_write_x(nullptr, 4, 0);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(write_x_null_error_placeholder_test, ordinary_machine_fixture) {
-    int error_code = cm_write_x(_machine, 4, 0);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_x_basic_test, ordinary_machine_fixture) {
@@ -1407,20 +1107,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_f_null_output_test, ordinary_machine_fixture
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(read_f_null_error_placeholder_test, ordinary_machine_fixture) {
-    uint64_t val{};
-    int error_code = cm_read_f(_machine, 4, &val);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-}
-
 BOOST_AUTO_TEST_CASE_NOLINT(write_f_null_machine_test) {
     int error_code = cm_write_f(nullptr, 4, 0);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(write_f_null_error_placeholder_test, ordinary_machine_fixture) {
-    int error_code = cm_write_f(_machine, 4, 0);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_f_basic_test, ordinary_machine_fixture) {
@@ -1449,20 +1138,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_uarch_x_null_output_test, ordinary_machine_f
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(read_uarch_x_null_error_placeholder_test, ordinary_machine_fixture) {
-    uint64_t val{};
-    int error_code = cm_read_uarch_x(_machine, 4, &val);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-}
-
 BOOST_AUTO_TEST_CASE_NOLINT(write_uarch_x_null_machine_test) {
     int error_code = cm_write_uarch_x(nullptr, 4, 0);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(write_uarch_x_null_error_placeholder_test, ordinary_machine_fixture) {
-    int error_code = cm_write_uarch_x(_machine, 4, 0);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_uarch_x_basic_test, ordinary_machine_fixture) {
@@ -1491,29 +1169,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_csr_null_output_test, ordinary_machine_fixtu
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(read_csr_null_error_placeholder_test, ordinary_machine_fixture) {
-    uint64_t val{};
-    int error_code = cm_read_csr(_machine, CM_CSR_MCYCLE, &val);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-}
-
 BOOST_AUTO_TEST_CASE_NOLINT(write_csr_null_machine_test) {
     int error_code = cm_write_csr(nullptr, CM_CSR_MCYCLE, 3);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_csr_null_error_placeholder_test, ordinary_machine_fixture) {
-    uint64_t csr_origin = 42;
-    uint64_t csr_read{};
-
-    int error_code = cm_write_csr(_machine, CM_CSR_MCYCLE, csr_origin);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-
-    error_code = cm_read_csr(_machine, CM_CSR_MCYCLE, &csr_read);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(csr_origin, csr_read);
-
-    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x200), cm_get_csr_address(CM_CSR_PC));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_csr_basic_test, ordinary_machine_fixture) {
@@ -1541,13 +1199,6 @@ BOOST_AUTO_TEST_CASE_NOLINT(verify_merkle_tree_null_machine_test) {
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_merkle_tree_null_output_test, ordinary_machine_fixture) {
     int error_code = cm_verify_merkle_tree(_machine, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_merkle_tree_null_error_placeholder_test, ordinary_machine_fixture) {
-    bool ret{};
-    int error_code = cm_verify_merkle_tree(_machine, &ret);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK(ret);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_merkle_tree_basic_test, ordinary_machine_fixture) {
@@ -1581,14 +1232,14 @@ public:
         std::ofstream of(_uarch_ram_path, std::ios::binary);
         of.write(static_cast<char *>(static_cast<void *>(&test_uarch_ram)), sizeof(test_uarch_ram));
         of.close();
-        _set_uarch_ram_image(_uarch_ram_path);
+        _machine_config["uarch"]["ram"]["image_filename"] = _uarch_ram_path;
 
-        cm_create(&_machine_config, &_runtime_config, &_machine);
+        cm_create(_machine_config.dump().c_str(), nullptr, &_machine);
     }
     ~access_log_machine_fixture() {
+        cm_delete_machine(_machine);
         std::filesystem::remove_all(_machine_dir_path);
         std::filesystem::remove_all(_uarch_ram_path);
-        cm_delete_machine(_machine);
     }
 
     access_log_machine_fixture(const access_log_machine_fixture &other) = delete;
@@ -1603,17 +1254,6 @@ protected:
     cm_access_log_type _log_type{};
 };
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_log_null_error_placeholder_test, access_log_machine_fixture) {
-    int error_code = cm_log_step_uarch(_machine, _log_type, false, &_access_log);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
-
-    error_code = cm_verify_step_uarch_log(_access_log, false);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-
-    cm_delete_access_log(_access_log);
-}
-
 BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_machine_test, access_log_machine_fixture) {
     int error_code = cm_log_step_uarch(nullptr, _log_type, false, &_access_log);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
@@ -1622,13 +1262,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_machine_test, access_log_machine_fixtur
 BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_access_log_test, access_log_machine_fixture) {
     int error_code = cm_log_step_uarch(_machine, _log_type, false, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_error_placeholder_test, access_log_machine_fixture) {
-    int error_code = cm_log_step_uarch(_machine, _log_type, false, &_access_log);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-
-    cm_delete_access_log(_access_log);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_state_transition_null_hash0_test, access_log_machine_fixture) {
@@ -1662,29 +1295,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_state_transition_null_access_lo
     BOOST_CHECK_EQUAL(origin, result);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_complex_test_null_error_placeholder_test, access_log_machine_fixture) {
-    cm_hash hash0;
-    cm_hash hash1;
-
-    int error_code = cm_get_root_hash(_machine, &hash0);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-
-    error_code = cm_log_step_uarch(_machine, _log_type, false, &_access_log);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-
-    error_code = cm_verify_step_uarch_log(_access_log, false);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-
-    error_code = cm_get_root_hash(_machine, &hash1);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
-
-    error_code = cm_verify_step_uarch_state_transition(&hash0, _access_log, &hash1, false);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-
-    cm_delete_access_log(_access_log);
-}
-
-// sunda
 BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, access_log_machine_fixture) {
     cm_hash hash0{};
     cm_hash hash1{};
@@ -1821,13 +1431,6 @@ BOOST_AUTO_TEST_CASE_NOLINT(machine_run_null_machine_test) {
     int error_code = cm_run(nullptr, 1000, &break_reason);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     BOOST_CHECK_EQUAL(break_reason, CM_BREAK_REASON_FAILED);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_null_error_placeholder_test, ordinary_machine_fixture) {
-    CM_BREAK_REASON break_reason{};
-    int error_code = cm_run(_machine, 1000, &break_reason);
-    BOOST_CHECK_EQUAL(break_reason, CM_BREAK_REASON_REACHED_TARGET_MCYCLE);
-    BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_1000_cycle_test, ordinary_machine_fixture) {

@@ -1231,6 +1231,134 @@ void machine::write_plic_girqsrvd(uint64_t val) {
 
 uint64_t machine::read_csr(csr r) const {
     switch (r) {
+        case csr::x0:
+            return read_x(0);
+        case csr::x1:
+            return read_x(1);
+        case csr::x2:
+            return read_x(2);
+        case csr::x3:
+            return read_x(3);
+        case csr::x4:
+            return read_x(4);
+        case csr::x5:
+            return read_x(5);
+        case csr::x6:
+            return read_x(6);
+        case csr::x7:
+            return read_x(7);
+        case csr::x8:
+            return read_x(8);
+        case csr::x9:
+            return read_x(9);
+        case csr::x10:
+            return read_x(10);
+        case csr::x11:
+            return read_x(11);
+        case csr::x12:
+            return read_x(12);
+        case csr::x13:
+            return read_x(13);
+        case csr::x14:
+            return read_x(14);
+        case csr::x15:
+            return read_x(15);
+        case csr::x16:
+            return read_x(16);
+        case csr::x17:
+            return read_x(17);
+        case csr::x18:
+            return read_x(18);
+        case csr::x19:
+            return read_x(19);
+        case csr::x20:
+            return read_x(20);
+        case csr::x21:
+            return read_x(21);
+        case csr::x22:
+            return read_x(22);
+        case csr::x23:
+            return read_x(23);
+        case csr::x24:
+            return read_x(24);
+        case csr::x25:
+            return read_x(25);
+        case csr::x26:
+            return read_x(26);
+        case csr::x27:
+            return read_x(27);
+        case csr::x28:
+            return read_x(28);
+        case csr::x29:
+            return read_x(29);
+        case csr::x30:
+            return read_x(30);
+        case csr::x31:
+            return read_x(31);
+        case csr::f0:
+            return read_f(0);
+        case csr::f1:
+            return read_f(1);
+        case csr::f2:
+            return read_f(2);
+        case csr::f3:
+            return read_f(3);
+        case csr::f4:
+            return read_f(4);
+        case csr::f5:
+            return read_f(5);
+        case csr::f6:
+            return read_f(6);
+        case csr::f7:
+            return read_f(7);
+        case csr::f8:
+            return read_f(8);
+        case csr::f9:
+            return read_f(9);
+        case csr::f10:
+            return read_f(10);
+        case csr::f11:
+            return read_f(11);
+        case csr::f12:
+            return read_f(12);
+        case csr::f13:
+            return read_f(13);
+        case csr::f14:
+            return read_f(14);
+        case csr::f15:
+            return read_f(15);
+        case csr::f16:
+            return read_f(16);
+        case csr::f17:
+            return read_f(17);
+        case csr::f18:
+            return read_f(18);
+        case csr::f19:
+            return read_f(19);
+        case csr::f20:
+            return read_f(20);
+        case csr::f21:
+            return read_f(21);
+        case csr::f22:
+            return read_f(22);
+        case csr::f23:
+            return read_f(23);
+        case csr::f24:
+            return read_f(24);
+        case csr::f25:
+            return read_f(25);
+        case csr::f26:
+            return read_f(26);
+        case csr::f27:
+            return read_f(27);
+        case csr::f28:
+            return read_f(28);
+        case csr::f29:
+            return read_f(29);
+        case csr::f30:
+            return read_f(30);
+        case csr::f31:
+            return read_f(31);
         case csr::pc:
             return read_pc();
         case csr::fcsr:
@@ -1309,12 +1437,76 @@ uint64_t machine::read_csr(csr r) const {
             return read_htif_iconsole();
         case csr::htif_iyield:
             return read_htif_iyield();
+        case csr::uarch_x0:
+            return read_uarch_x(0);
+        case csr::uarch_x1:
+            return read_uarch_x(1);
+        case csr::uarch_x2:
+            return read_uarch_x(2);
+        case csr::uarch_x3:
+            return read_uarch_x(3);
+        case csr::uarch_x4:
+            return read_uarch_x(4);
+        case csr::uarch_x5:
+            return read_uarch_x(5);
+        case csr::uarch_x6:
+            return read_uarch_x(6);
+        case csr::uarch_x7:
+            return read_uarch_x(7);
+        case csr::uarch_x8:
+            return read_uarch_x(8);
+        case csr::uarch_x9:
+            return read_uarch_x(9);
+        case csr::uarch_x10:
+            return read_uarch_x(10);
+        case csr::uarch_x11:
+            return read_uarch_x(11);
+        case csr::uarch_x12:
+            return read_uarch_x(12);
+        case csr::uarch_x13:
+            return read_uarch_x(13);
+        case csr::uarch_x14:
+            return read_uarch_x(14);
+        case csr::uarch_x15:
+            return read_uarch_x(15);
+        case csr::uarch_x16:
+            return read_uarch_x(16);
+        case csr::uarch_x17:
+            return read_uarch_x(17);
+        case csr::uarch_x18:
+            return read_uarch_x(18);
+        case csr::uarch_x19:
+            return read_uarch_x(19);
+        case csr::uarch_x20:
+            return read_uarch_x(20);
+        case csr::uarch_x21:
+            return read_uarch_x(21);
+        case csr::uarch_x22:
+            return read_uarch_x(22);
+        case csr::uarch_x23:
+            return read_uarch_x(23);
+        case csr::uarch_x24:
+            return read_uarch_x(24);
+        case csr::uarch_x25:
+            return read_uarch_x(25);
+        case csr::uarch_x26:
+            return read_uarch_x(26);
+        case csr::uarch_x27:
+            return read_uarch_x(27);
+        case csr::uarch_x28:
+            return read_uarch_x(28);
+        case csr::uarch_x29:
+            return read_uarch_x(29);
+        case csr::uarch_x30:
+            return read_uarch_x(30);
+        case csr::uarch_x31:
+            return read_uarch_x(31);
+        case csr::uarch_pc:
+            return read_uarch_pc();
         case csr::uarch_cycle:
             return read_uarch_cycle();
         case csr::uarch_halt_flag:
             return read_uarch_halt_flag();
-        case csr::uarch_pc:
-            return read_uarch_pc();
         case csr::iflags_prv:
             return read_iflags_PRV();
         case csr::iflags_x:
@@ -1347,6 +1539,134 @@ uint64_t machine::read_csr(csr r) const {
 
 void machine::write_csr(csr csr, uint64_t value) {
     switch (csr) {
+        case csr::x0:
+            return write_x(0, value);
+        case csr::x1:
+            return write_x(1, value);
+        case csr::x2:
+            return write_x(2, value);
+        case csr::x3:
+            return write_x(3, value);
+        case csr::x4:
+            return write_x(4, value);
+        case csr::x5:
+            return write_x(5, value);
+        case csr::x6:
+            return write_x(6, value);
+        case csr::x7:
+            return write_x(7, value);
+        case csr::x8:
+            return write_x(8, value);
+        case csr::x9:
+            return write_x(9, value);
+        case csr::x10:
+            return write_x(10, value);
+        case csr::x11:
+            return write_x(11, value);
+        case csr::x12:
+            return write_x(12, value);
+        case csr::x13:
+            return write_x(13, value);
+        case csr::x14:
+            return write_x(14, value);
+        case csr::x15:
+            return write_x(15, value);
+        case csr::x16:
+            return write_x(16, value);
+        case csr::x17:
+            return write_x(17, value);
+        case csr::x18:
+            return write_x(18, value);
+        case csr::x19:
+            return write_x(19, value);
+        case csr::x20:
+            return write_x(20, value);
+        case csr::x21:
+            return write_x(21, value);
+        case csr::x22:
+            return write_x(22, value);
+        case csr::x23:
+            return write_x(23, value);
+        case csr::x24:
+            return write_x(24, value);
+        case csr::x25:
+            return write_x(25, value);
+        case csr::x26:
+            return write_x(26, value);
+        case csr::x27:
+            return write_x(27, value);
+        case csr::x28:
+            return write_x(28, value);
+        case csr::x29:
+            return write_x(29, value);
+        case csr::x30:
+            return write_x(30, value);
+        case csr::x31:
+            return write_x(31, value);
+        case csr::f0:
+            return write_f(0, value);
+        case csr::f1:
+            return write_f(1, value);
+        case csr::f2:
+            return write_f(2, value);
+        case csr::f3:
+            return write_f(3, value);
+        case csr::f4:
+            return write_f(4, value);
+        case csr::f5:
+            return write_f(5, value);
+        case csr::f6:
+            return write_f(6, value);
+        case csr::f7:
+            return write_f(7, value);
+        case csr::f8:
+            return write_f(8, value);
+        case csr::f9:
+            return write_f(9, value);
+        case csr::f10:
+            return write_f(10, value);
+        case csr::f11:
+            return write_f(11, value);
+        case csr::f12:
+            return write_f(12, value);
+        case csr::f13:
+            return write_f(13, value);
+        case csr::f14:
+            return write_f(14, value);
+        case csr::f15:
+            return write_f(15, value);
+        case csr::f16:
+            return write_f(16, value);
+        case csr::f17:
+            return write_f(17, value);
+        case csr::f18:
+            return write_f(18, value);
+        case csr::f19:
+            return write_f(19, value);
+        case csr::f20:
+            return write_f(20, value);
+        case csr::f21:
+            return write_f(21, value);
+        case csr::f22:
+            return write_f(22, value);
+        case csr::f23:
+            return write_f(23, value);
+        case csr::f24:
+            return write_f(24, value);
+        case csr::f25:
+            return write_f(25, value);
+        case csr::f26:
+            return write_f(26, value);
+        case csr::f27:
+            return write_f(27, value);
+        case csr::f28:
+            return write_f(28, value);
+        case csr::f29:
+            return write_f(29, value);
+        case csr::f30:
+            return write_f(30, value);
+        case csr::f31:
+            return write_f(31, value);
         case csr::pc:
             return write_pc(value);
         case csr::fcsr:
@@ -1419,12 +1739,76 @@ void machine::write_csr(csr csr, uint64_t value) {
             return write_htif_iconsole(value);
         case csr::htif_iyield:
             return write_htif_iyield(value);
+        case csr::uarch_x0:
+            return write_uarch_x(0, value);
+        case csr::uarch_x1:
+            return write_uarch_x(1, value);
+        case csr::uarch_x2:
+            return write_uarch_x(2, value);
+        case csr::uarch_x3:
+            return write_uarch_x(3, value);
+        case csr::uarch_x4:
+            return write_uarch_x(4, value);
+        case csr::uarch_x5:
+            return write_uarch_x(5, value);
+        case csr::uarch_x6:
+            return write_uarch_x(6, value);
+        case csr::uarch_x7:
+            return write_uarch_x(7, value);
+        case csr::uarch_x8:
+            return write_uarch_x(8, value);
+        case csr::uarch_x9:
+            return write_uarch_x(9, value);
+        case csr::uarch_x10:
+            return write_uarch_x(10, value);
+        case csr::uarch_x11:
+            return write_uarch_x(11, value);
+        case csr::uarch_x12:
+            return write_uarch_x(12, value);
+        case csr::uarch_x13:
+            return write_uarch_x(13, value);
+        case csr::uarch_x14:
+            return write_uarch_x(14, value);
+        case csr::uarch_x15:
+            return write_uarch_x(15, value);
+        case csr::uarch_x16:
+            return write_uarch_x(16, value);
+        case csr::uarch_x17:
+            return write_uarch_x(17, value);
+        case csr::uarch_x18:
+            return write_uarch_x(18, value);
+        case csr::uarch_x19:
+            return write_uarch_x(19, value);
+        case csr::uarch_x20:
+            return write_uarch_x(20, value);
+        case csr::uarch_x21:
+            return write_uarch_x(21, value);
+        case csr::uarch_x22:
+            return write_uarch_x(22, value);
+        case csr::uarch_x23:
+            return write_uarch_x(23, value);
+        case csr::uarch_x24:
+            return write_uarch_x(24, value);
+        case csr::uarch_x25:
+            return write_uarch_x(25, value);
+        case csr::uarch_x26:
+            return write_uarch_x(26, value);
+        case csr::uarch_x27:
+            return write_uarch_x(27, value);
+        case csr::uarch_x28:
+            return write_uarch_x(28, value);
+        case csr::uarch_x29:
+            return write_uarch_x(29, value);
+        case csr::uarch_x30:
+            return write_uarch_x(30, value);
+        case csr::uarch_x31:
+            return write_uarch_x(31, value);
+        case csr::uarch_pc:
+            return write_uarch_pc(value);
         case csr::uarch_cycle:
             return write_uarch_cycle(value);
         case csr::uarch_halt_flag:
             return set_uarch_halt_flag();
-        case csr::uarch_pc:
-            return write_uarch_pc(value);
         case csr::mvendorid:
             [[fallthrough]];
         case csr::marchid:
@@ -1462,6 +1846,134 @@ void machine::write_csr(csr csr, uint64_t value) {
 
 uint64_t machine::get_csr_address(csr csr) {
     switch (csr) {
+        case csr::x0:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x0);
+        case csr::x1:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x1);
+        case csr::x2:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x2);
+        case csr::x3:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x3);
+        case csr::x4:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x4);
+        case csr::x5:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x5);
+        case csr::x6:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x6);
+        case csr::x7:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x7);
+        case csr::x8:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x8);
+        case csr::x9:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x9);
+        case csr::x10:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x10);
+        case csr::x11:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x11);
+        case csr::x12:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x12);
+        case csr::x13:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x13);
+        case csr::x14:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x14);
+        case csr::x15:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x15);
+        case csr::x16:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x16);
+        case csr::x17:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x17);
+        case csr::x18:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x18);
+        case csr::x19:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x19);
+        case csr::x20:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x20);
+        case csr::x21:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x21);
+        case csr::x22:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x22);
+        case csr::x23:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x23);
+        case csr::x24:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x24);
+        case csr::x25:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x25);
+        case csr::x26:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x26);
+        case csr::x27:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x27);
+        case csr::x28:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x28);
+        case csr::x29:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x29);
+        case csr::x30:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x30);
+        case csr::x31:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::x31);
+        case csr::f0:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f0);
+        case csr::f1:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f1);
+        case csr::f2:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f2);
+        case csr::f3:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f3);
+        case csr::f4:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f4);
+        case csr::f5:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f5);
+        case csr::f6:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f6);
+        case csr::f7:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f7);
+        case csr::f8:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f8);
+        case csr::f9:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f9);
+        case csr::f10:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f10);
+        case csr::f11:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f11);
+        case csr::f12:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f12);
+        case csr::f13:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f13);
+        case csr::f14:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f14);
+        case csr::f15:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f15);
+        case csr::f16:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f16);
+        case csr::f17:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f17);
+        case csr::f18:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f18);
+        case csr::f19:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f19);
+        case csr::f20:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f20);
+        case csr::f21:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f21);
+        case csr::f22:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f22);
+        case csr::f23:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f23);
+        case csr::f24:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f24);
+        case csr::f25:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f25);
+        case csr::f26:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f26);
+        case csr::f27:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f27);
+        case csr::f28:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f28);
+        case csr::f29:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f29);
+        case csr::f30:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f30);
+        case csr::f31:
+            return shadow_state_get_csr_abs_addr(shadow_state_csr::f31);
         case csr::pc:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::pc);
         case csr::fcsr:
@@ -1540,6 +2052,70 @@ uint64_t machine::get_csr_address(csr csr) {
             return shadow_state_get_csr_abs_addr(shadow_state_csr::plic_girqpend);
         case csr::plic_girqsrvd:
             return shadow_state_get_csr_abs_addr(shadow_state_csr::plic_girqsrvd);
+        case csr::uarch_x0:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x0);
+        case csr::uarch_x1:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x1);
+        case csr::uarch_x2:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x2);
+        case csr::uarch_x3:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x3);
+        case csr::uarch_x4:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x4);
+        case csr::uarch_x5:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x5);
+        case csr::uarch_x6:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x6);
+        case csr::uarch_x7:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x7);
+        case csr::uarch_x8:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x8);
+        case csr::uarch_x9:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x9);
+        case csr::uarch_x10:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x10);
+        case csr::uarch_x11:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x11);
+        case csr::uarch_x12:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x12);
+        case csr::uarch_x13:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x13);
+        case csr::uarch_x14:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x14);
+        case csr::uarch_x15:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x15);
+        case csr::uarch_x16:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x16);
+        case csr::uarch_x17:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x17);
+        case csr::uarch_x18:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x18);
+        case csr::uarch_x19:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x19);
+        case csr::uarch_x20:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x20);
+        case csr::uarch_x21:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x21);
+        case csr::uarch_x22:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x22);
+        case csr::uarch_x23:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x23);
+        case csr::uarch_x24:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x24);
+        case csr::uarch_x25:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x25);
+        case csr::uarch_x26:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x26);
+        case csr::uarch_x27:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x27);
+        case csr::uarch_x28:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x28);
+        case csr::uarch_x29:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x29);
+        case csr::uarch_x30:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x30);
+        case csr::uarch_x31:
+            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::x31);
         case csr::uarch_pc:
             return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::pc);
         case csr::uarch_cycle:

@@ -17,12 +17,14 @@
 #ifndef CLUA_MACHINE_UTIL_H
 #define CLUA_MACHINE_UTIL_H
 
+#include <string>
 #include <utility>
 
 extern "C" {
 #include <lua.h>
 }
 
+#include "json-util.h"
 #include "machine-c-api.h"
 
 /// \file
@@ -42,27 +44,9 @@ void cm_delete<char>(char *ptr);
 template <>
 void cm_delete<unsigned char>(unsigned char *ptr);
 
-/// \brief Deleter for C api machine configuration
-template <>
-void cm_delete<const cm_machine_config>(const cm_machine_config *ptr);
-template <>
-void cm_delete<cm_machine_config>(cm_machine_config *ptr);
-
 /// \brief Deleter for C api machine
 template <>
 void cm_delete<cm_machine>(cm_machine *ptr);
-
-/// \brief Deleter for C api runtime machine configuration
-template <>
-void cm_delete(cm_machine_runtime_config *ptr);
-
-/// \brief Deleter for C api ram config
-template <>
-void cm_delete(cm_ram_config *p);
-
-/// \brief Deleter for C api dtb config
-template <>
-void cm_delete(cm_dtb_config *p);
 
 /// \brief Deleter for C api access log
 template <>
@@ -71,10 +55,6 @@ void cm_delete(cm_access_log *ptr);
 /// \brief Deleter for C api merkle tree proof
 template <>
 void cm_delete(cm_merkle_tree_proof *p);
-
-/// \brief Deleter for C api flash drive config
-template <>
-void cm_delete(cm_memory_range_config *p);
 
 /// \brief Deleter for C api semantic version
 template <>
@@ -158,22 +138,10 @@ void clua_push_cm_semantic_version(lua_State *L, const cm_semantic_version *v);
 /// \param hash Hash to be pushed
 void clua_push_cm_hash(lua_State *L, const cm_hash *hash);
 
-/// \brief Pushes a C api cm_machine_config to the Lua stack
-/// \param L Lua state
-/// \param c Machine configuration to be pushed
-void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c);
-
 /// \brief Pushes a C api cm_memory_range_descr_array to the Lua stack
 /// \param L Lua state
 /// \param mrds Memory range description array to be pushed
 void clua_push_cm_memory_range_descr_array(lua_State *L, const cm_memory_range_descr_array *mrds);
-
-#if 0 // NOLINT
-/// \brief Pushes a cm_machine_runtime_config to the Lua stack
-/// \param L Lua state
-/// \param r C api machine runtime config to be pushed
-void clua_push_cm_machine_runtime_config(lua_State *L, const cm_machine_runtime_config *r);
-#endif
 
 /// \brief Returns a CSR selector from Lua
 /// \param L Lua state
@@ -211,38 +179,8 @@ cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx);
 /// \returns The access log. Must be delete by the user with cm_delete_access_log
 cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx, int ctxidx = lua_upvalueindex(1));
 
-/// \brief Loads a cm_machine_config object from a Lua table
-/// \param L Lua state
-/// \param tabidx Index of table in Lua stack
-/// \param ctxidx Index of clua context
-/// \returns Allocated machine config. It must be deleted with cm_delete_machine_config
-cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ctxidx = lua_upvalueindex(1));
-
-/// \brief Loads a cm_machine_runtime_config object from a Lua table
-/// \param L Lua state
-/// \param tabidx Index of table in Lua stack
-/// \param ctxidx Index of clua context
-/// \returns Allocated machine runtime config object. It must be deleted with cm_delete_machine_runtime_config
-cm_machine_runtime_config *clua_check_cm_machine_runtime_config(lua_State *L, int tabidx,
-    int ctxidx = lua_upvalueindex(1));
-
-/// \brief Loads an optional cm_machine_runtime_config object from a Lua
-/// \param L Lua state
-/// \param tabidx Index of table in Lua stack
-/// \param r Default C api machine runtime config value if optional field not present
-/// \param ctxidx Index of clua context
-/// \returns Allocated machine runtime config object. It must be deleted with cm_delete_machine_runtime_config
-cm_machine_runtime_config *clua_opt_cm_machine_runtime_config(lua_State *L, int tabidx,
-    const cm_machine_runtime_config *r, int ctxidx = lua_upvalueindex(1));
-
-/// \brief Loads C api memory range config from a Lua table
-/// \param L Lua state
-/// \param tabidx Memory range config stack index
-/// \param what Description of memory range for error messages
-/// \param m Pointer to cm_memory_range structure that will receive
-/// \returns m
-cm_memory_range_config *clua_check_cm_memory_range_config(lua_State *L, int tabidx, const char *what,
-    cm_memory_range_config *m);
+nlohmann::json clua_value_to_json(lua_State *L, int tabidx);
+void clua_push_json(lua_State *L, const nlohmann::json &j);
 
 } // namespace cartesi
 

@@ -331,9 +331,9 @@ local function check_test_result(machine, ctx)
         end
         return -- failed with the expected error at the expected cycle
     end
-    local test_status = machine:read_uarch_x(TEST_STATUS_X)
+    local test_status = machine:read_csr("uarch_x" .. TEST_STATUS_X)
     if test_status == TEST_FAILED then
-        local failed_test_case = machine:read_uarch_x(FAILED_TEST_CASE_X)
+        local failed_test_case = machine:read_csr("uarch_x" .. FAILED_TEST_CASE_X)
         fatal("%s: failed. test case is: %d\n", failed_test_case)
     end
     if test_status ~= TEST_SUCCEEDED then

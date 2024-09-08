@@ -1333,6 +1333,70 @@
       "CSR": {
         "title": "CSR",
         "enum": [
+          "x0",
+          "x1",
+          "x2",
+          "x3",
+          "x4",
+          "x5",
+          "x6",
+          "x7",
+          "x8",
+          "x9",
+          "x10",
+          "x11",
+          "x12",
+          "x13",
+          "x14",
+          "x15",
+          "x16",
+          "x17",
+          "x18",
+          "x19",
+          "x20",
+          "x21",
+          "x22",
+          "x23",
+          "x24",
+          "x25",
+          "x26",
+          "x27",
+          "x28",
+          "x29",
+          "x30",
+          "x31",
+          "f0",
+          "f1",
+          "f2",
+          "f3",
+          "f4",
+          "f5",
+          "f6",
+          "f7",
+          "f8",
+          "f9",
+          "f10",
+          "f11",
+          "f12",
+          "f13",
+          "f14",
+          "f15",
+          "f16",
+          "f17",
+          "f18",
+          "f19",
+          "f20",
+          "f21",
+          "f22",
+          "f23",
+          "f24",
+          "f25",
+          "f26",
+          "f27",
+          "f28",
+          "f29",
+          "f30",
+          "f31",
           "pc",
           "fcsr",
           "mvendorid",
@@ -1372,8 +1436,41 @@
           "htif_ihalt",
           "htif_iconsole",
           "htif_iyield",
+          "uarch_x0",
+          "uarch_x1",
+          "uarch_x2",
+          "uarch_x3",
+          "uarch_x4",
+          "uarch_x5",
+          "uarch_x6",
+          "uarch_x7",
+          "uarch_x8",
+          "uarch_x9",
+          "uarch_x10",
+          "uarch_x11",
+          "uarch_x12",
+          "uarch_x13",
+          "uarch_x14",
+          "uarch_x15",
+          "uarch_x16",
+          "uarch_x17",
+          "uarch_x18",
+          "uarch_x19",
+          "uarch_x20",
+          "uarch_x21",
+          "uarch_x22",
+          "uarch_x23",
+          "uarch_x24",
+          "uarch_x25",
+          "uarch_x26",
+          "uarch_x27",
+          "uarch_x28",
+          "uarch_x29",
+          "uarch_x30",
+          "uarch_x31",
           "uarch_pc",
           "uarch_cycle",
+          "uarch_halt_flag",
           "iflags_prv",
           "iflags_x",
           "iflags_y",
@@ -1436,31 +1533,201 @@
         }
       },
 
-      "XRegConfig": {
-        "title": "XRegConfig",
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/UnsignedInteger"
-        }
-      },
-
-      "FRegConfig": {
-        "title": "FRegConfig",
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/UnsignedInteger"
-        }
-      },
-
       "ProcessorConfig": {
         "title": "ProcessorConfig",
         "type": "object",
         "properties": {
-          "x": {
-            "$ref": "#/components/schemas/XRegConfig"
+          "x0": {
+            "$ref": "#/components/schemas/UnsignedInteger"
           },
-          "f": {
-            "$ref": "#/components/schemas/FRegConfig"
+          "x1": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x2": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x3": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x4": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x5": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x6": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x7": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x8": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x9": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x10": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x11": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x12": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x13": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x14": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x15": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x16": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x17": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x18": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x19": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x20": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x21": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x22": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x23": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x24": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x25": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x26": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x27": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x28": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x29": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x30": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x31": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f0": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f1": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f2": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f3": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f4": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f5": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f6": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f7": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f8": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f9": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f10": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f11": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f12": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f13": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f14": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f15": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f16": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f17": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f18": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f19": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f20": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f21": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f22": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f23": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f24": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f25": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f26": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f27": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f28": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f29": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f30": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f31": {
+            "$ref": "#/components/schemas/UnsignedInteger"
           },
           "pc": {
             "$ref": "#/components/schemas/UnsignedInteger"
@@ -1889,8 +2156,101 @@
         "title": "UarchProcessorConfig",
         "type": "object",
         "properties": {
-          "x": {
-            "$ref": "#/components/schemas/XRegConfig"
+          "x0": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x1": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x2": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x3": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x4": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x5": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x6": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x7": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x8": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x9": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x10": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x11": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x12": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x13": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x14": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x15": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x16": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x17": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x18": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x19": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x20": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x21": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x22": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x23": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x24": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x25": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x26": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x27": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x28": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x29": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x30": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x31": {
+            "$ref": "#/components/schemas/UnsignedInteger"
           },
           "pc": {
             "$ref": "#/components/schemas/UnsignedInteger"

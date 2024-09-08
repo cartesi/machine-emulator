@@ -33,13 +33,11 @@ void cm_delete(cm_jsonrpc_mgr *ptr) {
 static int jsonrpc_machine_class_get_default_config(lua_State *L) {
     auto &managed_jsonrpc_mgr =
         clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
-    auto &managed_default_config =
-        clua_push_to(L, clua_managed_cm_ptr<const cm_machine_config>(nullptr), lua_upvalueindex(2));
-    if (cm_jsonrpc_get_default_config(managed_jsonrpc_mgr.get(), &managed_default_config.get()) != 0) {
+    const char *config = nullptr;
+    if (cm_jsonrpc_get_default_config(managed_jsonrpc_mgr.get(), &config) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_cm_machine_config(L, managed_default_config.get());
-    managed_default_config.reset();
+    clua_push_json(L, nlohmann::json::parse(config));
     return 1;
 }
 
@@ -254,29 +252,21 @@ static int jsonrpc_machine_tostring(lua_State *L) {
 /// \param L Lua state.
 static int jsonrpc_machine_ctor(lua_State *L) {
     lua_settop(L, 3);
-    auto &managed_jsonrpc_mgr =
-        clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     const int ctxidx = lua_upvalueindex(2);
+    auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), ctxidx);
     auto &managed_machine = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr), ctxidx);
-    auto &managed_runtime_config = clua_push_to(L,
-        clua_managed_cm_ptr<cm_machine_runtime_config>(clua_opt_cm_machine_runtime_config(L, 3, {}, ctxidx)), ctxidx);
+    const std::string runtime_config = clua_value_to_json(L, 3).dump();
     if (lua_type(L, 2) == LUA_TTABLE) {
-        auto &managed_config =
-            clua_push_to(L, clua_managed_cm_ptr<cm_machine_config>(clua_check_cm_machine_config(L, 2, ctxidx)), ctxidx);
-        if (cm_jsonrpc_create_machine(managed_jsonrpc_mgr.get(), managed_config.get(), managed_runtime_config.get(),
+        const std::string config = clua_value_to_json(L, 2).dump();
+        if (cm_jsonrpc_create_machine(managed_jsonrpc_mgr.get(), config.c_str(), runtime_config.c_str(),
                 &managed_machine.get()) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
-        managed_config.reset();
-        managed_runtime_config.reset();
-        lua_pop(L, 2);
     } else {
-        if (cm_jsonrpc_load_machine(managed_jsonrpc_mgr.get(), luaL_checkstring(L, 2), managed_runtime_config.get(),
+        if (cm_jsonrpc_load_machine(managed_jsonrpc_mgr.get(), luaL_checkstring(L, 2), runtime_config.c_str(),
                 &managed_machine.get()) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
-        managed_runtime_config.reset();
-        lua_pop(L, 1);
     }
     return 1;
 }
@@ -397,14 +387,10 @@ static const auto mod = cartesi::clua_make_luaL_Reg_array({
 });
 
 int clua_jsonrpc_machine_init(lua_State *L, int ctxidx) {
-    clua_createnewtype<clua_managed_cm_ptr<const cm_machine_config>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_machine_config>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<cm_access_log>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_machine_runtime_config>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<cm_merkle_tree_proof>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<char>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<unsigned char>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_memory_range_config>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<const cm_semantic_version>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, ctxidx);
     return 1;

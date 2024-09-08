@@ -42,23 +42,6 @@ void cm_delete(const cm_semantic_version *p) {
     cm_delete_semantic_version(p);
 }
 
-/// \brief Deleter for C api machine configuration
-template <>
-void cm_delete<const cm_machine_config>(const cm_machine_config *ptr) {
-    cm_delete_machine_config(ptr);
-}
-
-template <>
-void cm_delete<cm_machine_config>(cm_machine_config *ptr) {
-    cm_delete_machine_config(ptr);
-}
-
-/// \brief Deleter for C api runtime machine configuration
-template <>
-void cm_delete(cm_machine_runtime_config *ptr) {
-    cm_delete_machine_runtime_config(ptr);
-}
-
 /// \brief Deleter for C api machine
 template <>
 void cm_delete(cm_machine *ptr) {
@@ -75,12 +58,6 @@ void cm_delete(cm_access_log *ptr) {
 template <>
 void cm_delete(cm_merkle_tree_proof *ptr) {
     cm_delete_merkle_tree_proof(ptr);
-}
-
-/// \brief Deleter for C api memory range config
-template <>
-void cm_delete(cm_memory_range_config *ptr) {
-    cm_delete_memory_range_config(ptr);
 }
 
 /// \brief Deleter for C api memory range description array
@@ -112,84 +89,6 @@ static bool opt_boolean_field(lua_State *L, int tabidx, const char *field, bool 
     }
     lua_pop(L, 1);
     return val;
-}
-
-/// \brief Returns an optional integer field indexed by integer in a table.
-/// \param L Lua state.
-/// \param tabidx Table stack index.
-/// \param field Field index.
-/// \param def Default value for missing field.
-/// \returns Field value, or default value if missing.
-static uint64_t opt_uint_field(lua_State *L, int tabidx, int field, uint64_t def = 0) {
-    tabidx = lua_absindex(L, tabidx);
-    uint64_t val = def;
-    lua_geti(L, tabidx, field);
-    if (lua_isinteger(L, -1)) {
-        val = lua_tointeger(L, -1);
-    } else if (!lua_isnil(L, -1)) {
-        luaL_error(L, "invalid entry %d (expected unsigned integer)", field);
-    }
-    lua_pop(L, 1);
-    return static_cast<uint64_t>(val);
-}
-
-/// \brief Returns an optional integer field indexed by string in a table.
-/// \param L Lua state.
-/// \param tabidx Table stack index.
-/// \param field Field index.
-/// \param def Default value for missing field.
-/// \returns Field value, or default value if missing.
-static uint64_t opt_uint_field(lua_State *L, int tabidx, const char *field, uint64_t def = 0) {
-    tabidx = lua_absindex(L, tabidx);
-    uint64_t val = def;
-    lua_getfield(L, tabidx, field);
-    if (lua_isinteger(L, -1)) {
-        val = lua_tointeger(L, -1);
-    } else if (!lua_isnil(L, -1)) {
-        luaL_error(L, "invalid %s (expected unsigned integer)", field);
-    }
-    lua_pop(L, 1);
-    return static_cast<uint64_t>(val);
-}
-
-// NOLINTNEXTLINE
-#if 0 // Unused
-/// \brief Returns an optional string field indexed by string in a table.
-/// \param L Lua state.
-/// \param tabidx Table stack index.
-/// \param field Field index.
-/// \returns Field value, or empty string if missing.
-static std::string opt_string_field(lua_State *L, int tabidx, const char *field) {
-    tabidx = lua_absindex(L, tabidx);
-    std::string str;
-    lua_getfield(L, tabidx, field);
-    if (lua_isstring(L, -1)) {
-        str = lua_tostring(L, -1);
-    } else if (!lua_isnil(L, -1)) {
-        luaL_error(L, "invalid %s (expected string)", field);
-    }
-    lua_pop(L, 1);
-    return str;
-}
-#endif
-
-/// \brief Returns an allocated optional c string field indexed by string in a table.
-/// \param L Lua state.
-/// \param tabidx Table stack index.
-/// \param field Field index.
-/// \returns Field value, or nullptr if missing. If field value is returned,
-/// it must be deallocated by the caller
-static char *opt_copy_string_field(lua_State *L, int tabidx, const char *field) {
-    tabidx = lua_absindex(L, tabidx);
-    char *str = nullptr;
-    lua_getfield(L, tabidx, field);
-    if (lua_isstring(L, -1)) {
-        str = copy_lua_str(L, -1);
-    } else if (!lua_isnil(L, -1)) {
-        luaL_error(L, "invalid %s (expected string)", field);
-    }
-    lua_pop(L, 1);
-    return str;
 }
 
 /// \brief Returns an integer field indexed by string in a table.
@@ -527,6 +426,70 @@ CM_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
     /// \brief Mapping between CSR names and C API constants
     const static std::unordered_map<std::string, CM_CSR> g_cm_proc_csr_name = {
         // clang-format off
+        {"x0", CM_CSR_X0},
+        {"x1", CM_CSR_X1},
+        {"x2", CM_CSR_X2},
+        {"x3", CM_CSR_X3},
+        {"x4", CM_CSR_X4},
+        {"x5", CM_CSR_X5},
+        {"x6", CM_CSR_X6},
+        {"x7", CM_CSR_X7},
+        {"x8", CM_CSR_X8},
+        {"x9", CM_CSR_X9},
+        {"x10", CM_CSR_X10},
+        {"x11", CM_CSR_X11},
+        {"x12", CM_CSR_X12},
+        {"x13", CM_CSR_X13},
+        {"x14", CM_CSR_X14},
+        {"x15", CM_CSR_X15},
+        {"x16", CM_CSR_X16},
+        {"x17", CM_CSR_X17},
+        {"x18", CM_CSR_X18},
+        {"x19", CM_CSR_X19},
+        {"x20", CM_CSR_X20},
+        {"x21", CM_CSR_X21},
+        {"x22", CM_CSR_X22},
+        {"x23", CM_CSR_X23},
+        {"x24", CM_CSR_X24},
+        {"x25", CM_CSR_X25},
+        {"x26", CM_CSR_X26},
+        {"x27", CM_CSR_X27},
+        {"x28", CM_CSR_X28},
+        {"x29", CM_CSR_X29},
+        {"x30", CM_CSR_X30},
+        {"x31", CM_CSR_X31},
+        {"f0", CM_CSR_F0},
+        {"f1", CM_CSR_F1},
+        {"f2", CM_CSR_F2},
+        {"f3", CM_CSR_F3},
+        {"f4", CM_CSR_F4},
+        {"f5", CM_CSR_F5},
+        {"f6", CM_CSR_F6},
+        {"f7", CM_CSR_F7},
+        {"f8", CM_CSR_F8},
+        {"f9", CM_CSR_F9},
+        {"f10", CM_CSR_F10},
+        {"f11", CM_CSR_F11},
+        {"f12", CM_CSR_F12},
+        {"f13", CM_CSR_F13},
+        {"f14", CM_CSR_F14},
+        {"f15", CM_CSR_F15},
+        {"f16", CM_CSR_F16},
+        {"f17", CM_CSR_F17},
+        {"f18", CM_CSR_F18},
+        {"f19", CM_CSR_F19},
+        {"f20", CM_CSR_F20},
+        {"f21", CM_CSR_F21},
+        {"f22", CM_CSR_F22},
+        {"f23", CM_CSR_F23},
+        {"f24", CM_CSR_F24},
+        {"f25", CM_CSR_F25},
+        {"f26", CM_CSR_F26},
+        {"f27", CM_CSR_F27},
+        {"f28", CM_CSR_F28},
+        {"f29", CM_CSR_F29},
+        {"f30", CM_CSR_F30},
+        {"f31", CM_CSR_F31},
         {"pc", CM_CSR_PC},
         {"fcsr", CM_CSR_FCSR},
         {"mvendorid", CM_CSR_MVENDORID},
@@ -578,6 +541,38 @@ CM_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
         {"htif_ihalt", CM_CSR_HTIF_IHALT},
         {"htif_iconsole", CM_CSR_HTIF_ICONSOLE},
         {"htif_iyield", CM_CSR_HTIF_IYIELD},
+        {"uarch_x0", CM_CSR_UARCH_X0},
+        {"uarch_x1", CM_CSR_UARCH_X1},
+        {"uarch_x2", CM_CSR_UARCH_X2},
+        {"uarch_x3", CM_CSR_UARCH_X3},
+        {"uarch_x4", CM_CSR_UARCH_X4},
+        {"uarch_x5", CM_CSR_UARCH_X5},
+        {"uarch_x6", CM_CSR_UARCH_X6},
+        {"uarch_x7", CM_CSR_UARCH_X7},
+        {"uarch_x8", CM_CSR_UARCH_X8},
+        {"uarch_x9", CM_CSR_UARCH_X9},
+        {"uarch_x10", CM_CSR_UARCH_X10},
+        {"uarch_x11", CM_CSR_UARCH_X11},
+        {"uarch_x12", CM_CSR_UARCH_X12},
+        {"uarch_x13", CM_CSR_UARCH_X13},
+        {"uarch_x14", CM_CSR_UARCH_X14},
+        {"uarch_x15", CM_CSR_UARCH_X15},
+        {"uarch_x16", CM_CSR_UARCH_X16},
+        {"uarch_x17", CM_CSR_UARCH_X17},
+        {"uarch_x18", CM_CSR_UARCH_X18},
+        {"uarch_x19", CM_CSR_UARCH_X19},
+        {"uarch_x20", CM_CSR_UARCH_X20},
+        {"uarch_x21", CM_CSR_UARCH_X21},
+        {"uarch_x22", CM_CSR_UARCH_X22},
+        {"uarch_x23", CM_CSR_UARCH_X23},
+        {"uarch_x24", CM_CSR_UARCH_X24},
+        {"uarch_x25", CM_CSR_UARCH_X25},
+        {"uarch_x26", CM_CSR_UARCH_X26},
+        {"uarch_x27", CM_CSR_UARCH_X27},
+        {"uarch_x28", CM_CSR_UARCH_X28},
+        {"uarch_x29", CM_CSR_UARCH_X29},
+        {"uarch_x30", CM_CSR_UARCH_X30},
+        {"uarch_x31", CM_CSR_UARCH_X31},
         {"uarch_pc", CM_CSR_UARCH_PC},
         {"uarch_cycle", CM_CSR_UARCH_CYCLE},
         {"uarch_halt_flag", CM_CSR_UARCH_HALT_FLAG},
@@ -757,773 +752,95 @@ cm_access_log_type clua_check_cm_log_type(lua_State *L, int tabidx) {
     };
 }
 
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define PUSH_PROCESSOR_CONFIG_CSR(regname)                                                                             \
-    do {                                                                                                               \
-        clua_setintegerfield(L, p.regname, #regname, -1);                                                              \
-    } while (0)
-
-// NOLINTBEGIN(cppcoreguidelines-macro-usage,cppcoreguidelines-avoid-do-while)
-#define PUSH_CM_PROCESSOR_CONFIG_CSR(regname)                                                                          \
-    do {                                                                                                               \
-        clua_setintegerfield(L, p->regname, #regname, -1);                                                             \
-    } while (0)
-// NOLINTEND(cppcoreguidelines-macro-usage,cppcoreguidelines-avoid-do-while)
-
-/// \brief Pushes a cm_processor_config to the Lua stack
-/// \param L Lua state.
-/// \param p Processor_config to be pushed.
-static void push_cm_processor_config(lua_State *L, const cm_processor_config *p) {
-    lua_newtable(L); // p
-    lua_newtable(L); // p x
-    for (int i = 1; i <= (X_REG_COUNT - 1); i++) {
-        lua_pushinteger(L, static_cast<lua_Integer>(p->x[i]));
-        lua_rawseti(L, -2, i);
-    }
-    lua_setfield(L, -2, "x");
-    lua_newtable(L); // p f
-    for (int i = 0; i <= (F_REG_COUNT - 1); i++) {
-        lua_pushinteger(L, static_cast<lua_Integer>(p->f[i]));
-        lua_rawseti(L, -2, i);
-    }
-    lua_setfield(L, -2, "f");
-    PUSH_CM_PROCESSOR_CONFIG_CSR(pc);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(fcsr);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(mvendorid);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(marchid);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(mimpid);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(mcycle);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(icycleinstret);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(mstatus);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(mtvec);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(mscratch);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(mepc);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(mcause);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(mtval);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(misa);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(mie);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(mip);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(medeleg);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(mideleg);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(mcounteren);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(menvcfg);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(stvec);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(sscratch);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(sepc);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(scause);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(stval);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(satp);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(scounteren);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(senvcfg);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(ilrsc);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(iflags);
-    PUSH_CM_PROCESSOR_CONFIG_CSR(iunrep);
-}
-
-/// \brief Pushes a cm_ram_config to the Lua stack
-/// \param L Lua state.
-/// \param r Ram configuration to be pushed.
-static void push_cm_ram_config(lua_State *L, const cm_ram_config *r) {
-    lua_newtable(L);
-    clua_setintegerfield(L, r->length, "length", -1);
-    if (r->image_filename != nullptr) {
-        clua_setstringfield(L, r->image_filename, "image_filename", -1);
-    }
-}
-
-/// \brief Pushes a cm_dtb_config to the Lua stack
-/// \param L Lua state.
-/// \param r Ram configuration to be pushed.
-static void push_cm_dtb_config(lua_State *L, const cm_dtb_config *r) {
-    lua_newtable(L);
-    if (r->bootargs != nullptr) {
-        clua_setstringfield(L, r->bootargs, "bootargs", -1);
-    }
-    if (r->init != nullptr) {
-        clua_setstringfield(L, r->init, "init", -1);
-    }
-    if (r->entrypoint != nullptr) {
-        clua_setstringfield(L, r->entrypoint, "entrypoint", -1);
-    }
-    if (r->image_filename != nullptr) {
-        clua_setstringfield(L, r->image_filename, "image_filename", -1);
-    }
-}
-
-/// \brief Pushes an cm_tlb_config to the Lua stack
-/// \param L Lua state.
-/// \param c Tlb configuration to be pushed.
-static void push_cm_tlb_config(lua_State *L, const cm_tlb_config *t) {
-    lua_newtable(L);
-    if (t->image_filename != nullptr) {
-        clua_setstringfield(L, t->image_filename, "image_filename", -1);
-    }
-}
-
-/// \brief Pushes an cm_htif_config to the Lua stack
-/// \param L Lua state.
-/// \param h Htif configuration to be pushed.
-static void push_cm_htif_config(lua_State *L, const cm_htif_config *h) {
-    lua_newtable(L);
-    clua_setbooleanfield(L, h->console_getchar, "console_getchar", -1);
-    clua_setbooleanfield(L, h->yield_manual, "yield_manual", -1);
-    clua_setbooleanfield(L, h->yield_automatic, "yield_automatic", -1);
-    clua_setintegerfield(L, h->fromhost, "fromhost", -1);
-    clua_setintegerfield(L, h->tohost, "tohost", -1);
-}
-
-/// \brief Pushes an cm_clint_config to the Lua stack
-/// \param L Lua state.
-/// \param c Clint configuration to be pushed.
-static void push_cm_clint_config(lua_State *L, const cm_clint_config *c) {
-    lua_newtable(L);
-    clua_setintegerfield(L, c->mtimecmp, "mtimecmp", -1);
-}
-
-/// \brief Pushes an cm_plic_config to the Lua stack
-/// \param L Lua state.
-/// \param c Plic configuration to be pushed.
-static void push_cm_plic_config(lua_State *L, const cm_plic_config *c) {
-    lua_newtable(L);
-    clua_setintegerfield(L, c->girqpend, "girqpend", -1);
-    clua_setintegerfield(L, c->girqsrvd, "girqsrvd", -1);
-}
-
-/// \brief Pushes cm_memory_range_config to the Lua stack
-/// \param L Lua state.
-/// \param m Memory range config to be pushed.
-static void push_cm_memory_range_config(lua_State *L, const cm_memory_range_config *m) {
-    lua_newtable(L);
-    clua_setintegerfield(L, m->start, "start", -1);
-    clua_setintegerfield(L, m->length, "length", -1);
-    if (m->image_filename != nullptr) {
-        clua_setstringfield(L, m->image_filename, "image_filename", -1);
-    }
-    clua_setbooleanfield(L, m->shared, "shared", -1);
-}
-
-/// \brief Pushes cm_virtio_hostfwd_config to the Lua stack
-/// \param L Lua state.
-/// \param m VirtIO host forward config to be pushed.
-static void push_cm_virtio_hostfwd_config(lua_State *L, const cm_virtio_hostfwd_config *m) {
-    lua_newtable(L);
-    clua_setbooleanfield(L, m->is_udp, "is_udp", -1);
-    clua_setintegerfield(L, m->host_ip, "host_ip", -1);
-    clua_setintegerfield(L, m->guest_ip, "guest_ip", -1);
-    clua_setintegerfield(L, m->host_port, "host_port", -1);
-    clua_setintegerfield(L, m->guest_port, "guest_port", -1);
-}
-
-/// \brief Pushes cm_cmio_buffer_config to the Lua stack
-/// \param L Lua state.
-/// \param m buffer to be pushed.
-static void push_cm_cmio_buffer_config(lua_State *L, const cm_cmio_buffer_config *m) {
-    lua_newtable(L);
-    if (m->image_filename != nullptr) {
-        clua_setstringfield(L, m->image_filename, "image_filename", -1);
-    }
-    clua_setbooleanfield(L, m->shared, "shared", -1);
-}
-
-/// \brief Pushes cm_cmio_config to the Lua stack
-/// \param L Lua state.
-/// \param r Cmio config to be pushed.
-static void push_cm_cmio_config(lua_State *L, const cm_cmio_config *r) {
-    lua_newtable(L);                              // cmio
-    push_cm_cmio_buffer_config(L, &r->rx_buffer); // buffer_config
-    lua_setfield(L, -2, "rx_buffer");             // cmio
-    push_cm_cmio_buffer_config(L, &r->tx_buffer); // buffer_config
-    lua_setfield(L, -2, "tx_buffer");             // cmio
-}
-
-/// \brief Pushes cm_flash_drive_configs to the Lua stack
-/// \param L Lua state.
-/// \param flash_drives Flash drive configuration array to be pushed.
-static void push_cm_flash_drive_configs(lua_State *L, const cm_memory_range_config_array *flash_drives) {
-    lua_newtable(L);
-    for (size_t j = 0; j < flash_drives->count; ++j) {
-        push_cm_memory_range_config(L, &flash_drives->entry[j]);
-        lua_rawseti(L, -2, static_cast<lua_Integer>(j) + 1);
-    }
-}
-
-/// \brief Pushes cm_virtio_hostfwd_configs to the Lua stack
-/// \param L Lua state.
-/// \param virtio_hostfwds VirtIO host forward configuration array to be pushed.
-static void push_cm_virtio_hostfwd_configs(lua_State *L, const cm_virtio_hostfwd_config_array *virtio_hostfwds) {
-    lua_newtable(L);
-    for (size_t j = 0; j < virtio_hostfwds->count; ++j) {
-        push_cm_virtio_hostfwd_config(L, &virtio_hostfwds->entry[j]);
-        lua_rawseti(L, -2, static_cast<lua_Integer>(j) + 1);
-    }
-}
-
-/// \brief Pushes cm_virtio_device_config to the Lua stack
-/// \param L Lua state.
-/// \param m VirtIO device config to be pushed.
-static void push_cm_virtio_device_config(lua_State *L, const cm_virtio_device_config *v) {
-    lua_newtable(L);
-    switch (v->type) {
-        case CM_VIRTIO_DEVICE_CONSOLE:
-            clua_setstringfield(L, "console", "type", -1);
-            break;
-        case CM_VIRTIO_DEVICE_P9FS:
-            clua_setstringfield(L, "p9fs", "type", -1);
-            clua_setstringfield(L, v->device.p9fs.tag, "tag", -1);
-            clua_setstringfield(L, v->device.p9fs.host_directory, "host_directory", -1);
-            break;
-        case CM_VIRTIO_DEVICE_NET_USER:
-            clua_setstringfield(L, "net-user", "type", -1);
-            push_cm_virtio_hostfwd_configs(L, &v->device.net_user.hostfwd);
-            lua_setfield(L, -2, "hostfwd");
-            break;
-        case CM_VIRTIO_DEVICE_NET_TUNTAP:
-            clua_setstringfield(L, "net-tuntap", "type", -1);
-            clua_setstringfield(L, v->device.net_tuntap.iface, "iface", -1);
-            break;
-        default:
-            luaL_error(L, "invalid virtio device config type");
-            break;
-    }
-}
-
-/// \brief Pushes cm_virtio_config_array to the Lua stack
-/// \param L Lua state.
-/// \param virtio VirtIO configuration array to be pushed.
-static void push_cm_virtio_configs(lua_State *L, const cm_virtio_config_array *virtio) {
-    lua_newtable(L);
-    for (size_t j = 0; j < virtio->count; ++j) {
-        push_cm_virtio_device_config(L, &virtio->entry[j]);
-        lua_rawseti(L, -2, static_cast<lua_Integer>(j) + 1);
-    }
-}
-
-/// \brief Pushes a cm_uarch_ram_config to the Lua stack
-/// \param L Lua state.
-/// \param r microarchitecture RAM configuration to be pushed.
-static void push_cm_uarch_ram_config(lua_State *L, const cm_uarch_ram_config *r) {
-    lua_newtable(L);
-    if (r->image_filename != nullptr) {
-        clua_setstringfield(L, r->image_filename, "image_filename", -1);
-    }
-}
-
-/// \brief Pushes an cm_uarch_processor_config to the Lua stack
-/// \param L Lua state.
-/// \param c microarchitecture processor configuration to be pushed.
-static void push_cm_uarch_processor_config(lua_State *L, const cm_uarch_processor_config *u) {
-    lua_newtable(L);
-    clua_setintegerfield(L, u->pc, "pc", -1);
-    clua_setintegerfield(L, u->cycle, "cycle", -1);
-    clua_setbooleanfield(L, u->halt_flag, "halt_flag", -1);
-    lua_newtable(L);
-    for (int i = 1; i <= (UARCH_X_REG_COUNT - 1); i++) {
-        lua_pushinteger(L, static_cast<lua_Integer>(u->x[i]));
-        lua_rawseti(L, -2, i);
-    }
-    lua_setfield(L, -2, "x");
-}
-
-/// \brief Pushes an cm_uarch_config to the Lua stack
-/// \param L Lua state.
-/// \param c microarchitecture configuration to be pushed.
-static void push_cm_uarch_config(lua_State *L, const cm_uarch_config *u) {
-    lua_newtable(L);
-    push_cm_uarch_ram_config(L, &u->ram);             // config ram
-    lua_setfield(L, -2, "ram");                       // config
-    push_cm_uarch_processor_config(L, &u->processor); // config processor
-    lua_setfield(L, -2, "processor");                 // config
-}
-
-void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c) {
-    lua_newtable(L);                                 // config
-    push_cm_processor_config(L, &c->processor);      // config processor
-    lua_setfield(L, -2, "processor");                // config
-    push_cm_tlb_config(L, &c->tlb);                  // config tlb
-    lua_setfield(L, -2, "tlb");                      // config
-    push_cm_htif_config(L, &c->htif);                // config htif
-    lua_setfield(L, -2, "htif");                     // config
-    push_cm_clint_config(L, &c->clint);              // config clint
-    lua_setfield(L, -2, "clint");                    // config
-    push_cm_plic_config(L, &c->plic);                // config plic
-    lua_setfield(L, -2, "plic");                     // config
-    push_cm_flash_drive_configs(L, &c->flash_drive); // config flash_drive
-    lua_setfield(L, -2, "flash_drive");              // config
-    push_cm_virtio_configs(L, &c->virtio);           // config virtio
-    lua_setfield(L, -2, "virtio");                   // config
-    push_cm_ram_config(L, &c->ram);                  // config ram
-    lua_setfield(L, -2, "ram");                      // config
-    push_cm_dtb_config(L, &c->dtb);                  // config dtb
-    lua_setfield(L, -2, "dtb");                      // config
-    push_cm_uarch_config(L, &c->uarch);              // uarch
-    lua_setfield(L, -2, "uarch");                    // config
-    push_cm_cmio_config(L, &c->cmio);                // config cmio
-    lua_setfield(L, -2, "cmio");                     // config
-}
-
-#if 0
-/// \brief Pushes an cm_concurrency_runtime_config to the Lua stack
-/// \param L Lua state.
-/// \param c C api concurrency runtime config to be pushed.
-static void push_cm_concurrency_runtime_config(lua_State *L, const cm_concurrency_runtime_config *c) {
-    lua_newtable(L);
-    clua_setintegerfield(L, c->update_merkle_tree, "update_merkle_tree", -1);
-}
-
-void clua_push_cm_machine_runtime_config(lua_State *L, const cm_machine_runtime_config *r) {
-    lua_newtable(L);                                        // config
-    push_cm_concurrency_runtime_config(L, &r->concurrency); // config concurrency
-    lua_setfield(L, -2, "concurrency");                     // config
-}
-#endif
-
-/// \brief Loads RAM config from Lua to cm_machine_config.
-/// \param L Lua state.
-/// \param tabidx Config stack index.
-/// \param r C api RAM config structure to receive results.
-static void check_cm_ram_config(lua_State *L, int tabidx, cm_ram_config *r) {
-    check_table_field(L, tabidx, "ram");
-    r->length = check_uint_field(L, -1, "length");
-    r->image_filename = opt_copy_string_field(L, -1, "image_filename");
-    lua_pop(L, 1);
-}
-
-/// \brief Loads DTB config from Lua to cm_dtb_config
-/// \param L Lua state
-/// \param tabidx Config stack index
-/// \param r C api DTB config structure to receive results
-static void check_cm_dtb_config(lua_State *L, int tabidx, cm_dtb_config *r) {
-    if (!opt_table_field(L, tabidx, "dtb")) {
-        return;
-    }
-    r->image_filename = opt_copy_string_field(L, -1, "image_filename");
-    r->bootargs = opt_copy_string_field(L, -1, "bootargs");
-    r->init = opt_copy_string_field(L, -1, "init");
-    r->entrypoint = opt_copy_string_field(L, -1, "entrypoint");
-    lua_pop(L, 1);
-}
-
-cm_memory_range_config *clua_check_cm_memory_range_config(lua_State *L, int tabidx, const char *what,
-    cm_memory_range_config *m) {
+static int64_t clua_get_array_table_len(lua_State *L, int tabidx) {
     if (!lua_istable(L, tabidx)) {
-        luaL_error(L, "%s memory range not a table", what);
+        return -1;
     }
-    m->shared = opt_boolean_field(L, tabidx, "shared");
-    m->start = check_uint_field(L, tabidx, "start");
-    m->length = opt_uint_field(L, tabidx, "length", UINT64_C(-1));
-    m->image_filename = opt_copy_string_field(L, tabidx, "image_filename");
-    return m;
+    int64_t len = 0;
+    lua_pushvalue(L, tabidx);        // push table
+    lua_pushnil(L);                  // push key
+    while (lua_next(L, -2)) {        // replace key, push value
+        if (!lua_isinteger(L, -2)) { // non integer key, not an array
+            lua_pop(L, 3);
+            return -1;
+        }
+        const int64_t i = lua_tointeger(L, -2);
+        if (i <= 0) { // invalid index, not an array
+            lua_pop(L, 3);
+            return -1;
+        }
+        len = std::max(i, len);
+        lua_pop(L, 1); // pop value
+    }
+    lua_pop(L, 1); // pop key
+    return len;
 }
 
-cm_virtio_hostfwd_config *clua_check_cm_virtio_hostfwd_config(lua_State *L, int tabidx, const char *what,
-    cm_virtio_hostfwd_config *m) {
-    if (!lua_istable(L, tabidx)) {
-        luaL_error(L, "%s virtio hostfwd not a table", what);
-    }
-    m->is_udp = opt_boolean_field(L, tabidx, "is_udp");
-    m->host_ip = check_uint_field(L, tabidx, "host_ip");
-    m->guest_ip = check_uint_field(L, tabidx, "guest_ip");
-    m->host_port = check_uint_field(L, tabidx, "host_port");
-    m->guest_port = check_uint_field(L, tabidx, "guest_port");
-    return m;
-}
-
-/// \brief Loads cm_cmio_buffer_config from Lua to cm_cmio_buffer_config
-cm_cmio_buffer_config *clua_check_cm_cmio_buffer_config(lua_State *L, int tabidx, cm_cmio_buffer_config *m,
-    const cm_cmio_buffer_config *def) {
-    if (!lua_istable(L, tabidx)) {
-        *m = *def;
-        return m;
-    }
-    m->shared = opt_boolean_field(L, tabidx, "shared");
-    m->image_filename = opt_copy_string_field(L, tabidx, "image_filename");
-    return m;
-}
-
-/// \brief Loads cmio config from Lua to cm_cmio_config
-/// \param L Lua state
-/// \param tabidx Config stack index
-/// \param r C api cmio config structure to receive results
-static void check_cm_cmio_config(lua_State *L, int tabidx, cm_cmio_config *r, const cm_cmio_config *def) {
-    if (!opt_table_field(L, tabidx, "cmio")) {
-        *r = *def;
-        return;
-    }
-    lua_getfield(L, -1, "rx_buffer");
-    clua_check_cm_cmio_buffer_config(L, -1, &r->rx_buffer, &def->rx_buffer);
-    lua_pop(L, 1);
-    lua_getfield(L, -1, "tx_buffer");
-    clua_check_cm_cmio_buffer_config(L, -1, &r->tx_buffer, &def->tx_buffer);
-    lua_pop(L, 2);
-}
-
-/// \brief Loads a C api flash drive configs from a Lua machine config
-/// \param L Lua state
-/// \param tabidx Machine config stack index
-/// \param fs Receives allocated array of flash drive configs
-static void check_cm_flash_drive_configs(lua_State *L, int tabidx, cm_memory_range_config_array *fs) {
-    memset(fs, 0, sizeof(cm_memory_range_config_array));
-    if (!opt_table_field(L, tabidx, "flash_drive")) {
-        return;
-    }
-    auto flash_drive_table_idx = lua_gettop(L);
-    const size_t count = luaL_len(L, flash_drive_table_idx);
-    if (count > CM_FLASH_DRIVE_CONFIGS_MAX_SIZE) {
-        luaL_error(L, "too many flash drives (expected max %d, got %d)", CM_FLASH_DRIVE_CONFIGS_MAX_SIZE,
-            static_cast<int>(fs->count));
-    }
-    fs->count = count;
-    fs->entry = new cm_memory_range_config[count]{};
-    for (unsigned i = 1; i <= fs->count; ++i) {
-        lua_geti(L, flash_drive_table_idx, i);
-        clua_check_cm_memory_range_config(L, -1, "flash drive", &fs->entry[i - 1]);
-        lua_pop(L, 1);
-    }
-    lua_pop(L, 1);
-}
-
-/// \brief Loads a C api VirtIO host forward configs from a Lua machine config
-/// \param L Lua state
-/// \param tabidx Machine config stack index
-/// \param fs Receives allocated array of VirtIO host forward configs
-static void check_cm_virtio_hostfwd_configs(lua_State *L, int tabidx, cm_virtio_hostfwd_config_array *hostfwds) {
-    memset(hostfwds, 0, sizeof(cm_virtio_hostfwd_config_array));
-    if (!opt_table_field(L, tabidx, "hostfwd")) {
-        return;
-    }
-    auto virtio_hostfwd_table_idx = lua_gettop(L);
-    const size_t count = luaL_len(L, virtio_hostfwd_table_idx);
-    if (count > CM_VIRTIO_HOSTFWD_CONFIGS_MAX_SIZE) {
-        luaL_error(L, "too many host forwards (expected max %d, got %d)", CM_VIRTIO_HOSTFWD_CONFIGS_MAX_SIZE,
-            static_cast<int>(hostfwds->count));
-    }
-    hostfwds->count = count;
-    hostfwds->entry = new cm_virtio_hostfwd_config[count]{};
-    for (unsigned i = 1; i <= hostfwds->count; ++i) {
-        lua_geti(L, virtio_hostfwd_table_idx, i);
-        clua_check_cm_virtio_hostfwd_config(L, -1, "hostfwd", &hostfwds->entry[i - 1]);
-        lua_pop(L, 1);
-    }
-    lua_pop(L, 1);
-}
-
-cm_virtio_device_config *clua_check_cm_virtio_device_config(lua_State *L, int tabidx, cm_virtio_device_config *m) {
-    if (!lua_istable(L, tabidx)) {
-        luaL_error(L, "virtio device not a table");
-    }
-    const std::string type = check_string_field(L, tabidx, "type");
-    if (type == "console") {
-        m->type = CM_VIRTIO_DEVICE_CONSOLE;
-    } else if (type == "p9fs") {
-        m->type = CM_VIRTIO_DEVICE_P9FS;
-        m->device.p9fs.tag = opt_copy_string_field(L, tabidx, "tag");
-        m->device.p9fs.host_directory = opt_copy_string_field(L, tabidx, "host_directory");
-    } else if (type == "net-user") {
-        m->type = CM_VIRTIO_DEVICE_NET_USER;
-        check_cm_virtio_hostfwd_configs(L, tabidx, &m->device.net_user.hostfwd);
-    } else if (type == "net-tuntap") {
-        m->type = CM_VIRTIO_DEVICE_NET_TUNTAP;
-        m->device.net_tuntap.iface = opt_copy_string_field(L, tabidx, "iface");
+nlohmann::json clua_value_to_json(lua_State *L, int idx) {
+    nlohmann::json j;
+    const int64_t len = clua_get_array_table_len(L, idx);
+    if (len >= 0) { // array
+        j = nlohmann::json::array();
+        for (int64_t i = 1; i <= len; ++i) {
+            lua_geti(L, idx, i);
+            j.push_back(clua_value_to_json(L, -1));
+            lua_pop(L, 1); // pop value
+        }
+    } else if (lua_istable(L, idx)) { // object
+        j = nlohmann::json::object();
+        lua_pushvalue(L, idx);    // push table
+        lua_pushnil(L);           // push key
+        while (lua_next(L, -2)) { // update key, push value
+            lua_pushvalue(L, -2); // push key again, because luaL_checkstring may overwrite it
+            const char *key = luaL_checkstring(L, -1);
+            j[key] = clua_value_to_json(L, -2);
+            lua_pop(L, 2); // pop key, value
+        }
+        lua_pop(L, 1); // pop table
+    } else if (lua_isinteger(L, idx)) {
+        j = lua_tointeger(L, idx);
+    } else if (lua_isnumber(L, idx)) {
+        j = lua_tonumber(L, idx);
+    } else if (lua_isstring(L, idx)) {
+        j = std::string(lua_tostring(L, idx));
+    } else if (lua_isboolean(L, idx)) {
+        j = static_cast<bool>(lua_toboolean(L, idx));
+    } else if (lua_isnil(L, idx)) {
+        j = nullptr;
     } else {
-        luaL_error(L, "invalid virtio device type '%s'", type.c_str());
+        luaL_error(L, "lua value of type %s cannot be serialized to JSON", lua_typename(L, lua_type(L, idx)));
     }
-    return m;
+    return j;
 }
 
-/// \brief Loads a C api virtio configs from a Lua machine config
-/// \param L Lua state
-/// \param tabidx Machine config stack index
-/// \param virtio Receives allocated array of virtio configs
-static void check_cm_virtio_configs(lua_State *L, int tabidx, cm_virtio_config_array *virtio) {
-    memset(virtio, 0, sizeof(cm_virtio_config_array));
-    if (!opt_table_field(L, tabidx, "virtio")) {
-        return;
-    }
-    auto virtio_table_idx = lua_gettop(L);
-    const size_t count = luaL_len(L, virtio_table_idx);
-    if (count > CM_VIRTIO_CONFIGS_MAX_SIZE) {
-        luaL_error(L, "too many virtio devices (expected max %d, got %d)", CM_VIRTIO_CONFIGS_MAX_SIZE,
-            static_cast<int>(virtio->count));
-    }
-    virtio->count = count;
-    virtio->entry = new cm_virtio_device_config[count]{};
-    for (unsigned i = 1; i <= virtio->count; ++i) {
-        lua_geti(L, virtio_table_idx, i);
-        clua_check_cm_virtio_device_config(L, -1, &virtio->entry[i - 1]);
-        lua_pop(L, 1);
-    }
-    lua_pop(L, 1);
-}
-
-/// \brief Loads processor config from a Lua to C api machine config
-/// \param L Lua state
-/// \param tabidx Config stack index
-/// \param p Pointer to C api processor config structure to receive results
-/// \param def Default configuration
-static void check_cm_processor_config(lua_State *L, int tabidx, cm_processor_config *p,
-    const cm_processor_config *def) {
-    if (!opt_table_field(L, tabidx, "processor")) {
-        *p = *def;
-        return;
-    }
-    // x
-    lua_getfield(L, -1, "x");
-    if (lua_istable(L, -1)) {
-        for (int i = 1; i < X_REG_COUNT; i++) {
-            p->x[i] = opt_uint_field(L, -1, i, def->x[i]);
+void clua_push_json(lua_State *L, const nlohmann::json &j) {
+    if (j.is_array()) {
+        lua_createtable(L, static_cast<int>(j.size()), 0);
+        int64_t i = 1;
+        for (auto it = j.begin(); it != j.end(); ++it, ++i) {
+            clua_push_json(L, *it);
+            lua_rawseti(L, -2, i);
         }
-    } else if (!lua_isnil(L, -1)) {
-        luaL_error(L, "invalid processor.x (expected table)");
-    }
-    lua_pop(L, 1);
-    // f
-    lua_getfield(L, -1, "f");
-    if (lua_istable(L, -1)) {
-        for (int i = 0; i < F_REG_COUNT; i++) {
-            p->f[i] = opt_uint_field(L, -1, i, def->f[i]);
+    } else if (j.is_object()) {
+        lua_createtable(L, 0, static_cast<int>(j.size()));
+        for (const auto &el : j.items()) {
+            clua_push_json(L, el.value());
+            lua_setfield(L, -2, el.key().c_str());
         }
-    } else if (!lua_isnil(L, -1)) {
-        luaL_error(L, "invalid processor.f (expected table)");
-    }
-    lua_pop(L, 1);
-    // CSRs
-    p->pc = opt_uint_field(L, -1, "pc", def->pc);
-    p->fcsr = opt_uint_field(L, -1, "fcsr", def->fcsr);
-    p->mvendorid = opt_uint_field(L, -1, "mvendorid", def->mvendorid);
-    p->marchid = opt_uint_field(L, -1, "marchid", def->marchid);
-    p->mimpid = opt_uint_field(L, -1, "mimpid", def->mimpid);
-    p->mcycle = opt_uint_field(L, -1, "mcycle", def->mcycle);
-    p->icycleinstret = opt_uint_field(L, -1, "icycleinstret", def->icycleinstret);
-    p->mstatus = opt_uint_field(L, -1, "mstatus", def->mstatus);
-    p->mtvec = opt_uint_field(L, -1, "mtvec", def->mtvec);
-    p->mscratch = opt_uint_field(L, -1, "mscratch", def->mscratch);
-    p->mepc = opt_uint_field(L, -1, "mepc", def->mepc);
-    p->mcause = opt_uint_field(L, -1, "mcause", def->mcause);
-    p->mtval = opt_uint_field(L, -1, "mtval", def->mtval);
-    p->misa = opt_uint_field(L, -1, "misa", def->misa);
-    p->mie = opt_uint_field(L, -1, "mie", def->mie);
-    p->mip = opt_uint_field(L, -1, "mip", def->mip);
-    p->medeleg = opt_uint_field(L, -1, "medeleg", def->medeleg);
-    p->mideleg = opt_uint_field(L, -1, "mideleg", def->mideleg);
-    p->mcounteren = opt_uint_field(L, -1, "mcounteren", def->mcounteren);
-    p->menvcfg = opt_uint_field(L, -1, "menvcfg", def->menvcfg);
-    p->stvec = opt_uint_field(L, -1, "stvec", def->stvec);
-    p->sscratch = opt_uint_field(L, -1, "sscratch", def->sscratch);
-    p->sepc = opt_uint_field(L, -1, "sepc", def->sepc);
-    p->scause = opt_uint_field(L, -1, "scause", def->scause);
-    p->stval = opt_uint_field(L, -1, "stval", def->stval);
-    p->satp = opt_uint_field(L, -1, "satp", def->satp);
-    p->scounteren = opt_uint_field(L, -1, "scounteren", def->scounteren);
-    p->senvcfg = opt_uint_field(L, -1, "senvcfg", def->senvcfg);
-    p->ilrsc = opt_uint_field(L, -1, "ilrsc", def->ilrsc);
-    p->iflags = opt_uint_field(L, -1, "iflags", def->iflags);
-    p->iunrep = opt_uint_field(L, -1, "iunrep", def->iunrep);
-    lua_pop(L, 1);
-}
-
-/// \brief Loads tlb config from a Lua to C api machine config
-/// \param L Lua state
-/// \param tabidx Config stack index
-/// \param p Pointer to C api processor config structure to receive results
-/// \param def Default configuration
-static void check_cm_tlb_config(lua_State *L, int tabidx, cm_tlb_config *t) {
-    if (!opt_table_field(L, tabidx, "tlb")) {
-        return;
-    }
-    t->image_filename = opt_copy_string_field(L, -1, "image_filename");
-    lua_pop(L, 1);
-}
-
-/// \brief Loads C api HTIF config from Lua.
-/// \param L Lua state.
-/// \param tabidx Config stack index.
-/// \param h C api HTIF config structure to receive results
-static void check_cm_htif_config(lua_State *L, int tabidx, cm_htif_config *h) {
-    if (!opt_table_field(L, tabidx, "htif")) {
-        return;
-    }
-    h->tohost = opt_uint_field(L, -1, "tohost", h->tohost);
-    h->fromhost = opt_uint_field(L, -1, "fromhost", h->fromhost);
-    h->console_getchar = opt_boolean_field(L, -1, "console_getchar");
-    h->yield_manual = opt_boolean_field(L, -1, "yield_manual");
-    h->yield_automatic = opt_boolean_field(L, -1, "yield_automatic");
-    lua_pop(L, 1);
-}
-
-/// \brief Loads C api CLINT config from Lua
-/// \param L Lua state
-/// \param tabidx Config stack index
-/// \param c CLINT config structure to receive results
-static void check_cm_clint_config(lua_State *L, int tabidx, cm_clint_config *c) {
-    if (!opt_table_field(L, tabidx, "clint")) {
-        return;
-    }
-    c->mtimecmp = opt_uint_field(L, -1, "mtimecmp", c->mtimecmp);
-    lua_pop(L, 1);
-}
-
-/// \brief Loads C api PLIC config from Lua
-/// \param L Lua state
-/// \param tabidx Config stack index
-/// \param c PLIC config structure to receive results
-static void check_cm_plic_config(lua_State *L, int tabidx, cm_plic_config *c) {
-    if (!opt_table_field(L, tabidx, "plic")) {
-        return;
-    }
-    c->girqpend = opt_uint_field(L, -1, "girqpend", c->girqpend);
-    c->girqsrvd = opt_uint_field(L, -1, "girqsrvd", c->girqsrvd);
-    lua_pop(L, 1);
-}
-
-cm_processor_config get_default_processor_config(lua_State *L) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to adjust config
-    const auto *config = cm_new_default_machine_config();
-    if (!config) {
-        luaL_error(L, "unable to obtain default config (out of memory?)"); // LCOV_EXCL_LINE
-        // Just to make clang-tidy happy. It doesn't know luaL_error is [[noreturn]]
-        return cm_processor_config{}; // LCOV_EXCL_LINE
-    }
-    cm_processor_config processor = config->processor;
-    cm_delete_machine_config(config);
-    return processor;
-}
-
-cm_uarch_processor_config get_default_uarch_processor_config(lua_State *L) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to adjust config
-    const auto *config = cm_new_default_machine_config();
-    if (!config) {
-        luaL_error(L, "unable to obtain default config (out of memory?)"); // LCOV_EXCL_LINE
-        // Just to make clang-tidy happy. It doesn't know luaL_error is [[noreturn]]
-        return cm_uarch_processor_config{}; // LCOV_EXCL_LINE
-    }
-    cm_uarch_processor_config uarch_processor_config = config->uarch.processor;
-    cm_delete_machine_config(config);
-    return uarch_processor_config;
-}
-
-/// \brief Loads microarchitecture RAM config from Lua to cm_uarch_ram_config.
-/// \param L Lua state.
-/// \param tabidx Config stack index.
-/// \param r C api microarchitecture RAM config structure to receive results.
-static void check_cm_uarch_ram_config(lua_State *L, int tabidx, cm_uarch_ram_config *r,
-    const cm_uarch_ram_config *def) {
-    if (!opt_table_field(L, tabidx, "ram")) {
-        *r = *def;
-        return;
-    }
-    r->image_filename = opt_copy_string_field(L, -1, "image_filename");
-    lua_pop(L, 1);
-}
-
-/// \brief Loads C api microarchitecture processor config from Lua to cm_uarch_processor_config
-/// \param L Lua state
-/// \param tabidx Config stack index
-/// \param u C api microarchitecture processor config structure to receive results
-static void check_cm_uarch_processor_config(lua_State *L, int tabidx, cm_uarch_processor_config *p,
-    const cm_uarch_processor_config *def) {
-    if (!opt_table_field(L, tabidx, "processor")) {
-        *p = *def;
-        return;
-    }
-    p->pc = opt_uint_field(L, -1, "pc", def->pc);
-    p->cycle = opt_uint_field(L, -1, "cycle", def->cycle);
-    p->halt_flag = opt_boolean_field(L, -1, "halt_flag", def->halt_flag);
-    lua_getfield(L, -1, "x");
-    if (lua_istable(L, -1)) {
-        for (int i = 1; i <= (UARCH_X_REG_COUNT - 1); i++) {
-            p->x[i] = opt_uint_field(L, -1, i, def->x[i]);
-        }
-    } else if (!lua_isnil(L, -1)) {
-        luaL_error(L, "invalid uarch.processor.x (expected table)");
-    }
-    lua_pop(L, 1); // x
-    lua_pop(L, 1); // processor
-}
-
-/// \brief Loads C api microarchitecture config from Lua to cm_uarch_config
-/// \param L Lua state
-/// \param tabidx Config stack index
-/// \param u C api microarchitecture config structure to receive results
-static void check_cm_uarch_config(lua_State *L, int tabidx, cm_uarch_config *u) {
-    u->processor = get_default_uarch_processor_config(L);
-    if (!opt_table_field(L, tabidx, "uarch")) {
-        return;
-    }
-    check_cm_uarch_ram_config(L, -1, &u->ram, &u->ram);
-    check_cm_uarch_processor_config(L, -1, &u->processor, &u->processor);
-    lua_pop(L, 1); // uarch
-}
-
-cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ctxidx) {
-    auto &managed = clua_push_to(L, clua_managed_cm_ptr<cm_machine_config>(new cm_machine_config{}), ctxidx);
-    cm_machine_config *config = managed.get();
-    config->processor = get_default_processor_config(L);
-    check_cm_processor_config(L, tabidx, &config->processor, &config->processor);
-    check_cm_ram_config(L, tabidx, &config->ram);
-    check_cm_dtb_config(L, tabidx, &config->dtb);
-    check_cm_tlb_config(L, tabidx, &config->tlb);
-    check_cm_htif_config(L, tabidx, &config->htif);
-    check_cm_clint_config(L, tabidx, &config->clint);
-    check_cm_plic_config(L, tabidx, &config->plic);
-    check_cm_uarch_config(L, tabidx, &config->uarch);
-    check_cm_cmio_config(L, tabidx, &config->cmio, &config->cmio);
-    check_cm_flash_drive_configs(L, tabidx, &config->flash_drive);
-    check_cm_virtio_configs(L, tabidx, &config->virtio);
-    managed.release();
-    lua_pop(L, 1); //??DD I don't think lua_pop can throw, but we should check
-    return config;
-}
-
-/// \brief Loads C api concurrency runtime config from Lua
-/// \param L Lua state
-/// \param tabidx Runtime config stack index
-/// \param c C api concurrency runtime config structure to receive results
-static void check_cm_concurrency_runtime_config(lua_State *L, int tabidx, cm_concurrency_runtime_config *c) {
-    if (!opt_table_field(L, tabidx, "concurrency")) {
-        return;
-    }
-    c->update_merkle_tree = opt_uint_field(L, -1, "update_merkle_tree");
-    lua_pop(L, 1);
-}
-
-/// \brief Loads C api htif runtime config from Lua
-/// \param L Lua state
-/// \param tabidx Runtime config stack index
-/// \param c C api htif runtime config structure to receive results
-static void check_cm_htif_runtime_config(lua_State *L, int tabidx, cm_htif_runtime_config *c) {
-    if (!opt_table_field(L, tabidx, "htif")) {
-        return;
-    }
-    c->no_console_putchar = opt_boolean_field(L, -1, "no_console_putchar");
-    lua_pop(L, 1);
-}
-
-cm_machine_runtime_config *clua_check_cm_machine_runtime_config(lua_State *L, int tabidx, int ctxidx) {
-    luaL_checktype(L, tabidx, LUA_TTABLE);
-    auto &managed =
-        clua_push_to(L, clua_managed_cm_ptr<cm_machine_runtime_config>(new cm_machine_runtime_config{}), ctxidx);
-    cm_machine_runtime_config *config = managed.get();
-    check_cm_concurrency_runtime_config(L, tabidx, &config->concurrency);
-    check_cm_htif_runtime_config(L, tabidx, &config->htif);
-    config->skip_root_hash_check = opt_boolean_field(L, tabidx, "skip_root_hash_check");
-    config->skip_root_hash_store = opt_boolean_field(L, tabidx, "skip_root_hash_store");
-    config->skip_version_check = opt_boolean_field(L, tabidx, "skip_version_check");
-    config->soft_yield = opt_boolean_field(L, tabidx, "soft_yield");
-    managed.release();
-    lua_pop(L, 1);
-    return config;
-}
-
-cm_machine_runtime_config *clua_opt_cm_machine_runtime_config(lua_State *L, int tabidx,
-    const cm_machine_runtime_config *r, int ctxidx) {
-    if (!lua_isnoneornil(L, tabidx)) {
-        return clua_check_cm_machine_runtime_config(L, tabidx, ctxidx);
+    } else if (j.is_string()) {
+        lua_pushstring(L, j.template get<std::string>().c_str());
+    } else if (j.is_number_unsigned()) {
+        lua_pushinteger(L, static_cast<int64_t>(j.template get<uint64_t>()));
+    } else if (j.is_number_integer()) {
+        lua_pushinteger(L, j.template get<int64_t>());
+    } else if (j.is_number_float()) {
+        lua_pushnumber(L, j.template get<double>());
+    } else if (j.is_boolean()) {
+        lua_pushboolean(L, j.template get<bool>());
+    } else if (j.is_null()) {
+        lua_pushnil(L);
     } else {
-        auto *def = new cm_machine_runtime_config{};
-        if (r != nullptr) {
-            def->concurrency = r->concurrency;
-        }
-        return def;
+        luaL_error(L, "JSON value of type %s cannot be to Lua", j.type_name());
     }
 }
 

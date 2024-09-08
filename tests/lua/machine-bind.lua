@@ -152,27 +152,6 @@ end
 
 local SHADOW_BASE = 0x0
 
-local cpu_x_addr = {}
-for i = 0, 31 do
-    cpu_x_addr[i] = i * 8
-end
-
-local function get_cpu_xreg_test_values()
-    local values = {}
-    for i = 0, 31 do
-        values[i] = i * 8
-    end
-    return values
-end
-
-local function get_cpu_uarch_xreg_test_values()
-    local values = {}
-    for i = 0, 31 do
-        values[i] = 0x10000 + (i * 8)
-    end
-    return values
-end
-
 local cpu_csr_addr = {
     pc = 512,
     fcsr = 520,
@@ -214,9 +193,20 @@ local cpu_csr_addr = {
     htif_iconsole = 808,
     htif_iyield = 816,
 }
+for i = 0, 31 do
+    cpu_csr_addr["x" .. i] = i * 8
+end
+
+local function get_uarch_cpu_csr_test_values()
+    local processor = {}
+    for i = 0, 31 do
+        processor["x" .. i] = 0x10000 + (i * 8)
+    end
+    return processor
+end
 
 local function get_cpu_csr_test_values()
-    return {
+    local csr_values = {
         pc = 0x200,
         mvendorid = -1,
         marchid = -1,
@@ -248,6 +238,10 @@ local function get_cpu_csr_test_values()
         ilrsc = 0x2e0,
         iunrep = 0x0,
     }
+    for i = 0, 31 do
+        csr_values["x" .. i] = i * 8
+    end
+    return csr_values
 end
 
 local machine_type = assert(arguments[1], "missing machine type")
@@ -283,9 +277,6 @@ local function build_machine_config(config_options)
 
     -- Create new machine
     local initial_csr_values = get_cpu_csr_test_values()
-    local initial_xreg_values = get_cpu_xreg_test_values()
-    local initial_uarch_xreg_values = get_cpu_uarch_xreg_test_values()
-    initial_csr_values.x = initial_xreg_values
     local config = {
         processor = config_options.processor or initial_csr_values,
         rom = { image_filename = test_util.images_path .. "rom.bin" },
@@ -293,9 +284,7 @@ local function build_machine_config(config_options)
         htif = config_options.htif or nil,
         cmio = config_options.cmio or nil,
         uarch = config_options.uarch or {
-            processor = {
-                x = initial_uarch_xreg_values,
-            },
+            processor = get_uarch_cpu_csr_test_values(),
             ram = {
                 length = 0x1000,
                 image_filename = test_util.create_test_uarch_program(),
@@ -342,8 +331,6 @@ end)
 print("\n\ntesting machine register initial flag values ")
 do_test("machine should have default config shadow register values", function(machine)
     local initial_csr_values = get_cpu_csr_test_values()
-    local initial_xreg_values = get_cpu_xreg_test_values()
-    initial_csr_values.x = nil
     initial_csr_values.mvendorid = nil
     initial_csr_values.marchid = nil
     initial_csr_values.mimpid = nil
@@ -352,17 +339,11 @@ do_test("machine should have default config shadow register values", function(ma
         local r = machine:read_word(cpu_csr_addr[k])
         assert(v == r)
     end
-    for k, v in pairs(initial_xreg_values) do
-        local r = machine:read_word(cpu_x_addr[k])
-        assert(v == r)
-    end
 end)
 
 print("\n\ntesting merkle tree get_proof for values for registers")
 do_test("should provide proof for values in registers", function(machine)
     local initial_csr_values = get_cpu_csr_test_values()
-    local initial_xreg_values = get_cpu_xreg_test_values()
-    initial_csr_values.x = nil
     initial_csr_values.mvendorid = nil
     initial_csr_values.marchid = nil
     initial_csr_values.mimpid = nil
@@ -372,13 +353,6 @@ do_test("should provide proof for values in registers", function(machine)
         for el = cartesi.TREE_LOG2_WORD_SIZE, cartesi.TREE_LOG2_ROOT_SIZE - 1 do
             local a = test_util.align(v, el)
             assert(test_util.check_proof(assert(machine:get_proof(a, el)), "no proof"), "proof failed")
-        end
-    end
-
-    for _, v in pairs(initial_xreg_values) do
-        for el = cartesi.TREE_LOG2_WORD_SIZE, cartesi.TREE_LOG2_ROOT_SIZE - 1 do
-            local a = test_util.align(v, el)
-            assert(test_util.check_proof(assert(machine:get_proof(a, el), "no proof")), "proof failed")
         end
     end
 end)
@@ -448,7 +422,7 @@ local function test_config(config)
         assert(config[field] and type(config[field]) == "table", "invalid field " .. field)
     end
     for i = 1, 31 do
-        assert(type(config.processor.x[i]) == "number", "x" .. i .. " is not a number")
+        assert(type(config.processor["x" .. i]) == "number", "x" .. i .. " is not a number")
     end
     local htif = config.htif
     for _, field in ipairs({ "console_getchar", "yield_manual", "yield_automatic" }) do
@@ -523,8 +497,8 @@ do_test("should have expected values", function(machine)
     assert(initial_config.plic.girqsrvd == 0, "wrong plic girqsrvd initial config value")
     assert(initial_config.htif.fromhost == 0, "wrong htif fromhost initial config value")
     assert(initial_config.htif.tohost == 0, "wrong htif tohost initial config value")
-    assert(initial_config.htif.yield_automatic == false, "wrong htif yield automatic initial config value")
-    assert(initial_config.htif.yield_manual == false, "wrong htif yield manual initial config value")
+    assert(initial_config.htif.yield_automatic == true, "wrong htif yield automatic initial config value")
+    assert(initial_config.htif.yield_manual == true, "wrong htif yield manual initial config value")
 end)
 
 print("\n\n test read_csr")
@@ -537,7 +511,7 @@ do_test("should return expected values", function(machine)
     initial_csr_values.htif_fromhost = 0x0
     initial_csr_values.htif_ihalt = 0x0
     initial_csr_values.htif_iconsole = 0x0
-    initial_csr_values.htif_iyield = 0x0
+    initial_csr_values.htif_iyield = 3
 
     -- Check csr register read
     local to_ignore = {
@@ -557,31 +531,31 @@ end)
 
 print("\n\n read and write x registers")
 do_test("written and expected register values should match", function(machine)
-    local initial_xreg_values = get_cpu_xreg_test_values()
     -- Write/Read X registers
-    local x1_initial_value = machine:read_x(1)
-    assert(x1_initial_value == initial_xreg_values[1], "error reading x1 register")
-    machine:write_x(1, 0x1122)
-    assert(machine:read_x(1) == 0x1122, "error with writing to x1 register")
-    machine:write_x(1, x1_initial_value)
-    assert(machine:read_x(1) == x1_initial_value)
+    local initial_csr_values = get_cpu_csr_test_values()
+    local x1_initial_value = machine:read_csr("x1")
+    assert(x1_initial_value == initial_csr_values.x1, "error reading x1 register")
+    machine:write_csr("x1", 0x1122)
+    assert(machine:read_csr("x1") == 0x1122, "error with writing to x1 register")
+    machine:write_csr("x1", x1_initial_value)
+    assert(machine:read_csr("x1") == x1_initial_value)
     -- Read invalid register
-    local status_invalid_reg = pcall(machine.read_x, machine, 1000)
+    local status_invalid_reg = pcall(machine.read_csr, machine, "x1000")
     assert(status_invalid_reg == false, "no error reading invalid x register")
 end)
 
 print("\n\n read and write uarch x registers")
 do_test("written and expected register values should match", function(machine)
-    local initial_xreg_values = get_cpu_uarch_xreg_test_values()
     -- Write/Read uarch X registers
-    local x1_initial_value = machine:read_uarch_x(1)
-    assert(x1_initial_value == initial_xreg_values[1], "error reading uarch x1 register")
-    machine:write_uarch_x(1, 0x1122)
-    assert(machine:read_uarch_x(1) == 0x1122, "error with writing to uarch x1 register")
-    machine:write_uarch_x(1, x1_initial_value)
-    assert(machine:read_uarch_x(1) == x1_initial_value)
+    local initial_csr_values = get_uarch_cpu_csr_test_values()
+    local x1_initial_value = machine:read_csr("uarch_x1")
+    assert(x1_initial_value == initial_csr_values.x1, "error reading uarch x1 register")
+    machine:write_csr("uarch_x1", 0x1122)
+    assert(machine:read_csr("uarch_x1") == 0x1122, "error with writing to uarch x1 register")
+    machine:write_csr("uarch_x1", x1_initial_value)
+    assert(machine:read_csr("uarch_x1") == x1_initial_value)
     -- Read invalid uarch register
-    local status_invalid_reg = pcall(machine.read_uarch_x, machine, 1000)
+    local status_invalid_reg = pcall(machine.read_csr, machine, "uarch_x1000")
     assert(status_invalid_reg == false, "no error reading invalid uarch x register")
 end)
 
@@ -828,11 +802,11 @@ test_util.make_do_test(build_machine, machine_type, {
 
     machine:log_step_uarch(with_proofs) -- auipc	t0,0x0
     machine:log_step_uarch(with_proofs) -- addi	t0,t0,256 # 0x100
-    assert(machine:read_uarch_x(t0) == uarch_ram_start + 0x100)
+    assert(machine:read_csr("uarch_x" .. t0) == uarch_ram_start + 0x100)
     machine:log_step_uarch(with_proofs) -- li	t1,0xca
-    assert(machine:read_uarch_x(t1) == 0xca)
+    assert(machine:read_csr("uarch_x" .. t1) == 0xca)
     machine:log_step_uarch(with_proofs) -- li	t2,0xfe
-    assert(machine:read_uarch_x(t2) == 0xfe)
+    assert(machine:read_csr("uarch_x" .. t2) == 0xfe)
 
     -- sd and assert stored correctly
     machine:log_step_uarch(with_proofs) -- sd	t1,0(t0) [0xca]
@@ -913,18 +887,19 @@ local test_reset_uarch_config = {
         halt_flag = true,
         cycle = 1,
         pc = 0,
-        x = get_cpu_uarch_xreg_test_values(),
     },
 }
+for i = 0, 31 do
+    test_reset_uarch_config.processor["x" .. i] = 0x10000 + (i * 8)
+end
 
 local function test_reset_uarch(machine, with_log, with_proofs, with_annotations)
     -- assert initial fixture state
     assert(machine:read_uarch_halt_flag() == true)
     assert(machine:read_uarch_cycle() == 1)
     assert(machine:read_csr("uarch_pc") == 0)
-    local xreg_test_values = get_cpu_uarch_xreg_test_values()
     for i = 1, 31 do
-        assert(machine:read_uarch_x(i) == xreg_test_values[i])
+        assert(machine:read_csr("uarch_x" .. i) == test_reset_uarch_config.processor["x" .. i])
     end
     -- modify uarch ram
     local gibberish = "mydataol12345678"
@@ -957,7 +932,7 @@ local function test_reset_uarch(machine, with_log, with_proofs, with_annotations
     assert(machine:read_uarch_cycle() == 0)
     assert(machine:read_csr("uarch_pc") == cartesi.UARCH_RAM_START_ADDRESS)
     for i = 1, 31 do
-        assert(machine:read_uarch_x(i) == 0)
+        assert(machine:read_csr("uarch_x" .. i) == 0)
     end
     -- assert that gibberish was removed from uarch ram
     assert(machine:read_memory(cartesi.UARCH_RAM_START_ADDRESS, #gibberish) ~= gibberish)
@@ -1609,8 +1584,8 @@ test_util.make_do_test(build_machine, machine_type, {
     end
 
     -- write to the first word
-    machine:write_uarch_x(t1, leaf_address)
-    machine:write_uarch_x(t0, 0xaaaaaaaaaaaaaaaa)
+    machine:write_csr("uarch_x" .. t1, leaf_address)
+    machine:write_csr("uarch_x" .. t0, 0xaaaaaaaaaaaaaaaa)
     local log, dump = log_step()
     assert(dump:match("7: write memory@0x%x+%(%d+%): 0x1111111111111111%(%d+%) %-> 0xaaaaaaaaaaaaaaaa%(%d+%)"))
     assert(log.accesses[7].read == leaf_data)
@@ -1620,8 +1595,8 @@ test_util.make_do_test(build_machine, machine_type, {
 
     -- restart program and write to second leaf word
     machine:write_csr("uarch_pc", cartesi.UARCH_RAM_START_ADDRESS)
-    machine:write_uarch_x(t1, machine:read_uarch_x(t1) + word_size)
-    machine:write_uarch_x(t0, 0xbbbbbbbbbbbbbbbb)
+    machine:write_csr("uarch_x" .. t1, machine:read_csr("uarch_x" .. t1) + word_size)
+    machine:write_csr("uarch_x" .. t0, 0xbbbbbbbbbbbbbbbb)
     log, dump = log_step()
     assert(dump:match("7: write memory@0x%x+%(%d+%): 0x2222222222222222%(%d+%) %-> 0xbbbbbbbbbbbbbbbb%(%d+%)"))
     assert(log.accesses[7].read == leaf_data)
@@ -1631,8 +1606,8 @@ test_util.make_do_test(build_machine, machine_type, {
 
     -- restart program and write to third leaf word
     machine:write_csr("uarch_pc", cartesi.UARCH_RAM_START_ADDRESS)
-    machine:write_uarch_x(t1, machine:read_uarch_x(t1) + word_size)
-    machine:write_uarch_x(t0, 0xcccccccccccccccc)
+    machine:write_csr("uarch_x" .. t1, machine:read_csr("uarch_x" .. t1) + word_size)
+    machine:write_csr("uarch_x" .. t0, 0xcccccccccccccccc)
     log, dump = log_step()
     assert(dump:match("7: write memory@0x%x+%(%d+%): 0x3333333333333333%(%d+%) %-> 0xcccccccccccccccc%(%d+%)"))
     assert(log.accesses[7].read == leaf_data)
@@ -1642,8 +1617,8 @@ test_util.make_do_test(build_machine, machine_type, {
 
     -- restart program and write to fourth leaf word
     machine:write_csr("uarch_pc", cartesi.UARCH_RAM_START_ADDRESS)
-    machine:write_uarch_x(t1, machine:read_uarch_x(t1) + word_size)
-    machine:write_uarch_x(t0, 0xdddddddddddddddd)
+    machine:write_csr("uarch_x" .. t1, machine:read_csr("uarch_x" .. t1) + word_size)
+    machine:write_csr("uarch_x" .. t0, 0xdddddddddddddddd)
     log, dump = log_step()
     assert(dump:match("7: write memory@0x%x+%(%d+%): 0x4444444444444444%(%d+%) %-> 0xdddddddddddddddd%(%d+%)"))
     assert(log.accesses[7].read == leaf_data)

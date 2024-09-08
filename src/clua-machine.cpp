@@ -25,12 +25,11 @@ namespace cartesi {
 /// \brief This is the machine.get_default_machine_config()
 /// method implementation.
 static int machine_class_index_get_default_config(lua_State *L) {
-    auto &managed_default_config = clua_push_to(L, clua_managed_cm_ptr<const cm_machine_config>(nullptr));
-    if (cm_get_default_config(&managed_default_config.get()) != 0) {
+    const char *config = cm_get_default_config();
+    if (!config) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_cm_machine_config(L, managed_default_config.get());
-    managed_default_config.reset();
+    clua_push_json(L, nlohmann::json::parse(config));
     return 1;
 }
 
@@ -184,23 +183,16 @@ static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
 static int machine_ctor(lua_State *L) {
     lua_settop(L, 3);
     auto &managed_machine = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr));
-    auto &managed_runtime_config =
-        clua_push_to(L, clua_managed_cm_ptr<cm_machine_runtime_config>(clua_opt_cm_machine_runtime_config(L, 3, {})));
+    const std::string runtime_config = clua_value_to_json(L, 3).dump();
     if (lua_type(L, 2) == LUA_TTABLE) {
-        auto &managed_config =
-            clua_push_to(L, clua_managed_cm_ptr<cm_machine_config>(clua_check_cm_machine_config(L, 2)));
-        if (cm_create(managed_config.get(), managed_runtime_config.get(), &managed_machine.get()) != 0) {
+        const std::string config = clua_value_to_json(L, 2).dump();
+        if (cm_create(config.c_str(), runtime_config.c_str(), &managed_machine.get()) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
-        managed_config.reset();
-        managed_runtime_config.reset();
-        lua_pop(L, 2);
     } else {
-        if (cm_load(luaL_checkstring(L, 2), managed_runtime_config.get(), &managed_machine.get()) != 0) {
+        if (cm_load(luaL_checkstring(L, 2), runtime_config.c_str(), &managed_machine.get()) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
-        managed_runtime_config.reset();
-        lua_pop(L, 1);
     }
     return 1;
 }
@@ -209,14 +201,10 @@ static int machine_ctor(lua_State *L) {
 struct machine_class {};
 
 int clua_machine_init(lua_State *L, int ctxidx) {
-    clua_createnewtype<clua_managed_cm_ptr<const cm_machine_config>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_machine_config>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<cm_access_log>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_machine_runtime_config>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<cm_merkle_tree_proof>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<char>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<unsigned char>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_memory_range_config>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<cm_memory_range_descr_array>>(L, ctxidx);
     if (!clua_typeexists<machine_class>(L, ctxidx)) {
         clua_createtype<machine_class>(L, "cartesi machine class", ctxidx);

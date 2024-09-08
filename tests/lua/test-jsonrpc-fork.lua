@@ -117,7 +117,12 @@ local function fork_tree(address, x, depth)
     local machine
     if depth == 0 then
         local config = stub.machine.get_default_config()
-        x = config.processor.x
+        x = {}
+        for k, v in pairs(config.processor) do
+            if k:sub(1, 1) == "x" then
+                x[tonumber(k:sub(2))] = v
+            end
+        end
         config.ram.length = 1 << 22
         machine = stub.machine(config)
     else
@@ -128,7 +133,7 @@ local function fork_tree(address, x, depth)
     node.children = children
     if depth <= MAXDEPTH then
         for child_index = 1, FANOUT do
-            machine:write_x(child_index, depth)
+            machine:write_csr("x" .. child_index, depth)
             x[child_index] = depth
             local child_address, child_pid = stub.fork()
             assert(child_pid > 0)
@@ -153,7 +158,7 @@ local function check_tree(root)
         local x = node.x
         io.write(string.rep("  ", depth), "{", table.concat(node.x, ","), "}\n")
         for i = 1, 31 do
-            if machine:read_x(i) ~= x[i] then
+            if machine:read_csr("x" .. i) ~= x[i] then
                 error("mismatch in x[" .. i .. "]")
             end
         end

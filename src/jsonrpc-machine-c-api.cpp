@@ -30,17 +30,6 @@ static const cartesi::jsonrpc_mgr_ptr *convert_from_c(const cm_jsonrpc_mgr *mgr)
     return reinterpret_cast<const cartesi::jsonrpc_mgr_ptr *>(mgr);
 }
 
-// NOLINTNEXTLINE
-#if 0 // Unused
-static cartesi::jsonrpc_mgr_ptr *convert_from_c(cm_jsonrpc_mgr *mgr) {
-    if (mgr == nullptr) {
-        throw std::invalid_argument("invalid stub");
-    }
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    return reinterpret_cast<cartesi::jsonrpc_mgr_ptr *>(mgr);
-}
-#endif
-
 static inline cartesi::i_virtual_machine *create_jsonrpc_virtual_machine(const cartesi::jsonrpc_mgr_ptr &mgr,
     const cartesi::machine_config &c, const cartesi::machine_runtime_config &r) {
     return new cartesi::jsonrpc_virtual_machine(mgr, c, r);
@@ -76,13 +65,13 @@ void cm_jsonrpc_destroy_mgr(const cm_jsonrpc_mgr *mgr) {
     delete mgr_wrapper;
 }
 
-int cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const cm_machine_config *config,
-    const cm_machine_runtime_config *runtime_config, cm_machine **new_machine) try {
+int cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const char *config, const char *runtime_config,
+    cm_machine **new_machine) try {
     if (new_machine == nullptr) {
         throw std::invalid_argument("invalid new machine output");
     }
-    const cartesi::machine_config c = convert_from_c(config);
-    const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
+    const cartesi::machine_config c = cartesi::from_json<cartesi::machine_config>(config);
+    const cartesi::machine_runtime_config r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
     const auto *cpp_mgr = convert_from_c(mgr);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     *new_machine = reinterpret_cast<cm_machine *>(create_jsonrpc_virtual_machine(*cpp_mgr, c, r));
@@ -91,12 +80,12 @@ int cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const cm_machine_config
     return cm_result_failure();
 }
 
-int cm_jsonrpc_load_machine(const cm_jsonrpc_mgr *mgr, const char *dir, const cm_machine_runtime_config *runtime_config,
+int cm_jsonrpc_load_machine(const cm_jsonrpc_mgr *mgr, const char *dir, const char *runtime_config,
     cm_machine **new_machine) try {
     if (new_machine == nullptr) {
         throw std::invalid_argument("invalid new machine output");
     }
-    const cartesi::machine_runtime_config r = convert_from_c(runtime_config);
+    const cartesi::machine_runtime_config r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
     const auto *cpp_mgr = convert_from_c(mgr);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     *new_machine = reinterpret_cast<cm_machine *>(load_jsonrpc_virtual_machine(*cpp_mgr, dir, r));
@@ -117,13 +106,14 @@ int cm_jsonrpc_get_machine(const cm_jsonrpc_mgr *mgr, cm_machine **new_machine) 
     return cm_result_failure();
 }
 
-int cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const cm_machine_config **config) try {
+int cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const char **config) try {
     if (config == nullptr) {
         throw std::invalid_argument("invalid config output");
     }
     const auto *cpp_mgr = convert_from_c(mgr);
     const cartesi::machine_config cpp_config = cartesi::jsonrpc_virtual_machine::get_default_config(*cpp_mgr);
-    *config = convert_to_c(cpp_config);
+    static THREAD_LOCAL char config_buf[CM_MAX_CONFIG_LENGTH];
+    *config = string_to_buf(config_buf, sizeof(config_buf), cartesi::to_json(cpp_config).dump());
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();

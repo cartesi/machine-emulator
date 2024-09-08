@@ -41,12 +41,11 @@ static int machine_obj_index_get_proof(lua_State *L) {
 
 static int machine_obj_index_get_initial_config(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto &managed_config = clua_push_to(L, clua_managed_cm_ptr<const cm_machine_config>(nullptr));
-    if (cm_get_initial_config(m.get(), &managed_config.get()) != 0) {
+    const char *config = nullptr;
+    if (cm_get_initial_config(m.get(), &config) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_cm_machine_config(L, managed_config.get());
-    managed_config.reset();
+    clua_push_json(L, nlohmann::json::parse(config));
     return 1;
 }
 

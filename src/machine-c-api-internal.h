@@ -40,17 +40,6 @@ char *string_to_buf(char *dest, size_t maxlen, const std::string &src);
 /// \brief Helper function that create empty string in case that C string is NULL
 std::string null_to_empty(const char *s);
 
-/// \brief Helper function that parses machine configuration cartesi::machine_config
-/// from C api structure cm_machine_config
-cartesi::machine_config convert_from_c(const cm_machine_config *c_config);
-
-/// \brief Helper function that parses machine runtime configuration
-/// from C api structure cm_machine_runtime_config
-cartesi::machine_runtime_config convert_from_c(const cm_machine_runtime_config *c_config);
-
-/// \brief Helper function converts machine configuration to C api structure
-cm_machine_config *convert_to_c(const cartesi::machine_config &cpp_config);
-
 /// \brief Helper function converts a semantic version to C api structure
 cm_semantic_version *convert_to_c(const cartesi::semantic_version &cpp_version);
 

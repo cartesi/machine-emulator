@@ -51,10 +51,7 @@ enum {
     CM_TREE_LOG2_WORD_SIZE = 5,
     CM_TREE_LOG2_PAGE_SIZE = 12,
     CM_TREE_LOG2_ROOT_SIZE = 64,
-
-    CM_FLASH_DRIVE_CONFIGS_MAX_SIZE = 8,
-    CM_VIRTIO_CONFIGS_MAX_SIZE = 16,
-    CM_VIRTIO_HOSTFWD_CONFIGS_MAX_SIZE = 16,
+    CM_MAX_CONFIG_LENGTH = 65536,
 };
 
 // ---------------------------------
@@ -115,6 +112,73 @@ typedef enum { // NOLINT(modernize-use-using)
 
 /// \brief List of CSRs to use with read_csr and write_csr
 typedef enum { // NOLINT(modernize-use-using)
+    // X registers
+    CM_CSR_X0,
+    CM_CSR_X1,
+    CM_CSR_X2,
+    CM_CSR_X3,
+    CM_CSR_X4,
+    CM_CSR_X5,
+    CM_CSR_X6,
+    CM_CSR_X7,
+    CM_CSR_X8,
+    CM_CSR_X9,
+    CM_CSR_X10,
+    CM_CSR_X11,
+    CM_CSR_X12,
+    CM_CSR_X13,
+    CM_CSR_X14,
+    CM_CSR_X15,
+    CM_CSR_X16,
+    CM_CSR_X17,
+    CM_CSR_X18,
+    CM_CSR_X19,
+    CM_CSR_X20,
+    CM_CSR_X21,
+    CM_CSR_X22,
+    CM_CSR_X23,
+    CM_CSR_X24,
+    CM_CSR_X25,
+    CM_CSR_X26,
+    CM_CSR_X27,
+    CM_CSR_X28,
+    CM_CSR_X29,
+    CM_CSR_X30,
+    CM_CSR_X31,
+    // F registers
+    CM_CSR_F0,
+    CM_CSR_F1,
+    CM_CSR_F2,
+    CM_CSR_F3,
+    CM_CSR_F4,
+    CM_CSR_F5,
+    CM_CSR_F6,
+    CM_CSR_F7,
+    CM_CSR_F8,
+    CM_CSR_F9,
+    CM_CSR_F10,
+    CM_CSR_F11,
+    CM_CSR_F12,
+    CM_CSR_F13,
+    CM_CSR_F14,
+    CM_CSR_F15,
+    CM_CSR_F16,
+    CM_CSR_F17,
+    CM_CSR_F18,
+    CM_CSR_F19,
+    CM_CSR_F20,
+    CM_CSR_F21,
+    CM_CSR_F22,
+    CM_CSR_F23,
+    CM_CSR_F24,
+    CM_CSR_F25,
+    CM_CSR_F26,
+    CM_CSR_F27,
+    CM_CSR_F28,
+    CM_CSR_F29,
+    CM_CSR_F30,
+    CM_CSR_F31,
+    // Machine CSRs
     CM_CSR_PC,
     CM_CSR_FCSR,
     CM_CSR_MVENDORID,
@@ -154,6 +218,39 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_CSR_HTIF_IHALT,
     CM_CSR_HTIF_ICONSOLE,
     CM_CSR_HTIF_IYIELD,
+    // Uarch
+    CM_CSR_UARCH_X0,
+    CM_CSR_UARCH_X1,
+    CM_CSR_UARCH_X2,
+    CM_CSR_UARCH_X3,
+    CM_CSR_UARCH_X4,
+    CM_CSR_UARCH_X5,
+    CM_CSR_UARCH_X6,
+    CM_CSR_UARCH_X7,
+    CM_CSR_UARCH_X8,
+    CM_CSR_UARCH_X9,
+    CM_CSR_UARCH_X10,
+    CM_CSR_UARCH_X11,
+    CM_CSR_UARCH_X12,
+    CM_CSR_UARCH_X13,
+    CM_CSR_UARCH_X14,
+    CM_CSR_UARCH_X15,
+    CM_CSR_UARCH_X16,
+    CM_CSR_UARCH_X17,
+    CM_CSR_UARCH_X18,
+    CM_CSR_UARCH_X19,
+    CM_CSR_UARCH_X20,
+    CM_CSR_UARCH_X21,
+    CM_CSR_UARCH_X22,
+    CM_CSR_UARCH_X23,
+    CM_CSR_UARCH_X24,
+    CM_CSR_UARCH_X25,
+    CM_CSR_UARCH_X26,
+    CM_CSR_UARCH_X27,
+    CM_CSR_UARCH_X28,
+    CM_CSR_UARCH_X29,
+    CM_CSR_UARCH_X30,
+    CM_CSR_UARCH_X31,
     CM_CSR_UARCH_PC,
     CM_CSR_UARCH_CYCLE,
     CM_CSR_UARCH_HALT_FLAG,
@@ -178,200 +275,6 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE,
     CM_UARCH_BREAK_REASON_UARCH_HALTED,
 } CM_UARCH_BREAK_REASON;
-
-/// \brief Processor state configuration
-typedef struct {                        // NOLINT(modernize-use-using)
-    uint64_t x[CM_MACHINE_X_REG_COUNT]; ///< Value of general-purpose registers
-    uint64_t f[CM_MACHINE_F_REG_COUNT]; ///< Value of floating-point registers
-    uint64_t pc;                        ///< Value of pc
-    uint64_t fcsr;                      ///< Value of fcsr CSR
-    uint64_t mvendorid;                 ///< Value of mvendorid CSR
-    uint64_t marchid;                   ///< Value of marchid CSR
-    uint64_t mimpid;                    ///< Value of mimpid CSR
-    uint64_t mcycle;                    ///< Value of mcycle CSR
-    uint64_t icycleinstret;             ///< Value of icycleinstret CSR
-    uint64_t mstatus;                   ///< Value of mstatus CSR
-    uint64_t mtvec;                     ///< Value of mtvec CSR
-    uint64_t mscratch;                  ///< Value of mscratch CSR
-    uint64_t mepc;                      ///< Value of mepc CSR
-    uint64_t mcause;                    ///< Value of mcause CSR
-    uint64_t mtval;                     ///< Value of mtval CSR
-    uint64_t misa;                      ///< Value of misa CSR
-    uint64_t mie;                       ///< Value of mie CSR
-    uint64_t mip;                       ///< Value of mip CSR
-    uint64_t medeleg;                   ///< Value of medeleg CSR
-    uint64_t mideleg;                   ///< Value of mideleg CSR
-    uint64_t mcounteren;                ///< Value of mcounteren CSR
-    uint64_t menvcfg;                   ///< Value of menvcfg CSR
-    uint64_t stvec;                     ///< Value of stvec CSR
-    uint64_t sscratch;                  ///< Value of sscratch CSR
-    uint64_t sepc;                      ///< Value of sepc CSR
-    uint64_t scause;                    ///< Value of scause CSR
-    uint64_t stval;                     ///< Value of stval CSR
-    uint64_t satp;                      ///< Value of satp CSR
-    uint64_t scounteren;                ///< Value of scounteren CSR
-    uint64_t senvcfg;                   ///< Value of senvcfg CSR
-    uint64_t ilrsc;                     ///< Value of ilrsc CSR
-    uint64_t iflags;                    ///< Value of iflags CSR
-    uint64_t iunrep;                    ///< Value of iunrep CSR
-} cm_processor_config;
-
-/// \brief RAM state configuration
-typedef struct {                // NOLINT(modernize-use-using)
-    uint64_t length;            ///< RAM length
-    const char *image_filename; ///< RAM image file name
-} cm_ram_config;
-
-/// \brief DTB state configuration
-typedef struct {                // NOLINT(modernize-use-using)
-    const char *bootargs;       ///< Bootargs to pass to kernel
-    const char *init;           ///< Initialization commands to be executed as root on boot
-    const char *entrypoint;     ///< Commands to execute the main application
-    const char *image_filename; ///< ROM image file
-} cm_dtb_config;
-
-/// \brief Memory range configuration
-typedef struct {                // NOLINT(modernize-use-using)
-    uint64_t start;             ///< Memory range start position
-    uint64_t length;            ///< Memory range length
-    bool shared;                ///< Target changes to range affect image file?
-    const char *image_filename; ///< Memory range image file name
-} cm_memory_range_config;
-
-/// \brief Memory range configuration array
-typedef struct { // NOLINT(modernize-use-using)
-    cm_memory_range_config *entry;
-    size_t count;
-} cm_memory_range_config_array;
-
-/// \brief TLB device state configuration
-typedef struct {                // NOLINT(modernize-use-using)
-    const char *image_filename; ///< TLB image file name
-} cm_tlb_config;
-
-/// \brief CLINT device state configuration
-typedef struct {       // NOLINT(modernize-use-using)
-    uint64_t mtimecmp; ///< Value of mtimecmp CSR
-} cm_clint_config;
-
-/// \brief PLIC device state configuration
-typedef struct {       // NOLINT(modernize-use-using)
-    uint64_t girqpend; ///< Value of girqpend CSR
-    uint64_t girqsrvd; ///< Value of girqsrvd CSR
-} cm_plic_config;
-
-/// \brief HTIF device state configuration
-typedef struct {          // NOLINT(modernize-use-using)
-    uint64_t fromhost;    ///< Value of fromhost CSR
-    uint64_t tohost;      ///< Value of tohost CSR
-    bool console_getchar; ///< Make console getchar available?
-    bool yield_manual;    ///< Make yield manual available?
-    bool yield_automatic; ///< Make yield automatic available?
-} cm_htif_config;
-
-/// \brief VirtIO device type
-typedef enum { // NOLINT(modernize-use-using)
-    CM_VIRTIO_DEVICE_CONSOLE,
-    CM_VIRTIO_DEVICE_P9FS,
-    CM_VIRTIO_DEVICE_NET_USER,
-    CM_VIRTIO_DEVICE_NET_TUNTAP
-} CM_VIRTIO_DEVICE_TYPE;
-
-/// \brief VirtIO Plan 9 filesystem device state configuration
-typedef struct {                // NOLINT(modernize-use-using)
-    const char *tag;            ///< Guest mount tag
-    const char *host_directory; ///< Path to the host shared directory
-} cm_virtio_p9fs_config;
-
-/// \brief VirtIO host forward state config
-typedef struct cm_virtio_hostfwd_config { // NOLINT(modernize-use-using)
-    bool is_udp;
-    uint64_t host_ip;
-    uint64_t guest_ip;
-    uint16_t host_port;
-    uint16_t guest_port;
-} cm_virtio_hostfwd_config;
-
-/// \brief VirtIO host forward configuration array
-typedef struct { // NOLINT(modernize-use-using)
-    cm_virtio_hostfwd_config *entry;
-    size_t count;
-} cm_virtio_hostfwd_config_array;
-
-/// \brief VirtIO user network device state configuration
-typedef struct { // NOLINT(modernize-use-using)
-    cm_virtio_hostfwd_config_array hostfwd;
-} cm_virtio_net_user_config;
-
-/// \brief VirtIO TUN/TAP network device state configuration
-typedef struct {       // NOLINT(modernize-use-using)
-    const char *iface; ///< Host's tap network interface (e.g "tap0")
-} cm_virtio_net_tuntap_config;
-
-/// \brief VirtIO device union
-typedef union {                             // NOLINT(modernize-use-using)
-    cm_virtio_p9fs_config p9fs;             ///< Plan 9 filesystem
-    cm_virtio_net_user_config net_user;     ///< User-mode networking
-    cm_virtio_net_tuntap_config net_tuntap; ///< TUN/TAP networking
-} cm_virtio_device_config_union;
-
-/// \brief VirtIO device state configuration
-typedef struct {                          // NOLINT(modernize-use-using)
-    CM_VIRTIO_DEVICE_TYPE type;           ///< VirtIO device type
-    cm_virtio_device_config_union device; ///< VirtIO device config
-} cm_virtio_device_config;
-
-/// \brief VirtIO device configuration array
-typedef struct { // NOLINT(modernize-use-using)
-    cm_virtio_device_config *entry;
-    size_t count;
-} cm_virtio_config_array;
-
-/// \brief CMIO buffer configuration
-typedef struct {                // NOLINT(modernize-use-using)
-    bool shared;                ///< Target changes to range affect image file?
-    const char *image_filename; ///< Memory range image file name
-} cm_cmio_buffer_config;
-
-/// \brief Cmio state configuration
-typedef struct {                     // NOLINT(modernize-use-using)
-    cm_cmio_buffer_config rx_buffer; ///< RX buffer configuration
-    cm_cmio_buffer_config tx_buffer; ///< TX buffer configuration
-} cm_cmio_config;
-
-/// \brief microarchitecture RAM configuration
-typedef struct {                // NOLINT(modernize-use-using)
-    const char *image_filename; ///< RAM image file name
-} cm_uarch_ram_config;
-
-/// \brief Microarchitecture processor configuration
-typedef struct { // NOLINT(modernize-use-using)
-    uint64_t x[CM_MACHINE_UARCH_X_REG_COUNT];
-    uint64_t pc;
-    uint64_t cycle;
-    bool halt_flag;
-} cm_uarch_processor_config;
-
-/// \brief Microarchitecture state configuration
-typedef struct { // NOLINT(modernize-use-using)
-    cm_uarch_processor_config processor;
-    cm_uarch_ram_config ram;
-} cm_uarch_config;
-
-/// \brief Machine state configuration
-typedef struct { // NOLINT(modernize-use-using)
-    cm_processor_config processor;
-    cm_ram_config ram;
-    cm_dtb_config dtb;
-    cm_memory_range_config_array flash_drive;
-    cm_tlb_config tlb;
-    cm_clint_config clint;
-    cm_plic_config plic;
-    cm_htif_config htif;
-    cm_virtio_config_array virtio;
-    cm_cmio_config cmio;
-    cm_uarch_config uarch;
-} cm_machine_config;
 
 /// \brief Merkle tree proof structure
 /// \details
@@ -452,26 +355,6 @@ typedef struct {                    // NOLINT(modernize-use-using)
     cm_access_log_type log_type;    ///< Log type
 } cm_access_log;
 
-/// \brief Concurrency runtime configuration
-typedef struct { // NOLINT(modernize-use-using)
-    uint64_t update_merkle_tree;
-} cm_concurrency_runtime_config;
-
-/// \brief HTIF runtime configuration
-typedef struct { // NOLINT(modernize-use-using)
-    bool no_console_putchar;
-} cm_htif_runtime_config;
-
-/// \brief Machine runtime configuration
-typedef struct { // NOLINT(modernize-use-using)
-    cm_concurrency_runtime_config concurrency;
-    cm_htif_runtime_config htif;
-    bool skip_root_hash_check;
-    bool skip_root_hash_store;
-    bool skip_version_check;
-    bool soft_yield;
-} cm_machine_runtime_config;
-
 /// \brief Machine instance handle
 /// \details cm_machine* is handle used from C api users
 /// to pass the machine object when calling C api functions. Currently,
@@ -506,32 +389,19 @@ typedef struct { // NOLINT(modernize-use-using)
 // API function definitions
 // ---------------------------------
 
-/// \brief Create new machine config with default parameters
-/// \returns Pointer to new default config object
-/// \details Object acquired from this function must not be changed and
-/// must be deleted with cm_delete_machine_config. To make a custom config based
-/// on default config user must make a deep copy of returned object members and then
-/// customize
-CM_API const cm_machine_config *cm_new_default_machine_config(void);
-
-/// \brief Delete machine config acquired from cm_new_default_machine_config
-/// \returns void
-CM_API void cm_delete_machine_config(const cm_machine_config *config);
-
-/// \brief Create new machine instance from configuration
-/// \param config Machine configuration. Must be pointer to valid object
-/// \param runtime_config Machine runtime configuration. Must be pointer to valid object
-/// \param new_machine Receives the pointer to new machine instance
-/// \returns 0 for success, non zero code for error
-CM_API int cm_create(const cm_machine_config *config, const cm_machine_runtime_config *runtime_config,
-    cm_machine **new_machine);
+/// \brief Creates a new machine instance from configuration.
+/// \param config Machine configuration as a JSON string.
+/// \param runtime_config Machine runtime configuration as a JSON string.
+/// \param new_machine Receives the pointer to new machine instance.
+/// \returns 0 for success, non zero code for error.
+CM_API int cm_create(const char *config, const char *runtime_config, cm_machine **new_machine);
 
 /// \brief Create machine instance from previously serialized directory
 /// \param dir Directory where previous machine is serialized
 /// \param runtime_config Machine runtime configuration. Must be pointer to valid object
 /// \param new_machine Receives the pointer to new machine instance
 /// \returns 0 for success, non zero code for error
-CM_API int cm_load(const char *dir, const cm_machine_runtime_config *runtime_config, cm_machine **new_machine);
+CM_API int cm_load(const char *dir, const char *runtime_config, cm_machine **new_machine);
 
 /// \brief Serialize entire state to directory
 /// \param m Pointer to valid machine instance
@@ -789,22 +659,19 @@ CM_API int cm_verify_dirty_page_maps(const cm_machine *m, bool *result);
 /// It uses a thread local variable, so it's safe to call from different threads.
 CM_API const char *cm_get_last_error_message();
 
-/// \brief Returns copy of initialization config.
-/// \param m Pointer to valid machine instance
-/// \param config Receives the initial configuration.
-/// It should be deleted with cm_delete_machine_config.
-/// \returns 0 for success, non zero code for error
-/// \details Object acquired from this function must not be changed and
-/// must be deleted with cm_delete_machine_config
-CM_API int cm_get_initial_config(const cm_machine *m, const cm_machine_config **config);
+/// \brief Returns the machine initial config.
+/// \param m Pointer to a valid machine instance.
+/// \param config Receives the initial configuration as a JSON string,
+/// remains valid until the next time this same function is called on the same thread.
+/// \returns 0 for success, non zero code for error.
+CM_API int cm_get_initial_config(const cm_machine *m, const char **config);
 
-/// \brief Returns copy of default system config.
-/// \param config Receives the default configuration.
-/// It should be deleted with cm_delete_machine_config
-/// \returns 0 for success, non zero code for error
-/// \details Object acquired from this function must not be changed and
-/// must be deleted with cm_delete_machine_config
-CM_API int cm_get_default_config(const cm_machine_config **config);
+/// \brief Returns a JSON string for the default machine config.
+/// \returns A C string, remains valid until program ends.
+/// The string returned by this function must not be changed nor deallocated.
+/// The returned config is not complete to run a machine yet,  configurations such as
+/// ram length, ram image, flash drives, bootargs and entrypoint still need to be set.
+CM_API const char *cm_get_default_config();
 
 /// \brief Replaces a memory range.
 /// \param m Pointer to a valid machine instance.
@@ -818,22 +685,6 @@ CM_API int cm_get_default_config(const cm_machine_config **config);
 /// specified in new range.
 CM_API int cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,
     const char *image_filename);
-
-/// \brief Deletes a machine memory range config
-/// \returns void
-CM_API void cm_delete_memory_range_config(const cm_memory_range_config *config);
-
-/// \brief Deletes machine runtime config
-/// \returns void
-CM_API void cm_delete_machine_runtime_config(const cm_machine_runtime_config *config);
-
-/// \brief Deletes allocated microarchitecture ram config
-/// \returns void
-CM_API void cm_delete_uarch_ram_config(const cm_uarch_ram_config *config);
-
-/// \brief Deletes allocated dhd microarchitecture config
-/// \returns void
-CM_API void cm_delete_uarch_config(const cm_uarch_config *config);
 
 /// \brief Deletes semantic version instance
 /// \param m Valid pointer to the existing semantic version instance

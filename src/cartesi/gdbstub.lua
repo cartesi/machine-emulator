@@ -324,10 +324,10 @@ function GDBStub:_handle_write_reg(payload)
     if not (reg and val) then return end
     reg, val = hex2int(reg), hex2reg(val)
     if reg > 0 and reg < 32 then -- machine registers
-        self.machine:write_x(reg, val)
+        self.machine:write_csr("x" .. reg, val)
         return self:_send_ok()
     elseif reg == 32 then -- machine program counter
-        self.machine:write_pc(val)
+        self.machine:write_csr("pc", val)
         return self:_send_ok()
     end
 end
@@ -337,7 +337,7 @@ function GDBStub:_handle_read_all_regs()
     local res = {}
     -- read general purposes registers
     for i = 0, 31 do
-        table.insert(res, reg2hex(self.machine:read_x(i)))
+        table.insert(res, reg2hex(self.machine:read_csr("x" .. i)))
     end
     -- read program counter
     table.insert(res, reg2hex(self.machine:read_csr("pc")))
@@ -360,7 +360,7 @@ function GDBStub:_handle_write_all_regs(payload)
     end
     -- write general purposes registers
     for i = 1, 31 do
-        self.machine:write_x(i, regs[i])
+        self.machine:write_csr("x" .. i, regs[i])
     end
     -- write program counter
     self.machine:write_csr("pc", regs[32])

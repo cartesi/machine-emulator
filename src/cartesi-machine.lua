@@ -1604,30 +1604,12 @@ local function store_machine_config(config, output)
     end
     output("return {\n")
     output("  processor = {\n")
-    output("    x = {\n")
-    local processor = config.processor or { x = {} }
-    for i = 1, 31 do
-        local xi = processor.x[i] or def.processor.x[i]
-        output("      0x%x,", xi)
-        comment_default(xi, def.processor.x[i])
-    end
-    output("    },\n")
-    output("    f = {\n")
-    for i = 0, 31 do
-        local xi = processor.f[i] or def.processor.f[i]
-        if i == 0 then
-            output("      [0] = 0x%x,", xi)
-        else
-            output("      0x%x,", xi)
-        end
-        comment_default(xi, def.processor.f[i])
-    end
-    output("    },\n")
     local order = {}
     for i, v in pairs(def.processor) do
         if type(v) == "number" then order[#order + 1] = i end
     end
     table.sort(order)
+    local processor = config.processor or {}
     for _, csr in ipairs(order) do
         local c = processor[csr] or def.processor[csr]
         output("    %s = 0x%x,", csr, c)
@@ -1702,13 +1684,11 @@ local function store_machine_config(config, output)
     comment_default(config.uarch.ram.image_filename, def.uarch.ram.image_filename)
     output("    },\n")
     output("    processor = {\n")
-    output("      x = {\n")
     for i = 1, 31 do
-        local xi = config.uarch.processor.x[i] or def.uarch.processor.x[i]
-        output("        0x%x,", xi)
-        comment_default(xi, def.uarch.processor.x[i])
+        local xi = config.uarch.processor["x" .. i] or def.uarch.processor["x" .. i]
+        output("      x%d = 0x%x,", i, xi)
+        comment_default(xi, def.uarch.processor["x" .. i])
     end
-    output("      },\n")
     output("      pc = 0x%x,", config.uarch.processor.pc or def.uarch.processor.pc)
     comment_default(config.uarch.processor.pc, def.uarch.processor.pc)
     output("      cycle = 0x%x", config.uarch.processor.cycle or def.uarch.processor.cycle)

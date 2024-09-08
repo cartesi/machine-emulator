@@ -53,6 +53,70 @@ std::string encode_base64(const access_data &data) {
 static auto csr_from_name(const std::string &name) {
     using csr = machine::csr;
     const static std::unordered_map<std::string, csr> g_csr_name = {
+        {"x0", csr::x0},
+        {"x1", csr::x1},
+        {"x2", csr::x2},
+        {"x3", csr::x3},
+        {"x4", csr::x4},
+        {"x5", csr::x5},
+        {"x6", csr::x6},
+        {"x7", csr::x7},
+        {"x8", csr::x8},
+        {"x9", csr::x9},
+        {"x10", csr::x10},
+        {"x11", csr::x11},
+        {"x12", csr::x12},
+        {"x13", csr::x13},
+        {"x14", csr::x14},
+        {"x15", csr::x15},
+        {"x16", csr::x16},
+        {"x17", csr::x17},
+        {"x18", csr::x18},
+        {"x19", csr::x19},
+        {"x20", csr::x20},
+        {"x21", csr::x21},
+        {"x22", csr::x22},
+        {"x23", csr::x23},
+        {"x24", csr::x24},
+        {"x25", csr::x25},
+        {"x26", csr::x26},
+        {"x27", csr::x27},
+        {"x28", csr::x28},
+        {"x29", csr::x29},
+        {"x30", csr::x30},
+        {"x31", csr::x31},
+        {"f0", csr::f0},
+        {"f1", csr::f1},
+        {"f2", csr::f2},
+        {"f3", csr::f3},
+        {"f4", csr::f4},
+        {"f5", csr::f5},
+        {"f6", csr::f6},
+        {"f7", csr::f7},
+        {"f8", csr::f8},
+        {"f9", csr::f9},
+        {"f10", csr::f10},
+        {"f11", csr::f11},
+        {"f12", csr::f12},
+        {"f13", csr::f13},
+        {"f14", csr::f14},
+        {"f15", csr::f15},
+        {"f16", csr::f16},
+        {"f17", csr::f17},
+        {"f18", csr::f18},
+        {"f19", csr::f19},
+        {"f20", csr::f20},
+        {"f21", csr::f21},
+        {"f22", csr::f22},
+        {"f23", csr::f23},
+        {"f24", csr::f24},
+        {"f25", csr::f25},
+        {"f26", csr::f26},
+        {"f27", csr::f27},
+        {"f28", csr::f28},
+        {"f29", csr::f29},
+        {"f30", csr::f30},
+        {"f31", csr::f31},
         {"pc", csr::pc},
         {"fcsr", csr::fcsr},
         {"mvendorid", csr::mvendorid},
@@ -104,9 +168,41 @@ static auto csr_from_name(const std::string &name) {
         {"htif_ihalt", csr::htif_ihalt},
         {"htif_iconsole", csr::htif_iconsole},
         {"htif_iyield", csr::htif_iyield},
-        {"uarch_halt_flag", csr::uarch_halt_flag},
+        {"uarch_x0", csr::uarch_x0},
+        {"uarch_x1", csr::uarch_x1},
+        {"uarch_x2", csr::uarch_x2},
+        {"uarch_x3", csr::uarch_x3},
+        {"uarch_x4", csr::uarch_x4},
+        {"uarch_x5", csr::uarch_x5},
+        {"uarch_x6", csr::uarch_x6},
+        {"uarch_x7", csr::uarch_x7},
+        {"uarch_x8", csr::uarch_x8},
+        {"uarch_x9", csr::uarch_x9},
+        {"uarch_x10", csr::uarch_x10},
+        {"uarch_x11", csr::uarch_x11},
+        {"uarch_x12", csr::uarch_x12},
+        {"uarch_x13", csr::uarch_x13},
+        {"uarch_x14", csr::uarch_x14},
+        {"uarch_x15", csr::uarch_x15},
+        {"uarch_x16", csr::uarch_x16},
+        {"uarch_x17", csr::uarch_x17},
+        {"uarch_x18", csr::uarch_x18},
+        {"uarch_x19", csr::uarch_x19},
+        {"uarch_x20", csr::uarch_x20},
+        {"uarch_x21", csr::uarch_x21},
+        {"uarch_x22", csr::uarch_x22},
+        {"uarch_x23", csr::uarch_x23},
+        {"uarch_x24", csr::uarch_x24},
+        {"uarch_x25", csr::uarch_x25},
+        {"uarch_x26", csr::uarch_x26},
+        {"uarch_x27", csr::uarch_x27},
+        {"uarch_x28", csr::uarch_x28},
+        {"uarch_x29", csr::uarch_x29},
+        {"uarch_x30", csr::uarch_x30},
+        {"uarch_x31", csr::uarch_x31},
         {"uarch_pc", csr::uarch_pc},
         {"uarch_cycle", csr::uarch_cycle},
+        {"uarch_halt_flag", csr::uarch_halt_flag},
     };
     auto got = g_csr_name.find(name);
     if (got == g_csr_name.end()) {
@@ -118,6 +214,134 @@ static auto csr_from_name(const std::string &name) {
 static auto csr_to_name(machine::csr reg) {
     using csr = machine::csr;
     switch (reg) {
+        case csr::x0:
+            return "x0";
+        case csr::x1:
+            return "x1";
+        case csr::x2:
+            return "x2";
+        case csr::x3:
+            return "x3";
+        case csr::x4:
+            return "x4";
+        case csr::x5:
+            return "x5";
+        case csr::x6:
+            return "x6";
+        case csr::x7:
+            return "x7";
+        case csr::x8:
+            return "x8";
+        case csr::x9:
+            return "x9";
+        case csr::x10:
+            return "x10";
+        case csr::x11:
+            return "x11";
+        case csr::x12:
+            return "x12";
+        case csr::x13:
+            return "x13";
+        case csr::x14:
+            return "x14";
+        case csr::x15:
+            return "x15";
+        case csr::x16:
+            return "x16";
+        case csr::x17:
+            return "x17";
+        case csr::x18:
+            return "x18";
+        case csr::x19:
+            return "x19";
+        case csr::x20:
+            return "x20";
+        case csr::x21:
+            return "x21";
+        case csr::x22:
+            return "x22";
+        case csr::x23:
+            return "x23";
+        case csr::x24:
+            return "x24";
+        case csr::x25:
+            return "x25";
+        case csr::x26:
+            return "x26";
+        case csr::x27:
+            return "x27";
+        case csr::x28:
+            return "x28";
+        case csr::x29:
+            return "x29";
+        case csr::x30:
+            return "x30";
+        case csr::x31:
+            return "x31";
+        case csr::f0:
+            return "f0";
+        case csr::f1:
+            return "f1";
+        case csr::f2:
+            return "f2";
+        case csr::f3:
+            return "f3";
+        case csr::f4:
+            return "f4";
+        case csr::f5:
+            return "f5";
+        case csr::f6:
+            return "f6";
+        case csr::f7:
+            return "f7";
+        case csr::f8:
+            return "f8";
+        case csr::f9:
+            return "f9";
+        case csr::f10:
+            return "f10";
+        case csr::f11:
+            return "f11";
+        case csr::f12:
+            return "f12";
+        case csr::f13:
+            return "f13";
+        case csr::f14:
+            return "f14";
+        case csr::f15:
+            return "f15";
+        case csr::f16:
+            return "f16";
+        case csr::f17:
+            return "f17";
+        case csr::f18:
+            return "f18";
+        case csr::f19:
+            return "f19";
+        case csr::f20:
+            return "f20";
+        case csr::f21:
+            return "f21";
+        case csr::f22:
+            return "f22";
+        case csr::f23:
+            return "f23";
+        case csr::f24:
+            return "f24";
+        case csr::f25:
+            return "f25";
+        case csr::f26:
+            return "f26";
+        case csr::f27:
+            return "f27";
+        case csr::f28:
+            return "f28";
+        case csr::f29:
+            return "f29";
+        case csr::f30:
+            return "f30";
+        case csr::f31:
+            return "f31";
         case csr::pc:
             return "pc";
         case csr::fcsr:
@@ -220,6 +444,70 @@ static auto csr_to_name(machine::csr reg) {
             return "htif_iconsole";
         case csr::htif_iyield:
             return "htif_iyield";
+        case csr::uarch_x0:
+            return "uarch_x0";
+        case csr::uarch_x1:
+            return "uarch_x1";
+        case csr::uarch_x2:
+            return "uarch_x2";
+        case csr::uarch_x3:
+            return "uarch_x3";
+        case csr::uarch_x4:
+            return "uarch_x4";
+        case csr::uarch_x5:
+            return "uarch_x5";
+        case csr::uarch_x6:
+            return "uarch_x6";
+        case csr::uarch_x7:
+            return "uarch_x7";
+        case csr::uarch_x8:
+            return "uarch_x8";
+        case csr::uarch_x9:
+            return "uarch_x9";
+        case csr::uarch_x10:
+            return "uarch_x10";
+        case csr::uarch_x11:
+            return "uarch_x11";
+        case csr::uarch_x12:
+            return "uarch_x12";
+        case csr::uarch_x13:
+            return "uarch_x13";
+        case csr::uarch_x14:
+            return "uarch_x14";
+        case csr::uarch_x15:
+            return "uarch_x15";
+        case csr::uarch_x16:
+            return "uarch_x16";
+        case csr::uarch_x17:
+            return "uarch_x17";
+        case csr::uarch_x18:
+            return "uarch_x18";
+        case csr::uarch_x19:
+            return "uarch_x19";
+        case csr::uarch_x20:
+            return "uarch_x20";
+        case csr::uarch_x21:
+            return "uarch_x21";
+        case csr::uarch_x22:
+            return "uarch_x22";
+        case csr::uarch_x23:
+            return "uarch_x23";
+        case csr::uarch_x24:
+            return "uarch_x24";
+        case csr::uarch_x25:
+            return "uarch_x25";
+        case csr::uarch_x26:
+            return "uarch_x26";
+        case csr::uarch_x27:
+            return "uarch_x27";
+        case csr::uarch_x28:
+            return "uarch_x28";
+        case csr::uarch_x29:
+            return "uarch_x29";
+        case csr::uarch_x30:
+            return "uarch_x30";
+        case csr::uarch_x31:
+            return "uarch_x31";
         case csr::uarch_pc:
             return "uarch_pc";
         case csr::uarch_cycle:
@@ -334,9 +622,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uint64_t &value, co
         return;
     }
     auto i = jk.template get<nlohmann::json::number_integer_t>();
-    if (i < 0) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not an unsigned integer");
-    }
+    // in case of negative integers, cast them to the unsigned representation
     value = static_cast<uint64_t>(i);
 }
 
@@ -496,8 +782,8 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_runtime_con
     if (!contains(j, key)) {
         return;
     }
-    ju_get_field(j[key], "concurrency"s, value.concurrency, path + to_string(key) + "/");
-    ju_get_field(j[key], "htif"s, value.htif, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "concurrency"s, value.concurrency, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "htif"s, value.htif, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "skip_root_hash_check"s, value.skip_root_hash_check, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "skip_root_hash_store"s, value.skip_root_hash_store, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "skip_version_check"s, value.skip_version_check, path + to_string(key) + "/");
@@ -866,8 +1152,70 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, processor_config &v
     }
     const auto &jconfig = j[key];
     const auto new_path = path + to_string(key) + "/";
-    ju_get_opt_array_like_field(jconfig, "x"s, value.x, new_path);
-    ju_get_opt_array_like_field(jconfig, "f"s, value.f, new_path);
+    ju_get_opt_field(jconfig, "x0"s, value.x[0], new_path);
+    ju_get_opt_field(jconfig, "x1"s, value.x[1], new_path);
+    ju_get_opt_field(jconfig, "x2"s, value.x[2], new_path);
+    ju_get_opt_field(jconfig, "x3"s, value.x[3], new_path);
+    ju_get_opt_field(jconfig, "x4"s, value.x[4], new_path);
+    ju_get_opt_field(jconfig, "x5"s, value.x[5], new_path);
+    ju_get_opt_field(jconfig, "x6"s, value.x[6], new_path);
+    ju_get_opt_field(jconfig, "x7"s, value.x[7], new_path);
+    ju_get_opt_field(jconfig, "x8"s, value.x[8], new_path);
+    ju_get_opt_field(jconfig, "x9"s, value.x[9], new_path);
+    ju_get_opt_field(jconfig, "x10"s, value.x[10], new_path);
+    ju_get_opt_field(jconfig, "x11"s, value.x[11], new_path);
+    ju_get_opt_field(jconfig, "x12"s, value.x[12], new_path);
+    ju_get_opt_field(jconfig, "x13"s, value.x[13], new_path);
+    ju_get_opt_field(jconfig, "x14"s, value.x[14], new_path);
+    ju_get_opt_field(jconfig, "x15"s, value.x[15], new_path);
+    ju_get_opt_field(jconfig, "x16"s, value.x[16], new_path);
+    ju_get_opt_field(jconfig, "x17"s, value.x[17], new_path);
+    ju_get_opt_field(jconfig, "x18"s, value.x[18], new_path);
+    ju_get_opt_field(jconfig, "x19"s, value.x[19], new_path);
+    ju_get_opt_field(jconfig, "x20"s, value.x[20], new_path);
+    ju_get_opt_field(jconfig, "x21"s, value.x[21], new_path);
+    ju_get_opt_field(jconfig, "x22"s, value.x[22], new_path);
+    ju_get_opt_field(jconfig, "x23"s, value.x[23], new_path);
+    ju_get_opt_field(jconfig, "x24"s, value.x[24], new_path);
+    ju_get_opt_field(jconfig, "x25"s, value.x[25], new_path);
+    ju_get_opt_field(jconfig, "x26"s, value.x[26], new_path);
+    ju_get_opt_field(jconfig, "x27"s, value.x[27], new_path);
+    ju_get_opt_field(jconfig, "x28"s, value.x[28], new_path);
+    ju_get_opt_field(jconfig, "x29"s, value.x[29], new_path);
+    ju_get_opt_field(jconfig, "x30"s, value.x[30], new_path);
+    ju_get_opt_field(jconfig, "x31"s, value.x[31], new_path);
+    ju_get_opt_field(jconfig, "f0"s, value.f[0], new_path);
+    ju_get_opt_field(jconfig, "f1"s, value.f[1], new_path);
+    ju_get_opt_field(jconfig, "f2"s, value.f[2], new_path);
+    ju_get_opt_field(jconfig, "f3"s, value.f[3], new_path);
+    ju_get_opt_field(jconfig, "f4"s, value.f[4], new_path);
+    ju_get_opt_field(jconfig, "f5"s, value.f[5], new_path);
+    ju_get_opt_field(jconfig, "f6"s, value.f[6], new_path);
+    ju_get_opt_field(jconfig, "f7"s, value.f[7], new_path);
+    ju_get_opt_field(jconfig, "f8"s, value.f[8], new_path);
+    ju_get_opt_field(jconfig, "f9"s, value.f[9], new_path);
+    ju_get_opt_field(jconfig, "f10"s, value.f[10], new_path);
+    ju_get_opt_field(jconfig, "f11"s, value.f[11], new_path);
+    ju_get_opt_field(jconfig, "f12"s, value.f[12], new_path);
+    ju_get_opt_field(jconfig, "f13"s, value.f[13], new_path);
+    ju_get_opt_field(jconfig, "f14"s, value.f[14], new_path);
+    ju_get_opt_field(jconfig, "f15"s, value.f[15], new_path);
+    ju_get_opt_field(jconfig, "f16"s, value.f[16], new_path);
+    ju_get_opt_field(jconfig, "f17"s, value.f[17], new_path);
+    ju_get_opt_field(jconfig, "f18"s, value.f[18], new_path);
+    ju_get_opt_field(jconfig, "f19"s, value.f[19], new_path);
+    ju_get_opt_field(jconfig, "f20"s, value.f[20], new_path);
+    ju_get_opt_field(jconfig, "f21"s, value.f[21], new_path);
+    ju_get_opt_field(jconfig, "f22"s, value.f[22], new_path);
+    ju_get_opt_field(jconfig, "f23"s, value.f[23], new_path);
+    ju_get_opt_field(jconfig, "f24"s, value.f[24], new_path);
+    ju_get_opt_field(jconfig, "f25"s, value.f[25], new_path);
+    ju_get_opt_field(jconfig, "f26"s, value.f[26], new_path);
+    ju_get_opt_field(jconfig, "f27"s, value.f[27], new_path);
+    ju_get_opt_field(jconfig, "f28"s, value.f[28], new_path);
+    ju_get_opt_field(jconfig, "f29"s, value.f[29], new_path);
+    ju_get_opt_field(jconfig, "f30"s, value.f[30], new_path);
+    ju_get_opt_field(jconfig, "f31"s, value.f[31], new_path);
     ju_get_opt_field(jconfig, "pc"s, value.pc, new_path);
     ju_get_opt_field(jconfig, "fcsr"s, value.fcsr, new_path);
     ju_get_opt_field(jconfig, "mvendorid"s, value.mvendorid, new_path);
@@ -1095,7 +1443,38 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_processor_con
     }
     const auto &jconfig = j[key];
     const auto new_path = path + to_string(key) + "/";
-    ju_get_opt_array_like_field(jconfig, "x"s, value.x, new_path);
+    ju_get_opt_field(jconfig, "x0"s, value.x[0], new_path);
+    ju_get_opt_field(jconfig, "x1"s, value.x[1], new_path);
+    ju_get_opt_field(jconfig, "x2"s, value.x[2], new_path);
+    ju_get_opt_field(jconfig, "x3"s, value.x[3], new_path);
+    ju_get_opt_field(jconfig, "x4"s, value.x[4], new_path);
+    ju_get_opt_field(jconfig, "x5"s, value.x[5], new_path);
+    ju_get_opt_field(jconfig, "x6"s, value.x[6], new_path);
+    ju_get_opt_field(jconfig, "x7"s, value.x[7], new_path);
+    ju_get_opt_field(jconfig, "x8"s, value.x[8], new_path);
+    ju_get_opt_field(jconfig, "x9"s, value.x[9], new_path);
+    ju_get_opt_field(jconfig, "x10"s, value.x[10], new_path);
+    ju_get_opt_field(jconfig, "x11"s, value.x[11], new_path);
+    ju_get_opt_field(jconfig, "x12"s, value.x[12], new_path);
+    ju_get_opt_field(jconfig, "x13"s, value.x[13], new_path);
+    ju_get_opt_field(jconfig, "x14"s, value.x[14], new_path);
+    ju_get_opt_field(jconfig, "x15"s, value.x[15], new_path);
+    ju_get_opt_field(jconfig, "x16"s, value.x[16], new_path);
+    ju_get_opt_field(jconfig, "x17"s, value.x[17], new_path);
+    ju_get_opt_field(jconfig, "x18"s, value.x[18], new_path);
+    ju_get_opt_field(jconfig, "x19"s, value.x[19], new_path);
+    ju_get_opt_field(jconfig, "x20"s, value.x[20], new_path);
+    ju_get_opt_field(jconfig, "x21"s, value.x[21], new_path);
+    ju_get_opt_field(jconfig, "x22"s, value.x[22], new_path);
+    ju_get_opt_field(jconfig, "x23"s, value.x[23], new_path);
+    ju_get_opt_field(jconfig, "x24"s, value.x[24], new_path);
+    ju_get_opt_field(jconfig, "x25"s, value.x[25], new_path);
+    ju_get_opt_field(jconfig, "x26"s, value.x[26], new_path);
+    ju_get_opt_field(jconfig, "x27"s, value.x[27], new_path);
+    ju_get_opt_field(jconfig, "x28"s, value.x[28], new_path);
+    ju_get_opt_field(jconfig, "x29"s, value.x[29], new_path);
+    ju_get_opt_field(jconfig, "x30"s, value.x[30], new_path);
+    ju_get_opt_field(jconfig, "x31"s, value.x[31], new_path);
     ju_get_opt_field(jconfig, "pc"s, value.pc, new_path);
     ju_get_opt_field(jconfig, "cycle"s, value.cycle, new_path);
     ju_get_opt_field(jconfig, "halt_flag"s, value.halt_flag, new_path);
@@ -1312,7 +1691,21 @@ void to_json(nlohmann::json &j, const cmio_buffer_config &config) {
 }
 
 void to_json(nlohmann::json &j, const processor_config &config) {
-    j = nlohmann::json{{"x", config.x}, {"f", config.f}, {"pc", config.pc}, {"fcsr", config.fcsr},
+    j = nlohmann::json{{"x0", config.x[0]}, {"x1", config.x[1]}, {"x2", config.x[2]}, {"x3", config.x[3]},
+        {"x4", config.x[4]}, {"x5", config.x[5]}, {"x6", config.x[6]}, {"x7", config.x[7]}, {"x8", config.x[8]},
+        {"x9", config.x[9]}, {"x10", config.x[10]}, {"x11", config.x[11]}, {"x12", config.x[12]}, {"x13", config.x[13]},
+        {"x14", config.x[14]}, {"x15", config.x[15]}, {"x16", config.x[16]}, {"x17", config.x[17]},
+        {"x18", config.x[18]}, {"x19", config.x[19]}, {"x20", config.x[20]}, {"x21", config.x[21]},
+        {"x22", config.x[22]}, {"x23", config.x[23]}, {"x24", config.x[24]}, {"x25", config.x[25]},
+        {"x26", config.x[26]}, {"x27", config.x[27]}, {"x28", config.x[28]}, {"x29", config.x[29]},
+        {"x30", config.x[30]}, {"x31", config.x[31]}, {"f0", config.f[0]}, {"f1", config.f[1]}, {"f2", config.f[2]},
+        {"f3", config.f[3]}, {"f4", config.f[4]}, {"f5", config.f[5]}, {"f6", config.f[6]}, {"f7", config.f[7]},
+        {"f8", config.f[8]}, {"f9", config.f[9]}, {"f10", config.f[10]}, {"f11", config.f[11]}, {"f12", config.f[12]},
+        {"f13", config.f[13]}, {"f14", config.f[14]}, {"f15", config.f[15]}, {"f16", config.f[16]},
+        {"f17", config.f[17]}, {"f18", config.f[18]}, {"f19", config.f[19]}, {"f20", config.f[20]},
+        {"f21", config.f[21]}, {"f22", config.f[22]}, {"f23", config.f[23]}, {"f24", config.f[24]},
+        {"f25", config.f[25]}, {"f26", config.f[26]}, {"f27", config.f[27]}, {"f28", config.f[28]},
+        {"f29", config.f[29]}, {"f30", config.f[30]}, {"f31", config.f[31]}, {"pc", config.pc}, {"fcsr", config.fcsr},
         {"mvendorid", config.mvendorid}, {"marchid", config.marchid}, {"mimpid", config.mimpid},
         {"mcycle", config.mcycle}, {"icycleinstret", config.icycleinstret}, {"mstatus", config.mstatus},
         {"mtvec", config.mtvec}, {"mscratch", config.mscratch}, {"mepc", config.mepc}, {"mcause", config.mcause},
@@ -1383,7 +1776,38 @@ void to_json(nlohmann::json &j, const cmio_config &config) {
 
 void to_json(nlohmann::json &j, const uarch_processor_config &config) {
     j = nlohmann::json{
-        {"x", config.x},
+        {"x0", config.x[0]},
+        {"x1", config.x[1]},
+        {"x2", config.x[2]},
+        {"x3", config.x[3]},
+        {"x4", config.x[4]},
+        {"x5", config.x[5]},
+        {"x6", config.x[6]},
+        {"x7", config.x[7]},
+        {"x8", config.x[8]},
+        {"x9", config.x[9]},
+        {"x10", config.x[10]},
+        {"x11", config.x[11]},
+        {"x12", config.x[12]},
+        {"x13", config.x[13]},
+        {"x14", config.x[14]},
+        {"x15", config.x[15]},
+        {"x16", config.x[16]},
+        {"x17", config.x[17]},
+        {"x18", config.x[18]},
+        {"x19", config.x[19]},
+        {"x20", config.x[20]},
+        {"x21", config.x[21]},
+        {"x22", config.x[22]},
+        {"x23", config.x[23]},
+        {"x24", config.x[24]},
+        {"x25", config.x[25]},
+        {"x26", config.x[26]},
+        {"x27", config.x[27]},
+        {"x28", config.x[28]},
+        {"x29", config.x[29]},
+        {"x30", config.x[30]},
+        {"x31", config.x[31]},
         {"pc", config.pc},
         {"cycle", config.cycle},
         {"halt_flag", config.halt_flag},

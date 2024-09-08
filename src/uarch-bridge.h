@@ -38,16 +38,199 @@ public:
     /// An exception is thrown if paddr can't me mapped to a valid state register.
     //// \}
     static void write_register(uint64_t paddr, machine_state &s, uint64_t data) {
-        if (try_write_x(s, paddr, data)) {
-            return;
-        }
-        if (try_write_f(s, paddr, data)) {
-            return;
-        }
-        if (try_write_tlb(s, paddr, data)) {
-            return;
-        }
         switch (static_cast<shadow_state_csr>(paddr)) {
+            case shadow_state_csr::x0:
+                s.x[0] = data;
+                return;
+            case shadow_state_csr::x1:
+                s.x[1] = data;
+                return;
+            case shadow_state_csr::x2:
+                s.x[2] = data;
+                return;
+            case shadow_state_csr::x3:
+                s.x[3] = data;
+                return;
+            case shadow_state_csr::x4:
+                s.x[4] = data;
+                return;
+            case shadow_state_csr::x5:
+                s.x[5] = data;
+                return;
+            case shadow_state_csr::x6:
+                s.x[6] = data;
+                return;
+            case shadow_state_csr::x7:
+                s.x[7] = data;
+                return;
+            case shadow_state_csr::x8:
+                s.x[8] = data;
+                return;
+            case shadow_state_csr::x9:
+                s.x[9] = data;
+                return;
+            case shadow_state_csr::x10:
+                s.x[10] = data;
+                return;
+            case shadow_state_csr::x11:
+                s.x[11] = data;
+                return;
+            case shadow_state_csr::x12:
+                s.x[12] = data;
+                return;
+            case shadow_state_csr::x13:
+                s.x[13] = data;
+                return;
+            case shadow_state_csr::x14:
+                s.x[14] = data;
+                return;
+            case shadow_state_csr::x15:
+                s.x[15] = data;
+                return;
+            case shadow_state_csr::x16:
+                s.x[16] = data;
+                return;
+            case shadow_state_csr::x17:
+                s.x[17] = data;
+                return;
+            case shadow_state_csr::x18:
+                s.x[18] = data;
+                return;
+            case shadow_state_csr::x19:
+                s.x[19] = data;
+                return;
+            case shadow_state_csr::x20:
+                s.x[20] = data;
+                return;
+            case shadow_state_csr::x21:
+                s.x[21] = data;
+                return;
+            case shadow_state_csr::x22:
+                s.x[22] = data;
+                return;
+            case shadow_state_csr::x23:
+                s.x[23] = data;
+                return;
+            case shadow_state_csr::x24:
+                s.x[24] = data;
+                return;
+            case shadow_state_csr::x25:
+                s.x[25] = data;
+                return;
+            case shadow_state_csr::x26:
+                s.x[26] = data;
+                return;
+            case shadow_state_csr::x27:
+                s.x[27] = data;
+                return;
+            case shadow_state_csr::x28:
+                s.x[28] = data;
+                return;
+            case shadow_state_csr::x29:
+                s.x[29] = data;
+                return;
+            case shadow_state_csr::x30:
+                s.x[30] = data;
+                return;
+            case shadow_state_csr::x31:
+                s.x[31] = data;
+                return;
+            case shadow_state_csr::f0:
+                s.f[0] = data;
+                return;
+            case shadow_state_csr::f1:
+                s.f[1] = data;
+                return;
+            case shadow_state_csr::f2:
+                s.f[2] = data;
+                return;
+            case shadow_state_csr::f3:
+                s.f[3] = data;
+                return;
+            case shadow_state_csr::f4:
+                s.f[4] = data;
+                return;
+            case shadow_state_csr::f5:
+                s.f[5] = data;
+                return;
+            case shadow_state_csr::f6:
+                s.f[6] = data;
+                return;
+            case shadow_state_csr::f7:
+                s.f[7] = data;
+                return;
+            case shadow_state_csr::f8:
+                s.f[8] = data;
+                return;
+            case shadow_state_csr::f9:
+                s.f[9] = data;
+                return;
+            case shadow_state_csr::f10:
+                s.f[10] = data;
+                return;
+            case shadow_state_csr::f11:
+                s.f[11] = data;
+                return;
+            case shadow_state_csr::f12:
+                s.f[12] = data;
+                return;
+            case shadow_state_csr::f13:
+                s.f[13] = data;
+                return;
+            case shadow_state_csr::f14:
+                s.f[14] = data;
+                return;
+            case shadow_state_csr::f15:
+                s.f[15] = data;
+                return;
+            case shadow_state_csr::f16:
+                s.f[16] = data;
+                return;
+            case shadow_state_csr::f17:
+                s.f[17] = data;
+                return;
+            case shadow_state_csr::f18:
+                s.f[18] = data;
+                return;
+            case shadow_state_csr::f19:
+                s.f[19] = data;
+                return;
+            case shadow_state_csr::f20:
+                s.f[20] = data;
+                return;
+            case shadow_state_csr::f21:
+                s.f[21] = data;
+                return;
+            case shadow_state_csr::f22:
+                s.f[22] = data;
+                return;
+            case shadow_state_csr::f23:
+                s.f[23] = data;
+                return;
+            case shadow_state_csr::f24:
+                s.f[24] = data;
+                return;
+            case shadow_state_csr::f25:
+                s.f[25] = data;
+                return;
+            case shadow_state_csr::f26:
+                s.f[26] = data;
+                return;
+            case shadow_state_csr::f27:
+                s.f[27] = data;
+                return;
+            case shadow_state_csr::f28:
+                s.f[28] = data;
+                return;
+            case shadow_state_csr::f29:
+                s.f[29] = data;
+                return;
+            case shadow_state_csr::f30:
+                s.f[30] = data;
+                return;
+            case shadow_state_csr::f31:
+                s.f[31] = data;
+                return;
             case shadow_state_csr::pc:
                 s.pc = data;
                 return;
@@ -147,6 +330,9 @@ public:
             default:
                 break;
         }
+        if (try_write_tlb(s, paddr, data)) {
+            return;
+        }
         throw std::runtime_error("invalid write memory access from microarchitecture");
     }
 
@@ -158,20 +344,135 @@ public:
     /// An exception is thrown if paddr can't me mapped to a valid state register.
     //// \}
     static uint64_t read_register(uint64_t paddr, machine_state &s) {
-        uint64_t data = 0;
-        if (try_read_x(s, paddr, &data)) {
-            return data;
-        }
-        if (try_read_f(s, paddr, &data)) {
-            return data;
-        }
-        if (try_read_tlb(s, paddr, &data)) {
-            return data;
-        }
-        if (try_read_pma(s, paddr, &data)) {
-            return data;
-        }
         switch (static_cast<shadow_state_csr>(paddr)) {
+            case shadow_state_csr::x0:
+                return s.x[0];
+            case shadow_state_csr::x1:
+                return s.x[1];
+            case shadow_state_csr::x2:
+                return s.x[2];
+            case shadow_state_csr::x3:
+                return s.x[3];
+            case shadow_state_csr::x4:
+                return s.x[4];
+            case shadow_state_csr::x5:
+                return s.x[5];
+            case shadow_state_csr::x6:
+                return s.x[6];
+            case shadow_state_csr::x7:
+                return s.x[7];
+            case shadow_state_csr::x8:
+                return s.x[8];
+            case shadow_state_csr::x9:
+                return s.x[9];
+            case shadow_state_csr::x10:
+                return s.x[10];
+            case shadow_state_csr::x11:
+                return s.x[11];
+            case shadow_state_csr::x12:
+                return s.x[12];
+            case shadow_state_csr::x13:
+                return s.x[13];
+            case shadow_state_csr::x14:
+                return s.x[14];
+            case shadow_state_csr::x15:
+                return s.x[15];
+            case shadow_state_csr::x16:
+                return s.x[16];
+            case shadow_state_csr::x17:
+                return s.x[17];
+            case shadow_state_csr::x18:
+                return s.x[18];
+            case shadow_state_csr::x19:
+                return s.x[19];
+            case shadow_state_csr::x20:
+                return s.x[20];
+            case shadow_state_csr::x21:
+                return s.x[21];
+            case shadow_state_csr::x22:
+                return s.x[22];
+            case shadow_state_csr::x23:
+                return s.x[23];
+            case shadow_state_csr::x24:
+                return s.x[24];
+            case shadow_state_csr::x25:
+                return s.x[25];
+            case shadow_state_csr::x26:
+                return s.x[26];
+            case shadow_state_csr::x27:
+                return s.x[27];
+            case shadow_state_csr::x28:
+                return s.x[28];
+            case shadow_state_csr::x29:
+                return s.x[29];
+            case shadow_state_csr::x30:
+                return s.x[30];
+            case shadow_state_csr::x31:
+                return s.x[31];
+            case shadow_state_csr::f0:
+                return s.f[0];
+            case shadow_state_csr::f1:
+                return s.f[1];
+            case shadow_state_csr::f2:
+                return s.f[2];
+            case shadow_state_csr::f3:
+                return s.f[3];
+            case shadow_state_csr::f4:
+                return s.f[4];
+            case shadow_state_csr::f5:
+                return s.f[5];
+            case shadow_state_csr::f6:
+                return s.f[6];
+            case shadow_state_csr::f7:
+                return s.f[7];
+            case shadow_state_csr::f8:
+                return s.f[8];
+            case shadow_state_csr::f9:
+                return s.f[9];
+            case shadow_state_csr::f10:
+                return s.f[10];
+            case shadow_state_csr::f11:
+                return s.f[11];
+            case shadow_state_csr::f12:
+                return s.f[12];
+            case shadow_state_csr::f13:
+                return s.f[13];
+            case shadow_state_csr::f14:
+                return s.f[14];
+            case shadow_state_csr::f15:
+                return s.f[15];
+            case shadow_state_csr::f16:
+                return s.f[16];
+            case shadow_state_csr::f17:
+                return s.f[17];
+            case shadow_state_csr::f18:
+                return s.f[18];
+            case shadow_state_csr::f19:
+                return s.f[19];
+            case shadow_state_csr::f20:
+                return s.f[20];
+            case shadow_state_csr::f21:
+                return s.f[21];
+            case shadow_state_csr::f22:
+                return s.f[22];
+            case shadow_state_csr::f23:
+                return s.f[23];
+            case shadow_state_csr::f24:
+                return s.f[24];
+            case shadow_state_csr::f25:
+                return s.f[25];
+            case shadow_state_csr::f26:
+                return s.f[26];
+            case shadow_state_csr::f27:
+                return s.f[27];
+            case shadow_state_csr::f28:
+                return s.f[28];
+            case shadow_state_csr::f29:
+                return s.f[29];
+            case shadow_state_csr::f30:
+                return s.f[30];
+            case shadow_state_csr::f31:
+                return s.f[31];
             case shadow_state_csr::pc:
                 return s.pc;
             case shadow_state_csr::fcsr:
@@ -251,6 +552,13 @@ public:
             default:
                 break;
         }
+        uint64_t data = 0;
+        if (try_read_tlb(s, paddr, &data)) {
+            return data;
+        }
+        if (try_read_pma(s, paddr, &data)) {
+            return data;
+        }
         throw std::runtime_error("invalid read memory access from microarchitecture");
     }
 
@@ -259,6 +567,134 @@ public:
     /// \returns The register name, if paddr maps to a register, or nullptr otherwise.
     static const char *get_register_name(uint64_t paddr) {
         switch (static_cast<shadow_state_csr>(paddr)) {
+            case shadow_state_csr::x0:
+                return "x0";
+            case shadow_state_csr::x1:
+                return "x1";
+            case shadow_state_csr::x2:
+                return "x2";
+            case shadow_state_csr::x3:
+                return "x3";
+            case shadow_state_csr::x4:
+                return "x4";
+            case shadow_state_csr::x5:
+                return "x5";
+            case shadow_state_csr::x6:
+                return "x6";
+            case shadow_state_csr::x7:
+                return "x7";
+            case shadow_state_csr::x8:
+                return "x8";
+            case shadow_state_csr::x9:
+                return "x9";
+            case shadow_state_csr::x10:
+                return "x10";
+            case shadow_state_csr::x11:
+                return "x11";
+            case shadow_state_csr::x12:
+                return "x12";
+            case shadow_state_csr::x13:
+                return "x13";
+            case shadow_state_csr::x14:
+                return "x14";
+            case shadow_state_csr::x15:
+                return "x15";
+            case shadow_state_csr::x16:
+                return "x16";
+            case shadow_state_csr::x17:
+                return "x17";
+            case shadow_state_csr::x18:
+                return "x18";
+            case shadow_state_csr::x19:
+                return "x19";
+            case shadow_state_csr::x20:
+                return "x20";
+            case shadow_state_csr::x21:
+                return "x21";
+            case shadow_state_csr::x22:
+                return "x22";
+            case shadow_state_csr::x23:
+                return "x23";
+            case shadow_state_csr::x24:
+                return "x24";
+            case shadow_state_csr::x25:
+                return "x25";
+            case shadow_state_csr::x26:
+                return "x26";
+            case shadow_state_csr::x27:
+                return "x27";
+            case shadow_state_csr::x28:
+                return "x28";
+            case shadow_state_csr::x29:
+                return "x29";
+            case shadow_state_csr::x30:
+                return "x30";
+            case shadow_state_csr::x31:
+                return "x31";
+            case shadow_state_csr::f0:
+                return "f0";
+            case shadow_state_csr::f1:
+                return "f1";
+            case shadow_state_csr::f2:
+                return "f2";
+            case shadow_state_csr::f3:
+                return "f3";
+            case shadow_state_csr::f4:
+                return "f4";
+            case shadow_state_csr::f5:
+                return "f5";
+            case shadow_state_csr::f6:
+                return "f6";
+            case shadow_state_csr::f7:
+                return "f7";
+            case shadow_state_csr::f8:
+                return "f8";
+            case shadow_state_csr::f9:
+                return "f9";
+            case shadow_state_csr::f10:
+                return "f10";
+            case shadow_state_csr::f11:
+                return "f11";
+            case shadow_state_csr::f12:
+                return "f12";
+            case shadow_state_csr::f13:
+                return "f13";
+            case shadow_state_csr::f14:
+                return "f14";
+            case shadow_state_csr::f15:
+                return "f15";
+            case shadow_state_csr::f16:
+                return "f16";
+            case shadow_state_csr::f17:
+                return "f17";
+            case shadow_state_csr::f18:
+                return "f18";
+            case shadow_state_csr::f19:
+                return "f19";
+            case shadow_state_csr::f20:
+                return "f20";
+            case shadow_state_csr::f21:
+                return "f21";
+            case shadow_state_csr::f22:
+                return "f22";
+            case shadow_state_csr::f23:
+                return "f23";
+            case shadow_state_csr::f24:
+                return "f24";
+            case shadow_state_csr::f25:
+                return "f25";
+            case shadow_state_csr::f26:
+                return "f26";
+            case shadow_state_csr::f27:
+                return "f27";
+            case shadow_state_csr::f28:
+                return "f28";
+            case shadow_state_csr::f29:
+                return "f29";
+            case shadow_state_csr::f30:
+                return "f30";
+            case shadow_state_csr::f31:
+                return "f31";
             case shadow_state_csr::pc:
                 return "pc";
             case shadow_state_csr::fcsr:
@@ -371,46 +807,6 @@ public:
     }
 
 private:
-    /// \brief Tries to write a general-purpose machine register.
-    /// \param s Machine state.
-    /// \param paddr Absolute address of the register within shadow-state range
-    /// \param data Data to write
-    /// \return true if the register was successfully written.
-    static bool try_write_x(machine_state &s, uint64_t paddr, uint64_t data) {
-        if (paddr < shadow_state_get_x_abs_addr(0)) {
-            return false;
-        }
-        if (paddr > shadow_state_get_x_abs_addr(X_REG_COUNT - 1)) {
-            return false;
-        }
-        if (paddr & 0b111) {
-            throw std::runtime_error("write register value not correctly aligned");
-        }
-        paddr -= shadow_state_get_x_abs_addr(0);
-        s.x[paddr >> 3] = data;
-        return true;
-    }
-
-    /// \brief Tries to read a general-purpose machine register.
-    /// \param s Machine state.
-    /// \param paddr Absolute address of the register within shadow-state range
-    /// \param data Pointer to word receiving value.
-    /// \return true if the register was successfully read
-    static bool try_read_x(machine_state &s, uint64_t paddr, uint64_t *data) {
-        if (paddr < shadow_state_get_x_abs_addr(0)) {
-            return false;
-        }
-        if (paddr > shadow_state_get_x_abs_addr(X_REG_COUNT - 1)) {
-            return false;
-        }
-        if (paddr & 0b111) {
-            throw std::runtime_error("read register value not correctly aligned");
-        }
-        paddr -= shadow_state_get_x_abs_addr(0);
-        *data = s.x[paddr >> 3];
-        return true;
-    }
-
     /// \brief Tries to read a PMA entry field.
     /// \param s Machine state.
     /// \param paddr Absolute address of the PMA entry field within shadow PMAs range
@@ -432,46 +828,6 @@ private:
         } else {
             *data = pma.get_ilength();
         }
-        return true;
-    }
-
-    /// \brief Tries to write a floating-point machine register.
-    /// \param s Machine state.
-    /// \param paddr Absolute address of the register within shadow-state range
-    /// \param data Data to write
-    /// \return true if the register was successfully written.
-    static bool try_write_f(machine_state &s, uint64_t paddr, uint64_t data) {
-        if (paddr < shadow_state_get_f_abs_addr(0)) {
-            return false;
-        }
-        if (paddr > shadow_state_get_f_abs_addr(F_REG_COUNT - 1)) {
-            return false;
-        }
-        if (paddr & 0b111) {
-            throw std::runtime_error("read floating-point register value not correctly aligned");
-        }
-        paddr -= shadow_state_get_f_abs_addr(0);
-        s.f[paddr >> 3] = data;
-        return true;
-    }
-
-    /// \brief Tries to read a floating-point machine register.
-    /// \param s Machine state.
-    /// \param paddr Absolute address of the register within shadow-state range
-    /// \param data Pointer to word receiving value.
-    /// \return true if the register was successfully read
-    static bool try_read_f(machine_state &s, uint64_t paddr, uint64_t *data) {
-        if (paddr < shadow_state_get_f_abs_addr(0)) {
-            return false;
-        }
-        if (paddr > shadow_state_get_f_abs_addr(F_REG_COUNT - 1)) {
-            return false;
-        }
-        if (paddr & 0b111) {
-            throw std::runtime_error("read floating-point register value not correctly aligned");
-        }
-        paddr -= shadow_state_get_f_abs_addr(0);
-        *data = s.f[paddr >> 3];
         return true;
     }
 

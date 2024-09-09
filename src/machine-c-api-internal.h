@@ -40,9 +40,6 @@ char *string_to_buf(char *dest, size_t maxlen, const std::string &src);
 /// \brief Helper function that create empty string in case that C string is NULL
 std::string null_to_empty(const char *s);
 
-/// \brief Helper function converts a semantic version to C api structure
-cm_semantic_version *convert_to_c(const cartesi::semantic_version &cpp_version);
-
 /// \brief Helper function that parses hash from C api structure
 cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash);
 

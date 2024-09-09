@@ -56,10 +56,6 @@ void cm_delete(cm_access_log *ptr);
 template <>
 void cm_delete(cm_merkle_tree_proof *p);
 
-/// \brief Deleter for C api semantic version
-template <>
-void cm_delete(const cm_semantic_version *p);
-
 /// \brief Deleter for C api memory range description array
 template <>
 void cm_delete(cm_memory_range_descr_array *p);
@@ -127,11 +123,6 @@ private:
 /// \param L Lua state
 /// \param proof Proof to be pushed
 void clua_push_cm_proof(lua_State *L, const cm_merkle_tree_proof *proof);
-
-/// \brief Pushes a cm_semantic_version to the Lua stack
-/// \param L Lua state
-/// \param v C api semantic version to be pushed
-void clua_push_cm_semantic_version(lua_State *L, const cm_semantic_version *v);
 
 /// \brief Pushes a C api hash object to the Lua stack
 /// \param L Lua state

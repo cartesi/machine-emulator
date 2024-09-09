@@ -209,13 +209,14 @@ int cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_CSR csr, uint64_t *
     return cm_result_failure();
 }
 
-int cm_jsonrpc_get_semantic_version(const cm_jsonrpc_mgr *mgr, const cm_semantic_version **version) try {
+int cm_jsonrpc_get_version(const cm_jsonrpc_mgr *mgr, const char **version) try {
     if (version == nullptr) {
         throw std::invalid_argument("invalid version output");
     }
     const auto *cpp_mgr = convert_from_c(mgr);
     const cartesi::semantic_version cpp_version = cartesi::jsonrpc_virtual_machine::get_version(*cpp_mgr);
-    *version = convert_to_c(cpp_version);
+    static THREAD_LOCAL char version_buf[1024];
+    *version = string_to_buf(version_buf, sizeof(version_buf), cartesi::to_json(cpp_version).dump());
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();

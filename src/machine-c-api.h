@@ -360,15 +360,6 @@ typedef struct {                    // NOLINT(modernize-use-using)
 /// where pointer size depend on types, this api might not work
 typedef struct cm_machine_tag cm_machine; // NOLINT(modernize-use-using)
 
-/// \brief Semantic version
-typedef struct { // NOLINT(modernize-use-using)
-    uint32_t major;
-    uint32_t minor;
-    uint32_t patch;
-    const char *pre_release;
-    const char *build;
-} cm_semantic_version;
-
 /// \brief Memory range description
 typedef struct { // NOLINT(modernize-use-using)
     uint64_t start;
@@ -639,10 +630,6 @@ CM_API const char *cm_get_default_config();
 /// specified in new range.
 CM_API int cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,
     const char *image_filename);
-
-/// \brief Deletes semantic version instance
-/// \param m Valid pointer to the existing semantic version instance
-CM_API void cm_delete_semantic_version(const cm_semantic_version *version);
 
 /// \brief Destroys machine
 /// \returns 0 for success, non zero code for error

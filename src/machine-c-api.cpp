@@ -185,20 +185,6 @@ static cm_hash_array *convert_to_c(const std::vector<cartesi::machine_merkle_tre
 }
 
 // ----------------------------------------------
-// Semantic version conversion functions
-// ----------------------------------------------
-
-cm_semantic_version *convert_to_c(const cartesi::semantic_version &cpp_version) {
-    auto *new_semantic_version = new cm_semantic_version{};
-    new_semantic_version->major = cpp_version.major;
-    new_semantic_version->minor = cpp_version.minor;
-    new_semantic_version->patch = cpp_version.patch;
-    new_semantic_version->pre_release = convert_to_c(cpp_version.pre_release);
-    new_semantic_version->build = convert_to_c(cpp_version.build);
-    return new_semantic_version;
-}
-
-// ----------------------------------------------
 // Merkle tree proof conversion functions
 // ----------------------------------------------
 
@@ -667,16 +653,6 @@ void cm_delete_merkle_tree_proof(cm_merkle_tree_proof *proof) {
     }
     delete[] proof->sibling_hashes.entry;
     delete proof;
-}
-
-void cm_delete_semantic_version(const cm_semantic_version *version) {
-    if (version == nullptr) {
-        return;
-    }
-
-    delete[] version->pre_release;
-    delete[] version->build;
-    delete version;
 }
 
 int cm_get_root_hash(const cm_machine *m, cm_hash *hash) try {

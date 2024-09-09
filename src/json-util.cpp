@@ -1879,4 +1879,14 @@ void to_json(nlohmann::json &j, const fork_result &fork_result) {
     j = nlohmann::json{{"address", fork_result.address}, {"pid", fork_result.pid}};
 }
 
+void to_json(nlohmann::json &j, const semantic_version &version) {
+    j = nlohmann::json{
+        {"major", version.major},
+        {"minor", version.minor},
+        {"patch", version.patch},
+        {"pre_release", version.pre_release},
+        {"build", version.build},
+    };
+}
+
 } // namespace cartesi

@@ -562,6 +562,7 @@ void to_json(nlohmann::json &j, const machine_runtime_config &runtime);
 void to_json(nlohmann::json &j, const machine::csr &csr);
 void to_json(nlohmann::json &j, const machine_memory_range_descrs &mrds);
 void to_json(nlohmann::json &j, const fork_result &fork_result);
+void to_json(nlohmann::json &j, const semantic_version &version);
 
 // Extern template declarations
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, std::string &value,

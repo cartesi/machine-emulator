@@ -252,13 +252,11 @@ static int jsonrpc_server_class_get_machine(lua_State *L) {
 static int jsonrpc_server_class_get_version(lua_State *L) {
     auto &managed_jsonrpc_mgr =
         clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
-    auto &managed_version =
-        clua_push_to(L, clua_managed_cm_ptr<const cm_semantic_version>(nullptr), lua_upvalueindex(2));
-    if (cm_jsonrpc_get_semantic_version(managed_jsonrpc_mgr.get(), &managed_version.get()) != 0) {
+    const char *version = nullptr;
+    if (cm_jsonrpc_get_version(managed_jsonrpc_mgr.get(), &version) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_cm_semantic_version(L, managed_version.get());
-    managed_version.reset();
+    clua_push_json(L, nlohmann::json::parse(version));
     return 1;
 }
 
@@ -349,7 +347,6 @@ int clua_jsonrpc_machine_init(lua_State *L, int ctxidx) {
     clua_createnewtype<clua_managed_cm_ptr<cm_merkle_tree_proof>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<char>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<unsigned char>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<const cm_semantic_version>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, ctxidx);
     return 1;
 }

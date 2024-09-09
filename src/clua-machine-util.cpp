@@ -36,12 +36,6 @@ void cm_delete<unsigned char>(unsigned char *ptr) { // NOLINT(readability-non-co
     delete[] ptr;
 }
 
-/// \brief Deleter for C api semantic version
-template <>
-void cm_delete(const cm_semantic_version *p) {
-    cm_delete_semantic_version(p);
-}
-
 /// \brief Deleter for C api machine
 template <>
 void cm_delete(cm_machine *ptr) {
@@ -703,15 +697,6 @@ void clua_push_cm_access_log(lua_State *L, const cm_access_log *log) {
 void clua_push_cm_hash(lua_State *L, const cm_hash *hash) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     lua_pushlstring(L, reinterpret_cast<const char *>(hash), CM_MACHINE_HASH_BYTE_SIZE);
-}
-
-void clua_push_cm_semantic_version(lua_State *L, const cm_semantic_version *v) {
-    lua_newtable(L);                                           // version
-    clua_setintegerfield(L, v->major, "major", -1);            // version
-    clua_setintegerfield(L, v->minor, "minor", -1);            // version
-    clua_setintegerfield(L, v->patch, "patch", -1);            // version
-    clua_setstringfield(L, v->pre_release, "pre_release", -1); // version
-    clua_setstringfield(L, v->build, "build", -1);             // version
 }
 
 void clua_push_cm_proof(lua_State *L, const cm_merkle_tree_proof *proof) {

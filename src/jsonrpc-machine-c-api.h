@@ -127,10 +127,12 @@ CM_API int cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, cha
 CM_API int cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_CSR csr, uint64_t *val);
 
 /// \brief Gets the semantic version of remote server machine
-/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
-/// \param version Receives semantic version
-/// \returns 0 for successful verification, non zero code for error
-CM_API int cm_jsonrpc_get_semantic_version(const cm_jsonrpc_mgr *mgr, const cm_semantic_version **version);
+/// \param mgr Pointer to a valid jsonrpc connection manager.
+/// \param semantic_version Receives the semantic version as a JSON string.
+/// remains valid until the next time this same function is called on the same thread.
+/// In case of failure receives NULL.
+/// \returns 0 for success, non zero code for error.
+CM_API int cm_jsonrpc_get_version(const cm_jsonrpc_mgr *mgr, const char **version);
 
 /// \brief Performs shutdown
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object

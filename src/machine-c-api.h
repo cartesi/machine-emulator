@@ -556,12 +556,6 @@ CM_API int cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t 
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_mcycle(const cm_machine *m, uint64_t *val);
 
-/// \brief Writes the value of the mcycle register.
-/// \param m Pointer to valid machine instance
-/// \param val New register value.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_write_mcycle(cm_machine *m, uint64_t val);
-
 /// \brief Checks the value of the iflags_X flag.
 /// \param m Pointer to valid machine instance
 /// \param val Receives the flag value
@@ -652,12 +646,6 @@ CM_API int cm_rollback(cm_machine *m);
 /// \param val Receives value of the register.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_read_uarch_cycle(const cm_machine *m, uint64_t *val);
-
-/// \brief Writes the value of the microarchitecture cycle register.
-/// \param m Pointer to valid machine instance
-/// \param val New register value.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_write_uarch_cycle(cm_machine *m, uint64_t val);
 
 /// \brief Gets the value of the microarchitecture halt flag.
 /// \param m Pointer to valid machine instance

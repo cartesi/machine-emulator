@@ -518,10 +518,6 @@ uint64_t jsonrpc_virtual_machine::do_read_mcycle(void) const {
     return read_csr(csr::mcycle);
 }
 
-void jsonrpc_virtual_machine::do_write_mcycle(uint64_t val) {
-    write_csr(csr::mcycle, val);
-}
-
 bool jsonrpc_virtual_machine::do_read_iflags_H(void) const {
     bool result = false;
     jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.read_iflags_H", std::tie(), result);
@@ -634,10 +630,6 @@ bool jsonrpc_virtual_machine::do_verify_merkle_tree(void) const {
 
 uint64_t jsonrpc_virtual_machine::do_read_uarch_cycle(void) const {
     return read_csr(csr::uarch_cycle);
-}
-
-void jsonrpc_virtual_machine::do_write_uarch_cycle(uint64_t val) {
-    write_csr(csr::uarch_cycle, val);
 }
 
 void jsonrpc_virtual_machine::do_snapshot(void) {

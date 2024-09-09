@@ -1372,18 +1372,6 @@ static json jsonrpc_machine_read_iflags_H_handler(const json &j, const std::shar
     return jsonrpc_response_ok(j, session->handler->machine->read_iflags_H());
 }
 
-/// \brief JSONRPC handler for the machine.read_iflags_PRV method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_read_iflags_PRV_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    if (!session->handler->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    jsonrpc_check_no_params(j);
-    return jsonrpc_response_ok(j, static_cast<uint64_t>(session->handler->machine->read_iflags_PRV()));
-}
-
 /// \brief JSONRPC handler for the machine.set_uarch_halt_flag method
 /// \param j JSON request object
 /// \param session HTTP session
@@ -1663,7 +1651,6 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.read_iflags_Y", jsonrpc_machine_read_iflags_Y_handler},
         {"machine.read_iflags_X", jsonrpc_machine_read_iflags_X_handler},
         {"machine.read_iflags_H", jsonrpc_machine_read_iflags_H_handler},
-        {"machine.read_iflags_PRV", jsonrpc_machine_read_iflags_PRV_handler},
         {"machine.read_uarch_halt_flag", jsonrpc_machine_read_uarch_halt_flag_handler},
         {"machine.set_uarch_halt_flag", jsonrpc_machine_set_uarch_halt_flag_handler},
         {"machine.get_initial_config", jsonrpc_machine_get_initial_config_handler},

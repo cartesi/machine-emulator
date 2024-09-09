@@ -61,28 +61,25 @@ static int machine_obj_index_get_root_hash(lua_State *L) {
     return 1;
 }
 
-/// \brief Generation of machine getters and setters for CSR registers
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define IMPL_MACHINE_OBJ_READ_WRITE(field)                                                                             \
-    static int machine_obj_index_read_##field(lua_State *L) {                                                          \
-        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);                                                   \
-        uint64_t val{};                                                                                                \
-        if (cm_read_##field(m.get(), &val) != 0) {                                                                     \
-            return luaL_error(L, "%s", cm_get_last_error_message());                                                   \
-        }                                                                                                              \
-        lua_pushinteger(L, val);                                                                                       \
-        return 1;                                                                                                      \
-    }                                                                                                                  \
-    static int machine_obj_index_write_##field(lua_State *L) {                                                         \
-        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);                                                   \
-        if (cm_write_##field(m.get(), luaL_checkinteger(L, 2)) != 0) {                                                 \
-            return luaL_error(L, "%s", cm_get_last_error_message());                                                   \
-        }                                                                                                              \
-        return 0;                                                                                                      \
+static int machine_obj_index_read_mcycle(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    uint64_t val{};
+    if (cm_read_mcycle(m.get(), &val) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
     }
+    lua_pushinteger(L, static_cast<lua_Integer>(val));
+    return 1;
+}
 
-IMPL_MACHINE_OBJ_READ_WRITE(mcycle)
-IMPL_MACHINE_OBJ_READ_WRITE(uarch_cycle)
+static int machine_obj_index_read_uarch_cycle(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    uint64_t val{};
+    if (cm_read_uarch_cycle(m.get(), &val) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    lua_pushinteger(L, static_cast<lua_Integer>(val));
+    return 1;
+}
 
 /// \brief This is the machine:read_csr() method implementation.
 /// \param L Lua state.
@@ -504,8 +501,6 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"verify_dirty_page_maps", machine_obj_index_verify_dirty_page_maps},
     {"verify_merkle_tree", machine_obj_index_verify_merkle_tree},
     {"write_csr", machine_obj_index_write_csr},
-    {"write_uarch_cycle", machine_obj_index_write_uarch_cycle},
-    {"write_mcycle", machine_obj_index_write_mcycle},
     {"write_memory", machine_obj_index_write_memory},
     {"write_virtual_memory", machine_obj_index_write_virtual_memory},
     {"translate_virtual_address", machine_obj_index_translate_virtual_address},

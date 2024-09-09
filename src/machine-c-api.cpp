@@ -756,30 +756,27 @@ int cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *paddr)
     return cm_result_failure();
 }
 
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define IMPL_MACHINE_READ_WRITE(field)                                                                                 \
-    int cm_read_##field(const cm_machine *m, uint64_t *val) try {                                                      \
-        if (val == nullptr) {                                                                                          \
-            throw std::invalid_argument("invalid val output");                                                         \
-        }                                                                                                              \
-        const auto *cpp_machine = convert_from_c(m);                                                                   \
-        *val = cpp_machine->read_##field();                                                                            \
-        return cm_result_success();                                                                                    \
-    } catch (...) {                                                                                                    \
-        return cm_result_failure();                                                                                    \
-    }                                                                                                                  \
-    int cm_write_##field(cm_machine *m, uint64_t val) try {                                                            \
-        auto *cpp_machine = convert_from_c(m);                                                                         \
-        cpp_machine->write_##field(val);                                                                               \
-        return cm_result_success();                                                                                    \
-    } catch (...) {                                                                                                    \
-        return cm_result_failure();                                                                                    \
+int cm_read_mcycle(const cm_machine *m, uint64_t *val) try {
+    if (val == nullptr) {
+        throw std::invalid_argument("invalid val output");
     }
+    const auto *cpp_machine = convert_from_c(m);
+    *val = cpp_machine->read_mcycle();
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
 
-// clang-format-off
-IMPL_MACHINE_READ_WRITE(mcycle)
-IMPL_MACHINE_READ_WRITE(uarch_cycle)
-// clang-format-on
+int cm_read_uarch_cycle(const cm_machine *m, uint64_t *val) try {
+    if (val == nullptr) {
+        throw std::invalid_argument("invalid val output");
+    }
+    const auto *cpp_machine = convert_from_c(m);
+    *val = cpp_machine->read_uarch_cycle();
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
 
 int cm_read_iflags_Y(const cm_machine *m, bool *val) try {
     if (val == nullptr) {

@@ -725,36 +725,6 @@ CHECK_READER_FAILS_ON_nullptr_MACHINE(uint64_t, uarch_cycle)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(bool, iflags_Y)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(bool, iflags_X)
 CHECK_READER_FAILS_ON_nullptr_MACHINE(bool, iflags_H)
-// clang-format on
-
-// NOLINTNEXTLINE
-#define CHECK_WRITER_FAILS_ON_nullptr_MACHINE(writer_f)                                                                \
-    BOOST_AUTO_TEST_CASE_NOLINT(write_##writer_f##_null_machine_test) {                                                \
-        int error_code = cm_write_##writer_f(nullptr, 0x1);                                                            \
-        BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);                                                      \
-    }
-
-    // clang-format off
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(mcycle)
-CHECK_WRITER_FAILS_ON_nullptr_MACHINE(uarch_cycle)
-// clang-format on
-
-// NOLINTNEXTLINE
-#define CHECK_REGISTER_READ_WRITE(F)                                                                                   \
-    BOOST_FIXTURE_TEST_CASE_NOLINT(F##_read_write_test, ordinary_machine_fixture) {                                    \
-        uint64_t write_val = 0xad;                                                                                     \
-        uint64_t read_val = 0;                                                                                         \
-        int error_code = cm_write_##F(_machine, write_val);                                                            \
-        BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);                                                                    \
-        error_code = cm_read_##F(_machine, &read_val);                                                                 \
-        BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);                                                                    \
-        BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));                                  \
-        BOOST_CHECK_EQUAL(write_val, read_val);                                                                        \
-    }
-
-    // clang-format off
-CHECK_REGISTER_READ_WRITE(mcycle)
-CHECK_REGISTER_READ_WRITE(uarch_cycle)
     // clang-format on
 
     BOOST_AUTO_TEST_CASE_NOLINT(set_iflags_y_null_machine_test) {
@@ -1260,7 +1230,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, access_log_machine_fix
     uint64_t halt{1};
 
     // at micro cycle 0
-    error_code = cm_read_csr(_machine, CM_CSR_UARCH_CYCLE, &cycle);
+    error_code = cm_read_uarch_cycle(_machine, &cycle);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(cycle, 0);
 
@@ -1325,7 +1295,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, access_log_machine_fix
     cm_delete_access_log(_access_log);
 
     // at micro cycle 4
-    error_code = cm_read_csr(_machine, CM_CSR_UARCH_CYCLE, &cycle);
+    error_code = cm_read_uarch_cycle(_machine, &cycle);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(cycle, 3);
 
@@ -1458,7 +1428,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_one_cycle, access_log_m
 
     // ensure that uarch cycle is 0
     uint64_t cycle{};
-    int error_code = cm_read_csr(_machine, CM_CSR_UARCH_CYCLE, &cycle);
+    int error_code = cm_read_uarch_cycle(_machine, &cycle);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_REQUIRE_EQUAL(cycle, 0);
@@ -1471,7 +1441,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_one_cycle, access_log_m
     BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE);
 
     // confirm uarch cycle was incremented
-    error_code = cm_read_csr(_machine, CM_CSR_UARCH_CYCLE, &cycle);
+    error_code = cm_read_uarch_cycle(_machine, &cycle);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_REQUIRE_EQUAL(cycle, 1);
@@ -1480,7 +1450,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_one_cycle, access_log_m
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_until_halt, access_log_machine_fixture) {
     // ensure that uarch cycle is 0
     uint64_t cycle{};
-    int error_code = cm_read_csr(_machine, CM_CSR_UARCH_CYCLE, &cycle);
+    int error_code = cm_read_uarch_cycle(_machine, &cycle);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_REQUIRE_EQUAL(cycle, 0);
@@ -1504,7 +1474,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_until_halt, access_log_
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE);
 
-    error_code = cm_read_csr(_machine, CM_CSR_UARCH_CYCLE, &cycle);
+    error_code = cm_read_uarch_cycle(_machine, &cycle);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(cycle, 1);
 
@@ -1522,7 +1492,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_until_halt, access_log_
     BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_UARCH_HALTED);
 
     // confirm uarch cycle advanced
-    error_code = cm_read_csr(_machine, CM_CSR_UARCH_CYCLE, &cycle);
+    error_code = cm_read_uarch_cycle(_machine, &cycle);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_REQUIRE_EQUAL(cycle, 3);
@@ -1538,7 +1508,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_reset_uarch, ordinary_machine_fixture) {
     // ensure that uarch cycle is 0
     uint64_t halt_cycle{};
     uint64_t cycle{};
-    int error_code = cm_read_csr(_machine, CM_CSR_UARCH_CYCLE, &cycle);
+    int error_code = cm_read_uarch_cycle(_machine, &cycle);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
@@ -1572,7 +1542,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_reset_uarch, ordinary_machine_fixture) {
     BOOST_REQUIRE_EQUAL(halt, 1);
 
     // save halt cycle
-    error_code = cm_read_csr(_machine, CM_CSR_UARCH_CYCLE, &halt_cycle);
+    error_code = cm_read_uarch_cycle(_machine, &halt_cycle);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE(halt_cycle > 0);
 
@@ -1582,7 +1552,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_reset_uarch, ordinary_machine_fixture) {
     BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_UARCH_HALTED);
 
     // should stay at halt cycle
-    error_code = cm_read_csr(_machine, CM_CSR_UARCH_CYCLE, &cycle);
+    error_code = cm_read_uarch_cycle(_machine, &cycle);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(cycle, halt_cycle);
 

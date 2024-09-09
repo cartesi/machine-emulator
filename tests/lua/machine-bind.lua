@@ -589,7 +589,7 @@ do_test("mcycle value should match", function(machine)
 end)
 
 do_test("should error if target mcycle is smaller than current mcycle", function(machine)
-    machine:write_mcycle(MAX_MCYCLE)
+    machine:write_csr("mcycle", MAX_MCYCLE)
     assert(machine:read_mcycle() == MAX_MCYCLE)
     local success, err = pcall(function()
         machine:run(MAX_MCYCLE - 1)
@@ -600,7 +600,7 @@ do_test("should error if target mcycle is smaller than current mcycle", function
 end)
 
 do_test("should error if target uarch_cycle is smaller than current uarch_cycle", function(machine)
-    machine:write_uarch_cycle(MAX_UARCH_CYCLE)
+    machine:write_csr("uarch_cycle", MAX_UARCH_CYCLE)
     assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
     local success, err = pcall(function()
         machine:run_uarch(MAX_UARCH_CYCLE - 1)
@@ -770,7 +770,7 @@ do_test("step when uarch cycle is max", function(machine)
         end
         module = remote
     end
-    machine:write_uarch_cycle(MAX_UARCH_CYCLE)
+    machine:write_csr("uarch_cycle", MAX_UARCH_CYCLE)
     assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
     local initial_hash = machine:get_root_hash()
     local log = machine:log_step_uarch({ proofs = true, annotations = true })

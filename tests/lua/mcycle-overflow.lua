@@ -54,7 +54,7 @@ end
 print("testing mcycle overflow")
 
 do_test("machine should run up to mcycle limit", function(machine)
-    machine:write_mcycle(MAX_MCYCLE - 5)
+    machine:write_csr("mcycle", MAX_MCYCLE - 5)
     -- Run once to trigger an interrupt, which might cause an overflow on the
     -- next call to machine:run
     assert(machine:run(MAX_MCYCLE - 4) == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
@@ -63,7 +63,7 @@ do_test("machine should run up to mcycle limit", function(machine)
 end)
 
 do_test("machine run shouldn't change state in max mcycle", function(machine)
-    machine:write_mcycle(MAX_MCYCLE)
+    machine:write_csr("mcycle", MAX_MCYCLE)
     local hash_before = machine:get_root_hash()
     assert(machine:run(MAX_MCYCLE) == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
     local hash_after = machine:get_root_hash()
@@ -71,7 +71,7 @@ do_test("machine run shouldn't change state in max mcycle", function(machine)
 end)
 
 do_test("run_uarch shouldn't change state at max uarch_cycle", function(machine)
-    machine:write_uarch_cycle(MAX_UARCH_CYCLE)
+    machine:write_csr("uarch_cycle", MAX_UARCH_CYCLE)
     assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
     local hash_before = machine:get_root_hash()
     assert(machine:run_uarch(MAX_UARCH_CYCLE) == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_CYCLE)
@@ -82,7 +82,7 @@ end)
 
 for _, proofs in ipairs({ true, false }) do
     do_test("machine step should do nothing on max mcycle [proofs=" .. tostring(proofs) .. "]", function(machine)
-        machine:write_uarch_cycle(MAX_UARCH_CYCLE)
+        machine:write_csr("uarch_cycle", MAX_UARCH_CYCLE)
         local log = machine:log_step_uarch({ proofs = proofs })
         assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
         assert(#log.accesses == 1)

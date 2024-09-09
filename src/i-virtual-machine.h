@@ -161,11 +161,6 @@ public:
         return do_read_mcycle();
     }
 
-    /// \brief Writes the mcycle register
-    void write_mcycle(uint64_t val) {
-        do_write_mcycle(val);
-    }
-
     /// \brief Reads the H iflag
     bool read_iflags_H(void) const {
         return do_read_iflags_H();
@@ -195,12 +190,6 @@ public:
     /// \returns The current microarchitecture cycle.
     uint64_t read_uarch_cycle(void) const {
         return do_read_uarch_cycle();
-    }
-
-    /// \brief Writes the value ofthe microarchitecture pc register.
-    /// \param val New register value.
-    void write_uarch_cycle(uint64_t val) {
-        return do_write_uarch_cycle(val);
     }
 
     /// \brief Gets the value of the microarchitecture halt flag
@@ -264,7 +253,6 @@ private:
     virtual void do_write_virtual_memory(uint64_t address, const unsigned char *data, size_t length) = 0;
     virtual uint64_t do_translate_virtual_address(uint64_t vaddr) const = 0;
     virtual uint64_t do_read_mcycle(void) const = 0;
-    virtual void do_write_mcycle(uint64_t val) = 0;
     virtual bool do_read_iflags_H(void) const = 0;
     virtual bool do_read_iflags_Y(void) const = 0;
     virtual bool do_read_iflags_X(void) const = 0;
@@ -279,7 +267,6 @@ private:
     virtual void do_commit() = 0;
     virtual void do_rollback() = 0;
     virtual uint64_t do_read_uarch_cycle(void) const = 0;
-    virtual void do_write_uarch_cycle(uint64_t val) = 0;
     virtual bool do_read_uarch_halt_flag(void) const = 0;
     virtual void do_set_uarch_halt_flag() = 0;
     virtual void do_reset_uarch() = 0;

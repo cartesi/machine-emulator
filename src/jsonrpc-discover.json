@@ -410,34 +410,6 @@
     },
 
     {
-      "name": "machine.get_proof",
-      "summary": "Obtains a Merkle proof for a span of memory in the machine state",
-      "params": [ {
-          "name":"address",
-          "description": "Starting address of range in state (must be aligned to size)",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          }
-        }, {
-          "name":"log2_size",
-          "description": "Log2 of size of range",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          }
-        }
-      ],
-      "result": {
-        "name": "proof",
-        "description": "Proof of range contents",
-        "schema": {
-          "$ref": "#/components/schemas/Proof"
-        }
-      }
-    },
-
-    {
       "name": "machine.get_root_hash",
       "summary": "Obtains the Merkle hash of the current machine state",
       "params": [ ],
@@ -789,19 +761,6 @@
     },
 
     {
-      "name": "machine.read_iflags_PRV",
-      "summary": "Returns value of iflags.PRV",
-      "params": [],
-      "result": {
-        "name": "value",
-        "description": "Value of flag",
-        "schema": {
-          "$ref": "#/components/schemas/UnsignedInteger"
-        }
-      }
-    },
-
-    {
       "name": "machine.set_uarch_halt_flag",
       "summary": "Sets iflags.H to true",
       "params": [],
@@ -962,8 +921,8 @@
     },
 
     {
-      "name": "machine.log_send_cmio_response and returns an access log",
-      "summary": "Sends cmio response. and returns an access log",
+      "name": "machine.log_send_cmio_response",
+      "summary": "Sends cmio response and returns an access log",
       "params": [ {
         "name":"reason",
         "description": "Reason for sending response",

@@ -84,10 +84,6 @@ uint64_t virtual_machine::do_read_mcycle(void) const {
     return m_machine->read_mcycle();
 }
 
-void virtual_machine::do_write_mcycle(uint64_t val) {
-    return m_machine->write_mcycle(val);
-}
-
 bool virtual_machine::do_read_iflags_H(void) const {
     return m_machine->read_iflags_H();
 }
@@ -142,10 +138,6 @@ void virtual_machine::do_rollback(void) {
 
 uint64_t virtual_machine::do_read_uarch_cycle(void) const {
     return m_machine->read_uarch_cycle();
-}
-
-void virtual_machine::do_write_uarch_cycle(uint64_t val) {
-    m_machine->write_uarch_cycle(val);
 }
 
 void virtual_machine::do_set_uarch_halt_flag() {

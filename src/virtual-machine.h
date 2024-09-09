@@ -53,7 +53,6 @@ private:
     void do_write_virtual_memory(uint64_t address, const unsigned char *data, size_t length) override;
     uint64_t do_translate_virtual_address(uint64_t vaddr) const override;
     uint64_t do_read_mcycle(void) const override;
-    void do_write_mcycle(uint64_t val) override;
     bool do_read_iflags_H(void) const override;
     bool do_read_iflags_Y(void) const override;
     bool do_read_iflags_X(void) const override;
@@ -68,7 +67,6 @@ private:
     void do_commit() override;
     void do_rollback() override;
     uint64_t do_read_uarch_cycle(void) const override;
-    void do_write_uarch_cycle(uint64_t val) override;
     void do_set_uarch_halt_flag() override;
     void do_reset_uarch() override;
     access_log do_log_reset_uarch(const access_log::type &log_type, bool one_based = false) override;

@@ -92,7 +92,6 @@ private:
     void do_write_virtual_memory(uint64_t address, const unsigned char *data, size_t length) override;
     uint64_t do_translate_virtual_address(uint64_t vaddr) const override;
     uint64_t do_read_mcycle(void) const override;
-    void do_write_mcycle(uint64_t val) override;
     bool do_read_iflags_H(void) const override;
     bool do_read_iflags_Y(void) const override;
     bool do_read_iflags_X(void) const override;
@@ -114,7 +113,6 @@ private:
     uint64_t do_read_word(uint64_t address) const override;
     bool do_verify_merkle_tree(void) const override;
     uint64_t do_read_uarch_cycle(void) const override;
-    void do_write_uarch_cycle(uint64_t val) override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
     machine_memory_range_descrs do_get_memory_ranges(void) const override;
     void do_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length) override;

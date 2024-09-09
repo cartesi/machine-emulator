@@ -393,7 +393,7 @@ create-generated-files-patch: $(ADD_GENERATED_FILES_DIFF)
 
 $(ADD_GENERATED_FILES_DIFF): $(GENERATED_FILES)
 	git add -f $(GENERATED_FILES)
-	git diff --no-prefix --staged --output=$(ADD_GENERATED_FILES_DIFF)
+	git diff --default-prefix --staged --output=$(ADD_GENERATED_FILES_DIFF)
 	git reset -- $(GENERATED_FILES)
 
 .PHONY: help all submodules doc clean distclean src luacartesi hash uarch \

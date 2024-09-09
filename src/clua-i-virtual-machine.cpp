@@ -96,54 +96,6 @@ static int machine_obj_index_read_csr(lua_State *L) {
     return 1;
 }
 
-/// \brief This is the machine:read_x() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_x(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const int i = static_cast<int>(luaL_checkinteger(L, 2));
-    if (i < 0 || i >= X_REG_COUNT) {
-        luaL_error(L, "register index out of range");
-    }
-    uint64_t val{};
-    if (cm_read_x(m.get(), i, &val) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushinteger(L, static_cast<lua_Integer>(val));
-    return 1;
-}
-
-/// \brief This is the machine:read_f() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_f(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const int i = static_cast<int>(luaL_checkinteger(L, 2));
-    if (i < 0 || i >= F_REG_COUNT) {
-        luaL_error(L, "register index out of range");
-    }
-    uint64_t val{};
-    if (cm_read_f(m.get(), i, &val) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushinteger(L, static_cast<lua_Integer>(val));
-    return 1;
-}
-
-/// \brief This is the machine:read_uarch_x() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_uarch_x(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const int i = static_cast<int>(luaL_checkinteger(L, 2));
-    if (i < 0 || i >= UARCH_X_REG_COUNT) {
-        luaL_error(L, "register index out of range");
-    }
-    uint64_t val{};
-    if (cm_read_uarch_x(m.get(), i, &val) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushinteger(L, static_cast<lua_Integer>(val));
-    return 1;
-}
-
 /// \brief This is the machine:read_iflags_H() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_read_iflags_H(lua_State *L) {
@@ -399,48 +351,6 @@ static int machine_obj_index_write_csr(lua_State *L) {
     return 0;
 }
 
-/// \brief This is the machine:write_x() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_x(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const int i = static_cast<int>(luaL_checkinteger(L, 2));
-    if (i < 1 || i >= X_REG_COUNT) {
-        luaL_error(L, "register index out of range");
-    }
-    if (cm_write_x(m.get(), i, luaL_checkinteger(L, 3)) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    return 0;
-}
-
-/// \brief This is the machine:write_f() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_f(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const int i = static_cast<int>(luaL_checkinteger(L, 2));
-    if (i < 0 || i >= F_REG_COUNT) {
-        luaL_error(L, "register index out of range");
-    }
-    if (cm_write_f(m.get(), i, luaL_checkinteger(L, 3)) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    return 0;
-}
-
-/// \brief This is the machine:write_uarch_x() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_uarch_x(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const int i = static_cast<int>(luaL_checkinteger(L, 2));
-    if (i < 1 || i >= UARCH_X_REG_COUNT) {
-        luaL_error(L, "register index out of range");
-    }
-    if (cm_write_uarch_x(m.get(), i, luaL_checkinteger(L, 3)) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    return 0;
-}
-
 /// \brief This is the machine:write_memory() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_write_memory(lua_State *L) {
@@ -578,7 +488,6 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"get_root_hash", machine_obj_index_get_root_hash},
     {"read_csr", machine_obj_index_read_csr},
     {"read_uarch_cycle", machine_obj_index_read_uarch_cycle},
-    {"read_uarch_x", machine_obj_index_read_uarch_x},
     {"read_iflags_H", machine_obj_index_read_iflags_H},
     {"read_iflags_Y", machine_obj_index_read_iflags_Y},
     {"read_iflags_X", machine_obj_index_read_iflags_X},
@@ -588,8 +497,6 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"read_memory", machine_obj_index_read_memory},
     {"read_virtual_memory", machine_obj_index_read_virtual_memory},
     {"read_word", machine_obj_index_read_word},
-    {"read_x", machine_obj_index_read_x},
-    {"read_f", machine_obj_index_read_f},
     {"run", machine_obj_index_run},
     {"run_uarch", machine_obj_index_run_uarch},
     {"log_step_uarch", machine_obj_index_log_step_uarch},
@@ -598,12 +505,9 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"verify_merkle_tree", machine_obj_index_verify_merkle_tree},
     {"write_csr", machine_obj_index_write_csr},
     {"write_uarch_cycle", machine_obj_index_write_uarch_cycle},
-    {"write_uarch_x", machine_obj_index_write_uarch_x},
     {"write_mcycle", machine_obj_index_write_mcycle},
     {"write_memory", machine_obj_index_write_memory},
     {"write_virtual_memory", machine_obj_index_write_virtual_memory},
-    {"write_x", machine_obj_index_write_x},
-    {"write_f", machine_obj_index_write_f},
     {"translate_virtual_address", machine_obj_index_translate_virtual_address},
     {"replace_memory_range", machine_obj_index_replace_memory_range},
     {"destroy", machine_obj_index_destroy},

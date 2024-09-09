@@ -459,23 +459,6 @@ uint64_t jsonrpc_virtual_machine::get_csr_address(const jsonrpc_mgr_ptr &mgr, cs
     return result;
 }
 
-uint64_t jsonrpc_virtual_machine::do_read_x(int i) const {
-    uint64_t result = 0;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.read_x", std::tie(i), result);
-    return result;
-}
-
-void jsonrpc_virtual_machine::do_write_x(int i, uint64_t val) {
-    bool result = false;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.write_x", std::tie(i, val), result);
-}
-
-uint64_t jsonrpc_virtual_machine::get_x_address(const jsonrpc_mgr_ptr &mgr, int i) {
-    uint64_t result = 0;
-    jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "machine.get_x_address", std::tie(i), result);
-    return result;
-}
-
 fork_result jsonrpc_virtual_machine::fork(const jsonrpc_mgr_ptr &mgr) {
     fork_result result{};
     jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "fork", std::tie(), result, false);
@@ -485,29 +468,6 @@ fork_result jsonrpc_virtual_machine::fork(const jsonrpc_mgr_ptr &mgr) {
 std::string jsonrpc_virtual_machine::rebind(const jsonrpc_mgr_ptr &mgr, const std::string &address) {
     std::string result;
     jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "rebind", std::tie(address), result, false);
-    return result;
-}
-
-uint64_t jsonrpc_virtual_machine::do_read_f(int i) const {
-    uint64_t result = 0;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.read_f", std::tie(i), result);
-    return result;
-}
-
-void jsonrpc_virtual_machine::do_write_f(int i, uint64_t val) {
-    bool result = false;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.write_f", std::tie(i, val), result);
-}
-
-uint64_t jsonrpc_virtual_machine::get_f_address(const jsonrpc_mgr_ptr &mgr, int i) {
-    uint64_t result = 0;
-    jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "machine.get_f_address", std::tie(i), result);
-    return result;
-}
-
-uint64_t jsonrpc_virtual_machine::get_uarch_x_address(const jsonrpc_mgr_ptr &mgr, int i) {
-    uint64_t result = 0;
-    jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "machine.get_uarch_x_address", std::tie(i), result);
     return result;
 }
 
@@ -670,18 +630,6 @@ bool jsonrpc_virtual_machine::do_verify_merkle_tree(void) const {
     bool result = false;
     jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.verify_merkle_tree", std::tie(), result);
     return result;
-}
-
-uint64_t jsonrpc_virtual_machine::do_read_uarch_x(int i) const {
-    uint64_t result = 0;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.read_uarch_x", std::tie(i), result);
-    return result;
-}
-
-void jsonrpc_virtual_machine::do_write_uarch_x(int i, uint64_t val) {
-    bool result = false;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.write_uarch_x", std::tie(i, val),
-        result);
 }
 
 uint64_t jsonrpc_virtual_machine::do_read_uarch_cycle(void) const {

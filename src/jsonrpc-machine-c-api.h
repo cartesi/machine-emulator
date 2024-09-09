@@ -119,27 +119,6 @@ CM_API int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address, int *pid);
 /// \returns 0 for successful verification, non zero code for error
 CM_API int cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, char **new_address);
 
-/// \brief Gets the address of a general-purpose register from remote cartesi server
-/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
-/// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.
-/// \param val Receives address of the register
-/// \returns 0 for successful verification, non zero code for error
-CM_API int cm_jsonrpc_get_x_address(const cm_jsonrpc_mgr *mgr, int i, uint64_t *val);
-
-/// \brief Gets the address of a floating-point register from remote cartesi server
-/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
-/// \param i Register index. Between 0 and F_REG_COUNT-1, inclusive.
-/// \param val Receives address of the register
-/// \returns 0 for successful verification, non zero code for error
-CM_API int cm_jsonrpc_get_f_address(const cm_jsonrpc_mgr *mgr, int i, uint64_t *val);
-
-/// \brief Gets the address of a general-purpose register in the microemulator from remote cartesi server
-/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
-/// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
-/// \param val Receives address of the register
-/// \returns 0 for successful verification, non zero code for error
-CM_API int cm_jsonrpc_get_uarch_x_address(const cm_jsonrpc_mgr *mgr, int i, uint64_t *val);
-
 /// \brief Gets the address of any CSR from remote server
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
 /// \param csr The command and status register

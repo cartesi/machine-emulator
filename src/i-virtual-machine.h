@@ -116,26 +116,6 @@ public:
         return do_translate_virtual_address(vaddr);
     }
 
-    /// \brief Reads the value of a general-purpose register.
-    uint64_t read_x(int i) const {
-        return do_read_x(i);
-    }
-
-    /// \brief Writes the value of a general-purpose register.
-    void write_x(int i, uint64_t val) {
-        do_write_x(i, val);
-    }
-
-    /// \brief Reads the value of a floating-point register.
-    uint64_t read_f(int i) const {
-        return do_read_f(i);
-    }
-
-    /// \brief Writes the value of a floating-point register.
-    void write_f(int i, uint64_t val) {
-        do_write_f(i, val);
-    }
-
     /// \brief Replaces a flash drive.
     void replace_memory_range(const memory_range_config &new_range) {
         do_replace_memory_range(new_range);
@@ -211,20 +191,6 @@ public:
         return do_reset_iflags_Y();
     }
 
-    /// \brief Reads the value of a microarchitecture register.
-    /// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
-    /// \returns The value of the register.
-    uint64_t read_uarch_x(int i) const {
-        return do_read_uarch_x(i);
-    }
-
-    /// \brief Writes the value of a of a microarchitecture register.
-    /// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
-    /// \param val New register value.
-    void write_uarch_x(int i, uint64_t val) {
-        return do_write_uarch_x(i, val);
-    }
-
     /// \brief Reads the value of the microarchitecture cycle counter register.
     /// \returns The current microarchitecture cycle.
     uint64_t read_uarch_cycle(void) const {
@@ -297,10 +263,6 @@ private:
     virtual void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const = 0;
     virtual void do_write_virtual_memory(uint64_t address, const unsigned char *data, size_t length) = 0;
     virtual uint64_t do_translate_virtual_address(uint64_t vaddr) const = 0;
-    virtual uint64_t do_read_x(int i) const = 0;
-    virtual void do_write_x(int i, uint64_t val) = 0;
-    virtual uint64_t do_read_f(int i) const = 0;
-    virtual void do_write_f(int i, uint64_t val) = 0;
     virtual uint64_t do_read_mcycle(void) const = 0;
     virtual void do_write_mcycle(uint64_t val) = 0;
     virtual bool do_read_iflags_H(void) const = 0;
@@ -316,8 +278,6 @@ private:
     virtual void do_destroy() = 0;
     virtual void do_commit() = 0;
     virtual void do_rollback() = 0;
-    virtual uint64_t do_read_uarch_x(int i) const = 0;
-    virtual void do_write_uarch_x(int i, uint64_t val) = 0;
     virtual uint64_t do_read_uarch_cycle(void) const = 0;
     virtual void do_write_uarch_cycle(uint64_t val) = 0;
     virtual bool do_read_uarch_halt_flag(void) const = 0;

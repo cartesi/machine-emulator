@@ -89,36 +89,6 @@ static int machine_class_index_verify_reset_uarch_state_transition(lua_State *L)
     return 1;
 }
 
-/// \brief This is the machine.get_x_address() method implementation.
-static int machine_class_index_get_x_address(lua_State *L) {
-    const int i = static_cast<int>(luaL_checkinteger(L, 1));
-    if (i < 0 || i >= X_REG_COUNT) {
-        luaL_error(L, "register index out of range");
-    }
-    lua_pushinteger(L, static_cast<lua_Integer>(cm_get_x_address(i)));
-    return 1;
-}
-
-/// \brief This is the machine.get_uarch_x_address() method implementation.
-static int machine_class_index_get_uarch_x_address(lua_State *L) {
-    const int i = static_cast<int>(luaL_checkinteger(L, 1));
-    if (i < 0 || i >= UARCH_X_REG_COUNT) {
-        luaL_error(L, "register index out of range");
-    }
-    lua_pushinteger(L, static_cast<lua_Integer>(cm_get_uarch_x_address(i)));
-    return 1;
-}
-
-/// \brief This is the machine.get_f_address() method implementation.
-static int machine_class_index_get_f_address(lua_State *L) {
-    const int i = static_cast<int>(luaL_checkinteger(L, 1));
-    if (i < 0 || i >= F_REG_COUNT) {
-        luaL_error(L, "register index out of range");
-    }
-    lua_pushinteger(L, static_cast<lua_Integer>(cm_get_f_address(i)));
-    return 1;
-}
-
 /// \brief This is the machine.get_csr_address() method implementation.
 static int machine_class_index_get_csr_address(lua_State *L) {
     lua_pushinteger(L, static_cast<lua_Integer>(cm_get_csr_address(clua_check_cm_proc_csr(L, 1))));
@@ -170,9 +140,6 @@ static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
     {"verify_step_uarch_state_transition", machine_class_index_verify_step_uarch_state_transition},
     {"verify_reset_uarch_log", machine_class_index_verify_reset_uarch_log},
     {"verify_reset_uarch_state_transition", machine_class_index_verify_reset_uarch_state_transition},
-    {"get_x_address", machine_class_index_get_x_address},
-    {"get_uarch_x_address", machine_class_index_get_uarch_x_address},
-    {"get_f_address", machine_class_index_get_f_address},
     {"get_csr_address", machine_class_index_get_csr_address},
     {"verify_send_cmio_response_log", machine_class_index_verify_send_cmio_response_log},
     {"verify_send_cmio_response_state_transition", machine_class_index_verify_send_cmio_response_state_transition},

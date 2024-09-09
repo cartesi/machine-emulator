@@ -77,9 +77,6 @@ public:
 
     static fork_result fork(const jsonrpc_mgr_ptr &mgr);
     static std::string rebind(const jsonrpc_mgr_ptr &mgr, const std::string &address);
-    static uint64_t get_x_address(const jsonrpc_mgr_ptr &mgr, int i);
-    static uint64_t get_f_address(const jsonrpc_mgr_ptr &mgr, int i);
-    static uint64_t get_uarch_x_address(const jsonrpc_mgr_ptr &mgr, int i);
     static uint64_t get_csr_address(const jsonrpc_mgr_ptr &mgr, csr w);
 
 private:
@@ -89,10 +86,6 @@ private:
     void do_store(const std::string &dir) override;
     uint64_t do_read_csr(csr r) const override;
     void do_write_csr(csr w, uint64_t val) override;
-    uint64_t do_read_x(int i) const override;
-    void do_write_x(int i, uint64_t val) override;
-    uint64_t do_read_f(int i) const override;
-    void do_write_f(int i, uint64_t val) override;
     void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const override;
     void do_write_memory(uint64_t address, const unsigned char *data, size_t length) override;
     void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const override;
@@ -120,8 +113,6 @@ private:
     bool do_verify_dirty_page_maps(void) const override;
     uint64_t do_read_word(uint64_t address) const override;
     bool do_verify_merkle_tree(void) const override;
-    uint64_t do_read_uarch_x(int i) const override;
-    void do_write_uarch_x(int i, uint64_t val) override;
     uint64_t do_read_uarch_cycle(void) const override;
     void do_write_uarch_cycle(uint64_t val) override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;

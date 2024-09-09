@@ -514,16 +514,6 @@ public:
     /// \param value New register value.
     void write_x(int index, uint64_t value);
 
-    /// \brief Gets the address of a general-purpose register.
-    /// \param index Register index. Between 0 and X_REG_COUNT-1, inclusive.
-    /// \returns Address of the specified register
-    static uint64_t get_x_address(int index);
-
-    /// \brief Gets the address of a general-purpose microarchitecture register.
-    /// \param index Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
-    /// \returns Address of the specified register
-    static uint64_t get_uarch_x_address(int index);
-
     /// \brief Reads the value of a floating-point register.
     /// \param index Register index. Between 0 and F_REG_COUNT-1, inclusive.
     /// \returns The value of the register.
@@ -533,11 +523,6 @@ public:
     /// \param index Register index. Between 1 and F_REG_COUNT-1, inclusive.
     /// \param value New register value.
     void write_f(int index, uint64_t value);
-
-    /// \brief Gets the address of a floating-point register.
-    /// \param index Register index. Between 0 and F_REG_COUNT-1, inclusive.
-    /// \returns Address of the specified register
-    static uint64_t get_f_address(int index);
 
     /// \brief Reads the value of the pc register.
     /// \returns The value of the register.

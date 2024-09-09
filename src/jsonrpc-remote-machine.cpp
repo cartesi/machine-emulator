@@ -1299,111 +1299,6 @@ static json jsonrpc_machine_write_csr_handler(const json &j, const std::shared_p
     return jsonrpc_response_ok(j);
 }
 
-/// \brief JSONRPC handler for the machine.read_x method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_read_x_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    if (!session->handler->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    static const char *param_name[] = {"index"};
-    auto args = parse_args<uint64_t>(j, param_name);
-    const int i = static_cast<int>(std::get<0>(args));
-    if (i >= cartesi::X_REG_COUNT) {
-        throw std::domain_error{"index out of range"};
-    }
-    return jsonrpc_response_ok(j, session->handler->machine->read_x(i));
-}
-
-/// \brief JSONRPC handler for the machine.write_x method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_write_x_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    if (!session->handler->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    static const char *param_name[] = {"index", "value"};
-    auto args = parse_args<uint64_t, uint64_t>(j, param_name);
-    const int i = static_cast<int>(std::get<0>(args));
-    if (i >= cartesi::X_REG_COUNT || i == 0) {
-        throw std::domain_error{"index out of range"};
-    }
-    session->handler->machine->write_x(i, std::get<1>(args));
-    return jsonrpc_response_ok(j);
-}
-
-/// \brief JSONRPC handler for the machine.read_f method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_read_f_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    if (!session->handler->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    static const char *param_name[] = {"index"};
-    auto args = parse_args<uint64_t>(j, param_name);
-    const int i = static_cast<int>(std::get<0>(args));
-    if (i >= cartesi::F_REG_COUNT) {
-        throw std::domain_error{"index out of range"};
-    }
-    return jsonrpc_response_ok(j, session->handler->machine->read_f(i));
-}
-
-/// \brief JSONRPC handler for the machine.write_f method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_write_f_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    if (!session->handler->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    static const char *param_name[] = {"index", "value"};
-    auto args = parse_args<uint64_t, uint64_t>(j, param_name);
-    const int i = static_cast<int>(std::get<0>(args));
-    if (i >= cartesi::F_REG_COUNT) {
-        throw std::domain_error{"index out of range"};
-    }
-    session->handler->machine->write_f(i, std::get<1>(args));
-    return jsonrpc_response_ok(j);
-}
-
-/// \brief JSONRPC handler for the machine.read_uarch_x method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_read_uarch_x_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    if (!session->handler->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    static const char *param_name[] = {"index"};
-    auto args = parse_args<uint64_t>(j, param_name);
-    const int i = static_cast<int>(std::get<0>(args));
-    if (i >= cartesi::UARCH_X_REG_COUNT) {
-        throw std::domain_error{"index out of range"};
-    }
-    return jsonrpc_response_ok(j, session->handler->machine->read_uarch_x(i));
-}
-
-/// \brief JSONRPC handler for the machine.write_uarch_x method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_write_uarch_x_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    if (!session->handler->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    static const char *param_name[] = {"index", "value"};
-    auto args = parse_args<uint64_t, uint64_t>(j, param_name);
-    const int i = static_cast<int>(std::get<0>(args));
-    if (i >= cartesi::UARCH_X_REG_COUNT || i == 0) {
-        throw std::domain_error{"index out of range"};
-    }
-    session->handler->machine->write_uarch_x(i, std::get<1>(args));
-    return jsonrpc_response_ok(j);
-}
-
 /// \brief JSONRPC handler for the machine.get_csr_address method
 /// \param j JSON request object
 /// \param session HTTP session
@@ -1413,51 +1308,6 @@ static json jsonrpc_machine_get_csr_address_handler(const json &j, const std::sh
     static const char *param_name[] = {"csr"};
     auto args = parse_args<cartesi::machine::csr>(j, param_name);
     return jsonrpc_response_ok(j, cartesi::machine::get_csr_address(std::get<0>(args)));
-}
-
-/// \brief JSONRPC handler for the machine.get_x_address method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_get_x_address_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    (void) session;
-    static const char *param_name[] = {"index"};
-    auto args = parse_args<uint64_t>(j, param_name);
-    const int i = static_cast<int>(std::get<0>(args));
-    if (i >= cartesi::X_REG_COUNT) {
-        throw std::domain_error{"index out of range"};
-    }
-    return jsonrpc_response_ok(j, cartesi::machine::get_x_address(i));
-}
-
-/// \brief JSONRPC handler for the machine.get_f_address method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_get_f_address_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    (void) session;
-    static const char *param_name[] = {"index"};
-    auto args = parse_args<uint64_t>(j, param_name);
-    const int i = static_cast<int>(std::get<0>(args));
-    if (i >= cartesi::F_REG_COUNT) {
-        throw std::domain_error{"index out of range"};
-    }
-    return jsonrpc_response_ok(j, cartesi::machine::get_f_address(i));
-}
-
-/// \brief JSONRPC handler for the machine.get_uarch_x_address method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_get_uarch_x_address_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    (void) session;
-    static const char *param_name[] = {"index"};
-    auto args = parse_args<uint64_t>(j, param_name);
-    const int i = static_cast<int>(std::get<0>(args));
-    if (i >= cartesi::UARCH_X_REG_COUNT) {
-        throw std::domain_error{"index out of range"};
-    }
-    return jsonrpc_response_ok(j, cartesi::machine::get_uarch_x_address(i));
 }
 
 /// \brief JSONRPC handler for the machine.reset_iflags_Y method
@@ -1808,15 +1658,6 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.read_csr", jsonrpc_machine_read_csr_handler},
         {"machine.write_csr", jsonrpc_machine_write_csr_handler},
         {"machine.get_csr_address", jsonrpc_machine_get_csr_address_handler},
-        {"machine.read_x", jsonrpc_machine_read_x_handler},
-        {"machine.write_x", jsonrpc_machine_write_x_handler},
-        {"machine.get_x_address", jsonrpc_machine_get_x_address_handler},
-        {"machine.read_f", jsonrpc_machine_read_f_handler},
-        {"machine.write_f", jsonrpc_machine_write_f_handler},
-        {"machine.get_f_address", jsonrpc_machine_get_f_address_handler},
-        {"machine.read_uarch_x", jsonrpc_machine_read_uarch_x_handler},
-        {"machine.write_uarch_x", jsonrpc_machine_write_uarch_x_handler},
-        {"machine.get_uarch_x_address", jsonrpc_machine_get_uarch_x_address_handler},
         {"machine.set_iflags_Y", jsonrpc_machine_set_iflags_Y_handler},
         {"machine.reset_iflags_Y", jsonrpc_machine_reset_iflags_Y_handler},
         {"machine.read_iflags_Y", jsonrpc_machine_read_iflags_Y_handler},

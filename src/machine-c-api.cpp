@@ -529,25 +529,6 @@ int cm_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason) tr
     return cm_result_failure();
 }
 
-int cm_read_uarch_x(const cm_machine *m, int i, uint64_t *val) try {
-    if (val == nullptr) {
-        throw std::invalid_argument("invalid val output");
-    }
-    const auto *cpp_machine = convert_from_c(m);
-    *val = cpp_machine->read_uarch_x(i);
-    return cm_result_success();
-} catch (...) {
-    return cm_result_failure();
-}
-
-int cm_write_uarch_x(cm_machine *m, int i, uint64_t val) try {
-    auto *cpp_machine = convert_from_c(m);
-    cpp_machine->write_uarch_x(i, val);
-    return cm_result_success();
-} catch (...) {
-    return cm_result_failure();
-}
-
 CM_API int cm_read_uarch_halt_flag(const cm_machine *m, bool *val) try {
     const auto *cpp_machine = convert_from_c(m);
     *val = cpp_machine->read_uarch_halt_flag();
@@ -797,56 +778,6 @@ int cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *paddr)
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
-}
-
-int cm_read_x(const cm_machine *m, int i, uint64_t *val) try {
-    if (val == nullptr) {
-        throw std::invalid_argument("invalid val output");
-    }
-    const auto *cpp_machine = convert_from_c(m);
-    *val = cpp_machine->read_x(i);
-    return cm_result_success();
-} catch (...) {
-    return cm_result_failure();
-}
-
-int cm_write_x(cm_machine *m, int i, uint64_t val) try {
-    auto *cpp_machine = convert_from_c(m);
-    cpp_machine->write_x(i, val);
-    return cm_result_success();
-} catch (...) {
-    return cm_result_failure();
-}
-
-uint64_t cm_get_x_address(int i) {
-    return cartesi::machine::get_x_address(i);
-}
-
-uint64_t cm_get_uarch_x_address(int i) {
-    return cartesi::machine::get_uarch_x_address(i);
-}
-
-int cm_read_f(const cm_machine *m, int i, uint64_t *val) try {
-    if (val == nullptr) {
-        throw std::invalid_argument("invalid val output");
-    }
-    const auto *cpp_machine = convert_from_c(m);
-    *val = cpp_machine->read_f(i);
-    return cm_result_success();
-} catch (...) {
-    return cm_result_failure();
-}
-
-int cm_write_f(cm_machine *m, int i, uint64_t val) try {
-    auto *cpp_machine = convert_from_c(m);
-    cpp_machine->write_f(i, val);
-    return cm_result_success();
-} catch (...) {
-    return cm_result_failure();
-}
-
-uint64_t cm_get_f_address(int i) {
-    return cartesi::machine::get_f_address(i);
 }
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)

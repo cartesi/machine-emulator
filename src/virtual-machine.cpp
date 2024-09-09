@@ -80,22 +80,6 @@ uint64_t virtual_machine::do_translate_virtual_address(uint64_t vaddr) const {
     return m_machine->translate_virtual_address(vaddr);
 }
 
-uint64_t virtual_machine::do_read_x(int i) const {
-    return m_machine->read_x(i);
-}
-
-void virtual_machine::do_write_x(int i, uint64_t val) {
-    m_machine->write_x(i, val);
-}
-
-uint64_t virtual_machine::do_read_f(int i) const {
-    return m_machine->read_f(i);
-}
-
-void virtual_machine::do_write_f(int i, uint64_t val) {
-    m_machine->write_f(i, val);
-}
-
 uint64_t virtual_machine::do_read_mcycle(void) const {
     return m_machine->read_mcycle();
 }
@@ -154,14 +138,6 @@ void virtual_machine::do_commit(void) {
 
 void virtual_machine::do_rollback(void) {
     throw std::runtime_error("rollback is not supported");
-}
-
-uint64_t virtual_machine::do_read_uarch_x(int i) const {
-    return m_machine->read_uarch_x(i);
-}
-
-void virtual_machine::do_write_uarch_x(int i, uint64_t val) {
-    m_machine->write_uarch_x(i, val);
 }
 
 uint64_t virtual_machine::do_read_uarch_cycle(void) const {

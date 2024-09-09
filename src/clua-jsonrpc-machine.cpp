@@ -123,45 +123,6 @@ static int jsonrpc_machine_class_verify_reset_uarch_state_transition(lua_State *
     return 1;
 }
 
-/// \brief This is the machine.get_x_address() method implementation.
-static int jsonrpc_machine_class_get_x_address(lua_State *L) {
-    auto &managed_jsonrpc_mgr =
-        clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
-    const int i = static_cast<int>(luaL_checkinteger(L, 1));
-    uint64_t reg_address{};
-    if (cm_jsonrpc_get_x_address(managed_jsonrpc_mgr.get(), i, &reg_address) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushinteger(L, static_cast<lua_Integer>(reg_address));
-    return 1;
-}
-
-/// \brief This is the machine.get_f_address() method implementation.
-static int jsonrpc_machine_class_get_f_address(lua_State *L) {
-    auto &managed_jsonrpc_mgr =
-        clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
-    const int i = static_cast<int>(luaL_checkinteger(L, 1));
-    uint64_t reg_address{};
-    if (cm_jsonrpc_get_f_address(managed_jsonrpc_mgr.get(), i, &reg_address) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushinteger(L, static_cast<lua_Integer>(reg_address));
-    return 1;
-}
-
-/// \brief This is the machine.get_uarch_x_address() method implementation.
-static int jsonrpc_machine_class_get_uarch_x_address(lua_State *L) {
-    auto &managed_jsonrpc_mgr =
-        clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
-    const int i = static_cast<int>(luaL_checkinteger(L, 1));
-    uint64_t reg_address{};
-    if (cm_jsonrpc_get_uarch_x_address(managed_jsonrpc_mgr.get(), i, &reg_address) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushinteger(L, static_cast<lua_Integer>(reg_address));
-    return 1;
-}
-
 /// \brief This is the machine.get_csr_address() method implementation.
 static int jsonrpc_machine_class_get_csr_address(lua_State *L) {
     auto &managed_jsonrpc_mgr =
@@ -233,9 +194,6 @@ static const auto jsonrpc_machine_static_methods = cartesi::clua_make_luaL_Reg_a
     {"verify_step_uarch_state_transition", jsonrpc_machine_class_verify_step_uarch_state_transition},
     {"verify_reset_uarch_log", jsonrpc_machine_class_verify_reset_uarch_log},
     {"verify_reset_uarch_state_transition", jsonrpc_machine_class_verify_reset_uarch_state_transition},
-    {"get_x_address", jsonrpc_machine_class_get_x_address},
-    {"get_f_address", jsonrpc_machine_class_get_f_address},
-    {"get_uarch_x_address", jsonrpc_machine_class_get_uarch_x_address},
     {"get_csr_address", jsonrpc_machine_class_get_csr_address},
     {"verify_send_cmio_response_log", jsonrpc_machine_class_verify_send_cmio_response_log},
     {"verify_send_cmio_response_state_transition", jsonrpc_machine_class_verify_send_cmio_response_state_transition},

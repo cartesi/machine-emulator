@@ -373,7 +373,7 @@ do_test("should return address value for csr register", function()
     end
 end)
 
-print("\n\ntesting get_x_address function binding")
+print("\n\ntesting get x address function binding")
 do_test("should return address value for x registers", function()
     local module = cartesi
     if machine_type ~= "local" then
@@ -384,17 +384,20 @@ do_test("should return address value for x registers", function()
     end
     -- Check x address
     for i = 0, 31 do
-        assert(module.machine.get_x_address(i) == SHADOW_BASE + i * 8, "invalid return for x" .. i)
+        assert(module.machine.get_csr_address("x" .. i) == SHADOW_BASE + i * 8, "invalid return for x" .. i)
     end
 end)
 
-print("\n\ntesting get_x_uarch_address function binding")
+print("\n\ntesting get x uarch_address function binding")
 do_test("should return address value for uarch x registers", function()
     local SHADOW_UARCH_XBASE = cartesi.UARCH_SHADOW_START_ADDRESS + 24
     local module = cartesi
     -- Check x address
     for i = 0, 31 do
-        assert(module.machine.get_uarch_x_address(i) == SHADOW_UARCH_XBASE + i * 8, "invalid return for uarch x" .. i)
+        assert(
+            module.machine.get_csr_address("uarch_x" .. i) == SHADOW_UARCH_XBASE + i * 8,
+            "invalid return for uarch x" .. i
+        )
     end
 end)
 

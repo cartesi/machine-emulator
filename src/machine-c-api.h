@@ -45,9 +45,6 @@ extern "C" {
 /// \brief Constants.
 enum {
     CM_MACHINE_HASH_BYTE_SIZE = 32,
-    CM_MACHINE_X_REG_COUNT = 32,
-    CM_MACHINE_F_REG_COUNT = 32,
-    CM_MACHINE_UARCH_X_REG_COUNT = 32,
     CM_TREE_LOG2_WORD_SIZE = 5,
     CM_TREE_LOG2_PAGE_SIZE = 12,
     CM_TREE_LOG2_ROOT_SIZE = 64,
@@ -562,49 +559,6 @@ CM_API int cm_write_virtual_memory(cm_machine *m, uint64_t address, const unsign
 /// \returns 0 for success, non zero code for error
 CM_API int cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *paddr);
 
-/// \brief Reads the value of a general-purpose register.
-/// \param m Pointer to valid machine instance
-/// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.
-/// \param val Receives value of the register.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_read_x(const cm_machine *m, int i, uint64_t *val);
-
-/// \brief Writes the value of a general-purpose register.
-/// \param m Pointer to valid machine instance
-/// \param i Register index. Between 1 and X_REG_COUNT-1, inclusive.
-/// \param val New register value.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_write_x(cm_machine *m, int i, uint64_t val);
-
-/// \brief Gets the address of a general-purpose register.
-/// \param i Register index. Between 0 and X_REG_COUNT-1, inclusive.
-/// \returns Address of the specified register
-CM_API uint64_t cm_get_x_address(int i);
-
-/// \brief Gets the address of a general-purpose microarchitecture register.
-/// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
-/// \returns Address of the specified register
-CM_API uint64_t cm_get_uarch_x_address(int i);
-
-/// \brief Reads the value of a floating-point register.
-/// \param m Pointer to valid machine instance
-/// \param i Register index. Between 0 and F_REG_COUNT-1, inclusive.
-/// \param val Receives value of the register.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_read_f(const cm_machine *m, int i, uint64_t *val);
-
-/// \brief Writes the value of a floating-point register.
-/// \param m Pointer to valid machine instance
-/// \param i Register index. Between 0 and F_REG_COUNT-1, inclusive.
-/// \param val New register value.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_write_f(cm_machine *m, int i, uint64_t val);
-
-/// \brief Gets the address of a floating-point register.
-/// \param i Register index. Between 0 and F_REG_COUNT-1, inclusive.
-/// \returns Address of the specified register
-CM_API uint64_t cm_get_f_address(int i);
-
 /// \brief Reads the value of the mcycle register.
 /// \param m Pointer to valid machine instance
 /// \param val Receives value of the register.
@@ -705,20 +659,6 @@ CM_API int cm_commit(cm_machine *m);
 /// \brief Performs rollback of the machine, restoring last snapshot.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_rollback(cm_machine *m);
-
-/// \brief Reads the value of a microarchitecture general-purpose register.
-/// \param m Pointer to valid machine instance
-/// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
-/// \param val Receives value of the register.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_read_uarch_x(const cm_machine *m, int i, uint64_t *val);
-
-/// \brief Writes the value of a microarchitecture general-purpose register.
-/// \param m Pointer to valid machine instance
-/// \param i Register index. Between 1 and UARCH_X_REG_COUNT-1, inclusive.
-/// \param val New register value.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_write_uarch_x(cm_machine *m, int i, uint64_t val);
 
 /// \brief Reads the value of the microarchitecture cycle register.
 /// \param m Pointer to valid machine instance

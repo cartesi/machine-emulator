@@ -22,7 +22,7 @@
 #include <iomanip>
 #include <iostream>
 #include  <cstdlib>
-#include <uarch-solidity-compat.h>
+#include "uarch-solidity-compat.h"
 
 #include "clint-factory.h"
 #include "dtb.h"

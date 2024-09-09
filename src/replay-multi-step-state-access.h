@@ -32,7 +32,7 @@
 #include "strict-aliasing.h"
 #include "compiler-defines.h"
 #include <optional>
-#include <shadow-tlb.h>
+#include "shadow-tlb.h"
 #include <stdlib.h>
 
 namespace cartesi {

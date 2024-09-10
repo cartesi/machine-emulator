@@ -150,9 +150,9 @@ static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
 static int machine_ctor(lua_State *L) {
     lua_settop(L, 3);
     auto &managed_machine = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr));
-    const std::string runtime_config = clua_value_to_json(L, 3).dump();
+    const std::string runtime_config = clua_check_json(L, 3).dump();
     if (lua_type(L, 2) == LUA_TTABLE) {
-        const std::string config = clua_value_to_json(L, 2).dump();
+        const std::string config = clua_check_json(L, 2).dump();
         if (cm_create(config.c_str(), runtime_config.c_str(), &managed_machine.get()) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }

@@ -18,8 +18,6 @@ RUN apt-get update && \
 RUN luarocks install --lua-version=5.4 luasocket && \
     luarocks install --lua-version=5.4 luasec && \
     luarocks install --lua-version=5.4 luaposix && \
-    luarocks install --lua-version=5.4 lpeg && \
-    luarocks install --lua-version=5.4 dkjson && \
     luarocks install --lua-version=5.4 luacheck && \
     cargo install stylua@0.20.0 --features lua54
 

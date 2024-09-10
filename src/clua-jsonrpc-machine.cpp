@@ -213,9 +213,9 @@ static int jsonrpc_machine_ctor(lua_State *L) {
     const int ctxidx = lua_upvalueindex(2);
     auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), ctxidx);
     auto &managed_machine = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr), ctxidx);
-    const std::string runtime_config = clua_value_to_json(L, 3).dump();
+    const std::string runtime_config = clua_check_json(L, 3).dump();
     if (lua_type(L, 2) == LUA_TTABLE) {
-        const std::string config = clua_value_to_json(L, 2).dump();
+        const std::string config = clua_check_json(L, 2).dump();
         if (cm_jsonrpc_create_machine(managed_jsonrpc_mgr.get(), config.c_str(), runtime_config.c_str(),
                 &managed_machine.get()) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());

@@ -54,8 +54,6 @@ sudo apt-get install build-essential wget git clang-tidy-16 clang-format-16 \
         ca-certificates pkg-config lua5.4 liblua5.4-dev \
         luarocks
 
-sudo luarocks install --lua-version=5.4 lpeg
-sudo luarocks install --lua-version=5.4 dkjson
 sudo luarocks install --lua-version=5.4 luasocket
 sudo luarocks install --lua-version=5.4 luasec
 sudo luarocks install --lua-version=5.4 luaposix
@@ -70,8 +68,6 @@ For more information, see the [Configuring Lua 5.4](#configuring-lua-54) section
 ```bash
 sudo port install clang-16 boost181 wget pkgconfig lua54 lua-luarocks libslirp
 
-sudo luarocks install --lua-version=5.4 lpeg
-sudo luarocks install --lua-version=5.4 dkjson
 sudo luarocks install --lua-version=5.4 luasocket
 sudo luarocks install --lua-version=5.4 luasec
 sudo luarocks install --lua-version=5.4 luaposix
@@ -84,8 +80,6 @@ For more information, see the [Configuring Lua 5.4](#configuring-lua-54) section
 ```bash
 brew install llvm@16 boost wget pkg-config openssl lua luarocks libslirp
 
-luarocks --lua-dir=$(brew --prefix)/opt/lua install lpeg
-luarocks --lua-dir=$(brew --prefix)/opt/lua install dkjson
 luarocks --lua-dir=$(brew --prefix)/opt/lua install luasocket
 luarocks --lua-dir=$(brew --prefix)/opt/lua install luasec
 luarocks --lua-dir=$(brew --prefix)/opt/lua install luaposix

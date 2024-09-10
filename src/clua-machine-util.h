@@ -146,7 +146,18 @@ void clua_check_cm_hash(lua_State *L, int idx, cm_hash *c_hash);
 /// \returns The access log. Must be delete by the user with cm_delete_access_log
 cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx, int ctxidx = lua_upvalueindex(1));
 
-nlohmann::json clua_value_to_json(lua_State *L, int tabidx, bool base64encode = false);
+/// \brief Loads a JSON object from a Lua value.
+/// \param L Lua state
+/// \param tabidx Lua value stack index.
+/// \param base64encode Whether to encode non key strings values using base64.
+/// \returns It traverses the Lua value while converting to a JSON object.
+nlohmann::json clua_check_json(lua_State *L, int tabidx, bool base64encode = false);
+
+/// \brief Pushes a JSON object as a Lua value.
+/// \param L Lua state
+/// \param j JSON object.
+/// \param base64decode Whether to decode non key strings values using base64.
+/// \returns It traverses the JSON object while converting to a Lua object.
 void clua_push_json(lua_State *L, const nlohmann::json &j, bool base64decode = false);
 
 } // namespace cartesi

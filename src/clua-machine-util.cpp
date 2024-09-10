@@ -700,14 +700,14 @@ static int64_t clua_get_array_table_len(lua_State *L, int tabidx) {
     return len;
 }
 
-nlohmann::json clua_value_to_json(lua_State *L, int idx, bool base64encode) {
+nlohmann::json clua_check_json(lua_State *L, int idx, bool base64encode) {
     nlohmann::json j;
     const int64_t len = clua_get_array_table_len(L, idx);
     if (len >= 0) { // array
         j = nlohmann::json::array();
         for (int64_t i = 1; i <= len; ++i) {
             lua_geti(L, idx, i);
-            j.push_back(clua_value_to_json(L, -1, base64encode));
+            j.push_back(clua_check_json(L, -1, base64encode));
             lua_pop(L, 1); // pop value
         }
     } else if (lua_istable(L, idx)) { // object
@@ -717,7 +717,7 @@ nlohmann::json clua_value_to_json(lua_State *L, int idx, bool base64encode) {
         while (lua_next(L, -2)) { // update key, push value
             lua_pushvalue(L, -2); // push key again, because luaL_checkstring may overwrite it
             const char *key = luaL_checkstring(L, -1);
-            j[key] = clua_value_to_json(L, -2, base64encode);
+            j[key] = clua_check_json(L, -2, base64encode);
             lua_pop(L, 2); // pop key, value
         }
         lua_pop(L, 1); // pop table

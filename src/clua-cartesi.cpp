@@ -16,8 +16,8 @@
 
 #include "base64.h"
 #include "clua-i-virtual-machine.h"
-#include "clua-machine.h"
 #include "clua-machine-util.h"
+#include "clua-machine.h"
 #include "clua.h"
 #include "keccak-256-hasher.h"
 #include "machine-c-api.h"
@@ -106,11 +106,37 @@ static int cartesi_mod_frombase64(lua_State *L) try {
     return 1;
 }
 
+static int cartesi_mod_tojson(lua_State *L) try {
+    lua_settop(L, 3);
+    const bool base64encode = lua_toboolean(L, 2);
+    const int indent = static_cast<int>(luaL_optinteger(L, 3, -1));
+    const std::string s = cartesi::clua_check_json(L, 1, base64encode).dump(indent);
+    lua_pushlstring(L, s.data(), s.size());
+    return 1;
+} catch (std::exception &e) {
+    luaL_error(L, "%s", e.what());
+    return 1;
+}
+
+static int cartesi_mod_fromjson(lua_State *L) try {
+    lua_settop(L, 2);
+    bool base64decode = lua_toboolean(L, 2);
+    size_t size = 0;
+    const char *data = luaL_checklstring(L, 1, &size);
+    cartesi::clua_push_json(L, nlohmann::json::parse(std::string_view(data, size)), base64decode);
+    return 1;
+} catch (std::exception &e) {
+    luaL_error(L, "%s", e.what());
+    return 1;
+}
+
 /// \brief Contents of the cartesi module table.
 static const auto cartesi_mod = cartesi::clua_make_luaL_Reg_array({
     {"keccak", cartesi_mod_keccak},
     {"tobase64", cartesi_mod_tobase64},
     {"frombase64", cartesi_mod_frombase64},
+    {"tojson", cartesi_mod_tojson},
+    {"fromjson", cartesi_mod_fromjson},
 });
 
 extern "C" {

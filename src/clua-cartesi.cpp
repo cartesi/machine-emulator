@@ -14,8 +14,10 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "base64.h"
 #include "clua-i-virtual-machine.h"
 #include "clua-machine.h"
+#include "clua-machine-util.h"
 #include "clua.h"
 #include "keccak-256-hasher.h"
 #include "machine-c-api.h"
@@ -82,9 +84,33 @@ static int cartesi_mod_keccak(lua_State *L) {
     }
 }
 
+static int cartesi_mod_tobase64(lua_State *L) try {
+    size_t size = 0;
+    const char *data = luaL_checklstring(L, 1, &size);
+    std::string value = cartesi::encode_base64(std::string_view(data, size));
+    lua_pushlstring(L, value.data(), value.size());
+    return 1;
+} catch (std::exception &e) {
+    luaL_error(L, "%s", e.what());
+    return 1;
+}
+
+static int cartesi_mod_frombase64(lua_State *L) try {
+    size_t size = 0;
+    const char *data = luaL_checklstring(L, 1, &size);
+    std::string value = cartesi::decode_base64(std::string_view(data, size));
+    lua_pushlstring(L, value.data(), value.size());
+    return 1;
+} catch (std::exception &e) {
+    luaL_error(L, "%s", e.what());
+    return 1;
+}
+
 /// \brief Contents of the cartesi module table.
 static const auto cartesi_mod = cartesi::clua_make_luaL_Reg_array({
     {"keccak", cartesi_mod_keccak},
+    {"tobase64", cartesi_mod_tobase64},
+    {"frombase64", cartesi_mod_frombase64},
 });
 
 extern "C" {

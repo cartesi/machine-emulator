@@ -1384,7 +1384,7 @@ local options = {
                 if not v or #v < 1 then return false end
                 store_config = v
             else
-                store_config = stderr
+                store_config = true
             end
             return true
         end,
@@ -1536,166 +1536,6 @@ end
 
 local function print_root_hash(machine, print)
     (print or stderr)("%u: %s\n", machine:read_mcycle(), util.hexhash(machine:get_root_hash()))
-end
-
-local function store_memory_range(r, indent, output)
-    local function comment_default(u, v) output(u == v and " -- default\n" or "\n") end
-    output("{\n")
-    output("%s  start = 0x%x,", indent, r.start)
-    comment_default(0, r.start)
-    output("%s  length = 0x%x,", indent, r.length)
-    comment_default(0, r.length)
-    if r.image_filename and r.image_filename ~= "" then
-        output("%s  image_filename = %q,\n", indent, r.image_filename)
-    end
-    output("%s  shared = %s,", indent, tostring(r.shared or false))
-    comment_default(false, r.shared)
-    output("%s},\n", indent)
-end
-
-local function store_cmio_buffer(r, indent, output)
-    local function comment_default(u, v) output(u == v and " -- default\n" or "\n") end
-    output("{\n")
-    if r.image_filename and r.image_filename ~= "" then
-        output("%s  image_filename = %q,\n", indent, r.image_filename)
-    end
-    output("%s  shared = %s,", indent, tostring(r.shared or false))
-    comment_default(false, r.shared)
-    output("%s},\n", indent)
-end
-
-local function store_value(key, value, indent, output)
-    -- skip empty values
-    if value == nil or (type(value) == "table" and next(value) == nil) then return end
-    -- add key
-    if key ~= nil then
-        output("%s%s = ", indent, key)
-    else
-        output("%s", indent)
-    end
-    -- add value
-    if type(value) == "table" then
-        output("{\n", key)
-        if type(next(value)) == "string" then
-            for k, v in pairs(value) do
-                store_value(k, v, "  " .. indent, output)
-            end
-        elseif #value > 0 then
-            for _, v in ipairs(value) do
-                store_value(nil, v, "  " .. indent, output)
-            end
-        end
-        output("%s},\n", indent)
-    elseif type(value) == "string" then
-        output('"%s",\n', value)
-    else
-        output("%s,\n", value)
-    end
-end
-
-local function store_machine_config(config, output)
-    local function comment_default(u, v) output(u == v and " -- default\n" or "\n") end
-
-    local def
-    if remote then
-        def = remote.machine.get_default_config()
-    else
-        def = cartesi.machine.get_default_config()
-    end
-    output("return {\n")
-    output("  processor = {\n")
-    local order = {}
-    for i, v in pairs(def.processor) do
-        if type(v) == "number" then order[#order + 1] = i end
-    end
-    table.sort(order)
-    local processor = config.processor or {}
-    for _, csr in ipairs(order) do
-        local c = processor[csr] or def.processor[csr]
-        output("    %s = 0x%x,", csr, c)
-        comment_default(c, def.processor[csr])
-    end
-    output("  },\n")
-    local ram = config.ram or {}
-    output("  ram = {\n")
-    output("    length = 0x%x,", ram.length or def.ram.length)
-    comment_default(ram.length, def.ram.length)
-    output("    image_filename = %q,", ram.image_filename or def.ram.image_filename)
-    comment_default(ram.image_filename, def.ram.image_filename)
-    output("  },\n")
-    local dtb = config.dtb or {}
-    output("  dtb = {\n")
-    output("    image_filename = %q,", dtb.image_filename or def.dtb.image_filename)
-    comment_default(dtb.image_filename, def.dtb.image_filename)
-    output("    bootargs = %q,", dtb.bootargs or def.dtb.bootargs)
-    comment_default(dtb.bootargs, def.dtb.bootargs)
-    output("    init = %q,", dtb.init or def.dtb.init)
-    comment_default(dtb.init, def.dtb.init)
-    output("    entrypoint = %q,", dtb.entrypoint or def.dtb.entrypoint)
-    comment_default(dtb.entrypoint, def.dtb.entrypoint)
-    output("  },\n")
-    local tlb = config.tlb or {}
-    output("  tlb = {\n")
-    output("    image_filename = %q,", tlb.image_filename or def.tlb.image_filename)
-    comment_default(tlb.image_filename, def.tlb.image_filename)
-    output("  },\n")
-    local htif = config.htif or {}
-    output("  htif = {\n")
-    output("    tohost = 0x%x,", htif.tohost or def.htif.tohost)
-    comment_default(htif.tohost, def.htif.tohost)
-    output("    fromhost = 0x%x,", htif.fromhost or def.htif.fromhost)
-    comment_default(htif.fromhost, def.htif.fromhost)
-    output("    console_getchar = %s,", tostring(htif.console_getchar or false))
-    comment_default(htif.console_getchar or false, def.htif.console_getchar)
-    output("    yield_automatic = %s,", tostring(htif.yield_automatic or false))
-    comment_default(htif.yield_automatic or false, def.htif.yield_automatic)
-    output("    yield_manual = %s,", tostring(htif.yield_manual or false))
-    comment_default(htif.yield_manual or false, def.htif.yield_manual)
-    output("  },\n")
-    local clint = config.clint or {}
-    output("  clint = {\n")
-    output("    mtimecmp = 0x%x,", clint.mtimecmp or def.clint.mtimecmp)
-    comment_default(clint.mtimecmp, def.clint.mtimecmp)
-    output("  },\n")
-    local plic = config.plic or {}
-    output("  plic = {\n")
-    output("    girqpend = 0x%x,", plic.girqpend or def.plic.girqpend)
-    output("    girqsrvd = 0x%x,", plic.girqsrvd or def.plic.girqsrvd)
-    comment_default(plic.girqpend, def.plic.girqpend)
-    output("  },\n")
-    output("  flash_drive = {\n")
-    for _, f in ipairs(config.flash_drive) do
-        output("    ")
-        store_memory_range(f, "    ", output)
-    end
-    output("  },\n")
-    store_value("virtio", config.virtio, "  ", output)
-    if config.cmio then
-        output("  cmio = {\n")
-        output("    rx_buffer = ")
-        store_cmio_buffer(config.cmio.rx_buffer, "    ", output)
-        output("    tx_buffer = ")
-        store_cmio_buffer(config.cmio.tx_buffer, "    ", output)
-        output("  },\n")
-    end
-    output("  uarch = {\n")
-    output("    ram = {\n")
-    output("      image_filename = %q,", config.uarch.ram.image_filename or def.uarch.ram.image_filename)
-    comment_default(config.uarch.ram.image_filename, def.uarch.ram.image_filename)
-    output("    },\n")
-    output("    processor = {\n")
-    for i = 1, 31 do
-        local xi = config.uarch.processor["x" .. i] or def.uarch.processor["x" .. i]
-        output("      x%d = 0x%x,", i, xi)
-        comment_default(xi, def.uarch.processor["x" .. i])
-    end
-    output("      pc = 0x%x,", config.uarch.processor.pc or def.uarch.processor.pc)
-    comment_default(config.uarch.processor.pc, def.uarch.processor.pc)
-    output("      cycle = 0x%x", config.uarch.processor.cycle or def.uarch.processor.cycle)
-    comment_default(config.uarch.processor.cycle, def.uarch.processor.cycle)
-    output("    },\n")
-    output("  }\n")
-    output("}\n")
 end
 
 local function resolve_flash_starts(label_order, start)
@@ -1910,10 +1750,11 @@ for _, r in ipairs(memory_range_replace) do
     main_machine:replace_memory_range(r.start, r.length, r.shared, r.image_filename)
 end
 
-if type(store_config) == "string" then
-    store_config = assert(io.open(store_config, "w"))
-    store_machine_config(main_config, function(...) store_config:write(string.format(...)) end)
-    store_config:close()
+if store_config == true then
+    io.write(cartesi.tojson(main_config, false, 2), "\n")
+elseif store_config then
+    local f <close> = assert(io.open(store_config, "w"))
+    f:write(cartesi.tojson(main_config))
 end
 
 local htif_yield_automatic_reason_tohost = {
@@ -2084,7 +1925,6 @@ if gdb_address then
     gdb_stub:listen_and_wait_gdb(address, tonumber(port))
 end
 if config.processor.iunrep ~= 0 then stderr("Running in unreproducible mode!\n") end
-if store_config == stderr then store_machine_config(config, stderr) end
 if cmio_advance or cmio_inspect then
     check_cmio_htif_config(config.htif)
     assert(remote_address or not perform_rollbacks, "cmio requires --remote-address for snapshot/commit/rollback")

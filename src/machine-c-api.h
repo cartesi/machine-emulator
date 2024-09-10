@@ -355,23 +355,9 @@ typedef struct {                    // NOLINT(modernize-use-using)
 /// \brief Machine instance handle
 /// \details cm_machine* is handle used from C api users
 /// to pass the machine object when calling C api functions. Currently,
-/// it is merely a pointer to internal C++ object that is  internally casted
-/// back to original C++ machine type. On some obscure CPU arhitectures
-/// where pointer size depend on types, this api might not work
-typedef struct cm_machine_tag cm_machine; // NOLINT(modernize-use-using)
-
-/// \brief Memory range description
-typedef struct { // NOLINT(modernize-use-using)
-    uint64_t start;
-    uint64_t length;
-    const char *description;
-} cm_memory_range_descr;
-
-/// \brief Memory range description array
-typedef struct { // NOLINT(modernize-use-using)
-    cm_memory_range_descr *entry;
-    size_t count;
-} cm_memory_range_descr_array;
+/// it is merely a pointer to internal C++ object that is internally casted
+/// back to original C++ machine type.
+typedef struct cm_machine cm_machine; // NOLINT(modernize-use-using)
 
 // ---------------------------------
 // API function definitions
@@ -679,17 +665,12 @@ CM_API int cm_log_reset_uarch(cm_machine *m, cm_access_log_type log_type, bool o
 /// \returns 0 for success, non zero code for error
 CM_API int cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *break_reason);
 
-/// \brief Returns an array with the description of each memory range in the machine.
-/// \param m Pointer to valid machine instance
-/// \param mrda Receives pointer to array of memory range descriptions. Must be deleted by the function caller using
-/// cm_delete_memory_range_descr_array.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_get_memory_ranges(cm_machine *m, cm_memory_range_descr_array **mrda);
-
-/// \brief Delete memory range description array acquired from cm_get_memory_ranges.
-/// \param mrda Pointer to array of memory range descriptions to delete.
-/// \returns void
-CM_API void cm_delete_memory_range_descr_array(cm_memory_range_descr_array *mrda);
+/// \brief Returns memory ranges in the machine.
+/// \param m Pointer to a valid machine instance.
+/// \param ranges Receives the memory ranges as a JSON string,
+/// remains valid until the next time this same function is called on the same thread.
+/// \returns 0 for success, non zero code for error.
+CM_API int cm_get_memory_ranges(cm_machine *m, const char **ranges);
 
 /// \brief Sends cmio response
 /// \param m Pointer to valid machine instance

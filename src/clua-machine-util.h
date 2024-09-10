@@ -56,10 +56,6 @@ void cm_delete(cm_access_log *ptr);
 template <>
 void cm_delete(cm_merkle_tree_proof *p);
 
-/// \brief Deleter for C api memory range description array
-template <>
-void cm_delete(cm_memory_range_descr_array *p);
-
 // clua_managed_cm_ptr is a smart pointer,
 // however we don't use all its functionally, therefore we exclude it from code coverage.
 // LCOV_EXCL_START
@@ -128,11 +124,6 @@ void clua_push_cm_proof(lua_State *L, const cm_merkle_tree_proof *proof);
 /// \param L Lua state
 /// \param hash Hash to be pushed
 void clua_push_cm_hash(lua_State *L, const cm_hash *hash);
-
-/// \brief Pushes a C api cm_memory_range_descr_array to the Lua stack
-/// \param L Lua state
-/// \param mrds Memory range description array to be pushed
-void clua_push_cm_memory_range_descr_array(lua_State *L, const cm_memory_range_descr_array *mrds);
 
 /// \brief Returns a CSR selector from Lua
 /// \param L Lua state

@@ -172,7 +172,6 @@ int clua_machine_init(lua_State *L, int ctxidx) {
     clua_createnewtype<clua_managed_cm_ptr<cm_merkle_tree_proof>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<char>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<unsigned char>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_memory_range_descr_array>>(L, ctxidx);
     if (!clua_typeexists<machine_class>(L, ctxidx)) {
         clua_createtype<machine_class>(L, "cartesi machine class", ctxidx);
         clua_setmethods<machine_class>(L, machine_class_index.data(), 0, ctxidx);

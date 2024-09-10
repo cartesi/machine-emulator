@@ -16,6 +16,7 @@
 
 #include <string>
 
+#include "json-util.h"
 #include <back-merkle-tree.h>
 #include <keccak-256-hasher.h>
 #include <machine-c-api.h>
@@ -87,15 +88,13 @@ static hash_type calculate_emulator_hash(cm_machine *machine) {
     cartesi::back_merkle_tree tree(CM_TREE_LOG2_ROOT_SIZE, CM_TREE_LOG2_PAGE_SIZE, CM_TREE_LOG2_WORD_SIZE);
     std::string page;
     page.resize(detail::MERKLE_PAGE_SIZE);
-    cm_memory_range_descr_array *mrds = nullptr;
-    auto mrds_deleter = [](cm_memory_range_descr_array **mrds) { cm_delete_memory_range_descr_array(*mrds); };
-    std::unique_ptr<cm_memory_range_descr_array *, decltype(mrds_deleter)> auto_mrds(&mrds, mrds_deleter);
-    if (cm_get_memory_ranges(machine, &mrds) != 0) {
+    const char *ranges_jsonstr{};
+    if (cm_get_memory_ranges(machine, &ranges_jsonstr) != 0) {
         throw std::runtime_error{cm_get_last_error_message()};
     }
+    const auto mrds = cartesi::from_json<cartesi::machine_memory_range_descrs>(ranges_jsonstr);
     uint64_t last = 0;
-    for (size_t i = 0; i < mrds->count; ++i) {
-        const auto &m = mrds->entry[i];
+    for (auto m : mrds) {
         tree.pad_back((m.start - last) >> detail::MERKLE_PAGE_LOG2_SIZE);
         auto end = m.start + m.length;
         for (uint64_t s = m.start; s < end; s += detail::MERKLE_PAGE_SIZE) {

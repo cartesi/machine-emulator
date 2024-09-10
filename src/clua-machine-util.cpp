@@ -54,12 +54,6 @@ void cm_delete(cm_merkle_tree_proof *ptr) {
     cm_delete_merkle_tree_proof(ptr);
 }
 
-/// \brief Deleter for C api memory range description array
-template <>
-void cm_delete(cm_memory_range_descr_array *ptr) {
-    cm_delete_memory_range_descr_array(ptr);
-}
-
 static char *copy_lua_str(lua_State *L, int idx) {
     const char *lua_str = lua_tostring(L, idx);
     auto size = strlen(lua_str) + 1;
@@ -714,18 +708,6 @@ void clua_push_cm_proof(lua_State *L, const cm_merkle_tree_proof *proof) {
     lua_setfield(L, -2, "root_hash"); // proof
     clua_push_cm_hash(L, &proof->target_hash);
     lua_setfield(L, -2, "target_hash"); // proof
-}
-
-void clua_push_cm_memory_range_descr_array(lua_State *L, const cm_memory_range_descr_array *mrds) {
-    lua_newtable(L); // array
-    for (int i = 0; i < static_cast<int>(mrds->count); ++i) {
-        const auto &mrd = mrds->entry[i];
-        lua_newtable(L);                                            // array config
-        clua_setintegerfield(L, mrd.start, "start", -1);            // array config
-        clua_setintegerfield(L, mrd.length, "length", -1);          // array config
-        clua_setstringfield(L, mrd.description, "description", -1); // array config
-        lua_rawseti(L, -2, i + 1);                                  // array
-    }
 }
 
 cm_access_log_type clua_check_cm_log_type(lua_State *L, int tabidx) {

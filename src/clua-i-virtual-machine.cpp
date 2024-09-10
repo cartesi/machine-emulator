@@ -256,12 +256,11 @@ static int machine_obj_index_reset_uarch(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_get_memory_ranges(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto &managed_mrds = clua_push_to(L, clua_managed_cm_ptr<cm_memory_range_descr_array>(nullptr));
-    if (cm_get_memory_ranges(m.get(), &managed_mrds.get()) != 0) {
+    const char *ranges = nullptr;
+    if (cm_get_memory_ranges(m.get(), &ranges) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_cm_memory_range_descr_array(L, managed_mrds.get());
-    managed_mrds.reset();
+    clua_push_json(L, nlohmann::json::parse(ranges));
     return 1;
 }
 

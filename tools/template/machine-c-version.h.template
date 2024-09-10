@@ -14,9 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef CM_MACHINE_C_VERSION_H
+#ifndef CM_MACHINE_C_VERSION_H // NOLINTBEGIN
 #define CM_MACHINE_C_VERSION_H
-// NOLINTBEGIN
 
 #define CM_MARCHID EMULATOR_MARCHID
 
@@ -33,5 +32,4 @@
 
 #define CM_MIMPID (CM_VERSION_MAJOR * 1000 + CM_VERSION_MINOR)
 
-// NOLINTEND
-#endif // CM_MACHINE_C_VERSION_H
+#endif // NOLINTEND

@@ -14,7 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef CM_JSONRPC_C_API_H
+#ifndef CM_JSONRPC_C_API_H // NOLINTBEGIN
 #define CM_JSONRPC_C_API_H
 
 #include "machine-c-api.h"
@@ -24,7 +24,7 @@ extern "C" {
 #endif
 
 /// \brief Handle of the jsonrpc connection manager
-typedef struct cm_jsonrpc_mgr_tag cm_jsonrpc_mgr; // NOLINT(modernize-use-using)
+typedef struct cm_jsonrpc_mgr cm_jsonrpc_mgr;
 
 /// \brief Create a connection manager to the remote Cartesi Machine server
 /// \param remote_address Address of the remote Cartesi server
@@ -168,4 +168,4 @@ CM_API int cm_jsonrpc_verify_send_cmio_response_state_transition(const cm_jsonrp
 }
 #endif
 
-#endif // CM_JSONRPC_C_API_H
+#endif // NOLINTEND

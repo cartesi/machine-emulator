@@ -14,7 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef CM_C_API_H
+#ifndef CM_C_API_H // NOLINTBEGIN
 #define CM_C_API_H
 
 #include "machine-c-version.h"
@@ -33,7 +33,7 @@ extern "C" {
 
 // Compiler visibility definition
 #ifndef CM_API
-#define CM_API __attribute__((visibility("default"))) // NOLINT(cppcoreguidelines-macro-usage)
+#define CM_API __attribute__((visibility("default")))
 #endif
 
 #define CM_MCYCLE_MAX UINT64_MAX
@@ -55,17 +55,16 @@ enum {
 // API Structures
 // ---------------------------------
 
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays,modernize-use-using)
 typedef uint8_t cm_hash[CM_MACHINE_HASH_BYTE_SIZE];
 
 /// \brief Array of hashes
-typedef struct { // NOLINT(modernize-use-using)
+typedef struct {
     cm_hash *entry;
     size_t count;
 } cm_hash_array;
 
-/// brief Error codes returned from machine emulator C API
-typedef enum { // NOLINT(modernize-use-using)
+/// \brief Error codes returned from machine emulator C API
+typedef enum {
     CM_ERROR_OK = 0,
     CM_ERROR_INVALID_ARGUMENT,
     CM_ERROR_DOMAIN_ERROR,
@@ -98,7 +97,7 @@ typedef enum { // NOLINT(modernize-use-using)
 } CM_ERROR;
 
 /// \brief Reasons for a machine run interruption
-typedef enum { // NOLINT(modernize-use-using)
+typedef enum {
     CM_BREAK_REASON_FAILED,
     CM_BREAK_REASON_HALTED,
     CM_BREAK_REASON_YIELDED_MANUALLY,
@@ -108,7 +107,7 @@ typedef enum { // NOLINT(modernize-use-using)
 } CM_BREAK_REASON;
 
 /// \brief List of CSRs to use with read_csr and write_csr
-typedef enum { // NOLINT(modernize-use-using)
+typedef enum {
     // X registers
     CM_CSR_X0,
     CM_CSR_X1,
@@ -268,39 +267,39 @@ typedef enum { // NOLINT(modernize-use-using)
 } CM_CSR;
 
 /// \brief Return values of uarch_interpret
-typedef enum { // NOLINT(modernize-use-using)
+typedef enum {
     CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE,
     CM_UARCH_BREAK_REASON_UARCH_HALTED,
 } CM_UARCH_BREAK_REASON;
 
 /// \brief Type of state access
-typedef enum {       // NOLINT(modernize-use-using)
+typedef enum {
     CM_ACCESS_READ,  ///< Read operation
     CM_ACCESS_WRITE, ///< Write operation
 } CM_ACCESS_TYPE;
 
 /// \brief Type of access log
-typedef struct {      // NOLINT(modernize-use-using)
+typedef struct {
     bool proofs;      ///< Includes proofs
     bool annotations; ///< Includes annotations
     bool large_data;  ///< Includes data bigger than 8 bytes
 } cm_access_log_type;
 
 /// \brief Bracket type
-typedef enum {        // NOLINT(modernize-use-using)
+typedef enum {
     CM_BRACKET_BEGIN, ///< Start of scope
     CM_BRACKET_END    ///< End of scope
 } CM_BRACKET_TYPE;
 
 /// \brief Bracket note
-typedef struct {          // NOLINT(modernize-use-using)
+typedef struct {
     CM_BRACKET_TYPE type; ///< Bracket type
     uint64_t where;       ///< Where it points to in the log
     char *text;           ///< Note text
 } cm_bracket_note;
 
 /// \brief Records an access to the machine state
-typedef struct {                   // NOLINT(modernize-use-using)
+typedef struct {
     CM_ACCESS_TYPE type;           ///< Type of access
     uint64_t address;              ///< Address of access
     int log2_size;                 ///< Log2 of size of access
@@ -314,25 +313,25 @@ typedef struct {                   // NOLINT(modernize-use-using)
 } cm_access;
 
 /// \brief Array of accesses
-typedef struct { // NOLINT(modernize-use-using)
+typedef struct {
     cm_access *entry;
     size_t count;
 } cm_access_array;
 
 /// \brief Array of bracket notes
-typedef struct { // NOLINT(modernize-use-using)
+typedef struct {
     cm_bracket_note *entry;
     size_t count;
 } cm_bracket_note_array;
 
 /// \brief Array of notes
-typedef struct { // NOLINT(modernize-use-using)
+typedef struct {
     const char **entry;
     size_t count;
 } cm_note_array;
 
 /// \brief Log of state accesses
-typedef struct {                    // NOLINT(modernize-use-using)
+typedef struct {
     cm_access_array accesses;       ///< List of accesses
     cm_bracket_note_array brackets; ///< Begin/End annotations
     cm_note_array notes;            ///< Per-access annotations
@@ -344,7 +343,7 @@ typedef struct {                    // NOLINT(modernize-use-using)
 /// to pass the machine object when calling C api functions. Currently,
 /// it is merely a pointer to internal C++ object that is internally casted
 /// back to original C++ machine type.
-typedef struct cm_machine cm_machine; // NOLINT(modernize-use-using)
+typedef struct cm_machine cm_machine;
 
 // ---------------------------------
 // API function definitions
@@ -702,4 +701,4 @@ CM_API int cm_verify_send_cmio_response_state_transition(uint16_t reason, const 
 }
 #endif
 
-#endif // CM_C_API_H
+#endif // NOLINTEND

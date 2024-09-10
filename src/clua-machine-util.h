@@ -52,10 +52,6 @@ void cm_delete<cm_machine>(cm_machine *ptr);
 template <>
 void cm_delete(cm_access_log *ptr);
 
-/// \brief Deleter for C api merkle tree proof
-template <>
-void cm_delete(cm_merkle_tree_proof *p);
-
 // clua_managed_cm_ptr is a smart pointer,
 // however we don't use all its functionally, therefore we exclude it from code coverage.
 // LCOV_EXCL_START
@@ -115,11 +111,6 @@ private:
 };
 // LCOV_EXCL_STOP
 
-/// \brief Pushes a C api proof to the Lua stack
-/// \param L Lua state
-/// \param proof Proof to be pushed
-void clua_push_cm_proof(lua_State *L, const cm_merkle_tree_proof *proof);
-
 /// \brief Pushes a C api hash object to the Lua stack
 /// \param L Lua state
 /// \param hash Hash to be pushed
@@ -148,12 +139,6 @@ cm_access_log_type clua_check_cm_log_type(lua_State *L, int tabidx);
 /// \param c_hash Receives hash
 void clua_check_cm_hash(lua_State *L, int idx, cm_hash *c_hash);
 
-/// \brief Loads a cm_merkle_tree_proof from Lua
-/// \param L Lua state
-/// \param tabidx Proof stack index
-/// \returns The allocated proof object
-cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx);
-
 /// \brief Loads an cm_access_log from Lua.
 /// \param L Lua state
 /// \param tabidx Access_log stack index.
@@ -161,8 +146,8 @@ cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx);
 /// \returns The access log. Must be delete by the user with cm_delete_access_log
 cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx, int ctxidx = lua_upvalueindex(1));
 
-nlohmann::json clua_value_to_json(lua_State *L, int tabidx);
-void clua_push_json(lua_State *L, const nlohmann::json &j);
+nlohmann::json clua_value_to_json(lua_State *L, int tabidx, bool base64encode = false);
+void clua_push_json(lua_State *L, const nlohmann::json &j, bool base64decode = false);
 
 } // namespace cartesi
 

@@ -30,12 +30,11 @@ static int machine_obj_index_get_proof(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t address = luaL_checkinteger(L, 2);
     const int log2_size = static_cast<int>(luaL_checkinteger(L, 3));
-    auto &managed_proof = clua_push_to(L, clua_managed_cm_ptr<cm_merkle_tree_proof>(nullptr));
-    if (cm_get_proof(m.get(), address, log2_size, &managed_proof.get()) != 0) {
+    const char *proof = nullptr;
+    if (cm_get_proof(m.get(), address, log2_size, &proof) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_cm_proof(L, managed_proof.get());
-    managed_proof.reset();
+    clua_push_json(L, nlohmann::json::parse(proof), true);
     return 1;
 }
 

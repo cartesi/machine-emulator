@@ -20,6 +20,7 @@
 #include <back-merkle-tree.h>
 #include <keccak-256-hasher.h>
 #include <machine-c-api.h>
+#include <merkle-tree-proof.h>
 
 using hash_type = cartesi::keccak_256_hasher::hash_type;
 
@@ -63,21 +64,23 @@ static hash_type merkle_hash(const std::string_view &data, int log2_size) {
     return detail::merkle_hash(h, data, log2_size);
 }
 
-static hash_type calculate_proof_root_hash(const cm_merkle_tree_proof *proof) {
+static hash_type calculate_proof_root_hash(const cartesi::machine_merkle_tree::proof_type &proof) {
     hash_type hash;
-    memcpy(hash.data(), proof->target_hash, sizeof(cm_hash));
-    for (int log2_size = static_cast<int>(proof->log2_target_size); log2_size < static_cast<int>(proof->log2_root_size);
-         ++log2_size) {
+    memcpy(hash.data(), proof.get_target_hash().data(), sizeof(cm_hash));
+    for (int log2_size = static_cast<int>(proof.get_log2_target_size());
+         log2_size < static_cast<int>(proof.get_log2_root_size()); ++log2_size) {
         cartesi::keccak_256_hasher h;
-        auto bit = (proof->target_address & (UINT64_C(1) << log2_size));
+        auto bit = (proof.get_target_address() & (UINT64_C(1) << log2_size));
         hash_type first;
         hash_type second;
         if (bit) {
-            memcpy(first.data(), proof->sibling_hashes.entry[log2_size - proof->log2_target_size], sizeof(cm_hash));
+            memcpy(first.data(), proof.get_sibling_hashes()[log2_size - proof.get_log2_target_size()].data(),
+                sizeof(cm_hash));
             second = hash;
         } else {
             first = hash;
-            memcpy(second.data(), proof->sibling_hashes.entry[log2_size - proof->log2_target_size], sizeof(cm_hash));
+            memcpy(second.data(), proof.get_sibling_hashes()[log2_size - proof.get_log2_target_size()].data(),
+                sizeof(cm_hash));
         }
         get_concat_hash(h, first, second, hash);
     }

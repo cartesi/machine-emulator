@@ -18,12 +18,13 @@
 #define BASE64_H
 
 #include <string>
+#include <string_view>
 
 namespace cartesi {
 
-std::string encode_base64(const std::string &input);
+std::string encode_base64(const std::string_view &input);
 
-std::string decode_base64(const std::string &input);
+std::string decode_base64(const std::string_view &input);
 
 } // namespace cartesi
 

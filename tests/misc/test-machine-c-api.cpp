@@ -62,10 +62,6 @@ BOOST_AUTO_TEST_CASE_NOLINT(delete_machine_null_test) {
     BOOST_CHECK_NO_THROW(cm_delete_machine(nullptr));
 }
 
-BOOST_AUTO_TEST_CASE_NOLINT(delete_proof_null_test) {
-    BOOST_CHECK_NO_THROW(cm_delete_merkle_tree_proof(nullptr));
-}
-
 BOOST_AUTO_TEST_CASE_NOLINT(get_default_machine_config_basic_test) {
     const char *config = cm_get_default_config();
     BOOST_TEST_CHECK(config != nullptr);
@@ -370,7 +366,6 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_root_hash_null_machine_test) {
 BOOST_AUTO_TEST_CASE_NOLINT(delete_null_test) {
     cm_delete_machine(nullptr);
     cm_delete_access_log(nullptr);
-    cm_delete_merkle_tree_proof(nullptr);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_null_hash_test, ordinary_machine_fixture) {
@@ -389,13 +384,13 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_machine_hash_test, ordinary_machine
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(get_proof_null_machine_test) {
-    cm_merkle_tree_proof *proof{};
+    const char *proof{};
     int error_code = cm_get_proof(nullptr, 0, 12, &proof);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_invalid_address_test, ordinary_machine_fixture) {
-    cm_merkle_tree_proof *proof{};
+    const char *proof{};
     int error_code = cm_get_proof(_machine, 1, 12, &proof);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
@@ -405,7 +400,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_invalid_address_test, ordinary_machine_
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_invalid_log2_test, ordinary_machine_fixture) {
-    cm_merkle_tree_proof *proof{};
+    const char *proof{};
 
     // log2_root_size = 64
     int error_code = cm_get_proof(_machine, 0, 65, &proof);
@@ -422,16 +417,14 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_invalid_log2_test, ordinary_machine_fix
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_inconsistent_tree_test, ordinary_machine_fixture) {
-    cm_merkle_tree_proof *proof{};
+    const char *proof{};
     int error_code = cm_get_proof(_machine, 0, 64, &proof);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    cm_delete_merkle_tree_proof(proof);
 
     // merkle tree is always consistent now as it updates on access
 
     error_code = cm_get_proof(_machine, 0, CM_TREE_LOG2_PAGE_SIZE, &proof);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    cm_delete_merkle_tree_proof(proof);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_null_proof_test, ordinary_machine_fixture) {
@@ -440,22 +433,24 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_null_proof_test, ordinary_machine_fixtu
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_machine_hash_test, ordinary_machine_fixture) {
-
-    cm_merkle_tree_proof *p{};
-    int error_code = cm_get_proof(_machine, 0, 12, &p);
+    const char *proof_str{};
+    int error_code = cm_get_proof(_machine, 0, 12, &proof_str);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
-    auto verification = calculate_proof_root_hash(p);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), p->root_hash,
-        p->root_hash + sizeof(cm_hash));
+    const auto proof =
+        cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(proof_str)
+            .value();
+    auto proof_root_hash = proof.get_root_hash();
+    auto verification = calculate_proof_root_hash(proof);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), proof_root_hash.begin(),
+        proof_root_hash.end());
     verification = calculate_emulator_hash(_machine);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), p->root_hash,
-        p->root_hash + sizeof(cm_hash));
-    BOOST_CHECK_EQUAL(p->log2_root_size, static_cast<size_t>(64));
-    BOOST_CHECK_EQUAL(p->sibling_hashes.count, static_cast<size_t>(52));
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), proof_root_hash.begin(),
+        proof_root_hash.end());
 
-    cm_delete_merkle_tree_proof(p);
+    BOOST_REQUIRE(proof.get_log2_root_size() == 64);
+    BOOST_REQUIRE(proof.get_sibling_hashes().size() == 52);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(read_word_null_machine_test) {
@@ -1614,34 +1609,37 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_root_updates_test, ord
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, ordinary_machine_fixture) {
-
-    cm_merkle_tree_proof *start_proof{};
-    int error_code = cm_get_proof(_machine, 0, 12, &start_proof);
+    const char *proof_str{};
+    int error_code = cm_get_proof(_machine, 0, 12, &proof_str);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    auto verification = calculate_proof_root_hash(start_proof);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), start_proof->root_hash,
-        start_proof->root_hash + sizeof(cm_hash));
+    auto proof =
+        cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(proof_str)
+            .value();
+    auto proof_root_hash = proof.get_root_hash();
+    auto verification = calculate_proof_root_hash(proof);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), proof_root_hash.begin(),
+        proof_root_hash.end());
     verification = calculate_emulator_hash(_machine);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), start_proof->root_hash,
-        start_proof->root_hash + sizeof(cm_hash));
-    cm_delete_merkle_tree_proof(start_proof);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), proof_root_hash.begin(),
+        proof_root_hash.end());
 
     error_code = cm_run(_machine, 1000, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
-    cm_merkle_tree_proof *end_proof{};
-    error_code = cm_get_proof(_machine, 0, 12, &end_proof);
+    error_code = cm_get_proof(_machine, 0, 12, &proof_str);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    verification = calculate_proof_root_hash(end_proof);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), end_proof->root_hash,
-        end_proof->root_hash + sizeof(cm_hash));
+    proof = cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(proof_str)
+                .value();
+    proof_root_hash = proof.get_root_hash();
+    verification = calculate_proof_root_hash(proof);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), proof_root_hash.begin(),
+        proof_root_hash.end());
     verification = calculate_emulator_hash(_machine);
-    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), end_proof->root_hash,
-        end_proof->root_hash + sizeof(cm_hash));
-    cm_delete_merkle_tree_proof(end_proof);
+    BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), proof_root_hash.begin(),
+        proof_root_hash.end());
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(uarch_solidity_compatibility_layer) {

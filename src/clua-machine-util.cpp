@@ -19,6 +19,7 @@
 #include <cstring>
 #include <unordered_map>
 
+#include "base64.h"
 #include "clua.h"
 #include "riscv-constants.h"
 
@@ -46,12 +47,6 @@ void cm_delete(cm_machine *ptr) {
 template <>
 void cm_delete(cm_access_log *ptr) {
     cm_delete_access_log(ptr);
-}
-
-/// \brief Deleter for C api merkle tree proof
-template <>
-void cm_delete(cm_merkle_tree_proof *ptr) {
-    cm_delete_merkle_tree_proof(ptr);
 }
 
 static char *copy_lua_str(lua_State *L, int idx) {
@@ -251,27 +246,6 @@ static void check_sibling_cm_hashes(lua_State *L, int idx, size_t log2_target_si
         clua_check_cm_hash(L, -1, &sibling_hashes->entry[index]);
         lua_pop(L, 1);
     }
-}
-
-cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx, int ctxidx) {
-    tabidx = lua_absindex(L, tabidx);
-    luaL_checktype(L, tabidx, LUA_TTABLE);
-    auto &managed = clua_push_to(L, clua_managed_cm_ptr<cm_merkle_tree_proof>(new cm_merkle_tree_proof{}), ctxidx);
-    cm_merkle_tree_proof *proof = managed.get();
-    proof->log2_target_size = check_uint_field(L, tabidx, "log2_target_size");
-    proof->log2_root_size = check_uint_field(L, tabidx, "log2_root_size");
-    proof->target_address = check_uint_field(L, tabidx, "target_address");
-    lua_getfield(L, tabidx, "target_hash");
-    clua_check_cm_hash(L, -1, &proof->target_hash);
-    lua_pop(L, 1);
-    lua_getfield(L, tabidx, "root_hash");
-    clua_check_cm_hash(L, -1, &proof->root_hash);
-    lua_pop(L, 1);
-    lua_getfield(L, tabidx, "sibling_hashes");
-    check_sibling_cm_hashes(L, -1, proof->log2_target_size, proof->log2_root_size, &proof->sibling_hashes);
-    managed.release();
-    lua_pop(L, 2);
-    return proof;
 }
 
 /// \brief Returns an access data field indexed by string in a table
@@ -693,23 +667,6 @@ void clua_push_cm_hash(lua_State *L, const cm_hash *hash) {
     lua_pushlstring(L, reinterpret_cast<const char *>(hash), CM_MACHINE_HASH_BYTE_SIZE);
 }
 
-void clua_push_cm_proof(lua_State *L, const cm_merkle_tree_proof *proof) {
-    lua_newtable(L); // proof
-    lua_newtable(L); // proof siblings
-    for (size_t log2_size = proof->log2_target_size; log2_size < proof->log2_root_size; ++log2_size) {
-        clua_push_cm_hash(L, &proof->sibling_hashes.entry[proof->log2_root_size - 1 - log2_size]);
-        lua_rawseti(L, -2, static_cast<lua_Integer>(proof->log2_root_size - log2_size));
-    }
-    lua_setfield(L, -2, "sibling_hashes");                                    // proof
-    clua_setintegerfield(L, proof->target_address, "target_address", -1);     // proof
-    clua_setintegerfield(L, proof->log2_target_size, "log2_target_size", -1); // proof
-    clua_setintegerfield(L, proof->log2_root_size, "log2_root_size", -1);     // proof
-    clua_push_cm_hash(L, &proof->root_hash);
-    lua_setfield(L, -2, "root_hash"); // proof
-    clua_push_cm_hash(L, &proof->target_hash);
-    lua_setfield(L, -2, "target_hash"); // proof
-}
-
 cm_access_log_type clua_check_cm_log_type(lua_State *L, int tabidx) {
     luaL_checktype(L, tabidx, LUA_TTABLE);
     return cm_access_log_type{
@@ -743,14 +700,14 @@ static int64_t clua_get_array_table_len(lua_State *L, int tabidx) {
     return len;
 }
 
-nlohmann::json clua_value_to_json(lua_State *L, int idx) {
+nlohmann::json clua_value_to_json(lua_State *L, int idx, bool base64encode) {
     nlohmann::json j;
     const int64_t len = clua_get_array_table_len(L, idx);
     if (len >= 0) { // array
         j = nlohmann::json::array();
         for (int64_t i = 1; i <= len; ++i) {
             lua_geti(L, idx, i);
-            j.push_back(clua_value_to_json(L, -1));
+            j.push_back(clua_value_to_json(L, -1, base64encode));
             lua_pop(L, 1); // pop value
         }
     } else if (lua_istable(L, idx)) { // object
@@ -760,7 +717,7 @@ nlohmann::json clua_value_to_json(lua_State *L, int idx) {
         while (lua_next(L, -2)) { // update key, push value
             lua_pushvalue(L, -2); // push key again, because luaL_checkstring may overwrite it
             const char *key = luaL_checkstring(L, -1);
-            j[key] = clua_value_to_json(L, -2);
+            j[key] = clua_value_to_json(L, -2, base64encode);
             lua_pop(L, 2); // pop key, value
         }
         lua_pop(L, 1); // pop table
@@ -769,7 +726,14 @@ nlohmann::json clua_value_to_json(lua_State *L, int idx) {
     } else if (lua_isnumber(L, idx)) {
         j = lua_tonumber(L, idx);
     } else if (lua_isstring(L, idx)) {
-        j = std::string(lua_tostring(L, idx));
+        size_t len = 0;
+        const char *ptr = lua_tolstring(L, idx, &len);
+        const std::string_view data(ptr, len);
+        if (base64encode) {
+            j = cartesi::encode_base64(data);
+        } else {
+            j = data;
+        }
     } else if (lua_isboolean(L, idx)) {
         j = static_cast<bool>(lua_toboolean(L, idx));
     } else if (lua_isnil(L, idx)) {
@@ -780,22 +744,28 @@ nlohmann::json clua_value_to_json(lua_State *L, int idx) {
     return j;
 }
 
-void clua_push_json(lua_State *L, const nlohmann::json &j) {
+void clua_push_json(lua_State *L, const nlohmann::json &j, bool base64decode) {
     if (j.is_array()) {
         lua_createtable(L, static_cast<int>(j.size()), 0);
         int64_t i = 1;
         for (auto it = j.begin(); it != j.end(); ++it, ++i) {
-            clua_push_json(L, *it);
+            clua_push_json(L, *it, base64decode);
             lua_rawseti(L, -2, i);
         }
     } else if (j.is_object()) {
         lua_createtable(L, 0, static_cast<int>(j.size()));
         for (const auto &el : j.items()) {
-            clua_push_json(L, el.value());
+            clua_push_json(L, el.value(), base64decode);
             lua_setfield(L, -2, el.key().c_str());
         }
     } else if (j.is_string()) {
-        lua_pushstring(L, j.template get<std::string>().c_str());
+        const auto data = j.template get<std::string_view>();
+        if (base64decode) {
+            const auto base64data = cartesi::decode_base64(data);
+            lua_pushlstring(L, base64data.data(), base64data.length());
+        } else {
+            lua_pushlstring(L, data.data(), data.length());
+        }
     } else if (j.is_number_unsigned()) {
         lua_pushinteger(L, static_cast<int64_t>(j.template get<uint64_t>()));
     } else if (j.is_number_integer()) {

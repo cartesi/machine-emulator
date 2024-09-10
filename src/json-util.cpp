@@ -876,10 +876,10 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key,
         throw std::invalid_argument("field \""s + new_path + "sibling_hashes\" not an array"s);
     }
     const auto sibling_hashes_base = path + "sibling_hashes/";
-    for (int log2_size = proof.get_log2_root_size() - 1; log2_size >= proof.get_log2_target_size(); --log2_size) {
+    for (int log2_size = proof.get_log2_target_size(), i = 0; log2_size < proof.get_log2_root_size();
+         ++log2_size, ++i) {
         machine_merkle_tree::proof_type::hash_type sibling_hash;
-        ju_get_field(sh, static_cast<uint64_t>(proof.get_log2_root_size() - 1 - log2_size), sibling_hash,
-            sibling_hashes_base);
+        ju_get_field(sh, i, sibling_hash, sibling_hashes_base);
         proof.set_sibling_hash(sibling_hash, log2_size);
     }
 }
@@ -1608,7 +1608,7 @@ void to_json(nlohmann::json &j, const std::vector<machine_merkle_tree::hash_type
 
 void to_json(nlohmann::json &j, const machine_merkle_tree::proof_type &p) {
     nlohmann::json s = nlohmann::json::array();
-    for (int log2_size = p.get_log2_root_size() - 1; log2_size >= p.get_log2_target_size(); --log2_size) {
+    for (int log2_size = p.get_log2_target_size(); log2_size < p.get_log2_root_size(); ++log2_size) {
         s.push_back(encode_base64(p.get_sibling_hash(log2_size)));
     }
     j = nlohmann::json{{"target_address", p.get_target_address()}, {"log2_target_size", p.get_log2_target_size()},

@@ -273,19 +273,6 @@ typedef enum { // NOLINT(modernize-use-using)
     CM_UARCH_BREAK_REASON_UARCH_HALTED,
 } CM_UARCH_BREAK_REASON;
 
-/// \brief Merkle tree proof structure
-/// \details
-/// This structure holds a proof that the node spanning a log2_target_size
-/// at a given address in the tree has a certain hash.
-typedef struct { // NOLINT(modernize-use-using)
-    uint64_t target_address;
-    size_t log2_target_size;
-    cm_hash target_hash;
-    size_t log2_root_size;
-    cm_hash root_hash;
-    cm_hash_array sibling_hashes;
-} cm_merkle_tree_proof;
-
 /// \brief Type of state access
 typedef enum {       // NOLINT(modernize-use-using)
     CM_ACCESS_READ,  ///< Read operation
@@ -439,20 +426,17 @@ CM_API int cm_verify_reset_uarch_state_transition(const cm_hash *root_hash_befor
 /// \returns 0 for success, non zero code for error
 CM_API int cm_verify_reset_uarch_log(const cm_access_log *log, bool one_based);
 
-/// \brief Obtains the proof for a node in the Merkle tree
-/// \param m Pointer to valid machine instance
-/// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary
-/// \param log2_size log<sub>2</sub> of size subintended by target node.
-/// Must be between 3 (for a word) and 64 (for the entire address space), inclusive
-/// \param proof Receives the proof
-/// proof must be deleted with the function cm_delete_merkle_tree_proof
-/// \returns 0 for success, non zero code for error
-/// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
-CM_API int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, cm_merkle_tree_proof **proof);
-
-/// \brief  Deletes the instance of cm_merkle_tree_proof acquired from cm_get_proof
-/// \param proof Valid pointer to cm_merkle_tree_proof object
-CM_API void cm_delete_merkle_tree_proof(cm_merkle_tree_proof *proof);
+/// \brief Obtains the proof for a node in the Merkle tree.
+/// \param m Pointer to a valid machine instance.
+/// \param address Address of target node. Must be aligned to a 2^log2_size boundary.
+/// \param log2_size The log2 of size subtended by target node.
+/// Must be between 3 (for a word) and 64 (for the entire address space), inclusive.
+/// \param proof Receives the proof as a JSON string,
+/// remains valid until the next time this same function is called on the same thread.
+/// \returns 0 for success, non zero code for error.
+/// \details If the node is smaller than a page size,
+/// then it must lie entirely inside the same PMA range.
+CM_API int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, const char **proof);
 
 /// \brief Obtains the root hash of the Merkle tree
 /// \param m Pointer to valid machine instance

@@ -169,7 +169,6 @@ struct machine_class {};
 
 int clua_machine_init(lua_State *L, int ctxidx) {
     clua_createnewtype<clua_managed_cm_ptr<cm_access_log>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_merkle_tree_proof>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<char>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<unsigned char>>(L, ctxidx);
     if (!clua_typeexists<machine_class>(L, ctxidx)) {

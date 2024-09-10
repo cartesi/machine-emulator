@@ -185,50 +185,6 @@ static cm_hash_array *convert_to_c(const std::vector<cartesi::machine_merkle_tre
 }
 
 // ----------------------------------------------
-// Merkle tree proof conversion functions
-// ----------------------------------------------
-
-/// \brief Converts log2_size to index into siblings array
-static int cm_log2_size_to_index(int log2_size, int log2_target_size) {
-    const int index = log2_size - log2_target_size;
-    if (index < 0) {
-        throw std::invalid_argument("log2_size can't be smaller than log2_target_size");
-    }
-    return index;
-}
-
-static cm_merkle_tree_proof *convert_to_c(const cartesi::machine_merkle_tree::proof_type &proof) {
-    auto *new_merkle_tree_proof = new cm_merkle_tree_proof{};
-
-    new_merkle_tree_proof->log2_root_size = proof.get_log2_root_size();
-    new_merkle_tree_proof->log2_target_size = proof.get_log2_target_size();
-    new_merkle_tree_proof->target_address = proof.get_target_address();
-
-    memcpy(&new_merkle_tree_proof->root_hash, static_cast<const uint8_t *>(proof.get_root_hash().data()),
-        sizeof(cm_hash));
-    memcpy(&new_merkle_tree_proof->target_hash, static_cast<const uint8_t *>(proof.get_target_hash().data()),
-        sizeof(cm_hash));
-
-    new_merkle_tree_proof->sibling_hashes.count =
-        new_merkle_tree_proof->log2_root_size - new_merkle_tree_proof->log2_target_size;
-    new_merkle_tree_proof->sibling_hashes.entry = new cm_hash[new_merkle_tree_proof->sibling_hashes.count];
-    memset(new_merkle_tree_proof->sibling_hashes.entry, 0,
-        sizeof(cm_hash) * new_merkle_tree_proof->sibling_hashes.count);
-
-    for (size_t log2_size = new_merkle_tree_proof->log2_target_size; log2_size < new_merkle_tree_proof->log2_root_size;
-         ++log2_size) {
-        const int current_index = cm_log2_size_to_index(static_cast<int>(log2_size),
-            static_cast<int>(new_merkle_tree_proof->log2_target_size));
-        const cartesi::machine_merkle_tree::hash_type sibling_hash =
-            proof.get_sibling_hash(static_cast<int>(log2_size));
-        memcpy(&(new_merkle_tree_proof->sibling_hashes.entry[current_index]),
-            static_cast<const uint8_t *>(sibling_hash.data()), sizeof(cm_hash));
-    }
-
-    return new_merkle_tree_proof;
-}
-
-// ----------------------------------------------
 // Access log conversion functions
 // ----------------------------------------------
 
@@ -614,24 +570,17 @@ int cm_verify_reset_uarch_state_transition(const cm_hash *root_hash_before, cons
     return cm_result_failure();
 }
 
-int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, cm_merkle_tree_proof **proof) try {
+int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, const char **proof) try {
     if (proof == nullptr) {
         throw std::invalid_argument("invalid proof output");
     }
     const auto *cpp_machine = convert_from_c(m);
     const cartesi::machine_merkle_tree::proof_type cpp_proof = cpp_machine->get_proof(address, log2_size);
-    *proof = convert_to_c(cpp_proof);
+    static THREAD_LOCAL char proof_buf[CM_MAX_CONFIG_LENGTH];
+    *proof = string_to_buf(proof_buf, sizeof(proof_buf), cartesi::to_json(cpp_proof).dump());
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
-}
-
-void cm_delete_merkle_tree_proof(cm_merkle_tree_proof *proof) {
-    if (proof == nullptr) {
-        return;
-    }
-    delete[] proof->sibling_hashes.entry;
-    delete proof;
 }
 
 int cm_get_root_hash(const cm_machine *m, cm_hash *hash) try {

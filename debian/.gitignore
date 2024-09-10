@@ -1,0 +1,9 @@
+.debhelper/
+cartesi-machine-emulator-dev.substvars
+cartesi-machine-emulator-dev/
+cartesi-machine-emulator-docs.docs
+cartesi-machine-emulator0.substvars
+cartesi-machine-emulator0/
+debhelper-build-stamp
+files
+tmp/

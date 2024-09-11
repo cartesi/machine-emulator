@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef CM_JSONRPC_C_API_H // NOLINTBEGIN
-#define CM_JSONRPC_C_API_H
+#ifndef CM_JSONRPC_MACHINE_C_API_H // NOLINTBEGIN
+#define CM_JSONRPC_MACHINE_C_API_H
 
 #include "machine-c-api.h"
 

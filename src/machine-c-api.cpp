@@ -21,11 +21,11 @@
 #include <cstring>
 #include <exception>
 #include <functional>
-#include <ios>
 #include <optional>
 #include <regex>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 
@@ -79,8 +79,8 @@ int cm_result_failure() try { throw; } catch (std::exception &e) {
         return CM_ERROR_UNDERFLOW_ERROR;
     } catch (std::regex_error &ex) {
         return CM_ERROR_REGEX_ERROR;
-    } catch (std::ios_base::failure &ex) {
-        return CM_ERROR_SYSTEM_IOS_BASE_FAILURE;
+    } catch (std::system_error &ex) {
+        return CM_ERROR_SYSTEM_ERROR;
     } catch (std::runtime_error &ex) {
         return CM_ERROR_RUNTIME_ERROR;
     } catch (std::bad_typeid &ex) {
@@ -99,6 +99,8 @@ int cm_result_failure() try { throw; } catch (std::exception &e) {
         return CM_ERROR_BAD_ALLOC;
     } catch (std::bad_exception &ex) {
         return CM_ERROR_BAD_EXCEPTION;
+    } catch (std::bad_variant_access &ex) {
+        return CM_ERROR_BAD_VARIANT_ACCESS;
     } catch (std::exception &e) {
         return CM_ERROR_EXCEPTION;
     }

@@ -722,8 +722,8 @@ do_test("machine step should pass verifications", function(machine)
     local initial_hash = machine:get_root_hash()
     local log = machine:log_step_uarch({ proofs = true, annotations = true })
     local final_hash = machine:get_root_hash()
-    module.machine.verify_step_uarch_state_transition(initial_hash, log, final_hash, {})
-    module.machine.verify_step_uarch_log(log, {})
+    module.machine.verify_step_uarch(initial_hash, log, final_hash, {})
+    module.machine.verify_step_uarch(nil, log, nil, {})
 end)
 
 print("\n\ntesting step and verification")
@@ -737,13 +737,13 @@ do_test("Step log must contain conssitent data hashes", function(machine)
         module = remote
     end
     local log = machine:log_step_uarch({ proofs = false, annotations = false })
-    module.machine.verify_step_uarch_log(log, {})
+    module.machine.verify_step_uarch(nil, log, nil, {})
     local read_access = log.accesses[1]
     assert(read_access.type == "read")
     local read_hash = read_access.read_hash
     -- ensure that verification fails with wrong read hash
     read_access.read_hash = wrong_hash
-    local _, err = pcall(module.machine.verify_step_uarch_log, log, {})
+    local _, err = pcall(module.machine.verify_step_uarch, nil, log, nil, {})
     assert(err:match("logged read data of uarch.uarch_cycle data does not hash to the logged read hash at access 1"))
     read_access.read_hash = read_hash -- restore correct value
 
@@ -752,13 +752,13 @@ do_test("Step log must contain conssitent data hashes", function(machine)
     assert(write_access.type == "write")
     read_hash = write_access.read_hash
     write_access.read_hash = wrong_hash
-    _, err = pcall(module.machine.verify_step_uarch_log, log, {})
+    _, err = pcall(module.machine.verify_step_uarch, nil, log, nil, {})
     assert(err:match("logged read data of uarch.cycle does not hash to the logged read hash at access 8"))
     write_access.read_hash = read_hash -- restore correct value
 
     -- ensure that verification fails with wrong written hash
     write_access.written_hash = wrong_hash
-    _, err = pcall(module.machine.verify_step_uarch_log, log, {})
+    _, err = pcall(module.machine.verify_step_uarch, nil, log, nil, {})
     assert(err:match("logged written data of uarch.cycle does not hash to the logged written hash at access 8"))
 end)
 
@@ -777,8 +777,8 @@ do_test("step when uarch cycle is max", function(machine)
     assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
     local final_hash = machine:get_root_hash()
     assert(final_hash == initial_hash)
-    module.machine.verify_step_uarch_state_transition(initial_hash, log, final_hash, {})
-    module.machine.verify_step_uarch_log(log, {})
+    module.machine.verify_step_uarch(initial_hash, log, final_hash, {})
+    module.machine.verify_step_uarch(nil, log, nil, {})
 end)
 
 local uarch_proof_step_program = {
@@ -967,7 +967,7 @@ for _, with_proofs in ipairs({ true, false }) do
 end
 
 test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
-    "Testing verify_reset_uarch_state_transition",
+    "Testing verify_reset_uarch",
     function(machine)
         local module = cartesi
         if machine_type ~= "local" then
@@ -977,26 +977,26 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         local log = machine:log_reset_uarch({ proofs = true, annotations = true })
         local final_hash = machine:get_root_hash()
         -- verify happy path
-        module.machine.verify_reset_uarch_state_transition(initial_hash, log, final_hash, {})
+        module.machine.verify_reset_uarch(initial_hash, log, final_hash, {})
         -- verifying incorrect initial hash
         local wrong_hash = string.rep("0", 32)
-        local _, err = pcall(module.machine.verify_reset_uarch_state_transition, wrong_hash, log, final_hash, {})
+        local _, err = pcall(module.machine.verify_reset_uarch, wrong_hash, log, final_hash, {})
         assert(err:match("Mismatch in root hash of access 1"))
         -- verifying incorrect final hash
-        _, err = pcall(module.machine.verify_reset_uarch_state_transition, initial_hash, log, wrong_hash, {})
+        _, err = pcall(module.machine.verify_reset_uarch, initial_hash, log, wrong_hash, {})
         assert(err:match("mismatch in root hash after replay"))
     end
 )
 
 test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
-    "Testing verify_reset_uarch_log",
+    "Testing verify_reset_uarch",
     function(machine)
         local module = cartesi
         if machine_type ~= "local" then
             module = remote
         end
         local log = machine:log_reset_uarch({ proofs = true, annotations = true })
-        module.machine.verify_reset_uarch_log(log, {})
+        module.machine.verify_reset_uarch(nil, log, nil, {})
     end
 )
 
@@ -1047,23 +1047,23 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         assert(access.read ~= nil, "read data should not be nil")
         assert(access.written ~= nil, "written data should not be nil")
         -- verify returned log
-        module.machine.verify_reset_uarch_log(log, {})
+        module.machine.verify_reset_uarch(nil, log, nil, {})
         -- save logged read and written data
         local original_read = access.read
         -- tamper with read data to produce a hash mismatch
         access.read = "X" .. access.read:sub(2)
-        local _, err = pcall(module.machine.verify_reset_uarch_log, log, {})
+        local _, err = pcall(module.machine.verify_reset_uarch, nil, log, nil, {})
         assert(err:match("hash of read data and read hash at access 1 does not match read hash"))
         -- restore correct read
         access.read = original_read
         --  change written data to produce a hash mismatch
         access.written = "X" .. access.written:sub(2)
-        _, err = pcall(module.machine.verify_reset_uarch_log, log, {})
+        _, err = pcall(module.machine.verify_reset_uarch, nil, log, nil, {})
         assert(err:match("written hash and written data mismatch at access 1"))
     end
 )
 
-do_test("Test unhappy paths of verify_reset_uarch_state_transition", function(machine)
+do_test("Test unhappy paths of verify_reset_uarch", function(machine)
     local module = cartesi
     if machine_type ~= "local" then
         if not remote then
@@ -1078,7 +1078,7 @@ do_test("Test unhappy paths of verify_reset_uarch_state_transition", function(ma
         local log = machine:log_reset_uarch({ proofs = true, annotations = false })
         local final_hash = machine:get_root_hash()
         callback(log)
-        local _, err = pcall(module.machine.verify_reset_uarch_state_transition, initial_hash, log, final_hash, {})
+        local _, err = pcall(module.machine.verify_reset_uarch, initial_hash, log, final_hash, {})
         assert(
             err:match(expected_error),
             'Error text "' .. err .. '"  does not match expected "' .. expected_error .. '"'
@@ -1118,7 +1118,7 @@ do_test("Test unhappy paths of verify_reset_uarch_state_transition", function(ma
     end)
 end)
 
-do_test("Test unhappy paths of verify_step_uarch_state_transition", function(machine)
+do_test("Test unhappy paths of verify_step_uarch", function(machine)
     local module = cartesi
     if machine_type ~= "local" then
         if not remote then
@@ -1133,7 +1133,7 @@ do_test("Test unhappy paths of verify_step_uarch_state_transition", function(mac
         local log = machine:log_step_uarch({ proofs = true, annotations = false })
         local final_hash = machine:get_root_hash()
         callback(log)
-        local _, err = pcall(module.machine.verify_step_uarch_state_transition, initial_hash, log, final_hash, {})
+        local _, err = pcall(module.machine.verify_step_uarch, initial_hash, log, final_hash, {})
         assert(
             err:match(expected_error),
             'Error text "' .. err .. '"  does not match expected "' .. expected_error .. '"'
@@ -1357,10 +1357,10 @@ local function test_send_cmio_input_with_different_arguments()
                         log2_size = 3,
                     })
                     -- ask machine to verify the log
-                    module.machine.verify_send_cmio_response_log(reason, data, log, {})
+                    module.machine.verify_send_cmio_response(reason, data, nil, log, nil, {})
                     if proofs then
                         -- ask machine to verify state transitions
-                        module.machine.verify_send_cmio_response_state_transition(
+                        module.machine.verify_send_cmio_response(
                             reason,
                             data,
                             root_hash_before,
@@ -1482,8 +1482,8 @@ do_test("send_cmio_response of zero bytes", function(machine)
     local log = machine:log_send_cmio_response(reason, data, { proofs = true })
     assert(#log.accesses == 4, "log should have 4 accesses")
     local hash_after = machine:get_root_hash()
-    module.machine.verify_send_cmio_response_log(reason, data, log, {})
-    module.machine.verify_send_cmio_response_state_transition(reason, data, hash_before, log, hash_after, {}, {})
+    module.machine.verify_send_cmio_response(reason, data, nil, log, nil, {})
+    module.machine.verify_send_cmio_response(reason, data, hash_before, log, hash_after, {}, {})
 end)
 
 local function test_cmio_buffers_backed_by_files()

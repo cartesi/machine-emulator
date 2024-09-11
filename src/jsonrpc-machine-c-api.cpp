@@ -120,45 +120,35 @@ int cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const char **config
     return cm_result_failure();
 }
 
-int cm_jsonrpc_verify_step_uarch_log(const cm_jsonrpc_mgr *mgr, const cm_access_log *log, bool one_based) try {
+int cm_jsonrpc_verify_step_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before, const cm_access_log *log,
+    const cm_hash *root_hash_after, bool one_based) try {
     const auto *cpp_mgr = convert_from_c(mgr);
     const cartesi::access_log cpp_log = convert_from_c(log);
-    cartesi::jsonrpc_virtual_machine::verify_step_uarch_log(*cpp_mgr, cpp_log, one_based);
+    if (root_hash_before || root_hash_after) {
+        const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+        const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+        cartesi::jsonrpc_virtual_machine::verify_step_uarch_state_transition(*cpp_mgr, cpp_root_hash_before, cpp_log,
+            cpp_root_hash_after, one_based);
+    } else {
+        cartesi::jsonrpc_virtual_machine::verify_step_uarch_log(*cpp_mgr, cpp_log, one_based);
+    }
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
 }
 
-int cm_jsonrpc_verify_step_uarch_state_transition(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
-    const cm_access_log *log, const cm_hash *root_hash_after, bool one_based) try {
-    const auto *cpp_mgr = convert_from_c(mgr);
-    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
-    const cartesi::access_log cpp_log = convert_from_c(log);
-    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
-    cartesi::jsonrpc_virtual_machine::verify_step_uarch_state_transition(*cpp_mgr, cpp_root_hash_before, cpp_log,
-        cpp_root_hash_after, one_based);
-    return cm_result_success();
-} catch (...) {
-    return cm_result_failure();
-}
-
-int cm_jsonrpc_verify_reset_uarch_log(const cm_jsonrpc_mgr *mgr, const cm_access_log *log, bool one_based) try {
+int cm_jsonrpc_verify_reset_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before, const cm_access_log *log,
+    const cm_hash *root_hash_after, bool one_based) try {
     const auto *cpp_mgr = convert_from_c(mgr);
     const cartesi::access_log cpp_log = convert_from_c(log);
-    cartesi::jsonrpc_virtual_machine::verify_reset_uarch_log(*cpp_mgr, cpp_log, one_based);
-    return cm_result_success();
-} catch (...) {
-    return cm_result_failure();
-}
-
-int cm_jsonrpc_verify_reset_uarch_state_transition(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
-    const cm_access_log *log, const cm_hash *root_hash_after, bool one_based) try {
-    const auto *cpp_mgr = convert_from_c(mgr);
-    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
-    const cartesi::access_log cpp_log = convert_from_c(log);
-    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
-    cartesi::jsonrpc_virtual_machine::verify_reset_uarch_state_transition(*cpp_mgr, cpp_root_hash_before, cpp_log,
-        cpp_root_hash_after, one_based);
+    if (root_hash_before || root_hash_after) {
+        const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+        const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+        cartesi::jsonrpc_virtual_machine::verify_reset_uarch_state_transition(*cpp_mgr, cpp_root_hash_before, cpp_log,
+            cpp_root_hash_after, one_based);
+    } else {
+        cartesi::jsonrpc_virtual_machine::verify_reset_uarch_log(*cpp_mgr, cpp_log, one_based);
+    }
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -234,25 +224,20 @@ int cm_jsonrpc_shutdown(const cm_jsonrpc_mgr *mgr) try {
     return cm_result_failure();
 }
 
-int cm_jsonrpc_verify_send_cmio_response_log(const cm_jsonrpc_mgr *mgr, uint16_t reason, const unsigned char *data,
-    size_t length, const cm_access_log *log, bool one_based) try {
+int cm_jsonrpc_verify_send_cmio_response(const cm_jsonrpc_mgr *mgr, uint16_t reason, const unsigned char *data,
+    size_t length, const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after,
+    bool one_based) try {
     const auto *cpp_mgr = convert_from_c(mgr);
     const cartesi::access_log cpp_log = convert_from_c(log);
-    cartesi::jsonrpc_virtual_machine::verify_send_cmio_response_log(*cpp_mgr, reason, data, length, cpp_log, one_based);
-    return cm_result_success();
-} catch (...) {
-    return cm_result_failure();
-}
-
-int cm_jsonrpc_verify_send_cmio_response_state_transition(const cm_jsonrpc_mgr *mgr, uint16_t reason,
-    const unsigned char *data, size_t length, const cm_hash *root_hash_before, const cm_access_log *log,
-    const cm_hash *root_hash_after, bool one_based) try {
-    const auto *cpp_mgr = convert_from_c(mgr);
-    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
-    const cartesi::access_log cpp_log = convert_from_c(log);
-    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
-    cartesi::jsonrpc_virtual_machine::verify_send_cmio_response_state_transition(*cpp_mgr, reason, data, length,
-        cpp_root_hash_before, cpp_log, cpp_root_hash_after, one_based);
+    if (root_hash_before || root_hash_after) {
+        const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+        const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+        cartesi::jsonrpc_virtual_machine::verify_send_cmio_response_state_transition(*cpp_mgr, reason, data, length,
+            cpp_root_hash_before, cpp_log, cpp_root_hash_after, one_based);
+    } else {
+        cartesi::jsonrpc_virtual_machine::verify_send_cmio_response_log(*cpp_mgr, reason, data, length, cpp_log,
+            one_based);
+    }
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();

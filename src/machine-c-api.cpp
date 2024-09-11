@@ -519,40 +519,33 @@ void cm_delete_access_log(cm_access_log *acc_log) {
     delete acc_log;
 }
 
-int cm_verify_step_uarch_log(const cm_access_log *log, bool one_based) try {
+int cm_verify_step_uarch(const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after,
+    bool one_based) try {
     const cartesi::access_log cpp_log = convert_from_c(log);
-    cartesi::machine::verify_step_uarch_log(cpp_log, one_based);
+    if (root_hash_before || root_hash_after) {
+        const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+        const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+        cartesi::machine::verify_step_uarch_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after,
+            one_based);
+    } else {
+        cartesi::machine::verify_step_uarch_log(cpp_log, one_based);
+    }
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
 }
 
-int cm_verify_reset_uarch_log(const cm_access_log *log, bool one_based) try {
+int cm_verify_reset_uarch(const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after,
+    bool one_based) try {
     const cartesi::access_log cpp_log = convert_from_c(log);
-    cartesi::machine::verify_reset_uarch_log(cpp_log, one_based);
-    return cm_result_success();
-} catch (...) {
-    return cm_result_failure();
-}
-
-int cm_verify_step_uarch_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
-    const cm_hash *root_hash_after, bool one_based) try {
-    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
-    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
-    const cartesi::access_log cpp_log = convert_from_c(log);
-    cartesi::machine::verify_step_uarch_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after, one_based);
-    return cm_result_success();
-} catch (...) {
-    return cm_result_failure();
-}
-
-int cm_verify_reset_uarch_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
-    const cm_hash *root_hash_after, bool one_based) try {
-    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
-    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
-    const cartesi::access_log cpp_log = convert_from_c(log);
-    cartesi::machine::verify_reset_uarch_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after,
-        one_based);
+    if (root_hash_before || root_hash_after) {
+        const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+        const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+        cartesi::machine::verify_reset_uarch_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after,
+            one_based);
+    } else {
+        cartesi::machine::verify_reset_uarch_log(cpp_log, one_based);
+    }
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -864,22 +857,17 @@ int cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const unsigned cha
     return cm_result_failure();
 }
 
-int cm_verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, size_t length,
-    const cm_access_log *log, bool one_based) try {
-    const cartesi::access_log cpp_log = convert_from_c(log);
-    cartesi::machine::verify_send_cmio_response_log(reason, data, length, cpp_log, one_based);
-    return cm_result_success();
-} catch (...) {
-    return cm_result_failure();
-}
-
-int cm_verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, size_t length,
+int cm_verify_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
     const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after, bool one_based) try {
-    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
-    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
     const cartesi::access_log cpp_log = convert_from_c(log);
-    cartesi::machine::verify_send_cmio_response_state_transition(reason, data, length, cpp_root_hash_before, cpp_log,
-        cpp_root_hash_after, one_based);
+    if (root_hash_before || root_hash_after) {
+        const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+        const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+        cartesi::machine::verify_send_cmio_response_state_transition(reason, data, length, cpp_root_hash_before,
+            cpp_log, cpp_root_hash_after, one_based);
+    } else {
+        cartesi::machine::verify_send_cmio_response_log(reason, data, length, cpp_log, one_based);
+    }
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();

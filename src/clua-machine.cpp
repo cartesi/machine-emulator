@@ -33,99 +33,77 @@ static int machine_class_index_get_default_config(lua_State *L) {
     return 1;
 }
 
-/// \brief This is the machine.verify_step_uarch_log() method implementation.
-static int machine_class_index_verify_step_uarch_log(lua_State *L) {
-    lua_settop(L, 2);
-    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 1)));
-    if (cm_verify_step_uarch_log(managed_log.get(), true) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushnumber(L, 1);
-    managed_log.reset();
-    return 1;
-}
-
-/// \brief This is the machine.verify_step_uarch_state_transition() method implementation.
-static int machine_class_index_verify_step_uarch_state_transition(lua_State *L) {
-    lua_settop(L, 4);
-    cm_hash root_hash{};
-    clua_check_cm_hash(L, 1, &root_hash);
-    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 2)));
-    cm_hash target_hash{};
-    clua_check_cm_hash(L, 3, &target_hash);
-    if (cm_verify_step_uarch_state_transition(&root_hash, managed_log.get(), &target_hash, true) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushnumber(L, 1);
-    managed_log.reset();
-    return 1;
-}
-
-/// \brief This is the machine.verify_reset_uarch_log() method implementation.
-static int machine_class_index_verify_reset_uarch_log(lua_State *L) {
-    lua_settop(L, 2);
-    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 1)));
-    if (cm_verify_reset_uarch_log(managed_log.get(), true) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushnumber(L, 1);
-    managed_log.reset();
-    return 1;
-}
-
-/// \brief This is the machine.verify_reset_uarch_state_transition() method implementation.
-static int machine_class_index_verify_reset_uarch_state_transition(lua_State *L) {
-    lua_settop(L, 4);
-    cm_hash root_hash{};
-    clua_check_cm_hash(L, 1, &root_hash);
-    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 2)));
-    cm_hash target_hash{};
-    clua_check_cm_hash(L, 3, &target_hash);
-    if (cm_verify_reset_uarch_state_transition(&root_hash, managed_log.get(), &target_hash, true) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushnumber(L, 1);
-    managed_log.reset();
-    return 1;
-}
-
 /// \brief This is the machine.get_csr_address() method implementation.
 static int machine_class_index_get_csr_address(lua_State *L) {
     lua_pushinteger(L, static_cast<lua_Integer>(cm_get_csr_address(clua_check_cm_proc_csr(L, 1))));
     return 1;
 }
 
-/// \brief This is the machine.verify_send_cmio_response_log() method implementation.
-static int machine_class_index_verify_send_cmio_response_log(lua_State *L) {
+/// \brief This is the machine.verify_step_uarch() method implementation.
+static int machine_class_index_verify_step_uarch(lua_State *L) {
     lua_settop(L, 4);
-    const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 1));
-    size_t length{0};
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &length));
-    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 3)));
-    if (cm_verify_send_cmio_response_log(reason, data, length, managed_log.get(), true) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
+    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 2)));
+    if (!lua_isnil(L, 1) || !lua_isnil(L, 3)) {
+        cm_hash root_hash{};
+        clua_check_cm_hash(L, 1, &root_hash);
+        cm_hash target_hash{};
+        clua_check_cm_hash(L, 3, &target_hash);
+        if (cm_verify_step_uarch(&root_hash, managed_log.get(), &target_hash, true) != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
+    } else {
+        if (cm_verify_step_uarch(nullptr, managed_log.get(), nullptr, true) != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
     }
     lua_pushnumber(L, 1);
     managed_log.reset();
     return 1;
 }
 
-/// \brief This is the machine.verify_send_cmio_response_state_transition() method implementation.
-static int machine_class_index_verify_send_cmio_response_state_transition(lua_State *L) {
+/// \brief This is the machine.verify_reset_uarch() method implementation.
+static int machine_class_index_verify_reset_uarch(lua_State *L) {
+    lua_settop(L, 4);
+    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 2)));
+    if (!lua_isnil(L, 1) || !lua_isnil(L, 3)) {
+        cm_hash root_hash{};
+        clua_check_cm_hash(L, 1, &root_hash);
+        cm_hash target_hash{};
+        clua_check_cm_hash(L, 3, &target_hash);
+        if (cm_verify_reset_uarch(&root_hash, managed_log.get(), &target_hash, true) != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
+    } else {
+        if (cm_verify_reset_uarch(nullptr, managed_log.get(), nullptr, true) != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
+    }
+    lua_pushnumber(L, 1);
+    managed_log.reset();
+    return 1;
+}
+
+/// \brief This is the machine.verify_send_cmio_response() method implementation.
+static int machine_class_index_verify_send_cmio_response(lua_State *L) {
     lua_settop(L, 6);
-    cm_hash root_hash{};
     const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 1));
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &length));
-    clua_check_cm_hash(L, 3, &root_hash);
     auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 4)));
-    cm_hash target_hash{};
-    clua_check_cm_hash(L, 5, &target_hash);
-    if (cm_verify_send_cmio_response_state_transition(reason, data, length, &root_hash, managed_log.get(), &target_hash,
-            true) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
+    if (!lua_isnil(L, 3) || !lua_isnil(L, 5)) {
+        cm_hash root_hash{};
+        clua_check_cm_hash(L, 3, &root_hash);
+        cm_hash target_hash{};
+        clua_check_cm_hash(L, 5, &target_hash);
+        if (cm_verify_send_cmio_response(reason, data, length, &root_hash, managed_log.get(), &target_hash, true) !=
+            0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
+    } else {
+        if (cm_verify_send_cmio_response(reason, data, length, nullptr, managed_log.get(), nullptr, true) != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
     }
 
     lua_pushnumber(L, 1);
@@ -136,13 +114,10 @@ static int machine_class_index_verify_send_cmio_response_state_transition(lua_St
 /// \brief Contents of the machine class metatable __index table.
 static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
     {"get_default_config", machine_class_index_get_default_config},
-    {"verify_step_uarch_log", machine_class_index_verify_step_uarch_log},
-    {"verify_step_uarch_state_transition", machine_class_index_verify_step_uarch_state_transition},
-    {"verify_reset_uarch_log", machine_class_index_verify_reset_uarch_log},
-    {"verify_reset_uarch_state_transition", machine_class_index_verify_reset_uarch_state_transition},
     {"get_csr_address", machine_class_index_get_csr_address},
-    {"verify_send_cmio_response_log", machine_class_index_verify_send_cmio_response_log},
-    {"verify_send_cmio_response_state_transition", machine_class_index_verify_send_cmio_response_state_transition},
+    {"verify_step_uarch", machine_class_index_verify_step_uarch},
+    {"verify_reset_uarch", machine_class_index_verify_reset_uarch},
+    {"verify_send_cmio_response", machine_class_index_verify_send_cmio_response},
 });
 
 /// \brief This is the cartesi.machine() constructor implementation.

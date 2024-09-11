@@ -41,88 +41,6 @@ static int jsonrpc_machine_class_get_default_config(lua_State *L) {
     return 1;
 }
 
-/// \brief This is the machine.verify_step_uarch_log()
-/// static method implementation.
-static int jsonrpc_machine_class_verify_step_uarch_log(lua_State *L) {
-    const int stubidx = lua_upvalueindex(1);
-    const int ctxidx = lua_upvalueindex(2);
-    lua_settop(L, 3);
-    auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
-    auto &managed_log =
-        clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 1, ctxidx)), ctxidx);
-    if (cm_jsonrpc_verify_step_uarch_log(managed_jsonrpc_mgr.get(), managed_log.get(), true) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    managed_log.reset();
-    lua_pop(L, 2);
-    lua_pushnumber(L, 1);
-    return 1;
-}
-
-/// \brief This is the machine.verify_reset_uarch_log()
-/// static method implementation.
-static int jsonrpc_machine_class_verify_reset_uarch_log(lua_State *L) {
-    const int stubidx = lua_upvalueindex(1);
-    const int ctxidx = lua_upvalueindex(2);
-    lua_settop(L, 3);
-    auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
-    auto &managed_log =
-        clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 1, ctxidx)), ctxidx);
-    if (cm_jsonrpc_verify_reset_uarch_log(managed_jsonrpc_mgr.get(), managed_log.get(), true) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    managed_log.reset();
-    lua_pop(L, 2);
-    lua_pushnumber(L, 1);
-    return 1;
-}
-
-/// \brief This is the machine.verify_step_uarch_state_transition()
-/// static method implementation.
-static int jsonrpc_machine_class_verify_step_uarch_state_transition(lua_State *L) {
-    const int stubidx = lua_upvalueindex(1);
-    const int ctxidx = lua_upvalueindex(2);
-    lua_settop(L, 5);
-    auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
-    cm_hash root_hash{};
-    clua_check_cm_hash(L, 1, &root_hash);
-    auto &managed_log =
-        clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 2, ctxidx)), ctxidx);
-    cm_hash target_hash{};
-    clua_check_cm_hash(L, 3, &target_hash);
-    if (cm_jsonrpc_verify_step_uarch_state_transition(managed_jsonrpc_mgr.get(), &root_hash, managed_log.get(),
-            &target_hash, true) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    managed_log.reset();
-    lua_pop(L, 2);
-    lua_pushnumber(L, 1); // result
-    return 1;
-}
-
-/// \brief This is the machine.verify_reset_uarch_state_transition()
-/// static method implementation.
-static int jsonrpc_machine_class_verify_reset_uarch_state_transition(lua_State *L) {
-    const int stubidx = lua_upvalueindex(1);
-    const int ctxidx = lua_upvalueindex(2);
-    lua_settop(L, 5);
-    auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
-    cm_hash root_hash{};
-    clua_check_cm_hash(L, 1, &root_hash);
-    auto &managed_log =
-        clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 2, ctxidx)), ctxidx);
-    cm_hash target_hash{};
-    clua_check_cm_hash(L, 3, &target_hash);
-    if (cm_jsonrpc_verify_reset_uarch_state_transition(managed_jsonrpc_mgr.get(), &root_hash, managed_log.get(),
-            &target_hash, true) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    managed_log.reset();
-    lua_pop(L, 2);
-    lua_pushnumber(L, 1); // result
-    return 1;
-}
-
 /// \brief This is the machine.get_csr_address() method implementation.
 static int jsonrpc_machine_class_get_csr_address(lua_State *L) {
     auto &managed_jsonrpc_mgr =
@@ -136,33 +54,67 @@ static int jsonrpc_machine_class_get_csr_address(lua_State *L) {
     return 1;
 }
 
-/// \brief This is the machine.verify_send_cmio_response_log()
+/// \brief This is the machine.verify_step_uarch()
 /// static method implementation.
-static int jsonrpc_machine_class_verify_send_cmio_response_log(lua_State *L) {
+static int jsonrpc_machine_class_verify_step_uarch(lua_State *L) {
     const int stubidx = lua_upvalueindex(1);
     const int ctxidx = lua_upvalueindex(2);
-    lua_settop(L, 4);
+    lua_settop(L, 5);
     auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
-    const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 1));
-    size_t length{0};
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &length));
-
     auto &managed_log =
-        clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 3, ctxidx)), ctxidx);
-    if (cm_jsonrpc_verify_send_cmio_response_log(managed_jsonrpc_mgr.get(), reason, data, length, managed_log.get(),
-            true) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
+        clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 2, ctxidx)), ctxidx);
+    if (!lua_isnil(L, 1) || !lua_isnil(L, 3)) {
+        cm_hash root_hash{};
+        clua_check_cm_hash(L, 1, &root_hash);
+        cm_hash target_hash{};
+        clua_check_cm_hash(L, 3, &target_hash);
+        if (cm_jsonrpc_verify_step_uarch(managed_jsonrpc_mgr.get(), &root_hash, managed_log.get(), &target_hash,
+                true) != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
+    } else {
+        if (cm_jsonrpc_verify_step_uarch(managed_jsonrpc_mgr.get(), nullptr, managed_log.get(), nullptr, true) != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
     }
     managed_log.reset();
     lua_pop(L, 2);
-    lua_pushnumber(L, 1);
+    lua_pushnumber(L, 1); // result
     return 1;
 }
 
-/// \brief This is the machine.verify_send_cmio_response_state_transition()
+/// \brief This is the machine.verify_reset_uarch()
 /// static method implementation.
-static int jsonrpc_machine_class_verify_send_cmio_response_state_transition(lua_State *L) {
+static int jsonrpc_machine_class_verify_reset_uarch(lua_State *L) {
+    const int stubidx = lua_upvalueindex(1);
+    const int ctxidx = lua_upvalueindex(2);
+    lua_settop(L, 5);
+    auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
+    auto &managed_log =
+        clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 2, ctxidx)), ctxidx);
+    if (!lua_isnil(L, 1) || !lua_isnil(L, 3)) {
+        cm_hash root_hash{};
+        clua_check_cm_hash(L, 1, &root_hash);
+        cm_hash target_hash{};
+        clua_check_cm_hash(L, 3, &target_hash);
+        if (cm_jsonrpc_verify_reset_uarch(managed_jsonrpc_mgr.get(), &root_hash, managed_log.get(), &target_hash,
+                true) != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
+    } else {
+        if (cm_jsonrpc_verify_reset_uarch(managed_jsonrpc_mgr.get(), nullptr, managed_log.get(), nullptr, true) != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
+    }
+    managed_log.reset();
+    lua_pop(L, 2);
+    lua_pushnumber(L, 1); // result
+    return 1;
+}
+
+/// \brief This is the machine.verify_send_cmio_response()
+/// static method implementation.
+static int jsonrpc_machine_class_verify_send_cmio_response(lua_State *L) {
     const int stubidx = lua_upvalueindex(1);
     const int ctxidx = lua_upvalueindex(2);
     lua_settop(L, 6);
@@ -171,15 +123,22 @@ static int jsonrpc_machine_class_verify_send_cmio_response_state_transition(lua_
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &length));
-    cm_hash root_hash{};
-    clua_check_cm_hash(L, 3, &root_hash);
     auto &managed_log =
         clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 4, ctxidx)), ctxidx);
-    cm_hash target_hash{};
-    clua_check_cm_hash(L, 5, &target_hash);
-    if (cm_jsonrpc_verify_send_cmio_response_state_transition(managed_jsonrpc_mgr.get(), reason, data, length,
-            &root_hash, managed_log.get(), &target_hash, true) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
+    if (!lua_isnil(L, 3) || !lua_isnil(L, 5)) {
+        cm_hash root_hash{};
+        clua_check_cm_hash(L, 3, &root_hash);
+        cm_hash target_hash{};
+        clua_check_cm_hash(L, 5, &target_hash);
+        if (cm_jsonrpc_verify_send_cmio_response(managed_jsonrpc_mgr.get(), reason, data, length, &root_hash,
+                managed_log.get(), &target_hash, true) != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
+    } else {
+        if (cm_jsonrpc_verify_send_cmio_response(managed_jsonrpc_mgr.get(), reason, data, length, nullptr,
+                managed_log.get(), nullptr, true) != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
     }
     managed_log.reset();
     lua_pop(L, 2);
@@ -190,13 +149,10 @@ static int jsonrpc_machine_class_verify_send_cmio_response_state_transition(lua_
 /// \brief Contents of the machine class metatable __index table.
 static const auto jsonrpc_machine_static_methods = cartesi::clua_make_luaL_Reg_array({
     {"get_default_config", jsonrpc_machine_class_get_default_config},
-    {"verify_step_uarch_log", jsonrpc_machine_class_verify_step_uarch_log},
-    {"verify_step_uarch_state_transition", jsonrpc_machine_class_verify_step_uarch_state_transition},
-    {"verify_reset_uarch_log", jsonrpc_machine_class_verify_reset_uarch_log},
-    {"verify_reset_uarch_state_transition", jsonrpc_machine_class_verify_reset_uarch_state_transition},
     {"get_csr_address", jsonrpc_machine_class_get_csr_address},
-    {"verify_send_cmio_response_log", jsonrpc_machine_class_verify_send_cmio_response_log},
-    {"verify_send_cmio_response_state_transition", jsonrpc_machine_class_verify_send_cmio_response_state_transition},
+    {"verify_step_uarch", jsonrpc_machine_class_verify_step_uarch},
+    {"verify_reset_uarch", jsonrpc_machine_class_verify_reset_uarch},
+    {"verify_send_cmio_response", jsonrpc_machine_class_verify_send_cmio_response},
 });
 
 /// \brief Prints a JSONRPC machine class

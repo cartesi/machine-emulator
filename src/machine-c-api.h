@@ -387,20 +387,13 @@ CM_API int cm_log_step_uarch(cm_machine *m, cm_access_log_type log_type, bool on
 /// \param acc_log Valid pointer to cm_access_log object
 CM_API void cm_delete_access_log(cm_access_log *acc_log);
 
-/// \brief Checks the internal consistency of an access log
-/// \param log State access log to be verified
-/// \param r Machine runtime configuration to use during verification. Must be pointer to valid object
-/// \param one_based Use 1-based indices when reporting errors
-/// \returns 0 for success, non zero code for error
-CM_API int cm_verify_step_uarch_log(const cm_access_log *log, bool one_based);
-
 /// \brief Checks the validity of a state transition
 /// \param root_hash_before State hash before step
 /// \param log Step state access log
 /// \param root_hash_after State hash after step
 /// \param one_based Use 1-based indices when reporting errors
 /// \returns 0 for successful verification, non zero code for error
-CM_API int cm_verify_step_uarch_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
+CM_API int cm_verify_step_uarch(const cm_hash *root_hash_before, const cm_access_log *log,
     const cm_hash *root_hash_after, bool one_based);
 
 /// \brief Checks the validity of a state transition caused by a uarch state reset
@@ -409,15 +402,8 @@ CM_API int cm_verify_step_uarch_state_transition(const cm_hash *root_hash_before
 /// \param root_hash_after State hash after step
 /// \param one_based Use 1-based indices when reporting errors
 /// \returns 0 for successful verification, non zero code for error
-CM_API int cm_verify_reset_uarch_state_transition(const cm_hash *root_hash_before, const cm_access_log *log,
+CM_API int cm_verify_reset_uarch(const cm_hash *root_hash_before, const cm_access_log *log,
     const cm_hash *root_hash_after, bool one_based);
-
-/// \brief Checks the internal consistency of an access log produced by cm_log_reset_uarch
-/// \param log State access log to be verified
-/// \param r Machine runtime configuration to use during verification. Must be pointer to valid object
-/// \param one_based Use 1-based indices when reporting errors
-/// \returns 0 for success, non zero code for error
-CM_API int cm_verify_reset_uarch_log(const cm_access_log *log, bool one_based);
 
 /// \brief Obtains the proof for a node in the Merkle tree.
 /// \param m Pointer to a valid machine instance.
@@ -669,16 +655,6 @@ CM_API int cm_send_cmio_response(cm_machine *m, uint16_t reason, const unsigned 
 CM_API int cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const unsigned char *data, size_t length,
     cm_access_log_type log_type, bool one_based, cm_access_log **access_log);
 
-/// \brief Checks the internal consistency of an access log produced by cm_send_cmio_response
-/// \param reason Reason for sending the response.
-/// \param data The response sent when the log was generated.
-/// \param length Length of response.
-/// \param log State access log to be verified.
-/// \param one_based Use 1-based indices when reporting errors.
-/// \returns 0 for success, non zero code for error
-CM_API int cm_verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, size_t length,
-    const cm_access_log *log, bool one_based);
-
 /// \brief Checks the validity of state transitions caused by cm_send_cmio_response
 /// \param reason Reason for sending the response.
 /// \param data The response sent when the log was generated.
@@ -688,7 +664,7 @@ CM_API int cm_verify_send_cmio_response_log(uint16_t reason, const unsigned char
 /// \param root_hash_after State hash after load.
 /// \param one_based Use 1-based indices when reporting errors.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, size_t length,
+CM_API int cm_verify_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
     const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after, bool one_based);
 
 #ifdef __cplusplus

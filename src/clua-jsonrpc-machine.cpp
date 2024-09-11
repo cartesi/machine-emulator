@@ -276,7 +276,7 @@ static int jsonrpc_server_class_rebind(lua_State *L) {
     auto &managed_jsonrpc_mgr =
         clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     const char *address = luaL_checkstring(L, 1);
-    char *new_address = nullptr;
+    const char *new_address = nullptr;
     if (cm_jsonrpc_rebind(managed_jsonrpc_mgr.get(), address, &new_address) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
@@ -292,7 +292,7 @@ static int jsonrpc_server_class_rebind(lua_State *L) {
 static int jsonrpc_server_class_fork(lua_State *L) {
     auto &managed_jsonrpc_mgr =
         clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
-    char *address = nullptr;
+    const char *address = nullptr;
     int pid = 0;
     if (cm_jsonrpc_fork(managed_jsonrpc_mgr.get(), &address, &pid) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());

@@ -112,8 +112,9 @@ int cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const char **config
     }
     const auto *cpp_mgr = convert_from_c(mgr);
     const cartesi::machine_config cpp_config = cartesi::jsonrpc_virtual_machine::get_default_config(*cpp_mgr);
-    static THREAD_LOCAL char config_buf[CM_MAX_CONFIG_LENGTH];
-    *config = string_to_buf(config_buf, sizeof(config_buf), cartesi::to_json(cpp_config).dump());
+    static THREAD_LOCAL std::string config_storage;
+    config_storage = cartesi::to_json(cpp_config).dump();
+    *config = config_storage.c_str();
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -163,14 +164,15 @@ int cm_jsonrpc_verify_reset_uarch_state_transition(const cm_jsonrpc_mgr *mgr, co
     return cm_result_failure();
 }
 
-int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address, int *pid) try {
+int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, const char **address, int *pid) try {
     if (address == nullptr) {
         throw std::invalid_argument("invalid address output");
     }
     const auto *cpp_mgr = convert_from_c(mgr);
     const auto result = cartesi::jsonrpc_virtual_machine::fork(*cpp_mgr);
-    static THREAD_LOCAL char address_buf[64];
-    *address = string_to_buf(address_buf, sizeof(address_buf), result.address);
+    static THREAD_LOCAL std::string address_storage;
+    address_storage = result.address;
+    *address = address_storage.c_str();
     if (pid) {
         *pid = static_cast<int>(result.pid);
     }
@@ -185,12 +187,13 @@ int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address, int *pid) try {
     return cm_result_failure();
 }
 
-int cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, char **new_address) try {
+int cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, const char **new_address) try {
     const auto *cpp_mgr = convert_from_c(mgr);
     const std::string cpp_new_address = cartesi::jsonrpc_virtual_machine::rebind(*cpp_mgr, address);
     if (new_address) {
-        static THREAD_LOCAL char new_address_buf[64];
-        *new_address = string_to_buf(new_address_buf, sizeof(new_address_buf), cpp_new_address);
+        static THREAD_LOCAL std::string new_address_storage;
+        new_address_storage = cpp_new_address;
+        *new_address = new_address_storage.c_str();
     }
     return cm_result_success();
 } catch (...) {
@@ -215,8 +218,9 @@ int cm_jsonrpc_get_version(const cm_jsonrpc_mgr *mgr, const char **version) try 
     }
     const auto *cpp_mgr = convert_from_c(mgr);
     const cartesi::semantic_version cpp_version = cartesi::jsonrpc_virtual_machine::get_version(*cpp_mgr);
-    static THREAD_LOCAL char version_buf[1024];
-    *version = string_to_buf(version_buf, sizeof(version_buf), cartesi::to_json(cpp_version).dump());
+    static THREAD_LOCAL std::string version_storage;
+    version_storage = cartesi::to_json(cpp_version).dump();
+    *version = version_storage.c_str();
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();

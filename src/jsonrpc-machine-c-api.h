@@ -108,7 +108,7 @@ CM_API int cm_jsonrpc_verify_step_uarch_state_transition(const cm_jsonrpc_mgr *m
 /// \param pid Receives the forked child process id.
 /// In case of failure receives 0.
 /// \returns 0 for successful verification, non zero code for error
-CM_API int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address, int *pid);
+CM_API int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, const char **address, int *pid);
 
 /// \brief Changes the address the server is listening to
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
@@ -117,7 +117,7 @@ CM_API int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address, int *pid);
 /// remains valid until the next time this same function is called on the same thread.
 /// In case of failure receives NULL.
 /// \returns 0 for successful verification, non zero code for error
-CM_API int cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, char **new_address);
+CM_API int cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, const char **new_address);
 
 /// \brief Gets the address of any CSR from remote server
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object

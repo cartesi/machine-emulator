@@ -48,7 +48,6 @@ enum {
     CM_TREE_LOG2_WORD_SIZE = 5,
     CM_TREE_LOG2_PAGE_SIZE = 12,
     CM_TREE_LOG2_ROOT_SIZE = 64,
-    CM_MAX_CONFIG_LENGTH = 65536,
 };
 
 // ---------------------------------

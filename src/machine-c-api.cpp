@@ -38,14 +38,10 @@
 #include "virtual-machine.h"
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-static THREAD_LOCAL char last_err_msg[4096];
+static THREAD_LOCAL std::string last_err_msg;
 
 const char *cm_get_last_error_message() {
-    return last_err_msg;
-}
-
-void cm_set_last_error_message(const std::string &err_msg) {
-    last_err_msg[err_msg.copy(last_err_msg, sizeof(last_err_msg) - 1)] = 0;
+    return last_err_msg.c_str();
 }
 
 static char *copy_cstring(const char *str) {
@@ -55,22 +51,12 @@ static char *copy_cstring(const char *str) {
     return copy;
 }
 
-char *string_to_buf(char *dest, size_t maxlen, const std::string &src) {
-    using namespace std::string_literals;
-    if (src.length() + 1 > maxlen) {
-        throw std::runtime_error("cannot store a string of length "s + std::to_string(maxlen) +
-            " into a buffer of length "s + std::to_string(src.length() + 1));
-    }
-    dest[src.copy(dest, maxlen - 1)] = 0;
-    return dest;
-}
-
 std::string null_to_empty(const char *s) {
     return std::string{s != nullptr ? s : ""};
 }
 
 int cm_result_failure() try { throw; } catch (std::exception &e) {
-    cm_set_last_error_message(e.what());
+    last_err_msg = e.what();
     try {
         throw;
     } catch (std::invalid_argument &ex) {
@@ -117,12 +103,12 @@ int cm_result_failure() try { throw; } catch (std::exception &e) {
         return CM_ERROR_EXCEPTION;
     }
 } catch (...) {
-    cm_set_last_error_message("unknown error");
+    last_err_msg = std::string("unknown error");
     return CM_ERROR_UNKNOWN;
 }
 
 int cm_result_success() {
-    cm_set_last_error_message("");
+    last_err_msg.clear();
     return 0;
 }
 
@@ -576,8 +562,9 @@ int cm_get_proof(const cm_machine *m, uint64_t address, int log2_size, const cha
     }
     const auto *cpp_machine = convert_from_c(m);
     const cartesi::machine_merkle_tree::proof_type cpp_proof = cpp_machine->get_proof(address, log2_size);
-    static THREAD_LOCAL char proof_buf[CM_MAX_CONFIG_LENGTH];
-    *proof = string_to_buf(proof_buf, sizeof(proof_buf), cartesi::to_json(cpp_proof).dump());
+    static THREAD_LOCAL std::string proof_storage;
+    proof_storage = cartesi::to_json(cpp_proof).dump();
+    *proof = proof_storage.c_str();
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -772,8 +759,9 @@ int cm_get_initial_config(const cm_machine *m, const char **config) try {
     }
     const auto *cpp_machine = convert_from_c(m);
     const cartesi::machine_config cpp_config = cpp_machine->get_initial_config();
-    static THREAD_LOCAL char config_buf[CM_MAX_CONFIG_LENGTH];
-    *config = string_to_buf(config_buf, sizeof(config_buf), cartesi::to_json(cpp_config).dump());
+    static THREAD_LOCAL std::string config_storage;
+    config_storage = cartesi::to_json(cpp_config).dump();
+    *config = config_storage.c_str();
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -781,8 +769,9 @@ int cm_get_initial_config(const cm_machine *m, const char **config) try {
 
 const char *cm_get_default_config() try {
     const cartesi::machine_config cpp_config = cartesi::machine::get_default_config();
-    static THREAD_LOCAL char config_buf[CM_MAX_CONFIG_LENGTH];
-    const char *config = string_to_buf(config_buf, sizeof(config_buf), cartesi::to_json(cpp_config).dump());
+    static THREAD_LOCAL std::string config_storage;
+    config_storage = cartesi::to_json(cpp_config).dump();
+    const char *config = config_storage.c_str();
     cm_result_success();
     return config;
 } catch (...) {
@@ -842,8 +831,9 @@ CM_API int cm_get_memory_ranges(cm_machine *m, const char **ranges) try {
     }
     auto *cpp_machine = convert_from_c(m);
     const cartesi::machine_memory_range_descrs cpp_ranges = cpp_machine->get_memory_ranges();
-    static THREAD_LOCAL char ranges_buf[4096];
-    *ranges = string_to_buf(ranges_buf, sizeof(ranges_buf), cartesi::to_json(cpp_ranges).dump());
+    static THREAD_LOCAL std::string ranges_storage;
+    ranges_storage = cartesi::to_json(cpp_ranges).dump();
+    *ranges = ranges_storage.c_str();
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();

@@ -516,7 +516,7 @@ local function run_machine_writing_json_logs(machine, ctx)
     util.indentout(out, indent, '{ "steps":[\n')
     local step_count = 0
     while math.ult(machine:read_uarch_cycle(), max_cycle) do
-        local log_type = { proofs = should_log_proofs() }
+        local log_type = should_log_proofs() and cartesi.ACCESS_LOG_TYPE_PROOFS or 0
         local log = machine:log_step_uarch(log_type)
         total_steps_counter = total_steps_counter + 1
         step_count = step_count + 1
@@ -537,7 +537,8 @@ local function create_json_reset_log()
     local test_name = "reset-uarch"
     machine:set_uarch_halt_flag()
     local initial_root_hash = machine:get_root_hash()
-    local log = machine:log_reset_uarch({ proofs = proofs })
+    local log_type = proofs and cartesi.ACCESS_LOG_TYPE_PROOFS or 0
+    local log = machine:log_reset_uarch(log_type)
     local out = create_json_log_file(test_name .. "-steps")
     write_log_to_file(log, out, 0, true)
     out:close()
@@ -561,7 +562,8 @@ local function create_json_send_cmio_response_log()
     local reason = 1
     machine:set_iflags_Y()
     local initial_root_hash = machine:get_root_hash()
-    local log = machine:log_send_cmio_response(reason, response_data, { proofs = proofs })
+    local log_type = proofs and cartesi.ACCESS_LOG_TYPE_PROOFS or 0
+    local log = machine:log_send_cmio_response(reason, response_data, log_type)
     local out = create_json_log_file(test_name .. "-steps")
     write_log_to_file(log, out, 0, true)
     out:close()

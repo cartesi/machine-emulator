@@ -54,10 +54,6 @@
 // NOLINTNEXTLINE
 #define BOOST_FIXTURE_TEST_CASE_NOLINT(...) BOOST_FIXTURE_TEST_CASE(__VA_ARGS__)
 
-BOOST_AUTO_TEST_CASE_NOLINT(delete_access_log_null_test) {
-    BOOST_CHECK_NO_THROW(cm_delete_access_log(nullptr));
-}
-
 BOOST_AUTO_TEST_CASE_NOLINT(delete_machine_null_test) {
     BOOST_CHECK_NO_THROW(cm_delete_machine(nullptr));
 }
@@ -365,7 +361,6 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_root_hash_null_machine_test) {
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_null_test) {
     cm_delete_machine(nullptr);
-    cm_delete_access_log(nullptr);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_null_hash_test, ordinary_machine_fixture) {
@@ -1139,7 +1134,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_log_null_log_test, default_mach
 class access_log_machine_fixture : public incomplete_machine_fixture {
 public:
     access_log_machine_fixture() {
-        _log_type = {true, true, false};
+        _log_type = CM_ACCESS_LOG_TYPE_PROOFS | CM_ACCESS_LOG_TYPE_ANNOTATIONS;
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
 
         uint32_t test_uarch_ram[] = {
@@ -1168,8 +1163,8 @@ public:
 protected:
     std::string _machine_dir_path;
     const std::string _uarch_ram_path = "/tmp/test-uarch-ram.bin";
-    cm_access_log *_access_log{};
-    cm_access_log_type _log_type{};
+    const char *_access_log{};
+    int _log_type{};
 };
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_machine_test, access_log_machine_fixture) {
@@ -1257,7 +1252,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, access_log_machine_fix
     // verify
     error_code = cm_verify_step_uarch(&hash0, _access_log, &hash1, false);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    cm_delete_access_log(_access_log);
 
     // step 2
     error_code = cm_log_step_uarch(_machine, _log_type, false, &_access_log);
@@ -1270,7 +1264,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, access_log_machine_fix
     // verify
     error_code = cm_verify_step_uarch(&hash1, _access_log, &hash2, false);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    cm_delete_access_log(_access_log);
 
     // step 3
     error_code = cm_log_step_uarch(_machine, _log_type, false, &_access_log);
@@ -1283,7 +1276,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, access_log_machine_fix
     // verify
     error_code = cm_verify_step_uarch(&hash2, _access_log, &hash3, false);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    cm_delete_access_log(_access_log);
     // step 4
     error_code = cm_log_step_uarch(_machine, _log_type, false, &_access_log);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
@@ -1295,7 +1287,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, access_log_machine_fix
     // verify
     error_code = cm_verify_step_uarch(&hash3, _access_log, &hash4, false);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    cm_delete_access_log(_access_log);
 
     // at micro cycle 4
     error_code = cm_read_uarch_cycle(_machine, &cycle);
@@ -1331,8 +1322,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture) {
     error_code = cm_verify_step_uarch(&hash0, _access_log, &hash1, false);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-
-    cm_delete_access_log(_access_log);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(step_hash_test, access_log_machine_fixture) {
@@ -1348,8 +1337,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_hash_test, access_log_machine_fixture) {
 
     auto verification = calculate_emulator_hash(_machine);
     BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), hash1, hash1 + sizeof(cm_hash));
-
-    cm_delete_access_log(_access_log);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(machine_run_null_machine_test) {

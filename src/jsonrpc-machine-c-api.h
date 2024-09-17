@@ -69,22 +69,22 @@ CM_API int cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const char *
 /// \brief Checks the validity of a state transition caused by a reset uarch.
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
 /// \param root_hash_before State hash before step
-/// \param log State access log to be verified.
+/// \param access_log State access log to be verified.
 /// \param root_hash_after State hash after step
 /// \param one_based Use 1-based indices when reporting errors
 /// \returns 0 for successful verification, non zero code for error
 CM_API int cm_jsonrpc_verify_reset_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
-    const cm_access_log *log, const cm_hash *root_hash_after, bool one_based);
+    const char *access_log, const cm_hash *root_hash_after, bool one_based);
 
 /// \brief Checks the validity of a state transition
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
 /// \param root_hash_before State hash before step
-/// \param log Step state access log
+/// \param access_log Step state access log
 /// \param root_hash_after State hash after step
 /// \param one_based Use 1-based indices when reporting errors
 /// \returns 0 for successful verification, non zero code for error
 CM_API int cm_jsonrpc_verify_step_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
-    const cm_access_log *log, const cm_hash *root_hash_after, bool one_based);
+    const char *access_log, const cm_hash *root_hash_after, bool one_based);
 
 /// \brief Forks the server
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
@@ -131,12 +131,12 @@ CM_API int cm_jsonrpc_shutdown(const cm_jsonrpc_mgr *mgr);
 /// \param data Response data to send.
 /// \param length Length of data response data.
 /// \param root_hash_before State hash before load.
-/// \param log State access log to be verified.
+/// \param access_log State access log to be verified.
 /// \param root_hash_after State hash after load.
 /// \param one_based Use 1-based indices when reporting errors
 /// \returns 0 for successfull verification, non zero code for error
 CM_API int cm_jsonrpc_verify_send_cmio_response(const cm_jsonrpc_mgr *mgr, uint16_t reason, const unsigned char *data,
-    size_t length, const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after,
+    size_t length, const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after,
     bool one_based);
 
 #ifdef __cplusplus

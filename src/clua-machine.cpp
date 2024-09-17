@@ -42,44 +42,42 @@ static int machine_class_index_get_csr_address(lua_State *L) {
 /// \brief This is the machine.verify_step_uarch() method implementation.
 static int machine_class_index_verify_step_uarch(lua_State *L) {
     lua_settop(L, 4);
-    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 2)));
+    const std::string access_log = clua_check_json(L, 2).dump();
     if (!lua_isnil(L, 1) || !lua_isnil(L, 3)) {
         cm_hash root_hash{};
         clua_check_cm_hash(L, 1, &root_hash);
         cm_hash target_hash{};
         clua_check_cm_hash(L, 3, &target_hash);
-        if (cm_verify_step_uarch(&root_hash, managed_log.get(), &target_hash, true) != 0) {
+        if (cm_verify_step_uarch(&root_hash, access_log.c_str(), &target_hash, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
-        if (cm_verify_step_uarch(nullptr, managed_log.get(), nullptr, true) != 0) {
+        if (cm_verify_step_uarch(nullptr, access_log.c_str(), nullptr, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
     lua_pushnumber(L, 1);
-    managed_log.reset();
     return 1;
 }
 
 /// \brief This is the machine.verify_reset_uarch() method implementation.
 static int machine_class_index_verify_reset_uarch(lua_State *L) {
     lua_settop(L, 4);
-    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 2)));
+    const std::string access_log = clua_check_json(L, 2).dump();
     if (!lua_isnil(L, 1) || !lua_isnil(L, 3)) {
         cm_hash root_hash{};
         clua_check_cm_hash(L, 1, &root_hash);
         cm_hash target_hash{};
         clua_check_cm_hash(L, 3, &target_hash);
-        if (cm_verify_reset_uarch(&root_hash, managed_log.get(), &target_hash, true) != 0) {
+        if (cm_verify_reset_uarch(&root_hash, access_log.c_str(), &target_hash, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
-        if (cm_verify_reset_uarch(nullptr, managed_log.get(), nullptr, true) != 0) {
+        if (cm_verify_reset_uarch(nullptr, access_log.c_str(), nullptr, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
     lua_pushnumber(L, 1);
-    managed_log.reset();
     return 1;
 }
 
@@ -90,24 +88,22 @@ static int machine_class_index_verify_send_cmio_response(lua_State *L) {
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &length));
-    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 4)));
+    const std::string access_log = clua_check_json(L, 4).dump();
     if (!lua_isnil(L, 3) || !lua_isnil(L, 5)) {
         cm_hash root_hash{};
         clua_check_cm_hash(L, 3, &root_hash);
         cm_hash target_hash{};
         clua_check_cm_hash(L, 5, &target_hash);
-        if (cm_verify_send_cmio_response(reason, data, length, &root_hash, managed_log.get(), &target_hash, true) !=
+        if (cm_verify_send_cmio_response(reason, data, length, &root_hash, access_log.c_str(), &target_hash, true) !=
             0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
-        if (cm_verify_send_cmio_response(reason, data, length, nullptr, managed_log.get(), nullptr, true) != 0) {
+        if (cm_verify_send_cmio_response(reason, data, length, nullptr, access_log.c_str(), nullptr, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
-
     lua_pushnumber(L, 1);
-    managed_log.reset();
     return 1;
 }
 
@@ -143,7 +139,6 @@ static int machine_ctor(lua_State *L) {
 struct machine_class {};
 
 int clua_machine_init(lua_State *L, int ctxidx) {
-    clua_createnewtype<clua_managed_cm_ptr<cm_access_log>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<char>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<unsigned char>>(L, ctxidx);
     if (!clua_typeexists<machine_class>(L, ctxidx)) {

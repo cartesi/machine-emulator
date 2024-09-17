@@ -44,13 +44,6 @@ const char *cm_get_last_error_message() {
     return last_err_msg.c_str();
 }
 
-static char *copy_cstring(const char *str) {
-    auto size = strlen(str) + 1;
-    auto *copy = new char[size];
-    strncpy(copy, str, size);
-    return copy;
-}
-
 std::string null_to_empty(const char *s) {
     return std::string{s != nullptr ? s : ""};
 }
@@ -115,13 +108,6 @@ int cm_result_success() {
 }
 
 // --------------------------------------------
-// String conversion (strdup equivalent with new)
-// --------------------------------------------
-char *convert_to_c(const std::string &cpp_str) {
-    return copy_cstring(cpp_str.c_str());
-}
-
-// --------------------------------------------
 // Machine pointer conversion functions
 // --------------------------------------------
 static cartesi::i_virtual_machine *convert_from_c(cm_machine *m) {
@@ -153,220 +139,6 @@ cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash) {
     return cpp_hash;
 }
 
-std::vector<cartesi::machine_merkle_tree::hash_type> convert_from_c(const cm_hash_array *c_array) {
-    auto new_array = std::vector<cartesi::machine_merkle_tree::hash_type>(c_array->count);
-    for (size_t i = 0; i < c_array->count; ++i) {
-        new_array[i] = convert_from_c(&c_array->entry[i]);
-    }
-    return new_array;
-}
-
-static cm_hash_array *convert_to_c(const std::vector<cartesi::machine_merkle_tree::hash_type> &cpp_array) {
-    auto *new_array = new cm_hash_array{};
-    new_array->count = cpp_array.size();
-    new_array->entry = new cm_hash[cpp_array.size()];
-    memset(new_array->entry, 0, sizeof(cm_hash) * new_array->count);
-    for (size_t i = 0; i < new_array->count; ++i) {
-        memcpy(&new_array->entry[i], static_cast<const uint8_t *>(cpp_array[i].data()), sizeof(cm_hash));
-    }
-    return new_array;
-}
-
-// ----------------------------------------------
-// Access log conversion functions
-// ----------------------------------------------
-
-static CM_ACCESS_TYPE convert_to_c(const cartesi::access_type type) {
-    if (type == cartesi::access_type::read) {
-        return CM_ACCESS_READ;
-    } else {
-        return CM_ACCESS_WRITE;
-    }
-}
-
-static cartesi::access_type convert_from_c(const CM_ACCESS_TYPE c_type) {
-    if (c_type == CM_ACCESS_READ) {
-        return cartesi::access_type::read;
-    } else {
-        return cartesi::access_type::write;
-    }
-}
-
-cartesi::access_log::type convert_from_c(const cm_access_log_type *type) {
-    cartesi::access_log::type cpp_type(type->proofs, type->annotations, type->large_data);
-    return cpp_type;
-}
-
-static cm_access convert_to_c(const cartesi::access &cpp_access) {
-    cm_access new_access{};
-    new_access.type = convert_to_c(cpp_access.get_type());
-    new_access.address = cpp_access.get_address();
-    new_access.log2_size = cpp_access.get_log2_size();
-    memcpy(&new_access.read_hash, static_cast<const uint8_t *>(cpp_access.get_read_hash().data()), sizeof(cm_hash));
-    new_access.read_data = nullptr;
-    new_access.read_data_size = 0;
-    if (cpp_access.get_read().has_value()) {
-        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        const auto &read_value = cpp_access.get_read().value();
-        new_access.read_data_size = read_value.size();
-        if (new_access.read_data_size > 0) {
-            new_access.read_data = new uint8_t[new_access.read_data_size];
-            memcpy(new_access.read_data, read_value.data(), new_access.read_data_size);
-        }
-    }
-    if (cpp_access.get_written_hash().has_value()) {
-        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        memcpy(&new_access.written_hash, static_cast<const uint8_t *>(cpp_access.get_written_hash().value().data()),
-            sizeof(cm_hash));
-    } else {
-        memset(&new_access.written_hash, 0, sizeof(cm_hash));
-    }
-    new_access.written_data = nullptr;
-    new_access.written_data_size = 0;
-    if (cpp_access.get_written().has_value()) {
-        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        const auto &written_value = cpp_access.get_written().value();
-        new_access.written_data_size = written_value.size();
-        if (new_access.written_data_size > 0) {
-            new_access.written_data = new uint8_t[new_access.written_data_size];
-            memcpy(new_access.written_data, written_value.data(), new_access.written_data_size);
-        }
-    }
-
-    if (cpp_access.get_sibling_hashes().has_value()) {
-        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        new_access.sibling_hashes = convert_to_c(*cpp_access.get_sibling_hashes());
-    } else {
-        new_access.sibling_hashes = nullptr;
-    }
-
-    return new_access;
-}
-
-cartesi::access convert_from_c(const cm_access *c_access) {
-    cartesi::access cpp_access{};
-    cpp_access.set_type(convert_from_c(c_access->type));
-    cpp_access.set_log2_size(c_access->log2_size);
-    cpp_access.set_address(c_access->address);
-    if (c_access->sibling_hashes != nullptr) {
-        cpp_access.set_sibling_hashes(convert_from_c(c_access->sibling_hashes));
-    }
-
-    cpp_access.set_read_hash(convert_from_c(&c_access->read_hash));
-    if (c_access->read_data_size > 0) {
-        cpp_access.set_read(cartesi::access_data{c_access->read_data, c_access->read_data + c_access->read_data_size});
-    }
-    if (c_access->type == CM_ACCESS_WRITE) {
-        cpp_access.set_written_hash(convert_from_c(&c_access->written_hash));
-    }
-    if (c_access->written_data_size > 0) {
-        cpp_access.set_written(
-            cartesi::access_data{c_access->written_data, c_access->written_data + c_access->written_data_size});
-    }
-    return cpp_access;
-}
-
-static void cm_cleanup_access(cm_access *access) {
-    if (access == nullptr) {
-        return;
-    }
-    if (access->sibling_hashes != nullptr) {
-        delete[] access->sibling_hashes->entry;
-        delete access->sibling_hashes;
-    }
-    delete[] access->written_data;
-    delete[] access->read_data;
-}
-
-static CM_BRACKET_TYPE convert_to_c(const cartesi::bracket_type type) {
-    if (type == cartesi::bracket_type::begin) {
-        return CM_BRACKET_BEGIN;
-    } else {
-        return CM_BRACKET_END;
-    }
-}
-
-static cartesi::bracket_type convert_from_c(const CM_BRACKET_TYPE c_type) {
-    if (c_type == CM_BRACKET_BEGIN) {
-        return cartesi::bracket_type::begin;
-    } else {
-        return cartesi::bracket_type::end;
-    }
-}
-
-static cm_bracket_note convert_to_c(const cartesi::bracket_note &cpp_bracket_note) {
-    cm_bracket_note new_bracket_note{};
-    new_bracket_note.type = convert_to_c(cpp_bracket_note.type);
-    new_bracket_note.where = cpp_bracket_note.where;
-    new_bracket_note.text = convert_to_c(cpp_bracket_note.text);
-    return new_bracket_note;
-}
-
-static cartesi::bracket_note convert_from_c(const cm_bracket_note *c_bracket_note) {
-    cartesi::bracket_note cpp_bracket_note{};
-    cpp_bracket_note.type = convert_from_c(c_bracket_note->type);
-    cpp_bracket_note.where = c_bracket_note->where;
-    cpp_bracket_note.text = null_to_empty(c_bracket_note->text);
-    return cpp_bracket_note;
-}
-
-static void cm_cleanup_bracket_note(cm_bracket_note *bracket_note) {
-    if (bracket_note == nullptr) {
-        return;
-    }
-    delete[] bracket_note->text;
-}
-
-cm_access_log *convert_to_c(const cartesi::access_log &cpp_access_log) {
-    auto *new_access_log = new cm_access_log{};
-
-    new_access_log->accesses.count = cpp_access_log.get_accesses().size();
-    new_access_log->accesses.entry = new cm_access[new_access_log->accesses.count];
-    for (size_t i = 0; i < new_access_log->accesses.count; ++i) {
-        new_access_log->accesses.entry[i] = convert_to_c(cpp_access_log.get_accesses()[i]);
-    }
-
-    new_access_log->brackets.count = cpp_access_log.get_brackets().size();
-    new_access_log->brackets.entry = new cm_bracket_note[new_access_log->brackets.count];
-    for (size_t i = 0; i < new_access_log->brackets.count; ++i) {
-        new_access_log->brackets.entry[i] = convert_to_c(cpp_access_log.get_brackets()[i]);
-    }
-
-    new_access_log->notes.count = cpp_access_log.get_notes().size();
-    new_access_log->notes.entry = new const char *[new_access_log->notes.count];
-    for (size_t i = 0; i < new_access_log->notes.count; ++i) {
-        new_access_log->notes.entry[i] = convert_to_c(cpp_access_log.get_notes()[i]);
-    }
-
-    new_access_log->log_type.annotations = cpp_access_log.get_log_type().has_annotations();
-    new_access_log->log_type.proofs = cpp_access_log.get_log_type().has_proofs();
-    new_access_log->log_type.large_data = cpp_access_log.get_log_type().has_large_data();
-
-    return new_access_log;
-}
-
-cartesi::access_log convert_from_c(const cm_access_log *c_acc_log) {
-    if (c_acc_log == nullptr) {
-        throw std::invalid_argument("invalid access log");
-    }
-
-    std::vector<cartesi::access> accesses;
-    for (size_t i = 0; i < c_acc_log->accesses.count; ++i) {
-        accesses.push_back(convert_from_c(&c_acc_log->accesses.entry[i]));
-    }
-    std::vector<cartesi::bracket_note> brackets;
-    for (size_t i = 0; i < c_acc_log->brackets.count; ++i) {
-        brackets.push_back(convert_from_c(&c_acc_log->brackets.entry[i]));
-    }
-
-    std::vector<std::string> notes;
-    for (size_t i = 0; i < c_acc_log->notes.count; ++i) {
-        notes.push_back(null_to_empty(c_acc_log->notes.entry[i]));
-    }
-    cartesi::access_log new_cpp_acc_log(accesses, brackets, notes, convert_from_c(&c_acc_log->log_type));
-    return new_cpp_acc_log;
-}
-
 // -----------------------------------------------------
 // Public API functions for generation of default configs
 // -----------------------------------------------------
@@ -377,7 +149,7 @@ static inline cartesi::i_virtual_machine *create_virtual_machine(const cartesi::
 
 static inline cartesi::i_virtual_machine *load_virtual_machine(const char *dir,
     const cartesi::machine_runtime_config &r) {
-    return new cartesi::virtual_machine(null_to_empty(dir), r);
+    return new cartesi::virtual_machine(dir ? dir : "", r);
 }
 
 int cm_create(const char *config, const char *runtime_config, cm_machine **new_machine) try {
@@ -418,7 +190,7 @@ void cm_delete_machine(cm_machine *m) {
 
 int cm_store(cm_machine *m, const char *dir) try {
     auto *cpp_machine = convert_from_c(m);
-    cpp_machine->store(null_to_empty(dir));
+    cpp_machine->store(dir ? dir : "");
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -462,14 +234,16 @@ CM_API int cm_reset_uarch(cm_machine *m) try {
     return cm_result_failure();
 }
 
-int cm_log_reset_uarch(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log) try {
+int cm_log_reset_uarch(cm_machine *m, int log_type, bool one_based, const char **access_log) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log output");
     }
     auto *cpp_machine = convert_from_c(m);
-    cartesi::access_log::type cpp_log_type{log_type.proofs, log_type.annotations, log_type.large_data};
+    cartesi::access_log::type cpp_log_type(log_type);
     cartesi::access_log cpp_access_log = cpp_machine->log_reset_uarch(cpp_log_type, one_based);
-    *access_log = convert_to_c(cpp_access_log);
+    static THREAD_LOCAL std::string access_log_storage;
+    access_log_storage = cartesi::to_json(cpp_access_log).dump();
+    *access_log = access_log_storage.c_str();
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -486,65 +260,55 @@ int cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON 
     return cm_result_failure();
 }
 
-int cm_log_step_uarch(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log) try {
+int cm_log_step_uarch(cm_machine *m, int log_type, bool one_based, const char **access_log) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log output");
     }
     auto *cpp_machine = convert_from_c(m);
-    cartesi::access_log::type cpp_log_type{log_type.proofs, log_type.annotations};
+    cartesi::access_log::type cpp_log_type(log_type);
     cartesi::access_log cpp_access_log = cpp_machine->log_step_uarch(cpp_log_type, one_based);
-    *access_log = convert_to_c(cpp_access_log);
+    static THREAD_LOCAL std::string access_log_storage;
+    access_log_storage = cartesi::to_json(cpp_access_log).dump();
+    *access_log = access_log_storage.c_str();
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
 }
 
-void cm_delete_access_log(cm_access_log *acc_log) {
-    if (acc_log == nullptr) {
-        return;
-    }
-
-    for (size_t i = 0; i < acc_log->notes.count; ++i) {
-        delete[] acc_log->notes.entry[i];
-    }
-    delete[] acc_log->notes.entry;
-    for (size_t i = 0; i < acc_log->brackets.count; ++i) {
-        cm_cleanup_bracket_note(&acc_log->brackets.entry[i]);
-    }
-    delete[] acc_log->brackets.entry;
-    for (size_t i = 0; i < acc_log->accesses.count; ++i) {
-        cm_cleanup_access(&acc_log->accesses.entry[i]);
-    }
-    delete[] acc_log->accesses.entry;
-    delete acc_log;
-}
-
-int cm_verify_step_uarch(const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after,
+int cm_verify_step_uarch(const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after,
     bool one_based) try {
-    const cartesi::access_log cpp_log = convert_from_c(log);
+    if (access_log == nullptr) {
+        throw std::invalid_argument("invalid access log");
+    }
+    const auto cpp_access_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(access_log).value();
     if (root_hash_before || root_hash_after) {
         const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
         const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
-        cartesi::machine::verify_step_uarch_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after,
+        cartesi::machine::verify_step_uarch_state_transition(cpp_root_hash_before, cpp_access_log, cpp_root_hash_after,
             one_based);
     } else {
-        cartesi::machine::verify_step_uarch_log(cpp_log, one_based);
+        cartesi::machine::verify_step_uarch_log(cpp_access_log, one_based);
     }
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
 }
 
-int cm_verify_reset_uarch(const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after,
+int cm_verify_reset_uarch(const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after,
     bool one_based) try {
-    const cartesi::access_log cpp_log = convert_from_c(log);
+    if (access_log == nullptr) {
+        throw std::invalid_argument("invalid access log");
+    }
+    const auto cpp_access_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(access_log).value();
     if (root_hash_before || root_hash_after) {
         const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
         const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
-        cartesi::machine::verify_reset_uarch_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after,
+        cartesi::machine::verify_reset_uarch_state_transition(cpp_root_hash_before, cpp_access_log, cpp_root_hash_after,
             one_based);
     } else {
-        cartesi::machine::verify_reset_uarch_log(cpp_log, one_based);
+        cartesi::machine::verify_reset_uarch_log(cpp_access_log, one_based);
     }
     return cm_result_success();
 } catch (...) {
@@ -842,31 +606,37 @@ int cm_send_cmio_response(cm_machine *m, uint16_t reason, const unsigned char *d
     return cm_result_failure();
 }
 
-int cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const unsigned char *data, size_t length,
-    cm_access_log_type log_type, bool one_based, cm_access_log **access_log) try {
+int cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const unsigned char *data, size_t length, int log_type,
+    bool one_based, const char **access_log) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log output");
     }
     auto *cpp_machine = convert_from_c(m);
-    cartesi::access_log::type cpp_log_type{log_type.proofs, log_type.annotations, log_type.large_data};
+    cartesi::access_log::type cpp_log_type(log_type);
     cartesi::access_log cpp_access_log =
         cpp_machine->log_send_cmio_response(reason, data, length, cpp_log_type, one_based);
-    *access_log = convert_to_c(cpp_access_log);
+    static THREAD_LOCAL std::string access_log_storage;
+    access_log_storage = cartesi::to_json(cpp_access_log).dump();
+    *access_log = access_log_storage.c_str();
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
 }
 
 int cm_verify_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
-    const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after, bool one_based) try {
-    const cartesi::access_log cpp_log = convert_from_c(log);
+    const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after, bool one_based) try {
+    if (access_log == nullptr) {
+        throw std::invalid_argument("invalid access log");
+    }
+    const auto cpp_access_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(access_log).value();
     if (root_hash_before || root_hash_after) {
         const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
         const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
         cartesi::machine::verify_send_cmio_response_state_transition(reason, data, length, cpp_root_hash_before,
-            cpp_log, cpp_root_hash_after, one_based);
+            cpp_access_log, cpp_root_hash_after, one_based);
     } else {
-        cartesi::machine::verify_send_cmio_response_log(reason, data, length, cpp_log, one_based);
+        cartesi::machine::verify_send_cmio_response_log(reason, data, length, cpp_access_log, one_based);
     }
     return cm_result_success();
 } catch (...) {

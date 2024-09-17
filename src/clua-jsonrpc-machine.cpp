@@ -61,25 +61,23 @@ static int jsonrpc_machine_class_verify_step_uarch(lua_State *L) {
     const int ctxidx = lua_upvalueindex(2);
     lua_settop(L, 5);
     auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
-    auto &managed_log =
-        clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 2, ctxidx)), ctxidx);
+    const std::string access_log = clua_check_json(L, 2).dump();
     if (!lua_isnil(L, 1) || !lua_isnil(L, 3)) {
         cm_hash root_hash{};
         clua_check_cm_hash(L, 1, &root_hash);
         cm_hash target_hash{};
         clua_check_cm_hash(L, 3, &target_hash);
-        if (cm_jsonrpc_verify_step_uarch(managed_jsonrpc_mgr.get(), &root_hash, managed_log.get(), &target_hash,
+        if (cm_jsonrpc_verify_step_uarch(managed_jsonrpc_mgr.get(), &root_hash, access_log.c_str(), &target_hash,
                 true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
-        if (cm_jsonrpc_verify_step_uarch(managed_jsonrpc_mgr.get(), nullptr, managed_log.get(), nullptr, true) != 0) {
+        if (cm_jsonrpc_verify_step_uarch(managed_jsonrpc_mgr.get(), nullptr, access_log.c_str(), nullptr, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
-    managed_log.reset();
     lua_pop(L, 2);
-    lua_pushnumber(L, 1); // result
+    lua_pushnumber(L, 1);
     return 1;
 }
 
@@ -90,25 +88,23 @@ static int jsonrpc_machine_class_verify_reset_uarch(lua_State *L) {
     const int ctxidx = lua_upvalueindex(2);
     lua_settop(L, 5);
     auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
-    auto &managed_log =
-        clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 2, ctxidx)), ctxidx);
+    const std::string access_log = clua_check_json(L, 2).dump();
     if (!lua_isnil(L, 1) || !lua_isnil(L, 3)) {
         cm_hash root_hash{};
         clua_check_cm_hash(L, 1, &root_hash);
         cm_hash target_hash{};
         clua_check_cm_hash(L, 3, &target_hash);
-        if (cm_jsonrpc_verify_reset_uarch(managed_jsonrpc_mgr.get(), &root_hash, managed_log.get(), &target_hash,
+        if (cm_jsonrpc_verify_reset_uarch(managed_jsonrpc_mgr.get(), &root_hash, access_log.c_str(), &target_hash,
                 true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
-        if (cm_jsonrpc_verify_reset_uarch(managed_jsonrpc_mgr.get(), nullptr, managed_log.get(), nullptr, true) != 0) {
+        if (cm_jsonrpc_verify_reset_uarch(managed_jsonrpc_mgr.get(), nullptr, access_log.c_str(), nullptr, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
-    managed_log.reset();
     lua_pop(L, 2);
-    lua_pushnumber(L, 1); // result
+    lua_pushnumber(L, 1);
     return 1;
 }
 
@@ -123,26 +119,24 @@ static int jsonrpc_machine_class_verify_send_cmio_response(lua_State *L) {
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &length));
-    auto &managed_log =
-        clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(clua_check_cm_access_log(L, 4, ctxidx)), ctxidx);
+    const std::string access_log = clua_check_json(L, 4).dump();
     if (!lua_isnil(L, 3) || !lua_isnil(L, 5)) {
         cm_hash root_hash{};
         clua_check_cm_hash(L, 3, &root_hash);
         cm_hash target_hash{};
         clua_check_cm_hash(L, 5, &target_hash);
         if (cm_jsonrpc_verify_send_cmio_response(managed_jsonrpc_mgr.get(), reason, data, length, &root_hash,
-                managed_log.get(), &target_hash, true) != 0) {
+                access_log.c_str(), &target_hash, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
         if (cm_jsonrpc_verify_send_cmio_response(managed_jsonrpc_mgr.get(), reason, data, length, nullptr,
-                managed_log.get(), nullptr, true) != 0) {
+                access_log.c_str(), nullptr, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
-    managed_log.reset();
     lua_pop(L, 2);
-    lua_pushnumber(L, 1); // result
+    lua_pushnumber(L, 1);
     return 1;
 }
 
@@ -299,7 +293,6 @@ static const auto mod = cartesi::clua_make_luaL_Reg_array({
 });
 
 int clua_jsonrpc_machine_init(lua_State *L, int ctxidx) {
-    clua_createnewtype<clua_managed_cm_ptr<cm_access_log>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<char>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<unsigned char>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, ctxidx);

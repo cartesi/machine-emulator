@@ -48,10 +48,6 @@ void cm_delete<unsigned char>(unsigned char *ptr);
 template <>
 void cm_delete<cm_machine>(cm_machine *ptr);
 
-/// \brief Deleter for C api access log
-template <>
-void cm_delete(cm_access_log *ptr);
-
 // clua_managed_cm_ptr is a smart pointer,
 // however we don't use all its functionally, therefore we exclude it from code coverage.
 // LCOV_EXCL_START
@@ -111,40 +107,22 @@ private:
 };
 // LCOV_EXCL_STOP
 
-/// \brief Pushes a C api hash object to the Lua stack
-/// \param L Lua state
-/// \param hash Hash to be pushed
-void clua_push_cm_hash(lua_State *L, const cm_hash *hash);
-
 /// \brief Returns a CSR selector from Lua
 /// \param L Lua state
 /// \param idx Index in stack
 /// \returns C API CSR selector. Lua argument error if unknown
 CM_CSR clua_check_cm_proc_csr(lua_State *L, int idx);
 
-/// \brief Pushes an C api access log to the Lua stack
+/// \brief Pushes a C api hash object to the Lua stack
 /// \param L Lua state
-/// \param log Access log to be pushed
-void clua_push_cm_access_log(lua_State *L, const cm_access_log *log);
-
-/// \brief Loads an cm_access_log_type from Lua
-/// \param L Lua state
-/// \param tabidx Access log stack index
-/// \param log_type C api access log type to be pushed
-cm_access_log_type clua_check_cm_log_type(lua_State *L, int tabidx);
+/// \param hash Hash to be pushed
+void clua_push_cm_hash(lua_State *L, const cm_hash *hash);
 
 /// \brief Return C hash from Lua
 /// \param L Lua state
 /// \param idx Index in stack
 /// \param c_hash Receives hash
 void clua_check_cm_hash(lua_State *L, int idx, cm_hash *c_hash);
-
-/// \brief Loads an cm_access_log from Lua.
-/// \param L Lua state
-/// \param tabidx Access_log stack index.
-/// \param ctxidx Index of clua context
-/// \returns The access log. Must be delete by the user with cm_delete_access_log
-cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx, int ctxidx = lua_upvalueindex(1));
 
 /// \brief Loads a JSON object from a Lua value.
 /// \param L Lua state

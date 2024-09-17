@@ -169,6 +169,9 @@ CM_API int luaopen_cartesi(lua_State *L) {
 
     clua_setintegerfield(L, CM_TREE_LOG2_ROOT_SIZE, "TREE_LOG2_ROOT_SIZE", -1);
     clua_setintegerfield(L, CM_TREE_LOG2_WORD_SIZE, "TREE_LOG2_WORD_SIZE", -1);
+    clua_setintegerfield(L, CM_ACCESS_LOG_TYPE_PROOFS, "ACCESS_LOG_TYPE_PROOFS", -1);
+    clua_setintegerfield(L, CM_ACCESS_LOG_TYPE_ANNOTATIONS, "ACCESS_LOG_TYPE_ANNOTATIONS", -1);
+    clua_setintegerfield(L, CM_ACCESS_LOG_TYPE_LARGE_DATA, "ACCESS_LOG_TYPE_LARGE_DATA", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_FAILED, "BREAK_REASON_FAILED", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_HALTED, "BREAK_REASON_HALTED", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_YIELDED_MANUALLY, "BREAK_REASON_YIELDED_MANUALLY", -1);

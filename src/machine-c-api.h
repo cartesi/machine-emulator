@@ -56,12 +56,6 @@ enum {
 
 typedef uint8_t cm_hash[CM_MACHINE_HASH_BYTE_SIZE];
 
-/// \brief Array of hashes
-typedef struct {
-    cm_hash *entry;
-    size_t count;
-} cm_hash_array;
-
 /// \brief Error codes returned from machine emulator C API
 typedef enum {
     CM_ERROR_OK = 0,
@@ -266,71 +260,12 @@ typedef enum {
     CM_UARCH_BREAK_REASON_UARCH_HALTED,
 } CM_UARCH_BREAK_REASON;
 
-/// \brief Type of state access
+/// \brief Access log types.
 typedef enum {
-    CM_ACCESS_READ,  ///< Read operation
-    CM_ACCESS_WRITE, ///< Write operation
-} CM_ACCESS_TYPE;
-
-/// \brief Type of access log
-typedef struct {
-    bool proofs;      ///< Includes proofs
-    bool annotations; ///< Includes annotations
-    bool large_data;  ///< Includes data bigger than 8 bytes
-} cm_access_log_type;
-
-/// \brief Bracket type
-typedef enum {
-    CM_BRACKET_BEGIN, ///< Start of scope
-    CM_BRACKET_END    ///< End of scope
-} CM_BRACKET_TYPE;
-
-/// \brief Bracket note
-typedef struct {
-    CM_BRACKET_TYPE type; ///< Bracket type
-    uint64_t where;       ///< Where it points to in the log
-    char *text;           ///< Note text
-} cm_bracket_note;
-
-/// \brief Records an access to the machine state
-typedef struct {
-    CM_ACCESS_TYPE type;           ///< Type of access
-    uint64_t address;              ///< Address of access
-    int log2_size;                 ///< Log2 of size of access
-    cm_hash read_hash;             ///< Hash of data before access
-    uint8_t *read_data;            ///< Data before access
-    size_t read_data_size;         ///< Size of data before access in bytes
-    cm_hash written_hash;          ///< Hash of data after access (if writing)
-    uint8_t *written_data;         ///< Data after access (if writing)
-    size_t written_data_size;      ///< Size of data after access in bytes
-    cm_hash_array *sibling_hashes; ///< Sibling hashes towards root
-} cm_access;
-
-/// \brief Array of accesses
-typedef struct {
-    cm_access *entry;
-    size_t count;
-} cm_access_array;
-
-/// \brief Array of bracket notes
-typedef struct {
-    cm_bracket_note *entry;
-    size_t count;
-} cm_bracket_note_array;
-
-/// \brief Array of notes
-typedef struct {
-    const char **entry;
-    size_t count;
-} cm_note_array;
-
-/// \brief Log of state accesses
-typedef struct {
-    cm_access_array accesses;       ///< List of accesses
-    cm_bracket_note_array brackets; ///< Begin/End annotations
-    cm_note_array notes;            ///< Per-access annotations
-    cm_access_log_type log_type;    ///< Log type
-} cm_access_log;
+    CM_ACCESS_LOG_TYPE_PROOFS = 1 << 1,      ///< Includes proofs
+    CM_ACCESS_LOG_TYPE_ANNOTATIONS = 1 << 2, ///< Includes annotations
+    CM_ACCESS_LOG_TYPE_LARGE_DATA = 1 << 3   ///< Includes data bigger than 8 bytes
+} CM_ACCESS_LOG_TYPE;
 
 /// \brief Machine instance handle
 /// \details cm_machine* is handle used from C api users
@@ -381,11 +316,7 @@ CM_API int cm_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_rea
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param access_log Receives the state access log.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_log_step_uarch(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log);
-
-/// \brief  Deletes the instance of cm_access_log acquired from cm_step
-/// \param acc_log Valid pointer to cm_access_log object
-CM_API void cm_delete_access_log(cm_access_log *acc_log);
+CM_API int cm_log_step_uarch(cm_machine *m, int log_type, bool one_based, const char **access_log);
 
 /// \brief Checks the validity of a state transition
 /// \param root_hash_before State hash before step
@@ -393,8 +324,8 @@ CM_API void cm_delete_access_log(cm_access_log *acc_log);
 /// \param root_hash_after State hash after step
 /// \param one_based Use 1-based indices when reporting errors
 /// \returns 0 for successful verification, non zero code for error
-CM_API int cm_verify_step_uarch(const cm_hash *root_hash_before, const cm_access_log *log,
-    const cm_hash *root_hash_after, bool one_based);
+CM_API int cm_verify_step_uarch(const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after,
+    bool one_based);
 
 /// \brief Checks the validity of a state transition caused by a uarch state reset
 /// \param root_hash_before State hash before step
@@ -402,7 +333,7 @@ CM_API int cm_verify_step_uarch(const cm_hash *root_hash_before, const cm_access
 /// \param root_hash_after State hash after step
 /// \param one_based Use 1-based indices when reporting errors
 /// \returns 0 for successful verification, non zero code for error
-CM_API int cm_verify_reset_uarch(const cm_hash *root_hash_before, const cm_access_log *log,
+CM_API int cm_verify_reset_uarch(const cm_hash *root_hash_before, const char *access_log,
     const cm_hash *root_hash_after, bool one_based);
 
 /// \brief Obtains the proof for a node in the Merkle tree.
@@ -618,7 +549,7 @@ CM_API int cm_reset_uarch(cm_machine *m);
 /// \param one_based Use 1-based indices when reporting errors.
 /// \param access_log Receives the state access log.
 /// \returns 0 for success, non zero code for error
-CM_API int cm_log_reset_uarch(cm_machine *m, cm_access_log_type log_type, bool one_based, cm_access_log **access_log);
+CM_API int cm_log_reset_uarch(cm_machine *m, int log_type, bool one_based, const char **access_log);
 
 /// \brief Runs the machine in the microarchitecture until the mcycle advances by one unit or the micro cycles counter
 /// (uarch_cycle) reaches uarch_cycle_end
@@ -653,19 +584,19 @@ CM_API int cm_send_cmio_response(cm_machine *m, uint16_t reason, const unsigned 
 /// \param access_log Receives the state access log.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const unsigned char *data, size_t length,
-    cm_access_log_type log_type, bool one_based, cm_access_log **access_log);
+    int log_type, bool one_based, const char **access_log);
 
 /// \brief Checks the validity of state transitions caused by cm_send_cmio_response
 /// \param reason Reason for sending the response.
 /// \param data The response sent when the log was generated.
 /// \param length Length of response
 /// \param root_hash_before State hash before load.
-/// \param log State access log to be verified.
+/// \param access_log State access log to be verified.
 /// \param root_hash_after State hash after load.
 /// \param one_based Use 1-based indices when reporting errors.
 /// \returns 0 for success, non zero code for error
 CM_API int cm_verify_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
-    const cm_hash *root_hash_before, const cm_access_log *log, const cm_hash *root_hash_after, bool one_based);
+    const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after, bool one_based);
 
 #ifdef __cplusplus
 }

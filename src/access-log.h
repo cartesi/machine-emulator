@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "bracket-note.h"
+#include "machine-c-api.h"
 #include "machine-merkle-tree.h"
 #include "strict-aliasing.h"
 
@@ -234,6 +235,12 @@ public:
             m_proofs(proofs),
             m_annotations(annotations),
             m_large_data(large_data) {
+            ;
+        }
+        explicit type(int log_type) :
+            m_proofs(static_cast<bool>(log_type & CM_ACCESS_LOG_TYPE_PROOFS)),
+            m_annotations(static_cast<bool>(log_type & CM_ACCESS_LOG_TYPE_ANNOTATIONS)),
+            m_large_data(static_cast<bool>(log_type & CM_ACCESS_LOG_TYPE_LARGE_DATA)) {
             ;
         }
 

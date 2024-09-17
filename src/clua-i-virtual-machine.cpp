@@ -34,7 +34,7 @@ static int machine_obj_index_get_proof(lua_State *L) {
     if (cm_get_proof(m.get(), address, log2_size, &proof) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json(L, nlohmann::json::parse(proof), true);
+    clua_push_json(L, nlohmann::json::parse(proof));
     return 1;
 }
 
@@ -267,12 +267,12 @@ static int machine_obj_index_get_memory_ranges(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_log_reset_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(nullptr));
-    if (cm_log_reset_uarch(m.get(), clua_check_cm_log_type(L, 2), true, &managed_log.get()) != 0) {
+    const int log_type = static_cast<int>(luaL_optinteger(L, 2, 0));
+    const char *access_log = nullptr;
+    if (cm_log_reset_uarch(m.get(), log_type, true, &access_log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_cm_access_log(L, managed_log.get());
-    managed_log.reset();
+    clua_push_json(L, nlohmann::json::parse(access_log));
     return 1;
 }
 
@@ -293,12 +293,12 @@ static int machine_obj_index_run_uarch(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_log_step_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(nullptr));
-    if (cm_log_step_uarch(m.get(), clua_check_cm_log_type(L, 2), true, &managed_log.get()) != 0) {
+    const int log_type = static_cast<int>(luaL_optinteger(L, 2, 0));
+    const char *access_log = nullptr;
+    if (cm_log_step_uarch(m.get(), log_type, true, &access_log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_cm_access_log(L, managed_log.get());
-    managed_log.reset();
+    clua_push_json(L, nlohmann::json::parse(access_log));
     return 1;
 }
 
@@ -462,17 +462,16 @@ static int machine_obj_index_send_cmio_response(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_log_send_cmio_response(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    size_t length{0};
-    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(nullptr));
     const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 2));
+    const int log_type = static_cast<int>(luaL_optinteger(L, 4, 0));
+    size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
-    if (cm_log_send_cmio_response(m.get(), reason, data, length, clua_check_cm_log_type(L, 4), true,
-            &managed_log.get()) != 0) {
+    const char *access_log = nullptr;
+    if (cm_log_send_cmio_response(m.get(), reason, data, length, log_type, true, &access_log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_cm_access_log(L, managed_log.get());
-    managed_log.reset();
+    clua_push_json(L, nlohmann::json::parse(access_log));
     return 1;
 }
 

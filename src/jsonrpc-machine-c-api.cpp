@@ -179,13 +179,22 @@ int cm_jsonrpc_verify_uarch_reset_state_transition(const cm_jsonrpc_mgr *mgr, co
     return cm_result_failure(err_msg);
 }
 
-int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address, char **err_msg) try {
+int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address, int *pid, char **err_msg) try {
+    if (address == nullptr) {
+        throw std::invalid_argument("invalid address output");
+    }
     const auto *cpp_mgr = convert_from_c(mgr);
-    auto cpp_address = cartesi::jsonrpc_virtual_machine::fork(*cpp_mgr);
-    *address = convert_to_c(cpp_address);
+    const auto result = cartesi::jsonrpc_virtual_machine::fork(*cpp_mgr);
+    *address = convert_to_c(result.address);
+    if (pid) {
+        *pid = static_cast<int>(result.pid);
+    }
     return cm_result_success(err_msg);
 } catch (...) {
     *address = nullptr;
+    if (pid) {
+        *pid = 0;
+    }
     return cm_result_failure(err_msg);
 }
 

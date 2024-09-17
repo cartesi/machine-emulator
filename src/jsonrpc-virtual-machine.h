@@ -26,6 +26,12 @@
 
 namespace cartesi {
 
+/// \brief Result of a fork
+struct fork_result final {
+    std::string address{};
+    uint32_t pid{};
+};
+
 /// \class jsonrpc_mgr
 /// \brief Connection manager to the server
 class jsonrpc_mgr;
@@ -73,7 +79,7 @@ public:
         const unsigned char *data, size_t length, const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after, const machine_runtime_config &r = {}, bool one_based = false);
 
-    static std::string fork(const jsonrpc_mgr_ptr &mgr);
+    static fork_result fork(const jsonrpc_mgr_ptr &mgr);
     static void rebind(const jsonrpc_mgr_ptr &mgr, const std::string &address);
     static uint64_t get_x_address(const jsonrpc_mgr_ptr &mgr, int i);
     static uint64_t get_f_address(const jsonrpc_mgr_ptr &mgr, int i);

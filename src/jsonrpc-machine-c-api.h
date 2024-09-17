@@ -145,11 +145,12 @@ CM_API int cm_jsonrpc_verify_uarch_step_state_transition(const cm_jsonrpc_mgr *m
 /// \param address Receives address of new server if function execution succeeds or NULL
 /// otherwise. In case of success, address must be deleted by the function caller using
 /// cm_delete_cstring.
+/// \param pid Receives the forked child process id if function execution succeeds or 0 otherwise.
 /// \param err_msg Receives the error message if function execution fails
 /// or NULL in case of successful function execution. In case of failure error_msg
 /// must be deleted by the function caller using cm_delete_cstring
 /// \returns 0 for successful verification, non zero code for error
-CM_API int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address, char **err_msg);
+CM_API int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, char **address, int *pid, char **err_msg);
 
 /// \brief Changes the address the server is listening to
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object

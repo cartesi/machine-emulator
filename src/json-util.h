@@ -25,6 +25,7 @@
 #define JSON_HAS_FILESYSTEM 0 // NOLINT(cppcoreguidelines-macro-usage)
 #include <json.hpp>
 
+#include "jsonrpc-virtual-machine.h"
 #include "machine-merkle-tree.h"
 #include "machine.h"
 #include "semantic-version.h"
@@ -431,6 +432,15 @@ template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_memory_range_descrs &value,
     const std::string &path = "params/");
 
+/// \brief Attempts to load a fork_result object from a field in a JSON object
+/// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
+/// \param j JSON object to load from
+/// \param key Key to load value from
+/// \param value Object to store value
+/// \param path Path to j
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, fork_result &value, const std::string &path = "params/");
+
 /// \brief Attempts to load an array from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
@@ -593,6 +603,7 @@ void to_json(nlohmann::json &j, const htif_runtime_config &config);
 void to_json(nlohmann::json &j, const machine_runtime_config &runtime);
 void to_json(nlohmann::json &j, const machine::csr &csr);
 void to_json(nlohmann::json &j, const machine_memory_range_descrs &mrds);
+void to_json(nlohmann::json &j, const fork_result &fork_result);
 
 // Extern template declarations
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, std::string &value,
@@ -747,6 +758,10 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &k
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key,
     machine_memory_range_descrs &value, const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, fork_result &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, fork_result &value,
+    const std::string &base = "params/");
 
 } // namespace cartesi
 

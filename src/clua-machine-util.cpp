@@ -27,20 +27,20 @@ namespace cartesi {
 
 /// \brief Deleter for C string
 template <>
-void cm_delete<char>(char *ptr) { // NOLINT(readability-non-const-parameter)
+void clua_delete<char>(char *ptr) { // NOLINT(readability-non-const-parameter)
     delete[] ptr;
 }
 
 /// \brief Deleter for C data buffer
 template <>
-void cm_delete<unsigned char>(unsigned char *ptr) { // NOLINT(readability-non-const-parameter)
+void clua_delete<unsigned char>(unsigned char *ptr) { // NOLINT(readability-non-const-parameter)
     delete[] ptr;
 }
 
-/// \brief Deleter for C api machine
+/// \brief Deleter for C machine
 template <>
-void cm_delete(cm_machine *ptr) {
-    cm_delete_machine(ptr);
+void clua_delete(cm_machine *ptr) {
+    cm_delete(ptr);
 }
 
 CM_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {

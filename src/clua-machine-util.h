@@ -34,19 +34,19 @@ namespace cartesi {
 
 /// \brief Create overloaded deleters for C API objects
 template <typename T>
-void cm_delete(T *ptr);
+void clua_delete(T *ptr);
 
 /// \brief Deleter for C string
 template <>
-void cm_delete<char>(char *ptr);
+void clua_delete<char>(char *ptr);
 
 /// \brief Deleter for C data buffer
 template <>
-void cm_delete<unsigned char>(unsigned char *ptr);
+void clua_delete<unsigned char>(unsigned char *ptr);
 
 /// \brief Deleter for C api machine
 template <>
-void cm_delete<cm_machine>(cm_machine *ptr);
+void clua_delete<cm_machine>(cm_machine *ptr);
 
 // clua_managed_cm_ptr is a smart pointer,
 // however we don't use all its functionally, therefore we exclude it from code coverage.
@@ -84,7 +84,7 @@ public:
     }
 
     void reset(T *ptr = nullptr) {
-        cm_delete(m_ptr); // use overloaded deleter
+        clua_delete(m_ptr); // use overloaded deleter
         m_ptr = ptr;
     }
 

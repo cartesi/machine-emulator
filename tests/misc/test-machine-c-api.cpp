@@ -55,7 +55,7 @@
 #define BOOST_FIXTURE_TEST_CASE_NOLINT(...) BOOST_FIXTURE_TEST_CASE(__VA_ARGS__)
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_machine_null_test) {
-    BOOST_CHECK_NO_THROW(cm_delete_machine(nullptr));
+    BOOST_CHECK_NO_THROW(cm_delete(nullptr));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(get_default_machine_config_basic_test) {
@@ -202,7 +202,7 @@ public:
     }
     ~ordinary_machine_fixture() {
         std::filesystem::remove_all(_machine_dir_path);
-        cm_delete_machine(_machine);
+        cm_delete(_machine);
     }
 
     ordinary_machine_fixture(const ordinary_machine_fixture &other) = delete;
@@ -350,7 +350,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(serde_complex_test, ordinary_machine_fixture) {
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_CHECK_EQUAL(0, memcmp(origin_hash, restored_hash, sizeof(cm_hash)));
 
-    cm_delete_machine(restored_machine);
+    cm_delete(restored_machine);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(get_root_hash_null_machine_test) {
@@ -360,7 +360,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_root_hash_null_machine_test) {
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_null_test) {
-    cm_delete_machine(nullptr);
+    cm_delete(nullptr);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_null_hash_test, ordinary_machine_fixture) {
@@ -900,7 +900,7 @@ public:
     }
 
     ~flash_drive_machine_fixture() {
-        cm_delete_machine(_machine);
+        cm_delete(_machine);
         std::filesystem::remove_all(_machine_dir_path);
         std::filesystem::remove(_flash_file);
     }
@@ -1150,7 +1150,7 @@ public:
         cm_create(_machine_config.dump().c_str(), nullptr, &_machine);
     }
     ~access_log_machine_fixture() {
-        cm_delete_machine(_machine);
+        cm_delete(_machine);
         std::filesystem::remove_all(_machine_dir_path);
         std::filesystem::remove_all(_uarch_ram_path);
     }

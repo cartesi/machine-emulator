@@ -285,6 +285,18 @@ typedef struct cm_machine cm_machine;
 /// \returns 0 for success, non zero code for error.
 CM_API int cm_create(const char *config, const char *runtime_config, cm_machine **new_machine);
 
+/// \brief Destroys a machine.
+/// \param m Valid pointer to the existing machine instance.
+/// \returns 0 for success, non zero code for error.
+/// \details This method doesn't deallocate and it's only relevant for remote machines.
+CM_API int cm_destroy(cm_machine *m);
+
+/// \brief Deletes a machine.
+/// \param m Valid pointer to the existing machine instance.
+/// \details The machine is deallocated and its pointer must not be used after this call.
+/// Remote machines may want to call destroy method before so it's released in the remote server.
+CM_API void cm_delete(cm_machine *m);
+
 /// \brief Create machine instance from previously serialized directory
 /// \param dir Directory where previous machine is serialized
 /// \param runtime_config Machine runtime configuration. Must be pointer to valid object
@@ -298,10 +310,6 @@ CM_API int cm_load(const char *dir, const char *runtime_config, cm_machine **new
 /// \details The method changes machine because it updates the root hash
 /// \returns 0 for success, non zero code for error
 CM_API int cm_store(cm_machine *m, const char *dir);
-
-/// \brief Deletes machine instance
-/// \param m Valid pointer to the existing machine instance
-CM_API void cm_delete_machine(cm_machine *m);
 
 /// \brief Runs the machine until mcycle reaches mcycle_end or the machine halts.
 /// \param m Pointer to valid machine instance
@@ -504,10 +512,6 @@ CM_API const char *cm_get_default_config();
 /// specified in new range.
 CM_API int cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,
     const char *image_filename);
-
-/// \brief Destroys machine
-/// \returns 0 for success, non zero code for error
-CM_API int cm_destroy(cm_machine *m);
 
 /// \brief Do a snapshot of the machine
 /// \returns 0 for success, non zero code for error

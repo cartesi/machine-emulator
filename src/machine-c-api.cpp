@@ -180,7 +180,7 @@ int cm_load(const char *dir, const char *runtime_config, cm_machine **new_machin
     return cm_result_failure();
 }
 
-void cm_delete_machine(cm_machine *m) {
+void cm_delete(cm_machine *m) {
     if (m == nullptr) {
         return;
     }

@@ -34,7 +34,7 @@ CM_API int cm_jsonrpc_create_mgr(const char *remote_address, cm_jsonrpc_mgr **mg
 
 /// \brief Deletes a connection manager instance
 /// \param m Valid pointer to the existing jsonrpc mgr instance
-CM_API void cm_jsonrpc_destroy_mgr(const cm_jsonrpc_mgr *mgr);
+CM_API void cm_jsonrpc_delete_mgr(const cm_jsonrpc_mgr *mgr);
 
 /// \brief Create remote machine instance
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object

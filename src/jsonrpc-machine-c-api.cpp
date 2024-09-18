@@ -57,7 +57,7 @@ int cm_jsonrpc_create_mgr(const char *remote_address, cm_jsonrpc_mgr **mgr) try 
     return cm_result_failure();
 }
 
-void cm_jsonrpc_destroy_mgr(const cm_jsonrpc_mgr *mgr) {
+void cm_jsonrpc_delete_mgr(const cm_jsonrpc_mgr *mgr) {
     if (mgr == nullptr) {
         return;
     }

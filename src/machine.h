@@ -123,7 +123,8 @@ public:
 
     /// \brief List of CSRs to use with read_csr and write_csr
     enum class csr {
-        x0,
+        // Processor CSRs
+        x0 = 0,
         x1,
         x2,
         x3,
@@ -226,6 +227,7 @@ public:
         htif_ihalt,
         htif_iconsole,
         htif_iyield,
+        // Microarchitecture processor CSRs
         uarch_x0,
         uarch_x1,
         uarch_x2,
@@ -262,7 +264,7 @@ public:
         uarch_cycle,
         uarch_halt_flag,
         last,
-        // CSR views
+        // Views of CSRs
         iflags_prv,
         iflags_x,
         iflags_y,
@@ -275,6 +277,7 @@ public:
         htif_fromhost_cmd,
         htif_fromhost_reason,
         htif_fromhost_data,
+        unknown,
     };
 
     static constexpr auto num_csr = static_cast<int>(csr::last);

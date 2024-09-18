@@ -30,20 +30,6 @@ static const cartesi::jsonrpc_mgr_ptr *convert_from_c(const cm_jsonrpc_mgr *mgr)
     return reinterpret_cast<const cartesi::jsonrpc_mgr_ptr *>(mgr);
 }
 
-static inline cartesi::i_virtual_machine *create_jsonrpc_virtual_machine(const cartesi::jsonrpc_mgr_ptr &mgr,
-    const cartesi::machine_config &c, const cartesi::machine_runtime_config &r) {
-    return new cartesi::jsonrpc_virtual_machine(mgr, c, r);
-}
-
-static inline cartesi::i_virtual_machine *load_jsonrpc_virtual_machine(const cartesi::jsonrpc_mgr_ptr &mgr,
-    const char *dir, const cartesi::machine_runtime_config &r) {
-    return new cartesi::jsonrpc_virtual_machine(mgr, dir ? dir : "", r);
-}
-
-static inline cartesi::i_virtual_machine *get_jsonrpc_virtual_machine(const cartesi::jsonrpc_mgr_ptr &mgr) {
-    return new cartesi::jsonrpc_virtual_machine(mgr);
-}
-
 int cm_jsonrpc_create_mgr(const char *remote_address, cm_jsonrpc_mgr **mgr) try {
     if (mgr == nullptr) {
         throw std::invalid_argument("invalid stub output");
@@ -72,10 +58,13 @@ int cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const char *config, con
         throw std::invalid_argument("invalid new machine output");
     }
     const cartesi::machine_config c = cartesi::from_json<cartesi::machine_config>(config);
-    const cartesi::machine_runtime_config r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
+    cartesi::machine_runtime_config r;
+    if (runtime_config) {
+        r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
+    }
     const auto *cpp_mgr = convert_from_c(mgr);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    *new_machine = reinterpret_cast<cm_machine *>(create_jsonrpc_virtual_machine(*cpp_mgr, c, r));
+    *new_machine = reinterpret_cast<cm_machine *>(new cartesi::jsonrpc_virtual_machine(*cpp_mgr, c, r));
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -86,10 +75,16 @@ int cm_jsonrpc_load_machine(const cm_jsonrpc_mgr *mgr, const char *dir, const ch
     if (new_machine == nullptr) {
         throw std::invalid_argument("invalid new machine output");
     }
-    const cartesi::machine_runtime_config r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
+    if (dir == nullptr) {
+        throw std::invalid_argument("invalid dir");
+    }
+    cartesi::machine_runtime_config r;
+    if (runtime_config) {
+        r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
+    }
     const auto *cpp_mgr = convert_from_c(mgr);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    *new_machine = reinterpret_cast<cm_machine *>(load_jsonrpc_virtual_machine(*cpp_mgr, dir, r));
+    *new_machine = reinterpret_cast<cm_machine *>(new cartesi::jsonrpc_virtual_machine(*cpp_mgr, dir, r));
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -101,7 +96,7 @@ int cm_jsonrpc_get_machine(const cm_jsonrpc_mgr *mgr, cm_machine **new_machine) 
     }
     const auto *cpp_mgr = convert_from_c(mgr);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    *new_machine = reinterpret_cast<cm_machine *>(get_jsonrpc_virtual_machine(*cpp_mgr));
+    *new_machine = reinterpret_cast<cm_machine *>(new cartesi::jsonrpc_virtual_machine(*cpp_mgr));
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -204,6 +199,9 @@ int cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, const char
 }
 
 int cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_CSR csr, uint64_t *val) try {
+    if (val == nullptr) {
+        throw std::invalid_argument("invalid val output");
+    }
     const auto *cpp_mgr = convert_from_c(mgr);
     const auto cpp_csr = static_cast<cartesi::machine::csr>(csr);
     *val = cartesi::jsonrpc_virtual_machine::get_csr_address(*cpp_mgr, cpp_csr);
@@ -234,9 +232,8 @@ int cm_jsonrpc_shutdown(const cm_jsonrpc_mgr *mgr) try {
     return cm_result_failure();
 }
 
-int cm_jsonrpc_verify_send_cmio_response(const cm_jsonrpc_mgr *mgr, uint16_t reason, const unsigned char *data,
-    size_t length, const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after,
-    bool one_based) try {
+int cm_jsonrpc_verify_send_cmio_response(const cm_jsonrpc_mgr *mgr, uint16_t reason, const uint8_t *data, size_t length,
+    const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after, bool one_based) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log");
     }

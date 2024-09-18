@@ -726,7 +726,7 @@ end)
 
 print("\n\ntesting step and verification")
 do_test("Step log must contain conssitent data hashes", function(machine)
-    local wrong_hash = string.rep("\0", 32)
+    local wrong_hash = string.rep("\0", cartesi.HASH_SIZE)
     local module = cartesi
     if machine_type ~= "local" then
         if not remote then
@@ -978,7 +978,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         -- verify happy path
         module.machine.verify_reset_uarch(initial_hash, log, final_hash)
         -- verifying incorrect initial hash
-        local wrong_hash = string.rep("0", 32)
+        local wrong_hash = string.rep("0", cartesi.HASH_SIZE)
         local _, err = pcall(module.machine.verify_reset_uarch, wrong_hash, log, final_hash)
         assert(err:match("Mismatch in root hash of access 1"))
         -- verifying incorrect final hash
@@ -1072,7 +1072,7 @@ do_test("Test unhappy paths of verify_reset_uarch", function(machine)
         end
         module = remote
     end
-    local bad_hash = string.rep("\0", 32)
+    local bad_hash = string.rep("\0", cartesi.HASH_SIZE)
     local function assert_error(expected_error, callback)
         machine:reset_uarch()
         local initial_hash = machine:get_root_hash()
@@ -1127,7 +1127,7 @@ do_test("Test unhappy paths of verify_step_uarch", function(machine)
         end
         module = remote
     end
-    local bad_hash = string.rep("\0", 32)
+    local bad_hash = string.rep("\0", cartesi.HASH_SIZE)
     local function assert_error(expected_error, callback)
         machine:reset_uarch()
         local initial_hash = machine:get_root_hash()
@@ -1179,7 +1179,7 @@ do_test("Test unhappy paths of verify_step_uarch", function(machine)
     assert_error(
         "logged written data of uarch.cycle does not hash to the logged written hash at access 7",
         function(log)
-            log.accesses[#log.accesses].written = string.rep("\0", 32)
+            log.accesses[#log.accesses].written = string.rep("\0", cartesi.HASH_SIZE)
         end
     )
     assert_error("Mismatch in root hash of access 1", function(log)

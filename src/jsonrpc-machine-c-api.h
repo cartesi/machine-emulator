@@ -23,119 +23,133 @@
 extern "C" {
 #endif
 
-/// \brief Handle of the jsonrpc connection manager
+/// \brief Handle of the JSONRPC connection manager.
+/// \details It's used only as an opaque handle to pass JSONRPC connection manager through the C API.
 typedef struct cm_jsonrpc_mgr cm_jsonrpc_mgr;
 
-/// \brief Create a connection manager to the remote Cartesi Machine server
-/// \param remote_address Address of the remote Cartesi server
-/// \param mgr Receives new connection manager instance
-/// \returns 0 for success, non zero code for error
+// -------------------------------------
+// Remote server management
+
+/// \brief Creates a JSONRPC connection manager instance connected to a remote machine server.
+/// \param remote_address Address of the remote machine server to connect to.
+/// \param mgr Receives new JSONRPC connection manager instance.
+/// \returns 0 for success, non zero code for error.
 CM_API int cm_jsonrpc_create_mgr(const char *remote_address, cm_jsonrpc_mgr **mgr);
 
-/// \brief Deletes a connection manager instance
-/// \param m Valid pointer to the existing jsonrpc mgr instance
+/// \brief Deletes a connection manager instance.
+/// \param mgr Pointer to a valid JSONRPC connection manager.
+/// \returns 0 for success, non zero code for error.
 CM_API void cm_jsonrpc_delete_mgr(const cm_jsonrpc_mgr *mgr);
 
-/// \brief Create remote machine instance
-/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
-/// \param config Machine configuration. Must be pointer to valid object
-/// \param runtime_config Machine runtime configuration. Must be pointer to valid object
-/// \param new_machine Receives the pointer to new remote machine instance
-/// \returns 0 for success, non zero code for error
-CM_API int cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const char *config, const char *runtime_config,
-    cm_machine **new_machine);
-
-/// \brief Create remote machine instance from previously serialized directory
-/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
-/// \param dir Directory where previous machine is serialized
-/// \param runtime_config Machine runtime configuration. Must be pointer to valid object
-/// \param new_machine Receives the pointer to new remote machine instance
-/// \returns 0 for success, non zero code for error
-CM_API int cm_jsonrpc_load_machine(const cm_jsonrpc_mgr *mgr, const char *dir, const char *runtime_config,
-    cm_machine **new_machine);
-
-/// \brief Get remote machine instance that was previously created in the server
-/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
-/// \param new_machine Receives the pointer to new remote machine instance
-/// \returns 0 for success, non zero code for error
-CM_API int cm_jsonrpc_get_machine(const cm_jsonrpc_mgr *mgr, cm_machine **new_machine);
-
-/// \brief Ged default machine config from server
-/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
-/// \param config Receives the default configuration
-/// \returns 0 for success, non zero code for error
-CM_API int cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const char **config);
-
-/// \brief Checks the validity of a state transition caused by a reset uarch.
-/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
-/// \param root_hash_before State hash before step
-/// \param access_log State access log to be verified.
-/// \param root_hash_after State hash after step
-/// \param one_based Use 1-based indices when reporting errors
-/// \returns 0 for successful verification, non zero code for error
-CM_API int cm_jsonrpc_verify_reset_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
-    const char *access_log, const cm_hash *root_hash_after, bool one_based);
-
-/// \brief Checks the validity of a state transition
-/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
-/// \param root_hash_before State hash before step
-/// \param access_log Step state access log
-/// \param root_hash_after State hash after step
-/// \param one_based Use 1-based indices when reporting errors
-/// \returns 0 for successful verification, non zero code for error
-CM_API int cm_jsonrpc_verify_step_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
-    const char *access_log, const cm_hash *root_hash_after, bool one_based);
-
-/// \brief Forks the server
-/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
-/// \param address Receives address of new server if function execution succeeds,
+/// \brief Forks the remote server.
+/// \param mgr Pointer to a valid JSONRPC connection manager.
+/// \param address Receives address of new server if function execution succeeds or NULL otherwise,
 /// remains valid until the next time this same function is called on the same thread.
-/// In case of failure receives NULL.
-/// \param pid Receives the forked child process id.
-/// In case of failure receives 0.
-/// \returns 0 for successful verification, non zero code for error
+/// \param pid Receives the forked child process id if function execution succeeds or 0 otherwise.
+/// \returns 0 for success, non zero code for error.
 CM_API int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, const char **address, int *pid);
 
-/// \brief Changes the address the server is listening to
-/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
-/// \param address New address that the remote server should bind to
+/// \brief Changes the address the remote server is listening to.
+/// \param mgr Pointer to a valid JSONRPC connection manager.
+/// \param address New address that the remote server should bind to.
 /// \param new_address Receives the new address that the remote server actually bound to,
 /// remains valid until the next time this same function is called on the same thread.
-/// In case of failure receives NULL.
-/// \returns 0 for successful verification, non zero code for error
+/// \returns 0 for success, non zero code for error.
 CM_API int cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, const char **new_address);
 
-/// \brief Gets the address of any CSR from remote server
-/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
-/// \param csr The command and status register
-/// \param val Receives address of the register
-/// \returns 0 for successful verification, non zero code for error
-CM_API int cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_CSR csr, uint64_t *val);
+/// \brief Shutdowns remote server.
+/// \param mgr Pointer to a valid JSONRPC connection manager.
+/// \returns 0 for success, non zero code for error.
+CM_API int cm_jsonrpc_shutdown(const cm_jsonrpc_mgr *mgr);
 
-/// \brief Gets the semantic version of remote server machine
-/// \param mgr Pointer to a valid jsonrpc connection manager.
-/// \param semantic_version Receives the semantic version as a JSON string.
+/// \brief Gets the semantic version of the remote server.
+/// \param mgr Pointer to a valid JSONRPC connection manager.
+/// \param semantic_version Receives the semantic version as a JSON string,
 /// remains valid until the next time this same function is called on the same thread.
-/// In case of failure receives NULL.
 /// \returns 0 for success, non zero code for error.
 CM_API int cm_jsonrpc_get_version(const cm_jsonrpc_mgr *mgr, const char **version);
 
-/// \brief Performs shutdown
-/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
-/// \returns 0 for successful verification, non zero code for error
-CM_API int cm_jsonrpc_shutdown(const cm_jsonrpc_mgr *mgr);
+/// \brief Gets a JSON string for the default machine config from the remote server.
+/// \param mgr Pointer to a valid JSONRPC connection manager.
+/// \param config Receives the default configuration,
+/// remains valid until the next time this same function is called on the same thread.
+/// \returns 0 for success, non zero code for error.
+CM_API int cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const char **config);
 
-/// \brief Checks the validity of a state transition caused by send_cmio_response
-/// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
-/// \param reason Reason for sending response.
-/// \param data Response data to send.
-/// \param length Length of data response data.
+/// \brief Gets the address of any CSR from the remote server.
+/// \param mgr Pointer to a valid JSONRPC connection manager.
+/// \param csr The CSR.
+/// \param val Receives address of the CSR.
+/// \returns 0 for success, non zero code for error.
+CM_API int cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_CSR csr, uint64_t *val);
+
+// -------------------------------------
+// Machine API functions
+
+/// \brief Creates a remote machine instance.
+/// \param mgr Pointer to a valid JSONRPC connection manager.
+/// \param config Machine configuration as a JSON string.
+/// \param runtime_config Machine runtime configuration as a JSON string, it can be NULL.
+/// \param new_machine Receives the pointer to new remote machine instance.
+/// \returns 0 for success, non zero code for error.
+CM_API int cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const char *config, const char *runtime_config,
+    cm_machine **new_machine);
+
+/// \brief Creates a remote machine instance from previously stored directory in the remote server.
+/// \param mgr Pointer to a valid JSONRPC connection manager.
+/// \param dir Directory where previous machine is stored.
+/// \param runtime_config Machine runtime configuration as a JSON string, it can be NULL.
+/// \param new_machine Receives the pointer to new remote machine instance.
+/// \returns 0 for success, non zero code for error.
+CM_API int cm_jsonrpc_load_machine(const cm_jsonrpc_mgr *mgr, const char *dir, const char *runtime_config,
+    cm_machine **new_machine);
+
+/// \brief Get remote machine instance that was previously created in the remote server.
+/// \param mgr Pointer to a valid JSONRPC connection manager.
+/// \param new_machine Receives the pointer to remote machine instance.
+/// \returns 0 for success, non zero code for error.
+CM_API int cm_jsonrpc_get_machine(const cm_jsonrpc_mgr *mgr, cm_machine **new_machine);
+
+// -------------------------------------
+// Verifying
+
+/// \brief Checks the validity of a state transition for one micro cycle.
+/// \param mgr Pointer to a valid JSONRPC connection manager.
 /// \param root_hash_before State hash before load.
-/// \param access_log State access log to be verified.
+/// \param access_log State access log to be verified as a JSON string.
 /// \param root_hash_after State hash after load.
-/// \param one_based Use 1-based indices when reporting errors
-/// \returns 0 for successfull verification, non zero code for error
-CM_API int cm_jsonrpc_verify_send_cmio_response(const cm_jsonrpc_mgr *mgr, uint16_t reason, const unsigned char *data,
+/// \param one_based Use 1-based indices when reporting errors.
+/// \returns 0 for success, non zero code for error.
+/// \details In case both root_hash_before and root_hash_after are NULL,
+/// then it just verifies the access log integrity.
+CM_API int cm_jsonrpc_verify_step_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
+    const char *access_log, const cm_hash *root_hash_after, bool one_based);
+
+/// \brief Checks the validity of a state transition produced by a microarchitecture state reset.
+/// \param mgr Pointer to a valid JSONRPC connection manager.
+/// \param root_hash_before State hash before load.
+/// \param access_log State access log to be verified as a JSON string.
+/// \param root_hash_after State hash after load.
+/// \param one_based Use 1-based indices when reporting errors.
+/// \returns 0 for success, non zero code for error.
+/// \details In case both root_hash_before and root_hash_after are NULL,
+/// then it just verifies the access log integrity.
+CM_API int cm_jsonrpc_verify_reset_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
+    const char *access_log, const cm_hash *root_hash_after, bool one_based);
+
+/// \brief Checks the validity of state transitions produced by a send cmio response.
+/// \param mgr Pointer to a valid JSONRPC connection manager.
+/// \param reason Reason for sending the response.
+/// \param data The response sent when the log was generated.
+/// \param length Length of response.
+/// \param root_hash_before State hash before load.
+/// \param access_log State access log to be verified as a JSON string.
+/// \param root_hash_after State hash after load.
+/// \param one_based Use 1-based indices when reporting errors.
+/// \returns 0 for success, non zero code for error.
+/// \details In case both root_hash_before and root_hash_after are NULL,
+/// then it just verifies the access log integrity.
+CM_API int cm_jsonrpc_verify_send_cmio_response(const cm_jsonrpc_mgr *mgr, uint16_t reason, const uint8_t *data,
     size_t length, const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after,
     bool one_based);
 

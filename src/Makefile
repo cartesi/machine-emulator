@@ -222,7 +222,7 @@ endif
 
 ifeq ($(sanitize),yes)
 # Enable address and undefined sanitizers
-UBFLAGS+=-fsanitize=address,undefined -fno-sanitize-recover=all
+UBFLAGS+=-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
 LIBASAN_SO=$(shell realpath `$(CC) -print-file-name=libasan.so`)
 LIBSTDCPP_SO=$(shell realpath `$(CC) -print-file-name=libstdc++.so`)
 LD_PRELOAD="$(LIBASAN_SO) $(LIBSTDCPP_SO)"

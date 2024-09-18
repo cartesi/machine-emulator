@@ -131,7 +131,7 @@ local remote
 
 -- There is no UINT64_MAX in Lua, so we have to use the signed representation
 local MAX_MCYCLE = -1
-local OUTPUTS_ROOT_HASH_SIZE = 32
+local OUTPUTS_ROOT_HASH_SIZE = cartesi.HASH_SIZE
 
 local function load_machine(name)
     local runtime = {
@@ -214,7 +214,7 @@ local function check_exception(machine, expected)
 end
 
 local function check_outputs_root_hash(root_hash, output_hashes)
-    local z = string.rep("\0", 32)
+    local z = string.rep("\0", cartesi.HASH_SIZE)
     if #output_hashes == 0 then
         output_hashes = { z }
     end

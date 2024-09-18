@@ -92,10 +92,10 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_unknown_dir_test, default_machine_fi
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_path_test, default_machine_fixture) {
     int error_code = cm_load(nullptr, nullptr, &_machine);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_SYSTEM_ERROR);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    BOOST_REQUIRE(result.find("unable to open '/config.json' for reading") == 0);
+    BOOST_REQUIRE(result.find("invalid dir") == 0);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_config_test, default_machine_fixture) {
@@ -315,8 +315,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_machine_test, ordinary_machine_fixture
     BOOST_CHECK_EQUAL(std::string("invalid machine"), std::string(cm_get_last_error_message()));
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_dir_path_test, ordinary_machine_fixture) {
-    int error_code = cm_store(_machine, nullptr);
+BOOST_FIXTURE_TEST_CASE_NOLINT(store_empty_dir_path_test, ordinary_machine_fixture) {
+    int error_code = cm_store(_machine, "");
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_SYSTEM_ERROR);
     std::string result = cm_get_last_error_message();
     BOOST_REQUIRE(result.find("error creating directory") == 0);

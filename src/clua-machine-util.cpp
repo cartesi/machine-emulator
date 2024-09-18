@@ -206,7 +206,7 @@ CM_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
     }
     return got->second;
 } catch (const std::exception &e) {
-    luaL_error(L, e.what());
+    luaL_error(L, "%s", e.what());
     return CM_CSR_UNKNOWN; // will not be reached
 } catch (...) {
     luaL_error(L, "unknown error with csr type conversion");
@@ -228,7 +228,7 @@ void clua_check_cm_hash(lua_State *L, int idx, cm_hash *c_hash) {
 
 void clua_push_cm_hash(lua_State *L, const cm_hash *hash) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    lua_pushlstring(L, reinterpret_cast<const char *>(hash), CM_MACHINE_HASH_BYTE_SIZE);
+    lua_pushlstring(L, reinterpret_cast<const char *>(hash), CM_HASH_SIZE);
 }
 
 static int64_t clua_get_array_table_len(lua_State *L, int tabidx) {

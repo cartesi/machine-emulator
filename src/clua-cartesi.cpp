@@ -107,11 +107,9 @@ static int cartesi_mod_frombase64(lua_State *L) try {
 }
 
 static int cartesi_mod_tojson(lua_State *L) try {
-    lua_settop(L, 3);
-    const bool base64encode = lua_toboolean(L, 2);
-    const int indent = static_cast<int>(luaL_optinteger(L, 3, -1));
-    const std::string s = cartesi::clua_check_json(L, 1, base64encode).dump(indent);
-    lua_pushlstring(L, s.data(), s.size());
+    const int indent = static_cast<int>(luaL_optinteger(L, 2, -1));
+    lua_settop(L, 1);
+    cartesi::clua_check_json_string(L, 1, indent);
     return 1;
 } catch (std::exception &e) {
     luaL_error(L, "%s", e.what());
@@ -119,11 +117,7 @@ static int cartesi_mod_tojson(lua_State *L) try {
 }
 
 static int cartesi_mod_fromjson(lua_State *L) try {
-    lua_settop(L, 2);
-    bool base64decode = lua_toboolean(L, 2);
-    size_t size = 0;
-    const char *data = luaL_checklstring(L, 1, &size);
-    cartesi::clua_push_json(L, nlohmann::json::parse(std::string_view(data, size)), base64decode);
+    cartesi::clua_push_json_table(L, luaL_checkstring(L, 1));
     return 1;
 } catch (std::exception &e) {
     luaL_error(L, "%s", e.what());

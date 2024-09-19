@@ -181,8 +181,8 @@ void cm_delete(cm_machine *m) {
     if (m == nullptr) {
         return;
     }
-    auto *cpp_machine = convert_from_c(m);
-    delete cpp_machine;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    delete reinterpret_cast<cartesi::i_virtual_machine *>(m);
 }
 
 int cm_store(cm_machine *m, const char *dir) try {

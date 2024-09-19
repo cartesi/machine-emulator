@@ -1751,7 +1751,7 @@ for _, r in ipairs(memory_range_replace) do
 end
 
 if store_config == true then
-    io.write(cartesi.tojson(main_config, false, 2), "\n")
+    io.write(cartesi.tojson(main_config, 2), "\n")
 elseif store_config then
     local f <close> = assert(io.open(store_config, "w"))
     f:write(cartesi.tojson(main_config))

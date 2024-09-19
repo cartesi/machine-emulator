@@ -29,7 +29,7 @@ static int machine_class_index_get_default_config(lua_State *L) {
     if (!config) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json(L, nlohmann::json::parse(config));
+    clua_push_json_table(L, config);
     return 1;
 }
 
@@ -42,17 +42,17 @@ static int machine_class_index_get_csr_address(lua_State *L) {
 /// \brief This is the machine.verify_step_uarch() method implementation.
 static int machine_class_index_verify_step_uarch(lua_State *L) {
     lua_settop(L, 4);
-    const std::string access_log = clua_check_json(L, 2).dump();
+    const char *access_log = clua_check_json_string(L, 2);
     if (!lua_isnil(L, 1) || !lua_isnil(L, 3)) {
         cm_hash root_hash{};
         clua_check_cm_hash(L, 1, &root_hash);
         cm_hash target_hash{};
         clua_check_cm_hash(L, 3, &target_hash);
-        if (cm_verify_step_uarch(&root_hash, access_log.c_str(), &target_hash, true) != 0) {
+        if (cm_verify_step_uarch(&root_hash, access_log, &target_hash, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
-        if (cm_verify_step_uarch(nullptr, access_log.c_str(), nullptr, true) != 0) {
+        if (cm_verify_step_uarch(nullptr, access_log, nullptr, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
@@ -63,17 +63,17 @@ static int machine_class_index_verify_step_uarch(lua_State *L) {
 /// \brief This is the machine.verify_reset_uarch() method implementation.
 static int machine_class_index_verify_reset_uarch(lua_State *L) {
     lua_settop(L, 4);
-    const std::string access_log = clua_check_json(L, 2).dump();
+    const char *access_log = clua_check_json_string(L, 2);
     if (!lua_isnil(L, 1) || !lua_isnil(L, 3)) {
         cm_hash root_hash{};
         clua_check_cm_hash(L, 1, &root_hash);
         cm_hash target_hash{};
         clua_check_cm_hash(L, 3, &target_hash);
-        if (cm_verify_reset_uarch(&root_hash, access_log.c_str(), &target_hash, true) != 0) {
+        if (cm_verify_reset_uarch(&root_hash, access_log, &target_hash, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
-        if (cm_verify_reset_uarch(nullptr, access_log.c_str(), nullptr, true) != 0) {
+        if (cm_verify_reset_uarch(nullptr, access_log, nullptr, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
@@ -88,18 +88,17 @@ static int machine_class_index_verify_send_cmio_response(lua_State *L) {
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &length));
-    const std::string access_log = clua_check_json(L, 4).dump();
+    const char *access_log = clua_check_json_string(L, 4);
     if (!lua_isnil(L, 3) || !lua_isnil(L, 5)) {
         cm_hash root_hash{};
         clua_check_cm_hash(L, 3, &root_hash);
         cm_hash target_hash{};
         clua_check_cm_hash(L, 5, &target_hash);
-        if (cm_verify_send_cmio_response(reason, data, length, &root_hash, access_log.c_str(), &target_hash, true) !=
-            0) {
+        if (cm_verify_send_cmio_response(reason, data, length, &root_hash, access_log, &target_hash, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
-        if (cm_verify_send_cmio_response(reason, data, length, nullptr, access_log.c_str(), nullptr, true) != 0) {
+        if (cm_verify_send_cmio_response(reason, data, length, nullptr, access_log, nullptr, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
@@ -121,14 +120,17 @@ static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
 static int machine_ctor(lua_State *L) {
     lua_settop(L, 3);
     auto &managed_machine = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr));
-    const std::string runtime_config = clua_check_json(L, 3).dump();
+    const char *runtime_config = nullptr;
+    if (!lua_isnil(L, 3)) {
+        runtime_config = clua_check_json_string(L, 3);
+    }
     if (lua_type(L, 2) == LUA_TTABLE) {
-        const std::string config = clua_check_json(L, 2).dump();
-        if (cm_create(config.c_str(), runtime_config.c_str(), &managed_machine.get()) != 0) {
+        const char *config = clua_check_json_string(L, 2);
+        if (cm_create(config, runtime_config, &managed_machine.get()) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
-        if (cm_load(luaL_checkstring(L, 2), runtime_config.c_str(), &managed_machine.get()) != 0) {
+        if (cm_load(luaL_checkstring(L, 2), runtime_config, &managed_machine.get()) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }

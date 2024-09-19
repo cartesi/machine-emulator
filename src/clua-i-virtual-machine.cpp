@@ -34,7 +34,7 @@ static int machine_obj_index_get_proof(lua_State *L) {
     if (cm_get_proof(m.get(), address, log2_size, &proof) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json(L, nlohmann::json::parse(proof));
+    clua_push_json_table(L, proof);
     return 1;
 }
 
@@ -44,7 +44,7 @@ static int machine_obj_index_get_initial_config(lua_State *L) {
     if (cm_get_initial_config(m.get(), &config) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json(L, nlohmann::json::parse(config));
+    clua_push_json_table(L, config);
     return 1;
 }
 
@@ -259,7 +259,7 @@ static int machine_obj_index_get_memory_ranges(lua_State *L) {
     if (cm_get_memory_ranges(m.get(), &ranges) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json(L, nlohmann::json::parse(ranges));
+    clua_push_json_table(L, ranges);
     return 1;
 }
 
@@ -272,7 +272,7 @@ static int machine_obj_index_log_reset_uarch(lua_State *L) {
     if (cm_log_reset_uarch(m.get(), log_type, true, &access_log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json(L, nlohmann::json::parse(access_log));
+    clua_push_json_table(L, access_log);
     return 1;
 }
 
@@ -298,7 +298,7 @@ static int machine_obj_index_log_step_uarch(lua_State *L) {
     if (cm_log_step_uarch(m.get(), log_type, true, &access_log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json(L, nlohmann::json::parse(access_log));
+    clua_push_json_table(L, access_log);
     return 1;
 }
 
@@ -471,7 +471,7 @@ static int machine_obj_index_log_send_cmio_response(lua_State *L) {
     if (cm_log_send_cmio_response(m.get(), reason, data, length, log_type, true, &access_log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json(L, nlohmann::json::parse(access_log));
+    clua_push_json_table(L, access_log);
     return 1;
 }
 

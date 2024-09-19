@@ -124,19 +124,19 @@ void clua_push_cm_hash(lua_State *L, const cm_hash *hash);
 /// \param c_hash Receives hash
 void clua_check_cm_hash(lua_State *L, int idx, cm_hash *c_hash);
 
-/// \brief Loads a JSON object from a Lua value.
+/// \brief Replaces a Lua table with its JSON string representation and returns the string.
 /// \param L Lua state
-/// \param tabidx Lua value stack index.
-/// \param base64encode Whether to encode non key strings values using base64.
+/// \param tabidx Lua table stack index which will be converted to a Lua string.
+/// \param indent JSON indentation when converting it to a string.
 /// \returns It traverses the Lua value while converting to a JSON object.
-nlohmann::json clua_check_json(lua_State *L, int tabidx, bool base64encode = false);
+/// \details In case the Lua valua is already a string, it just returns it.
+const char *clua_check_json_string(lua_State *L, int idx, int indent = -1);
 
-/// \brief Pushes a JSON object as a Lua value.
+/// \brief Parses a JSON from a string and pushes it as a Lua table.
 /// \param L Lua state
-/// \param j JSON object.
-/// \param base64decode Whether to decode non key strings values using base64.
+/// \param s JSON string.
 /// \returns It traverses the JSON object while converting to a Lua object.
-void clua_push_json(lua_State *L, const nlohmann::json &j, bool base64decode = false);
+void clua_push_json_table(lua_State *L, const char *s);
 
 } // namespace cartesi
 

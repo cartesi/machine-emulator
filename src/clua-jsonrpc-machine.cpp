@@ -37,7 +37,7 @@ static int jsonrpc_machine_class_get_default_config(lua_State *L) {
     if (cm_jsonrpc_get_default_config(managed_jsonrpc_mgr.get(), &config) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json(L, nlohmann::json::parse(config));
+    clua_push_json_table(L, config);
     return 1;
 }
 
@@ -61,18 +61,17 @@ static int jsonrpc_machine_class_verify_step_uarch(lua_State *L) {
     const int ctxidx = lua_upvalueindex(2);
     lua_settop(L, 5);
     auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
-    const std::string access_log = clua_check_json(L, 2).dump();
+    const char *access_log = clua_check_json_string(L, 2);
     if (!lua_isnil(L, 1) || !lua_isnil(L, 3)) {
         cm_hash root_hash{};
         clua_check_cm_hash(L, 1, &root_hash);
         cm_hash target_hash{};
         clua_check_cm_hash(L, 3, &target_hash);
-        if (cm_jsonrpc_verify_step_uarch(managed_jsonrpc_mgr.get(), &root_hash, access_log.c_str(), &target_hash,
-                true) != 0) {
+        if (cm_jsonrpc_verify_step_uarch(managed_jsonrpc_mgr.get(), &root_hash, access_log, &target_hash, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
-        if (cm_jsonrpc_verify_step_uarch(managed_jsonrpc_mgr.get(), nullptr, access_log.c_str(), nullptr, true) != 0) {
+        if (cm_jsonrpc_verify_step_uarch(managed_jsonrpc_mgr.get(), nullptr, access_log, nullptr, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
@@ -88,18 +87,17 @@ static int jsonrpc_machine_class_verify_reset_uarch(lua_State *L) {
     const int ctxidx = lua_upvalueindex(2);
     lua_settop(L, 5);
     auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
-    const std::string access_log = clua_check_json(L, 2).dump();
+    const char *access_log = clua_check_json_string(L, 2);
     if (!lua_isnil(L, 1) || !lua_isnil(L, 3)) {
         cm_hash root_hash{};
         clua_check_cm_hash(L, 1, &root_hash);
         cm_hash target_hash{};
         clua_check_cm_hash(L, 3, &target_hash);
-        if (cm_jsonrpc_verify_reset_uarch(managed_jsonrpc_mgr.get(), &root_hash, access_log.c_str(), &target_hash,
-                true) != 0) {
+        if (cm_jsonrpc_verify_reset_uarch(managed_jsonrpc_mgr.get(), &root_hash, access_log, &target_hash, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
-        if (cm_jsonrpc_verify_reset_uarch(managed_jsonrpc_mgr.get(), nullptr, access_log.c_str(), nullptr, true) != 0) {
+        if (cm_jsonrpc_verify_reset_uarch(managed_jsonrpc_mgr.get(), nullptr, access_log, nullptr, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
@@ -119,19 +117,19 @@ static int jsonrpc_machine_class_verify_send_cmio_response(lua_State *L) {
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &length));
-    const std::string access_log = clua_check_json(L, 4).dump();
+    const char *access_log = clua_check_json_string(L, 4);
     if (!lua_isnil(L, 3) || !lua_isnil(L, 5)) {
         cm_hash root_hash{};
         clua_check_cm_hash(L, 3, &root_hash);
         cm_hash target_hash{};
         clua_check_cm_hash(L, 5, &target_hash);
         if (cm_jsonrpc_verify_send_cmio_response(managed_jsonrpc_mgr.get(), reason, data, length, &root_hash,
-                access_log.c_str(), &target_hash, true) != 0) {
+                access_log, &target_hash, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
-        if (cm_jsonrpc_verify_send_cmio_response(managed_jsonrpc_mgr.get(), reason, data, length, nullptr,
-                access_log.c_str(), nullptr, true) != 0) {
+        if (cm_jsonrpc_verify_send_cmio_response(managed_jsonrpc_mgr.get(), reason, data, length, nullptr, access_log,
+                nullptr, true) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
@@ -163,15 +161,17 @@ static int jsonrpc_machine_ctor(lua_State *L) {
     const int ctxidx = lua_upvalueindex(2);
     auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), ctxidx);
     auto &managed_machine = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr), ctxidx);
-    const std::string runtime_config = clua_check_json(L, 3).dump();
+    const char *runtime_config = nullptr;
+    if (!lua_isnil(L, 3)) {
+        runtime_config = clua_check_json_string(L, 3);
+    }
     if (lua_type(L, 2) == LUA_TTABLE) {
-        const std::string config = clua_check_json(L, 2).dump();
-        if (cm_jsonrpc_create_machine(managed_jsonrpc_mgr.get(), config.c_str(), runtime_config.c_str(),
-                &managed_machine.get()) != 0) {
+        const char *config = clua_check_json_string(L, 2);
+        if (cm_jsonrpc_create_machine(managed_jsonrpc_mgr.get(), config, runtime_config, &managed_machine.get()) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
-        if (cm_jsonrpc_load_machine(managed_jsonrpc_mgr.get(), luaL_checkstring(L, 2), runtime_config.c_str(),
+        if (cm_jsonrpc_load_machine(managed_jsonrpc_mgr.get(), luaL_checkstring(L, 2), runtime_config,
                 &managed_machine.get()) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
@@ -206,7 +206,7 @@ static int jsonrpc_server_class_get_version(lua_State *L) {
     if (cm_jsonrpc_get_version(managed_jsonrpc_mgr.get(), &version) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json(L, nlohmann::json::parse(version));
+    clua_push_json_table(L, version);
     return 1;
 }
 

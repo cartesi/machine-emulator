@@ -87,8 +87,10 @@ static int cartesi_mod_keccak(lua_State *L) {
 static int cartesi_mod_tobase64(lua_State *L) try {
     size_t size = 0;
     const char *data = luaL_checklstring(L, 1, &size);
-    std::string value = cartesi::encode_base64(std::string_view(data, size));
+    std::string &value =
+        *cartesi::clua_push_new_managed_toclose_ptr(L, cartesi::encode_base64(std::string_view(data, size)));
     lua_pushlstring(L, value.data(), value.size());
+    value.clear();
     return 1;
 } catch (std::exception &e) {
     luaL_error(L, "%s", e.what());
@@ -98,8 +100,10 @@ static int cartesi_mod_tobase64(lua_State *L) try {
 static int cartesi_mod_frombase64(lua_State *L) try {
     size_t size = 0;
     const char *data = luaL_checklstring(L, 1, &size);
-    std::string value = cartesi::decode_base64(std::string_view(data, size));
+    std::string &value =
+        *cartesi::clua_push_new_managed_toclose_ptr(L, cartesi::decode_base64(std::string_view(data, size)));
     lua_pushlstring(L, value.data(), value.size());
+    value.clear();
     return 1;
 } catch (std::exception &e) {
     luaL_error(L, "%s", e.what());

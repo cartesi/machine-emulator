@@ -17,6 +17,7 @@
 #include "clua-htif.h"
 #include "clua-machine-util.h"
 #include "clua.h"
+#include "json-util.h"
 #include "machine-c-api.h"
 #include "riscv-constants.h"
 
@@ -141,8 +142,9 @@ static int machine_ctor(lua_State *L) {
 struct machine_class {};
 
 int clua_machine_init(lua_State *L, int ctxidx) {
-    clua_createnewtype<clua_managed_cm_ptr<char>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<unsigned char>>(L, ctxidx);
+    clua_createnewtype<clua_managed_cm_ptr<std::string>>(L, ctxidx);
+    clua_createnewtype<clua_managed_cm_ptr<nlohmann::json>>(L, ctxidx);
     if (!clua_typeexists<machine_class>(L, ctxidx)) {
         clua_createtype<machine_class>(L, "cartesi machine class", ctxidx);
         clua_setmethods<machine_class>(L, machine_class_index.data(), 0, ctxidx);

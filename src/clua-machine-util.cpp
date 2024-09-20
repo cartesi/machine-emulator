@@ -26,22 +26,24 @@
 
 namespace cartesi {
 
-/// \brief Deleter for C string
-template <>
-void clua_delete<char>(char *ptr) { // NOLINT(readability-non-const-parameter)
-    delete[] ptr;
-}
-
-/// \brief Deleter for C data buffer
 template <>
 void clua_delete<unsigned char>(unsigned char *ptr) { // NOLINT(readability-non-const-parameter)
     delete[] ptr;
 }
 
-/// \brief Deleter for C machine
 template <>
-void clua_delete(cm_machine *ptr) {
+void clua_delete<cm_machine>(cm_machine *ptr) {
     cm_delete(ptr);
+}
+
+template <>
+void clua_delete<std::string>(std::string *ptr) {
+    delete ptr;
+}
+
+template <>
+void clua_delete<nlohmann::json>(nlohmann::json *ptr) {
+    delete ptr;
 }
 
 CM_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
@@ -256,12 +258,9 @@ static int64_t clua_get_array_table_len(lua_State *L, int tabidx) {
     return len;
 }
 
-static nlohmann::json clua_check_json_value(lua_State *L, int idx, bool base64encode) {
-    // ??(edubart): This function has the assumption that we will be always able to
-    // traverse and read a Lua table without triggering lua_error.
-    // A lua_error should never happen here in practice,
-    // therefore we assume this JSON object will always be destructed leaving no leaks.
-    nlohmann::json j;
+static nlohmann::json &clua_push_json_value_ref(lua_State *L, int ctxidx, int idx, bool base64encode = false) {
+    nlohmann::json &j = *clua_push_new_managed_toclose_ptr(L, nlohmann::json(), ctxidx);
+    idx -= idx < 0 ? 1 : 0; // adjust offset after pushing j reference
     switch (lua_type(L, idx)) {
         case LUA_TTABLE: {
             const int64_t len = clua_get_array_table_len(L, idx);
@@ -269,8 +268,8 @@ static nlohmann::json clua_check_json_value(lua_State *L, int idx, bool base64en
                 j = nlohmann::json::array();
                 for (int64_t i = 1; i <= len; ++i) {
                     lua_geti(L, idx, i);
-                    j.push_back(clua_check_json_value(L, -1, base64encode));
-                    lua_pop(L, 1); // pop value
+                    j.push_back(clua_push_json_value_ref(L, ctxidx, -1, base64encode));
+                    lua_pop(L, 2); // pop value, child j reference
                 }
             } else { // object
                 j = nlohmann::json::object();
@@ -278,15 +277,16 @@ static nlohmann::json clua_check_json_value(lua_State *L, int idx, bool base64en
                 lua_pushnil(L);           // push key
                 while (lua_next(L, -2)) { // update key, push value
                     if (!lua_isstring(L, -2)) {
-                        lua_pop(L, 3); // pop table, key, value
-                        throw std::runtime_error{"table maps cannot contain non string keys"};
+                        luaL_error(L, "table maps cannot contain keys of type %s", lua_typename(L, lua_type(L, -2)));
                     }
-                    const std::string_view key = lua_tostring(L, -2);
+                    size_t len = 0;
+                    const char *ptr = lua_tolstring(L, -2, &len);
+                    const std::string_view key(ptr, len);
                     const bool base64encode_child = base64encode || key == "read_hash" || key == "read" ||
                         key == "sibling_hashes" || key == "written_hash" || key == "written" || key == "target_hash" ||
                         key == "root_hash";
-                    j[key] = clua_check_json_value(L, -1, base64encode_child);
-                    lua_pop(L, 1); // pop value
+                    j[key] = clua_push_json_value_ref(L, ctxidx, -1, base64encode_child);
+                    lua_pop(L, 2); // pop value, child j reference
                 }
                 lua_pop(L, 1); // pop table
             }
@@ -295,7 +295,7 @@ static nlohmann::json clua_check_json_value(lua_State *L, int idx, bool base64en
         case LUA_TNUMBER: {
             if (lua_isinteger(L, idx)) {
                 j = lua_tointeger(L, idx);
-            } else {
+            } else { // floating point
                 j = lua_tonumber(L, idx);
             }
             break;
@@ -305,7 +305,7 @@ static nlohmann::json clua_check_json_value(lua_State *L, int idx, bool base64en
             const char *ptr = lua_tolstring(L, idx, &len);
             const std::string_view data(ptr, len);
             if (base64encode) {
-                j = cartesi::encode_base64(data);
+                j = encode_base64(data);
             } else {
                 j = data;
             }
@@ -318,37 +318,34 @@ static nlohmann::json clua_check_json_value(lua_State *L, int idx, bool base64en
             j = nullptr;
             break;
         default:
-            throw std::runtime_error{
-                std::string("lua value of type ") + lua_typename(L, lua_type(L, idx)) + "cannot be serialized to JSON",
-            };
+            luaL_error(L, "lua value of type %s cannot be serialized to JSON", lua_typename(L, lua_type(L, idx)));
+            break;
     }
     return j;
 }
 
-const char *clua_check_json_string(lua_State *L, int idx, int indent) {
-    if (lua_istable(L, idx)) {
-        try {
-            // Use static thread local to avoid destruction leaks in case of a lua_error
-            static THREAD_LOCAL std::string s;
-            s = cartesi::clua_check_json_value(L, idx, false).dump(indent);
-            lua_pushlstring(L, s.data(), s.size());
-            s.clear();
-            lua_replace(L, idx);
-        } catch (std::exception &e) {
-            luaL_error(L, "failed to parse JSON from a table: %s", e.what());
-            return nullptr;
-        }
+const char *clua_check_json_string(lua_State *L, int idx, int indent, int ctxidx) {
+    assert(idx > 0);
+    try {
+        const nlohmann::json &j = clua_push_json_value_ref(L, ctxidx, idx);
+        std::string &s = *clua_push_new_managed_toclose_ptr(L, j.dump(indent), ctxidx);
+        lua_pushlstring(L, s.data(), s.size());
+        lua_replace(L, idx);             // replace the Lua value with its JSON string representation
+        lua_pop(L, 2);                   // pop s, j references
+        return luaL_checkstring(L, idx); // return the string
+    } catch (std::exception &e) {
+        luaL_error(L, "failed to parse JSON from a table: %s", e.what());
+        return nullptr;
     }
-    return luaL_checkstring(L, idx);
 }
 
-static void clua_push_json_value(lua_State *L, const nlohmann::json &j, bool base64decode) {
+static void clua_push_json_value(lua_State *L, int ctxidx, const nlohmann::json &j, bool base64decode = false) {
     switch (j.type()) {
         case nlohmann::json::value_t::array: {
             lua_createtable(L, static_cast<int>(j.size()), 0);
             int64_t i = 1;
             for (auto it = j.begin(); it != j.end(); ++it, ++i) {
-                clua_push_json_value(L, *it, base64decode);
+                clua_push_json_value(L, ctxidx, *it, base64decode);
                 lua_rawseti(L, -2, i);
             }
             break;
@@ -360,7 +357,7 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, bool bas
                 const bool base64decode_child = base64decode || key == "read_hash" || key == "read" ||
                     key == "sibling_hashes" || key == "written_hash" || key == "written" || key == "target_hash" ||
                     key == "root_hash";
-                clua_push_json_value(L, el.value(), base64decode_child);
+                clua_push_json_value(L, ctxidx, el.value(), base64decode_child);
                 lua_setfield(L, -2, key.c_str());
             }
             break;
@@ -368,11 +365,11 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, bool bas
         case nlohmann::json::value_t::string: {
             const std::string_view &data = j.template get<std::string_view>();
             if (base64decode) {
-                // Use static thread local to avoid destruction leaks in case of a luaL_error
-                static THREAD_LOCAL std::string binary_data;
-                binary_data = cartesi::decode_base64(data);
+                lua_pushnil(L); // reserve a slot in the stack (needed because of lua_toclose semantics)
+                std::string &binary_data = *clua_push_new_managed_toclose_ptr(L, decode_base64(data), ctxidx);
                 lua_pushlstring(L, binary_data.data(), binary_data.length());
-                binary_data.clear();
+                lua_replace(L, -3); // move into the placeholder slot
+                lua_pop(L, 1);      // pop binary_data reference
             } else {
                 lua_pushlstring(L, data.data(), data.length());
             }
@@ -399,13 +396,13 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, bool bas
     }
 }
 
-void clua_push_json_table(lua_State *L, const char *s) {
+void clua_push_json_table(lua_State *L, const char *s, int ctxidx) {
     try {
-        // Use static thread local to avoid destruction leaks in case of a lua_error
-        static THREAD_LOCAL nlohmann::json j;
-        j = nlohmann::json::parse(s);
-        clua_push_json_value(L, j, false);
-        j.clear();
+        lua_pushnil(L); // reserve a slot in the stack (needed because of lua_toclose semantics)
+        const nlohmann::json &j = *clua_push_new_managed_toclose_ptr(L, nlohmann::json::parse(s), ctxidx);
+        clua_push_json_value(L, ctxidx, j);
+        lua_replace(L, -3); // move into the placeholder slot
+        lua_pop(L, 1);      // pop j reference
     } catch (std::exception &e) {
         luaL_error(L, "failed to parse JSON from a string: %s", e.what());
     }

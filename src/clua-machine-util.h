@@ -24,6 +24,7 @@ extern "C" {
 #include <lua.h>
 }
 
+#include "clua.h"
 #include "json-util.h"
 #include "machine-c-api.h"
 
@@ -36,17 +37,21 @@ namespace cartesi {
 template <typename T>
 void clua_delete(T *ptr);
 
-/// \brief Deleter for C string
-template <>
-void clua_delete<char>(char *ptr);
-
 /// \brief Deleter for C data buffer
 template <>
 void clua_delete<unsigned char>(unsigned char *ptr);
 
-/// \brief Deleter for C api machine
+/// \brief Deleter for machine
 template <>
 void clua_delete<cm_machine>(cm_machine *ptr);
+
+/// \brief Deleter for string
+template <>
+void clua_delete<std::string>(std::string *ptr);
+
+/// \brief Deleter for JSON
+template <>
+void clua_delete<nlohmann::json>(nlohmann::json *ptr);
 
 // clua_managed_cm_ptr is a smart pointer,
 // however we don't use all its functionally, therefore we exclude it from code coverage.
@@ -107,6 +112,27 @@ private:
 };
 // LCOV_EXCL_STOP
 
+/// \brief Allocates a new type, pushes its reference into the Lua stack and returns its pointer.
+/// \param L Lua state
+/// \param value Initial value
+/// \param ctxidx Index (or pseudo-index) of clua context
+/// \returns The value pointer, valid until its reference is removed from the Lua stack.
+/// \details The value is marked to-be-closed when popped from the Lua stack.
+/// This follow lua_toclose semantics (check Lua 5.4 manual),
+/// therefore the stack index can only be removed via lua_pop (e.g. don't use lua_remove).
+template <typename T>
+T *clua_push_new_managed_toclose_ptr(lua_State *L, T &&value, int ctxidx = lua_upvalueindex(1)) {
+    auto &managed_value = clua_push_to(L, clua_managed_cm_ptr<T>(new T(std::forward<T>(value))), ctxidx);
+    // ??(edubart): Unfortunately Lua 5.4.4 (default on Ubuntu 22.04) has a bug that causes a crash
+    // when using lua_settop with lua_toclose, it was fixed only in Lua 5.4.5 in
+    // https://github.com/lua/lua/commit/196bb94d66e727e0aec053a0276c3ad701500762 .
+    // Without lua_toclose call, reference will be only collected by the GC (non deterministic).
+#if LUA_VERSION_RELEASE_NUM > 50404
+    lua_toclose(L, -1);
+#endif
+    return managed_value.get();
+}
+
 /// \brief Returns a CSR selector from Lua
 /// \param L Lua state
 /// \param idx Index in stack
@@ -128,15 +154,17 @@ void clua_check_cm_hash(lua_State *L, int idx, cm_hash *c_hash);
 /// \param L Lua state
 /// \param tabidx Lua table stack index which will be converted to a Lua string.
 /// \param indent JSON indentation when converting it to a string.
+/// \param ctxidx Index (or pseudo-index) of clua context
 /// \returns It traverses the Lua value while converting to a JSON object.
 /// \details In case the Lua valua is already a string, it just returns it.
-const char *clua_check_json_string(lua_State *L, int idx, int indent = -1);
+const char *clua_check_json_string(lua_State *L, int idx, int indent = -1, int ctxidx = lua_upvalueindex(1));
 
 /// \brief Parses a JSON from a string and pushes it as a Lua table.
 /// \param L Lua state
 /// \param s JSON string.
+/// \param ctxidx Index (or pseudo-index) of clua context
 /// \returns It traverses the JSON object while converting to a Lua object.
-void clua_push_json_table(lua_State *L, const char *s);
+void clua_push_json_table(lua_State *L, const char *s, int ctxidx = lua_upvalueindex(1));
 
 } // namespace cartesi
 

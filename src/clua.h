@@ -352,13 +352,6 @@ void clua_setstringfield(lua_State *L, const char *val, const char *name, int id
 /// \param ctxidx Index (or pseudo-index) of clua context
 void clua_setlstringfield(lua_State *L, const char *val, size_t length, const char *name, int idx);
 
-/// \brief Sets the lua named field to boolean value
-/// \param L Lua state
-/// \param val Boolean value
-/// \param idx Index (or pseudo-index) of object in stack
-/// \param ctxidx Index (or pseudo-index) of clua context
-void clua_setbooleanfield(lua_State *L, bool val, const char *name, int idx);
-
 } // namespace cartesi
 
 #endif

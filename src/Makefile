@@ -188,9 +188,11 @@ else ifeq ($(release),yes)
 OPTFLAGS+=-O2
 DEFS+=-DNDEBUG # disable all asserts
 else ifeq ($(debug),yes)
-OPTFLAGS+=-Og -g
+OPTFLAGS+=-Og -g -fno-omit-frame-pointer
+OPTFLAGS+=-D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS -fstack-clash-protection -fstack-protector-strong
 else ifeq ($(sanitize),yes)
-OPTFLAGS+=-O1 -g
+OPTFLAGS+=-O1 -g -fno-omit-frame-pointer
+OPTFLAGS+=-D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS -fstack-clash-protection -fstack-protector-strong
 endif
 
 # Git commit hash (for releases)
@@ -222,7 +224,7 @@ endif
 
 ifeq ($(sanitize),yes)
 # Enable address and undefined sanitizers
-UBFLAGS+=-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
+UBFLAGS+=-fsanitize=address,undefined -fno-sanitize-recover=all
 LIBASAN_SO=$(shell realpath `$(CC) -print-file-name=libasan.so`)
 LIBSTDCPP_SO=$(shell realpath `$(CC) -print-file-name=libstdc++.so`)
 LD_PRELOAD="$(LIBASAN_SO) $(LIBSTDCPP_SO)"

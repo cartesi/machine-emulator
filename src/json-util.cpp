@@ -19,6 +19,7 @@
 #include <climits>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 #include "base64.h"
 #include "machine-merkle-tree.h"
@@ -1351,6 +1352,80 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, virtio_device_config &value, const std::string &path) {
+    if (!contains(j, key)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    std::string type;
+    ju_get_opt_field(jconfig, "type"s, type, new_path);
+    if (type == "console") {
+        value.emplace<virtio_console_config>(virtio_console_config{});
+    } else if (type == "p9fs") {
+        virtio_p9fs_config p9fs_config;
+        ju_get_opt_field(jconfig, "tag"s, p9fs_config.tag, new_path);
+        ju_get_opt_field(jconfig, "host_directory"s, p9fs_config.host_directory, new_path);
+        value.emplace<virtio_p9fs_config>(std::move(p9fs_config));
+    } else if (type == "net-user") {
+        virtio_net_user_config net_user_config;
+        if (jconfig.contains("hostfwd")) {
+            const auto &jhostfwds = jconfig["hostfwd"];
+            if (!jhostfwds.is_array()) {
+                throw std::invalid_argument("field \""s + new_path + "hostfwd\" not an array"s);
+            }
+            for (const auto &el : jhostfwds.items()) {
+                const auto &jhostfwd = el.value();
+                const auto hostfwd_path = new_path + "hostfwd/"s + el.key() + "/"s;
+                virtio_hostfwd_config hostfwd;
+                ju_get_opt_field(jhostfwd, "is_udp"s, hostfwd.is_udp, hostfwd_path);
+                ju_get_opt_field(jhostfwd, "host_ip"s, hostfwd.host_ip, hostfwd_path);
+                ju_get_opt_field(jhostfwd, "guest_ip"s, hostfwd.guest_ip, hostfwd_path);
+                ju_get_opt_field(jhostfwd, "host_port"s, hostfwd.host_port, hostfwd_path);
+                ju_get_opt_field(jhostfwd, "guest_port"s, hostfwd.guest_port, hostfwd_path);
+                net_user_config.hostfwd.emplace_back(std::move(hostfwd));
+            }
+        }
+        value.emplace<virtio_net_user_config>(std::move(net_user_config));
+    } else if (type == "net-tuntap") {
+        virtio_net_tuntap_config net_tuntap_config;
+        ju_get_opt_field(jconfig, "iface"s, net_tuntap_config.iface, new_path);
+        value.emplace<virtio_net_tuntap_config>(std::move(net_tuntap_config));
+    } else {
+        throw std::domain_error("invalid virtio device type \""s + type + "\""s);
+    }
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, virtio_device_config &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    virtio_device_config &value, const std::string &path);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, virtio_configs &value, const std::string &path) {
+    if (!contains(j, key)) {
+        return;
+    }
+    const auto &jvirtio = j[key];
+    if (!jvirtio.is_array()) {
+        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not an array"s);
+    }
+    const auto new_path = path + to_string(key) + "/";
+    value.resize(0);
+    for (uint64_t i = 0; i < jvirtio.size(); ++i) {
+        value.push_back({});
+        ju_get_opt_field(jvirtio, i, value.back(), new_path);
+    }
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, virtio_configs &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, virtio_configs &value,
+    const std::string &path);
+
+template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, tlb_config &value, const std::string &path) {
     if (!contains(j, key)) {
         return;
@@ -1530,6 +1605,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_config &val
     ju_get_opt_field(config, "ram"s, value.ram, new_path);
     ju_get_opt_field(config, "dtb"s, value.dtb, new_path);
     ju_get_opt_field(config, "flash_drive"s, value.flash_drive, new_path);
+    ju_get_opt_field(config, "virtio"s, value.virtio, new_path);
     ju_get_opt_field(config, "tlb"s, value.tlb, new_path);
     ju_get_opt_field(config, "clint"s, value.clint, new_path);
     ju_get_opt_field(config, "plic"s, value.plic, new_path);
@@ -1722,6 +1798,43 @@ void to_json(nlohmann::json &j, const flash_drive_configs &fs) {
         [](const memory_range_config &m) -> nlohmann::json { return m; });
 }
 
+void to_json(nlohmann::json &j, const virtio_device_config &config) {
+    std::visit(
+        [&](const auto &vdev_config) {
+            using T = std::decay_t<decltype(vdev_config)>;
+            if constexpr (std::is_same_v<T, cartesi::virtio_console_config>) {
+                j = nlohmann::json{{"type", "console"}};
+            } else if constexpr (std::is_same_v<T, cartesi::virtio_p9fs_config>) {
+                j = nlohmann::json{{"type", "p9fs"}, {"tag", vdev_config.tag},
+                    {"host_directory", vdev_config.host_directory}};
+            } else if constexpr (std::is_same_v<T, cartesi::virtio_net_user_config>) {
+                nlohmann::json jhostfwd = nlohmann::json::array();
+                std::transform(vdev_config.hostfwd.cbegin(), vdev_config.hostfwd.cend(), std::back_inserter(jhostfwd),
+                    [](const virtio_hostfwd_config &h) -> nlohmann::json {
+                        return nlohmann::json{
+                            {"is_udp", h.is_udp},
+                            {"host_ip", h.host_ip},
+                            {"guest_ip", h.guest_ip},
+                            {"host_port", h.host_port},
+                            {"guest_port", h.guest_port},
+                        };
+                    });
+                j = nlohmann::json{{"type", "net-user"}, {"hostfwd", std::move(jhostfwd)}};
+            } else if constexpr (std::is_same_v<T, cartesi::virtio_net_tuntap_config>) {
+                j = nlohmann::json{{"type", "net-tuntap"}, {"iface", vdev_config.iface}};
+            } else {
+                throw std::domain_error("invalid virtio device configuration");
+            }
+        },
+        config);
+}
+
+void to_json(nlohmann::json &j, const virtio_configs &vs) {
+    j = nlohmann::json::array();
+    std::transform(vs.cbegin(), vs.cend(), std::back_inserter(j),
+        [](const virtio_device_config &v) -> nlohmann::json { return v; });
+}
+
 void to_json(nlohmann::json &j, const ram_config &config) {
     j = nlohmann::json{
         {"length", config.length},
@@ -1833,6 +1946,7 @@ void to_json(nlohmann::json &j, const machine_config &config) {
         {"ram", config.ram},
         {"dtb", config.dtb},
         {"flash_drive", config.flash_drive},
+        {"virtio", config.virtio},
         {"tlb", config.tlb},
         {"clint", config.clint},
         {"plic", config.plic},

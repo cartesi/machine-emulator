@@ -112,10 +112,10 @@ private:
     /// \returns Corresponding entry if found, or a sentinel entry
     /// for an empty range.
     template <typename CONTAINER>
-    pma_entry &find_pma_entry(const CONTAINER &pmas, uint64_t paddr, size_t length);
+    pma_entry &find_pma_entry(const CONTAINER &pmas, uint64_t paddr, uint64_t length);
 
     template <typename CONTAINER>
-    const pma_entry &find_pma_entry(const CONTAINER &pmas, uint64_t paddr, size_t length) const;
+    const pma_entry &find_pma_entry(const CONTAINER &pmas, uint64_t paddr, uint64_t length) const;
 
 public:
     /// \brief Type of hash
@@ -482,13 +482,13 @@ public:
     /// \details The entire chunk, from \p address to \p address + \p length must
     /// be inside the same PMA region. Moreover, this PMA must be a memory PMA,
     /// and not a device PMA.
-    void write_memory(uint64_t address, const unsigned char *data, size_t length);
+    void write_memory(uint64_t address, const unsigned char *data, uint64_t length);
 
     /// \brief Fills a memory range with a single byte.
     /// \param address Physical address to start filling.
     /// \param data Byte to fill memory with.
     /// \param length Size of memory range to fill.
-    void fill_memory(uint64_t address, uint8_t data, size_t length);
+    void fill_memory(uint64_t address, uint8_t data, uint64_t length);
 
     /// \brief Reads a chunk of data from the machine virtual memory.
     /// \param vaddr_start Virtual address to start reading.
@@ -500,7 +500,7 @@ public:
     /// \param vaddr_start Virtual address to start writing.
     /// \param data Source for chunk of data.
     /// \param length Size of chunk.
-    void write_virtual_memory(uint64_t vaddr_start, const unsigned char *data, size_t length);
+    void write_virtual_memory(uint64_t vaddr_start, const unsigned char *data, uint64_t length);
 
     /// \brief Translates a virtual memory address to its corresponding physical memory address.
     /// \param vaddr Virtual address to translate.
@@ -949,9 +949,9 @@ public:
     /// \param length Length of physical memory region.
     /// \returns Corresponding entry if found, or a sentinel entry
     /// for an empty range.
-    pma_entry &find_pma_entry(uint64_t paddr, size_t length);
+    pma_entry &find_pma_entry(uint64_t paddr, uint64_t length);
 
-    const pma_entry &find_pma_entry(uint64_t paddr, size_t length) const;
+    const pma_entry &find_pma_entry(uint64_t paddr, uint64_t length) const;
 
     /// \brief Obtain PMA entry covering a physical memory word
     /// \tparam T Type of word.
@@ -995,7 +995,7 @@ public:
     /// \param reason Reason for sending response.
     /// \param data Reponse data.
     /// \param length Length of response data.
-    void send_cmio_response(uint16_t reason, const unsigned char *data, size_t length);
+    void send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length);
 
     /// \brief Sends cmio response and returns an access log
     /// \param reason Reason for sending response.
@@ -1004,7 +1004,7 @@ public:
     /// \param log_type Type of access log to generate.
     /// \param one_based Use 1-based indices when reporting errors.
     /// \return The state access log.
-    access_log log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
+    access_log log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const access_log::type &log_type, bool one_based = false);
 
     /// \brief Checks the internal consistency of an access log produced by log_send_cmio_response
@@ -1013,7 +1013,7 @@ public:
     /// \param length Length of response data.
     /// \param log State access log to be verified.
     /// \param one_based Use 1-based indices when reporting errors.
-    static void verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, size_t length,
+    static void verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, uint64_t length,
         const access_log &log, bool one_based = false);
 
     /// \brief Checks the validity of state transitions caused by log_send_cmio_response
@@ -1024,7 +1024,7 @@ public:
     /// \param log Log containing the state accesses performed by the load operation
     /// \param root_hash_after State hash after response was sent.
     /// @param one_based Use 1-based indices when reporting errors.
-    static void verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, size_t length,
+    static void verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, uint64_t length,
         const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after,
         bool one_based = false);
 

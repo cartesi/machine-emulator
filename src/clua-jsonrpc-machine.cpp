@@ -115,7 +115,7 @@ static int jsonrpc_machine_class_verify_send_cmio_response(lua_State *L) {
     lua_settop(L, 6);
     auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
     const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 1));
-    size_t length{0};
+    uint64_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &length));
     const char *access_log = clua_check_json_string(L, 4, -1, ctxidx);
@@ -246,7 +246,7 @@ static int jsonrpc_server_class_fork(lua_State *L) {
     auto &managed_jsonrpc_mgr =
         clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     const char *address = nullptr;
-    int pid = 0;
+    int32_t pid = 0;
     if (cm_jsonrpc_fork(managed_jsonrpc_mgr.get(), &address, &pid) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }

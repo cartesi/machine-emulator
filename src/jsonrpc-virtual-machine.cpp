@@ -482,7 +482,7 @@ void jsonrpc_virtual_machine::do_read_memory(uint64_t address, unsigned char *da
     std::memcpy(data, bin.data(), length);
 }
 
-void jsonrpc_virtual_machine::do_write_memory(uint64_t address, const unsigned char *data, size_t length) {
+void jsonrpc_virtual_machine::do_write_memory(uint64_t address, const unsigned char *data, uint64_t length) {
     bool result = false;
     std::string b64 = cartesi::encode_base64(data, length);
     jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.write_memory", std::tie(address, b64),
@@ -500,7 +500,7 @@ void jsonrpc_virtual_machine::do_read_virtual_memory(uint64_t address, unsigned 
     std::memcpy(data, bin.data(), length);
 }
 
-void jsonrpc_virtual_machine::do_write_virtual_memory(uint64_t address, const unsigned char *data, size_t length) {
+void jsonrpc_virtual_machine::do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) {
     bool result = false;
     std::string b64 = cartesi::encode_base64(data, length);
     jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.write_virtual_memory",
@@ -657,15 +657,15 @@ machine_memory_range_descrs jsonrpc_virtual_machine::do_get_memory_ranges(void) 
     return result;
 }
 
-void jsonrpc_virtual_machine::do_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length) {
+void jsonrpc_virtual_machine::do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {
     bool result = false;
     std::string b64 = cartesi::encode_base64(data, length);
     jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.send_cmio_response",
         std::tie(reason, b64), result);
 }
 
-access_log jsonrpc_virtual_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
-    const access_log::type &log_type, bool one_based) {
+access_log jsonrpc_virtual_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data,
+    uint64_t length, const access_log::type &log_type, bool one_based) {
     not_default_constructible<access_log> result;
     std::string b64 = cartesi::encode_base64(data, length);
     jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.log_send_cmio_response",
@@ -677,7 +677,7 @@ access_log jsonrpc_virtual_machine::do_log_send_cmio_response(uint16_t reason, c
 }
 
 void jsonrpc_virtual_machine::verify_send_cmio_response_log(const jsonrpc_mgr_ptr &mgr, uint16_t reason,
-    const unsigned char *data, size_t length, const access_log &log, bool one_based) {
+    const unsigned char *data, uint64_t length, const access_log &log, bool one_based) {
     bool result = false;
     std::string b64_data = cartesi::encode_base64(data, length);
     jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "machine.verify_send_cmio_response_log",
@@ -685,7 +685,7 @@ void jsonrpc_virtual_machine::verify_send_cmio_response_log(const jsonrpc_mgr_pt
 }
 
 void jsonrpc_virtual_machine::verify_send_cmio_response_state_transition(const jsonrpc_mgr_ptr &mgr, uint16_t reason,
-    const unsigned char *data, size_t length, const hash_type &root_hash_before, const access_log &log,
+    const unsigned char *data, uint64_t length, const hash_type &root_hash_before, const access_log &log,
     const hash_type &root_hash_after, bool one_based) {
     bool result = false;
     std::string b64_data = cartesi::encode_base64(data, length);

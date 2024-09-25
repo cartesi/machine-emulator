@@ -44,7 +44,7 @@ const char *cm_get_last_error_message() {
     return last_err_msg.c_str();
 }
 
-int cm_result_failure() try { throw; } catch (std::exception &e) {
+int32_t cm_result_failure() try { throw; } catch (std::exception &e) {
     try {
         last_err_msg = e.what();
         throw;
@@ -103,7 +103,7 @@ int cm_result_failure() try { throw; } catch (std::exception &e) {
     return CM_ERROR_UNKNOWN;
 }
 
-int cm_result_success() {
+int32_t cm_result_success() {
     last_err_msg.clear();
     return 0;
 }
@@ -140,7 +140,7 @@ cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash) {
 // The C API implementation
 // ----------------------------------------------
 
-int cm_create(const char *config, const char *runtime_config, cm_machine **new_machine) try {
+int32_t cm_create(const char *config, const char *runtime_config, cm_machine **new_machine) try {
     if (config == nullptr) {
         throw std::invalid_argument("invalid machine configuration");
     }
@@ -159,7 +159,7 @@ int cm_create(const char *config, const char *runtime_config, cm_machine **new_m
     return cm_result_failure();
 }
 
-int cm_load(const char *dir, const char *runtime_config, cm_machine **new_machine) try {
+int32_t cm_load(const char *dir, const char *runtime_config, cm_machine **new_machine) try {
     if (new_machine == nullptr) {
         throw std::invalid_argument("invalid new machine output");
     }
@@ -185,7 +185,7 @@ void cm_delete(cm_machine *m) {
     delete reinterpret_cast<cartesi::i_virtual_machine *>(m);
 }
 
-int cm_store(cm_machine *m, const char *dir) try {
+int32_t cm_store(cm_machine *m, const char *dir) try {
     if (dir == nullptr) {
         throw std::invalid_argument("invalid dir");
     }
@@ -196,7 +196,7 @@ int cm_store(cm_machine *m, const char *dir) try {
     return cm_result_failure();
 }
 
-int cm_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason) try {
+int32_t cm_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason) try {
     auto *cpp_machine = convert_from_c(m);
     const auto status = cpp_machine->run(mcycle_end);
     if (break_reason) {
@@ -210,7 +210,7 @@ int cm_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason) tr
     return cm_result_failure();
 }
 
-CM_API int cm_read_uarch_halt_flag(const cm_machine *m, bool *val) try {
+int32_t cm_read_uarch_halt_flag(const cm_machine *m, bool *val) try {
     const auto *cpp_machine = convert_from_c(m);
     *val = cpp_machine->read_uarch_halt_flag();
     return cm_result_success();
@@ -218,7 +218,7 @@ CM_API int cm_read_uarch_halt_flag(const cm_machine *m, bool *val) try {
     return cm_result_failure();
 }
 
-CM_API int cm_set_uarch_halt_flag(cm_machine *m) try {
+int32_t cm_set_uarch_halt_flag(cm_machine *m) try {
     auto *cpp_machine = convert_from_c(m);
     cpp_machine->set_uarch_halt_flag();
     return cm_result_success();
@@ -226,7 +226,7 @@ CM_API int cm_set_uarch_halt_flag(cm_machine *m) try {
     return cm_result_failure();
 }
 
-CM_API int cm_reset_uarch(cm_machine *m) try {
+int32_t cm_reset_uarch(cm_machine *m) try {
     auto *cpp_machine = convert_from_c(m);
     cpp_machine->reset_uarch();
     return cm_result_success();
@@ -234,7 +234,7 @@ CM_API int cm_reset_uarch(cm_machine *m) try {
     return cm_result_failure();
 }
 
-int cm_log_reset_uarch(cm_machine *m, int log_type, bool one_based, const char **access_log) try {
+int32_t cm_log_reset_uarch(cm_machine *m, int32_t log_type, bool one_based, const char **access_log) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log output");
     }
@@ -249,7 +249,7 @@ int cm_log_reset_uarch(cm_machine *m, int log_type, bool one_based, const char *
     return cm_result_failure();
 }
 
-int cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *uarch_break_reason) try {
+int32_t cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *uarch_break_reason) try {
     auto *cpp_machine = convert_from_c(m);
     const auto status = cpp_machine->run_uarch(uarch_cycle_end);
     if (uarch_break_reason) {
@@ -260,7 +260,7 @@ int cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON 
     return cm_result_failure();
 }
 
-int cm_log_step_uarch(cm_machine *m, int log_type, bool one_based, const char **access_log) try {
+int32_t cm_log_step_uarch(cm_machine *m, int32_t log_type, bool one_based, const char **access_log) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log output");
     }
@@ -275,7 +275,7 @@ int cm_log_step_uarch(cm_machine *m, int log_type, bool one_based, const char **
     return cm_result_failure();
 }
 
-int cm_verify_step_uarch(const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after,
+int32_t cm_verify_step_uarch(const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after,
     bool one_based) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log");
@@ -295,7 +295,7 @@ int cm_verify_step_uarch(const cm_hash *root_hash_before, const char *access_log
     return cm_result_failure();
 }
 
-int cm_verify_reset_uarch(const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after,
+int32_t cm_verify_reset_uarch(const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after,
     bool one_based) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log");
@@ -315,7 +315,7 @@ int cm_verify_reset_uarch(const cm_hash *root_hash_before, const char *access_lo
     return cm_result_failure();
 }
 
-int cm_get_proof(cm_machine *m, uint64_t address, int log2_size, const char **proof) try {
+int32_t cm_get_proof(cm_machine *m, uint64_t address, int32_t log2_size, const char **proof) try {
     if (proof == nullptr) {
         throw std::invalid_argument("invalid proof output");
     }
@@ -329,7 +329,7 @@ int cm_get_proof(cm_machine *m, uint64_t address, int log2_size, const char **pr
     return cm_result_failure();
 }
 
-int cm_get_root_hash(cm_machine *m, cm_hash *hash) try {
+int32_t cm_get_root_hash(cm_machine *m, cm_hash *hash) try {
     if (hash == nullptr) {
         throw std::invalid_argument("invalid hash output");
     }
@@ -342,7 +342,7 @@ int cm_get_root_hash(cm_machine *m, cm_hash *hash) try {
     return cm_result_failure();
 }
 
-int cm_verify_merkle_tree(cm_machine *m, bool *result) try {
+int32_t cm_verify_merkle_tree(cm_machine *m, bool *result) try {
     if (result == nullptr) {
         throw std::invalid_argument("invalid result output");
     }
@@ -353,7 +353,7 @@ int cm_verify_merkle_tree(cm_machine *m, bool *result) try {
     return cm_result_failure();
 }
 
-int cm_read_csr(const cm_machine *m, CM_CSR csr, uint64_t *val) try {
+int32_t cm_read_csr(const cm_machine *m, CM_CSR csr, uint64_t *val) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");
     }
@@ -365,7 +365,7 @@ int cm_read_csr(const cm_machine *m, CM_CSR csr, uint64_t *val) try {
     return cm_result_failure();
 }
 
-int cm_write_csr(cm_machine *m, CM_CSR csr, uint64_t val) try {
+int32_t cm_write_csr(cm_machine *m, CM_CSR csr, uint64_t val) try {
     auto *cpp_machine = convert_from_c(m);
     auto cpp_csr = static_cast<cartesi::machine::csr>(csr);
     cpp_machine->write_csr(cpp_csr, val);
@@ -384,7 +384,7 @@ uint64_t cm_get_csr_address(CM_CSR csr) try {
     return UINT64_MAX;
 }
 
-int cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val) try {
+int32_t cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid word output");
     }
@@ -395,7 +395,7 @@ int cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val) try {
     return cm_result_failure();
 }
 
-int cm_read_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length) try {
+int32_t cm_read_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length) try {
     const auto *cpp_machine = convert_from_c(m);
     cpp_machine->read_memory(address, data, length);
     return cm_result_success();
@@ -403,7 +403,7 @@ int cm_read_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_
     return cm_result_failure();
 }
 
-int cm_write_memory(cm_machine *m, uint64_t address, const uint8_t *data, size_t length) try {
+int32_t cm_write_memory(cm_machine *m, uint64_t address, const uint8_t *data, uint64_t length) try {
     auto *cpp_machine = convert_from_c(m);
     cpp_machine->write_memory(address, data, length);
     return cm_result_success();
@@ -411,7 +411,7 @@ int cm_write_memory(cm_machine *m, uint64_t address, const uint8_t *data, size_t
     return cm_result_failure();
 }
 
-int cm_read_virtual_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length) try {
+int32_t cm_read_virtual_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length) try {
     const auto *cpp_machine = convert_from_c(m);
     cpp_machine->read_virtual_memory(address, data, length);
     return cm_result_success();
@@ -419,7 +419,7 @@ int cm_read_virtual_memory(const cm_machine *m, uint64_t address, uint8_t *data,
     return cm_result_failure();
 }
 
-int cm_write_virtual_memory(cm_machine *m, uint64_t address, const uint8_t *data, size_t length) try {
+int32_t cm_write_virtual_memory(cm_machine *m, uint64_t address, const uint8_t *data, uint64_t length) try {
     auto *cpp_machine = convert_from_c(m);
     cpp_machine->write_virtual_memory(address, data, length);
     return cm_result_success();
@@ -427,7 +427,7 @@ int cm_write_virtual_memory(cm_machine *m, uint64_t address, const uint8_t *data
     return cm_result_failure();
 }
 
-int cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *paddr) try {
+int32_t cm_translate_virtual_address(const cm_machine *m, uint64_t vaddr, uint64_t *paddr) try {
     const auto *cpp_machine = convert_from_c(m);
     *paddr = cpp_machine->translate_virtual_address(vaddr);
     return cm_result_success();
@@ -435,7 +435,7 @@ int cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *paddr)
     return cm_result_failure();
 }
 
-int cm_read_mcycle(const cm_machine *m, uint64_t *val) try {
+int32_t cm_read_mcycle(const cm_machine *m, uint64_t *val) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");
     }
@@ -446,7 +446,7 @@ int cm_read_mcycle(const cm_machine *m, uint64_t *val) try {
     return cm_result_failure();
 }
 
-int cm_read_uarch_cycle(const cm_machine *m, uint64_t *val) try {
+int32_t cm_read_uarch_cycle(const cm_machine *m, uint64_t *val) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");
     }
@@ -457,7 +457,7 @@ int cm_read_uarch_cycle(const cm_machine *m, uint64_t *val) try {
     return cm_result_failure();
 }
 
-int cm_read_iflags_Y(const cm_machine *m, bool *val) try {
+int32_t cm_read_iflags_Y(const cm_machine *m, bool *val) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");
     }
@@ -468,7 +468,7 @@ int cm_read_iflags_Y(const cm_machine *m, bool *val) try {
     return cm_result_failure();
 }
 
-int cm_reset_iflags_Y(cm_machine *m) try {
+int32_t cm_reset_iflags_Y(cm_machine *m) try {
     auto *cpp_machine = convert_from_c(m);
     cpp_machine->reset_iflags_Y();
     return cm_result_success();
@@ -476,7 +476,7 @@ int cm_reset_iflags_Y(cm_machine *m) try {
     return cm_result_failure();
 }
 
-int cm_set_iflags_Y(cm_machine *m) try {
+int32_t cm_set_iflags_Y(cm_machine *m) try {
     auto *cpp_machine = convert_from_c(m);
     cpp_machine->set_iflags_Y();
     return cm_result_success();
@@ -484,7 +484,7 @@ int cm_set_iflags_Y(cm_machine *m) try {
     return cm_result_failure();
 }
 
-int cm_read_iflags_X(const cm_machine *m, bool *val) try {
+int32_t cm_read_iflags_X(const cm_machine *m, bool *val) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");
     }
@@ -495,7 +495,7 @@ int cm_read_iflags_X(const cm_machine *m, bool *val) try {
     return cm_result_failure();
 }
 
-int cm_read_iflags_H(const cm_machine *m, bool *val) try {
+int32_t cm_read_iflags_H(const cm_machine *m, bool *val) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");
     }
@@ -506,7 +506,7 @@ int cm_read_iflags_H(const cm_machine *m, bool *val) try {
     return cm_result_failure();
 }
 
-int cm_verify_dirty_page_maps(cm_machine *m, bool *result) try {
+int32_t cm_verify_dirty_page_maps(cm_machine *m, bool *result) try {
     if (result == nullptr) {
         throw std::invalid_argument("invalid result output");
     }
@@ -517,7 +517,7 @@ int cm_verify_dirty_page_maps(cm_machine *m, bool *result) try {
     return cm_result_failure();
 }
 
-int cm_get_initial_config(const cm_machine *m, const char **config) try {
+int32_t cm_get_initial_config(const cm_machine *m, const char **config) try {
     if (config == nullptr) {
         throw std::invalid_argument("invalid config output");
     }
@@ -543,7 +543,7 @@ const char *cm_get_default_config() try {
     return nullptr;
 }
 
-int cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,
+int32_t cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,
     const char *image_filename) try {
     auto *cpp_machine = convert_from_c(m);
     cartesi::memory_range_config cpp_range;
@@ -557,7 +557,7 @@ int cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool
     return cm_result_failure();
 }
 
-int cm_destroy(cm_machine *m) try {
+int32_t cm_destroy(cm_machine *m) try {
     auto *cpp_machine = convert_from_c(m);
     cpp_machine->destroy();
     return cm_result_success();
@@ -565,7 +565,7 @@ int cm_destroy(cm_machine *m) try {
     return cm_result_failure();
 }
 
-int cm_snapshot(cm_machine *m) try {
+int32_t cm_snapshot(cm_machine *m) try {
     auto *cpp_machine = convert_from_c(m);
     cpp_machine->snapshot();
     return cm_result_success();
@@ -573,7 +573,7 @@ int cm_snapshot(cm_machine *m) try {
     return cm_result_failure();
 }
 
-int cm_commit(cm_machine *m) try {
+int32_t cm_commit(cm_machine *m) try {
     auto *cpp_machine = convert_from_c(m);
     cpp_machine->commit();
     return cm_result_success();
@@ -581,7 +581,7 @@ int cm_commit(cm_machine *m) try {
     return cm_result_failure();
 }
 
-int cm_rollback(cm_machine *m) try {
+int32_t cm_rollback(cm_machine *m) try {
     auto *cpp_machine = convert_from_c(m);
     cpp_machine->rollback();
     return cm_result_success();
@@ -589,7 +589,7 @@ int cm_rollback(cm_machine *m) try {
     return cm_result_failure();
 }
 
-CM_API int cm_get_memory_ranges(const cm_machine *m, const char **ranges) try {
+int32_t cm_get_memory_ranges(const cm_machine *m, const char **ranges) try {
     if (ranges == nullptr) {
         throw std::invalid_argument("invalid memory range output");
     }
@@ -603,7 +603,7 @@ CM_API int cm_get_memory_ranges(const cm_machine *m, const char **ranges) try {
     return cm_result_failure();
 }
 
-int cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, size_t length) try {
+int32_t cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length) try {
     auto *cpp_machine = convert_from_c(m);
     cpp_machine->send_cmio_response(reason, data, length);
     return cm_result_success();
@@ -611,8 +611,8 @@ int cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, s
     return cm_result_failure();
 }
 
-int cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, size_t length, int log_type,
-    bool one_based, const char **access_log) try {
+int32_t cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
+    int32_t log_type, bool one_based, const char **access_log) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log output");
     }
@@ -628,8 +628,8 @@ int cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *dat
     return cm_result_failure();
 }
 
-int cm_verify_send_cmio_response(uint16_t reason, const uint8_t *data, size_t length, const cm_hash *root_hash_before,
-    const char *access_log, const cm_hash *root_hash_after, bool one_based) try {
+int32_t cm_verify_send_cmio_response(uint16_t reason, const uint8_t *data, uint64_t length,
+    const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after, bool one_based) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log");
     }

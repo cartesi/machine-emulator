@@ -100,12 +100,12 @@ uint64_t uarch_machine::read_ram_length(void) const {
     return m_s.ram.get_length();
 }
 
-pma_entry &uarch_machine::find_pma_entry(uint64_t paddr, size_t length) {
+pma_entry &uarch_machine::find_pma_entry(uint64_t paddr, uint64_t length) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
     return const_cast<pma_entry &>(std::as_const(*this).find_pma_entry(paddr, length));
 }
 
-const pma_entry &uarch_machine::find_pma_entry(uint64_t paddr, size_t length) const {
+const pma_entry &uarch_machine::find_pma_entry(uint64_t paddr, uint64_t length) const {
     if (m_s.ram.contains(paddr, length)) {
         return m_s.ram;
     }

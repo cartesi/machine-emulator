@@ -694,23 +694,23 @@ static void store_memory_pma(const pma_entry &pma, const std::string &dir) {
     }
 }
 
-pma_entry &machine::find_pma_entry(uint64_t paddr, size_t length) {
+pma_entry &machine::find_pma_entry(uint64_t paddr, uint64_t length) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
     return const_cast<pma_entry &>(std::as_const(*this).find_pma_entry(paddr, length));
 }
 
-const pma_entry &machine::find_pma_entry(uint64_t paddr, size_t length) const {
+const pma_entry &machine::find_pma_entry(uint64_t paddr, uint64_t length) const {
     return find_pma_entry(m_s.pmas, paddr, length);
 }
 
 template <typename CONTAINER>
-pma_entry &machine::find_pma_entry(const CONTAINER &pmas, uint64_t paddr, size_t length) {
+pma_entry &machine::find_pma_entry(const CONTAINER &pmas, uint64_t paddr, uint64_t length) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
     return const_cast<pma_entry &>(std::as_const(*this).find_pma_entry(pmas, paddr, length));
 }
 
 template <typename CONTAINER>
-const pma_entry &machine::find_pma_entry(const CONTAINER &pmas, uint64_t paddr, size_t length) const {
+const pma_entry &machine::find_pma_entry(const CONTAINER &pmas, uint64_t paddr, uint64_t length) const {
     for (const auto &p : pmas) {
         const auto &pma = deref(p);
         // Stop at first empty PMA
@@ -2447,7 +2447,7 @@ void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length
     }
 }
 
-void machine::write_memory(uint64_t address, const unsigned char *data, size_t length) {
+void machine::write_memory(uint64_t address, const unsigned char *data, uint64_t length) {
     if (length == 0) {
         return;
     }
@@ -2461,7 +2461,7 @@ void machine::write_memory(uint64_t address, const unsigned char *data, size_t l
     pma.write_memory(address, data, length);
 }
 
-void machine::fill_memory(uint64_t address, uint8_t data, size_t length) {
+void machine::fill_memory(uint64_t address, uint8_t data, uint64_t length) {
     if (length == 0) {
         return;
     }
@@ -2487,7 +2487,7 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
     for (uint64_t vaddr_page = vaddr_page_start; vaddr_page < vaddr_page_limit; vaddr_page += PMA_PAGE_SIZE) {
         uint64_t paddr_page = 0;
         if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
-            throw std::invalid_argument{"page fault"};
+            throw std::domain_error{"page fault"};
         }
         uint64_t paddr = paddr_page;
         uint64_t vaddr = vaddr_page;
@@ -2503,7 +2503,7 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
     }
 }
 
-void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *data, size_t length) {
+void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *data, uint64_t length) {
     state_access a(*this);
     if (length == 0) {
         return;
@@ -2520,7 +2520,7 @@ void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *da
         // perform address translation using read access mode,
         // so we can write any reachable virtual memory range
         if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
-            throw std::invalid_argument{"page fault"};
+            throw std::domain_error{"page fault"};
         }
         uint64_t paddr = paddr_page;
         uint64_t vaddr = vaddr_page;
@@ -2541,7 +2541,7 @@ uint64_t machine::translate_virtual_address(uint64_t vaddr) {
     // perform address translation using read access mode
     uint64_t paddr = 0;
     if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr, vaddr, PTE_XWR_R_SHIFT)) {
-        throw std::invalid_argument{"page fault"};
+        throw std::domain_error{"page fault"};
     }
     return paddr;
 }
@@ -2602,12 +2602,12 @@ bool machine::read_uarch_halt_flag(void) const {
     return m_uarch.read_halt_flag();
 }
 
-void machine::send_cmio_response(uint16_t reason, const unsigned char *data, size_t length) {
+void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {
     state_access a(*this);
     cartesi::send_cmio_response(a, reason, data, length);
 }
 
-access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
+access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
     const access_log::type &log_type, bool one_based) {
     hash_type root_hash_before;
     if (log_type.has_proofs()) {
@@ -2631,7 +2631,7 @@ access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char 
     return std::move(*a.get_log());
 }
 
-void machine::verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, size_t length,
+void machine::verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, uint64_t length,
     const access_log &log, bool one_based) {
     // There must be at least one access in log
     if (log.get_accesses().empty()) {
@@ -2642,7 +2642,7 @@ void machine::verify_send_cmio_response_log(uint16_t reason, const unsigned char
     a.finish();
 }
 
-void machine::verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, size_t length,
+void machine::verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, uint64_t length,
     const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after, bool one_based) {
     // We need proofs in order to verify the state transition
     if (!log.get_log_type().has_proofs()) {

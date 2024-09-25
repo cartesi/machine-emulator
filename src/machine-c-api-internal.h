@@ -27,10 +27,10 @@
 #include "semantic-version.h"
 
 /// \brief Helper function that returns error result from C api function
-int cm_result_failure();
+int32_t cm_result_failure();
 
 /// \brief Helper function that returns success result from C api function
-int cm_result_success();
+int32_t cm_result_success();
 
 /// \brief Helper function that parses hash from C api structure
 cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash);

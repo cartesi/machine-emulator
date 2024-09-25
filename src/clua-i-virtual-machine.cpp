@@ -154,7 +154,7 @@ static int machine_obj_index_read_memory(lua_State *L) {
     lua_settop(L, 3);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t address = luaL_checkinteger(L, 2);
-    const size_t length = luaL_checkinteger(L, 3);
+    const uint64_t length = luaL_checkinteger(L, 3);
     unsigned char *data{};
     try {
         data = new unsigned char[length];
@@ -177,7 +177,7 @@ static int machine_obj_index_read_virtual_memory(lua_State *L) {
     lua_settop(L, 3);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t address = luaL_checkinteger(L, 2);
-    const size_t length = luaL_checkinteger(L, 3);
+    const uint64_t length = luaL_checkinteger(L, 3);
     unsigned char *data{};
     try {
         data = new unsigned char[length];
@@ -350,7 +350,7 @@ static int machine_obj_index_write_csr(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_write_memory(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    size_t length{0};
+    uint64_t length{0};
     const uint64_t address = luaL_checkinteger(L, 2);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
@@ -365,7 +365,7 @@ static int machine_obj_index_write_memory(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_write_virtual_memory(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    size_t length{0};
+    uint64_t length{0};
     const uint64_t address = luaL_checkinteger(L, 2);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
@@ -448,7 +448,7 @@ static int machine_obj_index_rollback(lua_State *L) {
 static int machine_obj_index_send_cmio_response(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 2));
-    size_t length{0};
+    uint64_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
     if (cm_send_cmio_response(m.get(), reason, data, length) != 0) {
@@ -464,7 +464,7 @@ static int machine_obj_index_log_send_cmio_response(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 2));
     const int log_type = static_cast<int>(luaL_optinteger(L, 4, 0));
-    size_t length{0};
+    uint64_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
     const char *access_log = nullptr;

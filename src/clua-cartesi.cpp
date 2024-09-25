@@ -166,6 +166,7 @@ CM_API int luaopen_cartesi(lua_State *L) {
     // Set cartesi constants
 
     clua_setintegerfield(L, CM_HASH_SIZE, "HASH_SIZE", -1);
+    clua_setintegerfield(L, CM_CSR_COUNT, "CSR_COUNT", -1);
     clua_setintegerfield(L, CM_TREE_LOG2_WORD_SIZE, "TREE_LOG2_WORD_SIZE", -1);
     clua_setintegerfield(L, CM_TREE_LOG2_PAGE_SIZE, "TREE_LOG2_PAGE_SIZE", -1);
     clua_setintegerfield(L, CM_TREE_LOG2_ROOT_SIZE, "TREE_LOG2_ROOT_SIZE", -1);

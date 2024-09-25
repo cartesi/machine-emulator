@@ -35,7 +35,7 @@ class uarch_state_access : public i_uarch_state_access<uarch_state_access> {
     /// \param length Length of physical memory region.
     /// \returns Corresponding entry if found, or a sentinel entry
     /// for an empty range.
-    pma_entry &find_memory_pma_entry(uint64_t paddr, size_t length) {
+    pma_entry &find_memory_pma_entry(uint64_t paddr, uint64_t length) {
         // First, search microarchitecture private PMA entries
         if (m_us.ram.contains(paddr, length)) {
             return m_us.ram;

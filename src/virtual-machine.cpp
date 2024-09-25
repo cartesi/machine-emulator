@@ -64,7 +64,7 @@ void virtual_machine::do_read_memory(uint64_t address, unsigned char *data, uint
     m_machine->read_memory(address, data, length);
 }
 
-void virtual_machine::do_write_memory(uint64_t address, const unsigned char *data, size_t length) {
+void virtual_machine::do_write_memory(uint64_t address, const unsigned char *data, uint64_t length) {
     m_machine->write_memory(address, data, length);
 }
 
@@ -72,7 +72,7 @@ void virtual_machine::do_read_virtual_memory(uint64_t address, unsigned char *da
     m_machine->read_virtual_memory(address, data, length);
 }
 
-void virtual_machine::do_write_virtual_memory(uint64_t address, const unsigned char *data, size_t length) {
+void virtual_machine::do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) {
     m_machine->write_virtual_memory(address, data, length);
 }
 
@@ -164,11 +164,11 @@ machine_memory_range_descrs virtual_machine::do_get_memory_ranges(void) const {
     return m_machine->get_memory_ranges();
 }
 
-void virtual_machine::do_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length) {
+void virtual_machine::do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {
     m_machine->send_cmio_response(reason, data, length);
 }
 
-access_log virtual_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
+access_log virtual_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
     const access_log::type &log_type, bool one_based) {
     return m_machine->log_send_cmio_response(reason, data, length, log_type, one_based);
 }

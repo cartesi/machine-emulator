@@ -491,7 +491,7 @@ public:
     /// \param address Address
     /// \param length Length
     /// \return true if this PMA contains the given range
-    bool contains(uint64_t address, size_t length) const {
+    bool contains(uint64_t address, uint64_t length) const {
         if (get_istart_E()) {
             return false;
         }

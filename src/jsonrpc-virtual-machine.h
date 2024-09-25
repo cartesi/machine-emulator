@@ -69,10 +69,10 @@ public:
         const access_log &log, const hash_type &root_hash_after, bool one_based = false);
 
     static void verify_send_cmio_response_log(const jsonrpc_mgr_ptr &mgr, uint16_t reason, const unsigned char *data,
-        size_t length, const access_log &log, bool one_based = false);
+        uint64_t length, const access_log &log, bool one_based = false);
 
     static void verify_send_cmio_response_state_transition(const jsonrpc_mgr_ptr &mgr, uint16_t reason,
-        const unsigned char *data, size_t length, const hash_type &root_hash_before, const access_log &log,
+        const unsigned char *data, uint64_t length, const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after, bool one_based = false);
 
     static fork_result fork(const jsonrpc_mgr_ptr &mgr);
@@ -87,9 +87,9 @@ private:
     uint64_t do_read_csr(csr r) const override;
     void do_write_csr(csr w, uint64_t val) override;
     void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const override;
-    void do_write_memory(uint64_t address, const unsigned char *data, size_t length) override;
+    void do_write_memory(uint64_t address, const unsigned char *data, uint64_t length) override;
     void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const override;
-    void do_write_virtual_memory(uint64_t address, const unsigned char *data, size_t length) override;
+    void do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) override;
     uint64_t do_translate_virtual_address(uint64_t vaddr) const override;
     uint64_t do_read_mcycle(void) const override;
     bool do_read_iflags_H(void) const override;
@@ -115,8 +115,8 @@ private:
     uint64_t do_read_uarch_cycle(void) const override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
     machine_memory_range_descrs do_get_memory_ranges(void) const override;
-    void do_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length) override;
-    access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
+    void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) override;
+    access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const access_log::type &log_type, bool one_based) override;
     jsonrpc_mgr_ptr m_mgr;
 };

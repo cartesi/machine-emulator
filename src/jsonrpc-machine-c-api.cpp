@@ -30,7 +30,7 @@ static const cartesi::jsonrpc_mgr_ptr *convert_from_c(const cm_jsonrpc_mgr *mgr)
     return reinterpret_cast<const cartesi::jsonrpc_mgr_ptr *>(mgr);
 }
 
-int cm_jsonrpc_create_mgr(const char *remote_address, cm_jsonrpc_mgr **mgr) try {
+int32_t cm_jsonrpc_create_mgr(const char *remote_address, cm_jsonrpc_mgr **mgr) try {
     if (mgr == nullptr) {
         throw std::invalid_argument("invalid stub output");
     }
@@ -52,7 +52,7 @@ void cm_jsonrpc_delete_mgr(const cm_jsonrpc_mgr *mgr) {
     delete mgr_wrapper;
 }
 
-int cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const char *config, const char *runtime_config,
+int32_t cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const char *config, const char *runtime_config,
     cm_machine **new_machine) try {
     if (new_machine == nullptr) {
         throw std::invalid_argument("invalid new machine output");
@@ -70,7 +70,7 @@ int cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const char *config, con
     return cm_result_failure();
 }
 
-int cm_jsonrpc_load_machine(const cm_jsonrpc_mgr *mgr, const char *dir, const char *runtime_config,
+int32_t cm_jsonrpc_load_machine(const cm_jsonrpc_mgr *mgr, const char *dir, const char *runtime_config,
     cm_machine **new_machine) try {
     if (new_machine == nullptr) {
         throw std::invalid_argument("invalid new machine output");
@@ -90,7 +90,7 @@ int cm_jsonrpc_load_machine(const cm_jsonrpc_mgr *mgr, const char *dir, const ch
     return cm_result_failure();
 }
 
-int cm_jsonrpc_get_machine(const cm_jsonrpc_mgr *mgr, cm_machine **new_machine) try {
+int32_t cm_jsonrpc_get_machine(const cm_jsonrpc_mgr *mgr, cm_machine **new_machine) try {
     if (new_machine == nullptr) {
         throw std::invalid_argument("invalid new machine output");
     }
@@ -102,7 +102,7 @@ int cm_jsonrpc_get_machine(const cm_jsonrpc_mgr *mgr, cm_machine **new_machine) 
     return cm_result_failure();
 }
 
-int cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const char **config) try {
+int32_t cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const char **config) try {
     if (config == nullptr) {
         throw std::invalid_argument("invalid config output");
     }
@@ -116,7 +116,7 @@ int cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const char **config
     return cm_result_failure();
 }
 
-int cm_jsonrpc_verify_step_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before, const char *access_log,
+int32_t cm_jsonrpc_verify_step_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before, const char *access_log,
     const cm_hash *root_hash_after, bool one_based) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log");
@@ -137,8 +137,8 @@ int cm_jsonrpc_verify_step_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_
     return cm_result_failure();
 }
 
-int cm_jsonrpc_verify_reset_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before, const char *access_log,
-    const cm_hash *root_hash_after, bool one_based) try {
+int32_t cm_jsonrpc_verify_reset_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
+    const char *access_log, const cm_hash *root_hash_after, bool one_based) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log");
     }
@@ -159,7 +159,7 @@ int cm_jsonrpc_verify_reset_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root
     return cm_result_failure();
 }
 
-int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, const char **address, int *pid) try {
+int32_t cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, const char **address, int32_t *pid) try {
     if (address == nullptr) {
         throw std::invalid_argument("invalid address output");
     }
@@ -182,7 +182,7 @@ int cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, const char **address, int *pid) t
     return cm_result_failure();
 }
 
-int cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, const char **new_address) try {
+int32_t cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, const char **new_address) try {
     const auto *cpp_mgr = convert_from_c(mgr);
     const std::string cpp_new_address = cartesi::jsonrpc_virtual_machine::rebind(*cpp_mgr, address);
     if (new_address) {
@@ -198,7 +198,7 @@ int cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, const char
     return cm_result_failure();
 }
 
-int cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_CSR csr, uint64_t *val) try {
+int32_t cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_CSR csr, uint64_t *val) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");
     }
@@ -210,7 +210,7 @@ int cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_CSR csr, uint64_t *
     return cm_result_failure();
 }
 
-int cm_jsonrpc_get_version(const cm_jsonrpc_mgr *mgr, const char **version) try {
+int32_t cm_jsonrpc_get_version(const cm_jsonrpc_mgr *mgr, const char **version) try {
     if (version == nullptr) {
         throw std::invalid_argument("invalid version output");
     }
@@ -224,7 +224,7 @@ int cm_jsonrpc_get_version(const cm_jsonrpc_mgr *mgr, const char **version) try 
     return cm_result_failure();
 }
 
-int cm_jsonrpc_shutdown(const cm_jsonrpc_mgr *mgr) try {
+int32_t cm_jsonrpc_shutdown(const cm_jsonrpc_mgr *mgr) try {
     const auto *cpp_mgr = convert_from_c(mgr);
     cartesi::jsonrpc_virtual_machine::shutdown(*cpp_mgr);
     return cm_result_success();
@@ -232,8 +232,9 @@ int cm_jsonrpc_shutdown(const cm_jsonrpc_mgr *mgr) try {
     return cm_result_failure();
 }
 
-int cm_jsonrpc_verify_send_cmio_response(const cm_jsonrpc_mgr *mgr, uint16_t reason, const uint8_t *data, size_t length,
-    const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after, bool one_based) try {
+int32_t cm_jsonrpc_verify_send_cmio_response(const cm_jsonrpc_mgr *mgr, uint16_t reason, const uint8_t *data,
+    uint64_t length, const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after,
+    bool one_based) try {
     if (access_log == nullptr) {
         throw std::invalid_argument("invalid access log");
     }

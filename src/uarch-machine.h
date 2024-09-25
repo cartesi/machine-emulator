@@ -101,10 +101,10 @@ public:
     /// \param length Length of physical memory region.
     /// \returns Corresponding entry if found, or a sentinel entry
     /// for an empty range.
-    pma_entry &find_pma_entry(uint64_t paddr, size_t length);
+    pma_entry &find_pma_entry(uint64_t paddr, uint64_t length);
 
     /// \brief Obtain PMA entry that covers a given physical memory region
-    const pma_entry &find_pma_entry(uint64_t paddr, size_t length) const;
+    const pma_entry &find_pma_entry(uint64_t paddr, uint64_t length) const;
 
     /// \brief Returns copy of initialization config.
     const uarch_config &get_initial_config(void) const {

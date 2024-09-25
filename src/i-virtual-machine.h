@@ -97,7 +97,7 @@ public:
     }
 
     /// \brief Writes a chunk of data to the machine memory.
-    void write_memory(uint64_t address, const unsigned char *data, size_t length) {
+    void write_memory(uint64_t address, const unsigned char *data, uint64_t length) {
         do_write_memory(address, data, length);
     }
 
@@ -107,7 +107,7 @@ public:
     }
 
     /// \brief Writes a chunk of data to the machine virtual memory.
-    void write_virtual_memory(uint64_t address, const unsigned char *data, size_t length) {
+    void write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) {
         do_write_virtual_memory(address, data, length);
     }
 
@@ -228,12 +228,12 @@ public:
     }
 
     /// \brief Sends cmio response.
-    void send_cmio_response(uint16_t reason, const unsigned char *data, size_t length) {
+    void send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {
         do_send_cmio_response(reason, data, length);
     }
 
     /// \brief Sends cmio response. and returns an access log
-    access_log log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
+    access_log log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const access_log::type &log_type, bool one_based) {
         return do_log_send_cmio_response(reason, data, length, log_type, one_based);
     }
@@ -248,9 +248,9 @@ private:
     virtual uint64_t do_read_csr(csr r) const = 0;
     virtual void do_write_csr(csr w, uint64_t val) = 0;
     virtual void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const = 0;
-    virtual void do_write_memory(uint64_t address, const unsigned char *data, size_t length) = 0;
+    virtual void do_write_memory(uint64_t address, const unsigned char *data, uint64_t length) = 0;
     virtual void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const = 0;
-    virtual void do_write_virtual_memory(uint64_t address, const unsigned char *data, size_t length) = 0;
+    virtual void do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) = 0;
     virtual uint64_t do_translate_virtual_address(uint64_t vaddr) const = 0;
     virtual uint64_t do_read_mcycle(void) const = 0;
     virtual bool do_read_iflags_H(void) const = 0;
@@ -273,8 +273,8 @@ private:
     virtual access_log do_log_reset_uarch(const access_log::type &log_type, bool one_based = false) = 0;
     virtual uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) = 0;
     virtual machine_memory_range_descrs do_get_memory_ranges(void) const = 0;
-    virtual void do_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length) = 0;
-    virtual access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
+    virtual void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) = 0;
+    virtual access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const access_log::type &log_type, bool one_based) = 0;
 };
 

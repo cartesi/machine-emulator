@@ -137,7 +137,7 @@ T *clua_push_new_managed_toclose_ptr(lua_State *L, T &&value, int ctxidx = lua_u
 /// \param L Lua state
 /// \param idx Index in stack
 /// \returns C API CSR selector. Lua argument error if unknown
-CM_CSR clua_check_cm_proc_csr(lua_State *L, int idx);
+cm_csr clua_check_cm_proc_csr(lua_State *L, int idx);
 
 /// \brief Pushes a C api hash object to the Lua stack
 /// \param L Lua state

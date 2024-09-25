@@ -43,15 +43,15 @@ extern "C" {
 // -----------------------------------------------------------------------------
 
 /// \brief Constants.
-typedef enum CM_CONSTANT {
+typedef enum cm_constant {
     CM_HASH_SIZE = 32,
     CM_TREE_LOG2_WORD_SIZE = 5,
     CM_TREE_LOG2_PAGE_SIZE = 12,
     CM_TREE_LOG2_ROOT_SIZE = 64,
-} CM_CONSTANT;
+} cm_constant;
 
 /// \brief Error codes returned from the C API.
-typedef enum CM_ERROR {
+typedef enum cm_error {
     CM_ERROR_OK,
     CM_ERROR_INVALID_ARGUMENT,
     CM_ERROR_DOMAIN_ERROR,
@@ -76,33 +76,33 @@ typedef enum CM_ERROR {
     CM_ERROR_BAD_VARIANT_ACCESS,
     CM_ERROR_EXCEPTION,
     CM_ERROR_UNKNOWN,
-} CM_ERROR;
+} cm_error;
 
 /// \brief Reasons for a machine run interruption.
-typedef enum CM_BREAK_REASON {
+typedef enum cm_break_reason {
     CM_BREAK_REASON_FAILED,
     CM_BREAK_REASON_HALTED,
     CM_BREAK_REASON_YIELDED_MANUALLY,
     CM_BREAK_REASON_YIELDED_AUTOMATICALLY,
     CM_BREAK_REASON_YIELDED_SOFTLY,
     CM_BREAK_REASON_REACHED_TARGET_MCYCLE,
-} CM_BREAK_REASON;
+} cm_break_reason;
 
 /// \brief Reasons for a machine microarchitecture run interruption.
-typedef enum {
+typedef enum cm_uarch_break_reason {
     CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE,
     CM_UARCH_BREAK_REASON_UARCH_HALTED,
-} CM_UARCH_BREAK_REASON;
+} cm_uarch_break_reason;
 
 /// \brief Access log types.
-typedef enum CM_ACCESS_LOG_TYPE {
+typedef enum cm_access_log_type {
     CM_ACCESS_LOG_TYPE_PROOFS = 1,      ///< Includes proofs
     CM_ACCESS_LOG_TYPE_ANNOTATIONS = 2, ///< Includes annotations
     CM_ACCESS_LOG_TYPE_LARGE_DATA = 4,  ///< Includes data bigger than 8 bytes
-} CM_ACCESS_LOG_TYPE;
+} cm_access_log_type;
 
 /// \brief Machine control and status registers.
-typedef enum CM_CSR {
+typedef enum cm_csr {
     // Processor CSRs
     CM_CSR_X0,
     CM_CSR_X1,
@@ -260,7 +260,7 @@ typedef enum CM_CSR {
     CM_CSR_HTIF_FROMHOST_REASON,
     CM_CSR_HTIF_FROMHOST_DATA,
     CM_CSR_UNKNOWN,
-} CM_CSR;
+} cm_csr;
 
 /// \brief Machine hash array.
 typedef uint8_t cm_hash[CM_HASH_SIZE];
@@ -276,7 +276,7 @@ typedef struct cm_machine cm_machine;
 /// \brief Returns the error message set by the very last C API call.
 /// \returns A C string, remains valid until next C API call.
 /// \details The string returned by this function must not be changed nor deallocated,
-/// and remains valid until next C API function that can return a CM_ERROR code is called.
+/// and remains valid until next C API function that can return a cm_error code is called.
 /// In case the last call was successful it returns an empty string.
 /// It uses a thread local variable, so it's safe to call from different threads.
 CM_API const char *cm_get_last_error_message();
@@ -293,7 +293,7 @@ CM_API const char *cm_get_default_config();
 /// \param csr The CSR.
 /// \returns The address of the specified CSR.
 /// In case the CSR is invalid, UINT64_MAX is returned and last error message is set.
-CM_API uint64_t cm_get_csr_address(CM_CSR csr);
+CM_API uint64_t cm_get_csr_address(cm_csr csr);
 
 // ---------------------------------
 // Machine API functions
@@ -395,14 +395,14 @@ CM_API int32_t cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val
 /// \param csr CSR to read.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_read_csr(const cm_machine *m, CM_CSR csr, uint64_t *val);
+CM_API int32_t cm_read_csr(const cm_machine *m, cm_csr csr, uint64_t *val);
 
 /// \brief Writes the value of a CSR.
 /// \param m Pointer to valid machine instance.
 /// \param csr CSR to write.
 /// \param val Value to write.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_write_csr(cm_machine *m, CM_CSR csr, uint64_t val);
+CM_API int32_t cm_write_csr(cm_machine *m, cm_csr csr, uint64_t val);
 
 /// \brief Reads a chunk of data from the machine memory.
 /// \param m Pointer to valid machine instance.
@@ -524,7 +524,7 @@ CM_API int32_t cm_rollback(cm_machine *m);
 /// \param mcycle_end End cycle value.
 /// \param break_reason Receives reason for machine run interruption when not NULL.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason);
+CM_API int32_t cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reason);
 
 /// \brief Runs the machine in the microarchitecture until the mcycle advances by one unit
 /// or the micro cycles counter reaches uarch_cycle_end.
@@ -532,7 +532,7 @@ CM_API int32_t cm_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break
 /// \param uarch_cycle_end End micro cycle value.
 /// \param uarch_break_reason Receives reason for machine microarchitecture run interruption when not NULL.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *uarch_break_reason);
+CM_API int32_t cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_break_reason *uarch_break_reason);
 
 /// \brief Resets the entire microarchitecture state to pristine values.
 /// \param m Pointer to valid machine instance.

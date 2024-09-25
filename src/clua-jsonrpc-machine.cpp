@@ -47,7 +47,7 @@ static int jsonrpc_machine_class_get_csr_address(lua_State *L) {
     auto &managed_jsonrpc_mgr =
         clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     uint64_t csr_address{};
-    const CM_CSR csr = clua_check_cm_proc_csr(L, 1);
+    const cm_csr csr = clua_check_cm_proc_csr(L, 1);
     if (cm_jsonrpc_get_csr_address(managed_jsonrpc_mgr.get(), csr, &csr_address) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }

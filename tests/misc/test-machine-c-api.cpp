@@ -1340,7 +1340,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_hash_test, access_log_machine_fixture) {
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(machine_run_null_machine_test) {
-    CM_BREAK_REASON break_reason{};
+    cm_break_reason break_reason{};
     int error_code = cm_run(nullptr, 1000, &break_reason);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     BOOST_CHECK_EQUAL(break_reason, CM_BREAK_REASON_FAILED);

@@ -81,7 +81,7 @@ CM_API int32_t cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const ch
 /// \param csr The CSR.
 /// \param val Receives address of the CSR.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_CSR csr, uint64_t *val);
+CM_API int32_t cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, cm_csr csr, uint64_t *val);
 
 // -------------------------------------
 // Machine API functions

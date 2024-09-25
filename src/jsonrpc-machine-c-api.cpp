@@ -198,7 +198,7 @@ int32_t cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, const 
     return cm_result_failure();
 }
 
-int32_t cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, CM_CSR csr, uint64_t *val) try {
+int32_t cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, cm_csr csr, uint64_t *val) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");
     }

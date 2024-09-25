@@ -196,11 +196,11 @@ int32_t cm_store(cm_machine *m, const char *dir) try {
     return cm_result_failure();
 }
 
-int32_t cm_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason) try {
+int32_t cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reason) try {
     auto *cpp_machine = convert_from_c(m);
     const auto status = cpp_machine->run(mcycle_end);
     if (break_reason) {
-        *break_reason = static_cast<CM_BREAK_REASON>(status);
+        *break_reason = static_cast<cm_break_reason>(status);
     }
     return cm_result_success();
 } catch (...) {
@@ -249,11 +249,11 @@ int32_t cm_log_reset_uarch(cm_machine *m, int32_t log_type, bool one_based, cons
     return cm_result_failure();
 }
 
-int32_t cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, CM_UARCH_BREAK_REASON *uarch_break_reason) try {
+int32_t cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_break_reason *uarch_break_reason) try {
     auto *cpp_machine = convert_from_c(m);
     const auto status = cpp_machine->run_uarch(uarch_cycle_end);
     if (uarch_break_reason) {
-        *uarch_break_reason = static_cast<CM_UARCH_BREAK_REASON>(status);
+        *uarch_break_reason = static_cast<cm_uarch_break_reason>(status);
     }
     return cm_result_success();
 } catch (...) {
@@ -353,7 +353,7 @@ int32_t cm_verify_merkle_tree(cm_machine *m, bool *result) try {
     return cm_result_failure();
 }
 
-int32_t cm_read_csr(const cm_machine *m, CM_CSR csr, uint64_t *val) try {
+int32_t cm_read_csr(const cm_machine *m, cm_csr csr, uint64_t *val) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");
     }
@@ -365,7 +365,7 @@ int32_t cm_read_csr(const cm_machine *m, CM_CSR csr, uint64_t *val) try {
     return cm_result_failure();
 }
 
-int32_t cm_write_csr(cm_machine *m, CM_CSR csr, uint64_t val) try {
+int32_t cm_write_csr(cm_machine *m, cm_csr csr, uint64_t val) try {
     auto *cpp_machine = convert_from_c(m);
     auto cpp_csr = static_cast<cartesi::machine::csr>(csr);
     cpp_machine->write_csr(cpp_csr, val);
@@ -374,7 +374,7 @@ int32_t cm_write_csr(cm_machine *m, CM_CSR csr, uint64_t val) try {
     return cm_result_failure();
 }
 
-uint64_t cm_get_csr_address(CM_CSR csr) try {
+uint64_t cm_get_csr_address(cm_csr csr) try {
     auto cpp_csr = static_cast<cartesi::machine::csr>(csr);
     uint64_t address = cartesi::machine::get_csr_address(cpp_csr);
     cm_result_success();

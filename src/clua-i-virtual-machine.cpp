@@ -211,7 +211,7 @@ static int machine_obj_index_read_word(lua_State *L) {
 static int machine_obj_index_run(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t mcycle_end = luaL_optinteger(L, 2, UINT64_MAX);
-    CM_BREAK_REASON break_reason = CM_BREAK_REASON_FAILED;
+    cm_break_reason break_reason = CM_BREAK_REASON_FAILED;
     if (cm_run(m.get(), mcycle_end, &break_reason) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
@@ -281,7 +281,7 @@ static int machine_obj_index_log_reset_uarch(lua_State *L) {
 static int machine_obj_index_run_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t cycle_end = luaL_optinteger(L, 2, UINT64_MAX);
-    CM_UARCH_BREAK_REASON status = CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE;
+    cm_uarch_break_reason status = CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE;
     if (cm_run_uarch(m.get(), cycle_end, &status) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }

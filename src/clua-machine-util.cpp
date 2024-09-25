@@ -46,9 +46,9 @@ void clua_delete<nlohmann::json>(nlohmann::json *ptr) {
     delete ptr;
 }
 
-CM_CSR clua_check_cm_proc_csr(lua_State *L, int idx) try {
+cm_csr clua_check_cm_proc_csr(lua_State *L, int idx) try {
     /// \brief Mapping between CSR names and C API constants
-    const static std::unordered_map<std::string, CM_CSR> g_cm_proc_csr_name = {
+    const static std::unordered_map<std::string, cm_csr> g_cm_proc_csr_name = {
         // clang-format off
         {"x0", CM_CSR_X0},
         {"x1", CM_CSR_X1},

@@ -1780,20 +1780,13 @@ local function check_cmio_htif_config(htif)
     assert(htif.yield_automatic, "yield automatic must be enabled for cmio")
 end
 
-local function get_yield(machine)
-    local cmd = machine:read_csr("htif_tohost_cmd")
-    local data = machine:read_csr("htif_tohost_data")
-    local reason = machine:read_csr("htif_tohost_reason")
-    return cmd, reason, data
-end
-
 local function get_and_print_yield(machine, htif)
-    local cmd, reason, data = get_yield(machine)
+    local cmd, reason, data = machine:receive_cmio_request()
     if
         cmd == cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC
         and reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_PROGRESS
     then
-        stderr("Progress: %6.2f" .. (htif.console_getchar and "\n" or "\r"), data / 10)
+        stderr("Progress: %6.2f" .. (htif.console_getchar and "\n" or "\r"), string.unpack("I4", data) / 10)
         return cmd, reason, data
     end
     local cmd_str = htif_yield_mode[cmd] or "Unknown"
@@ -1803,7 +1796,7 @@ local function get_and_print_yield(machine, htif)
     elseif cmd == cartesi.machine.HTIF_YIELD_CMD_MANUAL then
         reason_str = htif_yield_manual_reason_tohost[reason] or reason_str
     end
-    stderr("\n%s yield %s (%d) (0x%06x data)\n", cmd_str, reason_str, reason, data)
+    stderr("\n%s yield %s (%d) (0x%06x data)\n", cmd_str, reason_str, reason, #data)
     stderr("Cycles: %u\n", machine:read_mcycle())
     return cmd, reason, data
 end
@@ -1816,27 +1809,25 @@ local function instantiate_filename(pattern, values)
     return (string.gsub(pattern, "\0", "%"))
 end
 
-local function save_cmio_state_with_format(machine, advance, length, format, index)
+local function save_cmio_state_with_format(advance, data, format, index)
     local values = { i = advance.next_input_index - 1, o = index }
     local name = instantiate_filename(format, values)
     stderr("Storing %s\n", name)
     local f = assert(io.open(name, "wb"))
-    local s = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
-    assert(f:write(s))
+    assert(f:write(data))
     f:close()
-    return s
 end
 
-local function save_cmio_report(machine, advance, length)
-    return save_cmio_state_with_format(machine, advance, length, advance.report, advance.report_index)
+local function save_cmio_report(advance, data)
+    return save_cmio_state_with_format(advance, data, advance.report, advance.report_index)
 end
 
-local function save_cmio_output(machine, advance, length)
-    return save_cmio_state_with_format(machine, advance, length, advance.output, advance.output_index)
+local function save_cmio_output(advance, data)
+    return save_cmio_state_with_format(advance, data, advance.output, advance.output_index)
 end
 
-local function save_cmio_output_hashes_root_hash(machine, advance, length)
-    return save_cmio_state_with_format(machine, advance, length, advance.output_hashes_root_hash)
+local function save_cmio_output_hashes_root_hash(advance, data)
+    return save_cmio_state_with_format(advance, data, advance.output_hashes_root_hash)
 end
 
 local function load_cmio_input(machine, advance)
@@ -1855,17 +1846,12 @@ local function load_cmio_query(machine, inspect)
     machine:send_cmio_response(cartesi.machine.HTIF_YIELD_REASON_INSPECT_STATE, data)
 end
 
-local function dump_exception(machine, length)
-    local payload = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
-    stderr("cmio exception with payload: %q\n", payload)
-end
-
-local function save_cmio_inspect_state_report(machine, inspect, length)
+local function save_cmio_inspect_state_report(inspect, data)
     local values = { o = inspect.report_index }
     local name = instantiate_filename(inspect.report, values)
     stderr("Storing %s\n", name)
     local f = assert(io.open(name, "wb"))
-    assert(f:write(machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)))
+    assert(f:write(data))
     f:close()
 end
 
@@ -1999,10 +1985,10 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
         break
     -- deal with yield manual
     elseif machine:read_iflags_Y() then
-        local _, reason, length = get_and_print_yield(machine, config.htif)
+        local _, reason, data = get_and_print_yield(machine, config.htif)
         -- there was an exception
         if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION then
-            dump_exception(machine, length)
+            stderr("cmio exception with payload: %q\n", data)
             exit_code = 1
             do_rollback(machine)
             break
@@ -2013,9 +1999,9 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
                 do_commit(machine)
                 -- save only if we have already run an input and have just accepted it
                 if cmio_advance.next_input_index > cmio_advance.input_index_begin then
-                    assert(length == 32, "expected root hash in tx buffer")
-                    local root_hash = save_cmio_output_hashes_root_hash(machine, cmio_advance, length)
-                    check_outputs_root_hash(root_hash, output_hashes)
+                    assert(#data == 32, "expected root hash in tx buffer")
+                    save_cmio_output_hashes_root_hash(cmio_advance, data)
+                    check_outputs_root_hash(data, output_hashes)
                 end
             -- previous reason was a reject
             elseif reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
@@ -2036,9 +2022,9 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
             if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
                 -- there are outputs of a previous advance state to save
                 if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
-                    assert(length == 32, "expected root hash in tx buffer")
-                    local root_hash = save_cmio_output_hashes_root_hash(machine, cmio_advance, 32)
-                    check_outputs_root_hash(root_hash, output_hashes)
+                    assert(#data == 32, "expected root hash in tx buffer")
+                    save_cmio_output_hashes_root_hash(cmio_advance, data)
+                    check_outputs_root_hash(data, output_hashes)
                     output_hashes = {}
                     do_commit(machine)
                 elseif reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
@@ -2067,23 +2053,23 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
         end
     -- deal with yield automatic
     elseif machine:read_iflags_X() then
-        local _, reason, length = get_and_print_yield(machine, config.htif)
+        local _, reason, data = get_and_print_yield(machine, config.htif)
         -- we have fed an advance state input
         if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
             if reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
-                local output = save_cmio_output(machine, cmio_advance, length)
+                local output = save_cmio_output(cmio_advance, data)
                 local output_hash = cartesi.keccak(output)
                 output_hashes[#output_hashes + 1] = output_hash
                 cmio_advance.output_index = cmio_advance.output_index + 1
             elseif reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT then
-                save_cmio_report(machine, cmio_advance, length)
+                save_cmio_report(cmio_advance, data)
                 cmio_advance.report_index = cmio_advance.report_index + 1
             end
         -- ignore other reasons
         -- we have feed the inspect state query
         elseif cmio_inspect and not cmio_inspect.query then
             if reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT then
-                save_cmio_inspect_state_report(machine, cmio_inspect, length)
+                save_cmio_inspect_state_report(cmio_inspect, data)
                 cmio_inspect.report_index = cmio_inspect.report_index + 1
             end
             -- ignore other reasons
@@ -2140,7 +2126,7 @@ end
 dump_value_proofs(machine, final_proof, config)
 if store_dir then store_machine(machine, config, store_dir) end
 if assert_rolling_template then
-    local cmd, reason = get_yield(machine)
+    local cmd, reason = machine:receive_cmio_request()
     if
         not (
             cmd == cartesi.machine.HTIF_YIELD_MANUAL

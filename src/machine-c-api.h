@@ -519,11 +519,12 @@ CM_API int32_t cm_rollback(cm_machine *m);
 // ---------------------------------
 // Running
 
-/// \brief Runs the machine until mcycle reaches mcycle_end or the machine halts.
+/// \brief Runs the machine until mcycle reaches mcycle_end, or machine yields or machine halts.
 /// \param m Pointer to valid machine instance.
 /// \param mcycle_end End cycle value.
 /// \param break_reason Receives reason for machine run interruption when not NULL.
 /// \returns 0 for success, non zero code for error.
+/// \details You may want to receive cmio requests depending on the run break reason.
 CM_API int32_t cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reason);
 
 /// \brief Runs the machine in the microarchitecture until the mcycle advances by one unit
@@ -539,12 +540,30 @@ CM_API int32_t cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_br
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_reset_uarch(cm_machine *m);
 
+/// \brief Receives a cmio request.
+/// \param m Pointer to valid machine instance.
+/// \param cmd Receives the yield command (manual or automatic).
+/// \param reason Receives the yield reason (see below).
+/// \param data Receives the yield data. If NULL, length will still be set without reading any data.
+/// \param length Receives the yield data length. Must be initialized to the size of data buffer.
+/// \details May fail if machine is not in a valid yield state or data length isn't big enough.
+/// In case of an automatic yield with progress reason, length is 4 and data is the per mille progress as an integer.
+/// In case of other automatic yields length is variable (up to 2MB) and data is an output or reports.
+/// In case of a manual yield with accepted reason, length is 32 and data is filled with the output hashes root hash.
+/// In case of a manual yield with rejected reason, length and data can be ignored. Machine state should be reverted.
+/// In case of a manual yield with exception reason, data/length point to a message. Machine state is irrecoverable.
+/// In case of other manual yields (GIO request), reason is set to the domain, and data/length is filled with an id.
+CM_API int32_t cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16_t *reason, uint8_t *data,
+    uint64_t *length);
+
 /// \brief Sends a cmio response.
 /// \param m Pointer to valid machine instance.
 /// \param reason Reason for sending the response.
 /// \param data Response data to send.
 /// \param length Length of response data.
 /// \returns 0 for success, non zero code for error.
+/// \details This method should only be called as a response to cmio requests with manual yield command
+/// where the reason is either accepted or a GIO request, may fail otherwise.
 CM_API int32_t cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length);
 
 // ---------------------------------

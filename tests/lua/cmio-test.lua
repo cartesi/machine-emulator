@@ -151,13 +151,6 @@ local function load_machine(name)
     end
 end
 
-local function get_yield(machine)
-    local cmd = machine:read_csr("htif_tohost_cmd")
-    local reason = machine:read_csr("htif_tohost_reason")
-    local data = machine:read_csr("htif_tohost_data")
-    return cmd, reason, data
-end
-
 local function next_input(machine, reason, data)
     machine:send_cmio_response(reason, data)
 end
@@ -180,10 +173,9 @@ end
 
 local function check_output(machine, expected)
     assert(machine:read_iflags_X())
-    local cmd, reason, length = get_yield(machine)
+    local cmd, reason, output = machine:receive_cmio_request()
     assert(cmd == cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC)
     assert(reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT)
-    local output = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
     if expected ~= output then
         local e <close> = assert(io.open("expected.bin", "wb"))
         local o <close> = assert(io.open("output.bin", "wb"))
@@ -197,19 +189,17 @@ end
 
 local function check_report(machine, expected)
     assert(machine:read_iflags_X())
-    local cmd, reason, length = get_yield(machine)
+    local cmd, reason, output = machine:receive_cmio_request()
     assert(cmd == cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC)
     assert(reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT)
-    local output = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
     assert(expected == output)
 end
 
 local function check_exception(machine, expected)
     assert(machine:read_iflags_Y())
-    local cmd, reason, length = get_yield(machine)
+    local cmd, reason, output = machine:receive_cmio_request()
     assert(cmd == cartesi.machine.HTIF_YIELD_CMD_MANUAL)
     assert(reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION)
-    local output = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
     assert(expected == output, string.format("expected: %q, got: %q", expected, output))
 end
 
@@ -243,18 +233,17 @@ local function check_outputs_root_hash(root_hash, output_hashes)
 end
 
 local function check_finish(machine, output_hashes, expected_reason)
-    local cmd, reason, length = get_yield(machine)
+    local cmd, reason, output = machine:receive_cmio_request()
     assert(machine:read_iflags_Y())
     assert(cmd == cartesi.machine.HTIF_YIELD_CMD_MANUAL)
     assert(reason == expected_reason)
 
     -- only check for output-hashes-root-hash if the input was accepted
     if expected_reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
-        assert(length == OUTPUTS_ROOT_HASH_SIZE)
-        local output = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
+        assert(#output == OUTPUTS_ROOT_HASH_SIZE)
         check_outputs_root_hash(output, output_hashes)
     else
-        assert(length == 0)
+        assert(#output == 0)
     end
 end
 

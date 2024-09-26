@@ -443,6 +443,34 @@ static int machine_obj_index_rollback(lua_State *L) {
     return 0;
 }
 
+/// \brief This is the machine:receive_cmio_request() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_receive_cmio_request(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    uint64_t length{};
+    if (cm_receive_cmio_request(m.get(), nullptr, nullptr, nullptr, &length) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    unsigned char *data{};
+    try {
+        data = new unsigned char[length];
+    } catch (std::bad_alloc &e) {
+        luaL_error(L, "failed to allocate memory for buffer");
+    }
+    auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));
+    uint8_t cmd{};
+    uint16_t reason{};
+    if (cm_receive_cmio_request(m.get(), &cmd, &reason, data, &length) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    lua_pushinteger(L, cmd);
+    lua_pushinteger(L, reason);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    lua_pushlstring(L, reinterpret_cast<const char *>(managed_data.get()), length);
+    managed_data.reset();
+    return 3;
+}
+
 /// \brief This is the machine:send_cmio_response() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_send_cmio_response(lua_State *L) {
@@ -511,6 +539,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"get_memory_ranges", machine_obj_index_get_memory_ranges},
     {"reset_uarch", machine_obj_index_reset_uarch},
     {"log_reset_uarch", machine_obj_index_log_reset_uarch},
+    {"receive_cmio_request", machine_obj_index_receive_cmio_request},
     {"send_cmio_response", machine_obj_index_send_cmio_response},
     {"log_send_cmio_response", machine_obj_index_log_send_cmio_response},
 });

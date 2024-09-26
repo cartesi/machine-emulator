@@ -37,6 +37,9 @@
 #include "semantic-version.h"
 #include "virtual-machine.h"
 
+#include "htif.h"
+#include "pma-constants.h"
+
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static THREAD_LOCAL std::string last_err_msg;
 
@@ -598,6 +601,55 @@ int32_t cm_get_memory_ranges(const cm_machine *m, const char **ranges) try {
     static THREAD_LOCAL std::string ranges_storage;
     ranges_storage = cartesi::to_json(cpp_ranges).dump();
     *ranges = ranges_storage.c_str();
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
+int32_t cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16_t *reason, uint8_t *data,
+    uint64_t *length) try {
+    if (length == nullptr) {
+        throw std::invalid_argument("invalid length output");
+    }
+    const auto *cpp_machine = convert_from_c(m);
+    // NOTE(edubart): This can be implemented on top of other APIs,
+    // implementing in the C++ machine class would add lot of boilerplate code in all interfaces.
+    if (!cpp_machine->read_iflags_X() && !cpp_machine->read_iflags_Y()) {
+        throw std::runtime_error{"machine is not yielded"};
+    }
+    const uint64_t tohost = cpp_machine->read_csr(cartesi::machine::csr::htif_tohost);
+    const uint8_t tohost_cmd = cartesi::HTIF_CMD_FIELD(tohost);
+    const uint16_t tohost_reason = cartesi::HTIF_REASON_FIELD(tohost);
+    const uint32_t tohost_data = cartesi::HTIF_DATA_FIELD(tohost);
+    uint64_t data_length{};
+    // Reason progress is an special case where it doesn't need to read cmio TX buffer
+    if (tohost_cmd == cartesi::HTIF_YIELD_CMD_AUTOMATIC &&
+        tohost_reason == cartesi::HTIF_YIELD_AUTOMATIC_REASON_PROGRESS) {
+        data_length = sizeof(uint32_t);
+        if (data) { // Only actually read when data is not NULL
+            if (data_length > *length) {
+                throw std::invalid_argument{"data buffer length is too small"};
+            }
+            memcpy(data, &tohost_data, data_length);
+        }
+    } else {
+        data_length = tohost_data;
+        if (data) { // Only actually read when data is not NULL
+            if (data_length > *length) {
+                throw std::invalid_argument{"data buffer length is too small"};
+            }
+            cpp_machine->read_memory(cartesi::PMA_CMIO_TX_BUFFER_START, data, data_length);
+        }
+    }
+    if (cmd) {
+        *cmd = tohost_cmd;
+    }
+    if (reason) {
+        *reason = tohost_reason;
+    }
+    if (length) {
+        *length = data_length;
+    }
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();

@@ -1310,81 +1310,6 @@ static json jsonrpc_machine_get_csr_address_handler(const json &j, const std::sh
     return jsonrpc_response_ok(j, cartesi::machine::get_csr_address(std::get<0>(args)));
 }
 
-/// \brief JSONRPC handler for the machine.reset_iflags_Y method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_reset_iflags_Y_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    if (!session->handler->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    jsonrpc_check_no_params(j);
-    session->handler->machine->reset_iflags_Y();
-    return jsonrpc_response_ok(j);
-}
-
-/// \brief JSONRPC handler for the machine.set_iflags_Y method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_set_iflags_Y_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    if (!session->handler->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    jsonrpc_check_no_params(j);
-    session->handler->machine->set_iflags_Y();
-    return jsonrpc_response_ok(j);
-}
-
-/// \brief JSONRPC handler for the machine.read_iflags_Y method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_read_iflags_Y_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    if (!session->handler->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    jsonrpc_check_no_params(j);
-    return jsonrpc_response_ok(j, session->handler->machine->read_iflags_Y());
-}
-
-/// \brief JSONRPC handler for the machine.read_iflags_X method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_read_iflags_X_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    if (!session->handler->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    jsonrpc_check_no_params(j);
-    return jsonrpc_response_ok(j, session->handler->machine->read_iflags_X());
-}
-
-/// \brief JSONRPC handler for the machine.read_iflags_H method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_read_iflags_H_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    if (!session->handler->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    jsonrpc_check_no_params(j);
-    return jsonrpc_response_ok(j, session->handler->machine->read_iflags_H());
-}
-
-/// \brief JSONRPC handler for the machine.set_uarch_halt_flag method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_set_uarch_halt_flag_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    if (!session->handler->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    jsonrpc_check_no_params(j);
-    session->handler->machine->set_uarch_halt_flag();
-    return jsonrpc_response_ok(j);
-}
-
 /// \brief JSONRPC handler for the machine.reset_uarch method
 /// \param j JSON request object
 /// \param session HTTP session
@@ -1396,18 +1321,6 @@ static json jsonrpc_machine_reset_uarch_handler(const json &j, const std::shared
     jsonrpc_check_no_params(j);
     session->handler->machine->reset_uarch();
     return jsonrpc_response_ok(j);
-}
-
-/// \brief JSONRPC handler for the machine.read_uarch_halt_flag method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_read_uarch_halt_flag_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    if (!session->handler->machine) {
-        return jsonrpc_response_invalid_request(j, "no machine");
-    }
-    jsonrpc_check_no_params(j);
-    return jsonrpc_response_ok(j, session->handler->machine->read_uarch_halt_flag());
 }
 
 /// \brief JSONRPC handler for the machine.get_initial_config method
@@ -1646,13 +1559,6 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.read_csr", jsonrpc_machine_read_csr_handler},
         {"machine.write_csr", jsonrpc_machine_write_csr_handler},
         {"machine.get_csr_address", jsonrpc_machine_get_csr_address_handler},
-        {"machine.set_iflags_Y", jsonrpc_machine_set_iflags_Y_handler},
-        {"machine.reset_iflags_Y", jsonrpc_machine_reset_iflags_Y_handler},
-        {"machine.read_iflags_Y", jsonrpc_machine_read_iflags_Y_handler},
-        {"machine.read_iflags_X", jsonrpc_machine_read_iflags_X_handler},
-        {"machine.read_iflags_H", jsonrpc_machine_read_iflags_H_handler},
-        {"machine.read_uarch_halt_flag", jsonrpc_machine_read_uarch_halt_flag_handler},
-        {"machine.set_uarch_halt_flag", jsonrpc_machine_set_uarch_halt_flag_handler},
         {"machine.get_initial_config", jsonrpc_machine_get_initial_config_handler},
         {"machine.get_default_config", jsonrpc_machine_get_default_config_handler},
         {"machine.verify_merkle_tree", jsonrpc_machine_verify_merkle_tree_handler},

@@ -514,51 +514,6 @@ uint64_t jsonrpc_virtual_machine::do_translate_virtual_address(uint64_t vaddr) c
     return result;
 }
 
-uint64_t jsonrpc_virtual_machine::do_read_mcycle(void) const {
-    return read_csr(csr::mcycle);
-}
-
-bool jsonrpc_virtual_machine::do_read_iflags_H(void) const {
-    bool result = false;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.read_iflags_H", std::tie(), result);
-    return result;
-}
-
-bool jsonrpc_virtual_machine::do_read_iflags_Y(void) const {
-    bool result = false;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.read_iflags_Y", std::tie(), result);
-    return result;
-}
-
-bool jsonrpc_virtual_machine::do_read_iflags_X(void) const {
-    bool result = false;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.read_iflags_X", std::tie(), result);
-    return result;
-}
-
-void jsonrpc_virtual_machine::do_set_iflags_Y(void) {
-    bool result = false;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.set_iflags_Y", std::tie(), result);
-}
-
-void jsonrpc_virtual_machine::do_reset_iflags_Y(void) {
-    bool result = false;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.reset_iflags_Y", std::tie(), result);
-}
-
-bool jsonrpc_virtual_machine::do_read_uarch_halt_flag(void) const {
-    bool result = false;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.read_uarch_halt_flag", std::tie(),
-        result);
-    return result;
-}
-
-void jsonrpc_virtual_machine::do_set_uarch_halt_flag(void) {
-    bool result = false;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.set_uarch_halt_flag", std::tie(),
-        result);
-}
-
 void jsonrpc_virtual_machine::do_reset_uarch(void) {
     bool result = false;
     jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.reset_uarch", std::tie(), result);
@@ -626,10 +581,6 @@ bool jsonrpc_virtual_machine::do_verify_merkle_tree(void) const {
     bool result = false;
     jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.verify_merkle_tree", std::tie(), result);
     return result;
-}
-
-uint64_t jsonrpc_virtual_machine::do_read_uarch_cycle(void) const {
-    return read_csr(csr::uarch_cycle);
 }
 
 void jsonrpc_virtual_machine::do_snapshot(void) {

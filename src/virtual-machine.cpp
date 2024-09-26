@@ -80,30 +80,6 @@ uint64_t virtual_machine::do_translate_virtual_address(uint64_t vaddr) const {
     return m_machine->translate_virtual_address(vaddr);
 }
 
-uint64_t virtual_machine::do_read_mcycle(void) const {
-    return m_machine->read_mcycle();
-}
-
-bool virtual_machine::do_read_iflags_H(void) const {
-    return m_machine->read_iflags_H();
-}
-
-bool virtual_machine::do_read_iflags_Y(void) const {
-    return m_machine->read_iflags_Y();
-}
-
-bool virtual_machine::do_read_iflags_X(void) const {
-    return m_machine->read_iflags_X();
-}
-
-void virtual_machine::do_set_iflags_Y(void) {
-    return m_machine->set_iflags_Y();
-}
-
-void virtual_machine::do_reset_iflags_Y(void) {
-    return m_machine->reset_iflags_Y();
-}
-
 void virtual_machine::do_replace_memory_range(const memory_range_config &new_range) {
     m_machine->replace_memory_range(new_range);
 }
@@ -136,24 +112,12 @@ void virtual_machine::do_rollback(void) {
     throw std::runtime_error("rollback is not supported");
 }
 
-uint64_t virtual_machine::do_read_uarch_cycle(void) const {
-    return m_machine->read_uarch_cycle();
-}
-
-void virtual_machine::do_set_uarch_halt_flag() {
-    m_machine->set_uarch_halt_flag();
-}
-
 void virtual_machine::do_reset_uarch() {
     m_machine->reset_uarch();
 }
 
 access_log virtual_machine::do_log_reset_uarch(const access_log::type &log_type, bool one_based) {
     return m_machine->log_reset_uarch(log_type, one_based);
-}
-
-bool virtual_machine::do_read_uarch_halt_flag(void) const {
-    return m_machine->read_uarch_halt_flag();
 }
 
 uarch_interpreter_break_reason virtual_machine::do_run_uarch(uint64_t uarch_cycle_end) {

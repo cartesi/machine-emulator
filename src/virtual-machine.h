@@ -52,12 +52,6 @@ private:
     void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const override;
     void do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) override;
     uint64_t do_translate_virtual_address(uint64_t vaddr) const override;
-    uint64_t do_read_mcycle(void) const override;
-    bool do_read_iflags_H(void) const override;
-    bool do_read_iflags_Y(void) const override;
-    bool do_read_iflags_X(void) const override;
-    void do_set_iflags_Y(void) override;
-    void do_reset_iflags_Y(void) override;
     void do_replace_memory_range(const memory_range_config &new_range) override;
     uint64_t do_read_word(uint64_t address) const override;
     bool do_verify_dirty_page_maps(void) const override;
@@ -66,11 +60,8 @@ private:
     void do_destroy() override;
     void do_commit() override;
     void do_rollback() override;
-    uint64_t do_read_uarch_cycle(void) const override;
-    void do_set_uarch_halt_flag() override;
     void do_reset_uarch() override;
     access_log do_log_reset_uarch(const access_log::type &log_type, bool one_based = false) override;
-    bool do_read_uarch_halt_flag(void) const override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
     machine_memory_range_descrs do_get_memory_ranges(void) const override;
     void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) override;

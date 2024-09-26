@@ -215,7 +215,7 @@ int32_t cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reason
 
 int32_t cm_read_uarch_halt_flag(const cm_machine *m, bool *val) try {
     const auto *cpp_machine = convert_from_c(m);
-    *val = cpp_machine->read_uarch_halt_flag();
+    *val = static_cast<bool>(cpp_machine->read_csr(cartesi::machine::csr::uarch_halt_flag));
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -223,7 +223,7 @@ int32_t cm_read_uarch_halt_flag(const cm_machine *m, bool *val) try {
 
 int32_t cm_set_uarch_halt_flag(cm_machine *m) try {
     auto *cpp_machine = convert_from_c(m);
-    cpp_machine->set_uarch_halt_flag();
+    cpp_machine->write_csr(cartesi::machine::csr::uarch_halt_flag, 1);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -443,7 +443,7 @@ int32_t cm_read_mcycle(const cm_machine *m, uint64_t *val) try {
         throw std::invalid_argument("invalid val output");
     }
     const auto *cpp_machine = convert_from_c(m);
-    *val = cpp_machine->read_mcycle();
+    *val = cpp_machine->read_csr(cartesi::machine::csr::mcycle);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -454,7 +454,7 @@ int32_t cm_read_uarch_cycle(const cm_machine *m, uint64_t *val) try {
         throw std::invalid_argument("invalid val output");
     }
     const auto *cpp_machine = convert_from_c(m);
-    *val = cpp_machine->read_uarch_cycle();
+    *val = cpp_machine->read_csr(cartesi::machine::csr::uarch_cycle);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -465,7 +465,7 @@ int32_t cm_read_iflags_Y(const cm_machine *m, bool *val) try {
         throw std::invalid_argument("invalid val output");
     }
     const auto *cpp_machine = convert_from_c(m);
-    *val = cpp_machine->read_iflags_Y();
+    *val = static_cast<bool>(cpp_machine->read_csr(cartesi::machine::csr::iflags_y));
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -473,7 +473,7 @@ int32_t cm_read_iflags_Y(const cm_machine *m, bool *val) try {
 
 int32_t cm_reset_iflags_Y(cm_machine *m) try {
     auto *cpp_machine = convert_from_c(m);
-    cpp_machine->reset_iflags_Y();
+    cpp_machine->write_csr(cartesi::machine::csr::iflags_y, 0);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -481,7 +481,7 @@ int32_t cm_reset_iflags_Y(cm_machine *m) try {
 
 int32_t cm_set_iflags_Y(cm_machine *m) try {
     auto *cpp_machine = convert_from_c(m);
-    cpp_machine->set_iflags_Y();
+    cpp_machine->write_csr(cartesi::machine::csr::iflags_y, 1);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -492,7 +492,7 @@ int32_t cm_read_iflags_X(const cm_machine *m, bool *val) try {
         throw std::invalid_argument("invalid val output");
     }
     const auto *cpp_machine = convert_from_c(m);
-    *val = cpp_machine->read_iflags_X();
+    *val = static_cast<bool>(cpp_machine->read_csr(cartesi::machine::csr::iflags_x));
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -503,7 +503,7 @@ int32_t cm_read_iflags_H(const cm_machine *m, bool *val) try {
         throw std::invalid_argument("invalid val output");
     }
     const auto *cpp_machine = convert_from_c(m);
-    *val = cpp_machine->read_iflags_H();
+    *val = static_cast<bool>(cpp_machine->read_csr(cartesi::machine::csr::iflags_h));
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -614,7 +614,8 @@ int32_t cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16_t *rea
     const auto *cpp_machine = convert_from_c(m);
     // NOTE(edubart): This can be implemented on top of other APIs,
     // implementing in the C++ machine class would add lot of boilerplate code in all interfaces.
-    if (!cpp_machine->read_iflags_X() && !cpp_machine->read_iflags_Y()) {
+    if (!cpp_machine->read_csr(cartesi::machine::csr::iflags_x) &&
+        !cpp_machine->read_csr(cartesi::machine::csr::iflags_y)) {
         throw std::runtime_error{"machine is not yielded"};
     }
     const uint64_t tohost = cpp_machine->read_csr(cartesi::machine::csr::htif_tohost);

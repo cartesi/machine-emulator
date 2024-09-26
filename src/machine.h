@@ -911,6 +911,10 @@ public:
     /// \returns The flag value.
     bool read_iflags_X(void) const;
 
+    /// \brief Writes the value of the iflags_X flag.
+    /// \param val New register value.
+    void write_iflags_X(bool val);
+
     /// \brief Resets the value of the iflags_X flag.
     void reset_iflags_X(void);
 
@@ -920,6 +924,10 @@ public:
     /// \brief Checks the value of the iflags_Y flag.
     /// \returns The flag value.
     bool read_iflags_Y(void) const;
+
+    /// \brief Writes the value of the iflags_Y flag.
+    /// \param val New register value.
+    void write_iflags_Y(bool val);
 
     /// \brief Resets the value of the iflags_Y flag.
     void reset_iflags_Y(void);
@@ -931,12 +939,20 @@ public:
     /// \returns The flag value.
     bool read_iflags_H(void) const;
 
+    /// \brief Writes the value of the iflags_H flag.
+    /// \param val New register value.
+    void write_iflags_H(bool val);
+
+    /// \brief Sets the iflags_H flag.
+    void set_iflags_H(void);
+
     /// \brief Checks the value of the iflags_PRV field.
     /// \returns The field value.
     uint8_t read_iflags_PRV(void) const;
 
-    /// \brief Sets the iflags_H flag.
-    void set_iflags_H(void);
+    /// \brief Writes the value of the iflags_H flag.
+    /// \param val New register value.
+    void write_iflags_PRV(uint8_t val);
 
     /// \brief Get read-only access to container with all PMA entries.
     /// \returns The container.

@@ -156,53 +156,6 @@ public:
         do_rollback();
     }
 
-    /// \brief Reads the mcycle register
-    uint64_t read_mcycle(void) const {
-        return do_read_mcycle();
-    }
-
-    /// \brief Reads the H iflag
-    bool read_iflags_H(void) const {
-        return do_read_iflags_H();
-    }
-
-    /// \brief Reads the Y iflag
-    bool read_iflags_Y(void) const {
-        return do_read_iflags_Y();
-    }
-
-    /// \brief Reads the X iflag
-    bool read_iflags_X(void) const {
-        return do_read_iflags_X();
-    }
-
-    /// \brief Sets the Y iflag
-    void set_iflags_Y(void) {
-        return do_set_iflags_Y();
-    }
-
-    /// \brief Resets the Y iflag
-    void reset_iflags_Y(void) {
-        return do_reset_iflags_Y();
-    }
-
-    /// \brief Reads the value of the microarchitecture cycle counter register.
-    /// \returns The current microarchitecture cycle.
-    uint64_t read_uarch_cycle(void) const {
-        return do_read_uarch_cycle();
-    }
-
-    /// \brief Gets the value of the microarchitecture halt flag
-    /// \returns The current microarchitecture cycle.
-    bool read_uarch_halt_flag(void) const {
-        return do_read_uarch_halt_flag();
-    }
-
-    /// \brief Sets the microarchitecture halt flag
-    void set_uarch_halt_flag() {
-        return do_set_uarch_halt_flag();
-    }
-
     /// \brief Resets the microarchitecture state to pristine value
     void reset_uarch() {
         return do_reset_uarch();
@@ -252,12 +205,6 @@ private:
     virtual void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const = 0;
     virtual void do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) = 0;
     virtual uint64_t do_translate_virtual_address(uint64_t vaddr) const = 0;
-    virtual uint64_t do_read_mcycle(void) const = 0;
-    virtual bool do_read_iflags_H(void) const = 0;
-    virtual bool do_read_iflags_Y(void) const = 0;
-    virtual bool do_read_iflags_X(void) const = 0;
-    virtual void do_set_iflags_Y(void) = 0;
-    virtual void do_reset_iflags_Y(void) = 0;
     virtual void do_replace_memory_range(const memory_range_config &new_range) = 0;
     virtual uint64_t do_read_word(uint64_t address) const = 0;
     virtual bool do_verify_dirty_page_maps(void) const = 0;
@@ -266,9 +213,6 @@ private:
     virtual void do_destroy() = 0;
     virtual void do_commit() = 0;
     virtual void do_rollback() = 0;
-    virtual uint64_t do_read_uarch_cycle(void) const = 0;
-    virtual bool do_read_uarch_halt_flag(void) const = 0;
-    virtual void do_set_uarch_halt_flag() = 0;
     virtual void do_reset_uarch() = 0;
     virtual access_log do_log_reset_uarch(const access_log::type &log_type, bool one_based = false) = 0;
     virtual uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) = 0;

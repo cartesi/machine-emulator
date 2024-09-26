@@ -1803,14 +1803,14 @@ void machine::write_csr(csr csr, uint64_t value) {
             [[fallthrough]];
         case csr::mimpid:
             throw std::invalid_argument{"CSR is read-only"};
-        // case csr::iflags_prv:
-        //     return write_iflags_PRV(value);
-        // case csr::iflags_x:
-        //     return write_iflags_X(value);
-        // case csr::iflags_y:
-        //     return write_iflags_Y(value);
-        // case csr::iflags_h:
-        //     return write_iflags_H(value);
+        case csr::iflags_prv:
+            return write_iflags_PRV(value);
+        case csr::iflags_x:
+            return write_iflags_X(static_cast<bool>(value));
+        case csr::iflags_y:
+            return write_iflags_Y(static_cast<bool>(value));
+        case csr::iflags_h:
+            return write_iflags_H(static_cast<bool>(value));
         case csr::htif_tohost_dev:
             return write_htif_tohost_dev(value);
         case csr::htif_tohost_cmd:
@@ -2119,8 +2119,16 @@ uint8_t machine::read_iflags_PRV(void) const {
     return m_s.iflags.PRV;
 }
 
+void machine::write_iflags_PRV(uint8_t val) {
+    m_s.iflags.PRV = val;
+}
+
 bool machine::read_iflags_Y(void) const {
     return m_s.iflags.Y;
+}
+
+void machine::write_iflags_Y(bool val) {
+    m_s.iflags.Y = val;
 }
 
 void machine::reset_iflags_Y(void) {
@@ -2135,6 +2143,10 @@ bool machine::read_iflags_X(void) const {
     return m_s.iflags.X;
 }
 
+void machine::write_iflags_X(bool val) {
+    m_s.iflags.X = val;
+}
+
 void machine::reset_iflags_X(void) {
     m_s.iflags.X = false;
 }
@@ -2145,6 +2157,10 @@ void machine::set_iflags_X(void) {
 
 bool machine::read_iflags_H(void) const {
     return m_s.iflags.H;
+}
+
+void machine::write_iflags_H(bool val) {
+    m_s.iflags.H = val;
 }
 
 void machine::set_iflags_H(void) {

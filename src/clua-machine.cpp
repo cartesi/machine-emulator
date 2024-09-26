@@ -14,7 +14,6 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "clua-htif.h"
 #include "clua-machine-util.h"
 #include "clua.h"
 #include "json-util.h"
@@ -152,10 +151,6 @@ int clua_machine_init(lua_State *L, int ctxidx) {
             {"__call", machine_ctor},
         });
         clua_setmetamethods<machine_class>(L, machine_class_meta.data(), 0, ctxidx);
-        clua_gettypemetatable<machine_class>(L, ctxidx);
-        lua_getfield(L, -1, "__index");
-        clua_htif_export(L, ctxidx);
-        lua_pop(L, 2);
     }
     return 1;
 }

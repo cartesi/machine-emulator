@@ -15,7 +15,6 @@
 //
 
 #include "clua-jsonrpc-machine.h"
-#include "clua-htif.h"
 #include "clua-machine-util.h"
 #include "clua.h"
 #include "jsonrpc-machine-c-api.h"
@@ -277,7 +276,6 @@ static int mod_stub(lua_State *L) {
     lua_pushvalue(L, -3);                                       // stub server jsonrpc_machine_class stub
     lua_pushvalue(L, lua_upvalueindex(1));                      // stub server jsonrpc_machine_class stub cluactx
     luaL_setfuncs(L, jsonrpc_machine_static_methods.data(), 2); // stub server jsonrpc_machine_class
-    clua_htif_export(L, lua_upvalueindex(1));                   // stub server jsonrpc_machine_class
     lua_newtable(L);                                            // stub server jsonrpc_machine_class meta
     lua_pushvalue(L, -4);                                       // stub server jsonrpc_machine_class meta stub
     lua_pushvalue(L, lua_upvalueindex(1));                      // stub server jsonrpc_machine_class meta stub cluactx

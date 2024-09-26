@@ -163,16 +163,17 @@ CM_API int luaopen_cartesi(lua_State *L) {
     lua_pushvalue(L, -2);                    // cluactx cartesi cluactx
     luaL_setfuncs(L, cartesi_mod.data(), 1); // cluactx cartesi
 
-    // Set cartesi constants
-
+    // Set public C API constants
+    clua_setstringfield(L, CM_VERSION_LABEL, "VERSION_LABEL", -1);
+    clua_setstringfield(L, CM_VERSION, "VERSION", -1);
+    clua_setintegerfield(L, CM_VERSION_MAJOR, "VERSION_MAJOR", -1);
+    clua_setintegerfield(L, CM_VERSION_MINOR, "VERSION_MINOR", -1);
+    clua_setintegerfield(L, CM_VERSION_PATCH, "VERSION_PATCH", -1);
     clua_setintegerfield(L, CM_HASH_SIZE, "HASH_SIZE", -1);
     clua_setintegerfield(L, CM_CSR_COUNT, "CSR_COUNT", -1);
     clua_setintegerfield(L, CM_TREE_LOG2_WORD_SIZE, "TREE_LOG2_WORD_SIZE", -1);
     clua_setintegerfield(L, CM_TREE_LOG2_PAGE_SIZE, "TREE_LOG2_PAGE_SIZE", -1);
     clua_setintegerfield(L, CM_TREE_LOG2_ROOT_SIZE, "TREE_LOG2_ROOT_SIZE", -1);
-    clua_setintegerfield(L, CM_ACCESS_LOG_TYPE_PROOFS, "ACCESS_LOG_TYPE_PROOFS", -1);
-    clua_setintegerfield(L, CM_ACCESS_LOG_TYPE_ANNOTATIONS, "ACCESS_LOG_TYPE_ANNOTATIONS", -1);
-    clua_setintegerfield(L, CM_ACCESS_LOG_TYPE_LARGE_DATA, "ACCESS_LOG_TYPE_LARGE_DATA", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_FAILED, "BREAK_REASON_FAILED", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_HALTED, "BREAK_REASON_HALTED", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_YIELDED_MANUALLY, "BREAK_REASON_YIELDED_MANUALLY", -1);
@@ -181,6 +182,21 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_BREAK_REASON_REACHED_TARGET_MCYCLE, "BREAK_REASON_REACHED_TARGET_MCYCLE", -1);
     clua_setintegerfield(L, CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE, "UARCH_BREAK_REASON_REACHED_TARGET_CYCLE", -1);
     clua_setintegerfield(L, CM_UARCH_BREAK_REASON_UARCH_HALTED, "UARCH_BREAK_REASON_UARCH_HALTED", -1);
+    clua_setintegerfield(L, CM_ACCESS_LOG_TYPE_PROOFS, "ACCESS_LOG_TYPE_PROOFS", -1);
+    clua_setintegerfield(L, CM_ACCESS_LOG_TYPE_ANNOTATIONS, "ACCESS_LOG_TYPE_ANNOTATIONS", -1);
+    clua_setintegerfield(L, CM_ACCESS_LOG_TYPE_LARGE_DATA, "ACCESS_LOG_TYPE_LARGE_DATA", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_COMMAND_AUTOMATIC, "CMIO_YIELD_COMMAND_AUTOMATIC", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_COMMAND_MANUAL, "CMIO_YIELD_COMMAND_MANUAL", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_AUTOMATIC_REASON_PROGRESS, "CMIO_YIELD_AUTOMATIC_REASON_PROGRESS", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT, "CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT, "CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED, "CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_MANUAL_REASON_RX_REJECTED, "CMIO_YIELD_MANUAL_REASON_RX_REJECTED", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION, "CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_REASON_ADVANCE_STATE, "CMIO_YIELD_REASON_ADVANCE_STATE", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_REASON_INSPECT_STATE, "CMIO_YIELD_REASON_INSPECT_STATE", -1);
+
+    // Set other constants used by internal tests
     clua_setintegerfield(L, UARCH_STATE_START_ADDRESS, "UARCH_STATE_START_ADDRESS", -1);
     clua_setintegerfield(L, UARCH_STATE_LOG2_SIZE, "UARCH_STATE_LOG2_SIZE", -1);
     clua_setintegerfield(L, UARCH_SHADOW_START_ADDRESS, "UARCH_SHADOW_START_ADDRESS", -1);
@@ -199,11 +215,8 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, MVENDORID_INIT, "MVENDORID", -1);
     clua_setintegerfield(L, MARCHID_INIT, "MARCHID", -1);
     clua_setintegerfield(L, MIMPID_INIT, "MIMPID", -1);
-    clua_setintegerfield(L, CM_VERSION_MAJOR, "VERSION_MAJOR", -1);
-    clua_setintegerfield(L, CM_VERSION_MINOR, "VERSION_MINOR", -1);
-    clua_setintegerfield(L, CM_VERSION_PATCH, "VERSION_PATCH", -1);
-    clua_setstringfield(L, CM_VERSION_LABEL, "VERSION_LABEL", -1);
-    clua_setstringfield(L, CM_VERSION, "VERSION", -1);
+
+    // Build related constants
     clua_setstringfield(L, BOOST_COMPILER, "COMPILER", -1);
     clua_setstringfield(L, BOOST_PLATFORM, "PLATFORM", -1);
 #ifdef GIT_COMMIT

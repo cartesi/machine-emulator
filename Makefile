@@ -84,8 +84,7 @@ EMU_LUA_TO_BIN= src/cartesi-machine.lua src/cartesi-machine-stored-hash.lua
 EMU_TO_LUA_PATH= src/cartesi/util.lua src/cartesi/proof.lua src/cartesi/gdbstub.lua
 EMU_TO_LUA_CPATH= src/cartesi.so
 EMU_TO_LUA_CARTESI_CPATH= src/cartesi/jsonrpc.so
-EMU_TO_INC= $(addprefix src/,jsonrpc-machine-c-api.h machine-c-api.h \
-	    machine-c-version.h pma-defines.h rtc-defines.h htif-defines.h uarch-defines.h)
+EMU_TO_INC= $(addprefix src/,jsonrpc-machine-c-api.h machine-c-api.h machine-c-version.h)
 UARCH_TO_SHARE= uarch-ram.bin
 
 TESTS_TO_BIN= tests/build/misc/test-merkle-tree-hash tests/build/misc/test-machine-c-api

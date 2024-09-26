@@ -101,6 +101,24 @@ typedef enum cm_access_log_type {
     CM_ACCESS_LOG_TYPE_LARGE_DATA = 4,  ///< Includes data bigger than 8 bytes
 } cm_access_log_type;
 
+/// \brief Yield commands.
+typedef enum cm_cmio_yield_command {
+    CM_CMIO_YIELD_COMMAND_AUTOMATIC,
+    CM_CMIO_YIELD_COMMAND_MANUAL,
+} cm_cmio_yield_command;
+
+/// \brief Yield reasons.
+typedef enum cm_cmio_yield_reason {
+    CM_CMIO_YIELD_AUTOMATIC_REASON_PROGRESS = 1,
+    CM_CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT = 2,
+    CM_CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT = 4,
+    CM_CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED = 1,
+    CM_CMIO_YIELD_MANUAL_REASON_RX_REJECTED = 2,
+    CM_CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION = 4,
+    CM_CMIO_YIELD_REASON_ADVANCE_STATE = 0,
+    CM_CMIO_YIELD_REASON_INSPECT_STATE = 1,
+} cm_cmio_yield_reason;
+
 /// \brief Machine control and status registers.
 typedef enum cm_csr {
     // Processor CSRs

@@ -36,8 +36,6 @@
 #define PMA_FIRST_VIRTIO_START_DEF 0x40010000     ///< Start of first VIRTIO range
 #define PMA_VIRTIO_LENGTH_DEF 0x1000              ///< Length of each VIRTIO range
 #define PMA_LAST_VIRTIO_END_DEF 0x40020000        ///< End of last VIRTIO range
-#define PMA_DHD_START_DEF 0x40030000              ///< Start of DEHASH range
-#define PMA_DHD_LENGTH_DEF 0x1000                 ///< Length of in bytes
 #define PMA_DTB_START_DEF 0x7ff00000              ///< DTB start address
 #define PMA_DTB_LENGTH_DEF 0x100000               ///< DTB length in bytes
 #define PMA_CMIO_RX_BUFFER_START_DEF 0x60000000   ///< CMIO RX buffer start address
@@ -62,7 +60,6 @@
 #define PMA_SHADOW_TLB_DID_DEF 6          ///< Device ID for shadow TLB device
 #define PMA_CMIO_RX_BUFFER_DID_DEF 7      ///< Device ID for cmio RX buffer
 #define PMA_CMIO_TX_BUFFER_DID_DEF 8      ///< Device ID for cmio TX buffer
-#define PMA_DHD_DID_DEF 9                 ///< Device ID for DHD device
 #define PMA_PLIC_DID_DEF 10               ///< Device ID for PLIC device
 #define PMA_VIRTIO_DID_DEF 11             ///< Device ID for VirtIO devices
 #define PMA_SHADOW_UARCH_STATE_DID_DEF 12 ///< Device ID for uarch shadow state device

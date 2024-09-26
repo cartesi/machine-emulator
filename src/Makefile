@@ -370,7 +370,6 @@ LIBCARTESI_OBJS:= \
 CARTESI_CLUA_OBJS:= \
 	clua.o \
 	clua-i-virtual-machine.o \
-	clua-htif.o \
 	clua-machine-util.o \
 	uarch-pristine-ram.o \
 	uarch-pristine-state-hash.o \

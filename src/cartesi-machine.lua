@@ -31,7 +31,7 @@ local output_hashes = {}
 
 -- Print help and exit
 local function help()
-    stderr(
+    print(string.format(
         [=[
 Usage:
 
@@ -444,12 +444,21 @@ where options are:
     reset uarch automatically after halt.
 
   --store-config[=<filename>]
-    store initial machine config to <filename>. If <filename> is omitted,
-    print the initial machine config to stderr.
+    store initial machine config as Lua script to <filename>.
+    If <filename> is omitted, print the initial machine config to stdout.
+
+  --store-json-config[=<filename>]
+    store initial machine config as JSON to <filename>.
+    If <filename> is omitted, print the initial machine config to stdout.
 
   --load-config=<filename>
-    load initial machine config from <filename>. If a field is omitted on
-    machine_config table, it will fall back into the respective command-line
+    load initial machine config from Lua script <filename>. If a field is omitted on
+    the config table, it will fall back into the respective command-line
+    argument or into the default value.
+
+  --load-json-config=<filename>
+    load initial machine config from JSON <filename>. If a field is omitted on
+    the config table, it will fall back into the respective command-line
     argument or into the default value.
 
   --uarch-ram-image=<filename>
@@ -537,10 +546,9 @@ or a left shift (e.g., 2 << 20).
    unix:<path>
 
 <host> can be a host name, IPv4 or IPv6 address.
-
 ]=],
         arg[0]
-    )
+    ))
     os.exit()
 end
 
@@ -606,7 +614,9 @@ local store_dir
 local load_dir
 local cmdline_opts_finished = false
 local store_config = false
+local store_json_config = false
 local load_config = false
+local load_json_config = false
 local gdb_address
 local exec_arguments = {}
 local assert_rolling_template = false
@@ -1383,8 +1393,25 @@ local options = {
             if o == "=" then
                 if not v or #v < 1 then return false end
                 store_config = v
+            elseif #v ~= 0 then
+                return false
             else
                 store_config = true
+            end
+            return true
+        end,
+    },
+    {
+        "^%-%-store%-json%-config(%=?)(%g*)$",
+        function(o, v)
+            if not o then return false end
+            if o == "=" then
+                if not v or #v < 1 then return false end
+                store_json_config = v
+            elseif #v ~= 0 then
+                return false
+            else
+                store_json_config = true
             end
             return true
         end,
@@ -1394,6 +1421,14 @@ local options = {
         function(o)
             if not o or #o < 1 then return false end
             load_config = o
+            return true
+        end,
+    },
+    {
+        "^%-%-load%-json%-config%=(%g*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            load_json_config = o
             return true
         end,
     },
@@ -1738,6 +1773,9 @@ echo "
             error(ret)
         end
         config = setmetatable(ret, { __index = config })
+    elseif load_json_config then
+        local f <close> = assert(io.open(load_json_config, "rb"))
+        config = setmetatable(cartesi.fromjson(f:read("a")), { __index = config })
     end
 
     main_machine = create_machine(config, runtime)
@@ -1750,11 +1788,58 @@ for _, r in ipairs(memory_range_replace) do
     main_machine:replace_memory_range(r.start, r.length, r.shared, r.image_filename)
 end
 
-if store_config == true then
-    io.write(cartesi.tojson(main_config, 2), "\n")
-elseif store_config then
+local function dump_config(what, whatdef, out, indent)
+    if type(what) == "table" then
+        local next_indent = indent .. "  "
+        local keys = {}
+        for k in pairs(what) do
+            table.insert(keys, k)
+        end
+        table.sort(keys)
+        if #keys > 0 then
+            out:write("{\n")
+            for _, k in ipairs(keys) do
+                local v, vdef = what[k], whatdef and whatdef[k]
+                out:write(next_indent)
+                if type(k) == "string" then out:write(k, " = ") end
+                dump_config(v, vdef, out, next_indent)
+                out:write(",")
+                if v == vdef then out:write(" -- default") end
+                out:write("\n")
+            end
+            out:write(indent, "}")
+        else
+            out:write("{}")
+        end
+    elseif math.type(what) == "integer" then
+        out:write(string.format("0x%x", what))
+    else
+        out:write(string.format("%q", what))
+    end
+end
+
+local function serialize_config(out, config, format)
+    if format == "json" then
+        out:write(cartesi.tojson(main_config, 2), "\n")
+    elseif format == "lua" then
+        out:write("return ")
+        dump_config(config, cartesi.machine.get_default_config(), out, "")
+        out:write("\n")
+    end
+end
+
+if type(store_config) == "string" then
     local f <close> = assert(io.open(store_config, "w"))
-    f:write(cartesi.tojson(main_config))
+    serialize_config(f, main_config, "lua")
+elseif store_config then
+    serialize_config(io.stdout, main_config, "lua")
+end
+
+if type(store_json_config) == "string" then
+    local f <close> = assert(io.open(store_json_config, "w"))
+    serialize_config(f, main_config, "json")
+elseif store_json_config then
+    serialize_config(io.stdout, main_config, "json")
 end
 
 local cmio_yield_automatic_reason = {

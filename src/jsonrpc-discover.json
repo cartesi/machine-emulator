@@ -1,7 +1,7 @@
 {
   "openrpc": "1.0.0-rc1",
   "info": {
-    "version": "0.0.1",
+    "version": "0.0.2",
     "title": "Remote Cartesi Machine",
     "license": {
       "name": "MIT"
@@ -42,7 +42,7 @@
           "description": "URL of the new address",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
+            "type": "string"
           }
         }
       ],
@@ -233,7 +233,7 @@
         }
       ],
       "result": {
-        "name": "access_log",
+        "name": "log",
         "description": "Log of state accesses",
         "schema": {
           "$ref": "#/components/schemas/AccessLog"
@@ -250,13 +250,6 @@
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/AccessLog"
-          }
-        }, {
-          "name":"runtime",
-          "description": "Machine runtime configuration",
-          "required": false,
-          "schema": {
-            "$ref": "#/components/schemas/MachineRuntimeConfig"
           }
         }, {
           "name":"one_based",
@@ -301,13 +294,6 @@
             "$ref": "#/components/schemas/Base64Hash"
           }
         }, {
-          "name":"runtime",
-          "description": "Machine runtime configuration",
-          "required": false,
-          "schema": {
-            "$ref": "#/components/schemas/MachineRuntimeConfig"
-          }
-        }, {
           "name":"one_based",
           "description": "Whether messages use 1-based or 0-based indeces",
           "required": false,
@@ -334,13 +320,6 @@
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/AccessLog"
-          }
-        }, {
-          "name":"runtime",
-          "description": "Machine runtime configuration",
-          "required": false,
-          "schema": {
-            "$ref": "#/components/schemas/MachineRuntimeConfig"
           }
         }, {
           "name":"one_based",
@@ -383,13 +362,6 @@
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/Base64Hash"
-          }
-        }, {
-          "name":"runtime",
-          "description": "Machine runtime configuration",
-          "required": false,
-          "schema": {
-            "$ref": "#/components/schemas/MachineRuntimeConfig"
           }
         }, {
           "name":"one_based",
@@ -596,7 +568,7 @@
         }
       ],
       "result": {
-        "name": "value",
+        "name": "paddr",
         "description": "Value of corresponding physical address (little-endian)",
         "schema": {
           "$ref": "#/components/schemas/UnsignedInteger"
@@ -728,7 +700,7 @@
         }
       ],
       "result": {
-        "name": "access_log",
+        "name": "log",
         "description": "Log of state accesses",
         "schema": {
           "$ref": "#/components/schemas/AccessLog"
@@ -863,7 +835,7 @@
         }
       ],
       "result": {
-        "name": "access_log",
+        "name": "log",
         "description": "Log of state accesses",
         "schema": {
           "$ref": "#/components/schemas/AccessLog"
@@ -894,13 +866,6 @@
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/AccessLog"
-          }
-        }, {
-          "name":"runtime",
-          "description": "Machine runtime configuration",
-          "required": false,
-          "schema": {
-            "$ref": "#/components/schemas/MachineRuntimeConfig"
           }
         }, {
           "name":"one_based",
@@ -957,13 +922,6 @@
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/Base64Hash"
-          }
-        }, {
-          "name":"runtime",
-          "description": "Machine runtime configuration",
-          "required": false,
-          "schema": {
-            "$ref": "#/components/schemas/MachineRuntimeConfig"
           }
         }, {
           "name":"one_based",
@@ -1747,6 +1705,61 @@
         }
       },
 
+      "VirtIOHostfwd": {
+        "title": "VirtIOHostfwd",
+        "type": "object",
+        "properties": {
+          "is_udp": {
+            "type": "boolean"
+          },
+          "host_ip": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "guest_ip": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "host_port": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "guest_port": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      },
+
+      "VirtIOHostfwdArray": {
+        "title": "VirtIOHostfwdArray",
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/VirtIOHostfwd"
+        }
+      },
+
+      "VirtIODeviceConfig": {
+        "title": "VirtIODeviceConfig",
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          },
+          "host_directory": {
+            "type": "string"
+          },
+          "hostfwd": {
+            "$ref": "#/components/schemas/VirtIOHostfwdArray"
+          },
+          "iface": {
+            "type": "string"
+          }
+        }
+      },
+
       "FlashDriveConfigs": {
         "title": "FlashDriveConfigs",
         "type": "array",
@@ -1915,6 +1928,9 @@
           },
           "cycle": {
             "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "halt_flag": {
+            "type": "boolean"
           }
         }
       },
@@ -1958,6 +1974,14 @@
         }
       },
 
+      "VirtIOConfigs": {
+        "title": "VirtIOConfigs",
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/VirtIODeviceConfig"
+        }
+      },
+
       "MachineConfig": {
         "title": "MachineConfig",
         "type": "object",
@@ -1991,6 +2015,9 @@
           },
           "cmio": {
             "$ref": "#/components/schemas/CmioConfig"
+          },
+          "virtio": {
+            "$ref": "#/components/schemas/VirtIOConfigs"
           }
         }
       },

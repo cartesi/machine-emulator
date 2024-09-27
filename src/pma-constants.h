@@ -19,6 +19,7 @@
 
 #include <cstdint>
 
+#include "machine-c-api.h"
 #include "pma-defines.h"
 
 namespace cartesi {
@@ -128,6 +129,12 @@ enum class PMA_ISTART_DID {
     cmio_tx_buffer = PMA_CMIO_TX_BUFFER_DID_DEF,   ///< DID for cmio transmit buffer
     shadow_uarch = PMA_SHADOW_UARCH_STATE_DID_DEF, ///< DID for shadow uarch state device
 };
+
+static_assert(PMA_CMIO_RX_BUFFER_START_DEF == CM_PMA_CMIO_RX_BUFFER_START);
+static_assert(PMA_CMIO_RX_BUFFER_LOG2_SIZE_DEF == CM_PMA_CMIO_RX_BUFFER_LOG2_SIZE);
+static_assert(PMA_CMIO_TX_BUFFER_START_DEF == CM_PMA_CMIO_TX_BUFFER_START);
+static_assert(PMA_CMIO_TX_BUFFER_LOG2_SIZE_DEF == CM_PMA_CMIO_TX_BUFFER_LOG2_SIZE);
+static_assert(PMA_RAM_START_DEF == CM_PMA_RAM_START);
 
 } // namespace cartesi
 

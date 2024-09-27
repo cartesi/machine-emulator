@@ -50,6 +50,15 @@ typedef enum cm_constant {
     CM_TREE_LOG2_ROOT_SIZE = 64,
 } cm_constant;
 
+/// \brief Physical memory addresses (only relevant are exposed in the API).
+typedef enum cm_pma_constant {
+    CM_PMA_CMIO_RX_BUFFER_START = 0x60000000,
+    CM_PMA_CMIO_RX_BUFFER_LOG2_SIZE = 21,
+    CM_PMA_CMIO_TX_BUFFER_START = 0x60800000,
+    CM_PMA_CMIO_TX_BUFFER_LOG2_SIZE = 21,
+    CM_PMA_RAM_START = 0x80000000,
+} cm_pma_constant;
+
 /// \brief Error codes returned from the C API.
 typedef enum cm_error {
     CM_ERROR_OK,

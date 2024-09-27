@@ -313,8 +313,6 @@ void clua_createtype(lua_State *L, const char *name, int ctxidx) {
     lua_setfield(L, -2, "name");              // T_rawname T_meta
     lua_pushvalue(L, ctxidx);                 // T_rawname T_meta ctxtab
     luaL_setfuncs(L, default_meta.data(), 1); // T_rawname T_meta
-    lua_pushliteral(L, "access denied");      // T_rawname T_meta "access denied"
-    lua_setfield(L, -2, "__metatable");       // T_rawname T_meta
     lua_rawset(L, ctxidx);                    //
 }
 

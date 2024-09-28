@@ -56,8 +56,7 @@ static int machine_class_index_verify_step_uarch(lua_State *L) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
-    lua_pushnumber(L, 1);
-    return 1;
+    return 0;
 }
 
 /// \brief This is the machine.verify_reset_uarch() method implementation.
@@ -77,8 +76,7 @@ static int machine_class_index_verify_reset_uarch(lua_State *L) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
-    lua_pushnumber(L, 1);
-    return 1;
+    return 0;
 }
 
 /// \brief This is the machine.verify_send_cmio_response() method implementation.
@@ -102,8 +100,7 @@ static int machine_class_index_verify_send_cmio_response(lua_State *L) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
-    lua_pushnumber(L, 1);
-    return 1;
+    return 0;
 }
 
 /// \brief Contents of the machine class metatable __index table.

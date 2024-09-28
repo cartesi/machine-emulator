@@ -75,9 +75,7 @@ static int jsonrpc_machine_class_verify_step_uarch(lua_State *L) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
-    lua_pop(L, 2);
-    lua_pushnumber(L, 1);
-    return 1;
+    return 0;
 }
 
 /// \brief This is the machine.verify_reset_uarch()
@@ -101,9 +99,7 @@ static int jsonrpc_machine_class_verify_reset_uarch(lua_State *L) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
-    lua_pop(L, 2);
-    lua_pushnumber(L, 1);
-    return 1;
+    return 0;
 }
 
 /// \brief This is the machine.verify_send_cmio_response()
@@ -133,9 +129,7 @@ static int jsonrpc_machine_class_verify_send_cmio_response(lua_State *L) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
-    lua_pop(L, 2);
-    lua_pushnumber(L, 1);
-    return 1;
+    return 0;
 }
 
 /// \brief Contents of the machine class metatable __index table.
@@ -219,8 +213,7 @@ static int jsonrpc_server_class_shutdown(lua_State *L) {
     if (cm_jsonrpc_shutdown(managed_jsonrpc_mgr.get()) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    lua_pushnumber(L, 1);
-    return 1;
+    return 0;
 }
 
 /// \brief This is the rebind method implementation.

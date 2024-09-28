@@ -357,8 +357,7 @@ static int machine_obj_index_write_memory(lua_State *L) {
     if (cm_write_memory(m.get(), address, data, length) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    lua_pushboolean(L, true);
-    return 1;
+    return 0;
 }
 
 /// \brief This is the machine:write_virtual_memory() method implementation.
@@ -372,8 +371,7 @@ static int machine_obj_index_write_virtual_memory(lua_State *L) {
     if (cm_write_virtual_memory(m.get(), address, data, length) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    lua_pushboolean(L, true);
-    return 1;
+    return 0;
 }
 
 /// \brief This is the machine:translate_virtual_address() method implementation.
@@ -482,8 +480,7 @@ static int machine_obj_index_send_cmio_response(lua_State *L) {
     if (cm_send_cmio_response(m.get(), reason, data, length) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    lua_pushboolean(L, true);
-    return 1;
+    return 0;
 }
 
 /// \brief This is the machine:log_send_cmio_response() method implementation.

@@ -268,11 +268,11 @@ static int machine_obj_index_get_memory_ranges(lua_State *L) {
 static int machine_obj_index_log_reset_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const int log_type = static_cast<int>(luaL_optinteger(L, 2, 0));
-    const char *access_log = nullptr;
-    if (cm_log_reset_uarch(m.get(), log_type, true, &access_log) != 0) {
+    const char *log = nullptr;
+    if (cm_log_reset_uarch(m.get(), log_type, &log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json_table(L, access_log);
+    clua_push_json_table(L, log);
     return 1;
 }
 
@@ -294,11 +294,11 @@ static int machine_obj_index_run_uarch(lua_State *L) {
 static int machine_obj_index_log_step_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const int log_type = static_cast<int>(luaL_optinteger(L, 2, 0));
-    const char *access_log = nullptr;
-    if (cm_log_step_uarch(m.get(), log_type, true, &access_log) != 0) {
+    const char *log = nullptr;
+    if (cm_log_step_uarch(m.get(), log_type, &log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json_table(L, access_log);
+    clua_push_json_table(L, log);
     return 1;
 }
 
@@ -492,11 +492,11 @@ static int machine_obj_index_log_send_cmio_response(lua_State *L) {
     uint64_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
-    const char *access_log = nullptr;
-    if (cm_log_send_cmio_response(m.get(), reason, data, length, log_type, true, &access_log) != 0) {
+    const char *log = nullptr;
+    if (cm_log_send_cmio_response(m.get(), reason, data, length, log_type, &log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json_table(L, access_log);
+    clua_push_json_table(L, log);
     return 1;
 }
 

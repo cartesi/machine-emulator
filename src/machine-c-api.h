@@ -599,20 +599,18 @@ CM_API int32_t cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8
 /// \brief Runs the machine in the microarchitecture for one micro cycle logging all accesses to the state.
 /// \param m Pointer to valid machine instance.
 /// \param log_type Type of access log to generate.
-/// \param one_based Use 1-based indices when reporting errors.
-/// \param access_log Receives the state access log as a JSON string,
+/// \param log Receives the state access log as a JSON string,
 /// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_log_step_uarch(cm_machine *m, int32_t log_type, bool one_based, const char **access_log);
+CM_API int32_t cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **log);
 
 /// \brief Resets the entire microarchitecture state to pristine values logging all accesses to the state.
 /// \param m Pointer to valid machine instance.
 /// \param log_type Type of access log to generate.
-/// \param one_based Use 1-based indices when reporting errors.
-/// \param access_log Receives the state access log as a JSON string,
+/// \param log Receives the state access log as a JSON string,
 /// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_log_reset_uarch(cm_machine *m, int32_t log_type, bool one_based, const char **access_log);
+CM_API int32_t cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char **log);
 
 /// \brief Sends a cmio response logging all accesses to the state.
 /// \param m Pointer to valid machine instance.
@@ -620,51 +618,45 @@ CM_API int32_t cm_log_reset_uarch(cm_machine *m, int32_t log_type, bool one_base
 /// \param data Response data to send.
 /// \param length Length of response data.
 /// \param log_type Type of access log to generate.
-/// \param one_based Use 1-based indices when reporting errors.
-/// \param access_log Receives the state access log as a JSON string,
+/// \param log Receives the state access log as a JSON string,
 /// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
-    int32_t log_type, bool one_based, const char **access_log);
+    int32_t log_type, const char **log);
 
 // ---------------------------------
 // Verifying
 
 /// \brief Checks the validity of a state transition for one micro cycle.
 /// \param root_hash_before State hash before load.
-/// \param access_log State access log to be verified as a JSON string.
+/// \param log State access log to be verified as a JSON string.
 /// \param root_hash_after State hash after load.
-/// \param one_based Use 1-based indices when reporting errors.
 /// \returns 0 for success, non zero code for error.
 /// \details In case both root_hash_before and root_hash_after are NULL,
 /// then it just verifies the access log integrity.
-CM_API int32_t cm_verify_step_uarch(const cm_hash *root_hash_before, const char *access_log,
-    const cm_hash *root_hash_after, bool one_based);
+CM_API int32_t cm_verify_step_uarch(const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
 
 /// \brief Checks the validity of a state transition produced by a microarchitecture state reset.
 /// \param root_hash_before State hash before load.
-/// \param access_log State access log to be verified as a JSON string.
+/// \param log State access log to be verified as a JSON string.
 /// \param root_hash_after State hash after load.
-/// \param one_based Use 1-based indices when reporting errors.
 /// \returns 0 for success, non zero code for error.
 /// \details In case both root_hash_before and root_hash_after are NULL,
 /// then it just verifies the access log integrity.
-CM_API int32_t cm_verify_reset_uarch(const cm_hash *root_hash_before, const char *access_log,
-    const cm_hash *root_hash_after, bool one_based);
+CM_API int32_t cm_verify_reset_uarch(const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
 
 /// \brief Checks the validity of state transitions produced by a send cmio response.
 /// \param reason Reason for sending the response.
 /// \param data The response sent when the log was generated.
 /// \param length Length of response.
 /// \param root_hash_before State hash before load.
-/// \param access_log State access log to be verified as a JSON string.
+/// \param log State access log to be verified as a JSON string.
 /// \param root_hash_after State hash after load.
-/// \param one_based Use 1-based indices when reporting errors.
 /// \returns 0 for success, non zero code for error.
 /// \details In case both root_hash_before and root_hash_after are NULL,
 /// then it just verifies the access log integrity.
 CM_API int32_t cm_verify_send_cmio_response(uint16_t reason, const uint8_t *data, uint64_t length,
-    const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after, bool one_based);
+    const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
 
 // ---------------------------------
 // Integrity checking

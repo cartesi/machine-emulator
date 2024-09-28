@@ -1123,7 +1123,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_merkle_tree_basic_test, ordinary_machine_f
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_log_null_log_test, default_machine_fixture) {
-    int error_code = cm_verify_step_uarch(nullptr, nullptr, nullptr, false);
+    int error_code = cm_verify_step_uarch(nullptr, nullptr, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -1168,22 +1168,22 @@ protected:
 };
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_machine_test, access_log_machine_fixture) {
-    int error_code = cm_log_step_uarch(nullptr, _log_type, false, &_access_log);
+    int error_code = cm_log_step_uarch(nullptr, _log_type, &_access_log);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(step_null_access_log_test, access_log_machine_fixture) {
-    int error_code = cm_log_step_uarch(_machine, _log_type, false, nullptr);
+    int error_code = cm_log_step_uarch(_machine, _log_type, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_null_hash0_test, access_log_machine_fixture) {
-    int error_code = cm_log_step_uarch(_machine, _log_type, false, &_access_log);
+    int error_code = cm_log_step_uarch(_machine, _log_type, &_access_log);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
     cm_hash hash1;
-    error_code = cm_verify_step_uarch(nullptr, _access_log, &hash1, false);
+    error_code = cm_verify_step_uarch(nullptr, _access_log, &hash1);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -1192,12 +1192,12 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_null_hash0_test, access_log_mac
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_null_hash1_test, access_log_machine_fixture) {
-    int error_code = cm_log_step_uarch(_machine, _log_type, false, &_access_log);
+    int error_code = cm_log_step_uarch(_machine, _log_type, &_access_log);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
     cm_hash hash0;
-    error_code = cm_verify_step_uarch(&hash0, _access_log, nullptr, false);
+    error_code = cm_verify_step_uarch(&hash0, _access_log, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -1208,7 +1208,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_null_hash1_test, access_log_mac
 BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_null_access_log_test, access_log_machine_fixture) {
     cm_hash hash0;
     cm_hash hash1;
-    int error_code = cm_verify_step_uarch(&hash0, nullptr, &hash1, false);
+    int error_code = cm_verify_step_uarch(&hash0, nullptr, &hash1);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -1242,50 +1242,50 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, access_log_machine_fix
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
     // step 1
-    error_code = cm_log_step_uarch(_machine, _log_type, false, &_access_log);
+    error_code = cm_log_step_uarch(_machine, _log_type, &_access_log);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    error_code = cm_verify_step_uarch(nullptr, _access_log, nullptr, false);
+    error_code = cm_verify_step_uarch(nullptr, _access_log, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     // get hash after step
     error_code = cm_get_root_hash(_machine, &hash1);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     // verify
-    error_code = cm_verify_step_uarch(&hash0, _access_log, &hash1, false);
+    error_code = cm_verify_step_uarch(&hash0, _access_log, &hash1);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 
     // step 2
-    error_code = cm_log_step_uarch(_machine, _log_type, false, &_access_log);
+    error_code = cm_log_step_uarch(_machine, _log_type, &_access_log);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    error_code = cm_verify_step_uarch(nullptr, _access_log, nullptr, false);
+    error_code = cm_verify_step_uarch(nullptr, _access_log, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     // get hash after step
     error_code = cm_get_root_hash(_machine, &hash2);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     // verify
-    error_code = cm_verify_step_uarch(&hash1, _access_log, &hash2, false);
+    error_code = cm_verify_step_uarch(&hash1, _access_log, &hash2);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 
     // step 3
-    error_code = cm_log_step_uarch(_machine, _log_type, false, &_access_log);
+    error_code = cm_log_step_uarch(_machine, _log_type, &_access_log);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    error_code = cm_verify_step_uarch(nullptr, _access_log, nullptr, false);
+    error_code = cm_verify_step_uarch(nullptr, _access_log, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     // get hash after step
     error_code = cm_get_root_hash(_machine, &hash3);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     // verify
-    error_code = cm_verify_step_uarch(&hash2, _access_log, &hash3, false);
+    error_code = cm_verify_step_uarch(&hash2, _access_log, &hash3);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     // step 4
-    error_code = cm_log_step_uarch(_machine, _log_type, false, &_access_log);
+    error_code = cm_log_step_uarch(_machine, _log_type, &_access_log);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    error_code = cm_verify_step_uarch(nullptr, _access_log, nullptr, false);
+    error_code = cm_verify_step_uarch(nullptr, _access_log, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     // get hash after step
     error_code = cm_get_root_hash(_machine, &hash4);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     // verify
-    error_code = cm_verify_step_uarch(&hash3, _access_log, &hash4, false);
+    error_code = cm_verify_step_uarch(&hash3, _access_log, &hash4);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 
     // at micro cycle 4
@@ -1307,11 +1307,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture) {
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
 
-    error_code = cm_log_step_uarch(_machine, _log_type, false, &_access_log);
+    error_code = cm_log_step_uarch(_machine, _log_type, &_access_log);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
-    error_code = cm_verify_step_uarch(nullptr, _access_log, nullptr, false);
+    error_code = cm_verify_step_uarch(nullptr, _access_log, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
@@ -1319,14 +1319,14 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(step_complex_test, access_log_machine_fixture) {
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
 
-    error_code = cm_verify_step_uarch(&hash0, _access_log, &hash1, false);
+    error_code = cm_verify_step_uarch(&hash0, _access_log, &hash1);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(step_hash_test, access_log_machine_fixture) {
 
-    int error_code = cm_log_step_uarch(_machine, _log_type, false, &_access_log);
+    int error_code = cm_log_step_uarch(_machine, _log_type, &_access_log);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 

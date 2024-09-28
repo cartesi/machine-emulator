@@ -41,7 +41,7 @@ public:
 private:
     void do_store(const std::string &dir) override;
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
-    access_log do_log_step_uarch(const access_log::type &log_type, bool one_based = false) override;
+    access_log do_log_step_uarch(const access_log::type &log_type) override;
     machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const override;
     void do_get_root_hash(hash_type &hash) const override;
     bool do_verify_merkle_tree(void) const override;
@@ -61,12 +61,12 @@ private:
     void do_commit() override;
     void do_rollback() override;
     void do_reset_uarch() override;
-    access_log do_log_reset_uarch(const access_log::type &log_type, bool one_based = false) override;
+    access_log do_log_reset_uarch(const access_log::type &log_type) override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
     machine_memory_range_descrs do_get_memory_ranges(void) const override;
     void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) override;
     access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const access_log::type &log_type, bool one_based) override;
+        const access_log::type &log_type) override;
 };
 
 } // namespace cartesi

@@ -116,26 +116,24 @@ CM_API int32_t cm_jsonrpc_get_machine(const cm_jsonrpc_mgr *mgr, cm_machine **ne
 /// \brief Checks the validity of a state transition for one micro cycle.
 /// \param mgr Pointer to a valid JSONRPC connection manager.
 /// \param root_hash_before State hash before load.
-/// \param access_log State access log to be verified as a JSON string.
+/// \param log State access log to be verified as a JSON string.
 /// \param root_hash_after State hash after load.
-/// \param one_based Use 1-based indices when reporting errors.
 /// \returns 0 for success, non zero code for error.
 /// \details In case both root_hash_before and root_hash_after are NULL,
 /// then it just verifies the access log integrity.
-CM_API int32_t cm_jsonrpc_verify_step_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
-    const char *access_log, const cm_hash *root_hash_after, bool one_based);
+CM_API int32_t cm_jsonrpc_verify_step_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before, const char *log,
+    const cm_hash *root_hash_after);
 
 /// \brief Checks the validity of a state transition produced by a microarchitecture state reset.
 /// \param mgr Pointer to a valid JSONRPC connection manager.
 /// \param root_hash_before State hash before load.
-/// \param access_log State access log to be verified as a JSON string.
+/// \param log State access log to be verified as a JSON string.
 /// \param root_hash_after State hash after load.
-/// \param one_based Use 1-based indices when reporting errors.
 /// \returns 0 for success, non zero code for error.
 /// \details In case both root_hash_before and root_hash_after are NULL,
 /// then it just verifies the access log integrity.
 CM_API int32_t cm_jsonrpc_verify_reset_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
-    const char *access_log, const cm_hash *root_hash_after, bool one_based);
+    const char *log, const cm_hash *root_hash_after);
 
 /// \brief Checks the validity of state transitions produced by a send cmio response.
 /// \param mgr Pointer to a valid JSONRPC connection manager.
@@ -143,15 +141,13 @@ CM_API int32_t cm_jsonrpc_verify_reset_uarch(const cm_jsonrpc_mgr *mgr, const cm
 /// \param data The response sent when the log was generated.
 /// \param length Length of response.
 /// \param root_hash_before State hash before load.
-/// \param access_log State access log to be verified as a JSON string.
+/// \param log State access log to be verified as a JSON string.
 /// \param root_hash_after State hash after load.
-/// \param one_based Use 1-based indices when reporting errors.
 /// \returns 0 for success, non zero code for error.
 /// \details In case both root_hash_before and root_hash_after are NULL,
 /// then it just verifies the access log integrity.
 CM_API int32_t cm_jsonrpc_verify_send_cmio_response(const cm_jsonrpc_mgr *mgr, uint16_t reason, const uint8_t *data,
-    uint64_t length, const cm_hash *root_hash_before, const char *access_log, const cm_hash *root_hash_after,
-    bool one_based);
+    uint64_t length, const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
 
 #ifdef __cplusplus
 }

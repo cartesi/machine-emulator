@@ -36,8 +36,8 @@ interpreter_break_reason virtual_machine::do_run(uint64_t mcycle_end) {
     return m_machine->run(mcycle_end);
 }
 
-access_log virtual_machine::do_log_step_uarch(const access_log::type &log_type, bool one_based) {
-    return m_machine->log_step_uarch(log_type, one_based);
+access_log virtual_machine::do_log_step_uarch(const access_log::type &log_type) {
+    return m_machine->log_step_uarch(log_type);
 }
 
 machine_merkle_tree::proof_type virtual_machine::do_get_proof(uint64_t address, int log2_size) const {
@@ -116,8 +116,8 @@ void virtual_machine::do_reset_uarch() {
     m_machine->reset_uarch();
 }
 
-access_log virtual_machine::do_log_reset_uarch(const access_log::type &log_type, bool one_based) {
-    return m_machine->log_reset_uarch(log_type, one_based);
+access_log virtual_machine::do_log_reset_uarch(const access_log::type &log_type) {
+    return m_machine->log_reset_uarch(log_type);
 }
 
 uarch_interpreter_break_reason virtual_machine::do_run_uarch(uint64_t uarch_cycle_end) {
@@ -133,8 +133,8 @@ void virtual_machine::do_send_cmio_response(uint16_t reason, const unsigned char
 }
 
 access_log virtual_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-    const access_log::type &log_type, bool one_based) {
-    return m_machine->log_send_cmio_response(reason, data, length, log_type, one_based);
+    const access_log::type &log_type) {
+    return m_machine->log_send_cmio_response(reason, data, length, log_type);
 }
 
 } // namespace cartesi

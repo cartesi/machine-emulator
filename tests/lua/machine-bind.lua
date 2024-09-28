@@ -742,7 +742,7 @@ do_test("Step log must contain conssitent data hashes", function(machine)
     -- ensure that verification fails with wrong read hash
     read_access.read_hash = wrong_hash
     local _, err = pcall(module.machine.verify_step_uarch, nil, log, nil)
-    assert(err:match("logged read data of uarch.uarch_cycle data does not hash to the logged read hash at access 1"))
+    assert(err:match("logged read data of uarch.uarch_cycle data does not hash to the logged read hash at 1st access"))
     read_access.read_hash = read_hash -- restore correct value
 
     -- ensure that verification fails with wrong read hash
@@ -751,13 +751,13 @@ do_test("Step log must contain conssitent data hashes", function(machine)
     read_hash = write_access.read_hash
     write_access.read_hash = wrong_hash
     _, err = pcall(module.machine.verify_step_uarch, nil, log, nil)
-    assert(err:match("logged read data of uarch.cycle does not hash to the logged read hash at access 8"))
+    assert(err:match("logged read data of uarch.cycle does not hash to the logged read hash at 8th access"))
     write_access.read_hash = read_hash -- restore correct value
 
     -- ensure that verification fails with wrong written hash
     write_access.written_hash = wrong_hash
     _, err = pcall(module.machine.verify_step_uarch, nil, log, nil)
-    assert(err:match("logged written data of uarch.cycle does not hash to the logged written hash at access 8"))
+    assert(err:match("logged written data of uarch.cycle does not hash to the logged written hash at 8th access"))
 end)
 
 do_test("step when uarch cycle is max", function(machine)
@@ -980,7 +980,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         -- verifying incorrect initial hash
         local wrong_hash = string.rep("0", cartesi.HASH_SIZE)
         local _, err = pcall(module.machine.verify_reset_uarch, wrong_hash, log, final_hash)
-        assert(err:match("Mismatch in root hash of access 1"))
+        assert(err:match("Mismatch in root hash of 1st access"))
         -- verifying incorrect final hash
         _, err = pcall(module.machine.verify_reset_uarch, initial_hash, log, wrong_hash)
         assert(err:match("mismatch in root hash after replay"))
@@ -1054,13 +1054,13 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         -- tamper with read data to produce a hash mismatch
         access.read = "X" .. access.read:sub(2)
         local _, err = pcall(module.machine.verify_reset_uarch, nil, log, nil)
-        assert(err:match("hash of read data and read hash at access 1 does not match read hash"))
+        assert(err:match("hash of read data and read hash at 1st access does not match read hash"))
         -- restore correct read
         access.read = original_read
         --  change written data to produce a hash mismatch
         access.written = "X" .. access.written:sub(2)
         _, err = pcall(module.machine.verify_reset_uarch, nil, log, nil)
-        assert(err:match("written hash and written data mismatch at access 1"))
+        assert(err:match("written hash and written data mismatch at 1st access"))
     end
 )
 
@@ -1088,7 +1088,7 @@ do_test("Test unhappy paths of verify_reset_uarch", function(machine)
     assert_error("too few accesses in log", function(log)
         log.accesses = {}
     end)
-    assert_error("expected address of access 1 to be the start address of the uarch state", function(log)
+    assert_error("expected address of 1st access to be the start address of the uarch state", function(log)
         log.accesses[1].address = 0
     end)
 
@@ -1099,22 +1099,22 @@ do_test("Test unhappy paths of verify_reset_uarch", function(machine)
     assert_error("missing field", function(log)
         log.accesses[#log.accesses].read_hash = nil
     end)
-    assert_error("Mismatch in root hash of access 1", function(log)
+    assert_error("Mismatch in root hash of 1st access", function(log)
         log.accesses[1].read_hash = bad_hash
     end)
     assert_error("access log was not fully consumed", function(log)
         log.accesses[#log.accesses + 1] = log.accesses[1]
     end)
-    assert_error("write access 1 has no written hash", function(log)
+    assert_error("write 1st access has no written hash", function(log)
         log.accesses[#log.accesses].written_hash = nil
     end)
     assert_error("has wrong length", function(log)
         log.accesses[#log.accesses].written = "\0"
     end)
-    assert_error("written hash and written data mismatch at access 1", function(log)
+    assert_error("written hash and written data mismatch at 1st access", function(log)
         log.accesses[#log.accesses].written = string.rep("\0", 2 ^ 22)
     end)
-    assert_error("Mismatch in root hash of access 1", function(log)
+    assert_error("Mismatch in root hash of 1st access", function(log)
         log.accesses[1].sibling_hashes[1] = bad_hash
     end)
 end)
@@ -1143,23 +1143,23 @@ do_test("Test unhappy paths of verify_step_uarch", function(machine)
     assert_error("too few accesses in log", function(log)
         log.accesses = {}
     end)
-    assert_error("expected access 1 to read uarch.uarch_cycle", function(log)
+    assert_error("expected 1st access to read uarch.uarch_cycle", function(log)
         log.accesses[1].address = 0
     end)
-    assert_error("expected access 1 to read 2%^5 bytes from uarch.uarch_cycle", function(log)
+    assert_error("expected 1st access to read 2%^5 bytes from uarch.uarch_cycle", function(log)
         log.accesses[1].log2_size = 2
     end)
     assert_error("is out of bounds", function(log)
         log.accesses[1].log2_size = 65
     end)
-    assert_error("missing read uarch.uarch_cycle data at access 1", function(log)
+    assert_error("missing read uarch.uarch_cycle data at 1st access", function(log)
         log.accesses[1].read = nil
     end)
     assert_error("has wrong length", function(log)
         log.accesses[1].read = "\0"
     end)
     assert_error(
-        "logged read data of uarch.uarch_cycle data does not hash to the logged read hash at access 1",
+        "logged read data of uarch.uarch_cycle data does not hash to the logged read hash at 1st access",
         function(log)
             log.accesses[1].read_hash = bad_hash
         end
@@ -1170,19 +1170,19 @@ do_test("Test unhappy paths of verify_step_uarch", function(machine)
     assert_error("access log was not fully consumed", function(log)
         log.accesses[#log.accesses + 1] = log.accesses[1]
     end)
-    assert_error("missing written uarch.cycle hash at access", function(log)
+    assert_error("missing written uarch.cycle hash at 7th access", function(log)
         log.accesses[#log.accesses].written_hash = nil
     end)
     assert_error("has wrong length", function(log)
         log.accesses[#log.accesses].written = "\0"
     end)
     assert_error(
-        "logged written data of uarch.cycle does not hash to the logged written hash at access 7",
+        "logged written data of uarch.cycle does not hash to the logged written hash at 7th access",
         function(log)
             log.accesses[#log.accesses].written = string.rep("\0", cartesi.HASH_SIZE)
         end
     )
-    assert_error("Mismatch in root hash of access 1", function(log)
+    assert_error("Mismatch in root hash of 1st access", function(log)
         log.accesses[1].sibling_hashes[1] = bad_hash
     end)
 end)

@@ -62,8 +62,8 @@ public:
     }
 
     /// \brief Runs the machine for one micro cycle logging all accesses to the state.
-    access_log log_step_uarch(const access_log::type &log_type, bool one_based = false) {
-        return do_log_step_uarch(log_type, one_based);
+    access_log log_step_uarch(const access_log::type &log_type) {
+        return do_log_step_uarch(log_type);
     }
 
     /// \brief Obtains the proof for a node in the Merkle tree.
@@ -163,10 +163,9 @@ public:
 
     /// \brief Resets the microarchitecture state to pristine value and returns an access log
     /// \param log_type Type of access log to generate.
-    /// \param one_based Use 1-based indices when reporting errors.
     /// \returns The state access log.
-    access_log log_reset_uarch(const access_log::type &log_type, bool one_based = false) {
-        return do_log_reset_uarch(log_type, one_based);
+    access_log log_reset_uarch(const access_log::type &log_type) {
+        return do_log_reset_uarch(log_type);
     }
 
     /// \brief Runs the microarchitecture until the machine advances to the next mcycle or the current  micro cycle
@@ -187,14 +186,14 @@ public:
 
     /// \brief Sends cmio response. and returns an access log
     access_log log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const access_log::type &log_type, bool one_based) {
-        return do_log_send_cmio_response(reason, data, length, log_type, one_based);
+        const access_log::type &log_type) {
+        return do_log_send_cmio_response(reason, data, length, log_type);
     }
 
 private:
     virtual interpreter_break_reason do_run(uint64_t mcycle_end) = 0;
     virtual void do_store(const std::string &dir) = 0;
-    virtual access_log do_log_step_uarch(const access_log::type &log_type, bool one_based = false) = 0;
+    virtual access_log do_log_step_uarch(const access_log::type &log_type) = 0;
     virtual machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const = 0;
     virtual void do_get_root_hash(hash_type &hash) const = 0;
     virtual bool do_verify_merkle_tree(void) const = 0;
@@ -214,12 +213,12 @@ private:
     virtual void do_commit() = 0;
     virtual void do_rollback() = 0;
     virtual void do_reset_uarch() = 0;
-    virtual access_log do_log_reset_uarch(const access_log::type &log_type, bool one_based = false) = 0;
+    virtual access_log do_log_reset_uarch(const access_log::type &log_type) = 0;
     virtual uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) = 0;
     virtual machine_memory_range_descrs do_get_memory_ranges(void) const = 0;
     virtual void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) = 0;
     virtual access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const access_log::type &log_type, bool one_based) = 0;
+        const access_log::type &log_type) = 0;
 };
 
 } // namespace cartesi

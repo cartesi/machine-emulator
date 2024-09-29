@@ -202,6 +202,11 @@ public:
     ///  frequent scenario is when the program executes a WFI instruction. Another example is when the machine halts.
     interpreter_break_reason run(uint64_t mcycle_end);
 
+    interpreter_break_reason log_step(uint64_t mcycle_count, const std::string &filename);
+
+    static void verify_step(const hash_type &root_hash_before, const std::string &log_filename, uint64_t mcycle_count,
+        const hash_type &root_hash_after);
+
     /// \brief Runs the machine in the microarchitecture until the mcycles advances by one unit or the micro cycle
     /// counter (uarch_cycle) reaches uarch_cycle_end
     /// \param uarch_cycle_end uarch_cycle limit
@@ -335,6 +340,12 @@ public:
     /// \brief Obtains the root hash of the Merkle tree.
     /// \param hash Receives the hash.
     void get_root_hash(hash_type &hash) const;
+
+    /// \brief Obtains the hash of a node in the Merkle tree.
+    /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
+    /// \param log2_size log<sub>2</sub> of size subintended by target node.
+    /// \returns The hash of the target node.
+    hash_type get_node_hash(uint64_t address, int log2_size) const;
 
     /// \brief Verifies integrity of Merkle tree.
     /// \returns True if tree is self-consistent, false otherwise.

@@ -234,6 +234,9 @@ CM_API int cm_jsonrpc_verify_send_cmio_response_log(const cm_jsonrpc_mgr *mgr, u
     const unsigned char *data, size_t length, const cm_access_log *log, const cm_machine_runtime_config *runtime_config,
     bool one_based, char **err_msg);
 
+CM_API int cm_jsonrpc_verify_step(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before, const char *filename,
+    uint16_t mcycle_count, const cm_hash *root_hash_after, char **err_msg);
+
 /// \brief Checks the validity of a state transition caused by send_cmio_response
 /// \param mgr Cartesi jsonrpc connection manager. Must be pointer to valid object
 /// \param reason Reason for sending response.

@@ -539,6 +539,11 @@ CM_API void cm_delete_machine(cm_machine *m);
 /// \returns 0 for success, non zero code for error
 CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason_result, char **err_msg);
 
+CM_API int cm_log_step(cm_machine *m, uint64_t mcycle_count, const char *log_filename,
+    CM_BREAK_REASON *break_reason_result, char **err_msg);
+CM_API int cm_verify_step(const cm_hash *root_hash_before, const char *log_filename, uint64_t mcycle_count,
+    const cm_hash *root_hash_after, char **err_msg);
+
 /// \brief Runs the machine for one micro cycle logging all accesses to the state.
 /// \param m Pointer to valid machine instance
 /// \param log_type Type of access log to generate.

@@ -425,6 +425,14 @@ machine_merkle_tree::proof_type machine_merkle_tree::get_proof(address_type targ
     return proof;
 }
 
+machine_merkle_tree::hash_type machine_merkle_tree::get_node_hash(address_type address, int log2_size) const {
+    if (address & ((static_cast<address_type>(1) << log2_size) - 1)) {
+        throw std::invalid_argument{"address is not page-aligned"};
+    }
+    auto proof = get_proof(address, log2_size, nullptr);
+    return proof.get_target_hash();
+}
+
 std::ostream &operator<<(std::ostream &out, const machine_merkle_tree::hash_type &hash) {
     auto f = out.flags();
     for (const unsigned b : hash) {

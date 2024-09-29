@@ -41,6 +41,7 @@ public:
 private:
     void do_store(const std::string &dir) override;
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
+    interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) override;
     access_log do_log_uarch_step(const access_log::type &log_type, bool one_based = false) override;
     machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const override;
     void do_get_root_hash(hash_type &hash) const override;

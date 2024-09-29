@@ -277,6 +277,8 @@ private:
     // to 2^LOG2_ROOT_SIZE bytes.
     static const pristine_merkle_tree &pristine_hashes();
 
+    hash_type get_node_hash(address_type address, int log2_size) const;
+
 public:
     /// \brief Verifies the entire Merkle tree.
     /// \return True if tree is consistent, false otherwise.

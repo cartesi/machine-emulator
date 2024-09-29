@@ -924,6 +924,16 @@ static json jsonrpc_machine_run_handler(const json &j, const std::shared_ptr<htt
     return jsonrpc_response_ok(j, interpreter_break_reason_name(reason));
 }
 
+static json jsonrpc_machine_log_step_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    static const char *param_name[] = {"mcycle_count", "filename"};
+    auto args = parse_args<uint64_t, std::string>(j, param_name);
+    auto reason = session->handler->machine->log_step(std::get<0>(args), std::get<1>(args));
+    return jsonrpc_response_ok(j, interpreter_break_reason_name(reason));
+}
+
 /// \brief Translate an uarch_interpret_break_reason value to string
 /// \param reason uarch_interpret_break_reason value to translate
 /// \returns String representation of value
@@ -1698,6 +1708,21 @@ static json jsonrpc_machine_send_cmio_response_handler(const json &j, const std:
     return jsonrpc_response_ok(j);
 }
 
+static json jsonrpc_machine_verify_step_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    (void) session;
+    static const char *param_name[] = {"root_hash_before", "filename", "mcycle_count", "root_hash_after"};
+    auto args = parse_args<cartesi::machine_merkle_tree::hash_type, std::string, uint64_t,
+        cartesi::machine_merkle_tree::hash_type>(j, param_name);
+    switch (count_args(args)) {
+        case 4:
+            cartesi::machine::verify_step(std::get<0>(args), std::get<1>(args), std::get<2>(args), std::get<3>(args));
+            break;
+        default:
+            throw std::runtime_error{"error detecting number of arguments"};
+    }
+    return jsonrpc_response_ok(j);
+}
+
 static json jsonrpc_machine_log_send_cmio_response_handler(const json &j,
     const std::shared_ptr<http_session> &session) {
     if (!session->handler->machine) {
@@ -1911,6 +1936,8 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.verify_send_cmio_response_log", jsonrpc_machine_verify_send_cmio_response_log_handler},
         {"machine.verify_send_cmio_response_state_transition",
             jsonrpc_machine_verify_send_cmio_response_state_transition_handler},
+        {"machine.log_step", jsonrpc_machine_log_step_handler},
+        {"machine.verify_step", jsonrpc_machine_verify_step_handler},
     };
     auto method = j["method"].get<std::string>();
     SLOG(debug) << session->handler->local_endpoint << " handling \"" << method << "\" method";

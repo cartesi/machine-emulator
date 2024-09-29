@@ -1497,21 +1497,27 @@
           "log2_size": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
+          "read_hash": {
+            "$ref": "#/components/schemas/Base64String"
+          },
           "read": {
+            "$ref": "#/components/schemas/Base64String"
+          },
+          "written_hash": {
             "$ref": "#/components/schemas/Base64String"
           },
           "written": {
             "$ref": "#/components/schemas/Base64String"
           },
-          "proof": {
-            "$ref": "#/components/schemas/Proof"
+          "sibling_hashes": {
+            "$ref": "#/components/schemas/Base64HashArray"
           }
         },
         "required": [
           "type",
           "address",
           "log2_size",
-          "read"
+          "read_hash"
         ]
       },
 

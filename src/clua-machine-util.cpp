@@ -258,7 +258,18 @@ static int64_t clua_get_array_table_len(lua_State *L, int tabidx) {
     return len;
 }
 
-static nlohmann::json &clua_push_json_value_ref(lua_State *L, int ctxidx, int idx, bool base64encode = false) {
+static const nlohmann::json &clua_get_json_field_schema(const std::string_view field_name, const nlohmann::json &schema,
+    const nlohmann::json &schema_dict) {
+    static const nlohmann::json empty_schema;
+    if (!schema.contains(field_name)) {
+        return empty_schema;
+    }
+    const auto &type_name = schema.at(field_name).template get<std::string_view>();
+    return schema_dict.at(type_name);
+}
+
+static nlohmann::json &clua_push_json_value_ref(lua_State *L, int idx, int ctxidx, const nlohmann::json &schema,
+    const nlohmann::json &schema_dict) {
     nlohmann::json &j = *clua_push_new_managed_toclose_ptr(L, nlohmann::json(), ctxidx);
     idx -= idx < 0 ? 1 : 0; // adjust offset after pushing j reference
     switch (lua_type(L, idx)) {
@@ -266,9 +277,10 @@ static nlohmann::json &clua_push_json_value_ref(lua_State *L, int ctxidx, int id
             const int64_t len = clua_get_array_table_len(L, idx);
             if (len >= 0) { // array
                 j = nlohmann::json::array();
+                const auto &field_schema = clua_get_json_field_schema("items", schema, schema_dict);
                 for (int64_t i = 1; i <= len; ++i) {
                     lua_geti(L, idx, i);
-                    j.push_back(clua_push_json_value_ref(L, ctxidx, -1, base64encode));
+                    j.push_back(clua_push_json_value_ref(L, -1, ctxidx, field_schema, schema_dict));
                     lua_pop(L, 2); // pop value, child j reference
                 }
             } else { // object
@@ -279,13 +291,9 @@ static nlohmann::json &clua_push_json_value_ref(lua_State *L, int ctxidx, int id
                     if (!lua_isstring(L, -2)) {
                         luaL_error(L, "table maps cannot contain keys of type %s", lua_typename(L, lua_type(L, -2)));
                     }
-                    size_t len = 0;
-                    const char *ptr = lua_tolstring(L, -2, &len);
-                    const std::string_view key(ptr, len);
-                    const bool base64encode_child = base64encode || key == "read_hash" || key == "read" ||
-                        key == "sibling_hashes" || key == "written_hash" || key == "written" || key == "target_hash" ||
-                        key == "root_hash";
-                    j[key] = clua_push_json_value_ref(L, ctxidx, -1, base64encode_child);
+                    const char *field_name = lua_tostring(L, -2);
+                    const auto &field_schema = clua_get_json_field_schema(field_name, schema, schema_dict);
+                    j[field_name] = clua_push_json_value_ref(L, -1, ctxidx, field_schema, schema_dict);
                     lua_pop(L, 2); // pop value, child j reference
                 }
                 lua_pop(L, 1); // pop table
@@ -294,7 +302,11 @@ static nlohmann::json &clua_push_json_value_ref(lua_State *L, int ctxidx, int id
         }
         case LUA_TNUMBER: {
             if (lua_isinteger(L, idx)) {
-                j = lua_tointeger(L, idx);
+                int64_t v = lua_tointeger(L, idx);
+                if (schema.is_string() && schema.template get<std::string_view>() == "ArrayIndex") {
+                    v -= 1;
+                }
+                j = v;
             } else { // floating point
                 j = lua_tonumber(L, idx);
             }
@@ -304,7 +316,7 @@ static nlohmann::json &clua_push_json_value_ref(lua_State *L, int ctxidx, int id
             size_t len = 0;
             const char *ptr = lua_tolstring(L, idx, &len);
             const std::string_view data(ptr, len);
-            if (base64encode) {
+            if (schema.is_string() && schema.template get<std::string_view>() == "Base64") {
                 j = encode_base64(data);
             } else {
                 j = data;
@@ -324,28 +336,35 @@ static nlohmann::json &clua_push_json_value_ref(lua_State *L, int ctxidx, int id
     return j;
 }
 
-const char *clua_check_json_string(lua_State *L, int idx, int indent, int ctxidx) {
+const char *clua_check_json_string(lua_State *L, int idx, int indent, int ctxidx, const nlohmann::json &schema,
+    const nlohmann::json &schema_dict) {
     assert(idx > 0);
+    if (!lua_istable(L, idx)) {
+        luaL_error(L, "failed to parse JSON from a Lua value: expected a table but got type \"%s\"",
+            lua_typename(L, lua_type(L, idx)));
+    }
     try {
-        const nlohmann::json &j = clua_push_json_value_ref(L, ctxidx, idx);
+        const nlohmann::json &j = clua_push_json_value_ref(L, idx, ctxidx, schema, schema_dict);
         std::string &s = *clua_push_new_managed_toclose_ptr(L, j.dump(indent), ctxidx);
         lua_pushlstring(L, s.data(), s.size());
         lua_replace(L, idx);             // replace the Lua value with its JSON string representation
         lua_pop(L, 2);                   // pop s, j references
         return luaL_checkstring(L, idx); // return the string
     } catch (std::exception &e) {
-        luaL_error(L, "failed to parse JSON from a table: %s", e.what());
+        luaL_error(L, "failed to parse JSON from a Lua table: %s", e.what());
         return nullptr;
     }
 }
 
-static void clua_push_json_value(lua_State *L, int ctxidx, const nlohmann::json &j, bool base64decode = false) {
+static void clua_push_json_value(lua_State *L, const nlohmann::json &j, int ctxidx, const nlohmann::json &schema,
+    const nlohmann::json &schema_dict) {
     switch (j.type()) {
         case nlohmann::json::value_t::array: {
+            const auto &field_schema = clua_get_json_field_schema("items", schema, schema_dict);
             lua_createtable(L, static_cast<int>(j.size()), 0);
             int64_t i = 1;
             for (auto it = j.begin(); it != j.end(); ++it, ++i) {
-                clua_push_json_value(L, ctxidx, *it, base64decode);
+                clua_push_json_value(L, *it, ctxidx, field_schema, schema_dict);
                 lua_rawseti(L, -2, i);
             }
             break;
@@ -353,18 +372,16 @@ static void clua_push_json_value(lua_State *L, int ctxidx, const nlohmann::json 
         case nlohmann::json::value_t::object: {
             lua_createtable(L, 0, static_cast<int>(j.size()));
             for (const auto &el : j.items()) {
-                const std::string &key = el.key();
-                const bool base64decode_child = base64decode || key == "read_hash" || key == "read" ||
-                    key == "sibling_hashes" || key == "written_hash" || key == "written" || key == "target_hash" ||
-                    key == "root_hash";
-                clua_push_json_value(L, ctxidx, el.value(), base64decode_child);
-                lua_setfield(L, -2, key.c_str());
+                const auto &field_name = el.key();
+                const auto &field_schema = clua_get_json_field_schema(field_name, schema, schema_dict);
+                clua_push_json_value(L, el.value(), ctxidx, field_schema, schema_dict);
+                lua_setfield(L, -2, field_name.c_str());
             }
             break;
         }
         case nlohmann::json::value_t::string: {
             const std::string_view &data = j.template get<std::string_view>();
-            if (base64decode) {
+            if (schema.is_string() && schema.template get<std::string_view>() == "Base64") {
                 lua_pushnil(L); // reserve a slot in the stack (needed because of lua_toclose semantics)
                 std::string &binary_data = *clua_push_new_managed_toclose_ptr(L, decode_base64(data), ctxidx);
                 lua_pushlstring(L, binary_data.data(), binary_data.length());
@@ -375,12 +392,22 @@ static void clua_push_json_value(lua_State *L, int ctxidx, const nlohmann::json 
             }
             break;
         }
-        case nlohmann::json::value_t::number_integer:
-            lua_pushinteger(L, j.template get<int64_t>());
+        case nlohmann::json::value_t::number_integer: {
+            int64_t v = j.template get<int64_t>();
+            if (schema.is_string() && schema.template get<std::string_view>() == "ArrayIndex") {
+                v += 1;
+            }
+            lua_pushinteger(L, v);
             break;
-        case nlohmann::json::value_t::number_unsigned:
-            lua_pushinteger(L, static_cast<int64_t>(j.template get<uint64_t>()));
+        }
+        case nlohmann::json::value_t::number_unsigned: {
+            int64_t v = static_cast<int64_t>(j.template get<uint64_t>());
+            if (schema.is_string() && schema.template get<std::string_view>() == "ArrayIndex") {
+                v += 1;
+            }
+            lua_pushinteger(L, v);
             break;
+        }
         case nlohmann::json::value_t::number_float:
             lua_pushnumber(L, j.template get<double>());
             break;
@@ -396,16 +423,89 @@ static void clua_push_json_value(lua_State *L, int ctxidx, const nlohmann::json 
     }
 }
 
-void clua_push_json_table(lua_State *L, const char *s, int ctxidx) {
+void clua_push_json_table(lua_State *L, const char *s, int ctxidx, const nlohmann::json &schema,
+    const nlohmann::json &schema_dict) {
     try {
         lua_pushnil(L); // reserve a slot in the stack (needed because of lua_toclose semantics)
         const nlohmann::json &j = *clua_push_new_managed_toclose_ptr(L, nlohmann::json::parse(s), ctxidx);
-        clua_push_json_value(L, ctxidx, j);
+        clua_push_json_value(L, j, ctxidx, schema, schema_dict);
         lua_replace(L, -3); // move into the placeholder slot
         lua_pop(L, 1);      // pop j reference
     } catch (std::exception &e) {
         luaL_error(L, "failed to parse JSON from a string: %s", e.what());
     }
+}
+
+static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) {
+    static nlohmann::json machine_schema_dict;
+    try {
+        if (machine_schema_dict.is_null()) {
+            // In order to convert Lua tables <-> JSON objects we have to define a schema
+            // to transform some special fields, we only care about:
+            // - Binary strings (translate Base64 strings in JSON to binary strings in Lua)
+            // - Array indexes (translate 0 based index in JSON to 1 based index in Lua)
+            machine_schema_dict = {
+                {"Base64", "Base64"},
+                {"ArrayIndex", "ArrayIndex"},
+                {"Base64Array",
+                    {
+                        {"items", "Base64"},
+                    }},
+                {"Proof",
+                    {
+                        {"target_hash", "Base64"},
+                        {"root_hash", "Base64"},
+                        {"sibling_hashes", "Base64Array"},
+                    }},
+                {"Access",
+                    {
+                        {"read", "Base64"},
+                        {"read_hash", "Base64"},
+                        {"written", "Base64"},
+                        {"written_hash", "Base64"},
+                        {"sibling_hashes", "Base64Array"},
+                    }},
+                {"AccessArray",
+                    {
+                        {"items", "Access"},
+                    }},
+                {"Bracket",
+                    {
+                        {"where", "ArrayIndex"},
+                    }},
+                {"BracketArray",
+                    {
+                        {"items", "Bracket"},
+                    }},
+                {"AccessLog",
+                    {
+                        {"accesses", "AccessArray"},
+                        {"brackets", "BracketArray"},
+                    }},
+            };
+        }
+    } catch (std::exception &e) {
+        luaL_error(L, "failed to create machine schema dictionary: %s", e.what());
+    }
+    return machine_schema_dict;
+};
+
+const char *clua_check_schemed_json_string(lua_State *L, int idx, const std::string &schema_name, int ctxidx) {
+    const auto &machine_schema_dict = clua_get_machine_schema_dict(L);
+    const auto it = machine_schema_dict.find(schema_name);
+    if (it == machine_schema_dict.end()) {
+        luaL_error(L, "type \"%s\" is not defined in machine schema dictionary", schema_name.c_str());
+    }
+    return clua_check_json_string(L, idx, -1, ctxidx, *it, machine_schema_dict);
+}
+
+void clua_push_schemed_json_table(lua_State *L, const char *s, const std::string &schema_name, int ctxidx) {
+    const auto &machine_schema_dict = clua_get_machine_schema_dict(L);
+    const auto it = machine_schema_dict.find(schema_name);
+    if (it == machine_schema_dict.end()) {
+        luaL_error(L, "type \"%s\" is not defined in machine schema dictionary", schema_name.c_str());
+    }
+    return clua_push_json_table(L, s, ctxidx, *it, machine_schema_dict);
 }
 
 } // namespace cartesi

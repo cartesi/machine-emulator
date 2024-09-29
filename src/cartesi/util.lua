@@ -71,7 +71,7 @@ local function dump_json_log_brackets(brackets, out, indent)
     for i, bracket in ipairs(brackets) do
         indentout(out, indent, "{\n")
         indentout(out, indent + 1, '"type": "%s",\n', bracket.type)
-        indentout(out, indent + 1, '"where": %u,\n', (bracket.where + 1))
+        indentout(out, indent + 1, '"where": %u,\n', bracket.where)
         indentout(out, indent + 1, '"text": "%s"\n', bracket.text)
         indentout(out, indent, "}")
         if i < n then
@@ -236,7 +236,7 @@ function _M.dump_log(log, out)
         local ai = accesses[i]
         if not bj and not ai then break end
         -- If bracket points before current access, output bracket
-        if bj and (bj.where + 1) <= i then
+        if bj and bj.where <= i then
             if bj.type == "begin" then
                 indentout(out, indent, "begin %s\n", bj.text)
                 indent = indent + 1 -- Increase indentation before bracket

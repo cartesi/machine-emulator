@@ -34,7 +34,7 @@ static int machine_obj_index_get_proof(lua_State *L) {
     if (cm_get_proof(m.get(), address, log2_size, &proof) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json_table(L, proof);
+    clua_push_schemed_json_table(L, proof, "Proof");
     return 1;
 }
 
@@ -272,7 +272,7 @@ static int machine_obj_index_log_reset_uarch(lua_State *L) {
     if (cm_log_reset_uarch(m.get(), log_type, &log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json_table(L, log);
+    clua_push_schemed_json_table(L, log, "AccessLog");
     return 1;
 }
 
@@ -298,7 +298,7 @@ static int machine_obj_index_log_step_uarch(lua_State *L) {
     if (cm_log_step_uarch(m.get(), log_type, &log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json_table(L, log);
+    clua_push_schemed_json_table(L, log, "AccessLog");
     return 1;
 }
 
@@ -496,7 +496,7 @@ static int machine_obj_index_log_send_cmio_response(lua_State *L) {
     if (cm_log_send_cmio_response(m.get(), reason, data, length, log_type, &log) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    clua_push_json_table(L, log);
+    clua_push_schemed_json_table(L, log, "AccessLog");
     return 1;
 }
 

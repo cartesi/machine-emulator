@@ -73,6 +73,9 @@ public:
         const unsigned char *data, size_t length, const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after, const machine_runtime_config &r = {}, bool one_based = false);
 
+    static void verify_step(const jsonrpc_mgr_ptr &mgr, const hash_type &root_hash_before, const char *filename,
+        uint16_t mcycle_count, const hash_type &root_hash_after);
+
     static std::string fork(const jsonrpc_mgr_ptr &mgr);
     static void rebind(const jsonrpc_mgr_ptr &mgr, const std::string &address);
     static uint64_t get_x_address(const jsonrpc_mgr_ptr &mgr, int i);
@@ -84,6 +87,7 @@ private:
     machine_config do_get_initial_config(void) const override;
 
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
+    interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) override;
     void do_store(const std::string &dir) override;
     uint64_t do_read_csr(csr r) const override;
     void do_write_csr(csr w, uint64_t val) override;

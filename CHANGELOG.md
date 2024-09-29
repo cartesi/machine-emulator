@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Added the "log_step" method
+- Added the "verify_step" method
+- Added the "--log-step" option to "cartesi-machine.lua"
 
 ### Changed
 - Added a "--jobs" option to "uarch-riscv-tests.lua" test

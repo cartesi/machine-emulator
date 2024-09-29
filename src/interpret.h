@@ -63,10 +63,18 @@ extern template interpreter_break_reason interpret(uarch_machine_state_access &a
 #else
 // Forward declarations
 class state_access;
+class record_step_state_access;
+class replay_step_state_access;
 class machine;
 
 // Declaration of explicit instantiation in module interpret.cpp
 extern template interpreter_break_reason interpret(state_access &a, uint64_t mcycle_end);
+
+// Declaration of explicit instantiation
+extern template interpreter_break_reason interpret(record_step_state_access &a, uint64_t mcycle_end);
+
+// Declaration of explicit instantiation
+extern template interpreter_break_reason interpret(replay_step_state_access &a, uint64_t mcycle_end);
 
 #endif // MICROARCHITECTURE
 } // namespace cartesi

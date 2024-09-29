@@ -148,6 +148,19 @@ static int machine_class_index_verify_send_cmio_response_log(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine.verify_step() method implementation.
+static int machine_class_index_verify_step(lua_State *L) {
+    lua_settop(L, 4);
+    cm_hash root_hash_before{};
+    clua_check_cm_hash(L, 1, &root_hash_before);
+    cm_hash root_hash_after{};
+    clua_check_cm_hash(L, 4, &root_hash_after);
+
+    TRY_EXECUTE(
+        cm_verify_step(&root_hash_before, luaL_checkstring(L, 2), luaL_checkinteger(L, 3), &root_hash_after, err_msg));
+    return 1;
+}
+
 /// \brief This is the machine.verify_send_cmio_response_state_transition() method implementation.
 static int machine_class_index_verify_send_cmio_response_state_transition(lua_State *L) {
     lua_settop(L, 6);
@@ -183,6 +196,7 @@ static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
     {"get_csr_address", machine_class_index_get_csr_address},
     {"verify_send_cmio_response_log", machine_class_index_verify_send_cmio_response_log},
     {"verify_send_cmio_response_state_transition", machine_class_index_verify_send_cmio_response_state_transition},
+    {"verify_step", machine_class_index_verify_step},
 });
 
 /// \brief This is the cartesi.machine() constructor implementation.

@@ -190,6 +190,9 @@ jobs:
 
       - name: Run test suite inside the docker image
         run: docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine-tests run
+      
+      - name: Run test suite with log_stepinside the docker image
+        run: docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine-tests run_step
 
       - name: Save and Load
         run: |

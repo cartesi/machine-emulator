@@ -56,6 +56,11 @@ public:
         return do_run(mcycle_end);
     }
 
+    /// \brief  Runs the machine for the given mcycle count and generates a log file of accessed pages and proof data.
+    interpreter_break_reason log_step(uint64_t mcycle_count, const std::string &filename) {
+        return do_log_step(mcycle_count, filename);
+    }
+
     /// \brief Serialize entire state to directory
     void store(const std::string &dir) {
         do_store(dir);
@@ -698,6 +703,7 @@ public:
 
 private:
     virtual interpreter_break_reason do_run(uint64_t mcycle_end) = 0;
+    virtual interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) = 0;
     virtual void do_store(const std::string &dir) = 0;
     virtual access_log do_log_uarch_step(const access_log::type &log_type, bool one_based = false) = 0;
     virtual machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const = 0;

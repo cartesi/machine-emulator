@@ -982,6 +982,28 @@ int cm_machine_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_re
     return cm_result_failure(err_msg);
 }
 
+int cm_log_step(cm_machine *m, uint64_t mcycle_count, const char *log_filename, CM_BREAK_REASON *break_reason_result,
+    char **err_msg) try {
+    auto *cpp_machine = convert_from_c(m);
+    cartesi::interpreter_break_reason break_reason = cpp_machine->log_step(mcycle_count, null_to_empty(log_filename));
+    if (break_reason_result) {
+        *break_reason_result = static_cast<CM_BREAK_REASON>(break_reason);
+    }
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
+int cm_verify_step(const cm_hash *root_hash_before, const char *log_filename, uint64_t mcycle_count,
+    const cm_hash *root_hash_after, char **err_msg) try {
+    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    cartesi::machine::verify_step(cpp_root_hash_before, null_to_empty(log_filename), mcycle_count, cpp_root_hash_after);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
 int cm_read_uarch_x(const cm_machine *m, int i, uint64_t *val, char **err_msg) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");

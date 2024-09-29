@@ -17,9 +17,11 @@
 #include <cstdint>
 #include <utility>
 
-#ifdef MICROARCHITECTURE
+#if defined(MICROARCHITECTURE)
 #include "uarch-machine-state-access.h"
 #include "uarch-runtime.h"
+#elif defined(ZKARCHITECTURE)
+#include "replay-step-state-access.h"
 #else
 #include "record-step-state-access.h"
 #include "replay-step-state-access.h"
@@ -5674,8 +5676,10 @@ interpreter_break_reason interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     }
 }
 
-#ifdef MICROARCHITECTURE
+#if defined(MICROARCHITECTURE)
 template interpreter_break_reason interpret(uarch_machine_state_access &a, uint64_t mcycle_end);
+#elif defined(ZKARCHITECTURE)
+template interpreter_break_reason interpret(replay_step_state_access &a, uint64_t mcycle_end);
 #else
 // Explicit instantiation for state_access
 template interpreter_break_reason interpret(state_access &a, uint64_t mcycle_end);

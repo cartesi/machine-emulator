@@ -21,9 +21,6 @@ local test_util = require("cartesi.tests.util")
 
 local config_base = {
     processor = {
-        mvendorid = -1,
-        mimpid = -1,
-        marchid = -1,
         iunrep = 1,
     },
     ram = {

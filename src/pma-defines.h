@@ -42,6 +42,8 @@
 #define PMA_CMIO_RX_BUFFER_LOG2_SIZE_DEF 21       ///< log<sub>2</sub> of CMIO RX buffer length in bytes
 #define PMA_CMIO_TX_BUFFER_START_DEF 0x60800000   ///< CMIO TX buffer start address
 #define PMA_CMIO_TX_BUFFER_LOG2_SIZE_DEF 21       ///< log<sub>2</sub> of CMIO TX buffer length in bytes
+#define PMA_DRIVE_START_DEF 0x80000000000000      ///< Start PMA address for flash drives
+#define PMA_DRIVE_OFFSET_DEF 0x10000000000000     ///< PMA offset for extra flash drives
 
 #define PMA_RAM_START_DEF 0x80000000 ///< RAM start address
 

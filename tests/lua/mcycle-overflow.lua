@@ -25,12 +25,6 @@ local MAX_UARCH_CYCLE = -1
 
 local function build_machine()
     local config = {
-        processor = {
-            -- Request automatic default values for versioning CSRs
-            mimpid = -1,
-            marchid = -1,
-            mvendorid = -1,
-        },
         ram = {
             image_filename = test_util.tests_path .. "mcycle_overflow.bin",
             length = 32 << 20,

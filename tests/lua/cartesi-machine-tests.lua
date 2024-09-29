@@ -635,20 +635,9 @@ end
 
 local function build_machine(ram_image)
     local config = {
-        processor = {
-            -- Request automatic default values for versioning CSRs
-            mimpid = -1,
-            marchid = -1,
-            mvendorid = -1,
-        },
         ram = {
             length = 32 << 20,
             image_filename = test_path .. "/" .. ram_image,
-        },
-        htif = {
-            console_getchar = false,
-            yield_automatic = true,
-            yield_manual = true,
         },
         flash_drive = { {
             start = 0x80000000000000,

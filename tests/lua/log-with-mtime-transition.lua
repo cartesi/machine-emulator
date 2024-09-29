@@ -4,16 +4,10 @@ local cartesi = require("cartesi")
 
 local config = {
     processor = {
-        marchid = -1,
-        mimplid = -1,
-        mvendorid = -1,
         mcycle = 99,
     },
     ram = {
         length = 1 << 12,
-    },
-    dtb = {
-        image_filename = "",
     },
 }
 local machine <close> = cartesi.machine(config)

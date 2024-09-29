@@ -121,16 +121,6 @@ local function create_directory(path)
     end
 end
 
-local function get_file_length(file_path)
-    local file = io.open(file_path, "rb")
-    if file == nil then
-        error("File not found: " .. file_path)
-    end
-    local size = file:seek("end")
-    file:close()
-    return size
-end
-
 local function create_default_config(images_dir, command)
     return {
         ram = {
@@ -138,14 +128,7 @@ local function create_default_config(images_dir, command)
             image_filename = images_dir .. "linux.bin",
         },
         dtb = {
-            bootargs = "quiet earlycon=sbi console=hvc0 rootfstype=ext2 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init",
-            init = "USER=dapp\n",
             entrypoint = command,
-        },
-        htif = {
-            console_getchar = false, -- default
-            yield_automatic = true,
-            yield_manual = true,
         },
         cmio = {
             rx_buffer = { shared = false },
@@ -153,10 +136,7 @@ local function create_default_config(images_dir, command)
         },
         flash_drive = {
             {
-                start = 1 << 55,
-                length = get_file_length(images_dir .. "rootfs.ext2"),
                 image_filename = images_dir .. "rootfs.ext2",
-                shared = false, -- default
             },
         },
     }

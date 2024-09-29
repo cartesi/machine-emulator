@@ -118,11 +118,6 @@ end
 
 -- Config yields 5 times with progress
 local config = {
-    processor = {
-        mvendorid = -1,
-        mimpid = -1,
-        marchid = -1,
-    },
     ram = {
         image_filename = test_path .. "/htif_yield.bin",
         length = 0x4000000,

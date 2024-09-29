@@ -560,6 +560,7 @@ local remote_shutdown = false
 local remote_create = true
 local remote_destroy = true
 local perform_rollbacks = true
+local default_config = cartesi.machine.get_default_config()
 local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
 local flash_image_filename = { root = images_path .. "rootfs.ext2" }
 local flash_label_order = { "root" }
@@ -579,9 +580,7 @@ local memory_range_replace = {}
 local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 128 << 20 -- 128MB
 local dtb_image_filename = nil
-local bootargs = "no4lvl quiet earlycon=sbi console=hvc0"
-    -- rootfs related arguments must come at the end to be replaced by --no-root-flash-drive
-    .. " rootfstype=ext2 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"
+local bootargs = default_config.dtb.bootargs
 local init_splash = true
 local append_bootargs = ""
 local append_init = ""
@@ -1221,7 +1220,7 @@ local options = {
             flash_length.root = nil
             flash_shared.root = nil
             table.remove(flash_label_order, 1)
-            bootargs = bootargs:gsub(" rootfstype=.*$", "")
+            bootargs = bootargs:gsub(" root=$", "")
             return true
         end,
     },
@@ -1573,36 +1572,6 @@ local function print_root_hash(machine, print)
     (print or stderr)("%u: %s\n", machine:read_mcycle(), util.hexhash(machine:get_root_hash()))
 end
 
-local function resolve_flash_starts(label_order, start)
-    local auto_start = 1 << 55
-    if next(start) == nil then
-        for _, label in ipairs(label_order) do
-            start[label] = auto_start
-            auto_start = auto_start + (1 << 52)
-        end
-    else
-        local missing = {}
-        local found = {}
-        for _, label in ipairs(label_order) do
-            local quoted = string.format("'%s'", label)
-            if start[label] then
-                found[#found + 1] = quoted
-            else
-                missing[#missing + 1] = quoted
-            end
-        end
-        if #missing > 0 then
-            error(
-                string.format(
-                    "flash drive start set for %s but missing for %s",
-                    table.concat(found, ", "),
-                    table.concat(missing, ", ")
-                )
-            )
-        end
-    end
-end
-
 local function dump_value_proofs(machine, desired_proofs, config)
     if #desired_proofs > 0 then
         assert(config.processor.iunrep == 0, "proofs are meaningless in unreproducible mode")
@@ -1659,16 +1628,9 @@ elseif load_dir then
     stderr("Loading machine: please wait\n")
     main_machine = create_machine(load_dir, runtime)
 else
-    -- Resolve all device starts and lengths
-    resolve_flash_starts(flash_label_order, flash_start)
-
     -- Build machine config
     local config = {
         processor = {
-            -- Request automatic default values for versioning CSRs
-            mimpid = -1,
-            marchid = -1,
-            mvendorid = -1,
             iunrep = unreproducible and 1 or 0,
         },
         dtb = {
@@ -1823,7 +1785,7 @@ local function serialize_config(out, config, format)
         out:write(cartesi.tojson(main_config, 2), "\n")
     elseif format == "lua" then
         out:write("return ")
-        dump_config(config, cartesi.machine.get_default_config(), out, "")
+        dump_config(config, default_config, out, "")
         out:write("\n")
     end
 end

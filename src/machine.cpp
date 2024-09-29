@@ -339,7 +339,11 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     // Register all flash drives
     int i = 0;
     for (auto &f : m_c.flash_drive) {
-        const std::string flash_description = "flash drive "s + std::to_string(i++);
+        const std::string flash_description = "flash drive "s + std::to_string(i);
+        // Auto detect flash drive start address
+        if (f.start == UINT64_C(-1)) {
+            f.start = PMA_DRIVE_START + PMA_DRIVE_OFFSET_DEF * i;
+        }
         // Auto detect flash drive image length
         if (f.length == UINT64_C(-1)) {
             auto fp = unique_fopen(f.image_filename.c_str(), "rb");
@@ -357,6 +361,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
             f.length = length;
         }
         register_pma_entry(make_flash_drive_pma_entry(flash_description, f));
+        i++;
     }
 
     // Register cmio memory ranges

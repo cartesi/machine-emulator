@@ -55,6 +55,8 @@ enum PMA_ranges : uint64_t {
     PMA_CMIO_TX_BUFFER_START = EXPAND_UINT64_C(PMA_CMIO_TX_BUFFER_START_DEF),      ///< Start of CMIO TX buffer range
     PMA_CMIO_TX_BUFFER_LOG2_SIZE = EXPAND_UINT64_C(PMA_CMIO_TX_BUFFER_LOG2_SIZE_DEF), ///< Log2 of CMIO TX buffer range
     PMA_CMIO_TX_BUFFER_LENGTH = (UINT64_C(1) << PMA_CMIO_TX_BUFFER_LOG2_SIZE_DEF), ///< Length of CMIO TX buffer range
+    PMA_DRIVE_START = EXPAND_UINT64_C(PMA_DRIVE_START_DEF),   ///< Start PMA address for flash drives
+    PMA_DRIVE_OFFSET = EXPAND_UINT64_C(PMA_DRIVE_OFFSET_DEF), ///< PMA offset for extra flash drives
 
     PMA_FIRST_VIRTIO_START = EXPAND_UINT64_C(PMA_FIRST_VIRTIO_START_DEF), ///< Start of first VIRTIO range
     PMA_VIRTIO_LENGTH = EXPAND_UINT64_C(PMA_VIRTIO_LENGTH_DEF),           ///< Length of each VIRTIO range

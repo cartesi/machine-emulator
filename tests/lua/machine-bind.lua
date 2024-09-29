@@ -279,7 +279,6 @@ local function build_machine_config(config_options)
     local initial_csr_values = get_cpu_csr_test_values()
     local config = {
         processor = config_options.processor or initial_csr_values,
-        rom = { image_filename = test_util.images_path .. "rom.bin" },
         ram = { length = 1 << 20 },
         htif = config_options.htif or nil,
         cmio = config_options.cmio or nil,
@@ -448,8 +447,8 @@ local function test_config(config)
     assert(dtb.entrypoint == nil or type(dtb.entrypoint) == "string", "invalid dtb.entrypoint")
     local tlb = config.tlb
     assert(tlb.image_filename == nil or type(tlb.image_filename) == "string", "invalid tlb.image_filename")
-    for _, f in ipairs(config.flash_drive) do
-        test_config_memory_range(f)
+    for i, f in ipairs(config.flash_drive) do
+        test_config_memory_range(f, "drive" .. (i - 1))
     end
     local cmio = config.cmio
     if config.cmio then

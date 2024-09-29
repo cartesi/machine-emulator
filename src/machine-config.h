@@ -83,19 +83,21 @@ struct ram_config final {         // NOLINT(bugprone-exception-escape)
 };
 
 /// \brief DTB state configuration
-struct dtb_config final {         // NOLINT(bugprone-exception-escape)
-    std::string bootargs{};       ///< Bootargs to pass to kernel
+struct dtb_config final { // NOLINT(bugprone-exception-escape)
+    std::string bootargs{
+        "no4lvl quiet earlycon=sbi console=hvc0 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"}; ///< Bootargs to pass
+                                                                                                  ///< to kernel
     std::string init{};           ///< Initialization commands to be executed as root on boot
     std::string entrypoint{};     ///< Commands to execute the main application
     std::string image_filename{}; ///< DTB image file
 };
 
 /// \brief Memory range configuration
-struct memory_range_config final { // NOLINT(bugprone-exception-escape)
-    uint64_t start{0};             ///< Memory range start position
-    uint64_t length{0};            ///< Memory range length
-    bool shared{false};            ///< Target changes to memory affect image file?
-    std::string image_filename{};  ///< Memory range image file name
+struct memory_range_config final {         // NOLINT(bugprone-exception-escape)
+    uint64_t start{0xffffffffffffffffUL};  ///< Memory range start position, default is to auto detect
+    uint64_t length{0xffffffffffffffffUL}; ///< Memory range length, default is to auto detect
+    bool shared{false};                    ///< Target changes to memory affect image file?
+    std::string image_filename{};          ///< Memory range image file name
 };
 
 /// \brief List of flash drives

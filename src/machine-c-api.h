@@ -313,7 +313,7 @@ CM_API const char *cm_get_last_error_message();
 /// remains valid until the next time this same function is called on the same thread.
 /// In case of failure, NULL is returned and last error message is set.
 /// The returned config is not complete to run a machine yet, configurations such as
-/// ram length, ram image, flash drives, bootargs and entrypoint still need to be set.
+/// ram length, ram image, flash drives and entrypoint still need to be set.
 CM_API const char *cm_get_default_config();
 
 /// \brief Gets the address of any CSR.

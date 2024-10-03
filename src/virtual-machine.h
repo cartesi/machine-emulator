@@ -39,7 +39,7 @@ public:
     ~virtual_machine(void) override;
 
 private:
-    void do_store(const std::string &dir) override;
+    void do_store(const std::string &dir) const override;
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
     access_log do_log_step_uarch(const access_log::type &log_type) override;
     machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const override;

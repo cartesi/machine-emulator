@@ -436,7 +436,7 @@ interpreter_break_reason jsonrpc_virtual_machine::do_run(uint64_t mcycle_end) {
     return result;
 }
 
-void jsonrpc_virtual_machine::do_store(const std::string &directory) {
+void jsonrpc_virtual_machine::do_store(const std::string &directory) const {
     bool result = false;
     jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.store", std::tie(directory), result);
 }

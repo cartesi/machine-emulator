@@ -57,7 +57,7 @@ public:
     }
 
     /// \brief Serialize entire state to directory
-    void store(const std::string &dir) {
+    void store(const std::string &dir) const {
         do_store(dir);
     }
 
@@ -192,7 +192,7 @@ public:
 
 private:
     virtual interpreter_break_reason do_run(uint64_t mcycle_end) = 0;
-    virtual void do_store(const std::string &dir) = 0;
+    virtual void do_store(const std::string &dir) const = 0;
     virtual access_log do_log_step_uarch(const access_log::type &log_type) = 0;
     virtual machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const = 0;
     virtual void do_get_root_hash(hash_type &hash) const = 0;

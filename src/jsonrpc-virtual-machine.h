@@ -83,7 +83,7 @@ private:
     machine_config do_get_initial_config(void) const override;
 
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
-    void do_store(const std::string &dir) override;
+    void do_store(const std::string &dir) const override;
     uint64_t do_read_csr(csr r) const override;
     void do_write_csr(csr w, uint64_t val) override;
     void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const override;

@@ -28,7 +28,7 @@ virtual_machine::~virtual_machine(void) {
     delete m_machine;
 }
 
-void virtual_machine::do_store(const std::string &dir) {
+void virtual_machine::do_store(const std::string &dir) const {
     m_machine->store(dir);
 }
 

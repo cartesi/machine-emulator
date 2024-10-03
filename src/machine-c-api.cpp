@@ -188,11 +188,11 @@ void cm_delete(cm_machine *m) {
     delete reinterpret_cast<cartesi::i_virtual_machine *>(m);
 }
 
-int32_t cm_store(cm_machine *m, const char *dir) try {
+int32_t cm_store(const cm_machine *m, const char *dir) try {
     if (dir == nullptr) {
         throw std::invalid_argument("invalid dir");
     }
-    auto *cpp_machine = convert_from_c(m);
+    const auto *cpp_machine = convert_from_c(m);
     cpp_machine->store(dir);
     return cm_result_success();
 } catch (...) {
@@ -314,11 +314,11 @@ int32_t cm_verify_reset_uarch(const cm_hash *root_hash_before, const char *log, 
     return cm_result_failure();
 }
 
-int32_t cm_get_proof(cm_machine *m, uint64_t address, int32_t log2_size, const char **proof) try {
+int32_t cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_size, const char **proof) try {
     if (proof == nullptr) {
         throw std::invalid_argument("invalid proof output");
     }
-    auto *cpp_machine = convert_from_c(m);
+    const auto *cpp_machine = convert_from_c(m);
     const cartesi::machine_merkle_tree::proof_type cpp_proof = cpp_machine->get_proof(address, log2_size);
     static THREAD_LOCAL std::string proof_storage;
     proof_storage = cartesi::to_json(cpp_proof).dump();
@@ -328,11 +328,11 @@ int32_t cm_get_proof(cm_machine *m, uint64_t address, int32_t log2_size, const c
     return cm_result_failure();
 }
 
-int32_t cm_get_root_hash(cm_machine *m, cm_hash *hash) try {
+int32_t cm_get_root_hash(const cm_machine *m, cm_hash *hash) try {
     if (hash == nullptr) {
         throw std::invalid_argument("invalid hash output");
     }
-    auto *cpp_machine = convert_from_c(m);
+    const auto *cpp_machine = convert_from_c(m);
     cartesi::machine_merkle_tree::hash_type cpp_hash;
     cpp_machine->get_root_hash(cpp_hash);
     memcpy(hash, static_cast<const uint8_t *>(cpp_hash.data()), sizeof(cm_hash));

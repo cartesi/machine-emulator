@@ -563,20 +563,20 @@
     },
 
     {
-      "name": "machine.read_csr",
-      "summary": "Reads the value of a CSR",
+      "name": "machine.read_register",
+      "summary": "Reads the value of a register",
       "params": [ {
-          "name":"csr",
-          "description": "CSR to read",
+          "name":"reg",
+          "description": "Register to read",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/CSR"
+            "$ref": "#/components/schemas/REG"
           }
         }
       ],
       "result": {
         "name": "value",
-        "description": "Value of CSR (little-endian)",
+        "description": "Value of register (little-endian)",
         "schema": {
           "$ref": "#/components/schemas/UnsignedInteger"
         }
@@ -584,18 +584,18 @@
     },
 
     {
-      "name": "machine.write_csr",
-      "summary": "Writes the value of a CSR",
+      "name": "machine.write_reg",
+      "summary": "Writes the value of a register",
       "params": [ {
-          "name":"csr",
-          "description": "CSR to write",
+          "name":"reg",
+          "description": "Register to write",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/CSR"
+            "$ref": "#/components/schemas/REG"
           }
         }, {
           "name":"value",
-          "description": "Value of CSR (little-endian)",
+          "description": "Value of register (little-endian)",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"
@@ -612,20 +612,20 @@
     },
 
     {
-      "name": "machine.get_csr_address",
-      "summary": "Returns the address of a CSR",
+      "name": "machine.get_reg_address",
+      "summary": "Returns the address of a register",
       "params": [ {
-          "name":"csr",
-          "description": "CSR to obtain address",
+          "name":"reg",
+          "description": "Register to obtain address",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/CSR"
+            "$ref": "#/components/schemas/REG"
           }
         }
       ],
       "result": {
         "name": "address",
-        "description": "Address of CSR",
+        "description": "Address of register",
         "schema": {
           "$ref": "#/components/schemas/UnsignedInteger"
         }
@@ -883,8 +883,8 @@
   "components": {
     "schemas": {
 
-      "CSR": {
-        "title": "CSR",
+      "REG": {
+        "title": "REG",
         "enum": [
           "x0",
           "x1",

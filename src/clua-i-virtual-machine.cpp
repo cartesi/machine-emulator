@@ -80,12 +80,12 @@ static int machine_obj_index_read_uarch_cycle(lua_State *L) {
     return 1;
 }
 
-/// \brief This is the machine:read_csr() method implementation.
+/// \brief This is the machine:read_reg() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_read_csr(lua_State *L) {
+static int machine_obj_index_read_reg(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     uint64_t val{};
-    if (cm_read_csr(m.get(), clua_check_cm_proc_csr(L, 2), &val) != 0) {
+    if (cm_read_reg(m.get(), clua_check_cm_proc_reg(L, 2), &val) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     lua_pushinteger(L, static_cast<lua_Integer>(val));
@@ -336,11 +336,11 @@ static int machine_obj_index_verify_merkle_tree(lua_State *L) {
     return 1;
 }
 
-/// \brief This is the machine:write_csr() method implementation.
+/// \brief This is the machine:write_reg() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_write_csr(lua_State *L) {
+static int machine_obj_index_write_reg(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    if (cm_write_csr(m.get(), clua_check_cm_proc_csr(L, 2), luaL_checkinteger(L, 3)) != 0) {
+    if (cm_write_reg(m.get(), clua_check_cm_proc_reg(L, 2), luaL_checkinteger(L, 3)) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     return 0;
@@ -505,7 +505,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"get_proof", machine_obj_index_get_proof},
     {"get_initial_config", machine_obj_index_get_initial_config},
     {"get_root_hash", machine_obj_index_get_root_hash},
-    {"read_csr", machine_obj_index_read_csr},
+    {"read_reg", machine_obj_index_read_reg},
     {"read_uarch_cycle", machine_obj_index_read_uarch_cycle},
     {"read_iflags_H", machine_obj_index_read_iflags_H},
     {"read_iflags_Y", machine_obj_index_read_iflags_Y},
@@ -522,7 +522,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"store", machine_obj_index_store},
     {"verify_dirty_page_maps", machine_obj_index_verify_dirty_page_maps},
     {"verify_merkle_tree", machine_obj_index_verify_merkle_tree},
-    {"write_csr", machine_obj_index_write_csr},
+    {"write_reg", machine_obj_index_write_reg},
     {"write_memory", machine_obj_index_write_memory},
     {"write_virtual_memory", machine_obj_index_write_virtual_memory},
     {"translate_virtual_address", machine_obj_index_translate_virtual_address},

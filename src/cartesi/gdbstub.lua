@@ -201,9 +201,9 @@ function GDBStub:_handle_query(_, query)
         elseif payload == "cycles" then -- print current cycle
             self:_send_rcmd_reply(string.format("%u\n", self.machine:read_mcycle()))
             return self:_send_ok()
-        elseif payload:find("^csr [%w_]+$") then -- read machine CSRs
-            local csr_name = payload:match("^csr ([%w_]+)$")
-            local read_method_name = "read_" .. csr_name
+        elseif payload:find("^reg [%w_]+$") then -- read machine registers
+            local reg_name = payload:match("^reg ([%w_]+)$")
+            local read_method_name = "read_" .. reg_name
             local read_method = self.machine[read_method_name]
             if not read_method then return self:_send_unsupported() end
             local ok, res = pcall(read_method, self.machine)
@@ -214,25 +214,25 @@ function GDBStub:_handle_query(_, query)
                 self:_send_rcmd_reply(tostring(res) .. "\n")
             end
             return self:_send_ok()
-        elseif payload:find("^csr [%w_]+%=.*$") then -- write machine CSRs
-            local csr_name, val = payload:match("^csr ([%w_]+)%=(.*)$")
-            local write_method_name = "write_" .. csr_name
-            local read_method_name = "read_" .. csr_name
+        elseif payload:find("^reg [%w_]+%=.*$") then -- write machine registers
+            local reg_name, val = payload:match("^reg ([%w_]+)%=(.*)$")
+            local write_method_name = "write_" .. reg_name
+            local read_method_name = "read_" .. reg_name
             local write_method = self.machine[write_method_name]
             local read_method = self.machine[read_method_name]
             if not write_method or not read_method then return self:_send_unsupported() end
             val = tonumber(val)
             if not val or math.type(val) ~= "integer" then
-                self:_send_rcmd_reply("ERROR: malformed CSR integer\n")
+                self:_send_rcmd_reply("ERROR: malformed register integer\n")
                 return self:_send_ok()
             end
             local write_ok = pcall(write_method, self.machine, val)
             if not write_ok then return self:_send_unsupported() end
-            -- print the new CSR value
+            -- print the new register value
             local ok, res = pcall(read_method, self.machine)
             if ok and res ~= nil then
                 if math.type(res) == "integer" then
-                    self:_send_rcmd_reply(string.format("%s = 0x%x (%d)\n", csr_name, res, res))
+                    self:_send_rcmd_reply(string.format("%s = 0x%x (%d)\n", reg_name, res, res))
                 else
                     self:_send_rcmd_reply(tostring(res) .. "\n")
                 end
@@ -324,10 +324,10 @@ function GDBStub:_handle_write_reg(payload)
     if not (reg and val) then return end
     reg, val = hex2int(reg), hex2reg(val)
     if reg > 0 and reg < 32 then -- machine registers
-        self.machine:write_csr("x" .. reg, val)
+        self.machine:write_reg("x" .. reg, val)
         return self:_send_ok()
     elseif reg == 32 then -- machine program counter
-        self.machine:write_csr("pc", val)
+        self.machine:write_reg("pc", val)
         return self:_send_ok()
     end
 end
@@ -337,10 +337,10 @@ function GDBStub:_handle_read_all_regs()
     local res = {}
     -- read general purposes registers
     for i = 0, 31 do
-        table.insert(res, reg2hex(self.machine:read_csr("x" .. i)))
+        table.insert(res, reg2hex(self.machine:read_reg("x" .. i)))
     end
     -- read program counter
-    table.insert(res, reg2hex(self.machine:read_csr("pc")))
+    table.insert(res, reg2hex(self.machine:read_reg("pc")))
     res = table.concat(res)
     return self:_send(res)
 end
@@ -360,10 +360,10 @@ function GDBStub:_handle_write_all_regs(payload)
     end
     -- write general purposes registers
     for i = 1, 31 do
-        self.machine:write_csr("x" .. i, regs[i])
+        self.machine:write_reg("x" .. i, regs[i])
     end
     -- write program counter
-    self.machine:write_csr("pc", regs[32])
+    self.machine:write_reg("pc", regs[32])
     return self:_send_ok()
 end
 
@@ -407,7 +407,7 @@ function GDBStub:_handle_continue()
         -- need to run cycle by cycle, while checking breakpoints
         while ult(mcycle, mcycle_end) do
             machine:run(mcycle + 1)
-            if breakpoints[machine:read_csr("pc")] then -- breakpoint reached
+            if breakpoints[machine:read_reg("pc")] then -- breakpoint reached
                 return self:_send_signal(signals.SIGTRAP)
             elseif machine:read_iflags_H() then -- machined halted
                 return self:_send_signal(signals.SIGTERM)

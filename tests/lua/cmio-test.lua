@@ -167,7 +167,7 @@ end
 
 local function get_exit_code(machine)
     assert(machine:read_iflags_H())
-    return machine:read_csr("htif_tohost_data") >> 1
+    return machine:read_reg("htif_tohost_data") >> 1
 end
 
 local function check_output(machine, expected)

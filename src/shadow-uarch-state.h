@@ -43,8 +43,8 @@ struct shadow_uarch_state {
 /// \brief Global instance of  theprocessor shadow uarch state device driver.
 extern const pma_driver shadow_uarch_state_driver;
 
-/// \brief Mapping between CSRs and their relative addresses in shadow uarch state memory
-enum class shadow_uarch_state_csr {
+/// \brief Mapping between registers and their relative addresses in shadow uarch state memory
+enum class shadow_uarch_state_reg {
     halt_flag = offsetof(shadow_uarch_state, halt_flag),
     cycle = offsetof(shadow_uarch_state, cycle),
     pc = offsetof(shadow_uarch_state, pc),
@@ -82,16 +82,16 @@ enum class shadow_uarch_state_csr {
     x31 = offsetof(shadow_uarch_state, x[31]),
 };
 
-/// \brief Obtains the relative address of a CSR in shadow uarch state memory.
-/// \param reg CSR name.
+/// \brief Obtains the relative address of a register in shadow uarch state memory.
+/// \param reg Register name.
 /// \returns The address.
-constexpr uint64_t shadow_uarch_state_get_csr_rel_addr(shadow_uarch_state_csr reg) {
+constexpr uint64_t shadow_uarch_state_get_reg_rel_addr(shadow_uarch_state_reg reg) {
     return static_cast<uint64_t>(reg);
 }
 
-/// \brief Obtains the absolute address of a CSR in shadow uarch state memory.
-constexpr uint64_t shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr reg) {
-    return PMA_SHADOW_UARCH_STATE_START + shadow_uarch_state_get_csr_rel_addr(reg);
+/// \brief Obtains the absolute address of a register in shadow uarch state memory.
+constexpr uint64_t shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg reg) {
+    return PMA_SHADOW_UARCH_STATE_START + shadow_uarch_state_get_reg_rel_addr(reg);
 }
 
 /// \brief Obtains the relative address of a general purpose uarch register

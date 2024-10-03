@@ -1195,42 +1195,42 @@ static json jsonrpc_machine_replace_memory_range_handler(const json &j, const st
     return jsonrpc_response_ok(j);
 }
 
-/// \brief JSONRPC handler for the machine.read_csr method
+/// \brief JSONRPC handler for the machine.read_reg method
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_read_csr_handler(const json &j, const std::shared_ptr<http_session> &session) {
+static json jsonrpc_machine_read_reg_handler(const json &j, const std::shared_ptr<http_session> &session) {
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"csr"};
-    auto args = parse_args<cartesi::machine::csr>(j, param_name);
-    return jsonrpc_response_ok(j, session->handler->machine->read_csr(std::get<0>(args)));
+    static const char *param_name[] = {"reg"};
+    auto args = parse_args<cartesi::machine::reg>(j, param_name);
+    return jsonrpc_response_ok(j, session->handler->machine->read_reg(std::get<0>(args)));
 }
 
-/// \brief JSONRPC handler for the machine.write_csr method
+/// \brief JSONRPC handler for the machine.write_reg method
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_write_csr_handler(const json &j, const std::shared_ptr<http_session> &session) {
+static json jsonrpc_machine_write_reg_handler(const json &j, const std::shared_ptr<http_session> &session) {
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"csr", "value"};
-    auto args = parse_args<cartesi::machine::csr, uint64_t>(j, param_name);
-    session->handler->machine->write_csr(std::get<0>(args), std::get<1>(args));
+    static const char *param_name[] = {"reg", "value"};
+    auto args = parse_args<cartesi::machine::reg, uint64_t>(j, param_name);
+    session->handler->machine->write_reg(std::get<0>(args), std::get<1>(args));
     return jsonrpc_response_ok(j);
 }
 
-/// \brief JSONRPC handler for the machine.get_csr_address method
+/// \brief JSONRPC handler for the machine.get_reg_address method
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_get_csr_address_handler(const json &j, const std::shared_ptr<http_session> &session) {
+static json jsonrpc_machine_get_reg_address_handler(const json &j, const std::shared_ptr<http_session> &session) {
     (void) session;
-    static const char *param_name[] = {"csr"};
-    auto args = parse_args<cartesi::machine::csr>(j, param_name);
-    return jsonrpc_response_ok(j, cartesi::machine::get_csr_address(std::get<0>(args)));
+    static const char *param_name[] = {"reg"};
+    auto args = parse_args<cartesi::machine::reg>(j, param_name);
+    return jsonrpc_response_ok(j, cartesi::machine::get_reg_address(std::get<0>(args)));
 }
 
 /// \brief JSONRPC handler for the machine.reset_uarch method
@@ -1441,9 +1441,9 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.write_virtual_memory", jsonrpc_machine_write_virtual_memory_handler},
         {"machine.translate_virtual_address", jsonrpc_machine_translate_virtual_address_handler},
         {"machine.replace_memory_range", jsonrpc_machine_replace_memory_range_handler},
-        {"machine.read_csr", jsonrpc_machine_read_csr_handler},
-        {"machine.write_csr", jsonrpc_machine_write_csr_handler},
-        {"machine.get_csr_address", jsonrpc_machine_get_csr_address_handler},
+        {"machine.read_reg", jsonrpc_machine_read_reg_handler},
+        {"machine.write_reg", jsonrpc_machine_write_reg_handler},
+        {"machine.get_reg_address", jsonrpc_machine_get_reg_address_handler},
         {"machine.get_initial_config", jsonrpc_machine_get_initial_config_handler},
         {"machine.get_default_config", jsonrpc_machine_get_default_config_handler},
         {"machine.verify_merkle_tree", jsonrpc_machine_verify_merkle_tree_handler},

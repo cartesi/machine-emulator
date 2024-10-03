@@ -133,11 +133,11 @@ T *clua_push_new_managed_toclose_ptr(lua_State *L, T &&value, int ctxidx = lua_u
     return managed_value.get();
 }
 
-/// \brief Returns a CSR selector from Lua
+/// \brief Returns a register selector from Lua
 /// \param L Lua state
 /// \param idx Index in stack
-/// \returns C API CSR selector. Lua argument error if unknown
-cm_csr clua_check_cm_proc_csr(lua_State *L, int idx);
+/// \returns C API register selector. Lua argument error if unknown
+cm_reg clua_check_cm_proc_reg(lua_State *L, int idx);
 
 /// \brief Pushes a C api hash object to the Lua stack
 /// \param L Lua state

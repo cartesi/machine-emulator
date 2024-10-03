@@ -76,12 +76,12 @@ CM_API int32_t cm_jsonrpc_get_version(const cm_jsonrpc_mgr *mgr, const char **ve
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const char **config);
 
-/// \brief Gets the address of any CSR from the remote server.
+/// \brief Gets the address of any register from the remote server.
 /// \param mgr Pointer to a valid JSONRPC connection manager.
-/// \param csr The CSR.
-/// \param val Receives address of the CSR.
+/// \param reg The register.
+/// \param val Receives address of the register.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, cm_csr csr, uint64_t *val);
+CM_API int32_t cm_jsonrpc_get_reg_address(const cm_jsonrpc_mgr *mgr, cm_reg reg, uint64_t *val);
 
 // -------------------------------------
 // Machine API functions

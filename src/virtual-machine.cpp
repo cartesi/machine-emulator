@@ -52,12 +52,12 @@ bool virtual_machine::do_verify_merkle_tree(void) const {
     return m_machine->verify_merkle_tree();
 }
 
-uint64_t virtual_machine::do_read_csr(csr r) const {
-    return m_machine->read_csr(r);
+uint64_t virtual_machine::do_read_reg(reg r) const {
+    return m_machine->read_reg(r);
 }
 
-void virtual_machine::do_write_csr(csr w, uint64_t val) {
-    m_machine->write_csr(w, val);
+void virtual_machine::do_write_reg(reg w, uint64_t val) {
+    m_machine->write_reg(w, val);
 }
 
 void virtual_machine::do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const {

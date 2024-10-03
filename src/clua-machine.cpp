@@ -33,9 +33,9 @@ static int machine_class_index_get_default_config(lua_State *L) {
     return 1;
 }
 
-/// \brief This is the machine.get_csr_address() method implementation.
-static int machine_class_index_get_csr_address(lua_State *L) {
-    lua_pushinteger(L, static_cast<lua_Integer>(cm_get_csr_address(clua_check_cm_proc_csr(L, 1))));
+/// \brief This is the machine.get_reg_address() method implementation.
+static int machine_class_index_get_reg_address(lua_State *L) {
+    lua_pushinteger(L, static_cast<lua_Integer>(cm_get_reg_address(clua_check_cm_proc_reg(L, 1))));
     return 1;
 }
 
@@ -106,7 +106,7 @@ static int machine_class_index_verify_send_cmio_response(lua_State *L) {
 /// \brief Contents of the machine class metatable __index table.
 static const auto machine_class_index = cartesi::clua_make_luaL_Reg_array({
     {"get_default_config", machine_class_index_get_default_config},
-    {"get_csr_address", machine_class_index_get_csr_address},
+    {"get_reg_address", machine_class_index_get_reg_address},
     {"verify_step_uarch", machine_class_index_verify_step_uarch},
     {"verify_reset_uarch", machine_class_index_verify_reset_uarch},
     {"verify_send_cmio_response", machine_class_index_verify_send_cmio_response},

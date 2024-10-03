@@ -441,20 +441,20 @@ void jsonrpc_virtual_machine::do_store(const std::string &directory) const {
     jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.store", std::tie(directory), result);
 }
 
-uint64_t jsonrpc_virtual_machine::do_read_csr(csr r) const {
+uint64_t jsonrpc_virtual_machine::do_read_reg(reg r) const {
     uint64_t result = 0;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.read_csr", std::tie(r), result);
+    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.read_reg", std::tie(r), result);
     return result;
 }
 
-void jsonrpc_virtual_machine::do_write_csr(csr w, uint64_t val) {
+void jsonrpc_virtual_machine::do_write_reg(reg w, uint64_t val) {
     bool result = false;
-    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.write_csr", std::tie(w, val), result);
+    jsonrpc_request(m_mgr->get_stream(), m_mgr->get_remote_address(), "machine.write_reg", std::tie(w, val), result);
 }
 
-uint64_t jsonrpc_virtual_machine::get_csr_address(const jsonrpc_mgr_ptr &mgr, csr w) {
+uint64_t jsonrpc_virtual_machine::get_reg_address(const jsonrpc_mgr_ptr &mgr, reg r) {
     uint64_t result = 0;
-    jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "machine.get_csr_address", std::tie(w), result);
+    jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "machine.get_reg_address", std::tie(r), result);
     return result;
 }
 

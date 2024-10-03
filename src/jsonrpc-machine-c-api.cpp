@@ -198,13 +198,13 @@ int32_t cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, const 
     return cm_result_failure();
 }
 
-int32_t cm_jsonrpc_get_csr_address(const cm_jsonrpc_mgr *mgr, cm_csr csr, uint64_t *val) try {
+int32_t cm_jsonrpc_get_reg_address(const cm_jsonrpc_mgr *mgr, cm_reg reg, uint64_t *val) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");
     }
     const auto *cpp_mgr = convert_from_c(mgr);
-    const auto cpp_csr = static_cast<cartesi::machine::csr>(csr);
-    *val = cartesi::jsonrpc_virtual_machine::get_csr_address(*cpp_mgr, cpp_csr);
+    const auto cpp_reg = static_cast<cartesi::machine::reg>(reg);
+    *val = cartesi::jsonrpc_virtual_machine::get_reg_address(*cpp_mgr, cpp_reg);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();

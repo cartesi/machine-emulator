@@ -129,165 +129,167 @@ typedef enum cm_cmio_yield_reason {
 } cm_cmio_yield_reason;
 
 /// \brief Machine x, f, and control and status registers.
-typedef enum cm_csr {
+typedef enum cm_reg {
+    // Processor x registers
+    CM_REG_X0,
+    CM_REG_X1,
+    CM_REG_X2,
+    CM_REG_X3,
+    CM_REG_X4,
+    CM_REG_X5,
+    CM_REG_X6,
+    CM_REG_X7,
+    CM_REG_X8,
+    CM_REG_X9,
+    CM_REG_X10,
+    CM_REG_X11,
+    CM_REG_X12,
+    CM_REG_X13,
+    CM_REG_X14,
+    CM_REG_X15,
+    CM_REG_X16,
+    CM_REG_X17,
+    CM_REG_X18,
+    CM_REG_X19,
+    CM_REG_X20,
+    CM_REG_X21,
+    CM_REG_X22,
+    CM_REG_X23,
+    CM_REG_X24,
+    CM_REG_X25,
+    CM_REG_X26,
+    CM_REG_X27,
+    CM_REG_X28,
+    CM_REG_X29,
+    CM_REG_X30,
+    CM_REG_X31,
+    // Processor f registers
+    CM_REG_F0,
+    CM_REG_F1,
+    CM_REG_F2,
+    CM_REG_F3,
+    CM_REG_F4,
+    CM_REG_F5,
+    CM_REG_F6,
+    CM_REG_F7,
+    CM_REG_F8,
+    CM_REG_F9,
+    CM_REG_F10,
+    CM_REG_F11,
+    CM_REG_F12,
+    CM_REG_F13,
+    CM_REG_F14,
+    CM_REG_F15,
+    CM_REG_F16,
+    CM_REG_F17,
+    CM_REG_F18,
+    CM_REG_F19,
+    CM_REG_F20,
+    CM_REG_F21,
+    CM_REG_F22,
+    CM_REG_F23,
+    CM_REG_F24,
+    CM_REG_F25,
+    CM_REG_F26,
+    CM_REG_F27,
+    CM_REG_F28,
+    CM_REG_F29,
+    CM_REG_F30,
+    CM_REG_F31,
     // Processor CSRs
-    CM_CSR_X0,
-    CM_CSR_X1,
-    CM_CSR_X2,
-    CM_CSR_X3,
-    CM_CSR_X4,
-    CM_CSR_X5,
-    CM_CSR_X6,
-    CM_CSR_X7,
-    CM_CSR_X8,
-    CM_CSR_X9,
-    CM_CSR_X10,
-    CM_CSR_X11,
-    CM_CSR_X12,
-    CM_CSR_X13,
-    CM_CSR_X14,
-    CM_CSR_X15,
-    CM_CSR_X16,
-    CM_CSR_X17,
-    CM_CSR_X18,
-    CM_CSR_X19,
-    CM_CSR_X20,
-    CM_CSR_X21,
-    CM_CSR_X22,
-    CM_CSR_X23,
-    CM_CSR_X24,
-    CM_CSR_X25,
-    CM_CSR_X26,
-    CM_CSR_X27,
-    CM_CSR_X28,
-    CM_CSR_X29,
-    CM_CSR_X30,
-    CM_CSR_X31,
-    CM_CSR_F0,
-    CM_CSR_F1,
-    CM_CSR_F2,
-    CM_CSR_F3,
-    CM_CSR_F4,
-    CM_CSR_F5,
-    CM_CSR_F6,
-    CM_CSR_F7,
-    CM_CSR_F8,
-    CM_CSR_F9,
-    CM_CSR_F10,
-    CM_CSR_F11,
-    CM_CSR_F12,
-    CM_CSR_F13,
-    CM_CSR_F14,
-    CM_CSR_F15,
-    CM_CSR_F16,
-    CM_CSR_F17,
-    CM_CSR_F18,
-    CM_CSR_F19,
-    CM_CSR_F20,
-    CM_CSR_F21,
-    CM_CSR_F22,
-    CM_CSR_F23,
-    CM_CSR_F24,
-    CM_CSR_F25,
-    CM_CSR_F26,
-    CM_CSR_F27,
-    CM_CSR_F28,
-    CM_CSR_F29,
-    CM_CSR_F30,
-    CM_CSR_F31,
-    CM_CSR_PC,
-    CM_CSR_FCSR,
-    CM_CSR_MVENDORID,
-    CM_CSR_MARCHID,
-    CM_CSR_MIMPID,
-    CM_CSR_MCYCLE,
-    CM_CSR_ICYCLEINSTRET,
-    CM_CSR_MSTATUS,
-    CM_CSR_MTVEC,
-    CM_CSR_MSCRATCH,
-    CM_CSR_MEPC,
-    CM_CSR_MCAUSE,
-    CM_CSR_MTVAL,
-    CM_CSR_MISA,
-    CM_CSR_MIE,
-    CM_CSR_MIP,
-    CM_CSR_MEDELEG,
-    CM_CSR_MIDELEG,
-    CM_CSR_MCOUNTEREN,
-    CM_CSR_MENVCFG,
-    CM_CSR_STVEC,
-    CM_CSR_SSCRATCH,
-    CM_CSR_SEPC,
-    CM_CSR_SCAUSE,
-    CM_CSR_STVAL,
-    CM_CSR_SATP,
-    CM_CSR_SCOUNTEREN,
-    CM_CSR_SENVCFG,
-    CM_CSR_ILRSC,
-    CM_CSR_IFLAGS,
-    CM_CSR_IUNREP,
-    // Device CSRs
-    CM_CSR_CLINT_MTIMECMP,
-    CM_CSR_PLIC_GIRQPEND,
-    CM_CSR_PLIC_GIRQSRVD,
-    CM_CSR_HTIF_TOHOST,
-    CM_CSR_HTIF_FROMHOST,
-    CM_CSR_HTIF_IHALT,
-    CM_CSR_HTIF_ICONSOLE,
-    CM_CSR_HTIF_IYIELD,
-    // Microarchitecture processor CSRs
-    CM_CSR_UARCH_X0,
-    CM_CSR_UARCH_X1,
-    CM_CSR_UARCH_X2,
-    CM_CSR_UARCH_X3,
-    CM_CSR_UARCH_X4,
-    CM_CSR_UARCH_X5,
-    CM_CSR_UARCH_X6,
-    CM_CSR_UARCH_X7,
-    CM_CSR_UARCH_X8,
-    CM_CSR_UARCH_X9,
-    CM_CSR_UARCH_X10,
-    CM_CSR_UARCH_X11,
-    CM_CSR_UARCH_X12,
-    CM_CSR_UARCH_X13,
-    CM_CSR_UARCH_X14,
-    CM_CSR_UARCH_X15,
-    CM_CSR_UARCH_X16,
-    CM_CSR_UARCH_X17,
-    CM_CSR_UARCH_X18,
-    CM_CSR_UARCH_X19,
-    CM_CSR_UARCH_X20,
-    CM_CSR_UARCH_X21,
-    CM_CSR_UARCH_X22,
-    CM_CSR_UARCH_X23,
-    CM_CSR_UARCH_X24,
-    CM_CSR_UARCH_X25,
-    CM_CSR_UARCH_X26,
-    CM_CSR_UARCH_X27,
-    CM_CSR_UARCH_X28,
-    CM_CSR_UARCH_X29,
-    CM_CSR_UARCH_X30,
-    CM_CSR_UARCH_X31,
-    CM_CSR_UARCH_PC,
-    CM_CSR_UARCH_CYCLE,
-    CM_CSR_UARCH_HALT_FLAG,
-    // Amount of CSRs
-    CM_CSR_COUNT,
-    // Views of CSRs
-    CM_CSR_IFLAGS_PRV,
-    CM_CSR_IFLAGS_X,
-    CM_CSR_IFLAGS_Y,
-    CM_CSR_IFLAGS_H,
-    CM_CSR_HTIF_TOHOST_DEV,
-    CM_CSR_HTIF_TOHOST_CMD,
-    CM_CSR_HTIF_TOHOST_REASON,
-    CM_CSR_HTIF_TOHOST_DATA,
-    CM_CSR_HTIF_FROMHOST_DEV,
-    CM_CSR_HTIF_FROMHOST_CMD,
-    CM_CSR_HTIF_FROMHOST_REASON,
-    CM_CSR_HTIF_FROMHOST_DATA,
-    CM_CSR_UNKNOWN,
-} cm_csr;
+    CM_REG_PC,
+    CM_REG_FCSR,
+    CM_REG_MVENDORID,
+    CM_REG_MARCHID,
+    CM_REG_MIMPID,
+    CM_REG_MCYCLE,
+    CM_REG_ICYCLEINSTRET,
+    CM_REG_MSTATUS,
+    CM_REG_MTVEC,
+    CM_REG_MSCRATCH,
+    CM_REG_MEPC,
+    CM_REG_MCAUSE,
+    CM_REG_MTVAL,
+    CM_REG_MISA,
+    CM_REG_MIE,
+    CM_REG_MIP,
+    CM_REG_MEDELEG,
+    CM_REG_MIDELEG,
+    CM_REG_MCOUNTEREN,
+    CM_REG_MENVCFG,
+    CM_REG_STVEC,
+    CM_REG_SSCRATCH,
+    CM_REG_SEPC,
+    CM_REG_SCAUSE,
+    CM_REG_STVAL,
+    CM_REG_SATP,
+    CM_REG_SCOUNTEREN,
+    CM_REG_SENVCFG,
+    CM_REG_ILRSC,
+    CM_REG_IFLAGS,
+    CM_REG_IUNREP,
+    // Device registers
+    CM_REG_CLINT_MTIMECMP,
+    CM_REG_PLIC_GIRQPEND,
+    CM_REG_PLIC_GIRQSRVD,
+    CM_REG_HTIF_TOHOST,
+    CM_REG_HTIF_FROMHOST,
+    CM_REG_HTIF_IHALT,
+    CM_REG_HTIF_ICONSOLE,
+    CM_REG_HTIF_IYIELD,
+    // Microarchitecture registers
+    CM_REG_UARCH_X0,
+    CM_REG_UARCH_X1,
+    CM_REG_UARCH_X2,
+    CM_REG_UARCH_X3,
+    CM_REG_UARCH_X4,
+    CM_REG_UARCH_X5,
+    CM_REG_UARCH_X6,
+    CM_REG_UARCH_X7,
+    CM_REG_UARCH_X8,
+    CM_REG_UARCH_X9,
+    CM_REG_UARCH_X10,
+    CM_REG_UARCH_X11,
+    CM_REG_UARCH_X12,
+    CM_REG_UARCH_X13,
+    CM_REG_UARCH_X14,
+    CM_REG_UARCH_X15,
+    CM_REG_UARCH_X16,
+    CM_REG_UARCH_X17,
+    CM_REG_UARCH_X18,
+    CM_REG_UARCH_X19,
+    CM_REG_UARCH_X20,
+    CM_REG_UARCH_X21,
+    CM_REG_UARCH_X22,
+    CM_REG_UARCH_X23,
+    CM_REG_UARCH_X24,
+    CM_REG_UARCH_X25,
+    CM_REG_UARCH_X26,
+    CM_REG_UARCH_X27,
+    CM_REG_UARCH_X28,
+    CM_REG_UARCH_X29,
+    CM_REG_UARCH_X30,
+    CM_REG_UARCH_X31,
+    CM_REG_UARCH_PC,
+    CM_REG_UARCH_CYCLE,
+    CM_REG_UARCH_HALT_FLAG,
+    // Amount of registers
+    CM_REG_COUNT,
+    // Views of registers
+    CM_REG_IFLAGS_PRV,
+    CM_REG_IFLAGS_X,
+    CM_REG_IFLAGS_Y,
+    CM_REG_IFLAGS_H,
+    CM_REG_HTIF_TOHOST_DEV,
+    CM_REG_HTIF_TOHOST_CMD,
+    CM_REG_HTIF_TOHOST_REASON,
+    CM_REG_HTIF_TOHOST_DATA,
+    CM_REG_HTIF_FROMHOST_DEV,
+    CM_REG_HTIF_FROMHOST_CMD,
+    CM_REG_HTIF_FROMHOST_REASON,
+    CM_REG_HTIF_FROMHOST_DATA,
+    CM_REG_UNKNOWN,
+} cm_reg;
 
 /// \brief Storage for machine hash.
 typedef uint8_t cm_hash[CM_HASH_SIZE];
@@ -320,10 +322,10 @@ CM_API const char *cm_get_last_error_message();
 CM_API const char *cm_get_default_config();
 
 /// \brief Gets the address of any x, f, or control state register.
-/// \param csr The CSR.
-/// \returns The address of the specified CSR.
-/// In case the CSR is invalid, UINT64_MAX is returned and last error message is set.
-CM_API uint64_t cm_get_csr_address(cm_csr csr);
+/// \param reg The register.
+/// \returns The address of the specified register.
+/// In case the register is invalid, UINT64_MAX is returned and last error message is set.
+CM_API uint64_t cm_get_reg_address(cm_reg reg);
 
 // -----------------------------------------------------------------------------
 // Machine API functions
@@ -426,19 +428,19 @@ CM_API int32_t cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_
 /// in a memory range mapped to a device.
 CM_API int32_t cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val);
 
-/// \brief Reads the value of a CSR.
+/// \brief Reads the value of a register.
 /// \param m Pointer to valid machine instance.
-/// \param csr CSR to read.
+/// \param reg Register to read.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_read_csr(const cm_machine *m, cm_csr csr, uint64_t *val);
+CM_API int32_t cm_read_reg(const cm_machine *m, cm_reg reg, uint64_t *val);
 
-/// \brief Writes the value of a CSR.
+/// \brief Writes the value of a register.
 /// \param m Pointer to valid machine instance.
-/// \param csr CSR to write.
+/// \param reg Register to write.
 /// \param val Value to write.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_write_csr(cm_machine *m, cm_csr csr, uint64_t val);
+CM_API int32_t cm_write_reg(cm_machine *m, cm_reg reg, uint64_t val);
 
 /// \brief Reads a chunk of data from a machine memory range, by its physical address.
 /// \param m Pointer to valid machine instance.
@@ -465,7 +467,7 @@ CM_API int32_t cm_write_memory(cm_machine *m, uint64_t address, const uint8_t *d
 /// \param data Receives chunk of memory.
 /// \param length Size of chunk in bytes.
 /// \returns 0 for success, non zero code for error.
-/// \detail The translation is based on the current mapping, as defined in CM_CSR_SATP.
+/// \detail The translation is based on the current mapping, as defined in CM_REG_SATP.
 CM_API int32_t cm_read_virtual_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length);
 
 /// \brief Writes a chunk of data to a machine memory range, by its virtual address.
@@ -474,7 +476,7 @@ CM_API int32_t cm_read_virtual_memory(const cm_machine *m, uint64_t address, uin
 /// \param data Source for chunk of data.
 /// \param length Size of chunk in bytes.
 /// \returns 0 for success, non zero code for error.
-/// \detail The translation is based on the current mapping, as defined in CM_CSR_SATP.
+/// \detail The translation is based on the current mapping, as defined in CM_REG_SATP.
 CM_API int32_t cm_write_virtual_memory(cm_machine *m, uint64_t address, const uint8_t *data, uint64_t length);
 
 /// \brief Translates a virtual memory address to its corresponding physical memory address.
@@ -482,56 +484,56 @@ CM_API int32_t cm_write_virtual_memory(cm_machine *m, uint64_t address, const ui
 /// \param vaddr Virtual address to translate.
 /// \param paddr Receives the physical memory address.
 /// \returns 0 for success, non zero code for error.
-/// \detail The translation is based on the current mapping, as defined in CM_CSR_SATP.
+/// \detail The translation is based on the current mapping, as defined in CM_REG_SATP.
 CM_API int32_t cm_translate_virtual_address(const cm_machine *m, uint64_t vaddr, uint64_t *paddr);
 
-/// \brief Reads the value of the CM_CSR_MCYCLE.
+/// \brief Reads the value of the CM_REG_MCYCLE.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_read_mcycle(const cm_machine *m, uint64_t *val);
 
-/// \brief Reads the value of the X flag in CM_CSR_IFLAGS.
+/// \brief Reads the value of the X flag in CM_REG_IFLAGS.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_read_iflags_X(const cm_machine *m, bool *val);
 
-/// \brief Reads the value of the Y flag in CM_CSR_IFLAGS.
+/// \brief Reads the value of the Y flag in CM_REG_IFLAGS.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_read_iflags_Y(const cm_machine *m, bool *val);
 
-/// \brief Resets the value of the Y flag in CM_CSR_IFLAGS.
+/// \brief Resets the value of the Y flag in CM_REG_IFLAGS.
 /// \param m Pointer to valid machine instance.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_reset_iflags_Y(cm_machine *m);
 
-/// \brief Sets the Y flag in CM_CSR_IFLAGS.
+/// \brief Sets the Y flag in CM_REG_IFLAGS.
 /// \param m Pointer to valid machine instance.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_set_iflags_Y(cm_machine *m);
 
-/// \brief Reads the value of the H flag in CM_CSR_IFLAGS.
+/// \brief Reads the value of the H flag in CM_REG_IFLAGS.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_read_iflags_H(const cm_machine *m, bool *val);
 
-/// \brief Reads the value of CM_CSR_UARCH_CYCLE.
+/// \brief Reads the value of CM_REG_UARCH_CYCLE.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_read_uarch_cycle(const cm_machine *m, uint64_t *val);
 
-/// \brief Reads the value of CM_CSR_UARCH_HALT_FLAG.
+/// \brief Reads the value of CM_REG_UARCH_HALT_FLAG.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_read_uarch_halt_flag(const cm_machine *m, bool *val);
 
-/// \brief Sets the value of CM_CSR_UARCH_HALT_FLAG.
+/// \brief Sets the value of CM_REG_UARCH_HALT_FLAG.
 /// \param m Pointer to valid machine instance.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_set_uarch_halt_flag(cm_machine *m);
@@ -562,7 +564,7 @@ CM_API int32_t cm_rollback(cm_machine *m);
 // Running
 // ------------------------------------
 
-/// \brief Runs the machine until CM_CSR_MCYCLE reaches mcycle_end, machine yields, or halts.
+/// \brief Runs the machine until CM_REG_MCYCLE reaches mcycle_end, machine yields, or halts.
 /// \param m Pointer to valid machine instance.
 /// \param mcycle_end End cycle value.
 /// \param break_reason Receives reason for returning (can be NULL).
@@ -570,7 +572,7 @@ CM_API int32_t cm_rollback(cm_machine *m);
 /// \details You may want to receive cmio requests depending on the run break reason.
 CM_API int32_t cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reason);
 
-/// \brief Runs the machine microarchitecture until CM_CSR_UARCH_CYCLE reaches uarch_cycle_end or it halts.
+/// \brief Runs the machine microarchitecture until CM_REG_UARCH_CYCLE reaches uarch_cycle_end or it halts.
 /// \param m Pointer to valid machine instance.
 /// \param uarch_cycle_end End micro cycle value.
 /// \param uarch_break_reason Receives reason for returning (can be NULL).

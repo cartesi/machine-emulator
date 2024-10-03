@@ -76,11 +76,11 @@ struct shadow_state {
 };
 #pragma pack(pop)
 
-/// \brief Global instance of  theprocessor shadow device driver.
+/// \brief Global instance of the processor shadow device driver.
 extern const pma_driver shadow_state_driver;
 
-/// \brief Mapping between CSRs and their relative addresses in shadow memory
-enum class shadow_state_csr {
+/// \brief Mapping between registers and their relative addresses in shadow memory
+enum class shadow_state_reg {
     x0 = offsetof(shadow_state, x[0]),
     x1 = offsetof(shadow_state, x[1]),
     x2 = offsetof(shadow_state, x[2]),
@@ -186,16 +186,16 @@ enum class shadow_state_csr {
     htif_iyield = offsetof(shadow_state, htif_iyield),
 };
 
-/// \brief Obtains the relative address of a CSR in shadow memory.
-/// \param reg CSR name.
+/// \brief Obtains the relative address of a register in shadow memory.
+/// \param reg Register name.
 /// \returns The address.
-constexpr uint64_t shadow_state_get_csr_rel_addr(shadow_state_csr reg) {
+constexpr uint64_t shadow_state_get_reg_rel_addr(shadow_state_reg reg) {
     return static_cast<uint64_t>(reg);
 }
 
-/// \brief Obtains the absolute address of a CSR in shadow memory.
-constexpr uint64_t shadow_state_get_csr_abs_addr(shadow_state_csr reg) {
-    return PMA_SHADOW_STATE_START + shadow_state_get_csr_rel_addr(reg);
+/// \brief Obtains the absolute address of a register in shadow memory.
+constexpr uint64_t shadow_state_get_reg_abs_addr(shadow_state_reg reg) {
+    return PMA_SHADOW_STATE_START + shadow_state_get_reg_rel_addr(reg);
 }
 
 /// \brief Obtains the relative address of a general purpose register

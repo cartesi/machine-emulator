@@ -48,475 +48,475 @@ std::string encode_base64(const access_data &data) {
     return encode_base64(data.data(), data.size());
 }
 
-/// \brief Converts between a CSR name and a CSR index
-/// \param name CSR name
-/// \returns The CSR index
-static auto csr_from_name(const std::string &name) {
-    using csr = machine::csr;
-    const static std::unordered_map<std::string, csr> g_csr_name = {
-        {"x0", csr::x0},
-        {"x1", csr::x1},
-        {"x2", csr::x2},
-        {"x3", csr::x3},
-        {"x4", csr::x4},
-        {"x5", csr::x5},
-        {"x6", csr::x6},
-        {"x7", csr::x7},
-        {"x8", csr::x8},
-        {"x9", csr::x9},
-        {"x10", csr::x10},
-        {"x11", csr::x11},
-        {"x12", csr::x12},
-        {"x13", csr::x13},
-        {"x14", csr::x14},
-        {"x15", csr::x15},
-        {"x16", csr::x16},
-        {"x17", csr::x17},
-        {"x18", csr::x18},
-        {"x19", csr::x19},
-        {"x20", csr::x20},
-        {"x21", csr::x21},
-        {"x22", csr::x22},
-        {"x23", csr::x23},
-        {"x24", csr::x24},
-        {"x25", csr::x25},
-        {"x26", csr::x26},
-        {"x27", csr::x27},
-        {"x28", csr::x28},
-        {"x29", csr::x29},
-        {"x30", csr::x30},
-        {"x31", csr::x31},
-        {"f0", csr::f0},
-        {"f1", csr::f1},
-        {"f2", csr::f2},
-        {"f3", csr::f3},
-        {"f4", csr::f4},
-        {"f5", csr::f5},
-        {"f6", csr::f6},
-        {"f7", csr::f7},
-        {"f8", csr::f8},
-        {"f9", csr::f9},
-        {"f10", csr::f10},
-        {"f11", csr::f11},
-        {"f12", csr::f12},
-        {"f13", csr::f13},
-        {"f14", csr::f14},
-        {"f15", csr::f15},
-        {"f16", csr::f16},
-        {"f17", csr::f17},
-        {"f18", csr::f18},
-        {"f19", csr::f19},
-        {"f20", csr::f20},
-        {"f21", csr::f21},
-        {"f22", csr::f22},
-        {"f23", csr::f23},
-        {"f24", csr::f24},
-        {"f25", csr::f25},
-        {"f26", csr::f26},
-        {"f27", csr::f27},
-        {"f28", csr::f28},
-        {"f29", csr::f29},
-        {"f30", csr::f30},
-        {"f31", csr::f31},
-        {"pc", csr::pc},
-        {"fcsr", csr::fcsr},
-        {"mvendorid", csr::mvendorid},
-        {"marchid", csr::marchid},
-        {"mimpid", csr::mimpid},
-        {"mcycle", csr::mcycle},
-        {"icycleinstret", csr::icycleinstret},
-        {"mstatus", csr::mstatus},
-        {"mtvec", csr::mtvec},
-        {"mscratch", csr::mscratch},
-        {"mepc", csr::mepc},
-        {"mcause", csr::mcause},
-        {"mtval", csr::mtval},
-        {"misa", csr::misa},
-        {"mie", csr::mie},
-        {"mip", csr::mip},
-        {"medeleg", csr::medeleg},
-        {"mideleg", csr::mideleg},
-        {"mcounteren", csr::mcounteren},
-        {"menvcfg", csr::menvcfg},
-        {"stvec", csr::stvec},
-        {"sscratch", csr::sscratch},
-        {"sepc", csr::sepc},
-        {"scause", csr::scause},
-        {"stval", csr::stval},
-        {"satp", csr::satp},
-        {"scounteren", csr::scounteren},
-        {"senvcfg", csr::senvcfg},
-        {"ilrsc", csr::ilrsc},
-        {"iflags", csr::iflags},
-        {"iflags_prv", csr::iflags_prv},
-        {"iflags_x", csr::iflags_x},
-        {"iflags_y", csr::iflags_y},
-        {"iflags_h", csr::iflags_h},
-        {"iunrep", csr::iunrep},
-        {"clint_mtimecmp", csr::clint_mtimecmp},
-        {"plic_girqpend", csr::plic_girqpend},
-        {"plic_girqsrvd", csr::plic_girqsrvd},
-        {"htif_tohost", csr::htif_tohost},
-        {"htif_tohost_dev", csr::htif_tohost_dev},
-        {"htif_tohost_cmd", csr::htif_tohost_cmd},
-        {"htif_tohost_reason", csr::htif_tohost_reason},
-        {"htif_tohost_data", csr::htif_tohost_data},
-        {"htif_fromhost", csr::htif_fromhost},
-        {"htif_fromhost_dev", csr::htif_fromhost_dev},
-        {"htif_fromhost_cmd", csr::htif_fromhost_cmd},
-        {"htif_fromhost_reason", csr::htif_fromhost_reason},
-        {"htif_fromhost_data", csr::htif_fromhost_data},
-        {"htif_ihalt", csr::htif_ihalt},
-        {"htif_iconsole", csr::htif_iconsole},
-        {"htif_iyield", csr::htif_iyield},
-        {"uarch_x0", csr::uarch_x0},
-        {"uarch_x1", csr::uarch_x1},
-        {"uarch_x2", csr::uarch_x2},
-        {"uarch_x3", csr::uarch_x3},
-        {"uarch_x4", csr::uarch_x4},
-        {"uarch_x5", csr::uarch_x5},
-        {"uarch_x6", csr::uarch_x6},
-        {"uarch_x7", csr::uarch_x7},
-        {"uarch_x8", csr::uarch_x8},
-        {"uarch_x9", csr::uarch_x9},
-        {"uarch_x10", csr::uarch_x10},
-        {"uarch_x11", csr::uarch_x11},
-        {"uarch_x12", csr::uarch_x12},
-        {"uarch_x13", csr::uarch_x13},
-        {"uarch_x14", csr::uarch_x14},
-        {"uarch_x15", csr::uarch_x15},
-        {"uarch_x16", csr::uarch_x16},
-        {"uarch_x17", csr::uarch_x17},
-        {"uarch_x18", csr::uarch_x18},
-        {"uarch_x19", csr::uarch_x19},
-        {"uarch_x20", csr::uarch_x20},
-        {"uarch_x21", csr::uarch_x21},
-        {"uarch_x22", csr::uarch_x22},
-        {"uarch_x23", csr::uarch_x23},
-        {"uarch_x24", csr::uarch_x24},
-        {"uarch_x25", csr::uarch_x25},
-        {"uarch_x26", csr::uarch_x26},
-        {"uarch_x27", csr::uarch_x27},
-        {"uarch_x28", csr::uarch_x28},
-        {"uarch_x29", csr::uarch_x29},
-        {"uarch_x30", csr::uarch_x30},
-        {"uarch_x31", csr::uarch_x31},
-        {"uarch_pc", csr::uarch_pc},
-        {"uarch_cycle", csr::uarch_cycle},
-        {"uarch_halt_flag", csr::uarch_halt_flag},
+/// \brief Converts between a register name and a register index
+/// \param name Register name
+/// \returns The register index
+static auto reg_from_name(const std::string &name) {
+    using reg = machine::reg;
+    const static std::unordered_map<std::string, reg> g_reg_name = {
+        {"x0", reg::x0},
+        {"x1", reg::x1},
+        {"x2", reg::x2},
+        {"x3", reg::x3},
+        {"x4", reg::x4},
+        {"x5", reg::x5},
+        {"x6", reg::x6},
+        {"x7", reg::x7},
+        {"x8", reg::x8},
+        {"x9", reg::x9},
+        {"x10", reg::x10},
+        {"x11", reg::x11},
+        {"x12", reg::x12},
+        {"x13", reg::x13},
+        {"x14", reg::x14},
+        {"x15", reg::x15},
+        {"x16", reg::x16},
+        {"x17", reg::x17},
+        {"x18", reg::x18},
+        {"x19", reg::x19},
+        {"x20", reg::x20},
+        {"x21", reg::x21},
+        {"x22", reg::x22},
+        {"x23", reg::x23},
+        {"x24", reg::x24},
+        {"x25", reg::x25},
+        {"x26", reg::x26},
+        {"x27", reg::x27},
+        {"x28", reg::x28},
+        {"x29", reg::x29},
+        {"x30", reg::x30},
+        {"x31", reg::x31},
+        {"f0", reg::f0},
+        {"f1", reg::f1},
+        {"f2", reg::f2},
+        {"f3", reg::f3},
+        {"f4", reg::f4},
+        {"f5", reg::f5},
+        {"f6", reg::f6},
+        {"f7", reg::f7},
+        {"f8", reg::f8},
+        {"f9", reg::f9},
+        {"f10", reg::f10},
+        {"f11", reg::f11},
+        {"f12", reg::f12},
+        {"f13", reg::f13},
+        {"f14", reg::f14},
+        {"f15", reg::f15},
+        {"f16", reg::f16},
+        {"f17", reg::f17},
+        {"f18", reg::f18},
+        {"f19", reg::f19},
+        {"f20", reg::f20},
+        {"f21", reg::f21},
+        {"f22", reg::f22},
+        {"f23", reg::f23},
+        {"f24", reg::f24},
+        {"f25", reg::f25},
+        {"f26", reg::f26},
+        {"f27", reg::f27},
+        {"f28", reg::f28},
+        {"f29", reg::f29},
+        {"f30", reg::f30},
+        {"f31", reg::f31},
+        {"pc", reg::pc},
+        {"fcsr", reg::fcsr},
+        {"mvendorid", reg::mvendorid},
+        {"marchid", reg::marchid},
+        {"mimpid", reg::mimpid},
+        {"mcycle", reg::mcycle},
+        {"icycleinstret", reg::icycleinstret},
+        {"mstatus", reg::mstatus},
+        {"mtvec", reg::mtvec},
+        {"mscratch", reg::mscratch},
+        {"mepc", reg::mepc},
+        {"mcause", reg::mcause},
+        {"mtval", reg::mtval},
+        {"misa", reg::misa},
+        {"mie", reg::mie},
+        {"mip", reg::mip},
+        {"medeleg", reg::medeleg},
+        {"mideleg", reg::mideleg},
+        {"mcounteren", reg::mcounteren},
+        {"menvcfg", reg::menvcfg},
+        {"stvec", reg::stvec},
+        {"sscratch", reg::sscratch},
+        {"sepc", reg::sepc},
+        {"scause", reg::scause},
+        {"stval", reg::stval},
+        {"satp", reg::satp},
+        {"scounteren", reg::scounteren},
+        {"senvcfg", reg::senvcfg},
+        {"ilrsc", reg::ilrsc},
+        {"iflags", reg::iflags},
+        {"iflags_prv", reg::iflags_prv},
+        {"iflags_x", reg::iflags_x},
+        {"iflags_y", reg::iflags_y},
+        {"iflags_h", reg::iflags_h},
+        {"iunrep", reg::iunrep},
+        {"clint_mtimecmp", reg::clint_mtimecmp},
+        {"plic_girqpend", reg::plic_girqpend},
+        {"plic_girqsrvd", reg::plic_girqsrvd},
+        {"htif_tohost", reg::htif_tohost},
+        {"htif_tohost_dev", reg::htif_tohost_dev},
+        {"htif_tohost_cmd", reg::htif_tohost_cmd},
+        {"htif_tohost_reason", reg::htif_tohost_reason},
+        {"htif_tohost_data", reg::htif_tohost_data},
+        {"htif_fromhost", reg::htif_fromhost},
+        {"htif_fromhost_dev", reg::htif_fromhost_dev},
+        {"htif_fromhost_cmd", reg::htif_fromhost_cmd},
+        {"htif_fromhost_reason", reg::htif_fromhost_reason},
+        {"htif_fromhost_data", reg::htif_fromhost_data},
+        {"htif_ihalt", reg::htif_ihalt},
+        {"htif_iconsole", reg::htif_iconsole},
+        {"htif_iyield", reg::htif_iyield},
+        {"uarch_x0", reg::uarch_x0},
+        {"uarch_x1", reg::uarch_x1},
+        {"uarch_x2", reg::uarch_x2},
+        {"uarch_x3", reg::uarch_x3},
+        {"uarch_x4", reg::uarch_x4},
+        {"uarch_x5", reg::uarch_x5},
+        {"uarch_x6", reg::uarch_x6},
+        {"uarch_x7", reg::uarch_x7},
+        {"uarch_x8", reg::uarch_x8},
+        {"uarch_x9", reg::uarch_x9},
+        {"uarch_x10", reg::uarch_x10},
+        {"uarch_x11", reg::uarch_x11},
+        {"uarch_x12", reg::uarch_x12},
+        {"uarch_x13", reg::uarch_x13},
+        {"uarch_x14", reg::uarch_x14},
+        {"uarch_x15", reg::uarch_x15},
+        {"uarch_x16", reg::uarch_x16},
+        {"uarch_x17", reg::uarch_x17},
+        {"uarch_x18", reg::uarch_x18},
+        {"uarch_x19", reg::uarch_x19},
+        {"uarch_x20", reg::uarch_x20},
+        {"uarch_x21", reg::uarch_x21},
+        {"uarch_x22", reg::uarch_x22},
+        {"uarch_x23", reg::uarch_x23},
+        {"uarch_x24", reg::uarch_x24},
+        {"uarch_x25", reg::uarch_x25},
+        {"uarch_x26", reg::uarch_x26},
+        {"uarch_x27", reg::uarch_x27},
+        {"uarch_x28", reg::uarch_x28},
+        {"uarch_x29", reg::uarch_x29},
+        {"uarch_x30", reg::uarch_x30},
+        {"uarch_x31", reg::uarch_x31},
+        {"uarch_pc", reg::uarch_pc},
+        {"uarch_cycle", reg::uarch_cycle},
+        {"uarch_halt_flag", reg::uarch_halt_flag},
     };
-    auto got = g_csr_name.find(name);
-    if (got == g_csr_name.end()) {
-        throw std::domain_error{"invalid csr"};
+    auto got = g_reg_name.find(name);
+    if (got == g_reg_name.end()) {
+        throw std::domain_error{"invalid register"};
     }
     return got->second;
 }
 
-static auto csr_to_name(machine::csr reg) {
-    using csr = machine::csr;
-    switch (reg) {
-        case csr::x0:
+static auto reg_to_name(machine::reg r) {
+    using reg = machine::reg;
+    switch (r) {
+        case reg::x0:
             return "x0";
-        case csr::x1:
+        case reg::x1:
             return "x1";
-        case csr::x2:
+        case reg::x2:
             return "x2";
-        case csr::x3:
+        case reg::x3:
             return "x3";
-        case csr::x4:
+        case reg::x4:
             return "x4";
-        case csr::x5:
+        case reg::x5:
             return "x5";
-        case csr::x6:
+        case reg::x6:
             return "x6";
-        case csr::x7:
+        case reg::x7:
             return "x7";
-        case csr::x8:
+        case reg::x8:
             return "x8";
-        case csr::x9:
+        case reg::x9:
             return "x9";
-        case csr::x10:
+        case reg::x10:
             return "x10";
-        case csr::x11:
+        case reg::x11:
             return "x11";
-        case csr::x12:
+        case reg::x12:
             return "x12";
-        case csr::x13:
+        case reg::x13:
             return "x13";
-        case csr::x14:
+        case reg::x14:
             return "x14";
-        case csr::x15:
+        case reg::x15:
             return "x15";
-        case csr::x16:
+        case reg::x16:
             return "x16";
-        case csr::x17:
+        case reg::x17:
             return "x17";
-        case csr::x18:
+        case reg::x18:
             return "x18";
-        case csr::x19:
+        case reg::x19:
             return "x19";
-        case csr::x20:
+        case reg::x20:
             return "x20";
-        case csr::x21:
+        case reg::x21:
             return "x21";
-        case csr::x22:
+        case reg::x22:
             return "x22";
-        case csr::x23:
+        case reg::x23:
             return "x23";
-        case csr::x24:
+        case reg::x24:
             return "x24";
-        case csr::x25:
+        case reg::x25:
             return "x25";
-        case csr::x26:
+        case reg::x26:
             return "x26";
-        case csr::x27:
+        case reg::x27:
             return "x27";
-        case csr::x28:
+        case reg::x28:
             return "x28";
-        case csr::x29:
+        case reg::x29:
             return "x29";
-        case csr::x30:
+        case reg::x30:
             return "x30";
-        case csr::x31:
+        case reg::x31:
             return "x31";
-        case csr::f0:
+        case reg::f0:
             return "f0";
-        case csr::f1:
+        case reg::f1:
             return "f1";
-        case csr::f2:
+        case reg::f2:
             return "f2";
-        case csr::f3:
+        case reg::f3:
             return "f3";
-        case csr::f4:
+        case reg::f4:
             return "f4";
-        case csr::f5:
+        case reg::f5:
             return "f5";
-        case csr::f6:
+        case reg::f6:
             return "f6";
-        case csr::f7:
+        case reg::f7:
             return "f7";
-        case csr::f8:
+        case reg::f8:
             return "f8";
-        case csr::f9:
+        case reg::f9:
             return "f9";
-        case csr::f10:
+        case reg::f10:
             return "f10";
-        case csr::f11:
+        case reg::f11:
             return "f11";
-        case csr::f12:
+        case reg::f12:
             return "f12";
-        case csr::f13:
+        case reg::f13:
             return "f13";
-        case csr::f14:
+        case reg::f14:
             return "f14";
-        case csr::f15:
+        case reg::f15:
             return "f15";
-        case csr::f16:
+        case reg::f16:
             return "f16";
-        case csr::f17:
+        case reg::f17:
             return "f17";
-        case csr::f18:
+        case reg::f18:
             return "f18";
-        case csr::f19:
+        case reg::f19:
             return "f19";
-        case csr::f20:
+        case reg::f20:
             return "f20";
-        case csr::f21:
+        case reg::f21:
             return "f21";
-        case csr::f22:
+        case reg::f22:
             return "f22";
-        case csr::f23:
+        case reg::f23:
             return "f23";
-        case csr::f24:
+        case reg::f24:
             return "f24";
-        case csr::f25:
+        case reg::f25:
             return "f25";
-        case csr::f26:
+        case reg::f26:
             return "f26";
-        case csr::f27:
+        case reg::f27:
             return "f27";
-        case csr::f28:
+        case reg::f28:
             return "f28";
-        case csr::f29:
+        case reg::f29:
             return "f29";
-        case csr::f30:
+        case reg::f30:
             return "f30";
-        case csr::f31:
+        case reg::f31:
             return "f31";
-        case csr::pc:
+        case reg::pc:
             return "pc";
-        case csr::fcsr:
+        case reg::fcsr:
             return "fcsr";
-        case csr::mvendorid:
+        case reg::mvendorid:
             return "mvendorid";
-        case csr::marchid:
+        case reg::marchid:
             return "marchid";
-        case csr::mimpid:
+        case reg::mimpid:
             return "mimpid";
-        case csr::mcycle:
+        case reg::mcycle:
             return "mcycle";
-        case csr::icycleinstret:
+        case reg::icycleinstret:
             return "icycleinstret";
-        case csr::mstatus:
+        case reg::mstatus:
             return "mstatus";
-        case csr::mtvec:
+        case reg::mtvec:
             return "mtvec";
-        case csr::mscratch:
+        case reg::mscratch:
             return "mscratch";
-        case csr::mepc:
+        case reg::mepc:
             return "mepc";
-        case csr::mcause:
+        case reg::mcause:
             return "mcause";
-        case csr::mtval:
+        case reg::mtval:
             return "mtval";
-        case csr::misa:
+        case reg::misa:
             return "misa";
-        case csr::mie:
+        case reg::mie:
             return "mie";
-        case csr::mip:
+        case reg::mip:
             return "mip";
-        case csr::medeleg:
+        case reg::medeleg:
             return "medeleg";
-        case csr::mideleg:
+        case reg::mideleg:
             return "mideleg";
-        case csr::mcounteren:
+        case reg::mcounteren:
             return "mcounteren";
-        case csr::menvcfg:
+        case reg::menvcfg:
             return "menvcfg";
-        case csr::stvec:
+        case reg::stvec:
             return "stvec";
-        case csr::sscratch:
+        case reg::sscratch:
             return "sscratch";
-        case csr::sepc:
+        case reg::sepc:
             return "sepc";
-        case csr::scause:
+        case reg::scause:
             return "scause";
-        case csr::stval:
+        case reg::stval:
             return "stval";
-        case csr::satp:
+        case reg::satp:
             return "satp";
-        case csr::scounteren:
+        case reg::scounteren:
             return "scounteren";
-        case csr::senvcfg:
+        case reg::senvcfg:
             return "senvcfg";
-        case csr::ilrsc:
+        case reg::ilrsc:
             return "ilrsc";
-        case csr::iflags:
+        case reg::iflags:
             return "iflags";
-        case csr::iflags_prv:
+        case reg::iflags_prv:
             return "iflags_prv";
-        case csr::iflags_x:
+        case reg::iflags_x:
             return "iflags_x";
-        case csr::iflags_y:
+        case reg::iflags_y:
             return "iflags_y";
-        case csr::iflags_h:
+        case reg::iflags_h:
             return "iflags_h";
-        case csr::iunrep:
+        case reg::iunrep:
             return "iunrep";
-        case csr::clint_mtimecmp:
+        case reg::clint_mtimecmp:
             return "clint_mtimecmp";
-        case csr::plic_girqpend:
+        case reg::plic_girqpend:
             return "plic_girqpend";
-        case csr::plic_girqsrvd:
+        case reg::plic_girqsrvd:
             return "plic_girqsrvd";
-        case csr::htif_tohost:
+        case reg::htif_tohost:
             return "htif_tohost";
-        case csr::htif_tohost_dev:
+        case reg::htif_tohost_dev:
             return "htif_tohost_dev";
-        case csr::htif_tohost_cmd:
+        case reg::htif_tohost_cmd:
             return "htif_tohost_cmd";
-        case csr::htif_tohost_reason:
+        case reg::htif_tohost_reason:
             return "htif_tohost_reason";
-        case csr::htif_tohost_data:
+        case reg::htif_tohost_data:
             return "htif_tohost_data";
-        case csr::htif_fromhost:
+        case reg::htif_fromhost:
             return "htif_fromhost";
-        case csr::htif_fromhost_dev:
+        case reg::htif_fromhost_dev:
             return "htif_fromhost_dev";
-        case csr::htif_fromhost_cmd:
+        case reg::htif_fromhost_cmd:
             return "htif_fromhost_cmd";
-        case csr::htif_fromhost_reason:
+        case reg::htif_fromhost_reason:
             return "htif_fromhost_reason";
-        case csr::htif_fromhost_data:
+        case reg::htif_fromhost_data:
             return "htif_fromhost_data";
-        case csr::htif_ihalt:
+        case reg::htif_ihalt:
             return "htif_ihalt";
-        case csr::htif_iconsole:
+        case reg::htif_iconsole:
             return "htif_iconsole";
-        case csr::htif_iyield:
+        case reg::htif_iyield:
             return "htif_iyield";
-        case csr::uarch_x0:
+        case reg::uarch_x0:
             return "uarch_x0";
-        case csr::uarch_x1:
+        case reg::uarch_x1:
             return "uarch_x1";
-        case csr::uarch_x2:
+        case reg::uarch_x2:
             return "uarch_x2";
-        case csr::uarch_x3:
+        case reg::uarch_x3:
             return "uarch_x3";
-        case csr::uarch_x4:
+        case reg::uarch_x4:
             return "uarch_x4";
-        case csr::uarch_x5:
+        case reg::uarch_x5:
             return "uarch_x5";
-        case csr::uarch_x6:
+        case reg::uarch_x6:
             return "uarch_x6";
-        case csr::uarch_x7:
+        case reg::uarch_x7:
             return "uarch_x7";
-        case csr::uarch_x8:
+        case reg::uarch_x8:
             return "uarch_x8";
-        case csr::uarch_x9:
+        case reg::uarch_x9:
             return "uarch_x9";
-        case csr::uarch_x10:
+        case reg::uarch_x10:
             return "uarch_x10";
-        case csr::uarch_x11:
+        case reg::uarch_x11:
             return "uarch_x11";
-        case csr::uarch_x12:
+        case reg::uarch_x12:
             return "uarch_x12";
-        case csr::uarch_x13:
+        case reg::uarch_x13:
             return "uarch_x13";
-        case csr::uarch_x14:
+        case reg::uarch_x14:
             return "uarch_x14";
-        case csr::uarch_x15:
+        case reg::uarch_x15:
             return "uarch_x15";
-        case csr::uarch_x16:
+        case reg::uarch_x16:
             return "uarch_x16";
-        case csr::uarch_x17:
+        case reg::uarch_x17:
             return "uarch_x17";
-        case csr::uarch_x18:
+        case reg::uarch_x18:
             return "uarch_x18";
-        case csr::uarch_x19:
+        case reg::uarch_x19:
             return "uarch_x19";
-        case csr::uarch_x20:
+        case reg::uarch_x20:
             return "uarch_x20";
-        case csr::uarch_x21:
+        case reg::uarch_x21:
             return "uarch_x21";
-        case csr::uarch_x22:
+        case reg::uarch_x22:
             return "uarch_x22";
-        case csr::uarch_x23:
+        case reg::uarch_x23:
             return "uarch_x23";
-        case csr::uarch_x24:
+        case reg::uarch_x24:
             return "uarch_x24";
-        case csr::uarch_x25:
+        case reg::uarch_x25:
             return "uarch_x25";
-        case csr::uarch_x26:
+        case reg::uarch_x26:
             return "uarch_x26";
-        case csr::uarch_x27:
+        case reg::uarch_x27:
             return "uarch_x27";
-        case csr::uarch_x28:
+        case reg::uarch_x28:
             return "uarch_x28";
-        case csr::uarch_x29:
+        case reg::uarch_x29:
             return "uarch_x29";
-        case csr::uarch_x30:
+        case reg::uarch_x30:
             return "uarch_x30";
-        case csr::uarch_x31:
+        case reg::uarch_x31:
             return "uarch_x31";
-        case csr::uarch_pc:
+        case reg::uarch_pc:
             return "uarch_pc";
-        case csr::uarch_cycle:
+        case reg::uarch_cycle:
             return "uarch_cycle";
-        case csr::uarch_halt_flag:
+        case reg::uarch_halt_flag:
             return "uarch_halt_flag";
         default:
-            throw std::domain_error{"invalid csr"};
+            throw std::domain_error{"invalid register"};
             break;
     }
     return "";
@@ -695,7 +695,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, machine::csr &value, const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, machine::reg &value, const std::string &path) {
     if (!contains(j, key)) {
         return;
     }
@@ -703,13 +703,13 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine::csr &value
     if (!jk.is_string()) {
         throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a string");
     }
-    value = csr_from_name(jk.template get<std::string>());
+    value = reg_from_name(jk.template get<std::string>());
 }
 
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, machine::csr &value,
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, machine::reg &value,
     const std::string &path);
 
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, machine::csr &value,
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, machine::reg &value,
     const std::string &path);
 
 template <typename K>
@@ -1668,8 +1668,8 @@ template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, fork_result &value,
     const std::string &path);
 
-void to_json(nlohmann::json &j, const machine::csr &csr) {
-    j = csr_to_name(csr);
+void to_json(nlohmann::json &j, const machine::reg &reg) {
+    j = reg_to_name(reg);
 }
 
 void to_json(nlohmann::json &j, const machine_merkle_tree::hash_type &h) {

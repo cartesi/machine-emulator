@@ -45,8 +45,8 @@ private:
     machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const override;
     void do_get_root_hash(hash_type &hash) const override;
     bool do_verify_merkle_tree(void) const override;
-    uint64_t do_read_csr(csr r) const override;
-    void do_write_csr(csr w, uint64_t val) override;
+    uint64_t do_read_reg(reg r) const override;
+    void do_write_reg(reg w, uint64_t val) override;
     void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const override;
     void do_write_memory(uint64_t address, const unsigned char *data, uint64_t length) override;
     void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const override;

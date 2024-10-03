@@ -121,9 +121,9 @@ public:
     /// \brief Type of hash
     using hash_type = machine_merkle_tree::hash_type;
 
-    /// \brief List of CSRs to use with read_csr and write_csr
-    enum class csr {
-        // Processor CSRs
+    /// \brief List of register to use with read_reg and write_reg
+    enum class reg {
+        // Processor x registers
         x0 = 0,
         x1,
         x2,
@@ -156,6 +156,7 @@ public:
         x29,
         x30,
         x31,
+        // Processor f registers
         f0,
         f1,
         f2,
@@ -188,6 +189,7 @@ public:
         f29,
         f30,
         f31,
+        // Processor CSRs
         pc,
         fcsr,
         mvendorid,
@@ -227,7 +229,7 @@ public:
         htif_ihalt,
         htif_iconsole,
         htif_iyield,
-        // Microarchitecture processor CSRs
+        // Microarchitecture processor
         uarch_x0,
         uarch_x1,
         uarch_x2,
@@ -264,7 +266,7 @@ public:
         uarch_cycle,
         uarch_halt_flag,
         last,
-        // Views of CSRs
+        // Views of registers
         iflags_prv,
         iflags_x,
         iflags_y,
@@ -280,7 +282,7 @@ public:
         unknown,
     };
 
-    static constexpr auto num_csr = static_cast<int>(csr::last);
+    static constexpr auto num_reg = static_cast<int>(reg::last);
 
     /// \brief Constructor from machine configuration
     /// \param config Machine config to use instantiating machine
@@ -440,20 +442,20 @@ public:
     /// \returns True if tree is self-consistent, false otherwise.
     bool verify_merkle_tree(void) const;
 
-    /// \brief Read the value of any CSR
-    /// \param csr CSR to read
-    /// \returns The value of the CSR
-    uint64_t read_csr(csr csr) const;
+    /// \brief Read the value of any register
+    /// \param r Register to read
+    /// \returns The value of the register
+    uint64_t read_reg(reg r) const;
 
-    /// \brief Write the value of any CSR
-    /// \param csr CSR to write
+    /// \brief Write the value of any register
+    /// \param w Register to write
     /// \param value Value to write
-    void write_csr(csr csr, uint64_t value);
+    void write_reg(reg w, uint64_t value);
 
-    /// \brief Gets the address of any CSR
-    /// \param csr The CSR to obtain address
-    /// \returns The address of CSR
-    static uint64_t get_csr_address(csr csr);
+    /// \brief Gets the address of any register
+    /// \param reg The register to obtain address
+    /// \returns The address of the register
+    static uint64_t get_reg_address(reg r);
 
     /// \brief Read the value of a word in the machine state.
     /// \param address Word address (aligned to 64-bit boundary).

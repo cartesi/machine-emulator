@@ -38,7 +38,7 @@ namespace cartesi {
 class i_virtual_machine {
 public:
     using hash_type = machine_merkle_tree::hash_type;
-    using csr = machine::csr;
+    using reg = machine::reg;
 
     /// \brief Constructor
     i_virtual_machine() = default;
@@ -81,14 +81,14 @@ public:
         return do_verify_merkle_tree();
     }
 
-    /// \brief Reads the value of any CSR
-    uint64_t read_csr(csr r) const {
-        return do_read_csr(r);
+    /// \brief Reads the value of any register
+    uint64_t read_reg(reg r) const {
+        return do_read_reg(r);
     }
 
-    /// \brief Writes the value of any CSR
-    void write_csr(csr w, uint64_t val) {
-        do_write_csr(w, val);
+    /// \brief Writes the value of any register
+    void write_reg(reg w, uint64_t val) {
+        do_write_reg(w, val);
     }
 
     /// \brief Reads a chunk of data from the machine memory.
@@ -197,8 +197,8 @@ private:
     virtual machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const = 0;
     virtual void do_get_root_hash(hash_type &hash) const = 0;
     virtual bool do_verify_merkle_tree(void) const = 0;
-    virtual uint64_t do_read_csr(csr r) const = 0;
-    virtual void do_write_csr(csr w, uint64_t val) = 0;
+    virtual uint64_t do_read_reg(reg r) const = 0;
+    virtual void do_write_reg(reg w, uint64_t val) = 0;
     virtual void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const = 0;
     virtual void do_write_memory(uint64_t address, const unsigned char *data, uint64_t length) = 0;
     virtual void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const = 0;

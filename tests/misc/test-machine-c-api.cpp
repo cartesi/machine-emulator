@@ -471,7 +471,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_null_output_test, default_machine_fixtu
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_basic_test, ordinary_machine_fixture) {
     uint64_t word_value = 0;
-    int error_code = cm_read_word(_machine, cm_get_csr_address(CM_CSR_PC), &word_value);
+    int error_code = cm_read_word(_machine, cm_get_reg_address(CM_REG_PC), &word_value);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(word_value, static_cast<uint64_t>(0x80000000));
@@ -730,7 +730,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(reset_iflags_y_null_machine_test) {
 BOOST_FIXTURE_TEST_CASE_NOLINT(iflags_read_write_complex_test, ordinary_machine_fixture) {
     uint64_t read_value = 0;
 
-    int error_code = cm_read_csr(_machine, CM_CSR_IFLAGS, &read_value);
+    int error_code = cm_read_reg(_machine, CM_REG_IFLAGS, &read_value);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(read_value, static_cast<uint64_t>(0x18));
@@ -754,7 +754,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(iflags_read_write_complex_test, ordinary_machine_
     error_code = cm_set_iflags_Y(_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    error_code = cm_read_csr(_machine, CM_CSR_IFLAGS, &read_value);
+    error_code = cm_read_reg(_machine, CM_REG_IFLAGS, &read_value);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(read_value, static_cast<uint64_t>(0x1a));
@@ -762,7 +762,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(iflags_read_write_complex_test, ordinary_machine_
     error_code = cm_reset_iflags_Y(_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    error_code = cm_read_csr(_machine, CM_CSR_IFLAGS, &read_value);
+    error_code = cm_read_reg(_machine, CM_REG_IFLAGS, &read_value);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(read_value, static_cast<uint64_t>(0x18));
@@ -772,46 +772,46 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(ids_read_test, ordinary_machine_fixture) {
     uint64_t archid{};
     uint64_t impid{};
 
-    int error_code = cm_read_csr(_machine, CM_CSR_MVENDORID, &vendorid);
+    int error_code = cm_read_reg(_machine, CM_REG_MVENDORID, &vendorid);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(vendorid, static_cast<uint64_t>(cartesi::MVENDORID_INIT));
 
-    error_code = cm_read_csr(_machine, CM_CSR_MARCHID, &archid);
+    error_code = cm_read_reg(_machine, CM_REG_MARCHID, &archid);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(archid, static_cast<uint64_t>(cartesi::MARCHID_INIT));
 
-    error_code = cm_read_csr(_machine, CM_CSR_MIMPID, &impid);
+    error_code = cm_read_reg(_machine, CM_REG_MIMPID, &impid);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(impid, static_cast<uint64_t>(cartesi::MIMPID_INIT));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_tohost_read_complex_test, ordinary_machine_fixture) {
-    int error_code = cm_write_csr(_machine, CM_CSR_HTIF_TOHOST, 0x1111111111111111);
+    int error_code = cm_write_reg(_machine, CM_REG_HTIF_TOHOST, 0x1111111111111111);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
     uint64_t htif_dev{};
     uint64_t htif_cmd{};
     uint64_t htif_data{};
-    error_code = cm_read_csr(_machine, CM_CSR_HTIF_TOHOST_DEV, &htif_dev);
+    error_code = cm_read_reg(_machine, CM_REG_HTIF_TOHOST_DEV, &htif_dev);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(htif_dev, static_cast<uint64_t>(0x11));
 
-    error_code = cm_read_csr(_machine, CM_CSR_HTIF_TOHOST_CMD, &htif_cmd);
+    error_code = cm_read_reg(_machine, CM_REG_HTIF_TOHOST_CMD, &htif_cmd);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(htif_cmd, static_cast<uint64_t>(0x11));
 
-    error_code = cm_read_csr(_machine, CM_CSR_HTIF_TOHOST_REASON, &htif_data);
+    error_code = cm_read_reg(_machine, CM_REG_HTIF_TOHOST_REASON, &htif_data);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(htif_data, static_cast<uint64_t>(0x1111));
 
-    error_code = cm_read_csr(_machine, CM_CSR_HTIF_TOHOST_DATA, &htif_data);
+    error_code = cm_read_reg(_machine, CM_REG_HTIF_TOHOST_DATA, &htif_data);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(htif_data, static_cast<uint64_t>(0x11111111));
@@ -819,17 +819,17 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_tohost_read_complex_test, ordinary_mach
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_htif_fromhost_read_complex_test, ordinary_machine_fixture) {
     uint64_t write_data = 0x0;
-    int error_code = cm_write_csr(_machine, CM_CSR_HTIF_FROMHOST, write_data);
+    int error_code = cm_write_reg(_machine, CM_REG_HTIF_FROMHOST, write_data);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
     write_data = 0x11111111;
-    error_code = cm_write_csr(_machine, CM_CSR_HTIF_FROMHOST_DATA, write_data);
+    error_code = cm_write_reg(_machine, CM_REG_HTIF_FROMHOST_DATA, write_data);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
     uint64_t htif_data{};
-    error_code = cm_read_csr(_machine, CM_CSR_HTIF_FROMHOST_DATA, &htif_data);
+    error_code = cm_read_reg(_machine, CM_REG_HTIF_FROMHOST_DATA, &htif_data);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(htif_data, static_cast<uint64_t>(0x11111111));
@@ -1028,79 +1028,79 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(rollback_basic_test, ordinary_machine_fixture) {
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_x_basic_test, ordinary_machine_fixture) {
     uint64_t x_origin = 42;
     uint64_t x_read{};
-    int error_code = cm_write_csr(_machine, CM_CSR_X2, x_origin);
+    int error_code = cm_write_reg(_machine, CM_REG_X2, x_origin);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
-    error_code = cm_read_csr(_machine, CM_CSR_X2, &x_read);
+    error_code = cm_read_reg(_machine, CM_REG_X2, &x_read);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(x_origin, x_read);
 
-    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x10), cm_get_csr_address(CM_CSR_X2));
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x10), cm_get_reg_address(CM_REG_X2));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_f_basic_test, ordinary_machine_fixture) {
     uint64_t f_origin = 42;
     uint64_t f_read{};
-    int error_code = cm_write_csr(_machine, CM_CSR_F2, f_origin);
+    int error_code = cm_write_reg(_machine, CM_REG_F2, f_origin);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
-    error_code = cm_read_csr(_machine, CM_CSR_F2, &f_read);
+    error_code = cm_read_reg(_machine, CM_REG_F2, &f_read);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(f_origin, f_read);
 
-    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x110), cm_get_csr_address(CM_CSR_F2));
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x110), cm_get_reg_address(CM_REG_F2));
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_uarch_x_basic_test, ordinary_machine_fixture) {
     uint64_t uarch_x_origin = 42;
     uint64_t uarch_x_read{};
-    int error_code = cm_write_csr(_machine, CM_CSR_UARCH_X2, uarch_x_origin);
+    int error_code = cm_write_reg(_machine, CM_REG_UARCH_X2, uarch_x_origin);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
-    error_code = cm_read_csr(_machine, CM_CSR_UARCH_X2, &uarch_x_read);
+    error_code = cm_read_reg(_machine, CM_REG_UARCH_X2, &uarch_x_read);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(uarch_x_origin, uarch_x_read);
 
     BOOST_CHECK_EQUAL(static_cast<uint64_t>(cartesi::PMA_SHADOW_UARCH_STATE_START + 40),
-        cm_get_csr_address(CM_CSR_UARCH_X2));
+        cm_get_reg_address(CM_REG_UARCH_X2));
 }
 
-BOOST_AUTO_TEST_CASE_NOLINT(read_csr_null_machine_test) {
+BOOST_AUTO_TEST_CASE_NOLINT(read_reg_null_machine_test) {
     uint64_t val{};
-    int error_code = cm_read_csr(nullptr, CM_CSR_MCYCLE, &val);
+    int error_code = cm_read_reg(nullptr, CM_REG_MCYCLE, &val);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(read_csr_null_output_test, ordinary_machine_fixture) {
-    int error_code = cm_read_csr(_machine, CM_CSR_MCYCLE, nullptr);
+BOOST_FIXTURE_TEST_CASE_NOLINT(read_reg_null_output_test, ordinary_machine_fixture) {
+    int error_code = cm_read_reg(_machine, CM_REG_MCYCLE, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_AUTO_TEST_CASE_NOLINT(write_csr_null_machine_test) {
-    int error_code = cm_write_csr(nullptr, CM_CSR_MCYCLE, 3);
+BOOST_AUTO_TEST_CASE_NOLINT(write_reg_null_machine_test) {
+    int error_code = cm_write_reg(nullptr, CM_REG_MCYCLE, 3);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_csr_basic_test, ordinary_machine_fixture) {
-    uint64_t csr_origin = 42;
-    uint64_t csr_read{};
+BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_reg_basic_test, ordinary_machine_fixture) {
+    uint64_t reg_origin = 42;
+    uint64_t reg_read{};
 
-    int error_code = cm_write_csr(_machine, CM_CSR_MCYCLE, csr_origin);
+    int error_code = cm_write_reg(_machine, CM_REG_MCYCLE, reg_origin);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
-    error_code = cm_read_csr(_machine, CM_CSR_MCYCLE, &csr_read);
+    error_code = cm_read_reg(_machine, CM_REG_MCYCLE, &reg_read);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    BOOST_CHECK_EQUAL(csr_origin, csr_read);
+    BOOST_CHECK_EQUAL(reg_origin, reg_read);
 
-    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x200), cm_get_csr_address(CM_CSR_PC));
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x200), cm_get_reg_address(CM_REG_PC));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(verify_merkle_tree_null_machine_test) {
@@ -1233,7 +1233,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, access_log_machine_fix
     BOOST_REQUIRE_EQUAL(cycle, 0);
 
     // not halted
-    error_code = cm_read_csr(_machine, CM_CSR_UARCH_HALT_FLAG, &halt);
+    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT_FLAG, &halt);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(halt, 0);
 
@@ -1294,7 +1294,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(log_step_uarch_until_halt, access_log_machine_fix
     BOOST_REQUIRE_EQUAL(cycle, 3);
 
     // halted
-    error_code = cm_read_csr(_machine, CM_CSR_UARCH_HALT_FLAG, &halt);
+    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT_FLAG, &halt);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(halt, 1);
 }
@@ -1447,7 +1447,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_until_halt, access_log_
 
     // ensure not halted
     uint64_t halt{1};
-    error_code = cm_read_csr(_machine, CM_CSR_UARCH_HALT_FLAG, &halt);
+    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT_FLAG, &halt);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_REQUIRE_EQUAL(halt, 0);
@@ -1488,7 +1488,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_run_uarch_advance_until_halt, access_log_
     BOOST_REQUIRE_EQUAL(cycle, 3);
 
     // assert halt flag is set
-    error_code = cm_read_csr(_machine, CM_CSR_UARCH_HALT_FLAG, &halt);
+    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT_FLAG, &halt);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_REQUIRE_EQUAL(halt, 1);
@@ -1506,7 +1506,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_reset_uarch, ordinary_machine_fixture) {
 
     // ensure not halted
     uint64_t halt{1};
-    error_code = cm_read_csr(_machine, CM_CSR_UARCH_HALT_FLAG, &halt);
+    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT_FLAG, &halt);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_REQUIRE_EQUAL(halt, 0);
@@ -1526,7 +1526,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_reset_uarch, ordinary_machine_fixture) {
     BOOST_REQUIRE_EQUAL(status, CM_UARCH_BREAK_REASON_UARCH_HALTED);
 
     // confirm if halt flag is set
-    error_code = cm_read_csr(_machine, CM_CSR_UARCH_HALT_FLAG, &halt);
+    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT_FLAG, &halt);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_REQUIRE_EQUAL(halt, 1);
@@ -1566,7 +1566,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_reset_uarch, ordinary_machine_fixture) {
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
 
     // halt flag should be cleared
-    error_code = cm_read_csr(_machine, CM_CSR_UARCH_HALT_FLAG, &halt);
+    error_code = cm_read_reg(_machine, CM_REG_UARCH_HALT_FLAG, &halt);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_REQUIRE_EQUAL(halt, 0);

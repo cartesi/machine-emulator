@@ -326,7 +326,7 @@ public:
     }
 
     /// \brief Reads CSR iflags.
-    /// \returns CSR value.
+    /// \returns Register value.
     auto read_iflags(void) {
         return derived().do_read_iflags();
     }

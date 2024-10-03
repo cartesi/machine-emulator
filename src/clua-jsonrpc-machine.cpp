@@ -41,16 +41,16 @@ static int jsonrpc_machine_class_get_default_config(lua_State *L) {
     return 1;
 }
 
-/// \brief This is the machine.get_csr_address() method implementation.
-static int jsonrpc_machine_class_get_csr_address(lua_State *L) {
+/// \brief This is the machine.get_reg_address() method implementation.
+static int jsonrpc_machine_class_get_reg_address(lua_State *L) {
     auto &managed_jsonrpc_mgr =
         clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
-    uint64_t csr_address{};
-    const cm_csr csr = clua_check_cm_proc_csr(L, 1);
-    if (cm_jsonrpc_get_csr_address(managed_jsonrpc_mgr.get(), csr, &csr_address) != 0) {
+    uint64_t reg_address{};
+    const cm_reg reg = clua_check_cm_proc_reg(L, 1);
+    if (cm_jsonrpc_get_reg_address(managed_jsonrpc_mgr.get(), reg, &reg_address) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    lua_pushinteger(L, static_cast<lua_Integer>(csr_address));
+    lua_pushinteger(L, static_cast<lua_Integer>(reg_address));
     return 1;
 }
 
@@ -135,7 +135,7 @@ static int jsonrpc_machine_class_verify_send_cmio_response(lua_State *L) {
 /// \brief Contents of the machine class metatable __index table.
 static const auto jsonrpc_machine_static_methods = cartesi::clua_make_luaL_Reg_array({
     {"get_default_config", jsonrpc_machine_class_get_default_config},
-    {"get_csr_address", jsonrpc_machine_class_get_csr_address},
+    {"get_reg_address", jsonrpc_machine_class_get_reg_address},
     {"verify_step_uarch", jsonrpc_machine_class_verify_step_uarch},
     {"verify_reset_uarch", jsonrpc_machine_class_verify_reset_uarch},
     {"verify_send_cmio_response", jsonrpc_machine_class_verify_send_cmio_response},

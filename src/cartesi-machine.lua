@@ -2019,7 +2019,7 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
     end
     -- deal with halt
     if machine:read_iflags_H() then
-        exit_code = machine:read_csr("htif_tohost_data") >> 1
+        exit_code = machine:read_reg("htif_tohost_data") >> 1
         if exit_code ~= 0 then
             stderr("\nHalted with payload: %u\n", exit_code)
         else

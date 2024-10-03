@@ -215,7 +215,7 @@ int32_t cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reason
 
 int32_t cm_read_uarch_halt_flag(const cm_machine *m, bool *val) try {
     const auto *cpp_machine = convert_from_c(m);
-    *val = static_cast<bool>(cpp_machine->read_csr(cartesi::machine::csr::uarch_halt_flag));
+    *val = static_cast<bool>(cpp_machine->read_reg(cartesi::machine::reg::uarch_halt_flag));
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -223,7 +223,7 @@ int32_t cm_read_uarch_halt_flag(const cm_machine *m, bool *val) try {
 
 int32_t cm_set_uarch_halt_flag(cm_machine *m) try {
     auto *cpp_machine = convert_from_c(m);
-    cpp_machine->write_csr(cartesi::machine::csr::uarch_halt_flag, 1);
+    cpp_machine->write_reg(cartesi::machine::reg::uarch_halt_flag, 1);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -352,30 +352,30 @@ int32_t cm_verify_merkle_tree(cm_machine *m, bool *result) try {
     return cm_result_failure();
 }
 
-int32_t cm_read_csr(const cm_machine *m, cm_csr csr, uint64_t *val) try {
+int32_t cm_read_reg(const cm_machine *m, cm_reg reg, uint64_t *val) try {
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");
     }
     const auto *cpp_machine = convert_from_c(m);
-    auto cpp_csr = static_cast<cartesi::machine::csr>(csr);
-    *val = cpp_machine->read_csr(cpp_csr);
+    auto cpp_reg = static_cast<cartesi::machine::reg>(reg);
+    *val = cpp_machine->read_reg(cpp_reg);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
 }
 
-int32_t cm_write_csr(cm_machine *m, cm_csr csr, uint64_t val) try {
+int32_t cm_write_reg(cm_machine *m, cm_reg reg, uint64_t val) try {
     auto *cpp_machine = convert_from_c(m);
-    auto cpp_csr = static_cast<cartesi::machine::csr>(csr);
-    cpp_machine->write_csr(cpp_csr, val);
+    auto cpp_reg = static_cast<cartesi::machine::reg>(reg);
+    cpp_machine->write_reg(cpp_reg, val);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
 }
 
-uint64_t cm_get_csr_address(cm_csr csr) try {
-    auto cpp_csr = static_cast<cartesi::machine::csr>(csr);
-    uint64_t address = cartesi::machine::get_csr_address(cpp_csr);
+uint64_t cm_get_reg_address(cm_reg reg) try {
+    auto cpp_reg = static_cast<cartesi::machine::reg>(reg);
+    uint64_t address = cartesi::machine::get_reg_address(cpp_reg);
     cm_result_success();
     return address;
 } catch (...) {
@@ -439,7 +439,7 @@ int32_t cm_read_mcycle(const cm_machine *m, uint64_t *val) try {
         throw std::invalid_argument("invalid val output");
     }
     const auto *cpp_machine = convert_from_c(m);
-    *val = cpp_machine->read_csr(cartesi::machine::csr::mcycle);
+    *val = cpp_machine->read_reg(cartesi::machine::reg::mcycle);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -450,7 +450,7 @@ int32_t cm_read_uarch_cycle(const cm_machine *m, uint64_t *val) try {
         throw std::invalid_argument("invalid val output");
     }
     const auto *cpp_machine = convert_from_c(m);
-    *val = cpp_machine->read_csr(cartesi::machine::csr::uarch_cycle);
+    *val = cpp_machine->read_reg(cartesi::machine::reg::uarch_cycle);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -461,7 +461,7 @@ int32_t cm_read_iflags_Y(const cm_machine *m, bool *val) try {
         throw std::invalid_argument("invalid val output");
     }
     const auto *cpp_machine = convert_from_c(m);
-    *val = static_cast<bool>(cpp_machine->read_csr(cartesi::machine::csr::iflags_y));
+    *val = static_cast<bool>(cpp_machine->read_reg(cartesi::machine::reg::iflags_y));
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -469,7 +469,7 @@ int32_t cm_read_iflags_Y(const cm_machine *m, bool *val) try {
 
 int32_t cm_reset_iflags_Y(cm_machine *m) try {
     auto *cpp_machine = convert_from_c(m);
-    cpp_machine->write_csr(cartesi::machine::csr::iflags_y, 0);
+    cpp_machine->write_reg(cartesi::machine::reg::iflags_y, 0);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -477,7 +477,7 @@ int32_t cm_reset_iflags_Y(cm_machine *m) try {
 
 int32_t cm_set_iflags_Y(cm_machine *m) try {
     auto *cpp_machine = convert_from_c(m);
-    cpp_machine->write_csr(cartesi::machine::csr::iflags_y, 1);
+    cpp_machine->write_reg(cartesi::machine::reg::iflags_y, 1);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -488,7 +488,7 @@ int32_t cm_read_iflags_X(const cm_machine *m, bool *val) try {
         throw std::invalid_argument("invalid val output");
     }
     const auto *cpp_machine = convert_from_c(m);
-    *val = static_cast<bool>(cpp_machine->read_csr(cartesi::machine::csr::iflags_x));
+    *val = static_cast<bool>(cpp_machine->read_reg(cartesi::machine::reg::iflags_x));
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -499,7 +499,7 @@ int32_t cm_read_iflags_H(const cm_machine *m, bool *val) try {
         throw std::invalid_argument("invalid val output");
     }
     const auto *cpp_machine = convert_from_c(m);
-    *val = static_cast<bool>(cpp_machine->read_csr(cartesi::machine::csr::iflags_h));
+    *val = static_cast<bool>(cpp_machine->read_reg(cartesi::machine::reg::iflags_h));
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -610,11 +610,11 @@ int32_t cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16_t *rea
     const auto *cpp_machine = convert_from_c(m);
     // NOTE(edubart): This can be implemented on top of other APIs,
     // implementing in the C++ machine class would add lot of boilerplate code in all interfaces.
-    if (!cpp_machine->read_csr(cartesi::machine::csr::iflags_x) &&
-        !cpp_machine->read_csr(cartesi::machine::csr::iflags_y)) {
+    if (!cpp_machine->read_reg(cartesi::machine::reg::iflags_x) &&
+        !cpp_machine->read_reg(cartesi::machine::reg::iflags_y)) {
         throw std::runtime_error{"machine is not yielded"};
     }
-    const uint64_t tohost = cpp_machine->read_csr(cartesi::machine::csr::htif_tohost);
+    const uint64_t tohost = cpp_machine->read_reg(cartesi::machine::reg::htif_tohost);
     const uint8_t tohost_cmd = cartesi::HTIF_CMD_FIELD(tohost);
     const uint16_t tohost_reason = cartesi::HTIF_REASON_FIELD(tohost);
     const uint32_t tohost_data = cartesi::HTIF_DATA_FIELD(tohost);

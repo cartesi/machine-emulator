@@ -77,15 +77,15 @@ public:
 
     static fork_result fork(const jsonrpc_mgr_ptr &mgr);
     static std::string rebind(const jsonrpc_mgr_ptr &mgr, const std::string &address);
-    static uint64_t get_csr_address(const jsonrpc_mgr_ptr &mgr, csr w);
+    static uint64_t get_reg_address(const jsonrpc_mgr_ptr &mgr, reg r);
 
 private:
     machine_config do_get_initial_config(void) const override;
 
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
     void do_store(const std::string &dir) const override;
-    uint64_t do_read_csr(csr r) const override;
-    void do_write_csr(csr w, uint64_t val) override;
+    uint64_t do_read_reg(reg r) const override;
+    void do_write_reg(reg w, uint64_t val) override;
     void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const override;
     void do_write_memory(uint64_t address, const unsigned char *data, uint64_t length) override;
     void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const override;

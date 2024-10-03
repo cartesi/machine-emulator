@@ -50,7 +50,7 @@ typedef enum cm_constant {
     CM_TREE_LOG2_ROOT_SIZE = 64,
 } cm_constant;
 
-/// \brief Physical memory addresses (only relevant are exposed in the API).
+/// \brief Physical memory addresses (only the most useful are exposed in the API).
 typedef enum cm_pma_constant {
     CM_PMA_CMIO_RX_BUFFER_START = 0x60000000,
     CM_PMA_CMIO_RX_BUFFER_LOG2_SIZE = 21,
@@ -87,7 +87,7 @@ typedef enum cm_error {
     CM_ERROR_UNKNOWN = -23,
 } cm_error;
 
-/// \brief Reasons for a machine run interruption.
+/// \brief Reasons for the machine to break from call to cm_run.
 typedef enum cm_break_reason {
     CM_BREAK_REASON_FAILED,
     CM_BREAK_REASON_HALTED,
@@ -97,7 +97,7 @@ typedef enum cm_break_reason {
     CM_BREAK_REASON_REACHED_TARGET_MCYCLE,
 } cm_break_reason;
 
-/// \brief Reasons for a machine microarchitecture run interruption.
+/// \brief Reasons for the machine to break from call to cm_run_uarch.
 typedef enum cm_uarch_break_reason {
     CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE,
     CM_UARCH_BREAK_REASON_UARCH_HALTED,
@@ -107,10 +107,10 @@ typedef enum cm_uarch_break_reason {
 typedef enum cm_access_log_type {
     CM_ACCESS_LOG_TYPE_PROOFS = 1,      ///< Includes proofs
     CM_ACCESS_LOG_TYPE_ANNOTATIONS = 2, ///< Includes annotations
-    CM_ACCESS_LOG_TYPE_LARGE_DATA = 4,  ///< Includes data bigger than 8 bytes
+    CM_ACCESS_LOG_TYPE_LARGE_DATA = 4,  ///< Includes data larger than 8 bytes
 } cm_access_log_type;
 
-/// \brief Yield commands.
+/// \brief Yield device commands.
 typedef enum cm_cmio_yield_command {
     CM_CMIO_YIELD_COMMAND_AUTOMATIC,
     CM_CMIO_YIELD_COMMAND_MANUAL,
@@ -118,217 +118,221 @@ typedef enum cm_cmio_yield_command {
 
 /// \brief Yield reasons.
 typedef enum cm_cmio_yield_reason {
-    CM_CMIO_YIELD_AUTOMATIC_REASON_PROGRESS = 1,
-    CM_CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT = 2,
-    CM_CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT = 4,
-    CM_CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED = 1,
-    CM_CMIO_YIELD_MANUAL_REASON_RX_REJECTED = 2,
-    CM_CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION = 4,
-    CM_CMIO_YIELD_REASON_ADVANCE_STATE = 0,
-    CM_CMIO_YIELD_REASON_INSPECT_STATE = 1,
+    CM_CMIO_YIELD_AUTOMATIC_REASON_PROGRESS = 1,   ///< Progress is available
+    CM_CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT = 2,  ///< Output is available in tx buffer
+    CM_CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT = 4,  ///< Report is available in tx buffer
+    CM_CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED = 1,   ///< Input in rx buffer was accepted
+    CM_CMIO_YIELD_MANUAL_REASON_RX_REJECTED = 2,   ///< Input in rx buffer was rejected
+    CM_CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION = 4,  ///< Exception happened
+    CM_CMIO_YIELD_REASON_ADVANCE_STATE = 0,        ///< Input in rx buffer is advance state
+    CM_CMIO_YIELD_REASON_INSPECT_STATE = 1,        ///< Input in rx buffer is inspect state
 } cm_cmio_yield_reason;
 
-/// \brief Machine control and status registers.
-typedef enum cm_csr {
-    // Processor CSRs
-    CM_CSR_X0,
-    CM_CSR_X1,
-    CM_CSR_X2,
-    CM_CSR_X3,
-    CM_CSR_X4,
-    CM_CSR_X5,
-    CM_CSR_X6,
-    CM_CSR_X7,
-    CM_CSR_X8,
-    CM_CSR_X9,
-    CM_CSR_X10,
-    CM_CSR_X11,
-    CM_CSR_X12,
-    CM_CSR_X13,
-    CM_CSR_X14,
-    CM_CSR_X15,
-    CM_CSR_X16,
-    CM_CSR_X17,
-    CM_CSR_X18,
-    CM_CSR_X19,
-    CM_CSR_X20,
-    CM_CSR_X21,
-    CM_CSR_X22,
-    CM_CSR_X23,
-    CM_CSR_X24,
-    CM_CSR_X25,
-    CM_CSR_X26,
-    CM_CSR_X27,
-    CM_CSR_X28,
-    CM_CSR_X29,
-    CM_CSR_X30,
-    CM_CSR_X31,
-    CM_CSR_F0,
-    CM_CSR_F1,
-    CM_CSR_F2,
-    CM_CSR_F3,
-    CM_CSR_F4,
-    CM_CSR_F5,
-    CM_CSR_F6,
-    CM_CSR_F7,
-    CM_CSR_F8,
-    CM_CSR_F9,
-    CM_CSR_F10,
-    CM_CSR_F11,
-    CM_CSR_F12,
-    CM_CSR_F13,
-    CM_CSR_F14,
-    CM_CSR_F15,
-    CM_CSR_F16,
-    CM_CSR_F17,
-    CM_CSR_F18,
-    CM_CSR_F19,
-    CM_CSR_F20,
-    CM_CSR_F21,
-    CM_CSR_F22,
-    CM_CSR_F23,
-    CM_CSR_F24,
-    CM_CSR_F25,
-    CM_CSR_F26,
-    CM_CSR_F27,
-    CM_CSR_F28,
-    CM_CSR_F29,
-    CM_CSR_F30,
-    CM_CSR_F31,
-    CM_CSR_PC,
-    CM_CSR_FCSR,
-    CM_CSR_MVENDORID,
-    CM_CSR_MARCHID,
-    CM_CSR_MIMPID,
-    CM_CSR_MCYCLE,
-    CM_CSR_ICYCLEINSTRET,
-    CM_CSR_MSTATUS,
-    CM_CSR_MTVEC,
-    CM_CSR_MSCRATCH,
-    CM_CSR_MEPC,
-    CM_CSR_MCAUSE,
-    CM_CSR_MTVAL,
-    CM_CSR_MISA,
-    CM_CSR_MIE,
-    CM_CSR_MIP,
-    CM_CSR_MEDELEG,
-    CM_CSR_MIDELEG,
-    CM_CSR_MCOUNTEREN,
-    CM_CSR_MENVCFG,
-    CM_CSR_STVEC,
-    CM_CSR_SSCRATCH,
-    CM_CSR_SEPC,
-    CM_CSR_SCAUSE,
-    CM_CSR_STVAL,
-    CM_CSR_SATP,
-    CM_CSR_SCOUNTEREN,
-    CM_CSR_SENVCFG,
-    CM_CSR_ILRSC,
-    CM_CSR_IFLAGS,
-    CM_CSR_IUNREP,
-    // Device CSRs
-    CM_CSR_CLINT_MTIMECMP,
-    CM_CSR_PLIC_GIRQPEND,
-    CM_CSR_PLIC_GIRQSRVD,
-    CM_CSR_HTIF_TOHOST,
-    CM_CSR_HTIF_FROMHOST,
-    CM_CSR_HTIF_IHALT,
-    CM_CSR_HTIF_ICONSOLE,
-    CM_CSR_HTIF_IYIELD,
-    // Microarchitecture processor CSRs
-    CM_CSR_UARCH_X0,
-    CM_CSR_UARCH_X1,
-    CM_CSR_UARCH_X2,
-    CM_CSR_UARCH_X3,
-    CM_CSR_UARCH_X4,
-    CM_CSR_UARCH_X5,
-    CM_CSR_UARCH_X6,
-    CM_CSR_UARCH_X7,
-    CM_CSR_UARCH_X8,
-    CM_CSR_UARCH_X9,
-    CM_CSR_UARCH_X10,
-    CM_CSR_UARCH_X11,
-    CM_CSR_UARCH_X12,
-    CM_CSR_UARCH_X13,
-    CM_CSR_UARCH_X14,
-    CM_CSR_UARCH_X15,
-    CM_CSR_UARCH_X16,
-    CM_CSR_UARCH_X17,
-    CM_CSR_UARCH_X18,
-    CM_CSR_UARCH_X19,
-    CM_CSR_UARCH_X20,
-    CM_CSR_UARCH_X21,
-    CM_CSR_UARCH_X22,
-    CM_CSR_UARCH_X23,
-    CM_CSR_UARCH_X24,
-    CM_CSR_UARCH_X25,
-    CM_CSR_UARCH_X26,
-    CM_CSR_UARCH_X27,
-    CM_CSR_UARCH_X28,
-    CM_CSR_UARCH_X29,
-    CM_CSR_UARCH_X30,
-    CM_CSR_UARCH_X31,
-    CM_CSR_UARCH_PC,
-    CM_CSR_UARCH_CYCLE,
-    CM_CSR_UARCH_HALT_FLAG,
-    // Amount of CSRs
-    CM_CSR_COUNT,
-    // Views of CSRs
-    CM_CSR_IFLAGS_PRV,
-    CM_CSR_IFLAGS_X,
-    CM_CSR_IFLAGS_Y,
-    CM_CSR_IFLAGS_H,
-    CM_CSR_HTIF_TOHOST_DEV,
-    CM_CSR_HTIF_TOHOST_CMD,
-    CM_CSR_HTIF_TOHOST_REASON,
-    CM_CSR_HTIF_TOHOST_DATA,
-    CM_CSR_HTIF_FROMHOST_DEV,
-    CM_CSR_HTIF_FROMHOST_CMD,
-    CM_CSR_HTIF_FROMHOST_REASON,
-    CM_CSR_HTIF_FROMHOST_DATA,
-    CM_CSR_UNKNOWN,
-} cm_csr;
+/// \brief Machine x, f, and control and status registers.
+typedef enum cm_xfcsr {
+    // Processor XFCSRs
+    CM_XFCSR_X0,
+    CM_XFCSR_X1,
+    CM_XFCSR_X2,
+    CM_XFCSR_X3,
+    CM_XFCSR_X4,
+    CM_XFCSR_X5,
+    CM_XFCSR_X6,
+    CM_XFCSR_X7,
+    CM_XFCSR_X8,
+    CM_XFCSR_X9,
+    CM_XFCSR_X10,
+    CM_XFCSR_X11,
+    CM_XFCSR_X12,
+    CM_XFCSR_X13,
+    CM_XFCSR_X14,
+    CM_XFCSR_X15,
+    CM_XFCSR_X16,
+    CM_XFCSR_X17,
+    CM_XFCSR_X18,
+    CM_XFCSR_X19,
+    CM_XFCSR_X20,
+    CM_XFCSR_X21,
+    CM_XFCSR_X22,
+    CM_XFCSR_X23,
+    CM_XFCSR_X24,
+    CM_XFCSR_X25,
+    CM_XFCSR_X26,
+    CM_XFCSR_X27,
+    CM_XFCSR_X28,
+    CM_XFCSR_X29,
+    CM_XFCSR_X30,
+    CM_XFCSR_X31,
+    CM_XFCSR_F0,
+    CM_XFCSR_F1,
+    CM_XFCSR_F2,
+    CM_XFCSR_F3,
+    CM_XFCSR_F4,
+    CM_XFCSR_F5,
+    CM_XFCSR_F6,
+    CM_XFCSR_F7,
+    CM_XFCSR_F8,
+    CM_XFCSR_F9,
+    CM_XFCSR_F10,
+    CM_XFCSR_F11,
+    CM_XFCSR_F12,
+    CM_XFCSR_F13,
+    CM_XFCSR_F14,
+    CM_XFCSR_F15,
+    CM_XFCSR_F16,
+    CM_XFCSR_F17,
+    CM_XFCSR_F18,
+    CM_XFCSR_F19,
+    CM_XFCSR_F20,
+    CM_XFCSR_F21,
+    CM_XFCSR_F22,
+    CM_XFCSR_F23,
+    CM_XFCSR_F24,
+    CM_XFCSR_F25,
+    CM_XFCSR_F26,
+    CM_XFCSR_F27,
+    CM_XFCSR_F28,
+    CM_XFCSR_F29,
+    CM_XFCSR_F30,
+    CM_XFCSR_F31,
+    CM_XFCSR_PC,
+    CM_XFCSR_FXFCSR,
+    CM_XFCSR_MVENDORID,
+    CM_XFCSR_MARCHID,
+    CM_XFCSR_MIMPID,
+    CM_XFCSR_MCYCLE,
+    CM_XFCSR_ICYCLEINSTRET,
+    CM_XFCSR_MSTATUS,
+    CM_XFCSR_MTVEC,
+    CM_XFCSR_MSCRATCH,
+    CM_XFCSR_MEPC,
+    CM_XFCSR_MCAUSE,
+    CM_XFCSR_MTVAL,
+    CM_XFCSR_MISA,
+    CM_XFCSR_MIE,
+    CM_XFCSR_MIP,
+    CM_XFCSR_MEDELEG,
+    CM_XFCSR_MIDELEG,
+    CM_XFCSR_MCOUNTEREN,
+    CM_XFCSR_MENVCFG,
+    CM_XFCSR_STVEC,
+    CM_XFCSR_SSCRATCH,
+    CM_XFCSR_SEPC,
+    CM_XFCSR_SCAUSE,
+    CM_XFCSR_STVAL,
+    CM_XFCSR_SATP,
+    CM_XFCSR_SCOUNTEREN,
+    CM_XFCSR_SENVCFG,
+    CM_XFCSR_ILRSC,
+    CM_XFCSR_IFLAGS,
+    CM_XFCSR_IUNREP,
+    // Device XFCSRs
+    CM_XFCSR_CLINT_MTIMECMP,
+    CM_XFCSR_PLIC_GIRQPEND,
+    CM_XFCSR_PLIC_GIRQSRVD,
+    CM_XFCSR_HTIF_TOHOST,
+    CM_XFCSR_HTIF_FROMHOST,
+    CM_XFCSR_HTIF_IHALT,
+    CM_XFCSR_HTIF_ICONSOLE,
+    CM_XFCSR_HTIF_IYIELD,
+    // Microarchitecture processor XFCSRs
+    CM_XFCSR_UARCH_X0,
+    CM_XFCSR_UARCH_X1,
+    CM_XFCSR_UARCH_X2,
+    CM_XFCSR_UARCH_X3,
+    CM_XFCSR_UARCH_X4,
+    CM_XFCSR_UARCH_X5,
+    CM_XFCSR_UARCH_X6,
+    CM_XFCSR_UARCH_X7,
+    CM_XFCSR_UARCH_X8,
+    CM_XFCSR_UARCH_X9,
+    CM_XFCSR_UARCH_X10,
+    CM_XFCSR_UARCH_X11,
+    CM_XFCSR_UARCH_X12,
+    CM_XFCSR_UARCH_X13,
+    CM_XFCSR_UARCH_X14,
+    CM_XFCSR_UARCH_X15,
+    CM_XFCSR_UARCH_X16,
+    CM_XFCSR_UARCH_X17,
+    CM_XFCSR_UARCH_X18,
+    CM_XFCSR_UARCH_X19,
+    CM_XFCSR_UARCH_X20,
+    CM_XFCSR_UARCH_X21,
+    CM_XFCSR_UARCH_X22,
+    CM_XFCSR_UARCH_X23,
+    CM_XFCSR_UARCH_X24,
+    CM_XFCSR_UARCH_X25,
+    CM_XFCSR_UARCH_X26,
+    CM_XFCSR_UARCH_X27,
+    CM_XFCSR_UARCH_X28,
+    CM_XFCSR_UARCH_X29,
+    CM_XFCSR_UARCH_X30,
+    CM_XFCSR_UARCH_X31,
+    CM_XFCSR_UARCH_PC,
+    CM_XFCSR_UARCH_CYCLE,
+    CM_XFCSR_UARCH_HALT_FLAG,
+    // Amount of XFCSRs
+    CM_XFCSR_COUNT,
+    // Views of XFCSRs
+    CM_XFCSR_IFLAGS_PRV,
+    CM_XFCSR_IFLAGS_X,
+    CM_XFCSR_IFLAGS_Y,
+    CM_XFCSR_IFLAGS_H,
+    CM_XFCSR_HTIF_TOHOST_DEV,
+    CM_XFCSR_HTIF_TOHOST_CMD,
+    CM_XFCSR_HTIF_TOHOST_REASON,
+    CM_XFCSR_HTIF_TOHOST_DATA,
+    CM_XFCSR_HTIF_FROMHOST_DEV,
+    CM_XFCSR_HTIF_FROMHOST_CMD,
+    CM_XFCSR_HTIF_FROMHOST_REASON,
+    CM_XFCSR_HTIF_FROMHOST_DATA,
+    CM_XFCSR_UNKNOWN,
+} cm_xfcsr;
 
-/// \brief Machine hash array.
+/// \brief Storage for machine hash.
 typedef uint8_t cm_hash[CM_HASH_SIZE];
 
 /// \brief Machine instance handle.
 /// \details It's used only as an opaque handle to pass machine objects through the C API.
 typedef struct cm_machine cm_machine;
 
-// ---------------------------------
+// -----------------------------------------------------------------------------
 // API functions
-// ---------------------------------
+// -----------------------------------------------------------------------------
 
 /// \brief Returns the error message set by the very last C API call.
-/// \returns A C string, remains valid until next C API call.
+/// \returns A C string, guaranteed to remain valid only until the next C API call.
 /// \details The string returned by this function must not be changed nor deallocated,
 /// and remains valid until next C API function that can return a cm_error code is called.
-/// In case the last call was successful it returns an empty string.
-/// It uses a thread local variable, so it's safe to call from different threads.
+/// Must be called from the same thread that called the function that produced the error.
+/// In case the last call was successful, it returns an empty string.
+/// (Do not use the empty string as an indication that the previous call was successful.)
+/// (Instead, use the return code of the previous call itself.)
 CM_API const char *cm_get_last_error_message();
 
-/// \brief Returns a JSON string for the default machine config.
-/// \returns A C string in case of success,
-/// remains valid until the next time this same function is called on the same thread.
+/// \brief Returns a JSON object with the default machine config as a string.
+/// \returns A C string, in case of success, guaranteed to remain valid only until the
+/// the next time this same function is called again on the same thread.
 /// In case of failure, NULL is returned and last error message is set.
-/// The returned config is not complete to run a machine yet, configurations such as
-/// ram length, ram image, flash drives and entrypoint still need to be set.
+/// \details The returned config is not sufficient to run a machine.
+/// Additional configurations, such as RAM length, RAM image, flash drives,
+/// and entrypoint are still needed.
 CM_API const char *cm_get_default_config();
 
-/// \brief Gets the address of any CSR.
-/// \param csr The CSR.
-/// \returns The address of the specified CSR.
-/// In case the CSR is invalid, UINT64_MAX is returned and last error message is set.
-CM_API uint64_t cm_get_csr_address(cm_csr csr);
+/// \brief Gets the address of any x, f, or control state register.
+/// \param xfcsr The XFCSR.
+/// \returns The address of the specified XFCSR.
+/// In case the XFCSR is invalid, UINT64_MAX is returned and last error message is set.
+CM_API uint64_t cm_get_xfcsr_address(cm_xfcsr xfcsr);
 
-// ---------------------------------
+// -----------------------------------------------------------------------------
 // Machine API functions
-// ---------------------------------
+// -----------------------------------------------------------------------------
 
 /// \brief Creates a new machine instance from configuration.
-/// \param config Machine configuration as a JSON string.
-/// \param runtime_config Machine runtime configuration as a JSON string, it can be NULL.
+/// \param config Machine configuration as a JSON object in a string.
+/// \param runtime_config Machine runtime configuration as a JSON object in a
+/// string (can be NULL).
 /// \param new_machine Receives the pointer to new machine instance.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_create(const char *config, const char *runtime_config, cm_machine **new_machine);
@@ -336,18 +340,20 @@ CM_API int32_t cm_create(const char *config, const char *runtime_config, cm_mach
 /// \brief Destroys a machine.
 /// \param m Valid pointer to the existing machine instance.
 /// \returns 0 for success, non zero code for error.
-/// \details This method doesn't deallocate and it's only relevant for remote machines.
+/// \details This method doesn't deallocate and it's only relevant for remote
+/// machines.
 CM_API int32_t cm_destroy(cm_machine *m);
 
 /// \brief Deletes a machine.
 /// \param m Valid pointer to the existing machine instance.
-/// \details The machine is deallocated and its pointer must not be used after this call.
-/// Remote machines may want to call destroy method before so it's destroyed in the remote server.
+/// \details The machine is deallocated and its pointer must not be used after this
+/// call. Remote machines may want to call destroy method before so it's destroyed in
+/// the remote server.
 CM_API void cm_delete(cm_machine *m);
 
 /// \brief Loads a new machine instance from a previously stored directory.
 /// \param dir Directory where previous machine is stored.
-/// \param runtime_config Machine runtime configuration as a JSON string, it can be NULL.
+/// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \param new_machine Receives the pointer to new machine instance.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_load(const char *dir, const char *runtime_config, cm_machine **new_machine);
@@ -356,33 +362,36 @@ CM_API int32_t cm_load(const char *dir, const char *runtime_config, cm_machine *
 /// \param m Pointer to a valid machine instance.
 /// \param dir Directory where the machine will be stored.
 /// \returns 0 for success, non zero code for error.
-/// \details The method changes machine because it updates the root hash.
-CM_API int32_t cm_store(cm_machine *m, const char *dir);
+/// \details The function refuses to store into an existing directory.
+CM_API int32_t cm_store(const cm_machine *m, const char *dir);
 
 /// \brief Replaces a memory range.
 /// \param m Pointer to a valid machine instance.
-/// \param start Memory start physical address.
-/// \param length Memory length.
-/// \param shared If true changes by the machine will be shared to the image file.
-/// \param image_filename Image file name to load into the range,
-/// in case it's NULL the memory range is cleared with zeros.
+/// \param start Range start physical address.
+/// \param length Range length in bytes.
+/// \param shared[ni] If true, changes to the range from inside the machine will be
+/// written to the associated image file in the host.
+/// \param image_filename Image file name to load into the range. If NULL, entire
+/// range is cleared with zeros.
 /// \returns 0 for success, non zero code for error.
-/// \details The machine must contain an existing memory range matching the start and length
-/// specified in new range.
+/// \details The machine must have been initialized with an existing memory range that
+/// has the same start and length specified in the new range.
 CM_API int32_t cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,
     const char *image_filename);
 
-/// \brief Gets the machine initial config.
+/// \brief Returns a JSON object with the machine config used to initialize the machine.
 /// \param m Pointer to a valid machine instance.
-/// \param config Receives the initial configuration as a JSON string,
-/// remains valid until the next time this same function is called on the same thread.
+/// \param config Receives the initial configuration as a JSON object in a
+/// string, guaranteed to remain valid only until the the next time this same function
+/// is called again on the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_get_initial_config(const cm_machine *m, const char **config);
 
-/// \brief Gets memory ranges in the machine.
+/// \brief Returns a list with all memory ranges in the machine.
 /// \param m Pointer to a valid machine instance.
-/// \param ranges Receives the memory ranges as a JSON string,
-/// remains valid until the next time this same function is called on the same thread.
+/// \param ranges Receives the memory ranges as a JSON object in a string,
+/// guaranteed to remain valid only until the the next time this same function is
+/// called again on the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_get_memory_ranges(const cm_machine *m, const char **ranges);
 
@@ -390,81 +399,82 @@ CM_API int32_t cm_get_memory_ranges(const cm_machine *m, const char **ranges);
 /// \param m Pointer to a valid machine instance.
 /// \param hash Valid pointer to cm_hash structure that receives the hash.
 /// \returns 0 for success, non zero code for error.
-/// \details The method changes machine because it updates the root hash.
-CM_API int32_t cm_get_root_hash(cm_machine *m, cm_hash *hash);
+CM_API int32_t cm_get_root_hash(const cm_machine *m, cm_hash *hash);
 
-/// \brief Obtains the proof for a node in the Merkle tree.
+/// \brief Obtains the proof for a node in the machine state Merkle tree.
 /// \param m Pointer to a valid machine instance.
 /// \param address Address of target node. Must be aligned to a 2^log2_size boundary.
-/// \param log2_size The log2 of size subtended by target node.
-/// Must be between 3 (for a word) and 64 (for the entire address space), inclusive.
-/// \param proof Receives the proof as a JSON string,
-/// remains valid until the next time this same function is called on the same thread.
+/// \param log2_size The log base 2 of the size subtended by target node.
+/// Must be between CM_TREE_LOG2_WORD_SIZE (for a word) and CM_TREE_LOG2_ROOT_SIZE
+/// (for the entire address space), inclusive.
+/// \param proof Receives the proof as a JSON object in a string, guaranteed to
+/// remain valid only until the the next time this same function is called again on
+/// the same thread.
 /// \returns 0 for success, non zero code for error.
-/// \details If the node is smaller than a page size,
-/// then it must lie entirely inside the same PMA range.
-/// The method changes machine because it updates the root hash.
-CM_API int32_t cm_get_proof(cm_machine *m, uint64_t address, int32_t log2_size, const char **proof);
+CM_API int32_t cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_size, const char **proof);
 
-// ---------------------------------
+// ------------------------------------
 // Reading and writing
+// ------------------------------------
 
-/// \brief Reads the value of a word in the machine state.
+/// \brief Reads the value of a word in the machine state, by its physical address.
 /// \param m Pointer to valid machine instance.
 /// \param address Word address (aligned to 64-bit boundary).
 /// \param val Receives word value.
 /// \returns 0 for success, non zero code for error.
-/// \details The current implementation of this function is slow.
+/// \details The current implementation of this function is slow when the word falls
+/// in a memory range mapped to a device.
 CM_API int32_t cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val);
 
-/// \brief Reads the value of a CSR.
+/// \brief Reads the value of a XFCSR.
 /// \param m Pointer to valid machine instance.
-/// \param csr CSR to read.
+/// \param xfcsr XFCSR to read.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_read_csr(const cm_machine *m, cm_csr csr, uint64_t *val);
+CM_API int32_t cm_read_xfcsr(const cm_machine *m, cm_xfcsr xfcsr, uint64_t *val);
 
-/// \brief Writes the value of a CSR.
+/// \brief Writes the value of a XFCSR.
 /// \param m Pointer to valid machine instance.
-/// \param csr CSR to write.
+/// \param xfcsr XFCSR to write.
 /// \param val Value to write.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_write_csr(cm_machine *m, cm_csr csr, uint64_t val);
+CM_API int32_t cm_write_xfcsr(cm_machine *m, cm_xfcsr xfcsr, uint64_t val);
 
-/// \brief Reads a chunk of data from the machine memory.
+/// \brief Reads a chunk of data from a machine memory range, by its physical address.
 /// \param m Pointer to valid machine instance.
 /// \param address Physical address to start reading.
 /// \param data Receives chunk of memory.
-/// \param length Size of chunk.
+/// \param length Size of chunk in bytes.
 /// \returns 0 for success, non zero code for error.
-/// \details The entire chunk must be inside the same PMA region.
-/// Moreover, this PMA must be a memory PMA, and not a device PMA.
+/// \details The entire chunk must be inside the same memory range.
 CM_API int32_t cm_read_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length);
 
-/// \brief Writes a chunk of data to the machine memory.
+/// \brief Writes a chunk of data to a machine memory range, by its physical address.
 /// \param m Pointer to valid machine instance.
 /// \param address Physical address to start writing.
 /// \param data Source for chunk of data.
-/// \param length Size of chunk.
+/// \param length Size of chunk in bytes.
 /// \returns 0 for success, non zero code for error.
 /// \details The entire chunk must be inside the same PMA region.
-/// Moreover, this PMA must be a memory PMA, and not a device PMA.
+/// Moreover, unlike cm_read_memory(), the memory range written to must not be mapped to a device.
 CM_API int32_t cm_write_memory(cm_machine *m, uint64_t address, const uint8_t *data, uint64_t length);
 
-/// \brief Reads a chunk of data from the machine virtual memory.
+/// \brief Reads a chunk of data from a machine memory range, by its virtual memory.
 /// \param m Pointer to valid machine instance.
 /// \param address Virtual address to start reading.
 /// \param data Receives chunk of memory.
-/// \param length Size of chunk.
+/// \param length Size of chunk in bytes.
 /// \returns 0 for success, non zero code for error.
+/// \detail The translation is based on the current mapping, as defined in CM_XFCSR_SATP.
 CM_API int32_t cm_read_virtual_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length);
 
-/// \brief Writes a chunk of data to the machine virtual memory.
+/// \brief Writes a chunk of data to a machine memory range, by its virtual address.
 /// \param m Pointer to valid machine instance.
 /// \param address Virtual address to start writing.
 /// \param data Source for chunk of data.
-/// \param length Size of chunk.
+/// \param length Size of chunk in bytes.
 /// \returns 0 for success, non zero code for error.
+/// \detail The translation is based on the current mapping, as defined in CM_XFCSR_SATP.
 CM_API int32_t cm_write_virtual_memory(cm_machine *m, uint64_t address, const uint8_t *data, uint64_t length);
 
 /// \brief Translates a virtual memory address to its corresponding physical memory address.
@@ -472,93 +482,98 @@ CM_API int32_t cm_write_virtual_memory(cm_machine *m, uint64_t address, const ui
 /// \param vaddr Virtual address to translate.
 /// \param paddr Receives the physical memory address.
 /// \returns 0 for success, non zero code for error.
+/// \detail The translation is based on the current mapping, as defined in CM_XFCSR_SATP.
 CM_API int32_t cm_translate_virtual_address(const cm_machine *m, uint64_t vaddr, uint64_t *paddr);
 
-/// \brief Reads the value of the mcycle register.
+/// \brief Reads the value of the CM_XFCSR_MCYCLE.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_read_mcycle(const cm_machine *m, uint64_t *val);
 
-/// \brief Reads the value of the iflags_X flag.
+/// \brief Reads the value of the X flag in CM_XFCSR_IFLAGS.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_read_iflags_X(const cm_machine *m, bool *val);
 
-/// \brief Reads the value of the iflags_Y flag.
+/// \brief Reads the value of the Y flag in CM_XFCSR_IFLAGS.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_read_iflags_Y(const cm_machine *m, bool *val);
 
-/// \brief Resets the value of the iflags_Y flag.
+/// \brief Resets the value of the Y flag in CM_XFCSR_IFLAGS.
 /// \param m Pointer to valid machine instance.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_reset_iflags_Y(cm_machine *m);
 
-/// \brief Sets the iflags_Y flag.
+/// \brief Sets the Y flag in CM_XFCSR_IFLAGS.
 /// \param m Pointer to valid machine instance.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_set_iflags_Y(cm_machine *m);
 
-/// \brief Reads the value of the iflags_H flag.
+/// \brief Reads the value of the H flag in CM_XFCSR_IFLAGS.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_read_iflags_H(const cm_machine *m, bool *val);
 
-/// \brief Reads the value of the microarchitecture cycle register.
+/// \brief Reads the value of CM_XFCSR_UARCH_CYCLE.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_read_uarch_cycle(const cm_machine *m, uint64_t *val);
 
-/// \brief Reads the value of the microarchitecture halt flag.
+/// \brief Reads the value of CM_XFCSR_UARCH_HALT_FLAG.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_read_uarch_halt_flag(const cm_machine *m, bool *val);
 
-/// \brief Sets the value of the microarchitecture halt flag.
+/// \brief Sets the value of CM_XFCSR_UARCH_HALT_FLAG.
 /// \param m Pointer to valid machine instance.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_set_uarch_halt_flag(cm_machine *m);
 
-// ---------------------------------
+// ------------------------------------
 // Rolling back
+// ------------------------------------
 
-/// \brief Saves a snapshot of the machine.
+/// \brief Replaces the current snapshot with a copy of the current machine state.
 /// \param m Pointer to a valid machine instance.
 /// \returns 0 for success, non zero code for error.
+/// \detail This function is ignored unless the machine is remote.
 CM_API int32_t cm_snapshot(cm_machine *m);
 
-/// \brief Performs commit of the machine, discarding last snapshot.
+/// \brief Delete current snapshot.
 /// \param m Pointer to a valid machine instance.
 /// \returns 0 for success, non zero code for error.
+/// \detail This function is ignored unless the machine is remote.
 CM_API int32_t cm_commit(cm_machine *m);
 
-/// \brief Performs rollback of the machine, restoring last snapshot.
+/// \brief Replaces machine state with copy in current snapshot, and then delete snapshot.
 /// \param m Pointer to a valid machine instance.
 /// \returns 0 for success, non zero code for error.
+/// \detail This function is ignored unless the machine is remote.
 CM_API int32_t cm_rollback(cm_machine *m);
 
-// ---------------------------------
+// ------------------------------------
 // Running
+// ------------------------------------
 
-/// \brief Runs the machine until mcycle reaches mcycle_end, or machine yields or machine halts.
+/// \brief Runs the machine until CM_XFCSR_MCYCLE reaches mcycle_end, machine yields, or halts.
 /// \param m Pointer to valid machine instance.
 /// \param mcycle_end End cycle value.
-/// \param break_reason Receives reason for machine run interruption when not NULL.
+/// \param break_reason Receives reason for returning (can be NULL).
 /// \returns 0 for success, non zero code for error.
 /// \details You may want to receive cmio requests depending on the run break reason.
 CM_API int32_t cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reason);
 
-/// \brief Runs the machine in the microarchitecture until the mcycle advances by one unit
-/// or the micro cycles counter reaches uarch_cycle_end.
+/// \brief Runs the machine microarchitecture until CM_XFCSR_UARCH_CYCLE reaches uarch_cycle_end or it halts.
 /// \param m Pointer to valid machine instance.
 /// \param uarch_cycle_end End micro cycle value.
-/// \param uarch_break_reason Receives reason for machine microarchitecture run interruption when not NULL.
+/// \param uarch_break_reason Receives reason for returning (can be NULL).
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_break_reason *uarch_break_reason);
 
@@ -593,13 +608,14 @@ CM_API int32_t cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16
 /// where the reason is either accepted or a GIO request, may fail otherwise.
 CM_API int32_t cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length);
 
-// ---------------------------------
+// ------------------------------------
 // Logging
+// ------------------------------------
 
 /// \brief Runs the machine in the microarchitecture for one micro cycle logging all accesses to the state.
 /// \param m Pointer to valid machine instance.
 /// \param log_type Type of access log to generate.
-/// \param log Receives the state access log as a JSON string,
+/// \param log Receives the state access log as a JSON object in a string,
 /// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **log);
@@ -607,7 +623,7 @@ CM_API int32_t cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **l
 /// \brief Resets the entire microarchitecture state to pristine values logging all accesses to the state.
 /// \param m Pointer to valid machine instance.
 /// \param log_type Type of access log to generate.
-/// \param log Receives the state access log as a JSON string,
+/// \param log Receives the state access log as a JSON object in a string,
 /// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char **log);
@@ -618,50 +634,49 @@ CM_API int32_t cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char **
 /// \param data Response data to send.
 /// \param length Length of response data.
 /// \param log_type Type of access log to generate.
-/// \param log Receives the state access log as a JSON string,
+/// \param log Receives the state access log as a JSON object in a string,
 /// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
     int32_t log_type, const char **log);
 
-// ---------------------------------
+// ------------------------------------
 // Verifying
+// ------------------------------------
 
-/// \brief Checks the validity of a state transition for one micro cycle.
-/// \param root_hash_before State hash before load.
-/// \param log State access log to be verified as a JSON string.
-/// \param root_hash_after State hash after load.
+/// \brief Checks the validity of a state transition for one microarchitecture cycle.
+/// \param root_hash_before State hash before step.
+/// \param log State access log to be verified as a JSON object in a string.
+/// \param root_hash_after State hash after step.
 /// \returns 0 for success, non zero code for error.
-/// \details In case both root_hash_before and root_hash_after are NULL,
-/// then it just verifies the access log integrity.
+/// \details If both root_hash_before and root_hash_after are NULL, no proofs are taken into account.
 CM_API int32_t cm_verify_step_uarch(const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
 
-/// \brief Checks the validity of a state transition produced by a microarchitecture state reset.
-/// \param root_hash_before State hash before load.
-/// \param log State access log to be verified as a JSON string.
-/// \param root_hash_after State hash after load.
+/// \brief Checks the validity of a state transition produced by a microarchitecture reset.
+/// \param root_hash_before State hash before reset.
+/// \param log State access log to be verified as a JSON object in a string.
+/// \param root_hash_after State hash after reset.
 /// \returns 0 for success, non zero code for error.
-/// \details In case both root_hash_before and root_hash_after are NULL,
-/// then it just verifies the access log integrity.
+/// \details If both root_hash_before and root_hash_after are NULL, no proofs are taken into account.
 CM_API int32_t cm_verify_reset_uarch(const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
 
 /// \brief Checks the validity of state transitions produced by a send cmio response.
 /// \param reason Reason for sending the response.
 /// \param data The response sent when the log was generated.
 /// \param length Length of response.
-/// \param root_hash_before State hash before load.
-/// \param log State access log to be verified as a JSON string.
-/// \param root_hash_after State hash after load.
+/// \param root_hash_before State hash before response.
+/// \param log State access log to be verified as a JSON object in a string.
+/// \param root_hash_after State hash after response.
 /// \returns 0 for success, non zero code for error.
-/// \details In case both root_hash_before and root_hash_after are NULL,
-/// then it just verifies the access log integrity.
+/// \details If both root_hash_before and root_hash_after are NULL, no proofs are taken into account.
 CM_API int32_t cm_verify_send_cmio_response(uint16_t reason, const uint8_t *data, uint64_t length,
     const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
 
-// ---------------------------------
+// ------------------------------------
 // Integrity checking
+// ------------------------------------
 
-/// \brief Verifies integrity of Merkle tree.
+/// \brief Verifies integrity of Merkle tree against current machine state.
 /// \param m Pointer to valid machine instance.
 /// \param result True if tree is self-consistent, false otherwise.
 /// \returns 0 for success, non zero code for error.

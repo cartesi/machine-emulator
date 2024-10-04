@@ -285,42 +285,42 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
 
     // General purpose registers
     for (int i = 1; i < X_REG_COUNT; i++) {
-        write_x(i, m_c.processor.x[i]);
+        write_reg(static_cast<reg>(reg::x0 + i), m_c.processor.x[i]);
     }
 
     // Floating-point registers
     for (int i = 0; i < F_REG_COUNT; i++) {
-        write_f(i, m_c.processor.f[i]);
+        write_reg(static_cast<reg>(reg::f0 + i), m_c.processor.f[i]);
     }
 
-    write_pc(m_c.processor.pc);
-    write_fcsr(m_c.processor.fcsr);
-    write_mcycle(m_c.processor.mcycle);
-    write_icycleinstret(m_c.processor.icycleinstret);
-    write_mstatus(m_c.processor.mstatus);
-    write_mtvec(m_c.processor.mtvec);
-    write_mscratch(m_c.processor.mscratch);
-    write_mepc(m_c.processor.mepc);
-    write_mcause(m_c.processor.mcause);
-    write_mtval(m_c.processor.mtval);
-    write_misa(m_c.processor.misa);
-    write_mie(m_c.processor.mie);
-    write_mip(m_c.processor.mip);
-    write_medeleg(m_c.processor.medeleg);
-    write_mideleg(m_c.processor.mideleg);
-    write_mcounteren(m_c.processor.mcounteren);
-    write_menvcfg(m_c.processor.menvcfg);
-    write_stvec(m_c.processor.stvec);
-    write_sscratch(m_c.processor.sscratch);
-    write_sepc(m_c.processor.sepc);
-    write_scause(m_c.processor.scause);
-    write_stval(m_c.processor.stval);
-    write_satp(m_c.processor.satp);
-    write_scounteren(m_c.processor.scounteren);
-    write_senvcfg(m_c.processor.senvcfg);
-    write_ilrsc(m_c.processor.ilrsc);
-    write_iflags(m_c.processor.iflags);
-    write_iunrep(m_c.processor.iunrep);
+    write_reg(reg::pc, m_c.processor.pc);
+    write_reg(reg::fcsr, m_c.processor.fcsr);
+    write_reg(reg::mcycle, m_c.processor.mcycle);
+    write_reg(reg::icycleinstret, m_c.processor.icycleinstret);
+    write_reg(reg::mstatus, m_c.processor.mstatus);
+    write_reg(reg::mtvec, m_c.processor.mtvec);
+    write_reg(reg::mscratch, m_c.processor.mscratch);
+    write_reg(reg::mepc, m_c.processor.mepc);
+    write_reg(reg::mcause, m_c.processor.mcause);
+    write_reg(reg::mtval, m_c.processor.mtval);
+    write_reg(reg::misa, m_c.processor.misa);
+    write_reg(reg::mie, m_c.processor.mie);
+    write_reg(reg::mip, m_c.processor.mip);
+    write_reg(reg::medeleg, m_c.processor.medeleg);
+    write_reg(reg::mideleg, m_c.processor.mideleg);
+    write_reg(reg::mcounteren, m_c.processor.mcounteren);
+    write_reg(reg::menvcfg, m_c.processor.menvcfg);
+    write_reg(reg::stvec, m_c.processor.stvec);
+    write_reg(reg::sscratch, m_c.processor.sscratch);
+    write_reg(reg::sepc, m_c.processor.sepc);
+    write_reg(reg::scause, m_c.processor.scause);
+    write_reg(reg::stval, m_c.processor.stval);
+    write_reg(reg::satp, m_c.processor.satp);
+    write_reg(reg::scounteren, m_c.processor.scounteren);
+    write_reg(reg::senvcfg, m_c.processor.senvcfg);
+    write_reg(reg::ilrsc, m_c.processor.ilrsc);
+    write_reg(reg::iflags, m_c.processor.iflags);
+    write_reg(reg::iunrep, m_c.processor.iunrep);
 
     // Register RAM
     if (m_c.ram.image_filename.empty()) {
@@ -372,28 +372,28 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     register_pma_entry(make_htif_pma_entry(PMA_HTIF_START, PMA_HTIF_LENGTH, &m_r.htif));
 
     // Copy HTIF state to from config to machine
-    write_htif_tohost(m_c.htif.tohost);
-    write_htif_fromhost(m_c.htif.fromhost);
+    write_reg(reg::htif_tohost, m_c.htif.tohost);
+    write_reg(reg::htif_fromhost, m_c.htif.fromhost);
     // Only command in halt device is command 0 and it is always available
     const uint64_t htif_ihalt = static_cast<uint64_t>(true) << HTIF_HALT_CMD_HALT;
-    write_htif_ihalt(htif_ihalt);
+    write_reg(reg::htif_ihalt, htif_ihalt);
     const uint64_t htif_iconsole = static_cast<uint64_t>(m_c.htif.console_getchar) << HTIF_CONSOLE_CMD_GETCHAR |
         static_cast<uint64_t>(true) << HTIF_CONSOLE_CMD_PUTCHAR;
-    write_htif_iconsole(htif_iconsole);
+    write_reg(reg::htif_iconsole, htif_iconsole);
     const uint64_t htif_iyield = static_cast<uint64_t>(m_c.htif.yield_manual) << HTIF_YIELD_CMD_MANUAL |
         static_cast<uint64_t>(m_c.htif.yield_automatic) << HTIF_YIELD_CMD_AUTOMATIC;
-    write_htif_iyield(htif_iyield);
+    write_reg(reg::htif_iyield, htif_iyield);
 
     // Register CLINT device
     register_pma_entry(make_clint_pma_entry(PMA_CLINT_START, PMA_CLINT_LENGTH));
     // Copy CLINT state to from config to machine
-    write_clint_mtimecmp(m_c.clint.mtimecmp);
+    write_reg(reg::clint_mtimecmp, m_c.clint.mtimecmp);
 
     // Register PLIC device
     register_pma_entry(make_plic_pma_entry(PMA_PLIC_START, PMA_PLIC_LENGTH));
     // Copy PLIC state from config to machine
-    write_plic_girqpend(m_c.plic.girqpend);
-    write_plic_girqsrvd(m_c.plic.girqsrvd);
+    write_reg(reg::plic_girqpend, m_c.plic.girqpend);
+    write_reg(reg::plic_girqsrvd, m_c.plic.girqsrvd);
 
     // Register TLB device
     register_pma_entry(make_shadow_tlb_pma_entry(PMA_SHADOW_TLB_START, PMA_SHADOW_TLB_LENGTH));
@@ -580,65 +580,65 @@ bool machine::has_virtio_console() const {
 }
 
 bool machine::has_htif_console() const {
-    return static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_CMD_GETCHAR));
+    return static_cast<bool>(read_reg(reg::htif_iconsole) & (1 << HTIF_CONSOLE_CMD_GETCHAR));
 }
 
 machine_config machine::get_serialization_config(void) const {
-    if (read_iunrep()) {
+    if (read_reg(reg::iunrep)) {
         throw std::runtime_error{"cannot serialize configuration of unreproducible machines"};
     }
     // Initialize with copy of original config
     machine_config c = m_c;
     // Copy current processor state to config
     for (int i = 1; i < X_REG_COUNT; ++i) {
-        c.processor.x[i] = read_x(i);
+        c.processor.x[i] = read_reg(static_cast<reg>(reg::x0 + i));
     }
     for (int i = 0; i < F_REG_COUNT; ++i) {
-        c.processor.f[i] = read_f(i);
+        c.processor.f[i] = read_reg(static_cast<reg>(reg::f0 + i));
     }
-    c.processor.pc = read_pc();
-    c.processor.fcsr = read_fcsr();
-    c.processor.mvendorid = read_mvendorid();
-    c.processor.marchid = read_marchid();
-    c.processor.mimpid = read_mimpid();
-    c.processor.mcycle = read_mcycle();
-    c.processor.icycleinstret = read_icycleinstret();
-    c.processor.mstatus = read_mstatus();
-    c.processor.mtvec = read_mtvec();
-    c.processor.mscratch = read_mscratch();
-    c.processor.mepc = read_mepc();
-    c.processor.mcause = read_mcause();
-    c.processor.mtval = read_mtval();
-    c.processor.misa = read_misa();
-    c.processor.mie = read_mie();
-    c.processor.mip = read_mip();
-    c.processor.medeleg = read_medeleg();
-    c.processor.mideleg = read_mideleg();
-    c.processor.mcounteren = read_mcounteren();
-    c.processor.menvcfg = read_menvcfg();
-    c.processor.stvec = read_stvec();
-    c.processor.sscratch = read_sscratch();
-    c.processor.sepc = read_sepc();
-    c.processor.scause = read_scause();
-    c.processor.stval = read_stval();
-    c.processor.satp = read_satp();
-    c.processor.scounteren = read_scounteren();
-    c.processor.senvcfg = read_senvcfg();
-    c.processor.ilrsc = read_ilrsc();
-    c.processor.iflags = read_iflags();
-    c.processor.iunrep = read_iunrep();
+    c.processor.pc = read_reg(reg::pc);
+    c.processor.fcsr = read_reg(reg::fcsr);
+    c.processor.mvendorid = read_reg(reg::mvendorid);
+    c.processor.marchid = read_reg(reg::marchid);
+    c.processor.mimpid = read_reg(reg::mimpid);
+    c.processor.mcycle = read_reg(reg::mcycle);
+    c.processor.icycleinstret = read_reg(reg::icycleinstret);
+    c.processor.mstatus = read_reg(reg::mstatus);
+    c.processor.mtvec = read_reg(reg::mtvec);
+    c.processor.mscratch = read_reg(reg::mscratch);
+    c.processor.mepc = read_reg(reg::mepc);
+    c.processor.mcause = read_reg(reg::mcause);
+    c.processor.mtval = read_reg(reg::mtval);
+    c.processor.misa = read_reg(reg::misa);
+    c.processor.mie = read_reg(reg::mie);
+    c.processor.mip = read_reg(reg::mip);
+    c.processor.medeleg = read_reg(reg::medeleg);
+    c.processor.mideleg = read_reg(reg::mideleg);
+    c.processor.mcounteren = read_reg(reg::mcounteren);
+    c.processor.menvcfg = read_reg(reg::menvcfg);
+    c.processor.stvec = read_reg(reg::stvec);
+    c.processor.sscratch = read_reg(reg::sscratch);
+    c.processor.sepc = read_reg(reg::sepc);
+    c.processor.scause = read_reg(reg::scause);
+    c.processor.stval = read_reg(reg::stval);
+    c.processor.satp = read_reg(reg::satp);
+    c.processor.scounteren = read_reg(reg::scounteren);
+    c.processor.senvcfg = read_reg(reg::senvcfg);
+    c.processor.ilrsc = read_reg(reg::ilrsc);
+    c.processor.iflags = read_reg(reg::iflags);
+    c.processor.iunrep = read_reg(reg::iunrep);
     // Copy current CLINT state to config
-    c.clint.mtimecmp = read_clint_mtimecmp();
+    c.clint.mtimecmp = read_reg(reg::clint_mtimecmp);
     // Copy current PLIC state to config
-    c.plic.girqpend = read_plic_girqpend();
-    c.plic.girqsrvd = read_plic_girqsrvd();
+    c.plic.girqpend = read_reg(reg::plic_girqpend);
+    c.plic.girqsrvd = read_reg(reg::plic_girqsrvd);
     // Copy current HTIF state to config
-    c.htif.tohost = read_htif_tohost();
-    c.htif.fromhost = read_htif_fromhost();
-    // c.htif.halt = read_htif_ihalt(); // hard-coded to true
-    c.htif.console_getchar = static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_CMD_GETCHAR));
-    c.htif.yield_manual = static_cast<bool>(read_htif_iyield() & (1 << HTIF_YIELD_CMD_MANUAL));
-    c.htif.yield_automatic = static_cast<bool>(read_htif_iyield() & (1 << HTIF_YIELD_CMD_AUTOMATIC));
+    c.htif.tohost = read_reg(reg::htif_tohost);
+    c.htif.fromhost = read_reg(reg::htif_fromhost);
+    // c.htif.halt = read_reg(reg::htif_ihalt); // hard-coded to true
+    c.htif.console_getchar = static_cast<bool>(read_reg(reg::htif_iconsole) & (1 << HTIF_CONSOLE_CMD_GETCHAR));
+    c.htif.yield_manual = static_cast<bool>(read_reg(reg::htif_iyield) & (1 << HTIF_YIELD_CMD_MANUAL));
+    c.htif.yield_automatic = static_cast<bool>(read_reg(reg::htif_iyield) & (1 << HTIF_YIELD_CMD_AUTOMATIC));
     // Ensure we don't mess with DTB by writing the original bootargs
     // over the potentially modified memory region we serialize
     c.dtb.bootargs.clear();
@@ -653,11 +653,11 @@ machine_config machine::get_serialization_config(void) const {
     }
     c.cmio.rx_buffer.image_filename.clear();
     c.cmio.tx_buffer.image_filename.clear();
-    c.uarch.processor.cycle = read_uarch_cycle();
-    c.uarch.processor.halt_flag = read_uarch_halt_flag();
-    c.uarch.processor.pc = read_uarch_pc();
+    c.uarch.processor.cycle = read_reg(reg::uarch_cycle);
+    c.uarch.processor.halt_flag = read_reg(reg::uarch_halt_flag);
+    c.uarch.processor.pc = read_reg(reg::uarch_pc);
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
-        c.uarch.processor.x[i] = read_uarch_x(i);
+        c.uarch.processor.x[i] = read_reg(static_cast<reg>(reg::uarch_x0 + i));
     }
     return c;
 }
@@ -744,7 +744,7 @@ static inline T &deref(T *t) {
 }
 
 void machine::store_pmas(const machine_config &c, const std::string &dir) const {
-    if (read_iunrep()) {
+    if (read_reg(reg::iunrep)) {
         throw std::runtime_error{"cannot store PMAs of unreproducible machines"};
     }
     store_memory_pma(find_pma_entry<uint64_t>(PMA_DTB_START), dir);
@@ -840,692 +840,310 @@ machine::~machine() {
 #endif
 }
 
-uint64_t machine::read_x(int i) const {
-    return m_s.x[i];
-}
-
-void machine::write_x(int i, uint64_t val) {
-    if (i > 0) {
-        m_s.x[i] = val;
-    }
-}
-
-uint64_t machine::read_f(int i) const {
-    return m_s.f[i];
-}
-
-void machine::write_f(int i, uint64_t val) {
-    m_s.f[i] = val;
-}
-
-uint64_t machine::read_pc(void) const {
-    return m_s.pc;
-}
-
-void machine::write_pc(uint64_t val) {
-    m_s.pc = val;
-}
-
-uint64_t machine::read_fcsr(void) const {
-    return m_s.fcsr;
-}
-
-void machine::write_fcsr(uint64_t val) {
-    m_s.fcsr = val;
-}
-
-uint64_t machine::read_mvendorid(void) const { // NOLINT(readability-convert-member-functions-to-static)
-    return MVENDORID_INIT;
-}
-
-uint64_t machine::read_marchid(void) const { // NOLINT(readability-convert-member-functions-to-static)
-    return MARCHID_INIT;
-}
-
-uint64_t machine::read_mimpid(void) const { // NOLINT(readability-convert-member-functions-to-static)
-    return MIMPID_INIT;
-}
-
-uint64_t machine::read_mcycle(void) const {
-    return m_s.mcycle;
-}
-
-void machine::write_mcycle(uint64_t val) {
-    m_s.mcycle = val;
-}
-
-uint64_t machine::read_icycleinstret(void) const {
-    return m_s.icycleinstret;
-}
-
-void machine::write_icycleinstret(uint64_t val) {
-    m_s.icycleinstret = val;
-}
-
-uint64_t machine::read_mstatus(void) const {
-    return m_s.mstatus;
-}
-
-void machine::write_mstatus(uint64_t val) {
-    m_s.mstatus = val;
-}
-
-uint64_t machine::read_mtvec(void) const {
-    return m_s.mtvec;
-}
-
-void machine::write_mtvec(uint64_t val) {
-    m_s.mtvec = val;
-}
-
-uint64_t machine::read_mscratch(void) const {
-    return m_s.mscratch;
-}
-
-void machine::write_mscratch(uint64_t val) {
-    m_s.mscratch = val;
-}
-
-uint64_t machine::read_mepc(void) const {
-    return m_s.mepc;
-}
-
-void machine::write_mepc(uint64_t val) {
-    m_s.mepc = val;
-}
-
-uint64_t machine::read_mcause(void) const {
-    return m_s.mcause;
-}
-
-void machine::write_mcause(uint64_t val) {
-    m_s.mcause = val;
-}
-
-uint64_t machine::read_mtval(void) const {
-    return m_s.mtval;
-}
-
-void machine::write_mtval(uint64_t val) {
-    m_s.mtval = val;
-}
-
-uint64_t machine::read_misa(void) const {
-    return m_s.misa;
-}
-
-void machine::write_misa(uint64_t val) {
-    m_s.misa = val;
-}
-
-uint64_t machine::read_mip(void) const {
-    return m_s.mip;
-}
-
-void machine::write_mip(uint64_t val) {
-    m_s.mip = val;
-}
-
-uint64_t machine::read_mie(void) const {
-    return m_s.mie;
-}
-
-void machine::write_mie(uint64_t val) {
-    m_s.mie = val;
-}
-
-uint64_t machine::read_medeleg(void) const {
-    return m_s.medeleg;
-}
-
-void machine::write_medeleg(uint64_t val) {
-    m_s.medeleg = val;
-}
-
-uint64_t machine::read_mideleg(void) const {
-    return m_s.mideleg;
-}
-
-void machine::write_mideleg(uint64_t val) {
-    m_s.mideleg = val;
-}
-
-uint64_t machine::read_mcounteren(void) const {
-    return m_s.mcounteren;
-}
-
-void machine::write_mcounteren(uint64_t val) {
-    m_s.mcounteren = val;
-}
-
-uint64_t machine::read_menvcfg(void) const {
-    return m_s.menvcfg;
-}
-
-void machine::write_menvcfg(uint64_t val) {
-    m_s.menvcfg = val;
-}
-
-uint64_t machine::read_stvec(void) const {
-    return m_s.stvec;
-}
-
-void machine::write_stvec(uint64_t val) {
-    m_s.stvec = val;
-}
-
-uint64_t machine::read_sscratch(void) const {
-    return m_s.sscratch;
-}
-
-void machine::write_sscratch(uint64_t val) {
-    m_s.sscratch = val;
-}
-
-uint64_t machine::read_sepc(void) const {
-    return m_s.sepc;
-}
-
-void machine::write_sepc(uint64_t val) {
-    m_s.sepc = val;
-}
-
-uint64_t machine::read_scause(void) const {
-    return m_s.scause;
-}
-
-void machine::write_scause(uint64_t val) {
-    m_s.scause = val;
-}
-
-uint64_t machine::read_stval(void) const {
-    return m_s.stval;
-}
-
-void machine::write_stval(uint64_t val) {
-    m_s.stval = val;
-}
-
-uint64_t machine::read_satp(void) const {
-    return m_s.satp;
-}
-
-void machine::write_satp(uint64_t val) {
-    m_s.satp = val;
-}
-
-uint64_t machine::read_scounteren(void) const {
-    return m_s.scounteren;
-}
-
-void machine::write_scounteren(uint64_t val) {
-    m_s.scounteren = val;
-}
-
-uint64_t machine::read_senvcfg(void) const {
-    return m_s.senvcfg;
-}
-
-void machine::write_senvcfg(uint64_t val) {
-    m_s.senvcfg = val;
-}
-
-uint64_t machine::read_ilrsc(void) const {
-    return m_s.ilrsc;
-}
-
-void machine::write_ilrsc(uint64_t val) {
-    m_s.ilrsc = val;
-}
-
-uint64_t machine::read_iflags(void) const {
-    return m_s.read_iflags();
-}
-
-void machine::write_iflags(uint64_t val) {
-    m_s.write_iflags(val);
-}
-
-uint64_t machine::read_iunrep(void) const {
-    return m_s.iunrep;
-}
-
-void machine::write_iunrep(uint64_t val) {
-    m_s.iunrep = val;
-}
-
-uint64_t machine::read_htif_tohost(void) const {
-    return m_s.htif.tohost;
-}
-
-uint64_t machine::read_htif_tohost_dev(void) const {
-    return HTIF_DEV_FIELD(m_s.htif.tohost);
-}
-
-uint64_t machine::read_htif_tohost_cmd(void) const {
-    return HTIF_CMD_FIELD(m_s.htif.tohost);
-}
-
-uint64_t machine::read_htif_tohost_reason(void) const {
-    return HTIF_REASON_FIELD(m_s.htif.tohost);
-}
-
-uint64_t machine::read_htif_tohost_data(void) const {
-    return HTIF_DATA_FIELD(m_s.htif.tohost);
-}
-
-void machine::write_htif_tohost(uint64_t val) {
-    m_s.htif.tohost = val;
-}
-
-void machine::write_htif_tohost_dev(uint64_t val) {
-    m_s.htif.tohost = HTIF_REPLACE_DEV(m_s.htif.tohost, val);
-}
-
-void machine::write_htif_tohost_cmd(uint64_t val) {
-    m_s.htif.tohost = HTIF_REPLACE_CMD(m_s.htif.tohost, val);
-}
-
-void machine::write_htif_tohost_reason(uint64_t val) {
-    m_s.htif.tohost = HTIF_REPLACE_REASON(m_s.htif.tohost, val);
-}
-
-void machine::write_htif_tohost_data(uint64_t val) {
-    m_s.htif.tohost = HTIF_REPLACE_DATA(m_s.htif.tohost, val);
-}
-
-uint64_t machine::read_htif_fromhost(void) const {
-    return m_s.htif.fromhost;
-}
-
-uint64_t machine::read_htif_fromhost_dev(void) const {
-    return HTIF_DEV_FIELD(m_s.htif.fromhost);
-}
-
-uint64_t machine::read_htif_fromhost_cmd(void) const {
-    return HTIF_CMD_FIELD(m_s.htif.fromhost);
-}
-
-uint64_t machine::read_htif_fromhost_reason(void) const {
-    return HTIF_REASON_FIELD(m_s.htif.fromhost);
-}
-
-uint64_t machine::read_htif_fromhost_data(void) const {
-    return HTIF_DATA_FIELD(m_s.htif.fromhost);
-}
-
-void machine::write_htif_fromhost(uint64_t val) {
-    m_s.htif.fromhost = val;
-}
-
-void machine::write_htif_fromhost_dev(uint64_t val) {
-    m_s.htif.fromhost = HTIF_REPLACE_DEV(m_s.htif.fromhost, val);
-}
-
-void machine::write_htif_fromhost_cmd(uint64_t val) {
-    m_s.htif.fromhost = HTIF_REPLACE_CMD(m_s.htif.fromhost, val);
-}
-
-void machine::write_htif_fromhost_reason(uint64_t val) {
-    m_s.htif.fromhost = HTIF_REPLACE_REASON(m_s.htif.fromhost, val);
-}
-
-void machine::write_htif_fromhost_data(uint64_t val) {
-    m_s.htif.fromhost = HTIF_REPLACE_DATA(m_s.htif.fromhost, val);
-}
-
-uint64_t machine::read_htif_ihalt(void) const {
-    return m_s.htif.ihalt;
-}
-
-void machine::write_htif_ihalt(uint64_t val) {
-    m_s.htif.ihalt = val;
-}
-
-uint64_t machine::read_htif_iconsole(void) const {
-    return m_s.htif.iconsole;
-}
-
-void machine::write_htif_iconsole(uint64_t val) {
-    m_s.htif.iconsole = val;
-}
-
-uint64_t machine::read_htif_iyield(void) const {
-    return m_s.htif.iyield;
-}
-
-void machine::write_htif_iyield(uint64_t val) {
-    m_s.htif.iyield = val;
-}
-
-uint64_t machine::read_clint_mtimecmp(void) const {
-    return m_s.clint.mtimecmp;
-}
-
-void machine::write_clint_mtimecmp(uint64_t val) {
-    m_s.clint.mtimecmp = val;
-}
-
-uint64_t machine::read_plic_girqpend(void) const {
-    return m_s.plic.girqpend;
-}
-
-void machine::write_plic_girqpend(uint64_t val) {
-    m_s.plic.girqpend = val;
-}
-
-uint64_t machine::read_plic_girqsrvd(void) const {
-    return m_s.plic.girqsrvd;
-}
-
-void machine::write_plic_girqsrvd(uint64_t val) {
-    m_s.plic.girqsrvd = val;
-}
-
 uint64_t machine::read_reg(reg r) const {
     switch (r) {
         case reg::x0:
-            return read_x(0);
+            return m_s.x[0];
         case reg::x1:
-            return read_x(1);
+            return m_s.x[1];
         case reg::x2:
-            return read_x(2);
+            return m_s.x[2];
         case reg::x3:
-            return read_x(3);
+            return m_s.x[3];
         case reg::x4:
-            return read_x(4);
+            return m_s.x[4];
         case reg::x5:
-            return read_x(5);
+            return m_s.x[5];
         case reg::x6:
-            return read_x(6);
+            return m_s.x[6];
         case reg::x7:
-            return read_x(7);
+            return m_s.x[7];
         case reg::x8:
-            return read_x(8);
+            return m_s.x[8];
         case reg::x9:
-            return read_x(9);
+            return m_s.x[9];
         case reg::x10:
-            return read_x(10);
+            return m_s.x[10];
         case reg::x11:
-            return read_x(11);
+            return m_s.x[11];
         case reg::x12:
-            return read_x(12);
+            return m_s.x[12];
         case reg::x13:
-            return read_x(13);
+            return m_s.x[13];
         case reg::x14:
-            return read_x(14);
+            return m_s.x[14];
         case reg::x15:
-            return read_x(15);
+            return m_s.x[15];
         case reg::x16:
-            return read_x(16);
+            return m_s.x[16];
         case reg::x17:
-            return read_x(17);
+            return m_s.x[17];
         case reg::x18:
-            return read_x(18);
+            return m_s.x[18];
         case reg::x19:
-            return read_x(19);
+            return m_s.x[19];
         case reg::x20:
-            return read_x(20);
+            return m_s.x[20];
         case reg::x21:
-            return read_x(21);
+            return m_s.x[21];
         case reg::x22:
-            return read_x(22);
+            return m_s.x[22];
         case reg::x23:
-            return read_x(23);
+            return m_s.x[23];
         case reg::x24:
-            return read_x(24);
+            return m_s.x[24];
         case reg::x25:
-            return read_x(25);
+            return m_s.x[25];
         case reg::x26:
-            return read_x(26);
+            return m_s.x[26];
         case reg::x27:
-            return read_x(27);
+            return m_s.x[27];
         case reg::x28:
-            return read_x(28);
+            return m_s.x[28];
         case reg::x29:
-            return read_x(29);
+            return m_s.x[29];
         case reg::x30:
-            return read_x(30);
+            return m_s.x[30];
         case reg::x31:
-            return read_x(31);
+            return m_s.x[31];
         case reg::f0:
-            return read_f(0);
+            return m_s.f[0];
         case reg::f1:
-            return read_f(1);
+            return m_s.f[1];
         case reg::f2:
-            return read_f(2);
+            return m_s.f[2];
         case reg::f3:
-            return read_f(3);
+            return m_s.f[3];
         case reg::f4:
-            return read_f(4);
+            return m_s.f[4];
         case reg::f5:
-            return read_f(5);
+            return m_s.f[5];
         case reg::f6:
-            return read_f(6);
+            return m_s.f[6];
         case reg::f7:
-            return read_f(7);
+            return m_s.f[7];
         case reg::f8:
-            return read_f(8);
+            return m_s.f[8];
         case reg::f9:
-            return read_f(9);
+            return m_s.f[9];
         case reg::f10:
-            return read_f(10);
+            return m_s.f[10];
         case reg::f11:
-            return read_f(11);
+            return m_s.f[11];
         case reg::f12:
-            return read_f(12);
+            return m_s.f[12];
         case reg::f13:
-            return read_f(13);
+            return m_s.f[13];
         case reg::f14:
-            return read_f(14);
+            return m_s.f[14];
         case reg::f15:
-            return read_f(15);
+            return m_s.f[15];
         case reg::f16:
-            return read_f(16);
+            return m_s.f[16];
         case reg::f17:
-            return read_f(17);
+            return m_s.f[17];
         case reg::f18:
-            return read_f(18);
+            return m_s.f[18];
         case reg::f19:
-            return read_f(19);
+            return m_s.f[19];
         case reg::f20:
-            return read_f(20);
+            return m_s.f[20];
         case reg::f21:
-            return read_f(21);
+            return m_s.f[21];
         case reg::f22:
-            return read_f(22);
+            return m_s.f[22];
         case reg::f23:
-            return read_f(23);
+            return m_s.f[23];
         case reg::f24:
-            return read_f(24);
+            return m_s.f[24];
         case reg::f25:
-            return read_f(25);
+            return m_s.f[25];
         case reg::f26:
-            return read_f(26);
+            return m_s.f[26];
         case reg::f27:
-            return read_f(27);
+            return m_s.f[27];
         case reg::f28:
-            return read_f(28);
+            return m_s.f[28];
         case reg::f29:
-            return read_f(29);
+            return m_s.f[29];
         case reg::f30:
-            return read_f(30);
+            return m_s.f[30];
         case reg::f31:
-            return read_f(31);
+            return m_s.f[31];
         case reg::pc:
-            return read_pc();
+            return m_s.pc;
         case reg::fcsr:
-            return read_fcsr();
+            return m_s.fcsr;
         case reg::mvendorid:
-            return read_mvendorid();
+            return MVENDORID_INIT;
         case reg::marchid:
-            return read_marchid();
+            return MARCHID_INIT;
         case reg::mimpid:
-            return read_mimpid();
+            return MIMPID_INIT;
         case reg::mcycle:
-            return read_mcycle();
+            return m_s.mcycle;
         case reg::icycleinstret:
-            return read_icycleinstret();
+            return m_s.icycleinstret;
         case reg::mstatus:
-            return read_mstatus();
+            return m_s.mstatus;
         case reg::mtvec:
-            return read_mtvec();
+            return m_s.mtvec;
         case reg::mscratch:
-            return read_mscratch();
+            return m_s.mscratch;
         case reg::mepc:
-            return read_mepc();
+            return m_s.mepc;
         case reg::mcause:
-            return read_mcause();
+            return m_s.mcause;
         case reg::mtval:
-            return read_mtval();
+            return m_s.mtval;
         case reg::misa:
-            return read_misa();
+            return m_s.misa;
         case reg::mie:
-            return read_mie();
+            return m_s.mie;
         case reg::mip:
-            return read_mip();
+            return m_s.mip;
         case reg::medeleg:
-            return read_medeleg();
+            return m_s.medeleg;
         case reg::mideleg:
-            return read_mideleg();
+            return m_s.mideleg;
         case reg::mcounteren:
-            return read_mcounteren();
+            return m_s.mcounteren;
         case reg::menvcfg:
-            return read_menvcfg();
+            return m_s.menvcfg;
         case reg::stvec:
-            return read_stvec();
+            return m_s.stvec;
         case reg::sscratch:
-            return read_sscratch();
+            return m_s.sscratch;
         case reg::sepc:
-            return read_sepc();
+            return m_s.sepc;
         case reg::scause:
-            return read_scause();
+            return m_s.scause;
         case reg::stval:
-            return read_stval();
+            return m_s.stval;
         case reg::satp:
-            return read_satp();
+            return m_s.satp;
         case reg::scounteren:
-            return read_scounteren();
+            return m_s.scounteren;
         case reg::senvcfg:
-            return read_senvcfg();
+            return m_s.senvcfg;
         case reg::ilrsc:
-            return read_ilrsc();
+            return m_s.ilrsc;
         case reg::iflags:
-            return read_iflags();
+            return m_s.read_iflags();
         case reg::iunrep:
-            return read_iunrep();
+            return m_s.iunrep;
         case reg::clint_mtimecmp:
-            return read_clint_mtimecmp();
+            return m_s.clint.mtimecmp;
         case reg::plic_girqpend:
-            return read_plic_girqpend();
+            return m_s.plic.girqpend;
         case reg::plic_girqsrvd:
-            return read_plic_girqsrvd();
+            return m_s.plic.girqsrvd;
         case reg::htif_tohost:
-            return read_htif_tohost();
+            return m_s.htif.tohost;
         case reg::htif_fromhost:
-            return read_htif_fromhost();
+            return m_s.htif.fromhost;
         case reg::htif_ihalt:
-            return read_htif_ihalt();
+            return m_s.htif.ihalt;
         case reg::htif_iconsole:
-            return read_htif_iconsole();
+            return m_s.htif.iconsole;
         case reg::htif_iyield:
-            return read_htif_iyield();
+            return m_s.htif.iyield;
         case reg::uarch_x0:
-            return read_uarch_x(0);
+            return m_uarch.get_state().x[0];
         case reg::uarch_x1:
-            return read_uarch_x(1);
+            return m_uarch.get_state().x[1];
         case reg::uarch_x2:
-            return read_uarch_x(2);
+            return m_uarch.get_state().x[2];
         case reg::uarch_x3:
-            return read_uarch_x(3);
+            return m_uarch.get_state().x[3];
         case reg::uarch_x4:
-            return read_uarch_x(4);
+            return m_uarch.get_state().x[4];
         case reg::uarch_x5:
-            return read_uarch_x(5);
+            return m_uarch.get_state().x[5];
         case reg::uarch_x6:
-            return read_uarch_x(6);
+            return m_uarch.get_state().x[6];
         case reg::uarch_x7:
-            return read_uarch_x(7);
+            return m_uarch.get_state().x[7];
         case reg::uarch_x8:
-            return read_uarch_x(8);
+            return m_uarch.get_state().x[8];
         case reg::uarch_x9:
-            return read_uarch_x(9);
+            return m_uarch.get_state().x[9];
         case reg::uarch_x10:
-            return read_uarch_x(10);
+            return m_uarch.get_state().x[10];
         case reg::uarch_x11:
-            return read_uarch_x(11);
+            return m_uarch.get_state().x[11];
         case reg::uarch_x12:
-            return read_uarch_x(12);
+            return m_uarch.get_state().x[12];
         case reg::uarch_x13:
-            return read_uarch_x(13);
+            return m_uarch.get_state().x[13];
         case reg::uarch_x14:
-            return read_uarch_x(14);
+            return m_uarch.get_state().x[14];
         case reg::uarch_x15:
-            return read_uarch_x(15);
+            return m_uarch.get_state().x[15];
         case reg::uarch_x16:
-            return read_uarch_x(16);
+            return m_uarch.get_state().x[16];
         case reg::uarch_x17:
-            return read_uarch_x(17);
+            return m_uarch.get_state().x[17];
         case reg::uarch_x18:
-            return read_uarch_x(18);
+            return m_uarch.get_state().x[18];
         case reg::uarch_x19:
-            return read_uarch_x(19);
+            return m_uarch.get_state().x[19];
         case reg::uarch_x20:
-            return read_uarch_x(20);
+            return m_uarch.get_state().x[20];
         case reg::uarch_x21:
-            return read_uarch_x(21);
+            return m_uarch.get_state().x[21];
         case reg::uarch_x22:
-            return read_uarch_x(22);
+            return m_uarch.get_state().x[22];
         case reg::uarch_x23:
-            return read_uarch_x(23);
+            return m_uarch.get_state().x[23];
         case reg::uarch_x24:
-            return read_uarch_x(24);
+            return m_uarch.get_state().x[24];
         case reg::uarch_x25:
-            return read_uarch_x(25);
+            return m_uarch.get_state().x[25];
         case reg::uarch_x26:
-            return read_uarch_x(26);
+            return m_uarch.get_state().x[26];
         case reg::uarch_x27:
-            return read_uarch_x(27);
+            return m_uarch.get_state().x[27];
         case reg::uarch_x28:
-            return read_uarch_x(28);
+            return m_uarch.get_state().x[28];
         case reg::uarch_x29:
-            return read_uarch_x(29);
+            return m_uarch.get_state().x[29];
         case reg::uarch_x30:
-            return read_uarch_x(30);
+            return m_uarch.get_state().x[30];
         case reg::uarch_x31:
-            return read_uarch_x(31);
+            return m_uarch.get_state().x[31];
         case reg::uarch_pc:
-            return read_uarch_pc();
+            return m_uarch.get_state().pc;
         case reg::uarch_cycle:
-            return read_uarch_cycle();
+            return m_uarch.get_state().cycle;
         case reg::uarch_halt_flag:
-            return read_uarch_halt_flag();
+            return m_uarch.get_state().halt_flag;
         case reg::iflags_prv:
-            return read_iflags_PRV();
+            return m_s.iflags.PRV;
         case reg::iflags_x:
-            return read_iflags_X();
+            return m_s.iflags.X;
         case reg::iflags_y:
-            return read_iflags_Y();
+            return m_s.iflags.Y;
         case reg::iflags_h:
-            return read_iflags_H();
+            return m_s.iflags.H;
         case reg::htif_tohost_dev:
-            return read_htif_tohost_dev();
+            return HTIF_DEV_FIELD(m_s.htif.tohost);
         case reg::htif_tohost_cmd:
-            return read_htif_tohost_cmd();
+            return HTIF_CMD_FIELD(m_s.htif.tohost);
         case reg::htif_tohost_reason:
-            return read_htif_tohost_reason();
+            return HTIF_REASON_FIELD(m_s.htif.tohost);
         case reg::htif_tohost_data:
-            return read_htif_tohost_data();
+            return HTIF_DATA_FIELD(m_s.htif.tohost);
         case reg::htif_fromhost_dev:
-            return read_htif_fromhost_dev();
+            return HTIF_DEV_FIELD(m_s.htif.fromhost);
         case reg::htif_fromhost_cmd:
-            return read_htif_fromhost_cmd();
+            return HTIF_CMD_FIELD(m_s.htif.fromhost);
         case reg::htif_fromhost_reason:
-            return read_htif_fromhost_reason();
+            return HTIF_REASON_FIELD(m_s.htif.fromhost);
         case reg::htif_fromhost_data:
-            return read_htif_fromhost_data();
+            return HTIF_DATA_FIELD(m_s.htif.fromhost);
         default:
-            throw std::invalid_argument{"unknown CSR"};
+            throw std::invalid_argument{"unknown register"};
             return 0; // never reached
     }
 }
@@ -1533,305 +1151,450 @@ uint64_t machine::read_reg(reg r) const {
 void machine::write_reg(reg w, uint64_t value) {
     switch (w) {
         case reg::x0:
-            return write_x(0, value);
+            throw std::invalid_argument{"register is read-only"};
         case reg::x1:
-            return write_x(1, value);
+            m_s.x[1] = value;
+            break;
         case reg::x2:
-            return write_x(2, value);
+            m_s.x[2] = value;
+            break;
         case reg::x3:
-            return write_x(3, value);
+            m_s.x[3] = value;
+            break;
         case reg::x4:
-            return write_x(4, value);
+            m_s.x[4] = value;
+            break;
         case reg::x5:
-            return write_x(5, value);
+            m_s.x[5] = value;
+            break;
         case reg::x6:
-            return write_x(6, value);
+            m_s.x[6] = value;
+            break;
         case reg::x7:
-            return write_x(7, value);
+            m_s.x[7] = value;
+            break;
         case reg::x8:
-            return write_x(8, value);
+            m_s.x[8] = value;
+            break;
         case reg::x9:
-            return write_x(9, value);
+            m_s.x[9] = value;
+            break;
         case reg::x10:
-            return write_x(10, value);
+            m_s.x[10] = value;
+            break;
         case reg::x11:
-            return write_x(11, value);
+            m_s.x[11] = value;
+            break;
         case reg::x12:
-            return write_x(12, value);
+            m_s.x[12] = value;
+            break;
         case reg::x13:
-            return write_x(13, value);
+            m_s.x[13] = value;
+            break;
         case reg::x14:
-            return write_x(14, value);
+            m_s.x[14] = value;
+            break;
         case reg::x15:
-            return write_x(15, value);
+            m_s.x[15] = value;
+            break;
         case reg::x16:
-            return write_x(16, value);
+            m_s.x[16] = value;
+            break;
         case reg::x17:
-            return write_x(17, value);
+            m_s.x[17] = value;
+            break;
         case reg::x18:
-            return write_x(18, value);
+            m_s.x[18] = value;
+            break;
         case reg::x19:
-            return write_x(19, value);
+            m_s.x[19] = value;
+            break;
         case reg::x20:
-            return write_x(20, value);
+            m_s.x[20] = value;
+            break;
         case reg::x21:
-            return write_x(21, value);
+            m_s.x[21] = value;
+            break;
         case reg::x22:
-            return write_x(22, value);
+            m_s.x[22] = value;
+            break;
         case reg::x23:
-            return write_x(23, value);
+            m_s.x[23] = value;
+            break;
         case reg::x24:
-            return write_x(24, value);
+            m_s.x[24] = value;
+            break;
         case reg::x25:
-            return write_x(25, value);
+            m_s.x[25] = value;
+            break;
         case reg::x26:
-            return write_x(26, value);
+            m_s.x[26] = value;
+            break;
         case reg::x27:
-            return write_x(27, value);
+            m_s.x[27] = value;
+            break;
         case reg::x28:
-            return write_x(28, value);
+            m_s.x[28] = value;
+            break;
         case reg::x29:
-            return write_x(29, value);
+            m_s.x[29] = value;
+            break;
         case reg::x30:
-            return write_x(30, value);
+            m_s.x[30] = value;
+            break;
         case reg::x31:
-            return write_x(31, value);
+            m_s.x[31] = value;
+            break;
         case reg::f0:
-            return write_f(0, value);
+            m_s.f[0] = value;
+            break;
         case reg::f1:
-            return write_f(1, value);
+            m_s.f[1] = value;
+            break;
         case reg::f2:
-            return write_f(2, value);
+            m_s.f[2] = value;
+            break;
         case reg::f3:
-            return write_f(3, value);
+            m_s.f[3] = value;
+            break;
         case reg::f4:
-            return write_f(4, value);
+            m_s.f[4] = value;
+            break;
         case reg::f5:
-            return write_f(5, value);
+            m_s.f[5] = value;
+            break;
         case reg::f6:
-            return write_f(6, value);
+            m_s.f[6] = value;
+            break;
         case reg::f7:
-            return write_f(7, value);
+            m_s.f[7] = value;
+            break;
         case reg::f8:
-            return write_f(8, value);
+            m_s.f[8] = value;
+            break;
         case reg::f9:
-            return write_f(9, value);
+            m_s.f[9] = value;
+            break;
         case reg::f10:
-            return write_f(10, value);
+            m_s.f[10] = value;
+            break;
         case reg::f11:
-            return write_f(11, value);
+            m_s.f[11] = value;
+            break;
         case reg::f12:
-            return write_f(12, value);
+            m_s.f[12] = value;
+            break;
         case reg::f13:
-            return write_f(13, value);
+            m_s.f[13] = value;
+            break;
         case reg::f14:
-            return write_f(14, value);
+            m_s.f[14] = value;
+            break;
         case reg::f15:
-            return write_f(15, value);
+            m_s.f[15] = value;
+            break;
         case reg::f16:
-            return write_f(16, value);
+            m_s.f[16] = value;
+            break;
         case reg::f17:
-            return write_f(17, value);
+            m_s.f[17] = value;
+            break;
         case reg::f18:
-            return write_f(18, value);
+            m_s.f[18] = value;
+            break;
         case reg::f19:
-            return write_f(19, value);
+            m_s.f[19] = value;
+            break;
         case reg::f20:
-            return write_f(20, value);
+            m_s.f[20] = value;
+            break;
         case reg::f21:
-            return write_f(21, value);
+            m_s.f[21] = value;
+            break;
         case reg::f22:
-            return write_f(22, value);
+            m_s.f[22] = value;
+            break;
         case reg::f23:
-            return write_f(23, value);
+            m_s.f[23] = value;
+            break;
         case reg::f24:
-            return write_f(24, value);
+            m_s.f[24] = value;
+            break;
         case reg::f25:
-            return write_f(25, value);
+            m_s.f[25] = value;
+            break;
         case reg::f26:
-            return write_f(26, value);
+            m_s.f[26] = value;
+            break;
         case reg::f27:
-            return write_f(27, value);
+            m_s.f[27] = value;
+            break;
         case reg::f28:
-            return write_f(28, value);
+            m_s.f[28] = value;
+            break;
         case reg::f29:
-            return write_f(29, value);
+            m_s.f[29] = value;
+            break;
         case reg::f30:
-            return write_f(30, value);
+            m_s.f[30] = value;
+            break;
         case reg::f31:
-            return write_f(31, value);
+            m_s.f[31] = value;
+            break;
         case reg::pc:
-            return write_pc(value);
+            m_s.pc = value;
+            break;
         case reg::fcsr:
-            return write_fcsr(value);
-        case reg::mcycle:
-            return write_mcycle(value);
-        case reg::icycleinstret:
-            return write_icycleinstret(value);
-        case reg::mstatus:
-            return write_mstatus(value);
-        case reg::mtvec:
-            return write_mtvec(value);
-        case reg::mscratch:
-            return write_mscratch(value);
-        case reg::mepc:
-            return write_mepc(value);
-        case reg::mcause:
-            return write_mcause(value);
-        case reg::mtval:
-            return write_mtval(value);
-        case reg::misa:
-            return write_misa(value);
-        case reg::mie:
-            return write_mie(value);
-        case reg::mip:
-            return write_mip(value);
-        case reg::medeleg:
-            return write_medeleg(value);
-        case reg::mideleg:
-            return write_mideleg(value);
-        case reg::mcounteren:
-            return write_mcounteren(value);
-        case reg::menvcfg:
-            return write_menvcfg(value);
-        case reg::stvec:
-            return write_stvec(value);
-        case reg::sscratch:
-            return write_sscratch(value);
-        case reg::sepc:
-            return write_sepc(value);
-        case reg::scause:
-            return write_scause(value);
-        case reg::stval:
-            return write_stval(value);
-        case reg::satp:
-            return write_satp(value);
-        case reg::scounteren:
-            return write_scounteren(value);
-        case reg::senvcfg:
-            return write_senvcfg(value);
-        case reg::ilrsc:
-            return write_ilrsc(value);
-        case reg::iflags:
-            return write_iflags(value);
-        case reg::iunrep:
-            return write_iunrep(value);
-        case reg::clint_mtimecmp:
-            return write_clint_mtimecmp(value);
-        case reg::plic_girqpend:
-            return write_plic_girqpend(value);
-        case reg::plic_girqsrvd:
-            return write_plic_girqsrvd(value);
-        case reg::htif_tohost:
-            return write_htif_tohost(value);
-        case reg::htif_fromhost:
-            return write_htif_fromhost(value);
-        case reg::htif_ihalt:
-            return write_htif_ihalt(value);
-        case reg::htif_iconsole:
-            return write_htif_iconsole(value);
-        case reg::htif_iyield:
-            return write_htif_iyield(value);
-        case reg::uarch_x0:
-            return write_uarch_x(0, value);
-        case reg::uarch_x1:
-            return write_uarch_x(1, value);
-        case reg::uarch_x2:
-            return write_uarch_x(2, value);
-        case reg::uarch_x3:
-            return write_uarch_x(3, value);
-        case reg::uarch_x4:
-            return write_uarch_x(4, value);
-        case reg::uarch_x5:
-            return write_uarch_x(5, value);
-        case reg::uarch_x6:
-            return write_uarch_x(6, value);
-        case reg::uarch_x7:
-            return write_uarch_x(7, value);
-        case reg::uarch_x8:
-            return write_uarch_x(8, value);
-        case reg::uarch_x9:
-            return write_uarch_x(9, value);
-        case reg::uarch_x10:
-            return write_uarch_x(10, value);
-        case reg::uarch_x11:
-            return write_uarch_x(11, value);
-        case reg::uarch_x12:
-            return write_uarch_x(12, value);
-        case reg::uarch_x13:
-            return write_uarch_x(13, value);
-        case reg::uarch_x14:
-            return write_uarch_x(14, value);
-        case reg::uarch_x15:
-            return write_uarch_x(15, value);
-        case reg::uarch_x16:
-            return write_uarch_x(16, value);
-        case reg::uarch_x17:
-            return write_uarch_x(17, value);
-        case reg::uarch_x18:
-            return write_uarch_x(18, value);
-        case reg::uarch_x19:
-            return write_uarch_x(19, value);
-        case reg::uarch_x20:
-            return write_uarch_x(20, value);
-        case reg::uarch_x21:
-            return write_uarch_x(21, value);
-        case reg::uarch_x22:
-            return write_uarch_x(22, value);
-        case reg::uarch_x23:
-            return write_uarch_x(23, value);
-        case reg::uarch_x24:
-            return write_uarch_x(24, value);
-        case reg::uarch_x25:
-            return write_uarch_x(25, value);
-        case reg::uarch_x26:
-            return write_uarch_x(26, value);
-        case reg::uarch_x27:
-            return write_uarch_x(27, value);
-        case reg::uarch_x28:
-            return write_uarch_x(28, value);
-        case reg::uarch_x29:
-            return write_uarch_x(29, value);
-        case reg::uarch_x30:
-            return write_uarch_x(30, value);
-        case reg::uarch_x31:
-            return write_uarch_x(31, value);
-        case reg::uarch_pc:
-            return write_uarch_pc(value);
-        case reg::uarch_cycle:
-            return write_uarch_cycle(value);
-        case reg::uarch_halt_flag:
-            return set_uarch_halt_flag();
+            m_s.fcsr = value;
+            break;
         case reg::mvendorid:
             [[fallthrough]];
         case reg::marchid:
             [[fallthrough]];
         case reg::mimpid:
             throw std::invalid_argument{"register is read-only"};
+        case reg::mcycle:
+            m_s.mcycle = value;
+            break;
+        case reg::icycleinstret:
+            m_s.icycleinstret = value;
+            break;
+        case reg::mstatus:
+            m_s.mstatus = value;
+            break;
+        case reg::mtvec:
+            m_s.mtvec = value;
+            break;
+        case reg::mscratch:
+            m_s.mscratch = value;
+            break;
+        case reg::mepc:
+            m_s.mepc = value;
+            break;
+        case reg::mcause:
+            m_s.mcause = value;
+            break;
+        case reg::mtval:
+            m_s.mtval = value;
+            break;
+        case reg::misa:
+            m_s.misa = value;
+            break;
+        case reg::mie:
+            m_s.mie = value;
+            break;
+        case reg::mip:
+            m_s.mip = value;
+            break;
+        case reg::medeleg:
+            m_s.medeleg = value;
+            break;
+        case reg::mideleg:
+            m_s.mideleg = value;
+            break;
+        case reg::mcounteren:
+            m_s.mcounteren = value;
+            break;
+        case reg::menvcfg:
+            m_s.menvcfg = value;
+            break;
+        case reg::stvec:
+            m_s.stvec = value;
+            break;
+        case reg::sscratch:
+            m_s.sscratch = value;
+            break;
+        case reg::sepc:
+            m_s.sepc = value;
+            break;
+        case reg::scause:
+            m_s.scause = value;
+            break;
+        case reg::stval:
+            m_s.stval = value;
+            break;
+        case reg::satp:
+            m_s.satp = value;
+            break;
+        case reg::scounteren:
+            m_s.scounteren = value;
+            break;
+        case reg::senvcfg:
+            m_s.senvcfg = value;
+            break;
+        case reg::ilrsc:
+            m_s.ilrsc = value;
+            break;
+        case reg::iflags:
+            m_s.write_iflags(value);
+            break;
+        case reg::iunrep:
+            m_s.iunrep = value;
+            break;
+        case reg::clint_mtimecmp:
+            m_s.clint.mtimecmp = value;
+            break;
+        case reg::plic_girqpend:
+            m_s.plic.girqpend = value;
+            break;
+        case reg::plic_girqsrvd:
+            m_s.plic.girqsrvd = value;
+            break;
+        case reg::htif_tohost:
+            m_s.htif.tohost = value;
+            break;
+        case reg::htif_fromhost:
+            m_s.htif.fromhost = value;
+            break;
+        case reg::htif_ihalt:
+            m_s.htif.ihalt = value;
+            break;
+        case reg::htif_iconsole:
+            m_s.htif.iconsole = value;
+            break;
+        case reg::htif_iyield:
+            m_s.htif.iyield = value;
+            break;
+        case reg::uarch_x0:
+            throw std::invalid_argument{"register is read-only"};
+        case reg::uarch_x1:
+            m_uarch.get_state().x[1] = value;
+            break;
+        case reg::uarch_x2:
+            m_uarch.get_state().x[2] = value;
+            break;
+        case reg::uarch_x3:
+            m_uarch.get_state().x[3] = value;
+            break;
+        case reg::uarch_x4:
+            m_uarch.get_state().x[4] = value;
+            break;
+        case reg::uarch_x5:
+            m_uarch.get_state().x[5] = value;
+            break;
+        case reg::uarch_x6:
+            m_uarch.get_state().x[6] = value;
+            break;
+        case reg::uarch_x7:
+            m_uarch.get_state().x[7] = value;
+            break;
+        case reg::uarch_x8:
+            m_uarch.get_state().x[8] = value;
+            break;
+        case reg::uarch_x9:
+            m_uarch.get_state().x[9] = value;
+            break;
+        case reg::uarch_x10:
+            m_uarch.get_state().x[10] = value;
+            break;
+        case reg::uarch_x11:
+            m_uarch.get_state().x[11] = value;
+            break;
+        case reg::uarch_x12:
+            m_uarch.get_state().x[12] = value;
+            break;
+        case reg::uarch_x13:
+            m_uarch.get_state().x[13] = value;
+            break;
+        case reg::uarch_x14:
+            m_uarch.get_state().x[14] = value;
+            break;
+        case reg::uarch_x15:
+            m_uarch.get_state().x[15] = value;
+            break;
+        case reg::uarch_x16:
+            m_uarch.get_state().x[16] = value;
+            break;
+        case reg::uarch_x17:
+            m_uarch.get_state().x[17] = value;
+            break;
+        case reg::uarch_x18:
+            m_uarch.get_state().x[18] = value;
+            break;
+        case reg::uarch_x19:
+            m_uarch.get_state().x[19] = value;
+            break;
+        case reg::uarch_x20:
+            m_uarch.get_state().x[20] = value;
+            break;
+        case reg::uarch_x21:
+            m_uarch.get_state().x[21] = value;
+            break;
+        case reg::uarch_x22:
+            m_uarch.get_state().x[22] = value;
+            break;
+        case reg::uarch_x23:
+            m_uarch.get_state().x[23] = value;
+            break;
+        case reg::uarch_x24:
+            m_uarch.get_state().x[24] = value;
+            break;
+        case reg::uarch_x25:
+            m_uarch.get_state().x[25] = value;
+            break;
+        case reg::uarch_x26:
+            m_uarch.get_state().x[26] = value;
+            break;
+        case reg::uarch_x27:
+            m_uarch.get_state().x[27] = value;
+            break;
+        case reg::uarch_x28:
+            m_uarch.get_state().x[28] = value;
+            break;
+        case reg::uarch_x29:
+            m_uarch.get_state().x[29] = value;
+            break;
+        case reg::uarch_x30:
+            m_uarch.get_state().x[30] = value;
+            break;
+        case reg::uarch_x31:
+            m_uarch.get_state().x[31] = value;
+            break;
+        case reg::uarch_pc:
+            m_uarch.get_state().pc = value;
+            break;
+        case reg::uarch_cycle:
+            m_uarch.get_state().cycle = value;
+            break;
+        case reg::uarch_halt_flag:
+            m_uarch.get_state().halt_flag = static_cast<bool>(value);
+            break;
         case reg::iflags_prv:
-            return write_iflags_PRV(value);
+            m_s.iflags.PRV = static_cast<uint8_t>(value);
+            break;
         case reg::iflags_x:
-            return write_iflags_X(static_cast<bool>(value));
+            m_s.iflags.X = static_cast<bool>(value);
+            break;
         case reg::iflags_y:
-            return write_iflags_Y(static_cast<bool>(value));
+            m_s.iflags.Y = static_cast<bool>(value);
+            break;
         case reg::iflags_h:
-            return write_iflags_H(static_cast<bool>(value));
+            m_s.iflags.H = static_cast<bool>(value);
+            break;
         case reg::htif_tohost_dev:
-            return write_htif_tohost_dev(value);
+            m_s.htif.tohost = HTIF_REPLACE_DEV(m_s.htif.tohost, value);
+            break;
         case reg::htif_tohost_cmd:
-            return write_htif_tohost_cmd(value);
+            m_s.htif.tohost = HTIF_REPLACE_CMD(m_s.htif.tohost, value);
+            break;
         case reg::htif_tohost_reason:
-            return write_htif_tohost_reason(value);
+            m_s.htif.tohost = HTIF_REPLACE_REASON(m_s.htif.tohost, value);
+            break;
         case reg::htif_tohost_data:
-            return write_htif_tohost_data(value);
+            m_s.htif.tohost = HTIF_REPLACE_DATA(m_s.htif.tohost, value);
+            break;
         case reg::htif_fromhost_dev:
-            return write_htif_fromhost_dev(value);
+            m_s.htif.fromhost = HTIF_REPLACE_DEV(m_s.htif.fromhost, value);
+            break;
         case reg::htif_fromhost_cmd:
-            return write_htif_fromhost_cmd(value);
+            m_s.htif.fromhost = HTIF_REPLACE_CMD(m_s.htif.fromhost, value);
+            break;
         case reg::htif_fromhost_reason:
-            return write_htif_fromhost_reason(value);
+            m_s.htif.fromhost = HTIF_REPLACE_REASON(m_s.htif.fromhost, value);
+            break;
         case reg::htif_fromhost_data:
-            return write_htif_fromhost_data(value);
+            m_s.htif.fromhost = HTIF_REPLACE_DATA(m_s.htif.fromhost, value);
+            break;
         default:
             throw std::invalid_argument{"unknown register"};
     }
@@ -2120,58 +1883,6 @@ uint64_t machine::get_reg_address(reg r) {
     }
 }
 
-uint8_t machine::read_iflags_PRV(void) const {
-    return m_s.iflags.PRV;
-}
-
-void machine::write_iflags_PRV(uint8_t val) {
-    m_s.iflags.PRV = val;
-}
-
-bool machine::read_iflags_Y(void) const {
-    return m_s.iflags.Y;
-}
-
-void machine::write_iflags_Y(bool val) {
-    m_s.iflags.Y = val;
-}
-
-void machine::reset_iflags_Y(void) {
-    m_s.iflags.Y = false;
-}
-
-void machine::set_iflags_Y(void) {
-    m_s.iflags.Y = true;
-}
-
-bool machine::read_iflags_X(void) const {
-    return m_s.iflags.X;
-}
-
-void machine::write_iflags_X(bool val) {
-    m_s.iflags.X = val;
-}
-
-void machine::reset_iflags_X(void) {
-    m_s.iflags.X = false;
-}
-
-void machine::set_iflags_X(void) {
-    m_s.iflags.X = true;
-}
-
-bool machine::read_iflags_H(void) const {
-    return m_s.iflags.H;
-}
-
-void machine::write_iflags_H(bool val) {
-    m_s.iflags.H = val;
-}
-
-void machine::set_iflags_H(void) {
-    m_s.iflags.H = true;
-}
-
 void machine::mark_write_tlb_dirty_pages(void) const {
     for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
         const tlb_hot_entry &tlbhe = m_s.tlb.hot[TLB_WRITE][i];
@@ -2354,7 +2065,7 @@ const boost::container::static_vector<pma_entry, PMA_MAX> &machine::get_pmas(voi
 }
 
 void machine::get_root_hash(hash_type &hash) const {
-    if (read_iunrep()) {
+    if (read_reg(reg::iunrep)) {
         throw std::runtime_error("cannot compute root hash of unreproducible machines");
     }
     if (!update_merkle_tree()) {
@@ -2593,36 +2304,6 @@ uint64_t machine::read_word(uint64_t word_address) const {
     }
 }
 
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-uint64_t machine::read_uarch_x(int i) const {
-    return m_uarch.read_x(i);
-}
-
-void machine::write_uarch_x(int i, uint64_t val) {
-    m_uarch.write_x(i, val);
-}
-
-uint64_t machine::read_uarch_pc(void) const {
-    return m_uarch.read_pc();
-}
-
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-void machine::write_uarch_pc(uint64_t val) {
-    m_uarch.write_pc(val);
-}
-
-uint64_t machine::read_uarch_cycle(void) const {
-    return m_uarch.read_cycle();
-}
-
-void machine::write_uarch_cycle(uint64_t val) {
-    return m_uarch.write_cycle(val);
-}
-
-bool machine::read_uarch_halt_flag(void) const {
-    return m_uarch.read_halt_flag();
-}
-
 void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {
     state_access a(*this);
     cartesi::send_cmio_response(a, reason, data, length);
@@ -2663,10 +2344,6 @@ void machine::verify_send_cmio_response(uint16_t reason, const unsigned char *da
     if (obtained_root_hash != root_hash_after) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
     }
-}
-
-void machine::set_uarch_halt_flag() {
-    m_uarch.set_halt_flag();
 }
 
 void machine::reset_uarch() {
@@ -2750,7 +2427,7 @@ machine_config machine::get_default_config(void) {
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
-    if (read_iunrep()) {
+    if (read_reg(reg::iunrep)) {
         throw std::runtime_error("microarchitecture cannot be used with unreproducible machines");
     }
     if (m_uarch.get_state().ram.get_istart_E()) {
@@ -2761,7 +2438,7 @@ uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
 }
 
 interpreter_break_reason machine::run(uint64_t mcycle_end) {
-    if (mcycle_end < read_mcycle()) {
+    if (mcycle_end < read_reg(reg::mcycle)) {
         throw std::invalid_argument{"mcycle is past"};
     }
     state_access a(*this);

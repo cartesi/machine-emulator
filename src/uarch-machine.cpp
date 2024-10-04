@@ -62,44 +62,6 @@ uarch_machine::uarch_machine(uarch_config c) : m_s{}, m_c{c} {
     }
 }
 
-uint64_t uarch_machine::read_cycle(void) const {
-    return m_s.cycle;
-}
-
-void uarch_machine::write_cycle(uint64_t val) {
-    m_s.cycle = val;
-}
-
-uint64_t uarch_machine::read_pc(void) const {
-    return m_s.pc;
-}
-
-bool uarch_machine::read_halt_flag(void) const {
-    return m_s.halt_flag;
-}
-
-void uarch_machine::set_halt_flag(void) {
-    m_s.halt_flag = true;
-}
-
-void uarch_machine::write_pc(uint64_t val) {
-    m_s.pc = val;
-}
-
-uint64_t uarch_machine::read_x(int i) const {
-    return m_s.x[i];
-}
-
-void uarch_machine::write_x(int i, uint64_t val) {
-    if (i > 0) {
-        m_s.x[i] = val;
-    }
-}
-
-uint64_t uarch_machine::read_ram_length(void) const {
-    return m_s.ram.get_length();
-}
-
 pma_entry &uarch_machine::find_pma_entry(uint64_t paddr, uint64_t length) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
     return const_cast<pma_entry &>(std::as_const(*this).find_pma_entry(paddr, length));

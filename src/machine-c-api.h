@@ -337,7 +337,7 @@ CM_API uint64_t cm_get_reg_address(cm_reg reg);
 /// string (can be NULL).
 /// \param new_machine Receives the pointer to new machine instance.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_create(const char *config, const char *runtime_config, cm_machine **new_machine);
+CM_API cm_error cm_create(const char *config, const char *runtime_config, cm_machine **new_machine);
 
 /// \brief Destroys a machine.
 /// \param m Pointer to the existing machine instance (can be NULL).
@@ -346,21 +346,21 @@ CM_API int32_t cm_create(const char *config, const char *runtime_config, cm_mach
 /// \details The machine is deallocated and its pointer must not be used after this call.
 /// This method always succeeds for local machines, but may fail for remote machines when
 /// keep machine is false. In case of failure it must be called again to free resources.
-CM_API int32_t cm_destroy(cm_machine *m, bool keep_machine);
+CM_API cm_error cm_destroy(cm_machine *m, bool keep_machine);
 
 /// \brief Loads a new machine instance from a previously stored directory.
 /// \param dir Directory where previous machine is stored.
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \param new_machine Receives the pointer to new machine instance.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_load(const char *dir, const char *runtime_config, cm_machine **new_machine);
+CM_API cm_error cm_load(const char *dir, const char *runtime_config, cm_machine **new_machine);
 
 /// \brief Stores a machine instance to a directory, serializing its entire state.
 /// \param m Pointer to a valid machine instance.
 /// \param dir Directory where the machine will be stored.
 /// \returns 0 for success, non zero code for error.
 /// \details The function refuses to store into an existing directory.
-CM_API int32_t cm_store(const cm_machine *m, const char *dir);
+CM_API cm_error cm_store(const cm_machine *m, const char *dir);
 
 /// \brief Replaces a memory range.
 /// \param m Pointer to a valid machine instance.
@@ -373,7 +373,7 @@ CM_API int32_t cm_store(const cm_machine *m, const char *dir);
 /// \returns 0 for success, non zero code for error.
 /// \details The machine must have been initialized with an existing memory range that
 /// has the same start and length specified in the new range.
-CM_API int32_t cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,
+CM_API cm_error cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,
     const char *image_filename);
 
 /// \brief Returns a JSON object with the machine config used to initialize the machine.
@@ -382,7 +382,7 @@ CM_API int32_t cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t l
 /// string, guaranteed to remain valid only until the the next time this same function
 /// is called again on the same thread.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_get_initial_config(const cm_machine *m, const char **config);
+CM_API cm_error cm_get_initial_config(const cm_machine *m, const char **config);
 
 /// \brief Returns a list with all memory ranges in the machine.
 /// \param m Pointer to a valid machine instance.
@@ -390,13 +390,13 @@ CM_API int32_t cm_get_initial_config(const cm_machine *m, const char **config);
 /// guaranteed to remain valid only until the the next time this same function is
 /// called again on the same thread.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_get_memory_ranges(const cm_machine *m, const char **ranges);
+CM_API cm_error cm_get_memory_ranges(const cm_machine *m, const char **ranges);
 
 /// \brief Obtains the root hash of the Merkle tree.
 /// \param m Pointer to a valid machine instance.
 /// \param hash Valid pointer to cm_hash structure that receives the hash.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_get_root_hash(const cm_machine *m, cm_hash *hash);
+CM_API cm_error cm_get_root_hash(const cm_machine *m, cm_hash *hash);
 
 /// \brief Obtains the proof for a node in the machine state Merkle tree.
 /// \param m Pointer to a valid machine instance.
@@ -408,7 +408,7 @@ CM_API int32_t cm_get_root_hash(const cm_machine *m, cm_hash *hash);
 /// remain valid only until the the next time this same function is called again on
 /// the same thread.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_size, const char **proof);
+CM_API cm_error cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_size, const char **proof);
 
 // ------------------------------------
 // Reading and writing
@@ -421,21 +421,21 @@ CM_API int32_t cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_
 /// \returns 0 for success, non zero code for error.
 /// \details The current implementation of this function is slow when the word falls
 /// in a memory range mapped to a device.
-CM_API int32_t cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val);
+CM_API cm_error cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val);
 
 /// \brief Reads the value of a register.
 /// \param m Pointer to valid machine instance.
 /// \param reg Register to read.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_read_reg(const cm_machine *m, cm_reg reg, uint64_t *val);
+CM_API cm_error cm_read_reg(const cm_machine *m, cm_reg reg, uint64_t *val);
 
 /// \brief Writes the value of a register.
 /// \param m Pointer to valid machine instance.
 /// \param reg Register to write.
 /// \param val Value to write.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_write_reg(cm_machine *m, cm_reg reg, uint64_t val);
+CM_API cm_error cm_write_reg(cm_machine *m, cm_reg reg, uint64_t val);
 
 /// \brief Reads a chunk of data from a machine memory range, by its physical address.
 /// \param m Pointer to valid machine instance.
@@ -444,7 +444,7 @@ CM_API int32_t cm_write_reg(cm_machine *m, cm_reg reg, uint64_t val);
 /// \param length Size of chunk in bytes.
 /// \returns 0 for success, non zero code for error.
 /// \details The entire chunk must be inside the same memory range.
-CM_API int32_t cm_read_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length);
+CM_API cm_error cm_read_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length);
 
 /// \brief Writes a chunk of data to a machine memory range, by its physical address.
 /// \param m Pointer to valid machine instance.
@@ -454,7 +454,7 @@ CM_API int32_t cm_read_memory(const cm_machine *m, uint64_t address, uint8_t *da
 /// \returns 0 for success, non zero code for error.
 /// \details The entire chunk must be inside the same PMA region.
 /// Moreover, unlike cm_read_memory(), the memory range written to must not be mapped to a device.
-CM_API int32_t cm_write_memory(cm_machine *m, uint64_t address, const uint8_t *data, uint64_t length);
+CM_API cm_error cm_write_memory(cm_machine *m, uint64_t address, const uint8_t *data, uint64_t length);
 
 /// \brief Reads a chunk of data from a machine memory range, by its virtual memory.
 /// \param m Pointer to valid machine instance.
@@ -463,7 +463,7 @@ CM_API int32_t cm_write_memory(cm_machine *m, uint64_t address, const uint8_t *d
 /// \param length Size of chunk in bytes.
 /// \returns 0 for success, non zero code for error.
 /// \detail The translation is based on the current mapping, as defined in CM_REG_SATP.
-CM_API int32_t cm_read_virtual_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length);
+CM_API cm_error cm_read_virtual_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length);
 
 /// \brief Writes a chunk of data to a machine memory range, by its virtual address.
 /// \param m Pointer to valid machine instance.
@@ -472,7 +472,7 @@ CM_API int32_t cm_read_virtual_memory(const cm_machine *m, uint64_t address, uin
 /// \param length Size of chunk in bytes.
 /// \returns 0 for success, non zero code for error.
 /// \detail The translation is based on the current mapping, as defined in CM_REG_SATP.
-CM_API int32_t cm_write_virtual_memory(cm_machine *m, uint64_t address, const uint8_t *data, uint64_t length);
+CM_API cm_error cm_write_virtual_memory(cm_machine *m, uint64_t address, const uint8_t *data, uint64_t length);
 
 /// \brief Translates a virtual memory address to its corresponding physical memory address.
 /// \param m Pointer to valid machine instance.
@@ -480,58 +480,58 @@ CM_API int32_t cm_write_virtual_memory(cm_machine *m, uint64_t address, const ui
 /// \param paddr Receives the physical memory address.
 /// \returns 0 for success, non zero code for error.
 /// \detail The translation is based on the current mapping, as defined in CM_REG_SATP.
-CM_API int32_t cm_translate_virtual_address(const cm_machine *m, uint64_t vaddr, uint64_t *paddr);
+CM_API cm_error cm_translate_virtual_address(const cm_machine *m, uint64_t vaddr, uint64_t *paddr);
 
 /// \brief Reads the value of the CM_REG_MCYCLE.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_read_mcycle(const cm_machine *m, uint64_t *val);
+CM_API cm_error cm_read_mcycle(const cm_machine *m, uint64_t *val);
 
 /// \brief Reads the value of the X flag in CM_REG_IFLAGS.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_read_iflags_X(const cm_machine *m, bool *val);
+CM_API cm_error cm_read_iflags_X(const cm_machine *m, bool *val);
 
 /// \brief Reads the value of the Y flag in CM_REG_IFLAGS.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_read_iflags_Y(const cm_machine *m, bool *val);
+CM_API cm_error cm_read_iflags_Y(const cm_machine *m, bool *val);
 
 /// \brief Resets the value of the Y flag in CM_REG_IFLAGS.
 /// \param m Pointer to valid machine instance.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_reset_iflags_Y(cm_machine *m);
+CM_API cm_error cm_reset_iflags_Y(cm_machine *m);
 
 /// \brief Sets the Y flag in CM_REG_IFLAGS.
 /// \param m Pointer to valid machine instance.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_set_iflags_Y(cm_machine *m);
+CM_API cm_error cm_set_iflags_Y(cm_machine *m);
 
 /// \brief Reads the value of the H flag in CM_REG_IFLAGS.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_read_iflags_H(const cm_machine *m, bool *val);
+CM_API cm_error cm_read_iflags_H(const cm_machine *m, bool *val);
 
 /// \brief Reads the value of CM_REG_UARCH_CYCLE.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_read_uarch_cycle(const cm_machine *m, uint64_t *val);
+CM_API cm_error cm_read_uarch_cycle(const cm_machine *m, uint64_t *val);
 
 /// \brief Reads the value of CM_REG_UARCH_HALT_FLAG.
 /// \param m Pointer to valid machine instance.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_read_uarch_halt_flag(const cm_machine *m, bool *val);
+CM_API cm_error cm_read_uarch_halt_flag(const cm_machine *m, bool *val);
 
 /// \brief Sets the value of CM_REG_UARCH_HALT_FLAG.
 /// \param m Pointer to valid machine instance.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_set_uarch_halt_flag(cm_machine *m);
+CM_API cm_error cm_set_uarch_halt_flag(cm_machine *m);
 
 // ------------------------------------
 // Rolling back
@@ -541,19 +541,19 @@ CM_API int32_t cm_set_uarch_halt_flag(cm_machine *m);
 /// \param m Pointer to a valid machine instance.
 /// \returns 0 for success, non zero code for error.
 /// \detail This function is ignored unless the machine is remote.
-CM_API int32_t cm_snapshot(cm_machine *m);
+CM_API cm_error cm_snapshot(cm_machine *m);
 
 /// \brief Delete current snapshot.
 /// \param m Pointer to a valid machine instance.
 /// \returns 0 for success, non zero code for error.
 /// \detail This function is ignored unless the machine is remote.
-CM_API int32_t cm_commit(cm_machine *m);
+CM_API cm_error cm_commit(cm_machine *m);
 
 /// \brief Replaces machine state with copy in current snapshot, and then delete snapshot.
 /// \param m Pointer to a valid machine instance.
 /// \returns 0 for success, non zero code for error.
 /// \detail This function is ignored unless the machine is remote.
-CM_API int32_t cm_rollback(cm_machine *m);
+CM_API cm_error cm_rollback(cm_machine *m);
 
 // ------------------------------------
 // Running
@@ -565,19 +565,19 @@ CM_API int32_t cm_rollback(cm_machine *m);
 /// \param break_reason Receives reason for returning (can be NULL).
 /// \returns 0 for success, non zero code for error.
 /// \details You may want to receive cmio requests depending on the run break reason.
-CM_API int32_t cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reason);
+CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reason);
 
 /// \brief Runs the machine microarchitecture until CM_REG_UARCH_CYCLE reaches uarch_cycle_end or it halts.
 /// \param m Pointer to valid machine instance.
 /// \param uarch_cycle_end End micro cycle value.
 /// \param uarch_break_reason Receives reason for returning (can be NULL).
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_break_reason *uarch_break_reason);
+CM_API cm_error cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_break_reason *uarch_break_reason);
 
 /// \brief Resets the entire microarchitecture state to pristine values.
 /// \param m Pointer to valid machine instance.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_reset_uarch(cm_machine *m);
+CM_API cm_error cm_reset_uarch(cm_machine *m);
 
 /// \brief Receives a cmio request.
 /// \param m Pointer to valid machine instance.
@@ -592,7 +592,7 @@ CM_API int32_t cm_reset_uarch(cm_machine *m);
 /// In case of a manual yield with rejected reason, length and data can be ignored. Machine state should be reverted.
 /// In case of a manual yield with exception reason, data/length point to a message. Machine state is irrecoverable.
 /// In case of other manual yields (GIO request), reason is set to the domain, and data/length is filled with an id.
-CM_API int32_t cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16_t *reason, uint8_t *data,
+CM_API cm_error cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16_t *reason, uint8_t *data,
     uint64_t *length);
 
 /// \brief Sends a cmio response.
@@ -603,7 +603,7 @@ CM_API int32_t cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16
 /// \returns 0 for success, non zero code for error.
 /// \details This method should only be called as a response to cmio requests with manual yield command
 /// where the reason is either accepted or a GIO request, may fail otherwise.
-CM_API int32_t cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length);
+CM_API cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length);
 
 // ------------------------------------
 // Logging
@@ -615,7 +615,7 @@ CM_API int32_t cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8
 /// \param log Receives the state access log as a JSON object in a string,
 /// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **log);
+CM_API cm_error cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **log);
 
 /// \brief Resets the entire microarchitecture state to pristine values logging all accesses to the state.
 /// \param m Pointer to valid machine instance.
@@ -623,7 +623,7 @@ CM_API int32_t cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **l
 /// \param log Receives the state access log as a JSON object in a string,
 /// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char **log);
+CM_API cm_error cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char **log);
 
 /// \brief Sends a cmio response logging all accesses to the state.
 /// \param m Pointer to valid machine instance.
@@ -634,7 +634,7 @@ CM_API int32_t cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char **
 /// \param log Receives the state access log as a JSON object in a string,
 /// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
+CM_API cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
     int32_t log_type, const char **log);
 
 // ------------------------------------
@@ -647,7 +647,7 @@ CM_API int32_t cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const u
 /// \param root_hash_after State hash after step.
 /// \returns 0 for success, non zero code for error.
 /// \details If both root_hash_before and root_hash_after are NULL, no proofs are taken into account.
-CM_API int32_t cm_verify_step_uarch(const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
+CM_API cm_error cm_verify_step_uarch(const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
 
 /// \brief Checks the validity of a state transition produced by a microarchitecture reset.
 /// \param root_hash_before State hash before reset.
@@ -655,7 +655,7 @@ CM_API int32_t cm_verify_step_uarch(const cm_hash *root_hash_before, const char 
 /// \param root_hash_after State hash after reset.
 /// \returns 0 for success, non zero code for error.
 /// \details If both root_hash_before and root_hash_after are NULL, no proofs are taken into account.
-CM_API int32_t cm_verify_reset_uarch(const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
+CM_API cm_error cm_verify_reset_uarch(const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
 
 /// \brief Checks the validity of state transitions produced by a send cmio response.
 /// \param reason Reason for sending the response.
@@ -666,7 +666,7 @@ CM_API int32_t cm_verify_reset_uarch(const cm_hash *root_hash_before, const char
 /// \param root_hash_after State hash after response.
 /// \returns 0 for success, non zero code for error.
 /// \details If both root_hash_before and root_hash_after are NULL, no proofs are taken into account.
-CM_API int32_t cm_verify_send_cmio_response(uint16_t reason, const uint8_t *data, uint64_t length,
+CM_API cm_error cm_verify_send_cmio_response(uint16_t reason, const uint8_t *data, uint64_t length,
     const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
 
 // ------------------------------------
@@ -678,14 +678,14 @@ CM_API int32_t cm_verify_send_cmio_response(uint16_t reason, const uint8_t *data
 /// \param result True if tree is self-consistent, false otherwise.
 /// \returns 0 for success, non zero code for error.
 /// \details This method is used only for emulator internal tests.
-CM_API int32_t cm_verify_merkle_tree(cm_machine *m, bool *result);
+CM_API cm_error cm_verify_merkle_tree(cm_machine *m, bool *result);
 
 /// \brief Verify integrity of dirty page maps.
 /// \param m Pointer to valid machine instance.
 /// \param result True if dirty page maps are consistent, false otherwise.
 /// \returns 0 for success, non zero code for error.
 /// \details This method is used only for emulator internal tests.
-CM_API int32_t cm_verify_dirty_page_maps(cm_machine *m, bool *result);
+CM_API cm_error cm_verify_dirty_page_maps(cm_machine *m, bool *result);
 
 #ifdef __cplusplus
 }

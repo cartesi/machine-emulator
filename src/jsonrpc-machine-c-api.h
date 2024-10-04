@@ -34,7 +34,7 @@ typedef struct cm_jsonrpc_mgr cm_jsonrpc_mgr;
 /// \param remote_address Address of the remote machine server to connect to.
 /// \param mgr Receives new JSONRPC connection manager instance.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_jsonrpc_create_mgr(const char *remote_address, cm_jsonrpc_mgr **mgr);
+CM_API cm_error cm_jsonrpc_create_mgr(const char *remote_address, cm_jsonrpc_mgr **mgr);
 
 /// \brief Destroys a connection manager instance.
 /// \param mgr Pointer a JSONRPC connection manager (can be NULL).
@@ -48,7 +48,7 @@ CM_API void cm_jsonrpc_destroy_mgr(const cm_jsonrpc_mgr *mgr);
 /// remains valid until the next time this same function is called on the same thread.
 /// \param pid Receives the forked child process id if function execution succeeds or 0 otherwise.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, const char **address, int32_t *pid);
+CM_API cm_error cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, const char **address, int32_t *pid);
 
 /// \brief Changes the address the remote server is listening to.
 /// \param mgr Pointer to a valid JSONRPC connection manager.
@@ -56,33 +56,33 @@ CM_API int32_t cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, const char **address, 
 /// \param new_address Receives the new address that the remote server actually bound to,
 /// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, const char **new_address);
+CM_API cm_error cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, const char **new_address);
 
 /// \brief Shutdowns remote server.
 /// \param mgr Pointer to a valid JSONRPC connection manager.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_jsonrpc_shutdown(const cm_jsonrpc_mgr *mgr);
+CM_API cm_error cm_jsonrpc_shutdown(const cm_jsonrpc_mgr *mgr);
 
 /// \brief Gets the semantic version of the remote server.
 /// \param mgr Pointer to a valid JSONRPC connection manager.
 /// \param semantic_version Receives the semantic version as a JSON string,
 /// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_jsonrpc_get_version(const cm_jsonrpc_mgr *mgr, const char **version);
+CM_API cm_error cm_jsonrpc_get_version(const cm_jsonrpc_mgr *mgr, const char **version);
 
 /// \brief Gets a JSON string for the default machine config from the remote server.
 /// \param mgr Pointer to a valid JSONRPC connection manager.
 /// \param config Receives the default configuration,
 /// remains valid until the next time this same function is called on the same thread.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const char **config);
+CM_API cm_error cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const char **config);
 
 /// \brief Gets the address of any register from the remote server.
 /// \param mgr Pointer to a valid JSONRPC connection manager.
 /// \param reg The register.
 /// \param val Receives address of the register.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_jsonrpc_get_reg_address(const cm_jsonrpc_mgr *mgr, cm_reg reg, uint64_t *val);
+CM_API cm_error cm_jsonrpc_get_reg_address(const cm_jsonrpc_mgr *mgr, cm_reg reg, uint64_t *val);
 
 // -------------------------------------
 // Machine API functions
@@ -93,7 +93,7 @@ CM_API int32_t cm_jsonrpc_get_reg_address(const cm_jsonrpc_mgr *mgr, cm_reg reg,
 /// \param runtime_config Machine runtime configuration as a JSON string, it can be NULL.
 /// \param new_machine Receives the pointer to new remote machine instance.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const char *config, const char *runtime_config,
+CM_API cm_error cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const char *config, const char *runtime_config,
     cm_machine **new_machine);
 
 /// \brief Creates a remote machine instance from previously stored directory in the remote server.
@@ -102,14 +102,14 @@ CM_API int32_t cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const char *
 /// \param runtime_config Machine runtime configuration as a JSON string, it can be NULL.
 /// \param new_machine Receives the pointer to new remote machine instance.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_jsonrpc_load_machine(const cm_jsonrpc_mgr *mgr, const char *dir, const char *runtime_config,
+CM_API cm_error cm_jsonrpc_load_machine(const cm_jsonrpc_mgr *mgr, const char *dir, const char *runtime_config,
     cm_machine **new_machine);
 
 /// \brief Get remote machine instance that was previously created in the remote server.
 /// \param mgr Pointer to a valid JSONRPC connection manager.
 /// \param new_machine Receives the pointer to remote machine instance.
 /// \returns 0 for success, non zero code for error.
-CM_API int32_t cm_jsonrpc_get_machine(const cm_jsonrpc_mgr *mgr, cm_machine **new_machine);
+CM_API cm_error cm_jsonrpc_get_machine(const cm_jsonrpc_mgr *mgr, cm_machine **new_machine);
 
 // -------------------------------------
 // Verifying
@@ -122,8 +122,8 @@ CM_API int32_t cm_jsonrpc_get_machine(const cm_jsonrpc_mgr *mgr, cm_machine **ne
 /// \returns 0 for success, non zero code for error.
 /// \details In case both root_hash_before and root_hash_after are NULL,
 /// then it just verifies the access log integrity.
-CM_API int32_t cm_jsonrpc_verify_step_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before, const char *log,
-    const cm_hash *root_hash_after);
+CM_API cm_error cm_jsonrpc_verify_step_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
+    const char *log, const cm_hash *root_hash_after);
 
 /// \brief Checks the validity of a state transition produced by a microarchitecture state reset.
 /// \param mgr Pointer to a valid JSONRPC connection manager.
@@ -133,7 +133,7 @@ CM_API int32_t cm_jsonrpc_verify_step_uarch(const cm_jsonrpc_mgr *mgr, const cm_
 /// \returns 0 for success, non zero code for error.
 /// \details In case both root_hash_before and root_hash_after are NULL,
 /// then it just verifies the access log integrity.
-CM_API int32_t cm_jsonrpc_verify_reset_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
+CM_API cm_error cm_jsonrpc_verify_reset_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before,
     const char *log, const cm_hash *root_hash_after);
 
 /// \brief Checks the validity of state transitions produced by a send cmio response.
@@ -147,7 +147,7 @@ CM_API int32_t cm_jsonrpc_verify_reset_uarch(const cm_jsonrpc_mgr *mgr, const cm
 /// \returns 0 for success, non zero code for error.
 /// \details In case both root_hash_before and root_hash_after are NULL,
 /// then it just verifies the access log integrity.
-CM_API int32_t cm_jsonrpc_verify_send_cmio_response(const cm_jsonrpc_mgr *mgr, uint16_t reason, const uint8_t *data,
+CM_API cm_error cm_jsonrpc_verify_send_cmio_response(const cm_jsonrpc_mgr *mgr, uint16_t reason, const uint8_t *data,
     uint64_t length, const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
 
 #ifdef __cplusplus

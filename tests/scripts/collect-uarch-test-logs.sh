@@ -17,5 +17,5 @@
 #
 set -e
 mkdir -m 755 -p /tmp/uarch-riscv-tests-json-logs
-uarch-riscv-tests --output-dir=/tmp/uarch-riscv-tests-json-logs --proofs --proofs-frequency=1 --create-reset-uarch-log --create-send-cmio-response-log --jobs=$(nproc) json-step-logs
+uarch-riscv-tests --output-dir=/tmp/uarch-riscv-tests-json-logs --create-reset-uarch-log --create-send-cmio-response-log --jobs=$(nproc) json-step-logs
 tar -czf uarch-riscv-tests-json-logs.tar.gz -C /tmp uarch-riscv-tests-json-logs

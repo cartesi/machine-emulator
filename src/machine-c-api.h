@@ -105,9 +105,8 @@ typedef enum cm_uarch_break_reason {
 
 /// \brief Access log types.
 typedef enum cm_access_log_type {
-    CM_ACCESS_LOG_TYPE_PROOFS = 1,      ///< Includes proofs
-    CM_ACCESS_LOG_TYPE_ANNOTATIONS = 2, ///< Includes annotations
-    CM_ACCESS_LOG_TYPE_LARGE_DATA = 4,  ///< Includes data larger than 8 bytes
+    CM_ACCESS_LOG_TYPE_ANNOTATIONS = 1, ///< Includes annotations
+    CM_ACCESS_LOG_TYPE_LARGE_DATA = 2,  ///< Includes data larger than 8 bytes
 } cm_access_log_type;
 
 /// \brief Yield device commands.
@@ -641,23 +640,21 @@ CM_API cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const 
 // Verifying
 // ------------------------------------
 
-/// \brief Checks the validity of a state transition for one microarchitecture cycle.
+/// \brief Checks the validity of a state transition produced by cm_log_step_uarch.
 /// \param root_hash_before State hash before step.
 /// \param log State access log to be verified as a JSON object in a string.
 /// \param root_hash_after State hash after step.
 /// \returns 0 for success, non zero code for error.
-/// \details If both root_hash_before and root_hash_after are NULL, no proofs are taken into account.
 CM_API cm_error cm_verify_step_uarch(const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
 
-/// \brief Checks the validity of a state transition produced by a microarchitecture reset.
+/// \brief Checks the validity of a state transition produced by cm_log_verify_reset_uarch.
 /// \param root_hash_before State hash before reset.
 /// \param log State access log to be verified as a JSON object in a string.
 /// \param root_hash_after State hash after reset.
 /// \returns 0 for success, non zero code for error.
-/// \details If both root_hash_before and root_hash_after are NULL, no proofs are taken into account.
 CM_API cm_error cm_verify_reset_uarch(const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
 
-/// \brief Checks the validity of state transitions produced by a send cmio response.
+/// \brief Checks the validity of a state transition produced by cm_log_send_cmio_response.
 /// \param reason Reason for sending the response.
 /// \param data The response sent when the log was generated.
 /// \param length Length of response.
@@ -665,7 +662,6 @@ CM_API cm_error cm_verify_reset_uarch(const cm_hash *root_hash_before, const cha
 /// \param log State access log to be verified as a JSON object in a string.
 /// \param root_hash_after State hash after response.
 /// \returns 0 for success, non zero code for error.
-/// \details If both root_hash_before and root_hash_after are NULL, no proofs are taken into account.
 CM_API cm_error cm_verify_send_cmio_response(uint16_t reason, const uint8_t *data, uint64_t length,
     const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
 

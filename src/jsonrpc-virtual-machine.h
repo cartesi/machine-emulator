@@ -58,22 +58,14 @@ public:
 
     static machine_config get_default_config(const jsonrpc_mgr_ptr &mgr);
 
-    static void verify_step_uarch_log(const jsonrpc_mgr_ptr &mgr, const access_log &log);
-
-    static void verify_step_uarch_state_transition(const jsonrpc_mgr_ptr &mgr, const hash_type &root_hash_before,
-        const access_log &log, const hash_type &root_hash_after);
-
-    static void verify_reset_uarch_log(const jsonrpc_mgr_ptr &mgr, const access_log &log);
-
-    static void verify_reset_uarch_state_transition(const jsonrpc_mgr_ptr &mgr, const hash_type &root_hash_before,
-        const access_log &log, const hash_type &root_hash_after);
-
-    static void verify_send_cmio_response_log(const jsonrpc_mgr_ptr &mgr, uint16_t reason, const unsigned char *data,
-        uint64_t length, const access_log &log);
-
-    static void verify_send_cmio_response_state_transition(const jsonrpc_mgr_ptr &mgr, uint16_t reason,
-        const unsigned char *data, uint64_t length, const hash_type &root_hash_before, const access_log &log,
+    static void verify_step_uarch(const jsonrpc_mgr_ptr &mgr, const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after);
+
+    static void verify_reset_uarch(const jsonrpc_mgr_ptr &mgr, const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after);
+
+    static void verify_send_cmio_response(const jsonrpc_mgr_ptr &mgr, uint16_t reason, const unsigned char *data,
+        uint64_t length, const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after);
 
     static fork_result fork(const jsonrpc_mgr_ptr &mgr);
     static std::string rebind(const jsonrpc_mgr_ptr &mgr, const std::string &address);

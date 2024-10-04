@@ -2150,17 +2150,11 @@ if gdb_stub then gdb_stub:close() end
 if log_step_uarch then
     assert(config.processor.iunrep == 0, "micro step proof is meaningless in unreproducible mode")
     stderr("Gathering micro step log: please wait\n")
-    util.dump_log(
-        machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_PROOFS | cartesi.ACCESS_LOG_TYPE_ANNOTATIONS),
-        io.stderr
-    )
+    util.dump_log(machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
 end
 if log_reset_uarch then
     stderr("Resetting microarchitecture state: please wait\n")
-    util.dump_log(
-        machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_PROOFS | cartesi.ACCESS_LOG_TYPE_ANNOTATIONS),
-        io.stderr
-    )
+    util.dump_log(machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
 end
 if dump_memory_ranges then dump_pmas(machine) end
 if final_hash then

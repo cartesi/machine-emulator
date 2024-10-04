@@ -717,10 +717,9 @@ do_test("machine step should pass verifications", function(machine)
         module = remote
     end
     local initial_hash = machine:get_root_hash()
-    local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_PROOFS | cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
+    local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
     local final_hash = machine:get_root_hash()
     module.machine.verify_step_uarch(initial_hash, log, final_hash)
-    module.machine.verify_step_uarch(nil, log, nil)
 end)
 
 print("\n\ntesting step and verification")
@@ -733,14 +732,16 @@ do_test("Step log must contain conssitent data hashes", function(machine)
         end
         module = remote
     end
+    local initial_hash = machine:get_root_hash()
     local log = machine:log_step_uarch()
-    module.machine.verify_step_uarch(nil, log, nil)
+    local final_hash = machine:get_root_hash()
+    module.machine.verify_step_uarch(initial_hash, log, final_hash)
     local read_access = log.accesses[1]
     assert(read_access.type == "read")
     local read_hash = read_access.read_hash
     -- ensure that verification fails with wrong read hash
     read_access.read_hash = wrong_hash
-    local _, err = pcall(module.machine.verify_step_uarch, nil, log, nil)
+    local _, err = pcall(module.machine.verify_step_uarch, initial_hash, log, final_hash)
     assert(err:match("logged read data of uarch.uarch_cycle data does not hash to the logged read hash at 1st access"))
     read_access.read_hash = read_hash -- restore correct value
 
@@ -749,13 +750,13 @@ do_test("Step log must contain conssitent data hashes", function(machine)
     assert(write_access.type == "write")
     read_hash = write_access.read_hash
     write_access.read_hash = wrong_hash
-    _, err = pcall(module.machine.verify_step_uarch, nil, log, nil)
+    _, err = pcall(module.machine.verify_step_uarch, initial_hash, log, final_hash)
     assert(err:match("logged read data of uarch.cycle does not hash to the logged read hash at 8th access"))
     write_access.read_hash = read_hash -- restore correct value
 
     -- ensure that verification fails with wrong written hash
     write_access.written_hash = wrong_hash
-    _, err = pcall(module.machine.verify_step_uarch, nil, log, nil)
+    _, err = pcall(module.machine.verify_step_uarch, initial_hash, log, final_hash)
     assert(err:match("logged written data of uarch.cycle does not hash to the logged written hash at 8th access"))
 end)
 
@@ -770,12 +771,11 @@ do_test("step when uarch cycle is max", function(machine)
     machine:write_reg("uarch_cycle", MAX_UARCH_CYCLE)
     assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
     local initial_hash = machine:get_root_hash()
-    local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_PROOFS | cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
+    local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
     assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
     local final_hash = machine:get_root_hash()
     assert(final_hash == initial_hash)
     module.machine.verify_step_uarch(initial_hash, log, final_hash)
-    module.machine.verify_step_uarch(nil, log, nil)
 end)
 
 local uarch_proof_step_program = {
@@ -797,18 +797,17 @@ test_util.make_do_test(build_machine, machine_type, {
     local t1 = 6
     local t2 = 7
     local uarch_ram_start = cartesi.UARCH_RAM_START_ADDRESS
-    local log_type = cartesi.ACCESS_LOG_TYPE_PROOFS
 
-    machine:log_step_uarch(log_type) -- auipc	t0,0x0
-    machine:log_step_uarch(log_type) -- addi	t0,t0,256 # 0x100
+    machine:log_step_uarch() -- auipc	t0,0x0
+    machine:log_step_uarch() -- addi	t0,t0,256 # 0x100
     assert(machine:read_reg("uarch_x" .. t0) == uarch_ram_start + 0x100)
-    machine:log_step_uarch(log_type) -- li	t1,0xca
+    machine:log_step_uarch() -- li	t1,0xca
     assert(machine:read_reg("uarch_x" .. t1) == 0xca)
-    machine:log_step_uarch(log_type) -- li	t2,0xfe
+    machine:log_step_uarch() -- li	t2,0xfe
     assert(machine:read_reg("uarch_x" .. t2) == 0xfe)
 
     -- sd and assert stored correctly
-    machine:log_step_uarch(log_type) -- sd	t1,0(t0) [0xca]
+    machine:log_step_uarch() -- sd	t1,0(t0) [0xca]
     assert(string.unpack("I8", machine:read_memory(uarch_ram_start + 0x100, 8)) == 0xca)
 
     -- sd and assert stored correctly
@@ -818,7 +817,7 @@ test_util.make_do_test(build_machine, machine_type, {
     -- This step should run successfully
     -- The previous unproven step should have marked the updated pages dirty, allowing
     -- the tree to be updated correctly in the next proved step
-    machine:log_step_uarch(log_type) -- sd	t1,0(t0) [0xca]
+    machine:log_step_uarch() -- sd	t1,0(t0) [0xca]
     assert(string.unpack("I8", machine:read_memory(uarch_ram_start + 0x100, 8)) == 0xca)
 end)
 
@@ -892,7 +891,7 @@ for i = 0, 31 do
     test_reset_uarch_config.processor["x" .. i] = 0x10000 + (i * 8)
 end
 
-local function test_reset_uarch(machine, with_log, with_proofs, with_annotations)
+local function test_reset_uarch(machine, with_log, with_annotations)
     -- assert initial fixture state
     assert(machine:read_uarch_halt_flag() == true)
     assert(machine:read_uarch_cycle() == 1)
@@ -909,16 +908,11 @@ local function test_reset_uarch(machine, with_log, with_proofs, with_annotations
     assert(uarch_state_hash ~= cartesi.UARCH_PRISTINE_STATE_HASH)
     -- reset uarch state
     if with_log then
-        local log_type = (with_proofs and cartesi.ACCESS_LOG_TYPE_PROOFS or 0)
-            | (with_annotations and cartesi.ACCESS_LOG_TYPE_ANNOTATIONS or 0)
+        local log_type = (with_annotations and cartesi.ACCESS_LOG_TYPE_ANNOTATIONS or 0)
         local log = machine:log_reset_uarch(log_type)
         assert(#log.accesses == 1)
         local access = log.accesses[1]
-        if with_proofs then
-            assert(access.sibling_hashes ~= nil)
-        else
-            assert(access.sibling_hashes == nil)
-        end
+        assert(access.sibling_hashes ~= nil)
         assert(access.address == cartesi.UARCH_SHADOW_START_ADDRESS)
         assert(access.log2_size == cartesi.UARCH_STATE_LOG2_SIZE)
         assert(access.written_hash == cartesi.UARCH_PRISTINE_STATE_HASH)
@@ -946,22 +940,17 @@ end
 test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
     "Testing reset_uarch without logging",
     function(machine)
-        test_reset_uarch(machine, false, false, false)
+        test_reset_uarch(machine, false, false)
     end
 )
 
-for _, with_proofs in ipairs({ true, false }) do
-    for _, with_annotations in ipairs({ true, false }) do
-        test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
-            "Testing reset_uarch with logging, proofs="
-                .. tostring(with_proofs)
-                .. ", annotations="
-                .. tostring(with_annotations),
-            function(machine)
-                test_reset_uarch(machine, true, with_proofs, with_annotations)
-            end
-        )
-    end
+for _, with_annotations in ipairs({ true, false }) do
+    test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+        "Testing reset_uarch with logging, annotations=" .. tostring(with_annotations),
+        function(machine)
+            test_reset_uarch(machine, true, with_annotations)
+        end
+    )
 end
 
 test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
@@ -972,7 +961,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
             module = remote
         end
         local initial_hash = machine:get_root_hash()
-        local log = machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_PROOFS | cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
+        local log = machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
         local final_hash = machine:get_root_hash()
         -- verify happy path
         module.machine.verify_reset_uarch(initial_hash, log, final_hash)
@@ -993,15 +982,17 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         if machine_type ~= "local" then
             module = remote
         end
-        local log = machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_PROOFS | cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
-        module.machine.verify_reset_uarch(nil, log, nil)
+        local initial_hash = machine:get_root_hash()
+        local log = machine:log_reset_uarch()
+        local final_hash = machine:get_root_hash()
+        module.machine.verify_reset_uarch(initial_hash, log, final_hash)
     end
 )
 
 test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
     "Dump of log produced by log_reset_uarch should match",
     function(machine)
-        local log = machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_PROOFS | cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
+        local log = machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
         local expected_dump_pattern = "begin reset uarch state\n"
             .. "  1: write uarch_state@0x400000%(4194304%): "
             .. 'hash:"[0-9a-f]+"%(2%^22 bytes%) %-> hash:"[0-9a-fA-F]+"%(2%^22 bytes%)\n'
@@ -1038,27 +1029,27 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
             module = remote
         end
         -- reset uarch and get log
-        local log = machine:log_reset_uarch(
-            cartesi.ACCESS_LOG_TYPE_PROOFS | cartesi.ACCESS_LOG_TYPE_ANNOTATIONS | cartesi.ACCESS_LOG_TYPE_LARGE_DATA
-        )
+        local initial_hash = machine:get_root_hash()
+        local log = machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS | cartesi.ACCESS_LOG_TYPE_LARGE_DATA)
+        local final_hash = machine:get_root_hash()
         assert(#log.accesses == 1, "log should have 1 access")
         local access = log.accesses[1]
         -- in debug mode, the log must include read and written data
         assert(access.read ~= nil, "read data should not be nil")
         assert(access.written ~= nil, "written data should not be nil")
         -- verify returned log
-        module.machine.verify_reset_uarch(nil, log, nil)
+        module.machine.verify_reset_uarch(initial_hash, log, final_hash)
         -- save logged read and written data
         local original_read = access.read
         -- tamper with read data to produce a hash mismatch
         access.read = "X" .. access.read:sub(2)
-        local _, err = pcall(module.machine.verify_reset_uarch, nil, log, nil)
+        local _, err = pcall(module.machine.verify_reset_uarch, initial_hash, log, final_hash)
         assert(err:match("hash of read data and read hash at 1st access does not match read hash"))
         -- restore correct read
         access.read = original_read
         --  change written data to produce a hash mismatch
         access.written = "X" .. access.written:sub(2)
-        _, err = pcall(module.machine.verify_reset_uarch, nil, log, nil)
+        _, err = pcall(module.machine.verify_reset_uarch, initial_hash, log, final_hash)
         assert(err:match("written hash and written data mismatch at 1st access"))
     end
 )
@@ -1075,7 +1066,7 @@ do_test("Test unhappy paths of verify_reset_uarch", function(machine)
     local function assert_error(expected_error, callback)
         machine:reset_uarch()
         local initial_hash = machine:get_root_hash()
-        local log = machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_PROOFS)
+        local log = machine:log_reset_uarch()
         local final_hash = machine:get_root_hash()
         callback(log)
         local _, err = pcall(module.machine.verify_reset_uarch, initial_hash, log, final_hash)
@@ -1130,7 +1121,7 @@ do_test("Test unhappy paths of verify_step_uarch", function(machine)
     local function assert_error(expected_error, callback)
         machine:reset_uarch()
         local initial_hash = machine:get_root_hash()
-        local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_PROOFS)
+        local log = machine:log_step_uarch()
         local final_hash = machine:get_root_hash()
         callback(log)
         local _, err = pcall(module.machine.verify_step_uarch, initial_hash, log, final_hash)
@@ -1299,81 +1290,73 @@ local function test_send_cmio_input_with_different_arguments()
         machine:send_cmio_response(reason, data)
         assert_after_cmio_response_sent(machine)
     end)
-    for _, proofs in ipairs({ false, true }) do
-        for _, large_data in ipairs({ false, true }) do
-            local annotations = true
-            do_test(
-                string.format(
-                    "log_send_cmio_response happy path with proofs=%s, annotations=%s, large_data=%s",
-                    proofs,
-                    annotations,
-                    large_data
-                ),
-                function(machine)
-                    local log_type = (proofs and cartesi.ACCESS_LOG_TYPE_PROOFS or 0)
-                        | (annotations and cartesi.ACCESS_LOG_TYPE_ANNOTATIONS or 0)
-                        | (large_data and cartesi.ACCESS_LOG_TYPE_LARGE_DATA or 0)
-                    local module = cartesi
-                    if machine_type ~= "local" then
-                        if not remote then
-                            remote = connect()
-                        end
-                        module = remote
+    for _, large_data in ipairs({ false, true }) do
+        local annotations = true
+        do_test(
+            string.format(
+                "log_send_cmio_response happy path with annotations=%s, large_data=%s",
+                annotations,
+                large_data
+            ),
+            function(machine)
+                local log_type = (annotations and cartesi.ACCESS_LOG_TYPE_ANNOTATIONS or 0)
+                    | (large_data and cartesi.ACCESS_LOG_TYPE_LARGE_DATA or 0)
+                local module = cartesi
+                if machine_type ~= "local" then
+                    if not remote then
+                        remote = connect()
                     end
-                    assert_before_cmio_response_sent(machine)
-                    local root_hash_before = proofs and machine:get_root_hash() or nil
-                    local log = machine:log_send_cmio_response(reason, data, log_type)
-                    assert_after_cmio_response_sent(machine)
-                    local root_hash_after = proofs and machine:get_root_hash() or nil
-                    -- check log
-                    local accesses = log.accesses
-                    assert(#accesses == 5)
-                    assert_access(accesses, 1, {
-                        type = "read",
-                        address = module.machine.get_reg_address("iflags"),
-                        log2_size = 3,
-                    })
-                    assert_access(accesses, 2, {
-                        type = "write",
-                        address = cartesi.PMA_CMIO_RX_BUFFER_START,
-                        log2_size = cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE,
-                        read_hash = all_zeros_hash,
-                        read = large_data and all_zeros or nil,
-                        written_hash = data_hash,
-                        written = large_data and data or nil,
-                    })
-                    assert_access(accesses, 3, {
-                        type = "write",
-                        address = module.machine.get_reg_address("htif_fromhost"),
-                        log2_size = 3,
-                    })
-                    assert_access(accesses, 4, {
-                        type = "read",
-                        address = module.machine.get_reg_address("iflags"),
-                        log2_size = 3,
-                    })
-                    assert_access(accesses, 5, {
-                        type = "write",
-                        address = module.machine.get_reg_address("iflags"),
-                        log2_size = 3,
-                    })
-                    -- ask machine to verify the log
-                    module.machine.verify_send_cmio_response(reason, data, nil, log, nil)
-                    if proofs then
-                        -- ask machine to verify state transitions
-                        module.machine.verify_send_cmio_response(
-                            reason,
-                            data,
-                            root_hash_before,
-                            log,
-                            root_hash_after,
-                            log_type,
-                            {}
-                        )
-                    end
+                    module = remote
                 end
-            )
-        end
+                assert_before_cmio_response_sent(machine)
+                local root_hash_before = machine:get_root_hash()
+                local log = machine:log_send_cmio_response(reason, data, log_type)
+                assert_after_cmio_response_sent(machine)
+                local root_hash_after = machine:get_root_hash()
+                -- check log
+                local accesses = log.accesses
+                assert(#accesses == 5)
+                assert_access(accesses, 1, {
+                    type = "read",
+                    address = module.machine.get_reg_address("iflags"),
+                    log2_size = 3,
+                })
+                assert_access(accesses, 2, {
+                    type = "write",
+                    address = cartesi.PMA_CMIO_RX_BUFFER_START,
+                    log2_size = cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE,
+                    read_hash = all_zeros_hash,
+                    read = large_data and all_zeros or nil,
+                    written_hash = data_hash,
+                    written = large_data and data or nil,
+                })
+                assert_access(accesses, 3, {
+                    type = "write",
+                    address = module.machine.get_reg_address("htif_fromhost"),
+                    log2_size = 3,
+                })
+                assert_access(accesses, 4, {
+                    type = "read",
+                    address = module.machine.get_reg_address("iflags"),
+                    log2_size = 3,
+                })
+                assert_access(accesses, 5, {
+                    type = "write",
+                    address = module.machine.get_reg_address("iflags"),
+                    log2_size = 3,
+                })
+                -- ask machine to verify state transitions
+                module.machine.verify_send_cmio_response(
+                    reason,
+                    data,
+                    root_hash_before,
+                    log,
+                    root_hash_after,
+                    log_type,
+                    {}
+                )
+            end
+        )
     end
 end
 test_send_cmio_input_with_different_arguments()
@@ -1382,11 +1365,7 @@ do_test("Dump of log produced by send_cmio_response should match", function(mach
     machine:set_iflags_Y()
     local data = "0123456789"
     local reason = 7
-    local log = machine:log_send_cmio_response(
-        reason,
-        data,
-        cartesi.ACCESS_LOG_TYPE_PROOFS | cartesi.ACCESS_LOG_TYPE_ANNOTATIONS
-    )
+    local log = machine:log_send_cmio_response(reason, data, cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
     -- luacheck: push no max line length
     local expected_dump = "begin send cmio response\n"
         .. "  1: read iflags.Y@0x2e8(744): 0x1a(26)\n"
@@ -1484,10 +1463,9 @@ do_test("send_cmio_response of zero bytes", function(machine)
     -- log and verify
     machine:set_iflags_Y()
     local hash_before = machine:get_root_hash()
-    local log = machine:log_send_cmio_response(reason, data, cartesi.ACCESS_LOG_TYPE_PROOFS)
+    local log = machine:log_send_cmio_response(reason, data)
     assert(#log.accesses == 4, "log should have 4 accesses")
     local hash_after = machine:get_root_hash()
-    module.machine.verify_send_cmio_response(reason, data, nil, log, nil)
     module.machine.verify_send_cmio_response(reason, data, hash_before, log, hash_after)
 end)
 
@@ -1584,7 +1562,7 @@ test_util.make_do_test(build_machine, machine_type, {
     -- step and log one instruction that stores the word in t0 to the address in t1
     -- returns raw and formatted log
     local function log_step()
-        local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_PROOFS | cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
+        local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
         local temp_file <close> = test_util.new_temp_file()
         util.dump_log(log, temp_file)
         return log, temp_file:read_all()

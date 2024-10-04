@@ -167,16 +167,16 @@ private:
         }
         const uint64_t pleaf_aligned = paligned & ~(machine_merkle_tree::get_word_size() - 1);
         access a;
-        if (m_log->get_log_type().has_proofs()) {
-            // We can skip updating the merkle tree while getting the proof because we assume that:
-            // 1) A full merkle tree update was called at the beginning of machine::log_step_uarch()
-            // 2) We called update_merkle_tree_page on all write accesses
-            const auto proof =
-                m_m.get_proof(pleaf_aligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
-            // We just store the sibling hashes in the access because this is the only missing piece of data needed to
-            // reconstruct the proof
-            a.set_sibling_hashes(proof.get_sibling_hashes());
-        }
+
+        // We can skip updating the merkle tree while getting the proof because we assume that:
+        // 1) A full merkle tree update was called at the beginning of machine::log_step_uarch()
+        // 2) We called update_merkle_tree_page on all write accesses
+        const auto proof =
+            m_m.get_proof(pleaf_aligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
+        // We just store the sibling hashes in the access because this is the only missing piece of data needed to
+        // reconstruct the proof
+        a.set_sibling_hashes(proof.get_sibling_hashes());
+
         a.set_type(access_type::read);
         a.set_address(paligned);
         a.set_log2_size(log2_size<uint64_t>::value);
@@ -210,16 +210,16 @@ private:
         }
         const uint64_t pleaf_aligned = paligned & ~(machine_merkle_tree::get_word_size() - 1);
         access a;
-        if (m_log->get_log_type().has_proofs()) {
-            // We can skip updating the merkle tree while getting the proof because we assume that:
-            // 1) A full merkle tree update was called at the beginning of machine::log_step_uarch()
-            // 2) We called update_merkle_tree_page on all write accesses
-            const auto proof =
-                m_m.get_proof(pleaf_aligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
-            // We just store the sibling hashes in the access because this is the only missing piece of data needed to
-            // reconstruct the proof
-            a.set_sibling_hashes(proof.get_sibling_hashes());
-        }
+
+        // We can skip updating the merkle tree while getting the proof because we assume that:
+        // 1) A full merkle tree update was called at the beginning of machine::log_step_uarch()
+        // 2) We called update_merkle_tree_page on all write accesses
+        const auto proof =
+            m_m.get_proof(pleaf_aligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
+        // We just store the sibling hashes in the access because this is the only missing piece of data needed to
+        // reconstruct the proof
+        a.set_sibling_hashes(proof.get_sibling_hashes());
+
         a.set_type(access_type::write);
         a.set_address(paligned);
         a.set_log2_size(log2_size<uint64_t>::value);
@@ -244,11 +244,9 @@ private:
     /// \param paligned Physical address in the machine state, aligned to a 64-bit word.
     void update_after_write(uint64_t paligned) {
         assert((paligned & (sizeof(uint64_t) - 1)) == 0);
-        if (m_log->get_log_type().has_proofs()) {
-            const bool updated = m_m.update_merkle_tree_page(paligned);
-            (void) updated;
-            assert(updated);
-        }
+        const bool updated = m_m.update_merkle_tree_page(paligned);
+        (void) updated;
+        assert(updated);
     }
 
     /// \brief Logs a write access before it happens, writes, and then update the Merkle tree.
@@ -376,15 +374,8 @@ private:
         // Actually modify the state
         aliased_aligned_write<uint64_t>(hdata, data);
 
-        // Finally, update Merkle tree or mark the page dirty, depending on whether proofs are being requested or not
-        if (m_log->get_log_type().has_proofs()) {
-            // When proofs are requested, we always want to update the Merkle tree
-            update_after_write(paddr);
-        } else {
-            // Marking the page dirty is only needed for pages of memory PMAs, when proofs are not requested
-            const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-            pma.mark_dirty_page(paddr_page - pma.get_start());
-        }
+        // When proofs are requested, we always want to update the Merkle tree
+        update_after_write(paddr);
     }
 
     /// \brief Writes a uint64 machine state register mapped to a memory address
@@ -425,11 +416,11 @@ private:
             // log read data, if debug info is enabled
             a.get_read().emplace(get_uarch_state_image());
         }
-        if (m_log->get_log_type().has_proofs()) {
-            // We just store the sibling hashes in the access because this is the only missing piece of data needed to
-            // reconstruct the proof
-            a.set_sibling_hashes(proof.get_sibling_hashes());
-        }
+
+        // We just store the sibling hashes in the access because this is the only missing piece of data needed to
+        // reconstruct the proof
+        a.set_sibling_hashes(proof.get_sibling_hashes());
+
         a.set_written_hash(uarch_pristine_state_hash);
 
         // Restore uarch to pristine state

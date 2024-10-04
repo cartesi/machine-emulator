@@ -400,33 +400,21 @@ void jsonrpc_virtual_machine::shutdown(const jsonrpc_mgr_ptr &mgr) {
     mgr->shutdown();
 }
 
-void jsonrpc_virtual_machine::verify_step_uarch_log(const jsonrpc_mgr_ptr &mgr, const access_log &log) {
-    bool result = false;
-    jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "machine.verify_step_uarch_log", std::tie(log),
-        result);
-}
-
-void jsonrpc_virtual_machine::verify_step_uarch_state_transition(const jsonrpc_mgr_ptr &mgr,
-    const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) {
+void jsonrpc_virtual_machine::verify_step_uarch(const jsonrpc_mgr_ptr &mgr, const hash_type &root_hash_before,
+    const access_log &log, const hash_type &root_hash_after) {
     bool result = false;
     auto b64_root_hash_before = encode_base64(root_hash_before);
     auto b64_root_hash_after = encode_base64(root_hash_after);
-    jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "machine.verify_step_uarch_state_transition",
+    jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "machine.verify_step_uarch",
         std::tie(b64_root_hash_before, log, b64_root_hash_after), result);
 }
 
-void jsonrpc_virtual_machine::verify_reset_uarch_log(const jsonrpc_mgr_ptr &mgr, const access_log &log) {
-    bool result = false;
-    jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "machine.verify_reset_uarch_log", std::tie(log),
-        result);
-}
-
-void jsonrpc_virtual_machine::verify_reset_uarch_state_transition(const jsonrpc_mgr_ptr &mgr,
-    const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) {
+void jsonrpc_virtual_machine::verify_reset_uarch(const jsonrpc_mgr_ptr &mgr, const hash_type &root_hash_before,
+    const access_log &log, const hash_type &root_hash_after) {
     bool result = false;
     auto b64_root_hash_before = encode_base64(root_hash_before);
     auto b64_root_hash_after = encode_base64(root_hash_after);
-    jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "machine.verify_reset_uarch_state_transition",
+    jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "machine.verify_reset_uarch",
         std::tie(b64_root_hash_before, log, b64_root_hash_after), result);
 }
 
@@ -626,22 +614,14 @@ access_log jsonrpc_virtual_machine::do_log_send_cmio_response(uint16_t reason, c
     return std::move(result).value();
 }
 
-void jsonrpc_virtual_machine::verify_send_cmio_response_log(const jsonrpc_mgr_ptr &mgr, uint16_t reason,
-    const unsigned char *data, uint64_t length, const access_log &log) {
-    bool result = false;
-    std::string b64_data = cartesi::encode_base64(data, length);
-    jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "machine.verify_send_cmio_response_log",
-        std::tie(reason, b64_data, log), result);
-}
-
-void jsonrpc_virtual_machine::verify_send_cmio_response_state_transition(const jsonrpc_mgr_ptr &mgr, uint16_t reason,
+void jsonrpc_virtual_machine::verify_send_cmio_response(const jsonrpc_mgr_ptr &mgr, uint16_t reason,
     const unsigned char *data, uint64_t length, const hash_type &root_hash_before, const access_log &log,
     const hash_type &root_hash_after) {
     bool result = false;
     std::string b64_data = cartesi::encode_base64(data, length);
     auto b64_root_hash_before = encode_base64(root_hash_before);
     auto b64_root_hash_after = encode_base64(root_hash_after);
-    jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "machine.verify_send_cmio_response_state_transition",
+    jsonrpc_request(mgr->get_stream(), mgr->get_remote_address(), "machine.verify_send_cmio_response",
         std::tie(reason, b64_data, b64_root_hash_before, log, b64_root_hash_after), result);
 }
 

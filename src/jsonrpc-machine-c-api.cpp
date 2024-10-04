@@ -124,14 +124,9 @@ cm_error cm_jsonrpc_verify_step_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash *
     const auto *cpp_mgr = convert_from_c(mgr);
     const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log).value();
-    if (root_hash_before || root_hash_after) {
-        const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
-        const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
-        cartesi::jsonrpc_virtual_machine::verify_step_uarch_state_transition(*cpp_mgr, cpp_root_hash_before, cpp_log,
-            cpp_root_hash_after);
-    } else {
-        cartesi::jsonrpc_virtual_machine::verify_step_uarch_log(*cpp_mgr, cpp_log);
-    }
+    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    cartesi::jsonrpc_virtual_machine::verify_step_uarch(*cpp_mgr, cpp_root_hash_before, cpp_log, cpp_root_hash_after);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -143,17 +138,11 @@ cm_error cm_jsonrpc_verify_reset_uarch(const cm_jsonrpc_mgr *mgr, const cm_hash 
         throw std::invalid_argument("invalid access log");
     }
     const auto *cpp_mgr = convert_from_c(mgr);
-
     const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log).value();
-    if (root_hash_before || root_hash_after) {
-        const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
-        const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
-        cartesi::jsonrpc_virtual_machine::verify_reset_uarch_state_transition(*cpp_mgr, cpp_root_hash_before, cpp_log,
-            cpp_root_hash_after);
-    } else {
-        cartesi::jsonrpc_virtual_machine::verify_reset_uarch_log(*cpp_mgr, cpp_log);
-    }
+    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    cartesi::jsonrpc_virtual_machine::verify_reset_uarch(*cpp_mgr, cpp_root_hash_before, cpp_log, cpp_root_hash_after);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -240,14 +229,10 @@ cm_error cm_jsonrpc_verify_send_cmio_response(const cm_jsonrpc_mgr *mgr, uint16_
     const auto *cpp_mgr = convert_from_c(mgr);
     const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log).value();
-    if (root_hash_before || root_hash_after) {
-        const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
-        const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
-        cartesi::jsonrpc_virtual_machine::verify_send_cmio_response_state_transition(*cpp_mgr, reason, data, length,
-            cpp_root_hash_before, cpp_log, cpp_root_hash_after);
-    } else {
-        cartesi::jsonrpc_virtual_machine::verify_send_cmio_response_log(*cpp_mgr, reason, data, length, cpp_log);
-    }
+    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    cartesi::jsonrpc_virtual_machine::verify_send_cmio_response(*cpp_mgr, reason, data, length, cpp_root_hash_before,
+        cpp_log, cpp_root_hash_after);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();

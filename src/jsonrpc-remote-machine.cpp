@@ -966,33 +966,6 @@ static json jsonrpc_machine_log_step_uarch_handler(const json &j, const std::sha
     return jsonrpc_response_ok(j, session->handler->machine->log_step_uarch(std::get<0>(args).value()));
 }
 
-/// \brief JSONRPC handler for the machine.verify_step_uarch_log method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_verify_step_uarch_log_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    (void) session;
-    static const char *param_name[] = {"log"};
-    auto args = parse_args<cartesi::not_default_constructible<cartesi::access_log>>(j, param_name);
-    // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-    cartesi::machine::verify_step_uarch_log(std::get<0>(args).value());
-    return jsonrpc_response_ok(j);
-}
-
-/// \brief JSONRPC handler for the machine.verify_reset_uarch_log method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_verify_reset_uarch_log_handler(const json &j,
-    const std::shared_ptr<http_session> &session) {
-    (void) session;
-    static const char *param_name[] = {"log"};
-    auto args = parse_args<cartesi::not_default_constructible<cartesi::access_log>>(j, param_name);
-    // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-    cartesi::machine::verify_reset_uarch_log(std::get<0>(args).value());
-    return jsonrpc_response_ok(j);
-}
-
 /// \brief JSONRPC handler for the machine.log_step_uarch method
 /// \param j JSON request object
 /// \param session HTTP session
@@ -1007,37 +980,33 @@ static json jsonrpc_machine_log_reset_uarch_handler(const json &j, const std::sh
     return jsonrpc_response_ok(j, session->handler->machine->log_reset_uarch(std::get<0>(args).value()));
 }
 
-/// \brief JSONRPC handler for the machine.verify_step_uarch_state_transition method
+/// \brief JSONRPC handler for the machine.verify_step_uarch method
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_step_uarch_state_transition_handler(const json &j,
-    const std::shared_ptr<http_session> &session) {
+static json jsonrpc_machine_verify_step_uarch_handler(const json &j, const std::shared_ptr<http_session> &session) {
     (void) session;
     static const char *param_name[] = {"root_hash_before", "log", "root_hash_after"};
     auto args =
         parse_args<cartesi::machine_merkle_tree::hash_type, cartesi::not_default_constructible<cartesi::access_log>,
             cartesi::machine_merkle_tree::hash_type>(j, param_name);
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-    cartesi::machine::verify_step_uarch_state_transition(std::get<0>(args), std::get<1>(args).value(),
-        std::get<2>(args));
+    cartesi::machine::verify_step_uarch(std::get<0>(args), std::get<1>(args).value(), std::get<2>(args));
     return jsonrpc_response_ok(j);
 }
 
-/// \brief JSONRPC handler for the machine.verify_reset_uarch_state_transition method
+/// \brief JSONRPC handler for the machine.verify_reset_uarch method
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_reset_uarch_state_transition_handler(const json &j,
-    const std::shared_ptr<http_session> &session) {
+static json jsonrpc_machine_verify_reset_uarch_handler(const json &j, const std::shared_ptr<http_session> &session) {
     (void) session;
     static const char *param_name[] = {"root_hash_before", "log", "root_hash_after"};
     auto args =
         parse_args<cartesi::machine_merkle_tree::hash_type, cartesi::not_default_constructible<cartesi::access_log>,
             cartesi::machine_merkle_tree::hash_type>(j, param_name);
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-    cartesi::machine::verify_reset_uarch_state_transition(std::get<0>(args), std::get<1>(args).value(),
-        std::get<2>(args));
+    cartesi::machine::verify_reset_uarch(std::get<0>(args), std::get<1>(args).value(), std::get<2>(args));
     return jsonrpc_response_ok(j);
 }
 
@@ -1328,31 +1297,11 @@ static json jsonrpc_machine_log_send_cmio_response_handler(const json &j,
     // NOLINTEND(bugprone-unchecked-optional-access)
 }
 
-/// \brief JSONRPC handler for the machine.verify_send_cmio_response_log method
+/// \brief JSONRPC handler for the machine.verify_send_cmio_response method
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_send_cmio_response_log_handler(const json &j,
-    const std::shared_ptr<http_session> &session) {
-    (void) session;
-    static const char *param_name[] = {"reason", "data", "log"};
-    auto args =
-        parse_args<uint16_t, std::string, cartesi::not_default_constructible<cartesi::access_log>>(j, param_name);
-    auto bin = cartesi::decode_base64(std::get<1>(args));
-    // NOLINTBEGIN(bugprone-unchecked-optional-access)
-    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
-    cartesi::machine::verify_send_cmio_response_log(std::get<0>(args), reinterpret_cast<unsigned char *>(bin.data()),
-        bin.size(), std::get<2>(args).value());
-    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
-    // NOLINTEND(bugprone-unchecked-optional-access)
-    return jsonrpc_response_ok(j);
-}
-
-/// \brief JSONRPC handler for the machine.verify_send_cmio_response_state_transition method
-/// \param j JSON request object
-/// \param session HTTP session
-/// \returns JSON response object
-static json jsonrpc_machine_verify_send_cmio_response_state_transition_handler(const json &j,
+static json jsonrpc_machine_verify_send_cmio_response_handler(const json &j,
     const std::shared_ptr<http_session> &session) {
     (void) session;
     static const char *param_name[] = {"reason", "data", "root_hash_before", "log", "root_hash_after"};
@@ -1363,9 +1312,8 @@ static json jsonrpc_machine_verify_send_cmio_response_state_transition_handler(c
     auto bin = cartesi::decode_base64(std::get<1>(args));
     // NOLINTBEGIN(bugprone-unchecked-optional-access)
     // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
-    cartesi::machine::verify_send_cmio_response_state_transition(std::get<0>(args),
-        reinterpret_cast<unsigned char *>(bin.data()), bin.size(), std::get<2>(args), std::get<3>(args).value(),
-        std::get<4>(args));
+    cartesi::machine::verify_send_cmio_response(std::get<0>(args), reinterpret_cast<unsigned char *>(bin.data()),
+        bin.size(), std::get<2>(args), std::get<3>(args).value(), std::get<4>(args));
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
     // NOLINTEND(bugprone-unchecked-optional-access)
     return jsonrpc_response_ok(j);
@@ -1428,10 +1376,8 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.log_step_uarch", jsonrpc_machine_log_step_uarch_handler},
         {"machine.reset_uarch", jsonrpc_machine_reset_uarch_handler},
         {"machine.log_reset_uarch", jsonrpc_machine_log_reset_uarch_handler},
-        {"machine.verify_reset_uarch_log", jsonrpc_machine_verify_reset_uarch_log_handler},
-        {"machine.verify_reset_uarch_state_transition", jsonrpc_machine_verify_reset_uarch_state_transition_handler},
-        {"machine.verify_step_uarch_log", jsonrpc_machine_verify_step_uarch_log_handler},
-        {"machine.verify_step_uarch_state_transition", jsonrpc_machine_verify_step_uarch_state_transition_handler},
+        {"machine.verify_reset_uarch", jsonrpc_machine_verify_reset_uarch_handler},
+        {"machine.verify_step_uarch", jsonrpc_machine_verify_step_uarch_handler},
         {"machine.get_proof", jsonrpc_machine_get_proof_handler},
         {"machine.get_root_hash", jsonrpc_machine_get_root_hash_handler},
         {"machine.read_word", jsonrpc_machine_read_word_handler},
@@ -1451,9 +1397,7 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.get_memory_ranges", jsonrpc_machine_get_memory_ranges_handler},
         {"machine.send_cmio_response", jsonrpc_machine_send_cmio_response_handler},
         {"machine.log_send_cmio_response", jsonrpc_machine_log_send_cmio_response_handler},
-        {"machine.verify_send_cmio_response_log", jsonrpc_machine_verify_send_cmio_response_log_handler},
-        {"machine.verify_send_cmio_response_state_transition",
-            jsonrpc_machine_verify_send_cmio_response_state_transition_handler},
+        {"machine.verify_send_cmio_response", jsonrpc_machine_verify_send_cmio_response_handler},
     };
     auto method = j["method"].get<std::string>();
     SLOG(debug) << session->handler->local_endpoint << " handling \"" << method << "\" method";

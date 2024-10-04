@@ -224,29 +224,21 @@ class access_log {
 public:
     /// \brief Type of access log
     class type {
-        bool m_proofs;      ///< Includes proofs
         bool m_annotations; ///< Includes annotations
         bool m_large_data;  ///< Includes data bigger than 8 bytes
     public:
         /// \brief Default constructor
-        /// \param proofs Include proofs
         /// \param annotations Include annotations (default false)
-        explicit type(bool proofs, bool annotations = false, bool large_data = false) :
-            m_proofs(proofs),
+        /// \param large_data Include large data (default false)
+        explicit type(bool annotations = false, bool large_data = false) :
             m_annotations(annotations),
             m_large_data(large_data) {
             ;
         }
         explicit type(int log_type) :
-            m_proofs(static_cast<bool>(log_type & CM_ACCESS_LOG_TYPE_PROOFS)),
             m_annotations(static_cast<bool>(log_type & CM_ACCESS_LOG_TYPE_ANNOTATIONS)),
             m_large_data(static_cast<bool>(log_type & CM_ACCESS_LOG_TYPE_LARGE_DATA)) {
             ;
-        }
-
-        /// \brief Returns whether log includes proofs
-        bool has_proofs(void) const {
-            return m_proofs;
         }
 
         /// \brief Returns whether log includes annotations

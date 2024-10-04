@@ -276,13 +276,9 @@ cm_error cm_verify_step_uarch(const cm_hash *root_hash_before, const char *log, 
     }
     const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log).value();
-    if (root_hash_before || root_hash_after) {
-        const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
-        const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
-        cartesi::machine::verify_step_uarch_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after);
-    } else {
-        cartesi::machine::verify_step_uarch_log(cpp_log);
-    }
+    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    cartesi::machine::verify_step_uarch(cpp_root_hash_before, cpp_log, cpp_root_hash_after);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -294,13 +290,9 @@ cm_error cm_verify_reset_uarch(const cm_hash *root_hash_before, const char *log,
     }
     const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log).value();
-    if (root_hash_before || root_hash_after) {
-        const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
-        const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
-        cartesi::machine::verify_reset_uarch_state_transition(cpp_root_hash_before, cpp_log, cpp_root_hash_after);
-    } else {
-        cartesi::machine::verify_reset_uarch_log(cpp_log);
-    }
+    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    cartesi::machine::verify_reset_uarch(cpp_root_hash_before, cpp_log, cpp_root_hash_after);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -680,14 +672,10 @@ cm_error cm_verify_send_cmio_response(uint16_t reason, const uint8_t *data, uint
     }
     const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log).value();
-    if (root_hash_before || root_hash_after) {
-        const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
-        const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
-        cartesi::machine::verify_send_cmio_response_state_transition(reason, data, length, cpp_root_hash_before,
-            cpp_log, cpp_root_hash_after);
-    } else {
-        cartesi::machine::verify_send_cmio_response_log(reason, data, length, cpp_log);
-    }
+    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    cartesi::machine::verify_send_cmio_response(reason, data, length, cpp_root_hash_before, cpp_log,
+        cpp_root_hash_after);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();

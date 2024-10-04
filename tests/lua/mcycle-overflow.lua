@@ -74,19 +74,17 @@ do_test("run_uarch shouldn't change state at max uarch_cycle", function(machine)
     assert(hash_before == hash_after)
 end)
 
-for _, log_type in ipairs({ cartesi.ACCESS_LOG_TYPE_PROOFS, 0 }) do
-    do_test("machine step should do nothing on max mcycle [log_type=" .. tostring(log_type) .. "]", function(machine)
-        machine:write_reg("uarch_cycle", MAX_UARCH_CYCLE)
-        local log = machine:log_step_uarch(log_type)
-        assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
-        assert(#log.accesses == 1)
-        assert(log.accesses[1].type == "read")
-        assert(log.accesses[1].address == cartesi.UARCH_SHADOW_START_ADDRESS + 8) -- address of uarch_cycle
-        assert(#log.accesses[1].read == 32)
-        -- log data has 32 bytes. The uarch_cycle is the 2nd 8-byte word
-        assert(log.accesses[1].read:sub(9, 16) == string.pack("J", MAX_UARCH_CYCLE))
-        assert((log.accesses[1].sibling_hashes ~= nil) == (log_type == cartesi.ACCESS_LOG_TYPE_PROOFS))
-    end)
-end
+do_test("machine step should do nothing on max mcycle", function(machine)
+    machine:write_reg("uarch_cycle", MAX_UARCH_CYCLE)
+    local log = machine:log_step_uarch()
+    assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
+    assert(#log.accesses == 1)
+    assert(log.accesses[1].type == "read")
+    assert(log.accesses[1].address == cartesi.UARCH_SHADOW_START_ADDRESS + 8) -- address of uarch_cycle
+    assert(#log.accesses[1].read == 32)
+    -- log data has 32 bytes. The uarch_cycle is the 2nd 8-byte word
+    assert(log.accesses[1].read:sub(9, 16) == string.pack("J", MAX_UARCH_CYCLE))
+    assert(log.accesses[1].sibling_hashes ~= nil)
+end)
 
 print("passed all")

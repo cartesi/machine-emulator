@@ -235,29 +235,8 @@
     },
 
     {
-      "name": "machine.verify_step_uarch_log",
-      "summary": "Verifies an access log",
-      "params": [ {
-          "name":"log",
-          "description": "Access log to verify",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/AccessLog"
-          }
-        }
-      ],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.verify_step_uarch_state_transition",
-      "summary": "Verifies a state transition",
+      "name": "machine.verify_step_uarch",
+      "summary": "Verifies a state transition caused by log_step_uarch",
       "params": [ {
           "name":"root_hash_before",
           "description": "State hash before transition described by access log",
@@ -291,28 +270,7 @@
     },
 
     {
-      "name": "machine.verify_reset_uarch_log",
-      "summary": "Verifies an access log produced by a log_reset_uarch",
-      "params": [ {
-          "name":"log",
-          "description": "Access log to verify",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/AccessLog"
-          }
-        }
-      ],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.verify_reset_uarch_state_transition",
+      "name": "machine.verify_reset_uarch",
       "summary": "Verifies a state transition caused by log_reset_uarch",
       "params": [ {
           "name":"root_hash_before",
@@ -795,43 +753,8 @@
     },
 
     {
-      "name": "machine.verify_send_cmio_response_log",
-      "summary": "Checks the internal consistency of an access log produced by send_cmio_response",
-      "params": [ {
-        "name":"reason",
-        "description": "Reason for sending response",
-        "required": true,
-        "schema": {
-          "$ref": "#/components/schemas/UnsignedInteger"
-        }
-      }, {
-          "name":"data",
-          "description": "Response data sent when the log was generated.",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/Base64String"
-          }
-        }, {
-          "name":"log",
-          "description": "Access log to verify",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/AccessLog"
-          }
-        }
-      ],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.verify_send_cmio_response_state_transition",
-      "summary": "Checks the validity of state transitions caused by send_cmio_response",
+      "name": "machine.verify_send_cmio_response",
+      "summary": "Verifies a state transition caused by log_send_cmio_response",
       "params": [ {
         "name":"reason",
         "description": "Reason for sending response",
@@ -1541,9 +1464,6 @@
         "title": "AccessLogType",
         "type": "object",
         "properties": {
-          "has_proofs": {
-            "type": "boolean"
-          },
           "has_annotations": {
             "type": "boolean"
           },
@@ -1552,7 +1472,6 @@
           }
         },
         "required": [
-          "has_proofs",
           "has_annotations",
           "has_large_data"
         ]

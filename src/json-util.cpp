@@ -1082,13 +1082,11 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constru
     }
     const auto &jk = j[key];
     const auto new_path = path + to_string(key) + "/";
-    bool has_proofs = false;
-    ju_get_field(jk, "has_proofs"s, has_proofs, new_path);
     bool has_annotations = false;
     ju_get_field(jk, "has_annotations"s, has_annotations, new_path);
     bool has_large_data = false;
     ju_get_field(jk, "has_large_data"s, has_large_data, new_path);
-    optional.emplace(has_proofs, has_annotations, has_large_data);
+    optional.emplace(has_annotations, has_large_data);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
@@ -1113,12 +1111,10 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constru
     }
     std::vector<access> accesses;
     ju_get_vector_like_field(jk, "accesses"s, accesses, new_path);
-    if (log_type.value().has_proofs()) {
-        for (unsigned i = 0; i < accesses.size(); ++i) {
-            if (!accesses[i].get_sibling_hashes().has_value()) {
-                throw std::invalid_argument(
-                    "field \""s + new_path + "accesses/" + to_string(i) + "\" missing sibling hashes");
-            }
+    for (unsigned i = 0; i < accesses.size(); ++i) {
+        if (!accesses[i].get_sibling_hashes().has_value()) {
+            throw std::invalid_argument(
+                "field \""s + new_path + "accesses/" + to_string(i) + "\" missing sibling hashes");
         }
     }
     std::vector<bracket_note> brackets;
@@ -1745,8 +1741,7 @@ void to_json(nlohmann::json &j, const std::vector<access> &as) {
 }
 
 void to_json(nlohmann::json &j, const access_log::type &log_type) {
-    j = nlohmann::json{{"has_proofs", log_type.has_proofs()}, {"has_annotations", log_type.has_annotations()},
-        {"has_large_data", log_type.has_large_data()}};
+    j = nlohmann::json{{"has_annotations", log_type.has_annotations()}, {"has_large_data", log_type.has_large_data()}};
 }
 
 void to_json(nlohmann::json &j, const access_log &log) {

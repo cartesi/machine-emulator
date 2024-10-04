@@ -335,26 +335,18 @@ public:
     /// \returns The state access log.
     access_log log_reset_uarch(const access_log::type &log_type);
 
-    /// \brief Checks the internal consistency of an access log.
-    /// \param log State access log to be verified.
-    static void verify_step_uarch_log(const access_log &log);
-
-    /// \brief Checks the validity of a state transition.
+    /// \brief Checks the validity of a state transition caused by log_step_uarch.
     /// \param root_hash_before State hash before step.
     /// \param log Step state access log.
     /// \param root_hash_after State hash after step.
-    static void verify_step_uarch_state_transition(const hash_type &root_hash_before, const access_log &log,
+    static void verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after);
 
-    /// \brief Checks the internal consistency of an access log produced by log_reset_uarch
-    /// \param log State access log to be verified.
-    static void verify_reset_uarch_log(const access_log &log);
-
-    /// \brief Checks the validity of a state transition. caused by log_reset_uarch
+    /// \brief Checks the validity of a state transition caused by log_reset_uarch.
     /// \param root_hash_before State hash before uarch reset
     /// \param log Step state access log.
     /// \param root_hash_after State hash after uarch reset.
-    static void verify_reset_uarch_state_transition(const hash_type &root_hash_before, const access_log &log,
+    static void verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after);
 
     static machine_config get_default_config(void);
@@ -1018,22 +1010,14 @@ public:
     access_log log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const access_log::type &log_type);
 
-    /// \brief Checks the internal consistency of an access log produced by log_send_cmio_response
-    /// \param reason Reason for sending response.
-    /// \param data The response sent when the log was generated.
-    /// \param length Length of response data.
-    /// \param log State access log to be verified.
-    static void verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, uint64_t length,
-        const access_log &log);
-
-    /// \brief Checks the validity of state transitions caused by log_send_cmio_response
+    /// \brief Checks the validity of state transitions caused by log_send_cmio_response.
     /// \param reason Reason for sending response.
     /// \param data The response sent when the log was generated.
     /// \param length Length of response
     /// \param root_hash_before State hash before response was sent.
     /// \param log Log containing the state accesses performed by the load operation
     /// \param root_hash_after State hash after response was sent.
-    static void verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, uint64_t length,
+    static void verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after);
 
     /// \brief Reads the value of a microarchitecture register.

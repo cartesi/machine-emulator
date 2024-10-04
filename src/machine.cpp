@@ -2631,51 +2631,29 @@ void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uin
 access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
     const access_log::type &log_type) {
     hash_type root_hash_before;
-    if (log_type.has_proofs()) {
-        get_root_hash(root_hash_before);
-    }
+    get_root_hash(root_hash_before);
     // Call send_cmio_response  with the recording state accessor
     record_state_access a(*this, log_type);
     a.push_bracket(bracket_type::begin, "send cmio response");
     cartesi::send_cmio_response(a, reason, data, length);
     a.push_bracket(bracket_type::end, "send cmio response");
     // Verify access log before returning
-    if (log_type.has_proofs()) {
-        hash_type root_hash_after;
-        update_merkle_tree();
-        get_root_hash(root_hash_after);
-        verify_send_cmio_response_state_transition(reason, data, length, root_hash_before, *a.get_log(),
-            root_hash_after);
-    } else {
-        verify_send_cmio_response_log(reason, data, length, *a.get_log());
-    }
+    hash_type root_hash_after;
+    update_merkle_tree();
+    get_root_hash(root_hash_after);
+    verify_send_cmio_response(reason, data, length, root_hash_before, *a.get_log(), root_hash_after);
     return std::move(*a.get_log());
 }
 
-void machine::verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, uint64_t length,
-    const access_log &log) {
-    // There must be at least one access in log
-    if (log.get_accesses().empty()) {
-        throw std::invalid_argument{"too few accesses in log"};
-    }
-    replay_state_access a(log, false /* verify_proofs */, {} /* initial_hash */);
-    cartesi::send_cmio_response(a, reason, data, length);
-    a.finish();
-}
-
-void machine::verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, uint64_t length,
+void machine::verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
     const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) {
-    // We need proofs in order to verify the state transition
-    if (!log.get_log_type().has_proofs()) {
-        throw std::invalid_argument{"log has no proofs"};
-    }
     // There must be at least one access in log
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
     }
 
     // Verify all intermediate state transitions
-    replay_state_access a(log, true /* verify_proofs */, root_hash_before);
+    replay_state_access a(log, root_hash_before);
     cartesi::send_cmio_response(a, reason, data, length);
     a.finish();
 
@@ -2698,48 +2676,28 @@ void machine::reset_uarch() {
 
 access_log machine::log_reset_uarch(const access_log::type &log_type) {
     hash_type root_hash_before;
-    if (log_type.has_proofs()) {
-        get_root_hash(root_hash_before);
-    }
+    get_root_hash(root_hash_before);
     // Call uarch_reset_state with a uarch_record_state_access object
     uarch_record_state_access a(m_uarch.get_state(), *this, log_type);
     a.push_bracket(bracket_type::begin, "reset uarch state");
     uarch_reset_state(a);
     a.push_bracket(bracket_type::end, "reset uarch state");
     // Verify access log before returning
-    if (log_type.has_proofs()) {
-        hash_type root_hash_after;
-        update_merkle_tree();
-        get_root_hash(root_hash_after);
-        verify_reset_uarch_state_transition(root_hash_before, *a.get_log(), root_hash_after);
-    } else {
-        verify_reset_uarch_log(*a.get_log());
-    }
+    hash_type root_hash_after;
+    update_merkle_tree();
+    get_root_hash(root_hash_after);
+    verify_reset_uarch(root_hash_before, *a.get_log(), root_hash_after);
     return std::move(*a.get_log());
 }
 
-void machine::verify_reset_uarch_log(const access_log &log) {
-    // There must be at least one access in log
-    if (log.get_accesses().empty()) {
-        throw std::invalid_argument{"too few accesses in log"};
-    }
-    uarch_replay_state_access a(log, false /* verify_proofs */, {} /* initial_hash */);
-    uarch_reset_state(a);
-    a.finish();
-}
-
-void machine::verify_reset_uarch_state_transition(const hash_type &root_hash_before, const access_log &log,
+void machine::verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
     const hash_type &root_hash_after) {
-    // We need proofs in order to verify the state transition
-    if (!log.get_log_type().has_proofs()) {
-        throw std::invalid_argument{"log has no proofs"};
-    }
     // There must be at least one access in log
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
     }
     // Verify all intermediate state transitions
-    uarch_replay_state_access a(log, true /* verify_proofs */, root_hash_before);
+    uarch_replay_state_access a(log, root_hash_before);
     uarch_reset_state(a);
     a.finish();
     // Make sure the access log ends at the same root hash as the state
@@ -2755,47 +2713,27 @@ access_log machine::log_step_uarch(const access_log::type &log_type) {
         throw std::runtime_error("microarchitecture RAM is not present");
     }
     hash_type root_hash_before;
-    if (log_type.has_proofs()) {
-        get_root_hash(root_hash_before);
-    }
+    get_root_hash(root_hash_before);
     // Call interpret with a logged state access object
     uarch_record_state_access a(m_uarch.get_state(), *this, log_type);
     a.push_bracket(bracket_type::begin, "step");
     uarch_step(a);
     a.push_bracket(bracket_type::end, "step");
     // Verify access log before returning
-    if (log_type.has_proofs()) {
-        hash_type root_hash_after;
-        get_root_hash(root_hash_after);
-        verify_step_uarch_state_transition(root_hash_before, *a.get_log(), root_hash_after);
-    } else {
-        verify_step_uarch_log(*a.get_log());
-    }
+    hash_type root_hash_after;
+    get_root_hash(root_hash_after);
+    verify_step_uarch(root_hash_before, *a.get_log(), root_hash_after);
     return std::move(*a.get_log());
 }
 
-void machine::verify_step_uarch_log(const access_log &log) {
-    // There must be at least one access in log
-    if (log.get_accesses().empty()) {
-        throw std::invalid_argument{"too few accesses in log"};
-    }
-    uarch_replay_state_access a(log, false /* verify proofs */, {} /* initial hash */);
-    uarch_step(a);
-    a.finish();
-}
-
-void machine::verify_step_uarch_state_transition(const hash_type &root_hash_before, const access_log &log,
+void machine::verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
     const hash_type &root_hash_after) {
-    // We need proofs in order to verify the state transition
-    if (!log.get_log_type().has_proofs()) {
-        throw std::invalid_argument{"log has no proofs"};
-    }
     // There must be at least one access in log
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
     }
     // Verify all intermediate state transitions
-    uarch_replay_state_access a(log, true /* verify proofs! */, root_hash_before);
+    uarch_replay_state_access a(log, root_hash_before);
     uarch_step(a);
     a.finish();
     // Make sure the access log ends at the same root hash as the state

@@ -43,18 +43,12 @@ static int machine_class_index_get_reg_address(lua_State *L) {
 static int machine_class_index_verify_step_uarch(lua_State *L) {
     lua_settop(L, 4);
     const char *log = clua_check_schemed_json_string(L, 2, "AccessLog");
-    if (!lua_isnil(L, 1) || !lua_isnil(L, 3)) {
-        cm_hash root_hash{};
-        clua_check_cm_hash(L, 1, &root_hash);
-        cm_hash target_hash{};
-        clua_check_cm_hash(L, 3, &target_hash);
-        if (cm_verify_step_uarch(&root_hash, log, &target_hash) != 0) {
-            return luaL_error(L, "%s", cm_get_last_error_message());
-        }
-    } else {
-        if (cm_verify_step_uarch(nullptr, log, nullptr) != 0) {
-            return luaL_error(L, "%s", cm_get_last_error_message());
-        }
+    cm_hash root_hash{};
+    clua_check_cm_hash(L, 1, &root_hash);
+    cm_hash target_hash{};
+    clua_check_cm_hash(L, 3, &target_hash);
+    if (cm_verify_step_uarch(&root_hash, log, &target_hash) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
     }
     return 0;
 }
@@ -63,18 +57,12 @@ static int machine_class_index_verify_step_uarch(lua_State *L) {
 static int machine_class_index_verify_reset_uarch(lua_State *L) {
     lua_settop(L, 4);
     const char *log = clua_check_schemed_json_string(L, 2, "AccessLog");
-    if (!lua_isnil(L, 1) || !lua_isnil(L, 3)) {
-        cm_hash root_hash{};
-        clua_check_cm_hash(L, 1, &root_hash);
-        cm_hash target_hash{};
-        clua_check_cm_hash(L, 3, &target_hash);
-        if (cm_verify_reset_uarch(&root_hash, log, &target_hash) != 0) {
-            return luaL_error(L, "%s", cm_get_last_error_message());
-        }
-    } else {
-        if (cm_verify_reset_uarch(nullptr, log, nullptr) != 0) {
-            return luaL_error(L, "%s", cm_get_last_error_message());
-        }
+    cm_hash root_hash{};
+    clua_check_cm_hash(L, 1, &root_hash);
+    cm_hash target_hash{};
+    clua_check_cm_hash(L, 3, &target_hash);
+    if (cm_verify_reset_uarch(&root_hash, log, &target_hash) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
     }
     return 0;
 }
@@ -87,18 +75,12 @@ static int machine_class_index_verify_send_cmio_response(lua_State *L) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &length));
     const char *log = clua_check_schemed_json_string(L, 4, "AccessLog");
-    if (!lua_isnil(L, 3) || !lua_isnil(L, 5)) {
-        cm_hash root_hash{};
-        clua_check_cm_hash(L, 3, &root_hash);
-        cm_hash target_hash{};
-        clua_check_cm_hash(L, 5, &target_hash);
-        if (cm_verify_send_cmio_response(reason, data, length, &root_hash, log, &target_hash) != 0) {
-            return luaL_error(L, "%s", cm_get_last_error_message());
-        }
-    } else {
-        if (cm_verify_send_cmio_response(reason, data, length, nullptr, log, nullptr) != 0) {
-            return luaL_error(L, "%s", cm_get_last_error_message());
-        }
+    cm_hash root_hash{};
+    clua_check_cm_hash(L, 3, &root_hash);
+    cm_hash target_hash{};
+    clua_check_cm_hash(L, 5, &target_hash);
+    if (cm_verify_send_cmio_response(reason, data, length, &root_hash, log, &target_hash) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
     }
     return 0;
 }

@@ -218,7 +218,7 @@ test-yield-and-save: | $(CARTESI_IMAGES)
 test-misc: test-c-api test-hash test-save-and-load test-yield-and-save
 
 test-generate-uarch-logs: $(BUILDDIR)/uarch-riscv-tests-json-logs
-	$(LUA) ./lua/uarch-riscv-tests.lua --output-dir=$(BUILDDIR)/uarch-riscv-tests-json-logs --proofs --proofs-frequency=1 --create-reset-uarch-log --create-send-cmio-response-log --jobs=$(NUM_JOBS) json-step-logs
+	$(LUA) ./lua/uarch-riscv-tests.lua --output-dir=$(BUILDDIR)/uarch-riscv-tests-json-logs --create-reset-uarch-log --create-send-cmio-response-log --jobs=$(NUM_JOBS) json-step-logs
 	tar -czf uarch-riscv-tests-json-logs.tar.gz -C $(BUILDDIR) uarch-riscv-tests-json-logs
 
 coverage-machine:

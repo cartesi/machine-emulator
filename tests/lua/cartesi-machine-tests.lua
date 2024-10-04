@@ -294,7 +294,6 @@ local riscv_tests = {
     { "compressed.bin", 410 },
 }
 
-local log_proofs = false
 local log_annotations = false
 
 -- Microarchitecture configuration
@@ -321,9 +320,6 @@ where options are:
   --jobs=<N>
     run N tests in parallel
     (default: 1, i.e., run tests sequentially)
-
-  --log-proofs
-    include proofs in logs
 
   --log-annotations
     include annotations in logs
@@ -491,16 +487,6 @@ local options = {
             end
             jobs = tonumber(o)
             assert(jobs and jobs >= 1, "invalid number of jobs")
-            return true
-        end,
-    },
-    {
-        "^%-%-log%-proofs$",
-        function(o)
-            if not o then
-                return false
-            end
-            log_proofs = true
             return true
         end,
     },
@@ -781,7 +767,6 @@ local function step(tests)
     end
     local indentout = util.indentout
     local log_type = (log_annotations and cartesi.ACCESS_LOG_TYPE_ANNOTATIONS or 0)
-        | (log_proofs and cartesi.ACCESS_LOG_TYPE_PROOFS or 0)
     out:write("[\n")
     for i, test in ipairs(tests) do
         local ram_image = test[1]

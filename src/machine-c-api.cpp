@@ -180,14 +180,6 @@ int32_t cm_load(const char *dir, const char *runtime_config, cm_machine **new_ma
     return cm_result_failure();
 }
 
-void cm_delete(cm_machine *m) {
-    if (m == nullptr) {
-        return;
-    }
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    delete reinterpret_cast<cartesi::i_virtual_machine *>(m);
-}
-
 int32_t cm_store(const cm_machine *m, const char *dir) try {
     if (dir == nullptr) {
         throw std::invalid_argument("invalid dir");
@@ -556,9 +548,14 @@ int32_t cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, 
     return cm_result_failure();
 }
 
-int32_t cm_destroy(cm_machine *m) try {
-    auto *cpp_machine = convert_from_c(m);
-    cpp_machine->destroy();
+int32_t cm_destroy(cm_machine *m, bool keep_machine) try {
+    if (m != nullptr) {
+        auto *cpp_machine = convert_from_c(m);
+        if (!keep_machine) {
+            cpp_machine->destroy();
+        }
+        delete cpp_machine;
+    }
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();

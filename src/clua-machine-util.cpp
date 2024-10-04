@@ -33,7 +33,7 @@ void clua_delete<unsigned char>(unsigned char *ptr) { // NOLINT(readability-non-
 
 template <>
 void clua_delete<cm_machine>(cm_machine *ptr) {
-    cm_delete(ptr);
+    cm_destroy(ptr, true); // this call should never fail
 }
 
 template <>

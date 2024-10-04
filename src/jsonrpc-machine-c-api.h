@@ -36,10 +36,11 @@ typedef struct cm_jsonrpc_mgr cm_jsonrpc_mgr;
 /// \returns 0 for success, non zero code for error.
 CM_API int32_t cm_jsonrpc_create_mgr(const char *remote_address, cm_jsonrpc_mgr **mgr);
 
-/// \brief Deletes a connection manager instance.
-/// \param mgr Pointer to a valid JSONRPC connection manager.
+/// \brief Destroys a connection manager instance.
+/// \param mgr Pointer a JSONRPC connection manager (can be NULL).
 /// \returns 0 for success, non zero code for error.
-CM_API void cm_jsonrpc_delete_mgr(const cm_jsonrpc_mgr *mgr);
+/// \details The connection manager is deallocated and its pointer must not be used after this call.
+CM_API void cm_jsonrpc_destroy_mgr(const cm_jsonrpc_mgr *mgr);
 
 /// \brief Forks the remote server.
 /// \param mgr Pointer to a valid JSONRPC connection manager.

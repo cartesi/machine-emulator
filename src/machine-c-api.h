@@ -340,18 +340,13 @@ CM_API uint64_t cm_get_reg_address(cm_reg reg);
 CM_API int32_t cm_create(const char *config, const char *runtime_config, cm_machine **new_machine);
 
 /// \brief Destroys a machine.
-/// \param m Valid pointer to the existing machine instance.
+/// \param m Pointer to the existing machine instance (can be NULL).
+/// \param keep_machine If true, the machine is not destroyed in the remote server.
 /// \returns 0 for success, non zero code for error.
-/// \details This method doesn't deallocate and it's only relevant for remote
-/// machines.
-CM_API int32_t cm_destroy(cm_machine *m);
-
-/// \brief Deletes a machine.
-/// \param m Valid pointer to the existing machine instance.
-/// \details The machine is deallocated and its pointer must not be used after this
-/// call. Remote machines may want to call destroy method before so it's destroyed in
-/// the remote server.
-CM_API void cm_delete(cm_machine *m);
+/// \details The machine is deallocated and its pointer must not be used after this call.
+/// This method always succeeds for local machines, but may fail for remote machines when
+/// keep machine is false. In case of failure it must be called again to free resources.
+CM_API int32_t cm_destroy(cm_machine *m, bool keep_machine);
 
 /// \brief Loads a new machine instance from a previously stored directory.
 /// \param dir Directory where previous machine is stored.

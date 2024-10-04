@@ -24,7 +24,7 @@ namespace cartesi {
 /// \brief Deleter for C api jsonrpc stub
 template <>
 void clua_delete(cm_jsonrpc_mgr *ptr) {
-    cm_jsonrpc_delete_mgr(ptr);
+    cm_jsonrpc_destroy_mgr(ptr);
 }
 
 /// \brief This is the machine.get_default_machine_config()

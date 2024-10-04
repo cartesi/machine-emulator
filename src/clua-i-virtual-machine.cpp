@@ -404,10 +404,13 @@ static int machine_obj_index_replace_memory_range(lua_State *L) {
 /// \brief This is the machine:destroy() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_destroy(lua_State *L) {
+    lua_settop(L, 2);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    if (cm_destroy(m.get()) != 0) {
+    const bool keep_machine = lua_toboolean(L, 2);
+    if (cm_destroy(m.get(), keep_machine) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
+    m.release();
     return 0;
 }
 
@@ -545,9 +548,10 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
 /// \param L Lua state.
 static int machine_obj_close(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    if (cm_destroy(m.get()) != 0) {
+    if (cm_destroy(m.get(), false) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
+    m.release();
     clua_close<clua_managed_cm_ptr<cm_machine>>(L);
     return 0;
 }

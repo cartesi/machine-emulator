@@ -98,7 +98,7 @@ static int jsonrpc_machine_class_verify_send_cmio_response(lua_State *L) {
     lua_settop(L, 6);
     auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
     const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 1));
-    uint64_t length{0};
+    size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &length));
     const char *log = clua_check_schemed_json_string(L, 4, "AccessLog", ctxidx);

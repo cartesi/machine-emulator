@@ -281,7 +281,7 @@ static int machine_obj_index_log_reset_uarch(lua_State *L) {
 static int machine_obj_index_run_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t cycle_end = luaL_optinteger(L, 2, UINT64_MAX);
-    cm_uarch_break_reason status = CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE;
+    cm_uarch_break_reason status = CM_UARCH_BREAK_REASON_FAILED;
     if (cm_run_uarch(m.get(), cycle_end, &status) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
@@ -350,7 +350,7 @@ static int machine_obj_index_write_reg(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_write_memory(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    uint64_t length{0};
+    size_t length{0};
     const uint64_t address = luaL_checkinteger(L, 2);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
@@ -364,7 +364,7 @@ static int machine_obj_index_write_memory(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_write_virtual_memory(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    uint64_t length{0};
+    size_t length{0};
     const uint64_t address = luaL_checkinteger(L, 2);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
@@ -477,7 +477,7 @@ static int machine_obj_index_receive_cmio_request(lua_State *L) {
 static int machine_obj_index_send_cmio_response(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 2));
-    uint64_t length{0};
+    size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
     if (cm_send_cmio_response(m.get(), reason, data, length) != 0) {
@@ -492,7 +492,7 @@ static int machine_obj_index_log_send_cmio_response(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 2));
     const int log_type = static_cast<int>(luaL_optinteger(L, 4, 0));
-    uint64_t length{0};
+    size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
     const char *log = nullptr;

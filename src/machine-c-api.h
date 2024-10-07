@@ -101,6 +101,7 @@ typedef enum cm_break_reason {
 typedef enum cm_uarch_break_reason {
     CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE,
     CM_UARCH_BREAK_REASON_UARCH_HALTED,
+    CM_UARCH_BREAK_REASON_FAILED,
 } cm_uarch_break_reason;
 
 /// \brief Access log types.

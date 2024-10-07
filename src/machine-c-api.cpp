@@ -159,6 +159,9 @@ cm_error cm_create(const char *config, const char *runtime_config, cm_machine **
     *new_machine = reinterpret_cast<cm_machine *>(new cartesi::virtual_machine(c, r));
     return cm_result_success();
 } catch (...) {
+    if (new_machine) {
+        *new_machine = nullptr;
+    }
     return cm_result_failure();
 }
 
@@ -177,6 +180,9 @@ cm_error cm_load(const char *dir, const char *runtime_config, cm_machine **new_m
     *new_machine = reinterpret_cast<cm_machine *>(new cartesi::virtual_machine(dir, r));
     return cm_result_success();
 } catch (...) {
+    if (new_machine) {
+        *new_machine = nullptr;
+    }
     return cm_result_failure();
 }
 
@@ -210,6 +216,9 @@ cm_error cm_read_uarch_halt_flag(const cm_machine *m, bool *val) try {
     *val = static_cast<bool>(cpp_machine->read_reg(cartesi::machine::reg::uarch_halt_flag));
     return cm_result_success();
 } catch (...) {
+    if (val) {
+        *val = false;
+    }
     return cm_result_failure();
 }
 
@@ -241,6 +250,9 @@ cm_error cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char **log) t
     *log = access_log_storage.c_str();
     return cm_result_success();
 } catch (...) {
+    if (log) {
+        *log = nullptr;
+    }
     return cm_result_failure();
 }
 
@@ -252,6 +264,9 @@ cm_error cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_break_re
     }
     return cm_result_success();
 } catch (...) {
+    if (uarch_break_reason) {
+        *uarch_break_reason = CM_UARCH_BREAK_REASON_FAILED;
+    }
     return cm_result_failure();
 }
 
@@ -267,6 +282,9 @@ cm_error cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **log) tr
     *log = access_log_storage.c_str();
     return cm_result_success();
 } catch (...) {
+    if (log) {
+        *log = nullptr;
+    }
     return cm_result_failure();
 }
 
@@ -309,6 +327,9 @@ cm_error cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_size, 
     *proof = proof_storage.c_str();
     return cm_result_success();
 } catch (...) {
+    if (proof) {
+        *proof = nullptr;
+    }
     return cm_result_failure();
 }
 
@@ -333,6 +354,9 @@ cm_error cm_verify_merkle_tree(cm_machine *m, bool *result) try {
     *result = cpp_machine->verify_merkle_tree();
     return cm_result_success();
 } catch (...) {
+    if (result) {
+        *result = false;
+    }
     return cm_result_failure();
 }
 
@@ -345,6 +369,9 @@ cm_error cm_read_reg(const cm_machine *m, cm_reg reg, uint64_t *val) try {
     *val = cpp_machine->read_reg(cpp_reg);
     return cm_result_success();
 } catch (...) {
+    if (val) {
+        *val = 0;
+    }
     return cm_result_failure();
 }
 
@@ -375,6 +402,9 @@ cm_error cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val) try 
     *val = cpp_machine->read_word(address);
     return cm_result_success();
 } catch (...) {
+    if (val) {
+        *val = 0;
+    }
     return cm_result_failure();
 }
 
@@ -415,6 +445,9 @@ cm_error cm_translate_virtual_address(const cm_machine *m, uint64_t vaddr, uint6
     *paddr = cpp_machine->translate_virtual_address(vaddr);
     return cm_result_success();
 } catch (...) {
+    if (paddr) {
+        *paddr = 0;
+    }
     return cm_result_failure();
 }
 
@@ -426,6 +459,9 @@ cm_error cm_read_mcycle(const cm_machine *m, uint64_t *val) try {
     *val = cpp_machine->read_reg(cartesi::machine::reg::mcycle);
     return cm_result_success();
 } catch (...) {
+    if (val) {
+        *val = 0;
+    }
     return cm_result_failure();
 }
 
@@ -437,6 +473,9 @@ cm_error cm_read_uarch_cycle(const cm_machine *m, uint64_t *val) try {
     *val = cpp_machine->read_reg(cartesi::machine::reg::uarch_cycle);
     return cm_result_success();
 } catch (...) {
+    if (val) {
+        *val = 0;
+    }
     return cm_result_failure();
 }
 
@@ -448,6 +487,9 @@ cm_error cm_read_iflags_Y(const cm_machine *m, bool *val) try {
     *val = static_cast<bool>(cpp_machine->read_reg(cartesi::machine::reg::iflags_y));
     return cm_result_success();
 } catch (...) {
+    if (val) {
+        *val = false;
+    }
     return cm_result_failure();
 }
 
@@ -475,6 +517,9 @@ cm_error cm_read_iflags_X(const cm_machine *m, bool *val) try {
     *val = static_cast<bool>(cpp_machine->read_reg(cartesi::machine::reg::iflags_x));
     return cm_result_success();
 } catch (...) {
+    if (val) {
+        *val = false;
+    }
     return cm_result_failure();
 }
 
@@ -486,6 +531,9 @@ cm_error cm_read_iflags_H(const cm_machine *m, bool *val) try {
     *val = static_cast<bool>(cpp_machine->read_reg(cartesi::machine::reg::iflags_h));
     return cm_result_success();
 } catch (...) {
+    if (val) {
+        *val = false;
+    }
     return cm_result_failure();
 }
 
@@ -497,6 +545,9 @@ cm_error cm_verify_dirty_page_maps(cm_machine *m, bool *result) try {
     *result = cpp_machine->verify_dirty_page_maps();
     return cm_result_success();
 } catch (...) {
+    if (result) {
+        *result = false;
+    }
     return cm_result_failure();
 }
 
@@ -511,6 +562,9 @@ cm_error cm_get_initial_config(const cm_machine *m, const char **config) try {
     *config = config_storage.c_str();
     return cm_result_success();
 } catch (...) {
+    if (config) {
+        *config = nullptr;
+    }
     return cm_result_failure();
 }
 
@@ -588,6 +642,9 @@ cm_error cm_get_memory_ranges(const cm_machine *m, const char **ranges) try {
     *ranges = ranges_storage.c_str();
     return cm_result_success();
 } catch (...) {
+    if (ranges) {
+        *ranges = nullptr;
+    }
     return cm_result_failure();
 }
 
@@ -638,6 +695,15 @@ cm_error cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16_t *re
     }
     return cm_result_success();
 } catch (...) {
+    if (cmd) {
+        *cmd = 0;
+    }
+    if (reason) {
+        *reason = 0;
+    }
+    if (length) {
+        *length = 0;
+    }
     return cm_result_failure();
 }
 
@@ -662,6 +728,9 @@ cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t
     *log = access_log_storage.c_str();
     return cm_result_success();
 } catch (...) {
+    if (log) {
+        *log = nullptr;
+    }
     return cm_result_failure();
 }
 

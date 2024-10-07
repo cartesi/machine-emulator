@@ -40,6 +40,9 @@ cm_error cm_jsonrpc_create_mgr(const char *remote_address, cm_jsonrpc_mgr **mgr)
     *mgr = reinterpret_cast<cm_jsonrpc_mgr *>(cpp_mgr);
     return cm_result_success();
 } catch (...) {
+    if (mgr) {
+        *mgr = nullptr;
+    }
     return cm_result_failure();
 }
 
@@ -67,6 +70,9 @@ cm_error cm_jsonrpc_create_machine(const cm_jsonrpc_mgr *mgr, const char *config
     *new_machine = reinterpret_cast<cm_machine *>(new cartesi::jsonrpc_virtual_machine(*cpp_mgr, c, r));
     return cm_result_success();
 } catch (...) {
+    if (new_machine) {
+        *new_machine = nullptr;
+    }
     return cm_result_failure();
 }
 
@@ -87,6 +93,9 @@ cm_error cm_jsonrpc_load_machine(const cm_jsonrpc_mgr *mgr, const char *dir, con
     *new_machine = reinterpret_cast<cm_machine *>(new cartesi::jsonrpc_virtual_machine(*cpp_mgr, dir, r));
     return cm_result_success();
 } catch (...) {
+    if (new_machine) {
+        *new_machine = nullptr;
+    }
     return cm_result_failure();
 }
 
@@ -99,6 +108,9 @@ cm_error cm_jsonrpc_get_machine(const cm_jsonrpc_mgr *mgr, cm_machine **new_mach
     *new_machine = reinterpret_cast<cm_machine *>(new cartesi::jsonrpc_virtual_machine(*cpp_mgr));
     return cm_result_success();
 } catch (...) {
+    if (new_machine) {
+        *new_machine = nullptr;
+    }
     return cm_result_failure();
 }
 
@@ -113,6 +125,9 @@ cm_error cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const char **c
     *config = config_storage.c_str();
     return cm_result_success();
 } catch (...) {
+    if (config) {
+        *config = nullptr;
+    }
     return cm_result_failure();
 }
 
@@ -196,6 +211,9 @@ cm_error cm_jsonrpc_get_reg_address(const cm_jsonrpc_mgr *mgr, cm_reg reg, uint6
     *val = cartesi::jsonrpc_virtual_machine::get_reg_address(*cpp_mgr, cpp_reg);
     return cm_result_success();
 } catch (...) {
+    if (val) {
+        *val = 0;
+    }
     return cm_result_failure();
 }
 
@@ -210,6 +228,9 @@ cm_error cm_jsonrpc_get_version(const cm_jsonrpc_mgr *mgr, const char **version)
     *version = version_storage.c_str();
     return cm_result_success();
 } catch (...) {
+    if (version) {
+        *version = nullptr;
+    }
     return cm_result_failure();
 }
 

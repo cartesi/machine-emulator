@@ -118,11 +118,6 @@ end
 
 -- Config yields 5 times with progress
 local config = {
-    processor = {
-        mvendorid = -1,
-        mimpid = -1,
-        marchid = -1,
-    },
     ram = {
         image_filename = test_path .. "/htif_yield.bin",
         length = 0x4000000,
@@ -133,15 +128,15 @@ if uarch then
     config.uarch = uarch
 end
 
-local YIELD_MANUAL = cartesi.machine.HTIF_YIELD_CMD_MANUAL
-local YIELD_AUTOMATIC = cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC
+local YIELD_MANUAL = cartesi.CMIO_YIELD_COMMAND_MANUAL
+local YIELD_AUTOMATIC = cartesi.CMIO_YIELD_COMMAND_AUTOMATIC
 
-local REASON_PROGRESS = cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_PROGRESS
-local REASON_TX_OUTPUT = cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT
-local REASON_TX_REPORT = cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT
-local REASON_RX_ACCEPTED = cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
-local REASON_RX_REJECTED = cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED
-local REASON_TX_EXCEPTION = cartesi.machine.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION
+local REASON_PROGRESS = cartesi.CMIO_YIELD_AUTOMATIC_REASON_PROGRESS
+local REASON_TX_OUTPUT = cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT
+local REASON_TX_REPORT = cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT
+local REASON_RX_ACCEPTED = cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED
+local REASON_RX_REJECTED = cartesi.CMIO_YIELD_MANUAL_REASON_RX_REJECTED
+local REASON_TX_EXCEPTION = cartesi.CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION
 
 local yields = {
     { mcycle = 10, data = 10, cmd = YIELD_MANUAL, reason = REASON_PROGRESS },
@@ -210,16 +205,13 @@ local function test(machine_config, yield_automatic_enable, yield_manual_enable)
         yield_manual = yield_manual_enable,
     }
     local machine <close> = cartesi.machine(machine_config)
-    local break_reason
     for _, v in ipairs(yields) do
         if
             (v.reason == REASON_PROGRESS and progress_enable)
             or (v.cmd == YIELD_MANUAL and yield_manual_enable)
             or (v.cmd == YIELD_AUTOMATIC and yield_automatic_enable)
         then
-            while not machine:read_iflags_Y() and not machine:read_iflags_X() and not machine:read_iflags_H() do
-                break_reason = run_machine(machine)
-            end
+            local break_reason = run_machine(machine)
 
             -- mcycle should be as expected
             local mcycle = machine:read_mcycle()
@@ -241,13 +233,12 @@ local function test(machine_config, yield_automatic_enable, yield_manual_enable)
             end
 
             -- data should be as expected
-            local data = machine:read_htif_tohost_data()
-            local reason = data >> 32
-            data = data << 32 >> 32
+            local data = machine:read_reg("htif_tohost_data")
+            local reason = machine:read_reg("htif_tohost_reason")
             assert(data == v.data, string.format("data: expected %d, got %d", v.data, data))
             assert(reason == v.reason, string.format("reason: expected %d, got %d", v.reason, reason))
             -- cmd should be as expected
-            assert(machine:read_htif_tohost_cmd() == v.cmd)
+            assert(machine:read_reg("htif_tohost_cmd") == v.cmd)
             -- trying to run it without resetting iflags.Y should not advance
             if machine:read_iflags_Y() then
                 run_machine(machine)
@@ -256,13 +247,10 @@ local function test(machine_config, yield_automatic_enable, yield_manual_enable)
             end
             -- now reset it so the machine can be advanced
             machine:reset_iflags_Y()
-            machine:reset_iflags_X()
         end
     end
     -- finally run to completion
-    while not machine:read_iflags_Y() and not machine:read_iflags_H() do
-        break_reason = run_machine(machine)
-    end
+    local break_reason = run_machine(machine)
     -- should be halted
     assert(break_reason == cartesi.BREAK_REASON_HALTED)
     assert(machine:read_iflags_H(), "expected iflags_H set")
@@ -273,8 +261,8 @@ local function test(machine_config, yield_automatic_enable, yield_manual_enable)
     )
     -- with the expected payload
     assert(
-        (machine:read_htif_tohost_data() >> 1) == exit_payload,
-        string.format("exit payload: expected %u, got %u\n", exit_payload, machine:read_htif_tohost_data() >> 1)
+        (machine:read_reg("htif_tohost_data") >> 1) == exit_payload,
+        string.format("exit payload: expected %u, got %u\n", exit_payload, machine:read_reg("htif_tohost_data") >> 1)
     )
     stderr("    passed\n")
 end

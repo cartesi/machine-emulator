@@ -78,11 +78,11 @@ static execute_status htif_yield(i_device_state_access *a, uint64_t cmd, uint64_
         if (cmd == HTIF_YIELD_CMD_MANUAL) {
             a->set_iflags_Y();
             status = execute_status::success_and_yield;
-            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_YIELD, cmd, 0));
+            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_YIELD, cmd, 0, 0));
         } else if (cmd == HTIF_YIELD_CMD_AUTOMATIC) {
             a->set_iflags_X();
             status = execute_status::success_and_yield;
-            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_YIELD, cmd, 0));
+            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_YIELD, cmd, 0, 0));
         }
     }
     // Otherwise, silently ignore it
@@ -100,7 +100,7 @@ static execute_status htif_console(htif_runtime_config *runtime_config, i_device
             if (!runtime_config || !runtime_config->no_console_putchar) {
                 os_putchar(ch);
             }
-            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_CONSOLE, cmd, 0));
+            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_CONSOLE, cmd, 0, 0));
         } else if (cmd == HTIF_CONSOLE_CMD_GETCHAR) {
             // In blockchain, this command will never be enabled as there is no way to input the same character
             // to every participant in a dispute: where would c come from? So if the code reached here in the
@@ -108,7 +108,7 @@ static execute_status htif_console(htif_runtime_config *runtime_config, i_device
             // In interactive mode, we just get the next character from the console and send it back in the ack
             os_poll_tty(0);
             const int c = os_getchar() + 1;
-            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_CONSOLE, cmd, c));
+            a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_CONSOLE, cmd, 0, static_cast<uint32_t>(c)));
         }
     }
     // Otherwise, silently ignore it

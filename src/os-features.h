@@ -23,6 +23,9 @@
 
 #if !defined(NO_THREADS)
 #define HAVE_THREADS
+#define THREAD_LOCAL
+#else
+#define THREAD_LOCAL thread_local
 #endif
 
 #if !defined(NO_TERMIOS) && !defined(_WIN32) && !defined(__wasi__)

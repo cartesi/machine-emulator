@@ -1,7 +1,7 @@
 {
   "openrpc": "1.0.0-rc1",
   "info": {
-    "version": "0.0.1",
+    "version": "0.0.2",
     "title": "Remote Cartesi Machine",
     "license": {
       "name": "MIT"
@@ -26,10 +26,10 @@
       "summary": "Forks the server",
       "params": [],
       "result": {
-        "name": "address",
-        "description": "URL of forked server",
+        "name": "fork_result",
+        "description": "Result of the fork containing address and pid",
         "schema": {
-          "type": "string"
+          "$ref": "#/components/schemas/ForkResult"
         }
       }
     },
@@ -42,13 +42,13 @@
           "description": "URL of the new address",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
+            "type": "string"
           }
         }
       ],
       "result": {
         "name": "address",
-        "description": "URL of rebound server",
+        "description": "URL of the rebound address",
         "schema": {
           "type": "string"
         }
@@ -214,7 +214,7 @@
     },
 
     {
-      "name": "machine.log_uarch_step",
+      "name": "machine.log_step_uarch",
       "summary": "Runs the small emulator for one cycle and return a log of state accesses",
       "params": [ {
           "name":"log_type",
@@ -223,17 +223,10 @@
           "schema": {
             "$ref": "#/components/schemas/AccessLogType"
           }
-        }, {
-          "name":"one_based",
-          "description": "Whether messages use 1-based or 0-based indeces",
-          "required": false,
-          "schema": {
-            "type": "boolean"
-          }
         }
       ],
       "result": {
-        "name": "access_log",
+        "name": "log",
         "description": "Log of state accesses",
         "schema": {
           "$ref": "#/components/schemas/AccessLog"
@@ -242,43 +235,8 @@
     },
 
     {
-      "name": "machine.verify_uarch_step_log",
-      "summary": "Verifies an access log",
-      "params": [ {
-          "name":"log",
-          "description": "Access log to verify",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/AccessLog"
-          }
-        }, {
-          "name":"runtime",
-          "description": "Machine runtime configuration",
-          "required": false,
-          "schema": {
-            "$ref": "#/components/schemas/MachineRuntimeConfig"
-          }
-        }, {
-          "name":"one_based",
-          "description": "Whether messages use 1-based or 0-based indeces",
-          "required": false,
-          "schema": {
-            "type": "boolean"
-          }
-        }
-      ],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.verify_uarch_step_state_transition",
-      "summary": "Verifies a state transition",
+      "name": "machine.verify_step_uarch",
+      "summary": "Verifies a state transition caused by log_step_uarch",
       "params": [ {
           "name":"root_hash_before",
           "description": "State hash before transition described by access log",
@@ -300,20 +258,6 @@
           "schema": {
             "$ref": "#/components/schemas/Base64Hash"
           }
-        }, {
-          "name":"runtime",
-          "description": "Machine runtime configuration",
-          "required": false,
-          "schema": {
-            "$ref": "#/components/schemas/MachineRuntimeConfig"
-          }
-        }, {
-          "name":"one_based",
-          "description": "Whether messages use 1-based or 0-based indeces",
-          "required": false,
-          "schema": {
-            "type": "boolean"
-          }
         }
       ],
       "result": {
@@ -326,43 +270,8 @@
     },
 
     {
-      "name": "machine.verify_uarch_reset_log",
-      "summary": "Verifies an access log produced by a log_uarch_reset",
-      "params": [ {
-          "name":"log",
-          "description": "Access log to verify",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/AccessLog"
-          }
-        }, {
-          "name":"runtime",
-          "description": "Machine runtime configuration",
-          "required": false,
-          "schema": {
-            "$ref": "#/components/schemas/MachineRuntimeConfig"
-          }
-        }, {
-          "name":"one_based",
-          "description": "Whether messages use 1-based or 0-based indeces",
-          "required": false,
-          "schema": {
-            "type": "boolean"
-          }
-        }
-      ],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.verify_uarch_reset_state_transition",
-      "summary": "Verifies a state transition caused by log_uarch_reset",
+      "name": "machine.verify_reset_uarch",
+      "summary": "Verifies a state transition caused by log_reset_uarch",
       "params": [ {
           "name":"root_hash_before",
           "description": "State hash before transition described by access log",
@@ -384,20 +293,6 @@
           "schema": {
             "$ref": "#/components/schemas/Base64Hash"
           }
-        }, {
-          "name":"runtime",
-          "description": "Machine runtime configuration",
-          "required": false,
-          "schema": {
-            "$ref": "#/components/schemas/MachineRuntimeConfig"
-          }
-        }, {
-          "name":"one_based",
-          "description": "Whether messages use 1-based or 0-based indeces",
-          "required": false,
-          "schema": {
-            "type": "boolean"
-          }
         }
       ],
       "result": {
@@ -405,34 +300,6 @@
         "description": "True when operation succeeded",
         "schema": {
           "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.get_proof",
-      "summary": "Obtains a Merkle proof for a span of memory in the machine state",
-      "params": [ {
-          "name":"address",
-          "description": "Starting address of range in state (must be aligned to size)",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          }
-        }, {
-          "name":"log2_size",
-          "description": "Log2 of size of range",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          }
-        }
-      ],
-      "result": {
-        "name": "proof",
-        "description": "Proof of range contents",
-        "schema": {
-          "$ref": "#/components/schemas/Proof"
         }
       }
     },
@@ -624,7 +491,7 @@
         }
       ],
       "result": {
-        "name": "value",
+        "name": "paddr",
         "description": "Value of corresponding physical address (little-endian)",
         "schema": {
           "$ref": "#/components/schemas/UnsignedInteger"
@@ -654,20 +521,20 @@
     },
 
     {
-      "name": "machine.read_csr",
-      "summary": "Reads the value of a CSR",
+      "name": "machine.read_register",
+      "summary": "Reads the value of a register",
       "params": [ {
-          "name":"csr",
-          "description": "CSR to read",
+          "name":"reg",
+          "description": "Register to read",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/CSR"
+            "$ref": "#/components/schemas/REG"
           }
         }
       ],
       "result": {
         "name": "value",
-        "description": "Value of CSR (little-endian)",
+        "description": "Value of register (little-endian)",
         "schema": {
           "$ref": "#/components/schemas/UnsignedInteger"
         }
@@ -675,18 +542,18 @@
     },
 
     {
-      "name": "machine.write_csr",
-      "summary": "Writes the value of a CSR",
+      "name": "machine.write_reg",
+      "summary": "Writes the value of a register",
       "params": [ {
-          "name":"csr",
-          "description": "CSR to write",
+          "name":"reg",
+          "description": "Register to write",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/CSR"
+            "$ref": "#/components/schemas/REG"
           }
         }, {
           "name":"value",
-          "description": "Value of CSR (little-endian)",
+          "description": "Value of register (little-endian)",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"
@@ -703,182 +570,14 @@
     },
 
     {
-      "name": "machine.get_csr_address",
-      "summary": "Returns the address of a CSR",
+      "name": "machine.get_reg_address",
+      "summary": "Returns the address of a register",
       "params": [ {
-          "name":"csr",
-          "description": "CSR to obtain address",
+          "name":"reg",
+          "description": "Register to obtain address",
           "required": true,
           "schema": {
-            "$ref": "#/components/schemas/CSR"
-          }
-        }
-      ],
-      "result": {
-        "name": "address",
-        "description": "Address of CSR",
-        "schema": {
-          "$ref": "#/components/schemas/UnsignedInteger"
-        }
-      }
-    },
-
-    {
-      "name": "machine.read_x",
-      "summary": "Returns value of a general-purpose register",
-      "params": [ {
-          "name":"index",
-          "description": "Index of register ({0,...,31})",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          }
-        }
-      ],
-      "result": {
-        "name": "value",
-        "description": "Value of register",
-        "schema": {
-          "$ref": "#/components/schemas/UnsignedInteger"
-        }
-      }
-    },
-
-    {
-      "name": "machine.read_f",
-      "summary": "Returns value of a floating-point register",
-      "params": [ {
-          "name":"index",
-          "description": "Index of register ({0,...,31})",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          }
-        }
-      ],
-      "result": {
-        "name": "value",
-        "description": "Value of register",
-        "schema": {
-          "$ref": "#/components/schemas/UnsignedInteger"
-        }
-      }
-    },
-
-    {
-      "name": "machine.read_uarch_x",
-      "summary": "Returns value of a general-purpose register of the small emulator",
-      "params": [ {
-          "name":"index",
-          "description": "Index of register ({0,...,31})",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          }
-        }
-      ],
-      "result": {
-        "name": "value",
-        "description": "Value of register",
-        "schema": {
-          "$ref": "#/components/schemas/UnsignedInteger"
-        }
-      }
-    },
-
-    {
-      "name": "machine.write_x",
-      "summary": "Writes the value of a general-purpose register",
-      "params": [ {
-          "name":"index",
-          "description": "Index of register ({1,...,31})",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          }
-        }, {
-          "name":"value",
-          "description": "Value of register",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          }
-        }
-      ],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.write_f",
-      "summary": "Writes the value of a floating-point register",
-      "params": [ {
-          "name":"index",
-          "description": "Index of register ({0,...,31})",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          }
-        }, {
-          "name":"value",
-          "description": "Value of register",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          }
-        }
-      ],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.write_uarch_x",
-      "summary": "Writes the value of a general-purpose register in the small emulator",
-      "params": [ {
-          "name":"index",
-          "description": "Index of register ({1,...,31})",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          }
-        }, {
-          "name":"value",
-          "description": "Value of register",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          }
-        }
-      ],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.get_x_address",
-      "summary": "Returns the address of a general-purpose register",
-      "params": [ {
-          "name":"index",
-          "description": "Index of register ({0,...,31})",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
+            "$ref": "#/components/schemas/REG"
           }
         }
       ],
@@ -887,191 +586,6 @@
         "description": "Address of register",
         "schema": {
           "$ref": "#/components/schemas/UnsignedInteger"
-        }
-      }
-    },
-
-    {
-      "name": "machine.get_f_address",
-      "summary": "Returns the address of a floating-point register",
-      "params": [ {
-          "name":"index",
-          "description": "Index of register ({0,...,31})",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          }
-        }
-      ],
-      "result": {
-        "name": "address",
-        "description": "Address of register",
-        "schema": {
-          "$ref": "#/components/schemas/UnsignedInteger"
-        }
-      }
-    },
-
-    {
-      "name": "machine.get_uarch_x_address",
-      "summary": "Returns the address of a general-purpose register in the small emulator",
-      "params": [ {
-          "name":"index",
-          "description": "Index of register ({0,...,31})",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          }
-        }
-      ],
-      "result": {
-        "name": "address",
-        "description": "Address of register",
-        "schema": {
-          "$ref": "#/components/schemas/UnsignedInteger"
-        }
-      }
-    },
-
-    {
-      "name": "machine.set_iflags_Y",
-      "summary": "Sets iflags.Y to true",
-      "params": [],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.reset_iflags_Y",
-      "summary": "Sets iflags.Y to false",
-      "params": [],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.read_iflags_Y",
-      "summary": "Returns value of iflags.Y",
-      "params": [],
-      "result": {
-        "name": "value",
-        "description": "Value of flag",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.set_iflags_X",
-      "summary": "Sets iflags.X to true",
-      "params": [],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.reset_iflags_X",
-      "summary": "Sets iflags.X to false",
-      "params": [],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.read_iflags_X",
-      "summary": "Returns value of iflags.X",
-      "params": [],
-      "result": {
-        "name": "value",
-        "description": "Value of flag",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.set_iflags_H",
-      "summary": "Sets iflags.H to true",
-      "params": [],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.read_iflags_H",
-      "summary": "Returns value of iflags.H",
-      "params": [],
-      "result": {
-        "name": "value",
-        "description": "Value of flag",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.read_iflags_PRV",
-      "summary": "Returns value of iflags.PRV",
-      "params": [],
-      "result": {
-        "name": "value",
-        "description": "Value of flag",
-        "schema": {
-          "$ref": "#/components/schemas/UnsignedInteger"
-        }
-      }
-    },
-
-    {
-      "name": "machine.set_uarch_halt_flag",
-      "summary": "Sets iflags.H to true",
-      "params": [],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.read_uarch_halt_flag",
-      "summary": "Returns value of iflags.H",
-      "params": [],
-      "result": {
-        "name": "value",
-        "description": "Value of flag",
-        "schema": {
-          "type": "boolean"
         }
       }
     },
@@ -1090,7 +604,7 @@
     },
 
     {
-      "name": "machine.log_uarch_reset",
+      "name": "machine.log_reset_uarch",
       "summary": "Reset uarch to pristine state and return a log of state accesses",
       "params": [ {
           "name":"log_type",
@@ -1099,17 +613,10 @@
           "schema": {
             "$ref": "#/components/schemas/AccessLogType"
           }
-        }, {
-          "name":"one_based",
-          "description": "Whether messages use 1-based or 0-based indeces",
-          "required": false,
-          "schema": {
-            "type": "boolean"
-          }
         }
       ],
       "result": {
-        "name": "access_log",
+        "name": "log",
         "description": "Log of state accesses",
         "schema": {
           "$ref": "#/components/schemas/AccessLog"
@@ -1211,8 +718,8 @@
     },
 
     {
-      "name": "machine.log_send_cmio_response and returns an access log",
-      "summary": "Sends cmio response. and returns an access log",
+      "name": "machine.log_send_cmio_response",
+      "summary": "Sends cmio response and returns an access log",
       "params": [ {
         "name":"reason",
         "description": "Reason for sending response",
@@ -1234,17 +741,10 @@
           "schema": {
             "$ref": "#/components/schemas/AccessLogType"
           }
-        }, {
-          "name":"one_based",
-          "description": "Whether messages use 1-based or 0-based indeces",
-          "required": false,
-          "schema": {
-            "type": "boolean"
-          }
         }
       ],
       "result": {
-        "name": "access_log",
+        "name": "log",
         "description": "Log of state accesses",
         "schema": {
           "$ref": "#/components/schemas/AccessLog"
@@ -1253,57 +753,8 @@
     },
 
     {
-      "name": "machine.verify_send_cmio_response_log",
-      "summary": "Checks the internal consistency of an access log produced by send_cmio_response",
-      "params": [ {
-        "name":"reason",
-        "description": "Reason for sending response",
-        "required": true,
-        "schema": {
-          "$ref": "#/components/schemas/UnsignedInteger"
-        }
-      }, {
-          "name":"data",
-          "description": "Response data sent when the log was generated.",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/Base64String"
-          }
-        }, {
-          "name":"log",
-          "description": "Access log to verify",
-          "required": true,
-          "schema": {
-            "$ref": "#/components/schemas/AccessLog"
-          }
-        }, {
-          "name":"runtime",
-          "description": "Machine runtime configuration",
-          "required": false,
-          "schema": {
-            "$ref": "#/components/schemas/MachineRuntimeConfig"
-          }
-        }, {
-          "name":"one_based",
-          "description": "Whether messages use 1-based or 0-based indeces",
-          "required": false,
-          "schema": {
-            "type": "boolean"
-          }
-        }
-      ],
-      "result": {
-        "name": "status",
-        "description": "True when operation succeeded",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-
-    {
-      "name": "machine.verify_send_cmio_response_state_transition",
-      "summary": "Checks the validity of state transitions caused by send_cmio_response",
+      "name": "machine.verify_send_cmio_response",
+      "summary": "Verifies a state transition caused by log_send_cmio_response",
       "params": [ {
         "name":"reason",
         "description": "Reason for sending response",
@@ -1339,20 +790,6 @@
           "schema": {
             "$ref": "#/components/schemas/Base64Hash"
           }
-        }, {
-          "name":"runtime",
-          "description": "Machine runtime configuration",
-          "required": false,
-          "schema": {
-            "$ref": "#/components/schemas/MachineRuntimeConfig"
-          }
-        }, {
-          "name":"one_based",
-          "description": "Whether messages use 1-based or 0-based indeces",
-          "required": false,
-          "schema": {
-            "type": "boolean"
-          }
         }
       ],
       "result": {
@@ -1369,9 +806,73 @@
   "components": {
     "schemas": {
 
-      "CSR": {
-        "title": "CSR",
+      "REG": {
+        "title": "REG",
         "enum": [
+          "x0",
+          "x1",
+          "x2",
+          "x3",
+          "x4",
+          "x5",
+          "x6",
+          "x7",
+          "x8",
+          "x9",
+          "x10",
+          "x11",
+          "x12",
+          "x13",
+          "x14",
+          "x15",
+          "x16",
+          "x17",
+          "x18",
+          "x19",
+          "x20",
+          "x21",
+          "x22",
+          "x23",
+          "x24",
+          "x25",
+          "x26",
+          "x27",
+          "x28",
+          "x29",
+          "x30",
+          "x31",
+          "f0",
+          "f1",
+          "f2",
+          "f3",
+          "f4",
+          "f5",
+          "f6",
+          "f7",
+          "f8",
+          "f9",
+          "f10",
+          "f11",
+          "f12",
+          "f13",
+          "f14",
+          "f15",
+          "f16",
+          "f17",
+          "f18",
+          "f19",
+          "f20",
+          "f21",
+          "f22",
+          "f23",
+          "f24",
+          "f25",
+          "f26",
+          "f27",
+          "f28",
+          "f29",
+          "f30",
+          "f31",
           "pc",
           "fcsr",
           "mvendorid",
@@ -1411,8 +912,53 @@
           "htif_ihalt",
           "htif_iconsole",
           "htif_iyield",
+          "uarch_x0",
+          "uarch_x1",
+          "uarch_x2",
+          "uarch_x3",
+          "uarch_x4",
+          "uarch_x5",
+          "uarch_x6",
+          "uarch_x7",
+          "uarch_x8",
+          "uarch_x9",
+          "uarch_x10",
+          "uarch_x11",
+          "uarch_x12",
+          "uarch_x13",
+          "uarch_x14",
+          "uarch_x15",
+          "uarch_x16",
+          "uarch_x17",
+          "uarch_x18",
+          "uarch_x19",
+          "uarch_x20",
+          "uarch_x21",
+          "uarch_x22",
+          "uarch_x23",
+          "uarch_x24",
+          "uarch_x25",
+          "uarch_x26",
+          "uarch_x27",
+          "uarch_x28",
+          "uarch_x29",
+          "uarch_x30",
+          "uarch_x31",
           "uarch_pc",
-          "uarch_cycle"
+          "uarch_cycle",
+          "uarch_halt_flag",
+          "iflags_prv",
+          "iflags_x",
+          "iflags_y",
+          "iflags_h",
+          "htif_tohost_dev",
+          "htif_tohost_cmd",
+          "htif_tohost_reason",
+          "htif_tohost_data",
+          "htif_fromhost_dev",
+          "htif_fromhost_cmd",
+          "htif_fromhost_reason",
+          "htif_fromhost_data"
         ]
       },
 
@@ -1463,31 +1009,201 @@
         }
       },
 
-      "XRegConfig": {
-        "title": "XRegConfig",
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/UnsignedInteger"
-        }
-      },
-
-      "FRegConfig": {
-        "title": "FRegConfig",
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/UnsignedInteger"
-        }
-      },
-
       "ProcessorConfig": {
         "title": "ProcessorConfig",
         "type": "object",
         "properties": {
-          "x": {
-            "$ref": "#/components/schemas/XRegConfig"
+          "x0": {
+            "$ref": "#/components/schemas/UnsignedInteger"
           },
-          "f": {
-            "$ref": "#/components/schemas/FRegConfig"
+          "x1": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x2": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x3": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x4": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x5": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x6": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x7": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x8": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x9": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x10": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x11": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x12": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x13": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x14": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x15": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x16": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x17": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x18": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x19": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x20": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x21": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x22": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x23": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x24": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x25": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x26": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x27": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x28": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x29": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x30": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x31": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f0": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f1": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f2": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f3": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f4": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f5": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f6": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f7": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f8": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f9": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f10": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f11": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f12": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f13": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f14": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f15": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f16": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f17": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f18": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f19": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f20": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f21": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f22": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f23": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f24": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f25": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f26": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f27": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f28": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f29": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f30": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "f31": {
+            "$ref": "#/components/schemas/UnsignedInteger"
           },
           "pc": {
             "$ref": "#/components/schemas/UnsignedInteger"
@@ -1704,21 +1420,27 @@
           "log2_size": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
+          "read_hash": {
+            "$ref": "#/components/schemas/Base64String"
+          },
           "read": {
+            "$ref": "#/components/schemas/Base64String"
+          },
+          "written_hash": {
             "$ref": "#/components/schemas/Base64String"
           },
           "written": {
             "$ref": "#/components/schemas/Base64String"
           },
-          "proof": {
-            "$ref": "#/components/schemas/Proof"
+          "sibling_hashes": {
+            "$ref": "#/components/schemas/Base64HashArray"
           }
         },
         "required": [
           "type",
           "address",
           "log2_size",
-          "read"
+          "read_hash"
         ]
       },
 
@@ -1742,9 +1464,6 @@
         "title": "AccessLogType",
         "type": "object",
         "properties": {
-          "has_proofs": {
-            "type": "boolean"
-          },
           "has_annotations": {
             "type": "boolean"
           },
@@ -1753,7 +1472,6 @@
           }
         },
         "required": [
-          "has_proofs",
           "has_annotations",
           "has_large_data"
         ]
@@ -1849,6 +1567,61 @@
         }
       },
 
+      "VirtIOHostfwd": {
+        "title": "VirtIOHostfwd",
+        "type": "object",
+        "properties": {
+          "is_udp": {
+            "type": "boolean"
+          },
+          "host_ip": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "guest_ip": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "host_port": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "guest_port": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      },
+
+      "VirtIOHostfwdArray": {
+        "title": "VirtIOHostfwdArray",
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/VirtIOHostfwd"
+        }
+      },
+
+      "VirtIODeviceConfig": {
+        "title": "VirtIODeviceConfig",
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "tag": {
+            "type": "string"
+          },
+          "host_directory": {
+            "type": "string"
+          },
+          "hostfwd": {
+            "$ref": "#/components/schemas/VirtIOHostfwdArray"
+          },
+          "iface": {
+            "type": "string"
+          }
+        }
+      },
+
       "FlashDriveConfigs": {
         "title": "FlashDriveConfigs",
         "type": "array",
@@ -1916,14 +1689,110 @@
         "title": "UarchProcessorConfig",
         "type": "object",
         "properties": {
-          "x": {
-            "$ref": "#/components/schemas/XRegConfig"
+          "x0": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x1": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x2": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x3": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x4": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x5": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x6": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x7": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x8": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x9": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x10": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x11": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x12": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x13": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x14": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x15": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x16": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x17": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x18": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x19": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x20": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x21": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x22": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x23": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x24": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x25": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x26": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x27": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x28": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x29": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x30": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "x31": {
+            "$ref": "#/components/schemas/UnsignedInteger"
           },
           "pc": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
           "cycle": {
             "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "halt_flag": {
+            "type": "boolean"
           }
         }
       },
@@ -1967,6 +1836,14 @@
         }
       },
 
+      "VirtIOConfigs": {
+        "title": "VirtIOConfigs",
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/VirtIODeviceConfig"
+        }
+      },
+
       "MachineConfig": {
         "title": "MachineConfig",
         "type": "object",
@@ -2000,6 +1877,9 @@
           },
           "cmio": {
             "$ref": "#/components/schemas/CmioConfig"
+          },
+          "virtio": {
+            "$ref": "#/components/schemas/VirtIOConfigs"
           }
         }
       },
@@ -2071,8 +1951,20 @@
         "items": {
           "$ref": "#/components/schemas/MemoryRangeDescription"
         }
-      }
+      },
 
+      "ForkResult": {
+        "title": "ForkResult",
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "pid": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      }
     }
   }
 }

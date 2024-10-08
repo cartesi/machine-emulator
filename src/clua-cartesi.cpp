@@ -14,7 +14,9 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "base64.h"
 #include "clua-i-virtual-machine.h"
+#include "clua-machine-util.h"
 #include "clua-machine.h"
 #include "clua.h"
 #include "keccak-256-hasher.h"
@@ -82,9 +84,57 @@ static int cartesi_mod_keccak(lua_State *L) {
     }
 }
 
+static int cartesi_mod_tobase64(lua_State *L) try {
+    size_t size = 0;
+    const char *data = luaL_checklstring(L, 1, &size);
+    std::string &value =
+        *cartesi::clua_push_new_managed_toclose_ptr(L, cartesi::encode_base64(std::string_view(data, size)));
+    lua_pushlstring(L, value.data(), value.size());
+    value.clear();
+    return 1;
+} catch (std::exception &e) {
+    luaL_error(L, "%s", e.what());
+    return 1;
+}
+
+static int cartesi_mod_frombase64(lua_State *L) try {
+    size_t size = 0;
+    const char *data = luaL_checklstring(L, 1, &size);
+    std::string &value =
+        *cartesi::clua_push_new_managed_toclose_ptr(L, cartesi::decode_base64(std::string_view(data, size)));
+    lua_pushlstring(L, value.data(), value.size());
+    value.clear();
+    return 1;
+} catch (std::exception &e) {
+    luaL_error(L, "%s", e.what());
+    return 1;
+}
+
+static int cartesi_mod_tojson(lua_State *L) try {
+    const int indent = static_cast<int>(luaL_optinteger(L, 2, -1));
+    lua_settop(L, 1);
+    cartesi::clua_check_json_string(L, 1, indent);
+    return 1;
+} catch (std::exception &e) {
+    luaL_error(L, "%s", e.what());
+    return 1;
+}
+
+static int cartesi_mod_fromjson(lua_State *L) try {
+    cartesi::clua_push_json_table(L, luaL_checkstring(L, 1));
+    return 1;
+} catch (std::exception &e) {
+    luaL_error(L, "%s", e.what());
+    return 1;
+}
+
 /// \brief Contents of the cartesi module table.
 static const auto cartesi_mod = cartesi::clua_make_luaL_Reg_array({
     {"keccak", cartesi_mod_keccak},
+    {"tobase64", cartesi_mod_tobase64},
+    {"frombase64", cartesi_mod_frombase64},
+    {"tojson", cartesi_mod_tojson},
+    {"fromjson", cartesi_mod_fromjson},
 });
 
 extern "C" {
@@ -113,10 +163,17 @@ CM_API int luaopen_cartesi(lua_State *L) {
     lua_pushvalue(L, -2);                    // cluactx cartesi cluactx
     luaL_setfuncs(L, cartesi_mod.data(), 1); // cluactx cartesi
 
-    // Set cartesi constants
-
-    clua_setintegerfield(L, CM_TREE_LOG2_ROOT_SIZE, "TREE_LOG2_ROOT_SIZE", -1);
+    // Set public C API constants
+    clua_setstringfield(L, CM_VERSION_LABEL, "VERSION_LABEL", -1);
+    clua_setstringfield(L, CM_VERSION, "VERSION", -1);
+    clua_setintegerfield(L, CM_VERSION_MAJOR, "VERSION_MAJOR", -1);
+    clua_setintegerfield(L, CM_VERSION_MINOR, "VERSION_MINOR", -1);
+    clua_setintegerfield(L, CM_VERSION_PATCH, "VERSION_PATCH", -1);
+    clua_setintegerfield(L, CM_HASH_SIZE, "HASH_SIZE", -1);
+    clua_setintegerfield(L, CM_REG_COUNT, "REG_COUNT", -1);
     clua_setintegerfield(L, CM_TREE_LOG2_WORD_SIZE, "TREE_LOG2_WORD_SIZE", -1);
+    clua_setintegerfield(L, CM_TREE_LOG2_PAGE_SIZE, "TREE_LOG2_PAGE_SIZE", -1);
+    clua_setintegerfield(L, CM_TREE_LOG2_ROOT_SIZE, "TREE_LOG2_ROOT_SIZE", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_FAILED, "BREAK_REASON_FAILED", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_HALTED, "BREAK_REASON_HALTED", -1);
     clua_setintegerfield(L, CM_BREAK_REASON_YIELDED_MANUALLY, "BREAK_REASON_YIELDED_MANUALLY", -1);
@@ -125,6 +182,25 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_BREAK_REASON_REACHED_TARGET_MCYCLE, "BREAK_REASON_REACHED_TARGET_MCYCLE", -1);
     clua_setintegerfield(L, CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE, "UARCH_BREAK_REASON_REACHED_TARGET_CYCLE", -1);
     clua_setintegerfield(L, CM_UARCH_BREAK_REASON_UARCH_HALTED, "UARCH_BREAK_REASON_UARCH_HALTED", -1);
+    clua_setintegerfield(L, CM_ACCESS_LOG_TYPE_ANNOTATIONS, "ACCESS_LOG_TYPE_ANNOTATIONS", -1);
+    clua_setintegerfield(L, CM_ACCESS_LOG_TYPE_LARGE_DATA, "ACCESS_LOG_TYPE_LARGE_DATA", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_COMMAND_AUTOMATIC, "CMIO_YIELD_COMMAND_AUTOMATIC", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_COMMAND_MANUAL, "CMIO_YIELD_COMMAND_MANUAL", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_AUTOMATIC_REASON_PROGRESS, "CMIO_YIELD_AUTOMATIC_REASON_PROGRESS", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT, "CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT, "CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED, "CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_MANUAL_REASON_RX_REJECTED, "CMIO_YIELD_MANUAL_REASON_RX_REJECTED", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION, "CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_REASON_ADVANCE_STATE, "CMIO_YIELD_REASON_ADVANCE_STATE", -1);
+    clua_setintegerfield(L, CM_CMIO_YIELD_REASON_INSPECT_STATE, "CMIO_YIELD_REASON_INSPECT_STATE", -1);
+    clua_setintegerfield(L, CM_PMA_CMIO_RX_BUFFER_START, "PMA_CMIO_RX_BUFFER_START", -1);
+    clua_setintegerfield(L, CM_PMA_CMIO_RX_BUFFER_LOG2_SIZE, "PMA_CMIO_RX_BUFFER_LOG2_SIZE", -1);
+    clua_setintegerfield(L, CM_PMA_CMIO_TX_BUFFER_START, "PMA_CMIO_TX_BUFFER_START", -1);
+    clua_setintegerfield(L, CM_PMA_CMIO_TX_BUFFER_LOG2_SIZE, "PMA_CMIO_TX_BUFFER_LOG2_SIZE", -1);
+    clua_setintegerfield(L, CM_PMA_RAM_START, "PMA_RAM_START", -1);
+
+    // Set other constants used by internal tests
     clua_setintegerfield(L, UARCH_STATE_START_ADDRESS, "UARCH_STATE_START_ADDRESS", -1);
     clua_setintegerfield(L, UARCH_STATE_LOG2_SIZE, "UARCH_STATE_LOG2_SIZE", -1);
     clua_setintegerfield(L, UARCH_SHADOW_START_ADDRESS, "UARCH_SHADOW_START_ADDRESS", -1);
@@ -133,21 +209,14 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, UARCH_RAM_START_ADDRESS, "UARCH_RAM_START_ADDRESS", -1);
     clua_setintegerfield(L, UARCH_ECALL_FN_HALT, "UARCH_ECALL_FN_HALT", -1);
     clua_setintegerfield(L, UARCH_ECALL_FN_PUTCHAR, "UARCH_ECALL_FN_PUTCHAR", -1);
-    clua_setintegerfield(L, PMA_CMIO_RX_BUFFER_START, "PMA_CMIO_RX_BUFFER_START", -1);
-    clua_setintegerfield(L, PMA_CMIO_RX_BUFFER_LOG2_SIZE, "PMA_CMIO_RX_BUFFER_LOG2_SIZE", -1);
-    clua_setintegerfield(L, PMA_CMIO_TX_BUFFER_START, "PMA_CMIO_TX_BUFFER_START", -1);
-    clua_setintegerfield(L, PMA_CMIO_TX_BUFFER_LOG2_SIZE, "PMA_CMIO_TX_BUFFER_LOG2_SIZE", -1);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     clua_setlstringfield(L, reinterpret_cast<const char *>(uarch_pristine_hash), uarch_pristine_hash_len,
         "UARCH_PRISTINE_STATE_HASH", -1);
     clua_setintegerfield(L, MVENDORID_INIT, "MVENDORID", -1);
     clua_setintegerfield(L, MARCHID_INIT, "MARCHID", -1);
     clua_setintegerfield(L, MIMPID_INIT, "MIMPID", -1);
-    clua_setintegerfield(L, CM_VERSION_MAJOR, "VERSION_MAJOR", -1);
-    clua_setintegerfield(L, CM_VERSION_MINOR, "VERSION_MINOR", -1);
-    clua_setintegerfield(L, CM_VERSION_PATCH, "VERSION_PATCH", -1);
-    clua_setstringfield(L, CM_VERSION_LABEL, "VERSION_LABEL", -1);
-    clua_setstringfield(L, CM_VERSION, "VERSION", -1);
+
+    // Build related constants
     clua_setstringfield(L, BOOST_COMPILER, "COMPILER", -1);
     clua_setstringfield(L, BOOST_PLATFORM, "PLATFORM", -1);
 #ifdef GIT_COMMIT

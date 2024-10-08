@@ -285,42 +285,42 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
 
     // General purpose registers
     for (int i = 1; i < X_REG_COUNT; i++) {
-        write_x(i, m_c.processor.x[i]);
+        write_reg(static_cast<reg>(reg::x0 + i), m_c.processor.x[i]);
     }
 
     // Floating-point registers
     for (int i = 0; i < F_REG_COUNT; i++) {
-        write_f(i, m_c.processor.f[i]);
+        write_reg(static_cast<reg>(reg::f0 + i), m_c.processor.f[i]);
     }
 
-    write_pc(m_c.processor.pc);
-    write_fcsr(m_c.processor.fcsr);
-    write_mcycle(m_c.processor.mcycle);
-    write_icycleinstret(m_c.processor.icycleinstret);
-    write_mstatus(m_c.processor.mstatus);
-    write_mtvec(m_c.processor.mtvec);
-    write_mscratch(m_c.processor.mscratch);
-    write_mepc(m_c.processor.mepc);
-    write_mcause(m_c.processor.mcause);
-    write_mtval(m_c.processor.mtval);
-    write_misa(m_c.processor.misa);
-    write_mie(m_c.processor.mie);
-    write_mip(m_c.processor.mip);
-    write_medeleg(m_c.processor.medeleg);
-    write_mideleg(m_c.processor.mideleg);
-    write_mcounteren(m_c.processor.mcounteren);
-    write_menvcfg(m_c.processor.menvcfg);
-    write_stvec(m_c.processor.stvec);
-    write_sscratch(m_c.processor.sscratch);
-    write_sepc(m_c.processor.sepc);
-    write_scause(m_c.processor.scause);
-    write_stval(m_c.processor.stval);
-    write_satp(m_c.processor.satp);
-    write_scounteren(m_c.processor.scounteren);
-    write_senvcfg(m_c.processor.senvcfg);
-    write_ilrsc(m_c.processor.ilrsc);
-    write_iflags(m_c.processor.iflags);
-    write_iunrep(m_c.processor.iunrep);
+    write_reg(reg::pc, m_c.processor.pc);
+    write_reg(reg::fcsr, m_c.processor.fcsr);
+    write_reg(reg::mcycle, m_c.processor.mcycle);
+    write_reg(reg::icycleinstret, m_c.processor.icycleinstret);
+    write_reg(reg::mstatus, m_c.processor.mstatus);
+    write_reg(reg::mtvec, m_c.processor.mtvec);
+    write_reg(reg::mscratch, m_c.processor.mscratch);
+    write_reg(reg::mepc, m_c.processor.mepc);
+    write_reg(reg::mcause, m_c.processor.mcause);
+    write_reg(reg::mtval, m_c.processor.mtval);
+    write_reg(reg::misa, m_c.processor.misa);
+    write_reg(reg::mie, m_c.processor.mie);
+    write_reg(reg::mip, m_c.processor.mip);
+    write_reg(reg::medeleg, m_c.processor.medeleg);
+    write_reg(reg::mideleg, m_c.processor.mideleg);
+    write_reg(reg::mcounteren, m_c.processor.mcounteren);
+    write_reg(reg::menvcfg, m_c.processor.menvcfg);
+    write_reg(reg::stvec, m_c.processor.stvec);
+    write_reg(reg::sscratch, m_c.processor.sscratch);
+    write_reg(reg::sepc, m_c.processor.sepc);
+    write_reg(reg::scause, m_c.processor.scause);
+    write_reg(reg::stval, m_c.processor.stval);
+    write_reg(reg::satp, m_c.processor.satp);
+    write_reg(reg::scounteren, m_c.processor.scounteren);
+    write_reg(reg::senvcfg, m_c.processor.senvcfg);
+    write_reg(reg::ilrsc, m_c.processor.ilrsc);
+    write_reg(reg::iflags, m_c.processor.iflags);
+    write_reg(reg::iunrep, m_c.processor.iunrep);
 
     // Register RAM
     if (m_c.ram.image_filename.empty()) {
@@ -339,7 +339,11 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     // Register all flash drives
     int i = 0;
     for (auto &f : m_c.flash_drive) {
-        const std::string flash_description = "flash drive "s + std::to_string(i++);
+        const std::string flash_description = "flash drive "s + std::to_string(i);
+        // Auto detect flash drive start address
+        if (f.start == UINT64_C(-1)) {
+            f.start = PMA_DRIVE_START + PMA_DRIVE_OFFSET_DEF * i;
+        }
         // Auto detect flash drive image length
         if (f.length == UINT64_C(-1)) {
             auto fp = unique_fopen(f.image_filename.c_str(), "rb");
@@ -357,6 +361,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
             f.length = length;
         }
         register_pma_entry(make_flash_drive_pma_entry(flash_description, f));
+        i++;
     }
 
     // Register cmio memory ranges
@@ -367,28 +372,28 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     register_pma_entry(make_htif_pma_entry(PMA_HTIF_START, PMA_HTIF_LENGTH, &m_r.htif));
 
     // Copy HTIF state to from config to machine
-    write_htif_tohost(m_c.htif.tohost);
-    write_htif_fromhost(m_c.htif.fromhost);
+    write_reg(reg::htif_tohost, m_c.htif.tohost);
+    write_reg(reg::htif_fromhost, m_c.htif.fromhost);
     // Only command in halt device is command 0 and it is always available
     const uint64_t htif_ihalt = static_cast<uint64_t>(true) << HTIF_HALT_CMD_HALT;
-    write_htif_ihalt(htif_ihalt);
+    write_reg(reg::htif_ihalt, htif_ihalt);
     const uint64_t htif_iconsole = static_cast<uint64_t>(m_c.htif.console_getchar) << HTIF_CONSOLE_CMD_GETCHAR |
         static_cast<uint64_t>(true) << HTIF_CONSOLE_CMD_PUTCHAR;
-    write_htif_iconsole(htif_iconsole);
+    write_reg(reg::htif_iconsole, htif_iconsole);
     const uint64_t htif_iyield = static_cast<uint64_t>(m_c.htif.yield_manual) << HTIF_YIELD_CMD_MANUAL |
         static_cast<uint64_t>(m_c.htif.yield_automatic) << HTIF_YIELD_CMD_AUTOMATIC;
-    write_htif_iyield(htif_iyield);
+    write_reg(reg::htif_iyield, htif_iyield);
 
     // Register CLINT device
     register_pma_entry(make_clint_pma_entry(PMA_CLINT_START, PMA_CLINT_LENGTH));
     // Copy CLINT state to from config to machine
-    write_clint_mtimecmp(m_c.clint.mtimecmp);
+    write_reg(reg::clint_mtimecmp, m_c.clint.mtimecmp);
 
     // Register PLIC device
     register_pma_entry(make_plic_pma_entry(PMA_PLIC_START, PMA_PLIC_LENGTH));
     // Copy PLIC state from config to machine
-    write_plic_girqpend(m_c.plic.girqpend);
-    write_plic_girqsrvd(m_c.plic.girqsrvd);
+    write_reg(reg::plic_girqpend, m_c.plic.girqpend);
+    write_reg(reg::plic_girqsrvd, m_c.plic.girqsrvd);
 
     // Register TLB device
     register_pma_entry(make_shadow_tlb_pma_entry(PMA_SHADOW_TLB_START, PMA_SHADOW_TLB_LENGTH));
@@ -575,65 +580,65 @@ bool machine::has_virtio_console() const {
 }
 
 bool machine::has_htif_console() const {
-    return static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_CMD_GETCHAR));
+    return static_cast<bool>(read_reg(reg::htif_iconsole) & (1 << HTIF_CONSOLE_CMD_GETCHAR));
 }
 
 machine_config machine::get_serialization_config(void) const {
-    if (read_iunrep()) {
+    if (read_reg(reg::iunrep)) {
         throw std::runtime_error{"cannot serialize configuration of unreproducible machines"};
     }
     // Initialize with copy of original config
     machine_config c = m_c;
     // Copy current processor state to config
     for (int i = 1; i < X_REG_COUNT; ++i) {
-        c.processor.x[i] = read_x(i);
+        c.processor.x[i] = read_reg(static_cast<reg>(reg::x0 + i));
     }
     for (int i = 0; i < F_REG_COUNT; ++i) {
-        c.processor.f[i] = read_f(i);
+        c.processor.f[i] = read_reg(static_cast<reg>(reg::f0 + i));
     }
-    c.processor.pc = read_pc();
-    c.processor.fcsr = read_fcsr();
-    c.processor.mvendorid = read_mvendorid();
-    c.processor.marchid = read_marchid();
-    c.processor.mimpid = read_mimpid();
-    c.processor.mcycle = read_mcycle();
-    c.processor.icycleinstret = read_icycleinstret();
-    c.processor.mstatus = read_mstatus();
-    c.processor.mtvec = read_mtvec();
-    c.processor.mscratch = read_mscratch();
-    c.processor.mepc = read_mepc();
-    c.processor.mcause = read_mcause();
-    c.processor.mtval = read_mtval();
-    c.processor.misa = read_misa();
-    c.processor.mie = read_mie();
-    c.processor.mip = read_mip();
-    c.processor.medeleg = read_medeleg();
-    c.processor.mideleg = read_mideleg();
-    c.processor.mcounteren = read_mcounteren();
-    c.processor.menvcfg = read_menvcfg();
-    c.processor.stvec = read_stvec();
-    c.processor.sscratch = read_sscratch();
-    c.processor.sepc = read_sepc();
-    c.processor.scause = read_scause();
-    c.processor.stval = read_stval();
-    c.processor.satp = read_satp();
-    c.processor.scounteren = read_scounteren();
-    c.processor.senvcfg = read_senvcfg();
-    c.processor.ilrsc = read_ilrsc();
-    c.processor.iflags = read_iflags();
-    c.processor.iunrep = read_iunrep();
+    c.processor.pc = read_reg(reg::pc);
+    c.processor.fcsr = read_reg(reg::fcsr);
+    c.processor.mvendorid = read_reg(reg::mvendorid);
+    c.processor.marchid = read_reg(reg::marchid);
+    c.processor.mimpid = read_reg(reg::mimpid);
+    c.processor.mcycle = read_reg(reg::mcycle);
+    c.processor.icycleinstret = read_reg(reg::icycleinstret);
+    c.processor.mstatus = read_reg(reg::mstatus);
+    c.processor.mtvec = read_reg(reg::mtvec);
+    c.processor.mscratch = read_reg(reg::mscratch);
+    c.processor.mepc = read_reg(reg::mepc);
+    c.processor.mcause = read_reg(reg::mcause);
+    c.processor.mtval = read_reg(reg::mtval);
+    c.processor.misa = read_reg(reg::misa);
+    c.processor.mie = read_reg(reg::mie);
+    c.processor.mip = read_reg(reg::mip);
+    c.processor.medeleg = read_reg(reg::medeleg);
+    c.processor.mideleg = read_reg(reg::mideleg);
+    c.processor.mcounteren = read_reg(reg::mcounteren);
+    c.processor.menvcfg = read_reg(reg::menvcfg);
+    c.processor.stvec = read_reg(reg::stvec);
+    c.processor.sscratch = read_reg(reg::sscratch);
+    c.processor.sepc = read_reg(reg::sepc);
+    c.processor.scause = read_reg(reg::scause);
+    c.processor.stval = read_reg(reg::stval);
+    c.processor.satp = read_reg(reg::satp);
+    c.processor.scounteren = read_reg(reg::scounteren);
+    c.processor.senvcfg = read_reg(reg::senvcfg);
+    c.processor.ilrsc = read_reg(reg::ilrsc);
+    c.processor.iflags = read_reg(reg::iflags);
+    c.processor.iunrep = read_reg(reg::iunrep);
     // Copy current CLINT state to config
-    c.clint.mtimecmp = read_clint_mtimecmp();
+    c.clint.mtimecmp = read_reg(reg::clint_mtimecmp);
     // Copy current PLIC state to config
-    c.plic.girqpend = read_plic_girqpend();
-    c.plic.girqsrvd = read_plic_girqsrvd();
+    c.plic.girqpend = read_reg(reg::plic_girqpend);
+    c.plic.girqsrvd = read_reg(reg::plic_girqsrvd);
     // Copy current HTIF state to config
-    c.htif.tohost = read_htif_tohost();
-    c.htif.fromhost = read_htif_fromhost();
-    // c.htif.halt = read_htif_ihalt(); // hard-coded to true
-    c.htif.console_getchar = static_cast<bool>(read_htif_iconsole() & (1 << HTIF_CONSOLE_CMD_GETCHAR));
-    c.htif.yield_manual = static_cast<bool>(read_htif_iyield() & (1 << HTIF_YIELD_CMD_MANUAL));
-    c.htif.yield_automatic = static_cast<bool>(read_htif_iyield() & (1 << HTIF_YIELD_CMD_AUTOMATIC));
+    c.htif.tohost = read_reg(reg::htif_tohost);
+    c.htif.fromhost = read_reg(reg::htif_fromhost);
+    // c.htif.halt = read_reg(reg::htif_ihalt); // hard-coded to true
+    c.htif.console_getchar = static_cast<bool>(read_reg(reg::htif_iconsole) & (1 << HTIF_CONSOLE_CMD_GETCHAR));
+    c.htif.yield_manual = static_cast<bool>(read_reg(reg::htif_iyield) & (1 << HTIF_YIELD_CMD_MANUAL));
+    c.htif.yield_automatic = static_cast<bool>(read_reg(reg::htif_iyield) & (1 << HTIF_YIELD_CMD_AUTOMATIC));
     // Ensure we don't mess with DTB by writing the original bootargs
     // over the potentially modified memory region we serialize
     c.dtb.bootargs.clear();
@@ -648,11 +653,11 @@ machine_config machine::get_serialization_config(void) const {
     }
     c.cmio.rx_buffer.image_filename.clear();
     c.cmio.tx_buffer.image_filename.clear();
-    c.uarch.processor.cycle = read_uarch_cycle();
-    c.uarch.processor.halt_flag = read_uarch_halt_flag();
-    c.uarch.processor.pc = read_uarch_pc();
+    c.uarch.processor.cycle = read_reg(reg::uarch_cycle);
+    c.uarch.processor.halt_flag = read_reg(reg::uarch_halt_flag);
+    c.uarch.processor.pc = read_reg(reg::uarch_pc);
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
-        c.uarch.processor.x[i] = read_uarch_x(i);
+        c.uarch.processor.x[i] = read_reg(static_cast<reg>(reg::uarch_x0 + i));
     }
     return c;
 }
@@ -694,23 +699,23 @@ static void store_memory_pma(const pma_entry &pma, const std::string &dir) {
     }
 }
 
-pma_entry &machine::find_pma_entry(uint64_t paddr, size_t length) {
+pma_entry &machine::find_pma_entry(uint64_t paddr, uint64_t length) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
     return const_cast<pma_entry &>(std::as_const(*this).find_pma_entry(paddr, length));
 }
 
-const pma_entry &machine::find_pma_entry(uint64_t paddr, size_t length) const {
+const pma_entry &machine::find_pma_entry(uint64_t paddr, uint64_t length) const {
     return find_pma_entry(m_s.pmas, paddr, length);
 }
 
 template <typename CONTAINER>
-pma_entry &machine::find_pma_entry(const CONTAINER &pmas, uint64_t paddr, size_t length) {
+pma_entry &machine::find_pma_entry(const CONTAINER &pmas, uint64_t paddr, uint64_t length) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
     return const_cast<pma_entry &>(std::as_const(*this).find_pma_entry(pmas, paddr, length));
 }
 
 template <typename CONTAINER>
-const pma_entry &machine::find_pma_entry(const CONTAINER &pmas, uint64_t paddr, size_t length) const {
+const pma_entry &machine::find_pma_entry(const CONTAINER &pmas, uint64_t paddr, uint64_t length) const {
     for (const auto &p : pmas) {
         const auto &pma = deref(p);
         // Stop at first empty PMA
@@ -739,7 +744,7 @@ static inline T &deref(T *t) {
 }
 
 void machine::store_pmas(const machine_config &c, const std::string &dir) const {
-    if (read_iunrep()) {
+    if (read_reg(reg::iunrep)) {
         throw std::runtime_error{"cannot store PMAs of unreproducible machines"};
     }
     store_memory_pma(find_pma_entry<uint64_t>(PMA_DTB_START), dir);
@@ -835,660 +840,1047 @@ machine::~machine() {
 #endif
 }
 
-uint64_t machine::read_x(int i) const {
-    return m_s.x[i];
-}
-
-uint64_t machine::get_x_address(int i) {
-    return shadow_state_get_x_abs_addr(i);
-}
-
-uint64_t machine::get_uarch_x_address(int i) {
-    return shadow_uarch_state_get_x_abs_addr(i);
-}
-
-void machine::write_x(int i, uint64_t val) {
-    if (i > 0) {
-        m_s.x[i] = val;
-    }
-}
-
-uint64_t machine::read_f(int i) const {
-    return m_s.f[i];
-}
-
-uint64_t machine::get_f_address(int i) {
-    return shadow_state_get_f_abs_addr(i);
-}
-
-void machine::write_f(int i, uint64_t val) {
-    m_s.f[i] = val;
-}
-
-uint64_t machine::read_pc(void) const {
-    return m_s.pc;
-}
-
-void machine::write_pc(uint64_t val) {
-    m_s.pc = val;
-}
-
-uint64_t machine::read_fcsr(void) const {
-    return m_s.fcsr;
-}
-
-void machine::write_fcsr(uint64_t val) {
-    m_s.fcsr = val;
-}
-
-uint64_t machine::read_mvendorid(void) const { // NOLINT(readability-convert-member-functions-to-static)
-    return MVENDORID_INIT;
-}
-
-uint64_t machine::read_marchid(void) const { // NOLINT(readability-convert-member-functions-to-static)
-    return MARCHID_INIT;
-}
-
-uint64_t machine::read_mimpid(void) const { // NOLINT(readability-convert-member-functions-to-static)
-    return MIMPID_INIT;
-}
-
-uint64_t machine::read_mcycle(void) const {
-    return m_s.mcycle;
-}
-
-void machine::write_mcycle(uint64_t val) {
-    m_s.mcycle = val;
-}
-
-uint64_t machine::read_icycleinstret(void) const {
-    return m_s.icycleinstret;
-}
-
-void machine::write_icycleinstret(uint64_t val) {
-    m_s.icycleinstret = val;
-}
-
-uint64_t machine::read_mstatus(void) const {
-    return m_s.mstatus;
-}
-
-void machine::write_mstatus(uint64_t val) {
-    m_s.mstatus = val;
-}
-
-uint64_t machine::read_mtvec(void) const {
-    return m_s.mtvec;
-}
-
-void machine::write_mtvec(uint64_t val) {
-    m_s.mtvec = val;
-}
-
-uint64_t machine::read_mscratch(void) const {
-    return m_s.mscratch;
-}
-
-void machine::write_mscratch(uint64_t val) {
-    m_s.mscratch = val;
-}
-
-uint64_t machine::read_mepc(void) const {
-    return m_s.mepc;
-}
-
-void machine::write_mepc(uint64_t val) {
-    m_s.mepc = val;
-}
-
-uint64_t machine::read_mcause(void) const {
-    return m_s.mcause;
-}
-
-void machine::write_mcause(uint64_t val) {
-    m_s.mcause = val;
-}
-
-uint64_t machine::read_mtval(void) const {
-    return m_s.mtval;
-}
-
-void machine::write_mtval(uint64_t val) {
-    m_s.mtval = val;
-}
-
-uint64_t machine::read_misa(void) const {
-    return m_s.misa;
-}
-
-void machine::write_misa(uint64_t val) {
-    m_s.misa = val;
-}
-
-uint64_t machine::read_mip(void) const {
-    return m_s.mip;
-}
-
-void machine::write_mip(uint64_t val) {
-    m_s.mip = val;
-}
-
-uint64_t machine::read_mie(void) const {
-    return m_s.mie;
-}
-
-void machine::write_mie(uint64_t val) {
-    m_s.mie = val;
-}
-
-uint64_t machine::read_medeleg(void) const {
-    return m_s.medeleg;
-}
-
-void machine::write_medeleg(uint64_t val) {
-    m_s.medeleg = val;
-}
-
-uint64_t machine::read_mideleg(void) const {
-    return m_s.mideleg;
-}
-
-void machine::write_mideleg(uint64_t val) {
-    m_s.mideleg = val;
-}
-
-uint64_t machine::read_mcounteren(void) const {
-    return m_s.mcounteren;
-}
-
-void machine::write_mcounteren(uint64_t val) {
-    m_s.mcounteren = val;
-}
-
-uint64_t machine::read_menvcfg(void) const {
-    return m_s.menvcfg;
-}
-
-void machine::write_menvcfg(uint64_t val) {
-    m_s.menvcfg = val;
-}
-
-uint64_t machine::read_stvec(void) const {
-    return m_s.stvec;
-}
-
-void machine::write_stvec(uint64_t val) {
-    m_s.stvec = val;
-}
-
-uint64_t machine::read_sscratch(void) const {
-    return m_s.sscratch;
-}
-
-void machine::write_sscratch(uint64_t val) {
-    m_s.sscratch = val;
-}
-
-uint64_t machine::read_sepc(void) const {
-    return m_s.sepc;
-}
-
-void machine::write_sepc(uint64_t val) {
-    m_s.sepc = val;
-}
-
-uint64_t machine::read_scause(void) const {
-    return m_s.scause;
-}
-
-void machine::write_scause(uint64_t val) {
-    m_s.scause = val;
-}
-
-uint64_t machine::read_stval(void) const {
-    return m_s.stval;
-}
-
-void machine::write_stval(uint64_t val) {
-    m_s.stval = val;
-}
-
-uint64_t machine::read_satp(void) const {
-    return m_s.satp;
-}
-
-void machine::write_satp(uint64_t val) {
-    m_s.satp = val;
-}
-
-uint64_t machine::read_scounteren(void) const {
-    return m_s.scounteren;
-}
-
-void machine::write_scounteren(uint64_t val) {
-    m_s.scounteren = val;
-}
-
-uint64_t machine::read_senvcfg(void) const {
-    return m_s.senvcfg;
-}
-
-void machine::write_senvcfg(uint64_t val) {
-    m_s.senvcfg = val;
-}
-
-uint64_t machine::read_ilrsc(void) const {
-    return m_s.ilrsc;
-}
-
-void machine::write_ilrsc(uint64_t val) {
-    m_s.ilrsc = val;
-}
-
-uint64_t machine::read_iflags(void) const {
-    return m_s.read_iflags();
-}
-
-void machine::write_iflags(uint64_t val) {
-    m_s.write_iflags(val);
-}
-
-uint64_t machine::read_iunrep(void) const {
-    return m_s.iunrep;
-}
-
-void machine::write_iunrep(uint64_t val) {
-    m_s.iunrep = val;
-}
-
-uint64_t machine::read_htif_tohost(void) const {
-    return m_s.htif.tohost;
-}
-
-uint64_t machine::read_htif_tohost_dev(void) const {
-    return HTIF_DEV_FIELD(m_s.htif.tohost);
-}
-
-uint64_t machine::read_htif_tohost_cmd(void) const {
-    return HTIF_CMD_FIELD(m_s.htif.tohost);
-}
-
-uint64_t machine::read_htif_tohost_data(void) const {
-    return HTIF_DATA_FIELD(m_s.htif.tohost);
-}
-
-void machine::write_htif_tohost(uint64_t val) {
-    m_s.htif.tohost = val;
-}
-
-uint64_t machine::read_htif_fromhost(void) const {
-    return m_s.htif.fromhost;
-}
-
-void machine::write_htif_fromhost(uint64_t val) {
-    m_s.htif.fromhost = val;
-}
-
-void machine::write_htif_fromhost_data(uint64_t val) {
-    m_s.htif.fromhost = HTIF_REPLACE_DATA(m_s.htif.fromhost, val);
-}
-
-uint64_t machine::read_htif_ihalt(void) const {
-    return m_s.htif.ihalt;
-}
-
-void machine::write_htif_ihalt(uint64_t val) {
-    m_s.htif.ihalt = val;
-}
-
-uint64_t machine::read_htif_iconsole(void) const {
-    return m_s.htif.iconsole;
-}
-
-void machine::write_htif_iconsole(uint64_t val) {
-    m_s.htif.iconsole = val;
-}
-
-uint64_t machine::read_htif_iyield(void) const {
-    return m_s.htif.iyield;
-}
-
-void machine::write_htif_iyield(uint64_t val) {
-    m_s.htif.iyield = val;
-}
-
-uint64_t machine::read_clint_mtimecmp(void) const {
-    return m_s.clint.mtimecmp;
-}
-
-void machine::write_clint_mtimecmp(uint64_t val) {
-    m_s.clint.mtimecmp = val;
-}
-
-uint64_t machine::read_plic_girqpend(void) const {
-    return m_s.plic.girqpend;
-}
-
-void machine::write_plic_girqpend(uint64_t val) {
-    m_s.plic.girqpend = val;
-}
-
-uint64_t machine::read_plic_girqsrvd(void) const {
-    return m_s.plic.girqsrvd;
-}
-
-void machine::write_plic_girqsrvd(uint64_t val) {
-    m_s.plic.girqsrvd = val;
-}
-
-uint64_t machine::read_csr(csr r) const {
+uint64_t machine::read_reg(reg r) const {
     switch (r) {
-        case csr::pc:
-            return read_pc();
-        case csr::fcsr:
-            return read_fcsr();
-        case csr::mvendorid:
-            return read_mvendorid();
-        case csr::marchid:
-            return read_marchid();
-        case csr::mimpid:
-            return read_mimpid();
-        case csr::mcycle:
-            return read_mcycle();
-        case csr::icycleinstret:
-            return read_icycleinstret();
-        case csr::mstatus:
-            return read_mstatus();
-        case csr::mtvec:
-            return read_mtvec();
-        case csr::mscratch:
-            return read_mscratch();
-        case csr::mepc:
-            return read_mepc();
-        case csr::mcause:
-            return read_mcause();
-        case csr::mtval:
-            return read_mtval();
-        case csr::misa:
-            return read_misa();
-        case csr::mie:
-            return read_mie();
-        case csr::mip:
-            return read_mip();
-        case csr::medeleg:
-            return read_medeleg();
-        case csr::mideleg:
-            return read_mideleg();
-        case csr::mcounteren:
-            return read_mcounteren();
-        case csr::menvcfg:
-            return read_menvcfg();
-        case csr::stvec:
-            return read_stvec();
-        case csr::sscratch:
-            return read_sscratch();
-        case csr::sepc:
-            return read_sepc();
-        case csr::scause:
-            return read_scause();
-        case csr::stval:
-            return read_stval();
-        case csr::satp:
-            return read_satp();
-        case csr::scounteren:
-            return read_scounteren();
-        case csr::senvcfg:
-            return read_senvcfg();
-        case csr::ilrsc:
-            return read_ilrsc();
-        case csr::iflags:
-            return read_iflags();
-        case csr::iunrep:
-            return read_iunrep();
-        case csr::clint_mtimecmp:
-            return read_clint_mtimecmp();
-        case csr::plic_girqpend:
-            return read_plic_girqpend();
-        case csr::plic_girqsrvd:
-            return read_plic_girqsrvd();
-        case csr::htif_tohost:
-            return read_htif_tohost();
-        case csr::htif_fromhost:
-            return read_htif_fromhost();
-        case csr::htif_ihalt:
-            return read_htif_ihalt();
-        case csr::htif_iconsole:
-            return read_htif_iconsole();
-        case csr::htif_iyield:
-            return read_htif_iyield();
-        case csr::uarch_cycle:
-            return read_uarch_cycle();
-        case csr::uarch_halt_flag:
-            return read_uarch_halt_flag();
-        case csr::uarch_pc:
-            return read_uarch_pc();
+        case reg::x0:
+            return m_s.x[0];
+        case reg::x1:
+            return m_s.x[1];
+        case reg::x2:
+            return m_s.x[2];
+        case reg::x3:
+            return m_s.x[3];
+        case reg::x4:
+            return m_s.x[4];
+        case reg::x5:
+            return m_s.x[5];
+        case reg::x6:
+            return m_s.x[6];
+        case reg::x7:
+            return m_s.x[7];
+        case reg::x8:
+            return m_s.x[8];
+        case reg::x9:
+            return m_s.x[9];
+        case reg::x10:
+            return m_s.x[10];
+        case reg::x11:
+            return m_s.x[11];
+        case reg::x12:
+            return m_s.x[12];
+        case reg::x13:
+            return m_s.x[13];
+        case reg::x14:
+            return m_s.x[14];
+        case reg::x15:
+            return m_s.x[15];
+        case reg::x16:
+            return m_s.x[16];
+        case reg::x17:
+            return m_s.x[17];
+        case reg::x18:
+            return m_s.x[18];
+        case reg::x19:
+            return m_s.x[19];
+        case reg::x20:
+            return m_s.x[20];
+        case reg::x21:
+            return m_s.x[21];
+        case reg::x22:
+            return m_s.x[22];
+        case reg::x23:
+            return m_s.x[23];
+        case reg::x24:
+            return m_s.x[24];
+        case reg::x25:
+            return m_s.x[25];
+        case reg::x26:
+            return m_s.x[26];
+        case reg::x27:
+            return m_s.x[27];
+        case reg::x28:
+            return m_s.x[28];
+        case reg::x29:
+            return m_s.x[29];
+        case reg::x30:
+            return m_s.x[30];
+        case reg::x31:
+            return m_s.x[31];
+        case reg::f0:
+            return m_s.f[0];
+        case reg::f1:
+            return m_s.f[1];
+        case reg::f2:
+            return m_s.f[2];
+        case reg::f3:
+            return m_s.f[3];
+        case reg::f4:
+            return m_s.f[4];
+        case reg::f5:
+            return m_s.f[5];
+        case reg::f6:
+            return m_s.f[6];
+        case reg::f7:
+            return m_s.f[7];
+        case reg::f8:
+            return m_s.f[8];
+        case reg::f9:
+            return m_s.f[9];
+        case reg::f10:
+            return m_s.f[10];
+        case reg::f11:
+            return m_s.f[11];
+        case reg::f12:
+            return m_s.f[12];
+        case reg::f13:
+            return m_s.f[13];
+        case reg::f14:
+            return m_s.f[14];
+        case reg::f15:
+            return m_s.f[15];
+        case reg::f16:
+            return m_s.f[16];
+        case reg::f17:
+            return m_s.f[17];
+        case reg::f18:
+            return m_s.f[18];
+        case reg::f19:
+            return m_s.f[19];
+        case reg::f20:
+            return m_s.f[20];
+        case reg::f21:
+            return m_s.f[21];
+        case reg::f22:
+            return m_s.f[22];
+        case reg::f23:
+            return m_s.f[23];
+        case reg::f24:
+            return m_s.f[24];
+        case reg::f25:
+            return m_s.f[25];
+        case reg::f26:
+            return m_s.f[26];
+        case reg::f27:
+            return m_s.f[27];
+        case reg::f28:
+            return m_s.f[28];
+        case reg::f29:
+            return m_s.f[29];
+        case reg::f30:
+            return m_s.f[30];
+        case reg::f31:
+            return m_s.f[31];
+        case reg::pc:
+            return m_s.pc;
+        case reg::fcsr:
+            return m_s.fcsr;
+        case reg::mvendorid:
+            return MVENDORID_INIT;
+        case reg::marchid:
+            return MARCHID_INIT;
+        case reg::mimpid:
+            return MIMPID_INIT;
+        case reg::mcycle:
+            return m_s.mcycle;
+        case reg::icycleinstret:
+            return m_s.icycleinstret;
+        case reg::mstatus:
+            return m_s.mstatus;
+        case reg::mtvec:
+            return m_s.mtvec;
+        case reg::mscratch:
+            return m_s.mscratch;
+        case reg::mepc:
+            return m_s.mepc;
+        case reg::mcause:
+            return m_s.mcause;
+        case reg::mtval:
+            return m_s.mtval;
+        case reg::misa:
+            return m_s.misa;
+        case reg::mie:
+            return m_s.mie;
+        case reg::mip:
+            return m_s.mip;
+        case reg::medeleg:
+            return m_s.medeleg;
+        case reg::mideleg:
+            return m_s.mideleg;
+        case reg::mcounteren:
+            return m_s.mcounteren;
+        case reg::menvcfg:
+            return m_s.menvcfg;
+        case reg::stvec:
+            return m_s.stvec;
+        case reg::sscratch:
+            return m_s.sscratch;
+        case reg::sepc:
+            return m_s.sepc;
+        case reg::scause:
+            return m_s.scause;
+        case reg::stval:
+            return m_s.stval;
+        case reg::satp:
+            return m_s.satp;
+        case reg::scounteren:
+            return m_s.scounteren;
+        case reg::senvcfg:
+            return m_s.senvcfg;
+        case reg::ilrsc:
+            return m_s.ilrsc;
+        case reg::iflags:
+            return m_s.read_iflags();
+        case reg::iunrep:
+            return m_s.iunrep;
+        case reg::clint_mtimecmp:
+            return m_s.clint.mtimecmp;
+        case reg::plic_girqpend:
+            return m_s.plic.girqpend;
+        case reg::plic_girqsrvd:
+            return m_s.plic.girqsrvd;
+        case reg::htif_tohost:
+            return m_s.htif.tohost;
+        case reg::htif_fromhost:
+            return m_s.htif.fromhost;
+        case reg::htif_ihalt:
+            return m_s.htif.ihalt;
+        case reg::htif_iconsole:
+            return m_s.htif.iconsole;
+        case reg::htif_iyield:
+            return m_s.htif.iyield;
+        case reg::uarch_x0:
+            return m_uarch.get_state().x[0];
+        case reg::uarch_x1:
+            return m_uarch.get_state().x[1];
+        case reg::uarch_x2:
+            return m_uarch.get_state().x[2];
+        case reg::uarch_x3:
+            return m_uarch.get_state().x[3];
+        case reg::uarch_x4:
+            return m_uarch.get_state().x[4];
+        case reg::uarch_x5:
+            return m_uarch.get_state().x[5];
+        case reg::uarch_x6:
+            return m_uarch.get_state().x[6];
+        case reg::uarch_x7:
+            return m_uarch.get_state().x[7];
+        case reg::uarch_x8:
+            return m_uarch.get_state().x[8];
+        case reg::uarch_x9:
+            return m_uarch.get_state().x[9];
+        case reg::uarch_x10:
+            return m_uarch.get_state().x[10];
+        case reg::uarch_x11:
+            return m_uarch.get_state().x[11];
+        case reg::uarch_x12:
+            return m_uarch.get_state().x[12];
+        case reg::uarch_x13:
+            return m_uarch.get_state().x[13];
+        case reg::uarch_x14:
+            return m_uarch.get_state().x[14];
+        case reg::uarch_x15:
+            return m_uarch.get_state().x[15];
+        case reg::uarch_x16:
+            return m_uarch.get_state().x[16];
+        case reg::uarch_x17:
+            return m_uarch.get_state().x[17];
+        case reg::uarch_x18:
+            return m_uarch.get_state().x[18];
+        case reg::uarch_x19:
+            return m_uarch.get_state().x[19];
+        case reg::uarch_x20:
+            return m_uarch.get_state().x[20];
+        case reg::uarch_x21:
+            return m_uarch.get_state().x[21];
+        case reg::uarch_x22:
+            return m_uarch.get_state().x[22];
+        case reg::uarch_x23:
+            return m_uarch.get_state().x[23];
+        case reg::uarch_x24:
+            return m_uarch.get_state().x[24];
+        case reg::uarch_x25:
+            return m_uarch.get_state().x[25];
+        case reg::uarch_x26:
+            return m_uarch.get_state().x[26];
+        case reg::uarch_x27:
+            return m_uarch.get_state().x[27];
+        case reg::uarch_x28:
+            return m_uarch.get_state().x[28];
+        case reg::uarch_x29:
+            return m_uarch.get_state().x[29];
+        case reg::uarch_x30:
+            return m_uarch.get_state().x[30];
+        case reg::uarch_x31:
+            return m_uarch.get_state().x[31];
+        case reg::uarch_pc:
+            return m_uarch.get_state().pc;
+        case reg::uarch_cycle:
+            return m_uarch.get_state().cycle;
+        case reg::uarch_halt_flag:
+            return m_uarch.get_state().halt_flag;
+        case reg::iflags_prv:
+            return m_s.iflags.PRV;
+        case reg::iflags_x:
+            return m_s.iflags.X;
+        case reg::iflags_y:
+            return m_s.iflags.Y;
+        case reg::iflags_h:
+            return m_s.iflags.H;
+        case reg::htif_tohost_dev:
+            return HTIF_DEV_FIELD(m_s.htif.tohost);
+        case reg::htif_tohost_cmd:
+            return HTIF_CMD_FIELD(m_s.htif.tohost);
+        case reg::htif_tohost_reason:
+            return HTIF_REASON_FIELD(m_s.htif.tohost);
+        case reg::htif_tohost_data:
+            return HTIF_DATA_FIELD(m_s.htif.tohost);
+        case reg::htif_fromhost_dev:
+            return HTIF_DEV_FIELD(m_s.htif.fromhost);
+        case reg::htif_fromhost_cmd:
+            return HTIF_CMD_FIELD(m_s.htif.fromhost);
+        case reg::htif_fromhost_reason:
+            return HTIF_REASON_FIELD(m_s.htif.fromhost);
+        case reg::htif_fromhost_data:
+            return HTIF_DATA_FIELD(m_s.htif.fromhost);
         default:
-            throw std::invalid_argument{"unknown CSR"};
+            throw std::invalid_argument{"unknown register"};
             return 0; // never reached
     }
 }
 
-void machine::write_csr(csr csr, uint64_t value) {
-    switch (csr) {
-        case csr::pc:
-            return write_pc(value);
-        case csr::fcsr:
-            return write_fcsr(value);
-        case csr::mcycle:
-            return write_mcycle(value);
-        case csr::icycleinstret:
-            return write_icycleinstret(value);
-        case csr::mstatus:
-            return write_mstatus(value);
-        case csr::mtvec:
-            return write_mtvec(value);
-        case csr::mscratch:
-            return write_mscratch(value);
-        case csr::mepc:
-            return write_mepc(value);
-        case csr::mcause:
-            return write_mcause(value);
-        case csr::mtval:
-            return write_mtval(value);
-        case csr::misa:
-            return write_misa(value);
-        case csr::mie:
-            return write_mie(value);
-        case csr::mip:
-            return write_mip(value);
-        case csr::medeleg:
-            return write_medeleg(value);
-        case csr::mideleg:
-            return write_mideleg(value);
-        case csr::mcounteren:
-            return write_mcounteren(value);
-        case csr::menvcfg:
-            return write_menvcfg(value);
-        case csr::stvec:
-            return write_stvec(value);
-        case csr::sscratch:
-            return write_sscratch(value);
-        case csr::sepc:
-            return write_sepc(value);
-        case csr::scause:
-            return write_scause(value);
-        case csr::stval:
-            return write_stval(value);
-        case csr::satp:
-            return write_satp(value);
-        case csr::scounteren:
-            return write_scounteren(value);
-        case csr::senvcfg:
-            return write_senvcfg(value);
-        case csr::ilrsc:
-            return write_ilrsc(value);
-        case csr::iflags:
-            return write_iflags(value);
-        case csr::iunrep:
-            return write_iunrep(value);
-        case csr::clint_mtimecmp:
-            return write_clint_mtimecmp(value);
-        case csr::plic_girqpend:
-            return write_plic_girqpend(value);
-        case csr::plic_girqsrvd:
-            return write_plic_girqsrvd(value);
-        case csr::htif_tohost:
-            return write_htif_tohost(value);
-        case csr::htif_fromhost:
-            return write_htif_fromhost(value);
-        case csr::htif_ihalt:
-            return write_htif_ihalt(value);
-        case csr::htif_iconsole:
-            return write_htif_iconsole(value);
-        case csr::htif_iyield:
-            return write_htif_iyield(value);
-        case csr::uarch_cycle:
-            return write_uarch_cycle(value);
-        case csr::uarch_halt_flag:
-            return set_uarch_halt_flag();
-        case csr::uarch_pc:
-            return write_uarch_pc(value);
-        case csr::mvendorid:
+void machine::write_reg(reg w, uint64_t value) {
+    switch (w) {
+        case reg::x0:
+            throw std::invalid_argument{"register is read-only"};
+        case reg::x1:
+            m_s.x[1] = value;
+            break;
+        case reg::x2:
+            m_s.x[2] = value;
+            break;
+        case reg::x3:
+            m_s.x[3] = value;
+            break;
+        case reg::x4:
+            m_s.x[4] = value;
+            break;
+        case reg::x5:
+            m_s.x[5] = value;
+            break;
+        case reg::x6:
+            m_s.x[6] = value;
+            break;
+        case reg::x7:
+            m_s.x[7] = value;
+            break;
+        case reg::x8:
+            m_s.x[8] = value;
+            break;
+        case reg::x9:
+            m_s.x[9] = value;
+            break;
+        case reg::x10:
+            m_s.x[10] = value;
+            break;
+        case reg::x11:
+            m_s.x[11] = value;
+            break;
+        case reg::x12:
+            m_s.x[12] = value;
+            break;
+        case reg::x13:
+            m_s.x[13] = value;
+            break;
+        case reg::x14:
+            m_s.x[14] = value;
+            break;
+        case reg::x15:
+            m_s.x[15] = value;
+            break;
+        case reg::x16:
+            m_s.x[16] = value;
+            break;
+        case reg::x17:
+            m_s.x[17] = value;
+            break;
+        case reg::x18:
+            m_s.x[18] = value;
+            break;
+        case reg::x19:
+            m_s.x[19] = value;
+            break;
+        case reg::x20:
+            m_s.x[20] = value;
+            break;
+        case reg::x21:
+            m_s.x[21] = value;
+            break;
+        case reg::x22:
+            m_s.x[22] = value;
+            break;
+        case reg::x23:
+            m_s.x[23] = value;
+            break;
+        case reg::x24:
+            m_s.x[24] = value;
+            break;
+        case reg::x25:
+            m_s.x[25] = value;
+            break;
+        case reg::x26:
+            m_s.x[26] = value;
+            break;
+        case reg::x27:
+            m_s.x[27] = value;
+            break;
+        case reg::x28:
+            m_s.x[28] = value;
+            break;
+        case reg::x29:
+            m_s.x[29] = value;
+            break;
+        case reg::x30:
+            m_s.x[30] = value;
+            break;
+        case reg::x31:
+            m_s.x[31] = value;
+            break;
+        case reg::f0:
+            m_s.f[0] = value;
+            break;
+        case reg::f1:
+            m_s.f[1] = value;
+            break;
+        case reg::f2:
+            m_s.f[2] = value;
+            break;
+        case reg::f3:
+            m_s.f[3] = value;
+            break;
+        case reg::f4:
+            m_s.f[4] = value;
+            break;
+        case reg::f5:
+            m_s.f[5] = value;
+            break;
+        case reg::f6:
+            m_s.f[6] = value;
+            break;
+        case reg::f7:
+            m_s.f[7] = value;
+            break;
+        case reg::f8:
+            m_s.f[8] = value;
+            break;
+        case reg::f9:
+            m_s.f[9] = value;
+            break;
+        case reg::f10:
+            m_s.f[10] = value;
+            break;
+        case reg::f11:
+            m_s.f[11] = value;
+            break;
+        case reg::f12:
+            m_s.f[12] = value;
+            break;
+        case reg::f13:
+            m_s.f[13] = value;
+            break;
+        case reg::f14:
+            m_s.f[14] = value;
+            break;
+        case reg::f15:
+            m_s.f[15] = value;
+            break;
+        case reg::f16:
+            m_s.f[16] = value;
+            break;
+        case reg::f17:
+            m_s.f[17] = value;
+            break;
+        case reg::f18:
+            m_s.f[18] = value;
+            break;
+        case reg::f19:
+            m_s.f[19] = value;
+            break;
+        case reg::f20:
+            m_s.f[20] = value;
+            break;
+        case reg::f21:
+            m_s.f[21] = value;
+            break;
+        case reg::f22:
+            m_s.f[22] = value;
+            break;
+        case reg::f23:
+            m_s.f[23] = value;
+            break;
+        case reg::f24:
+            m_s.f[24] = value;
+            break;
+        case reg::f25:
+            m_s.f[25] = value;
+            break;
+        case reg::f26:
+            m_s.f[26] = value;
+            break;
+        case reg::f27:
+            m_s.f[27] = value;
+            break;
+        case reg::f28:
+            m_s.f[28] = value;
+            break;
+        case reg::f29:
+            m_s.f[29] = value;
+            break;
+        case reg::f30:
+            m_s.f[30] = value;
+            break;
+        case reg::f31:
+            m_s.f[31] = value;
+            break;
+        case reg::pc:
+            m_s.pc = value;
+            break;
+        case reg::fcsr:
+            m_s.fcsr = value;
+            break;
+        case reg::mvendorid:
             [[fallthrough]];
-        case csr::marchid:
+        case reg::marchid:
             [[fallthrough]];
-        case csr::mimpid:
-            throw std::invalid_argument{"CSR is read-only"};
+        case reg::mimpid:
+            throw std::invalid_argument{"register is read-only"};
+        case reg::mcycle:
+            m_s.mcycle = value;
+            break;
+        case reg::icycleinstret:
+            m_s.icycleinstret = value;
+            break;
+        case reg::mstatus:
+            m_s.mstatus = value;
+            break;
+        case reg::mtvec:
+            m_s.mtvec = value;
+            break;
+        case reg::mscratch:
+            m_s.mscratch = value;
+            break;
+        case reg::mepc:
+            m_s.mepc = value;
+            break;
+        case reg::mcause:
+            m_s.mcause = value;
+            break;
+        case reg::mtval:
+            m_s.mtval = value;
+            break;
+        case reg::misa:
+            m_s.misa = value;
+            break;
+        case reg::mie:
+            m_s.mie = value;
+            break;
+        case reg::mip:
+            m_s.mip = value;
+            break;
+        case reg::medeleg:
+            m_s.medeleg = value;
+            break;
+        case reg::mideleg:
+            m_s.mideleg = value;
+            break;
+        case reg::mcounteren:
+            m_s.mcounteren = value;
+            break;
+        case reg::menvcfg:
+            m_s.menvcfg = value;
+            break;
+        case reg::stvec:
+            m_s.stvec = value;
+            break;
+        case reg::sscratch:
+            m_s.sscratch = value;
+            break;
+        case reg::sepc:
+            m_s.sepc = value;
+            break;
+        case reg::scause:
+            m_s.scause = value;
+            break;
+        case reg::stval:
+            m_s.stval = value;
+            break;
+        case reg::satp:
+            m_s.satp = value;
+            break;
+        case reg::scounteren:
+            m_s.scounteren = value;
+            break;
+        case reg::senvcfg:
+            m_s.senvcfg = value;
+            break;
+        case reg::ilrsc:
+            m_s.ilrsc = value;
+            break;
+        case reg::iflags:
+            m_s.write_iflags(value);
+            break;
+        case reg::iunrep:
+            m_s.iunrep = value;
+            break;
+        case reg::clint_mtimecmp:
+            m_s.clint.mtimecmp = value;
+            break;
+        case reg::plic_girqpend:
+            m_s.plic.girqpend = value;
+            break;
+        case reg::plic_girqsrvd:
+            m_s.plic.girqsrvd = value;
+            break;
+        case reg::htif_tohost:
+            m_s.htif.tohost = value;
+            break;
+        case reg::htif_fromhost:
+            m_s.htif.fromhost = value;
+            break;
+        case reg::htif_ihalt:
+            m_s.htif.ihalt = value;
+            break;
+        case reg::htif_iconsole:
+            m_s.htif.iconsole = value;
+            break;
+        case reg::htif_iyield:
+            m_s.htif.iyield = value;
+            break;
+        case reg::uarch_x0:
+            throw std::invalid_argument{"register is read-only"};
+        case reg::uarch_x1:
+            m_uarch.get_state().x[1] = value;
+            break;
+        case reg::uarch_x2:
+            m_uarch.get_state().x[2] = value;
+            break;
+        case reg::uarch_x3:
+            m_uarch.get_state().x[3] = value;
+            break;
+        case reg::uarch_x4:
+            m_uarch.get_state().x[4] = value;
+            break;
+        case reg::uarch_x5:
+            m_uarch.get_state().x[5] = value;
+            break;
+        case reg::uarch_x6:
+            m_uarch.get_state().x[6] = value;
+            break;
+        case reg::uarch_x7:
+            m_uarch.get_state().x[7] = value;
+            break;
+        case reg::uarch_x8:
+            m_uarch.get_state().x[8] = value;
+            break;
+        case reg::uarch_x9:
+            m_uarch.get_state().x[9] = value;
+            break;
+        case reg::uarch_x10:
+            m_uarch.get_state().x[10] = value;
+            break;
+        case reg::uarch_x11:
+            m_uarch.get_state().x[11] = value;
+            break;
+        case reg::uarch_x12:
+            m_uarch.get_state().x[12] = value;
+            break;
+        case reg::uarch_x13:
+            m_uarch.get_state().x[13] = value;
+            break;
+        case reg::uarch_x14:
+            m_uarch.get_state().x[14] = value;
+            break;
+        case reg::uarch_x15:
+            m_uarch.get_state().x[15] = value;
+            break;
+        case reg::uarch_x16:
+            m_uarch.get_state().x[16] = value;
+            break;
+        case reg::uarch_x17:
+            m_uarch.get_state().x[17] = value;
+            break;
+        case reg::uarch_x18:
+            m_uarch.get_state().x[18] = value;
+            break;
+        case reg::uarch_x19:
+            m_uarch.get_state().x[19] = value;
+            break;
+        case reg::uarch_x20:
+            m_uarch.get_state().x[20] = value;
+            break;
+        case reg::uarch_x21:
+            m_uarch.get_state().x[21] = value;
+            break;
+        case reg::uarch_x22:
+            m_uarch.get_state().x[22] = value;
+            break;
+        case reg::uarch_x23:
+            m_uarch.get_state().x[23] = value;
+            break;
+        case reg::uarch_x24:
+            m_uarch.get_state().x[24] = value;
+            break;
+        case reg::uarch_x25:
+            m_uarch.get_state().x[25] = value;
+            break;
+        case reg::uarch_x26:
+            m_uarch.get_state().x[26] = value;
+            break;
+        case reg::uarch_x27:
+            m_uarch.get_state().x[27] = value;
+            break;
+        case reg::uarch_x28:
+            m_uarch.get_state().x[28] = value;
+            break;
+        case reg::uarch_x29:
+            m_uarch.get_state().x[29] = value;
+            break;
+        case reg::uarch_x30:
+            m_uarch.get_state().x[30] = value;
+            break;
+        case reg::uarch_x31:
+            m_uarch.get_state().x[31] = value;
+            break;
+        case reg::uarch_pc:
+            m_uarch.get_state().pc = value;
+            break;
+        case reg::uarch_cycle:
+            m_uarch.get_state().cycle = value;
+            break;
+        case reg::uarch_halt_flag:
+            m_uarch.get_state().halt_flag = static_cast<bool>(value);
+            break;
+        case reg::iflags_prv:
+            m_s.iflags.PRV = static_cast<uint8_t>(value);
+            break;
+        case reg::iflags_x:
+            m_s.iflags.X = static_cast<bool>(value);
+            break;
+        case reg::iflags_y:
+            m_s.iflags.Y = static_cast<bool>(value);
+            break;
+        case reg::iflags_h:
+            m_s.iflags.H = static_cast<bool>(value);
+            break;
+        case reg::htif_tohost_dev:
+            m_s.htif.tohost = HTIF_REPLACE_DEV(m_s.htif.tohost, value);
+            break;
+        case reg::htif_tohost_cmd:
+            m_s.htif.tohost = HTIF_REPLACE_CMD(m_s.htif.tohost, value);
+            break;
+        case reg::htif_tohost_reason:
+            m_s.htif.tohost = HTIF_REPLACE_REASON(m_s.htif.tohost, value);
+            break;
+        case reg::htif_tohost_data:
+            m_s.htif.tohost = HTIF_REPLACE_DATA(m_s.htif.tohost, value);
+            break;
+        case reg::htif_fromhost_dev:
+            m_s.htif.fromhost = HTIF_REPLACE_DEV(m_s.htif.fromhost, value);
+            break;
+        case reg::htif_fromhost_cmd:
+            m_s.htif.fromhost = HTIF_REPLACE_CMD(m_s.htif.fromhost, value);
+            break;
+        case reg::htif_fromhost_reason:
+            m_s.htif.fromhost = HTIF_REPLACE_REASON(m_s.htif.fromhost, value);
+            break;
+        case reg::htif_fromhost_data:
+            m_s.htif.fromhost = HTIF_REPLACE_DATA(m_s.htif.fromhost, value);
+            break;
         default:
-            throw std::invalid_argument{"unknown CSR"};
+            throw std::invalid_argument{"unknown register"};
     }
 }
 
-uint64_t machine::get_csr_address(csr csr) {
-    switch (csr) {
-        case csr::pc:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::pc);
-        case csr::fcsr:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::fcsr);
-        case csr::mvendorid:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::mvendorid);
-        case csr::marchid:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::marchid);
-        case csr::mimpid:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::mimpid);
-        case csr::mcycle:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::mcycle);
-        case csr::icycleinstret:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::icycleinstret);
-        case csr::mstatus:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::mstatus);
-        case csr::mtvec:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::mtvec);
-        case csr::mscratch:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::mscratch);
-        case csr::mepc:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::mepc);
-        case csr::mcause:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::mcause);
-        case csr::mtval:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::mtval);
-        case csr::misa:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::misa);
-        case csr::mie:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::mie);
-        case csr::mip:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::mip);
-        case csr::medeleg:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::medeleg);
-        case csr::mideleg:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::mideleg);
-        case csr::mcounteren:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::mcounteren);
-        case csr::menvcfg:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::menvcfg);
-        case csr::stvec:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::stvec);
-        case csr::sscratch:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::sscratch);
-        case csr::sepc:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::sepc);
-        case csr::scause:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::scause);
-        case csr::stval:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::stval);
-        case csr::satp:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::satp);
-        case csr::scounteren:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::scounteren);
-        case csr::senvcfg:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::senvcfg);
-        case csr::ilrsc:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::ilrsc);
-        case csr::iflags:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::iflags);
-        case csr::iunrep:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::iunrep);
-        case csr::htif_tohost:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::htif_tohost);
-        case csr::htif_fromhost:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::htif_fromhost);
-        case csr::htif_ihalt:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::htif_ihalt);
-        case csr::htif_iconsole:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::htif_iconsole);
-        case csr::htif_iyield:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::htif_iyield);
-        case csr::clint_mtimecmp:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::clint_mtimecmp);
-        case csr::plic_girqpend:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::plic_girqpend);
-        case csr::plic_girqsrvd:
-            return shadow_state_get_csr_abs_addr(shadow_state_csr::plic_girqsrvd);
-        case csr::uarch_pc:
-            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::pc);
-        case csr::uarch_cycle:
-            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::cycle);
-        case csr::uarch_halt_flag:
-            return shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::halt_flag);
+uint64_t machine::get_reg_address(reg r) {
+    switch (r) {
+        case reg::x0:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x0);
+        case reg::x1:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x1);
+        case reg::x2:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x2);
+        case reg::x3:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x3);
+        case reg::x4:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x4);
+        case reg::x5:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x5);
+        case reg::x6:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x6);
+        case reg::x7:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x7);
+        case reg::x8:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x8);
+        case reg::x9:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x9);
+        case reg::x10:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x10);
+        case reg::x11:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x11);
+        case reg::x12:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x12);
+        case reg::x13:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x13);
+        case reg::x14:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x14);
+        case reg::x15:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x15);
+        case reg::x16:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x16);
+        case reg::x17:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x17);
+        case reg::x18:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x18);
+        case reg::x19:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x19);
+        case reg::x20:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x20);
+        case reg::x21:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x21);
+        case reg::x22:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x22);
+        case reg::x23:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x23);
+        case reg::x24:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x24);
+        case reg::x25:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x25);
+        case reg::x26:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x26);
+        case reg::x27:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x27);
+        case reg::x28:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x28);
+        case reg::x29:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x29);
+        case reg::x30:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x30);
+        case reg::x31:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::x31);
+        case reg::f0:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f0);
+        case reg::f1:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f1);
+        case reg::f2:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f2);
+        case reg::f3:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f3);
+        case reg::f4:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f4);
+        case reg::f5:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f5);
+        case reg::f6:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f6);
+        case reg::f7:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f7);
+        case reg::f8:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f8);
+        case reg::f9:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f9);
+        case reg::f10:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f10);
+        case reg::f11:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f11);
+        case reg::f12:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f12);
+        case reg::f13:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f13);
+        case reg::f14:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f14);
+        case reg::f15:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f15);
+        case reg::f16:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f16);
+        case reg::f17:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f17);
+        case reg::f18:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f18);
+        case reg::f19:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f19);
+        case reg::f20:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f20);
+        case reg::f21:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f21);
+        case reg::f22:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f22);
+        case reg::f23:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f23);
+        case reg::f24:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f24);
+        case reg::f25:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f25);
+        case reg::f26:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f26);
+        case reg::f27:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f27);
+        case reg::f28:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f28);
+        case reg::f29:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f29);
+        case reg::f30:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f30);
+        case reg::f31:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::f31);
+        case reg::pc:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::pc);
+        case reg::fcsr:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::fcsr);
+        case reg::mvendorid:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::mvendorid);
+        case reg::marchid:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::marchid);
+        case reg::mimpid:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::mimpid);
+        case reg::mcycle:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::mcycle);
+        case reg::icycleinstret:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::icycleinstret);
+        case reg::mstatus:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::mstatus);
+        case reg::mtvec:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::mtvec);
+        case reg::mscratch:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::mscratch);
+        case reg::mepc:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::mepc);
+        case reg::mcause:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::mcause);
+        case reg::mtval:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::mtval);
+        case reg::misa:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::misa);
+        case reg::mie:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::mie);
+        case reg::mip:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::mip);
+        case reg::medeleg:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::medeleg);
+        case reg::mideleg:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::mideleg);
+        case reg::mcounteren:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::mcounteren);
+        case reg::menvcfg:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::menvcfg);
+        case reg::stvec:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::stvec);
+        case reg::sscratch:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::sscratch);
+        case reg::sepc:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::sepc);
+        case reg::scause:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::scause);
+        case reg::stval:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::stval);
+        case reg::satp:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::satp);
+        case reg::scounteren:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::scounteren);
+        case reg::senvcfg:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::senvcfg);
+        case reg::ilrsc:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::ilrsc);
+        case reg::iflags:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::iflags);
+        case reg::iunrep:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::iunrep);
+        case reg::htif_tohost:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::htif_tohost);
+        case reg::htif_fromhost:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::htif_fromhost);
+        case reg::htif_ihalt:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::htif_ihalt);
+        case reg::htif_iconsole:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::htif_iconsole);
+        case reg::htif_iyield:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::htif_iyield);
+        case reg::clint_mtimecmp:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::clint_mtimecmp);
+        case reg::plic_girqpend:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::plic_girqpend);
+        case reg::plic_girqsrvd:
+            return shadow_state_get_reg_abs_addr(shadow_state_reg::plic_girqsrvd);
+        case reg::uarch_x0:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x0);
+        case reg::uarch_x1:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x1);
+        case reg::uarch_x2:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x2);
+        case reg::uarch_x3:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x3);
+        case reg::uarch_x4:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x4);
+        case reg::uarch_x5:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x5);
+        case reg::uarch_x6:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x6);
+        case reg::uarch_x7:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x7);
+        case reg::uarch_x8:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x8);
+        case reg::uarch_x9:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x9);
+        case reg::uarch_x10:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x10);
+        case reg::uarch_x11:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x11);
+        case reg::uarch_x12:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x12);
+        case reg::uarch_x13:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x13);
+        case reg::uarch_x14:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x14);
+        case reg::uarch_x15:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x15);
+        case reg::uarch_x16:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x16);
+        case reg::uarch_x17:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x17);
+        case reg::uarch_x18:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x18);
+        case reg::uarch_x19:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x19);
+        case reg::uarch_x20:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x20);
+        case reg::uarch_x21:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x21);
+        case reg::uarch_x22:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x22);
+        case reg::uarch_x23:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x23);
+        case reg::uarch_x24:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x24);
+        case reg::uarch_x25:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x25);
+        case reg::uarch_x26:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x26);
+        case reg::uarch_x27:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x27);
+        case reg::uarch_x28:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x28);
+        case reg::uarch_x29:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x29);
+        case reg::uarch_x30:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x30);
+        case reg::uarch_x31:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::x31);
+        case reg::uarch_pc:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::pc);
+        case reg::uarch_cycle:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::cycle);
+        case reg::uarch_halt_flag:
+            return shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag);
         default:
-            throw std::invalid_argument{"unknown CSR"};
+            throw std::invalid_argument{"unknown register"};
     }
-}
-
-uint8_t machine::read_iflags_PRV(void) const {
-    return m_s.iflags.PRV;
-}
-
-bool machine::read_iflags_Y(void) const {
-    return m_s.iflags.Y;
-}
-
-void machine::reset_iflags_Y(void) {
-    m_s.iflags.Y = false;
-}
-
-void machine::set_iflags_Y(void) {
-    m_s.iflags.Y = true;
-}
-
-bool machine::read_iflags_X(void) const {
-    return m_s.iflags.X;
-}
-
-void machine::reset_iflags_X(void) {
-    m_s.iflags.X = false;
-}
-
-void machine::set_iflags_X(void) {
-    m_s.iflags.X = true;
-}
-
-bool machine::read_iflags_H(void) const {
-    return m_s.iflags.H;
-}
-
-void machine::set_iflags_H(void) {
-    m_s.iflags.H = true;
 }
 
 void machine::mark_write_tlb_dirty_pages(void) const {
@@ -1673,7 +2065,7 @@ const boost::container::static_vector<pma_entry, PMA_MAX> &machine::get_pmas(voi
 }
 
 void machine::get_root_hash(hash_type &hash) const {
-    if (read_iunrep()) {
+    if (read_reg(reg::iunrep)) {
         throw std::runtime_error("cannot compute root hash of unreproducible machines");
     }
     if (!update_merkle_tree()) {
@@ -1787,7 +2179,7 @@ void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length
     }
 }
 
-void machine::write_memory(uint64_t address, const unsigned char *data, size_t length) {
+void machine::write_memory(uint64_t address, const unsigned char *data, uint64_t length) {
     if (length == 0) {
         return;
     }
@@ -1801,7 +2193,7 @@ void machine::write_memory(uint64_t address, const unsigned char *data, size_t l
     pma.write_memory(address, data, length);
 }
 
-void machine::fill_memory(uint64_t address, uint8_t data, size_t length) {
+void machine::fill_memory(uint64_t address, uint8_t data, uint64_t length) {
     if (length == 0) {
         return;
     }
@@ -1827,7 +2219,7 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
     for (uint64_t vaddr_page = vaddr_page_start; vaddr_page < vaddr_page_limit; vaddr_page += PMA_PAGE_SIZE) {
         uint64_t paddr_page = 0;
         if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
-            throw std::invalid_argument{"page fault"};
+            throw std::domain_error{"page fault"};
         }
         uint64_t paddr = paddr_page;
         uint64_t vaddr = vaddr_page;
@@ -1843,7 +2235,7 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
     }
 }
 
-void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *data, size_t length) {
+void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *data, uint64_t length) {
     state_access a(*this);
     if (length == 0) {
         return;
@@ -1860,7 +2252,7 @@ void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *da
         // perform address translation using read access mode,
         // so we can write any reachable virtual memory range
         if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr_page, vaddr_page, PTE_XWR_R_SHIFT)) {
-            throw std::invalid_argument{"page fault"};
+            throw std::domain_error{"page fault"};
         }
         uint64_t paddr = paddr_page;
         uint64_t vaddr = vaddr_page;
@@ -1881,7 +2273,7 @@ uint64_t machine::translate_virtual_address(uint64_t vaddr) {
     // perform address translation using read access mode
     uint64_t paddr = 0;
     if (!cartesi::translate_virtual_address<state_access, false>(a, &paddr, vaddr, PTE_XWR_R_SHIFT)) {
-        throw std::invalid_argument{"page fault"};
+        throw std::domain_error{"page fault"};
     }
     return paddr;
 }
@@ -1912,92 +2304,37 @@ uint64_t machine::read_word(uint64_t word_address) const {
     }
 }
 
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-uint64_t machine::read_uarch_x(int i) const {
-    return m_uarch.read_x(i);
-}
-
-void machine::write_uarch_x(int i, uint64_t val) {
-    m_uarch.write_x(i, val);
-}
-
-uint64_t machine::read_uarch_pc(void) const {
-    return m_uarch.read_pc();
-}
-
-// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-void machine::write_uarch_pc(uint64_t val) {
-    m_uarch.write_pc(val);
-}
-
-uint64_t machine::read_uarch_cycle(void) const {
-    return m_uarch.read_cycle();
-}
-
-void machine::write_uarch_cycle(uint64_t val) {
-    return m_uarch.write_cycle(val);
-}
-
-bool machine::read_uarch_halt_flag(void) const {
-    return m_uarch.read_halt_flag();
-}
-
-void machine::send_cmio_response(uint16_t reason, const unsigned char *data, size_t length) {
+void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {
     state_access a(*this);
     cartesi::send_cmio_response(a, reason, data, length);
 }
 
-access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
-    const access_log::type &log_type, bool one_based) {
+access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+    const access_log::type &log_type) {
     hash_type root_hash_before;
-    if (log_type.has_proofs()) {
-        get_root_hash(root_hash_before);
-    }
+    get_root_hash(root_hash_before);
     // Call send_cmio_response  with the recording state accessor
     record_state_access a(*this, log_type);
     a.push_bracket(bracket_type::begin, "send cmio response");
     cartesi::send_cmio_response(a, reason, data, length);
     a.push_bracket(bracket_type::end, "send cmio response");
     // Verify access log before returning
-    if (log_type.has_proofs()) {
-        hash_type root_hash_after;
-        update_merkle_tree();
-        get_root_hash(root_hash_after);
-        verify_send_cmio_response_state_transition(reason, data, length, root_hash_before, *a.get_log(),
-            root_hash_after, m_r, one_based);
-    } else {
-        verify_send_cmio_response_log(reason, data, length, *a.get_log(), m_r, one_based);
-    }
+    hash_type root_hash_after;
+    update_merkle_tree();
+    get_root_hash(root_hash_after);
+    verify_send_cmio_response(reason, data, length, root_hash_before, *a.get_log(), root_hash_after);
     return std::move(*a.get_log());
 }
 
-void machine::verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, size_t length,
-    const access_log &log, const machine_runtime_config &r, bool one_based) {
-    (void) r;
-    // There must be at least one access in log
-    if (log.get_accesses().empty()) {
-        throw std::invalid_argument{"too few accesses in log"};
-    }
-    replay_state_access a(log, false /* verify_proofs */, {} /* initial_hash */, one_based);
-    cartesi::send_cmio_response(a, reason, data, length);
-    a.finish();
-}
-
-void machine::verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, size_t length,
-    const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after,
-    const machine_runtime_config &r, bool one_based) {
-    (void) r;
-    // We need proofs in order to verify the state transition
-    if (!log.get_log_type().has_proofs()) {
-        throw std::invalid_argument{"log has no proofs"};
-    }
+void machine::verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+    const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) {
     // There must be at least one access in log
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
     }
 
     // Verify all intermediate state transitions
-    replay_state_access a(log, true /* verify_proofs */, root_hash_before, one_based);
+    replay_state_access a(log, root_hash_before);
     cartesi::send_cmio_response(a, reason, data, length);
     a.finish();
 
@@ -2007,10 +2344,6 @@ void machine::verify_send_cmio_response_state_transition(uint16_t reason, const 
     if (obtained_root_hash != root_hash_after) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
     }
-}
-
-void machine::set_uarch_halt_flag() {
-    m_uarch.set_halt_flag();
 }
 
 void machine::reset_uarch() {
@@ -2018,52 +2351,30 @@ void machine::reset_uarch() {
     uarch_reset_state(a);
 }
 
-access_log machine::log_uarch_reset(const access_log::type &log_type, bool one_based) {
+access_log machine::log_reset_uarch(const access_log::type &log_type) {
     hash_type root_hash_before;
-    if (log_type.has_proofs()) {
-        get_root_hash(root_hash_before);
-    }
+    get_root_hash(root_hash_before);
     // Call uarch_reset_state with a uarch_record_state_access object
     uarch_record_state_access a(m_uarch.get_state(), *this, log_type);
     a.push_bracket(bracket_type::begin, "reset uarch state");
     uarch_reset_state(a);
     a.push_bracket(bracket_type::end, "reset uarch state");
     // Verify access log before returning
-    if (log_type.has_proofs()) {
-        hash_type root_hash_after;
-        update_merkle_tree();
-        get_root_hash(root_hash_after);
-        verify_uarch_reset_state_transition(root_hash_before, *a.get_log(), root_hash_after, m_r, one_based);
-    } else {
-        verify_uarch_reset_log(*a.get_log(), m_r, one_based);
-    }
+    hash_type root_hash_after;
+    update_merkle_tree();
+    get_root_hash(root_hash_after);
+    verify_reset_uarch(root_hash_before, *a.get_log(), root_hash_after);
     return std::move(*a.get_log());
 }
 
-void machine::verify_uarch_reset_log(const access_log &log, const machine_runtime_config &r, bool one_based) {
-    (void) r;
-    // There must be at least one access in log
-    if (log.get_accesses().empty()) {
-        throw std::invalid_argument{"too few accesses in log"};
-    }
-    uarch_replay_state_access a(log, false /* verify_proofs */, {} /* initial_hash */, one_based);
-    uarch_reset_state(a);
-    a.finish();
-}
-
-void machine::verify_uarch_reset_state_transition(const hash_type &root_hash_before, const access_log &log,
-    const hash_type &root_hash_after, const machine_runtime_config &r, bool one_based) {
-    (void) r;
-    // We need proofs in order to verify the state transition
-    if (!log.get_log_type().has_proofs()) {
-        throw std::invalid_argument{"log has no proofs"};
-    }
+void machine::verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
+    const hash_type &root_hash_after) {
     // There must be at least one access in log
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
     }
     // Verify all intermediate state transitions
-    uarch_replay_state_access a(log, true /* verify_proofs */, root_hash_before, one_based);
+    uarch_replay_state_access a(log, root_hash_before);
     uarch_reset_state(a);
     a.finish();
     // Make sure the access log ends at the same root hash as the state
@@ -2074,54 +2385,32 @@ void machine::verify_uarch_reset_state_transition(const hash_type &root_hash_bef
     }
 }
 
-access_log machine::log_uarch_step(const access_log::type &log_type, bool one_based) {
+access_log machine::log_step_uarch(const access_log::type &log_type) {
     if (m_uarch.get_state().ram.get_istart_E()) {
         throw std::runtime_error("microarchitecture RAM is not present");
     }
     hash_type root_hash_before;
-    if (log_type.has_proofs()) {
-        get_root_hash(root_hash_before);
-    }
+    get_root_hash(root_hash_before);
     // Call interpret with a logged state access object
     uarch_record_state_access a(m_uarch.get_state(), *this, log_type);
     a.push_bracket(bracket_type::begin, "step");
     uarch_step(a);
     a.push_bracket(bracket_type::end, "step");
     // Verify access log before returning
-    if (log_type.has_proofs()) {
-        hash_type root_hash_after;
-        get_root_hash(root_hash_after);
-        verify_uarch_step_state_transition(root_hash_before, *a.get_log(), root_hash_after, m_r, one_based);
-    } else {
-        verify_uarch_step_log(*a.get_log(), m_r, one_based);
-    }
+    hash_type root_hash_after;
+    get_root_hash(root_hash_after);
+    verify_step_uarch(root_hash_before, *a.get_log(), root_hash_after);
     return std::move(*a.get_log());
 }
 
-void machine::verify_uarch_step_log(const access_log &log, const machine_runtime_config &r, bool one_based) {
-    (void) r;
-    // There must be at least one access in log
-    if (log.get_accesses().empty()) {
-        throw std::invalid_argument{"too few accesses in log"};
-    }
-    uarch_replay_state_access a(log, false /* verify proofs */, {} /* initial hash */, one_based);
-    uarch_step(a);
-    a.finish();
-}
-
-void machine::verify_uarch_step_state_transition(const hash_type &root_hash_before, const access_log &log,
-    const hash_type &root_hash_after, const machine_runtime_config &r, bool one_based) {
-    (void) r;
-    // We need proofs in order to verify the state transition
-    if (!log.get_log_type().has_proofs()) {
-        throw std::invalid_argument{"log has no proofs"};
-    }
+void machine::verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
+    const hash_type &root_hash_after) {
     // There must be at least one access in log
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
     }
     // Verify all intermediate state transitions
-    uarch_replay_state_access a(log, true /* verify proofs! */, root_hash_before, one_based);
+    uarch_replay_state_access a(log, root_hash_before);
     uarch_step(a);
     a.finish();
     // Make sure the access log ends at the same root hash as the state
@@ -2138,7 +2427,7 @@ machine_config machine::get_default_config(void) {
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
-    if (read_iunrep()) {
+    if (read_reg(reg::iunrep)) {
         throw std::runtime_error("microarchitecture cannot be used with unreproducible machines");
     }
     if (m_uarch.get_state().ram.get_istart_E()) {
@@ -2149,7 +2438,7 @@ uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
 }
 
 interpreter_break_reason machine::run(uint64_t mcycle_end) {
-    if (mcycle_end < read_mcycle()) {
+    if (mcycle_end < read_reg(reg::mcycle)) {
         throw std::invalid_argument{"mcycle is past"};
     }
     state_access a(*this);

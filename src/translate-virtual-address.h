@@ -130,7 +130,9 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppadd
             return true;
         case SATP_MODE_SV39: // Sv39: Page-based 39-bit virtual addressing
         case SATP_MODE_SV48: // Sv48: Page-based 48-bit virtual addressing
+#ifndef NO_SATP_MODE_SV57
         case SATP_MODE_SV57: // Sv57: Page-based 57-bit virtual addressing
+#endif
             break;
         default: // Unsupported mode
             return false;

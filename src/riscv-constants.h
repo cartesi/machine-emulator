@@ -27,6 +27,9 @@
 
 namespace cartesi {
 
+// Sv57 is explicitly disabled because it doesn't work with some userspace JITs (nodejs)
+#define NO_SATP_MODE_SV57 // NOLINT(cppcoreguidelines-macro-usage)
+
 /// \brief Global RISC-V constants
 enum RISCV_constants {
     XLEN = 64,   ///< Maximum XLEN

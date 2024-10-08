@@ -98,12 +98,7 @@ where options are:
     (default: 1, i.e., run tests sequentially)
   --output-dir=<directory-path>
     write json logs to this  directory
-  --proofs
-    include proofs in the log
-  --proofs-frequency=<number>
-    write proof of every <number> uarch cycles
-    (default: 1, i.e., all accesses)
-  --create-uarch-reset-log
+  --create-reset-uarch-log
     create a json log file for a uarch reset operation
     valid only for the json-step-logs command
 --create-send-cmio-response-log
@@ -130,11 +125,8 @@ local test_path = test_util.tests_uarch_path
 local test_pattern = ".*"
 local output_dir
 local jobs = 1
-local proofs = false
 local create_uarch_reset_log = false
 local create_send_cmio_response_log = false
-local proofs_frequency = 1
-local total_steps_counter = 0
 
 local options = {
     {
@@ -156,7 +148,7 @@ local options = {
         end,
     },
     {
-        "^%-%-create%-uarch%-reset%-log$",
+        "^%-%-create%-reset%-uarch%-log$",
         function(all)
             if not all then
                 return false
@@ -213,27 +205,6 @@ local options = {
             end
             jobs = tonumber(o)
             assert(jobs and jobs >= 1, "invalid number of jobs")
-            return true
-        end,
-    },
-    {
-        "^%-%-proofs$",
-        function(o)
-            if not o or #o < 1 then
-                return false
-            end
-            proofs = true
-            return true
-        end,
-    },
-    {
-        "^%-%-proofs%-frequency%=(.+)$",
-        function(n)
-            if not n then
-                return false
-            end
-            proofs_frequency = assert(util.parse_number(n), "invalid proofs frequency " .. n)
-            assert(proofs_frequency > 0, "proofs frequency must be > 0")
             return true
         end,
     },
@@ -331,9 +302,9 @@ local function check_test_result(machine, ctx)
         end
         return -- failed with the expected error at the expected cycle
     end
-    local test_status = machine:read_uarch_x(TEST_STATUS_X)
+    local test_status = machine:read_reg("uarch_x" .. TEST_STATUS_X)
     if test_status == TEST_FAILED then
-        local failed_test_case = machine:read_uarch_x(FAILED_TEST_CASE_X)
+        local failed_test_case = machine:read_reg("uarch_x" .. FAILED_TEST_CASE_X)
         fatal("%s: failed. test case is: %d\n", failed_test_case)
     end
     if test_status ~= TEST_SUCCEEDED then
@@ -482,13 +453,11 @@ local function write_catalog_json_log_entry(out, logFilename, ctx)
     util.indentout(
         out,
         1,
-        '{"logFilename": "%s", "binaryFilename": "%s", "steps": %d, "proofs":%s, "proofsFrequency":%d, '
+        '{"logFilename": "%s", "binaryFilename": "%s", "steps": %d, '
             .. '"initialRootHash": "%s", "finalRootHash": "%s"}',
         logFilename,
         ctx.ram_image or "",
         ctx.step_count,
-        proofs,
-        proofs_frequency,
         util.hexhash(ctx.initial_root_hash),
         util.hexhash(ctx.final_root_hash)
     )
@@ -501,13 +470,6 @@ local function create_catalog_json_log_entry(ctx)
     out:close()
 end
 
-local function should_log_proofs()
-    if not proofs then
-        return false
-    end
-    return (total_steps_counter % proofs_frequency) == 0
-end
-
 local function run_machine_writing_json_logs(machine, ctx)
     local test_name = ctx.test_name
     local max_cycle = ctx.expected_cycles * 2
@@ -516,9 +478,7 @@ local function run_machine_writing_json_logs(machine, ctx)
     util.indentout(out, indent, '{ "steps":[\n')
     local step_count = 0
     while math.ult(machine:read_uarch_cycle(), max_cycle) do
-        local log_type = { proofs = should_log_proofs() }
-        local log = machine:log_uarch_step(log_type)
-        total_steps_counter = total_steps_counter + 1
+        local log = machine:log_step_uarch()
         step_count = step_count + 1
         local halted = machine:read_uarch_halt_flag()
         write_log_to_file(log, out, indent + 1, halted)
@@ -534,10 +494,10 @@ end
 
 local function create_json_reset_log()
     local machine <close> = build_machine()
-    local test_name = "uarch-reset"
+    local test_name = "reset-uarch"
     machine:set_uarch_halt_flag()
     local initial_root_hash = machine:get_root_hash()
-    local log = machine:log_uarch_reset({ proofs = proofs })
+    local log = machine:log_reset_uarch()
     local out = create_json_log_file(test_name .. "-steps")
     write_log_to_file(log, out, 0, true)
     out:close()
@@ -561,7 +521,7 @@ local function create_json_send_cmio_response_log()
     local reason = 1
     machine:set_iflags_Y()
     local initial_root_hash = machine:get_root_hash()
-    local log = machine:log_send_cmio_response(reason, response_data, { proofs = proofs })
+    local log = machine:log_send_cmio_response(reason, response_data)
     local out = create_json_log_file(test_name .. "-steps")
     write_log_to_file(log, out, 0, true)
     out:close()

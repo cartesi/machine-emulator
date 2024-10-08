@@ -188,9 +188,11 @@ else ifeq ($(release),yes)
 OPTFLAGS+=-O2
 DEFS+=-DNDEBUG # disable all asserts
 else ifeq ($(debug),yes)
-OPTFLAGS+=-Og -g
+OPTFLAGS+=-Og -g -fno-omit-frame-pointer
+OPTFLAGS+=-D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS -fstack-clash-protection -fstack-protector-strong
 else ifeq ($(sanitize),yes)
-OPTFLAGS+=-O1 -g
+OPTFLAGS+=-O1 -g -fno-omit-frame-pointer
+OPTFLAGS+=-D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS -fstack-clash-protection -fstack-protector-strong
 endif
 
 # Git commit hash (for releases)
@@ -368,7 +370,6 @@ LIBCARTESI_OBJS:= \
 CARTESI_CLUA_OBJS:= \
 	clua.o \
 	clua-i-virtual-machine.o \
-	clua-htif.o \
 	clua-machine-util.o \
 	uarch-pristine-ram.o \
 	uarch-pristine-state-hash.o \

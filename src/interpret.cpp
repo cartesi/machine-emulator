@@ -1981,7 +1981,9 @@ static NO_INLINE execute_status write_csr_satp(STATE_ACCESS &a, uint64_t val) {
         case SATP_MODE_BARE:
         case SATP_MODE_SV39:
         case SATP_MODE_SV48:
+#ifndef NO_SATP_MODE_SV57
         case SATP_MODE_SV57:
+#endif
             stap = (val & SATP_PPN_MASK) | (val & SATP_ASID_MASK) | (val & SATP_MODE_MASK);
             break;
         default:

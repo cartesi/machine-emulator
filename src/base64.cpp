@@ -138,7 +138,7 @@ static size_t b64decode(uint8_t c, uint8_t *input, size_t size, std::ostringstre
     }
 }
 
-std::string encode_base64(const std::string &input) {
+std::string encode_base64(const std::string_view &input) {
     std::ostringstream sout;
     uint8_t ctx[4]{};
     size_t ctxlen = 0;
@@ -149,7 +149,7 @@ std::string encode_base64(const std::string &input) {
     return sout.str();
 }
 
-std::string decode_base64(const std::string &input) {
+std::string decode_base64(const std::string_view &input) {
     std::ostringstream sout;
     uint8_t ctx[4]{};
     size_t ctxlen = 0;

@@ -131,7 +131,6 @@ local remote
 
 -- There is no UINT64_MAX in Lua, so we have to use the signed representation
 local MAX_MCYCLE = -1
-local OUTPUTS_ROOT_HASH_SIZE = 32
 
 local function load_machine(name)
     local runtime = {
@@ -151,41 +150,31 @@ local function load_machine(name)
     end
 end
 
-local function get_yield(machine)
-    local m16 = (1 << 16) - 1
-    local m32 = (1 << 32) - 1
-    local cmd = machine:read_htif_tohost_cmd()
-    local data = machine:read_htif_tohost_data()
-    local reason = data >> 32
-    return cmd, reason & m16, data & m32
-end
-
 local function next_input(machine, reason, data)
     machine:send_cmio_response(reason, data)
 end
 
 local function setup_advance(machine, data)
     assert(data)
-    local reason = cartesi.machine.HTIF_YIELD_REASON_ADVANCE_STATE
+    local reason = cartesi.CMIO_YIELD_REASON_ADVANCE_STATE
     next_input(machine, reason, data)
 end
 
 local function setup_inspect(machine, data)
-    local reason = cartesi.machine.HTIF_YIELD_REASON_INSPECT_STATE
+    local reason = cartesi.CMIO_YIELD_REASON_INSPECT_STATE
     next_input(machine, reason, data)
 end
 
 local function get_exit_code(machine)
     assert(machine:read_iflags_H())
-    return machine:read_htif_tohost_data() >> 1
+    return machine:read_reg("htif_tohost_data") >> 1
 end
 
 local function check_output(machine, expected)
     assert(machine:read_iflags_X())
-    local cmd, reason, length = get_yield(machine)
-    assert(cmd == cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC)
-    assert(reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT)
-    local output = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
+    local cmd, reason, output = machine:receive_cmio_request()
+    assert(cmd == cartesi.CMIO_YIELD_COMMAND_AUTOMATIC)
+    assert(reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT)
     if expected ~= output then
         local e <close> = assert(io.open("expected.bin", "wb"))
         local o <close> = assert(io.open("output.bin", "wb"))
@@ -199,24 +188,22 @@ end
 
 local function check_report(machine, expected)
     assert(machine:read_iflags_X())
-    local cmd, reason, length = get_yield(machine)
-    assert(cmd == cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC)
-    assert(reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT)
-    local output = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
+    local cmd, reason, output = machine:receive_cmio_request()
+    assert(cmd == cartesi.CMIO_YIELD_COMMAND_AUTOMATIC)
+    assert(reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT)
     assert(expected == output)
 end
 
 local function check_exception(machine, expected)
     assert(machine:read_iflags_Y())
-    local cmd, reason, length = get_yield(machine)
-    assert(cmd == cartesi.machine.HTIF_YIELD_CMD_MANUAL)
-    assert(reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION)
-    local output = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
+    local cmd, reason, output = machine:receive_cmio_request()
+    assert(cmd == cartesi.CMIO_YIELD_COMMAND_MANUAL)
+    assert(reason == cartesi.CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION)
     assert(expected == output, string.format("expected: %q, got: %q", expected, output))
 end
 
 local function check_outputs_root_hash(root_hash, output_hashes)
-    local z = string.rep("\0", 32)
+    local z = string.rep("\0", cartesi.HASH_SIZE)
     if #output_hashes == 0 then
         output_hashes = { z }
     end
@@ -245,18 +232,17 @@ local function check_outputs_root_hash(root_hash, output_hashes)
 end
 
 local function check_finish(machine, output_hashes, expected_reason)
-    local cmd, reason, length = get_yield(machine)
+    local cmd, reason, output = machine:receive_cmio_request()
     assert(machine:read_iflags_Y())
-    assert(cmd == cartesi.machine.HTIF_YIELD_CMD_MANUAL)
+    assert(cmd == cartesi.CMIO_YIELD_COMMAND_MANUAL)
     assert(reason == expected_reason)
 
     -- only check for output-hashes-root-hash if the input was accepted
-    if expected_reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
-        assert(length == OUTPUTS_ROOT_HASH_SIZE)
-        local output = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
+    if expected_reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED then
+        assert(#output == cartesi.HASH_SIZE)
         check_outputs_root_hash(output, output_hashes)
     else
-        assert(length == 0)
+        assert(#output == 0)
     end
 end
 
@@ -330,7 +316,7 @@ for _, dapp in pairs({ "ioctl", "http" }) do
 
                 -- finish
                 machine:run(MAX_MCYCLE)
-                check_finish(machine, hashes, cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED)
+                check_finish(machine, hashes, cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED)
             end
 
             return 0
@@ -354,7 +340,7 @@ for _, dapp in pairs({ "ioctl", "http" }) do
 
         -- finish
         machine:run(MAX_MCYCLE)
-        check_finish(machine, hashes, cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED)
+        check_finish(machine, hashes, cartesi.CMIO_YIELD_MANUAL_REASON_RX_REJECTED)
 
         return 0
     end, 0)

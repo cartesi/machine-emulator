@@ -23,35 +23,28 @@
 
 namespace cartesi {
 
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define PRINT_PROCESSOR_CSR(machine, regname)                                                                          \
-    do {                                                                                                               \
-        uint64_t val{0};                                                                                               \
-        TRY_EXECUTE(cm_read_##regname(machine, &val, err_msg));                                                        \
-        (void) fprintf(stderr, #regname " = %" PRIx64 "\n", val);                                                      \
-    } while (0)
-
 /// \brief This is the machine:get_proof() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_get_proof(lua_State *L) {
     lua_settop(L, 3);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t address = luaL_checkinteger(L, 2);
-    auto log2_size = luaL_checkinteger(L, 3);
-    auto &managed_proof = clua_push_to(L, clua_managed_cm_ptr<cm_merkle_tree_proof>(nullptr));
-    TRY_EXECUTE(cm_get_proof(m.get(), address, log2_size, &managed_proof.get(), err_msg));
-    clua_push_cm_proof(L, managed_proof.get());
-    managed_proof.reset();
+    const int log2_size = static_cast<int>(luaL_checkinteger(L, 3));
+    const char *proof = nullptr;
+    if (cm_get_proof(m.get(), address, log2_size, &proof) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    clua_push_schemed_json_table(L, proof, "Proof");
     return 1;
 }
 
 static int machine_obj_index_get_initial_config(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto &managed_config = clua_push_to(L, clua_managed_cm_ptr<const cm_machine_config>(nullptr));
-
-    TRY_EXECUTE(cm_get_initial_config(m.get(), &managed_config.get(), err_msg));
-    clua_push_cm_machine_config(L, managed_config.get());
-    managed_config.reset();
+    const char *config = nullptr;
+    if (cm_get_initial_config(m.get(), &config) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    clua_push_json_table(L, config);
     return 1;
 }
 
@@ -60,141 +53,41 @@ static int machine_obj_index_get_initial_config(lua_State *L) {
 static int machine_obj_index_get_root_hash(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     cm_hash root_hash{};
-    TRY_EXECUTE(cm_get_root_hash(m.get(), &root_hash, err_msg));
+    if (cm_get_root_hash(m.get(), &root_hash) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     clua_push_cm_hash(L, &root_hash);
     return 1;
 }
 
-/// \brief Generation of machine getters and setters for CSR registers
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define IMPL_MACHINE_OBJ_READ_WRITE(field)                                                                             \
-    static int machine_obj_index_read_##field(lua_State *L) {                                                          \
-        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);                                                   \
-        uint64_t val{};                                                                                                \
-        TRY_EXECUTE(cm_read_##field(m.get(), &val, err_msg));                                                          \
-        lua_pushinteger(L, val);                                                                                       \
-        return 1;                                                                                                      \
-    }                                                                                                                  \
-    static int machine_obj_index_write_##field(lua_State *L) {                                                         \
-        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);                                                   \
-        TRY_EXECUTE(cm_write_##field(m.get(), luaL_checkinteger(L, 2), err_msg));                                      \
-        return 0;                                                                                                      \
-    }
-
-/// \brief Generation of machine getters for CSR registers
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define IMPL_MACHINE_OBJ_READ(field)                                                                                   \
-    static int machine_obj_index_read_##field(lua_State *L) {                                                          \
-        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);                                                   \
-        uint64_t val{};                                                                                                \
-        TRY_EXECUTE(cm_read_##field(m.get(), &val, err_msg));                                                          \
-        lua_pushinteger(L, val);                                                                                       \
-        return 1;                                                                                                      \
-    }
-
-/// \brief Generation of machine setters for CSR registers
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define IMPL_MACHINE_OBJ_WRITE(field)                                                                                  \
-    static int machine_obj_index_write_##field(lua_State *L) {                                                         \
-        auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);                                                   \
-        TRY_EXECUTE(cm_write_##field(m.get(), luaL_checkinteger(L, 2), err_msg));                                      \
-        return 0;                                                                                                      \
-    }
-
-IMPL_MACHINE_OBJ_READ_WRITE(pc)
-IMPL_MACHINE_OBJ_READ_WRITE(fcsr)
-IMPL_MACHINE_OBJ_READ(mvendorid)
-IMPL_MACHINE_OBJ_READ(marchid)
-IMPL_MACHINE_OBJ_READ(mimpid)
-IMPL_MACHINE_OBJ_READ_WRITE(mcycle)
-IMPL_MACHINE_OBJ_READ_WRITE(icycleinstret)
-IMPL_MACHINE_OBJ_READ_WRITE(mstatus)
-IMPL_MACHINE_OBJ_READ_WRITE(mtvec)
-IMPL_MACHINE_OBJ_READ_WRITE(mscratch)
-IMPL_MACHINE_OBJ_READ_WRITE(mepc)
-IMPL_MACHINE_OBJ_READ_WRITE(mcause)
-IMPL_MACHINE_OBJ_READ_WRITE(mtval)
-IMPL_MACHINE_OBJ_READ_WRITE(misa)
-IMPL_MACHINE_OBJ_READ_WRITE(mie)
-IMPL_MACHINE_OBJ_READ_WRITE(mip)
-IMPL_MACHINE_OBJ_READ_WRITE(medeleg)
-IMPL_MACHINE_OBJ_READ_WRITE(mideleg)
-IMPL_MACHINE_OBJ_READ_WRITE(mcounteren)
-IMPL_MACHINE_OBJ_READ_WRITE(menvcfg)
-IMPL_MACHINE_OBJ_READ_WRITE(stvec)
-IMPL_MACHINE_OBJ_READ_WRITE(sscratch)
-IMPL_MACHINE_OBJ_READ_WRITE(sepc)
-IMPL_MACHINE_OBJ_READ_WRITE(scause)
-IMPL_MACHINE_OBJ_READ_WRITE(stval)
-IMPL_MACHINE_OBJ_READ_WRITE(satp)
-IMPL_MACHINE_OBJ_READ_WRITE(scounteren)
-IMPL_MACHINE_OBJ_READ_WRITE(senvcfg)
-IMPL_MACHINE_OBJ_READ_WRITE(ilrsc)
-IMPL_MACHINE_OBJ_READ_WRITE(iflags)
-IMPL_MACHINE_OBJ_READ_WRITE(iunrep)
-IMPL_MACHINE_OBJ_READ_WRITE(htif_tohost)
-IMPL_MACHINE_OBJ_READ(htif_tohost_dev)
-IMPL_MACHINE_OBJ_READ(htif_tohost_cmd)
-IMPL_MACHINE_OBJ_READ(htif_tohost_data)
-IMPL_MACHINE_OBJ_READ_WRITE(htif_fromhost)
-IMPL_MACHINE_OBJ_WRITE(htif_fromhost_data)
-IMPL_MACHINE_OBJ_READ_WRITE(htif_ihalt)
-IMPL_MACHINE_OBJ_READ_WRITE(htif_iconsole)
-IMPL_MACHINE_OBJ_READ_WRITE(htif_iyield)
-IMPL_MACHINE_OBJ_READ_WRITE(clint_mtimecmp)
-IMPL_MACHINE_OBJ_READ_WRITE(plic_girqpend)
-IMPL_MACHINE_OBJ_READ_WRITE(plic_girqsrvd)
-IMPL_MACHINE_OBJ_READ_WRITE(uarch_cycle)
-IMPL_MACHINE_OBJ_READ_WRITE(uarch_pc)
-
-/// \brief This is the machine:read_csr() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_csr(lua_State *L) {
+static int machine_obj_index_read_mcycle(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     uint64_t val{};
-    TRY_EXECUTE(cm_read_csr(m.get(), clua_check_cm_proc_csr(L, 2), &val, err_msg));
+    if (cm_read_mcycle(m.get(), &val) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     lua_pushinteger(L, static_cast<lua_Integer>(val));
     return 1;
 }
 
-/// \brief This is the machine:read_x() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_x(lua_State *L) {
+static int machine_obj_index_read_uarch_cycle(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto i = luaL_checkinteger(L, 2);
-    if (i < 0 || i >= X_REG_COUNT) {
-        luaL_error(L, "register index out of range");
-    }
     uint64_t val{};
-    TRY_EXECUTE(cm_read_x(m.get(), i, &val, err_msg));
+    if (cm_read_uarch_cycle(m.get(), &val) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     lua_pushinteger(L, static_cast<lua_Integer>(val));
     return 1;
 }
 
-/// \brief This is the machine:read_f() method implementation.
+/// \brief This is the machine:read_reg() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_read_f(lua_State *L) {
+static int machine_obj_index_read_reg(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto i = luaL_checkinteger(L, 2);
-    if (i < 0 || i >= F_REG_COUNT) {
-        luaL_error(L, "register index out of range");
-    }
     uint64_t val{};
-    TRY_EXECUTE(cm_read_f(m.get(), i, &val, err_msg));
-    lua_pushinteger(L, static_cast<lua_Integer>(val));
-    return 1;
-}
-
-/// \brief This is the machine:read_uarch_x() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_uarch_x(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto i = luaL_checkinteger(L, 2);
-    if (i < 0 || i >= UARCH_X_REG_COUNT) {
-        luaL_error(L, "register index out of range");
+    if (cm_read_reg(m.get(), clua_check_cm_proc_reg(L, 2), &val) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    uint64_t val{};
-    TRY_EXECUTE(cm_read_uarch_x(m.get(), i, &val, err_msg));
     lua_pushinteger(L, static_cast<lua_Integer>(val));
     return 1;
 }
@@ -204,7 +97,9 @@ static int machine_obj_index_read_uarch_x(lua_State *L) {
 static int machine_obj_index_read_iflags_H(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     bool val{};
-    TRY_EXECUTE(cm_read_iflags_H(m.get(), &val, err_msg));
+    if (cm_read_iflags_H(m.get(), &val) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     lua_pushboolean(L, val);
     return 1;
 }
@@ -214,7 +109,9 @@ static int machine_obj_index_read_iflags_H(lua_State *L) {
 static int machine_obj_index_read_iflags_Y(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     bool val{};
-    TRY_EXECUTE(cm_read_iflags_Y(m.get(), &val, err_msg));
+    if (cm_read_iflags_Y(m.get(), &val) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     lua_pushboolean(L, val);
     return 1;
 }
@@ -224,32 +121,20 @@ static int machine_obj_index_read_iflags_Y(lua_State *L) {
 static int machine_obj_index_read_iflags_X(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     bool val{};
-    TRY_EXECUTE(cm_read_iflags_X(m.get(), &val, err_msg));
+    if (cm_read_iflags_X(m.get(), &val) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     lua_pushboolean(L, val);
     return 1;
-}
-
-/// \brief This is the machine:set_iflags_H() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_set_iflags_H(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_set_iflags_H(m.get(), err_msg));
-    return 0;
 }
 
 /// \brief This is the machine:set_iflags_Y() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_set_iflags_Y(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_set_iflags_Y(m.get(), err_msg));
-    return 0;
-}
-
-/// \brief This is the machine:set_iflags_X() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_set_iflags_X(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_set_iflags_X(m.get(), err_msg));
+    if (cm_set_iflags_Y(m.get()) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     return 0;
 }
 
@@ -257,15 +142,9 @@ static int machine_obj_index_set_iflags_X(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_reset_iflags_Y(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_reset_iflags_Y(m.get(), err_msg));
-    return 0;
-}
-
-/// \brief This is the machine:reset_iflags_X() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_reset_iflags_X(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_reset_iflags_X(m.get(), err_msg));
+    if (cm_reset_iflags_Y(m.get()) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     return 0;
 }
 
@@ -275,7 +154,7 @@ static int machine_obj_index_read_memory(lua_State *L) {
     lua_settop(L, 3);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t address = luaL_checkinteger(L, 2);
-    const size_t length = luaL_checkinteger(L, 3);
+    const uint64_t length = luaL_checkinteger(L, 3);
     unsigned char *data{};
     try {
         data = new unsigned char[length];
@@ -283,7 +162,9 @@ static int machine_obj_index_read_memory(lua_State *L) {
         luaL_error(L, "failed to allocate memory for buffer");
     }
     auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));
-    TRY_EXECUTE(cm_read_memory(m.get(), address, managed_data.get(), length, err_msg));
+    if (cm_read_memory(m.get(), address, managed_data.get(), length) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     lua_pushlstring(L, reinterpret_cast<const char *>(managed_data.get()), length);
     managed_data.reset();
@@ -296,7 +177,7 @@ static int machine_obj_index_read_virtual_memory(lua_State *L) {
     lua_settop(L, 3);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t address = luaL_checkinteger(L, 2);
-    const size_t length = luaL_checkinteger(L, 3);
+    const uint64_t length = luaL_checkinteger(L, 3);
     unsigned char *data{};
     try {
         data = new unsigned char[length];
@@ -304,7 +185,9 @@ static int machine_obj_index_read_virtual_memory(lua_State *L) {
         luaL_error(L, "failed to allocate memory for buffer");
     }
     auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));
-    TRY_EXECUTE(cm_read_virtual_memory(m.get(), address, managed_data.get(), length, err_msg));
+    if (cm_read_virtual_memory(m.get(), address, managed_data.get(), length) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     lua_pushlstring(L, reinterpret_cast<const char *>(managed_data.get()), length);
     managed_data.reset();
@@ -316,7 +199,9 @@ static int machine_obj_index_read_virtual_memory(lua_State *L) {
 static int machine_obj_index_read_word(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     uint64_t word_value{0};
-    TRY_EXECUTE(cm_read_word(m.get(), luaL_checkinteger(L, 2), &word_value, err_msg));
+    if (cm_read_word(m.get(), luaL_checkinteger(L, 2), &word_value) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     lua_pushinteger(L, static_cast<lua_Integer>(word_value));
     return 1;
 }
@@ -326,8 +211,10 @@ static int machine_obj_index_read_word(lua_State *L) {
 static int machine_obj_index_run(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t mcycle_end = luaL_optinteger(L, 2, UINT64_MAX);
-    CM_BREAK_REASON break_reason = CM_BREAK_REASON_FAILED;
-    TRY_EXECUTE(cm_machine_run(m.get(), mcycle_end, &break_reason, err_msg));
+    cm_break_reason break_reason = CM_BREAK_REASON_FAILED;
+    if (cm_run(m.get(), mcycle_end, &break_reason) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     lua_pushinteger(L, static_cast<lua_Integer>(break_reason));
     return 1;
 }
@@ -337,7 +224,9 @@ static int machine_obj_index_run(lua_State *L) {
 static int machine_obj_index_read_uarch_halt_flag(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     bool val{};
-    TRY_EXECUTE(cm_read_uarch_halt_flag(m.get(), &val, err_msg));
+    if (cm_read_uarch_halt_flag(m.get(), &val) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     lua_pushboolean(L, val);
     return 1;
 }
@@ -346,7 +235,9 @@ static int machine_obj_index_read_uarch_halt_flag(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_set_uarch_halt_flag(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_set_uarch_halt_flag(m.get(), err_msg));
+    if (cm_set_uarch_halt_flag(m.get()) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     return 0;
 }
 
@@ -354,7 +245,9 @@ static int machine_obj_index_set_uarch_halt_flag(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_reset_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_reset_uarch(m.get(), err_msg));
+    if (cm_reset_uarch(m.get()) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     return 0;
 }
 
@@ -362,21 +255,24 @@ static int machine_obj_index_reset_uarch(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_get_memory_ranges(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto &managed_mrds = clua_push_to(L, clua_managed_cm_ptr<cm_memory_range_descr_array>(nullptr));
-    TRY_EXECUTE(cm_get_memory_ranges(m.get(), &managed_mrds.get(), err_msg));
-    clua_push_cm_memory_range_descr_array(L, managed_mrds.get());
-    managed_mrds.reset();
+    const char *ranges = nullptr;
+    if (cm_get_memory_ranges(m.get(), &ranges) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    clua_push_json_table(L, ranges);
     return 1;
 }
 
 /// \brief This is the machine:reset_uarch() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_log_uarch_reset(lua_State *L) {
+static int machine_obj_index_log_reset_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(nullptr));
-    TRY_EXECUTE(cm_log_uarch_reset(m.get(), clua_check_cm_log_type(L, 2), true, &managed_log.get(), err_msg));
-    clua_push_cm_access_log(L, managed_log.get());
-    managed_log.reset();
+    const int log_type = static_cast<int>(luaL_optinteger(L, 2, 0));
+    const char *log = nullptr;
+    if (cm_log_reset_uarch(m.get(), log_type, &log) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    clua_push_schemed_json_table(L, log, "AccessLog");
     return 1;
 }
 
@@ -385,20 +281,24 @@ static int machine_obj_index_log_uarch_reset(lua_State *L) {
 static int machine_obj_index_run_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t cycle_end = luaL_optinteger(L, 2, UINT64_MAX);
-    CM_UARCH_BREAK_REASON status = CM_UARCH_BREAK_REASON_REACHED_TARGET_CYCLE;
-    TRY_EXECUTE(cm_machine_run_uarch(m.get(), cycle_end, &status, err_msg));
+    cm_uarch_break_reason status = CM_UARCH_BREAK_REASON_FAILED;
+    if (cm_run_uarch(m.get(), cycle_end, &status) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     lua_pushinteger(L, static_cast<lua_Integer>(status));
     return 1;
 }
 
-/// \brief This is the machine:log_uarch_step() method implementation.
+/// \brief This is the machine:log_step_uarch() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_log_uarch_step(lua_State *L) {
+static int machine_obj_index_log_step_uarch(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(nullptr));
-    TRY_EXECUTE(cm_log_uarch_step(m.get(), clua_check_cm_log_type(L, 2), true, &managed_log.get(), err_msg));
-    clua_push_cm_access_log(L, managed_log.get());
-    managed_log.reset();
+    const int log_type = static_cast<int>(luaL_optinteger(L, 2, 0));
+    const char *log = nullptr;
+    if (cm_log_step_uarch(m.get(), log_type, &log) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    clua_push_schemed_json_table(L, log, "AccessLog");
     return 1;
 }
 
@@ -406,7 +306,9 @@ static int machine_obj_index_log_uarch_step(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_store(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_store(m.get(), luaL_checkstring(L, 2), err_msg));
+    if (cm_store(m.get(), luaL_checkstring(L, 2)) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     return 0;
 }
 
@@ -415,7 +317,9 @@ static int machine_obj_index_store(lua_State *L) {
 static int machine_obj_index_verify_dirty_page_maps(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     bool result{};
-    TRY_EXECUTE(cm_verify_dirty_page_maps(m.get(), &result, err_msg));
+    if (cm_verify_dirty_page_maps(m.get(), &result) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     lua_pushboolean(L, result);
     return 1;
 }
@@ -425,52 +329,20 @@ static int machine_obj_index_verify_dirty_page_maps(lua_State *L) {
 static int machine_obj_index_verify_merkle_tree(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     bool result{};
-    TRY_EXECUTE(cm_verify_merkle_tree(m.get(), &result, err_msg));
+    if (cm_verify_merkle_tree(m.get(), &result) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     lua_pushboolean(L, result);
     return 1;
 }
 
-/// \brief This is the machine:write_csr() method implementation.
+/// \brief This is the machine:write_reg() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_write_csr(lua_State *L) {
+static int machine_obj_index_write_reg(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_write_csr(m.get(), clua_check_cm_proc_csr(L, 2), luaL_checkinteger(L, 3), err_msg));
-    return 0;
-}
-
-/// \brief This is the machine:write_x() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_x(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto i = luaL_checkinteger(L, 2);
-    if (i < 1 || i >= X_REG_COUNT) {
-        luaL_error(L, "register index out of range");
+    if (cm_write_reg(m.get(), clua_check_cm_proc_reg(L, 2), luaL_checkinteger(L, 3)) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    TRY_EXECUTE(cm_write_x(m.get(), i, luaL_checkinteger(L, 3), err_msg));
-    return 0;
-}
-
-/// \brief This is the machine:write_f() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_f(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto i = luaL_checkinteger(L, 2);
-    if (i < 0 || i >= F_REG_COUNT) {
-        luaL_error(L, "register index out of range");
-    }
-    TRY_EXECUTE(cm_write_f(m.get(), i, luaL_checkinteger(L, 3), err_msg));
-    return 0;
-}
-
-/// \brief This is the machine:write_uarch_x() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_write_uarch_x(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    auto i = luaL_checkinteger(L, 2);
-    if (i < 1 || i >= UARCH_X_REG_COUNT) {
-        luaL_error(L, "register index out of range");
-    }
-    TRY_EXECUTE(cm_write_uarch_x(m.get(), i, luaL_checkinteger(L, 3), err_msg));
     return 0;
 }
 
@@ -482,9 +354,10 @@ static int machine_obj_index_write_memory(lua_State *L) {
     const uint64_t address = luaL_checkinteger(L, 2);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
-    TRY_EXECUTE(cm_write_memory(m.get(), address, data, length, err_msg));
-    lua_pushboolean(L, true);
-    return 1;
+    if (cm_write_memory(m.get(), address, data, length) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    return 0;
 }
 
 /// \brief This is the machine:write_virtual_memory() method implementation.
@@ -495,9 +368,10 @@ static int machine_obj_index_write_virtual_memory(lua_State *L) {
     const uint64_t address = luaL_checkinteger(L, 2);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
-    TRY_EXECUTE(cm_write_virtual_memory(m.get(), address, data, length, err_msg));
-    lua_pushboolean(L, true);
-    return 1;
+    if (cm_write_virtual_memory(m.get(), address, data, length) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    return 0;
 }
 
 /// \brief This is the machine:translate_virtual_address() method implementation.
@@ -505,7 +379,9 @@ static int machine_obj_index_write_virtual_memory(lua_State *L) {
 static int machine_obj_index_translate_virtual_address(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     uint64_t paddr_value{0};
-    TRY_EXECUTE(cm_translate_virtual_address(m.get(), luaL_checkinteger(L, 2), &paddr_value, err_msg));
+    if (cm_translate_virtual_address(m.get(), luaL_checkinteger(L, 2), &paddr_value) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     lua_pushinteger(L, static_cast<lua_Integer>(paddr_value));
     return 1;
 }
@@ -513,27 +389,28 @@ static int machine_obj_index_translate_virtual_address(lua_State *L) {
 /// \brief Replaces a memory range.
 /// \param L Lua state.
 static int machine_obj_index_replace_memory_range(lua_State *L) {
-    lua_settop(L, 2);
+    lua_settop(L, 5);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    cm_memory_range_config *memory_range_config{};
-    try {
-        memory_range_config = new cm_memory_range_config{};
-    } catch (std::bad_alloc &e) {
-        luaL_error(L, "failed to allocate memory range config");
+    const uint64_t start = luaL_checkinteger(L, 2);
+    const uint64_t length = luaL_checkinteger(L, 3);
+    const bool shared = lua_toboolean(L, 4);
+    const char *image_filename = luaL_optstring(L, 5, nullptr);
+    if (cm_replace_memory_range(m.get(), start, length, shared, image_filename) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    auto &managed_memory_range_config =
-        clua_push_to(L, clua_managed_cm_ptr<cm_memory_range_config>(memory_range_config));
-    clua_check_cm_memory_range_config(L, 2, "replace", managed_memory_range_config.get());
-    TRY_EXECUTE(cm_replace_memory_range(m.get(), managed_memory_range_config.get(), err_msg));
-    managed_memory_range_config.reset();
     return 0;
 }
 
 /// \brief This is the machine:destroy() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_destroy(lua_State *L) {
+    lua_settop(L, 2);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_destroy(m.get(), err_msg));
+    const bool keep_machine = lua_toboolean(L, 2);
+    if (cm_destroy(m.get(), keep_machine) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    m.release();
     return 0;
 }
 
@@ -541,7 +418,9 @@ static int machine_obj_index_destroy(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_snapshot(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_snapshot(m.get(), err_msg));
+    if (cm_snapshot(m.get()) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     return 0;
 }
 
@@ -549,7 +428,9 @@ static int machine_obj_index_snapshot(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_commit(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_commit(m.get(), err_msg));
+    if (cm_commit(m.get()) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     return 0;
 }
 
@@ -557,8 +438,38 @@ static int machine_obj_index_commit(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_rollback(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_rollback(m.get(), err_msg));
+    if (cm_rollback(m.get()) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     return 0;
+}
+
+/// \brief This is the machine:receive_cmio_request() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_receive_cmio_request(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    uint64_t length{};
+    if (cm_receive_cmio_request(m.get(), nullptr, nullptr, nullptr, &length) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    unsigned char *data{};
+    try {
+        data = new unsigned char[length];
+    } catch (std::bad_alloc &e) {
+        luaL_error(L, "failed to allocate memory for buffer");
+    }
+    auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));
+    uint8_t cmd{};
+    uint16_t reason{};
+    if (cm_receive_cmio_request(m.get(), &cmd, &reason, data, &length) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    lua_pushinteger(L, cmd);
+    lua_pushinteger(L, reason);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    lua_pushlstring(L, reinterpret_cast<const char *>(managed_data.get()), length);
+    managed_data.reset();
+    return 3;
 }
 
 /// \brief This is the machine:send_cmio_response() method implementation.
@@ -569,24 +480,26 @@ static int machine_obj_index_send_cmio_response(lua_State *L) {
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
-    TRY_EXECUTE(cm_send_cmio_response(m.get(), reason, data, length, err_msg));
-    lua_pushboolean(L, true);
-    return 1;
+    if (cm_send_cmio_response(m.get(), reason, data, length) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    return 0;
 }
 
 /// \brief This is the machine:log_send_cmio_response() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_log_send_cmio_response(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    size_t length{0};
-    auto &managed_log = clua_push_to(L, clua_managed_cm_ptr<cm_access_log>(nullptr));
     const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 2));
+    const int log_type = static_cast<int>(luaL_optinteger(L, 4, 0));
+    size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
-    TRY_EXECUTE(cm_log_send_cmio_response(m.get(), reason, data, length, clua_check_cm_log_type(L, 4), true,
-        &managed_log.get(), err_msg));
-    clua_push_cm_access_log(L, managed_log.get());
-    managed_log.reset();
+    const char *log = nullptr;
+    if (cm_log_send_cmio_response(m.get(), reason, data, length, log_type, &log) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    clua_push_schemed_json_table(L, log, "AccessLog");
     return 1;
 }
 
@@ -595,116 +508,26 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"get_proof", machine_obj_index_get_proof},
     {"get_initial_config", machine_obj_index_get_initial_config},
     {"get_root_hash", machine_obj_index_get_root_hash},
-    {"read_clint_mtimecmp", machine_obj_index_read_clint_mtimecmp},
-    {"read_plic_girqpend", machine_obj_index_read_plic_girqpend},
-    {"read_plic_girqsrvd", machine_obj_index_read_plic_girqsrvd},
-    {"read_csr", machine_obj_index_read_csr},
-    {"read_htif_fromhost", machine_obj_index_read_htif_fromhost},
-    {"read_htif_tohost", machine_obj_index_read_htif_tohost},
-    {"read_htif_tohost_dev", machine_obj_index_read_htif_tohost_dev},
-    {"read_htif_tohost_cmd", machine_obj_index_read_htif_tohost_cmd},
-    {"read_htif_tohost_data", machine_obj_index_read_htif_tohost_data},
-    {"read_htif_ihalt", machine_obj_index_read_htif_ihalt},
-    {"read_htif_iconsole", machine_obj_index_read_htif_iconsole},
-    {"read_htif_iyield", machine_obj_index_read_htif_iyield},
+    {"read_reg", machine_obj_index_read_reg},
     {"read_uarch_cycle", machine_obj_index_read_uarch_cycle},
-    {"read_uarch_pc", machine_obj_index_read_uarch_pc},
-    {"read_uarch_x", machine_obj_index_read_uarch_x},
-    {"read_iflags", machine_obj_index_read_iflags},
     {"read_iflags_H", machine_obj_index_read_iflags_H},
     {"read_iflags_Y", machine_obj_index_read_iflags_Y},
     {"read_iflags_X", machine_obj_index_read_iflags_X},
-    {"set_iflags_H", machine_obj_index_set_iflags_H},
     {"set_iflags_Y", machine_obj_index_set_iflags_Y},
-    {"set_iflags_X", machine_obj_index_set_iflags_X},
     {"reset_iflags_Y", machine_obj_index_reset_iflags_Y},
-    {"reset_iflags_X", machine_obj_index_reset_iflags_X},
-    {"read_iunrep", machine_obj_index_read_iunrep},
-    {"read_ilrsc", machine_obj_index_read_ilrsc},
-    {"read_marchid", machine_obj_index_read_marchid},
-    {"read_mcause", machine_obj_index_read_mcause},
-    {"read_mcounteren", machine_obj_index_read_mcounteren},
-    {"read_menvcfg", machine_obj_index_read_menvcfg},
     {"read_mcycle", machine_obj_index_read_mcycle},
-    {"read_medeleg", machine_obj_index_read_medeleg},
     {"read_memory", machine_obj_index_read_memory},
     {"read_virtual_memory", machine_obj_index_read_virtual_memory},
-    {"read_mepc", machine_obj_index_read_mepc},
-    {"read_mideleg", machine_obj_index_read_mideleg},
-    {"read_mie", machine_obj_index_read_mie},
-    {"read_mimpid", machine_obj_index_read_mimpid},
-    {"read_icycleinstret", machine_obj_index_read_icycleinstret},
-    {"read_mip", machine_obj_index_read_mip},
-    {"read_misa", machine_obj_index_read_misa},
-    {"read_mscratch", machine_obj_index_read_mscratch},
-    {"read_mstatus", machine_obj_index_read_mstatus},
-    {"read_mtval", machine_obj_index_read_mtval},
-    {"read_mtvec", machine_obj_index_read_mtvec},
-    {"read_mvendorid", machine_obj_index_read_mvendorid},
-    {"read_pc", machine_obj_index_read_pc},
-    {"read_fcsr", machine_obj_index_read_fcsr},
-    {"read_satp", machine_obj_index_read_satp},
-    {"read_scause", machine_obj_index_read_scause},
-    {"read_scounteren", machine_obj_index_read_scounteren},
-    {"read_senvcfg", machine_obj_index_read_senvcfg},
-    {"read_sepc", machine_obj_index_read_sepc},
-    {"read_sscratch", machine_obj_index_read_sscratch},
-    {"read_stval", machine_obj_index_read_stval},
-    {"read_stvec", machine_obj_index_read_stvec},
     {"read_word", machine_obj_index_read_word},
-    {"read_x", machine_obj_index_read_x},
-    {"read_f", machine_obj_index_read_f},
     {"run", machine_obj_index_run},
     {"run_uarch", machine_obj_index_run_uarch},
-    {"log_uarch_step", machine_obj_index_log_uarch_step},
+    {"log_step_uarch", machine_obj_index_log_step_uarch},
     {"store", machine_obj_index_store},
     {"verify_dirty_page_maps", machine_obj_index_verify_dirty_page_maps},
     {"verify_merkle_tree", machine_obj_index_verify_merkle_tree},
-    {"write_clint_mtimecmp", machine_obj_index_write_clint_mtimecmp},
-    {"write_plic_girqpend", machine_obj_index_write_plic_girqpend},
-    {"write_plic_girqsrvd", machine_obj_index_write_plic_girqsrvd},
-    {"write_csr", machine_obj_index_write_csr},
-    {"write_htif_fromhost", machine_obj_index_write_htif_fromhost},
-    {"write_htif_fromhost_data", machine_obj_index_write_htif_fromhost_data},
-    {"write_htif_tohost", machine_obj_index_write_htif_tohost},
-    {"write_htif_ihalt", machine_obj_index_write_htif_ihalt},
-    {"write_htif_iconsole", machine_obj_index_write_htif_iconsole},
-    {"write_htif_iyield", machine_obj_index_write_htif_iyield},
-    {"write_uarch_cycle", machine_obj_index_write_uarch_cycle},
-    {"write_uarch_pc", machine_obj_index_write_uarch_pc},
-    {"write_uarch_x", machine_obj_index_write_uarch_x},
-    {"write_iflags", machine_obj_index_write_iflags},
-    {"write_iunrep", machine_obj_index_write_iunrep},
-    {"write_ilrsc", machine_obj_index_write_ilrsc},
-    {"write_mcause", machine_obj_index_write_mcause},
-    {"write_mcounteren", machine_obj_index_write_mcounteren},
-    {"write_menvcfg", machine_obj_index_write_menvcfg},
-    {"write_mcycle", machine_obj_index_write_mcycle},
-    {"write_medeleg", machine_obj_index_write_medeleg},
+    {"write_reg", machine_obj_index_write_reg},
     {"write_memory", machine_obj_index_write_memory},
     {"write_virtual_memory", machine_obj_index_write_virtual_memory},
-    {"write_mepc", machine_obj_index_write_mepc},
-    {"write_mideleg", machine_obj_index_write_mideleg},
-    {"write_mie", machine_obj_index_write_mie},
-    {"write_icycleinstret", machine_obj_index_write_icycleinstret},
-    {"write_mip", machine_obj_index_write_mip},
-    {"write_misa", machine_obj_index_write_misa},
-    {"write_mscratch", machine_obj_index_write_mscratch},
-    {"write_mstatus", machine_obj_index_write_mstatus},
-    {"write_mtval", machine_obj_index_write_mtval},
-    {"write_mtvec", machine_obj_index_write_mtvec},
-    {"write_pc", machine_obj_index_write_pc},
-    {"write_fcsr", machine_obj_index_write_fcsr},
-    {"write_satp", machine_obj_index_write_satp},
-    {"write_scause", machine_obj_index_write_scause},
-    {"write_scounteren", machine_obj_index_write_scounteren},
-    {"write_senvcfg", machine_obj_index_write_senvcfg},
-    {"write_sepc", machine_obj_index_write_sepc},
-    {"write_sscratch", machine_obj_index_write_sscratch},
-    {"write_stval", machine_obj_index_write_stval},
-    {"write_stvec", machine_obj_index_write_stvec},
-    {"write_x", machine_obj_index_write_x},
-    {"write_f", machine_obj_index_write_f},
     {"translate_virtual_address", machine_obj_index_translate_virtual_address},
     {"replace_memory_range", machine_obj_index_replace_memory_range},
     {"destroy", machine_obj_index_destroy},
@@ -715,7 +538,8 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"set_uarch_halt_flag", machine_obj_index_set_uarch_halt_flag},
     {"get_memory_ranges", machine_obj_index_get_memory_ranges},
     {"reset_uarch", machine_obj_index_reset_uarch},
-    {"log_uarch_reset", machine_obj_index_log_uarch_reset},
+    {"log_reset_uarch", machine_obj_index_log_reset_uarch},
+    {"receive_cmio_request", machine_obj_index_receive_cmio_request},
     {"send_cmio_response", machine_obj_index_send_cmio_response},
     {"log_send_cmio_response", machine_obj_index_log_send_cmio_response},
 });
@@ -724,7 +548,10 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
 /// \param L Lua state.
 static int machine_obj_close(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    TRY_EXECUTE(cm_destroy(m.get(), err_msg));
+    if (cm_destroy(m.get(), false) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    m.release();
     clua_close<clua_managed_cm_ptr<cm_machine>>(L);
     return 0;
 }

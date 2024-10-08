@@ -179,7 +179,7 @@ do_test("machine halt and yield flags and config matches", function(machine)
     local initial_config = machine:get_initial_config()
     -- test_util.print_table(initial_config)
     assert(initial_config["processor"]["marchid"] == cartesi.MARCHID, "marchid value does not match")
-    assert(initial_config["processor"]["pc"] == 0x80000000, "pc value does not match")
+    assert(initial_config["processor"]["pc"] == cartesi.PMA_RAM_START, "pc value does not match")
     assert(initial_config["ram"]["length"] == 1048576, "ram length value does not match")
     -- Check machine is not halted
     assert(not machine:read_iflags_H(), "machine shouldn't be halted")
@@ -209,8 +209,7 @@ do_test("machine root hash after step one should match", function(machine)
     assert(root_hash == calculated_root_hash, "Initial root hash does not match")
 
     -- Perform step and check if hash maches
-    local log_type = {}
-    machine:log_uarch_step(log_type)
+    machine:log_step_uarch()
     local root_hash_step1 = machine:get_root_hash()
     local calculated_root_hash_step1 = test_util.calculate_emulator_hash(machine)
     assert(root_hash_step1 == calculated_root_hash_step1, "hash after first step does not match")
@@ -218,8 +217,7 @@ end)
 
 print("\n\ntesting proof after step one")
 do_test("proof check should pass", function(machine)
-    local log_type = {}
-    machine:log_uarch_step(log_type)
+    machine:log_step_uarch()
 
     -- Find ram memory range
     local ram
@@ -270,7 +268,7 @@ do_test("mcycle and root hash should match", function(machine)
     local halt_bytecode = "\x93\x02\x10\x00" -- li t0,1
         .. "\x37\x83\x00\x40" -- lui t1,0x40008
         .. "\x23\x30\x53\x00" -- sd t0,0(t1) # 40008000
-    machine:write_memory(machine:read_pc(), halt_bytecode)
+    machine:write_memory(machine:read_reg("pc"), halt_bytecode)
 
     machine:run(MAX_MCYCLE)
     -- Check machine is halted
@@ -300,7 +298,7 @@ if machine_type == "local" then
         end
         local soft_yield_insn = sraiw(0, 31, 7)
 
-        machine:write_memory(machine:read_pc(), string.pack("<I4", soft_yield_insn))
+        machine:write_memory(machine:read_reg("pc"), string.pack("<I4", soft_yield_insn))
 
         assert(machine:run(1000) == cartesi.BREAK_REASON_YIELDED_SOFTLY)
 
@@ -311,14 +309,14 @@ if machine_type == "local" then
         assert(not machine:read_iflags_X())
 
         -- Check if previous instruction match
-        local prev_insn = string.unpack("<I4", machine:read_virtual_memory(machine:read_pc() - 4, 4))
+        local prev_insn = string.unpack("<I4", machine:read_virtual_memory(machine:read_reg("pc") - 4, 4))
         assert(prev_insn == soft_yield_insn)
     end)
 end
 
 print("\n\nwrite something to ram memory and check if hash and proof matches")
 do_test("proof  and root hash should match", function(machine)
-    local ram_address_start = 0x80000000
+    local ram_address_start = cartesi.PMA_RAM_START
 
     -- Find proof for first KB of ram
     local initial_ram_proof = machine:get_proof(ram_address_start, 10)
@@ -390,16 +388,10 @@ test_util.make_do_test(build_machine, machine_type, {
     p:close()
 
     local flash_address_start = 0x80000000000000
-    local flash_drive_config = {
-        start = flash_address_start,
-        length = rootfs_length,
-        image_filename = input_path,
-        shared = true,
-    }
 
     machine:read_memory(flash_address_start, 20)
 
-    machine:replace_memory_range(flash_drive_config)
+    machine:replace_memory_range(flash_address_start, rootfs_length, true, input_path)
 
     local flash_data = machine:read_memory(flash_address_start, 20)
     assert(flash_data == "test data 1234567890", "data read from replaced flash failed")
@@ -408,13 +400,12 @@ end)
 
 print("\n\n check for relevant register values after step 1")
 do_test("register values should match", function(machine)
-    local uarch_pc_before = machine:read_uarch_pc()
+    local uarch_pc_before = machine:read_reg("uarch_pc")
     local uarch_cycle_before = machine:read_uarch_cycle()
 
-    local log_type = {}
-    machine:log_uarch_step(log_type)
+    machine:log_step_uarch()
 
-    local uarch_pc_after = machine:read_uarch_pc()
+    local uarch_pc_after = machine:read_reg("uarch_pc")
     local uarch_cycle_after = machine:read_uarch_cycle()
 
     assert(uarch_pc_before + 4 == uarch_pc_after, "wrong uarch_pc value")

@@ -41,7 +41,7 @@ local EXPECTED_MCYCLE = RTC_FREQ_DIV * 2 + 20
 
 local function check_state(machine)
     assert(machine:read_iflags_H(), "machine did not halt")
-    assert(machine:read_htif_tohost_data() >> 1 == 0, "invalid return code")
+    assert(machine:read_reg("htif_tohost_data") >> 1 == 0, "invalid return code")
     assert(machine:read_mcycle() == EXPECTED_MCYCLE, "invalid mcycle")
 end
 
@@ -57,9 +57,9 @@ do_test("machine:run should interrupt for mtime", function(machine)
     check_state(machine)
 end)
 
-test_util.disabled_test("machine:log_uarch_step should interrupt for mtime", function(machine)
+test_util.disabled_test("machine:log_step_uarch should interrupt for mtime", function(machine)
     for _ = 1, EXPECTED_MCYCLE do
-        machine:log_uarch_step({})
+        machine:log_step_uarch()
         if machine:read_iflags_H() then
             break
         end

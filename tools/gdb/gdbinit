@@ -51,7 +51,7 @@ end
 
 # dump registers (example on how to execute arbitrary Lua code)
 define dump_regs
-    lua "print('pc:', machine:read_pc()) return 'read the machine pc value in the machine terminal'"
+    lua "print('mcycle:', machine:read_mcycle()) return 'read the machine mcycle value in the machine terminal'"
 end
 
 # shortcuts

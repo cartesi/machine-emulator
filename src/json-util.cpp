@@ -19,6 +19,7 @@
 #include <climits>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 #include "base64.h"
 #include "machine-merkle-tree.h"
@@ -47,151 +48,475 @@ std::string encode_base64(const access_data &data) {
     return encode_base64(data.data(), data.size());
 }
 
-/// \brief Converts between a CSR name and a CSR index
-/// \param name CSR name
-/// \returns The CSR index
-static auto csr_from_name(const std::string &name) {
-    using csr = machine::csr;
-    const static std::unordered_map<std::string, csr> g_csr_name = {
-        {"pc", csr::pc},
-        {"fcsr", csr::fcsr},
-        {"mvendorid", csr::mvendorid},
-        {"marchid", csr::marchid},
-        {"mimpid", csr::mimpid},
-        {"mcycle", csr::mcycle},
-        {"icycleinstret", csr::icycleinstret},
-        {"mstatus", csr::mstatus},
-        {"mtvec", csr::mtvec},
-        {"mscratch", csr::mscratch},
-        {"mepc", csr::mepc},
-        {"mcause", csr::mcause},
-        {"mtval", csr::mtval},
-        {"misa", csr::misa},
-        {"mie", csr::mie},
-        {"mip", csr::mip},
-        {"medeleg", csr::medeleg},
-        {"mideleg", csr::mideleg},
-        {"mcounteren", csr::mcounteren},
-        {"menvcfg", csr::menvcfg},
-        {"stvec", csr::stvec},
-        {"sscratch", csr::sscratch},
-        {"sepc", csr::sepc},
-        {"scause", csr::scause},
-        {"stval", csr::stval},
-        {"satp", csr::satp},
-        {"scounteren", csr::scounteren},
-        {"senvcfg", csr::senvcfg},
-        {"ilrsc", csr::ilrsc},
-        {"iflags", csr::iflags},
-        {"iunrep", csr::iunrep},
-        {"clint_mtimecmp", csr::clint_mtimecmp},
-        {"plic_girqpend", csr::plic_girqpend},
-        {"plic_girqsrvd", csr::plic_girqsrvd},
-        {"htif_tohost", csr::htif_tohost},
-        {"htif_fromhost", csr::htif_fromhost},
-        {"htif_ihalt", csr::htif_ihalt},
-        {"htif_iconsole", csr::htif_iconsole},
-        {"htif_iyield", csr::htif_iyield},
-        {"uarch_halt_flag", csr::uarch_halt_flag},
-        {"uarch_pc", csr::uarch_pc},
-        {"uarch_cycle", csr::uarch_cycle},
+/// \brief Converts between a register name and a register index
+/// \param name Register name
+/// \returns The register index
+static auto reg_from_name(const std::string &name) {
+    using reg = machine::reg;
+    const static std::unordered_map<std::string, reg> g_reg_name = {
+        {"x0", reg::x0},
+        {"x1", reg::x1},
+        {"x2", reg::x2},
+        {"x3", reg::x3},
+        {"x4", reg::x4},
+        {"x5", reg::x5},
+        {"x6", reg::x6},
+        {"x7", reg::x7},
+        {"x8", reg::x8},
+        {"x9", reg::x9},
+        {"x10", reg::x10},
+        {"x11", reg::x11},
+        {"x12", reg::x12},
+        {"x13", reg::x13},
+        {"x14", reg::x14},
+        {"x15", reg::x15},
+        {"x16", reg::x16},
+        {"x17", reg::x17},
+        {"x18", reg::x18},
+        {"x19", reg::x19},
+        {"x20", reg::x20},
+        {"x21", reg::x21},
+        {"x22", reg::x22},
+        {"x23", reg::x23},
+        {"x24", reg::x24},
+        {"x25", reg::x25},
+        {"x26", reg::x26},
+        {"x27", reg::x27},
+        {"x28", reg::x28},
+        {"x29", reg::x29},
+        {"x30", reg::x30},
+        {"x31", reg::x31},
+        {"f0", reg::f0},
+        {"f1", reg::f1},
+        {"f2", reg::f2},
+        {"f3", reg::f3},
+        {"f4", reg::f4},
+        {"f5", reg::f5},
+        {"f6", reg::f6},
+        {"f7", reg::f7},
+        {"f8", reg::f8},
+        {"f9", reg::f9},
+        {"f10", reg::f10},
+        {"f11", reg::f11},
+        {"f12", reg::f12},
+        {"f13", reg::f13},
+        {"f14", reg::f14},
+        {"f15", reg::f15},
+        {"f16", reg::f16},
+        {"f17", reg::f17},
+        {"f18", reg::f18},
+        {"f19", reg::f19},
+        {"f20", reg::f20},
+        {"f21", reg::f21},
+        {"f22", reg::f22},
+        {"f23", reg::f23},
+        {"f24", reg::f24},
+        {"f25", reg::f25},
+        {"f26", reg::f26},
+        {"f27", reg::f27},
+        {"f28", reg::f28},
+        {"f29", reg::f29},
+        {"f30", reg::f30},
+        {"f31", reg::f31},
+        {"pc", reg::pc},
+        {"fcsr", reg::fcsr},
+        {"mvendorid", reg::mvendorid},
+        {"marchid", reg::marchid},
+        {"mimpid", reg::mimpid},
+        {"mcycle", reg::mcycle},
+        {"icycleinstret", reg::icycleinstret},
+        {"mstatus", reg::mstatus},
+        {"mtvec", reg::mtvec},
+        {"mscratch", reg::mscratch},
+        {"mepc", reg::mepc},
+        {"mcause", reg::mcause},
+        {"mtval", reg::mtval},
+        {"misa", reg::misa},
+        {"mie", reg::mie},
+        {"mip", reg::mip},
+        {"medeleg", reg::medeleg},
+        {"mideleg", reg::mideleg},
+        {"mcounteren", reg::mcounteren},
+        {"menvcfg", reg::menvcfg},
+        {"stvec", reg::stvec},
+        {"sscratch", reg::sscratch},
+        {"sepc", reg::sepc},
+        {"scause", reg::scause},
+        {"stval", reg::stval},
+        {"satp", reg::satp},
+        {"scounteren", reg::scounteren},
+        {"senvcfg", reg::senvcfg},
+        {"ilrsc", reg::ilrsc},
+        {"iflags", reg::iflags},
+        {"iflags_prv", reg::iflags_prv},
+        {"iflags_x", reg::iflags_x},
+        {"iflags_y", reg::iflags_y},
+        {"iflags_h", reg::iflags_h},
+        {"iunrep", reg::iunrep},
+        {"clint_mtimecmp", reg::clint_mtimecmp},
+        {"plic_girqpend", reg::plic_girqpend},
+        {"plic_girqsrvd", reg::plic_girqsrvd},
+        {"htif_tohost", reg::htif_tohost},
+        {"htif_tohost_dev", reg::htif_tohost_dev},
+        {"htif_tohost_cmd", reg::htif_tohost_cmd},
+        {"htif_tohost_reason", reg::htif_tohost_reason},
+        {"htif_tohost_data", reg::htif_tohost_data},
+        {"htif_fromhost", reg::htif_fromhost},
+        {"htif_fromhost_dev", reg::htif_fromhost_dev},
+        {"htif_fromhost_cmd", reg::htif_fromhost_cmd},
+        {"htif_fromhost_reason", reg::htif_fromhost_reason},
+        {"htif_fromhost_data", reg::htif_fromhost_data},
+        {"htif_ihalt", reg::htif_ihalt},
+        {"htif_iconsole", reg::htif_iconsole},
+        {"htif_iyield", reg::htif_iyield},
+        {"uarch_x0", reg::uarch_x0},
+        {"uarch_x1", reg::uarch_x1},
+        {"uarch_x2", reg::uarch_x2},
+        {"uarch_x3", reg::uarch_x3},
+        {"uarch_x4", reg::uarch_x4},
+        {"uarch_x5", reg::uarch_x5},
+        {"uarch_x6", reg::uarch_x6},
+        {"uarch_x7", reg::uarch_x7},
+        {"uarch_x8", reg::uarch_x8},
+        {"uarch_x9", reg::uarch_x9},
+        {"uarch_x10", reg::uarch_x10},
+        {"uarch_x11", reg::uarch_x11},
+        {"uarch_x12", reg::uarch_x12},
+        {"uarch_x13", reg::uarch_x13},
+        {"uarch_x14", reg::uarch_x14},
+        {"uarch_x15", reg::uarch_x15},
+        {"uarch_x16", reg::uarch_x16},
+        {"uarch_x17", reg::uarch_x17},
+        {"uarch_x18", reg::uarch_x18},
+        {"uarch_x19", reg::uarch_x19},
+        {"uarch_x20", reg::uarch_x20},
+        {"uarch_x21", reg::uarch_x21},
+        {"uarch_x22", reg::uarch_x22},
+        {"uarch_x23", reg::uarch_x23},
+        {"uarch_x24", reg::uarch_x24},
+        {"uarch_x25", reg::uarch_x25},
+        {"uarch_x26", reg::uarch_x26},
+        {"uarch_x27", reg::uarch_x27},
+        {"uarch_x28", reg::uarch_x28},
+        {"uarch_x29", reg::uarch_x29},
+        {"uarch_x30", reg::uarch_x30},
+        {"uarch_x31", reg::uarch_x31},
+        {"uarch_pc", reg::uarch_pc},
+        {"uarch_cycle", reg::uarch_cycle},
+        {"uarch_halt_flag", reg::uarch_halt_flag},
     };
-    auto got = g_csr_name.find(name);
-    if (got == g_csr_name.end()) {
-        throw std::domain_error{"invalid csr"};
+    auto got = g_reg_name.find(name);
+    if (got == g_reg_name.end()) {
+        throw std::domain_error{"invalid register"};
     }
     return got->second;
 }
 
-static auto csr_to_name(machine::csr reg) {
-    using csr = machine::csr;
-    switch (reg) {
-        case csr::pc:
+static auto reg_to_name(machine::reg r) {
+    using reg = machine::reg;
+    switch (r) {
+        case reg::x0:
+            return "x0";
+        case reg::x1:
+            return "x1";
+        case reg::x2:
+            return "x2";
+        case reg::x3:
+            return "x3";
+        case reg::x4:
+            return "x4";
+        case reg::x5:
+            return "x5";
+        case reg::x6:
+            return "x6";
+        case reg::x7:
+            return "x7";
+        case reg::x8:
+            return "x8";
+        case reg::x9:
+            return "x9";
+        case reg::x10:
+            return "x10";
+        case reg::x11:
+            return "x11";
+        case reg::x12:
+            return "x12";
+        case reg::x13:
+            return "x13";
+        case reg::x14:
+            return "x14";
+        case reg::x15:
+            return "x15";
+        case reg::x16:
+            return "x16";
+        case reg::x17:
+            return "x17";
+        case reg::x18:
+            return "x18";
+        case reg::x19:
+            return "x19";
+        case reg::x20:
+            return "x20";
+        case reg::x21:
+            return "x21";
+        case reg::x22:
+            return "x22";
+        case reg::x23:
+            return "x23";
+        case reg::x24:
+            return "x24";
+        case reg::x25:
+            return "x25";
+        case reg::x26:
+            return "x26";
+        case reg::x27:
+            return "x27";
+        case reg::x28:
+            return "x28";
+        case reg::x29:
+            return "x29";
+        case reg::x30:
+            return "x30";
+        case reg::x31:
+            return "x31";
+        case reg::f0:
+            return "f0";
+        case reg::f1:
+            return "f1";
+        case reg::f2:
+            return "f2";
+        case reg::f3:
+            return "f3";
+        case reg::f4:
+            return "f4";
+        case reg::f5:
+            return "f5";
+        case reg::f6:
+            return "f6";
+        case reg::f7:
+            return "f7";
+        case reg::f8:
+            return "f8";
+        case reg::f9:
+            return "f9";
+        case reg::f10:
+            return "f10";
+        case reg::f11:
+            return "f11";
+        case reg::f12:
+            return "f12";
+        case reg::f13:
+            return "f13";
+        case reg::f14:
+            return "f14";
+        case reg::f15:
+            return "f15";
+        case reg::f16:
+            return "f16";
+        case reg::f17:
+            return "f17";
+        case reg::f18:
+            return "f18";
+        case reg::f19:
+            return "f19";
+        case reg::f20:
+            return "f20";
+        case reg::f21:
+            return "f21";
+        case reg::f22:
+            return "f22";
+        case reg::f23:
+            return "f23";
+        case reg::f24:
+            return "f24";
+        case reg::f25:
+            return "f25";
+        case reg::f26:
+            return "f26";
+        case reg::f27:
+            return "f27";
+        case reg::f28:
+            return "f28";
+        case reg::f29:
+            return "f29";
+        case reg::f30:
+            return "f30";
+        case reg::f31:
+            return "f31";
+        case reg::pc:
             return "pc";
-        case csr::fcsr:
+        case reg::fcsr:
             return "fcsr";
-        case csr::mvendorid:
+        case reg::mvendorid:
             return "mvendorid";
-        case csr::marchid:
+        case reg::marchid:
             return "marchid";
-        case csr::mimpid:
+        case reg::mimpid:
             return "mimpid";
-        case csr::mcycle:
+        case reg::mcycle:
             return "mcycle";
-        case csr::icycleinstret:
+        case reg::icycleinstret:
             return "icycleinstret";
-        case csr::mstatus:
+        case reg::mstatus:
             return "mstatus";
-        case csr::mtvec:
+        case reg::mtvec:
             return "mtvec";
-        case csr::mscratch:
+        case reg::mscratch:
             return "mscratch";
-        case csr::mepc:
+        case reg::mepc:
             return "mepc";
-        case csr::mcause:
+        case reg::mcause:
             return "mcause";
-        case csr::mtval:
+        case reg::mtval:
             return "mtval";
-        case csr::misa:
+        case reg::misa:
             return "misa";
-        case csr::mie:
+        case reg::mie:
             return "mie";
-        case csr::mip:
+        case reg::mip:
             return "mip";
-        case csr::medeleg:
+        case reg::medeleg:
             return "medeleg";
-        case csr::mideleg:
+        case reg::mideleg:
             return "mideleg";
-        case csr::mcounteren:
+        case reg::mcounteren:
             return "mcounteren";
-        case csr::menvcfg:
+        case reg::menvcfg:
             return "menvcfg";
-        case csr::stvec:
+        case reg::stvec:
             return "stvec";
-        case csr::sscratch:
+        case reg::sscratch:
             return "sscratch";
-        case csr::sepc:
+        case reg::sepc:
             return "sepc";
-        case csr::scause:
+        case reg::scause:
             return "scause";
-        case csr::stval:
+        case reg::stval:
             return "stval";
-        case csr::satp:
+        case reg::satp:
             return "satp";
-        case csr::scounteren:
+        case reg::scounteren:
             return "scounteren";
-        case csr::senvcfg:
+        case reg::senvcfg:
             return "senvcfg";
-        case csr::ilrsc:
+        case reg::ilrsc:
             return "ilrsc";
-        case csr::iflags:
+        case reg::iflags:
             return "iflags";
-        case csr::iunrep:
+        case reg::iflags_prv:
+            return "iflags_prv";
+        case reg::iflags_x:
+            return "iflags_x";
+        case reg::iflags_y:
+            return "iflags_y";
+        case reg::iflags_h:
+            return "iflags_h";
+        case reg::iunrep:
             return "iunrep";
-        case csr::clint_mtimecmp:
+        case reg::clint_mtimecmp:
             return "clint_mtimecmp";
-        case csr::plic_girqpend:
+        case reg::plic_girqpend:
             return "plic_girqpend";
-        case csr::plic_girqsrvd:
+        case reg::plic_girqsrvd:
             return "plic_girqsrvd";
-        case csr::htif_tohost:
+        case reg::htif_tohost:
             return "htif_tohost";
-        case csr::htif_fromhost:
+        case reg::htif_tohost_dev:
+            return "htif_tohost_dev";
+        case reg::htif_tohost_cmd:
+            return "htif_tohost_cmd";
+        case reg::htif_tohost_reason:
+            return "htif_tohost_reason";
+        case reg::htif_tohost_data:
+            return "htif_tohost_data";
+        case reg::htif_fromhost:
             return "htif_fromhost";
-        case csr::htif_ihalt:
+        case reg::htif_fromhost_dev:
+            return "htif_fromhost_dev";
+        case reg::htif_fromhost_cmd:
+            return "htif_fromhost_cmd";
+        case reg::htif_fromhost_reason:
+            return "htif_fromhost_reason";
+        case reg::htif_fromhost_data:
+            return "htif_fromhost_data";
+        case reg::htif_ihalt:
             return "htif_ihalt";
-        case csr::htif_iconsole:
+        case reg::htif_iconsole:
             return "htif_iconsole";
-        case csr::htif_iyield:
+        case reg::htif_iyield:
             return "htif_iyield";
-        case csr::uarch_pc:
+        case reg::uarch_x0:
+            return "uarch_x0";
+        case reg::uarch_x1:
+            return "uarch_x1";
+        case reg::uarch_x2:
+            return "uarch_x2";
+        case reg::uarch_x3:
+            return "uarch_x3";
+        case reg::uarch_x4:
+            return "uarch_x4";
+        case reg::uarch_x5:
+            return "uarch_x5";
+        case reg::uarch_x6:
+            return "uarch_x6";
+        case reg::uarch_x7:
+            return "uarch_x7";
+        case reg::uarch_x8:
+            return "uarch_x8";
+        case reg::uarch_x9:
+            return "uarch_x9";
+        case reg::uarch_x10:
+            return "uarch_x10";
+        case reg::uarch_x11:
+            return "uarch_x11";
+        case reg::uarch_x12:
+            return "uarch_x12";
+        case reg::uarch_x13:
+            return "uarch_x13";
+        case reg::uarch_x14:
+            return "uarch_x14";
+        case reg::uarch_x15:
+            return "uarch_x15";
+        case reg::uarch_x16:
+            return "uarch_x16";
+        case reg::uarch_x17:
+            return "uarch_x17";
+        case reg::uarch_x18:
+            return "uarch_x18";
+        case reg::uarch_x19:
+            return "uarch_x19";
+        case reg::uarch_x20:
+            return "uarch_x20";
+        case reg::uarch_x21:
+            return "uarch_x21";
+        case reg::uarch_x22:
+            return "uarch_x22";
+        case reg::uarch_x23:
+            return "uarch_x23";
+        case reg::uarch_x24:
+            return "uarch_x24";
+        case reg::uarch_x25:
+            return "uarch_x25";
+        case reg::uarch_x26:
+            return "uarch_x26";
+        case reg::uarch_x27:
+            return "uarch_x27";
+        case reg::uarch_x28:
+            return "uarch_x28";
+        case reg::uarch_x29:
+            return "uarch_x29";
+        case reg::uarch_x30:
+            return "uarch_x30";
+        case reg::uarch_x31:
+            return "uarch_x31";
+        case reg::uarch_pc:
             return "uarch_pc";
-        case csr::uarch_cycle:
+        case reg::uarch_cycle:
             return "uarch_cycle";
-        case csr::uarch_halt_flag:
+        case reg::uarch_halt_flag:
             return "uarch_halt_flag";
         default:
-            throw std::domain_error{"invalid csr"};
+            throw std::domain_error{"invalid register"};
             break;
     }
     return "";
@@ -298,9 +623,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uint64_t &value, co
         return;
     }
     auto i = jk.template get<nlohmann::json::number_integer_t>();
-    if (i < 0) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not an unsigned integer");
-    }
+    // in case of negative integers, cast them to the unsigned representation
     value = static_cast<uint64_t>(i);
 }
 
@@ -372,7 +695,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, machine::csr &value, const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, machine::reg &value, const std::string &path) {
     if (!contains(j, key)) {
         return;
     }
@@ -380,13 +703,13 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine::csr &value
     if (!jk.is_string()) {
         throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a string");
     }
-    value = csr_from_name(jk.template get<std::string>());
+    value = reg_from_name(jk.template get<std::string>());
 }
 
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, machine::csr &value,
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, machine::reg &value,
     const std::string &path);
 
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, machine::csr &value,
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, machine::reg &value,
     const std::string &path);
 
 template <typename K>
@@ -460,8 +783,8 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_runtime_con
     if (!contains(j, key)) {
         return;
     }
-    ju_get_field(j[key], "concurrency"s, value.concurrency, path + to_string(key) + "/");
-    ju_get_field(j[key], "htif"s, value.htif, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "concurrency"s, value.concurrency, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "htif"s, value.htif, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "skip_root_hash_check"s, value.skip_root_hash_check, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "skip_root_hash_store"s, value.skip_root_hash_store, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "skip_version_check"s, value.skip_version_check, path + to_string(key) + "/");
@@ -554,10 +877,10 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key,
         throw std::invalid_argument("field \""s + new_path + "sibling_hashes\" not an array"s);
     }
     const auto sibling_hashes_base = path + "sibling_hashes/";
-    for (int log2_size = proof.get_log2_root_size() - 1; log2_size >= proof.get_log2_target_size(); --log2_size) {
+    for (int log2_size = proof.get_log2_target_size(), i = 0; log2_size < proof.get_log2_root_size();
+         ++log2_size, ++i) {
         machine_merkle_tree::proof_type::hash_type sibling_hash;
-        ju_get_field(sh, static_cast<uint64_t>(proof.get_log2_root_size() - 1 - log2_size), sibling_hash,
-            sibling_hashes_base);
+        ju_get_field(sh, i, sibling_hash, sibling_hashes_base);
         proof.set_sibling_hash(sibling_hash, log2_size);
     }
 }
@@ -646,7 +969,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, con
     access.set_type(type);
     uint64_t log2_size = 0;
     ju_get_field(jk, "log2_size"s, log2_size, new_path);
-    if (log2_size > INT_MAX) {
+    if (log2_size >= 64) {
         throw std::domain_error("field \""s + new_path + "log2_size\" is out of bounds");
     }
     access.set_log2_size(static_cast<int>(log2_size));
@@ -759,13 +1082,11 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constru
     }
     const auto &jk = j[key];
     const auto new_path = path + to_string(key) + "/";
-    bool has_proofs = false;
-    ju_get_field(jk, "has_proofs"s, has_proofs, new_path);
     bool has_annotations = false;
     ju_get_field(jk, "has_annotations"s, has_annotations, new_path);
     bool has_large_data = false;
     ju_get_field(jk, "has_large_data"s, has_large_data, new_path);
-    optional.emplace(has_proofs, has_annotations, has_large_data);
+    optional.emplace(has_annotations, has_large_data);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
@@ -790,12 +1111,10 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constru
     }
     std::vector<access> accesses;
     ju_get_vector_like_field(jk, "accesses"s, accesses, new_path);
-    if (log_type.value().has_proofs()) {
-        for (unsigned i = 0; i < accesses.size(); ++i) {
-            if (!accesses[i].get_sibling_hashes().has_value()) {
-                throw std::invalid_argument(
-                    "field \""s + new_path + "accesses/" + to_string(i) + "\" missing sibling hashes");
-            }
+    for (unsigned i = 0; i < accesses.size(); ++i) {
+        if (!accesses[i].get_sibling_hashes().has_value()) {
+            throw std::invalid_argument(
+                "field \""s + new_path + "accesses/" + to_string(i) + "\" missing sibling hashes");
         }
     }
     std::vector<bracket_note> brackets;
@@ -830,8 +1149,70 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, processor_config &v
     }
     const auto &jconfig = j[key];
     const auto new_path = path + to_string(key) + "/";
-    ju_get_opt_array_like_field(jconfig, "x"s, value.x, new_path);
-    ju_get_opt_array_like_field(jconfig, "f"s, value.f, new_path);
+    ju_get_opt_field(jconfig, "x0"s, value.x[0], new_path);
+    ju_get_opt_field(jconfig, "x1"s, value.x[1], new_path);
+    ju_get_opt_field(jconfig, "x2"s, value.x[2], new_path);
+    ju_get_opt_field(jconfig, "x3"s, value.x[3], new_path);
+    ju_get_opt_field(jconfig, "x4"s, value.x[4], new_path);
+    ju_get_opt_field(jconfig, "x5"s, value.x[5], new_path);
+    ju_get_opt_field(jconfig, "x6"s, value.x[6], new_path);
+    ju_get_opt_field(jconfig, "x7"s, value.x[7], new_path);
+    ju_get_opt_field(jconfig, "x8"s, value.x[8], new_path);
+    ju_get_opt_field(jconfig, "x9"s, value.x[9], new_path);
+    ju_get_opt_field(jconfig, "x10"s, value.x[10], new_path);
+    ju_get_opt_field(jconfig, "x11"s, value.x[11], new_path);
+    ju_get_opt_field(jconfig, "x12"s, value.x[12], new_path);
+    ju_get_opt_field(jconfig, "x13"s, value.x[13], new_path);
+    ju_get_opt_field(jconfig, "x14"s, value.x[14], new_path);
+    ju_get_opt_field(jconfig, "x15"s, value.x[15], new_path);
+    ju_get_opt_field(jconfig, "x16"s, value.x[16], new_path);
+    ju_get_opt_field(jconfig, "x17"s, value.x[17], new_path);
+    ju_get_opt_field(jconfig, "x18"s, value.x[18], new_path);
+    ju_get_opt_field(jconfig, "x19"s, value.x[19], new_path);
+    ju_get_opt_field(jconfig, "x20"s, value.x[20], new_path);
+    ju_get_opt_field(jconfig, "x21"s, value.x[21], new_path);
+    ju_get_opt_field(jconfig, "x22"s, value.x[22], new_path);
+    ju_get_opt_field(jconfig, "x23"s, value.x[23], new_path);
+    ju_get_opt_field(jconfig, "x24"s, value.x[24], new_path);
+    ju_get_opt_field(jconfig, "x25"s, value.x[25], new_path);
+    ju_get_opt_field(jconfig, "x26"s, value.x[26], new_path);
+    ju_get_opt_field(jconfig, "x27"s, value.x[27], new_path);
+    ju_get_opt_field(jconfig, "x28"s, value.x[28], new_path);
+    ju_get_opt_field(jconfig, "x29"s, value.x[29], new_path);
+    ju_get_opt_field(jconfig, "x30"s, value.x[30], new_path);
+    ju_get_opt_field(jconfig, "x31"s, value.x[31], new_path);
+    ju_get_opt_field(jconfig, "f0"s, value.f[0], new_path);
+    ju_get_opt_field(jconfig, "f1"s, value.f[1], new_path);
+    ju_get_opt_field(jconfig, "f2"s, value.f[2], new_path);
+    ju_get_opt_field(jconfig, "f3"s, value.f[3], new_path);
+    ju_get_opt_field(jconfig, "f4"s, value.f[4], new_path);
+    ju_get_opt_field(jconfig, "f5"s, value.f[5], new_path);
+    ju_get_opt_field(jconfig, "f6"s, value.f[6], new_path);
+    ju_get_opt_field(jconfig, "f7"s, value.f[7], new_path);
+    ju_get_opt_field(jconfig, "f8"s, value.f[8], new_path);
+    ju_get_opt_field(jconfig, "f9"s, value.f[9], new_path);
+    ju_get_opt_field(jconfig, "f10"s, value.f[10], new_path);
+    ju_get_opt_field(jconfig, "f11"s, value.f[11], new_path);
+    ju_get_opt_field(jconfig, "f12"s, value.f[12], new_path);
+    ju_get_opt_field(jconfig, "f13"s, value.f[13], new_path);
+    ju_get_opt_field(jconfig, "f14"s, value.f[14], new_path);
+    ju_get_opt_field(jconfig, "f15"s, value.f[15], new_path);
+    ju_get_opt_field(jconfig, "f16"s, value.f[16], new_path);
+    ju_get_opt_field(jconfig, "f17"s, value.f[17], new_path);
+    ju_get_opt_field(jconfig, "f18"s, value.f[18], new_path);
+    ju_get_opt_field(jconfig, "f19"s, value.f[19], new_path);
+    ju_get_opt_field(jconfig, "f20"s, value.f[20], new_path);
+    ju_get_opt_field(jconfig, "f21"s, value.f[21], new_path);
+    ju_get_opt_field(jconfig, "f22"s, value.f[22], new_path);
+    ju_get_opt_field(jconfig, "f23"s, value.f[23], new_path);
+    ju_get_opt_field(jconfig, "f24"s, value.f[24], new_path);
+    ju_get_opt_field(jconfig, "f25"s, value.f[25], new_path);
+    ju_get_opt_field(jconfig, "f26"s, value.f[26], new_path);
+    ju_get_opt_field(jconfig, "f27"s, value.f[27], new_path);
+    ju_get_opt_field(jconfig, "f28"s, value.f[28], new_path);
+    ju_get_opt_field(jconfig, "f29"s, value.f[29], new_path);
+    ju_get_opt_field(jconfig, "f30"s, value.f[30], new_path);
+    ju_get_opt_field(jconfig, "f31"s, value.f[31], new_path);
     ju_get_opt_field(jconfig, "pc"s, value.pc, new_path);
     ju_get_opt_field(jconfig, "fcsr"s, value.fcsr, new_path);
     ju_get_opt_field(jconfig, "mvendorid"s, value.mvendorid, new_path);
@@ -967,6 +1348,80 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, virtio_device_config &value, const std::string &path) {
+    if (!contains(j, key)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    std::string type;
+    ju_get_opt_field(jconfig, "type"s, type, new_path);
+    if (type == "console") {
+        value.emplace<virtio_console_config>(virtio_console_config{});
+    } else if (type == "p9fs") {
+        virtio_p9fs_config p9fs_config;
+        ju_get_opt_field(jconfig, "tag"s, p9fs_config.tag, new_path);
+        ju_get_opt_field(jconfig, "host_directory"s, p9fs_config.host_directory, new_path);
+        value.emplace<virtio_p9fs_config>(std::move(p9fs_config));
+    } else if (type == "net-user") {
+        virtio_net_user_config net_user_config;
+        if (jconfig.contains("hostfwd")) {
+            const auto &jhostfwds = jconfig["hostfwd"];
+            if (!jhostfwds.is_array()) {
+                throw std::invalid_argument("field \""s + new_path + "hostfwd\" not an array"s);
+            }
+            for (const auto &el : jhostfwds.items()) {
+                const auto &jhostfwd = el.value();
+                const auto hostfwd_path = new_path + "hostfwd/"s + el.key() + "/"s;
+                virtio_hostfwd_config hostfwd;
+                ju_get_opt_field(jhostfwd, "is_udp"s, hostfwd.is_udp, hostfwd_path);
+                ju_get_opt_field(jhostfwd, "host_ip"s, hostfwd.host_ip, hostfwd_path);
+                ju_get_opt_field(jhostfwd, "guest_ip"s, hostfwd.guest_ip, hostfwd_path);
+                ju_get_opt_field(jhostfwd, "host_port"s, hostfwd.host_port, hostfwd_path);
+                ju_get_opt_field(jhostfwd, "guest_port"s, hostfwd.guest_port, hostfwd_path);
+                net_user_config.hostfwd.emplace_back(std::move(hostfwd));
+            }
+        }
+        value.emplace<virtio_net_user_config>(std::move(net_user_config));
+    } else if (type == "net-tuntap") {
+        virtio_net_tuntap_config net_tuntap_config;
+        ju_get_opt_field(jconfig, "iface"s, net_tuntap_config.iface, new_path);
+        value.emplace<virtio_net_tuntap_config>(std::move(net_tuntap_config));
+    } else {
+        throw std::domain_error("invalid virtio device type \""s + type + "\""s);
+    }
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, virtio_device_config &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    virtio_device_config &value, const std::string &path);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, virtio_configs &value, const std::string &path) {
+    if (!contains(j, key)) {
+        return;
+    }
+    const auto &jvirtio = j[key];
+    if (!jvirtio.is_array()) {
+        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not an array"s);
+    }
+    const auto new_path = path + to_string(key) + "/";
+    value.resize(0);
+    for (uint64_t i = 0; i < jvirtio.size(); ++i) {
+        value.push_back({});
+        ju_get_opt_field(jvirtio, i, value.back(), new_path);
+    }
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, virtio_configs &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, virtio_configs &value,
+    const std::string &path);
+
+template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, tlb_config &value, const std::string &path) {
     if (!contains(j, key)) {
         return;
@@ -1059,7 +1514,38 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_processor_con
     }
     const auto &jconfig = j[key];
     const auto new_path = path + to_string(key) + "/";
-    ju_get_opt_array_like_field(jconfig, "x"s, value.x, new_path);
+    ju_get_opt_field(jconfig, "x0"s, value.x[0], new_path);
+    ju_get_opt_field(jconfig, "x1"s, value.x[1], new_path);
+    ju_get_opt_field(jconfig, "x2"s, value.x[2], new_path);
+    ju_get_opt_field(jconfig, "x3"s, value.x[3], new_path);
+    ju_get_opt_field(jconfig, "x4"s, value.x[4], new_path);
+    ju_get_opt_field(jconfig, "x5"s, value.x[5], new_path);
+    ju_get_opt_field(jconfig, "x6"s, value.x[6], new_path);
+    ju_get_opt_field(jconfig, "x7"s, value.x[7], new_path);
+    ju_get_opt_field(jconfig, "x8"s, value.x[8], new_path);
+    ju_get_opt_field(jconfig, "x9"s, value.x[9], new_path);
+    ju_get_opt_field(jconfig, "x10"s, value.x[10], new_path);
+    ju_get_opt_field(jconfig, "x11"s, value.x[11], new_path);
+    ju_get_opt_field(jconfig, "x12"s, value.x[12], new_path);
+    ju_get_opt_field(jconfig, "x13"s, value.x[13], new_path);
+    ju_get_opt_field(jconfig, "x14"s, value.x[14], new_path);
+    ju_get_opt_field(jconfig, "x15"s, value.x[15], new_path);
+    ju_get_opt_field(jconfig, "x16"s, value.x[16], new_path);
+    ju_get_opt_field(jconfig, "x17"s, value.x[17], new_path);
+    ju_get_opt_field(jconfig, "x18"s, value.x[18], new_path);
+    ju_get_opt_field(jconfig, "x19"s, value.x[19], new_path);
+    ju_get_opt_field(jconfig, "x20"s, value.x[20], new_path);
+    ju_get_opt_field(jconfig, "x21"s, value.x[21], new_path);
+    ju_get_opt_field(jconfig, "x22"s, value.x[22], new_path);
+    ju_get_opt_field(jconfig, "x23"s, value.x[23], new_path);
+    ju_get_opt_field(jconfig, "x24"s, value.x[24], new_path);
+    ju_get_opt_field(jconfig, "x25"s, value.x[25], new_path);
+    ju_get_opt_field(jconfig, "x26"s, value.x[26], new_path);
+    ju_get_opt_field(jconfig, "x27"s, value.x[27], new_path);
+    ju_get_opt_field(jconfig, "x28"s, value.x[28], new_path);
+    ju_get_opt_field(jconfig, "x29"s, value.x[29], new_path);
+    ju_get_opt_field(jconfig, "x30"s, value.x[30], new_path);
+    ju_get_opt_field(jconfig, "x31"s, value.x[31], new_path);
     ju_get_opt_field(jconfig, "pc"s, value.pc, new_path);
     ju_get_opt_field(jconfig, "cycle"s, value.cycle, new_path);
     ju_get_opt_field(jconfig, "halt_flag"s, value.halt_flag, new_path);
@@ -1115,6 +1601,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_config &val
     ju_get_opt_field(config, "ram"s, value.ram, new_path);
     ju_get_opt_field(config, "dtb"s, value.dtb, new_path);
     ju_get_opt_field(config, "flash_drive"s, value.flash_drive, new_path);
+    ju_get_opt_field(config, "virtio"s, value.virtio, new_path);
     ju_get_opt_field(config, "tlb"s, value.tlb, new_path);
     ju_get_opt_field(config, "clint"s, value.clint, new_path);
     ju_get_opt_field(config, "plic"s, value.plic, new_path);
@@ -1160,8 +1647,25 @@ template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
     machine_memory_range_descrs &value, const std::string &path);
 
-void to_json(nlohmann::json &j, const machine::csr &csr) {
-    j = csr_to_name(csr);
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, fork_result &value, const std::string &path) {
+    if (!contains(j, key)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    ju_get_opt_field(jconfig, "address"s, value.address, new_path);
+    ju_get_opt_field(jconfig, "pid"s, value.pid, new_path);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, fork_result &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, fork_result &value,
+    const std::string &path);
+
+void to_json(nlohmann::json &j, const machine::reg &reg) {
+    j = reg_to_name(reg);
 }
 
 void to_json(nlohmann::json &j, const machine_merkle_tree::hash_type &h) {
@@ -1176,7 +1680,7 @@ void to_json(nlohmann::json &j, const std::vector<machine_merkle_tree::hash_type
 
 void to_json(nlohmann::json &j, const machine_merkle_tree::proof_type &p) {
     nlohmann::json s = nlohmann::json::array();
-    for (int log2_size = p.get_log2_root_size() - 1; log2_size >= p.get_log2_target_size(); --log2_size) {
+    for (int log2_size = p.get_log2_target_size(); log2_size < p.get_log2_root_size(); ++log2_size) {
         s.push_back(encode_base64(p.get_sibling_hash(log2_size)));
     }
     j = nlohmann::json{{"target_address", p.get_target_address()}, {"log2_target_size", p.get_log2_target_size()},
@@ -1237,8 +1741,7 @@ void to_json(nlohmann::json &j, const std::vector<access> &as) {
 }
 
 void to_json(nlohmann::json &j, const access_log::type &log_type) {
-    j = nlohmann::json{{"has_proofs", log_type.has_proofs()}, {"has_annotations", log_type.has_annotations()},
-        {"has_large_data", log_type.has_large_data()}};
+    j = nlohmann::json{{"has_annotations", log_type.has_annotations()}, {"has_large_data", log_type.has_large_data()}};
 }
 
 void to_json(nlohmann::json &j, const access_log &log) {
@@ -1259,7 +1762,21 @@ void to_json(nlohmann::json &j, const cmio_buffer_config &config) {
 }
 
 void to_json(nlohmann::json &j, const processor_config &config) {
-    j = nlohmann::json{{"x", config.x}, {"f", config.f}, {"pc", config.pc}, {"fcsr", config.fcsr},
+    j = nlohmann::json{{"x0", config.x[0]}, {"x1", config.x[1]}, {"x2", config.x[2]}, {"x3", config.x[3]},
+        {"x4", config.x[4]}, {"x5", config.x[5]}, {"x6", config.x[6]}, {"x7", config.x[7]}, {"x8", config.x[8]},
+        {"x9", config.x[9]}, {"x10", config.x[10]}, {"x11", config.x[11]}, {"x12", config.x[12]}, {"x13", config.x[13]},
+        {"x14", config.x[14]}, {"x15", config.x[15]}, {"x16", config.x[16]}, {"x17", config.x[17]},
+        {"x18", config.x[18]}, {"x19", config.x[19]}, {"x20", config.x[20]}, {"x21", config.x[21]},
+        {"x22", config.x[22]}, {"x23", config.x[23]}, {"x24", config.x[24]}, {"x25", config.x[25]},
+        {"x26", config.x[26]}, {"x27", config.x[27]}, {"x28", config.x[28]}, {"x29", config.x[29]},
+        {"x30", config.x[30]}, {"x31", config.x[31]}, {"f0", config.f[0]}, {"f1", config.f[1]}, {"f2", config.f[2]},
+        {"f3", config.f[3]}, {"f4", config.f[4]}, {"f5", config.f[5]}, {"f6", config.f[6]}, {"f7", config.f[7]},
+        {"f8", config.f[8]}, {"f9", config.f[9]}, {"f10", config.f[10]}, {"f11", config.f[11]}, {"f12", config.f[12]},
+        {"f13", config.f[13]}, {"f14", config.f[14]}, {"f15", config.f[15]}, {"f16", config.f[16]},
+        {"f17", config.f[17]}, {"f18", config.f[18]}, {"f19", config.f[19]}, {"f20", config.f[20]},
+        {"f21", config.f[21]}, {"f22", config.f[22]}, {"f23", config.f[23]}, {"f24", config.f[24]},
+        {"f25", config.f[25]}, {"f26", config.f[26]}, {"f27", config.f[27]}, {"f28", config.f[28]},
+        {"f29", config.f[29]}, {"f30", config.f[30]}, {"f31", config.f[31]}, {"pc", config.pc}, {"fcsr", config.fcsr},
         {"mvendorid", config.mvendorid}, {"marchid", config.marchid}, {"mimpid", config.mimpid},
         {"mcycle", config.mcycle}, {"icycleinstret", config.icycleinstret}, {"mstatus", config.mstatus},
         {"mtvec", config.mtvec}, {"mscratch", config.mscratch}, {"mepc", config.mepc}, {"mcause", config.mcause},
@@ -1274,6 +1791,43 @@ void to_json(nlohmann::json &j, const flash_drive_configs &fs) {
     j = nlohmann::json::array();
     std::transform(fs.cbegin(), fs.cend(), std::back_inserter(j),
         [](const memory_range_config &m) -> nlohmann::json { return m; });
+}
+
+void to_json(nlohmann::json &j, const virtio_device_config &config) {
+    std::visit(
+        [&](const auto &vdev_config) {
+            using T = std::decay_t<decltype(vdev_config)>;
+            if constexpr (std::is_same_v<T, cartesi::virtio_console_config>) {
+                j = nlohmann::json{{"type", "console"}};
+            } else if constexpr (std::is_same_v<T, cartesi::virtio_p9fs_config>) {
+                j = nlohmann::json{{"type", "p9fs"}, {"tag", vdev_config.tag},
+                    {"host_directory", vdev_config.host_directory}};
+            } else if constexpr (std::is_same_v<T, cartesi::virtio_net_user_config>) {
+                nlohmann::json jhostfwd = nlohmann::json::array();
+                std::transform(vdev_config.hostfwd.cbegin(), vdev_config.hostfwd.cend(), std::back_inserter(jhostfwd),
+                    [](const virtio_hostfwd_config &h) -> nlohmann::json {
+                        return nlohmann::json{
+                            {"is_udp", h.is_udp},
+                            {"host_ip", h.host_ip},
+                            {"guest_ip", h.guest_ip},
+                            {"host_port", h.host_port},
+                            {"guest_port", h.guest_port},
+                        };
+                    });
+                j = nlohmann::json{{"type", "net-user"}, {"hostfwd", std::move(jhostfwd)}};
+            } else if constexpr (std::is_same_v<T, cartesi::virtio_net_tuntap_config>) {
+                j = nlohmann::json{{"type", "net-tuntap"}, {"iface", vdev_config.iface}};
+            } else {
+                throw std::domain_error("invalid virtio device configuration");
+            }
+        },
+        config);
+}
+
+void to_json(nlohmann::json &j, const virtio_configs &vs) {
+    j = nlohmann::json::array();
+    std::transform(vs.cbegin(), vs.cend(), std::back_inserter(j),
+        [](const virtio_device_config &v) -> nlohmann::json { return v; });
 }
 
 void to_json(nlohmann::json &j, const ram_config &config) {
@@ -1330,7 +1884,38 @@ void to_json(nlohmann::json &j, const cmio_config &config) {
 
 void to_json(nlohmann::json &j, const uarch_processor_config &config) {
     j = nlohmann::json{
-        {"x", config.x},
+        {"x0", config.x[0]},
+        {"x1", config.x[1]},
+        {"x2", config.x[2]},
+        {"x3", config.x[3]},
+        {"x4", config.x[4]},
+        {"x5", config.x[5]},
+        {"x6", config.x[6]},
+        {"x7", config.x[7]},
+        {"x8", config.x[8]},
+        {"x9", config.x[9]},
+        {"x10", config.x[10]},
+        {"x11", config.x[11]},
+        {"x12", config.x[12]},
+        {"x13", config.x[13]},
+        {"x14", config.x[14]},
+        {"x15", config.x[15]},
+        {"x16", config.x[16]},
+        {"x17", config.x[17]},
+        {"x18", config.x[18]},
+        {"x19", config.x[19]},
+        {"x20", config.x[20]},
+        {"x21", config.x[21]},
+        {"x22", config.x[22]},
+        {"x23", config.x[23]},
+        {"x24", config.x[24]},
+        {"x25", config.x[25]},
+        {"x26", config.x[26]},
+        {"x27", config.x[27]},
+        {"x28", config.x[28]},
+        {"x29", config.x[29]},
+        {"x30", config.x[30]},
+        {"x31", config.x[31]},
         {"pc", config.pc},
         {"cycle", config.cycle},
         {"halt_flag", config.halt_flag},
@@ -1356,6 +1941,7 @@ void to_json(nlohmann::json &j, const machine_config &config) {
         {"ram", config.ram},
         {"dtb", config.dtb},
         {"flash_drive", config.flash_drive},
+        {"virtio", config.virtio},
         {"tlb", config.tlb},
         {"clint", config.clint},
         {"plic", config.plic},
@@ -1396,6 +1982,20 @@ void to_json(nlohmann::json &j, const machine_memory_range_descrs &mrds) {
     j = nlohmann::json::array();
     std::transform(mrds.cbegin(), mrds.cend(), std::back_inserter(j),
         [](const auto &a) -> nlohmann::json { return a; });
+}
+
+void to_json(nlohmann::json &j, const fork_result &fork_result) {
+    j = nlohmann::json{{"address", fork_result.address}, {"pid", fork_result.pid}};
+}
+
+void to_json(nlohmann::json &j, const semantic_version &version) {
+    j = nlohmann::json{
+        {"major", version.major},
+        {"minor", version.minor},
+        {"patch", version.patch},
+        {"pre_release", version.pre_release},
+        {"build", version.build},
+    };
 }
 
 } // namespace cartesi

@@ -25,12 +25,6 @@ local MAX_UARCH_CYCLE = -1
 
 local function build_machine()
     local config = {
-        processor = {
-            -- Request automatic default values for versioning CSRs
-            mimpid = -1,
-            marchid = -1,
-            mvendorid = -1,
-        },
         ram = {
             image_filename = test_util.tests_path .. "mcycle_overflow.bin",
             length = 32 << 20,
@@ -54,7 +48,7 @@ end
 print("testing mcycle overflow")
 
 do_test("machine should run up to mcycle limit", function(machine)
-    machine:write_mcycle(MAX_MCYCLE - 5)
+    machine:write_reg("mcycle", MAX_MCYCLE - 5)
     -- Run once to trigger an interrupt, which might cause an overflow on the
     -- next call to machine:run
     assert(machine:run(MAX_MCYCLE - 4) == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
@@ -63,7 +57,7 @@ do_test("machine should run up to mcycle limit", function(machine)
 end)
 
 do_test("machine run shouldn't change state in max mcycle", function(machine)
-    machine:write_mcycle(MAX_MCYCLE)
+    machine:write_reg("mcycle", MAX_MCYCLE)
     local hash_before = machine:get_root_hash()
     assert(machine:run(MAX_MCYCLE) == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
     local hash_after = machine:get_root_hash()
@@ -71,7 +65,7 @@ do_test("machine run shouldn't change state in max mcycle", function(machine)
 end)
 
 do_test("run_uarch shouldn't change state at max uarch_cycle", function(machine)
-    machine:write_uarch_cycle(MAX_UARCH_CYCLE)
+    machine:write_reg("uarch_cycle", MAX_UARCH_CYCLE)
     assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
     local hash_before = machine:get_root_hash()
     assert(machine:run_uarch(MAX_UARCH_CYCLE) == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_CYCLE)
@@ -80,19 +74,17 @@ do_test("run_uarch shouldn't change state at max uarch_cycle", function(machine)
     assert(hash_before == hash_after)
 end)
 
-for _, proofs in ipairs({ true, false }) do
-    do_test("machine step should do nothing on max mcycle [proofs=" .. tostring(proofs) .. "]", function(machine)
-        machine:write_uarch_cycle(MAX_UARCH_CYCLE)
-        local log = machine:log_uarch_step({ proofs = proofs })
-        assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
-        assert(#log.accesses == 1)
-        assert(log.accesses[1].type == "read")
-        assert(log.accesses[1].address == cartesi.UARCH_SHADOW_START_ADDRESS + 8) -- address of uarch_cycle
-        assert(#log.accesses[1].read == 32)
-        -- log data has 32 bytes. The uarch_cycle is the 2nd 8-byte word
-        assert(log.accesses[1].read:sub(9, 16) == string.pack("J", MAX_UARCH_CYCLE))
-        assert((log.accesses[1].sibling_hashes ~= nil) == proofs)
-    end)
-end
+do_test("machine step should do nothing on max mcycle", function(machine)
+    machine:write_reg("uarch_cycle", MAX_UARCH_CYCLE)
+    local log = machine:log_step_uarch()
+    assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
+    assert(#log.accesses == 1)
+    assert(log.accesses[1].type == "read")
+    assert(log.accesses[1].address == cartesi.UARCH_SHADOW_START_ADDRESS + 8) -- address of uarch_cycle
+    assert(#log.accesses[1].read == 32)
+    -- log data has 32 bytes. The uarch_cycle is the 2nd 8-byte word
+    assert(log.accesses[1].read:sub(9, 16) == string.pack("J", MAX_UARCH_CYCLE))
+    assert(log.accesses[1].sibling_hashes ~= nil)
+end)
 
 print("passed all")

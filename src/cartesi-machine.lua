@@ -31,7 +31,7 @@ local output_hashes = {}
 
 -- Print help and exit
 local function help()
-    stderr(
+    print(string.format(
         [=[
 Usage:
 
@@ -434,22 +434,31 @@ where options are:
     this option implies --initial-hash and --final-hash.
     (default: none)
 
-  --log-uarch-step
+  --log-step-uarch
     advance one micro step and print access log.
 
-  --log-uarch-reset
+  --log-reset-uarch
     reset the microarchitecture state and print the access log.
 
-  --auto-uarch-reset
+  --auto-reset-uarch
     reset uarch automatically after halt.
 
   --store-config[=<filename>]
-    store initial machine config to <filename>. If <filename> is omitted,
-    print the initial machine config to stderr.
+    store initial machine config as Lua script to <filename>.
+    If <filename> is omitted, print the initial machine config to stdout.
+
+  --store-json-config[=<filename>]
+    store initial machine config as JSON to <filename>.
+    If <filename> is omitted, print the initial machine config to stdout.
 
   --load-config=<filename>
-    load initial machine config from <filename>. If a field is omitted on
-    machine_config table, it will fall back into the respective command-line
+    load initial machine config from Lua script <filename>. If a field is omitted on
+    the config table, it will fall back into the respective command-line
+    argument or into the default value.
+
+  --load-json-config=<filename>
+    load initial machine config from JSON <filename>. If a field is omitted on
+    the config table, it will fall back into the respective command-line
     argument or into the default value.
 
   --uarch-ram-image=<filename>
@@ -537,10 +546,9 @@ or a left shift (e.g., 2 << 20).
    unix:<path>
 
 <host> can be a host name, IPv4 or IPv6 address.
-
 ]=],
         arg[0]
-    )
+    ))
     os.exit()
 end
 
@@ -552,6 +560,7 @@ local remote_shutdown = false
 local remote_create = true
 local remote_destroy = true
 local perform_rollbacks = true
+local default_config = cartesi.machine.get_default_config()
 local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
 local flash_image_filename = { root = images_path .. "rootfs.ext2" }
 local flash_label_order = { "root" }
@@ -571,9 +580,7 @@ local memory_range_replace = {}
 local ram_image_filename = images_path .. "linux.bin"
 local ram_length = 128 << 20 -- 128MB
 local dtb_image_filename = nil
-local bootargs = "no4lvl quiet earlycon=sbi console=hvc0"
-    -- rootfs related arguments must come at the end to be replaced by --no-root-flash-drive
-    .. " rootfstype=ext2 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"
+local bootargs = default_config.dtb.bootargs
 local init_splash = true
 local append_bootargs = ""
 local append_init = ""
@@ -599,14 +606,16 @@ local periodic_hashes_start = 0
 local dump_memory_ranges = false
 local max_mcycle = math.maxinteger
 local max_uarch_cycle = 0
-local log_uarch_step = false
-local auto_uarch_reset = false
-local log_uarch_reset = false
+local log_step_uarch = false
+local auto_reset_uarch = false
+local log_reset_uarch = false
 local store_dir
 local load_dir
 local cmdline_opts_finished = false
 local store_config = false
+local store_json_config = false
 local load_config = false
+local load_json_config = false
 local gdb_address
 local exec_arguments = {}
 local assert_rolling_template = false
@@ -1211,7 +1220,7 @@ local options = {
             flash_length.root = nil
             flash_shared.root = nil
             table.remove(flash_label_order, 1)
-            bootargs = bootargs:gsub(" rootfstype=.*$", "")
+            bootargs = bootargs:gsub(" root=$", "")
             return true
         end,
     },
@@ -1240,18 +1249,18 @@ local options = {
         end,
     },
     {
-        "^%-%-log%-uarch%-step$",
+        "^%-%-log%-step%-uarch$",
         function(all)
             if not all then return false end
-            log_uarch_step = true
+            log_step_uarch = true
             return true
         end,
     },
     {
-        "^%-%-log%-uarch%-reset$",
+        "^%-%-log%-reset%-uarch$",
         function(all)
             if not all then return false end
-            log_uarch_reset = true
+            log_reset_uarch = true
             return true
         end,
     },
@@ -1272,10 +1281,10 @@ local options = {
         end,
     },
     {
-        "^%-%-auto%-uarch%-reset$",
+        "^%-%-auto%-reset%-uarch$",
         function(all)
             if not all then return false end
-            auto_uarch_reset = true
+            auto_reset_uarch = true
             return true
         end,
     },
@@ -1383,8 +1392,25 @@ local options = {
             if o == "=" then
                 if not v or #v < 1 then return false end
                 store_config = v
+            elseif #v ~= 0 then
+                return false
             else
-                store_config = stderr
+                store_config = true
+            end
+            return true
+        end,
+    },
+    {
+        "^%-%-store%-json%-config(%=?)(%g*)$",
+        function(o, v)
+            if not o then return false end
+            if o == "=" then
+                if not v or #v < 1 then return false end
+                store_json_config = v
+            elseif #v ~= 0 then
+                return false
+            else
+                store_json_config = true
             end
             return true
         end,
@@ -1394,6 +1420,14 @@ local options = {
         function(o)
             if not o or #o < 1 then return false end
             load_config = o
+            return true
+        end,
+    },
+    {
+        "^%-%-load%-json%-config%=(%g*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            load_json_config = o
             return true
         end,
     },
@@ -1538,216 +1572,6 @@ local function print_root_hash(machine, print)
     (print or stderr)("%u: %s\n", machine:read_mcycle(), util.hexhash(machine:get_root_hash()))
 end
 
-local function store_memory_range(r, indent, output)
-    local function comment_default(u, v) output(u == v and " -- default\n" or "\n") end
-    output("{\n")
-    output("%s  start = 0x%x,", indent, r.start)
-    comment_default(0, r.start)
-    output("%s  length = 0x%x,", indent, r.length)
-    comment_default(0, r.length)
-    if r.image_filename and r.image_filename ~= "" then
-        output("%s  image_filename = %q,\n", indent, r.image_filename)
-    end
-    output("%s  shared = %s,", indent, tostring(r.shared or false))
-    comment_default(false, r.shared)
-    output("%s},\n", indent)
-end
-
-local function store_cmio_buffer(r, indent, output)
-    local function comment_default(u, v) output(u == v and " -- default\n" or "\n") end
-    output("{\n")
-    if r.image_filename and r.image_filename ~= "" then
-        output("%s  image_filename = %q,\n", indent, r.image_filename)
-    end
-    output("%s  shared = %s,", indent, tostring(r.shared or false))
-    comment_default(false, r.shared)
-    output("%s},\n", indent)
-end
-
-local function store_value(key, value, indent, output)
-    -- skip empty values
-    if value == nil or (type(value) == "table" and next(value) == nil) then return end
-    -- add key
-    if key ~= nil then
-        output("%s%s = ", indent, key)
-    else
-        output("%s", indent)
-    end
-    -- add value
-    if type(value) == "table" then
-        output("{\n", key)
-        if type(next(value)) == "string" then
-            for k, v in pairs(value) do
-                store_value(k, v, "  " .. indent, output)
-            end
-        elseif #value > 0 then
-            for _, v in ipairs(value) do
-                store_value(nil, v, "  " .. indent, output)
-            end
-        end
-        output("%s},\n", indent)
-    elseif type(value) == "string" then
-        output('"%s",\n', value)
-    else
-        output("%s,\n", value)
-    end
-end
-
-local function store_machine_config(config, output)
-    local function comment_default(u, v) output(u == v and " -- default\n" or "\n") end
-
-    local def
-    if remote then
-        def = remote.machine.get_default_config()
-    else
-        def = cartesi.machine.get_default_config()
-    end
-    output("return {\n")
-    output("  processor = {\n")
-    output("    x = {\n")
-    local processor = config.processor or { x = {} }
-    for i = 1, 31 do
-        local xi = processor.x[i] or def.processor.x[i]
-        output("      0x%x,", xi)
-        comment_default(xi, def.processor.x[i])
-    end
-    output("    },\n")
-    output("    f = {\n")
-    for i = 0, 31 do
-        local xi = processor.f[i] or def.processor.f[i]
-        if i == 0 then
-            output("      [0] = 0x%x,", xi)
-        else
-            output("      0x%x,", xi)
-        end
-        comment_default(xi, def.processor.f[i])
-    end
-    output("    },\n")
-    local order = {}
-    for i, v in pairs(def.processor) do
-        if type(v) == "number" then order[#order + 1] = i end
-    end
-    table.sort(order)
-    for _, csr in ipairs(order) do
-        local c = processor[csr] or def.processor[csr]
-        output("    %s = 0x%x,", csr, c)
-        comment_default(c, def.processor[csr])
-    end
-    output("  },\n")
-    local ram = config.ram or {}
-    output("  ram = {\n")
-    output("    length = 0x%x,", ram.length or def.ram.length)
-    comment_default(ram.length, def.ram.length)
-    output("    image_filename = %q,", ram.image_filename or def.ram.image_filename)
-    comment_default(ram.image_filename, def.ram.image_filename)
-    output("  },\n")
-    local dtb = config.dtb or {}
-    output("  dtb = {\n")
-    output("    image_filename = %q,", dtb.image_filename or def.dtb.image_filename)
-    comment_default(dtb.image_filename, def.dtb.image_filename)
-    output("    bootargs = %q,", dtb.bootargs or def.dtb.bootargs)
-    comment_default(dtb.bootargs, def.dtb.bootargs)
-    output("    init = %q,", dtb.init or def.dtb.init)
-    comment_default(dtb.init, def.dtb.init)
-    output("    entrypoint = %q,", dtb.entrypoint or def.dtb.entrypoint)
-    comment_default(dtb.entrypoint, def.dtb.entrypoint)
-    output("  },\n")
-    local tlb = config.tlb or {}
-    output("  tlb = {\n")
-    output("    image_filename = %q,", tlb.image_filename or def.tlb.image_filename)
-    comment_default(tlb.image_filename, def.tlb.image_filename)
-    output("  },\n")
-    local htif = config.htif or {}
-    output("  htif = {\n")
-    output("    tohost = 0x%x,", htif.tohost or def.htif.tohost)
-    comment_default(htif.tohost, def.htif.tohost)
-    output("    fromhost = 0x%x,", htif.fromhost or def.htif.fromhost)
-    comment_default(htif.fromhost, def.htif.fromhost)
-    output("    console_getchar = %s,", tostring(htif.console_getchar or false))
-    comment_default(htif.console_getchar or false, def.htif.console_getchar)
-    output("    yield_automatic = %s,", tostring(htif.yield_automatic or false))
-    comment_default(htif.yield_automatic or false, def.htif.yield_automatic)
-    output("    yield_manual = %s,", tostring(htif.yield_manual or false))
-    comment_default(htif.yield_manual or false, def.htif.yield_manual)
-    output("  },\n")
-    local clint = config.clint or {}
-    output("  clint = {\n")
-    output("    mtimecmp = 0x%x,", clint.mtimecmp or def.clint.mtimecmp)
-    comment_default(clint.mtimecmp, def.clint.mtimecmp)
-    output("  },\n")
-    local plic = config.plic or {}
-    output("  plic = {\n")
-    output("    girqpend = 0x%x,", plic.girqpend or def.plic.girqpend)
-    output("    girqsrvd = 0x%x,", plic.girqsrvd or def.plic.girqsrvd)
-    comment_default(plic.girqpend, def.plic.girqpend)
-    output("  },\n")
-    output("  flash_drive = {\n")
-    for _, f in ipairs(config.flash_drive) do
-        output("    ")
-        store_memory_range(f, "    ", output)
-    end
-    output("  },\n")
-    store_value("virtio", config.virtio, "  ", output)
-    if config.cmio then
-        output("  cmio = {\n")
-        output("    rx_buffer = ")
-        store_cmio_buffer(config.cmio.rx_buffer, "    ", output)
-        output("    tx_buffer = ")
-        store_cmio_buffer(config.cmio.tx_buffer, "    ", output)
-        output("  },\n")
-    end
-    output("  uarch = {\n")
-    output("    ram = {\n")
-    output("      image_filename = %q,", config.uarch.ram.image_filename or def.uarch.ram.image_filename)
-    comment_default(config.uarch.ram.image_filename, def.uarch.ram.image_filename)
-    output("    },\n")
-    output("    processor = {\n")
-    output("      x = {\n")
-    for i = 1, 31 do
-        local xi = config.uarch.processor.x[i] or def.uarch.processor.x[i]
-        output("        0x%x,", xi)
-        comment_default(xi, def.uarch.processor.x[i])
-    end
-    output("      },\n")
-    output("      pc = 0x%x,", config.uarch.processor.pc or def.uarch.processor.pc)
-    comment_default(config.uarch.processor.pc, def.uarch.processor.pc)
-    output("      cycle = 0x%x", config.uarch.processor.cycle or def.uarch.processor.cycle)
-    comment_default(config.uarch.processor.cycle, def.uarch.processor.cycle)
-    output("    },\n")
-    output("  }\n")
-    output("}\n")
-end
-
-local function resolve_flash_starts(label_order, start)
-    local auto_start = 1 << 55
-    if next(start) == nil then
-        for _, label in ipairs(label_order) do
-            start[label] = auto_start
-            auto_start = auto_start + (1 << 52)
-        end
-    else
-        local missing = {}
-        local found = {}
-        for _, label in ipairs(label_order) do
-            local quoted = string.format("'%s'", label)
-            if start[label] then
-                found[#found + 1] = quoted
-            else
-                missing[#missing + 1] = quoted
-            end
-        end
-        if #missing > 0 then
-            error(
-                string.format(
-                    "flash drive start set for %s but missing for %s",
-                    table.concat(found, ", "),
-                    table.concat(missing, ", ")
-                )
-            )
-        end
-    end
-end
-
 local function dump_value_proofs(machine, desired_proofs, config)
     if #desired_proofs > 0 then
         assert(config.processor.iunrep == 0, "proofs are meaningless in unreproducible mode")
@@ -1804,16 +1628,9 @@ elseif load_dir then
     stderr("Loading machine: please wait\n")
     main_machine = create_machine(load_dir, runtime)
 else
-    -- Resolve all device starts and lengths
-    resolve_flash_starts(flash_label_order, flash_start)
-
     -- Build machine config
     local config = {
         processor = {
-            -- Request automatic default values for versioning CSRs
-            mimpid = -1,
-            marchid = -1,
-            mvendorid = -1,
             iunrep = unreproducible and 1 or 0,
         },
         dtb = {
@@ -1918,6 +1735,9 @@ echo "
             error(ret)
         end
         config = setmetatable(ret, { __index = config })
+    elseif load_json_config then
+        local f <close> = assert(io.open(load_json_config, "rb"))
+        config = setmetatable(cartesi.fromjson(f:read("a")), { __index = config })
     end
 
     main_machine = create_machine(config, runtime)
@@ -1927,30 +1747,78 @@ end
 local main_config = main_machine:get_initial_config()
 
 for _, r in ipairs(memory_range_replace) do
-    main_machine:replace_memory_range(r)
+    main_machine:replace_memory_range(r.start, r.length, r.shared, r.image_filename)
+end
+
+local function dump_config(what, whatdef, out, indent)
+    if type(what) == "table" then
+        local next_indent = indent .. "  "
+        local keys = {}
+        for k in pairs(what) do
+            table.insert(keys, k)
+        end
+        table.sort(keys)
+        if #keys > 0 then
+            out:write("{\n")
+            for _, k in ipairs(keys) do
+                local v, vdef = what[k], whatdef and whatdef[k]
+                out:write(next_indent)
+                if type(k) == "string" then out:write(k, " = ") end
+                dump_config(v, vdef, out, next_indent)
+                out:write(",")
+                if v == vdef then out:write(" -- default") end
+                out:write("\n")
+            end
+            out:write(indent, "}")
+        else
+            out:write("{}")
+        end
+    elseif math.type(what) == "integer" then
+        out:write(string.format("0x%x", what))
+    else
+        out:write(string.format("%q", what))
+    end
+end
+
+local function serialize_config(out, config, format)
+    if format == "json" then
+        out:write(cartesi.tojson(main_config, 2), "\n")
+    elseif format == "lua" then
+        out:write("return ")
+        dump_config(config, default_config, out, "")
+        out:write("\n")
+    end
 end
 
 if type(store_config) == "string" then
-    store_config = assert(io.open(store_config, "w"))
-    store_machine_config(main_config, function(...) store_config:write(string.format(...)) end)
-    store_config:close()
+    local f <close> = assert(io.open(store_config, "w"))
+    serialize_config(f, main_config, "lua")
+elseif store_config then
+    serialize_config(io.stdout, main_config, "lua")
 end
 
-local htif_yield_automatic_reason_tohost = {
-    [cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_PROGRESS] = "progress",
-    [cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT] = "tx-output",
-    [cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT] = "tx-report",
+if type(store_json_config) == "string" then
+    local f <close> = assert(io.open(store_json_config, "w"))
+    serialize_config(f, main_config, "json")
+elseif store_json_config then
+    serialize_config(io.stdout, main_config, "json")
+end
+
+local cmio_yield_automatic_reason = {
+    [cartesi.CMIO_YIELD_AUTOMATIC_REASON_PROGRESS] = "progress",
+    [cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT] = "tx-output",
+    [cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT] = "tx-report",
 }
 
-local htif_yield_manual_reason_tohost = {
-    [cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED] = "rx-accepted",
-    [cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED] = "rx-rejected",
-    [cartesi.machine.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION] = "tx-exception",
+local cmio_yield_manual_reason = {
+    [cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED] = "rx-accepted",
+    [cartesi.CMIO_YIELD_MANUAL_REASON_RX_REJECTED] = "rx-rejected",
+    [cartesi.CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION] = "tx-exception",
 }
 
-local htif_yield_mode = {
-    [cartesi.machine.HTIF_YIELD_CMD_MANUAL] = "Manual",
-    [cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC] = "Automatic",
+local cmio_yield_command = {
+    [cartesi.CMIO_YIELD_COMMAND_MANUAL] = "Manual",
+    [cartesi.CMIO_YIELD_COMMAND_AUTOMATIC] = "Automatic",
 }
 
 local function check_cmio_htif_config(htif)
@@ -1959,32 +1827,20 @@ local function check_cmio_htif_config(htif)
     assert(htif.yield_automatic, "yield automatic must be enabled for cmio")
 end
 
-local function get_yield(machine)
-    local m16 = (1 << 16) - 1
-    local m32 = (1 << 32) - 1
-    local cmd = machine:read_htif_tohost_cmd()
-    local data = machine:read_htif_tohost_data()
-    local reason = data >> 32
-    return cmd, reason & m16, data & m32
-end
-
 local function get_and_print_yield(machine, htif)
-    local cmd, reason, data = get_yield(machine)
-    if
-        cmd == cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC
-        and reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_PROGRESS
-    then
-        stderr("Progress: %6.2f" .. (htif.console_getchar and "\n" or "\r"), data / 10)
+    local cmd, reason, data = machine:receive_cmio_request()
+    if cmd == cartesi.CMIO_YIELD_COMMAND_AUTOMATIC and reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_PROGRESS then
+        stderr("Progress: %6.2f" .. (htif.console_getchar and "\n" or "\r"), string.unpack("I4", data) / 10)
         return cmd, reason, data
     end
-    local cmd_str = htif_yield_mode[cmd] or "Unknown"
+    local cmd_str = cmio_yield_command[cmd] or "Unknown"
     local reason_str = "unknown"
-    if cmd == cartesi.machine.HTIF_YIELD_CMD_AUTOMATIC then
-        reason_str = htif_yield_automatic_reason_tohost[reason] or reason_str
-    elseif cmd == cartesi.machine.HTIF_YIELD_CMD_MANUAL then
-        reason_str = htif_yield_manual_reason_tohost[reason] or reason_str
+    if cmd == cartesi.CMIO_YIELD_COMMAND_AUTOMATIC then
+        reason_str = cmio_yield_automatic_reason[reason] or reason_str
+    elseif cmd == cartesi.CMIO_YIELD_COMMAND_MANUAL then
+        reason_str = cmio_yield_manual_reason[reason] or reason_str
     end
-    stderr("\n%s yield %s (%d) (0x%06x data)\n", cmd_str, reason_str, reason, data)
+    stderr("\n%s yield %s (%d) (0x%06x data)\n", cmd_str, reason_str, reason, #data)
     stderr("Cycles: %u\n", machine:read_mcycle())
     return cmd, reason, data
 end
@@ -1997,27 +1853,25 @@ local function instantiate_filename(pattern, values)
     return (string.gsub(pattern, "\0", "%"))
 end
 
-local function save_cmio_state_with_format(machine, advance, length, format, index)
+local function save_cmio_state_with_format(advance, data, format, index)
     local values = { i = advance.next_input_index - 1, o = index }
     local name = instantiate_filename(format, values)
     stderr("Storing %s\n", name)
     local f = assert(io.open(name, "wb"))
-    local s = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
-    assert(f:write(s))
+    assert(f:write(data))
     f:close()
-    return s
 end
 
-local function save_cmio_report(machine, advance, length)
-    return save_cmio_state_with_format(machine, advance, length, advance.report, advance.report_index)
+local function save_cmio_report(advance, data)
+    return save_cmio_state_with_format(advance, data, advance.report, advance.report_index)
 end
 
-local function save_cmio_output(machine, advance, length)
-    return save_cmio_state_with_format(machine, advance, length, advance.output, advance.output_index)
+local function save_cmio_output(advance, data)
+    return save_cmio_state_with_format(advance, data, advance.output, advance.output_index)
 end
 
-local function save_cmio_output_hashes_root_hash(machine, advance, length)
-    return save_cmio_state_with_format(machine, advance, length, advance.output_hashes_root_hash)
+local function save_cmio_output_hashes_root_hash(advance, data)
+    return save_cmio_state_with_format(advance, data, advance.output_hashes_root_hash)
 end
 
 local function load_cmio_input(machine, advance)
@@ -2026,27 +1880,22 @@ local function load_cmio_input(machine, advance)
     local f = assert(io.open(filename, "rb"))
     local data = assert(f:read("*a"))
     f:close()
-    machine:send_cmio_response(cartesi.machine.HTIF_YIELD_REASON_ADVANCE_STATE, data)
+    machine:send_cmio_response(cartesi.CMIO_YIELD_REASON_ADVANCE_STATE, data)
 end
 
 local function load_cmio_query(machine, inspect)
     local f = assert(io.open(inspect.query, "rb"))
     local data = assert(f:read("*a"))
     f:close()
-    machine:send_cmio_response(cartesi.machine.HTIF_YIELD_REASON_INSPECT_STATE, data)
+    machine:send_cmio_response(cartesi.CMIO_YIELD_REASON_INSPECT_STATE, data)
 end
 
-local function dump_exception(machine, length)
-    local payload = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)
-    stderr("cmio exception with payload: %q\n", payload)
-end
-
-local function save_cmio_inspect_state_report(machine, inspect, length)
+local function save_cmio_inspect_state_report(inspect, data)
     local values = { o = inspect.report_index }
     local name = instantiate_filename(inspect.report, values)
     stderr("Storing %s\n", name)
     local f = assert(io.open(name, "wb"))
-    assert(f:write(machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, length)))
+    assert(f:write(data))
     f:close()
 end
 
@@ -2106,7 +1955,6 @@ if gdb_address then
     gdb_stub:listen_and_wait_gdb(address, tonumber(port))
 end
 if config.processor.iunrep ~= 0 then stderr("Running in unreproducible mode!\n") end
-if store_config == stderr then store_machine_config(config, stderr) end
 if cmio_advance or cmio_inspect then
     check_cmio_htif_config(config.htif)
     assert(remote_address or not perform_rollbacks, "cmio requires --remote-address for snapshot/commit/rollback")
@@ -2171,7 +2019,7 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
     end
     -- deal with halt
     if machine:read_iflags_H() then
-        exit_code = machine:read_htif_tohost_data() >> 1
+        exit_code = machine:read_reg("htif_tohost_data") >> 1
         if exit_code ~= 0 then
             stderr("\nHalted with payload: %u\n", exit_code)
         else
@@ -2181,26 +2029,26 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
         break
     -- deal with yield manual
     elseif machine:read_iflags_Y() then
-        local _, reason, length = get_and_print_yield(machine, config.htif)
+        local _, reason, data = get_and_print_yield(machine, config.htif)
         -- there was an exception
-        if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION then
-            dump_exception(machine, length)
+        if reason == cartesi.CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION then
+            stderr("cmio exception with payload: %q\n", data)
             exit_code = 1
             do_rollback(machine)
             break
         -- there are advance state inputs to feed
         elseif cmio_advance and cmio_advance.next_input_index < cmio_advance.input_index_end then
             -- previous reason was an accept
-            if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
+            if reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED then
                 do_commit(machine)
                 -- save only if we have already run an input and have just accepted it
                 if cmio_advance.next_input_index > cmio_advance.input_index_begin then
-                    assert(length == 32, "expected root hash in tx buffer")
-                    local root_hash = save_cmio_output_hashes_root_hash(machine, cmio_advance, length)
-                    check_outputs_root_hash(root_hash, output_hashes)
+                    assert(#data == 32, "expected root hash in tx buffer")
+                    save_cmio_output_hashes_root_hash(cmio_advance, data)
+                    check_outputs_root_hash(data, output_hashes)
                 end
             -- previous reason was a reject
-            elseif reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
+            elseif reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_REJECTED then
                 do_rollback(machine)
             else
                 error("unexpected manual yield reason")
@@ -2217,13 +2065,13 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
         else
             if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
                 -- there are outputs of a previous advance state to save
-                if reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED then
-                    assert(length == 32, "expected root hash in tx buffer")
-                    local root_hash = save_cmio_output_hashes_root_hash(machine, cmio_advance, 32)
-                    check_outputs_root_hash(root_hash, output_hashes)
+                if reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED then
+                    assert(#data == 32, "expected root hash in tx buffer")
+                    save_cmio_output_hashes_root_hash(cmio_advance, data)
+                    check_outputs_root_hash(data, output_hashes)
                     output_hashes = {}
                     do_commit(machine)
-                elseif reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_REJECTED then
+                elseif reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_REJECTED then
                     do_rollback(machine)
                 end
                 cmio_advance = nil
@@ -2249,23 +2097,23 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
         end
     -- deal with yield automatic
     elseif machine:read_iflags_X() then
-        local _, reason, length = get_and_print_yield(machine, config.htif)
+        local _, reason, data = get_and_print_yield(machine, config.htif)
         -- we have fed an advance state input
         if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
-            if reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
-                local output = save_cmio_output(machine, cmio_advance, length)
+            if reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
+                local output = save_cmio_output(cmio_advance, data)
                 local output_hash = cartesi.keccak(output)
                 output_hashes[#output_hashes + 1] = output_hash
                 cmio_advance.output_index = cmio_advance.output_index + 1
-            elseif reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT then
-                save_cmio_report(machine, cmio_advance, length)
+            elseif reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT then
+                save_cmio_report(cmio_advance, data)
                 cmio_advance.report_index = cmio_advance.report_index + 1
             end
         -- ignore other reasons
         -- we have feed the inspect state query
         elseif cmio_inspect and not cmio_inspect.query then
-            if reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT then
-                save_cmio_inspect_state_report(machine, cmio_inspect, length)
+            if reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT then
+                save_cmio_inspect_state_report(cmio_inspect, data)
                 cmio_inspect.report_index = cmio_inspect.report_index + 1
             end
             -- ignore other reasons
@@ -2291,7 +2139,7 @@ if max_uarch_cycle > 0 then
         -- The mcycle counter was incremented, unless the machine was already halted
         if machine:read_iflags_H() and not previously_halted then stderr("Halted\n") end
         stderr("Cycles: %u\n", machine:read_mcycle())
-        if auto_uarch_reset then
+        if auto_reset_uarch then
             machine:reset_uarch()
         else
             stderr("uCycles: %u\n", machine:read_uarch_cycle())
@@ -2299,14 +2147,14 @@ if max_uarch_cycle > 0 then
     end
 end
 if gdb_stub then gdb_stub:close() end
-if log_uarch_step then
+if log_step_uarch then
     assert(config.processor.iunrep == 0, "micro step proof is meaningless in unreproducible mode")
     stderr("Gathering micro step log: please wait\n")
-    util.dump_log(machine:log_uarch_step({ proofs = true, annotations = true }), io.stderr)
+    util.dump_log(machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
 end
-if log_uarch_reset then
+if log_reset_uarch then
     stderr("Resetting microarchitecture state: please wait\n")
-    util.dump_log(machine:log_uarch_reset({ proofs = true, annotations = true }), io.stderr)
+    util.dump_log(machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
 end
 if dump_memory_ranges then dump_pmas(machine) end
 if final_hash then
@@ -2316,13 +2164,8 @@ end
 dump_value_proofs(machine, final_proof, config)
 if store_dir then store_machine(machine, config, store_dir) end
 if assert_rolling_template then
-    local cmd, reason = get_yield(machine)
-    if
-        not (
-            cmd == cartesi.machine.HTIF_YIELD_MANUAL
-            and reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
-        )
-    then
+    local cmd, reason = machine:receive_cmio_request()
+    if not (cmd == cartesi.CMIO_YIELD_MANUAL and reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED) then
         exit_code = 2
     end
 end

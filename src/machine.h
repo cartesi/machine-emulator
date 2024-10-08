@@ -112,17 +112,84 @@ private:
     /// \returns Corresponding entry if found, or a sentinel entry
     /// for an empty range.
     template <typename CONTAINER>
-    pma_entry &find_pma_entry(const CONTAINER &pmas, uint64_t paddr, size_t length);
+    pma_entry &find_pma_entry(const CONTAINER &pmas, uint64_t paddr, uint64_t length);
 
     template <typename CONTAINER>
-    const pma_entry &find_pma_entry(const CONTAINER &pmas, uint64_t paddr, size_t length) const;
+    const pma_entry &find_pma_entry(const CONTAINER &pmas, uint64_t paddr, uint64_t length) const;
 
 public:
     /// \brief Type of hash
     using hash_type = machine_merkle_tree::hash_type;
 
-    /// \brief List of CSRs to use with read_csr and write_csr
-    enum class csr {
+    /// \brief List of register to use with read_reg and write_reg
+    enum reg {
+        // Processor x registers
+        x0 = 0,
+        x1,
+        x2,
+        x3,
+        x4,
+        x5,
+        x6,
+        x7,
+        x8,
+        x9,
+        x10,
+        x11,
+        x12,
+        x13,
+        x14,
+        x15,
+        x16,
+        x17,
+        x18,
+        x19,
+        x20,
+        x21,
+        x22,
+        x23,
+        x24,
+        x25,
+        x26,
+        x27,
+        x28,
+        x29,
+        x30,
+        x31,
+        // Processor f registers
+        f0,
+        f1,
+        f2,
+        f3,
+        f4,
+        f5,
+        f6,
+        f7,
+        f8,
+        f9,
+        f10,
+        f11,
+        f12,
+        f13,
+        f14,
+        f15,
+        f16,
+        f17,
+        f18,
+        f19,
+        f20,
+        f21,
+        f22,
+        f23,
+        f24,
+        f25,
+        f26,
+        f27,
+        f28,
+        f29,
+        f30,
+        f31,
+        // Processor CSRs
         pc,
         fcsr,
         mvendorid,
@@ -162,13 +229,60 @@ public:
         htif_ihalt,
         htif_iconsole,
         htif_iyield,
+        // Microarchitecture processor
+        uarch_x0,
+        uarch_x1,
+        uarch_x2,
+        uarch_x3,
+        uarch_x4,
+        uarch_x5,
+        uarch_x6,
+        uarch_x7,
+        uarch_x8,
+        uarch_x9,
+        uarch_x10,
+        uarch_x11,
+        uarch_x12,
+        uarch_x13,
+        uarch_x14,
+        uarch_x15,
+        uarch_x16,
+        uarch_x17,
+        uarch_x18,
+        uarch_x19,
+        uarch_x20,
+        uarch_x21,
+        uarch_x22,
+        uarch_x23,
+        uarch_x24,
+        uarch_x25,
+        uarch_x26,
+        uarch_x27,
+        uarch_x28,
+        uarch_x29,
+        uarch_x30,
+        uarch_x31,
         uarch_pc,
         uarch_cycle,
         uarch_halt_flag,
-        last
+        last,
+        // Views of registers
+        iflags_prv,
+        iflags_x,
+        iflags_y,
+        iflags_h,
+        htif_tohost_dev,
+        htif_tohost_cmd,
+        htif_tohost_reason,
+        htif_tohost_data,
+        htif_fromhost_dev,
+        htif_fromhost_cmd,
+        htif_fromhost_reason,
+        htif_fromhost_data,
+        unknown,
     };
 
-    static constexpr auto num_csr = static_cast<int>(csr::last);
+    static constexpr auto num_reg = static_cast<int>(reg::last);
 
     /// \brief Constructor from machine configuration
     /// \param config Machine config to use instantiating machine
@@ -209,51 +323,31 @@ public:
 
     /// \brief Advances one micro step and returns a state access log.
     /// \param log_type Type of access log to generate.
-    /// \param one_based Use 1-based indices when reporting errors.
     /// \returns The state access log.
-    access_log log_uarch_step(const access_log::type &log_type, bool one_based = false);
+    access_log log_step_uarch(const access_log::type &log_type);
 
     /// \brief Resets the entire uarch state to pristine values.
     void reset_uarch();
 
     /// \brief Resets the microarchitecture state and returns an access log
     /// \param log_type Type of access log to generate.
-    /// \param one_based Use 1-based indices when reporting errors.
     /// \param log_data If true, access data is recorded in the log, otherwise only hashes. The default is false.
     /// \returns The state access log.
-    access_log log_uarch_reset(const access_log::type &log_type, bool one_based = false);
+    access_log log_reset_uarch(const access_log::type &log_type);
 
-    /// \brief Checks the internal consistency of an access log.
-    /// \param log State access log to be verified.
-    /// \param runtime Machine runtime configuration to use during verification.
-    /// \param one_based Use 1-based indices when reporting errors.
-    static void verify_uarch_step_log(const access_log &log, const machine_runtime_config &runtime = {},
-        bool one_based = false);
-
-    /// \brief Checks the validity of a state transition.
+    /// \brief Checks the validity of a state transition caused by log_step_uarch.
     /// \param root_hash_before State hash before step.
     /// \param log Step state access log.
     /// \param root_hash_after State hash after step.
-    /// \param runtime Machine runtime configuration to use during verification.
-    /// \param one_based Use 1-based indices when reporting errors.
-    static void verify_uarch_step_state_transition(const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after, const machine_runtime_config &runtime = {}, bool one_based = false);
+    static void verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after);
 
-    /// \brief Checks the internal consistency of an access log produced by log_uarch_reset
-    /// \param log State access log to be verified.
-    /// \param runtime Machine runtime configuration to use during verification.
-    /// \param one_based Use 1-based indices when reporting errors.
-    static void verify_uarch_reset_log(const access_log &log, const machine_runtime_config &runtime = {},
-        bool one_based = false);
-
-    /// \brief Checks the validity of a state transition. caused by log_uarch_reset
+    /// \brief Checks the validity of a state transition caused by log_reset_uarch.
     /// \param root_hash_before State hash before uarch reset
     /// \param log Step state access log.
     /// \param root_hash_after State hash after uarch reset.
-    /// \param runtime Machine runtime configuration to use during verification.
-    /// \param one_based Use 1-based indices when reporting errors.
-    static void verify_uarch_reset_state_transition(const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after, const machine_runtime_config &runtime = {}, bool one_based = false);
+    static void verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after);
 
     static machine_config get_default_config(void);
 
@@ -340,20 +434,20 @@ public:
     /// \returns True if tree is self-consistent, false otherwise.
     bool verify_merkle_tree(void) const;
 
-    /// \brief Read the value of any CSR
-    /// \param csr CSR to read
-    /// \returns The value of the CSR
-    uint64_t read_csr(csr csr) const;
+    /// \brief Read the value of any register
+    /// \param r Register to read
+    /// \returns The value of the register
+    uint64_t read_reg(reg r) const;
 
-    /// \brief Write the value of any CSR
-    /// \param csr CSR to write
+    /// \brief Write the value of any register
+    /// \param w Register to write
     /// \param value Value to write
-    void write_csr(csr csr, uint64_t value);
+    void write_reg(reg w, uint64_t value);
 
-    /// \brief Gets the address of any CSR
-    /// \param csr The CSR to obtain address
-    /// \returns The address of CSR
-    static uint64_t get_csr_address(csr csr);
+    /// \brief Gets the address of any register
+    /// \param reg The register to obtain address
+    /// \returns The address of the register
+    static uint64_t get_reg_address(reg r);
 
     /// \brief Read the value of a word in the machine state.
     /// \param address Word address (aligned to 64-bit boundary).
@@ -376,13 +470,13 @@ public:
     /// \details The entire chunk, from \p address to \p address + \p length must
     /// be inside the same PMA region. Moreover, this PMA must be a memory PMA,
     /// and not a device PMA.
-    void write_memory(uint64_t address, const unsigned char *data, size_t length);
+    void write_memory(uint64_t address, const unsigned char *data, uint64_t length);
 
     /// \brief Fills a memory range with a single byte.
     /// \param address Physical address to start filling.
     /// \param data Byte to fill memory with.
     /// \param length Size of memory range to fill.
-    void fill_memory(uint64_t address, uint8_t data, size_t length);
+    void fill_memory(uint64_t address, uint8_t data, uint64_t length);
 
     /// \brief Reads a chunk of data from the machine virtual memory.
     /// \param vaddr_start Virtual address to start reading.
@@ -394,410 +488,12 @@ public:
     /// \param vaddr_start Virtual address to start writing.
     /// \param data Source for chunk of data.
     /// \param length Size of chunk.
-    void write_virtual_memory(uint64_t vaddr_start, const unsigned char *data, size_t length);
+    void write_virtual_memory(uint64_t vaddr_start, const unsigned char *data, uint64_t length);
 
     /// \brief Translates a virtual memory address to its corresponding physical memory address.
     /// \param vaddr Virtual address to translate.
     /// \returns The corresponding physical address.
     uint64_t translate_virtual_address(uint64_t vaddr);
-
-    /// \brief Reads the value of a general-purpose register.
-    /// \param index Register index. Between 0 and X_REG_COUNT-1, inclusive.
-    /// \returns The value of the register.
-    uint64_t read_x(int index) const;
-
-    /// \brief Writes the value of a general-purpose register.
-    /// \param index Register index. Between 1 and X_REG_COUNT-1, inclusive.
-    /// \param value New register value.
-    void write_x(int index, uint64_t value);
-
-    /// \brief Gets the address of a general-purpose register.
-    /// \param index Register index. Between 0 and X_REG_COUNT-1, inclusive.
-    /// \returns Address of the specified register
-    static uint64_t get_x_address(int index);
-
-    /// \brief Gets the address of a general-purpose microarchitecture register.
-    /// \param index Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
-    /// \returns Address of the specified register
-    static uint64_t get_uarch_x_address(int index);
-
-    /// \brief Reads the value of a floating-point register.
-    /// \param index Register index. Between 0 and F_REG_COUNT-1, inclusive.
-    /// \returns The value of the register.
-    uint64_t read_f(int index) const;
-
-    /// \brief Writes the value of a floating-point register.
-    /// \param index Register index. Between 1 and F_REG_COUNT-1, inclusive.
-    /// \param value New register value.
-    void write_f(int index, uint64_t value);
-
-    /// \brief Gets the address of a floating-point register.
-    /// \param index Register index. Between 0 and F_REG_COUNT-1, inclusive.
-    /// \returns Address of the specified register
-    static uint64_t get_f_address(int index);
-
-    /// \brief Reads the value of the pc register.
-    /// \returns The value of the register.
-    uint64_t read_pc(void) const;
-
-    /// \brief Reads the value of the pc register.
-    /// \param value New register value.
-    void write_pc(uint64_t value);
-
-    /// \brief Reads the value of the fcsr register.
-    /// \returns The value of the register.
-    uint64_t read_fcsr(void) const;
-
-    /// \brief Writes the value of the fcsr register.
-    /// \param value New register value.
-    void write_fcsr(uint64_t value);
-
-    /// \brief Reads the value of the mvendorid register.
-    /// \returns The value of the register.
-    uint64_t read_mvendorid(void) const;
-
-    /// \brief Reads the value of the mvendorid register.
-    /// \param value New register value.
-    void write_mvendorid(uint64_t value);
-
-    /// \brief Reads the value of the marchid register.
-    /// \returns The value of the register.
-    uint64_t read_marchid(void) const;
-
-    /// \brief Reads the value of the marchid register.
-    /// \param value New register value.
-    void write_marchid(uint64_t value);
-
-    /// \brief Reads the value of the mimpid register.
-    /// \returns The value of the register.
-    uint64_t read_mimpid(void) const;
-
-    /// \brief Reads the value of the mimpid register.
-    /// \param value New register value.
-    void write_mimpid(uint64_t value);
-
-    /// \brief Reads the value of the mcycle register.
-    /// \returns The value of the register.
-    uint64_t read_mcycle(void) const;
-
-    /// \brief Writes the value of the mcycle register.
-    /// \param value New register value.
-    void write_mcycle(uint64_t value);
-
-    /// \brief Reads the value of the icycleinstret register.
-    /// \returns The value of the register.
-    uint64_t read_icycleinstret(void) const;
-
-    /// \brief Writes the value of the icycleinstret register.
-    /// \param value New register value.
-    void write_icycleinstret(uint64_t value);
-
-    /// \brief Reads the value of the mstatus register.
-    /// \returns The value of the register.
-    uint64_t read_mstatus(void) const;
-
-    /// \brief Writes the value of the mstatus register.
-    /// \param value New register value.
-    void write_mstatus(uint64_t value);
-
-    /// \brief Reads the value of the menvcfg register.
-    /// \returns The value of the register.
-    uint64_t read_menvcfg(void) const;
-
-    /// \brief Writes the value of the menvcfg register.
-    /// \param value New register value.
-    void write_menvcfg(uint64_t value);
-
-    /// \brief Reads the value of the mtvec register.
-    /// \returns The value of the register.
-    uint64_t read_mtvec(void) const;
-
-    /// \brief Writes the value of the mtvec register.
-    /// \param value New register value.
-    void write_mtvec(uint64_t value);
-
-    /// \brief Reads the value of the mscratch register.
-    /// \returns The value of the register.
-    uint64_t read_mscratch(void) const;
-
-    /// \brief Writes the value of the mscratch register.
-    /// \param value New register value.
-    void write_mscratch(uint64_t value);
-
-    /// \brief Reads the value of the mepc register.
-    /// \returns The value of the register.
-    uint64_t read_mepc(void) const;
-
-    /// \brief Writes the value of the mepc register.
-    /// \param value New register value.
-    void write_mepc(uint64_t value);
-
-    /// \brief Reads the value of the mcause register.
-    /// \returns The value of the register.
-    uint64_t read_mcause(void) const;
-
-    /// \brief Writes the value of the mcause register.
-    /// \param value New register value.
-    void write_mcause(uint64_t value);
-
-    /// \brief Reads the value of the mtval register.
-    /// \returns The value of the register.
-    uint64_t read_mtval(void) const;
-
-    /// \brief Writes the value of the mtval register.
-    /// \param value New register value.
-    void write_mtval(uint64_t value);
-
-    /// \brief Reads the value of the misa register.
-    /// \returns The value of the register.
-    uint64_t read_misa(void) const;
-
-    /// \brief Writes the value of the misa register.
-    /// \param value New register value.
-    void write_misa(uint64_t value);
-
-    /// \brief Reads the value of the mie register.
-    /// \returns The value of the register.
-    uint64_t read_mie(void) const;
-
-    /// \brief Reads the value of the mie register.
-    /// \param value New register value.
-    void write_mie(uint64_t value);
-
-    /// \brief Reads the value of the mip register.
-    /// \returns The value of the register.
-    uint64_t read_mip(void) const;
-
-    /// \brief Reads the value of the mip register.
-    /// \param value New register value.
-    void write_mip(uint64_t value);
-
-    /// \brief Reads the value of the medeleg register.
-    /// \returns The value of the register.
-    uint64_t read_medeleg(void) const;
-
-    /// \brief Writes the value of the medeleg register.
-    /// \param value New register value.
-    void write_medeleg(uint64_t value);
-
-    /// \brief Reads the value of the mideleg register.
-    /// \returns The value of the register.
-    uint64_t read_mideleg(void) const;
-
-    /// \brief Writes the value of the mideleg register.
-    /// \param value New register value.
-    void write_mideleg(uint64_t value);
-
-    /// \brief Reads the value of the mcounteren register.
-    /// \returns The value of the register.
-    uint64_t read_mcounteren(void) const;
-
-    /// \brief Writes the value of the mcounteren register.
-    /// \param value New register value.
-    void write_mcounteren(uint64_t value);
-
-    /// \brief Reads the value of the senvcfg register.
-    /// \returns The value of the register.
-    uint64_t read_senvcfg(void) const;
-
-    /// \brief Writes the value of the senvcfg register.
-    /// \param value New register value.
-    void write_senvcfg(uint64_t value);
-
-    /// \brief Reads the value of the stvec register.
-    /// \returns The value of the register.
-    uint64_t read_stvec(void) const;
-
-    /// \brief Writes the value of the stvec register.
-    /// \param value New register value.
-    void write_stvec(uint64_t value);
-
-    /// \brief Reads the value of the sscratch register.
-    /// \returns The value of the register.
-    uint64_t read_sscratch(void) const;
-
-    /// \brief Writes the value of the sscratch register.
-    /// \param value New register value.
-    void write_sscratch(uint64_t value);
-
-    /// \brief Reads the value of the sepc register.
-    /// \returns The value of the register.
-    uint64_t read_sepc(void) const;
-
-    /// \brief Writes the value of the sepc register.
-    /// \param value New register value.
-    void write_sepc(uint64_t value);
-
-    /// \brief Reads the value of the scause register.
-    /// \returns The value of the register.
-    uint64_t read_scause(void) const;
-
-    /// \brief Writes the value of the scause register.
-    /// \param value New register value.
-    void write_scause(uint64_t value);
-
-    /// \brief Reads the value of the stval register.
-    /// \returns The value of the register.
-    uint64_t read_stval(void) const;
-
-    /// \brief Writes the value of the stval register.
-    /// \param value New register value.
-    void write_stval(uint64_t value);
-
-    /// \brief Reads the value of the satp register.
-    /// \returns The value of the register.
-    uint64_t read_satp(void) const;
-
-    /// \brief Writes the value of the satp register.
-    /// \param value New register value.
-    void write_satp(uint64_t value);
-
-    /// \brief Reads the value of the scounteren register.
-    /// \returns The value of the register.
-    uint64_t read_scounteren(void) const;
-
-    /// \brief Writes the value of the scounteren register.
-    /// \param value New register value.
-    void write_scounteren(uint64_t value);
-
-    /// \brief Reads the value of the ilrsc register.
-    /// \returns The value of the register.
-    uint64_t read_ilrsc(void) const;
-
-    /// \brief Writes the value of the ilrsc register.
-    /// \param value New register value.
-    void write_ilrsc(uint64_t value);
-
-    /// \brief Reads the value of the iflags register.
-    /// \returns The value of the register.
-    uint64_t read_iflags(void) const;
-
-    /// \brief Returns packed iflags from its component fields.
-    /// \returns The value of the register.
-    uint64_t packed_iflags(int PRV, int Y, int H);
-
-    /// \brief Reads the value of the iflags register.
-    /// \param value New register value.
-    void write_iflags(uint64_t value);
-
-    /// \brief Reads the value of the iunrep register.
-    /// \returns The value of the register.
-    uint64_t read_iunrep(void) const;
-
-    /// \brief Writes the value of the iunrep register.
-    /// \param value New register value.
-    void write_iunrep(uint64_t value);
-
-    /// \brief Reads the value of HTIF's tohost register.
-    /// \returns The value of the register.
-    uint64_t read_htif_tohost(void) const;
-
-    /// \brief Reads the value of the device field of HTIF's tohost register.
-    /// \returns The value of the field.
-    uint64_t read_htif_tohost_dev(void) const;
-
-    /// \brief Reads the value of the command field of HTIF's tohost register.
-    /// \returns The value of the field.
-    uint64_t read_htif_tohost_cmd(void) const;
-
-    /// \brief Reads the value of the data field of HTIF's tohost register.
-    /// \returns The value of the field.
-    uint64_t read_htif_tohost_data(void) const;
-
-    /// \brief Writes the value of HTIF's tohost register.
-    /// \param value New register value.
-    void write_htif_tohost(uint64_t value);
-
-    /// \brief Reads the value of HTIF's fromhost register.
-    /// \returns The value of the register.
-    uint64_t read_htif_fromhost(void) const;
-
-    /// \brief Writes the value of HTIF's fromhost register.
-    /// \param value New register value.
-    void write_htif_fromhost(uint64_t value);
-
-    /// \brief Writes the value of the data field in HTIF's fromhost register.
-    /// \param value New value for the field.
-    void write_htif_fromhost_data(uint64_t value);
-
-    /// \brief Reads the value of HTIF's halt register.
-    /// \returns The value of the register.
-    uint64_t read_htif_ihalt(void) const;
-
-    /// \brief Writes the value of HTIF's halt register.
-    /// \param value New register value.
-    void write_htif_ihalt(uint64_t value);
-
-    /// \brief Reads the value of HTIF's console register.
-    /// \returns The value of the register.
-    uint64_t read_htif_iconsole(void) const;
-
-    /// \brief Writes the value of HTIF's console register.
-    /// \param value New register value.
-    void write_htif_iconsole(uint64_t value);
-
-    /// \brief Reads the value of HTIF's yield register.
-    /// \returns The value of the register.
-    uint64_t read_htif_iyield(void) const;
-
-    /// \brief Writes the value of HTIF's yield register.
-    /// \param value New register value.
-    void write_htif_iyield(uint64_t value);
-
-    /// \brief Reads the value of CLINT's mtimecmp register.
-    /// \returns The value of the register.
-    uint64_t read_clint_mtimecmp(void) const;
-
-    /// \brief Writes the value of CLINT's mtimecmp register.
-    /// \param value New register value.
-    void write_clint_mtimecmp(uint64_t value);
-
-    /// \brief Reads the value of PLIC's girqpend register.
-    /// \returns The value of the register.
-    uint64_t read_plic_girqpend(void) const;
-
-    /// \brief Writes the value of PLIC's girqpend register.
-    /// \param val New register value.
-    void write_plic_girqpend(uint64_t val);
-
-    /// \brief Reads the value of PLIC's girqsrvd register.
-    /// \returns The value of the register.
-    uint64_t read_plic_girqsrvd(void) const;
-
-    /// \brief Writes the value of PLIC's girqsrvd register.
-    /// \param val New register value.
-    void write_plic_girqsrvd(uint64_t val);
-
-    /// \brief Checks the value of the iflags_X flag.
-    /// \returns The flag value.
-    bool read_iflags_X(void) const;
-
-    /// \brief Resets the value of the iflags_X flag.
-    void reset_iflags_X(void);
-
-    /// \brief Sets the iflags_X flag.
-    void set_iflags_X(void);
-
-    /// \brief Checks the value of the iflags_Y flag.
-    /// \returns The flag value.
-    bool read_iflags_Y(void) const;
-
-    /// \brief Resets the value of the iflags_Y flag.
-    void reset_iflags_Y(void);
-
-    /// \brief Sets the iflags_Y flag.
-    void set_iflags_Y(void);
-
-    /// \brief Checks the value of the iflags_H flag.
-    /// \returns The flag value.
-    bool read_iflags_H(void) const;
-
-    /// \brief Checks the value of the iflags_PRV field.
-    /// \returns The field value.
-    uint8_t read_iflags_PRV(void) const;
-
-    /// \brief Sets the iflags_H flag.
-    void set_iflags_H(void);
 
     /// \brief Get read-only access to container with all PMA entries.
     /// \returns The container.
@@ -810,9 +506,9 @@ public:
     /// \param length Length of physical memory region.
     /// \returns Corresponding entry if found, or a sentinel entry
     /// for an empty range.
-    pma_entry &find_pma_entry(uint64_t paddr, size_t length);
+    pma_entry &find_pma_entry(uint64_t paddr, uint64_t length);
 
-    const pma_entry &find_pma_entry(uint64_t paddr, size_t length) const;
+    const pma_entry &find_pma_entry(uint64_t paddr, uint64_t length) const;
 
     /// \brief Obtain PMA entry covering a physical memory word
     /// \tparam T Type of word.
@@ -856,73 +552,26 @@ public:
     /// \param reason Reason for sending response.
     /// \param data Reponse data.
     /// \param length Length of response data.
-    void send_cmio_response(uint16_t reason, const unsigned char *data, size_t length);
+    void send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length);
 
     /// \brief Sends cmio response and returns an access log
     /// \param reason Reason for sending response.
     /// \param data Reponse data.
     /// \param length Length of response data.
     /// \param log_type Type of access log to generate.
-    /// \param one_based Use 1-based indices when reporting errors.
     /// \return The state access log.
-    access_log log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
-        const access_log::type &log_type, bool one_based = false);
+    access_log log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        const access_log::type &log_type);
 
-    /// \brief Checks the internal consistency of an access log produced by log_send_cmio_response
-    /// \param reason Reason for sending response.
-    /// \param data The response sent when the log was generated.
-    /// \param length Length of response data.
-    /// \param log State access log to be verified.
-    /// \param runtime Machine runtime configuration to use during verification.
-    /// \param one_based Use 1-based indices when reporting errors.
-    static void verify_send_cmio_response_log(uint16_t reason, const unsigned char *data, size_t length,
-        const access_log &log, const machine_runtime_config &runtime = {}, bool one_based = false);
-
-    /// \brief Checks the validity of state transitions caused by log_send_cmio_response
+    /// \brief Checks the validity of state transitions caused by log_send_cmio_response.
     /// \param reason Reason for sending response.
     /// \param data The response sent when the log was generated.
     /// \param length Length of response
     /// \param root_hash_before State hash before response was sent.
     /// \param log Log containing the state accesses performed by the load operation
     /// \param root_hash_after State hash after response was sent.
-    /// \param runtime Machine runtime configuration to use during verification.
-    /// @param one_based Use 1-based indices when reporting errors.
-    static void verify_send_cmio_response_state_transition(uint16_t reason, const unsigned char *data, size_t length,
-        const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after,
-        const machine_runtime_config &runtime = {}, bool one_based = false);
-
-    /// \brief Reads the value of a microarchitecture register.
-    /// \param index Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
-    /// \returns The value of the register.
-    uint64_t read_uarch_x(int index) const;
-
-    /// \brief Writes the value of a of a microarchitecture register.
-    /// \param index Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
-    /// \param value New register value.
-    void write_uarch_x(int index, uint64_t value);
-
-    /// \brief Reads the value of the microarchitecture pc register.
-    /// \returns The current microarchitecture pc value.
-    uint64_t read_uarch_pc(void) const;
-
-    /// \brief Writes the value ofthe microarchitecture pc register.
-    /// \param value New register value.
-    void write_uarch_pc(uint64_t value);
-
-    /// \brief Reads the value of the microarchitecture halt flag.
-    /// \returns The current microarchitecture halt value.
-    bool read_uarch_halt_flag(void) const;
-
-    /// \brief Sets the value ofthe microarchitecture halt flag.
-    void set_uarch_halt_flag();
-
-    /// \brief Reads the value of the microarchitecture cycle counter register.
-    /// \returns The current microarchitecture cycle.
-    uint64_t read_uarch_cycle(void) const;
-
-    /// \brief Writes the value ofthe microarchitecture cycle counter register.
-    /// \param value New register value.
-    void write_uarch_cycle(uint64_t value);
+    static void verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after);
 };
 
 } // namespace cartesi

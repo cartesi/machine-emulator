@@ -17,12 +17,15 @@
 #ifndef CLUA_MACHINE_UTIL_H
 #define CLUA_MACHINE_UTIL_H
 
+#include <string>
 #include <utility>
 
 extern "C" {
 #include <lua.h>
 }
 
+#include "clua.h"
+#include "json-util.h"
 #include "machine-c-api.h"
 
 /// \file
@@ -30,76 +33,25 @@ extern "C" {
 
 namespace cartesi {
 
-constexpr size_t MAX_ERR_MSG_LEN = 1024;
-
-// NOLINTBEGIN(cppcoreguidelines-macro-usage,cppcoreguidelines-avoid-do-while)
-#define TRY_EXECUTE(func_call)                                                                                         \
-    do {                                                                                                               \
-        char *err_msg_heap = nullptr;                                                                                  \
-        char **err_msg = &err_msg_heap;                                                                                \
-        if ((func_call) != 0) {                                                                                        \
-            std::array<char, MAX_ERR_MSG_LEN> err_msg_stack{};                                                         \
-            strncpy(err_msg_stack.data(), err_msg_heap, MAX_ERR_MSG_LEN - 1);                                          \
-            err_msg_stack[MAX_ERR_MSG_LEN - 1] = '\0';                                                                 \
-            cm_delete_cstring(err_msg_heap);                                                                           \
-            return luaL_error(L, err_msg_stack.data());                                                                \
-        }                                                                                                              \
-    } while (0)
-// NOLINTEND(cppcoreguidelines-macro-usage,cppcoreguidelines-avoid-do-while)
-
 /// \brief Create overloaded deleters for C API objects
 template <typename T>
-void cm_delete(T *ptr);
-
-/// \brief Deleter for C string
-template <>
-void cm_delete<char>(char *ptr);
+void clua_delete(T *ptr);
 
 /// \brief Deleter for C data buffer
 template <>
-void cm_delete<unsigned char>(unsigned char *ptr);
+void clua_delete<unsigned char>(unsigned char *ptr);
 
-/// \brief Deleter for C api machine configuration
+/// \brief Deleter for machine
 template <>
-void cm_delete<const cm_machine_config>(const cm_machine_config *ptr);
-template <>
-void cm_delete<cm_machine_config>(cm_machine_config *ptr);
+void clua_delete<cm_machine>(cm_machine *ptr);
 
-/// \brief Deleter for C api machine
+/// \brief Deleter for string
 template <>
-void cm_delete<cm_machine>(cm_machine *ptr);
+void clua_delete<std::string>(std::string *ptr);
 
-/// \brief Deleter for C api runtime machine configuration
+/// \brief Deleter for JSON
 template <>
-void cm_delete(cm_machine_runtime_config *ptr);
-
-/// \brief Deleter for C api ram config
-template <>
-void cm_delete(cm_ram_config *p);
-
-/// \brief Deleter for C api dtb config
-template <>
-void cm_delete(cm_dtb_config *p);
-
-/// \brief Deleter for C api access log
-template <>
-void cm_delete(cm_access_log *ptr);
-
-/// \brief Deleter for C api merkle tree proof
-template <>
-void cm_delete(cm_merkle_tree_proof *p);
-
-/// \brief Deleter for C api flash drive config
-template <>
-void cm_delete(cm_memory_range_config *p);
-
-/// \brief Deleter for C api semantic version
-template <>
-void cm_delete(const cm_semantic_version *p);
-
-/// \brief Deleter for C api memory range description array
-template <>
-void cm_delete(cm_memory_range_descr_array *p);
+void clua_delete<nlohmann::json>(nlohmann::json *ptr);
 
 // clua_managed_cm_ptr is a smart pointer,
 // however we don't use all its functionally, therefore we exclude it from code coverage.
@@ -137,7 +89,7 @@ public:
     }
 
     void reset(T *ptr = nullptr) {
-        cm_delete(m_ptr); // use overloaded deleter
+        clua_delete(m_ptr); // use overloaded deleter
         m_ptr = ptr;
     }
 
@@ -160,54 +112,37 @@ private:
 };
 // LCOV_EXCL_STOP
 
-/// \brief Pushes a C api proof to the Lua stack
+/// \brief Allocates a new type, pushes its reference into the Lua stack and returns its pointer.
 /// \param L Lua state
-/// \param proof Proof to be pushed
-void clua_push_cm_proof(lua_State *L, const cm_merkle_tree_proof *proof);
+/// \param value Initial value
+/// \param ctxidx Index (or pseudo-index) of clua context
+/// \returns The value pointer, valid until its reference is removed from the Lua stack.
+/// \details The value is marked to-be-closed when popped from the Lua stack.
+/// This follow lua_toclose semantics (check Lua 5.4 manual),
+/// therefore the stack index can only be removed via lua_pop (e.g. don't use lua_remove).
+template <typename T>
+T *clua_push_new_managed_toclose_ptr(lua_State *L, T &&value, int ctxidx = lua_upvalueindex(1)) {
+    auto &managed_value = clua_push_to(L, clua_managed_cm_ptr<T>(new T(std::forward<T>(value))), ctxidx);
+    // ??(edubart): Unfortunately Lua 5.4.4 (default on Ubuntu 22.04) has a bug that causes a crash
+    // when using lua_settop with lua_toclose, it was fixed only in Lua 5.4.5 in
+    // https://github.com/lua/lua/commit/196bb94d66e727e0aec053a0276c3ad701500762 .
+    // Without lua_toclose call, reference will be only collected by the GC (non deterministic).
+#if LUA_VERSION_RELEASE_NUM > 50404
+    lua_toclose(L, -1);
+#endif
+    return managed_value.get();
+}
 
-/// \brief Pushes a cm_semantic_version to the Lua stack
+/// \brief Returns a register selector from Lua
 /// \param L Lua state
-/// \param v C api semantic version to be pushed
-void clua_push_cm_semantic_version(lua_State *L, const cm_semantic_version *v);
+/// \param idx Index in stack
+/// \returns C API register selector. Lua argument error if unknown
+cm_reg clua_check_cm_proc_reg(lua_State *L, int idx);
 
 /// \brief Pushes a C api hash object to the Lua stack
 /// \param L Lua state
 /// \param hash Hash to be pushed
 void clua_push_cm_hash(lua_State *L, const cm_hash *hash);
-
-/// \brief Pushes a C api cm_machine_config to the Lua stack
-/// \param L Lua state
-/// \param c Machine configuration to be pushed
-void clua_push_cm_machine_config(lua_State *L, const cm_machine_config *c);
-
-/// \brief Pushes a C api cm_memory_range_descr_array to the Lua stack
-/// \param L Lua state
-/// \param mrds Memory range description array to be pushed
-void clua_push_cm_memory_range_descr_array(lua_State *L, const cm_memory_range_descr_array *mrds);
-
-#if 0 // NOLINT
-/// \brief Pushes a cm_machine_runtime_config to the Lua stack
-/// \param L Lua state
-/// \param r C api machine runtime config to be pushed
-void clua_push_cm_machine_runtime_config(lua_State *L, const cm_machine_runtime_config *r);
-#endif
-
-/// \brief Returns a CSR selector from Lua
-/// \param L Lua state
-/// \param idx Index in stack
-/// \returns C API CSR selector. Lua argument error if unknown
-CM_PROC_CSR clua_check_cm_proc_csr(lua_State *L, int idx);
-
-/// \brief Pushes an C api access log to the Lua stack
-/// \param L Lua state
-/// \param log Access log to be pushed
-void clua_push_cm_access_log(lua_State *L, const cm_access_log *log);
-
-/// \brief Loads an cm_access_log_type from Lua
-/// \param L Lua state
-/// \param tabidx Access log stack index
-/// \param log_type C api access log type to be pushed
-cm_access_log_type clua_check_cm_log_type(lua_State *L, int tabidx);
 
 /// \brief Return C hash from Lua
 /// \param L Lua state
@@ -215,51 +150,44 @@ cm_access_log_type clua_check_cm_log_type(lua_State *L, int tabidx);
 /// \param c_hash Receives hash
 void clua_check_cm_hash(lua_State *L, int idx, cm_hash *c_hash);
 
-/// \brief Loads a cm_merkle_tree_proof from Lua
+/// \brief Replaces a Lua table with its JSON string representation and returns the string
 /// \param L Lua state
-/// \param tabidx Proof stack index
-/// \returns The allocated proof object
-cm_merkle_tree_proof *clua_check_cm_merkle_tree_proof(lua_State *L, int tabidx);
+/// \param idx Lua table stack index which will be converted to a Lua string
+/// \param indent JSON indentation when converting it to a string
+/// \param ctxidx Index (or pseudo-index) of clua context
+/// \param schema Schema for the table
+/// \param schema_dict Dictionary containing schema for all types
+/// \returns It traverses the Lua value while converting to a JSON object
+/// \details In case the Lua valua is already a string, it just returns it
+const char *clua_check_json_string(lua_State *L, int idx, int indent = -1, int ctxidx = lua_upvalueindex(1),
+    const nlohmann::json &schema = nlohmann::json(), const nlohmann::json &schema_dict = nlohmann::json());
 
-/// \brief Loads an cm_access_log from Lua.
+/// \brief Parses a JSON from a string and pushes it as a Lua table
 /// \param L Lua state
-/// \param tabidx Access_log stack index.
-/// \param ctxidx Index of clua context
-/// \returns The access log. Must be delete by the user with cm_delete_access_log
-cm_access_log *clua_check_cm_access_log(lua_State *L, int tabidx, int ctxidx = lua_upvalueindex(1));
+/// \param s JSON string
+/// \param ctxidx Index (or pseudo-index) of clua context
+/// \param schema Schema for the table
+/// \param schema_dict Dictionary containing schema for all types
+/// \returns It traverses the JSON object while converting to a Lua object
+void clua_push_json_table(lua_State *L, const char *s, int ctxidx = lua_upvalueindex(1),
+    const nlohmann::json &schema = nlohmann::json(), const nlohmann::json &schema_dict = nlohmann::json());
 
-/// \brief Loads a cm_machine_config object from a Lua table
+/// \brief Replaces a Lua table with its JSON string representation and returns the string (schemed version)
 /// \param L Lua state
-/// \param tabidx Index of table in Lua stack
-/// \param ctxidx Index of clua context
-/// \returns Allocated machine config. It must be deleted with cm_delete_machine_config
-cm_machine_config *clua_check_cm_machine_config(lua_State *L, int tabidx, int ctxidx = lua_upvalueindex(1));
-
-/// \brief Loads a cm_machine_runtime_config object from a Lua table
-/// \param L Lua state
-/// \param tabidx Index of table in Lua stack
-/// \param ctxidx Index of clua context
-/// \returns Allocated machine runtime config object. It must be deleted with cm_delete_machine_runtime_config
-cm_machine_runtime_config *clua_check_cm_machine_runtime_config(lua_State *L, int tabidx,
+/// \param idx Lua table stack index which will be converted to a Lua string
+/// \param schema_name Schema name to be used while converting the table
+/// \param ctxidx Index (or pseudo-index) of clua context
+const char *clua_check_schemed_json_string(lua_State *L, int idx, const std::string &schema_name,
     int ctxidx = lua_upvalueindex(1));
 
-/// \brief Loads an optional cm_machine_runtime_config object from a Lua
+/// \brief Parses a JSON from a string and pushes it as a Lua table (schemed version)
 /// \param L Lua state
-/// \param tabidx Index of table in Lua stack
-/// \param r Default C api machine runtime config value if optional field not present
-/// \param ctxidx Index of clua context
-/// \returns Allocated machine runtime config object. It must be deleted with cm_delete_machine_runtime_config
-cm_machine_runtime_config *clua_opt_cm_machine_runtime_config(lua_State *L, int tabidx,
-    const cm_machine_runtime_config *r, int ctxidx = lua_upvalueindex(1));
-
-/// \brief Loads C api memory range config from a Lua table
-/// \param L Lua state
-/// \param tabidx Memory range config stack index
-/// \param what Description of memory range for error messages
-/// \param m Pointer to cm_memory_range structure that will receive
-/// \returns m
-cm_memory_range_config *clua_check_cm_memory_range_config(lua_State *L, int tabidx, const char *what,
-    cm_memory_range_config *m);
+/// \param s JSON string
+/// \param idx Lua table stack index which will be converted to a Lua string
+/// \param schema_name Schema name to be used while converting the table
+/// \param ctxidx Index (or pseudo-index) of clua context
+void clua_push_schemed_json_table(lua_State *L, const char *s, const std::string &schema_name,
+    int ctxidx = lua_upvalueindex(1));
 
 } // namespace cartesi
 

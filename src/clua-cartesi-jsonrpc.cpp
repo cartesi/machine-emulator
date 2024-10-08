@@ -17,7 +17,7 @@
 #include "clua-i-virtual-machine.h"
 #include "clua-jsonrpc-machine.h"
 #include "clua.h"
-#include "machine-c-defines.h"
+#include "machine-c-api.h"
 
 /// \file
 /// \brief Scripting interface for the Cartesi JSONRPC API SDK.

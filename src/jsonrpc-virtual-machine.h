@@ -26,6 +26,12 @@
 
 namespace cartesi {
 
+/// Result of a fork
+struct fork_result final {
+    std::string address{};
+    uint32_t pid{};
+};
+
 /// \class jsonrpc_mgr
 /// \brief Connection manager to the server
 class jsonrpc_mgr;
@@ -52,145 +58,37 @@ public:
 
     static machine_config get_default_config(const jsonrpc_mgr_ptr &mgr);
 
-    static void verify_uarch_step_log(const jsonrpc_mgr_ptr &mgr, const access_log &log,
-        const machine_runtime_config &r = {}, bool one_based = false);
+    static void verify_step_uarch(const jsonrpc_mgr_ptr &mgr, const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after);
 
-    static void verify_uarch_step_state_transition(const jsonrpc_mgr_ptr &mgr, const hash_type &root_hash_before,
-        const access_log &log, const hash_type &root_hash_after, const machine_runtime_config &r = {},
-        bool one_based = false);
+    static void verify_reset_uarch(const jsonrpc_mgr_ptr &mgr, const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after);
 
-    static void verify_uarch_reset_log(const jsonrpc_mgr_ptr &mgr, const access_log &log,
-        const machine_runtime_config &r = {}, bool one_based = false);
+    static void verify_send_cmio_response(const jsonrpc_mgr_ptr &mgr, uint16_t reason, const unsigned char *data,
+        uint64_t length, const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after);
 
-    static void verify_uarch_reset_state_transition(const jsonrpc_mgr_ptr &mgr, const hash_type &root_hash_before,
-        const access_log &log, const hash_type &root_hash_after, const machine_runtime_config &r = {},
-        bool one_based = false);
-
-    static void verify_send_cmio_response_log(const jsonrpc_mgr_ptr &mgr, uint16_t reason, const unsigned char *data,
-        size_t length, const access_log &log, const machine_runtime_config &r = {}, bool one_based = false);
-
-    static void verify_send_cmio_response_state_transition(const jsonrpc_mgr_ptr &mgr, uint16_t reason,
-        const unsigned char *data, size_t length, const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after, const machine_runtime_config &r = {}, bool one_based = false);
-
-    static std::string fork(const jsonrpc_mgr_ptr &mgr);
-    static void rebind(const jsonrpc_mgr_ptr &mgr, const std::string &address);
-    static uint64_t get_x_address(const jsonrpc_mgr_ptr &mgr, int i);
-    static uint64_t get_f_address(const jsonrpc_mgr_ptr &mgr, int i);
-    static uint64_t get_uarch_x_address(const jsonrpc_mgr_ptr &mgr, int i);
-    static uint64_t get_csr_address(const jsonrpc_mgr_ptr &mgr, csr w);
+    static fork_result fork(const jsonrpc_mgr_ptr &mgr);
+    static std::string rebind(const jsonrpc_mgr_ptr &mgr, const std::string &address);
+    static uint64_t get_reg_address(const jsonrpc_mgr_ptr &mgr, reg r);
 
 private:
     machine_config do_get_initial_config(void) const override;
 
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
-    void do_store(const std::string &dir) override;
-    uint64_t do_read_csr(csr r) const override;
-    void do_write_csr(csr w, uint64_t val) override;
-    uint64_t do_read_x(int i) const override;
-    void do_write_x(int i, uint64_t val) override;
-    uint64_t do_read_f(int i) const override;
-    void do_write_f(int i, uint64_t val) override;
+    void do_store(const std::string &dir) const override;
+    uint64_t do_read_reg(reg r) const override;
+    void do_write_reg(reg w, uint64_t val) override;
     void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const override;
-    void do_write_memory(uint64_t address, const unsigned char *data, size_t length) override;
+    void do_write_memory(uint64_t address, const unsigned char *data, uint64_t length) override;
     void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const override;
-    void do_write_virtual_memory(uint64_t address, const unsigned char *data, size_t length) override;
+    void do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) override;
     uint64_t do_translate_virtual_address(uint64_t vaddr) const override;
-    uint64_t do_read_pc(void) const override;
-    void do_write_pc(uint64_t val) override;
-    uint64_t do_read_fcsr(void) const override;
-    void do_write_fcsr(uint64_t val) override;
-    uint64_t do_read_mvendorid(void) const override;
-    uint64_t do_read_marchid(void) const override;
-    uint64_t do_read_mimpid(void) const override;
-    uint64_t do_read_mcycle(void) const override;
-    void do_write_mcycle(uint64_t val) override;
-    uint64_t do_read_icycleinstret(void) const override;
-    void do_write_icycleinstret(uint64_t val) override;
-    uint64_t do_read_mstatus(void) const override;
-    void do_write_mstatus(uint64_t val) override;
-    uint64_t do_read_menvcfg(void) const override;
-    void do_write_menvcfg(uint64_t val) override;
-    uint64_t do_read_mtvec(void) const override;
-    void do_write_mtvec(uint64_t val) override;
-    uint64_t do_read_mscratch(void) const override;
-    void do_write_mscratch(uint64_t val) override;
-    uint64_t do_read_mepc(void) const override;
-    void do_write_mepc(uint64_t val) override;
-    uint64_t do_read_mcause(void) const override;
-    void do_write_mcause(uint64_t val) override;
-    uint64_t do_read_mtval(void) const override;
-    void do_write_mtval(uint64_t val) override;
-    uint64_t do_read_misa(void) const override;
-    void do_write_misa(uint64_t val) override;
-    uint64_t do_read_mie(void) const override;
-    void do_write_mie(uint64_t val) override;
-    uint64_t do_read_mip(void) const override;
-    void do_write_mip(uint64_t val) override;
-    uint64_t do_read_medeleg(void) const override;
-    void do_write_medeleg(uint64_t val) override;
-    uint64_t do_read_mideleg(void) const override;
-    void do_write_mideleg(uint64_t val) override;
-    uint64_t do_read_mcounteren(void) const override;
-    void do_write_mcounteren(uint64_t val) override;
-    uint64_t do_read_stvec(void) const override;
-    void do_write_stvec(uint64_t val) override;
-    uint64_t do_read_sscratch(void) const override;
-    void do_write_sscratch(uint64_t val) override;
-    uint64_t do_read_sepc(void) const override;
-    void do_write_sepc(uint64_t val) override;
-    uint64_t do_read_scause(void) const override;
-    void do_write_scause(uint64_t val) override;
-    uint64_t do_read_stval(void) const override;
-    void do_write_stval(uint64_t val) override;
-    uint64_t do_read_satp(void) const override;
-    void do_write_satp(uint64_t val) override;
-    uint64_t do_read_scounteren(void) const override;
-    void do_write_scounteren(uint64_t val) override;
-    uint64_t do_read_senvcfg(void) const override;
-    void do_write_senvcfg(uint64_t val) override;
-    uint64_t do_read_ilrsc(void) const override;
-    void do_write_ilrsc(uint64_t val) override;
-    uint64_t do_read_iflags(void) const override;
-    bool do_read_iflags_H(void) const override;
-    bool do_read_iflags_Y(void) const override;
-    bool do_read_iflags_X(void) const override;
-    void do_set_iflags_H(void) override;
-    void do_set_iflags_Y(void) override;
-    void do_set_iflags_X(void) override;
-    void do_reset_iflags_Y(void) override;
-    void do_reset_iflags_X(void) override;
-    uint64_t do_read_iunrep(void) const override;
-    void do_write_iunrep(uint64_t val) override;
-    bool do_read_uarch_halt_flag(void) const override;
-    void do_set_uarch_halt_flag(void) override;
     void do_reset_uarch(void) override;
-    access_log do_log_uarch_reset(const access_log::type &log_type, bool /*one_based = false*/) override;
-    void do_write_iflags(uint64_t val) override;
-    uint64_t do_read_htif_tohost(void) const override;
-    uint64_t do_read_htif_tohost_dev(void) const override;
-    uint64_t do_read_htif_tohost_cmd(void) const override;
-    uint64_t do_read_htif_tohost_data(void) const override;
-    void do_write_htif_tohost(uint64_t val) override;
-    uint64_t do_read_htif_fromhost(void) const override;
-    void do_write_htif_fromhost(uint64_t val) override;
-    void do_write_htif_fromhost_data(uint64_t val) override;
-    uint64_t do_read_htif_ihalt(void) const override;
-    void do_write_htif_ihalt(uint64_t val) override;
-    uint64_t do_read_htif_iconsole(void) const override;
-    void do_write_htif_iconsole(uint64_t val) override;
-    uint64_t do_read_htif_iyield(void) const override;
-    void do_write_htif_iyield(uint64_t val) override;
-    uint64_t do_read_clint_mtimecmp(void) const override;
-    void do_write_clint_mtimecmp(uint64_t val) override;
-    uint64_t do_read_plic_girqpend(void) const override;
-    void do_write_plic_girqpend(uint64_t val) override;
-    uint64_t do_read_plic_girqsrvd(void) const override;
-    void do_write_plic_girqsrvd(uint64_t val) override;
+    access_log do_log_reset_uarch(const access_log::type &log_type) override;
     void do_get_root_hash(hash_type &hash) const override;
     machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const override;
     void do_replace_memory_range(const memory_range_config &new_range) override;
-    access_log do_log_uarch_step(const access_log::type &log_type, bool /*one_based = false*/) override;
+    access_log do_log_step_uarch(const access_log::type &log_type) override;
     void do_destroy() override;
     void do_snapshot() override;
     void do_commit() override;
@@ -198,17 +96,11 @@ private:
     bool do_verify_dirty_page_maps(void) const override;
     uint64_t do_read_word(uint64_t address) const override;
     bool do_verify_merkle_tree(void) const override;
-    uint64_t do_read_uarch_x(int i) const override;
-    void do_write_uarch_x(int i, uint64_t val) override;
-    uint64_t do_read_uarch_pc(void) const override;
-    void do_write_uarch_pc(uint64_t val) override;
-    uint64_t do_read_uarch_cycle(void) const override;
-    void do_write_uarch_cycle(uint64_t val) override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
     machine_memory_range_descrs do_get_memory_ranges(void) const override;
-    void do_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length) override;
-    access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, size_t length,
-        const access_log::type &log_type, bool one_based) override;
+    void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) override;
+    access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        const access_log::type &log_type) override;
     jsonrpc_mgr_ptr m_mgr;
 };
 

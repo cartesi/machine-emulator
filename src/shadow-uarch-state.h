@@ -43,23 +43,55 @@ struct shadow_uarch_state {
 /// \brief Global instance of  theprocessor shadow uarch state device driver.
 extern const pma_driver shadow_uarch_state_driver;
 
-/// \brief Mapping between CSRs and their relative addresses in shadow uarch state memory
-enum class shadow_uarch_state_csr {
+/// \brief Mapping between registers and their relative addresses in shadow uarch state memory
+enum class shadow_uarch_state_reg {
     halt_flag = offsetof(shadow_uarch_state, halt_flag),
     cycle = offsetof(shadow_uarch_state, cycle),
     pc = offsetof(shadow_uarch_state, pc),
+    x0 = offsetof(shadow_uarch_state, x[0]),
+    x1 = offsetof(shadow_uarch_state, x[1]),
+    x2 = offsetof(shadow_uarch_state, x[2]),
+    x3 = offsetof(shadow_uarch_state, x[3]),
+    x4 = offsetof(shadow_uarch_state, x[4]),
+    x5 = offsetof(shadow_uarch_state, x[5]),
+    x6 = offsetof(shadow_uarch_state, x[6]),
+    x7 = offsetof(shadow_uarch_state, x[7]),
+    x8 = offsetof(shadow_uarch_state, x[8]),
+    x9 = offsetof(shadow_uarch_state, x[9]),
+    x10 = offsetof(shadow_uarch_state, x[10]),
+    x11 = offsetof(shadow_uarch_state, x[11]),
+    x12 = offsetof(shadow_uarch_state, x[12]),
+    x13 = offsetof(shadow_uarch_state, x[13]),
+    x14 = offsetof(shadow_uarch_state, x[14]),
+    x15 = offsetof(shadow_uarch_state, x[15]),
+    x16 = offsetof(shadow_uarch_state, x[16]),
+    x17 = offsetof(shadow_uarch_state, x[17]),
+    x18 = offsetof(shadow_uarch_state, x[18]),
+    x19 = offsetof(shadow_uarch_state, x[19]),
+    x20 = offsetof(shadow_uarch_state, x[20]),
+    x21 = offsetof(shadow_uarch_state, x[21]),
+    x22 = offsetof(shadow_uarch_state, x[22]),
+    x23 = offsetof(shadow_uarch_state, x[23]),
+    x24 = offsetof(shadow_uarch_state, x[24]),
+    x25 = offsetof(shadow_uarch_state, x[25]),
+    x26 = offsetof(shadow_uarch_state, x[26]),
+    x27 = offsetof(shadow_uarch_state, x[27]),
+    x28 = offsetof(shadow_uarch_state, x[28]),
+    x29 = offsetof(shadow_uarch_state, x[29]),
+    x30 = offsetof(shadow_uarch_state, x[30]),
+    x31 = offsetof(shadow_uarch_state, x[31]),
 };
 
-/// \brief Obtains the relative address of a CSR in shadow uarch state memory.
-/// \param reg CSR name.
+/// \brief Obtains the relative address of a register in shadow uarch state memory.
+/// \param reg Register name.
 /// \returns The address.
-constexpr uint64_t shadow_uarch_state_get_csr_rel_addr(shadow_uarch_state_csr reg) {
+constexpr uint64_t shadow_uarch_state_get_reg_rel_addr(shadow_uarch_state_reg reg) {
     return static_cast<uint64_t>(reg);
 }
 
-/// \brief Obtains the absolute address of a CSR in shadow uarch state memory.
-constexpr uint64_t shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr reg) {
-    return PMA_SHADOW_UARCH_STATE_START + shadow_uarch_state_get_csr_rel_addr(reg);
+/// \brief Obtains the absolute address of a register in shadow uarch state memory.
+constexpr uint64_t shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg reg) {
+    return PMA_SHADOW_UARCH_STATE_START + shadow_uarch_state_get_reg_rel_addr(reg);
 }
 
 /// \brief Obtains the relative address of a general purpose uarch register

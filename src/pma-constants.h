@@ -19,6 +19,7 @@
 
 #include <cstdint>
 
+#include "machine-c-api.h"
 #include "pma-defines.h"
 
 namespace cartesi {
@@ -54,6 +55,8 @@ enum PMA_ranges : uint64_t {
     PMA_CMIO_TX_BUFFER_START = EXPAND_UINT64_C(PMA_CMIO_TX_BUFFER_START_DEF),      ///< Start of CMIO TX buffer range
     PMA_CMIO_TX_BUFFER_LOG2_SIZE = EXPAND_UINT64_C(PMA_CMIO_TX_BUFFER_LOG2_SIZE_DEF), ///< Log2 of CMIO TX buffer range
     PMA_CMIO_TX_BUFFER_LENGTH = (UINT64_C(1) << PMA_CMIO_TX_BUFFER_LOG2_SIZE_DEF), ///< Length of CMIO TX buffer range
+    PMA_DRIVE_START = EXPAND_UINT64_C(PMA_DRIVE_START_DEF),   ///< Start PMA address for flash drives
+    PMA_DRIVE_OFFSET = EXPAND_UINT64_C(PMA_DRIVE_OFFSET_DEF), ///< PMA offset for extra flash drives
 
     PMA_FIRST_VIRTIO_START = EXPAND_UINT64_C(PMA_FIRST_VIRTIO_START_DEF), ///< Start of first VIRTIO range
     PMA_VIRTIO_LENGTH = EXPAND_UINT64_C(PMA_VIRTIO_LENGTH_DEF),           ///< Length of each VIRTIO range
@@ -128,6 +131,12 @@ enum class PMA_ISTART_DID {
     cmio_tx_buffer = PMA_CMIO_TX_BUFFER_DID_DEF,   ///< DID for cmio transmit buffer
     shadow_uarch = PMA_SHADOW_UARCH_STATE_DID_DEF, ///< DID for shadow uarch state device
 };
+
+static_assert(PMA_CMIO_RX_BUFFER_START_DEF == CM_PMA_CMIO_RX_BUFFER_START);
+static_assert(PMA_CMIO_RX_BUFFER_LOG2_SIZE_DEF == CM_PMA_CMIO_RX_BUFFER_LOG2_SIZE);
+static_assert(PMA_CMIO_TX_BUFFER_START_DEF == CM_PMA_CMIO_TX_BUFFER_START);
+static_assert(PMA_CMIO_TX_BUFFER_LOG2_SIZE_DEF == CM_PMA_CMIO_TX_BUFFER_LOG2_SIZE);
+static_assert(PMA_RAM_START_DEF == CM_PMA_RAM_START);
 
 } // namespace cartesi
 

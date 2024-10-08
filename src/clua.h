@@ -277,7 +277,8 @@ void clua_setmethods(lua_State *L, const luaL_Reg *methods, int nup, int ctxidx)
         lua_newtable(L);      // up1 .. upn meta index
         lua_pushvalue(L, -1); // up1 .. upn meta index index
         lua_setfield(L, -3, "__index");
-    }                                   // up1 .. upn meta index
+    }
+    // up1 .. upn meta index
     lua_insert(L, -nup - 2);            // index up1 .. upn meta
     lua_pop(L, 1);                      // index up1 .. upn
     lua_pushvalue(L, ctxidx);           // index up1 .. upn ctxtab
@@ -312,8 +313,6 @@ void clua_createtype(lua_State *L, const char *name, int ctxidx) {
     lua_setfield(L, -2, "name");              // T_rawname T_meta
     lua_pushvalue(L, ctxidx);                 // T_rawname T_meta ctxtab
     luaL_setfuncs(L, default_meta.data(), 1); // T_rawname T_meta
-    lua_pushliteral(L, "access denied");      // T_rawname T_meta "access denied"
-    lua_setfield(L, -2, "__metatable");       // T_rawname T_meta
     lua_rawset(L, ctxidx);                    //
 }
 
@@ -350,13 +349,6 @@ void clua_setstringfield(lua_State *L, const char *val, const char *name, int id
 /// \param idx Index (or pseudo-index) of object in stack
 /// \param ctxidx Index (or pseudo-index) of clua context
 void clua_setlstringfield(lua_State *L, const char *val, size_t length, const char *name, int idx);
-
-/// \brief Sets the lua named field to boolean value
-/// \param L Lua state
-/// \param val Boolean value
-/// \param idx Index (or pseudo-index) of object in stack
-/// \param ctxidx Index (or pseudo-index) of clua context
-void clua_setbooleanfield(lua_State *L, bool val, const char *name, int idx);
 
 } // namespace cartesi
 

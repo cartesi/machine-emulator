@@ -42,52 +42,52 @@ static bool shadow_state_peek(const pma_entry &pma, const machine &m, uint64_t p
 
     // Copy general-purpose registers
     for (int i = 0; i < X_REG_COUNT; ++i) {
-        s->x[i] = m.read_x(i);
+        s->x[i] = m.read_reg(static_cast<machine::reg>(machine::reg::x0 + i));
     }
     // Copy floating-point registers
     for (int i = 0; i < F_REG_COUNT; ++i) {
-        s->f[i] = m.read_f(i);
+        s->f[i] = m.read_reg(static_cast<machine::reg>(machine::reg::f0 + i));
     }
     // Copy named registers
-    s->pc = m.read_pc();
-    s->fcsr = m.read_fcsr();
-    s->mvendorid = m.read_mvendorid();
-    s->marchid = m.read_marchid();
-    s->mimpid = m.read_mimpid();
-    s->mcycle = m.read_mcycle();
-    s->icycleinstret = m.read_icycleinstret();
-    s->mstatus = m.read_mstatus();
-    s->mtvec = m.read_mtvec();
-    s->mscratch = m.read_mscratch();
-    s->mepc = m.read_mepc();
-    s->mcause = m.read_mcause();
-    s->mtval = m.read_mtval();
-    s->misa = m.read_misa();
-    s->mie = m.read_mie();
-    s->mip = m.read_mip();
-    s->medeleg = m.read_medeleg();
-    s->mideleg = m.read_mideleg();
-    s->mcounteren = m.read_mcounteren();
-    s->menvcfg = m.read_menvcfg();
-    s->stvec = m.read_stvec();
-    s->sscratch = m.read_sscratch();
-    s->sepc = m.read_sepc();
-    s->scause = m.read_scause();
-    s->stval = m.read_stval();
-    s->satp = m.read_satp();
-    s->scounteren = m.read_scounteren();
-    s->senvcfg = m.read_senvcfg();
-    s->ilrsc = m.read_ilrsc();
-    s->iflags = m.read_iflags();
-    s->iunrep = m.read_iunrep();
-    s->clint_mtimecmp = m.read_clint_mtimecmp();
-    s->plic_girqpend = m.read_plic_girqpend();
-    s->plic_girqsrvd = m.read_plic_girqsrvd();
-    s->htif_tohost = m.read_htif_tohost();
-    s->htif_fromhost = m.read_htif_fromhost();
-    s->htif_ihalt = m.read_htif_ihalt();
-    s->htif_iconsole = m.read_htif_iconsole();
-    s->htif_iyield = m.read_htif_iyield();
+    s->pc = m.read_reg(machine::reg::pc);
+    s->fcsr = m.read_reg(machine::reg::fcsr);
+    s->mvendorid = m.read_reg(machine::reg::mvendorid);
+    s->marchid = m.read_reg(machine::reg::marchid);
+    s->mimpid = m.read_reg(machine::reg::mimpid);
+    s->mcycle = m.read_reg(machine::reg::mcycle);
+    s->icycleinstret = m.read_reg(machine::reg::icycleinstret);
+    s->mstatus = m.read_reg(machine::reg::mstatus);
+    s->mtvec = m.read_reg(machine::reg::mtvec);
+    s->mscratch = m.read_reg(machine::reg::mscratch);
+    s->mepc = m.read_reg(machine::reg::mepc);
+    s->mcause = m.read_reg(machine::reg::mcause);
+    s->mtval = m.read_reg(machine::reg::mtval);
+    s->misa = m.read_reg(machine::reg::misa);
+    s->mie = m.read_reg(machine::reg::mie);
+    s->mip = m.read_reg(machine::reg::mip);
+    s->medeleg = m.read_reg(machine::reg::medeleg);
+    s->mideleg = m.read_reg(machine::reg::mideleg);
+    s->mcounteren = m.read_reg(machine::reg::mcounteren);
+    s->menvcfg = m.read_reg(machine::reg::menvcfg);
+    s->stvec = m.read_reg(machine::reg::stvec);
+    s->sscratch = m.read_reg(machine::reg::sscratch);
+    s->sepc = m.read_reg(machine::reg::sepc);
+    s->scause = m.read_reg(machine::reg::scause);
+    s->stval = m.read_reg(machine::reg::stval);
+    s->satp = m.read_reg(machine::reg::satp);
+    s->scounteren = m.read_reg(machine::reg::scounteren);
+    s->senvcfg = m.read_reg(machine::reg::senvcfg);
+    s->ilrsc = m.read_reg(machine::reg::ilrsc);
+    s->iflags = m.read_reg(machine::reg::iflags);
+    s->iunrep = m.read_reg(machine::reg::iunrep);
+    s->clint_mtimecmp = m.read_reg(machine::reg::clint_mtimecmp);
+    s->plic_girqpend = m.read_reg(machine::reg::plic_girqpend);
+    s->plic_girqsrvd = m.read_reg(machine::reg::plic_girqsrvd);
+    s->htif_tohost = m.read_reg(machine::reg::htif_tohost);
+    s->htif_fromhost = m.read_reg(machine::reg::htif_fromhost);
+    s->htif_ihalt = m.read_reg(machine::reg::htif_ihalt);
+    s->htif_iconsole = m.read_reg(machine::reg::htif_iconsole);
+    s->htif_iyield = m.read_reg(machine::reg::htif_iyield);
     *page_data = scratch;
     return true;
 }

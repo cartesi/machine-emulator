@@ -59,52 +59,16 @@ public:
         return m_s;
     }
 
-    /// \brief Reads the value of a general-purpose register.
-    /// \param i Register index. Between 0 and UARCH_X_REG_COUNT-1, inclusive.
-    /// \returns The value of the register.
-    uint64_t read_x(int i) const;
-
-    /// \brief Writes the value of a general-purpose register.
-    /// \param i Register index. Between 1 and UARCH_X_REG_COUNT-1, inclusive.
-    /// \param val New register value.
-    void write_x(int i, uint64_t val);
-
-    /// \brief Reads the value of the pc register.
-    /// \returns The value of the register.
-    uint64_t read_pc(void) const;
-
-    /// \brief Reads the value of the pc register.
-    /// \param val New register value.
-    void write_pc(uint64_t val);
-
-    /// \brief Reads the value of the cycles counter register.
-    /// \returns Register value
-    uint64_t read_cycle(void) const;
-
-    /// \brief Writes the value of the cycles counter register.
-    /// \param val New register value.
-    void write_cycle(uint64_t val);
-
-    /// \brief Gets the value of halt flag
-    bool read_halt_flag(void) const;
-
-    /// \brief Sets the value of halt flag
-    void set_halt_flag(void);
-
-    /// \brief Reads the length of uarch RAM
-    /// \returns Length of uarch RAM
-    uint64_t read_ram_length(void) const;
-
     /// \brief Obtain PMA entry that covers a given physical memory region
     /// \param s Pointer to machine state.
     /// \param paddr Start of physical memory region.
     /// \param length Length of physical memory region.
     /// \returns Corresponding entry if found, or a sentinel entry
     /// for an empty range.
-    pma_entry &find_pma_entry(uint64_t paddr, size_t length);
+    pma_entry &find_pma_entry(uint64_t paddr, uint64_t length);
 
     /// \brief Obtain PMA entry that covers a given physical memory region
-    const pma_entry &find_pma_entry(uint64_t paddr, size_t length) const;
+    const pma_entry &find_pma_entry(uint64_t paddr, uint64_t length) const;
 
     /// \brief Returns copy of initialization config.
     const uarch_config &get_initial_config(void) const {

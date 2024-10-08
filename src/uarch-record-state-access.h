@@ -51,7 +51,7 @@ class uarch_record_state_access : public i_uarch_state_access<uarch_record_state
     /// \param length Length of physical memory region.
     /// \returns Corresponding entry if found, or a sentinel entry
     /// for an empty range.
-    pma_entry &find_memory_pma_entry(uint64_t paddr, size_t length) {
+    pma_entry &find_memory_pma_entry(uint64_t paddr, uint64_t length) {
         // First, search microarchitecture's private PMA entries
         if (m_us.ram.contains(paddr, length)) {
             return m_us.ram;
@@ -167,16 +167,16 @@ private:
         }
         const uint64_t pleaf_aligned = paligned & ~(machine_merkle_tree::get_word_size() - 1);
         access a;
-        if (m_log->get_log_type().has_proofs()) {
-            // We can skip updating the merkle tree while getting the proof because we assume that:
-            // 1) A full merkle tree update was called at the beginning of machine::log_uarch_step()
-            // 2) We called update_merkle_tree_page on all write accesses
-            const auto proof =
-                m_m.get_proof(pleaf_aligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
-            // We just store the sibling hashes in the access because this is the only missing piece of data needed to
-            // reconstruct the proof
-            a.set_sibling_hashes(proof.get_sibling_hashes());
-        }
+
+        // We can skip updating the merkle tree while getting the proof because we assume that:
+        // 1) A full merkle tree update was called at the beginning of machine::log_step_uarch()
+        // 2) We called update_merkle_tree_page on all write accesses
+        const auto proof =
+            m_m.get_proof(pleaf_aligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
+        // We just store the sibling hashes in the access because this is the only missing piece of data needed to
+        // reconstruct the proof
+        a.set_sibling_hashes(proof.get_sibling_hashes());
+
         a.set_type(access_type::read);
         a.set_address(paligned);
         a.set_log2_size(log2_size<uint64_t>::value);
@@ -210,16 +210,16 @@ private:
         }
         const uint64_t pleaf_aligned = paligned & ~(machine_merkle_tree::get_word_size() - 1);
         access a;
-        if (m_log->get_log_type().has_proofs()) {
-            // We can skip updating the merkle tree while getting the proof because we assume that:
-            // 1) A full merkle tree update was called at the beginning of machine::log_uarch_step()
-            // 2) We called update_merkle_tree_page on all write accesses
-            const auto proof =
-                m_m.get_proof(pleaf_aligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
-            // We just store the sibling hashes in the access because this is the only missing piece of data needed to
-            // reconstruct the proof
-            a.set_sibling_hashes(proof.get_sibling_hashes());
-        }
+
+        // We can skip updating the merkle tree while getting the proof because we assume that:
+        // 1) A full merkle tree update was called at the beginning of machine::log_step_uarch()
+        // 2) We called update_merkle_tree_page on all write accesses
+        const auto proof =
+            m_m.get_proof(pleaf_aligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
+        // We just store the sibling hashes in the access because this is the only missing piece of data needed to
+        // reconstruct the proof
+        a.set_sibling_hashes(proof.get_sibling_hashes());
+
         a.set_type(access_type::write);
         a.set_address(paligned);
         a.set_log2_size(log2_size<uint64_t>::value);
@@ -244,11 +244,9 @@ private:
     /// \param paligned Physical address in the machine state, aligned to a 64-bit word.
     void update_after_write(uint64_t paligned) {
         assert((paligned & (sizeof(uint64_t) - 1)) == 0);
-        if (m_log->get_log_type().has_proofs()) {
-            const bool updated = m_m.update_merkle_tree_page(paligned);
-            (void) updated;
-            assert(updated);
-        }
+        const bool updated = m_m.update_merkle_tree_page(paligned);
+        (void) updated;
+        assert(updated);
     }
 
     /// \brief Logs a write access before it happens, writes, and then update the Merkle tree.
@@ -291,35 +289,35 @@ private:
     }
 
     uint64_t do_read_pc() const {
-        return log_read(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::pc), m_us.pc, "uarch.pc");
+        return log_read(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::pc), m_us.pc, "uarch.pc");
     }
 
     void do_write_pc(uint64_t val) {
-        return log_before_write_write_and_update(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::pc),
+        return log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::pc),
             m_us.pc, val, "uarch.pc");
     }
 
     uint64_t do_read_cycle() const {
-        return log_read(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::cycle), m_us.cycle, "uarch.cycle");
+        return log_read(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::cycle), m_us.cycle, "uarch.cycle");
     }
 
     void do_write_cycle(uint64_t val) {
-        return log_before_write_write_and_update(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::cycle),
+        return log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::cycle),
             m_us.cycle, val, "uarch.cycle");
     }
 
     bool do_read_halt_flag() const {
-        return log_read(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::halt_flag), m_us.halt_flag,
+        return log_read(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag), m_us.halt_flag,
             "uarch.halt_flag");
     }
 
     void do_set_halt_flag() {
-        log_before_write_write_and_update(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::halt_flag),
+        log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag),
             m_us.halt_flag, true, "uarch.halt_flag");
     }
 
     void do_reset_halt_flag() {
-        return log_before_write_write_and_update(shadow_uarch_state_get_csr_abs_addr(shadow_uarch_state_csr::halt_flag),
+        return log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag),
             m_us.halt_flag, false, "uarch.halt_flag");
     }
 
@@ -376,15 +374,8 @@ private:
         // Actually modify the state
         aliased_aligned_write<uint64_t>(hdata, data);
 
-        // Finally, update Merkle tree or mark the page dirty, depending on whether proofs are being requested or not
-        if (m_log->get_log_type().has_proofs()) {
-            // When proofs are requested, we always want to update the Merkle tree
-            update_after_write(paddr);
-        } else {
-            // Marking the page dirty is only needed for pages of memory PMAs, when proofs are not requested
-            const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-            pma.mark_dirty_page(paddr_page - pma.get_start());
-        }
+        // When proofs are requested, we always want to update the Merkle tree
+        update_after_write(paddr);
     }
 
     /// \brief Writes a uint64 machine state register mapped to a memory address
@@ -425,11 +416,11 @@ private:
             // log read data, if debug info is enabled
             a.get_read().emplace(get_uarch_state_image());
         }
-        if (m_log->get_log_type().has_proofs()) {
-            // We just store the sibling hashes in the access because this is the only missing piece of data needed to
-            // reconstruct the proof
-            a.set_sibling_hashes(proof.get_sibling_hashes());
-        }
+
+        // We just store the sibling hashes in the access because this is the only missing piece of data needed to
+        // reconstruct the proof
+        a.set_sibling_hashes(proof.get_sibling_hashes());
+
         a.set_written_hash(uarch_pristine_state_hash);
 
         // Restore uarch to pristine state

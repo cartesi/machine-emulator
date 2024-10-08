@@ -21,9 +21,6 @@ local test_util = require("cartesi.tests.util")
 
 local config_base = {
     processor = {
-        mvendorid = -1,
-        mimpid = -1,
-        marchid = -1,
         iunrep = 1,
     },
     ram = {
@@ -52,8 +49,8 @@ local function test(config, console_getchar_enable)
 
     -- with the expected payload
     assert(
-        (machine:read_htif_tohost_data() >> 1) == exit_payload,
-        string.format("exit payload: expected %u, got %u\n", exit_payload, machine:read_htif_tohost_data() >> 1)
+        (machine:read_reg("htif_tohost_data") >> 1) == exit_payload,
+        string.format("exit payload: expected %u, got %u\n", exit_payload, machine:read_reg("htif_tohost_data") >> 1)
     )
 
     -- at the expected mcycle

@@ -294,7 +294,6 @@ local riscv_tests = {
     { "compressed.bin", 410 },
 }
 
-local log_proofs = false
 local log_annotations = false
 
 -- Microarchitecture configuration
@@ -321,9 +320,6 @@ where options are:
   --jobs=<N>
     run N tests in parallel
     (default: 1, i.e., run tests sequentially)
-
-  --log-proofs
-    include proofs in logs
 
   --log-annotations
     include annotations in logs
@@ -495,16 +491,6 @@ local options = {
         end,
     },
     {
-        "^%-%-log%-proofs$",
-        function(o)
-            if not o then
-                return false
-            end
-            log_proofs = true
-            return true
-        end,
-    },
-    {
         "^%-%-log%-annotations$",
         function(o)
             if not o then
@@ -604,7 +590,7 @@ local function run_machine(machine, ctx, max_mcycle, advance_machine_fn)
             break
         end
     end
-    ctx.read_htif_tohost_data = machine:read_htif_tohost_data()
+    ctx.read_htif_tohost_data = machine:read_reg("htif_tohost_data")
 end
 
 local function advance_machine_with_uarch(machine)
@@ -635,20 +621,9 @@ end
 
 local function build_machine(ram_image)
     local config = {
-        processor = {
-            -- Request automatic default values for versioning CSRs
-            mimpid = -1,
-            marchid = -1,
-            mvendorid = -1,
-        },
         ram = {
             length = 32 << 20,
             image_filename = test_path .. "/" .. ram_image,
-        },
-        htif = {
-            console_getchar = false,
-            yield_automatic = true,
-            yield_manual = true,
         },
         flash_drive = { {
             start = 0x80000000000000,
@@ -705,7 +680,7 @@ local function fatal(fmt, ...)
     error(string.format(fmt, ...))
 end
 local function check_and_print_result(machine, ctx)
-    local halt_payload = machine:read_htif_tohost_data() >> 1
+    local halt_payload = machine:read_reg("htif_tohost_data") >> 1
     local expected_halt_payload = ctx.expected_halt_payload or 0
     if halt_payload ~= expected_halt_payload then
         fatal("%s: failed. returned halt payload %d, expected %d\n", ctx.ram_image, halt_payload, expected_halt_payload)
@@ -759,7 +734,10 @@ local function hash(tests)
                 end
             end
         end
-        if machine:read_htif_tohost_data() >> 1 ~= expected_payload or machine:read_mcycle() ~= expected_cycles then
+        if
+            machine:read_reg("htif_tohost_data") >> 1 ~= expected_payload
+            or machine:read_mcycle() ~= expected_cycles
+        then
             os.exit(1, true)
         end
         out:write(
@@ -788,7 +766,7 @@ local function step(tests)
         out = assert(io.open(output, "w"), "error opening file: " .. output)
     end
     local indentout = util.indentout
-    local log_type = { annotations = log_annotations, proofs = log_proofs }
+    local log_type = (log_annotations and cartesi.ACCESS_LOG_TYPE_ANNOTATIONS or 0)
     out:write("[\n")
     for i, test in ipairs(tests) do
         local ram_image = test[1]
@@ -832,7 +810,7 @@ local function step(tests)
             if not periodic_action or total_uarch_cycles == next_action_uarch_cycle then
                 local init_mcycle = machine:read_mcycle()
                 init_uarch_cycle = machine:read_uarch_cycle()
-                local log = machine:log_uarch_step(log_type)
+                local log = machine:log_step_uarch(log_type)
                 local final_mcycle = machine:read_mcycle()
                 final_uarch_cycle = machine:read_uarch_cycle()
                 if total_logged_steps > 0 then
@@ -855,7 +833,10 @@ local function step(tests)
         else
             indentout(out, 1, "}\n")
         end
-        if machine:read_htif_tohost_data() >> 1 ~= expected_payload or machine:read_mcycle() ~= expected_cycles then
+        if
+            machine:read_reg("htif_tohost_data") >> 1 ~= expected_payload
+            or machine:read_mcycle() ~= expected_cycles
+        then
             os.exit(1, true)
         end
         machine:destroy()
@@ -954,8 +935,8 @@ local function run_host_and_uarch_machines(target, ctx, max_mcycle)
             break
         end
     end
-    local host_htif_tohost_data = host_machine:read_htif_tohost_data()
-    local uarch_htif_tohost_data = uarch_machine:read_htif_tohost_data()
+    local host_htif_tohost_data = host_machine:read_reg("htif_tohost_data")
+    local uarch_htif_tohost_data = uarch_machine:read_reg("htif_tohost_data")
     if host_htif_tohost_data ~= uarch_htif_tohost_data then
         fatal(
             "%s: host_htif_tohost_data ~= uarch_htif_tohost_data: %d ~= %d",

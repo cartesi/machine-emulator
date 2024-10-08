@@ -90,16 +90,16 @@ private:
         }
         const uint64_t pleaf_aligned = paligned & ~(machine_merkle_tree::get_word_size() - 1);
         access a;
-        if (m_log->get_log_type().has_proofs()) {
-            // We can skip updating the merkle tree while getting the proof because we assume that:
-            // 1) A full merkle tree update was called at the beginning of machine::log_load_cmio_input()
-            // 2) We called update_merkle_tree_page on all write accesses
-            const auto proof =
-                m_m.get_proof(pleaf_aligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
-            // We just store the sibling hashes in the access because this is the only missing piece of data needed to
-            // reconstruct the proof
-            a.set_sibling_hashes(proof.get_sibling_hashes());
-        }
+
+        // We can skip updating the merkle tree while getting the proof because we assume that:
+        // 1) A full merkle tree update was called at the beginning of machine::log_load_cmio_input()
+        // 2) We called update_merkle_tree_page on all write accesses
+        const auto proof =
+            m_m.get_proof(pleaf_aligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
+        // We just store the sibling hashes in the access because this is the only missing piece of data needed to
+        // reconstruct the proof
+        a.set_sibling_hashes(proof.get_sibling_hashes());
+
         a.set_type(access_type::read);
         a.set_address(paligned);
         a.set_log2_size(log2_size<uint64_t>::value);
@@ -127,16 +127,16 @@ private:
         // address of the leaf that contains the word at paligned
         const uint64_t pleaf_aligned = paligned & ~(machine_merkle_tree::get_word_size() - 1);
         access a;
-        if (m_log->get_log_type().has_proofs()) {
-            // We can skip updating the merkle tree while getting the proof because we assume that:
-            // 1) A full merkle tree update was called at the beginning of machine::log_load_cmio_input()
-            // 2) We called update_merkle_tree_page on all write accesses
-            const auto proof =
-                m_m.get_proof(pleaf_aligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
-            // We just store the sibling hashes in the access because this is the only missing piece of data needed to
-            // reconstruct the proof
-            a.set_sibling_hashes(proof.get_sibling_hashes());
-        }
+
+        // We can skip updating the merkle tree while getting the proof because we assume that:
+        // 1) A full merkle tree update was called at the beginning of machine::log_load_cmio_input()
+        // 2) We called update_merkle_tree_page on all write accesses
+        const auto proof =
+            m_m.get_proof(pleaf_aligned, machine_merkle_tree::get_log2_word_size(), skip_merkle_tree_update);
+        // We just store the sibling hashes in the access because this is the only missing piece of data needed to
+        // reconstruct the proof
+        a.set_sibling_hashes(proof.get_sibling_hashes());
+
         a.set_type(access_type::write);
         a.set_address(paligned);
         a.set_log2_size(log2_size<uint64_t>::value);
@@ -161,11 +161,9 @@ private:
     /// \param paligned Physical address in the machine state, aligned to a 64-bit word.
     void update_after_write(uint64_t paligned) {
         assert((paligned & (sizeof(uint64_t) - 1)) == 0);
-        if (m_log->get_log_type().has_proofs()) {
-            const bool updated = m_m.update_merkle_tree_page(paligned);
-            (void) updated;
-            assert(updated);
-        }
+        const bool updated = m_m.update_merkle_tree_page(paligned);
+        (void) updated;
+        assert(updated);
     }
 
     /// \brief Logs a write access before it happens, writes, and then update the Merkle tree.
@@ -197,7 +195,7 @@ private:
     void do_reset_iflags_Y(void) {
         auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, m_m.get_state().iflags.X,
             false /* Y */, m_m.get_state().iflags.H);
-        const uint64_t iflags_addr = shadow_state_get_csr_abs_addr(shadow_state_csr::iflags);
+        const uint64_t iflags_addr = shadow_state_get_reg_abs_addr(shadow_state_reg::iflags);
         log_read(iflags_addr, "iflags.Y");
         log_before_write(iflags_addr, new_iflags, "iflags.Y");
         m_m.get_state().iflags.Y = false;
@@ -205,12 +203,12 @@ private:
     }
 
     bool do_read_iflags_Y(void) const {
-        log_read(shadow_state_get_csr_abs_addr(shadow_state_csr::iflags), "iflags.Y");
+        log_read(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags), "iflags.Y");
         return m_m.get_state().iflags.Y;
     }
 
     void do_write_htif_fromhost(uint64_t val) {
-        log_before_write_write_and_update(shadow_state_get_csr_abs_addr(shadow_state_csr::htif_fromhost),
+        log_before_write_write_and_update(shadow_state_get_reg_abs_addr(shadow_state_reg::htif_fromhost),
             m_m.get_state().htif.fromhost, val, "htif.fromhost");
     }
 
@@ -247,11 +245,11 @@ private:
             access_data &data = a.get_read().emplace(write_length);
             memcpy(data.data(), pma.get_memory().get_host_memory(), write_length);
         }
-        if (m_log->get_log_type().has_proofs()) {
-            // We just store the sibling hashes in the access because this is the only missing piece of data needed to
-            // reconstruct the proof
-            a.set_sibling_hashes(proof.get_sibling_hashes());
-        }
+
+        // We just store the sibling hashes in the access because this is the only missing piece of data needed to
+        // reconstruct the proof
+        a.set_sibling_hashes(proof.get_sibling_hashes());
+
         // write data to memory
         m_m.write_memory(paddr, data, data_length);
         if (write_length > data_length) {

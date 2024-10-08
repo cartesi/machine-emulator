@@ -20,6 +20,7 @@
 #include <cstdint>
 
 #include "htif-defines.h"
+#include "machine-c-api.h"
 #include "pma-defines.h"
 #include "pma-driver.h"
 
@@ -36,6 +37,7 @@ extern const pma_driver htif_driver;
 enum HTIF_shifts {
     HTIF_DEV_SHIFT = HTIF_DEV_SHIFT_DEF,
     HTIF_CMD_SHIFT = HTIF_CMD_SHIFT_DEF,
+    HTIF_REASON_SHIFT = HTIF_REASON_SHIFT_DEF,
     HTIF_DATA_SHIFT = HTIF_DATA_SHIFT_DEF
 };
 
@@ -43,12 +45,13 @@ enum HTIF_shifts {
 enum HTIF_masks : uint64_t {
     HTIF_DEV_MASK = EXPAND_UINT64_C(HTIF_DEV_MASK_DEF),
     HTIF_CMD_MASK = EXPAND_UINT64_C(HTIF_CMD_MASK_DEF),
+    HTIF_REASON_MASK = EXPAND_UINT64_C(HTIF_REASON_MASK_DEF),
     HTIF_DATA_MASK = EXPAND_UINT64_C(HTIF_DATA_MASK_DEF)
 };
 
-static constexpr uint64_t HTIF_BUILD(uint64_t dev, uint64_t cmd, uint64_t data) {
+static constexpr uint64_t HTIF_BUILD(uint64_t dev, uint64_t cmd, uint64_t reason, uint64_t data) {
     return ((dev << HTIF_DEV_SHIFT) & HTIF_DEV_MASK) | ((cmd << HTIF_CMD_SHIFT) & HTIF_CMD_MASK) |
-        ((data << HTIF_DATA_SHIFT) & HTIF_DATA_MASK);
+        ((reason << HTIF_REASON_SHIFT) & HTIF_REASON_MASK) | ((data << HTIF_DATA_SHIFT) & HTIF_DATA_MASK);
 }
 
 static constexpr uint64_t HTIF_DEV_FIELD(uint64_t reg) {
@@ -59,8 +62,24 @@ static constexpr uint64_t HTIF_CMD_FIELD(uint64_t reg) {
     return (reg & HTIF_CMD_MASK) >> HTIF_CMD_SHIFT;
 }
 
+static constexpr uint64_t HTIF_REASON_FIELD(uint64_t reg) {
+    return (reg & HTIF_REASON_MASK) >> HTIF_REASON_SHIFT;
+}
+
 static constexpr uint64_t HTIF_DATA_FIELD(uint64_t reg) {
     return (reg & HTIF_DATA_MASK) >> HTIF_DATA_SHIFT;
+}
+
+static constexpr uint64_t HTIF_REPLACE_DEV(uint64_t reg, uint64_t dev) {
+    return (reg & (~HTIF_DEV_MASK)) | ((dev << HTIF_DEV_SHIFT) & HTIF_DEV_MASK);
+}
+
+static constexpr uint64_t HTIF_REPLACE_CMD(uint64_t reg, uint64_t cmd) {
+    return (reg & (~HTIF_CMD_MASK)) | ((cmd << HTIF_CMD_SHIFT) & HTIF_CMD_MASK);
+}
+
+static constexpr uint64_t HTIF_REPLACE_REASON(uint64_t reg, uint64_t cmd) {
+    return (reg & (~HTIF_REASON_MASK)) | ((cmd << HTIF_REASON_SHIFT) & HTIF_REASON_MASK);
 }
 
 static constexpr uint64_t HTIF_REPLACE_DATA(uint64_t reg, uint64_t data) {
@@ -102,6 +121,15 @@ enum class htif_csr {
     iconsole = UINT64_C(0x18),
     iyield = UINT64_C(0x20)
 };
+
+static_assert(HTIF_YIELD_AUTOMATIC_REASON_PROGRESS_DEF == CM_CMIO_YIELD_AUTOMATIC_REASON_PROGRESS);
+static_assert(HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT_DEF == CM_CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT);
+static_assert(HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT_DEF == CM_CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT);
+static_assert(HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED_DEF == CM_CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED);
+static_assert(HTIF_YIELD_MANUAL_REASON_RX_REJECTED_DEF == CM_CMIO_YIELD_MANUAL_REASON_RX_REJECTED);
+static_assert(HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION_DEF == CM_CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION);
+static_assert(HTIF_YIELD_REASON_ADVANCE_STATE_DEF == CM_CMIO_YIELD_REASON_ADVANCE_STATE);
+static_assert(HTIF_YIELD_REASON_INSPECT_STATE_DEF == CM_CMIO_YIELD_REASON_INSPECT_STATE);
 
 } // namespace cartesi
 

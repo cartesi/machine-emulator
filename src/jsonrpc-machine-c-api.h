@@ -45,7 +45,7 @@ CM_API void cm_jsonrpc_destroy_mgr(const cm_jsonrpc_mgr *mgr);
 /// \brief Forks the remote server.
 /// \param mgr Pointer to a valid JSONRPC connection manager.
 /// \param address Receives address of new server if function execution succeeds or NULL otherwise,
-/// remains valid until the next time this same function is called on the same thread.
+/// guaranteed to remain valid only until the next C API is called from the same thread.
 /// \param pid Receives the forked child process id if function execution succeeds or 0 otherwise.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, const char **address, int32_t *pid);
@@ -54,7 +54,7 @@ CM_API cm_error cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, const char **address,
 /// \param mgr Pointer to a valid JSONRPC connection manager.
 /// \param address New address that the remote server should bind to.
 /// \param new_address Receives the new address that the remote server actually bound to,
-/// remains valid until the next time this same function is called on the same thread.
+/// guaranteed to remain valid only until the next C API is called from the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, const char **new_address);
 
@@ -66,14 +66,14 @@ CM_API cm_error cm_jsonrpc_shutdown(const cm_jsonrpc_mgr *mgr);
 /// \brief Gets the semantic version of the remote server.
 /// \param mgr Pointer to a valid JSONRPC connection manager.
 /// \param semantic_version Receives the semantic version as a JSON string,
-/// remains valid until the next time this same function is called on the same thread.
+/// guaranteed to remain valid only until the next C API is called from the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_jsonrpc_get_version(const cm_jsonrpc_mgr *mgr, const char **version);
 
 /// \brief Gets a JSON string for the default machine config from the remote server.
 /// \param mgr Pointer to a valid JSONRPC connection manager.
 /// \param config Receives the default configuration,
-/// remains valid until the next time this same function is called on the same thread.
+/// guaranteed to remain valid only until the next C API is called from the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const char **config);
 

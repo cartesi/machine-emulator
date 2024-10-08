@@ -47,6 +47,12 @@ const char *cm_get_last_error_message() {
     return last_err_msg.c_str();
 }
 
+const char *cm_set_temp_string(const std::string &s) {
+    static THREAD_LOCAL std::string temp_string;
+    temp_string = s;
+    return temp_string.c_str();
+}
+
 cm_error cm_result_failure() try { throw; } catch (std::exception &e) {
     try {
         last_err_msg = e.what();
@@ -245,9 +251,7 @@ cm_error cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char **log) t
     auto *cpp_machine = convert_from_c(m);
     cartesi::access_log::type cpp_log_type(log_type);
     cartesi::access_log cpp_log = cpp_machine->log_reset_uarch(cpp_log_type);
-    static THREAD_LOCAL std::string access_log_storage;
-    access_log_storage = cartesi::to_json(cpp_log).dump();
-    *log = access_log_storage.c_str();
+    *log = cm_set_temp_string(cartesi::to_json(cpp_log).dump());
     return cm_result_success();
 } catch (...) {
     if (log) {
@@ -277,9 +281,7 @@ cm_error cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **log) tr
     auto *cpp_machine = convert_from_c(m);
     cartesi::access_log::type cpp_log_type(log_type);
     cartesi::access_log cpp_log = cpp_machine->log_step_uarch(cpp_log_type);
-    static THREAD_LOCAL std::string access_log_storage;
-    access_log_storage = cartesi::to_json(cpp_log).dump();
-    *log = access_log_storage.c_str();
+    *log = cm_set_temp_string(cartesi::to_json(cpp_log).dump());
     return cm_result_success();
 } catch (...) {
     if (log) {
@@ -322,9 +324,7 @@ cm_error cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_size, 
     }
     const auto *cpp_machine = convert_from_c(m);
     const cartesi::machine_merkle_tree::proof_type cpp_proof = cpp_machine->get_proof(address, log2_size);
-    static THREAD_LOCAL std::string proof_storage;
-    proof_storage = cartesi::to_json(cpp_proof).dump();
-    *proof = proof_storage.c_str();
+    *proof = cm_set_temp_string(cartesi::to_json(cpp_proof).dump());
     return cm_result_success();
 } catch (...) {
     if (proof) {
@@ -561,9 +561,7 @@ cm_error cm_get_initial_config(const cm_machine *m, const char **config) try {
     }
     const auto *cpp_machine = convert_from_c(m);
     const cartesi::machine_config cpp_config = cpp_machine->get_initial_config();
-    static THREAD_LOCAL std::string config_storage;
-    config_storage = cartesi::to_json(cpp_config).dump();
-    *config = config_storage.c_str();
+    *config = cm_set_temp_string(cartesi::to_json(cpp_config).dump());
     return cm_result_success();
 } catch (...) {
     if (config) {
@@ -577,9 +575,7 @@ cm_error cm_get_default_config(const char **config) try {
         throw std::invalid_argument("invalid config output");
     }
     const cartesi::machine_config cpp_config = cartesi::machine::get_default_config();
-    static THREAD_LOCAL std::string config_storage;
-    config_storage = cartesi::to_json(cpp_config).dump();
-    *config = config_storage.c_str();
+    *config = cm_set_temp_string(cartesi::to_json(cpp_config).dump());
     return cm_result_success();
 } catch (...) {
     if (config) {
@@ -645,9 +641,7 @@ cm_error cm_get_memory_ranges(const cm_machine *m, const char **ranges) try {
     }
     const auto *cpp_machine = convert_from_c(m);
     const cartesi::machine_memory_range_descrs cpp_ranges = cpp_machine->get_memory_ranges();
-    static THREAD_LOCAL std::string ranges_storage;
-    ranges_storage = cartesi::to_json(cpp_ranges).dump();
-    *ranges = ranges_storage.c_str();
+    *ranges = cm_set_temp_string(cartesi::to_json(cpp_ranges).dump());
     return cm_result_success();
 } catch (...) {
     if (ranges) {
@@ -731,9 +725,7 @@ cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t
     auto *cpp_machine = convert_from_c(m);
     cartesi::access_log::type cpp_log_type(log_type);
     cartesi::access_log cpp_log = cpp_machine->log_send_cmio_response(reason, data, length, cpp_log_type);
-    static THREAD_LOCAL std::string access_log_storage;
-    access_log_storage = cartesi::to_json(cpp_log).dump();
-    *log = access_log_storage.c_str();
+    *log = cm_set_temp_string(cartesi::to_json(cpp_log).dump());
     return cm_result_success();
 } catch (...) {
     if (log) {

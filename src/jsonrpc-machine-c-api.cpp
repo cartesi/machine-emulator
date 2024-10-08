@@ -120,9 +120,7 @@ cm_error cm_jsonrpc_get_default_config(const cm_jsonrpc_mgr *mgr, const char **c
     }
     const auto *cpp_mgr = convert_from_c(mgr);
     const cartesi::machine_config cpp_config = cartesi::jsonrpc_virtual_machine::get_default_config(*cpp_mgr);
-    static THREAD_LOCAL std::string config_storage;
-    config_storage = cartesi::to_json(cpp_config).dump();
-    *config = config_storage.c_str();
+    *config = cm_set_temp_string(cartesi::to_json(cpp_config).dump());
     return cm_result_success();
 } catch (...) {
     if (config) {
@@ -169,9 +167,7 @@ cm_error cm_jsonrpc_fork(const cm_jsonrpc_mgr *mgr, const char **address, int32_
     }
     const auto *cpp_mgr = convert_from_c(mgr);
     const auto result = cartesi::jsonrpc_virtual_machine::fork(*cpp_mgr);
-    static THREAD_LOCAL std::string address_storage;
-    address_storage = result.address;
-    *address = address_storage.c_str();
+    *address = cm_set_temp_string(result.address);
     if (pid) {
         *pid = static_cast<int>(result.pid);
     }
@@ -190,9 +186,7 @@ cm_error cm_jsonrpc_rebind(const cm_jsonrpc_mgr *mgr, const char *address, const
     const auto *cpp_mgr = convert_from_c(mgr);
     const std::string cpp_new_address = cartesi::jsonrpc_virtual_machine::rebind(*cpp_mgr, address);
     if (new_address) {
-        static THREAD_LOCAL std::string new_address_storage;
-        new_address_storage = cpp_new_address;
-        *new_address = new_address_storage.c_str();
+        *new_address = cm_set_temp_string(cpp_new_address);
     }
     return cm_result_success();
 } catch (...) {
@@ -223,9 +217,7 @@ cm_error cm_jsonrpc_get_version(const cm_jsonrpc_mgr *mgr, const char **version)
     }
     const auto *cpp_mgr = convert_from_c(mgr);
     const cartesi::semantic_version cpp_version = cartesi::jsonrpc_virtual_machine::get_version(*cpp_mgr);
-    static THREAD_LOCAL std::string version_storage;
-    version_storage = cartesi::to_json(cpp_version).dump();
-    *version = version_storage.c_str();
+    *version = cm_set_temp_string(cartesi::to_json(cpp_version).dump());
     return cm_result_success();
 } catch (...) {
     if (version) {

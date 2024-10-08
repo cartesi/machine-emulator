@@ -312,20 +312,23 @@ typedef struct cm_machine cm_machine;
 /// (Instead, use the return code of the previous call itself.)
 CM_API const char *cm_get_last_error_message();
 
-/// \brief Returns a JSON object with the default machine config as a string.
-/// \returns A C string, in case of success, guaranteed to remain valid only until the
-/// the next time this same function is called again on the same thread.
-/// In case of failure, NULL is returned and last error message is set.
+/// \brief Obtains a JSON object with the default machine config as a string.
+/// \param config Receives the default configuration as a JSON object in a string,
+/// guaranteed to remain valid only until the the next time this same function
+/// is called again on the same thread.
+/// \returns 0 for success, non zero code for error.
 /// \details The returned config is not sufficient to run a machine.
 /// Additional configurations, such as RAM length, RAM image, flash drives,
 /// and entrypoint are still needed.
-CM_API const char *cm_get_default_config();
+CM_API cm_error cm_get_default_config(const char **config);
 
 /// \brief Gets the address of any x, f, or control state register.
 /// \param reg The register.
-/// \returns The address of the specified register.
-/// In case the register is invalid, UINT64_MAX is returned and last error message is set.
-CM_API uint64_t cm_get_reg_address(cm_reg reg);
+/// \param val Receives address of the register.
+/// \returns 0 for success, non zero code for error.
+/// \details The current implementation of this function is slow when the word falls
+/// in a memory range mapped to a device.
+CM_API cm_error cm_get_reg_address(cm_reg reg, uint64_t *val);
 
 // -----------------------------------------------------------------------------
 // Machine API functions
@@ -376,7 +379,7 @@ CM_API cm_error cm_store(const cm_machine *m, const char *dir);
 CM_API cm_error cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,
     const char *image_filename);
 
-/// \brief Returns a JSON object with the machine config used to initialize the machine.
+/// \brief Obtains a JSON object with the machine config used to initialize the machine.
 /// \param m Pointer to a valid machine instance.
 /// \param config Receives the initial configuration as a JSON object in a
 /// string, guaranteed to remain valid only until the the next time this same function
@@ -384,7 +387,7 @@ CM_API cm_error cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t 
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_get_initial_config(const cm_machine *m, const char **config);
 
-/// \brief Returns a list with all memory ranges in the machine.
+/// \brief Obtains a list with all memory ranges in the machine.
 /// \param m Pointer to a valid machine instance.
 /// \param ranges Receives the memory ranges as a JSON object in a string,
 /// guaranteed to remain valid only until the the next time this same function is

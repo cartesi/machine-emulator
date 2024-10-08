@@ -59,15 +59,19 @@ BOOST_AUTO_TEST_CASE_NOLINT(delete_machine_null_test) {
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(get_default_machine_config_basic_test) {
-    const char *config = cm_get_default_config();
-    BOOST_TEST_CHECK(config != nullptr);
+    const char *config{};
+    cm_error error_code = cm_get_default_config(&config);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+    BOOST_TEST_CHECK(config != nullptr);
 }
 
 class default_machine_fixture {
 public:
     default_machine_fixture() {
-        _default_machine_config = cm_get_default_config();
+        const char *config{};
+        cm_get_default_config(&config);
+        _default_machine_config = config;
     }
 
     ~default_machine_fixture() {}
@@ -79,7 +83,7 @@ public:
 
 protected:
     cm_machine *_machine{};
-    const char *_default_machine_config{};
+    std::string _default_machine_config{};
 };
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_unknown_dir_test, default_machine_fixture) {
@@ -106,14 +110,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_config_test, default_machine_
     BOOST_CHECK_EQUAL(origin, result);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_rt_config_test, default_machine_fixture) {
-    cm_error error_code = cm_create(_default_machine_config, nullptr, &_machine);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-    BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string("RAM length cannot be zero"));
-}
-
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_default_machine_test, default_machine_fixture) {
-    cm_error error_code = cm_create(_default_machine_config, nullptr, &_machine);
+    cm_error error_code = cm_create(_default_machine_config.c_str(), nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string("RAM length cannot be zero"));
 }
@@ -122,7 +120,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_default_machine_test, default_mach
 class incomplete_machine_fixture : public default_machine_fixture {
 public:
     incomplete_machine_fixture() : _machine_config{} {
-        _machine_config = nlohmann::json::parse(cm_get_default_config());
+        const char *config{};
+        cm_get_default_config(&config);
+        _machine_config = nlohmann::json::parse(config);
         _machine_config["ram"]["length"] = 1 << 20;
     }
 
@@ -223,7 +223,7 @@ public:
         BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     }
 
-    virtual ~serialized_machine_fixture() {
+    ~serialized_machine_fixture() {
         std::filesystem::remove_all(_machine_config_path.string());
     }
 
@@ -260,9 +260,12 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_invalid_config_version_test, seriali
     std::stringstream expected_err;
     expected_err << "expected \"archive_version\" " << v << " (got " << v + 1 << ")";
 
-    cm_error error_code = cm_load(_machine_config_path.c_str(), nullptr, &_machine);
+    cm_machine *restored_machine{};
+    cm_error error_code = cm_load(_machine_config_path.c_str(), nullptr, &restored_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), expected_err.str());
+
+    cm_destroy(restored_machine, false);
 }
 
 class store_file_fixture : public ordinary_machine_fixture {
@@ -471,7 +474,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_null_output_test, default_machine_fixtu
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_basic_test, ordinary_machine_fixture) {
     uint64_t word_value = 0;
-    cm_error error_code = cm_read_word(_machine, cm_get_reg_address(CM_REG_PC), &word_value);
+    uint64_t pc_addr{};
+    BOOST_CHECK_EQUAL(cm_get_reg_address(CM_REG_PC, &pc_addr), CM_ERROR_OK);
+    cm_error error_code = cm_read_word(_machine, pc_addr, &word_value);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(word_value, static_cast<uint64_t>(0x80000000));
@@ -1038,7 +1043,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_x_basic_test, ordinary_machine_fixture
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(x_origin, x_read);
 
-    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x10), cm_get_reg_address(CM_REG_X2));
+    uint64_t x2_addr{};
+    BOOST_CHECK_EQUAL(cm_get_reg_address(CM_REG_X2, &x2_addr), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x10), x2_addr);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_f_basic_test, ordinary_machine_fixture) {
@@ -1053,7 +1060,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_f_basic_test, ordinary_machine_fixture
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(f_origin, f_read);
 
-    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x110), cm_get_reg_address(CM_REG_F2));
+    uint64_t f2_addr{};
+    BOOST_CHECK_EQUAL(cm_get_reg_address(CM_REG_F2, &f2_addr), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x110), f2_addr);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_uarch_x_basic_test, ordinary_machine_fixture) {
@@ -1068,8 +1077,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_uarch_x_basic_test, ordinary_machine_f
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(uarch_x_origin, uarch_x_read);
 
-    BOOST_CHECK_EQUAL(static_cast<uint64_t>(cartesi::PMA_SHADOW_UARCH_STATE_START + 40),
-        cm_get_reg_address(CM_REG_UARCH_X2));
+    uint64_t uarch_x2_addr{};
+    BOOST_CHECK_EQUAL(cm_get_reg_address(CM_REG_UARCH_X2, &uarch_x2_addr), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(cartesi::PMA_SHADOW_UARCH_STATE_START + 40), uarch_x2_addr);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(read_reg_null_machine_test) {
@@ -1101,7 +1111,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_reg_basic_test, ordinary_machine_fixtu
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK_EQUAL(reg_origin, reg_read);
 
-    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x200), cm_get_reg_address(CM_REG_PC));
+    uint64_t pc_addr{};
+    BOOST_CHECK_EQUAL(cm_get_reg_address(CM_REG_PC, &pc_addr), CM_ERROR_OK);
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x200), pc_addr);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(verify_merkle_tree_null_machine_test) {

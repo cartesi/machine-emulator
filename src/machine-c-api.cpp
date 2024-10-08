@@ -384,14 +384,18 @@ cm_error cm_write_reg(cm_machine *m, cm_reg reg, uint64_t val) try {
     return cm_result_failure();
 }
 
-uint64_t cm_get_reg_address(cm_reg reg) try {
+cm_error cm_get_reg_address(cm_reg reg, uint64_t *val) try {
+    if (val == nullptr) {
+        throw std::invalid_argument("invalid val output");
+    }
     auto cpp_reg = static_cast<cartesi::machine::reg>(reg);
-    uint64_t address = cartesi::machine::get_reg_address(cpp_reg);
-    cm_result_success();
-    return address;
+    *val = cartesi::machine::get_reg_address(cpp_reg);
+    return cm_result_success();
 } catch (...) {
-    cm_result_failure();
-    return UINT64_MAX;
+    if (val) {
+        *val = 0;
+    }
+    return cm_result_failure();
 }
 
 cm_error cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val) try {
@@ -568,16 +572,20 @@ cm_error cm_get_initial_config(const cm_machine *m, const char **config) try {
     return cm_result_failure();
 }
 
-const char *cm_get_default_config() try {
+cm_error cm_get_default_config(const char **config) try {
+    if (config == nullptr) {
+        throw std::invalid_argument("invalid config output");
+    }
     const cartesi::machine_config cpp_config = cartesi::machine::get_default_config();
     static THREAD_LOCAL std::string config_storage;
     config_storage = cartesi::to_json(cpp_config).dump();
-    const char *config = config_storage.c_str();
-    cm_result_success();
-    return config;
+    *config = config_storage.c_str();
+    return cm_result_success();
 } catch (...) {
-    cm_result_failure();
-    return nullptr;
+    if (config) {
+        *config = nullptr;
+    }
+    return cm_result_failure();
 }
 
 cm_error cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,

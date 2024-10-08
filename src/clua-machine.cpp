@@ -25,8 +25,8 @@ namespace cartesi {
 /// \brief This is the machine.get_default_machine_config()
 /// method implementation.
 static int machine_class_index_get_default_config(lua_State *L) {
-    const char *config = cm_get_default_config();
-    if (!config) {
+    const char *config{};
+    if (cm_get_default_config(&config) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_push_json_table(L, config);
@@ -35,7 +35,11 @@ static int machine_class_index_get_default_config(lua_State *L) {
 
 /// \brief This is the machine.get_reg_address() method implementation.
 static int machine_class_index_get_reg_address(lua_State *L) {
-    lua_pushinteger(L, static_cast<lua_Integer>(cm_get_reg_address(clua_check_cm_proc_reg(L, 1))));
+    uint64_t addr{};
+    if (cm_get_reg_address(clua_check_cm_proc_reg(L, 1), &addr) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    lua_pushinteger(L, static_cast<lua_Integer>(addr));
     return 1;
 }
 

@@ -18,6 +18,7 @@
 #include <array>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <exception>
 #include <iostream>
@@ -29,6 +30,7 @@
 #include <unordered_set>
 
 #include <fcntl.h>
+#include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -78,6 +80,7 @@ std::ostream &operator<<(std::ostream &out, log_prefix prefix) {
     out << PROGRAM_NAME << " ";
     out << "pid:" << getpid() << " ";
     out << "ppid:" << getppid() << " ";
+    out << "pgid:" << getpgid(0) << " ";
     return out;
 }
 
@@ -241,35 +244,21 @@ struct http_session : std::enable_shared_from_this<http_session> {
 
 //------------------------------------------------------------------------------
 
-// Bind and listen to a local TCP port and return its acceptor
-static tcp::acceptor make_listen_acceptor(asio::io_context &ioc, const tcp::endpoint &local_endpoint) {
-    tcp::acceptor acceptor(ioc);
-    // Open the acceptor
-    acceptor.open(local_endpoint.protocol());
-    // Allow address reuse
-    acceptor.set_option(asio::socket_base::reuse_address(true));
-    // Bind to the server address
-    acceptor.bind(local_endpoint);
-    // Start listening for connections
-    acceptor.listen(asio::socket_base::max_listen_connections);
-    return acceptor;
-}
-
 // Accepts incoming connections and launches HTTP sessions
 struct http_handler : std::enable_shared_from_this<http_handler> {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
     asio::io_context &ioc;                             ///< IO context
     asio::signal_set signals;                          ///< Signal set used for process termination notifications
-    tcp::acceptor acceptor;                            ///< TCP connection acceptor
     tcp::endpoint local_endpoint;                      ///< Address server receives requests at
+    tcp::acceptor acceptor;                            ///< TCP connection acceptor
     std::unique_ptr<cartesi::machine> machine;         ///< Cartesi Machine, if any
     std::vector<std::weak_ptr<http_session>> sessions; ///< HTTP sessions
 
-    http_handler(asio::io_context &ioc, const tcp::endpoint &endpoint) :
+    http_handler(asio::io_context &ioc, tcp::acceptor &&acceptor) :
         ioc(ioc),
         signals(ioc),
-        acceptor(make_listen_acceptor(ioc, endpoint)),
-        local_endpoint(acceptor.local_endpoint()) {
+        local_endpoint(acceptor.local_endpoint()),
+        acceptor(std::move(acceptor)) {
         SLOG(info) << "remote machine bound to " << local_endpoint;
     }
 
@@ -761,8 +750,7 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
     jsonrpc_check_no_params(j);
     // Listen in desired port before fork so failures happen still in parent,
     // who can directly report them to client
-    auto acceptor =
-        make_listen_acceptor(session->handler->ioc, tcp::endpoint{session->handler->local_endpoint.address(), 0});
+    tcp::acceptor acceptor{session->handler->ioc, tcp::endpoint{session->handler->local_endpoint.address(), 0}};
     const std::string new_server_address = endpoint_to_string(acceptor.local_endpoint());
     // Notify ASIO that we are about to fork
     session->handler->ioc.notify_fork(asio::io_context::fork_prepare);
@@ -806,7 +794,7 @@ static json jsonrpc_rebind_handler(const json &j, const std::shared_ptr<http_ses
     const tcp::endpoint new_local_endpoint = address_to_endpoint(new_server_address);
     if (new_local_endpoint != session->handler->local_endpoint) {
         SLOG(trace) << session->handler->local_endpoint << " rebinding to " << new_local_endpoint;
-        session->handler->rebind(make_listen_acceptor(session->handler->ioc, new_local_endpoint));
+        session->handler->rebind(tcp::acceptor{session->handler->ioc, new_local_endpoint});
         SLOG(trace) << session->handler->local_endpoint << " rebound to " << session->handler->local_endpoint;
     } else {
         SLOG(trace) << session->handler->local_endpoint << " rebind skipped";
@@ -1522,19 +1510,27 @@ static void help(const char *name) {
     (void) fprintf(stderr,
         R"(Usage:
 
-    %s [options] [<server-address>]
+    %s [options]
 
-where
+where options are
 
-    --server-address=<server-address> or [<server-address>]
-      gives the address of the server
+    --server-address=<server-address>
+      gives the address server should bind to
       <server-address> can be
-        <ipv4-hostname/address>:<port>
-        <ipv6-hostname/address>:<port>
+        <ipv4-address>:<port>
+        <ipv6-address>:<port>
       when <port> is 0, an ephemeral port will be automatically selected
-      default is "localhost:0"
+      default is "127.0.0.1:0"
 
-and options are
+    --server-fd=<socket-fd>
+      use a listening TCP/IP socket file descriptor inherited from parent process
+      default is "-1", so a new socket is created based on --server-address
+
+    --setpgid
+      break out of parent process group and become leader of new group
+      (this essentially puts the server in the background)
+      the proccess group id is the same as the process id of the server
+      the server and all its children can be signaled via this process group id
 
     --log-level=<level>
       sets the log level
@@ -1582,7 +1578,9 @@ static void init_logger(const char *strlevel) {
 }
 
 int main(int argc, char *argv[]) try {
-    const char *server_address = "127.0.0.1:0";
+    const char *server_address = nullptr;
+    int server_fd = -1;
+    bool newpg = false;
     const char *log_level = nullptr;
     const char *program_name = PROGRAM_NAME;
 
@@ -1593,19 +1591,25 @@ int main(int argc, char *argv[]) try {
     for (int i = 1; i < argc; i++) {
         if (stringval("--server-address=", argv[i], &server_address)) {
             ;
+        } else if (sscanf(argv[i], "--server-fd=%d", &server_fd)) {
+            ;
         } else if (stringval("--log-level=", argv[i], &log_level)) {
             ;
+        } else if (strcmp(argv[i], "--setpgid") == 0) {
+            newpg = true;
         } else if (strcmp(argv[i], "--help") == 0) {
             help(program_name);
             exit(0);
         } else {
-            if (!server_address) {
-                server_address = argv[i];
-            } else {
-                std::cerr << "repeated [<server-address>] option";
-                exit(1);
-            }
+            std::cerr << "invalid command-line argument '" << argv[i] << "'\n";
+            exit(1);
         }
+    }
+
+    // create a new process group and become its leader
+    if (newpg) {
+        setpgid(0, 0);
+        SLOG(info) << "remote machine now has pgid:" << getpgid(0);
     }
 
     init_logger(log_level);
@@ -1613,16 +1617,66 @@ int main(int argc, char *argv[]) try {
     SLOG(info) << "remote machine version is " << server_version_major << "." << server_version_minor << "."
                << server_version_patch;
 
-    // Parse local endpoint to listen to
-    auto local_endpoint = address_to_endpoint(server_address);
-    SLOG(info) << "'" << local_endpoint << "' requested as initial server address";
-
     install_restart_signal_handlers();
 
     // IO context that will process async events
     asio::io_context ioc{1};
+
+    tcp::acceptor acceptor(ioc);
+    if (server_fd >= 0) {
+        if (server_address) {
+            SLOG(fatal) << "server-address and server-fd options are mutually exclusive";
+            exit(1);
+        }
+        SLOG(info) << "attempting to inherit fd " << server_fd << " from parent";
+        // check socket is listening and is of right domain and type
+        int listen = 0;
+        socklen_t len = sizeof(listen);
+        if (getsockopt(server_fd, SOL_SOCKET, SO_ACCEPTCONN, &listen, &len) < 0) {
+            SLOG(fatal) << "getsockopt failed on inherited fd: " << strerror(errno);
+            exit(1);
+        }
+        if (!listen) {
+            SLOG(fatal) << "inherited is fd not a listening socket";
+            exit(1);
+        }
+        struct sockaddr_in fd_addr;
+        len = sizeof(fd_addr);
+        memset(&fd_addr, 0, len);
+        if (getsockname(server_fd, reinterpret_cast<struct sockaddr *>(&fd_addr), &len) < 0) {
+            SLOG(fatal) << "getsockname failed on inherited fd: " << strerror(errno);
+            exit(1);
+        }
+        if (fd_addr.sin_family != PF_INET && fd_addr.sin_family != PF_INET6) {
+            SLOG(fatal) << "inherited fd is not an inet/inet6 domain socket";
+            exit(1);
+        }
+        int type = 0;
+        len = sizeof(type);
+        if (getsockopt(server_fd, SOL_SOCKET, SO_TYPE, &type, &len) < 0) {
+            SLOG(fatal) << "getsockopt failed on inherited fd: " << strerror(errno);
+            exit(1);
+        }
+        if (type != SOCK_STREAM) {
+            SLOG(fatal) << "inherited fd is not a stream type socket";
+            exit(1);
+        }
+        if (fd_addr.sin_family == PF_INET) {
+            acceptor.assign(boost::asio::ip::tcp::v4(), server_fd);
+        } else {
+            acceptor.assign(boost::asio::ip::tcp::v6(), server_fd);
+        }
+    } else {
+        if (!server_address) {
+            server_address = "127.0.0.1:0";
+        }
+        acceptor = tcp::acceptor{ioc, address_to_endpoint(server_address)};
+    }
+
+    SLOG(info) << "initial server address is '" << acceptor.local_endpoint() << "'";
+
     // Create and launch a listener
-    auto handler = std::make_shared<http_handler>(ioc, local_endpoint);
+    auto handler = std::make_shared<http_handler>(ioc, std::move(acceptor));
     // Begin asynchronous operation that will be fired on next process termination signal
     handler->install_termination_signal_handlers();
     // Begin asynchronous operation that will be fired on next accept
@@ -1635,9 +1689,9 @@ int main(int argc, char *argv[]) try {
     SLOG(trace) << "remote machine terminated";
     return 0;
 } catch (std::exception &e) {
-    std::cerr << "Caught exception: " << e.what() << '\n';
+    SLOG(fatal) << "caught exception: " << e.what();
     return 1;
 } catch (...) {
-    std::cerr << "Caught unknown exception\n";
+    SLOG(fatal) << "caught unknown exception";
     return 1;
 }

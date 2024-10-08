@@ -64,9 +64,8 @@ public:
     static void verify_reset_uarch(const jsonrpc_connection_ptr &con, const hash_type &root_hash_before,
         const access_log &log, const hash_type &root_hash_after);
 
-    static void verify_send_cmio_response(const jsonrpc_connection_ptr &con, uint16_t reason,
-        const unsigned char *data, uint64_t length, const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after);
+    static void verify_send_cmio_response(const jsonrpc_connection_ptr &con, uint16_t reason, const unsigned char *data,
+        uint64_t length, const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after);
 
     static fork_result fork(const jsonrpc_connection_ptr &con);
     static std::string rebind(const jsonrpc_connection_ptr &con, const std::string &address);

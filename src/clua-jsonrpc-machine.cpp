@@ -140,12 +140,14 @@ static int jsonrpc_machine_ctor(lua_State *L) {
     const char *runtime_config = !lua_isnil(L, 3) ? clua_check_json_string(L, 3, -1, ctxidx) : nullptr;
     if (!lua_isstring(L, 2)) {
         const char *config = clua_check_json_string(L, 2, -1, ctxidx);
-        if (cm_jsonrpc_create_machine(managed_jsonrpc_connection.get(), config, runtime_config, &managed_machine.get()) != 0) {
+        if (cm_jsonrpc_create_machine(managed_jsonrpc_connection.get(), config, runtime_config,
+                &managed_machine.get()) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
         const char *dir = luaL_checkstring(L, 2);
-        if (cm_jsonrpc_load_machine(managed_jsonrpc_connection.get(), dir, runtime_config, &managed_machine.get()) != 0) {
+        if (cm_jsonrpc_load_machine(managed_jsonrpc_connection.get(), dir, runtime_config, &managed_machine.get()) !=
+            0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }

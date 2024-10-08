@@ -93,8 +93,8 @@ CM_API cm_error cm_jsonrpc_get_reg_address(const cm_jsonrpc_connection *con, cm_
 /// \param runtime_config Machine runtime configuration as a JSON string, it can be NULL.
 /// \param new_machine Receives the pointer to new remote machine instance.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_jsonrpc_create_machine(const cm_jsonrpc_connection *con, const char *config, const char *runtime_config,
-    cm_machine **new_machine);
+CM_API cm_error cm_jsonrpc_create_machine(const cm_jsonrpc_connection *con, const char *config,
+    const char *runtime_config, cm_machine **new_machine);
 
 /// \brief Creates a remote machine instance from previously stored directory in the remote server.
 /// \param con Pointer to a valid JSONRPC connection.
@@ -141,8 +141,9 @@ CM_API cm_error cm_jsonrpc_verify_reset_uarch(const cm_jsonrpc_connection *con, 
 /// \param log State access log to be verified as a JSON string.
 /// \param root_hash_after State hash after load.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_jsonrpc_verify_send_cmio_response(const cm_jsonrpc_connection *con, uint16_t reason, const uint8_t *data,
-    uint64_t length, const cm_hash *root_hash_before, const char *log, const cm_hash *root_hash_after);
+CM_API cm_error cm_jsonrpc_verify_send_cmio_response(const cm_jsonrpc_connection *con, uint16_t reason,
+    const uint8_t *data, uint64_t length, const cm_hash *root_hash_before, const char *log,
+    const cm_hash *root_hash_after);
 
 #ifdef __cplusplus
 }

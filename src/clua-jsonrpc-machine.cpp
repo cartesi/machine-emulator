@@ -23,8 +23,8 @@ namespace cartesi {
 
 /// \brief Deleter for C api jsonrpc stub
 template <>
-void clua_delete(cm_jsonrpc_mgr *ptr) {
-    cm_jsonrpc_destroy_mgr(ptr);
+void clua_delete(cm_jsonrpc_connection *ptr) {
+    cm_jsonrpc_destroy_connection(ptr);
 }
 
 /// \brief This is the machine.get_default_machine_config()
@@ -32,9 +32,9 @@ void clua_delete(cm_jsonrpc_mgr *ptr) {
 static int jsonrpc_machine_class_get_default_config(lua_State *L) {
     const int stubidx = lua_upvalueindex(1);
     const int ctxidx = lua_upvalueindex(2);
-    auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
+    auto &managed_jsonrpc_connection = clua_check<clua_managed_cm_ptr<cm_jsonrpc_connection>>(L, stubidx, ctxidx);
     const char *config = nullptr;
-    if (cm_jsonrpc_get_default_config(managed_jsonrpc_mgr.get(), &config) != 0) {
+    if (cm_jsonrpc_get_default_config(managed_jsonrpc_connection.get(), &config) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_push_json_table(L, config, ctxidx);
@@ -43,11 +43,11 @@ static int jsonrpc_machine_class_get_default_config(lua_State *L) {
 
 /// \brief This is the machine.get_reg_address() method implementation.
 static int jsonrpc_machine_class_get_reg_address(lua_State *L) {
-    auto &managed_jsonrpc_mgr =
-        clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
+    auto &managed_jsonrpc_connection =
+        clua_check<clua_managed_cm_ptr<cm_jsonrpc_connection>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     uint64_t reg_address{};
     const cm_reg reg = clua_check_cm_proc_reg(L, 1);
-    if (cm_jsonrpc_get_reg_address(managed_jsonrpc_mgr.get(), reg, &reg_address) != 0) {
+    if (cm_jsonrpc_get_reg_address(managed_jsonrpc_connection.get(), reg, &reg_address) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     lua_pushinteger(L, static_cast<lua_Integer>(reg_address));
@@ -60,13 +60,13 @@ static int jsonrpc_machine_class_verify_step_uarch(lua_State *L) {
     const int stubidx = lua_upvalueindex(1);
     const int ctxidx = lua_upvalueindex(2);
     lua_settop(L, 5);
-    auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
+    auto &managed_jsonrpc_connection = clua_check<clua_managed_cm_ptr<cm_jsonrpc_connection>>(L, stubidx, ctxidx);
     const char *log = clua_check_schemed_json_string(L, 2, "AccessLog", ctxidx);
     cm_hash root_hash{};
     clua_check_cm_hash(L, 1, &root_hash);
     cm_hash target_hash{};
     clua_check_cm_hash(L, 3, &target_hash);
-    if (cm_jsonrpc_verify_step_uarch(managed_jsonrpc_mgr.get(), &root_hash, log, &target_hash) != 0) {
+    if (cm_jsonrpc_verify_step_uarch(managed_jsonrpc_connection.get(), &root_hash, log, &target_hash) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     return 0;
@@ -78,13 +78,13 @@ static int jsonrpc_machine_class_verify_reset_uarch(lua_State *L) {
     const int stubidx = lua_upvalueindex(1);
     const int ctxidx = lua_upvalueindex(2);
     lua_settop(L, 5);
-    auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
+    auto &managed_jsonrpc_connection = clua_check<clua_managed_cm_ptr<cm_jsonrpc_connection>>(L, stubidx, ctxidx);
     const char *log = clua_check_schemed_json_string(L, 2, "AccessLog", ctxidx);
     cm_hash root_hash{};
     clua_check_cm_hash(L, 1, &root_hash);
     cm_hash target_hash{};
     clua_check_cm_hash(L, 3, &target_hash);
-    if (cm_jsonrpc_verify_reset_uarch(managed_jsonrpc_mgr.get(), &root_hash, log, &target_hash) != 0) {
+    if (cm_jsonrpc_verify_reset_uarch(managed_jsonrpc_connection.get(), &root_hash, log, &target_hash) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     return 0;
@@ -96,7 +96,7 @@ static int jsonrpc_machine_class_verify_send_cmio_response(lua_State *L) {
     const int stubidx = lua_upvalueindex(1);
     const int ctxidx = lua_upvalueindex(2);
     lua_settop(L, 6);
-    auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
+    auto &managed_jsonrpc_connection = clua_check<clua_managed_cm_ptr<cm_jsonrpc_connection>>(L, stubidx, ctxidx);
     const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 1));
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -106,7 +106,7 @@ static int jsonrpc_machine_class_verify_send_cmio_response(lua_State *L) {
     clua_check_cm_hash(L, 3, &root_hash);
     cm_hash target_hash{};
     clua_check_cm_hash(L, 5, &target_hash);
-    if (cm_jsonrpc_verify_send_cmio_response(managed_jsonrpc_mgr.get(), reason, data, length, &root_hash, log,
+    if (cm_jsonrpc_verify_send_cmio_response(managed_jsonrpc_connection.get(), reason, data, length, &root_hash, log,
             &target_hash) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
@@ -135,17 +135,17 @@ static int jsonrpc_machine_ctor(lua_State *L) {
     const int stubidx = lua_upvalueindex(1);
     const int ctxidx = lua_upvalueindex(2);
     lua_settop(L, 3);
-    auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
+    auto &managed_jsonrpc_connection = clua_check<clua_managed_cm_ptr<cm_jsonrpc_connection>>(L, stubidx, ctxidx);
     auto &managed_machine = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr), ctxidx);
     const char *runtime_config = !lua_isnil(L, 3) ? clua_check_json_string(L, 3, -1, ctxidx) : nullptr;
     if (!lua_isstring(L, 2)) {
         const char *config = clua_check_json_string(L, 2, -1, ctxidx);
-        if (cm_jsonrpc_create_machine(managed_jsonrpc_mgr.get(), config, runtime_config, &managed_machine.get()) != 0) {
+        if (cm_jsonrpc_create_machine(managed_jsonrpc_connection.get(), config, runtime_config, &managed_machine.get()) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
         const char *dir = luaL_checkstring(L, 2);
-        if (cm_jsonrpc_load_machine(managed_jsonrpc_mgr.get(), dir, runtime_config, &managed_machine.get()) != 0) {
+        if (cm_jsonrpc_load_machine(managed_jsonrpc_connection.get(), dir, runtime_config, &managed_machine.get()) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }
@@ -161,11 +161,11 @@ static const auto jsonrpc_machine_class_meta = cartesi::clua_make_luaL_Reg_array
 /// \brief This is the machine.get_machine() static method implementation.
 static int jsonrpc_server_class_get_machine(lua_State *L) {
     lua_settop(L, 1);
-    auto &managed_jsonrpc_mgr =
-        clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
+    auto &managed_jsonrpc_connection =
+        clua_check<clua_managed_cm_ptr<cm_jsonrpc_connection>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     const int ctxidx = lua_upvalueindex(2);
     auto &managed_machine = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr), ctxidx);
-    if (cm_jsonrpc_get_machine(managed_jsonrpc_mgr.get(), &managed_machine.get()) != 0) {
+    if (cm_jsonrpc_get_machine(managed_jsonrpc_connection.get(), &managed_machine.get()) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     return 1;
@@ -175,9 +175,9 @@ static int jsonrpc_server_class_get_machine(lua_State *L) {
 static int jsonrpc_server_class_get_version(lua_State *L) {
     const int stubidx = lua_upvalueindex(1);
     const int ctxidx = lua_upvalueindex(2);
-    auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
+    auto &managed_jsonrpc_connection = clua_check<clua_managed_cm_ptr<cm_jsonrpc_connection>>(L, stubidx, ctxidx);
     const char *version = nullptr;
-    if (cm_jsonrpc_get_version(managed_jsonrpc_mgr.get(), &version) != 0) {
+    if (cm_jsonrpc_get_version(managed_jsonrpc_connection.get(), &version) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_push_json_table(L, version, ctxidx);
@@ -186,9 +186,9 @@ static int jsonrpc_server_class_get_version(lua_State *L) {
 
 /// \brief This is the machine.shutdown() static method implementation.
 static int jsonrpc_server_class_shutdown(lua_State *L) {
-    auto &managed_jsonrpc_mgr =
-        clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
-    if (cm_jsonrpc_shutdown(managed_jsonrpc_mgr.get()) != 0) {
+    auto &managed_jsonrpc_connection =
+        clua_check<clua_managed_cm_ptr<cm_jsonrpc_connection>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
+    if (cm_jsonrpc_shutdown(managed_jsonrpc_connection.get()) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     return 0;
@@ -196,11 +196,11 @@ static int jsonrpc_server_class_shutdown(lua_State *L) {
 
 /// \brief This is the rebind method implementation.
 static int jsonrpc_server_class_rebind(lua_State *L) {
-    auto &managed_jsonrpc_mgr =
-        clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
+    auto &managed_jsonrpc_connection =
+        clua_check<clua_managed_cm_ptr<cm_jsonrpc_connection>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     const char *address = luaL_checkstring(L, 1);
     const char *new_address = nullptr;
-    if (cm_jsonrpc_rebind(managed_jsonrpc_mgr.get(), address, &new_address) != 0) {
+    if (cm_jsonrpc_rebind(managed_jsonrpc_connection.get(), address, &new_address) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     if (new_address) {
@@ -213,11 +213,11 @@ static int jsonrpc_server_class_rebind(lua_State *L) {
 
 /// \brief This is the fork method implementation.
 static int jsonrpc_server_class_fork(lua_State *L) {
-    auto &managed_jsonrpc_mgr =
-        clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
+    auto &managed_jsonrpc_connection =
+        clua_check<clua_managed_cm_ptr<cm_jsonrpc_connection>>(L, lua_upvalueindex(1), lua_upvalueindex(2));
     const char *address = nullptr;
     int32_t pid = 0;
-    if (cm_jsonrpc_fork(managed_jsonrpc_mgr.get(), &address, &pid) != 0) {
+    if (cm_jsonrpc_fork(managed_jsonrpc_connection.get(), &address, &pid) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     lua_pushstring(L, address);
@@ -238,8 +238,8 @@ static const auto jsonrpc_server_static_methods = cartesi::clua_make_luaL_Reg_ar
 static int mod_stub(lua_State *L) {
     const char *remote_address = luaL_checkstring(L, 1);
     // Create stub
-    auto &managed_jsonrpc_mgr = clua_push_to(L, clua_managed_cm_ptr<cm_jsonrpc_mgr>(nullptr));
-    if (cm_jsonrpc_create_mgr(remote_address, &managed_jsonrpc_mgr.get()) != 0) {
+    auto &managed_jsonrpc_connection = clua_push_to(L, clua_managed_cm_ptr<cm_jsonrpc_connection>(nullptr));
+    if (cm_jsonrpc_create_connection(remote_address, &managed_jsonrpc_connection.get()) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     lua_newtable(L);                                            // stub server
@@ -268,7 +268,7 @@ int clua_jsonrpc_machine_init(lua_State *L, int ctxidx) {
     clua_createnewtype<clua_managed_cm_ptr<unsigned char>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<std::string>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<nlohmann::json>>(L, ctxidx);
-    clua_createnewtype<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, ctxidx);
+    clua_createnewtype<clua_managed_cm_ptr<cm_jsonrpc_connection>>(L, ctxidx);
     return 1;
 }
 

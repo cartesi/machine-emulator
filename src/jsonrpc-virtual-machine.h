@@ -32,19 +32,19 @@ struct fork_result final {
     uint32_t pid{};
 };
 
-/// \class jsonrpc_mgr
+/// \class jsonrpc_connection
 /// \brief Connection manager to the server
-class jsonrpc_mgr;
+class jsonrpc_connection;
 
-using jsonrpc_mgr_ptr = std::shared_ptr<jsonrpc_mgr>;
+using jsonrpc_connection_ptr = std::shared_ptr<jsonrpc_connection>;
 
 /// \class jsonrpc_virtual_machine
 /// \brief JSONRPC implementation of the i_virtual_machine interface
 class jsonrpc_virtual_machine final : public i_virtual_machine {
 public:
-    jsonrpc_virtual_machine(jsonrpc_mgr_ptr mgr);
-    jsonrpc_virtual_machine(jsonrpc_mgr_ptr mgr, const std::string &dir, const machine_runtime_config &r = {});
-    jsonrpc_virtual_machine(jsonrpc_mgr_ptr mgr, const machine_config &c, const machine_runtime_config &r = {});
+    jsonrpc_virtual_machine(jsonrpc_connection_ptr con);
+    jsonrpc_virtual_machine(jsonrpc_connection_ptr con, const std::string &dir, const machine_runtime_config &r = {});
+    jsonrpc_virtual_machine(jsonrpc_connection_ptr con, const machine_config &c, const machine_runtime_config &r = {});
 
     jsonrpc_virtual_machine(const jsonrpc_virtual_machine &other) = delete;
     jsonrpc_virtual_machine(jsonrpc_virtual_machine &&other) noexcept = delete;
@@ -52,24 +52,25 @@ public:
     jsonrpc_virtual_machine &operator=(jsonrpc_virtual_machine &&other) noexcept = delete;
     ~jsonrpc_virtual_machine() override;
 
-    static semantic_version get_version(const jsonrpc_mgr_ptr &mgr);
+    static semantic_version get_version(const jsonrpc_connection_ptr &con);
 
-    static void shutdown(const jsonrpc_mgr_ptr &mgr);
+    static void shutdown(const jsonrpc_connection_ptr &con);
 
-    static machine_config get_default_config(const jsonrpc_mgr_ptr &mgr);
+    static machine_config get_default_config(const jsonrpc_connection_ptr &con);
 
-    static void verify_step_uarch(const jsonrpc_mgr_ptr &mgr, const hash_type &root_hash_before, const access_log &log,
+    static void verify_step_uarch(const jsonrpc_connection_ptr &con, const hash_type &root_hash_before,
+        const access_log &log, const hash_type &root_hash_after);
+
+    static void verify_reset_uarch(const jsonrpc_connection_ptr &con, const hash_type &root_hash_before,
+        const access_log &log, const hash_type &root_hash_after);
+
+    static void verify_send_cmio_response(const jsonrpc_connection_ptr &con, uint16_t reason,
+        const unsigned char *data, uint64_t length, const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after);
 
-    static void verify_reset_uarch(const jsonrpc_mgr_ptr &mgr, const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after);
-
-    static void verify_send_cmio_response(const jsonrpc_mgr_ptr &mgr, uint16_t reason, const unsigned char *data,
-        uint64_t length, const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after);
-
-    static fork_result fork(const jsonrpc_mgr_ptr &mgr);
-    static std::string rebind(const jsonrpc_mgr_ptr &mgr, const std::string &address);
-    static uint64_t get_reg_address(const jsonrpc_mgr_ptr &mgr, reg r);
+    static fork_result fork(const jsonrpc_connection_ptr &con);
+    static std::string rebind(const jsonrpc_connection_ptr &con, const std::string &address);
+    static uint64_t get_reg_address(const jsonrpc_connection_ptr &con, reg r);
 
 private:
     machine_config do_get_initial_config(void) const override;
@@ -101,7 +102,7 @@ private:
     void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) override;
     access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const access_log::type &log_type) override;
-    jsonrpc_mgr_ptr m_mgr;
+    jsonrpc_connection_ptr m_connection;
 };
 
 } // namespace cartesi

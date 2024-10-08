@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef JSONRPC_MGR_H
-#define JSONRPC_MGR_H
+#ifndef JSONRPC_CONNECTION_H
+#define JSONRPC_CONNECTION_H
 
 #include <string>
 
@@ -29,18 +29,18 @@
 
 namespace cartesi {
 
-class jsonrpc_mgr final {
+class jsonrpc_connection final {
     boost::asio::io_context m_ioc{1};         // The io_context is required for all I/O
     boost::beast::tcp_stream m_stream{m_ioc}; // TCP stream for keep alive connections
     boost::container::static_vector<std::string, 2> m_address{};
 
 public:
-    explicit jsonrpc_mgr(std::string remote_address);
-    jsonrpc_mgr(const jsonrpc_mgr &other) = delete;
-    jsonrpc_mgr(jsonrpc_mgr &&other) noexcept = delete;
-    jsonrpc_mgr &operator=(const jsonrpc_mgr &other) = delete;
-    jsonrpc_mgr &operator=(jsonrpc_mgr &&other) noexcept = delete;
-    ~jsonrpc_mgr();
+    explicit jsonrpc_connection(std::string remote_address);
+    jsonrpc_connection(const jsonrpc_connection &other) = delete;
+    jsonrpc_connection(jsonrpc_connection &&other) noexcept = delete;
+    jsonrpc_connection &operator=(const jsonrpc_connection &other) = delete;
+    jsonrpc_connection &operator=(jsonrpc_connection &&other) noexcept = delete;
+    ~jsonrpc_connection();
     bool is_forked(void) const;
     bool is_shutdown(void) const;
     boost::beast::tcp_stream &get_stream(void);

@@ -23,96 +23,142 @@
 extern "C" {
 #endif
 
+// -----------------------------------------------------------------------------
+// API enums and structures
+// -----------------------------------------------------------------------------
+
+/// \brief Constants.
+typedef enum cm_jsonrpc_cleanup {
+    CM_JSONRPC_CLEANUP_SERVER = 0,  ///< Release machine and shutdown server when closing connection
+    CM_JSONRPC_CLEANUP_MACHINE = 1, ///< Release machine but leave server running
+    CM_JSONRPC_CLEANUP_NONE = 2     ///< Leave machine and server alone
+} cm_jsonrpc_cleanup;
+
 /// \brief Handle of the JSONRPC connection.
 /// \details It's used only as an opaque handle to pass JSONRPC connection through the C API.
 typedef struct cm_jsonrpc_connection cm_jsonrpc_connection;
 
-// -------------------------------------
+// -----------------------------------------------------------------------------
+// API functions
+// -----------------------------------------------------------------------------
+
+// ------------------------------------
 // Remote server management
+// ------------------------------------
 
-/// \brief Creates a JSONRPC connection instance connected to a remote machine server.
-/// \param remote_address Address of the remote machine server to connect to.
-/// \param con Receives new JSONRPC connection instance.
+/// \brief Connects to an existing JSONRPC remote machine server.
+/// \param address Address of the remote machine server to connect to.
+/// \param cleanup What to cleanup when cm_jsonrpc_release() is called on connection.
+/// \param con If function succeeds, receives new JSONRPC connection. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_jsonrpc_create_connection(const char *remote_address, cm_jsonrpc_connection **con);
+CM_API cm_error cm_jsonrpc_connect(const char *address, cm_jsonrpc_connection **con);
 
-/// \brief Destroys a connection instance.
+/// \brief Spawns a new JSONRPC remote machine server and connect to it.
+/// \param address Address (in local host) to bind the new JSONRPC remote machine server.
+/// \param con If function succeeds, receives new JSONRPC connection. Set to NULL on failure.
+/// \param bound_address_bound Receives the address that the remote server actually bound to, guaranteed to remain valid
+/// only until the next CM_API function is called again on the same thread. Set to NULL on failure.
+/// \param pid If function suceeds, receives the forked child process id. Set to 0 on failure.
+/// \details If the jsonrpc-remote-cartesi-machine executable is not in the path,
+/// the environment variable JSONRPC_REMOTE_CARTESI_MACHINE should point to the executable.
+CM_API cm_error cm_jsonrpc_spawn(const char *address, cm_jsonrpc_connection **con,
+    const char **bound_address, int32_t *pid);
+
+/// \brief Configure resources managed by connection
+/// \param con Pointer to a valid JSONRPC connection.
+/// \param cleanup What to cleanup when the last reference to the connection is released by cm_jsonrpc_release().
+/// \returns 0 for success, non zero code for error.
+CM_API cm_error cm_jsonrpc_manage(const cm_jsonrpc_connection *con, cm_jsonrpc_cleanup cleanup);
+
+/// \brief Releases a reference to a JSONRPC connection to remote machine server.
 /// \param con Pointer a JSONRPC connection (can be NULL).
 /// \returns 0 for success, non zero code for error.
-/// \details The connection is deallocated and its pointer must not be used after this call.
-CM_API void cm_jsonrpc_destroy_connection(const cm_jsonrpc_connection *con);
+/// \details When the last reference to the connection is released, the function attempts to follow
+/// the last cm_jsonrpc_cleanup instructions specified by cm_jsonrpc_manage().
+/// The connection object itself is deallocated immediately and its pointer must not be used after this call.
+CM_API void cm_jsonrpc_release(const cm_jsonrpc_connection *con);
 
 /// \brief Forks the remote server.
 /// \param con Pointer to a valid JSONRPC connection.
-/// \param address Receives address of new server if function execution succeeds or NULL otherwise,
-/// guaranteed to remain valid only until the next C API is called from the same thread.
-/// \param pid Receives the forked child process id if function execution succeeds or 0 otherwise.
+/// \param address If function succeeds, receives address of new server, guaranteed to remain valid
+/// only until the next CM_API function is called again on the same thread. Set to NULL on failure.
+/// \param pid If function suceeds, receives the forked child process id. Set to 0 on failure.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_jsonrpc_fork(const cm_jsonrpc_connection *con, const char **address, int32_t *pid);
 
 /// \brief Changes the address the remote server is listening to.
 /// \param con Pointer to a valid JSONRPC connection.
-/// \param address New address that the remote server should bind to.
-/// \param new_address Receives the new address that the remote server actually bound to,
-/// guaranteed to remain valid only until the next C API is called from the same thread.
+/// \param address Address the remote server should bind to.
+/// \param address_bound Receives the address that the remote server actually bound to, guaranteed to remain valid
+/// only until the next CM_API function is called again on the same thread. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_jsonrpc_rebind(const cm_jsonrpc_connection *con, const char *address, const char **new_address);
-
-/// \brief Shutdowns remote server.
-/// \param con Pointer to a valid JSONRPC connection.
-/// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_jsonrpc_shutdown(const cm_jsonrpc_connection *con);
+CM_API cm_error cm_jsonrpc_rebind(const cm_jsonrpc_connection *con, const char *address, const char **address_bound);
 
 /// \brief Gets the semantic version of the remote server.
 /// \param con Pointer to a valid JSONRPC connection.
-/// \param semantic_version Receives the semantic version as a JSON string,
-/// guaranteed to remain valid only until the next C API is called from the same thread.
+/// \param semantic_version Receives the semantic version as a JSON object in a string,
+/// guaranteed to remain valid only until the next CM_API function is called again on the
+/// same thread. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_jsonrpc_get_version(const cm_jsonrpc_connection *con, const char **version);
 
-/// \brief Gets a JSON string for the default machine config from the remote server.
+/// \brief Returns a JSON object in a string with the default machine config from the remote server.
 /// \param con Pointer to a valid JSONRPC connection.
-/// \param config Receives the default configuration,
-/// guaranteed to remain valid only until the next C API is called from the same thread.
+/// \param config Receives the default configuration, guaranteed to remain valid only until
+/// the next CM_API function is called again on the same thread.
 /// \returns 0 for success, non zero code for error.
+/// \details The returned config is not sufficient to run a machine.
+/// Additional configurations, such as RAM length, RAM image, flash drives,
+/// and entrypoint are still needed.
 CM_API cm_error cm_jsonrpc_get_default_config(const cm_jsonrpc_connection *con, const char **config);
 
-/// \brief Gets the address of any register from the remote server.
+/// \brief Gets the address of any x, f, or control state register from the remote server.
 /// \param con Pointer to a valid JSONRPC connection.
 /// \param reg The register.
 /// \param val Receives address of the register.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_jsonrpc_get_reg_address(const cm_jsonrpc_connection *con, cm_reg reg, uint64_t *val);
 
-// -------------------------------------
+// ------------------------------------
 // Machine API functions
+// ------------------------------------
 
 /// \brief Creates a remote machine instance.
 /// \param con Pointer to a valid JSONRPC connection.
 /// \param config Machine configuration as a JSON string.
 /// \param runtime_config Machine runtime configuration as a JSON string, it can be NULL.
-/// \param new_machine Receives the pointer to new remote machine instance.
+/// \param m Receives the pointer to new remote machine instance.
 /// \returns 0 for success, non zero code for error.
+/// \details The machine instance holds its own reference to the connection.
 CM_API cm_error cm_jsonrpc_create_machine(const cm_jsonrpc_connection *con, const char *config,
-    const char *runtime_config, cm_machine **new_machine);
+    const char *runtime_config, cm_machine **m);
 
 /// \brief Creates a remote machine instance from previously stored directory in the remote server.
 /// \param con Pointer to a valid JSONRPC connection.
 /// \param dir Directory where previous machine is stored.
 /// \param runtime_config Machine runtime configuration as a JSON string, it can be NULL.
-/// \param new_machine Receives the pointer to new remote machine instance.
+/// \param m Receives the pointer to new remote machine instance.
 /// \returns 0 for success, non zero code for error.
+/// \details The machine instance holds its own reference to the connection.
 CM_API cm_error cm_jsonrpc_load_machine(const cm_jsonrpc_connection *con, const char *dir, const char *runtime_config,
-    cm_machine **new_machine);
+    cm_machine **m);
 
 /// \brief Get remote machine instance that was previously created in the remote server.
 /// \param con Pointer to a valid JSONRPC connection.
-/// \param new_machine Receives the pointer to remote machine instance.
+/// \param m Receives the pointer to remote machine instance.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_jsonrpc_get_machine(const cm_jsonrpc_connection *con, cm_machine **new_machine);
+/// \details The machine instance holds its own reference to the connection.
+CM_API cm_error cm_jsonrpc_get_machine(const cm_jsonrpc_connection *con, cm_machine **m);
 
-// -------------------------------------
+/// \brief Get new reference to a connection to JSONRPC server given a remote machine instance.
+/// \param m Pointer to a valid machine instance.
+/// \param con Receives the pointer to JSONRPC connection. Set to NULL on failure.
+/// \returns 0 for success, non zero code for error.
+CM_API cm_error cm_jsonrpc_get_connection(cm_machine *m, const cm_jsonrpc_connection **con);
+
+// ------------------------------------
 // Verifying
+// ------------------------------------
 
 /// \brief Checks the validity of a state transition produced by cm_log_step_uarch.
 /// \param con Pointer to a valid JSONRPC connection.

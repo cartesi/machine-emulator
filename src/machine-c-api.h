@@ -303,9 +303,9 @@ typedef struct cm_machine cm_machine;
 // -----------------------------------------------------------------------------
 
 /// \brief Returns the error message set by the very last C API call.
-/// \returns A C string, guaranteed to remain valid only until the next C API call.
+/// \returns A C string, guaranteed to remain valid only until the next CM_API function call.
 /// \details The string returned by this function must not be changed nor deallocated,
-/// and remains valid until next C API function that can return a cm_error code is called.
+/// and remains valid until next CM_API function that can return a cm_error code is called.
 /// Must be called from the same thread that called the function that produced the error.
 /// In case the last call was successful, it returns an empty string.
 /// (Do not use the empty string as an indication that the previous call was successful.)
@@ -314,7 +314,7 @@ CM_API const char *cm_get_last_error_message();
 
 /// \brief Obtains a JSON object with the default machine config as a string.
 /// \param config Receives the default configuration as a JSON object in a string,
-/// guaranteed to remain valid only until the next C API is called from the same thread.
+/// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
 /// \details The returned config is not sufficient to run a machine.
 /// Additional configurations, such as RAM length, RAM image, flash drives,
@@ -381,14 +381,14 @@ CM_API cm_error cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t 
 /// \brief Obtains a JSON object with the machine config used to initialize the machine.
 /// \param m Pointer to a valid machine instance.
 /// \param config Receives the initial configuration as a JSON object in a string,
-/// guaranteed to remain valid only until the next C API is called from the same thread.
+/// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_get_initial_config(const cm_machine *m, const char **config);
 
 /// \brief Obtains a list with all memory ranges in the machine.
 /// \param m Pointer to a valid machine instance.
 /// \param ranges Receives the memory ranges as a JSON object in a string,
-/// guaranteed to remain valid only until the next C API is called from the same thread.
+/// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_get_memory_ranges(const cm_machine *m, const char **ranges);
 
@@ -405,7 +405,7 @@ CM_API cm_error cm_get_root_hash(const cm_machine *m, cm_hash *hash);
 /// Must be between CM_TREE_LOG2_WORD_SIZE (for a word) and CM_TREE_LOG2_ROOT_SIZE
 /// (for the entire address space), inclusive.
 /// \param proof Receives the proof as a JSON object in a string,
-/// guaranteed to remain valid only until the next C API is called from the same thread.
+/// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_size, const char **proof);
 
@@ -612,7 +612,7 @@ CM_API cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint
 /// \param m Pointer to valid machine instance.
 /// \param log_type Type of access log to generate.
 /// \param log Receives the state access log as a JSON object in a string,
-/// guaranteed to remain valid only until the next C API is called from the same thread.
+/// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **log);
 
@@ -620,7 +620,7 @@ CM_API cm_error cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **
 /// \param m Pointer to valid machine instance.
 /// \param log_type Type of access log to generate.
 /// \param log Receives the state access log as a JSON object in a string,
-/// guaranteed to remain valid only until the next C API is called from the same thread.
+/// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char **log);
 
@@ -631,7 +631,7 @@ CM_API cm_error cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char *
 /// \param length Length of response data.
 /// \param log_type Type of access log to generate.
 /// \param log Receives the state access log as a JSON object in a string,
-/// guaranteed to remain valid only until the next C API is called from the same thread.
+/// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length,
     int32_t log_type, const char **log);

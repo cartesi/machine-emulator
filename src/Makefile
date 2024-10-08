@@ -157,6 +157,7 @@ INCS+= \
 	-I../third-party/tiny_sha3 \
 	-I../third-party/nlohmann-json \
 	-I../third-party/downloads \
+	-I../third-party/SHA256 \
 	$(BOOST_INC)
 
 # Use 64-bit offsets for file operations in POSIX APIs
@@ -364,7 +365,8 @@ LIBCARTESI_OBJS:= \
 	uarch-pristine-state-hash.o \
 	uarch-pristine-hash.o \
 	send-cmio-response.o \
-	replay-step-state-access-interop.o
+	replay-step-state-access-interop.o \
+	sha256.o
 
 CARTESI_CLUA_OBJS:= \
 	clua.o \
@@ -386,7 +388,8 @@ LIBCARTESI_MERKLE_TREE_OBJS:= \
 	back-merkle-tree.o \
 	pristine-merkle-tree.o \
 	complete-merkle-tree.o \
-	full-merkle-tree.o
+	full-merkle-tree.o \
+	sha256.o
 
 MERKLE_TREE_HASH_OBJS:= \
 	merkle-tree-hash.o
@@ -544,6 +547,9 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	@touch $@
 
 sha3.o: ../third-party/tiny_sha3/sha3.c
+	$(CC) $(CFLAGS) $(SHA3_CFLAGS) -c -o $@ $<
+
+sha256.o: ../third-party/SHA256/sha256.c
 	$(CC) $(CFLAGS) $(SHA3_CFLAGS) -c -o $@ $<
 
 uarch-pristine-ram.o: $(UARCH_PRISTINE_RAM_C)

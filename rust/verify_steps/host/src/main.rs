@@ -18,7 +18,7 @@ use risc0_zkvm::{
     1: f66a12a3601c991025f7658226220f8346365f98958f5859a3add8954c1b1dd4
 
     2) pass hashes, log file and mcycle_count to the host
-    cargo run 5b4d6e46f7c024a1c108dcd2d7c174ec8ed2259a7ca53e362c611c2476791cb0 /tmp/step.bin 1 f66a12a3601c991025f7658226220f8346365f98958f5859a3add8954c1b1dd4
+    cargo run 2ce13ae92f9a25102ed5cc67e97c5de69921f4e66400f3710d7938e33e027ce1 /tmp/step.bin 1 5efccf3096a2f4d780d91cd8097481d08f5084ea6f077e001334aadccc42f0d7
    */
   fn main() {
     fn parse_hash(hex: &str) -> [u8; 32] {
@@ -27,7 +27,6 @@ use risc0_zkvm::{
         array.copy_from_slice(&bytes);
         array
     }
-
     let args: Vec<String> = env::args().collect();
     if args.len() != 5 {
         eprintln!("Usage: {} <root_hash_before> <log_file_path> <mcycle_count> <root_hash_after>", args[0]);
@@ -39,7 +38,6 @@ use risc0_zkvm::{
     let root_hash_after = parse_hash(&args[4]);
     assert_eq!(root_hash_before.len(), 32);
     assert_eq!(root_hash_after.len(), 32);
-
     // mmap the step log file
     let log_file = File::open(log_file_path).expect("Could not open log file");
     let log_file_len = log_file.metadata().expect("Could not get metadata").len();
@@ -49,8 +47,7 @@ use risc0_zkvm::{
             .map(&log_file)
             .expect("Could not memory map log file")
     };
-    
-    // build, run and verify the prover
+    println!("original log_file_len: {:?}", log_file_len);
     let mut builder = ExecutorEnv::builder();
     builder.write(&mcycle_count).unwrap();
     builder.write(&root_hash_before).unwrap();
@@ -61,14 +58,16 @@ use risc0_zkvm::{
     }
     let env = builder.build().unwrap();
     let prover = default_prover();
+    println!("host: prover created");   
     let receipt = prover
         .prove(env, TESTE1_ELF)
         .unwrap();
-    
-    //todo result to be hashes and mcycle_count
-    let result: bool = receipt.journal.decode().unwrap();
-    println!("host: result from guest: {:?}", result);
+    println!("host: proof generated");    
+    let result:u64 = receipt.journal.decode().unwrap();
+    println!("host: zkarch_replay_steps result: {:?}", result);
     receipt
         .verify(TESTE1_ID)
         .unwrap();
+    println!("host: proof verified");
 }
+    

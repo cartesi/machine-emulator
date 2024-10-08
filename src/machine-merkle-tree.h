@@ -27,6 +27,7 @@
 #include <unordered_map>
 
 #include "keccak-256-hasher.h"
+#include "sha-256-hasher.h"
 #include "merkle-tree-proof.h"
 #include "pristine-merkle-tree.h"
 
@@ -110,7 +111,7 @@ public:
     }
 
     /// \brief Hasher class.
-    using hasher_type = keccak_256_hasher;
+    using hasher_type = sha_256_hasher;
 
     /// \brief Storage for a hash.
     using hash_type = hasher_type::hash_type;

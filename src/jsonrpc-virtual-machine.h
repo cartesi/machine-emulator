@@ -52,9 +52,9 @@ public:
     jsonrpc_virtual_machine &operator=(jsonrpc_virtual_machine &&other) noexcept = delete;
     ~jsonrpc_virtual_machine() override;
 
-    static semantic_version get_version(const jsonrpc_connection_ptr &con);
+    jsonrpc_connection_ptr get_connection(void) const;
 
-    static void shutdown(const jsonrpc_connection_ptr &con);
+    static semantic_version get_version(const jsonrpc_connection_ptr &con);
 
     static machine_config get_default_config(const jsonrpc_connection_ptr &con);
 

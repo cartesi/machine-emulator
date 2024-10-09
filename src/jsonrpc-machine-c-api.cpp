@@ -22,22 +22,59 @@
 #include "machine-c-api-internal.h"
 #include "os-features.h"
 
+#include <signal.h>
+#include <unistd.h>
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#include "asio-config.h" // must be included before any ASIO header
+#include <boost/asio/ip/tcp.hpp>
+#pragma GCC diagnostic pop
+
+using namespace std::string_literals;
+
+cartesi::jsonrpc_connection::manage convert_from_c(cm_jsonrpc_manage what) {
+    switch (what) {
+        case CM_JSONRPC_MANAGE_SERVER:
+            return cartesi::jsonrpc_connection::manage::server;
+        case CM_JSONRPC_MANAGE_MACHINE:
+            return cartesi::jsonrpc_connection::manage::machine;
+        case CM_JSONRPC_MANAGE_NONE:
+            return cartesi::jsonrpc_connection::manage::none;
+        default:
+            throw std::domain_error("invalid cm_jsonrpc_manage");
+            return cartesi::jsonrpc_connection::manage::server;
+    }
+}
+
 static const cartesi::jsonrpc_connection_ptr *convert_from_c(const cm_jsonrpc_connection *con) {
     if (con == nullptr) {
-        throw std::invalid_argument("invalid stub");
+        throw std::invalid_argument("invalid connection");
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return reinterpret_cast<const cartesi::jsonrpc_connection_ptr *>(con);
 }
 
-cm_error cm_jsonrpc_create_connection(const char *remote_address, cm_jsonrpc_connection **con) try {
-    if (con == nullptr) {
-        throw std::invalid_argument("invalid stub output");
+static cartesi::i_virtual_machine *convert_from_c(cm_machine *m) {
+    if (m == nullptr) {
+        throw std::invalid_argument("invalid machine");
     }
-    auto *cpp_connection = new std::shared_ptr<cartesi::jsonrpc_connection>(
-        new cartesi::jsonrpc_connection{remote_address ? remote_address : ""});
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    *con = reinterpret_cast<cm_jsonrpc_connection *>(cpp_connection);
+    return reinterpret_cast<cartesi::i_virtual_machine *>(m);
+}
+
+cm_error cm_jsonrpc_connect(const char *address, cm_jsonrpc_manage what, cm_jsonrpc_connection **con) try {
+    if (address == nullptr) {
+        throw std::invalid_argument("invalid address");
+    }
+    if (con == nullptr) {
+        throw std::invalid_argument("invalid connection output");
+    }
+    auto cpp_what = convert_from_c(what);
+    auto *cpp_con =
+        new cartesi::jsonrpc_connection_ptr(std::make_shared<cartesi::jsonrpc_connection>(address, cpp_what));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    *con = reinterpret_cast<cm_jsonrpc_connection *>(cpp_con);
     return cm_result_success();
 } catch (...) {
     if (con) {
@@ -46,13 +83,123 @@ cm_error cm_jsonrpc_create_connection(const char *remote_address, cm_jsonrpc_con
     return cm_result_failure();
 }
 
-void cm_jsonrpc_destroy_connection(const cm_jsonrpc_connection *con) {
+static boost::asio::ip::tcp::endpoint address_to_endpoint(const std::string &address) {
+    try {
+        const auto pos = address.find_last_of(':');
+        const std::string ip = address.substr(0, pos);
+        const int port = std::stoi(address.substr(pos + 1));
+        if (port < 0 || port > 65535) {
+            throw std::runtime_error{"invalid port"};
+        }
+        return {boost::asio::ip::make_address(ip), static_cast<uint16_t>(port)};
+    } catch (std::exception &e) {
+        throw std::runtime_error{"invalid endpoint address \"" + address + "\""};
+    }
+}
+
+static std::string endpoint_to_string(const boost::asio::ip::tcp::endpoint &endpoint) {
+    std::ostringstream ss;
+    ss << endpoint;
+    return ss.str();
+}
+
+cm_error cm_jsonrpc_spawn(const char *address, cm_jsonrpc_manage what, cm_jsonrpc_connection **con,
+    const char **bound_address, int32_t *pid) try {
+    if (address == nullptr) {
+        throw std::invalid_argument("invalid address");
+    }
+    if (con == nullptr) {
+        throw std::invalid_argument("invalid connection output");
+    }
+    if (bound_address == nullptr) {
+        throw std::invalid_argument("invalid bound address output");
+    }
+    if (pid == nullptr) {
+        throw std::invalid_argument("invalid bound address output");
+    }
+    boost::asio::io_context ioc{1};
+    boost::asio::ip::tcp::acceptor a(ioc, address_to_endpoint(address));
+    // already done by constructor
+    // a.open(endpoint.protocol());
+    // a.set_option(asio::socket_base::reuse_address(true));
+    // a.bind(endpoint);
+    // a.listen(asio::socket_base::max_listen_connections);
+    static THREAD_LOCAL std::string bound_address_storage = endpoint_to_string(a.local_endpoint());
+    sigset_t mask, omask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGUSR1);
+    sigaddset(&mask, SIGUSR2);
+    sigaddset(&mask, SIGALRM);
+    sigprocmask(SIG_BLOCK, &mask, &omask);
+    const char *bin = getenv("JSONRPC_REMOTE_CARTESI_MACHINE");
+    if (!bin) {
+        bin = "jsonrpc-remote-cartesi-machine";
+    }
+    const int32_t child = fork();
+    if (child == 0) { // child
+        sigprocmask(SIG_SETMASK, &omask, nullptr);
+        char server_fd[256] = "";
+        snprintf(server_fd, std::size(server_fd), "--server-fd=%d", a.native_handle());
+        char *args[] = {const_cast<char *>(bin), server_fd, const_cast<char *>("--setpgid"),
+            const_cast<char *>("--sigusr1"), nullptr};
+        if (execvp(bin, args) < 0) {
+            kill(getppid(), SIGUSR2); // notify parent that exec failed
+            exit(1);
+        };
+    } else if (child > 0) { // parent and fork() succeeded
+        // change child to its own process group
+        setpgid(child, child);
+        struct itimerval value, ovalue;
+        value.it_interval.tv_sec = 0;
+        value.it_interval.tv_usec = 0;
+        value.it_value.tv_sec = 15;
+        value.it_value.tv_usec = 0;
+        setitimer(ITIMER_REAL, &value, &ovalue);
+        int sig = 0;
+        sigwait(&mask, &sig);
+        // get rid of our copy of socket
+        a.close();
+        // restore previous timer
+        setitimer(ITIMER_REAL, &ovalue, nullptr);
+        // restore previous mask
+        sigprocmask(SIG_SETMASK, &omask, nullptr);
+        if (sig == SIGALRM) { // child didn't signal us before alarm
+            kill(child, SIGTERM);
+            throw std::runtime_error{"child process unresponsive"};
+        }
+        if (sig == SIGUSR2) { // child signaled us that it failed to exec
+            // child will have exited on its own
+            throw std::runtime_error{"failed to run '"s + bin + "'"s};
+        }
+        assert(sig == SIGUSR1);
+        // child signaled us that everything is fine
+        *bound_address = bound_address_storage.c_str();
+        *pid = child;
+        auto ret = cm_jsonrpc_connect(*bound_address, what, con);
+        if (ret < 0) { // and yet we failed to connect
+            kill(child, SIGTERM);
+            *bound_address = nullptr;
+            *pid = 0;
+        }
+        return ret;
+    } else { // fork failed
+        sigprocmask(SIG_SETMASK, &omask, nullptr);
+        throw std::system_error{errno, std::generic_category(), "fork failed"};
+    }
+    return cm_result_success();
+} catch (...) {
+    *con = nullptr;
+    *bound_address = nullptr;
+    return cm_result_failure();
+}
+
+void cm_jsonrpc_release_connection(const cm_jsonrpc_connection *con) {
     if (con == nullptr) {
         return;
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    const auto *mgr_wrapper = reinterpret_cast<const cartesi::jsonrpc_connection_ptr *>(con);
-    delete mgr_wrapper;
+    const auto *cpp_con = reinterpret_cast<const cartesi::jsonrpc_connection_ptr *>(con);
+    delete cpp_con;
 }
 
 cm_error cm_jsonrpc_create_machine(const cm_jsonrpc_connection *con, const char *config, const char *runtime_config,
@@ -111,6 +258,21 @@ cm_error cm_jsonrpc_get_machine(const cm_jsonrpc_connection *con, cm_machine **n
     if (new_machine) {
         *new_machine = nullptr;
     }
+    return cm_result_failure();
+}
+
+CM_API cm_error cm_jsonrpc_get_connection(cm_machine *m, const cm_jsonrpc_connection **con) try {
+    auto *cpp_machine = convert_from_c(m);
+    cartesi::jsonrpc_virtual_machine *cpp_json_machine = dynamic_cast<cartesi::jsonrpc_virtual_machine *>(cpp_machine);
+    if (!cpp_json_machine) {
+        throw std::invalid_argument("not a remote machine");
+    }
+    auto *cpp_con = new cartesi::jsonrpc_connection_ptr(cpp_json_machine->get_connection());
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    *con = reinterpret_cast<cm_jsonrpc_connection *>(cpp_con);
+    return cm_result_success();
+} catch (...) {
+    *con = nullptr;
     return cm_result_failure();
 }
 
@@ -225,14 +387,6 @@ cm_error cm_jsonrpc_get_version(const cm_jsonrpc_connection *con, const char **v
     if (version) {
         *version = nullptr;
     }
-    return cm_result_failure();
-}
-
-cm_error cm_jsonrpc_shutdown(const cm_jsonrpc_connection *con) try {
-    const auto *cpp_connection = convert_from_c(con);
-    cartesi::jsonrpc_virtual_machine::shutdown(*cpp_connection);
-    return cm_result_success();
-} catch (...) {
     return cm_result_failure();
 }
 

@@ -401,19 +401,6 @@ static int machine_obj_index_replace_memory_range(lua_State *L) {
     return 0;
 }
 
-/// \brief This is the machine:destroy() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_destroy(lua_State *L) {
-    lua_settop(L, 2);
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const bool keep_machine = lua_toboolean(L, 2);
-    if (cm_destroy(m.get(), keep_machine) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    m.release();
-    return 0;
-}
-
 /// \brief This is the machine:snapshot() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_snapshot(lua_State *L) {
@@ -530,7 +517,6 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"write_virtual_memory", machine_obj_index_write_virtual_memory},
     {"translate_virtual_address", machine_obj_index_translate_virtual_address},
     {"replace_memory_range", machine_obj_index_replace_memory_range},
-    {"destroy", machine_obj_index_destroy},
     {"snapshot", machine_obj_index_snapshot},
     {"commit", machine_obj_index_commit},
     {"rollback", machine_obj_index_rollback},
@@ -544,27 +530,10 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"log_send_cmio_response", machine_obj_index_log_send_cmio_response},
 });
 
-/// \brief This is the machine __close metamethod implementation.
-/// \param L Lua state.
-static int machine_obj_close(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    if (cm_destroy(m.get(), false) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    m.release();
-    clua_close<clua_managed_cm_ptr<cm_machine>>(L);
-    return 0;
-}
-
 int clua_i_virtual_machine_init(lua_State *L, int ctxidx) {
     if (!clua_typeexists<clua_managed_cm_ptr<cm_machine>>(L, ctxidx)) {
         clua_createtype<clua_managed_cm_ptr<cm_machine>>(L, "cartesi machine object", ctxidx);
         clua_setmethods<clua_managed_cm_ptr<cm_machine>>(L, machine_obj_index.data(), 0, ctxidx);
-        // Override __close to actually destroy the machine
-        static const auto machine_class_meta = cartesi::clua_make_luaL_Reg_array({
-            {"__close", machine_obj_close},
-        });
-        clua_setmetamethods<clua_managed_cm_ptr<cm_machine>>(L, machine_class_meta.data(), 0, ctxidx);
     }
     return 1;
 }

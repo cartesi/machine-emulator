@@ -30,12 +30,9 @@
 namespace cartesi {
 
 class jsonrpc_connection final {
-    boost::asio::io_context m_ioc{1};         // The io_context is required for all I/O
-    boost::beast::tcp_stream m_stream{m_ioc}; // TCP stream for keep alive connections
-    boost::container::static_vector<std::string, 2> m_address{};
-
 public:
-    explicit jsonrpc_connection(std::string remote_address);
+    enum class manage { server, machine, none };
+    explicit jsonrpc_connection(std::string remote_address, manage what);
     jsonrpc_connection(const jsonrpc_connection &other) = delete;
     jsonrpc_connection(jsonrpc_connection &&other) noexcept = delete;
     jsonrpc_connection &operator=(const jsonrpc_connection &other) = delete;
@@ -50,7 +47,14 @@ public:
     void snapshot(void);
     void commit(void);
     void rollback(void);
+    manage get_what_managed(void) const;
+
+private:
     void shutdown(void);
+    boost::asio::io_context m_ioc{1};         // The io_context is required for all I/O
+    boost::beast::tcp_stream m_stream{m_ioc}; // TCP stream for keep alive connections
+    boost::container::static_vector<std::string, 2> m_address{};
+    manage m_what_managed{manage::server};
 };
 
 } // namespace cartesi

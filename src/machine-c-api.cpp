@@ -598,12 +598,9 @@ cm_error cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length,
     return cm_result_failure();
 }
 
-cm_error cm_destroy(cm_machine *m, bool keep_machine) try {
+cm_error cm_destroy(cm_machine *m) try {
     if (m != nullptr) {
         auto *cpp_machine = convert_from_c(m);
-        if (!keep_machine) {
-            cpp_machine->destroy();
-        }
         delete cpp_machine;
     }
     return cm_result_success();

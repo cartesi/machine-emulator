@@ -255,13 +255,23 @@ void jsonrpc_request(beast::tcp_stream &stream, const std::string &remote_addres
 
 namespace cartesi {
 
-jsonrpc_connection::jsonrpc_connection(std::string remote_address) {
-    m_address.push_back(std::move(remote_address));
+jsonrpc_connection::jsonrpc_connection(std::string address, manage what) {
+    m_address.push_back(std::move(address));
+    m_what_managed = what;
     // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
     os_disable_sigpipe();
 }
 
 jsonrpc_connection::~jsonrpc_connection() {
+    // If configured to detroy machine but not server, do it
+    if (m_what_managed == manage::machine) {
+        bool result = false;
+        jsonrpc_request(get_stream(), get_remote_address(), "machine.destroy", std::tie(), result, false);
+    }
+    // If configured to shutdown server, do it
+    if (m_what_managed == manage::server) {
+        shutdown();
+    }
     // Gracefully close any established keep alive connection
     if (m_stream.socket().is_open()) {
         beast::error_code ec;
@@ -355,6 +365,10 @@ bool jsonrpc_connection::is_shutdown(void) const {
     return m_address.empty();
 }
 
+auto jsonrpc_connection::get_what_managed(void) const -> manage {
+    return m_what_managed;
+}
+
 jsonrpc_virtual_machine::jsonrpc_virtual_machine(jsonrpc_connection_ptr con) : m_connection(std::move(con)) {}
 
 jsonrpc_virtual_machine::jsonrpc_virtual_machine(jsonrpc_connection_ptr con, const std::string &directory,
@@ -373,7 +387,12 @@ jsonrpc_virtual_machine::jsonrpc_virtual_machine(jsonrpc_connection_ptr con, con
         std::tie(config, runtime), result);
 }
 
-jsonrpc_virtual_machine::~jsonrpc_virtual_machine(void) = default;
+jsonrpc_virtual_machine::~jsonrpc_virtual_machine(void) {
+    auto what = m_connection->get_what_managed();
+    if (what != jsonrpc_connection::manage::none) {
+        destroy();
+    }
+}
 
 machine_config jsonrpc_virtual_machine::do_get_initial_config(void) const {
     machine_config result;
@@ -394,12 +413,12 @@ semantic_version jsonrpc_virtual_machine::get_version(const jsonrpc_connection_p
     return result;
 }
 
+jsonrpc_connection_ptr jsonrpc_virtual_machine::get_connection(void) const {
+    return m_connection;
+}
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-
-void jsonrpc_virtual_machine::shutdown(const jsonrpc_connection_ptr &con) {
-    con->shutdown();
-}
 
 void jsonrpc_virtual_machine::verify_step_uarch(const jsonrpc_connection_ptr &con, const hash_type &root_hash_before,
     const access_log &log, const hash_type &root_hash_after) {

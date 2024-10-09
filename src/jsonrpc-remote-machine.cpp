@@ -259,7 +259,7 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
         signals(ioc),
         local_endpoint(acceptor.local_endpoint()),
         acceptor(std::move(acceptor)) {
-        SLOG(info) << "remote machine bound to " << local_endpoint;
+        SLOG(info) << "remote machine server bound to " << local_endpoint;
     }
 
     // Installs all handlers that should stop the HTTP server
@@ -1532,6 +1532,9 @@ where options are
       the proccess group id is the same as the process id of the server
       the server and all its children can be signaled via this process group id
 
+    --sigusr1
+      send SIGUSR1 to parent process when ready
+
     --log-level=<level>
       sets the log level
       <level> can be
@@ -1581,6 +1584,7 @@ int main(int argc, char *argv[]) try {
     const char *server_address = nullptr;
     int server_fd = -1;
     bool newpg = false;
+    bool sigusr1 = false;
     const char *log_level = nullptr;
     const char *program_name = PROGRAM_NAME;
 
@@ -1597,6 +1601,8 @@ int main(int argc, char *argv[]) try {
             ;
         } else if (strcmp(argv[i], "--setpgid") == 0) {
             newpg = true;
+        } else if (strcmp(argv[i], "--sigusr1") == 0) {
+            sigusr1 = true;
         } else if (strcmp(argv[i], "--help") == 0) {
             help(program_name);
             exit(0);
@@ -1609,12 +1615,16 @@ int main(int argc, char *argv[]) try {
     // create a new process group and become its leader
     if (newpg) {
         setpgid(0, 0);
-        SLOG(info) << "remote machine now has pgid:" << getpgid(0);
+        SLOG(info) << "remote machine server now has pgid:" << getpgid(0);
+    }
+
+    if (sigusr1) {
+        kill(getppid(), SIGUSR1);
     }
 
     init_logger(log_level);
 
-    SLOG(info) << "remote machine version is " << server_version_major << "." << server_version_minor << "."
+    SLOG(info) << "remote machine server version is " << server_version_major << "." << server_version_minor << "."
                << server_version_patch;
 
     install_restart_signal_handlers();
@@ -1630,18 +1640,8 @@ int main(int argc, char *argv[]) try {
         }
         SLOG(info) << "attempting to inherit fd " << server_fd << " from parent";
         // check socket is listening and is of right domain and type
-        int listen = 0;
-        socklen_t len = sizeof(listen);
-        if (getsockopt(server_fd, SOL_SOCKET, SO_ACCEPTCONN, &listen, &len) < 0) {
-            SLOG(fatal) << "getsockopt failed on inherited fd: " << strerror(errno);
-            exit(1);
-        }
-        if (!listen) {
-            SLOG(fatal) << "inherited is fd not a listening socket";
-            exit(1);
-        }
         struct sockaddr_in fd_addr;
-        len = sizeof(fd_addr);
+        socklen_t len = sizeof(fd_addr);
         memset(&fd_addr, 0, len);
         if (getsockname(server_fd, reinterpret_cast<struct sockaddr *>(&fd_addr), &len) < 0) {
             SLOG(fatal) << "getsockname failed on inherited fd: " << strerror(errno);
@@ -1649,6 +1649,21 @@ int main(int argc, char *argv[]) try {
         }
         if (fd_addr.sin_family != PF_INET && fd_addr.sin_family != PF_INET6) {
             SLOG(fatal) << "inherited fd is not an inet/inet6 domain socket";
+            exit(1);
+        }
+        int listen = 0;
+        len = sizeof(listen);
+        if (getsockopt(server_fd, SOL_SOCKET, SO_ACCEPTCONN, &listen, &len) < 0) {
+            auto copy = errno;
+            if (copy != ENOPROTOOPT) {
+                SLOG(fatal) << "getsockopt failed on inherited fd: " << strerror(errno);
+                exit(1);
+            } else { // test is not supported in platform (e.g. macOS), so we just hope for the best
+                listen = 1;
+            }
+        }
+        if (!listen) {
+            SLOG(fatal) << "inherited is fd not a listening socket";
             exit(1);
         }
         int type = 0;
@@ -1686,7 +1701,7 @@ int main(int argc, char *argv[]) try {
     // e.g, there is no more clients connected and the handler is not accepting new connections.
     ioc.run();
 
-    SLOG(trace) << "remote machine terminated";
+    SLOG(trace) << "remote machine server exiting";
     return 0;
 } catch (std::exception &e) {
     SLOG(fatal) << "caught exception: " << e.what();

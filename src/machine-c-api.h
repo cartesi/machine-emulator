@@ -343,12 +343,11 @@ CM_API cm_error cm_create(const char *config, const char *runtime_config, cm_mac
 
 /// \brief Destroys a machine.
 /// \param m Pointer to the existing machine instance (can be NULL).
-/// \param keep_machine If true, the machine is not destroyed in the remote server.
 /// \returns 0 for success, non zero code for error.
 /// \details The machine is deallocated and its pointer must not be used after this call.
-/// This method always succeeds for local machines, but may fail for remote machines when
-/// keep machine is false. In case of failure it must be called again to free resources.
-CM_API cm_error cm_destroy(cm_machine *m, bool keep_machine);
+/// This method always succeeds for local machines, but may fail for remote machines.
+/// In case of failure it must be called again to free resources.
+CM_API cm_error cm_destroy(cm_machine *m);
 
 /// \brief Loads a new machine instance from a previously stored directory.
 /// \param dir Directory where previous machine is stored.

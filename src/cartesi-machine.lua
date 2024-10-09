@@ -71,13 +71,13 @@ where options are:
 
     DON'T USE THIS OPTION IN PRODUCTION
 
-  --ram-image=<filename>
+  -k=<filename> or --ram-image=<filename>
     name of file containing RAM image (default: "linux.bin").
 
   --no-ram-image
     forget settings for RAM image.
 
-  --ram-length=<number>
+  -m=<number> or --ram-length=<number>
     set RAM length.
 
   --dtb-image=<filename>
@@ -92,6 +92,13 @@ where options are:
 
   --no-root-flash-drive
     clear default root flash drive and associated bootargs parameters.
+
+  -r=<filename> or --rootfs=<filename>
+    shorthand for --flash-drive=label:root,filename:<filename>
+
+  -S or --shared-rootfs
+    target modifications to root flash drive modify image file as well.
+    by default, image files are not modified and changes are lost.
 
   --flash-drive=<key>:<value>[,<key>:<value>[,...]...]
     defines a new flash drive, or modify an existing flash drive definition.
@@ -297,7 +304,7 @@ where options are:
 
     NON REPRODUCIBLE OPTION, DON'T USE THIS OPTION IN PRODUCTION
 
-  -v or --volume=<host_directory>:<guest_directory>
+  -v=... or --volume=<host_directory>:<guest_directory>
     like --virtio-9p, but also appends init commands to auto mount the
     host directory in the guest directory.
     mount tags are incrementally set to "vfs0", "vfs1", ...
@@ -477,6 +484,9 @@ where options are:
 
   --no-init-splash
     don't show cartesi machine splash on boot.
+
+  -q
+    shorthand for --quiet --no-init-splash.
 
   -u=<name> or --user=<name>
     appends to init the user who should execute the entrypoint command.
@@ -808,6 +818,40 @@ local function handle_interactive(all)
     return true
 end
 
+local function handle_flashdrive(all, f)
+    assert(f.label, "missing flash drive label in " .. all)
+    f.image_filename = f.filename
+    f.filename = nil
+    if f.image_filename == true then f.image_filename = "" end
+    assert(not f.shared or f.shared == true, "invalid flash drive shared value in " .. all)
+    if f.mount == nil then
+        -- mount only if there is a file backing
+        if f.image_filename and f.image_filename ~= "" then
+            f.mount = "/mnt/" .. f.label
+        else
+            f.mount = false
+        end
+    elseif f.mount == "true" then
+        f.mount = "/mnt/" .. f.label
+    elseif f.mount == "false" then
+        f.mount = false
+    end
+    if f.start then f.start = assert(util.parse_number(f.start), "invalid flash drive start in " .. all) end
+    if f.length then f.length = assert(util.parse_number(f.length), "invalid flash drive length in " .. all) end
+    local d = f.label
+    if not flash_image_filename[d] then
+        flash_label_order[#flash_label_order + 1] = d
+        flash_image_filename[d] = ""
+    end
+    flash_image_filename[d] = f.image_filename or flash_image_filename[d]
+    flash_start[d] = f.start or flash_start[d]
+    flash_length[d] = f.length or flash_length[d]
+    flash_shared[d] = f.shared or flash_shared[d]
+    flash_mount[d] = f.mount or flash_mount[d]
+    flash_user[d] = f.user or flash_user[d]
+    return true
+end
+
 -- List of supported options
 -- Options are processed in order
 -- For each option,
@@ -907,10 +951,26 @@ local options = {
         end,
     },
     {
+        "^%-m%=(.+)$",
+        function(n)
+            if not n then return false end
+            ram_length = assert(util.parse_number(n), "invalid RAM length " .. n)
+            return true
+        end,
+    },
+    {
         "^%-%-ram%-length%=(.+)$",
         function(n)
             if not n then return false end
             ram_length = assert(util.parse_number(n), "invalid RAM length " .. n)
+            return true
+        end,
+    },
+    {
+        "^%-k%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            ram_image_filename = o
             return true
         end,
     },
@@ -1017,49 +1077,53 @@ local options = {
         end,
     },
     {
+        "^(%-r%=(.+))$",
+        function(all, o)
+            if not o then return false end
+            return handle_flashdrive(all, { label = "root", filename = o })
+        end,
+    },
+    {
+        "^(%-%-rootfs%=(.+))$",
+        function(all, o)
+            if not o then return false end
+            return handle_flashdrive(all, { label = "root", filename = o, shared = flash_shared.root })
+        end,
+    },
+    {
+        "^%-S$",
+        function(all)
+            if not all then return false end
+            assert(flash_image_filename.root and flash_label_order[1] == "root", "no root flash drive to be shared")
+            flash_shared.root = true
+            return true
+        end,
+    },
+    {
+        "^%-%-shared%-rootfs$",
+        function(all)
+            if not all then return false end
+            assert(flash_image_filename.root and flash_label_order[1] == "root", "no root flash drive to be shared")
+            flash_shared.root = true
+            return true
+        end,
+    },
+    {
         "^(%-%-flash%-drive%=(.+))$",
         function(all, opts)
             if not opts then return false end
-            local f = util.parse_options(opts, {
-                label = true,
-                filename = true,
-                shared = true,
-                mount = true,
-                user = true,
-                length = true,
-                start = true,
-            })
-            assert(f.label, "missing flash drive label in " .. all)
-            f.image_filename = f.filename
-            f.filename = nil
-            if f.image_filename == true then f.image_filename = "" end
-            assert(not f.shared or f.shared == true, "invalid flash drive shared value in " .. all)
-            if f.mount == nil then
-                -- mount only if there is a file backing
-                if f.image_filename and f.image_filename ~= "" then
-                    f.mount = "/mnt/" .. f.label
-                else
-                    f.mount = false
-                end
-            elseif f.mount == "true" then
-                f.mount = "/mnt/" .. f.label
-            elseif f.mount == "false" then
-                f.mount = false
-            end
-            if f.start then f.start = assert(util.parse_number(f.start), "invalid flash drive start in " .. all) end
-            if f.length then f.length = assert(util.parse_number(f.length), "invalid flash drive length in " .. all) end
-            local d = f.label
-            if not flash_image_filename[d] then
-                flash_label_order[#flash_label_order + 1] = d
-                flash_image_filename[d] = ""
-            end
-            flash_image_filename[d] = f.image_filename or flash_image_filename[d]
-            flash_start[d] = f.start or flash_start[d]
-            flash_length[d] = f.length or flash_length[d]
-            flash_shared[d] = f.shared or flash_shared[d]
-            flash_mount[d] = f.mount or flash_mount[d]
-            flash_user[d] = f.user or flash_user[d]
-            return true
+            return handle_flashdrive(
+                all,
+                util.parse_options(opts, {
+                    label = true,
+                    filename = true,
+                    shared = true,
+                    mount = true,
+                    user = true,
+                    length = true,
+                    start = true,
+                })
+            )
         end,
     },
     {
@@ -1245,6 +1309,15 @@ local options = {
         function(all)
             if not all then return false end
             stderr = function() end
+            return true
+        end,
+    },
+    {
+        "%-q",
+        function(all)
+            if not all then return false end
+            stderr = function() end
+            init_splash = false
             return true
         end,
     },

@@ -264,6 +264,18 @@ int cm_jsonrpc_verify_send_cmio_response_log(const cm_jsonrpc_mgr *mgr, uint16_t
     return cm_result_failure(err_msg);
 }
 
+int cm_jsonrpc_verify_step(const cm_jsonrpc_mgr *mgr, const cm_hash *root_hash_before, const char *filename,
+    uint16_t mcycle_count, const cm_hash *root_hash_after, char **err_msg) try {
+    const auto *cpp_mgr = convert_from_c(mgr);
+    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    cartesi::jsonrpc_virtual_machine::verify_step(*cpp_mgr, cpp_root_hash_before, filename, mcycle_count,
+        cpp_root_hash_after);
+    return cm_result_success(err_msg);
+} catch (...) {
+    return cm_result_failure(err_msg);
+}
+
 int cm_jsonrpc_verify_send_cmio_response_state_transition(const cm_jsonrpc_mgr *mgr, uint16_t reason,
     const unsigned char *data, size_t length, const cm_hash *root_hash_before, const cm_access_log *log,
     const cm_hash *root_hash_after, const cm_machine_runtime_config *runtime_config, bool one_based,

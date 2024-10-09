@@ -224,6 +224,24 @@ static int jsonrpc_machine_class_verify_send_cmio_response_state_transition(lua_
     return 1;
 }
 
+/// \brief This is the machine.verify_step() static method implementation.
+static int jsonrpc_machine_class_verify_step(lua_State *L) {
+    const int stubidx = lua_upvalueindex(1);
+    const int ctxidx = lua_upvalueindex(2);
+    lua_settop(L, 5);
+    auto &managed_jsonrpc_mgr = clua_check<clua_managed_cm_ptr<cm_jsonrpc_mgr>>(L, stubidx, ctxidx);
+    cm_hash root_hash_before{};
+    clua_check_cm_hash(L, 1, &root_hash_before);
+    const auto *filename = luaL_checkstring(L, 2);
+    const uint64_t mcycle_count = luaL_optinteger(L, 3, UINT64_MAX);
+    cm_hash root_hash_after{};
+    clua_check_cm_hash(L, 4, &root_hash_after);
+    TRY_EXECUTE(cm_jsonrpc_verify_step(managed_jsonrpc_mgr.get(), &root_hash_before, filename, mcycle_count,
+        &root_hash_after, err_msg));
+    lua_pop(L, 2);
+    return 0;
+}
+
 /// \brief Contents of the machine class metatable __index table.
 static const auto jsonrpc_machine_static_methods = cartesi::clua_make_luaL_Reg_array({
     {"get_default_config", jsonrpc_machine_class_get_default_config},
@@ -237,6 +255,7 @@ static const auto jsonrpc_machine_static_methods = cartesi::clua_make_luaL_Reg_a
     {"get_csr_address", jsonrpc_machine_class_get_csr_address},
     {"verify_send_cmio_response_log", jsonrpc_machine_class_verify_send_cmio_response_log},
     {"verify_send_cmio_response_state_transition", jsonrpc_machine_class_verify_send_cmio_response_state_transition},
+    {"verify_step", jsonrpc_machine_class_verify_step},
 });
 
 /// \brief Prints a JSONRPC machine class

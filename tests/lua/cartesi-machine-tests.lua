@@ -355,6 +355,9 @@ and command can be:
   run
     run test and report if payload and cycles match expected
 
+  run_step
+    run all tests by recording and verifying each test execution into a step log file
+
   run_uarch
     run test in the microarchitecture and report if payload and cycles match expected
 
@@ -604,6 +607,22 @@ local function run_machine(machine, ctx, max_mcycle, advance_machine_fn)
             break
         end
     end
+    ctx.read_htif_tohost_data = machine:read_htif_tohost_data()
+end
+
+local function run_machine_step(machine, ctx, mcycle_count)
+    local log_filename = os.tmpname()
+    local deleter = {}
+    setmetatable(deleter, {
+        __gc = function()
+            os.remove(log_filename)
+        end,
+    })
+    os.remove(log_filename)
+    local root_hash_before = machine:get_root_hash()
+    machine:log_step(mcycle_count, log_filename)
+    local root_hash_after = machine:get_root_hash()
+    cartesi.machine.verify_step(root_hash_before, log_filename, mcycle_count, root_hash_after)
     ctx.read_htif_tohost_data = machine:read_htif_tohost_data()
 end
 
@@ -977,6 +996,13 @@ elseif command == "run" then
     failures = parallel.run(contexts, jobs, function(row)
         local machine = build_machine(row.ram_image)
         run_machine(machine, row, 2 * row.expected_cycles)
+        check_and_print_result(machine, row)
+        machine:destroy()
+    end)
+elseif command == "run_step" then
+    failures = parallel.run(contexts, jobs, function(row)
+        local machine = build_machine(row.ram_image)
+        run_machine_step(machine, row, row.expected_cycles)
         check_and_print_result(machine, row)
         machine:destroy()
     end)

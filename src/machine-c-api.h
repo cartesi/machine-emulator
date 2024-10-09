@@ -539,6 +539,28 @@ CM_API void cm_delete_machine(cm_machine *m);
 /// \returns 0 for success, non zero code for error
 CM_API int cm_machine_run(cm_machine *m, uint64_t mcycle_end, CM_BREAK_REASON *break_reason_result, char **err_msg);
 
+/// \brief Runs the machine for the given mcycle count and generates a log of accessed pages and proof data.
+/// \param m Pointer to valid machine instance
+/// \param mcycle_count Number of mcycles to run
+/// \param log_filename Name of the log file to be generated
+/// \param break_reason Receives reason for machine run interruption when not NULL
+/// \param err_msg Receives the error message if function execution fails
+CM_API int cm_log_step(cm_machine *m, uint64_t mcycle_count, const char *log_filename,
+    CM_BREAK_REASON *break_reason_result, char **err_msg);
+
+/// \brief Checks the validity of a step log file.
+/// \param root_hash_before State hash before step
+/// \param log_filename Path to the step log file to be verified
+/// \param mcycle_count Number of mcycles in the step
+/// \param root_hash_after State hash after step
+/// \param err_msg Receives the error message if function execution fails
+/// or NULL in case of successful function execution. In case of failure error_msg
+/// must be deleted by the function caller using cm_delete_cstring.
+/// err_msg can be NULL, meaning the error message won't be received.
+/// \returns 0 for success, non zero code for error
+CM_API int cm_verify_step(const cm_hash *root_hash_before, const char *log_filename, uint64_t mcycle_count,
+    const cm_hash *root_hash_after, char **err_msg);
+
 /// \brief Runs the machine for one micro cycle logging all accesses to the state.
 /// \param m Pointer to valid machine instance
 /// \param log_type Type of access log to generate.

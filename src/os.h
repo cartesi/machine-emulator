@@ -147,6 +147,12 @@ void os_disable_sigpipe();
 /// \brief Sleep until timeout_us microseconds elapsed
 void os_sleep_us(uint64_t timeout_us);
 
+/// \brief Get the length of a file
+long os_get_file_length(const char *filename, const char *text = "");
+
+/// \brief Check if a file exists
+bool os_file_exists(const char *filename);
+
 } // namespace cartesi
 
 #endif

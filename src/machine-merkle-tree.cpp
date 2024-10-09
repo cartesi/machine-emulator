@@ -425,6 +425,34 @@ machine_merkle_tree::proof_type machine_merkle_tree::get_proof(address_type targ
     return proof;
 }
 
+machine_merkle_tree::hash_type machine_merkle_tree::get_node_hash(address_type target_address,
+    int log2_target_size) const {
+    if (log2_target_size > get_log2_root_size() || log2_target_size < get_log2_word_size()) {
+        throw std::runtime_error{"log2_target_size is out of bounds"};
+    }
+    if (log2_target_size < get_log2_page_size()) {
+        throw std::runtime_error{"log2_target_size is smaller than page size"};
+    }
+    if (target_address & ((static_cast<address_type>(1) << log2_target_size) - 1)) {
+        throw std::invalid_argument{"address is not page-aligned"};
+    }
+    int log2_node_size = get_log2_root_size();
+    const tree_node *node = m_root;
+    // walk down the tree until we reach the target node
+    while (node && log2_node_size > log2_target_size) {
+        const int log2_child_size = log2_node_size - 1;
+        const int path_bit = (target_address & (UINT64_C(1) << (log2_child_size))) != 0;
+        node = node->child[path_bit];
+        log2_node_size = log2_child_size;
+    }
+    if (!node) {
+        // We hit a pristine node along the path to the target node
+        return get_pristine_hash(log2_target_size);
+    }
+    assert(node);
+    return node->hash;
+}
+
 std::ostream &operator<<(std::ostream &out, const machine_merkle_tree::hash_type &hash) {
     auto f = out.flags();
     for (const unsigned b : hash) {

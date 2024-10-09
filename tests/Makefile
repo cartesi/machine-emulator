@@ -185,6 +185,9 @@ test-cmio: | $(CARTESI_CMIO_PATH)
 test-machine:
 	$(LUA) ./lua/cartesi-machine-tests.lua --jobs=$(NUM_JOBS) run
 
+test-machine-with-log-step:
+	$(LUA) ./lua/cartesi-machine-tests.lua --jobs=$(NUM_JOBS) run_step
+
 test-uarch:
 	$(LUA) ./lua/cartesi-machine-tests.lua --jobs=$(NUM_JOBS) run_uarch
 
@@ -255,7 +258,7 @@ coverage-report: $(COVERAGE_OUTPUT_DIR)
 export LLVM_PROFILE_FILE=coverage-%p.profraw
 endif
 
-test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-hash test-cmio
+test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-hash test-cmio test-machine-with-log-step
 
 lint format check-format:
 	@$(MAKE) -C misc $@

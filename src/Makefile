@@ -363,7 +363,8 @@ LIBCARTESI_OBJS:= \
 	uarch-pristine-ram.o \
 	uarch-pristine-state-hash.o \
 	uarch-pristine-hash.o \
-	send-cmio-response.o
+	send-cmio-response.o \
+	replay-step-state-access-interop.o
 
 CARTESI_CLUA_OBJS:= \
 	clua.o \

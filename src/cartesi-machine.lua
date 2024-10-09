@@ -434,6 +434,9 @@ where options are:
     this option implies --initial-hash and --final-hash.
     (default: none)
 
+--log-steps=<mcycle-count>,<filename>
+    log and save a step of <mcycle-count> mcycles to <filename>.
+
   --log-uarch-step
     advance one micro step and print access log.
 
@@ -610,6 +613,8 @@ local load_config = false
 local gdb_address
 local exec_arguments = {}
 local assert_rolling_template = false
+local log_step_mcycle_count
+local log_step_filename
 
 local function parse_memory_range(opts, what, all)
     local f = util.parse_options(opts, {
@@ -1236,6 +1241,15 @@ local options = {
         function(all)
             if not all then return false end
             stderr = function() end
+            return true
+        end,
+    },
+    {
+        "^%-%-log%-step%=(.*),(.*)$",
+        function(count, filename)
+            if (not count) or not filename then return false end
+            log_step_mcycle_count = assert(util.parse_number(count), "invalid steps " .. count)
+            log_step_filename = filename
             return true
         end,
     },
@@ -2299,6 +2313,12 @@ if max_uarch_cycle > 0 then
     end
 end
 if gdb_stub then gdb_stub:close() end
+if log_step_mcycle_count then
+    stderr(string.format("Logging step of %d cycles to %s\n", log_step_mcycle_count, log_step_filename))
+    print_root_hash(machine, stderr_unsilenceable)
+    machine:log_step(log_step_mcycle_count, log_step_filename)
+    print_root_hash(machine, stderr_unsilenceable)
+end
 if log_uarch_step then
     assert(config.processor.iunrep == 0, "micro step proof is meaningless in unreproducible mode")
     stderr("Gathering micro step log: please wait\n")

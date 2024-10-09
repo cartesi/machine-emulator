@@ -332,6 +332,14 @@ static int machine_obj_index_run(lua_State *L) {
     return 1;
 }
 
+static int machine_obj_index_log_step(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    CM_BREAK_REASON break_reason = CM_BREAK_REASON_FAILED;
+    TRY_EXECUTE(cm_log_step(m.get(), luaL_checkinteger(L, 2), luaL_checkstring(L, 3), &break_reason, err_msg));
+    lua_pushinteger(L, static_cast<lua_Integer>(break_reason));
+    return 1;
+}
+
 /// \brief This is the machine:read_uarch_halt_flag() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_read_uarch_halt_flag(lua_State *L) {
@@ -718,6 +726,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"log_uarch_reset", machine_obj_index_log_uarch_reset},
     {"send_cmio_response", machine_obj_index_send_cmio_response},
     {"log_send_cmio_response", machine_obj_index_log_send_cmio_response},
+    {"log_step", machine_obj_index_log_step},
 });
 
 /// \brief This is the machine __close metamethod implementation.

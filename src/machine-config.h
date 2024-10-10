@@ -211,6 +211,8 @@ struct machine_config final {
     /// \brief Stores the machine config to a directory
     /// \param dir Directory where "config" will be stored
     void store(const std::string &dir) const;
+
+    std::string load_dir{}; ///< Directory this machine config was loaded from
 };
 
 } // namespace cartesi

@@ -77,6 +77,7 @@ machine_config machine_config::load(const std::string &dir) {
         }
         ju_get_field(j, std::string("config"), c, "");
         adjust_image_filenames(c, dir);
+        c.load_dir = dir;
     } catch (std::exception &e) {
         throw std::runtime_error{e.what()};
     }

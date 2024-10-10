@@ -20,6 +20,7 @@
 /// \file
 /// \brief Cartesi microarchitecture machine
 
+#include "machine-runtime-config.h"
 #include "uarch-config.h"
 #include "uarch-state.h"
 
@@ -34,7 +35,7 @@ class uarch_machine final {
 public:
     /// \brief Constructor from machine configuration
     // I will deal with clang-tidy later.
-    explicit uarch_machine(uarch_config c);
+    explicit uarch_machine(const uarch_config &c);
     /// \brief Destructor.
     ~uarch_machine() = default;
 
@@ -58,6 +59,8 @@ public:
     const uarch_state &get_state(void) const {
         return m_s;
     }
+
+    void register_pmas(const machine_runtime_config &r);
 
     /// \brief Obtain PMA entry that covers a given physical memory region
     /// \param s Pointer to machine state.

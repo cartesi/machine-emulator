@@ -86,13 +86,7 @@ void os_putchar(uint8_t ch);
 void os_putchars(const uint8_t *data, size_t len);
 
 /// \brief Creates a new directory
-int os_mkdir(const char *path, int mode);
-
-/// \brief Maps a file to memory
-unsigned char *os_map_file(const char *path, uint64_t length, bool shared);
-
-/// \brief Unmaps a file from memory
-void os_unmap_file(unsigned char *host_memory, uint64_t length);
+void os_mkdir(const char *path, int mode);
 
 /// \brief Get time elapsed since its first call with microsecond precision
 int64_t os_now_us();
@@ -146,6 +140,17 @@ void os_disable_sigpipe();
 
 /// \brief Sleep until timeout_us microseconds elapsed
 void os_sleep_us(uint64_t timeout_us);
+
+void os_copy_reflink(const char *oldpath, const char *newpath);
+void os_copy_file(const char *oldpath, const char *newpath);
+void os_write_file(const char *path, const unsigned char *data, size_t length);
+void os_grow_file(const char *path, uint64_t length, bool create);
+bool os_exists(const char *path);
+void os_unlink(const char *path, bool force = false);
+void os_rmdir(const char *path, bool force = false);
+
+void os_unlock_fd(int fd, const char *path);
+void os_lock_fd(int fd, const char *path, bool write);
 
 } // namespace cartesi
 

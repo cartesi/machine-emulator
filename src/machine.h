@@ -77,28 +77,6 @@ private:
     /// \returns Reference to corresponding entry in machine state.
     pma_entry &register_pma_entry(pma_entry &&pma);
 
-    /// \brief Creates a new PMA entry reflecting a memory range configuration.
-    /// \param description Informative description of PMA entry for use in error messages
-    /// \param c Memory range configuration.
-    /// \returns New PMA entry (with default flags).
-    static pma_entry make_memory_range_pma_entry(const std::string &description, const memory_range_config &c);
-
-    /// \brief Creates a new flash drive PMA entry.
-    /// \param description Informative description of PMA entry for use in error messages
-    /// \param c Memory range configuration.
-    /// \returns New PMA entry with flash drive flags already set.
-    static pma_entry make_flash_drive_pma_entry(const std::string &description, const memory_range_config &c);
-
-    /// \brief Creates a new cmio rx buffer PMA entry.
-    // \param c Optional cmio configuration
-    /// \returns New PMA entry with rx buffer flags already set.
-    static pma_entry make_cmio_rx_buffer_pma_entry(const cmio_config &cmio_config);
-
-    /// \brief Creates a new cmio tx buffer PMA entry.
-    // \param c Optional cmio configuration
-    /// \returns New PMA entry with tx buffer flags already set.
-    static pma_entry make_cmio_tx_buffer_pma_entry(const cmio_config &cmio_config);
-
     /// \brief Saves PMAs into files for serialization
     /// \param config Machine config to be stored
     /// \param directory Directory where PMAs will be stored

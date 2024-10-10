@@ -21,6 +21,7 @@
 #include <string>
 #include <system_error>
 
+#include "machine-config.h"
 #include "os.h"
 #include "unique-c-ptr.h"
 
@@ -29,91 +30,29 @@ namespace cartesi {
 using namespace std::string_literals;
 
 void pma_memory::release(void) {
-    if (m_mmapped) {
-        os_unmap_file(m_host_memory, m_length);
-        m_mmapped = false;
-    } else {
-        std::free(m_host_memory); // NOLINT(cppcoreguidelines-no-malloc)
-    }
-    m_host_memory = nullptr;
-    m_length = 0;
+    os_munmap(m_mmaped);
+    m_mmaped = os_mmapd{};
 }
 
 pma_memory::~pma_memory() {
     release();
 }
 
-pma_memory::pma_memory(pma_memory &&other) noexcept :
-    m_length{std::move(other.m_length)},
-    m_host_memory{std::move(other.m_host_memory)},
-    m_mmapped{std::move(other.m_mmapped)} {
+pma_memory::pma_memory(pma_memory &&other) noexcept : m_mmaped{std::move(other.m_mmaped)} {
     // set other to safe state
-    other.m_host_memory = nullptr;
-    other.m_mmapped = false;
-    other.m_length = 0;
+    other.m_mmaped = os_mmapd{};
 }
 
-pma_memory::pma_memory(const std::string &description, uint64_t length, const callocd &c) :
-    m_length{length},
-    m_host_memory{nullptr},
-    m_mmapped{false} {
-    (void) c;
-    // use calloc to improve performance
-    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-prefer-member-initializer)
-    m_host_memory = static_cast<unsigned char *>(std::calloc(1, length));
-    if (!m_host_memory) {
-        throw std::runtime_error{"error allocating memory for "s + description};
-    }
-}
-
-pma_memory::pma_memory(const std::string &description, uint64_t length, const mockd &m) :
-    m_length{length},
-    m_host_memory{nullptr},
-    m_mmapped{false} {
-    (void) m;
-    (void) description;
-}
-
-pma_memory::pma_memory(const std::string &description, uint64_t length, const std::string &path, const callocd &c) :
-    pma_memory{description, length, c} {
-    // Try to load image file, if any
-    if (!path.empty()) {
-        auto fp = unique_fopen(path.c_str(), "rb", std::nothrow_t{});
-        if (!fp) {
-            throw std::system_error{errno, std::generic_category(),
-                "error opening image file '"s + path + "' when initializing "s + description};
-        }
-        // Get file size
-        if (fseek(fp.get(), 0, SEEK_END)) {
-            throw std::system_error{errno, std::generic_category(),
-                "error obtaining length of image file '"s + path + "' when initializing "s + description};
-        }
-        auto file_length = ftell(fp.get());
-        if (fseek(fp.get(), 0, SEEK_SET)) {
-            throw std::system_error{errno, std::generic_category(),
-                "error obtaining length of image file '"s + path + "' when initializing "s + description};
-        }
-        // Check against PMA range size
-        if (static_cast<uint64_t>(file_length) > length) {
-            throw std::runtime_error{"image file '"s + path + "' of "s + description + " is too large for range"s};
-        }
-        // Read to host memory
-        auto read = fread(m_host_memory, 1, length, fp.get());
-        (void) read;
-        if (ferror(fp.get())) {
-            throw std::system_error{errno, std::generic_category(),
-                "error reading from image file '"s + path + "' when initializing "s + description};
-        }
-    }
-}
-
-pma_memory::pma_memory(const std::string &description, uint64_t length, const std::string &path, const mmapd &m) :
-    m_length{length},
-    m_host_memory{nullptr},
-    m_mmapped{false} {
+pma_memory::pma_memory(const std::string &description, uint64_t length, const std::string &path, bool shared) {
     try {
-        m_host_memory = os_map_file(path.c_str(), length, m.shared);
-        m_mmapped = true;
+        int flags = 0;
+        if (shared) {
+            flags |= OS_MMAP_SHARED;
+        }
+        if (!path.empty()) {
+            flags |= OS_MMAP_LOCKBACKING;
+        }
+        m_mmaped = os_mmap(length, flags, path);
     } catch (std::exception &e) {
         throw std::runtime_error{e.what() + " when initializing "s + description};
     }
@@ -122,13 +61,9 @@ pma_memory::pma_memory(const std::string &description, uint64_t length, const st
 pma_memory &pma_memory::operator=(pma_memory &&other) noexcept {
     release();
     // copy from other
-    m_host_memory = std::move(other.m_host_memory);
-    m_mmapped = std::move(other.m_mmapped);
-    m_length = std::move(other.m_length);
+    m_mmaped = std::move(other.m_mmaped);
     // set other to safe state
-    other.m_host_memory = nullptr;
-    other.m_mmapped = false;
-    other.m_length = 0;
+    other.m_mmaped = os_mmapd{};
     return *this;
 }
 
@@ -182,6 +117,7 @@ bool pma_peek_error(const pma_entry &, const machine &, uint64_t, const unsigned
 /// \brief Memory range peek callback. See pma_peek.
 static bool memory_peek(const pma_entry &pma, const machine &m, uint64_t page_address, const unsigned char **page_data,
     unsigned char *scratch) {
+    // TODO(edubart): use pread to avoid faulting page
     (void) m;
     // If page_address is not aligned, or if it is out of range, return error
     if ((page_address & (PMA_PAGE_SIZE - 1)) != 0 || page_address > pma.get_length()) {
@@ -206,31 +142,33 @@ pma_entry make_mmapd_memory_pma_entry(const std::string &description, uint64_t s
     if (length == 0) {
         throw std::invalid_argument{description + " length cannot be zero"s};
     }
-    return pma_entry{description, start, length, pma_memory{description, length, path, pma_memory::mmapd{shared}},
-        memory_peek};
+    return pma_entry{description, start, length, pma_memory{description, length, path, shared}, memory_peek};
 }
 
-pma_entry make_callocd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length) {
-    if (length == 0) {
-        throw std::invalid_argument{description + " length cannot be zero"s};
+pma_entry make_memory_range_pma_entry(const std::string &description, pma_entry::flags flags, uint64_t start,
+    uint64_t length, const std::string &image_filename, bool shared, const machine_runtime_config &r) {
+    std::string backing_filename = image_filename;
+    if (!r.backing_storage.empty()) {
+        backing_filename = machine_config::get_image_filename(r.backing_storage, start, length);
+        if (!image_filename.empty()) {
+            if (shared && backing_filename != image_filename) {
+                throw std::runtime_error(
+                    "PMA "s + description + " cannot be shared simultaneously with backing storage runtime option"s);
+            }
+            if (backing_filename != image_filename) {
+                if (r.copy_reflink) {
+                    os_copy_reflink(image_filename.c_str(), backing_filename.c_str());
+                } else {
+                    os_copy_file(image_filename.c_str(), backing_filename.c_str());
+                }
+                os_grow_file(backing_filename.c_str(), length, false);
+            }
+        } else {
+            os_grow_file(backing_filename.c_str(), length, true);
+        }
+        shared = true;
     }
-    return pma_entry{description, start, length, pma_memory{description, length, pma_memory::callocd{}}, memory_peek};
-}
-
-pma_entry make_callocd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length,
-    const std::string &path) {
-    if (length == 0) {
-        throw std::invalid_argument{description + " length cannot be zero"s};
-    }
-    return pma_entry{description, start, length, pma_memory{description, length, path, pma_memory::callocd{}},
-        memory_peek};
-}
-
-pma_entry make_mockd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length) {
-    if (length == 0) {
-        throw std::invalid_argument{description + " length cannot be zero"s};
-    }
-    return pma_entry{description, start, length, pma_memory{description, length, pma_memory::mockd{}}, pma_peek_error};
+    return make_mmapd_memory_pma_entry(description, start, length, backing_filename, shared).set_flags(flags);
 }
 
 pma_entry make_device_pma_entry(const std::string &description, uint64_t start, uint64_t length, pma_peek peek,

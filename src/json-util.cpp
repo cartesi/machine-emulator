@@ -789,6 +789,8 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_runtime_con
     ju_get_opt_field(j[key], "skip_root_hash_store"s, value.skip_root_hash_store, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "skip_version_check"s, value.skip_version_check, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "soft_yield"s, value.soft_yield, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "copy_reflink"s, value.copy_reflink, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "backing_storage"s, value.backing_storage, path + to_string(key) + "/");
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, machine_runtime_config &value,
@@ -1971,6 +1973,8 @@ void to_json(nlohmann::json &j, const machine_runtime_config &runtime) {
         {"skip_root_hash_store", runtime.skip_root_hash_store},
         {"skip_version_check", runtime.skip_version_check},
         {"soft_yield", runtime.soft_yield},
+        {"copy_reflink", runtime.copy_reflink},
+        {"backing_storage", runtime.backing_storage},
     };
 }
 

@@ -40,6 +40,14 @@
 #define HAVE_MMAP
 #endif
 
+#if !defined(NO_FLOCK) && !defined(_WIN32) && !defined(__wasi__)
+#define HAVE_FLOCK
+#endif
+
+#if !defined(NO_FICLONE) && defined(__linux__)
+#define HAVE_FICLONE
+#endif
+
 #if !defined(NO_MKDIR)
 #define HAVE_MKDIR
 #endif

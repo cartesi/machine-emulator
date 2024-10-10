@@ -24,6 +24,8 @@
 #include <variant>
 #include <vector>
 
+#include "machine-runtime-config.h"
+#include "os-mmap.h"
 #include "pma-constants.h"
 #include "pma-driver.h"
 
@@ -91,51 +93,18 @@ public:
 
 /// \brief Data for memory ranges.
 class pma_memory final {
-
-    uint64_t m_length;            ///< Length of memory range (copy of PMA length field).
-    unsigned char *m_host_memory; ///< Start of associated memory region in host.
-    bool m_mmapped;               ///< True if memory was mapped from a file.
+    os_mmapd m_mmaped; ///< Memory map entry
 
     /// \brief Close file and/or release memory.
     void release(void);
 
 public:
-    /// \brief Mmap'd range data (shared or not).
-    struct mmapd {
-        bool shared;
-    };
-
     /// \brief Constructor for mmap'd ranges.
     /// \param description Informative description of PMA entry for use in error messages
     /// \param length Length of range.
     /// \param path Path for backing file.
     /// \param m Mmap'd range data (shared or not).
-    pma_memory(const std::string &description, uint64_t length, const std::string &path, const mmapd &m);
-
-    /// \brief Calloc'd range data (just a tag).
-    struct callocd {};
-
-    /// \brief Mock'd range data (just a tag).
-    struct mockd {};
-
-    /// \brief Constructor for calloc'd ranges.
-    /// \param description Informative description of PMA entry for use in error messages
-    /// \param length Length of range.
-    /// \param path Path for backing file.
-    /// \param c Calloc'd range data (just a tag).
-    pma_memory(const std::string &description, uint64_t length, const std::string &path, const callocd &c);
-
-    /// \brief Constructor for calloc'd ranges.
-    /// \param description Informative description of PMA entry for use in error messages
-    /// \param length Length of range.
-    /// \param c Calloc'd range data (just a tag).
-    pma_memory(const std::string &description, uint64_t length, const callocd &c);
-
-    /// \brief Constructor for mock ranges.
-    /// \param description Informative description of PMA entry for use in error messages
-    /// \param length Length of range.
-    /// \param m Mock'd range data (just a tag).
-    pma_memory(const std::string &description, uint64_t length, const mockd &m);
+    pma_memory(const std::string &description, uint64_t length, const std::string &path = "", bool shared = false);
 
     /// \brief No copy constructor
     pma_memory(const pma_memory &) = delete;
@@ -153,18 +122,21 @@ public:
     ~pma_memory(void);
 
     /// \brief Returns start of associated memory region in host
-    unsigned char *get_host_memory(void) {
-        return m_host_memory;
-    }
-
-    /// \brief Returns start of associated memory region in host
-    const unsigned char *get_host_memory(void) const {
-        return m_host_memory;
+    unsigned char *get_host_memory(void) const {
+        return m_mmaped.host_memory;
     }
 
     /// \brief Returns copy of PMA length field (needed for munmap).
     uint64_t get_length(void) const {
-        return m_length;
+        return m_mmaped.length;
+    }
+
+    const std::string &get_backing_filename() const {
+        return m_mmaped.backing_filename;
+    }
+
+    int get_backing_fd() const {
+        return m_mmaped.backing_fd;
     }
 };
 
@@ -511,22 +483,6 @@ public:
     void fill_memory(uint64_t paddr, unsigned char value, uint64_t size);
 };
 
-/// \brief Creates a PMA entry for a new memory range initially filled with zeros.
-/// \param description Informative description of PMA entry for use in error messages
-/// \param start Start of PMA range.
-/// \param length Length of PMA range.
-/// \returns Corresponding PMA entry
-pma_entry make_callocd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length);
-
-/// \brief Creates a PMA entry for a new memory range initially filled with the contents of a backing file.
-/// \param description Informative description of PMA entry for use in error messages
-/// \param start Start of PMA range.
-/// \param length Length of PMA range.
-/// \param path Path to backing file.
-/// \returns Corresponding PMA entry
-pma_entry make_callocd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length,
-    const std::string &path);
-
 /// \brief Creates a PMA entry for a new memory region using the host's
 /// mmap functionality.
 /// \param description Informative description of PMA entry for use in error messages
@@ -542,16 +498,14 @@ pma_entry make_callocd_memory_pma_entry(const std::string &description, uint64_t
 /// \details \p length must match the size of the backing file.
 /// This function is typically used to map flash drives.
 pma_entry make_mmapd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length,
-    const std::string &path, bool shared);
+    const std::string &path = "", bool shared = false);
 
-/// \brief Creates a PMA entry for a new mock memory region (no allocation).
+/// \brief Creates a new PMA entry reflecting a memory range configuration.
 /// \param description Informative description of PMA entry for use in error messages
-/// \param start Start of physical memory range in the target address
-/// space on which to map the memory region.
-/// \param length Length of physical memory range in the
-/// target address space on which to map the memory region.
-/// \returns Corresponding PMA entry
-pma_entry make_mockd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length);
+/// \param c Memory range configuration.
+/// \returns New PMA entry (with default flags).
+pma_entry make_memory_range_pma_entry(const std::string &description, pma_entry::flags flags, uint64_t start,
+    uint64_t length, const std::string &image_filename, bool shared, const machine_runtime_config &r);
 
 /// \brief Creates a PMA entry for a new memory-mapped IO device.
 /// \param description Informative description of PMA entry for use in error messages

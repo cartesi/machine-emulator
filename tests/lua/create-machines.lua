@@ -211,11 +211,3 @@ chmod +x /home/dapp/s.sh;
 rollup-init bash /home/dapp/s.sh
 ]]
 )
-
--- Should not work with shared buffers
-create_machine("shared-rx-buffer-machine", "rollup accept", function(config)
-    config.cmio.rx_buffer.shared = true
-end)
-create_machine("shared-tx-buffer-machine", "rollup accept", function(config)
-    config.cmio.tx_buffer.shared = true
-end)

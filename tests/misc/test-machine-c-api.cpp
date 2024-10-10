@@ -147,9 +147,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_machine_test, incomplete_mach
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, incomplete_machine_fixture) {
     _machine_config["flash_drive"] =
         nlohmann::json{nlohmann::json{nlohmann::json{"start", 0x80000000000000}, nlohmann::json{"length", 0x3c00000},
-                           nlohmann::json{"shared", true}},
+                           nlohmann::json{"shared", false}},
             nlohmann::json{nlohmann::json{"start", 0x7ffffffffff000}, nlohmann::json{"length", 0x2000},
-                nlohmann::json{"shared", true}}};
+                nlohmann::json{"shared", false}}};
     cm_error error_code = cm_create(_machine_config.dump().c_str(), nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
@@ -161,8 +161,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, incomp
 class machine_flash_simple_fixture : public incomplete_machine_fixture {
 public:
     machine_flash_simple_fixture() {
-        _machine_config["flash_drive"] = nlohmann::json{nlohmann::json{nlohmann::json{"start", 0x80000000000000},
-            nlohmann::json{"length", 0x3c00000}, nlohmann::json{"shared", true}, nlohmann::json{"image_filename", ""}}};
+        _machine_config["flash_drive"] = nlohmann::json{
+            nlohmann::json{nlohmann::json{"start", 0x80000000000000}, nlohmann::json{"length", 0x3c00000},
+                nlohmann::json{"shared", false}, nlohmann::json{"image_filename", ""}}};
     }
 
     machine_flash_simple_fixture(const machine_flash_simple_fixture &other) = delete;

@@ -90,8 +90,8 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
         const auto socket_remote_endpoint = stream.socket().remote_endpoint(ec);
         if (ec || socket_remote_endpoint != remote_endpoint) {
             // We can silently ignore socket shutdown/close errors from previous connections
-            stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-            stream.socket().close(ec);
+            (void) stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+            (void) stream.socket().close(ec);
         }
     }
 
@@ -187,8 +187,8 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
         if (!keep_alive || !res.keep_alive()) {
             beast::error_code ec;
             // The response was received so we can silently ignore socket shutdown/close errors
-            stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-            stream.socket().close(ec);
+            (void) stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+            (void) stream.socket().close(ec);
         }
 
         // Return response body
@@ -196,8 +196,8 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
     } catch (...) {
         // Close stream socket on errors
         beast::error_code ec;
-        stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-        stream.socket().close(ec);
+        (void) stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+        (void) stream.socket().close(ec);
         // Re-throw exception
         throw;
     }
@@ -255,28 +255,32 @@ void jsonrpc_request(beast::tcp_stream &stream, const std::string &remote_addres
 
 namespace cartesi {
 
-jsonrpc_connection::jsonrpc_connection(std::string address, manage what) {
+jsonrpc_connection::jsonrpc_connection(std::string address, manage what): m_what_managed(what) {
     m_address.push_back(std::move(address));
-    m_what_managed = what;
     // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
     os_disable_sigpipe();
 }
 
 jsonrpc_connection::~jsonrpc_connection() {
-    // If configured to detroy machine but not server, do it
-    if (m_what_managed == manage::machine) {
-        bool result = false;
-        jsonrpc_request(get_stream(), get_remote_address(), "machine.destroy", std::tie(), result, false);
-    }
-    // If configured to shutdown server, do it
-    if (m_what_managed == manage::server) {
-        shutdown();
+    try {
+        // If configured to detroy machine but not server, do it
+        if (m_what_managed == manage::machine) {
+            bool result = false;
+            jsonrpc_request(get_stream(), get_remote_address(), "machine.destroy", std::tie(), result, false);
+        }
+        // If configured to shutdown server, do it
+        if (m_what_managed == manage::server) {
+            shutdown();
+        }
+    } catch (...) { // NOLINT(bugprone-empty-catch)
+        // We guard against exceptions here, which would only mean we failed to cleanup.
+        // We do not guarantee that we will cleanup. It's a best-effort thing.
     }
     // Gracefully close any established keep alive connection
     if (m_stream.socket().is_open()) {
         beast::error_code ec;
-        m_stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-        m_stream.socket().close(ec);
+        (void) m_stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+        (void) m_stream.socket().close(ec);
     }
 }
 
@@ -324,7 +328,7 @@ void jsonrpc_connection::commit() {
     try {
         bool result = false;
         jsonrpc_request(get_stream(), get_remote_parent_address(), "shutdown", std::tie(), result, false);
-    } catch (std::exception &e) {
+    } catch (std::exception &e) { // NOLINT(bugprone-empty-catch)
         // It's possible that the remote server was killed before the shutdown (e.g SIGTERM was sent),
         // so we silently ignore errors here.
         // If the server still up, the next rebind request will fail anyway with port already in use.

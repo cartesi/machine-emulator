@@ -15,9 +15,12 @@
 //
 
 #include "complete-merkle-tree.h"
+#include "i-hasher.h"
 
+#include <algorithm>
 #include <cassert>
 #include <limits>
+#include <stdexcept>
 #include <utility>
 
 /// \file

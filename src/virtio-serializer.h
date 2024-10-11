@@ -39,7 +39,7 @@ struct virtq_unserializer {
     virtq_unserializer() = delete;
     ~virtq_unserializer() = default;
     virtq_unserializer(const virtq_unserializer &other) = delete;
-    virtq_unserializer(virtq_unserializer &&other) = delete;
+    virtq_unserializer(virtq_unserializer &&other) = default;
     virtq_unserializer &operator=(const virtq_unserializer &other) = delete;
     virtq_unserializer &operator=(virtq_unserializer &&other) = delete;
 
@@ -116,7 +116,7 @@ struct virtq_serializer {
     virtq_serializer() = delete;
     ~virtq_serializer() = default;
     virtq_serializer(const virtq_serializer &other) = delete;
-    virtq_serializer(virtq_serializer &&other) = delete;
+    virtq_serializer(virtq_serializer &&other) = default;
     virtq_serializer &operator=(const virtq_serializer &other) = delete;
     virtq_serializer &operator=(virtq_serializer &&other) = delete;
 

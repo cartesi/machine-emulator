@@ -288,7 +288,7 @@ bool machine_merkle_tree::end_update(hasher_type &h) {
     return true;
 }
 
-machine_merkle_tree::machine_merkle_tree(void) : m_root_storage{}, m_root{&m_root_storage}, m_merkle_update_nonce{1} {
+machine_merkle_tree::machine_merkle_tree(void) : m_root_storage{}, m_root{&m_root_storage} {
     m_root->hash = get_pristine_hash(get_log2_root_size());
 #ifdef MERKLE_DUMP_STATS
     m_num_nodes = 0;
@@ -418,7 +418,8 @@ machine_merkle_tree::proof_type machine_merkle_tree::get_proof(address_type targ
     proof.set_root_hash(m_root->hash); // NOLINT: m_root can't be nullptr
 #ifndef NDEBUG
     // Return proof only if it passes verification
-    if (!proof.verify(hasher_type{})) {
+    hasher_type h;
+    if (!proof.verify(h)) {
         throw std::runtime_error{"proof failed verification"};
     }
 #endif

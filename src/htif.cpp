@@ -14,10 +14,14 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include <cstdint>
+
 #include "htif.h"
 #include "i-device-state-access.h"
+#include "interpret.h"
 #include "machine-runtime-config.h"
 #include "os.h"
+#include "pma-driver.h"
 
 namespace cartesi {
 

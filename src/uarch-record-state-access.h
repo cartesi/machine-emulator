@@ -146,10 +146,18 @@ public:
 
         /// \brief Destructor adds the "end" bracketting note
         /// if the log shared_ptr is not empty
-
         ~scoped_note() {
             if (m_log) {
-                m_log->push_bracket(bracket_type::end, m_text.c_str());
+                try {
+                    m_log->push_bracket(bracket_type::end, m_text.c_str());
+                } catch (...) { // NOLINT(bugprone-empty-catch)
+                    // push_bracket with type begin always reserves space for the end bracket
+                    // so either the user using unbalanced with begin/end, or there
+                    // is no way we ran out of memory. therefore, if we did run out of
+                    // memory, it was because the sytem is completely screwed anyway *and* the
+                    // user is using unbalanced brackets. it's ok to quietly ignore, as the user's
+                    // brackets were already unbalanced anyway...
+                }
             }
         }
     };

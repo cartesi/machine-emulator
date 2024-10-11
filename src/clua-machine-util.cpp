@@ -14,15 +14,18 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "clua-machine-util.h"
-
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
 #include <cstring>
+#include <exception>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 
+#include "clua-machine-util.h"
 #include "base64.h"
-#include "clua.h"
-#include "os-features.h"
-#include "riscv-constants.h"
+#include "machine-c-api.h"
 
 namespace cartesi {
 

@@ -14,15 +14,34 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "json-util.h"
-
+#include <algorithm>
 #include <climits>
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
+#include <optional>
+#include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
+#include <variant>
+#include <vector>
 
+#include "json-util.h"
+#include "access-log.h"
 #include "base64.h"
+#include "bracket-note.h"
+#include "interpret.h"
+#include "jsonrpc-virtual-machine.h"
+#include "machine-config.h"
+#include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"
+#include "machine-runtime-config.h"
+#include "machine.h"
+#include "semantic-version.h"
+#include "uarch-config.h"
+#include "uarch-interpret.h"
 
 namespace cartesi {
 

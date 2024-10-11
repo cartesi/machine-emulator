@@ -132,7 +132,9 @@ LIBCARTESI_JSONRPC=libcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSI
 ifeq ($(slirp),yes)
 # Workaround for building with macports lua-luarocks installation
 machine.o: INCS+=$(SLIRP_INC)
+machine.clang-tidy: INCS+=$(SLIRP_INC)
 virtio-net-carrier-slirp.o: INCS+=$(SLIRP_INC)
+virtio-net-carrier-slirp.clang-tidy: INCS+=$(SLIRP_INC)
 #INCS+=$(SLIRP_INC)
 LIBCARTESI_COMMON_LIBS+=$(SLIRP_LIB)
 else
@@ -283,7 +285,7 @@ else
 DEFS+=-DNO_THREADS
 endif
 
-CXXFLAGS+=$(OPTFLAGS) -std=gnu++17 -fvisibility=hidden -MMD $(PICCFLAGS) $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
+CXXFLAGS+=$(OPTFLAGS) -std=gnu++20 -fvisibility=hidden -MMD $(PICCFLAGS) $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
 CFLAGS+=$(OPTFLAGS) -std=gnu99 -fvisibility=hidden -MMD $(PICCFLAGS) $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
 LDFLAGS+=$(UBFLAGS)
 

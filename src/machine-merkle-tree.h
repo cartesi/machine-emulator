@@ -145,7 +145,7 @@ private:
     // Used to mark visited nodes when traversing the tree
     // bottom up in breadth to propagate changes from dirty
     // pages all the way up to the tree root.
-    uint64_t m_merkle_update_nonce;
+    uint64_t m_merkle_update_nonce{1};
     // FIFO to process pages in bottom-up order.
     std::deque<std::pair<int, tree_node *>> m_merkle_update_fifo;
 

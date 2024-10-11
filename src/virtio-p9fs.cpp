@@ -652,7 +652,8 @@ bool virtio_p9fs_device::on_device_queue_available(i_device_state_access *a, uin
     }
 }
 
-bool virtio_p9fs_device::op_statfs(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_statfs(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t fid{};
     if (!msg.unpack(&fid)) {
         return send_error(msg, tag, P9_EPROTO);
@@ -701,7 +702,8 @@ bool virtio_p9fs_device::op_statfs(virtq_unserializer &&msg, uint16_t tag) {
     return send_reply(std::move(out_msg), tag, P9_RSTATFS);
 }
 
-bool virtio_p9fs_device::op_lopen(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_lopen(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t fid{};
     uint32_t flags{};
     if (!msg.unpack(&fid, &flags)) {
@@ -748,7 +750,8 @@ bool virtio_p9fs_device::op_lopen(virtq_unserializer &&msg, uint16_t tag) {
     return true;
 }
 
-bool virtio_p9fs_device::op_lcreate(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_lcreate(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t fid{};
     uint32_t flags{};
     uint32_t mode{};
@@ -813,7 +816,8 @@ bool virtio_p9fs_device::op_lcreate(virtq_unserializer &&msg, uint16_t tag) {
     return true;
 }
 
-bool virtio_p9fs_device::op_symlink(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_symlink(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t dfid{};
     uint32_t gid{};
     char name[P9_NAME_MAX]{};
@@ -862,7 +866,8 @@ bool virtio_p9fs_device::op_symlink(virtq_unserializer &&msg, uint16_t tag) {
     return true;
 }
 
-bool virtio_p9fs_device::op_mknod(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_mknod(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t dfid{};
     uint32_t mode{};
     uint32_t major{};
@@ -915,7 +920,8 @@ bool virtio_p9fs_device::op_mknod(virtq_unserializer &&msg, uint16_t tag) {
     return true;
 }
 
-bool virtio_p9fs_device::op_setattr(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_setattr(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t fid{};
     uint32_t mask{};
     uint32_t mode{};
@@ -1041,7 +1047,8 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&msg, uint16_t tag) {
     return send_ok(msg, tag, P9_RSETATTR);
 }
 
-bool virtio_p9fs_device::op_readlink(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_readlink(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t fid{};
     if (!msg.unpack(&fid)) {
         return send_error(msg, tag, P9_EPROTO);
@@ -1069,7 +1076,8 @@ bool virtio_p9fs_device::op_readlink(virtq_unserializer &&msg, uint16_t tag) {
     return send_reply(std::move(out_msg), tag, P9_RREADLINK);
 }
 
-bool virtio_p9fs_device::op_getattr(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_getattr(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t fid{};
     uint64_t mask{};
     if (!msg.unpack(&fid, &mask)) {
@@ -1159,7 +1167,8 @@ bool virtio_p9fs_device::op_getattr(virtq_unserializer &&msg, uint16_t tag) {
     return send_reply(std::move(out_msg), tag, P9_RGETATTR);
 }
 
-bool virtio_p9fs_device::op_lock(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_lock(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t fid{};
     uint8_t type{};
     uint32_t flags{};
@@ -1211,7 +1220,8 @@ bool virtio_p9fs_device::op_lock(virtq_unserializer &&msg, uint16_t tag) {
     return send_reply(std::move(out_msg), tag, P9_RLOCK);
 }
 
-bool virtio_p9fs_device::op_getlock(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_getlock(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t fid{};
     uint8_t type{};
     uint64_t start{};
@@ -1250,7 +1260,8 @@ bool virtio_p9fs_device::op_getlock(virtq_unserializer &&msg, uint16_t tag) {
     return send_reply(std::move(out_msg), tag, P9_RGETLOCK);
 }
 
-bool virtio_p9fs_device::op_readdir(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_readdir(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t fid{};
     uint64_t offset{};
     uint32_t count{};
@@ -1351,7 +1362,8 @@ bool virtio_p9fs_device::op_readdir(virtq_unserializer &&msg, uint16_t tag) {
     return send_reply(std::move(out_msg), tag, P9_RREADDIR);
 }
 
-bool virtio_p9fs_device::op_fsync(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_fsync(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t fid{};
     if (!msg.unpack(&fid)) {
         return send_error(msg, tag, P9_EPROTO);
@@ -1372,7 +1384,8 @@ bool virtio_p9fs_device::op_fsync(virtq_unserializer &&msg, uint16_t tag) {
     return send_ok(msg, tag, P9_RFSYNC);
 }
 
-bool virtio_p9fs_device::op_link(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_link(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t dfid{};
     uint32_t fid{};
     char name[P9_NAME_MAX]{};
@@ -1405,7 +1418,8 @@ bool virtio_p9fs_device::op_link(virtq_unserializer &&msg, uint16_t tag) {
     return true;
 }
 
-bool virtio_p9fs_device::op_mkdir(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_mkdir(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t dfid{};
     uint32_t mode{};
     uint32_t gid{};
@@ -1454,7 +1468,8 @@ bool virtio_p9fs_device::op_mkdir(virtq_unserializer &&msg, uint16_t tag) {
     return true;
 }
 
-bool virtio_p9fs_device::op_renameat(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_renameat(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t oldfid{};
     uint32_t newfid{};
     char oldname[P9_NAME_MAX]{};
@@ -1499,7 +1514,8 @@ bool virtio_p9fs_device::op_renameat(virtq_unserializer &&msg, uint16_t tag) {
     return true;
 }
 
-bool virtio_p9fs_device::op_unlinkat(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_unlinkat(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t dfid{};
     uint32_t flags{};
     char name[P9_NAME_MAX]{};
@@ -1532,7 +1548,8 @@ bool virtio_p9fs_device::op_unlinkat(virtq_unserializer &&msg, uint16_t tag) {
     return send_ok(msg, tag, P9_RUNLINKAT);
 }
 
-bool virtio_p9fs_device::op_version(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_version(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     char version[32]{};
     uint32_t msize{};
     if (!msg.unpack(&msize, &version)) {
@@ -1552,7 +1569,8 @@ bool virtio_p9fs_device::op_version(virtq_unserializer &&msg, uint16_t tag) {
     return send_reply(std::move(out_msg), tag, P9_RVERSION);
 }
 
-bool virtio_p9fs_device::op_attach(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_attach(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t fid{};
     uint32_t afid{};
     uint32_t uid{};
@@ -1593,7 +1611,8 @@ bool virtio_p9fs_device::op_attach(virtq_unserializer &&msg, uint16_t tag) {
     return true;
 }
 
-bool virtio_p9fs_device::op_walk(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_walk(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t fid{};
     uint32_t newfid{};
     uint16_t nwname{};
@@ -1691,7 +1710,8 @@ bool virtio_p9fs_device::op_walk(virtq_unserializer &&msg, uint16_t tag) {
     return true;
 }
 
-bool virtio_p9fs_device::op_read(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_read(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t fid{};
     uint64_t offset{};
     uint32_t count{};
@@ -1725,7 +1745,8 @@ bool virtio_p9fs_device::op_read(virtq_unserializer &&msg, uint16_t tag) {
     return send_reply(std::move(out_msg), tag, P9_RREAD);
 }
 
-bool virtio_p9fs_device::op_write(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_write(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t fid{};
     uint64_t offset{};
     uint32_t count{};
@@ -1759,7 +1780,8 @@ bool virtio_p9fs_device::op_write(virtq_unserializer &&msg, uint16_t tag) {
     return send_reply(std::move(out_msg), tag, P9_RREAD);
 }
 
-bool virtio_p9fs_device::op_clunk(virtq_unserializer &&msg, uint16_t tag) {
+bool virtio_p9fs_device::op_clunk(virtq_unserializer &&mmsg, uint16_t tag) {
+    virtq_unserializer msg = std::move(mmsg);
     uint32_t fid{};
     if (!msg.unpack(&fid)) {
         return send_error(msg, tag, P9_EPROTO);
@@ -1784,7 +1806,8 @@ bool virtio_p9fs_device::op_clunk(virtq_unserializer &&msg, uint16_t tag) {
     return send_ok(msg, tag, P9_RCLUNK);
 }
 
-bool virtio_p9fs_device::send_reply(virtq_serializer &&out_msg, uint16_t tag, p9_opcode opcode) {
+bool virtio_p9fs_device::send_reply(virtq_serializer &&mout_msg, uint16_t tag, p9_opcode opcode) {
+    virtq_serializer out_msg = std::move(mout_msg);
 #ifdef DEBUG_VIRTIO_P9FS
     if (opcode != P9_RLERROR) {
         (void) fprintf(stderr, "p9fs send_reply: tag=%d opcode=%d\n", tag, opcode);

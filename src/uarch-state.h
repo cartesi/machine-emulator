@@ -34,6 +34,7 @@ struct uarch_state {
     }
 
     /// \brief No copy or move constructor or assignment
+    uarch_state(void) = default;
     uarch_state(const uarch_state &other) = delete;
     uarch_state(uarch_state &&other) = delete;
     uarch_state &operator=(const uarch_state &other) = delete;

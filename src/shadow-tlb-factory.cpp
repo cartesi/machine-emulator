@@ -49,6 +49,7 @@ static bool shadow_tlb_peek(const pma_entry &pma, const machine &m, uint64_t pag
                     val = tlbhe.vaddr_page;
                     break;
                 case offsetof(tlb_hot_entry, vh_offset):
+                default:
                     // Here we skip host related fields, they are visible as 0 in the device
                     val = 0;
                     break;
@@ -66,6 +67,9 @@ static bool shadow_tlb_peek(const pma_entry &pma, const machine &m, uint64_t pag
                     break;
                 case offsetof(tlb_cold_entry, pma_index):
                     val = tlbce.pma_index;
+                    break;
+                default:
+                    val = 0;
                     break;
             }
         }

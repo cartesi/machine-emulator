@@ -15,9 +15,13 @@
 //
 
 #include "uarch-interpret.h"
+#include "uarch-state-access.h"
 #include "uarch-step.h"
 
 namespace cartesi {
+
+// Declaration of explicit instantiation in module uarch-step.cpp
+extern template UArchStepStatus uarch_step(uarch_state_access &a);
 
 uarch_interpreter_break_reason uarch_interpret(uarch_state_access &a, uint64_t cycle_end) {
     uint64_t cycle = a.read_cycle();

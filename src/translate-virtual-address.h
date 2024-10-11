@@ -185,7 +185,7 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppadd
             return false;
         }
         // Clear all flags in least significant bits, then shift back to multiple of page size to form physical address.
-        const uint64_t ppn = (pte & PTE_PPN_MASK) << (LOG2_PAGE_SIZE - PTE_PPN_SHIFT);
+        const uint64_t ppn = (pte & PTE_PPN_MASK) << (static_cast<int>(LOG2_PAGE_SIZE) - static_cast<int>(PTE_PPN_SHIFT));
         // Obtain X, W, R protection bits
         uint64_t xwr = (pte >> PTE_R_SHIFT) & (PTE_XWR_R_MASK | PTE_XWR_W_MASK | PTE_XWR_X_MASK);
         // xwr != 0 means we are done walking the page tables

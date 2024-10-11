@@ -14,19 +14,23 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <unordered_map>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <string>
 
 #include "clua-jsonrpc-machine.h"
 #include "clua-machine-util.h"
 #include "clua.h"
 #include "jsonrpc-machine-c-api.h"
+#include "machine-c-api.h"
 
 namespace cartesi {
 
 /// \brief Deleter for C api jsonrpc connection
 template <>
-void clua_delete(cm_jsonrpc_connection *con) {
-    cm_jsonrpc_release_connection(con);
+void clua_delete(cm_jsonrpc_connection *ptr) {
+    cm_jsonrpc_release_connection(ptr);
 }
 
 /// \brief This is the machine.get_default_machine_config()
@@ -256,7 +260,7 @@ static cm_jsonrpc_manage check_cm_jsonrpc_manage(lua_State *L, int idx) {
     } else if (strcmp(strwhat, "none") == 0) {
         return CM_JSONRPC_MANAGE_NONE;
     } else {
-        luaL_argerror(L, idx, "expected \"server\", \"machine\", or \"none\"");
+        luaL_argerror(L, idx, R"(expected "server", "machine", or "none")");
         return CM_JSONRPC_MANAGE_SERVER;
     }
 }

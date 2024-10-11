@@ -14,9 +14,14 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include <cstdint>
+
 #include "htif-factory.h"
 #include "htif.h"
+#include "machine-runtime-config.h"
 #include "machine.h"
+#include "pma-constants.h"
+#include "pma.h"
 
 namespace cartesi {
 

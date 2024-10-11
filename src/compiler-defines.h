@@ -38,4 +38,6 @@
 //    using them allows for more performance without the need to compile with PGO,
 //    useful when doing benchmark of code changes.
 
+#define PACKED __attribute__((packed))
+
 #endif

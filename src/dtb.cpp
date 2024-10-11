@@ -17,18 +17,21 @@
 /// \file
 /// \brief Device Tree Blob
 
-#include "dtb.h"
-
+#include <cstdint>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 
+#include "dtb.h"
+#include "machine-config.h"
 #include "fdt-builder.h"
 #include "machine-c-version.h"
 #include "pma-constants.h"
 #include "riscv-constants.h"
 #include "rng-seed.h"
 #include "rtc.h"
+
+using namespace std::string_literals;
 
 namespace cartesi {
 

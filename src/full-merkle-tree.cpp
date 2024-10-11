@@ -14,9 +14,14 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "full-merkle-tree.h"
-
+#include <algorithm>
 #include <limits>
+#include <stdexcept>
+#include <vector>
+
+#include "full-merkle-tree.h"
+#include "i-hasher.h"
+#include "pristine-merkle-tree.h"
 
 /// \file
 /// \brief Full Merkle tree implementation.
@@ -62,7 +67,8 @@ full_merkle_tree::proof_type full_merkle_tree::get_proof(address_type address, i
         proof.set_sibling_hash(get_node_hash(sibling_address, log2_sibling_size), log2_sibling_size);
     }
 #ifndef NDEBUG
-    if (!proof.verify(hasher_type{})) {
+    hasher_type h{};
+    if (!proof.verify(h)) {
         throw std::runtime_error{"produced invalid proof"};
     }
 #endif

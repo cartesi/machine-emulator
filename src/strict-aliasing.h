@@ -70,8 +70,8 @@ static inline T aliased_unaligned_read(const void *p) {
 template <typename T, typename PTR>
 static inline uint64_t cast_ptr_to_addr(PTR ptr) {
     // Enforcement on type arguments
-    static_assert(std::is_pointer<PTR>::value);
-    static_assert(std::is_unsigned<T>::value);
+    static_assert(std::is_pointer_v<PTR>);
+    static_assert(std::is_unsigned_v<T>);
     static_assert(sizeof(PTR) == sizeof(uintptr_t));
     // We can only cast to integers that large enough to contain a pointer
     static_assert(sizeof(T) >= sizeof(uintptr_t), "expected sizeof(T) >= sizeof(uintptr_t)");
@@ -92,8 +92,8 @@ static inline uint64_t cast_ptr_to_addr(PTR ptr) {
 template <typename PTR, typename T>
 static inline PTR cast_addr_to_ptr(T addr) {
     // Enforcement on type arguments
-    static_assert(std::is_pointer<PTR>::value);
-    static_assert(std::is_unsigned<T>::value);
+    static_assert(std::is_pointer_v<PTR>);
+    static_assert(std::is_unsigned_v<T>);
     static_assert(sizeof(PTR) == sizeof(uintptr_t));
     // We can only cast from integer that are large enough to contain a pointer
     static_assert(sizeof(T) >= sizeof(uintptr_t), "expected sizeof(T) >= sizeof(uintptr_t)");

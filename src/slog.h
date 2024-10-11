@@ -37,7 +37,7 @@ struct autoendl {
     }
 
     ~autoendl() {
-        _out << std::endl;
+        _out << std::endl; // NOLINT(performance-avoid-endl): we don't know if output is buffered...
     }
 
     autoendl(const autoendl &) = default;

@@ -24,6 +24,7 @@
 #include "pma-constants.h"
 #include "pma-driver.h"
 #include "riscv-constants.h"
+#include "compiler-defines.h"
 
 /// \file
 /// \brief Shadow uarch state device.
@@ -31,14 +32,12 @@
 namespace cartesi {
 
 /// \brief Shadow uarch memory layout
-#pragma pack(push, 1)
-struct shadow_uarch_state {
+struct PACKED shadow_uarch_state {
     uint64_t halt_flag;
     uint64_t cycle;
     uint64_t pc;
     uint64_t x[UARCH_X_REG_COUNT];
 };
-#pragma pack(pop)
 
 /// \brief Global instance of  theprocessor shadow uarch state device driver.
 extern const pma_driver shadow_uarch_state_driver;

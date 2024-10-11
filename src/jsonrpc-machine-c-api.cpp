@@ -14,21 +14,40 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "jsonrpc-machine-c-api.h"
+#include <cassert>
+#include <csignal>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <exception>
+#include <memory>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <sys/time.h>
+#include <system_error>
+#include <unistd.h>
+
+#include "access-log.h"
 #include "i-virtual-machine.h"
 #include "json-util.h"
 #include "jsonrpc-connection.h"
+#include "jsonrpc-machine-c-api.h"
 #include "jsonrpc-virtual-machine.h"
 #include "machine-c-api-internal.h"
+#include "machine-c-api.h"
+#include "machine-config.h"
+#include "machine-runtime-config.h"
+#include "machine.h"
 #include "os-features.h"
-
-#include <signal.h>
-#include <unistd.h>
+#include "semantic-version.h"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#include "asio-config.h" // must be included before any ASIO header
+#include "asio-config.h"
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/ip/address.hpp>
 #pragma GCC diagnostic pop
 
 using namespace std::string_literals;
@@ -105,6 +124,14 @@ static std::string endpoint_to_string(const boost::asio::ip::tcp::endpoint &endp
 
 cm_error cm_jsonrpc_spawn(const char *address, cm_jsonrpc_manage what, cm_jsonrpc_connection **con,
     const char **bound_address, int32_t *pid) try {
+    // this function first blocks SIGUSR1, SIGUSR2 and SIGALRM.
+    // then it forks.
+    // the child sends the parent a SIGUSR2 and suicides if failed before execing jsonrpc-remote-cartesi-machine.
+    // otherwise, jsonrpc-remote-cartesi-machine sends the parent a SIGUSR1 to notify it is ready.
+    // the parent sets up to receive a SIGALRM after 15 seconds and then waits for SIGUSR1, SIGUSR2 or SIGALRM
+    // if it gets SIGALRM, the child is unresponsive and he parent kills and cm_jsonrpc_spawn fails.
+    // if it gets SIGUSR2, the child failed before exec an suicided, so cm_jsonrpc_spawn fails.
+    // if it gets SIGUSR1, jsonrpc-remote-cartesi-machine is ready and cm_jsonrpc_span succeeds.
     if (address == nullptr) {
         throw std::invalid_argument("invalid address");
     }
@@ -115,7 +142,7 @@ cm_error cm_jsonrpc_spawn(const char *address, cm_jsonrpc_manage what, cm_jsonrp
         throw std::invalid_argument("invalid bound address output");
     }
     if (pid == nullptr) {
-        throw std::invalid_argument("invalid bound address output");
+        throw std::invalid_argument("invalid pid output");
     }
     boost::asio::io_context ioc{1};
     boost::asio::ip::tcp::acceptor a(ioc, address_to_endpoint(address));
@@ -125,12 +152,18 @@ cm_error cm_jsonrpc_spawn(const char *address, cm_jsonrpc_manage what, cm_jsonrp
     // a.bind(endpoint);
     // a.listen(asio::socket_base::max_listen_connections);
     static THREAD_LOCAL std::string bound_address_storage = endpoint_to_string(a.local_endpoint());
-    sigset_t mask, omask;
-    sigemptyset(&mask);
-    sigaddset(&mask, SIGUSR1);
-    sigaddset(&mask, SIGUSR2);
-    sigaddset(&mask, SIGALRM);
-    sigprocmask(SIG_BLOCK, &mask, &omask);
+    sigset_t mask{};
+    sigset_t omask{};
+    sigemptyset(&mask);        // always returns 0
+    sigaddset(&mask, SIGUSR1); // always returns 0
+    sigaddset(&mask, SIGUSR2); // always returns 0
+    sigaddset(&mask, SIGALRM); // always returns 0
+    if (sigprocmask(SIG_BLOCK, &mask, &omask) < 0) {
+        // sigprocmask can only fail if we screwed up the values. this can't happen.
+        // being paranoid, if it *did* happen, we are trying to avoid a situation where
+        // our process gets killed when the child or the alarm tries to signal us
+        throw std::system_error{errno, std::generic_category(), "sigprocmask failed"};
+    }
     const char *bin = getenv("JSONRPC_REMOTE_CARTESI_MACHINE");
     if (!bin) {
         bin = "jsonrpc-remote-cartesi-machine";
@@ -139,36 +172,66 @@ cm_error cm_jsonrpc_spawn(const char *address, cm_jsonrpc_manage what, cm_jsonrp
     if (child == 0) { // child
         sigprocmask(SIG_SETMASK, &omask, nullptr);
         char server_fd[256] = "";
-        snprintf(server_fd, std::size(server_fd), "--server-fd=%d", a.native_handle());
+        (void) snprintf(server_fd, std::size(server_fd), "--server-fd=%d", a.native_handle());
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
         char *args[] = {const_cast<char *>(bin), server_fd, const_cast<char *>("--setpgid"),
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
             const_cast<char *>("--sigusr1"), nullptr};
         if (execvp(bin, args) < 0) {
-            kill(getppid(), SIGUSR2); // notify parent that exec failed
+            // here we failed to run jsonrpc-remote-cartesi-machine. nothing we can do.
+            kill(getppid(), SIGUSR2); // notify parent we failed
             exit(1);
         };
-    } else if (child > 0) { // parent and fork() succeeded
+        return cm_result_success(); // code never reaches here
+    } else if (child > 0) {         // parent and fork() succeeded
+        // get rid of our copy of socket
+        a.close();
         // change child to its own process group
-        setpgid(child, child);
-        struct itimerval value, ovalue;
+        if (setpgid(child, child) < 0) {
+            // we don't want to be in a situation where the child is in the parent's process group.
+            // otherwise, should the client then kill the process group, it would be committing suicide...
+            kill(child, SIGTERM); // we try to kill the poor child
+            waitpid(child, nullptr, WNOHANG);
+            throw std::system_error{errno, std::generic_category(), "setpgid failed"};
+        }
+        struct itimerval value{};
+        memset(&value, 0, sizeof(value));
         value.it_interval.tv_sec = 0;
         value.it_interval.tv_usec = 0;
         value.it_value.tv_sec = 15;
         value.it_value.tv_usec = 0;
-        setitimer(ITIMER_REAL, &value, &ovalue);
+        struct itimerval ovalue{};
+        memset(&ovalue, 0, sizeof(ovalue));
+        if (setitimer(ITIMER_REAL, &value, &ovalue) < 0) {
+            // setitimer only fails if we screwed up with the values. this should not happen.
+            // being paranoid, if it *did* happen, and if the child also failed to signal us,
+            // we might hang forever in the following call to sigwait.
+            // we prefer to give up instead of risking a deadlock.
+            kill(child, SIGTERM);                      // we try to kill the poor child
+            waitpid(child, nullptr, WNOHANG);
+            sigprocmask(SIG_SETMASK, &omask, nullptr); // we try to restore our mask
+            throw std::system_error{errno, std::generic_category(), "setitimer failed"};
+        }
         int sig = 0;
-        sigwait(&mask, &sig);
-        // get rid of our copy of socket
-        a.close();
+        if (auto ret = sigwait(&mask, &sig); ret != 0) {
+            // here sigwait failed.
+            kill(child, SIGTERM);                      // we try to kill the poor child
+            waitpid(child, nullptr, WNOHANG);
+            sigprocmask(SIG_SETMASK, &omask, nullptr); // we try to restore our mask
+            setitimer(ITIMER_REAL, &ovalue, nullptr);  // we try to restore the timer
+            throw std::system_error{ret, std::generic_category(), "sigwait failed"};
+        }
         // restore previous timer
         setitimer(ITIMER_REAL, &ovalue, nullptr);
-        // restore previous mask
         sigprocmask(SIG_SETMASK, &omask, nullptr);
         if (sig == SIGALRM) { // child didn't signal us before alarm
             kill(child, SIGTERM);
+            waitpid(child, nullptr, WNOHANG);
             throw std::runtime_error{"child process unresponsive"};
         }
         if (sig == SIGUSR2) { // child signaled us that it failed to exec
             // child will have exited on its own
+            waitpid(child, nullptr, WNOHANG);
             throw std::runtime_error{"failed to run '"s + bin + "'"s};
         }
         assert(sig == SIGUSR1);
@@ -178,18 +241,18 @@ cm_error cm_jsonrpc_spawn(const char *address, cm_jsonrpc_manage what, cm_jsonrp
         auto ret = cm_jsonrpc_connect(*bound_address, what, con);
         if (ret < 0) { // and yet we failed to connect
             kill(child, SIGTERM);
+            waitpid(child, nullptr, WNOHANG);
             *bound_address = nullptr;
             *pid = 0;
         }
         return ret;
     } else { // fork failed
-        sigprocmask(SIG_SETMASK, &omask, nullptr);
         throw std::system_error{errno, std::generic_category(), "fork failed"};
     }
-    return cm_result_success();
 } catch (...) {
     *con = nullptr;
     *bound_address = nullptr;
+    *pid = 0;
     return cm_result_failure();
 }
 

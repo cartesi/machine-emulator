@@ -284,6 +284,12 @@ public:
     /// \param text Annotation contents
     void push_bracket(bracket_type type, const char *text) {
         if (m_log_type.has_annotations()) {
+            if (type == bracket_type::begin) {
+                // make sure we have room for end bracket as well. that way,
+                // unless the user use unbalanced brackets, there is no way we
+                // would throw an exception for lack of memory on and end bracket
+                m_brackets.reserve(m_brackets.size()+2);
+            }
             m_brackets.push_back(bracket_note{type, m_accesses.size(), text});
         }
     }

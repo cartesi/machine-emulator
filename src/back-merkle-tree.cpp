@@ -17,17 +17,20 @@
 /// \file
 /// \brief Back Merkle tree implementation.
 
-#include "back-merkle-tree.h"
-
+#include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <limits>
+#include <stdexcept>
+
+#include "back-merkle-tree.h"
+#include "i-hasher.h"
 
 namespace cartesi {
 
 back_merkle_tree::back_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size) :
     m_log2_root_size{log2_root_size},
     m_log2_leaf_size{log2_leaf_size},
-    m_leaf_count{0},
     m_max_leaves{address_type{1} << (log2_root_size - log2_leaf_size)},
     m_context(std::max(1, log2_root_size - log2_leaf_size + 1)),
     m_pristine_hashes{log2_root_size, log2_word_size} {

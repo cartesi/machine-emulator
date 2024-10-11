@@ -139,7 +139,7 @@ public:
 private:
     int m_log2_root_size;                   ///< Log<sub>2</sub> of tree size
     int m_log2_leaf_size;                   ///< Log<sub>2</sub> of leaf size
-    address_type m_leaf_count;              ///< Number of leaves already added
+    address_type m_leaf_count{0};           ///< Number of leaves already added
     address_type m_max_leaves;              ///< Maximum number of leaves
     std::vector<hash_type> m_context;       ///< Hashes of bits set in leaf_count
     pristine_merkle_tree m_pristine_hashes; ///< Hash of pristine subtrees of all sizes

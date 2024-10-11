@@ -42,11 +42,8 @@ public:
     /// \brief Constructs a merkle_tree_proof object and allocates
     /// room for the sibling hashes
     merkle_tree_proof(int log2_root_size, int log2_target_size) :
-        m_target_address{0},
         m_log2_target_size{log2_target_size},
-        m_target_hash{},
         m_log2_root_size{log2_root_size},
-        m_root_hash{},
         m_sibling_hashes(std::max(0, log2_root_size - log2_target_size)) {
         if (log2_root_size <= 0) {
             throw std::out_of_range{"log2_root_size is not positive"};
@@ -177,8 +174,8 @@ public:
     ///< \param h Hasher object to use
     ///< \return True if proof is valid, false otherwise
     template <typename HASHER_TYPE>
-    bool verify(HASHER_TYPE &&h) const {
-        return bubble_up(std::forward<HASHER_TYPE>(h), get_target_hash()) == get_root_hash();
+    bool verify(HASHER_TYPE &h) const {
+        return bubble_up(h, get_target_hash()) == get_root_hash();
     }
 
     ///< \brief Verify if proof is valid
@@ -187,7 +184,7 @@ public:
     ///< \param new_target_hash New target hash to replace
     ///< \return New root hash
     template <typename HASHER_TYPE>
-    hash_type bubble_up(HASHER_TYPE &&h, const hash_type &new_target_hash) const {
+    hash_type bubble_up(HASHER_TYPE &h, const hash_type &new_target_hash) const {
         static_assert(is_an_i_hasher<HASHER_TYPE>::value, "not an i_hasher");
         static_assert(std::is_same<typename remove_cvref<HASHER_TYPE>::type::hash_type, hash_type>::value,
             "incompatible hash types");
@@ -204,7 +201,7 @@ public:
     }
 
     template <typename HASHER_TYPE>
-    merkle_tree_proof<hash_type, address_type> slice(HASHER_TYPE &&h, int new_log2_root_size,
+    merkle_tree_proof<hash_type, address_type> slice(HASHER_TYPE &h, int new_log2_root_size,
         int new_log2_target_size) const {
         static_assert(is_an_i_hasher<HASHER_TYPE>::value, "not an i_hasher");
         static_assert(std::is_same<typename remove_cvref<HASHER_TYPE>::type::hash_type, hash_type>::value,
@@ -264,11 +261,11 @@ private:
         return index;
     }
 
-    address_type m_target_address;        ///< Address of target node
-    int m_log2_target_size;               ///< log<sub>2</sub> of size subintended by target node
-    hash_type m_target_hash;              ///< Hash of target node
-    int m_log2_root_size;                 ///< log<sub>2</sub> of size subintended by tree
-    hash_type m_root_hash;                ///< Hash of root node
+    address_type m_target_address{0};     ///< Address of target node
+    int m_log2_target_size{0};            ///< log<sub>2</sub> of size subintended by target node
+    hash_type m_target_hash{};            ///< Hash of target node
+    int m_log2_root_size{0};              ///< log<sub>2</sub> of size subintended by tree
+    hash_type m_root_hash{};              ///< Hash of root node
     sibling_hashes_type m_sibling_hashes; ///< Hashes of siblings in path from target to root
 };
 

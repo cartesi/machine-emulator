@@ -141,7 +141,7 @@ pma_entry machine::make_cmio_tx_buffer_pma_entry(const cmio_config &c) {
         .set_flags(m_cmio_tx_buffer_flags);
 }
 
-pma_entry &machine::register_pma_entry(pma_entry &&pma) {
+pma_entry &machine::register_pma_entry(pma_entry &&pma) { // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
     if (m_s.pmas.capacity() <= m_s.pmas.size()) { // NOLINT(readability-static-accessed-through-instance)
         throw std::runtime_error{"too many PMAs when adding "s + pma.get_description()};
     }
@@ -337,7 +337,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
                                             .set_flags(m_dtb_flags));
 
     // Register all flash drives
-    int i = 0;
+    int i = 0; // NOLINT(misc-const-correctness)
     for (auto &f : m_c.flash_drive) {
         const std::string flash_description = "flash drive "s + std::to_string(i);
         // Auto detect flash drive start address
@@ -415,7 +415,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
             std::visit(
                 [&](const auto &vdev_config) {
                     using T = std::decay_t<decltype(vdev_config)>;
-                    std::string pma_name = "VirtIO device";
+                    std::string pma_name = "VirtIO device"; // NOLINT(misc-const-correctness): // no, can't be const
                     std::unique_ptr<virtio_device> vdev;
                     if constexpr (std::is_same_v<T, cartesi::virtio_console_config>) {
                         pma_name = "VirtIO Console";
@@ -554,14 +554,16 @@ void machine::prepare_virtio_devices_select(select_fd_sets *fds, uint64_t *timeo
     }
 }
 
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 bool machine::poll_selected_virtio_devices(int select_ret, select_fd_sets *fds, i_device_state_access *da) {
-    bool interrupt_requested = false;
+    bool interrupt_requested = false; // NOLINT(misc-const-correctness)
     for (auto &vdev : m_vdevs) {
         interrupt_requested |= vdev->poll_selected(select_ret, fds, da);
     }
     return interrupt_requested;
 }
 
+// NOLINTNEXTLINE(readability-non-const-parameter)
 bool machine::poll_virtio_devices(uint64_t *timeout_us, i_device_state_access *da) {
     return os_select_fds(
         [&](select_fd_sets *fds, uint64_t *timeout_us) -> void { prepare_virtio_devices_select(fds, timeout_us); },
@@ -2385,6 +2387,9 @@ void machine::verify_reset_uarch(const hash_type &root_hash_before, const access
     }
 }
 
+// Declaration of explicit instantiation in module uarch-step.cpp
+extern template UArchStepStatus uarch_step(uarch_record_state_access &a);
+
 access_log machine::log_step_uarch(const access_log::type &log_type) {
     if (m_uarch.get_state().ram.get_istart_E()) {
         throw std::runtime_error("microarchitecture RAM is not present");
@@ -2402,6 +2407,9 @@ access_log machine::log_step_uarch(const access_log::type &log_type) {
     verify_step_uarch(root_hash_before, *a.get_log(), root_hash_after);
     return std::move(*a.get_log());
 }
+
+// Declaration of explicit instantiation in module uarch-step.cpp
+extern template UArchStepStatus uarch_step(uarch_replay_state_access &a);
 
 void machine::verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
     const hash_type &root_hash_after) {

@@ -22,26 +22,23 @@
 
 #include "pma-constants.h"
 #include "pma-driver.h"
+#include "compiler-defines.h"
 
 /// \file
 /// \brief Shadow device.
 
 namespace cartesi {
 
-#pragma pack(push, 1)
-
 /// \brief Shadow memory layout
 
-struct shadow_pma_entry {
+struct PACKED shadow_pma_entry {
     uint64_t start;
     uint64_t length;
 };
 
-struct shadow_pmas {
+struct PACKED shadow_pmas {
     shadow_pma_entry pmas[PMA_MAX];
 };
-
-#pragma pack(pop)
 
 /// \brief Global instance of the pma board shadow device driver.
 extern const pma_driver shadow_pmas_driver;

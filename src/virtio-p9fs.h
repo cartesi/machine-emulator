@@ -18,11 +18,13 @@
 #define VIRTIO_P9FS_H
 
 #include "os-features.h"
+#include "compiler-defines.h"
 
 #ifdef HAVE_POSIX_FS
 
 #include "virtio-device.h"
 #include "virtio-serializer.h"
+#include "compiler-defines.h"
 
 #include <unordered_map>
 
@@ -344,17 +346,16 @@ enum p9_lock_type : uint8_t {
     P9_LOCK_TYPE_UNLCK = 2,
 };
 
-#pragma pack(push, 1)
 /// \brief 9P2000.L qid
 /// \details A qid is a 13 byte value representing a unique file system object.
-struct p9_qid {
+struct PACKED p9_qid {
     uint8_t type;     ///< File type (directory/symlink/file)
     uint32_t version; ///< Cache version
     uint64_t path;    ///< The inode representing the path
 };
 
 /// \brief 9P2000.L file stat
-struct p9_stat {
+struct PACKED p9_stat {
     uint32_t mode;
     uint32_t uid;
     uint32_t gid;
@@ -374,7 +375,6 @@ struct p9_stat {
     uint64_t gen;          ///< Reserved for future use
     uint64_t data_version; ///< Reserved for future use
 };
-#pragma pack(pop)
 
 /// \brief 9P2000.L fid state
 /// \details A fid is a file system object identifier, each one has its own state.

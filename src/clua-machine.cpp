@@ -14,11 +14,13 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include <cstddef>
+#include <cstdint>
+#include <string>
+
 #include "clua-machine-util.h"
 #include "clua.h"
-#include "json-util.h"
 #include "machine-c-api.h"
-#include "riscv-constants.h"
 
 namespace cartesi {
 

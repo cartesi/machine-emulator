@@ -14,12 +14,14 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include <cstddef>
+#include <cstdint>
+#include <new>
+
 #include "clua-i-virtual-machine.h"
-
-#include <cinttypes>
-
 #include "clua-machine-util.h"
 #include "clua.h"
+#include "machine-c-api.h"
 
 namespace cartesi {
 

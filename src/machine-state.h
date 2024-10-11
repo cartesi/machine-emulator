@@ -52,6 +52,7 @@ struct machine_state {
     } // Due to bug in clang++
 
     /// \brief No copy or move constructor or assignment
+    machine_state(void) = default;
     machine_state(const machine_state &other) = delete;
     machine_state(machine_state &&other) = delete;
     machine_state &operator=(const machine_state &other) = delete;

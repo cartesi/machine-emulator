@@ -17,10 +17,14 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <csignal>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <exception>
+#include <stdexcept>
+#include <memory>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -28,8 +32,11 @@
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
+#include <system_error>
 
 #include <fcntl.h>
+#include <sys/errno.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -38,7 +45,6 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include "asio-config.h" // must be included before any ASIO header
-#include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/signal_set.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
@@ -130,8 +136,8 @@ static void install_restart_signal_handlers(void) {
 
 struct http_handler;
 struct http_session;
-static http::message_generator handle_request(http::request<http::string_body> &&req,
-    const std::shared_ptr<http_session> &session);
+template <typename HTTP_REQ>
+static http::message_generator handle_request(HTTP_REQ &&rreq, const std::shared_ptr<http_session> &session);
 
 // Handles a HTTP session
 struct http_session : std::enable_shared_from_this<http_session> {
@@ -229,7 +235,7 @@ struct http_session : std::enable_shared_from_this<http_session> {
 
         // Send a TCP send shutdown.
         beast::error_code ec;
-        stream.socket().shutdown(tcp::socket::shutdown_send, ec);
+        (void) stream.socket().shutdown(tcp::socket::shutdown_send, ec);
 
         // At this point the connection is closed gracefully
     }
@@ -237,8 +243,8 @@ struct http_session : std::enable_shared_from_this<http_session> {
     // Called by HTTP handler to cancel asynchronous operations and close the session
     void close() {
         beast::error_code ec;
-        stream.socket().cancel(ec);
-        stream.socket().close(ec);
+        (void) stream.socket().cancel(ec);
+        (void) stream.socket().close(ec);
     }
 };
 
@@ -279,8 +285,8 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
     void rebind(tcp::acceptor &&new_acceptor) {
         // Stop asynchronous accept and close the acceptor
         beast::error_code ec;
-        acceptor.cancel(ec);
-        acceptor.close(ec);
+        (void) acceptor.cancel(ec);
+        (void) acceptor.close(ec);
         // Replace current acceptor with the new one
         acceptor = std::move(new_acceptor);
         local_endpoint = acceptor.local_endpoint();
@@ -290,10 +296,10 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
     // Stop accepting new connections
     void stop() {
         beast::error_code ec;
-        acceptor.close(ec);
-        acceptor.cancel(ec);
-        signals.cancel(ec);
-        signals.clear(ec);
+        (void) acceptor.close(ec);
+        (void) acceptor.cancel(ec);
+        (void) signals.cancel(ec);
+        (void) signals.clear(ec);
     }
 
     // Close open sessions
@@ -770,7 +776,7 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
         // Note that the parent doesn't need the server that will be used by the child,
         // we can close it.
         beast::error_code ec;
-        acceptor.close(ec);
+        (void) acceptor.close(ec);
         SLOG(trace) << session->handler->local_endpoint << " fork parent";
     } else { // parent and fork() failed
         const int errno_copy = errno;
@@ -1406,8 +1412,11 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
 /// \param req HTTP request
 /// \param session HTTP session
 // Return a response for the given request.
-http::message_generator handle_request(http::request<http::string_body> &&req,
+template <typename HTTP_REQ>
+http::message_generator handle_request(HTTP_REQ &&rreq,
     const std::shared_ptr<http_session> &session) {
+    static_assert(std::is_same_v<std::remove_cvref_t<HTTP_REQ>, http::request<http::string_body>>, "not a boost::beast::http::request<http::string_body>>");
+    HTTP_REQ req = std::forward<HTTP_REQ>(rreq);
     // Answer OPTIONS request to support cross origin resource sharing (CORS) preflighted browser requests
     if (req.method() == http::verb::options) {
         SLOG(trace) << session->handler->local_endpoint << " serving \"" << req.method_string() << "\" request";
@@ -1595,7 +1604,8 @@ int main(int argc, char *argv[]) try {
     for (int i = 1; i < argc; i++) {
         if (stringval("--server-address=", argv[i], &server_address)) {
             ;
-        } else if (sscanf(argv[i], "--server-fd=%d", &server_fd)) {
+        // NOLINTNEXTLINE(cert-err34-c)
+        } else if (int end = 0; sscanf(argv[i], "--server-fd=%d%n", &server_fd, &end) == 1 && argv[i][end] == 0) {
             ;
         } else if (stringval("--log-level=", argv[i], &log_level)) {
             ;
@@ -1640,9 +1650,10 @@ int main(int argc, char *argv[]) try {
         }
         SLOG(info) << "attempting to inherit fd " << server_fd << " from parent";
         // check socket is listening and is of right domain and type
-        struct sockaddr_in fd_addr;
+        struct sockaddr_in fd_addr{};
         socklen_t len = sizeof(fd_addr);
         memset(&fd_addr, 0, len);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         if (getsockname(server_fd, reinterpret_cast<struct sockaddr *>(&fd_addr), &len) < 0) {
             SLOG(fatal) << "getsockname failed on inherited fd: " << strerror(errno);
             exit(1);

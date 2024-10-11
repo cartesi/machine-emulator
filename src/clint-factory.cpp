@@ -14,9 +14,12 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include <cstdint>
+
 #include "clint-factory.h"
 #include "clint.h"
 #include "machine.h"
+#include "pma-constants.h"
 #include "pma.h"
 
 namespace cartesi {

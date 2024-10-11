@@ -14,7 +14,10 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include <algorithm>
+#include <array>
 #include <cstdint>
+#include <type_traits>
 #include <utility>
 
 #ifdef MICROARCHITECTURE
@@ -22,8 +25,13 @@
 #include "uarch-runtime.h"
 #else
 #include "state-access.h"
-#endif
+#include <cassert>
+#endif // MICROARCHITECTURE
+
+#include "compiler-defines.h"
+#include "i-state-access.h"
 #include "machine-statistics.h"
+#include "shadow-tlb.h"
 
 /// \file
 /// \brief Interpreter implementation.
@@ -3056,7 +3064,7 @@ static FORCE_INLINE execute_status execute_L(STATE_ACCESS &a, uint64_t &pc, uint
         return advance_to_next_insn(a, pc);
     }
     // This static branch is eliminated by the compiler
-    if constexpr (std::is_signed<T>::value) {
+    if constexpr (std::is_signed_v<T>) {
         a.write_x(rd, static_cast<int64_t>(val));
     } else {
         a.write_x(rd, static_cast<uint64_t>(val));
@@ -4541,7 +4549,7 @@ static FORCE_INLINE execute_status execute_C_L(STATE_ACCESS &a, uint64_t &pc, ui
         return advance_to_raised_exception(a, pc);
     }
     // This static branch is eliminated by the compiler
-    if constexpr (std::is_signed<T>::value) {
+    if constexpr (std::is_signed_v<T>) {
         a.write_x(rd, static_cast<uint64_t>(static_cast<int64_t>(val)));
     } else {
         a.write_x(rd, static_cast<uint64_t>(val));
@@ -5675,6 +5683,7 @@ interpreter_break_reason interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
 }
 
 #ifdef MICROARCHITECTURE
+// Explicit instantiation for uarch_machine_state_access
 template interpreter_break_reason interpret(uarch_machine_state_access &a, uint64_t mcycle_end);
 #else
 // Explicit instantiation for state_access

@@ -23,6 +23,7 @@
 
 #include "pma-driver.h"
 #include "riscv-constants.h"
+#include "compiler-defines.h"
 
 /// \file
 /// \brief Shadow device.
@@ -30,8 +31,7 @@
 namespace cartesi {
 
 /// \brief Shadow memory layout
-#pragma pack(push, 1)
-struct shadow_state {
+struct PACKED shadow_state {
     uint64_t x[X_REG_COUNT]; ///< Register file.
     uint64_t f[F_REG_COUNT]; ///< Floating-point register file.
     uint64_t pc;
@@ -74,7 +74,6 @@ struct shadow_state {
     uint64_t htif_iconsole;
     uint64_t htif_iyield;
 };
-#pragma pack(pop)
 
 /// \brief Global instance of the processor shadow device driver.
 extern const pma_driver shadow_state_driver;

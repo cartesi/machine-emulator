@@ -37,6 +37,9 @@ static void set_uarch_halt_flag() {
 // Let the state accessor be on static memory storage to speed up uarch initialization
 static uarch_machine_state_access a;
 
+// Declaration of explicit instantiation in module interpret.cpp when compiled with microarchitecture
+extern template interpreter_break_reason interpret(uarch_machine_state_access &a, uint64_t mcycle_end);
+
 /// \brief  Advances one mcycle by executing the "big machine interpreter" compiled to the microarchitecture
 /// \return This function never returns
 extern "C" NO_RETURN void interpret_next_mcycle_with_uarch() {

@@ -17,8 +17,8 @@
 #include "clua-i-virtual-machine.h"
 #include "clua-machine.h"
 #include "clua.h"
-#include "keccak-256-hasher.h"
 #include "machine-c-api.h"
+#include "machine-merkle-tree.h"
 #include "riscv-constants.h"
 #include "uarch-constants.h"
 #include "uarch-pristine.h"
@@ -41,12 +41,12 @@ static const auto gperf_meta = cartesi::clua_make_luaL_Reg_array({
 });
 #endif
 
-/// \brief This is the cartesi.keccak() function implementation.
+/// \brief This is the cartesi.hash() function implementation.
 /// \param L Lua state.
-static int cartesi_mod_keccak(lua_State *L) {
+static int cartesi_mod_hash(lua_State *L) {
     using namespace cartesi;
-    keccak_256_hasher h;
-    keccak_256_hasher::hash_type hash;
+    machine_merkle_tree::hasher_type h;
+    machine_merkle_tree::hash_type hash;
     if (lua_gettop(L) > 2) {
         luaL_argerror(L, 3, "too many arguments");
     }
@@ -84,7 +84,7 @@ static int cartesi_mod_keccak(lua_State *L) {
 
 /// \brief Contents of the cartesi module table.
 static const auto cartesi_mod = cartesi::clua_make_luaL_Reg_array({
-    {"keccak", cartesi_mod_keccak},
+    {"hash", cartesi_mod_hash},
 });
 
 extern "C" {

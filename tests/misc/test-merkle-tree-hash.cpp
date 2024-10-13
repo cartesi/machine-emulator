@@ -30,12 +30,12 @@
 #include <complete-merkle-tree.h>
 #include <full-merkle-tree.h>
 #include <i-hasher.h>
-#include <keccak-256-hasher.h>
+#include <machine-hasher.h>
 #include <merkle-tree-proof.h>
 #include <unique-c-ptr.h>
 
 using namespace cartesi;
-using hasher_type = keccak_256_hasher;
+using hasher_type = machine_hasher_type;
 using hash_type = hasher_type::hash_type;
 
 namespace {

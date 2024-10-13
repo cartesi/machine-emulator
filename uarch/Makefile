@@ -16,7 +16,7 @@ else
 HOST_CXX := g++
 endif
 
-HOST_CFLAGS := -I$(THIRD_PARTY_DIR)/tiny_sha3 -I$(EMULATOR_SRC_DIR)
+HOST_CFLAGS := -I$(THIRD_PARTY_DIR)/tiny_sha3 -I$(THIRD_PARTY_DIR)/SHA256 -I$(EMULATOR_SRC_DIR)
 
 CC := $(TOOLCHAIN_PREFIX)gcc
 LD := $(TOOLCHAIN_PREFIX)ld
@@ -73,6 +73,7 @@ COMPUTE_UARCH_CPP_SOURCES=\
 	$(EMULATOR_SRC_DIR)/full-merkle-tree.cpp
 COMPUTE_UARCH_C_SOURCES=\
 	$(THIRD_PARTY_DIR)/tiny_sha3/sha3.c \
+	$(THIRD_PARTY_DIR)/SHA256/sha256.c \
 	uarch-pristine-ram.c
 
 UARCH_OBJS = $(patsubst %.c,%.uarch_c.o,$(patsubst %.cpp,%.uarch_cpp.o,$(UARCH_SOURCES)))

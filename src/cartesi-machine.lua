@@ -2062,14 +2062,14 @@ local function check_outputs_root_hash(root_hash, hashes)
             if not c1 then break end
             local c2 = hashes[child + 1]
             if c2 then
-                parent_output_hashes[parent] = cartesi.keccak(c1, c2)
+                parent_output_hashes[parent] = cartesi.hash(c1, c2)
             else
-                parent_output_hashes[parent] = cartesi.keccak(c1, z)
+                parent_output_hashes[parent] = cartesi.hash(c1, z)
             end
             parent = parent + 1
             child = child + 2
         end
-        z = cartesi.keccak(z, z)
+        z = cartesi.hash(z, z)
         hashes = parent_output_hashes
     end
     assert(root_hash == hashes[1], "output root hash mismatch")
@@ -2254,7 +2254,7 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
         if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
             if reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
                 local output = save_cmio_output(machine, cmio_advance, length)
-                local output_hash = cartesi.keccak(output)
+                local output_hash = cartesi.hash(output)
                 output_hashes[#output_hashes + 1] = output_hash
                 cmio_advance.output_index = cmio_advance.output_index + 1
             elseif reason == cartesi.machine.HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT then

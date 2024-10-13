@@ -32,16 +32,16 @@ local test_util = {
     tests_uarch_path = adjust_path(assert(os.getenv("CARTESI_TESTS_UARCH_PATH"))),
 }
 
-local zero_keccak_hash_table = {
+local zero_hash_table = {
     "",
     "",
 }
 
 do
-    local hash = cartesi.keccak(string.rep("\0", 1 << WORD_LOG2_SIZE))
+    local hash = cartesi.hash(string.rep("\0", 1 << WORD_LOG2_SIZE))
     for i = WORD_LOG2_SIZE, ROOT_LOG2_SIZE - 1 do
-        zero_keccak_hash_table[i] = hash
-        hash = cartesi.keccak(hash, hash)
+        zero_hash_table[i] = hash
+        hash = cartesi.hash(hash, hash)
     end
 end
 
@@ -93,7 +93,7 @@ function back_merkle_tree_meta.__index:push_back(new_leaf_hash)
     for i = 0, depth do
         if self.m_leaf_count & (0x01 << i) ~= 0x0 then
             local left = self.m_context[i]
-            right = cartesi.keccak(left, right)
+            right = cartesi.hash(left, right)
         else
             self.m_context[i] = right
             break
@@ -118,12 +118,12 @@ function back_merkle_tree_meta.__index:pad_back(new_leaf_count)
         -- is our smallest tree at depth j?
         if (self.m_leaf_count & j_span) ~= 0x0 then
             -- if so, we can add 2^j pristine leaves directly
-            local right = zero_keccak_hash_table[self.m_log2_leaf_size + j]
+            local right = zero_hash_table[self.m_log2_leaf_size + j]
             for i = j, depth do
                 local i_span = 0x1 << i
                 if (self.m_leaf_count & i_span) ~= 0x0 then
                     local left = self.m_context[i]
-                    right = cartesi.keccak(left, right)
+                    right = cartesi.hash(left, right)
                 else
                     self.m_context[i] = right
                     -- next outer loop starts again from where inner loop left off
@@ -141,7 +141,7 @@ function back_merkle_tree_meta.__index:pad_back(new_leaf_count)
     for i = 0, depth do
         local i_span = 0x1 << i
         if (new_leaf_count & i_span) ~= 0x0 then
-            self.m_context[i] = zero_keccak_hash_table[self.m_log2_leaf_size + i]
+            self.m_context[i] = zero_hash_table[self.m_log2_leaf_size + i]
             new_leaf_count = new_leaf_count - i_span
             self.m_leaf_count = self.m_leaf_count + i_span
         end
@@ -152,14 +152,14 @@ function back_merkle_tree_meta.__index:get_root_hash()
     assert(self.m_leaf_count <= self.m_max_leaves, "too many leaves")
     local depth = self.m_log2_root_size - self.m_log2_leaf_size
     if self.m_leaf_count < self.m_max_leaves then
-        local root = zero_keccak_hash_table[self.m_log2_leaf_size]
+        local root = zero_hash_table[self.m_log2_leaf_size]
         for i = 0, depth - 1 do
             if (self.m_leaf_count & (0x01 << i)) ~= 0 then
                 local left = self.m_context[i]
-                root = cartesi.keccak(left, root)
+                root = cartesi.hash(left, root)
             else
-                local right = zero_keccak_hash_table[self.m_log2_leaf_size + i]
-                root = cartesi.keccak(root, right)
+                local right = zero_hash_table[self.m_log2_leaf_size + i]
+                root = cartesi.hash(root, right)
             end
         end
         return root
@@ -216,7 +216,7 @@ function test_util.check_proof(proof)
         else
             first, second = hash, proof.sibling_hashes[log2_size - proof.log2_target_size + 1]
         end
-        hash = cartesi.keccak(first, second)
+        hash = cartesi.hash(first, second)
     end
     return hash == proof.root_hash
 end
@@ -233,14 +233,14 @@ end
 
 local function merkle_hash(data, start, log2_size)
     if log2_size == PAGE_LOG2_SIZE and data:sub(start + 1, start + PAGE_SIZE) == ZERO_PAGE then
-        return zero_keccak_hash_table[PAGE_LOG2_SIZE]
+        return zero_hash_table[PAGE_LOG2_SIZE]
     elseif log2_size > WORD_LOG2_SIZE then
         local child_log2_size = log2_size - 1
         local left = merkle_hash(data, start, child_log2_size)
         local right = merkle_hash(data, start + (1 << child_log2_size), child_log2_size)
-        return cartesi.keccak(left, right)
+        return cartesi.hash(left, right)
     else
-        return cartesi.keccak(data:sub(start + 1, start + (1 << WORD_LOG2_SIZE)))
+        return cartesi.hash(data:sub(start + 1, start + (1 << WORD_LOG2_SIZE)))
     end
 end
 

@@ -17,10 +17,10 @@
 #include <string>
 
 #include <back-merkle-tree.h>
-#include <keccak-256-hasher.h>
 #include <machine-c-api.h>
+#include <machine-hasher.h>
 
-using hash_type = cartesi::keccak_256_hasher::hash_type;
+using hash_type = cartesi::machine_hasher_type::hash_type;
 
 // Calculate root hash for data buffer of log2_size
 namespace detail {
@@ -29,7 +29,7 @@ constexpr int WORD_LOG2_SIZE = 5;
 constexpr int MERKLE_PAGE_LOG2_SIZE = 12;
 constexpr int MERKLE_PAGE_SIZE = (UINT64_C(1) << MERKLE_PAGE_LOG2_SIZE);
 
-static hash_type merkle_hash(cartesi::keccak_256_hasher &h, const std::string_view &data, int log2_size) {
+static hash_type merkle_hash(cartesi::sha_256_hasher &h, const std::string_view &data, int log2_size) {
     hash_type result;
     if (log2_size > WORD_LOG2_SIZE) {
         --log2_size;
@@ -58,7 +58,7 @@ static hash_type merkle_hash(const std::string_view &data, int log2_size) {
     if ((UINT64_C(1) << log2_size) != data.size()) {
         throw std::invalid_argument("log2_size does not match data size");
     }
-    cartesi::keccak_256_hasher h;
+    cartesi::machine_hasher_type h;
     return detail::merkle_hash(h, data, log2_size);
 }
 
@@ -67,7 +67,7 @@ static hash_type calculate_proof_root_hash(const cm_merkle_tree_proof *proof) {
     memcpy(hash.data(), proof->target_hash, sizeof(cm_hash));
     for (int log2_size = static_cast<int>(proof->log2_target_size); log2_size < static_cast<int>(proof->log2_root_size);
          ++log2_size) {
-        cartesi::keccak_256_hasher h;
+        cartesi::machine_hasher_type h;
         auto bit = (proof->target_address & (UINT64_C(1) << log2_size));
         hash_type first;
         hash_type second;

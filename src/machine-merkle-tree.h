@@ -26,7 +26,7 @@
 #include <iosfwd>
 #include <unordered_map>
 
-#include "keccak-256-hasher.h"
+#include "machine-hasher.h"
 #include "merkle-tree-proof.h"
 #include "pristine-merkle-tree.h"
 
@@ -49,7 +49,7 @@ namespace cartesi {
 /// original data whenever needed and never stored.
 /// Pages are divided into *words* that cover LOG2_WORD_SIZE
 /// bits of address space.
-/// Tree leaves contain Keccak-256 hashes of individual words.
+/// Tree leaves contain sha256 hashes of individual words.
 ///
 /// Tree contents are updated page-by-page using calls to
 /// machine_merkle_tree#begin_update, machine_merkle_tree#update_page, ...,
@@ -110,7 +110,7 @@ public:
     }
 
     /// \brief Hasher class.
-    using hasher_type = keccak_256_hasher;
+    using hasher_type = machine_hasher_type;
 
     /// \brief Storage for a hash.
     using hash_type = hasher_type::hash_type;

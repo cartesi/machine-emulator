@@ -17,7 +17,7 @@
 #ifndef BACK_MERKLE_TREE_H
 #define BACK_MERKLE_TREE_H
 
-#include "keccak-256-hasher.h"
+#include "machine-hasher.h"
 #include "merkle-tree-proof.h"
 #include "pristine-merkle-tree.h"
 
@@ -37,7 +37,7 @@ namespace cartesi {
 class back_merkle_tree {
 public:
     /// \brief Hasher class.
-    using hasher_type = keccak_256_hasher;
+    using hasher_type = machine_hasher_type;
 
     /// \brief Storage for a hash.
     using hash_type = hasher_type::hash_type;

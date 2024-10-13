@@ -20,7 +20,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "keccak-256-hasher.h"
+#include "machine-hasher.h"
 
 /// \file
 /// \brief Pristine Merkle tree interface.
@@ -31,7 +31,7 @@ namespace cartesi {
 class pristine_merkle_tree {
 public:
     /// \brief Hasher class.
-    using hasher_type = keccak_256_hasher;
+    using hasher_type = machine_hasher_type;
 
     /// \brief Storage for a hash.
     using hash_type = hasher_type::hash_type;

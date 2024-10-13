@@ -23,6 +23,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "i-hasher.h"
+
 namespace cartesi {
 
 /// \brief Merkle tree proof structure

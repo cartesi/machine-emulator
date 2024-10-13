@@ -27,6 +27,7 @@
 #include "htif-factory.h"
 #include "htif.h"
 #include "interpret.h"
+#include "is-pristine.h"
 #include "plic-factory.h"
 #include "record-state-access.h"
 #include "replay-state-access.h"
@@ -108,39 +109,6 @@ const pma_entry::flags machine::m_cmio_tx_buffer_flags{
     PMA_ISTART_DID::cmio_tx_buffer // DID
 };
 
-pma_entry machine::make_memory_range_pma_entry(const std::string &description, const memory_range_config &c) {
-    if (c.image_filename.empty()) {
-        return make_callocd_memory_pma_entry(description, c.start, c.length);
-    }
-    return make_mmapd_memory_pma_entry(description, c.start, c.length, c.image_filename, c.shared);
-}
-
-pma_entry machine::make_flash_drive_pma_entry(const std::string &description, const memory_range_config &c) {
-    return make_memory_range_pma_entry(description, c).set_flags(m_flash_drive_flags);
-}
-
-pma_entry machine::make_cmio_rx_buffer_pma_entry(const cmio_config &c) {
-    const auto description = "cmio rx buffer memory range"s;
-    if (!c.rx_buffer.image_filename.empty()) {
-        return make_mmapd_memory_pma_entry(description, PMA_CMIO_RX_BUFFER_START, PMA_CMIO_RX_BUFFER_LENGTH,
-            c.rx_buffer.image_filename, c.rx_buffer.shared)
-            .set_flags(m_cmio_rx_buffer_flags);
-    }
-    return make_callocd_memory_pma_entry(description, PMA_CMIO_RX_BUFFER_START, PMA_CMIO_RX_BUFFER_LENGTH)
-        .set_flags(m_cmio_rx_buffer_flags);
-}
-
-pma_entry machine::make_cmio_tx_buffer_pma_entry(const cmio_config &c) {
-    const auto description = "cmio tx buffer memory range"s;
-    if (!c.tx_buffer.image_filename.empty()) {
-        return make_mmapd_memory_pma_entry(description, PMA_CMIO_TX_BUFFER_START, PMA_CMIO_TX_BUFFER_LENGTH,
-            c.tx_buffer.image_filename, c.tx_buffer.shared)
-            .set_flags(m_cmio_tx_buffer_flags);
-    }
-    return make_callocd_memory_pma_entry(description, PMA_CMIO_TX_BUFFER_START, PMA_CMIO_TX_BUFFER_LENGTH)
-        .set_flags(m_cmio_tx_buffer_flags);
-}
-
 pma_entry &machine::register_pma_entry(pma_entry &&pma) {
     if (m_s.pmas.capacity() <= m_s.pmas.size()) { // NOLINT(readability-static-accessed-through-instance)
         throw std::runtime_error{"too many PMAs when adding "s + pma.get_description()};
@@ -199,7 +167,9 @@ void machine::replace_memory_range(const memory_range_config &range) {
                 throw std::invalid_argument{"attempt to replace a protected range "s + pma.get_description()};
             }
             // replace range preserving original flags
-            pma = make_memory_range_pma_entry(pma.get_description(), range).set_flags(pma.get_flags());
+            pma = make_mmapd_memory_pma_entry(pma.get_description(), range.start, range.length, range.image_filename,
+                range.shared)
+                      .set_flags(pma.get_flags());
             return;
         }
     }
@@ -248,6 +218,14 @@ static void init_tlb_entry(machine &m, uint64_t eidx) {
     tlbhe.vh_offset = 0;
     tlbce.paddr_page = TLB_INVALID_PAGE;
     tlbce.pma_index = TLB_INVALID_PMA;
+}
+
+static void load_hash(const std::string &dir, machine::hash_type &h) {
+    auto name = dir + "/hash";
+    auto fp = unique_fopen(name.c_str(), "rb");
+    if (fread(h.data(), 1, h.size(), fp.get()) != h.size()) {
+        throw std::runtime_error{"error reading from '" + name + "'"};
+    }
 }
 
 machine::machine(const machine_config &c, const machine_runtime_config &r) :
@@ -322,19 +300,22 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     write_reg(reg::iflags, m_c.processor.iflags);
     write_reg(reg::iunrep, m_c.processor.iunrep);
 
-    // Register RAM
-    if (m_c.ram.image_filename.empty()) {
-        register_pma_entry(make_callocd_memory_pma_entry("RAM"s, PMA_RAM_START, m_c.ram.length).set_flags(m_ram_flags));
-    } else {
-        register_pma_entry(make_callocd_memory_pma_entry("RAM"s, PMA_RAM_START, m_c.ram.length, m_c.ram.image_filename)
-                               .set_flags(m_ram_flags));
+    // TODO(edubart): handle case when backing storage is the same dir
+    // TODO(edubart): remove directory + files on failure
+    if (!m_r.backing_storage.empty() && m_r.backing_storage != m_c.load_dir) {
+        os_mkdir(m_r.backing_storage.c_str(), 0700);
     }
 
+    // Register uarch PMAs
+    m_uarch.register_pmas(m_r);
+
+    // Register RAM
+    register_pma_entry(make_memory_range_pma_entry("RAM"s, m_ram_flags, PMA_RAM_START, m_c.ram.length,
+        m_c.ram.image_filename, false, m_r));
+
     // Register DTB
-    pma_entry &dtb = register_pma_entry((m_c.dtb.image_filename.empty() ?
-            make_callocd_memory_pma_entry("DTB"s, PMA_DTB_START, PMA_DTB_LENGTH) :
-            make_callocd_memory_pma_entry("DTB"s, PMA_DTB_START, PMA_DTB_LENGTH, m_c.dtb.image_filename))
-                                            .set_flags(m_dtb_flags));
+    pma_entry &dtb = register_pma_entry(make_memory_range_pma_entry("DTB"s, m_dtb_flags, PMA_DTB_START, PMA_DTB_LENGTH,
+        m_c.dtb.image_filename, false, m_r));
 
     // Register all flash drives
     int i = 0;
@@ -360,13 +341,18 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
             }
             f.length = length;
         }
-        register_pma_entry(make_flash_drive_pma_entry(flash_description, f));
+        register_pma_entry(make_memory_range_pma_entry(flash_description, m_flash_drive_flags, f.start, f.length,
+            f.image_filename, f.shared, m_r));
         i++;
     }
 
     // Register cmio memory ranges
-    register_pma_entry(make_cmio_tx_buffer_pma_entry(m_c.cmio));
-    register_pma_entry(make_cmio_rx_buffer_pma_entry(m_c.cmio));
+    register_pma_entry(
+        make_memory_range_pma_entry("cmio tx buffer memory range"s, m_cmio_tx_buffer_flags, PMA_CMIO_TX_BUFFER_START,
+            PMA_CMIO_TX_BUFFER_LENGTH, m_c.cmio.tx_buffer.image_filename, m_c.cmio.tx_buffer.shared, m_r));
+    register_pma_entry(
+        make_memory_range_pma_entry("cmio rx buffer memory range"s, m_cmio_rx_buffer_flags, PMA_CMIO_RX_BUFFER_START,
+            PMA_CMIO_RX_BUFFER_LENGTH, m_c.cmio.rx_buffer.image_filename, m_c.cmio.rx_buffer.shared, m_r));
 
     // Register HTIF device
     register_pma_entry(make_htif_pma_entry(PMA_HTIF_START, PMA_HTIF_LENGTH, &m_r.htif));
@@ -396,7 +382,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     write_reg(reg::plic_girqsrvd, m_c.plic.girqsrvd);
 
     // Register TLB device
-    register_pma_entry(make_shadow_tlb_pma_entry(PMA_SHADOW_TLB_START, PMA_SHADOW_TLB_LENGTH));
+    const pma_entry &tlb = register_pma_entry(make_shadow_tlb_pma_entry(PMA_SHADOW_TLB_START, PMA_SHADOW_TLB_LENGTH));
 
     // Register state shadow device
     register_pma_entry(make_shadow_state_pma_entry(PMA_SHADOW_STATE_START, PMA_SHADOW_STATE_LENGTH));
@@ -485,7 +471,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     if (!m_c.tlb.image_filename.empty()) {
         // Create a temporary PMA entry just to load TLB contents from an image file
         pma_entry tlb_image_pma = make_mmapd_memory_pma_entry("shadow TLB device"s, PMA_SHADOW_TLB_START,
-            PMA_SHADOW_TLB_LENGTH, m_c.tlb.image_filename, false);
+            PMA_SHADOW_TLB_LENGTH, m_c.tlb.image_filename);
         unsigned char *hmem = tlb_image_pma.get_memory().get_host_memory();
         for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
             load_tlb_entry<TLB_CODE>(*this, i, hmem);
@@ -518,35 +504,35 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     std::sort(m_mrds.begin(), m_mrds.end(),
         [](const machine_memory_range_descr &a, const machine_memory_range_descr &b) { return a.start < b.start; });
 
+    // Check root hash
+    if (!m_c.load_dir.empty() && !r.skip_root_hash_check) {
+        hash_type hstored;
+        hash_type hrestored;
+        load_hash(m_c.load_dir, hstored);
+        if (!update_merkle_tree()) {
+            throw std::runtime_error{"error updating Merkle tree"};
+        }
+        m_t.get_root_hash(hrestored);
+        if (hstored != hrestored) {
+            throw std::runtime_error{"stored and restored hashes do not match"};
+        }
+    }
+
+    // Remove backing files that are not mapped to memory
+    if (!m_r.backing_storage.empty()) {
+        os_unlink(machine_config::get_image_filename(m_r.backing_storage, tlb.get_start(), tlb.get_length()).c_str(),
+            true);
+        os_unlink((m_r.backing_storage + "/config.json"s).c_str(), true);
+        os_unlink((m_r.backing_storage + "/hash"s).c_str(), true);
+    }
+
     // Disable SIGPIPE handler, because this signal can be raised and terminate the emulator process
     // when calling write() on closed file descriptors.
     // This can happen with the stdout console file descriptors or network file descriptors.
     os_disable_sigpipe();
 }
 
-static void load_hash(const std::string &dir, machine::hash_type &h) {
-    auto name = dir + "/hash";
-    auto fp = unique_fopen(name.c_str(), "rb");
-    if (fread(h.data(), 1, h.size(), fp.get()) != h.size()) {
-        throw std::runtime_error{"error reading from '" + name + "'"};
-    }
-}
-
-machine::machine(const std::string &dir, const machine_runtime_config &r) : machine{machine_config::load(dir), r} {
-    if (r.skip_root_hash_check) {
-        return;
-    }
-    hash_type hstored;
-    hash_type hrestored;
-    load_hash(dir, hstored);
-    if (!update_merkle_tree()) {
-        throw std::runtime_error{"error updating Merkle tree"};
-    }
-    m_t.get_root_hash(hrestored);
-    if (hstored != hrestored) {
-        throw std::runtime_error{"stored and restored hashes do not match"};
-    }
-}
+machine::machine(const std::string &dir, const machine_runtime_config &r) : machine{machine_config::load(dir), r} {}
 
 void machine::prepare_virtio_devices_select(select_fd_sets *fds, uint64_t *timeout_us) {
     for (auto &vdev : m_vdevs) {
@@ -687,15 +673,23 @@ static void store_device_pma(const machine &m, const pma_entry &pma, const std::
     }
 }
 
-static void store_memory_pma(const pma_entry &pma, const std::string &dir) {
+static void store_memory_pma(const pma_entry &pma, const std::string &dir, const machine_runtime_config &r) {
     if (!pma.get_istart_M()) {
         throw std::runtime_error{"attempt to save non-memory PMA"};
     }
     auto name = machine_config::get_image_filename(dir, pma.get_start(), pma.get_length());
-    auto fp = unique_fopen(name.c_str(), "wb");
     const pma_memory &mem = pma.get_memory();
-    if (fwrite(mem.get_host_memory(), 1, pma.get_length(), fp.get()) != pma.get_length()) {
-        throw std::runtime_error{"error writing to '" + name + "'"};
+    if (!r.backing_storage.empty() && name == mem.get_backing_filename()) {
+        if (!os_exists(name.c_str())) {
+            throw std::runtime_error{"PMA backing file '" + name + "' was unexpectedly removed"};
+        }
+    } else if (!r.backing_storage.empty() && r.copy_reflink) {
+        os_unlock_fd(mem.get_backing_fd(), mem.get_backing_filename().c_str());
+        os_copy_reflink(mem.get_backing_filename().c_str(), name.c_str());
+        os_lock_fd(mem.get_backing_fd(), mem.get_backing_filename().c_str(), true);
+    } else {
+        // TODO(edubart): could use pread/pwrite to avoid page faults
+        os_write_file(name.c_str(), mem.get_host_memory(), pma.get_length());
     }
 }
 
@@ -747,32 +741,24 @@ void machine::store_pmas(const machine_config &c, const std::string &dir) const 
     if (read_reg(reg::iunrep)) {
         throw std::runtime_error{"cannot store PMAs of unreproducible machines"};
     }
-    store_memory_pma(find_pma_entry<uint64_t>(PMA_DTB_START), dir);
-    store_memory_pma(find_pma_entry<uint64_t>(PMA_RAM_START), dir);
+    store_memory_pma(find_pma_entry<uint64_t>(PMA_DTB_START), dir, m_r);
+    store_memory_pma(find_pma_entry<uint64_t>(PMA_RAM_START), dir, m_r);
     store_device_pma(*this, find_pma_entry<uint64_t>(PMA_SHADOW_TLB_START), dir);
     // Could iterate over PMAs checking for those with a drive DID
     // but this is easier
     for (const auto &f : c.flash_drive) {
-        store_memory_pma(find_pma_entry<uint64_t>(f.start), dir);
+        store_memory_pma(find_pma_entry<uint64_t>(f.start), dir, m_r);
     }
-    store_memory_pma(find_pma_entry<uint64_t>(PMA_CMIO_RX_BUFFER_START), dir);
-    store_memory_pma(find_pma_entry<uint64_t>(PMA_CMIO_TX_BUFFER_START), dir);
+    store_memory_pma(find_pma_entry<uint64_t>(PMA_CMIO_RX_BUFFER_START), dir, m_r);
+    store_memory_pma(find_pma_entry<uint64_t>(PMA_CMIO_TX_BUFFER_START), dir, m_r);
     if (!m_uarch.get_state().ram.get_istart_E()) {
-        store_memory_pma(m_uarch.get_state().ram, dir);
-    }
-}
-
-static void store_hash(const machine::hash_type &h, const std::string &dir) {
-    auto name = dir + "/hash";
-    auto fp = unique_fopen(name.c_str(), "wb");
-    if (fwrite(h.data(), 1, h.size(), fp.get()) != h.size()) {
-        throw std::runtime_error{"error writing to '" + name + "'"};
+        store_memory_pma(m_uarch.get_state().ram, dir, m_r);
     }
 }
 
 void machine::store(const std::string &dir) const {
-    if (os_mkdir(dir.c_str(), 0700)) {
-        throw std::system_error{errno, std::generic_category(), "error creating directory '"s + dir + "'"s};
+    if (m_r.backing_storage.empty() || dir != m_r.backing_storage) {
+        os_mkdir(dir.c_str(), 0700);
     }
     if (!m_r.skip_root_hash_store) {
         if (!update_merkle_tree()) {
@@ -780,7 +766,7 @@ void machine::store(const std::string &dir) const {
         }
         hash_type h;
         m_t.get_root_hash(h);
-        store_hash(h, dir);
+        os_write_file((dir + "/hash").c_str(), h.data(), h.size());
     }
     auto c = get_serialization_config();
     c.store(dir);
@@ -789,6 +775,27 @@ void machine::store(const std::string &dir) const {
 
 // NOLINTNEXTLINE(modernize-use-equals-default)
 machine::~machine() {
+    if (!m_r.backing_storage.empty()) {
+        try {
+            // If the machine as not committed with an explicit store method, remove it
+            if (!os_exists((m_r.backing_storage + "/config.json"s).c_str())) {
+                // Remove backing files for PMAs
+                for (const auto &pma : m_pmas) {
+                    if (pma->get_istart_M()) {
+                        const std::string backing_filename = pma->get_memory().get_backing_filename();
+                        *pma = make_empty_pma_entry("removed"s, 0, 0);
+                        os_unlink(backing_filename.c_str());
+                    }
+                }
+                // Remove backing storage directory
+                os_rmdir(m_r.backing_storage.c_str());
+            }
+        } catch (std::exception &e) {
+            // Silently fail
+            (void) fprintf(stderr, "unable to cleanup machine backing storage: %s\n", e.what());
+        }
+    }
+
     // Cleanup TTY if console input was enabled
     if (m_c.htif.console_getchar || has_virtio_console()) {
         os_close_tty();
@@ -1989,10 +1996,7 @@ bool machine::update_merkle_tree(void) const {
                     return false;
                 }
                 if (page_data) {
-                    const bool is_pristine = std::all_of(page_data, page_data + PMA_PAGE_SIZE,
-                        [](unsigned char pp) -> bool { return pp == '\0'; });
-
-                    if (is_pristine) {
+                    if (is_pristine(page_data, PMA_PAGE_SIZE)) {
                         // The update_page_node_hash function in the machine_merkle_tree is not thread
                         // safe, so we protect it with a mutex
                         const parallel_for_mutex_guard lock(mutex);
@@ -2138,6 +2142,7 @@ void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length
     }
     const pma_entry &pma = find_pma_entry(m_pmas, address, length);
     if (pma.get_istart_M()) {
+        // TODO(edubart): use pread to avoid faulting page
         memcpy(data, pma.get_memory().get_host_memory() + (address - pma.get_start()), length);
         return;
     }

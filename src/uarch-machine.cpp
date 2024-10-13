@@ -34,7 +34,7 @@ const pma_entry::flags ram_flags{
     PMA_ISTART_DID::memory // DID
 };
 
-uarch_machine::uarch_machine(uarch_config c) : m_s{}, m_c{c} {
+uarch_machine::uarch_machine(const uarch_config &c) : m_s{}, m_c{c} {
     m_s.pc = c.processor.pc;
     m_s.cycle = c.processor.cycle;
     m_s.halt_flag = c.processor.halt_flag;
@@ -42,19 +42,16 @@ uarch_machine::uarch_machine(uarch_config c) : m_s{}, m_c{c} {
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
         m_s.x[i] = c.processor.x[i];
     }
+}
+
+void uarch_machine::register_pmas(const machine_runtime_config &r) {
     // Register shadow state
     m_s.shadow_state = make_shadow_uarch_state_pma_entry(PMA_SHADOW_UARCH_STATE_START, PMA_SHADOW_UARCH_STATE_LENGTH);
-    // Register RAM
-    constexpr auto ram_description = "uarch RAM";
-    if (!c.ram.image_filename.empty()) {
-        // Load RAM image from file
-        m_s.ram =
-            make_callocd_memory_pma_entry(ram_description, PMA_UARCH_RAM_START, UARCH_RAM_LENGTH, c.ram.image_filename)
-                .set_flags(ram_flags);
-    } else {
-        // Load embedded pristine RAM image
-        m_s.ram = make_callocd_memory_pma_entry(ram_description, PMA_UARCH_RAM_START, PMA_UARCH_RAM_LENGTH)
-                      .set_flags(ram_flags);
+    // Register RAM image from file
+    m_s.ram = make_memory_range_pma_entry("uarch RAM", ram_flags, PMA_UARCH_RAM_START, PMA_UARCH_RAM_LENGTH,
+        m_c.ram.image_filename, false, r);
+    // Load embedded pristine RAM image
+    if (m_c.ram.image_filename.empty()) {
         if (uarch_pristine_ram_len > m_s.ram.get_length()) {
             throw std::runtime_error("embedded uarch ram image does not fit in uarch ram pma");
         }

@@ -14,6 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -24,6 +25,7 @@
 #include <system_error>
 #include <vector>
 
+#include "is-pristine.h"
 #include "os-features.h"
 #include "os.h"
 #include "unique-c-ptr.h"
@@ -55,6 +57,16 @@
 
 #if defined(HAVE_MMAP) || defined(HAVE_MKDIR) || defined(_WIN32)
 #include <sys/stat.h> // fstat/mkdir
+#endif
+
+#if defined(HAVE_FLOCK)
+#include <sys/file.h> // flock
+#endif
+
+#ifdef HAVE_FICLONE
+#ifndef FICLONE
+#define FICLONE _IOW(0x94, 9, int)
+#endif
 #endif
 
 #ifdef _WIN32
@@ -516,158 +528,15 @@ void os_putchars(const uint8_t *data, size_t len) {
     }
 }
 
-int os_mkdir(const char *path, int mode) {
+void os_mkdir(const char *path, int mode) {
 #ifdef HAVE_MKDIR
-    return plat_mkdir(path, mode);
+    if (plat_mkdir(path, mode) != 0) {
+        throw std::system_error{errno, std::generic_category(),
+            "error creating directory '"s + std::string(path) + "'"s};
+    }
 #else
-    return -1;
+    throw std::runtime_error("mkdir() is not supported");
 #endif // HAVE_MKDIR
-}
-
-unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
-    if (!path || *path == '\0') {
-        throw std::runtime_error{"image file path must be specified"s};
-    }
-
-#ifdef HAVE_MMAP
-    const int oflag = shared ? O_RDWR : O_RDONLY;
-
-    // Try to open image file
-    const int backing_file = open(path, oflag);
-    if (backing_file < 0) {
-        throw std::system_error{errno, std::generic_category(), "could not open image file '"s + path + "'"s};
-    }
-
-    // Try to get file size
-    struct stat statbuf {};
-    if (fstat(backing_file, &statbuf) < 0) {
-        close(backing_file);
-        throw std::system_error{errno, std::generic_category(),
-            "unable to obtain length of image file '"s + path + "'"s};
-    }
-
-    // Check that it matches range length
-    if (static_cast<uint64_t>(statbuf.st_size) != length) {
-        close(backing_file);
-        throw std::invalid_argument{"image file '"s + path + "' size ("s +
-            std::to_string(static_cast<uint64_t>(statbuf.st_size)) + ") does not match range length ("s +
-            std::to_string(length) + ")"s};
-    }
-
-    // Try to map image file to host memory
-    const int mflag = shared ? MAP_SHARED : MAP_PRIVATE;
-    auto *host_memory =
-        static_cast<unsigned char *>(mmap(nullptr, length, PROT_READ | PROT_WRITE, mflag, backing_file, 0));
-    if (host_memory == MAP_FAILED) { // NOLINT(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr)
-        close(backing_file);
-        throw std::system_error{errno, std::generic_category(), "could not map image file '"s + path + "' to memory"s};
-    }
-
-    // We can close the file after mapping it, because the OS will retain a reference of the file on its own
-    close(backing_file);
-    return host_memory;
-
-#elif defined(_WIN32)
-    const int oflag = (shared ? _O_RDWR : _O_RDONLY) | _O_BINARY;
-
-    // Try to open image file
-    const int backing_file = _open(path, oflag);
-    if (backing_file < 0) {
-        throw std::system_error{errno, std::generic_category(), "could not open image file '"s + path + "'"s};
-    }
-
-    // Try to get file size
-    struct __stat64 statbuf {};
-    if (_fstat64(backing_file, &statbuf) < 0) {
-        _close(backing_file);
-        throw std::system_error{errno, std::generic_category(),
-            "unable to obtain length of image file '"s + path + "'"s};
-    }
-
-    // Check that it matches range length
-    if (static_cast<uint64_t>(statbuf.st_size) != length) {
-        _close(backing_file);
-        throw std::invalid_argument{"image file '"s + path + "' size ("s +
-            std::to_string(static_cast<uint64_t>(statbuf.st_size)) + ") does not match range length ("s +
-            std::to_string(length) + ")"s};
-    }
-
-    // Try to map image file to host memory
-    DWORD flProtect = shared ? PAGE_READWRITE : PAGE_READONLY;
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    HANDLE hFile = reinterpret_cast<HANDLE>(_get_osfhandle(backing_file));
-    HANDLE hFileMappingObject = CreateFileMapping(hFile, NULL, flProtect, length >> 32, length & 0xffffffff, NULL);
-    if (!hFileMappingObject) {
-        _close(backing_file);
-        throw std::system_error{errno, std::generic_category(), "could not map image file '"s + path + "' to memory"s};
-    }
-
-    DWORD dwDesiredAccess = shared ? FILE_MAP_WRITE : FILE_MAP_COPY;
-    auto *host_memory = static_cast<unsigned char *>(MapViewOfFile(hFileMappingObject, dwDesiredAccess, 0, 0, length));
-    if (!host_memory) {
-        _close(backing_file);
-        throw std::system_error{errno, std::generic_category(), "could not map image file '"s + path + "' to memory"s};
-    }
-
-    // We can close the file after mapping it, because the OS will retain a reference of the file on its own
-    _close(backing_file);
-    return host_memory;
-
-#else
-    if (shared) {
-        throw std::runtime_error{"shared image file mapping is unsupported"s};
-    }
-
-    auto fp = unique_fopen(path, "rb", std::nothrow_t{});
-    if (!fp) {
-        throw std::system_error{errno, std::generic_category(), "error opening image file '"s + path + "'"s};
-    }
-    // Get file size
-    if (fseek(fp.get(), 0, SEEK_END)) {
-        throw std::system_error{errno, std::generic_category(),
-            "error obtaining length of image file '"s + path + "'"s};
-    }
-    auto file_length = ftell(fp.get());
-    if (fseek(fp.get(), 0, SEEK_SET)) {
-        throw std::system_error{errno, std::generic_category(),
-            "error obtaining length of image file '"s + path + "'"s};
-    }
-    // Check against PMA range size
-    if (static_cast<uint64_t>(file_length) > length) {
-        throw std::runtime_error{"image file '"s + path + "' of "s + " is too large for range"s};
-    }
-
-    // use calloc to improve performance
-    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-prefer-member-initializer)
-    auto host_memory = static_cast<unsigned char *>(std::calloc(1, length));
-    if (!host_memory) {
-        throw std::runtime_error{"error allocating memory"s};
-    }
-
-    // Read to host memory
-    auto read = fread(host_memory, 1, length, fp.get());
-    (void) read;
-    if (ferror(fp.get())) {
-        throw std::system_error{errno, std::generic_category(), "error reading from image file '"s + path + "'"s};
-    }
-    return host_memory;
-
-#endif // HAVE_MMAP
-}
-
-void os_unmap_file(unsigned char *host_memory, uint64_t length) {
-#ifdef HAVE_MMAP
-    munmap(host_memory, length);
-
-#elif defined(_WIN32)
-    (void) length;
-    UnmapViewOfFile(host_memory);
-
-#else
-    (void) length;
-    std::free(host_memory);
-
-#endif // HAVE_MMAP
 }
 
 int64_t os_now_us() {
@@ -786,4 +655,316 @@ void os_sleep_us(uint64_t timeout_us) {
     Sleep(timeout_us / 1000);
 #endif
 }
+
+void os_copy_reflink(const char *oldpath, const char *newpath) {
+#ifdef HAVE_POSIX_FS
+    int src_fd = -1;
+    int dest_fd = -1;
+    try {
+        // Open source file
+        src_fd = open(oldpath, O_RDONLY);
+        if (src_fd < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to open file '"s + oldpath + "' for read"s};
+        }
+#ifdef HAVE_FLOCK
+        // Lock source file
+        if (flock(src_fd, LOCK_SH | LOCK_NB) < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to lock file '"s + oldpath + "' for read"s};
+        }
+#endif
+
+        // Open destination file
+        const int mode = (S_IRUSR | S_IWUSR) | S_IRGRP | S_IROTH;
+        dest_fd = open(newpath, O_WRONLY | O_CREAT | O_EXCL, mode);
+        if (dest_fd < 0) {
+            throw std::system_error{errno, std::generic_category(),
+                "unable to open file '"s + newpath + "' for write"s};
+        }
+#ifdef HAVE_FLOCK
+        // Lock destination file
+        if (flock(dest_fd, LOCK_EX | LOCK_NB) < 0) {
+            throw std::system_error{errno, std::generic_category(),
+                "unable to lock file '"s + newpath + "' for write"s};
+        }
+#endif
+
+        // Clone file
+        if (ioctl(dest_fd, FICLONE, src_fd) < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to clone file '"s + newpath + "'"s};
+        }
+
+        // Close source file
+        if (close(src_fd) < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to close file '"s + oldpath + "'"s};
+        }
+        src_fd = -1;
+
+        // Close destination file
+        if (close(dest_fd) < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to close file '"s + newpath + "'"s};
+        }
+        dest_fd = -1;
+    } catch (std::exception &e) {
+        if (src_fd != -1) {
+            close(src_fd);
+        }
+        if (dest_fd != -1) {
+            close(dest_fd);
+            unlink(newpath); // revert file creation
+        }
+        throw;
+    }
+#else
+    throw std::runtime_error{"copy reflink is unsupported in this platform"};
+#endif
+}
+
+void os_copy_file(const char *oldpath, const char *newpath) {
+    // TODO(edubart): copy read-only files with hardlinks ?
+    // TODO(edubart): copy using COW
+
+#ifdef HAVE_POSIX_FS
+    int src_fd = -1;
+    int dest_fd = -1;
+    try {
+        // Open source file
+        src_fd = open(oldpath, O_RDONLY);
+        if (src_fd < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to open file '"s + oldpath + "' for read"s};
+        }
+#ifdef HAVE_FLOCK
+        // Lock source file
+        if (flock(src_fd, LOCK_SH | LOCK_NB) < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to lock file '"s + oldpath + "' for read"s};
+        }
+#endif
+        // Get source file length
+        struct stat src_statbuf {};
+        if (fstat(src_fd, &src_statbuf) < 0) {
+            throw std::system_error{errno, std::generic_category(),
+                "unable to obtain length of file '"s + oldpath + "'"s};
+        }
+        const uint64_t src_length = static_cast<uint64_t>(src_statbuf.st_size);
+
+        // Open destination file
+        const int mode = (S_IRUSR | S_IWUSR) | S_IRGRP | S_IROTH;
+        dest_fd = open(newpath, O_RDWR | O_CREAT | O_EXCL, mode);
+        if (dest_fd < 0) {
+            throw std::system_error{errno, std::generic_category(),
+                "unable to open file '"s + newpath + "' for write"s};
+        }
+#ifdef HAVE_FLOCK
+        // Lock destination file
+        if (flock(dest_fd, LOCK_EX | LOCK_NB) < 0) {
+            throw std::system_error{errno, std::generic_category(),
+                "unable to lock file '"s + newpath + "' for write"s};
+        }
+#endif
+        // Truncate destination file to a sparse file
+        if (ftruncate(dest_fd, static_cast<off_t>(src_length)) < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to truncate file '"s + newpath + "'"s};
+        }
+
+        // Copy in chunks of 4096 bytes
+        uint8_t buf[4096];
+        for (uint64_t off = 0; off < src_length;) {
+            const size_t len = std::min<size_t>(static_cast<size_t>(src_length - off), sizeof(buf));
+            const ssize_t read_len = pread(src_fd, buf, len, static_cast<off_t>(off));
+            if (read_len < 0) {
+                throw std::system_error{errno, std::generic_category(), "unable to read file '"s + oldpath + "'"s};
+            } else if (static_cast<size_t>(read_len) != len) {
+                throw std::runtime_error{"unable to read file '"s + oldpath + "'"s};
+            }
+            // Write only non zeros chunks (to keep file sparse)
+            if (!is_pristine(buf, len)) {
+                const ssize_t written_len = pwrite(dest_fd, buf, len, static_cast<off_t>(off));
+                if (written_len < 0) {
+                    throw std::system_error{errno, std::generic_category(), "unable to write file '"s + newpath + "'"s};
+                } else if (static_cast<size_t>(written_len) != len) {
+                    throw std::runtime_error{"unable to write file '"s + newpath + "'"s};
+                }
+            }
+            off += len;
+        }
+
+        // Close source file
+        if (close(src_fd) < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to close file '"s + oldpath + "'"s};
+        }
+        src_fd = -1;
+
+        // Close destination file
+        if (close(dest_fd) < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to close file '"s + newpath + "'"s};
+        }
+        dest_fd = -1;
+    } catch (std::exception &e) {
+        if (src_fd != -1) {
+            close(src_fd);
+        }
+        if (dest_fd != -1) {
+            close(dest_fd);
+            unlink(newpath); // revert file creation
+        }
+        throw;
+    }
+
+#else
+    // TODO(edubart): remove file on failure
+    auto src_fp = unique_fopen(oldpath, "rb");
+    auto dest_fp = unique_fopen(newpath, "wb");
+
+    char buf[4096];
+    while (true) {
+        const size_t size = fread(buf, 1, sizeof(buf), src_fp.get());
+        if (size == 0) {
+            if (feof(src_fp.get()) != 0) { // end of file
+                break;
+            } else {
+                throw std::system_error{errno, std::generic_category(),
+                    "could not read file '"s + std::string(oldpath) + "'"s};
+            }
+        }
+        const size_t written = fwrite(buf, 1, size, dest_fp.get());
+        if (written != size) {
+            throw std::system_error{errno, std::generic_category(),
+                "could not write file '"s + std::string(newpath) + "'"s};
+        }
+    }
+
+#endif
+}
+
+void os_write_file(const char *path, const unsigned char *data, size_t length) {
+
+#ifdef HAVE_POSIX_FS
+    int fd = -1;
+    try {
+        // Open destination file
+        const int mode = (S_IRUSR | S_IWUSR) | S_IRGRP | S_IROTH;
+        fd = open(path, O_RDWR | O_CREAT | O_EXCL, mode);
+        if (fd < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to open file '"s + path + "' for write"s};
+        }
+#ifdef HAVE_FLOCK
+        // Lock destination file
+        if (flock(fd, LOCK_EX | LOCK_NB) < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to lock file '"s + path + "' for write"s};
+        }
+#endif
+        // Truncate destination file to a sparse file
+        if (ftruncate(fd, static_cast<off_t>(length)) < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to truncate file '"s + path + "'"s};
+        }
+
+        // Copy in chunks of 4096 bytes
+        for (size_t off = 0; off < length;) {
+            const size_t len = std::min<size_t>(static_cast<size_t>(length - off), 4096);
+            const unsigned char *buf = &data[off];
+            // Write only non zeros chunks (to keep file sparse)
+            if (!is_pristine(buf, len)) {
+                const ssize_t written_len = pwrite(fd, buf, len, static_cast<off_t>(off));
+                if (written_len < 0) {
+                    throw std::system_error{errno, std::generic_category(), "unable to write file '"s + path + "'"s};
+                } else if (static_cast<size_t>(written_len) != len) {
+                    throw std::runtime_error{"unable to write file '"s + path + "'"s};
+                }
+            }
+            off += len;
+        }
+
+        // Close destination file
+        if (close(fd) < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to close file '"s + path + "'"s};
+        }
+        fd = -1;
+    } catch (std::exception &e) {
+        if (fd != -1) {
+            close(fd);
+            unlink(path); // revert file creation
+        }
+        throw;
+    }
+#else
+    auto fp = unique_fopen(name.c_str(), "wb");
+    if (fwrite(data, 1, length, fp.get()) != pma.get_length()) {
+        throw std::runtime_error{"error writing to '" + name + "'"};
+    }
+
+#endif
+}
+
+void os_grow_file(const char *path, uint64_t length, bool create) {
+    // TODO(edubart): fallback implementation
+
+    int fd = -1;
+    try {
+        int oflags = O_RDWR;
+        int omode = 0;
+        if (create) {
+            oflags |= O_CREAT | O_EXCL;
+            omode = (S_IRUSR | S_IWUSR) | S_IRGRP | S_IROTH;
+        }
+        fd = open(path, oflags, omode);
+        if (fd < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to create file '"s + path + "'"s};
+        }
+        struct stat statbuf {};
+        if (fstat(fd, &statbuf) < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to obtain length of file '"s + path + "'"s};
+        }
+        const uint64_t file_length = static_cast<uint64_t>(statbuf.st_size);
+        if (length < file_length) {
+            throw std::system_error{errno, std::generic_category(), "shrinking file '"s + path + "' is not allowed"s};
+        }
+        if (ftruncate(fd, static_cast<off_t>(length)) < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to truncate file '"s + path + "'"s};
+        }
+        if (close(fd) < 0) {
+            throw std::system_error{errno, std::generic_category(), "unable to close file '"s + path + "'"s};
+        }
+    } catch (std::exception &e) {
+        if (fd != -1) {
+            close(fd);
+            if (create) { // revert file creation
+                unlink(path);
+            }
+        }
+        throw;
+    }
+}
+
+bool os_exists(const char *path) {
+    const int fd = open(path, O_RDONLY);
+    if (fd < 0) {
+        return false;
+    }
+    close(fd);
+    return true;
+}
+
+void os_unlink(const char *path, bool force) {
+    if (unlink(path) < 0 && !force) {
+        throw std::system_error{errno, std::generic_category(), "unable to unlink file '"s + path + "'"s};
+    }
+}
+
+void os_rmdir(const char *path, bool force) {
+    if (rmdir(path) < 0 && force) {
+        throw std::system_error{errno, std::generic_category(), "unable to remove directory '"s + path + "'"s};
+    }
+}
+
+void os_unlock_fd(int fd, const char *path) {
+    if (flock(fd, LOCK_UN | LOCK_NB) < 0) {
+        throw std::system_error{errno, std::generic_category(), "unable to unlock file'"s + path + "' for write"s};
+    }
+}
+
+void os_lock_fd(int fd, const char *path, bool write) {
+    if (flock(fd, (write ? LOCK_EX : LOCK_SH) | LOCK_NB) < 0) {
+        throw std::system_error{errno, std::generic_category(), "unable to lock file'"s + path + "' for write"s};
+    }
+}
+
 } // namespace cartesi

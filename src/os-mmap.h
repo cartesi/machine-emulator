@@ -14,43 +14,35 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef MACHINE_RUNTIME_CONFIG_H
-#define MACHINE_RUNTIME_CONFIG_H
+#ifndef OS_MMAP_H
+#define OS_MMAP_H
 
 #include <cstdint>
 #include <string>
 
-/// \file
-/// \brief Runtime configuration for machines.
-
 namespace cartesi {
 
-/// \brief Concurrency runtime configuration
-struct concurrency_runtime_config {
-    uint64_t update_merkle_tree{};
+enum os_mmap_flags {
+    OS_MMAP_SHARED = 1 << 0,      ///< Share memory with the backing file
+    OS_MMAP_LOCKBACKING = 1 << 1, ///< Lock backing file (for shared read or exclusive writing)
+    OS_MMAP_READONLY = 1 << 2,    ///< Mark memory as read-only
+    OS_MMAP_NORESERVE = 1 << 3,   ///< Do not reserve swap space, allowing to map large address space
 };
 
-/// \brief HTIF runtime configuration
-struct htif_runtime_config {
-    bool no_console_putchar;
+struct os_mmapd {
+    unsigned char *host_memory{};
+    uint64_t length{};
+    int flags{};
+    int backing_fd{-1};
+    uint64_t backing_length{};
+    std::string backing_filename{};
 };
 
-/// \brief Machine runtime configuration
-struct machine_runtime_config {
-    concurrency_runtime_config concurrency{};
-    htif_runtime_config htif{};
-    bool skip_root_hash_check{};
-    bool skip_root_hash_store{};
-    bool skip_version_check{};
-    bool soft_yield{};
-    bool copy_reflink{};
-    std::string backing_storage{};
-};
+/// \brief Maps OS memory
+os_mmapd os_mmap(uint64_t length, int flags = 0, const std::string &backing_filename = "");
 
-/// \brief CONCURRENCY constants
-enum CONCURRENCY_constants : uint64_t {
-    THREADS_MAX = 256 ///< Maximum number of threads
-};
+/// \brief Unmaps OS memory
+void os_munmap(const os_mmapd &mmapd);
 
 } // namespace cartesi
 

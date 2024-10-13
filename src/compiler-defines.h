@@ -27,6 +27,12 @@
 
 #define NO_INLINE __attribute__((noinline))
 
+#if defined(__GNUC__)
+#define FORCE_OPTIMIZE_O3 __attribute__((optimize("-O3")))
+#else
+#define FORCE_OPTIMIZE_O3
+#endif
+
 #define NO_RETURN [[noreturn]]
 
 // These macros are used only in very hot code paths (such as TLB hit checks).

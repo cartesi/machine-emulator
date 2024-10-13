@@ -337,6 +337,7 @@ LIBCARTESI_OBJS:= \
 	virtio-net-carrier-slirp.o \
 	dtb.o \
 	os.o \
+	os-mmap.o \
 	htif.o \
 	htif-factory.o \
 	shadow-state.o \

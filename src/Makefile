@@ -210,9 +210,6 @@ ifneq (,$(filter gcc,$(CC)))
 # but we don't use -O3 because it enables some other flags that are not worth for the interpreter.
 INTERPRET_CXXFLAGS+=-fgcse-after-reload -fpredictive-commoning -fsplit-paths -ftree-partial-pre
 endif
-# Disable jump tables, because it degrades the instruction decoding performance in the interpret loop,
-# since it generates a memory indirection that has a high cost in opcode switches.
-INTERPRET_CXXFLAGS+=-fno-jump-tables
 endif
 
 # Link time optimizations

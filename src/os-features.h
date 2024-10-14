@@ -57,7 +57,7 @@
 #define HAVE_SELECT
 #endif
 
-#if !defined(NO_POSIX_FILE) && !defined(__wasi__) && !defined(_WIN32)
+#if !defined(NO_POSIX_FILE) && !defined(__wasi__)
 #define HAVE_POSIX_FS
 #endif
 

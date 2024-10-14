@@ -41,6 +41,7 @@
 #include "machine-runtime-config.h"
 #include "machine.h"
 #include "os-features.h"
+#include "os.h"
 #include "semantic-version.h"
 
 #pragma GCC diagnostic push
@@ -125,12 +126,12 @@ static std::string endpoint_to_string(const boost::asio::ip::tcp::endpoint &endp
 cm_error cm_jsonrpc_spawn(const char *address, cm_jsonrpc_manage what, cm_jsonrpc_connection **con,
     const char **bound_address, int32_t *pid) try {
     // this function first blocks SIGUSR1, SIGUSR2 and SIGALRM.
-    // then it forks.
-    // the child sends the parent a SIGUSR2 and suicides if failed before execing jsonrpc-remote-cartesi-machine.
-    // otherwise, jsonrpc-remote-cartesi-machine sends the parent a SIGUSR1 to notify it is ready.
+    // then it double-forks.
+    // the grand-child sends the parent a SIGUSR2 and suicides if failed before execing jsonrpc-remote-cartesi-machine.
+    // otherwise, jsonrpc-remote-cartesi-machine itself sends the parent a SIGUSR1 to notify it is ready.
     // the parent sets up to receive a SIGALRM after 15 seconds and then waits for SIGUSR1, SIGUSR2 or SIGALRM
-    // if it gets SIGALRM, the child is unresponsive and he parent kills and cm_jsonrpc_spawn fails.
-    // if it gets SIGUSR2, the child failed before exec an suicided, so cm_jsonrpc_spawn fails.
+    // if it gets SIGALRM, the grand-child is unresponsive, so the parent kills it and cm_jsonrpc_spawn fails.
+    // if it gets SIGUSR2, the grand-child failed before exec and suicided, so cm_jsonrpc_spawn fails.
     // if it gets SIGUSR1, jsonrpc-remote-cartesi-machine is ready and cm_jsonrpc_span succeeds.
     if (address == nullptr) {
         throw std::invalid_argument("invalid address");
@@ -144,14 +145,6 @@ cm_error cm_jsonrpc_spawn(const char *address, cm_jsonrpc_manage what, cm_jsonrp
     if (pid == nullptr) {
         throw std::invalid_argument("invalid pid output");
     }
-    boost::asio::io_context ioc{1};
-    boost::asio::ip::tcp::acceptor a(ioc, address_to_endpoint(address));
-    // already done by constructor
-    // a.open(endpoint.protocol());
-    // a.set_option(asio::socket_base::reuse_address(true));
-    // a.bind(endpoint);
-    // a.listen(asio::socket_base::max_listen_connections);
-    static THREAD_LOCAL std::string bound_address_storage = endpoint_to_string(a.local_endpoint());
     sigset_t mask{};
     sigset_t omask{};
     sigemptyset(&mask);        // always returns 0
@@ -161,94 +154,104 @@ cm_error cm_jsonrpc_spawn(const char *address, cm_jsonrpc_manage what, cm_jsonrp
     if (sigprocmask(SIG_BLOCK, &mask, &omask) < 0) {
         // sigprocmask can only fail if we screwed up the values. this can't happen.
         // being paranoid, if it *did* happen, we are trying to avoid a situation where
-        // our process gets killed when the child or the alarm tries to signal us
+        // our process gets killed when the grand-child or the alarm tries to signal us
+        // and the signals are not blocked
         throw std::system_error{errno, std::generic_category(), "sigprocmask failed"};
     }
+    bool restore_sigprocmask = true;
+    boost::asio::io_context ioc{1};
+    boost::asio::ip::tcp::acceptor a(ioc, address_to_endpoint(address));
+    // already done by constructor
+    // a.open(endpoint.protocol());
+    // a.set_option(asio::socket_base::reuse_address(true));
+    // a.bind(endpoint);
+    // a.listen(asio::socket_base::max_listen_connections);
     const char *bin = getenv("JSONRPC_REMOTE_CARTESI_MACHINE");
     if (!bin) {
         bin = "jsonrpc-remote-cartesi-machine";
     }
-    const int32_t child = fork();
-    if (child == 0) { // child
+    auto ppid = getpid();
+    bool restore_grand_child = false;
+    const int32_t grand_child = cartesi::os_double_fork_or_throw(true);
+    if (grand_child == 0) { // grand-child and double-fork() succeeded
         sigprocmask(SIG_SETMASK, &omask, nullptr);
+        char sigusr1[256] = "";
+        (void) snprintf(sigusr1, std::size(sigusr1), "--sigusr1=%d", ppid);
         char server_fd[256] = "";
         (void) snprintf(server_fd, std::size(server_fd), "--server-fd=%d", a.native_handle());
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-        char *args[] = {const_cast<char *>(bin), server_fd, const_cast<char *>("--setpgid"),
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-            const_cast<char *>("--sigusr1"), nullptr};
+        char *args[] = {const_cast<char *>(bin), server_fd, sigusr1, nullptr};
         if (execvp(bin, args) < 0) {
             // here we failed to run jsonrpc-remote-cartesi-machine. nothing we can do.
-            kill(getppid(), SIGUSR2); // notify parent we failed
+            kill(ppid, SIGUSR2); // notify parent as soon as possible that we failed.
             exit(1);
         };
         return cm_result_success(); // code never reaches here
-    } else if (child > 0) {         // parent and fork() succeeded
-        // get rid of our copy of socket
+    } else if (grand_child > 0) {   // parent and double-fork() succeeded
+        restore_grand_child = true; // make sure grand-child is killed if we fail
+        static THREAD_LOCAL std::string bound_address_storage = endpoint_to_string(a.local_endpoint());
         a.close();
-        // change child to its own process group
-        if (setpgid(child, child) < 0) {
-            // we don't want to be in a situation where the child is in the parent's process group.
-            // otherwise, should the client then kill the process group, it would be committing suicide...
-            kill(child, SIGTERM); // we try to kill the poor child
-            waitpid(child, nullptr, WNOHANG);
-            throw std::system_error{errno, std::generic_category(), "setpgid failed"};
-        }
-        struct itimerval value {};
-        memset(&value, 0, sizeof(value));
-        value.it_interval.tv_sec = 0;
-        value.it_interval.tv_usec = 0;
-        value.it_value.tv_sec = 15;
-        value.it_value.tv_usec = 0;
         struct itimerval ovalue {};
-        memset(&ovalue, 0, sizeof(ovalue));
-        if (setitimer(ITIMER_REAL, &value, &ovalue) < 0) {
-            // setitimer only fails if we screwed up with the values. this should not happen.
-            // being paranoid, if it *did* happen, and if the child also failed to signal us,
-            // we might hang forever in the following call to sigwait.
-            // we prefer to give up instead of risking a deadlock.
-            kill(child, SIGTERM); // we try to kill the poor child
-            waitpid(child, nullptr, WNOHANG);
-            sigprocmask(SIG_SETMASK, &omask, nullptr); // we try to restore our mask
-            throw std::system_error{errno, std::generic_category(), "setitimer failed"};
-        }
-        int sig = 0;
-        if (auto ret = sigwait(&mask, &sig); ret != 0) {
-            // here sigwait failed.
-            kill(child, SIGTERM); // we try to kill the poor child
-            waitpid(child, nullptr, WNOHANG);
-            sigprocmask(SIG_SETMASK, &omask, nullptr); // we try to restore our mask
-            setitimer(ITIMER_REAL, &ovalue, nullptr);  // we try to restore the timer
-            throw std::system_error{ret, std::generic_category(), "sigwait failed"};
-        }
-        // restore previous timer
-        setitimer(ITIMER_REAL, &ovalue, nullptr);
-        sigprocmask(SIG_SETMASK, &omask, nullptr);
-        if (sig == SIGALRM) { // child didn't signal us before alarm
-            kill(child, SIGTERM);
-            waitpid(child, nullptr, WNOHANG);
-            throw std::runtime_error{"child process unresponsive"};
-        }
-        if (sig == SIGUSR2) { // child signaled us that it failed to exec
-            // child will have exited on its own
-            waitpid(child, nullptr, WNOHANG);
-            throw std::runtime_error{"failed to run '"s + bin + "'"s};
-        }
-        assert(sig == SIGUSR1);
-        // child signaled us that everything is fine
-        *bound_address = bound_address_storage.c_str();
-        *pid = child;
-        auto ret = cm_jsonrpc_connect(*bound_address, what, con);
-        if (ret < 0) { // and yet we failed to connect
-            kill(child, SIGTERM);
-            waitpid(child, nullptr, WNOHANG);
+        bool restore_itimer = false;
+        try {
+            struct itimerval value {};
+            memset(&value, 0, sizeof(value));
+            value.it_interval.tv_sec = 0;
+            value.it_interval.tv_usec = 0;
+            value.it_value.tv_sec = 15;
+            value.it_value.tv_usec = 0;
+            if (setitimer(ITIMER_REAL, &value, &ovalue) < 0) {
+                // setitimer only fails if we screwed up with the values. this should not happen.
+                // being paranoid, if it *did* happen, and if the grand-child also failed to signal us,
+                // we might hang forever in the following call to sigwait.
+                // we prefer to give up instead of risking a deadlock.
+                throw std::system_error{errno, std::generic_category(), "setitimer failed"};
+            }
+            restore_itimer = true;
+            int sig = 0;
+            if (auto ret = sigwait(&mask, &sig); ret != 0) {
+                throw std::system_error{ret, std::generic_category(), "sigwait failed"};
+            }
+            if (sig == SIGALRM) { // grand-child didn't signal us before alarm
+                throw std::runtime_error{"grand-child process unresponsive"};
+            }
+            if (sig == SIGUSR2) { // grand-child signaled us that it failed to exec
+                // grand-child will have exited on its own
+                restore_grand_child = false;
+                throw std::runtime_error{"failed to run '"s + bin + "'"s};
+            }
+            // grand-child signaled us that everything is fine
+            assert(sig == SIGUSR1);
+            setitimer(ITIMER_REAL, &ovalue, nullptr);
+            restore_itimer = false;
+            sigprocmask(SIG_SETMASK, &omask, nullptr);
+            restore_sigprocmask = false;
+            *bound_address = bound_address_storage.c_str();
+            *pid = grand_child;
+            auto ret = cm_jsonrpc_connect(*bound_address, what, con);
+            if (ret < 0) { // and yet we failed to connect
+                kill(grand_child, SIGTERM);
+                *bound_address = nullptr;
+                *pid = 0;
+            }
+            return ret;
+        } catch (...) {
+            if (restore_sigprocmask) {
+                sigprocmask(SIG_SETMASK, &omask, nullptr);
+            }
+            if (restore_grand_child) {
+                kill(grand_child, SIGTERM);
+            }
+            if (restore_itimer) {
+                setitimer(ITIMER_REAL, &ovalue, nullptr);
+            }
+            *con = nullptr;
             *bound_address = nullptr;
             *pid = 0;
+            return cm_result_failure();
         }
-        return ret;
-    } else { // fork failed
-        throw std::system_error{errno, std::generic_category(), "fork failed"};
     }
+    return cm_result_success(); // code never reaches here
 } catch (...) {
     *con = nullptr;
     *bound_address = nullptr;

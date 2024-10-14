@@ -60,6 +60,8 @@
 #define SLOG_PREFIX log_prefix
 #include "slog.h"
 
+#include "os.h"
+
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define PROGRAM_NAME "jsonrpc-remote-cartesi-machine"
 
@@ -761,7 +763,8 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
     // Notify ASIO that we are about to fork
     session->handler->ioc.notify_fork(asio::io_context::fork_prepare);
     // Done initializing, so we fork
-    const int pid = fork();
+    const char *err_msg = nullptr;
+    const int pid = cartesi::os_double_fork(true, &err_msg);
     if (pid == 0) { // child
         // Notify to ASIO that we are the child
         session->handler->ioc.notify_fork(asio::io_context::fork_child);
@@ -779,9 +782,8 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
         (void) acceptor.close(ec);
         SLOG(trace) << session->handler->local_endpoint << " fork parent";
     } else { // parent and fork() failed
-        const int errno_copy = errno;
-        SLOG(error) << session->handler->local_endpoint << " fork failed (" << strerror(errno_copy) << ")";
-        return jsonrpc_response_server_error(j, "fork failed ("s + strerror(errno_copy) + ")"s);
+        SLOG(error) << session->handler->local_endpoint << " fork failed (" << err_msg << ")";
+        return jsonrpc_response_server_error(j, "fork failed ("s + err_msg + ")"s);
     }
     const cartesi::fork_result result{new_server_address, static_cast<uint32_t>(pid)};
     return jsonrpc_response_ok(j, result);
@@ -1535,14 +1537,8 @@ where options are
       use a listening TCP/IP socket file descriptor inherited from parent process
       default is "-1", so a new socket is created based on --server-address
 
-    --setpgid
-      break out of parent process group and become leader of new group
-      (this essentially puts the server in the background)
-      the proccess group id is the same as the process id of the server
-      the server and all its children can be signaled via this process group id
-
-    --sigusr1
-      send SIGUSR1 to parent process when ready
+    --sigusr1=<pid>
+      send SIGUSR1 to process when ready
 
     --log-level=<level>
       sets the log level
@@ -1592,8 +1588,7 @@ static void init_logger(const char *strlevel) {
 int main(int argc, char *argv[]) try {
     const char *server_address = nullptr;
     int server_fd = -1;
-    bool newpg = false;
-    bool sigusr1 = false;
+    int sigusr1 = 0;
     const char *log_level = nullptr;
     const char *program_name = PROGRAM_NAME;
 
@@ -1609,10 +1604,9 @@ int main(int argc, char *argv[]) try {
             ;
         } else if (stringval("--log-level=", argv[i], &log_level)) {
             ;
-        } else if (strcmp(argv[i], "--setpgid") == 0) {
-            newpg = true;
-        } else if (strcmp(argv[i], "--sigusr1") == 0) {
-            sigusr1 = true;
+            // NOLINTNEXTLINE(cert-err34-c)
+        } else if (int end = 0; sscanf(argv[i], "--sigusr1=%d%n", &sigusr1, &end) == 1 && argv[i][end] == 0) {
+            ;
         } else if (strcmp(argv[i], "--help") == 0) {
             help(program_name);
             exit(0);
@@ -1622,14 +1616,8 @@ int main(int argc, char *argv[]) try {
         }
     }
 
-    // create a new process group and become its leader
-    if (newpg) {
-        setpgid(0, 0);
-        SLOG(info) << "remote machine server now has pgid:" << getpgid(0);
-    }
-
-    if (sigusr1) {
-        kill(getppid(), SIGUSR1);
+    if (sigusr1 != 0) {
+        kill(sigusr1, SIGUSR1);
     }
 
     init_logger(log_level);

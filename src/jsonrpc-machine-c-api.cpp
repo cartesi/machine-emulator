@@ -46,8 +46,8 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include "asio-config.h"
-#include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/ip/address.hpp>
+#include <boost/asio/ip/tcp.hpp>
 #pragma GCC diagnostic pop
 
 using namespace std::string_literals;
@@ -194,20 +194,20 @@ cm_error cm_jsonrpc_spawn(const char *address, cm_jsonrpc_manage what, cm_jsonrp
             waitpid(child, nullptr, WNOHANG);
             throw std::system_error{errno, std::generic_category(), "setpgid failed"};
         }
-        struct itimerval value{};
+        struct itimerval value {};
         memset(&value, 0, sizeof(value));
         value.it_interval.tv_sec = 0;
         value.it_interval.tv_usec = 0;
         value.it_value.tv_sec = 15;
         value.it_value.tv_usec = 0;
-        struct itimerval ovalue{};
+        struct itimerval ovalue {};
         memset(&ovalue, 0, sizeof(ovalue));
         if (setitimer(ITIMER_REAL, &value, &ovalue) < 0) {
             // setitimer only fails if we screwed up with the values. this should not happen.
             // being paranoid, if it *did* happen, and if the child also failed to signal us,
             // we might hang forever in the following call to sigwait.
             // we prefer to give up instead of risking a deadlock.
-            kill(child, SIGTERM);                      // we try to kill the poor child
+            kill(child, SIGTERM); // we try to kill the poor child
             waitpid(child, nullptr, WNOHANG);
             sigprocmask(SIG_SETMASK, &omask, nullptr); // we try to restore our mask
             throw std::system_error{errno, std::generic_category(), "setitimer failed"};
@@ -215,7 +215,7 @@ cm_error cm_jsonrpc_spawn(const char *address, cm_jsonrpc_manage what, cm_jsonrp
         int sig = 0;
         if (auto ret = sigwait(&mask, &sig); ret != 0) {
             // here sigwait failed.
-            kill(child, SIGTERM);                      // we try to kill the poor child
+            kill(child, SIGTERM); // we try to kill the poor child
             waitpid(child, nullptr, WNOHANG);
             sigprocmask(SIG_SETMASK, &omask, nullptr); // we try to restore our mask
             setitimer(ITIMER_REAL, &ovalue, nullptr);  // we try to restore the timer

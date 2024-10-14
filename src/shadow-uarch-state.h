@@ -21,10 +21,10 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "compiler-defines.h"
 #include "pma-constants.h"
 #include "pma-driver.h"
 #include "riscv-constants.h"
-#include "compiler-defines.h"
 
 /// \file
 /// \brief Shadow uarch state device.

@@ -23,8 +23,8 @@
 #include <string_view>
 #include <unordered_map>
 
-#include "clua-machine-util.h"
 #include "base64.h"
+#include "clua-machine-util.h"
 #include "machine-c-api.h"
 
 namespace cartesi {

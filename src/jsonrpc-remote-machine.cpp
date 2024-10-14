@@ -16,24 +16,24 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdio>
 #include <csignal>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <exception>
-#include <stdexcept>
-#include <memory>
 #include <iostream>
+#include <memory>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
-#include <system_error>
 
 #include <fcntl.h>
 #include <sys/errno.h>
@@ -1413,9 +1413,9 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
 /// \param session HTTP session
 // Return a response for the given request.
 template <typename HTTP_REQ>
-http::message_generator handle_request(HTTP_REQ &&rreq,
-    const std::shared_ptr<http_session> &session) {
-    static_assert(std::is_same_v<std::remove_cvref_t<HTTP_REQ>, http::request<http::string_body>>, "not a boost::beast::http::request<http::string_body>>");
+http::message_generator handle_request(HTTP_REQ &&rreq, const std::shared_ptr<http_session> &session) {
+    static_assert(std::is_same_v<std::remove_cvref_t<HTTP_REQ>, http::request<http::string_body>>,
+        "not a boost::beast::http::request<http::string_body>>");
     HTTP_REQ req = std::forward<HTTP_REQ>(rreq);
     // Answer OPTIONS request to support cross origin resource sharing (CORS) preflighted browser requests
     if (req.method() == http::verb::options) {
@@ -1604,7 +1604,7 @@ int main(int argc, char *argv[]) try {
     for (int i = 1; i < argc; i++) {
         if (stringval("--server-address=", argv[i], &server_address)) {
             ;
-        // NOLINTNEXTLINE(cert-err34-c)
+            // NOLINTNEXTLINE(cert-err34-c)
         } else if (int end = 0; sscanf(argv[i], "--server-fd=%d%n", &server_fd, &end) == 1 && argv[i][end] == 0) {
             ;
         } else if (stringval("--log-level=", argv[i], &log_level)) {
@@ -1650,7 +1650,7 @@ int main(int argc, char *argv[]) try {
         }
         SLOG(info) << "attempting to inherit fd " << server_fd << " from parent";
         // check socket is listening and is of right domain and type
-        struct sockaddr_in fd_addr{};
+        struct sockaddr_in fd_addr {};
         socklen_t len = sizeof(fd_addr);
         memset(&fd_addr, 0, len);
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)

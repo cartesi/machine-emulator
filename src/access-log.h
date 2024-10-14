@@ -288,7 +288,7 @@ public:
                 // make sure we have room for end bracket as well. that way,
                 // unless the user use unbalanced brackets, there is no way we
                 // would throw an exception for lack of memory on and end bracket
-                m_brackets.reserve(m_brackets.size()+2);
+                m_brackets.reserve(m_brackets.size() + 2);
             }
             m_brackets.push_back(bracket_note{type, m_accesses.size(), text});
         }

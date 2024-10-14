@@ -255,7 +255,7 @@ void jsonrpc_request(beast::tcp_stream &stream, const std::string &remote_addres
 
 namespace cartesi {
 
-jsonrpc_connection::jsonrpc_connection(std::string address, manage what): m_what_managed(what) {
+jsonrpc_connection::jsonrpc_connection(std::string address, manage what) : m_what_managed(what) {
     m_address.push_back(std::move(address));
     // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
     os_disable_sigpipe();

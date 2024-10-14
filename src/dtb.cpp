@@ -23,9 +23,9 @@
 #include <string>
 
 #include "dtb.h"
-#include "machine-config.h"
 #include "fdt-builder.h"
 #include "machine-c-version.h"
+#include "machine-config.h"
 #include "pma-constants.h"
 #include "riscv-constants.h"
 #include "rng-seed.h"

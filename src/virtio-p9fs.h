@@ -17,14 +17,14 @@
 #ifndef VIRTIO_P9FS_H
 #define VIRTIO_P9FS_H
 
-#include "os-features.h"
 #include "compiler-defines.h"
+#include "os-features.h"
 
 #ifdef HAVE_POSIX_FS
 
+#include "compiler-defines.h"
 #include "virtio-device.h"
 #include "virtio-serializer.h"
-#include "compiler-defines.h"
 
 #include <unordered_map>
 

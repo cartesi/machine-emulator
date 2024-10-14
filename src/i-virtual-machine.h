@@ -102,7 +102,7 @@ public:
     }
 
     /// \brief Reads a chunk of data from the machine virtual memory.
-    void read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const {
+    void read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) {
         do_read_virtual_memory(address, data, length);
     }
 
@@ -112,7 +112,7 @@ public:
     }
 
     /// \brief Translates a virtual memory address to its corresponding physical memory address.
-    uint64_t translate_virtual_address(uint64_t vaddr) const {
+    uint64_t translate_virtual_address(uint64_t vaddr) {
         return do_translate_virtual_address(vaddr);
     }
 
@@ -201,9 +201,9 @@ private:
     virtual void do_write_reg(reg w, uint64_t val) = 0;
     virtual void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const = 0;
     virtual void do_write_memory(uint64_t address, const unsigned char *data, uint64_t length) = 0;
-    virtual void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const = 0;
+    virtual void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) = 0;
     virtual void do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) = 0;
-    virtual uint64_t do_translate_virtual_address(uint64_t vaddr) const = 0;
+    virtual uint64_t do_translate_virtual_address(uint64_t vaddr) = 0;
     virtual void do_replace_memory_range(const memory_range_config &new_range) = 0;
     virtual uint64_t do_read_word(uint64_t address) const = 0;
     virtual bool do_verify_dirty_page_maps(void) const = 0;

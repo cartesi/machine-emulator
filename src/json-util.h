@@ -25,6 +25,7 @@
 #define JSON_HAS_FILESYSTEM 0 // NOLINT(cppcoreguidelines-macro-usage)
 #include <json.hpp>
 
+#include "jsonrpc-connection.h"
 #include "jsonrpc-virtual-machine.h"
 #include "machine-merkle-tree.h"
 #include "machine.h"

@@ -39,6 +39,8 @@ public:
     ~virtual_machine(void) override;
 
 private:
+    machine *get_machine(void);
+    const machine *get_machine(void) const;
     void do_store(const std::string &dir) const override;
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
     access_log do_log_step_uarch(const access_log::type &log_type) override;
@@ -49,9 +51,9 @@ private:
     void do_write_reg(reg w, uint64_t val) override;
     void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const override;
     void do_write_memory(uint64_t address, const unsigned char *data, uint64_t length) override;
-    void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) const override;
+    void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) override;
     void do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) override;
-    uint64_t do_translate_virtual_address(uint64_t vaddr) const override;
+    uint64_t do_translate_virtual_address(uint64_t vaddr) override;
     void do_replace_memory_range(const memory_range_config &new_range) override;
     uint64_t do_read_word(uint64_t address) const override;
     bool do_verify_dirty_page_maps(void) const override;

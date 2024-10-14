@@ -149,7 +149,7 @@ cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash) {
 // The C API implementation
 // ----------------------------------------------
 
-cm_error cm_create(const char *config, const char *runtime_config, cm_machine **new_machine) try {
+cm_error cm_create_machine(const char *config, const char *runtime_config, cm_machine **new_machine) try {
     if (config == nullptr) {
         throw std::invalid_argument("invalid machine configuration");
     }
@@ -171,7 +171,7 @@ cm_error cm_create(const char *config, const char *runtime_config, cm_machine **
     return cm_result_failure();
 }
 
-cm_error cm_load(const char *dir, const char *runtime_config, cm_machine **new_machine) try {
+cm_error cm_load_machine(const char *dir, const char *runtime_config, cm_machine **new_machine) try {
     if (new_machine == nullptr) {
         throw std::invalid_argument("invalid new machine output");
     }
@@ -428,8 +428,8 @@ cm_error cm_write_memory(cm_machine *m, uint64_t address, const uint8_t *data, u
     return cm_result_failure();
 }
 
-cm_error cm_read_virtual_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length) try {
-    const auto *cpp_machine = convert_from_c(m);
+cm_error cm_read_virtual_memory(cm_machine *m, uint64_t address, uint8_t *data, uint64_t length) try {
+    auto *cpp_machine = convert_from_c(m);
     cpp_machine->read_virtual_memory(address, data, length);
     return cm_result_success();
 } catch (...) {
@@ -444,8 +444,8 @@ cm_error cm_write_virtual_memory(cm_machine *m, uint64_t address, const uint8_t 
     return cm_result_failure();
 }
 
-cm_error cm_translate_virtual_address(const cm_machine *m, uint64_t vaddr, uint64_t *paddr) try {
-    const auto *cpp_machine = convert_from_c(m);
+cm_error cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *paddr) try {
+    auto *cpp_machine = convert_from_c(m);
     *paddr = cpp_machine->translate_virtual_address(vaddr);
     return cm_result_success();
 } catch (...) {
@@ -598,14 +598,21 @@ cm_error cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length,
     return cm_result_failure();
 }
 
-cm_error cm_destroy(cm_machine *m) try {
+cm_error cm_destroy_machine(cm_machine *m) try {
     if (m != nullptr) {
         auto *cpp_machine = convert_from_c(m);
-        delete cpp_machine;
+        cpp_machine->destroy();
     }
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
+}
+
+void cm_release_machine(cm_machine *m) {
+    if (m != nullptr) {
+        auto *cpp_machine = convert_from_c(m);
+        delete cpp_machine;
+    }
 }
 
 cm_error cm_snapshot(cm_machine *m) try {

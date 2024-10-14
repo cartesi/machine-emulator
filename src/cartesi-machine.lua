@@ -1594,11 +1594,11 @@ local remote_shutdown_deleter = {}
 if remote_address then
     stderr("Connecting to %s remote cartesi machine at '%s'\n", remote_protocol, remote_address)
     local protocol = require("cartesi." .. remote_protocol)
-    remote = assert(protocol.stub(remote_address))
-    local v = assert(remote.get_version())
+    remote = assert(protocol.connect(remote_address, true)) -- detach server from connection, we will manage it
+    local v = assert(remote.get_server_version())
     stderr("Connected: remote version is %d.%d.%d\n", v.major, v.minor, v.patch)
-    if remote_fork then remote = assert(protocol.stub(remote.fork())) end
-    local shutdown = function() remote.shutdown() end
+    if remote_fork then remote = assert(protocol.connect(remote.fork_server())) end
+    local shutdown = function() remote.shutdown_server() end
     if remote_shutdown then
         setmetatable(remote_shutdown_deleter, {
             __gc = function()

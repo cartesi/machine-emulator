@@ -133,17 +133,8 @@ if machine_type == "jsonrpc" then
 end
 
 local function connect()
-    local remote = protocol.stub(remote_address)
-    local version = assert(remote.get_version(), "could not connect to remote cartesi machine at " .. remote_address)
-    local shutdown = function()
-        remote.shutdown()
-    end
-    local mt = {
-        __gc = function()
-            pcall(shutdown)
-        end,
-    }
-    setmetatable(cleanup, mt)
+    local remote = protocol.connect(remote_address) -- server will be shutdown when connection is collected
+    local version = assert(remote.get_server_version(), "could not connect to remote cartesi machine at " .. remote_address)
     return remote, version
 end
 

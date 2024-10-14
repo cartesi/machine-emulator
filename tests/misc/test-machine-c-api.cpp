@@ -55,7 +55,8 @@
 #define BOOST_FIXTURE_TEST_CASE_NOLINT(...) BOOST_FIXTURE_TEST_CASE(__VA_ARGS__)
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_machine_null_test) {
-    BOOST_CHECK_NO_THROW(cm_destroy(nullptr, false));
+    BOOST_CHECK_NO_THROW(cm_destroy_machine(nullptr));
+    BOOST_CHECK_NO_THROW(cm_release_machine(nullptr));
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(get_default_machine_config_basic_test) {
@@ -87,7 +88,7 @@ protected:
 };
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_unknown_dir_test, default_machine_fixture) {
-    cm_error error_code = cm_load("/unknown_dir", nullptr, &_machine);
+    cm_error error_code = cm_load_machine("/unknown_dir", nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_SYSTEM_ERROR);
 
     std::string result = cm_get_last_error_message();
@@ -95,7 +96,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_unknown_dir_test, default_machine_fi
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_path_test, default_machine_fixture) {
-    cm_error error_code = cm_load(nullptr, nullptr, &_machine);
+    cm_error error_code = cm_load_machine(nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -103,7 +104,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_path_test, default_machine_fixt
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_config_test, default_machine_fixture) {
-    cm_error error_code = cm_create(nullptr, nullptr, &_machine);
+    cm_error error_code = cm_create_machine(nullptr, nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
     std::string origin("invalid machine configuration");
@@ -111,7 +112,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_config_test, default_machine_
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_default_machine_test, default_machine_fixture) {
-    cm_error error_code = cm_create(_default_machine_config.c_str(), nullptr, &_machine);
+    cm_error error_code = cm_create_machine(_default_machine_config.c_str(), nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string("RAM length cannot be zero"));
 }
@@ -136,7 +137,7 @@ protected:
 };
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_machine_test, incomplete_machine_fixture) {
-    cm_error error_code = cm_create(_machine_config.dump().c_str(), nullptr, nullptr);
+    cm_error error_code = cm_create_machine(_machine_config.dump().c_str(), nullptr, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -150,7 +151,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, incomp
                            nlohmann::json{"shared", true}},
             nlohmann::json{nlohmann::json{"start", 0x7ffffffffff000}, nlohmann::json{"length", 0x2000},
                 nlohmann::json{"shared", true}}};
-    cm_error error_code = cm_create(_machine_config.dump().c_str(), nullptr, &_machine);
+    cm_error error_code = cm_create_machine(_machine_config.dump().c_str(), nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -161,8 +162,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, incomp
 class machine_flash_simple_fixture : public incomplete_machine_fixture {
 public:
     machine_flash_simple_fixture() {
-        _machine_config["flash_drive"] = nlohmann::json{nlohmann::json{nlohmann::json{"start", 0x80000000000000},
-            nlohmann::json{"length", 0x3c00000}, nlohmann::json{"shared", true}, nlohmann::json{"image_filename", ""}}};
+        _machine_config["flash_drive"] = {
+            {{"start", 0x80000000000000}, {"length", 0x3c00000}, {"shared", true}, {"image_filename", ""}}};
     }
 
     machine_flash_simple_fixture(const machine_flash_simple_fixture &other) = delete;
@@ -174,7 +175,7 @@ public:
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_alignment_test, machine_flash_simple_fixture) {
     _machine_config["flash_drive"][0]["start"] = 0x80000000000000 - 1;
 
-    cm_error error_code = cm_create(_machine_config.dump().c_str(), nullptr, &_machine);
+    cm_error error_code = cm_create_machine(_machine_config.dump().c_str(), nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -186,7 +187,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_not_addressable_test, machin
     _machine_config["flash_drive"][0]["start"] = 0x100000000000000 - 0x3c00000 + 4096;
     _machine_config["flash_drive"][0]["length"] = 0x3c00000;
 
-    cm_error error_code = cm_create(_machine_config.dump().c_str(), nullptr, &_machine);
+    cm_error error_code = cm_create_machine(_machine_config.dump().c_str(), nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -198,11 +199,11 @@ class ordinary_machine_fixture : public incomplete_machine_fixture {
 public:
     ordinary_machine_fixture() {
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
-        cm_create(_machine_config.dump().c_str(), nullptr, &_machine);
+        cm_create_machine(_machine_config.dump().c_str(), nullptr, &_machine);
     }
     ~ordinary_machine_fixture() {
         std::filesystem::remove_all(_machine_dir_path);
-        cm_destroy(_machine, false);
+        cm_release_machine(_machine);
     }
 
     ordinary_machine_fixture(const ordinary_machine_fixture &other) = delete;
@@ -261,11 +262,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_invalid_config_version_test, seriali
     expected_err << "expected \"archive_version\" " << v << " (got " << v + 1 << ")";
 
     cm_machine *restored_machine{};
-    cm_error error_code = cm_load(_machine_config_path.c_str(), nullptr, &restored_machine);
+    cm_error error_code = cm_load_machine(_machine_config_path.c_str(), nullptr, &restored_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_RUNTIME_ERROR);
     BOOST_CHECK_EQUAL(std::string(cm_get_last_error_message()), expected_err.str());
 
-    cm_destroy(restored_machine, false);
+    cm_release_machine(restored_machine);
 }
 
 class store_file_fixture : public ordinary_machine_fixture {
@@ -329,7 +330,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_null_machine_test, ordinary_machine_
     cm_error error_code = cm_store(_machine, _machine_dir_path.c_str());
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
-    error_code = cm_load(_machine_dir_path.c_str(), nullptr, nullptr);
+    error_code = cm_load_machine(_machine_dir_path.c_str(), nullptr, nullptr);
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
@@ -339,7 +340,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(serde_complex_test, ordinary_machine_fixture) {
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
     cm_machine *restored_machine{};
-    error_code = cm_load(_machine_dir_path.c_str(), nullptr, &restored_machine);
+    error_code = cm_load_machine(_machine_dir_path.c_str(), nullptr, &restored_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
@@ -353,7 +354,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(serde_complex_test, ordinary_machine_fixture) {
     BOOST_REQUIRE_EQUAL(std::string(cm_get_last_error_message()), std::string(""));
     BOOST_CHECK_EQUAL(0, memcmp(origin_hash, restored_hash, sizeof(cm_hash)));
 
-    cm_destroy(restored_machine, false);
+    cm_release_machine(restored_machine);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(get_root_hash_null_machine_test) {
@@ -363,7 +364,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_root_hash_null_machine_test) {
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(delete_null_test) {
-    cm_destroy(nullptr, false);
+    cm_release_machine(nullptr);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_root_hash_null_hash_test, ordinary_machine_fixture) {
@@ -897,7 +898,7 @@ public:
         _flash_file{"/tmp/data.bin"},
         _flash_data{"test data 1234567890"} {
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
-        cm_create(_machine_config.dump().c_str(), nullptr, &_machine);
+        cm_create_machine(_machine_config.dump().c_str(), nullptr, &_machine);
         std::ofstream flash_stream(_flash_file);
         flash_stream << _flash_data;
         flash_stream.close();
@@ -905,7 +906,7 @@ public:
     }
 
     ~flash_drive_machine_fixture() {
-        cm_destroy(_machine, false);
+        cm_release_machine(_machine);
         std::filesystem::remove_all(_machine_dir_path);
         std::filesystem::remove(_flash_file);
     }
@@ -994,12 +995,13 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_basic_test, flash_drive_mach
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(destroy_null_machine_test) {
-    cm_error error_code = cm_destroy(nullptr, false);
+    cm_error error_code = cm_destroy_machine(nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(destroy_basic_test, ordinary_machine_fixture) {
-    cm_error error_code = cm_destroy(_machine, false);
+    cm_error error_code = cm_destroy_machine(_machine);
+    cm_release_machine(_machine);
     _machine = nullptr;
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
@@ -1160,10 +1162,10 @@ public:
         of.close();
         _machine_config["uarch"]["ram"]["image_filename"] = _uarch_ram_path;
 
-        cm_create(_machine_config.dump().c_str(), nullptr, &_machine);
+        cm_create_machine(_machine_config.dump().c_str(), nullptr, &_machine);
     }
     ~access_log_machine_fixture() {
-        cm_destroy(_machine, false);
+        cm_release_machine(_machine);
         std::filesystem::remove_all(_machine_dir_path);
         std::filesystem::remove_all(_uarch_ram_path);
     }

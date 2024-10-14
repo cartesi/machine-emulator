@@ -27,18 +27,25 @@
 #include <boost/container/static_vector.hpp>
 #pragma GCC diagnostic pop
 
+#include "semantic-version.h"
+
 namespace cartesi {
+
+/// Result of a fork
+struct fork_result final {
+    std::string address{};
+    uint32_t pid{};
+};
 
 class jsonrpc_connection final {
 public:
-    enum class manage { server, machine, none };
-    explicit jsonrpc_connection(std::string remote_address, manage what);
+    jsonrpc_connection(std::string remote_address, bool detach_server);
     jsonrpc_connection(const jsonrpc_connection &other) = delete;
     jsonrpc_connection(jsonrpc_connection &&other) noexcept = delete;
     jsonrpc_connection &operator=(const jsonrpc_connection &other) = delete;
     jsonrpc_connection &operator=(jsonrpc_connection &&other) noexcept = delete;
     ~jsonrpc_connection();
-    bool is_forked(void) const;
+    bool is_snapshot(void) const;
     bool is_shutdown(void) const;
     boost::beast::tcp_stream &get_stream(void);
     const boost::beast::tcp_stream &get_stream(void) const;
@@ -47,14 +54,17 @@ public:
     void snapshot(void);
     void commit(void);
     void rollback(void);
-    manage get_what_managed(void) const;
+
+    void shutdown_server(void);
+    fork_result fork_server(void);
+    std::string rebind_server(const std::string &address);
+    semantic_version get_server_version(void);
 
 private:
-    void shutdown(void);
     boost::asio::io_context m_ioc{1};         // The io_context is required for all I/O
     boost::beast::tcp_stream m_stream{m_ioc}; // TCP stream for keep alive connections
     boost::container::static_vector<std::string, 2> m_address{};
-    manage m_what_managed{manage::server};
+    const bool m_detach_server;
 };
 
 } // namespace cartesi

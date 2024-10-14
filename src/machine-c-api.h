@@ -339,32 +339,42 @@ CM_API cm_error cm_get_reg_address(cm_reg reg, uint64_t *val);
 /// string (can be NULL).
 /// \param new_machine Receives the pointer to new machine instance.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_create(const char *config, const char *runtime_config, cm_machine **new_machine);
-
-/// \brief Destroys a machine.
-/// \param m Pointer to the existing machine instance (can be NULL).
-/// \returns 0 for success, non zero code for error.
-/// \details The machine is deallocated and its pointer must not be used after this call.
-/// This method always succeeds for local machines, but may fail for remote machines.
-/// In case of failure it must be called again to free resources.
-CM_API cm_error cm_destroy(cm_machine *m);
+CM_API cm_error cm_create_machine(const char *config, const char *runtime_config, cm_machine **new_machine);
 
 /// \brief Loads a new machine instance from a previously stored directory.
 /// \param dir Directory where previous machine is stored.
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \param new_machine Receives the pointer to new machine instance.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_load(const char *dir, const char *runtime_config, cm_machine **new_machine);
+CM_API cm_error cm_load_machine(const char *dir, const char *runtime_config, cm_machine **new_machine);
+
+/// \brief Releases handle to a machine.
+/// \param m Pointer to the existing machine handle (can be NULL).
+/// \details Local machines are never detached and are always destroyed immediately
+/// when released. If machine is remote and not detached, this function
+/// implicitly calls cm_destroy_machine() to destroy the remote machine. This
+/// might fail silently. To know if the destruction of a remote machine was
+/// successful, call cm_destroy_machine() explicitly before calling cm_release_machine().
+/// The machine handle must not be used after this call.
+CM_API void cm_release_machine(cm_machine *m);
+
+/// \brief Destroy machine, releasing its resources but preserving a valid handle.
+/// \param m Pointer to the existing machine handle (can be NULL).
+/// \returns 0 for success, non zero code for error.
+/// \details Local machines are always destroyed sucessfully.
+/// In contrast, the attempt to destroy a remote machine might fail.
+/// The handle itself must still be released with cm_release_machine().
+CM_API cm_error cm_destroy_machine(cm_machine *m);
 
 /// \brief Stores a machine instance to a directory, serializing its entire state.
-/// \param m Pointer to a valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param dir Directory where the machine will be stored.
 /// \returns 0 for success, non zero code for error.
 /// \details The function refuses to store into an existing directory.
 CM_API cm_error cm_store(const cm_machine *m, const char *dir);
 
 /// \brief Replaces a memory range.
-/// \param m Pointer to a valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param start Range start physical address.
 /// \param length Range length in bytes.
 /// \param shared[ni] If true, changes to the range from inside the machine will be
@@ -377,28 +387,28 @@ CM_API cm_error cm_store(const cm_machine *m, const char *dir);
 CM_API cm_error cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,
     const char *image_filename);
 
-/// \brief Obtains a JSON object with the machine config used to initialize the machine.
-/// \param m Pointer to a valid machine instance.
+/// \brief Returns a JSON object with the machine config used to initialize the machine.
+/// \param m Pointer to a valid machine handle.
 /// \param config Receives the initial configuration as a JSON object in a string,
 /// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_get_initial_config(const cm_machine *m, const char **config);
 
-/// \brief Obtains a list with all memory ranges in the machine.
-/// \param m Pointer to a valid machine instance.
+/// \brief Returns a list with all memory ranges in the machine.
+/// \param m Pointer to a valid machine handle.
 /// \param ranges Receives the memory ranges as a JSON object in a string,
 /// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_get_memory_ranges(const cm_machine *m, const char **ranges);
 
 /// \brief Obtains the root hash of the Merkle tree.
-/// \param m Pointer to a valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param hash Valid pointer to cm_hash structure that receives the hash.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_get_root_hash(const cm_machine *m, cm_hash *hash);
 
 /// \brief Obtains the proof for a node in the machine state Merkle tree.
-/// \param m Pointer to a valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param address Address of target node. Must be aligned to a 2^log2_size boundary.
 /// \param log2_size The log base 2 of the size subtended by target node.
 /// Must be between CM_TREE_LOG2_WORD_SIZE (for a word) and CM_TREE_LOG2_ROOT_SIZE
@@ -413,7 +423,7 @@ CM_API cm_error cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2
 // ------------------------------------
 
 /// \brief Reads the value of a word in the machine state, by its physical address.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param address Word address (aligned to 64-bit boundary).
 /// \param val Receives word value.
 /// \returns 0 for success, non zero code for error.
@@ -422,21 +432,21 @@ CM_API cm_error cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2
 CM_API cm_error cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val);
 
 /// \brief Reads the value of a register.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param reg Register to read.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_read_reg(const cm_machine *m, cm_reg reg, uint64_t *val);
 
 /// \brief Writes the value of a register.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param reg Register to write.
 /// \param val Value to write.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_write_reg(cm_machine *m, cm_reg reg, uint64_t val);
 
 /// \brief Reads a chunk of data from a machine memory range, by its physical address.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param address Physical address to start reading.
 /// \param data Receives chunk of memory.
 /// \param length Size of chunk in bytes.
@@ -445,7 +455,7 @@ CM_API cm_error cm_write_reg(cm_machine *m, cm_reg reg, uint64_t val);
 CM_API cm_error cm_read_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length);
 
 /// \brief Writes a chunk of data to a machine memory range, by its physical address.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param address Physical address to start writing.
 /// \param data Source for chunk of data.
 /// \param length Size of chunk in bytes.
@@ -455,16 +465,16 @@ CM_API cm_error cm_read_memory(const cm_machine *m, uint64_t address, uint8_t *d
 CM_API cm_error cm_write_memory(cm_machine *m, uint64_t address, const uint8_t *data, uint64_t length);
 
 /// \brief Reads a chunk of data from a machine memory range, by its virtual memory.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param address Virtual address to start reading.
 /// \param data Receives chunk of memory.
 /// \param length Size of chunk in bytes.
 /// \returns 0 for success, non zero code for error.
 /// \detail The translation is based on the current mapping, as defined in CM_REG_SATP.
-CM_API cm_error cm_read_virtual_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length);
+CM_API cm_error cm_read_virtual_memory(cm_machine *m, uint64_t address, uint8_t *data, uint64_t length);
 
 /// \brief Writes a chunk of data to a machine memory range, by its virtual address.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param address Virtual address to start writing.
 /// \param data Source for chunk of data.
 /// \param length Size of chunk in bytes.
@@ -473,61 +483,61 @@ CM_API cm_error cm_read_virtual_memory(const cm_machine *m, uint64_t address, ui
 CM_API cm_error cm_write_virtual_memory(cm_machine *m, uint64_t address, const uint8_t *data, uint64_t length);
 
 /// \brief Translates a virtual memory address to its corresponding physical memory address.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param vaddr Virtual address to translate.
 /// \param paddr Receives the physical memory address.
 /// \returns 0 for success, non zero code for error.
 /// \detail The translation is based on the current mapping, as defined in CM_REG_SATP.
-CM_API cm_error cm_translate_virtual_address(const cm_machine *m, uint64_t vaddr, uint64_t *paddr);
+CM_API cm_error cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *paddr);
 
 /// \brief Reads the value of the CM_REG_MCYCLE.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_read_mcycle(const cm_machine *m, uint64_t *val);
 
 /// \brief Reads the value of the X flag in CM_REG_IFLAGS.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_read_iflags_X(const cm_machine *m, bool *val);
 
 /// \brief Reads the value of the Y flag in CM_REG_IFLAGS.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_read_iflags_Y(const cm_machine *m, bool *val);
 
 /// \brief Resets the value of the Y flag in CM_REG_IFLAGS.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_reset_iflags_Y(cm_machine *m);
 
 /// \brief Sets the Y flag in CM_REG_IFLAGS.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_set_iflags_Y(cm_machine *m);
 
 /// \brief Reads the value of the H flag in CM_REG_IFLAGS.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_read_iflags_H(const cm_machine *m, bool *val);
 
 /// \brief Reads the value of CM_REG_UARCH_CYCLE.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_read_uarch_cycle(const cm_machine *m, uint64_t *val);
 
 /// \brief Reads the value of CM_REG_UARCH_HALT_FLAG.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param val Receives the value.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_read_uarch_halt_flag(const cm_machine *m, bool *val);
 
 /// \brief Sets the value of CM_REG_UARCH_HALT_FLAG.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_set_uarch_halt_flag(cm_machine *m);
 
@@ -536,19 +546,19 @@ CM_API cm_error cm_set_uarch_halt_flag(cm_machine *m);
 // ------------------------------------
 
 /// \brief Replaces the current snapshot with a copy of the current machine state.
-/// \param m Pointer to a valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \returns 0 for success, non zero code for error.
 /// \detail This function is ignored unless the machine is remote.
 CM_API cm_error cm_snapshot(cm_machine *m);
 
 /// \brief Delete current snapshot.
-/// \param m Pointer to a valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \returns 0 for success, non zero code for error.
 /// \detail This function is ignored unless the machine is remote.
 CM_API cm_error cm_commit(cm_machine *m);
 
 /// \brief Replaces machine state with copy in current snapshot, and then delete snapshot.
-/// \param m Pointer to a valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \returns 0 for success, non zero code for error.
 /// \detail This function is ignored unless the machine is remote.
 CM_API cm_error cm_rollback(cm_machine *m);
@@ -558,7 +568,7 @@ CM_API cm_error cm_rollback(cm_machine *m);
 // ------------------------------------
 
 /// \brief Runs the machine until CM_REG_MCYCLE reaches mcycle_end, machine yields, or halts.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param mcycle_end End cycle value.
 /// \param break_reason Receives reason for returning (can be NULL).
 /// \returns 0 for success, non zero code for error.
@@ -566,19 +576,19 @@ CM_API cm_error cm_rollback(cm_machine *m);
 CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reason);
 
 /// \brief Runs the machine microarchitecture until CM_REG_UARCH_CYCLE reaches uarch_cycle_end or it halts.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param uarch_cycle_end End micro cycle value.
 /// \param uarch_break_reason Receives reason for returning (can be NULL).
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_break_reason *uarch_break_reason);
 
 /// \brief Resets the entire microarchitecture state to pristine values.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_reset_uarch(cm_machine *m);
 
 /// \brief Receives a cmio request.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param cmd Receives the yield command (manual or automatic).
 /// \param reason Receives the yield reason (see below).
 /// \param data Receives the yield data. If NULL, length will still be set without reading any data.
@@ -594,7 +604,7 @@ CM_API cm_error cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint1
     uint64_t *length);
 
 /// \brief Sends a cmio response.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param reason Reason for sending the response.
 /// \param data Response data to send.
 /// \param length Length of response data.
@@ -608,7 +618,7 @@ CM_API cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint
 // ------------------------------------
 
 /// \brief Runs the machine in the microarchitecture for one micro cycle logging all accesses to the state.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param log_type Type of access log to generate.
 /// \param log Receives the state access log as a JSON object in a string,
 /// guaranteed to remain valid only until the next CM_API function is called from the same thread.
@@ -616,7 +626,7 @@ CM_API cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint
 CM_API cm_error cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **log);
 
 /// \brief Resets the entire microarchitecture state to pristine values logging all accesses to the state.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param log_type Type of access log to generate.
 /// \param log Receives the state access log as a JSON object in a string,
 /// guaranteed to remain valid only until the next CM_API function is called from the same thread.
@@ -624,7 +634,7 @@ CM_API cm_error cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **
 CM_API cm_error cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char **log);
 
 /// \brief Sends a cmio response logging all accesses to the state.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param reason Reason for sending the response.
 /// \param data Response data to send.
 /// \param length Length of response data.
@@ -669,14 +679,14 @@ CM_API cm_error cm_verify_send_cmio_response(uint16_t reason, const uint8_t *dat
 // ------------------------------------
 
 /// \brief Verifies integrity of Merkle tree against current machine state.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param result True if tree is self-consistent, false otherwise.
 /// \returns 0 for success, non zero code for error.
 /// \details This method is used only for emulator internal tests.
 CM_API cm_error cm_verify_merkle_tree(cm_machine *m, bool *result);
 
 /// \brief Verify integrity of dirty page maps.
-/// \param m Pointer to valid machine instance.
+/// \param m Pointer to a valid machine handle.
 /// \param result True if dirty page maps are consistent, false otherwise.
 /// \returns 0 for success, non zero code for error.
 /// \details This method is used only for emulator internal tests.

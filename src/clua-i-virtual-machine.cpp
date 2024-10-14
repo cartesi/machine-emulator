@@ -433,6 +433,18 @@ static int machine_obj_index_rollback(lua_State *L) {
     return 0;
 }
 
+/// \brief This is the machine:destroy() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_destroy(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    if (cm_destroy_machine(m.get()) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    cm_release_machine(m.get());
+    m.release();
+    return 0;
+}
+
 /// \brief This is the machine:receive_cmio_request() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_receive_cmio_request(lua_State *L) {
@@ -522,6 +534,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"snapshot", machine_obj_index_snapshot},
     {"commit", machine_obj_index_commit},
     {"rollback", machine_obj_index_rollback},
+    {"destroy", machine_obj_index_destroy},
     {"read_uarch_halt_flag", machine_obj_index_read_uarch_halt_flag},
     {"set_uarch_halt_flag", machine_obj_index_set_uarch_halt_flag},
     {"get_memory_ranges", machine_obj_index_get_memory_ranges},

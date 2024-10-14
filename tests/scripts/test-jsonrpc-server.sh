@@ -31,7 +31,6 @@ tests=(
     "$cartesi_machine_tests --remote-address=$server_address --test-path=\"$test_path\" --test='.*' run"
     "$lua $script_dir/../lua/machine-bind.lua jsonrpc --remote-address=$server_address"
     "$lua $script_dir/../lua/machine-test.lua jsonrpc --remote-address=$server_address"
-    "$cartesi_machine --remote-address=$server_address --remote-shutdown"
     "$lua $script_dir/../lua/test-jsonrpc-fork.lua --remote-address=$server_address"
 )
 

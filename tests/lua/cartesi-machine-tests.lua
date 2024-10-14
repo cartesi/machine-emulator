@@ -604,19 +604,10 @@ local function run_machine_with_uarch(machine, ctx, max_mcycle)
 end
 
 local function connect()
-    local remote_stub = protocol.stub(remote_address)
+    local remote = protocol.connect(remote_address) -- server will be shutdown when remote is collected
     local version =
-        assert(remote_stub.get_version(), "could not connect to remote cartesi machine at " .. remote_address)
-    local shutdown = function()
-        remote_stub.shutdown()
-    end
-    local mt = {
-        __gc = function()
-            pcall(shutdown)
-        end,
-    }
-    setmetatable(cleanup, mt)
-    return remote_stub, version
+        assert(remote.get_server_version(), "could not connect to remote cartesi machine at " .. remote_address)
+    return remote, version
 end
 
 local function build_machine(ram_image)

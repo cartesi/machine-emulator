@@ -29,7 +29,6 @@ server_address=127.0.0.1:6010
 
 tests=(
     "$lua $script_dir/../lua/cmio-test.lua jsonrpc --remote-address=$server_address"
-    "$lua $script_dir/../lua/cmio-test.lua local"
 )
 
 is_server_running () {
@@ -81,3 +80,6 @@ do
         exit $retcode
     fi
 done
+
+eval "$lua $script_dir/../lua/cmio-test.lua local"
+

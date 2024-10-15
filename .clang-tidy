@@ -14,7 +14,6 @@ Checks: >-
   -cppcoreguidelines-pro-type-vararg,
   -cppcoreguidelines-avoid-c-arrays,
   -cppcoreguidelines-macro-to-enum,
-  -cppcoreguidelines-use-default-member-init,
   google*,
   -google-explicit-constructor,
   -google-build-using-namespace,

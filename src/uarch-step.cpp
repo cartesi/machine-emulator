@@ -726,7 +726,7 @@ static inline void executeSLLW(UarchState &a, uint32 insn, uint64 pc) {
     uint8 rs2 = operandRs2(insn);
     uint32 rs1val = uint32(readX(a, rs1));
     uint32 rs2val = uint32(readX(a, rs2));
-    int32 rdval = int32(uint32ShiftLeft(uint32(rs1val), rs2val));
+    int32 rdval = int32(uint32ShiftLeft(rs1val, rs2val));
     if (rd != 0) {
         writeX(a, rd, int32ToUint64(rdval));
     }

@@ -2780,8 +2780,7 @@ static FORCE_INLINE execute_status execute_MULH(STATE_ACCESS &a, uint64_t &pc, u
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         auto srs1 = static_cast<int64_t>(rs1);
         auto srs2 = static_cast<int64_t>(rs2);
-        return static_cast<uint64_t>(
-            static_cast<int64_t>((static_cast<int128_t>(srs1) * static_cast<int64_t>(srs2)) >> 64));
+        return static_cast<uint64_t>(static_cast<int64_t>((static_cast<int128_t>(srs1) * srs2) >> 64));
     });
 }
 

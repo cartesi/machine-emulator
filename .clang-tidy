@@ -50,7 +50,6 @@ Checks: >-
   -readability-duplicate-include,
   -readability-avoid-nested-conditional-operator,
   -readability-static-accessed-through-instance,
-  -readability-redundant-casting,
 WarningsAsErrors: >-
   boost*,
   bugprone*,

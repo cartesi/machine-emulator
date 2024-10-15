@@ -384,7 +384,7 @@ static NO_INLINE uint64_t raise_exception(STATE_ACCESS &a, uint64_t pc, uint64_t
             // Clear the MCAUSE_INTERRUPT_FLAG bit before shifting
             deleg = (a.read_mideleg() >> (cause & (XLEN - 1))) & 1;
         } else {
-            deleg = (a.read_medeleg() >> cause) & 1;
+            deleg = (a.read_medeleg() >> (cause & (XLEN - 1))) & 1;
         }
     }
 

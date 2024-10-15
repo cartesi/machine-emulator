@@ -46,13 +46,10 @@ struct unpacked_iflags {
 /// \details The machine_state structure contains the entire
 /// state of a Cartesi machine.
 struct machine_state {
-
-    ~machine_state() {
-        ;
-    } // Due to bug in clang++
+    machine_state(void) = default;
+    ~machine_state() = default;
 
     /// \brief No copy or move constructor or assignment
-    machine_state(void) = default;
     machine_state(const machine_state &other) = delete;
     machine_state(machine_state &&other) = delete;
     machine_state &operator=(const machine_state &other) = delete;
@@ -60,69 +57,69 @@ struct machine_state {
 
     // The following state fields are very hot,
     // and are carefully ordered to have better data locality in the interpreter loop.
-    uint64_t mcycle;                     ///< CSR mcycle.
-    uint64_t pc;                         ///< Program counter.
-    std::array<uint64_t, X_REG_COUNT> x; ///< Register file.
-    uint64_t fcsr;                       ///< CSR fcsr.
-    std::array<uint64_t, F_REG_COUNT> f; ///< Floating-point register file.
+    uint64_t mcycle{};                     ///< CSR mcycle.
+    uint64_t pc{};                         ///< Program counter.
+    std::array<uint64_t, X_REG_COUNT> x{}; ///< Register file.
+    uint64_t fcsr{};                       ///< CSR fcsr.
+    std::array<uint64_t, F_REG_COUNT> f{}; ///< Floating-point register file.
 
-    uint64_t icycleinstret; ///< CSR icycleinstret.
+    uint64_t icycleinstret{}; ///< CSR icycleinstret.
 
-    uint64_t mstatus;  ///< CSR mstatus.
-    uint64_t mtvec;    ///< CSR mtvec.
-    uint64_t mscratch; ///< CSR mscratch.
-    uint64_t mepc;     ///< CSR mepc.
-    uint64_t mcause;   ///< CSR mcause.
-    uint64_t mtval;    ///< CSR mtval.
-    uint64_t misa;     ///< CSR misa.
+    uint64_t mstatus{};  ///< CSR mstatus.
+    uint64_t mtvec{};    ///< CSR mtvec.
+    uint64_t mscratch{}; ///< CSR mscratch.
+    uint64_t mepc{};     ///< CSR mepc.
+    uint64_t mcause{};   ///< CSR mcause.
+    uint64_t mtval{};    ///< CSR mtval.
+    uint64_t misa{};     ///< CSR misa.
 
-    uint64_t mie;        ///< CSR mie.
-    uint64_t mip;        ///< CSR mip.
-    uint64_t medeleg;    ///< CSR medeleg.
-    uint64_t mideleg;    ///< CSR mideleg.
-    uint64_t mcounteren; ///< CSR mcounteren.
-    uint64_t menvcfg;    ///< CSR menvcfg.
+    uint64_t mie{};        ///< CSR mie.
+    uint64_t mip{};        ///< CSR mip.
+    uint64_t medeleg{};    ///< CSR medeleg.
+    uint64_t mideleg{};    ///< CSR mideleg.
+    uint64_t mcounteren{}; ///< CSR mcounteren.
+    uint64_t menvcfg{};    ///< CSR menvcfg.
 
-    uint64_t stvec;      ///< CSR stvec.
-    uint64_t sscratch;   ///< CSR sscratch.
-    uint64_t sepc;       ///< CSR sepc.
-    uint64_t scause;     ///< CSR scause.
-    uint64_t stval;      ///< CSR stval.
-    uint64_t satp;       ///< CSR satp.
-    uint64_t scounteren; ///< CSR scounteren.
-    uint64_t senvcfg;    ///< CSR senvcfg.
+    uint64_t stvec{};      ///< CSR stvec.
+    uint64_t sscratch{};   ///< CSR sscratch.
+    uint64_t sepc{};       ///< CSR sepc.
+    uint64_t scause{};     ///< CSR scause.
+    uint64_t stval{};      ///< CSR stval.
+    uint64_t satp{};       ///< CSR satp.
+    uint64_t scounteren{}; ///< CSR scounteren.
+    uint64_t senvcfg{};    ///< CSR senvcfg.
 
     // Cartesi-specific state
-    uint64_t ilrsc;  ///< Cartesi-specific CSR ilrsc (For LR/SC instructions).
-    uint64_t iunrep; ///< Cartesi-specific CSR iunrep
+    uint64_t ilrsc{};  ///< Cartesi-specific CSR ilrsc (For LR/SC instructions).
+    uint64_t iunrep{}; ///< Cartesi-specific CSR iunrep
 
-    unpacked_iflags iflags; ///< Cartesi-specific unpacked CSR iflags.
+    unpacked_iflags iflags{}; ///< Cartesi-specific unpacked CSR iflags.
 
     /// \brief CLINT state
     struct {
-        uint64_t mtimecmp; ///< CSR mtimecmp.
+        uint64_t mtimecmp{}; ///< CSR mtimecmp.
     } clint;
 
     /// \brief PLIC state
     struct {
-        uint64_t girqpend; ///< CSR girqpend (global interrupts pending).
-        uint64_t girqsrvd; ///< CSR girqsrvd (global interrupts served).
+        uint64_t girqpend{}; ///< CSR girqpend (global interrupts pending).
+        uint64_t girqsrvd{}; ///< CSR girqsrvd (global interrupts served).
     } plic;
 
     /// \brief TLB state
-    shadow_tlb_state tlb;
+    shadow_tlb_state tlb{};
 
     /// \brief HTIF state
     struct {
-        uint64_t tohost;   ///< CSR tohost.
-        uint64_t fromhost; ///< CSR fromhost.
-        uint64_t ihalt;    ///< CSR ihalt.
-        uint64_t iconsole; ///< CSR iconsole.
-        uint64_t iyield;   ///< CSR iyield.
+        uint64_t tohost{};   ///< CSR tohost.
+        uint64_t fromhost{}; ///< CSR fromhost.
+        uint64_t ihalt{};    ///< CSR ihalt.
+        uint64_t iconsole{}; ///< CSR iconsole.
+        uint64_t iyield{};   ///< CSR iyield.
     } htif;
 
     /// Soft yield
-    bool soft_yield;
+    bool soft_yield{};
 
     /// Map of physical memory ranges
     boost::container::static_vector<pma_entry, PMA_MAX> pmas;

@@ -29,21 +29,19 @@
 namespace cartesi {
 
 struct uarch_state {
-    ~uarch_state() {
-        ;
-    }
+    uarch_state(void) = default;
+    ~uarch_state() = default;
 
     /// \brief No copy or move constructor or assignment
-    uarch_state(void) = default;
     uarch_state(const uarch_state &other) = delete;
     uarch_state(uarch_state &&other) = delete;
     uarch_state &operator=(const uarch_state &other) = delete;
     uarch_state &operator=(uarch_state &&other) = delete;
 
-    uint64_t pc;                               ///< Program counter.
-    std::array<uint64_t, UARCH_X_REG_COUNT> x; ///< Register file.
-    uint64_t cycle;                            ///< Cycles counter
-    bool halt_flag;
+    uint64_t pc{};                               ///< Program counter.
+    std::array<uint64_t, UARCH_X_REG_COUNT> x{}; ///< Register file.
+    uint64_t cycle{};                            ///< Cycles counter
+    bool halt_flag{};
     pma_entry shadow_state; ///< Shadow uarch state
     pma_entry ram;          ///< Memory range for micro RAM
     pma_entry empty_pma;    ///< Empty range fallback

@@ -44,9 +44,7 @@ void clua_dumpstack(lua_State *L);
 
 namespace detail {
 template <size_t N, std::size_t... I>
-constexpr auto clua_make_luaL_Reg_array_impl(
-    luaL_Reg const (&vec)[N], // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
-    std::index_sequence<I...>) noexcept {
+constexpr auto clua_make_luaL_Reg_array_impl(luaL_Reg const (&vec)[N], std::index_sequence<I...>) noexcept {
     return std::array<luaL_Reg, N + 1>{{vec[I]..., {nullptr, nullptr}}};
 }
 } // namespace detail
@@ -68,8 +66,7 @@ const char *clua_rawname(void) {
 /// \param N number of Regs
 /// \param regs C array with Regs
 template <size_t N>
-constexpr auto clua_make_luaL_Reg_array(
-    luaL_Reg const (&vec)[N]) noexcept { // NOLINT(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
+constexpr auto clua_make_luaL_Reg_array(luaL_Reg const (&vec)[N]) noexcept {
     return detail::clua_make_luaL_Reg_array_impl(vec, std::make_index_sequence<N>{});
 }
 

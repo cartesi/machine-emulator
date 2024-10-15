@@ -128,6 +128,7 @@ static void get_word_hash(hasher_type &h, const unsigned char *word, int log2_wo
 /// \param log2_word_size Log<sub>2</sub> of word size
 /// \returns Merkle hash of leaf data
 static hash_type get_leaf_hash(hasher_type &h, const unsigned char *leaf_data, int log2_leaf_size, int log2_word_size) {
+    assert(log2_word_size >= 1);
     assert(log2_leaf_size >= log2_word_size);
     if (log2_leaf_size > log2_word_size) {
         hash_type left = get_leaf_hash(h, leaf_data, log2_leaf_size - 1, log2_word_size);

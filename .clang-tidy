@@ -16,7 +16,6 @@ Checks: >-
   -cppcoreguidelines-macro-to-enum,
   google*,
   -google-build-using-namespace,
-  -google-runtime-int,
   misc*,
   -misc-no-recursion,
   -misc-non-private-member-variables-in-classes,

@@ -116,8 +116,8 @@ struct tty_state {
     std::array<char, TTY_BUF_SIZE> buf{}; // Characters in console input buffer
     intptr_t buf_pos{};
     intptr_t buf_len{};
-    unsigned short cols{TTY_DEFAULT_COLS};
-    unsigned short rows{TTY_DEFAULT_ROWS};
+    uint16_t cols{TTY_DEFAULT_COLS};
+    uint16_t rows{TTY_DEFAULT_ROWS};
 #ifdef HAVE_TERMIOS
     int ttyfd{-1};
     termios oldtty{};

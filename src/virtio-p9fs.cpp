@@ -408,7 +408,7 @@ static int p9_open_flags_to_host(uint32_t flags) {
     return oflags;
 }
 
-static short p9_lock_type_to_host(uint8_t type) {
+static int16_t p9_lock_type_to_host(uint8_t type) {
     switch (type) {
         case P9_LOCK_TYPE_RDLCK:
             return F_RDLCK;
@@ -421,7 +421,7 @@ static short p9_lock_type_to_host(uint8_t type) {
     }
 }
 
-static uint8_t host_lock_type_to_p9(short type) {
+static uint8_t host_lock_type_to_p9(int16_t type) {
     switch (type) {
         case F_RDLCK:
             return P9_LOCK_TYPE_RDLCK;
@@ -997,7 +997,7 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&mmsg, uint16_t tag) {
         if (mask & P9_SETATTR_ATIME) {
             if (mask & P9_SETATTR_ATIME_SET) {
                 ts[0].tv_sec = static_cast<time_t>(atime_sec);
-                ts[0].tv_nsec = static_cast<long>(atime_nsec);
+                ts[0].tv_nsec = static_cast<int64_t>(atime_nsec);
             } else {
                 ts[0].tv_sec = 0;
                 ts[0].tv_nsec = UTIME_NOW;
@@ -1009,7 +1009,7 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&mmsg, uint16_t tag) {
         if (mask & P9_SETATTR_MTIME) {
             if (mask & P9_SETATTR_MTIME_SET) {
                 ts[1].tv_sec = static_cast<time_t>(mtime_sec);
-                ts[1].tv_nsec = static_cast<long>(mtime_nsec);
+                ts[1].tv_nsec = static_cast<int64_t>(mtime_nsec);
             } else {
                 ts[1].tv_sec = 0;
                 ts[1].tv_nsec = UTIME_NOW;
@@ -1292,7 +1292,7 @@ bool virtio_p9fs_device::op_readdir(virtq_unserializer &&mmsg, uint16_t tag) {
     if (offset == 0) {
         rewinddir(dirp);
     } else {
-        seekdir(dirp, static_cast<long>(offset));
+        seekdir(dirp, static_cast<int64_t>(offset));
     }
     // Traverse directory entries
     while (true) {
@@ -1315,7 +1315,7 @@ bool virtio_p9fs_device::op_readdir(virtq_unserializer &&mmsg, uint16_t tag) {
             break;
         }
         // Get entry offset
-        const long entry_off = telldir(dirp);
+        const int64_t entry_off = telldir(dirp);
         if (entry_off < 0) {
             if (first_entry) {
                 return send_error(msg, tag, host_errno_to_p9(errno));

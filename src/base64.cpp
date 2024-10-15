@@ -47,7 +47,7 @@ static size_t b64encode(uint8_t c, uint8_t *input, size_t size, std::ostringstre
     input[size++] = c;
     if (size == 3) {
         uint8_t code[4];
-        unsigned long value = 0;
+        uint64_t value = 0;
         value += input[0];
         value <<= 8;
         value += input[1];
@@ -71,7 +71,7 @@ static size_t b64encode(uint8_t c, uint8_t *input, size_t size, std::ostringstre
 // Result, if any, is appended to buffer.
 // Returns 0.
 static size_t b64pad(const uint8_t *input, size_t size, std::ostringstream &sout) {
-    unsigned long value = 0;
+    uint64_t value = 0;
     uint8_t code[4] = {'=', '=', '=', '='};
     switch (size) {
         case 1:

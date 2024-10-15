@@ -250,12 +250,7 @@ static void init_tlb_entry(machine &m, uint64_t eidx) {
     tlbce.pma_index = TLB_INVALID_PMA;
 }
 
-machine::machine(const machine_config &c, const machine_runtime_config &r) :
-    m_s{},
-    m_t{},
-    m_c{c},
-    m_uarch{c.uarch},
-    m_r{r} {
+machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c{c}, m_uarch{c.uarch}, m_r{r} {
 
     if (m_c.processor.marchid == UINT64_C(-1)) {
         m_c.processor.marchid = MARCHID_INIT;

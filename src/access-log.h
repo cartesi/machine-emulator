@@ -209,14 +209,14 @@ public:
     }
 
 private:
-    access_type m_type{0};                                 ///< Type of access
-    uint64_t m_address{0};                                 ///< Address of access
-    int m_log2_size{0};                                    ///< Log2 of size of access
-    std::optional<access_data> m_read{};                   ///< Data before access
-    hash_type m_read_hash{};                               ///< Hash of data before access
-    std::optional<access_data> m_written{};                ///< Written data
-    std::optional<hash_type> m_written_hash{};             ///< Hash of written data
-    std::optional<sibling_hashes_type> m_sibling_hashes{}; ///< Hashes of siblings in path from address to root
+    access_type m_type{0};                               ///< Type of access
+    uint64_t m_address{0};                               ///< Address of access
+    int m_log2_size{0};                                  ///< Log2 of size of access
+    std::optional<access_data> m_read;                   ///< Data before access
+    hash_type m_read_hash{};                             ///< Hash of data before access
+    std::optional<access_data> m_written;                ///< Written data
+    std::optional<hash_type> m_written_hash;             ///< Hash of written data
+    std::optional<sibling_hashes_type> m_sibling_hashes; ///< Hashes of siblings in path from address to root
 };
 
 /// \brief Log of state accesses
@@ -253,10 +253,10 @@ public:
     };
 
 private:
-    std::vector<access> m_accesses{};       ///< List of all accesses
-    std::vector<bracket_note> m_brackets{}; ///< Begin/End annotations
-    std::vector<std::string> m_notes{};     ///< Per-access annotations
-    type m_log_type;                        ///< Log type
+    std::vector<access> m_accesses;       ///< List of all accesses
+    std::vector<bracket_note> m_brackets; ///< Begin/End annotations
+    std::vector<std::string> m_notes;     ///< Per-access annotations
+    type m_log_type;                      ///< Log type
 
 public:
     explicit access_log(type log_type) : m_log_type(log_type) {

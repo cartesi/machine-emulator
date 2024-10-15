@@ -37,7 +37,6 @@ Checks: >-
   -readability-identifier-length,
   -readability-magic-numbers,
   -readability-named-parameter,
-  -readability-redundant-member-init,
   -readability-avoid-return-with-void-value,
   -readability-redundant-inline-specifier,
   -readability-duplicate-include,

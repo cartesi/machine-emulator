@@ -33,7 +33,7 @@ namespace cartesi {
 
 /// Result of a fork
 struct fork_result final {
-    std::string address{};
+    std::string address;
     uint32_t pid{};
 };
 
@@ -63,7 +63,7 @@ public:
 
     boost::asio::io_context m_ioc{1};         // The io_context is required for all I/O
     boost::beast::tcp_stream m_stream{m_ioc}; // TCP stream for keep alive connections
-    boost::container::static_vector<std::string, 2> m_address{};
+    boost::container::static_vector<std::string, 2> m_address;
     bool m_detach_server{};
 };
 

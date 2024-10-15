@@ -35,7 +35,7 @@ enum class bracket_type {
 struct bracket_note {                       // NOLINT(bugprone-exception-escape)
     bracket_type type{bracket_type::begin}; ///< Bracket type
     uint64_t where{0};                      ///< Where it points to in the log
-    std::string text{};                     ///< Note text
+    std::string text;                       ///< Note text
 };
 
 } // namespace cartesi

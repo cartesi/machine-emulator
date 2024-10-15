@@ -56,8 +56,7 @@ public:
     /// \param initial_hash Initial root hash
     explicit replay_state_access(const access_log &log, const hash_type &initial_hash) :
         m_accesses(log.get_accesses()),
-        m_root_hash{initial_hash},
-        m_hasher{} {
+        m_root_hash{initial_hash} {
         if (m_accesses.empty()) {
             throw std::invalid_argument{"the access log has no accesses"};
         }

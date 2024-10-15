@@ -34,7 +34,7 @@ const pma_entry::flags ram_flags{
     PMA_ISTART_DID::memory // DID
 };
 
-uarch_machine::uarch_machine(uarch_config c) : m_s{}, m_c{c} {
+uarch_machine::uarch_machine(uarch_config c) : m_c{c} {
     m_s.pc = c.processor.pc;
     m_s.cycle = c.processor.cycle;
     m_s.halt_flag = c.processor.halt_flag;

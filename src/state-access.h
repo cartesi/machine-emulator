@@ -573,7 +573,7 @@ private:
     }
 
     template <TLB_entry_type ETYPE, typename T>
-    inline bool do_translate_vaddr_via_tlb(uint64_t vaddr, unsigned char **phptr) {
+    bool do_translate_vaddr_via_tlb(uint64_t vaddr, unsigned char **phptr) {
         const uint64_t eidx = tlb_get_entry_index(vaddr);
         const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
         if (unlikely(!tlb_is_hit<T>(tlbhe.vaddr_page, vaddr))) {
@@ -584,7 +584,7 @@ private:
     }
 
     template <TLB_entry_type ETYPE, typename T>
-    inline bool do_read_memory_word_via_tlb(uint64_t vaddr, T *pval) {
+    bool do_read_memory_word_via_tlb(uint64_t vaddr, T *pval) {
         const uint64_t eidx = tlb_get_entry_index(vaddr);
         const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
         if (unlikely(!tlb_is_hit<T>(tlbhe.vaddr_page, vaddr))) {
@@ -596,7 +596,7 @@ private:
     }
 
     template <TLB_entry_type ETYPE, typename T>
-    inline bool do_write_memory_word_via_tlb(uint64_t vaddr, T val) {
+    bool do_write_memory_word_via_tlb(uint64_t vaddr, T val) {
         const uint64_t eidx = tlb_get_entry_index(vaddr);
         const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
         if (unlikely(!tlb_is_hit<T>(tlbhe.vaddr_page, vaddr))) {

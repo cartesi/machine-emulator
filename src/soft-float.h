@@ -86,7 +86,7 @@ struct make_long_uint<uint64_t> {
 /// \param plow is used to store the high bits of the result.
 /// \returns The high bits of the result.
 template <typename UINT>
-static inline UINT mul_u(UINT *plow, UINT a, UINT b) {
+static UINT mul_u(UINT *plow, UINT a, UINT b) {
     using ULONG = typename make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
     const ULONG r = static_cast<ULONG>(a) * static_cast<ULONG>(b);
@@ -98,7 +98,7 @@ static inline UINT mul_u(UINT *plow, UINT a, UINT b) {
 /// \param pr is used to store the remainder.
 /// \returns the quotient.
 template <typename UINT>
-static inline UINT divrem_u(UINT *pr, UINT ah, UINT al, UINT bl) {
+static UINT divrem_u(UINT *pr, UINT ah, UINT al, UINT bl) {
     using ULONG = typename make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
     const ULONG a = (static_cast<ULONG>(ah) << UINT_SIZE) | al;
@@ -120,7 +120,7 @@ static inline UINT divrem_u(UINT *pr, UINT ah, UINT al, UINT bl) {
 /// \param pr is used to store the result.
 /// \returns true if not an exact square.
 template <typename UINT>
-static inline bool sqrtrem_u(UINT *pr, UINT ah, UINT al) {
+static bool sqrtrem_u(UINT *pr, UINT ah, UINT al) {
     using ULONG = typename make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
     int l = 0;
@@ -180,20 +180,20 @@ struct i_sfloat {
     };
 
     /// \brief Packs a float to its binary representation.
-    static inline F_UINT pack(uint32_t a_sign, uint32_t a_exp, F_UINT a_mant) {
+    static F_UINT pack(uint32_t a_sign, uint32_t a_exp, F_UINT a_mant) {
         return (static_cast<F_UINT>(a_sign) << (F_SIZE - 1)) | (static_cast<F_UINT>(a_exp) << MANT_SIZE) |
             (a_mant & MANT_MASK);
     }
 
     /// \brief Unpacks a float from its binary representation.
-    static inline F_UINT unpack(uint32_t *pa_sign, int32_t *pa_exp, F_UINT a) {
+    static F_UINT unpack(uint32_t *pa_sign, int32_t *pa_exp, F_UINT a) {
         *pa_sign = a >> (F_SIZE - 1);
         *pa_exp = (a >> MANT_SIZE) & EXP_MASK;
         return a & MANT_MASK;
     }
 
     /// \brief Right shift that takes rounding in account, used for adjust mantissa.
-    static inline F_UINT mant_rshift_rnd(F_UINT a, int d) {
+    static F_UINT mant_rshift_rnd(F_UINT a, int d) {
         if (d != 0) {
             if (d >= F_SIZE) {
                 return (a != 0);
@@ -206,7 +206,7 @@ struct i_sfloat {
     }
 
     /// \brief Normalizes mantissa of a subnormal float.
-    static inline F_UINT mant_normalize_subnormal(int32_t *pa_exp, F_UINT a_mant) {
+    static F_UINT mant_normalize_subnormal(int32_t *pa_exp, F_UINT a_mant) {
         const int shift = MANT_SIZE - ((F_SIZE - 1 - clz(a_mant)));
         *pa_exp = 1 - shift;
         return a_mant << shift;
@@ -214,7 +214,7 @@ struct i_sfloat {
 
     /// \brief Packs a float to its final binary representation, rounding as necessary.
     /// \details a_mant is considered to have its MSB at F_SIZE - 2 bits
-    static inline F_UINT round_pack(uint32_t a_sign, int a_exp, F_UINT a_mant, FRM_modes rm, uint32_t *pfflags) {
+    static F_UINT round_pack(uint32_t a_sign, int a_exp, F_UINT a_mant, FRM_modes rm, uint32_t *pfflags) {
         uint32_t addend = 0;
         switch (rm) {
             case FRM_RNE:
@@ -279,7 +279,7 @@ struct i_sfloat {
 
     /// \brief Normalizes a float to its final binary representation, shifting and rounding as necessary.
     /// \details a_mant is considered to have at most F_SIZE - 1 bits
-    static inline F_UINT normalize(uint32_t a_sign, int a_exp, F_UINT a_mant, FRM_modes rm, uint32_t *pfflags) {
+    static F_UINT normalize(uint32_t a_sign, int a_exp, F_UINT a_mant, FRM_modes rm, uint32_t *pfflags) {
         const int shift = clz(a_mant) - (F_SIZE - 1 - IMANT_SIZE);
         assert(shift >= 0); // LCOV_EXCL_LINE
         a_exp -= shift;
@@ -289,7 +289,7 @@ struct i_sfloat {
 
     /// \brief Same as normalize() but with a double word mantissa.
     /// \details a_mant1 is considered to have at most F_SIZE - 1 bits
-    static inline F_UINT normalize2(uint32_t a_sign, int a_exp, F_UINT a_mant1, F_UINT a_mant0, FRM_modes rm,
+    static F_UINT normalize2(uint32_t a_sign, int a_exp, F_UINT a_mant1, F_UINT a_mant0, FRM_modes rm,
         uint32_t *pfflags) {
         int l = 0;
         if (a_mant1 == 0) {
@@ -313,14 +313,14 @@ struct i_sfloat {
     }
 
     /// \brief Checks if a float is a signaling-NaN.
-    static inline bool issignan(F_UINT a) {
+    static bool issignan(F_UINT a) {
         const uint32_t a_exp1 = (a >> (MANT_SIZE - 1)) & ((1 << (EXP_SIZE + 1)) - 1);
         const F_UINT a_mant = a & MANT_MASK;
         return a_exp1 == (2 * EXP_MASK) && a_mant != 0;
     }
 
     /// \brief Checks if a float is a NaN.
-    static inline bool isnan(F_UINT a) {
+    static bool isnan(F_UINT a) {
         const uint32_t a_exp = (a >> MANT_SIZE) & EXP_MASK;
         const F_UINT a_mant = a & MANT_MASK;
         return a_exp == EXP_MASK && a_mant != 0;
@@ -665,7 +665,7 @@ struct i_sfloat {
     }
 
     /// \brief Min/max operation for NaN float.
-    static inline F_UINT min_max_nan(F_UINT a, F_UINT b, uint32_t *pfflags) {
+    static F_UINT min_max_nan(F_UINT a, F_UINT b, uint32_t *pfflags) {
         if (issignan(a) || issignan(b)) {
             *pfflags |= FFLAGS_NV_MASK;
         }

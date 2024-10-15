@@ -437,10 +437,10 @@ static int machine_obj_index_rollback(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_destroy(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    if (cm_destroy_machine(m.get()) != 0) {
+    if (cm_destroy(m.get()) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    cm_release_machine(m.get());
+    cm_release(m.get());
     m.release();
     return 0;
 }

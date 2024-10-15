@@ -265,8 +265,7 @@ cm_error cm_jsonrpc_create_machine(const cm_jsonrpc_connection *con, int detach_
     }
     const auto *cpp_con = convert_from_c(con);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    *new_machine =
-        reinterpret_cast<cm_machine *>(new cartesi::jsonrpc_virtual_machine(*cpp_con, detach_machine, c, r));
+    *new_machine = reinterpret_cast<cm_machine *>(new cartesi::jsonrpc_virtual_machine(*cpp_con, detach_machine, c, r));
     return cm_result_success();
 } catch (...) {
     if (new_machine) {
@@ -288,8 +287,8 @@ cm_error cm_jsonrpc_load_machine(const cm_jsonrpc_connection *con, int detach_ma
         r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
     }
     const auto *cpp_con = convert_from_c(con);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     *new_machine =
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         reinterpret_cast<cm_machine *>(new cartesi::jsonrpc_virtual_machine(*cpp_con, detach_machine, dir, r));
     return cm_result_success();
 } catch (...) {

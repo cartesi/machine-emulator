@@ -339,32 +339,32 @@ CM_API cm_error cm_get_reg_address(cm_reg reg, uint64_t *val);
 /// string (can be NULL).
 /// \param new_machine Receives the pointer to new machine instance.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_create_machine(const char *config, const char *runtime_config, cm_machine **new_machine);
+CM_API cm_error cm_create(const char *config, const char *runtime_config, cm_machine **new_machine);
 
 /// \brief Loads a new machine instance from a previously stored directory.
 /// \param dir Directory where previous machine is stored.
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \param new_machine Receives the pointer to new machine instance.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_load_machine(const char *dir, const char *runtime_config, cm_machine **new_machine);
+CM_API cm_error cm_load(const char *dir, const char *runtime_config, cm_machine **new_machine);
 
 /// \brief Releases handle to a machine.
 /// \param m Pointer to the existing machine handle (can be NULL).
 /// \details Local machines are never detached and are always destroyed immediately
 /// when released. If machine is remote and not detached, this function
-/// implicitly calls cm_destroy_machine() to destroy the remote machine. This
+/// implicitly calls cm_destroy() to destroy the remote machine. This
 /// might fail silently. To know if the destruction of a remote machine was
-/// successful, call cm_destroy_machine() explicitly before calling cm_release_machine().
+/// successful, call cm_destroy() explicitly before calling cm_release().
 /// The machine handle must not be used after this call.
-CM_API void cm_release_machine(cm_machine *m);
+CM_API void cm_release(cm_machine *m);
 
 /// \brief Destroy machine, releasing its resources but preserving a valid handle.
 /// \param m Pointer to the existing machine handle (can be NULL).
 /// \returns 0 for success, non zero code for error.
 /// \details Local machines are always destroyed sucessfully.
 /// In contrast, the attempt to destroy a remote machine might fail.
-/// The handle itself must still be released with cm_release_machine().
-CM_API cm_error cm_destroy_machine(cm_machine *m);
+/// The handle itself must still be released with cm_release().
+CM_API cm_error cm_destroy(cm_machine *m);
 
 /// \brief Stores a machine instance to a directory, serializing its entire state.
 /// \param m Pointer to a valid machine handle.

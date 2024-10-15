@@ -284,8 +284,7 @@ static int mod_spawn_server(lua_State *L) {
     auto &managed_jsonrpc_connection = clua_push_to(L, clua_managed_cm_ptr<cm_jsonrpc_connection>(nullptr));
     const char *bound_address = nullptr;
     int32_t pid = 0;
-    if (cm_jsonrpc_spawn_server(address, detach_server, &managed_jsonrpc_connection.get(), &bound_address, &pid) !=
-        0) {
+    if (cm_jsonrpc_spawn_server(address, detach_server, &managed_jsonrpc_connection.get(), &bound_address, &pid) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     // wrap it into its Lua interface

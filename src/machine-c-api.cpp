@@ -149,7 +149,7 @@ cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash) {
 // The C API implementation
 // ----------------------------------------------
 
-cm_error cm_create_machine(const char *config, const char *runtime_config, cm_machine **new_machine) try {
+cm_error cm_create(const char *config, const char *runtime_config, cm_machine **new_machine) try {
     if (config == nullptr) {
         throw std::invalid_argument("invalid machine configuration");
     }
@@ -171,7 +171,7 @@ cm_error cm_create_machine(const char *config, const char *runtime_config, cm_ma
     return cm_result_failure();
 }
 
-cm_error cm_load_machine(const char *dir, const char *runtime_config, cm_machine **new_machine) try {
+cm_error cm_load(const char *dir, const char *runtime_config, cm_machine **new_machine) try {
     if (new_machine == nullptr) {
         throw std::invalid_argument("invalid new machine output");
     }
@@ -598,7 +598,7 @@ cm_error cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length,
     return cm_result_failure();
 }
 
-cm_error cm_destroy_machine(cm_machine *m) try {
+cm_error cm_destroy(cm_machine *m) try {
     if (m != nullptr) {
         auto *cpp_machine = convert_from_c(m);
         cpp_machine->destroy();
@@ -608,7 +608,7 @@ cm_error cm_destroy_machine(cm_machine *m) try {
     return cm_result_failure();
 }
 
-void cm_release_machine(cm_machine *m) {
+void cm_release(cm_machine *m) {
     if (m != nullptr) {
         auto *cpp_machine = convert_from_c(m);
         delete cpp_machine;

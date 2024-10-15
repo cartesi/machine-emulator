@@ -108,12 +108,12 @@ static int machine_ctor(lua_State *L) {
     const char *runtime_config = !lua_isnil(L, 3) ? clua_check_json_string(L, 3) : nullptr;
     if (!lua_isstring(L, 2)) {
         const char *config = clua_check_json_string(L, 2);
-        if (cm_create_machine(config, runtime_config, &managed_machine.get()) != 0) {
+        if (cm_create(config, runtime_config, &managed_machine.get()) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
         const char *dir = luaL_checkstring(L, 2);
-        if (cm_load_machine(dir, runtime_config, &managed_machine.get()) != 0) {
+        if (cm_load(dir, runtime_config, &managed_machine.get()) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }

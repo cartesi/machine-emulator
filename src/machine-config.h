@@ -77,13 +77,13 @@ struct processor_config final {
 };
 
 /// \brief RAM state configuration
-struct ram_config final {       // NOLINT(bugprone-exception-escape)
+struct ram_config final {
     uint64_t length{0};         ///< RAM length
     std::string image_filename; ///< RAM image file name
 };
 
 /// \brief DTB state configuration
-struct dtb_config final { // NOLINT(bugprone-exception-escape)
+struct dtb_config final {
     std::string bootargs{
         "quiet earlycon=sbi console=hvc0 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"}; ///< Bootargs to pass
                                                                                            ///< to kernel
@@ -93,7 +93,7 @@ struct dtb_config final { // NOLINT(bugprone-exception-escape)
 };
 
 /// \brief Memory range configuration
-struct memory_range_config final {         // NOLINT(bugprone-exception-escape)
+struct memory_range_config final {
     uint64_t start{0xffffffffffffffffUL};  ///< Memory range start position, default is to auto detect
     uint64_t length{0xffffffffffffffffUL}; ///< Memory range length, default is to auto detect
     bool shared{false};                    ///< Target changes to memory affect image file?
@@ -104,7 +104,7 @@ struct memory_range_config final {         // NOLINT(bugprone-exception-escape)
 using flash_drive_configs = boost::container::static_vector<memory_range_config, FLASH_DRIVE_MAX>;
 
 /// \brief TLB device state configuration
-struct tlb_config final {       // NOLINT(bugprone-exception-escape)
+struct tlb_config final {
     std::string image_filename; ///< TLB image file name
 };
 
@@ -170,19 +170,18 @@ using virtio_device_config = std::variant<virtio_console_config, ///< Console
 using virtio_configs = boost::container::static_vector<virtio_device_config, VIRTIO_DEVICE_MAX>;
 
 /// \brief cmio buffer configuration
-struct cmio_buffer_config final { // NOLINT(bugprone-exception-escape)
-    bool shared{false};           ///< Target changes to memory affect image file?
-    std::string image_filename;   ///< Memory range image file name
+struct cmio_buffer_config final {
+    bool shared{false};         ///< Target changes to memory affect image file?
+    std::string image_filename; ///< Memory range image file name
 };
 
 /// \brief Cmio configuration
-struct cmio_config final {        // NOLINT(bugprone-exception-escape)
+struct cmio_config final {
     cmio_buffer_config rx_buffer; ///< RX buffer configuration
     cmio_buffer_config tx_buffer; ///< TX buffer configuration
 };
 
 /// \brief Machine state configuration
-/// NOLINTNEXTLINE(bugprone-exception-escape)
 struct machine_config final {
     processor_config processor{};    ///< Processor state
     ram_config ram{};                ///< RAM state

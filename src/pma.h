@@ -214,9 +214,9 @@ public:
     /// \brief No copy assignment
     pma_entry &operator=(const pma_entry &) = delete;
     /// \brief Default move constructor
-    pma_entry(pma_entry &&) = default; // NOLINT(bugprone-exception-escape)
+    pma_entry(pma_entry &&) = default;
     /// \brief Default move assignment
-    pma_entry &operator=(pma_entry &&) = default; // NOLINT(bugprone-exception-escape)
+    pma_entry &operator=(pma_entry &&) = default;
     /// \bried Default destructor
     ~pma_entry() = default;
 

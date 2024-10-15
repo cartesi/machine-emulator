@@ -784,7 +784,6 @@ void machine::store(const std::string &dir) const {
     store_pmas(c, dir);
 }
 
-// NOLINTNEXTLINE(modernize-use-equals-default)
 machine::~machine() {
     // Cleanup TTY if console input was enabled
     if (m_c.htif.console_getchar || has_virtio_console()) {

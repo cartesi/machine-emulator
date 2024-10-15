@@ -59,7 +59,6 @@ static inline uint64_t get_word_access_data(const access_data &ad, int offset = 
 }
 
 /// \brief Records an access to the machine state
-/// NOLINTNEXTLINE(bugprone-exception-escape)
 class access {
 
     using hasher_type = machine_merkle_tree::hasher_type;

@@ -113,7 +113,7 @@ static void install_signal_handler(int signum, HANDLER handler) {
     if (sigemptyset(&act.sa_mask) < 0) {
         throw std::system_error{errno, std::generic_category(), "sigemptyset failed"};
     }
-    act.sa_handler = handler; // NOLINT(cppcoreguidelines-pro-type-union-access)
+    act.sa_handler = handler;
     act.sa_flags = SA_RESTART;
     if (sigaction(signum, &act, nullptr) < 0) {
         throw std::system_error{errno, std::generic_category(), "sigaction failed"};

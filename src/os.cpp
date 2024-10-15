@@ -642,7 +642,7 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
     }
 
     // use calloc to improve performance
-    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-prefer-member-initializer)
+    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
     auto host_memory = static_cast<unsigned char *>(std::calloc(1, length));
     if (!host_memory) {
         throw std::runtime_error{"error allocating memory"s};

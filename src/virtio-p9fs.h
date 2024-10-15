@@ -17,7 +17,6 @@
 #ifndef VIRTIO_P9FS_H
 #define VIRTIO_P9FS_H
 
-#include "compiler-defines.h"
 #include "os-features.h"
 
 #ifdef HAVE_POSIX_FS

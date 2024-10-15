@@ -3,7 +3,6 @@ Checks: >-
   bugprone*,
   -bugprone-branch-clone,
   -bugprone-easily-swappable-parameters,
-  -bugprone-unused-return-value,
   cert*,
   clang-analyzer*,
   -clang-analyzer-optin.cplusplus.VirtualCall,

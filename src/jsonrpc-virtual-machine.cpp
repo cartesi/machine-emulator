@@ -90,8 +90,8 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
         const auto socket_remote_endpoint = stream.socket().remote_endpoint(ec);
         if (ec || socket_remote_endpoint != remote_endpoint) {
             // We can silently ignore socket shutdown/close errors from previous connections
-            (void) stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-            (void) stream.socket().close(ec);
+            std::ignore = stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+            std::ignore = stream.socket().close(ec);
         }
     }
 
@@ -187,8 +187,8 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
         if (!keep_alive || !res.keep_alive()) {
             beast::error_code ec;
             // The response was received so we can silently ignore socket shutdown/close errors
-            (void) stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-            (void) stream.socket().close(ec);
+            std::ignore = stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+            std::ignore = stream.socket().close(ec);
         }
 
         // Return response body
@@ -196,8 +196,8 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
     } catch (...) {
         // Close stream socket on errors
         beast::error_code ec;
-        (void) stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-        (void) stream.socket().close(ec);
+        std::ignore = stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+        std::ignore = stream.socket().close(ec);
         // Re-throw exception
         throw;
     }
@@ -280,8 +280,8 @@ jsonrpc_connection::~jsonrpc_connection() {
     // Gracefully close any established keep alive connection
     if (m_stream.socket().is_open()) {
         beast::error_code ec;
-        (void) m_stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-        (void) m_stream.socket().close(ec);
+        std::ignore = m_stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+        std::ignore = m_stream.socket().close(ec);
     }
 }
 

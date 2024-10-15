@@ -237,7 +237,7 @@ struct http_session : std::enable_shared_from_this<http_session> {
 
         // Send a TCP send shutdown.
         beast::error_code ec;
-        (void) stream.socket().shutdown(tcp::socket::shutdown_send, ec);
+        std::ignore = stream.socket().shutdown(tcp::socket::shutdown_send, ec);
 
         // At this point the connection is closed gracefully
     }
@@ -245,8 +245,8 @@ struct http_session : std::enable_shared_from_this<http_session> {
     // Called by HTTP handler to cancel asynchronous operations and close the session
     void close() {
         beast::error_code ec;
-        (void) stream.socket().cancel(ec);
-        (void) stream.socket().close(ec);
+        std::ignore = stream.socket().cancel(ec);
+        std::ignore = stream.socket().close(ec);
     }
 };
 
@@ -287,8 +287,8 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
     void rebind(tcp::acceptor &&new_acceptor) {
         // Stop asynchronous accept and close the acceptor
         beast::error_code ec;
-        (void) acceptor.cancel(ec);
-        (void) acceptor.close(ec);
+        std::ignore = acceptor.cancel(ec);
+        std::ignore = acceptor.close(ec);
         // Replace current acceptor with the new one
         acceptor = std::move(new_acceptor);
         local_endpoint = acceptor.local_endpoint();
@@ -298,10 +298,10 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
     // Stop accepting new connections
     void stop() {
         beast::error_code ec;
-        (void) acceptor.close(ec);
-        (void) acceptor.cancel(ec);
-        (void) signals.cancel(ec);
-        (void) signals.clear(ec);
+        std::ignore = acceptor.close(ec);
+        std::ignore = acceptor.cancel(ec);
+        std::ignore = signals.cancel(ec);
+        std::ignore = signals.clear(ec);
     }
 
     // Close open sessions
@@ -779,7 +779,7 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
         // Note that the parent doesn't need the server that will be used by the child,
         // we can close it.
         beast::error_code ec;
-        (void) acceptor.close(ec);
+        std::ignore = acceptor.close(ec);
         SLOG(trace) << session->handler->local_endpoint << " fork parent";
     } else { // parent and fork() failed
         SLOG(error) << session->handler->local_endpoint << " fork failed (" << err_msg << ")";

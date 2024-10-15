@@ -37,7 +37,6 @@ Checks: >-
   -readability-identifier-length,
   -readability-magic-numbers,
   -readability-named-parameter,
-  -readability-avoid-nested-conditional-operator,
   -readability-static-accessed-through-instance,
 WarningsAsErrors: >-
   boost*,

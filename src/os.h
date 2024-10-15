@@ -108,7 +108,7 @@ struct parallel_for_mutex {
 
 /// \brief Mutex guard for os_parallel_for()
 struct parallel_for_mutex_guard {
-    parallel_for_mutex_guard(const parallel_for_mutex &mutex) : mutex(mutex) {
+    explicit parallel_for_mutex_guard(const parallel_for_mutex &mutex) : mutex(mutex) {
         mutex.lock();
     }
     ~parallel_for_mutex_guard() { // NOLINT(bugprone-exception-escape)

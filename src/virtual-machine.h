@@ -30,8 +30,8 @@ class virtual_machine : public i_virtual_machine {
     machine *m_machine;
 
 public:
-    virtual_machine(const machine_config &c, const machine_runtime_config &r = {});
-    virtual_machine(const std::string &dir, const machine_runtime_config &r = {});
+    explicit virtual_machine(const machine_config &c, const machine_runtime_config &r = {});
+    explicit virtual_machine(const std::string &dir, const machine_runtime_config &r = {});
     virtual_machine(const virtual_machine &other) = delete;
     virtual_machine(virtual_machine &&other) noexcept = delete;
     virtual_machine &operator=(const virtual_machine &other) = delete;

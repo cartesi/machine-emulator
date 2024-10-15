@@ -15,7 +15,6 @@ Checks: >-
   -cppcoreguidelines-avoid-c-arrays,
   -cppcoreguidelines-macro-to-enum,
   google*,
-  -google-explicit-constructor,
   -google-build-using-namespace,
   -google-runtime-int,
   misc*,

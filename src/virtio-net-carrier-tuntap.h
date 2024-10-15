@@ -29,7 +29,7 @@ class virtio_net_carrier_tuntap final : public virtio_net_carrier {
     int m_tapfd = -1;
 
 public:
-    virtio_net_carrier_tuntap(const std::string &tap_name);
+    explicit virtio_net_carrier_tuntap(const std::string &tap_name);
     ~virtio_net_carrier_tuntap() override;
     virtio_net_carrier_tuntap(const virtio_net_carrier_tuntap &other) = delete;
     virtio_net_carrier_tuntap(virtio_net_carrier_tuntap &&other) = delete;

@@ -69,7 +69,7 @@ public:
     std::list<slirp_packet> send_packets;
     std::unordered_set<slirp_timer *> timers;
 
-    virtio_net_carrier_slirp(const cartesi::virtio_net_user_config &config);
+    explicit virtio_net_carrier_slirp(const cartesi::virtio_net_user_config &config);
     ~virtio_net_carrier_slirp() override;
     virtio_net_carrier_slirp(const virtio_net_carrier_slirp &other) = delete;
     virtio_net_carrier_slirp(virtio_net_carrier_slirp &&other) = delete;

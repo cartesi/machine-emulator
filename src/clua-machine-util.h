@@ -63,7 +63,7 @@ public:
 
     explicit clua_managed_cm_ptr(T *ptr) : m_ptr{ptr} {}
 
-    explicit clua_managed_cm_ptr(clua_managed_cm_ptr &&other) noexcept : m_ptr{other.m_ptr} {
+    clua_managed_cm_ptr(clua_managed_cm_ptr &&other) noexcept : m_ptr{other.m_ptr} {
         other.m_ptr = nullptr;
     }
 

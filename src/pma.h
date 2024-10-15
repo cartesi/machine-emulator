@@ -222,7 +222,7 @@ public:
     /// \param description Informative description of PMA entry for use in error messages
     /// \param start Start of range.
     /// \param length Length of range.
-    pma_entry(std::string description, uint64_t start, uint64_t length) :
+    explicit pma_entry(std::string description, uint64_t start, uint64_t length) :
         m_description{std::move(description)},
         m_start{start},
         m_length{length},
@@ -235,7 +235,7 @@ public:
 
     /// \brief Default constructor creates an empty entry spanning an empty range
     /// \param description Informative description of PMA entry for use in error messages
-    pma_entry(std::string description = {}) :
+    explicit pma_entry(std::string description = {}) :
         m_description{std::move(description)},
         m_start{0},
         m_length{0},
@@ -252,7 +252,7 @@ public:
     /// \param length Length of range.
     /// \param memory Memory PMA holding range data
     /// \param peek Function used to extract a page of data from the range
-    pma_entry(std::string description, uint64_t start, uint64_t length, pma_memory &&memory,
+    explicit pma_entry(std::string description, uint64_t start, uint64_t length, pma_memory &&memory,
         pma_peek peek = pma_peek_error) :
         m_description{std::move(description)},
         m_start{start},
@@ -271,7 +271,7 @@ public:
     /// \param length Length of range.
     /// \param device Device PMA controlling range data
     /// \param peek Function used to extract a page of data from the range
-    pma_entry(std::string description, uint64_t start, uint64_t length, pma_device &&device,
+    explicit pma_entry(std::string description, uint64_t start, uint64_t length, pma_device &&device,
         pma_peek peek = pma_peek_error) :
         m_description{std::move(description)},
         m_start{start},

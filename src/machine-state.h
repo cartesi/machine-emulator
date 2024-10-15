@@ -46,7 +46,7 @@ struct unpacked_iflags {
 /// \details The machine_state structure contains the entire
 /// state of a Cartesi machine.
 struct machine_state {
-    machine_state(void) = default;
+    machine_state() = default;
     ~machine_state() = default;
 
     /// \brief No copy or move constructor or assignment
@@ -138,7 +138,7 @@ struct machine_state {
 
     /// \brief Reads the value of the iflags register.
     /// \returns The value of the register.
-    uint64_t read_iflags(void) const {
+    uint64_t read_iflags() const {
         return packed_iflags(iflags.PRV, iflags.X, iflags.Y, iflags.H);
     }
 

@@ -57,7 +57,7 @@ int machine_merkle_tree::set_page_node_map(address_type page_index, tree_node *n
 }
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-machine_merkle_tree::tree_node *machine_merkle_tree::create_node(void) const {
+machine_merkle_tree::tree_node *machine_merkle_tree::create_node() const {
 #ifdef MERKLE_DUMP_STATS
     m_num_nodes++;
 #endif
@@ -190,7 +190,7 @@ void machine_merkle_tree::destroy_merkle_tree(tree_node *node, int log2_size) {
     }
 }
 
-void machine_merkle_tree::destroy_merkle_tree(void) {
+void machine_merkle_tree::destroy_merkle_tree() {
     destroy_merkle_tree(m_root_storage.child[0], get_log2_root_size() - 1);
     destroy_merkle_tree(m_root_storage.child[1], get_log2_root_size() - 1);
     memset(&m_root_storage, 0, sizeof(m_root_storage));
@@ -240,11 +240,11 @@ void machine_merkle_tree::get_inside_page_sibling_hashes(address_type address, i
         0 /* parent hasn't diverted */, 0 /* curr node hasn't diverged */, proof);
 }
 
-void machine_merkle_tree::dump_merkle_tree(void) const {
+void machine_merkle_tree::dump_merkle_tree() const {
     dump_merkle_tree(m_root, 0, get_log2_root_size());
 }
 
-bool machine_merkle_tree::begin_update(void) {
+bool machine_merkle_tree::begin_update() {
     m_merkle_update_fifo.clear();
     return true;
 }
@@ -288,7 +288,7 @@ bool machine_merkle_tree::end_update(hasher_type &h) {
     return true;
 }
 
-machine_merkle_tree::machine_merkle_tree(void) : m_root_storage{}, m_root{&m_root_storage} {
+machine_merkle_tree::machine_merkle_tree() : m_root_storage{}, m_root{&m_root_storage} {
     m_root->hash = get_pristine_hash(get_log2_root_size());
 #ifdef MERKLE_DUMP_STATS
     m_num_nodes = 0;
@@ -311,7 +311,7 @@ void machine_merkle_tree::get_root_hash(hash_type &hash) const {
     hash = m_root->hash;
 }
 
-bool machine_merkle_tree::verify_tree(void) const {
+bool machine_merkle_tree::verify_tree() const {
     hasher_type h;
     return verify_tree(h, m_root, get_log2_root_size());
 }

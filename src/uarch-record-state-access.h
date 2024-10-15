@@ -101,12 +101,12 @@ public:
     ~uarch_record_state_access() = default;
 
     /// \brief Returns const pointer to access log.
-    std::shared_ptr<const access_log> get_log(void) const {
+    std::shared_ptr<const access_log> get_log() const {
         return m_log;
     }
 
     /// \brief Returns pointer to access log.
-    std::shared_ptr<access_log> get_log(void) {
+    std::shared_ptr<access_log> get_log() {
         return m_log;
     }
 
@@ -404,7 +404,7 @@ private:
         throw std::runtime_error("invalid memory write access from microarchitecture");
     }
 
-    void do_reset_state(void) {
+    void do_reset_state() {
         // The pristine uarch state decided at compile time and never changes.
         // We set all uarch registers and RAM to their initial values and
         // log a single write access to the entire uarch memory range.
@@ -449,7 +449,7 @@ private:
 
     /// \brief Returns the image of the entire uarch state
     /// \return access_data containing the image of the current uarch state
-    access_data get_uarch_state_image(void) {
+    access_data get_uarch_state_image() {
         constexpr int uarch_data_len = uint64_t{1} << UARCH_STATE_LOG2_SIZE;
         access_data data(uarch_data_len, 0);
         constexpr auto ram_offset = UARCH_RAM_START_ADDRESS - UARCH_STATE_START_ADDRESS;

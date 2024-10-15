@@ -93,17 +93,17 @@ public:
         m_ptr = ptr;
     }
 
-    T *release(void) noexcept {
+    T *release() noexcept {
         auto *tmp_ptr = m_ptr;
         m_ptr = nullptr;
         return tmp_ptr;
     }
 
-    T *&get(void) noexcept { // return reference to internal ptr
+    T *&get() noexcept { // return reference to internal ptr
         return m_ptr;
     }
 
-    T *get(void) const noexcept {
+    T *get() const noexcept {
         return m_ptr;
     }
 

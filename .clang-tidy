@@ -22,8 +22,6 @@ Checks: >-
   -misc-use-anonymous-namespace,
   -misc-include-cleaner,
   modernize*,
-  -modernize-redundant-void-arg,
-  -modernize-use-default-member-init,
   -modernize-use-nodiscard,
   -modernize-use-trailing-return-type,
   -modernize-avoid-c-arrays,

@@ -47,7 +47,7 @@ public:
     jsonrpc_virtual_machine &operator=(jsonrpc_virtual_machine &&other) noexcept = delete;
     ~jsonrpc_virtual_machine() final;
 
-    jsonrpc_connection_ptr get_connection(void) const;
+    jsonrpc_connection_ptr get_connection() const;
 
     static machine_config get_default_config(const jsonrpc_connection_ptr &con);
 
@@ -63,7 +63,7 @@ public:
     static uint64_t get_reg_address(const jsonrpc_connection_ptr &con, reg r);
 
 private:
-    machine_config do_get_initial_config(void) const override;
+    machine_config do_get_initial_config() const override;
 
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
     void do_store(const std::string &dir) const override;
@@ -74,7 +74,7 @@ private:
     void do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) override;
     void do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) override;
     uint64_t do_translate_virtual_address(uint64_t vaddr) override;
-    void do_reset_uarch(void) override;
+    void do_reset_uarch() override;
     access_log do_log_reset_uarch(const access_log::type &log_type) override;
     void do_get_root_hash(hash_type &hash) const override;
     machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const override;
@@ -84,11 +84,11 @@ private:
     void do_snapshot() override;
     void do_commit() override;
     void do_rollback() override;
-    bool do_verify_dirty_page_maps(void) const override;
+    bool do_verify_dirty_page_maps() const override;
     uint64_t do_read_word(uint64_t address) const override;
-    bool do_verify_merkle_tree(void) const override;
+    bool do_verify_merkle_tree() const override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
-    machine_memory_range_descrs do_get_memory_ranges(void) const override;
+    machine_memory_range_descrs do_get_memory_ranges() const override;
     void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) override;
     access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const access_log::type &log_type) override;

@@ -28,7 +28,7 @@ namespace cartesi {
 
 using namespace std::string_literals;
 
-void pma_memory::release(void) {
+void pma_memory::release() {
     if (m_mmapped) {
         os_unmap_file(m_host_memory, m_length);
         m_mmapped = false;
@@ -132,7 +132,7 @@ pma_memory &pma_memory::operator=(pma_memory &&other) noexcept {
     return *this;
 }
 
-uint64_t pma_entry::get_istart(void) const {
+uint64_t pma_entry::get_istart() const {
     uint64_t istart = m_start;
     istart |= (static_cast<uint64_t>(get_istart_M()) << PMA_ISTART_M_SHIFT);
     istart |= (static_cast<uint64_t>(get_istart_IO()) << PMA_ISTART_IO_SHIFT);
@@ -146,7 +146,7 @@ uint64_t pma_entry::get_istart(void) const {
     return istart;
 }
 
-uint64_t pma_entry::get_ilength(void) const {
+uint64_t pma_entry::get_ilength() const {
     return m_length;
 }
 

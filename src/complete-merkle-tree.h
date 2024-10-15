@@ -69,7 +69,7 @@ public:
 
     /// \brief Returns the tree's root hash
     /// \returns Root hash
-    hash_type get_root_hash(void) const {
+    hash_type get_root_hash() const {
         return get_node_hash(0, get_log2_root_size());
     }
 
@@ -89,7 +89,7 @@ public:
     void push_back(const hash_type &hash);
 
     /// \brief Returns number of leaves in tree
-    address_type size(void) const {
+    address_type size() const {
         return get_level(get_log2_leaf_size()).size();
     };
 
@@ -102,18 +102,18 @@ private:
     static void check_log2_sizes(int log2_root_size, int log2_leaf_size, int log2_word_size);
 
     /// \brief Returns log<sub>2</sub> of size of tree
-    int get_log2_root_size(void) const {
+    int get_log2_root_size() const {
         return m_log2_root_size;
     }
 
     /// \brief Returns log<sub>2</sub> of size of leaf
-    int get_log2_leaf_size(void) const {
+    int get_log2_leaf_size() const {
         return m_log2_leaf_size;
     }
 
     /// \brief Update node hashes when a new set of non-pristine nodes is added
     /// to the leaf level
-    void bubble_up(void);
+    void bubble_up();
 
     ///< \brief Returns hashes at a given level
     ///< \param log2_size Log<sub>2</sub> of size subintended by each

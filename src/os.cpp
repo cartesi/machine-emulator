@@ -143,7 +143,7 @@ static int new_ttyfd(const char *path) {
     return fd;
 }
 
-static int get_ttyfd(void) {
+static int get_ttyfd() {
     char *path{};
     // NOLINTBEGIN(bugprone-assignment-in-if-condition)
     if ((path = ttyname(STDERR_FILENO)) != nullptr) {
@@ -213,7 +213,7 @@ bool os_update_tty_size(tty_state *s) {
     return false;
 }
 
-void os_open_tty(void) {
+void os_open_tty() {
 #ifdef HAVE_TTY
     auto *s = get_state();
     if (s->initialized) {
@@ -319,7 +319,7 @@ void os_open_tty(void) {
 #endif // HAVE_TTY
 }
 
-void os_close_tty(void) {
+void os_close_tty() {
 #ifdef HAVE_TTY
 #ifdef HAVE_TERMIOS
     auto *s = get_state();
@@ -461,7 +461,7 @@ bool os_poll_tty(uint64_t timeout_us) {
 #endif // _WIN32
 }
 
-int os_getchar(void) {
+int os_getchar() {
 #ifdef HAVE_TTY
     auto *s = get_state();
     if (!s->initialized) {

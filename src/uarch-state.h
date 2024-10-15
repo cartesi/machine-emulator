@@ -29,7 +29,7 @@
 namespace cartesi {
 
 struct uarch_state {
-    uarch_state(void) = default;
+    uarch_state() = default;
     ~uarch_state() = default;
 
     /// \brief No copy or move constructor or assignment

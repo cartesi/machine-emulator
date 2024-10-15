@@ -121,7 +121,7 @@ static void install_signal_handler(int signum, HANDLER handler) {
 }
 
 /// \brief Installs signal handlers that should not stop read()/write() primitives.
-static void install_restart_signal_handlers(void) {
+static void install_restart_signal_handlers() {
     // Prevent dead children from becoming zombies
     install_signal_handler(SIGCHLD, SIG_IGN);
     // Prevent this process from suspending after issuing a SIGTTOU when trying
@@ -490,7 +490,7 @@ inline constexpr bool is_optional_param_v = is_optional_param<T>::value;
 /// \tparam ARGS Parameter pack to test
 /// \returns Number of parameters wrapped in optional_param
 template <typename... ARGS>
-constexpr size_t count_mandatory_params(void) {
+constexpr size_t count_mandatory_params() {
     return ((is_optional_param_v<ARGS> ? 0 : 1) + ... + 0);
 }
 

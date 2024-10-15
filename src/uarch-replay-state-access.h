@@ -73,7 +73,7 @@ public:
     /// \brief Default destructor
     ~uarch_replay_state_access() = default;
 
-    void finish(void) {
+    void finish() {
         if (m_next_access != m_accesses.size()) {
             throw std::invalid_argument{"access log was not fully consumed"};
         }
@@ -84,7 +84,7 @@ public:
     }
 
 private:
-    std::string access_to_report(void) const {
+    std::string access_to_report() const {
         auto index = m_next_access + 1;
         switch (index) {
             case 1:
@@ -320,7 +320,7 @@ private:
         check_write(paddr, data, name);
     }
 
-    void do_reset_state(void) {
+    void do_reset_state() {
         hasher_type hasher;
         auto text = std::string("uarchState");
         if (m_next_access >= m_accesses.size()) {

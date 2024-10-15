@@ -585,7 +585,7 @@ bool machine::has_htif_console() const {
     return static_cast<bool>(read_reg(reg::htif_iconsole) & (1 << HTIF_CONSOLE_CMD_GETCHAR));
 }
 
-machine_config machine::get_serialization_config(void) const {
+machine_config machine::get_serialization_config() const {
     if (read_reg(reg::iunrep)) {
         throw std::runtime_error{"cannot serialize configuration of unreproducible machines"};
     }
@@ -1885,7 +1885,7 @@ uint64_t machine::get_reg_address(reg r) {
     }
 }
 
-void machine::mark_write_tlb_dirty_pages(void) const {
+void machine::mark_write_tlb_dirty_pages() const {
     for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
         const tlb_hot_entry &tlbhe = m_s.tlb.hot[TLB_WRITE][i];
         if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
@@ -1902,7 +1902,7 @@ void machine::mark_write_tlb_dirty_pages(void) const {
     }
 }
 
-bool machine::verify_dirty_page_maps(void) const {
+bool machine::verify_dirty_page_maps() const {
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
         "PMA and machine_merkle_tree page sizes must match");
     machine_merkle_tree::hasher_type h;
@@ -1955,7 +1955,7 @@ static uint64_t get_task_concurrency(uint64_t value) {
     return std::min(concurrency, static_cast<uint64_t>(THREADS_MAX));
 }
 
-bool machine::update_merkle_tree(void) const {
+bool machine::update_merkle_tree() const {
     machine_merkle_tree::hasher_type gh;
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
         "PMA and machine_merkle_tree page sizes must match");
@@ -2062,7 +2062,7 @@ bool machine::update_merkle_tree_page(uint64_t address) {
     return m_t.end_update(h);
 }
 
-const boost::container::static_vector<pma_entry, PMA_MAX> &machine::get_pmas(void) const {
+const boost::container::static_vector<pma_entry, PMA_MAX> &machine::get_pmas() const {
     return m_s.pmas;
 }
 
@@ -2076,7 +2076,7 @@ void machine::get_root_hash(hash_type &hash) const {
     m_t.get_root_hash(hash);
 }
 
-bool machine::verify_merkle_tree(void) const {
+bool machine::verify_merkle_tree() const {
     return m_t.verify_tree();
 }
 
@@ -2429,7 +2429,7 @@ void machine::verify_step_uarch(const hash_type &root_hash_before, const access_
     }
 }
 
-machine_config machine::get_default_config(void) {
+machine_config machine::get_default_config() {
     return machine_config{};
 }
 

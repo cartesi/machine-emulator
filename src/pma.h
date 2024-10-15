@@ -66,12 +66,12 @@ public:
     }
 
     /// \brief Returns context to pass to callbacks.
-    void *get_context(void) {
+    void *get_context() {
         return m_context;
     }
 
     /// \brief Returns context to pass to callbacks.
-    void *get_context(void) const {
+    void *get_context() const {
         // Discard qualifier on purpose because the context
         // is none of our business.
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
@@ -79,7 +79,7 @@ public:
     }
 
     /// \brief Returns pointer to driver with callbacks
-    const pma_driver *get_driver(void) const {
+    const pma_driver *get_driver() const {
         return m_driver;
     }
 };
@@ -97,7 +97,7 @@ class pma_memory final {
     bool m_mmapped;               ///< True if memory was mapped from a file.
 
     /// \brief Close file and/or release memory.
-    void release(void);
+    void release();
 
 public:
     /// \brief Mmap'd range data (shared or not).
@@ -150,20 +150,20 @@ public:
     pma_memory &operator=(pma_memory &&) noexcept;
 
     /// \brief Destructor
-    ~pma_memory(void);
+    ~pma_memory();
 
     /// \brief Returns start of associated memory region in host
-    unsigned char *get_host_memory(void) {
+    unsigned char *get_host_memory() {
         return m_host_memory;
     }
 
     /// \brief Returns start of associated memory region in host
-    const unsigned char *get_host_memory(void) const {
+    const unsigned char *get_host_memory() const {
         return m_host_memory;
     }
 
     /// \brief Returns copy of PMA length field (needed for munmap).
-    uint64_t get_length(void) const {
+    uint64_t get_length() const {
         return m_length;
     }
 };
@@ -289,7 +289,7 @@ public:
     }
 
     /// \brief Returns PMA entry index in target.
-    int get_index(void) const {
+    int get_index() const {
         return m_index;
     }
 
@@ -309,112 +309,112 @@ public:
 
     /// \brief Get flags
     /// \return Flags
-    flags get_flags(void) const {
+    flags get_flags() const {
         return m_flags;
     }
 
     /// \brief Returns the peek callback for the range.
-    pma_peek get_peek(void) const {
+    pma_peek get_peek() const {
         return m_peek;
     }
 
     /// \returns data specific to E ranges
-    const pma_empty &get_empty(void) const {
+    const pma_empty &get_empty() const {
         return std::get<pma_empty>(m_data);
     }
 
     /// \returns data specific to E ranges
-    pma_empty &get_empty(void) {
+    pma_empty &get_empty() {
         return std::get<pma_empty>(m_data);
     }
 
     /// \returns data specific to M ranges
-    const pma_memory &get_memory(void) const {
+    const pma_memory &get_memory() const {
         return std::get<pma_memory>(m_data);
     }
 
     /// \returns data specific to M ranges
-    pma_memory &get_memory(void) {
+    pma_memory &get_memory() {
         return std::get<pma_memory>(m_data);
     }
 
     /// \returns data specific to IO ranges (cannot throw exceptions).
-    pma_memory &get_memory_noexcept(void) {
+    pma_memory &get_memory_noexcept() {
         return *std::get_if<pma_memory>(&m_data);
     }
 
     /// \returns data specific to IO ranges
-    const pma_device &get_device(void) const {
+    const pma_device &get_device() const {
         return std::get<pma_device>(m_data);
     }
 
     /// \returns data specific to IO ranges
-    pma_device &get_device(void) {
+    pma_device &get_device() {
         return std::get<pma_device>(m_data);
     }
 
     /// \returns data specific to IO ranges (cannot throw exceptions).
-    pma_device &get_device_noexcept(void) {
+    pma_device &get_device_noexcept() {
         return *std::get_if<pma_device>(&m_data);
     }
 
     /// \brief Returns packed PMA istart field as per whitepaper
-    uint64_t get_istart(void) const;
+    uint64_t get_istart() const;
 
     /// \brief Returns start of physical memory range in target.
-    uint64_t get_start(void) const {
+    uint64_t get_start() const {
         return m_start;
     }
     /// \brief Returns length of physical memory range in target.
-    uint64_t get_length(void) const {
+    uint64_t get_length() const {
         return m_length;
     }
 
     /// \brief Returns encoded PMA ilength field as per whitepaper
-    uint64_t get_ilength(void) const;
+    uint64_t get_ilength() const;
 
     /// \brief Tells if PMA is a memory range
-    bool get_istart_M(void) const {
+    bool get_istart_M() const {
         return std::holds_alternative<pma_memory>(m_data);
     }
 
     /// \brief Tells if PMA is a device range
-    bool get_istart_IO(void) const {
+    bool get_istart_IO() const {
         return std::holds_alternative<pma_device>(m_data);
     }
 
     /// \brief Tells if PMA is an empty range
-    bool get_istart_E(void) const {
+    bool get_istart_E() const {
         return std::holds_alternative<pma_empty>(m_data);
     }
 
     /// \brief Tells if PMA range is readable
-    bool get_istart_R(void) const {
+    bool get_istart_R() const {
         return m_flags.R;
     }
 
     /// \brief Tells if PMA range is writable
-    bool get_istart_W(void) const {
+    bool get_istart_W() const {
         return m_flags.W;
     }
 
     /// \brief Tells if PMA range is executable
-    bool get_istart_X(void) const {
+    bool get_istart_X() const {
         return m_flags.X;
     }
 
     /// \brief Tells if reads to PMA range are idempotent
-    bool get_istart_IR(void) const {
+    bool get_istart_IR() const {
         return m_flags.IR;
     }
 
     /// \brief Tells if writes to PMA range are idempotent
-    bool get_istart_IW(void) const {
+    bool get_istart_IW() const {
         return m_flags.IW;
     }
 
     /// \brief Returns the id of the device that owns the range
-    PMA_ISTART_DID get_istart_DID(void) const {
+    PMA_ISTART_DID get_istart_DID() const {
         return m_flags.DID;
     }
 
@@ -477,13 +477,13 @@ public:
     }
 
     /// \brief Marks all pages in range as clean
-    void mark_pages_clean(void) {
+    void mark_pages_clean() {
         return std::fill(m_dirty_page_map.begin(), m_dirty_page_map.end(), 0);
     }
 
     /// \brief Returns PMA description as a string
     /// \returns Description
-    const std::string &get_description(void) const {
+    const std::string &get_description() const {
         return m_description;
     }
 

@@ -59,11 +59,11 @@ public:
     /// \brief Default destructor
     ~state_access() = default;
 
-    const machine &get_naked_machine(void) const {
+    const machine &get_naked_machine() const {
         return m_m;
     }
 
-    machine &get_naked_machine(void) {
+    machine &get_naked_machine() {
         return m_m;
     }
 
@@ -71,7 +71,7 @@ private:
     // Declare interface as friend to it can forward calls to the "overridden" methods.
     friend i_state_access<state_access, pma_entry>;
 
-    machine_state &do_get_naked_state(void) {
+    machine_state &do_get_naked_state() {
         return m_m.get_state();
     }
 
@@ -104,7 +104,7 @@ private:
         m_m.get_state().f[reg] = val;
     }
 
-    uint64_t do_read_pc(void) const {
+    uint64_t do_read_pc() const {
         return m_m.get_state().pc;
     }
 
@@ -112,7 +112,7 @@ private:
         m_m.get_state().pc = val;
     }
 
-    uint64_t do_read_fcsr(void) const {
+    uint64_t do_read_fcsr() const {
         return m_m.get_state().fcsr;
     }
 
@@ -120,7 +120,7 @@ private:
         m_m.get_state().fcsr = val;
     }
 
-    uint64_t do_read_icycleinstret(void) const {
+    uint64_t do_read_icycleinstret() const {
         return m_m.get_state().icycleinstret;
     }
 
@@ -128,19 +128,19 @@ private:
         m_m.get_state().icycleinstret = val;
     }
 
-    uint64_t do_read_mvendorid(void) const { // NOLINT(readability-convert-member-functions-to-static)
+    uint64_t do_read_mvendorid() const { // NOLINT(readability-convert-member-functions-to-static)
         return MVENDORID_INIT;
     }
 
-    uint64_t do_read_marchid(void) const { // NOLINT(readability-convert-member-functions-to-static)
+    uint64_t do_read_marchid() const { // NOLINT(readability-convert-member-functions-to-static)
         return MARCHID_INIT;
     }
 
-    uint64_t do_read_mimpid(void) const { // NOLINT(readability-convert-member-functions-to-static)
+    uint64_t do_read_mimpid() const { // NOLINT(readability-convert-member-functions-to-static)
         return MIMPID_INIT;
     }
 
-    uint64_t do_read_mcycle(void) const {
+    uint64_t do_read_mcycle() const {
         return m_m.get_state().mcycle;
     }
 
@@ -148,7 +148,7 @@ private:
         m_m.get_state().mcycle = val;
     }
 
-    uint64_t do_read_mstatus(void) const {
+    uint64_t do_read_mstatus() const {
         return m_m.get_state().mstatus;
     }
 
@@ -156,7 +156,7 @@ private:
         m_m.get_state().mstatus = val;
     }
 
-    uint64_t do_read_menvcfg(void) const {
+    uint64_t do_read_menvcfg() const {
         return m_m.get_state().menvcfg;
     }
 
@@ -164,7 +164,7 @@ private:
         m_m.get_state().menvcfg = val;
     }
 
-    uint64_t do_read_mtvec(void) const {
+    uint64_t do_read_mtvec() const {
         return m_m.get_state().mtvec;
     }
 
@@ -172,7 +172,7 @@ private:
         m_m.get_state().mtvec = val;
     }
 
-    uint64_t do_read_mscratch(void) const {
+    uint64_t do_read_mscratch() const {
         return m_m.get_state().mscratch;
     }
 
@@ -180,7 +180,7 @@ private:
         m_m.get_state().mscratch = val;
     }
 
-    uint64_t do_read_mepc(void) const {
+    uint64_t do_read_mepc() const {
         return m_m.get_state().mepc;
     }
 
@@ -188,7 +188,7 @@ private:
         m_m.get_state().mepc = val;
     }
 
-    uint64_t do_read_mcause(void) const {
+    uint64_t do_read_mcause() const {
         return m_m.get_state().mcause;
     }
 
@@ -196,7 +196,7 @@ private:
         m_m.get_state().mcause = val;
     }
 
-    uint64_t do_read_mtval(void) const {
+    uint64_t do_read_mtval() const {
         return m_m.get_state().mtval;
     }
 
@@ -204,7 +204,7 @@ private:
         m_m.get_state().mtval = val;
     }
 
-    uint64_t do_read_misa(void) const {
+    uint64_t do_read_misa() const {
         return m_m.get_state().misa;
     }
 
@@ -212,7 +212,7 @@ private:
         m_m.get_state().misa = val;
     }
 
-    uint64_t do_read_mie(void) const {
+    uint64_t do_read_mie() const {
         return m_m.get_state().mie;
     }
 
@@ -220,7 +220,7 @@ private:
         m_m.get_state().mie = val;
     }
 
-    uint64_t do_read_mip(void) const {
+    uint64_t do_read_mip() const {
         return m_m.get_state().mip;
     }
 
@@ -228,7 +228,7 @@ private:
         m_m.get_state().mip = val;
     }
 
-    uint64_t do_read_medeleg(void) const {
+    uint64_t do_read_medeleg() const {
         return m_m.get_state().medeleg;
     }
 
@@ -236,7 +236,7 @@ private:
         m_m.get_state().medeleg = val;
     }
 
-    uint64_t do_read_mideleg(void) const {
+    uint64_t do_read_mideleg() const {
         return m_m.get_state().mideleg;
     }
 
@@ -244,7 +244,7 @@ private:
         m_m.get_state().mideleg = val;
     }
 
-    uint64_t do_read_mcounteren(void) const {
+    uint64_t do_read_mcounteren() const {
         return m_m.get_state().mcounteren;
     }
 
@@ -252,7 +252,7 @@ private:
         m_m.get_state().mcounteren = val;
     }
 
-    uint64_t do_read_senvcfg(void) const {
+    uint64_t do_read_senvcfg() const {
         return m_m.get_state().senvcfg;
     }
 
@@ -260,7 +260,7 @@ private:
         m_m.get_state().senvcfg = val;
     }
 
-    uint64_t do_read_stvec(void) const {
+    uint64_t do_read_stvec() const {
         return m_m.get_state().stvec;
     }
 
@@ -268,7 +268,7 @@ private:
         m_m.get_state().stvec = val;
     }
 
-    uint64_t do_read_sscratch(void) const {
+    uint64_t do_read_sscratch() const {
         return m_m.get_state().sscratch;
     }
 
@@ -276,7 +276,7 @@ private:
         m_m.get_state().sscratch = val;
     }
 
-    uint64_t do_read_sepc(void) const {
+    uint64_t do_read_sepc() const {
         return m_m.get_state().sepc;
     }
 
@@ -284,7 +284,7 @@ private:
         m_m.get_state().sepc = val;
     }
 
-    uint64_t do_read_scause(void) const {
+    uint64_t do_read_scause() const {
         return m_m.get_state().scause;
     }
 
@@ -292,7 +292,7 @@ private:
         m_m.get_state().scause = val;
     }
 
-    uint64_t do_read_stval(void) const {
+    uint64_t do_read_stval() const {
         return m_m.get_state().stval;
     }
 
@@ -300,7 +300,7 @@ private:
         m_m.get_state().stval = val;
     }
 
-    uint64_t do_read_satp(void) const {
+    uint64_t do_read_satp() const {
         return m_m.get_state().satp;
     }
 
@@ -308,7 +308,7 @@ private:
         m_m.get_state().satp = val;
     }
 
-    uint64_t do_read_scounteren(void) const {
+    uint64_t do_read_scounteren() const {
         return m_m.get_state().scounteren;
     }
 
@@ -316,7 +316,7 @@ private:
         m_m.get_state().scounteren = val;
     }
 
-    uint64_t do_read_ilrsc(void) const {
+    uint64_t do_read_ilrsc() const {
         return m_m.get_state().ilrsc;
     }
 
@@ -324,39 +324,39 @@ private:
         m_m.get_state().ilrsc = val;
     }
 
-    void do_set_iflags_H(void) {
+    void do_set_iflags_H() {
         m_m.get_state().iflags.H = true;
     }
 
-    bool do_read_iflags_H(void) const {
+    bool do_read_iflags_H() const {
         return m_m.get_state().iflags.H;
     }
 
-    void do_set_iflags_X(void) {
+    void do_set_iflags_X() {
         m_m.get_state().iflags.X = true;
     }
 
-    void do_reset_iflags_X(void) {
+    void do_reset_iflags_X() {
         m_m.get_state().iflags.X = false;
     }
 
-    bool do_read_iflags_X(void) const {
+    bool do_read_iflags_X() const {
         return m_m.get_state().iflags.X;
     }
 
-    void do_set_iflags_Y(void) {
+    void do_set_iflags_Y() {
         m_m.get_state().iflags.Y = true;
     }
 
-    void do_reset_iflags_Y(void) {
+    void do_reset_iflags_Y() {
         m_m.get_state().iflags.Y = false;
     }
 
-    bool do_read_iflags_Y(void) const {
+    bool do_read_iflags_Y() const {
         return m_m.get_state().iflags.Y;
     }
 
-    uint8_t do_read_iflags_PRV(void) const {
+    uint8_t do_read_iflags_PRV() const {
         return m_m.get_state().iflags.PRV;
     }
 
@@ -364,7 +364,7 @@ private:
         m_m.get_state().iflags.PRV = val;
     }
 
-    uint64_t do_read_iunrep(void) const {
+    uint64_t do_read_iunrep() const {
         return m_m.get_state().iunrep;
     }
 
@@ -372,7 +372,7 @@ private:
         m_m.get_state().iunrep = val;
     }
 
-    uint64_t do_read_clint_mtimecmp(void) const {
+    uint64_t do_read_clint_mtimecmp() const {
         return m_m.get_state().clint.mtimecmp;
     }
 
@@ -380,7 +380,7 @@ private:
         m_m.get_state().clint.mtimecmp = val;
     }
 
-    uint64_t do_read_plic_girqpend(void) const {
+    uint64_t do_read_plic_girqpend() const {
         return m_m.get_state().plic.girqpend;
     }
 
@@ -388,7 +388,7 @@ private:
         m_m.get_state().plic.girqpend = val;
     }
 
-    uint64_t do_read_plic_girqsrvd(void) const {
+    uint64_t do_read_plic_girqsrvd() const {
         return m_m.get_state().plic.girqsrvd;
     }
 
@@ -396,7 +396,7 @@ private:
         m_m.get_state().plic.girqsrvd = val;
     }
 
-    uint64_t do_read_htif_fromhost(void) const {
+    uint64_t do_read_htif_fromhost() const {
         return m_m.get_state().htif.fromhost;
     }
 
@@ -404,7 +404,7 @@ private:
         m_m.get_state().htif.fromhost = val;
     }
 
-    uint64_t do_read_htif_tohost(void) const {
+    uint64_t do_read_htif_tohost() const {
         return m_m.get_state().htif.tohost;
     }
 
@@ -412,15 +412,15 @@ private:
         m_m.get_state().htif.tohost = val;
     }
 
-    uint64_t do_read_htif_ihalt(void) const {
+    uint64_t do_read_htif_ihalt() const {
         return m_m.get_state().htif.ihalt;
     }
 
-    uint64_t do_read_htif_iconsole(void) const {
+    uint64_t do_read_htif_iconsole() const {
         return m_m.get_state().htif.iconsole;
     }
 
-    uint64_t do_read_htif_iyield(void) const {
+    uint64_t do_read_htif_iyield() const {
         return m_m.get_state().htif.iyield;
     }
 
@@ -552,7 +552,7 @@ private:
         return pmas[index];
     }
 
-    uint64_t do_read_iflags(void) {
+    uint64_t do_read_iflags() {
         return m_m.get_state().read_iflags();
     }
 

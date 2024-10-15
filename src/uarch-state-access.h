@@ -178,7 +178,7 @@ private:
         return uarch_bridge::write_register(paddr, m_s, data);
     }
 
-    void do_reset_state(void) {
+    void do_reset_state() {
         m_us.halt_flag = false;
         m_us.pc = UARCH_PC_INIT;
         m_us.cycle = UARCH_CYCLE_INIT;

@@ -85,27 +85,27 @@ private:
 
 public:
     /// \brief Returns the LOG2_ROOT_SIZE parameter.
-    static constexpr int get_log2_root_size(void) {
+    static constexpr int get_log2_root_size() {
         return LOG2_ROOT_SIZE;
     }
     /// \brief Returns the LOG2_PAGE_SIZE parameter.
-    static constexpr int get_log2_page_size(void) {
+    static constexpr int get_log2_page_size() {
         return LOG2_PAGE_SIZE;
     }
     /// \brief Returns the LOG2_WORD_SIZE parameter.
-    static constexpr int get_log2_word_size(void) {
+    static constexpr int get_log2_word_size() {
         return LOG2_WORD_SIZE;
     }
     /// \brief Returns the tree DEPTH.
-    static constexpr int get_depth(void) {
+    static constexpr int get_depth() {
         return DEPTH;
     }
     /// \brief Returns the page size.
-    static constexpr size_t get_page_size(void) {
+    static constexpr size_t get_page_size() {
         return m_page_size;
     }
     /// \brief Returns the word size.
-    static constexpr size_t get_word_size(void) {
+    static constexpr size_t get_word_size() {
         return m_word_size;
     }
 
@@ -162,7 +162,7 @@ private:
 
     /// \brief Creates and returns a new tree node.
     /// \return Newly created node or nullptr if out-of-memory.
-    tree_node *create_node(void) const;
+    tree_node *create_node() const;
 
     /// \brief Deallocates node.
     /// \param node Node to be deallocated.
@@ -200,7 +200,7 @@ private:
     void dump_merkle_tree(tree_node *node, uint64_t address, int log2_size) const;
 
     /// \brief Dumps the entire tree rooted to std::cerr.
-    void dump_merkle_tree(void) const;
+    void dump_merkle_tree() const;
 
     /// \brief Destroys tree rooted at node.
     /// \param node Root of subtree.
@@ -208,7 +208,7 @@ private:
     void destroy_merkle_tree(tree_node *node, int log2_size);
 
     /// \brief Destroys entire Merkle tree.
-    void destroy_merkle_tree(void);
+    void destroy_merkle_tree();
 
     /// \brief Verifies tree rooted at node.
     /// \param h Hasher object.
@@ -280,11 +280,11 @@ private:
 public:
     /// \brief Verifies the entire Merkle tree.
     /// \return True if tree is consistent, false otherwise.
-    bool verify_tree(void) const;
+    bool verify_tree() const;
 
     /// \brief Default constructor.
     /// \details Initializes memory to zero.
-    machine_merkle_tree(void);
+    machine_merkle_tree();
 
     /// \brief No copy constructor
     machine_merkle_tree(const machine_merkle_tree &) = delete;
@@ -307,7 +307,7 @@ public:
     /// \returns True.
     /// \details This method is not thread safe, so be careful when using
     /// parallelization to compute Merkle trees
-    bool begin_update(void);
+    bool begin_update();
 
     /// \brief Update tree with new hash for a page node.
     /// \param page_index Page index for node.

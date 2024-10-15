@@ -68,13 +68,13 @@ public:
 
     /// \brief Gets log<sub>2</sub> of size subintended by entire tree.
     /// \returns log<sub>2</sub> of size subintended by entire tree.
-    int get_log2_root_size(void) const {
+    int get_log2_root_size() const {
         return m_log2_root_size;
     }
 
     /// \brief Gets log<sub>2</sub> of size subintended by target node.
     /// \returns log<sub>2</sub> of size subintended by target node.
-    int get_log2_target_size(void) const {
+    int get_log2_target_size() const {
         return m_log2_target_size;
     }
 
@@ -86,10 +86,10 @@ public:
 
     /// \brief Gets address of target node
     /// \return Reference to hash.
-    const address_type &get_target_address(void) const {
+    const address_type &get_target_address() const {
         return m_target_address;
     }
-    address_type &get_target_address(void) {
+    address_type &get_target_address() {
         return m_target_address;
     }
 
@@ -101,10 +101,10 @@ public:
 
     /// \brief Gets hash of target node
     /// \return Reference to hash.
-    const hash_type &get_target_hash(void) const {
+    const hash_type &get_target_hash() const {
         return m_target_hash;
     }
-    hash_type &get_target_hash(void) {
+    hash_type &get_target_hash() {
         return m_target_hash;
     }
 
@@ -116,10 +116,10 @@ public:
 
     /// \brief Gets hash of root node
     /// \return Reference to hash.
-    const hash_type &get_root_hash(void) const {
+    const hash_type &get_root_hash() const {
         return m_root_hash;
     }
-    hash_type &get_root_hash(void) {
+    hash_type &get_root_hash() {
         return m_root_hash;
     }
 

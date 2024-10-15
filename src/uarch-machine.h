@@ -39,7 +39,7 @@ public:
     ~uarch_machine() = default;
 
     /// \brief No default constructor
-    uarch_machine(void) = delete;
+    uarch_machine() = delete;
     /// \brief No copy constructor
     uarch_machine(const uarch_machine &other) = delete;
     /// \brief No move constructor
@@ -50,12 +50,12 @@ public:
     uarch_machine &operator=(uarch_machine &&other) = delete;
 
     /// \brief Returns machine state for direct access.
-    uarch_state &get_state(void) {
+    uarch_state &get_state() {
         return m_s;
     }
 
     /// \brief Returns machine state for direct read-only access.
-    const uarch_state &get_state(void) const {
+    const uarch_state &get_state() const {
         return m_s;
     }
 
@@ -71,7 +71,7 @@ public:
     const pma_entry &find_pma_entry(uint64_t paddr, uint64_t length) const;
 
     /// \brief Returns copy of initialization config.
-    const uarch_config &get_initial_config(void) const {
+    const uarch_config &get_initial_config() const {
         return m_c;
     }
 };

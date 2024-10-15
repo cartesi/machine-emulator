@@ -128,13 +128,13 @@ public:
     /// root = hash(root, pristine[i+log2_leaf_size]) and move up a bit
     /// (i.e., to grow our subtree, we need to pad it on the right with
     /// a pristine subtree of the same size)
-    hash_type get_root_hash(void) const;
+    hash_type get_root_hash() const;
 
     /// \brief Returns proof for the next pristine leaf
     /// \returns Proof for leaf at given index, or throws exception
     /// \details This is basically the same algorithm as
     /// back_merkle_tree::get_root_hash.
-    proof_type get_next_leaf_proof(void) const;
+    proof_type get_next_leaf_proof() const;
 
 private:
     int m_log2_root_size;                   ///< Log<sub>2</sub> of tree size

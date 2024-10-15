@@ -24,19 +24,19 @@ virtual_machine::virtual_machine(const machine_config &c, const machine_runtime_
 virtual_machine::virtual_machine(const std::string &dir, const machine_runtime_config &r) :
     m_machine(new machine(dir, r)) {}
 
-virtual_machine::~virtual_machine(void) {
+virtual_machine::~virtual_machine() {
     delete m_machine;
     m_machine = nullptr;
 }
 
-machine *virtual_machine::get_machine(void) {
+machine *virtual_machine::get_machine() {
     if (!m_machine) {
         throw std::runtime_error{"no machine"};
     }
     return m_machine;
 }
 
-const machine *virtual_machine::get_machine(void) const {
+const machine *virtual_machine::get_machine() const {
     if (!m_machine) {
         throw std::runtime_error{"no machine"};
     }
@@ -63,7 +63,7 @@ void virtual_machine::do_get_root_hash(hash_type &hash) const {
     get_machine()->get_root_hash(hash);
 }
 
-bool virtual_machine::do_verify_merkle_tree(void) const {
+bool virtual_machine::do_verify_merkle_tree() const {
     return get_machine()->verify_merkle_tree();
 }
 
@@ -103,11 +103,11 @@ uint64_t virtual_machine::do_read_word(uint64_t address) const {
     return get_machine()->read_word(address);
 }
 
-bool virtual_machine::do_verify_dirty_page_maps(void) const {
+bool virtual_machine::do_verify_dirty_page_maps() const {
     return get_machine()->verify_dirty_page_maps();
 }
 
-machine_config virtual_machine::do_get_initial_config(void) const {
+machine_config virtual_machine::do_get_initial_config() const {
     return get_machine()->get_initial_config();
 }
 
@@ -116,15 +116,15 @@ void virtual_machine::do_destroy() {
     m_machine = nullptr;
 }
 
-void virtual_machine::do_snapshot(void) {
+void virtual_machine::do_snapshot() {
     throw std::runtime_error("snapshot is not supported");
 }
 
-void virtual_machine::do_commit(void) {
+void virtual_machine::do_commit() {
     // no-op, we are always committed
 }
 
-void virtual_machine::do_rollback(void) {
+void virtual_machine::do_rollback() {
     throw std::runtime_error("rollback is not supported");
 }
 
@@ -140,7 +140,7 @@ uarch_interpreter_break_reason virtual_machine::do_run_uarch(uint64_t uarch_cycl
     return get_machine()->run_uarch(uarch_cycle_end);
 }
 
-machine_memory_range_descrs virtual_machine::do_get_memory_ranges(void) const {
+machine_memory_range_descrs virtual_machine::do_get_memory_ranges() const {
     return get_machine()->get_memory_ranges();
 }
 

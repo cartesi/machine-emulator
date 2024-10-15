@@ -76,7 +76,7 @@ extern "C" void _putchar(char c) {
     );
 }
 
-extern "C" NO_RETURN void abort(void) {
+extern "C" NO_RETURN void abort() {
     asm volatile("ebreak"
                  : // no output
                  : // no input
@@ -88,16 +88,16 @@ extern "C" NO_RETURN void abort(void) {
 
 namespace cartesi {
 
-void os_open_tty(void) {}
+void os_open_tty() {}
 
-void os_close_tty(void) {}
+void os_close_tty() {}
 
 bool os_poll_tty(uint64_t timeout_us) {
     (void) timeout_us;
     return false;
 }
 
-int os_getchar(void) {
+int os_getchar() {
     return -1;
 }
 

@@ -31,6 +31,6 @@
         abort();                                                                                                       \
     }
 
-extern "C" NO_RETURN void abort(void);
+extern "C" NO_RETURN void abort();
 
 #endif

@@ -79,7 +79,7 @@ public:
     }
 
     /// \brief Checks if access log was fully consumed after reset operation is finished
-    void finish(void) {
+    void finish() {
         if (m_next_access != m_accesses.size()) {
             throw std::invalid_argument{"access log was not fully consumed"};
         }
@@ -88,7 +88,7 @@ public:
 private:
     friend i_state_access<replay_state_access, pma_entry>;
 
-    std::string access_to_report(void) const {
+    std::string access_to_report() const {
         auto index = m_next_access + 1;
         switch (index) {
             case 1:
@@ -257,13 +257,13 @@ private:
 
     void do_push_bracket(bracket_type &type, const char *text) {}
 
-    void do_reset_iflags_Y(void) {
+    void do_reset_iflags_Y() {
         auto old_iflags = check_read(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags), "iflags.Y");
         auto new_iflags = old_iflags & (~IFLAGS_Y_MASK);
         check_write(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags), new_iflags, "iflags.Y");
     }
 
-    bool do_read_iflags_Y(void) {
+    bool do_read_iflags_Y() {
         auto iflags = check_read(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags), "iflags.Y");
         return (iflags & IFLAGS_Y_MASK) != 0;
     }

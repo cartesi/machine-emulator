@@ -56,18 +56,18 @@ template <typename DERIVED, typename PMA_ENTRY_TYPE>
 class i_state_access { // CRTP
 
     /// \brief Returns object cast as the derived class
-    DERIVED &derived(void) {
+    DERIVED &derived() {
         return *static_cast<DERIVED *>(this);
     }
 
     /// \brief Returns object cast as the derived class
-    const DERIVED &derived(void) const {
+    const DERIVED &derived() const {
         return *static_cast<const DERIVED *>(this);
     }
 
 public:
     /// \brief Returns machine state for direct access.
-    auto &get_naked_state(void) {
+    auto &get_naked_state() {
         return derived().do_get_naked_state();
     }
 
@@ -117,7 +117,7 @@ public:
 
     /// \brief Reads the program counter.
     /// \returns Register value.
-    uint64_t read_pc(void) {
+    uint64_t read_pc() {
         return derived().do_read_pc();
     }
 
@@ -135,13 +135,13 @@ public:
 
     /// \brief Reads CSR fcsr.
     /// \returns Register value.
-    uint64_t read_fcsr(void) {
+    uint64_t read_fcsr() {
         return derived().do_read_fcsr();
     }
 
     /// \brief Reads CSR icycleinstret.
     /// \returns Register value.
-    uint64_t read_icycleinstret(void) {
+    uint64_t read_icycleinstret() {
         return derived().do_read_icycleinstret();
     }
 
@@ -153,25 +153,25 @@ public:
 
     /// \brief Reads CSR mvendorid.
     /// \returns Register value.
-    uint64_t read_mvendorid(void) {
+    uint64_t read_mvendorid() {
         return derived().do_read_mvendorid();
     }
 
     /// \brief Reads CSR marchid.
     /// \returns Register value.
-    uint64_t read_marchid(void) {
+    uint64_t read_marchid() {
         return derived().do_read_marchid();
     }
 
     /// \brief Reads CSR mimpid.
     /// \returns Register value.
-    uint64_t read_mimpid(void) {
+    uint64_t read_mimpid() {
         return derived().do_read_mimpid();
     }
 
     /// \brief Reads CSR mcycle.
     /// \returns Register value.
-    uint64_t read_mcycle(void) {
+    uint64_t read_mcycle() {
         return derived().do_read_mcycle();
     }
 
@@ -183,7 +183,7 @@ public:
 
     /// \brief Reads CSR mstatus.
     /// \returns Register value.
-    uint64_t read_mstatus(void) {
+    uint64_t read_mstatus() {
         return derived().do_read_mstatus();
     }
 
@@ -195,7 +195,7 @@ public:
 
     /// \brief Reads CSR menvcfg.
     /// \returns Register value.
-    uint64_t read_menvcfg(void) {
+    uint64_t read_menvcfg() {
         return derived().do_read_menvcfg();
     }
 
@@ -207,7 +207,7 @@ public:
 
     /// \brief Reads CSR mtvec.
     /// \returns Register value.
-    uint64_t read_mtvec(void) {
+    uint64_t read_mtvec() {
         return derived().do_read_mtvec();
     }
 
@@ -219,7 +219,7 @@ public:
 
     /// \brief Reads CSR mscratch.
     /// \returns Register value.
-    uint64_t read_mscratch(void) {
+    uint64_t read_mscratch() {
         return derived().do_read_mscratch();
     }
 
@@ -231,7 +231,7 @@ public:
 
     /// \brief Reads CSR mepc.
     /// \returns Register value.
-    uint64_t read_mepc(void) {
+    uint64_t read_mepc() {
         return derived().do_read_mepc();
     }
 
@@ -243,7 +243,7 @@ public:
 
     /// \brief Reads CSR mcause.
     /// \returns Register value.
-    uint64_t read_mcause(void) {
+    uint64_t read_mcause() {
         return derived().do_read_mcause();
     }
 
@@ -255,7 +255,7 @@ public:
 
     /// \brief Reads CSR mtval.
     /// \returns Register value.
-    uint64_t read_mtval(void) {
+    uint64_t read_mtval() {
         return derived().do_read_mtval();
     }
 
@@ -267,7 +267,7 @@ public:
 
     /// \brief Reads CSR misa.
     /// \returns Register value.
-    uint64_t read_misa(void) {
+    uint64_t read_misa() {
         return derived().do_read_misa();
     }
 
@@ -279,7 +279,7 @@ public:
 
     /// \brief Reads CSR mie.
     /// \returns Register value.
-    uint64_t read_mie(void) {
+    uint64_t read_mie() {
         return derived().do_read_mie();
     }
 
@@ -291,7 +291,7 @@ public:
 
     /// \brief Reads CSR mip.
     /// \returns Register value.
-    uint64_t read_mip(void) {
+    uint64_t read_mip() {
         return derived().do_read_mip();
     }
 
@@ -303,7 +303,7 @@ public:
 
     /// \brief Reads CSR medeleg.
     /// \returns Register value.
-    uint64_t read_medeleg(void) {
+    uint64_t read_medeleg() {
         return derived().do_read_medeleg();
     }
 
@@ -315,7 +315,7 @@ public:
 
     /// \brief Reads CSR mideleg.
     /// \returns Register value.
-    uint64_t read_mideleg(void) {
+    uint64_t read_mideleg() {
         return derived().do_read_mideleg();
     }
 
@@ -327,7 +327,7 @@ public:
 
     /// \brief Reads CSR iflags.
     /// \returns Register value.
-    auto read_iflags(void) {
+    auto read_iflags() {
         return derived().do_read_iflags();
     }
 
@@ -339,7 +339,7 @@ public:
 
     /// \brief Reads CSR mcounteren.
     /// \returns Register value.
-    uint64_t read_mcounteren(void) {
+    uint64_t read_mcounteren() {
         return derived().do_read_mcounteren();
     }
 
@@ -351,7 +351,7 @@ public:
 
     /// \brief Reads CSR senvcfg.
     /// \returns Register value.
-    uint64_t read_senvcfg(void) {
+    uint64_t read_senvcfg() {
         return derived().do_read_senvcfg();
     }
 
@@ -363,7 +363,7 @@ public:
 
     /// \brief Reads CSR stvec.
     /// \returns Register value.
-    uint64_t read_stvec(void) {
+    uint64_t read_stvec() {
         return derived().do_read_stvec();
     }
 
@@ -375,7 +375,7 @@ public:
 
     /// \brief Reads CSR sscratch.
     /// \returns Register value.
-    uint64_t read_sscratch(void) {
+    uint64_t read_sscratch() {
         return derived().do_read_sscratch();
     }
 
@@ -387,7 +387,7 @@ public:
 
     /// \brief Reads CSR sepc.
     /// \returns Register value.
-    uint64_t read_sepc(void) {
+    uint64_t read_sepc() {
         return derived().do_read_sepc();
     }
 
@@ -399,7 +399,7 @@ public:
 
     /// \brief Reads CSR scause.
     /// \returns Register value.
-    uint64_t read_scause(void) {
+    uint64_t read_scause() {
         return derived().do_read_scause();
     }
 
@@ -411,7 +411,7 @@ public:
 
     /// \brief Reads CSR stval.
     /// \returns Register value.
-    uint64_t read_stval(void) {
+    uint64_t read_stval() {
         return derived().do_read_stval();
     }
 
@@ -423,7 +423,7 @@ public:
 
     /// \brief Reads CSR satp.
     /// \returns Register value.
-    uint64_t read_satp(void) {
+    uint64_t read_satp() {
         return derived().do_read_satp();
     }
 
@@ -435,7 +435,7 @@ public:
 
     /// \brief Reads CSR scounteren.
     /// \returns Register value.
-    uint64_t read_scounteren(void) {
+    uint64_t read_scounteren() {
         return derived().do_read_scounteren();
     }
 
@@ -448,7 +448,7 @@ public:
     /// \brief Reads CSR ilrsc.
     /// \returns Register value.
     /// \details This is Cartesi-specific.
-    uint64_t read_ilrsc(void) {
+    uint64_t read_ilrsc() {
         return derived().do_read_ilrsc();
     }
 
@@ -461,59 +461,59 @@ public:
 
     /// \brief Sets the iflags_H flag.
     /// \details This is Cartesi-specific.
-    void set_iflags_H(void) {
+    void set_iflags_H() {
         return derived().do_set_iflags_H();
     }
 
     /// \brief Reads the iflags_H flag.
     /// \returns The flag value.
     /// \details This is Cartesi-specific.
-    bool read_iflags_H(void) {
+    bool read_iflags_H() {
         return derived().do_read_iflags_H();
     }
 
     /// \brief Sets the iflags_Y flag.
     /// \details This is Cartesi-specific.
-    void set_iflags_Y(void) {
+    void set_iflags_Y() {
         return derived().do_set_iflags_Y();
     }
 
     /// \brief Sets the iflags_X flag.
     /// \details This is Cartesi-specific.
-    void set_iflags_X(void) {
+    void set_iflags_X() {
         return derived().do_set_iflags_X();
     }
 
     /// \brief Resets the iflags_Y flag.
     /// \details This is Cartesi-specific.
-    void reset_iflags_Y(void) {
+    void reset_iflags_Y() {
         return derived().do_reset_iflags_Y();
     }
 
     /// \brief Resets the iflags_X flag.
     /// \details This is Cartesi-specific.
-    void reset_iflags_X(void) {
+    void reset_iflags_X() {
         return derived().do_reset_iflags_X();
     }
 
     /// \brief Reads the iflags_Y flag.
     /// \returns The flag value.
     /// \details This is Cartesi-specific.
-    bool read_iflags_Y(void) {
+    bool read_iflags_Y() {
         return derived().do_read_iflags_Y();
     }
 
     /// \brief Reads the iflags_X flag.
     /// \returns The flag value.
     /// \details This is Cartesi-specific.
-    bool read_iflags_X(void) {
+    bool read_iflags_X() {
         return derived().do_read_iflags_X();
     }
 
     /// \brief Reads the current privilege mode from iflags_PRV.
     /// \details This is Cartesi-specific.
     /// \returns Current privilege mode.
-    uint8_t read_iflags_PRV(void) {
+    uint8_t read_iflags_PRV() {
         return derived().do_read_iflags_PRV();
     }
 
@@ -526,7 +526,7 @@ public:
     /// \brief Reads CSR iunrep.
     /// \returns Register value.
     /// \details This is Cartesi-specific.
-    uint64_t read_iunrep(void) {
+    uint64_t read_iunrep() {
         return derived().do_read_iunrep();
     }
 
@@ -539,7 +539,7 @@ public:
 
     /// \brief Reads CLINT's mtimecmp.
     /// \returns Register value.
-    uint64_t read_clint_mtimecmp(void) {
+    uint64_t read_clint_mtimecmp() {
         return derived().do_read_clint_mtimecmp();
     }
 
@@ -551,7 +551,7 @@ public:
 
     /// \brief Reads PLIC's girqpend.
     /// \returns Register value.
-    uint64_t read_plic_girqpend(void) {
+    uint64_t read_plic_girqpend() {
         return derived().do_read_plic_girqpend();
     }
 
@@ -563,7 +563,7 @@ public:
 
     /// \brief Reads PLIC's girqsrvd.
     /// \returns Register value.
-    uint64_t read_plic_girqsrvd(void) {
+    uint64_t read_plic_girqsrvd() {
         return derived().do_read_plic_girqsrvd();
     }
 
@@ -575,7 +575,7 @@ public:
 
     /// \brief Reads HTIF's fromhost.
     /// \returns Register value.
-    uint64_t read_htif_fromhost(void) {
+    uint64_t read_htif_fromhost() {
         return derived().do_read_htif_fromhost();
     }
 
@@ -587,7 +587,7 @@ public:
 
     /// \brief Reads HTIF's tohost.
     /// \returns Register value.
-    uint64_t read_htif_tohost(void) {
+    uint64_t read_htif_tohost() {
         return derived().do_read_htif_tohost();
     }
 
@@ -599,19 +599,19 @@ public:
 
     /// \brief Reads HTIF's ihalt.
     /// \returns Register value.
-    uint64_t read_htif_ihalt(void) {
+    uint64_t read_htif_ihalt() {
         return derived().do_read_htif_ihalt();
     }
 
     /// \brief Reads HTIF's iconsole.
     /// \returns Register value.
-    uint64_t read_htif_iconsole(void) {
+    uint64_t read_htif_iconsole() {
         return derived().do_read_htif_iconsole();
     }
 
     /// \brief Reads HTIF's iyield.
     /// \returns Register value.
-    uint64_t read_htif_iyield(void) {
+    uint64_t read_htif_iyield() {
         return derived().do_read_htif_iyield();
     }
 

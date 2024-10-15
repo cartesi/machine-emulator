@@ -69,12 +69,12 @@ public:
     ~record_state_access() = default;
 
     /// \brief Returns const pointer to access log.
-    std::shared_ptr<const access_log> get_log(void) const {
+    std::shared_ptr<const access_log> get_log() const {
         return m_log;
     }
 
     /// \brief Returns pointer to access log.
-    std::shared_ptr<access_log> get_log(void) {
+    std::shared_ptr<access_log> get_log() {
         return m_log;
     }
 
@@ -192,7 +192,7 @@ private:
         m_log->push_bracket(type, text);
     }
 
-    void do_reset_iflags_Y(void) {
+    void do_reset_iflags_Y() {
         auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, m_m.get_state().iflags.X,
             false /* Y */, m_m.get_state().iflags.H);
         const uint64_t iflags_addr = shadow_state_get_reg_abs_addr(shadow_state_reg::iflags);
@@ -202,7 +202,7 @@ private:
         update_after_write(iflags_addr);
     }
 
-    bool do_read_iflags_Y(void) const {
+    bool do_read_iflags_Y() const {
         log_read(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags), "iflags.Y");
         return m_m.get_state().iflags.Y;
     }

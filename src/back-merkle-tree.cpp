@@ -118,7 +118,7 @@ void back_merkle_tree::pad_back(uint64_t new_leaf_count) {
     }
 }
 
-back_merkle_tree::hash_type back_merkle_tree::get_root_hash(void) const {
+back_merkle_tree::hash_type back_merkle_tree::get_root_hash() const {
     hasher_type h;
     assert(m_leaf_count <= m_max_leaves);
     const int depth = m_log2_root_size - m_log2_leaf_size;
@@ -139,7 +139,7 @@ back_merkle_tree::hash_type back_merkle_tree::get_root_hash(void) const {
     }
 }
 
-back_merkle_tree::proof_type back_merkle_tree::get_next_leaf_proof(void) const {
+back_merkle_tree::proof_type back_merkle_tree::get_next_leaf_proof() const {
     const int depth = m_log2_root_size - m_log2_leaf_size;
     if (m_leaf_count >= m_max_leaves) {
         throw std::out_of_range{"tree is full"};

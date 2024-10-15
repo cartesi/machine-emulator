@@ -36,12 +36,12 @@ template <typename DERIVED, typename HASH_SIZE>
 class i_hasher { // CRTP
 
     /// \brief Returns object cast as the derived class
-    DERIVED &derived(void) {
+    DERIVED &derived() {
         return *static_cast<DERIVED *>(this);
     }
 
     /// \brief Returns object cast as the derived class
-    const DERIVED &derived(void) const {
+    const DERIVED &derived() const {
         return *static_cast<const DERIVED *>(this);
     }
 
@@ -50,7 +50,7 @@ public:
 
     using hash_type = std::array<unsigned char, hash_size>;
 
-    void begin(void) {
+    void begin() {
         return derived().do_begin();
     }
 

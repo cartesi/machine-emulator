@@ -77,7 +77,7 @@ public:
     }
 
     /// \brief Verifies integrity of Merkle tree.
-    bool verify_merkle_tree(void) const {
+    bool verify_merkle_tree() const {
         return do_verify_merkle_tree();
     }
 
@@ -127,32 +127,32 @@ public:
     }
 
     /// \brief Verify if dirty page maps are consistent.
-    bool verify_dirty_page_maps(void) const {
+    bool verify_dirty_page_maps() const {
         return do_verify_dirty_page_maps();
     }
 
     /// \brief Returns copy of initialization config.
-    machine_config get_initial_config(void) const {
+    machine_config get_initial_config() const {
         return do_get_initial_config();
     }
 
     /// \brief destroy
-    void destroy(void) {
+    void destroy() {
         do_destroy();
     }
 
     /// \brief snapshot
-    void snapshot(void) {
+    void snapshot() {
         do_snapshot();
     }
 
     /// \brief commit
-    void commit(void) {
+    void commit() {
         do_commit();
     }
 
     /// \brief rollback
-    void rollback(void) {
+    void rollback() {
         do_rollback();
     }
 
@@ -175,7 +175,7 @@ public:
     }
 
     /// \brief Returns a list of descriptions for all PMA entries registered in the machine, sorted by start
-    virtual machine_memory_range_descrs get_memory_ranges(void) const {
+    virtual machine_memory_range_descrs get_memory_ranges() const {
         return do_get_memory_ranges();
     }
 
@@ -196,7 +196,7 @@ private:
     virtual access_log do_log_step_uarch(const access_log::type &log_type) = 0;
     virtual machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const = 0;
     virtual void do_get_root_hash(hash_type &hash) const = 0;
-    virtual bool do_verify_merkle_tree(void) const = 0;
+    virtual bool do_verify_merkle_tree() const = 0;
     virtual uint64_t do_read_reg(reg r) const = 0;
     virtual void do_write_reg(reg w, uint64_t val) = 0;
     virtual void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const = 0;
@@ -206,8 +206,8 @@ private:
     virtual uint64_t do_translate_virtual_address(uint64_t vaddr) = 0;
     virtual void do_replace_memory_range(const memory_range_config &new_range) = 0;
     virtual uint64_t do_read_word(uint64_t address) const = 0;
-    virtual bool do_verify_dirty_page_maps(void) const = 0;
-    virtual machine_config do_get_initial_config(void) const = 0;
+    virtual bool do_verify_dirty_page_maps() const = 0;
+    virtual machine_config do_get_initial_config() const = 0;
     virtual void do_snapshot() = 0;
     virtual void do_destroy() = 0;
     virtual void do_commit() = 0;
@@ -215,7 +215,7 @@ private:
     virtual void do_reset_uarch() = 0;
     virtual access_log do_log_reset_uarch(const access_log::type &log_type) = 0;
     virtual uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) = 0;
-    virtual machine_memory_range_descrs do_get_memory_ranges(void) const = 0;
+    virtual machine_memory_range_descrs do_get_memory_ranges() const = 0;
     virtual void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) = 0;
     virtual access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const access_log::type &log_type) = 0;

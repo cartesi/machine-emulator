@@ -58,7 +58,7 @@ int clua_init(lua_State *L);
 /// \brief Returns the C++ type name as a string
 /// \tparam T C++ type whose name is desired
 template <typename T>
-const char *clua_rawname(void) {
+const char *clua_rawname() {
     return boost::typeindex::type_id_with_cvr<T>().raw_name();
 }
 

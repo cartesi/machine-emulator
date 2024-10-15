@@ -18,11 +18,13 @@
 
 namespace cartesi {
 
-bool device_read_error(void *, i_device_state_access *, uint64_t, uint64_t *, int) {
+bool device_read_error(void * /*context*/, i_device_state_access * /*a*/, uint64_t /*offset*/, uint64_t * /*val*/,
+    int /*log2_size*/) {
     return false;
 }
 
-execute_status device_write_error(void *, i_device_state_access *, uint64_t, uint64_t, int) {
+execute_status device_write_error(void * /*context*/, i_device_state_access * /*a*/, uint64_t /*offset*/,
+    uint64_t /*val*/, int /*log2_size*/) {
     return execute_status::failure;
 }
 

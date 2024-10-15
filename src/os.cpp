@@ -791,7 +791,7 @@ void os_sleep_us(uint64_t timeout_us) {
 #endif
 }
 
-static void sig_alrm(int) {
+static void sig_alrm(int /*unused*/) {
     ;
 }
 

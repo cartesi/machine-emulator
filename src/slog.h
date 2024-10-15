@@ -86,7 +86,7 @@ struct null_prefix {
 };
 
 /// \brief Stream-out operator for null prefix class
-static inline std::ostream &operator<<(std::ostream &out, null_prefix) {
+static inline std::ostream &operator<<(std::ostream &out, null_prefix /*unused*/) {
     return out;
 }
 

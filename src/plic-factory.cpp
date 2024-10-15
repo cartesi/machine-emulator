@@ -20,7 +20,7 @@ namespace cartesi {
 
 /// \brief PLIC device peek callback. See ::pma_peek.
 static bool plic_peek(const pma_entry &pma, const machine &m, uint64_t page_offset, const unsigned char **page_data,
-    unsigned char *) {
+    unsigned char * /*context*/) {
     (void) m;
     // PLIC range can be represented as pristine because its state is already represented in shadow CSRs
     *page_data = nullptr;

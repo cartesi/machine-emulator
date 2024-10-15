@@ -49,7 +49,8 @@ namespace asio = boost::asio;   // from <boost/asio.hpp>
 using tcp = asio::ip::tcp;      // from <boost/asio/ip/tcp.hpp>
 
 template <typename... Ts, size_t... Is>
-std::string jsonrpc_post_data(const std::string &method, const std::tuple<Ts...> &params, std::index_sequence<Is...>) {
+std::string jsonrpc_post_data(const std::string &method, const std::tuple<Ts...> &params,
+    std::index_sequence<Is...> /*unused*/) {
     json array = json::array();
     ((array.push_back(json(std::get<Is>(params)))), ...);
     const json j = {{"jsonrpc", "2.0"}, {"method", method}, {"id", 0}, {"params", std::move(array)}};

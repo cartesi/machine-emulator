@@ -175,7 +175,8 @@ void pma_entry::fill_memory(uint64_t paddr, unsigned char value, uint64_t size) 
     mark_dirty_pages(paddr, size);
 }
 
-bool pma_peek_error(const pma_entry &, const machine &, uint64_t, const unsigned char **, unsigned char *) {
+bool pma_peek_error(const pma_entry & /*pma*/, const machine & /*m*/, uint64_t /*page_address*/,
+    const unsigned char ** /*page_data*/, unsigned char * /*scratch*/) {
     return false;
 }
 

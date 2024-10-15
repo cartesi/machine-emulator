@@ -151,7 +151,7 @@ HASH_LIBS=
 
 #DEFS+= -DMT_ALL_DIRTY
 
-WARNS=-Wall -Wpedantic
+WARNS=-Wall -Wextra -Wpedantic
 
 # Place our include directories before the system's
 INCS+= \

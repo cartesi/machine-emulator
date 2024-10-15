@@ -2075,7 +2075,8 @@ bool machine::verify_merkle_tree() const {
     return m_t.verify_tree();
 }
 
-machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_size, skip_merkle_tree_update_t) const {
+machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_size,
+    skip_merkle_tree_update_t /*unused*/) const {
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
         "PMA and machine_merkle_tree page sizes must match");
     // Check for valid target node size

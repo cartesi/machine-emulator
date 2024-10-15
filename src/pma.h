@@ -43,10 +43,12 @@ class machine;
 /// \param page_data Receives pointer to start of page data, or nullptr if page is constant *and* pristine.
 /// \param scratch Pointer to memory buffer that must be able to hold PMA_PAGE_SIZE bytes.
 /// \returns True if operation succeeded, false otherwise.
-using pma_peek = bool (*)(const pma_entry &, const machine &, uint64_t, const unsigned char **, unsigned char *);
+using pma_peek = bool (*)(const pma_entry &pma, const machine &m, uint64_t page_offset, const unsigned char **page_data,
+    unsigned char *scratch);
 
 /// \brief Default peek callback issues error on peeks.
-bool pma_peek_error(const pma_entry &, const machine &, uint64_t, const unsigned char **, unsigned char *);
+bool pma_peek_error(const pma_entry & /*pma*/, const machine & /*m*/, uint64_t /*page_offset*/,
+    const unsigned char ** /*page_data*/, unsigned char * /*scratch*/);
 
 /// \brief Data for IO ranges.
 class pma_device final {
@@ -138,16 +140,16 @@ public:
     pma_memory(const std::string &description, uint64_t length, const mockd &m);
 
     /// \brief No copy constructor
-    pma_memory(const pma_memory &) = delete;
+    pma_memory(const pma_memory &other) = delete;
 
     /// \brief No copy assignment
-    pma_memory &operator=(const pma_memory &) = delete;
+    pma_memory &operator=(const pma_memory &other) = delete;
 
     /// \brief Move constructor
-    pma_memory(pma_memory &&) noexcept;
+    pma_memory(pma_memory &&other) noexcept;
 
     /// \brief Move assignment
-    pma_memory &operator=(pma_memory &&) noexcept;
+    pma_memory &operator=(pma_memory &&other) noexcept;
 
     /// \brief Destructor
     ~pma_memory();

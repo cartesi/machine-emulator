@@ -35,10 +35,10 @@ class i_device_state_access;
 /// \param val Pointer to word where value will be stored.
 /// \param log2_size log<sub>2</sub> of size of value to read (0 = uint8_t, 1 = uint16_t, 2 = uint32_t, 3 = uint64_t).
 /// \returns True if operation succeeded, false otherwise.
-using device_read = bool (*)(void *, i_device_state_access *, uint64_t, uint64_t *, int);
+using device_read = bool (*)(void *context, i_device_state_access *da, uint64_t offset, uint64_t *val, int log2_size);
 
 /// \brief Default read callback issues error on reads.
-bool device_read_error(void *context, i_device_state_access *, uint64_t, uint64_t *, int);
+bool device_read_error(void *context, i_device_state_access *da, uint64_t offset, uint64_t *val, int log2_size);
 
 /// \brief Prototype for callback invoked when machine wants to write to a range.
 /// \param context Device-specific context
@@ -47,10 +47,12 @@ bool device_read_error(void *context, i_device_state_access *, uint64_t, uint64_
 /// \param val Word to be written at \p offset.
 /// \param log2_size log<sub>2</sub> of size of value to read (0 = uint8_t, 1 = uint16_t, 2 = uint32_t, 3 = uint64_t).
 /// \returns execute::failure if operation failed, otherwise other success enumeration if operation succeeded.
-using device_write = execute_status (*)(void *, i_device_state_access *, uint64_t, uint64_t, int);
+using device_write = execute_status (*)(void *context, i_device_state_access *da, uint64_t offset, uint64_t val,
+    int log2_size);
 
 /// \brief Default write callback issues error on write.
-execute_status device_write_error(void *context, i_device_state_access *, uint64_t, uint64_t, int);
+execute_status device_write_error(void *context, i_device_state_access *da, uint64_t offset, uint64_t val,
+    int log2_size);
 
 /// \brief Driver for device memory ranges.
 struct pma_driver final {

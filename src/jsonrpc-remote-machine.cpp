@@ -499,7 +499,7 @@ constexpr size_t count_mandatory_params() {
 /// \tparam I Parameter pack with indices of each parameter
 /// \returns Index of first parameter that is optional
 template <typename... ARGS, size_t... I>
-size_t first_optional_param(const std::tuple<ARGS...> &, std::index_sequence<I...>) {
+size_t first_optional_param(const std::tuple<ARGS...> & /*unused*/, std::index_sequence<I...> /*unused*/) {
     if constexpr (sizeof...(ARGS) > 0) {
         return std::min({(is_optional_param_v<ARGS> ? I + 1 : sizeof...(ARGS) + 1)...});
     } else {
@@ -512,7 +512,7 @@ size_t first_optional_param(const std::tuple<ARGS...> &, std::index_sequence<I..
 /// \tparam I Parameter pack with indices of each parameter
 /// \returns Index of first parameter that is optional
 template <typename... ARGS, size_t... I>
-size_t last_mandatory_param(const std::tuple<ARGS...> &, std::index_sequence<I...>) {
+size_t last_mandatory_param(const std::tuple<ARGS...> & /*unused*/, std::index_sequence<I...> /*unused*/) {
     if constexpr (sizeof...(ARGS) > 0) {
         return std::max({(!is_optional_param_v<ARGS> ? I + 1 : 0)...});
     } else {
@@ -547,7 +547,7 @@ bool has_arg(const cartesi::optional_param<T> &t) {
 /// \returns Index of first optional argument that is missing
 /// \details The function returns the index + 1, so that sizeof...(ARGS)+1 means no missing optional arguments
 template <typename... ARGS, size_t... I>
-size_t first_missing_optional_arg(const std::tuple<ARGS...> &tup, std::index_sequence<I...>) {
+size_t first_missing_optional_arg(const std::tuple<ARGS...> &tup, std::index_sequence<I...> /*unused*/) {
     if constexpr (sizeof...(ARGS) > 0) {
         return std::min({(!has_arg(std::get<I>(tup)) ? I + 1 : sizeof...(ARGS) + 1)...});
     } else {
@@ -561,7 +561,7 @@ size_t first_missing_optional_arg(const std::tuple<ARGS...> &tup, std::index_seq
 /// \returns Index of last argument that is present
 /// \details The function returns the index + 1, so that 0 means no arguments are present
 template <typename... ARGS, size_t... I>
-size_t last_present_arg(const std::tuple<ARGS...> &tup, std::index_sequence<I...>) {
+size_t last_present_arg(const std::tuple<ARGS...> &tup, std::index_sequence<I...> /*unused*/) {
     if constexpr (sizeof...(ARGS) > 0) {
         return std::max({(has_arg(std::get<I>(tup)) ? I + 1 : 0)...});
     } else {
@@ -607,7 +607,7 @@ size_t count_args(const std::tuple<ARGS...> &tup) {
 /// \param j JSONRPC request params
 /// \returns tuple with arguments
 template <typename... ARGS, size_t... I>
-std::tuple<ARGS...> parse_array_args(const json &j, std::index_sequence<I...>) {
+std::tuple<ARGS...> parse_array_args(const json &j, std::index_sequence<I...> /*unused*/) {
     std::tuple<ARGS...> tp;
     (cartesi::ju_get_field(j, static_cast<uint64_t>(I), std::get<I>(tp)), ...);
     return tp;
@@ -630,7 +630,7 @@ std::tuple<ARGS...> parse_array_args(const json &j) {
 /// \returns tuple with arguments
 template <typename... ARGS, size_t... I>
 std::tuple<ARGS...> parse_object_args(const json &j, const char *(&param_name)[sizeof...(ARGS)],
-    std::index_sequence<I...>) {
+    std::index_sequence<I...> /*unused*/) {
     std::tuple<ARGS...> tp;
     (cartesi::ju_get_field(j, std::string(param_name[I]), std::get<I>(tp)), ...);
     return tp;

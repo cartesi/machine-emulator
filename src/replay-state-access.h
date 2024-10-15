@@ -254,7 +254,7 @@ private:
         m_next_access++;
     }
 
-    void do_push_bracket(bracket_type &type, const char *text) {}
+    void do_push_bracket(bracket_type & /*type*/, const char * /*text*/) {}
 
     void do_reset_iflags_Y() {
         auto old_iflags = check_read(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags), "iflags.Y");

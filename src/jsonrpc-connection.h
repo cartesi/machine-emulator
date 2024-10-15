@@ -64,7 +64,7 @@ private:
     boost::asio::io_context m_ioc{1};         // The io_context is required for all I/O
     boost::beast::tcp_stream m_stream{m_ioc}; // TCP stream for keep alive connections
     boost::container::static_vector<std::string, 2> m_address{};
-    const bool m_detach_server;
+    bool m_detach_server{};
 };
 
 } // namespace cartesi

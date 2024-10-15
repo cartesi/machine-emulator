@@ -45,7 +45,7 @@ public:
     jsonrpc_virtual_machine(jsonrpc_virtual_machine &&other) noexcept = delete;
     jsonrpc_virtual_machine &operator=(const jsonrpc_virtual_machine &other) = delete;
     jsonrpc_virtual_machine &operator=(jsonrpc_virtual_machine &&other) noexcept = delete;
-    ~jsonrpc_virtual_machine();
+    ~jsonrpc_virtual_machine() final;
 
     jsonrpc_connection_ptr get_connection(void) const;
 

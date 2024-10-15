@@ -293,7 +293,7 @@ private:
 
     void do_write_x(int reg, uint64_t val) {
         assert(reg != 0);
-        return log_before_write_write_and_update(shadow_uarch_state_get_x_abs_addr(reg), m_us.x[reg], val, "uarch.x");
+        log_before_write_write_and_update(shadow_uarch_state_get_x_abs_addr(reg), m_us.x[reg], val, "uarch.x");
     }
 
     uint64_t do_read_pc() const {
@@ -301,8 +301,8 @@ private:
     }
 
     void do_write_pc(uint64_t val) {
-        return log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::pc),
-            m_us.pc, val, "uarch.pc");
+        log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::pc), m_us.pc, val,
+            "uarch.pc");
     }
 
     uint64_t do_read_cycle() const {
@@ -310,7 +310,7 @@ private:
     }
 
     void do_write_cycle(uint64_t val) {
-        return log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::cycle),
+        log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::cycle),
             m_us.cycle, val, "uarch.cycle");
     }
 
@@ -325,7 +325,7 @@ private:
     }
 
     void do_reset_halt_flag() {
-        return log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag),
+        log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag),
             m_us.halt_flag, false, "uarch.halt_flag");
     }
 
@@ -364,7 +364,8 @@ private:
         auto &pma = find_memory_pma_entry(paddr, sizeof(uint64_t));
         if (pma.get_istart_E()) {
             // Memory not found. Try to write a machine state register
-            return write_register(paddr, data);
+            write_register(paddr, data);
+            return;
         }
         if (!pma.get_istart_W()) {
             throw std::runtime_error("pma is not writable");

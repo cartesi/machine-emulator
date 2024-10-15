@@ -508,7 +508,7 @@ void clua_push_schemed_json_table(lua_State *L, const char *s, const std::string
     if (it == machine_schema_dict.end()) {
         luaL_error(L, "type \"%s\" is not defined in machine schema dictionary", schema_name.c_str());
     }
-    return clua_push_json_table(L, s, ctxidx, *it, machine_schema_dict);
+    clua_push_json_table(L, s, ctxidx, *it, machine_schema_dict);
 }
 
 } // namespace cartesi

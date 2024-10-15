@@ -52,12 +52,12 @@ public:
 
     /// \brief Sets bits in mip.
     void set_mip(uint64_t mask) {
-        return do_set_mip(mask);
+        do_set_mip(mask);
     }
 
     /// \brief Resets bits in mip.
     void reset_mip(uint64_t mask) {
-        return do_reset_mip(mask);
+        do_reset_mip(mask);
     }
 
     /// \brief Reads the value of the mip register.
@@ -75,19 +75,19 @@ public:
     /// \brief Sets the iflags_H flag.
     /// \details This is Cartesi-specific.
     void set_iflags_H() {
-        return do_set_iflags_H();
+        do_set_iflags_H();
     }
 
     /// \brief Sets the iflags_Y flag.
     /// \details This is Cartesi-specific.
     void set_iflags_Y() {
-        return do_set_iflags_Y();
+        do_set_iflags_Y();
     }
 
     /// \brief Sets the iflags_X flag.
     /// \details This is Cartesi-specific.
     void set_iflags_X() {
-        return do_set_iflags_X();
+        do_set_iflags_X();
     }
 
     /// \brief Reads CLINT's mtimecmp.
@@ -99,7 +99,7 @@ public:
     /// \brief Writes CLINT's mtimecmp.
     /// \param val New register value.
     void write_clint_mtimecmp(uint64_t val) {
-        return do_write_clint_mtimecmp(val);
+        do_write_clint_mtimecmp(val);
     }
 
     /// \brief Reads PLIC's girqpend.
@@ -111,7 +111,7 @@ public:
     /// \brief Writes PLIC's girqpend.
     /// \param val New register value.
     void write_plic_girqpend(uint64_t val) {
-        return do_write_plic_girqpend(val);
+        do_write_plic_girqpend(val);
     }
 
     /// \brief Reads PLIC's girqsrvd.
@@ -123,7 +123,7 @@ public:
     /// \brief Writes PLIC's girqsrvd.
     /// \param val New register value.
     void write_plic_girqsrvd(uint64_t val) {
-        return do_write_plic_girqsrvd(val);
+        do_write_plic_girqsrvd(val);
     }
 
     /// \brief Reads HTIF's fromhost.
@@ -135,7 +135,7 @@ public:
     /// \brief Writes HTIF's fromhost.
     /// \param val New register value.
     void write_htif_fromhost(uint64_t val) {
-        return do_write_htif_fromhost(val);
+        do_write_htif_fromhost(val);
     }
 
     /// \brief Reads HTIF's tohost.
@@ -147,7 +147,7 @@ public:
     /// \brief Writes HTIF's tohost.
     /// \param val New register value.
     void write_htif_tohost(uint64_t val) {
-        return do_write_htif_tohost(val);
+        do_write_htif_tohost(val);
     }
 
     /// \brief Reads HTIF's ihalt.

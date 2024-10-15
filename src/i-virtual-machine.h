@@ -158,7 +158,7 @@ public:
 
     /// \brief Resets the microarchitecture state to pristine value
     void reset_uarch() {
-        return do_reset_uarch();
+        do_reset_uarch();
     }
 
     /// \brief Resets the microarchitecture state to pristine value and returns an access log

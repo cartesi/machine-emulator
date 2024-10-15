@@ -478,7 +478,7 @@ public:
 
     /// \brief Marks all pages in range as clean
     void mark_pages_clean() {
-        return std::fill(m_dirty_page_map.begin(), m_dirty_page_map.end(), 0);
+        std::fill(m_dirty_page_map.begin(), m_dirty_page_map.end(), 0);
     }
 
     /// \brief Returns PMA description as a string

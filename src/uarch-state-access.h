@@ -158,7 +158,8 @@ private:
         if (pma.get_istart_E()) {
             // This word doesn't fall within any memory PMA range.
             // Check if uarch is trying to access a machine state register
-            return write_register(paddr, data);
+            write_register(paddr, data);
+            return;
         }
         if (!pma.get_istart_W()) {
             throw std::runtime_error("pma is not writable");
@@ -175,7 +176,7 @@ private:
     /// \param paddr Address of the state register
     /// \param data New register value
     void write_register(uint64_t paddr, uint64_t data) {
-        return uarch_bridge::write_register(paddr, m_s, data);
+        uarch_bridge::write_register(paddr, m_s, data);
     }
 
     void do_reset_state() {

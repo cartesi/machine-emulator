@@ -3,7 +3,6 @@ Checks: >-
   bugprone*,
   -bugprone-branch-clone,
   -bugprone-easily-swappable-parameters,
-  -bugprone-casting-through-void,
   -bugprone-unused-return-value,
   cert*,
   clang-analyzer*,

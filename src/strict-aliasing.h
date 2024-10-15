@@ -77,7 +77,7 @@ static inline uint64_t cast_ptr_to_addr(PTR ptr) {
     static_assert(sizeof(T) >= sizeof(uintptr_t), "expected sizeof(T) >= sizeof(uintptr_t)");
     // Note that bellow we cast the pointer to void* first,
     // according to the C spec this is required is to ensure the same presentation, before casting to uintptr_t
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,bugprone-casting-through-void)
     return static_cast<T>(reinterpret_cast<uintptr_t>(static_cast<const void *>(ptr)));
 }
 
@@ -99,7 +99,7 @@ static inline PTR cast_addr_to_ptr(T addr) {
     static_assert(sizeof(T) >= sizeof(uintptr_t), "expected sizeof(T) >= sizeof(uintptr_t)");
     // Note that bellow we cast the address to void* first,
     // according to the C spec this is required is to ensure the same presentation, before casting to PTR
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,performance-no-int-to-ptr)
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,bugprone-casting-through-void,performance-no-int-to-ptr)
     return static_cast<PTR>(reinterpret_cast<void *>(static_cast<uintptr_t>(addr)));
 }
 

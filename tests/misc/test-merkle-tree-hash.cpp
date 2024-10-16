@@ -143,11 +143,10 @@ hash_type get_leaf_hash(hasher_type &h, int log2_word_size, const unsigned char 
             get_leaf_hash(h, log2_word_size, leaf_data + (1 << (log2_leaf_size - 1)), log2_leaf_size - 1);
         get_concat_hash(h, left, right, left);
         return left;
-    } else {
-        hash_type leaf;
-        get_word_hash(h, leaf_data, log2_word_size, leaf);
-        return leaf;
     }
+    hash_type leaf;
+    get_word_hash(h, leaf_data, log2_word_size, leaf);
+    return leaf;
 }
 
 /// \brief Computes the Merkle hash of a leaf of data
@@ -183,7 +182,8 @@ int main(int argc, char *argv[]) try {
         if (strcmp(argv[i], "--help") == 0) {
             help(argv[0]);
             return 1;
-        } else if (stringval("--input=", argv[i], &input_name)) {
+        }
+        if (stringval("--input=", argv[i], &input_name)) {
             ;
         } else if (intval("--log2-word-size=", argv[i], &log2_word_size)) {
             ;
@@ -249,9 +249,8 @@ int main(int argc, char *argv[]) try {
             if (ferror(input_file.get()) != 0) {
                 error("error reading input\n");
                 return 1;
-            } else {
-                break;
             }
+            break;
         }
         if (leaf_count >= max_leaves) {
             error("too many leaves for tree\n");

@@ -91,9 +91,9 @@ static execute_status clint_write(void *context, i_device_state_access *a, uint6
                 if ((val & 1) != 0) {
                     a->set_mip(MIP_MSIP_MASK);
                     return execute_status::success_and_serve_interrupts;
-                } else {
-                    a->reset_mip(MIP_MSIP_MASK);
                 }
+                a->reset_mip(MIP_MSIP_MASK);
+
                 return execute_status::success;
             }
             return execute_status::failure;

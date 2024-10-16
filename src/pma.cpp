@@ -196,10 +196,9 @@ static bool memory_peek(const pma_entry &pma, const machine &m, uint64_t page_ad
         *page_data = scratch;
         return true;
         // Otherwise, return pointer directly into host memory
-    } else {
-        *page_data = pma.get_memory().get_host_memory() + page_address;
-        return true;
     }
+    *page_data = pma.get_memory().get_host_memory() + page_address;
+    return true;
 }
 
 pma_entry make_mmapd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length,

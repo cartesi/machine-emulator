@@ -175,10 +175,12 @@ struct http_session : std::enable_shared_from_this<http_session> {
         // Check error code
         if (ec == asio::error::operation_aborted) { // Operation may be aborted
             return;
-        } else if (ec == http::error::end_of_stream) { // This means the connection was closed by the client
+        }
+        if (ec == http::error::end_of_stream) { // This means the connection was closed by the client
             shutdown_send();
             return;
-        } else if (ec) { // Unexpected error
+        }
+        if (ec) { // Unexpected error
             SLOG(error) << "read request error:" << ec.what();
             return;
         }
@@ -214,7 +216,8 @@ struct http_session : std::enable_shared_from_this<http_session> {
         // Check error code
         if (ec == asio::error::operation_aborted) { // Operation may be aborted
             return;
-        } else if (ec) { // Unexpected error
+        }
+        if (ec) { // Unexpected error
             SLOG(error) << "send response error:" << ec.what();
             shutdown_send();
             return;
@@ -330,7 +333,8 @@ private:
         // Operation may be aborted (e.g rebind() or stop() was called)
         if (ec == asio::error::operation_aborted) {
             return;
-        } else if (ec) {
+        }
+        if (ec) {
             SLOG(error) << local_endpoint << " accept error: " << ec.what();
             return;
         }

@@ -479,9 +479,8 @@ public:
             auto map_index = page_number >> 3;
             assert(map_index < m_dirty_page_map.size());
             return (m_dirty_page_map[map_index] & (1 << (page_number & 7))) != 0;
-        } else {
-            return true;
         }
+        return true;
     }
 
     /// \brief Marks all pages in range as clean

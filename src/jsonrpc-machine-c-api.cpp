@@ -172,7 +172,8 @@ cm_error cm_jsonrpc_spawn_server(const char *address, int detach_server, cm_json
             exit(1);
         };
         return cm_result_success(); // code never reaches here
-    } else if (grand_child > 0) {   // parent and double-fork() succeeded
+    }
+    if (grand_child > 0) {          // parent and double-fork() succeeded
         restore_grand_child = true; // make sure grand-child is killed if we fail
         static THREAD_LOCAL std::string bound_address_storage = endpoint_to_string(a.local_endpoint());
         a.close();

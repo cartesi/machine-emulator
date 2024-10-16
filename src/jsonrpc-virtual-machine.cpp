@@ -104,7 +104,8 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
             stream.connect(remote_endpoint, ec);
             if (!ec) { // Success
                 break;
-            } else if (ec == asio::error::interrupted) {
+            }
+            if (ec == asio::error::interrupted) {
                 // Retry the operation during interrupts (SIGINT/SIGTERM),
                 // otherwise we may leave dead zombies processes during fork requests.
             } else { // Unexpected error
@@ -150,7 +151,8 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
             http::write(stream, req, ec);
             if (!ec) { // Success
                 break;
-            } else if (ec == asio::error::interrupted) {
+            }
+            if (ec == asio::error::interrupted) {
                 // Retry the operation during interrupts (SIGINT/SIGTERM),
                 // otherwise we may leave dead zombies processes during fork requests.
             } else { // Unexpected error
@@ -170,7 +172,8 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
             http::read(stream, buffer, res_parser, ec);
             if (!ec) { // Success
                 break;
-            } else if (ec == asio::error::interrupted) {
+            }
+            if (ec == asio::error::interrupted) {
                 // Retry the operation during interrupts (SIGINT/SIGTERM),
                 // otherwise we may leave dead zombies processes during fork requests.
             } else { // Unexpected error

@@ -919,7 +919,8 @@ static inline void executeECALL(UarchState &a, uint64 pc) {
     uint64 fn = readX(a, 17); // a7 contains the function number
     if (fn == UARCH_ECALL_FN_HALT) {
         return setHaltFlag(a);
-    } else if (fn == UARCH_ECALL_FN_PUTCHAR) {
+    }
+    if (fn == UARCH_ECALL_FN_PUTCHAR) {
         uint64 character = readX(a, 16); // a6 contains the character to print
         putChar(a, uint8(character));
     } else {
@@ -964,107 +965,158 @@ template <typename UarchState>
 static inline void executeInsn(UarchState &a, uint32 insn, uint64 pc) {
     if (insnMatchOpcodeFunct3(insn, 0x13, 0x0)) {
         return executeADDI(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x3, 0x3)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x3, 0x3)) {
         return executeLD(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x63, 0x6)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x63, 0x6)) {
         return executeBLTU(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x63, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x63, 0x0)) {
         return executeBEQ(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x13, 0x7)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x13, 0x7)) {
         return executeANDI(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x0, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x0, 0x0)) {
         return executeADD(a, insn, pc);
-    } else if (insnMatchOpcode(insn, 0x6f)) {
+    }
+    if (insnMatchOpcode(insn, 0x6f)) {
         return executeJAL(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7Sr1(insn, 0x13, 0x1, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7Sr1(insn, 0x13, 0x1, 0x0)) {
         return executeSLLI(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x7, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x7, 0x0)) {
         return executeAND(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x23, 0x3)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x23, 0x3)) {
         return executeSD(a, insn, pc);
-    } else if (insnMatchOpcode(insn, 0x37)) {
+    }
+    if (insnMatchOpcode(insn, 0x37)) {
         return executeLUI(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x67, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x67, 0x0)) {
         return executeJALR(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x1b, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x1b, 0x0)) {
         return executeADDIW(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7Sr1(insn, 0x13, 0x5, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7Sr1(insn, 0x13, 0x5, 0x0)) {
         return executeSRLI(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x1b, 0x5, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x1b, 0x5, 0x0)) {
         return executeSRLIW(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x63, 0x1)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x63, 0x1)) {
         return executeBNE(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x3, 0x2)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x3, 0x2)) {
         return executeLW(a, insn, pc);
-    } else if (insnMatchOpcode(insn, 0x17)) {
+    }
+    if (insnMatchOpcode(insn, 0x17)) {
         return executeAUIPC(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x63, 0x7)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x63, 0x7)) {
         return executeBGEU(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x0, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x0, 0x0)) {
         return executeADDW(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7Sr1(insn, 0x13, 0x5, 0x10)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7Sr1(insn, 0x13, 0x5, 0x10)) {
         return executeSRAI(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x6, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x6, 0x0)) {
         return executeOR(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x1b, 0x5, 0x20)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x1b, 0x5, 0x20)) {
         return executeSRAIW(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x63, 0x5)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x63, 0x5)) {
         return executeBGE(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x0, 0x20)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x0, 0x20)) {
         return executeSUB(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x3, 0x4)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x3, 0x4)) {
         return executeLBU(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x1b, 0x1, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x1b, 0x1, 0x0)) {
         return executeSLLIW(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x5, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x5, 0x0)) {
         return executeSRL(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x4, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x4, 0x0)) {
         return executeXOR(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x23, 0x2)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x23, 0x2)) {
         return executeSW(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x1, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x1, 0x0)) {
         return executeSLL(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x63, 0x4)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x63, 0x4)) {
         return executeBLT(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x23, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x23, 0x0)) {
         return executeSB(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x0, 0x20)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x0, 0x20)) {
         return executeSUBW(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x13, 0x4)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x13, 0x4)) {
         return executeXORI(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x5, 0x20)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x5, 0x20)) {
         return executeSRA(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x3, 0x5)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x3, 0x5)) {
         return executeLHU(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x23, 0x1)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x23, 0x1)) {
         return executeSH(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x5, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x5, 0x0)) {
         return executeSRLW(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x3, 0x6)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x3, 0x6)) {
         return executeLWU(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x1, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x1, 0x0)) {
         return executeSLLW(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x3, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x3, 0x0)) {
         return executeLB(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x3, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x3, 0x0)) {
         return executeSLTU(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x5, 0x20)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x3b, 0x5, 0x20)) {
         return executeSRAW(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x3, 0x1)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x3, 0x1)) {
         return executeLH(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x13, 0x6)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x13, 0x6)) {
         return executeORI(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x13, 0x3)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x13, 0x3)) {
         return executeSLTIU(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x2, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3Funct7(insn, 0x33, 0x2, 0x0)) {
         return executeSLT(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0x13, 0x2)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0x13, 0x2)) {
         return executeSLTI(a, insn, pc);
-    } else if (insnMatchOpcodeFunct3(insn, 0xf, 0x0)) {
+    }
+    if (insnMatchOpcodeFunct3(insn, 0xf, 0x0)) {
         return executeFENCE(a, pc);
-    } else if (insn == uint32(0x73)) {
+    }
+    if (insn == uint32(0x73)) {
         return executeECALL(a, pc);
-    } else if (insn == uint32(0x100073)) {
+    }
+    if (insn == uint32(0x100073)) {
         return executeEBREAK(a);
     }
     throwRuntimeError(a, "illegal instruction");

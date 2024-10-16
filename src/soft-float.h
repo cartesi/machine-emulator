@@ -197,10 +197,9 @@ struct i_sfloat {
         if (d != 0) {
             if (d >= F_SIZE) {
                 return (a != 0);
-            } else {
-                const F_UINT mask = (static_cast<F_UINT>(1) << d) - 1;
-                return (a >> d) | ((a & mask) != 0);
             }
+            const F_UINT mask = (static_cast<F_UINT>(1) << d) - 1;
+            return (a >> d) | ((a & mask) != 0);
         }
         return a;
     }
@@ -346,12 +345,12 @@ struct i_sfloat {
                     *pfflags |= FFLAGS_NV_MASK;
                 }
                 return F_QNAN;
-            } else if (b_exp == EXP_MASK && a_sign != b_sign) {
+            }
+            if (b_exp == EXP_MASK && a_sign != b_sign) {
                 *pfflags |= FFLAGS_NV_MASK;
                 return F_QNAN;
-            } else { // infinity
-                return a;
-            }
+            } // infinity
+            return a;
         }
         if (a_exp == 0) {
             a_exp = 1;
@@ -394,15 +393,13 @@ struct i_sfloat {
                     *pfflags |= FFLAGS_NV_MASK;
                 }
                 return F_QNAN;
-            } else { // infinity
-                if ((a_exp == EXP_MASK && (b_exp == 0 && b_mant == 0)) ||
-                    (b_exp == EXP_MASK && (a_exp == 0 && a_mant == 0))) {
-                    *pfflags |= FFLAGS_NV_MASK;
-                    return F_QNAN;
-                } else {
-                    return pack(r_sign, EXP_MASK, 0);
-                }
+            } // infinity
+            if ((a_exp == EXP_MASK && (b_exp == 0 && b_mant == 0)) ||
+                (b_exp == EXP_MASK && (a_exp == 0 && a_mant == 0))) {
+                *pfflags |= FFLAGS_NV_MASK;
+                return F_QNAN;
             }
+            return pack(r_sign, EXP_MASK, 0);
         }
         if (a_exp == 0) {
             if (a_mant == 0) { // zero
@@ -452,16 +449,15 @@ struct i_sfloat {
                     *pfflags |= FFLAGS_NV_MASK;
                 }
                 return F_QNAN;
-            } else { // infinities
-                if ((a_exp == EXP_MASK || b_exp == EXP_MASK) && (c_exp == EXP_MASK && r_sign != c_sign)) {
-                    *pfflags |= FFLAGS_NV_MASK;
-                    return F_QNAN;
-                } else if (c_exp == EXP_MASK) {
-                    return pack(c_sign, EXP_MASK, 0);
-                } else {
-                    return pack(r_sign, EXP_MASK, 0);
-                }
+            } // infinities
+            if ((a_exp == EXP_MASK || b_exp == EXP_MASK) && (c_exp == EXP_MASK && r_sign != c_sign)) {
+                *pfflags |= FFLAGS_NV_MASK;
+                return F_QNAN;
             }
+            if (c_exp == EXP_MASK) {
+                return pack(c_sign, EXP_MASK, 0);
+            }
+            return pack(r_sign, EXP_MASK, 0);
         }
         if ((a_exp == 0 && a_mant == 0) || (b_exp == 0 && b_mant == 0)) {
             if (c_exp == 0 && c_mant == 0) {
@@ -469,9 +465,8 @@ struct i_sfloat {
                     r_sign = static_cast<uint32_t>(rm == FRM_RDN);
                 }
                 return pack(r_sign, 0, 0);
-            } else {
-                return c;
             }
+            return c;
         }
         if (a_exp == 0) {
             a_mant = mant_normalize_subnormal(&a_exp, a_mant);
@@ -570,31 +565,30 @@ struct i_sfloat {
                     *pfflags |= FFLAGS_NV_MASK;
                 }
                 return F_QNAN;
-            } else if (b_exp == EXP_MASK) {
+            }
+            if (b_exp == EXP_MASK) {
                 *pfflags |= FFLAGS_NV_MASK;
                 return F_QNAN;
-            } else {
-                return pack(r_sign, EXP_MASK, 0);
             }
-        } else if (unlikely(b_exp == EXP_MASK)) {
+            return pack(r_sign, EXP_MASK, 0);
+        }
+        if (unlikely(b_exp == EXP_MASK)) {
             if (b_mant != 0) {
                 if (issignan(b)) {
                     *pfflags |= FFLAGS_NV_MASK;
                 }
                 return F_QNAN;
-            } else {
-                return pack(r_sign, 0, 0);
             }
+            return pack(r_sign, 0, 0);
         }
         if (b_exp == 0) {
             if (unlikely(b_mant == 0)) { // zero
                 if (a_exp == 0 && a_mant == 0) {
                     *pfflags |= FFLAGS_NV_MASK;
                     return F_QNAN;
-                } else {
-                    *pfflags |= FFLAGS_DZ_MASK;
-                    return pack(r_sign, EXP_MASK, 0);
                 }
+                *pfflags |= FFLAGS_DZ_MASK;
+                return pack(r_sign, EXP_MASK, 0);
             }
             b_mant = mant_normalize_subnormal(&b_exp, b_mant);
         } else {
@@ -628,12 +622,12 @@ struct i_sfloat {
                     *pfflags |= FFLAGS_NV_MASK;
                 }
                 return F_QNAN;
-            } else if (a_sign != 0) {
+            }
+            if (a_sign != 0) {
                 *pfflags |= FFLAGS_NV_MASK;
                 return F_QNAN;
-            } else { // infinity
-                return a;
-            }
+            } // infinity
+            return a;
         }
         if (a_sign != 0) {
             if (likely(a_exp == 0 && a_mant == 0)) { // zero
@@ -672,12 +666,10 @@ struct i_sfloat {
         if (isnan(a)) {
             if (isnan(b)) {
                 return F_QNAN;
-            } else {
-                return b;
             }
-        } else {
-            return a;
+            return b;
         }
+        return a;
     }
 
     /// \brief Min operation.
@@ -689,9 +681,8 @@ struct i_sfloat {
         const uint32_t b_sign = b >> (F_SIZE - 1);
         if (a_sign != b_sign) {
             return (a_sign != 0) ? a : b;
-        } else {
-            return ((a < b) ^ a_sign) ? a : b;
         }
+        return ((a < b) ^ a_sign) ? a : b;
     }
 
     /// \brief Max operation.
@@ -703,9 +694,8 @@ struct i_sfloat {
         const uint32_t b_sign = b >> (F_SIZE - 1);
         if (a_sign != b_sign) {
             return (a_sign != 0) ? b : a;
-        } else {
-            return ((a < b) ^ a_sign) ? b : a;
         }
+        return ((a < b) ^ a_sign) ? b : a;
     }
 
     /// \brief Equal operation.
@@ -732,9 +722,8 @@ struct i_sfloat {
         const uint32_t b_sign = b >> (F_SIZE - 1);
         if (a_sign != b_sign) {
             return a_sign || (((a | b) << 1) == 0);
-        } else {
-            return (a_sign != 0) ? (a >= b) : (a <= b);
         }
+        return (a_sign != 0) ? (a >= b) : (a <= b);
     }
 
     /// \brief Less than operation.
@@ -747,9 +736,8 @@ struct i_sfloat {
         const uint32_t b_sign = b >> (F_SIZE - 1);
         if (a_sign != b_sign) {
             return a_sign && (((a | b) << 1) != 0);
-        } else {
-            return (a_sign != 0) ? (a > b) : (a < b);
         }
+        return (a_sign != 0) ? (a > b) : (a < b);
     }
 
     /// \brief Retrieves float class.
@@ -760,18 +748,16 @@ struct i_sfloat {
         if (unlikely(a_exp == EXP_MASK)) {
             if (a_mant != 0) {
                 return (a_mant & QNAN_MASK) ? FCLASS_QNAN : FCLASS_SNAN;
-            } else {
-                return (a_sign != 0) ? FCLASS_NINF : FCLASS_PINF;
             }
-        } else if (a_exp == 0) {
+            return (a_sign != 0) ? FCLASS_NINF : FCLASS_PINF;
+        }
+        if (a_exp == 0) {
             if (a_mant == 0) {
                 return (a_sign != 0) ? FCLASS_NZERO : FCLASS_PZERO;
-            } else {
-                return (a_sign != 0) ? FCLASS_NSUBNORMAL : FCLASS_PSUBNORMAL;
             }
-        } else {
-            return (a_sign != 0) ? FCLASS_NNORMAL : FCLASS_PNORMAL;
+            return (a_sign != 0) ? FCLASS_NSUBNORMAL : FCLASS_PSUBNORMAL;
         }
+        return (a_sign != 0) ? FCLASS_NNORMAL : FCLASS_PNORMAL;
     }
 
     /// \brief Conversion from float to integer.
@@ -894,9 +880,8 @@ static uint64_t sfloat_cvt_f32_f64(uint32_t a, uint32_t *pfflags) {
                 *pfflags |= FFLAGS_NV_MASK;
             }
             return i_sfloat64::F_QNAN;
-        } else { // infinity
-            return i_sfloat64::pack(a_sign, i_sfloat64::EXP_MASK, 0);
-        }
+        } // infinity
+        return i_sfloat64::pack(a_sign, i_sfloat64::EXP_MASK, 0);
     }
     if (a_exp == 0) {
         if (a_mant == 0) { // zero
@@ -924,9 +909,8 @@ static uint32_t sfloat_cvt_f64_f32(uint64_t a, FRM_modes rm, uint32_t *pfflags) 
                 *pfflags |= FFLAGS_NV_MASK;
             }
             return i_sfloat32::F_QNAN;
-        } else { // infinity
-            return i_sfloat32::pack(a_sign, 0xff, 0);
-        }
+        } // infinity
+        return i_sfloat32::pack(a_sign, 0xff, 0);
     }
     if (a_exp == 0) {
         if (a_mant == 0) { // zero

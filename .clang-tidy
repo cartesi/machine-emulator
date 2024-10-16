@@ -37,7 +37,6 @@ Checks: >-
   -performance-enum-size,
   portability*,
   readability*,
-  -readability-else-after-return,
   -readability-function-cognitive-complexity,
   -readability-identifier-length,
   -readability-magic-numbers,

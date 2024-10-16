@@ -874,9 +874,9 @@ int os_double_fork_or_throw(int newpgid) {
                 fd[1] = -1;
                 // we are done and can return to whatever caller wants to do as a child
                 return 0;
-            } else {     // intermediate child, fork either failed or succeeded
-                exit(0); // intermediate child exits right away
-            }
+            } // intermediate child, fork either failed or succeeded
+            exit(0); // intermediate child exits right away
+
         } else if (ipid > 0) {         // still parent (fork succeeded)
             waitpid(ipid, nullptr, 0); // wait on dead intermediate child so it doesn't become a zombie
             // set alarm so we can't hang while waiting to read final child pid from pipe
@@ -899,9 +899,8 @@ int os_double_fork_or_throw(int newpgid) {
                         auto e = errno;
                         if (e == EINTR) {
                             throw std::runtime_error{"parent gave up waiting for child pid"};
-                        } else {
-                            throw std::system_error{e, std::generic_category(), "failed to read child pid"};
                         }
+                        throw std::system_error{e, std::generic_category(), "failed to read child pid"};
                     }
                     throw std::runtime_error{"failed to read child pid"};
                 }

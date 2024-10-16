@@ -788,9 +788,8 @@ public:
             auto word_index = (paddr - PMA_SHADOW_PMAS_START) >> 3;
             if ((word_index & 1) == 0) {
                 return "pma.istart";
-            } else {
-                return "pma.ilength";
             }
+            return "pma.ilength";
         }
 
         if (paddr >= PMA_SHADOW_TLB_START && paddr < PMA_SHADOW_TLB_START + PMA_SHADOW_TLB_LENGTH &&
@@ -798,7 +797,8 @@ public:
             const uint64_t tlboff = paddr - PMA_SHADOW_TLB_START;
             if (tlboff < offsetof(shadow_tlb_state, cold)) {
                 return "cold_tlb_entry_field";
-            } else if (tlboff < sizeof(shadow_tlb_state)) {
+            }
+            if (tlboff < sizeof(shadow_tlb_state)) {
                 return "hot_tlb_entry_field";
             }
         }
@@ -851,7 +851,8 @@ private:
             const uint64_t eidx = etypeoff / sizeof(tlb_hot_entry);
             const uint64_t fieldoff = etypeoff % sizeof(tlb_hot_entry);
             return read_tlb_entry_field(s, true, etype, eidx, fieldoff, data);
-        } else if (tlboff < sizeof(shadow_tlb_state)) { // Cold entry
+        }
+        if (tlboff < sizeof(shadow_tlb_state)) { // Cold entry
             const uint64_t coldoff = tlboff - offsetof(shadow_tlb_state, cold);
             const uint64_t etype = coldoff / sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
             const uint64_t etypeoff = coldoff % sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
@@ -882,7 +883,8 @@ private:
             const uint64_t eidx = etypeoff / sizeof(tlb_hot_entry);
             const uint64_t fieldoff = etypeoff % sizeof(tlb_hot_entry);
             return write_tlb_entry_field(s, true, etype, eidx, fieldoff, data);
-        } else if (tlboff < sizeof(shadow_tlb_state)) { // Cold entry
+        }
+        if (tlboff < sizeof(shadow_tlb_state)) { // Cold entry
             const uint64_t coldoff = tlboff - offsetof(shadow_tlb_state, cold);
             const uint64_t etype = coldoff / sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
             const uint64_t etypeoff = coldoff % sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);

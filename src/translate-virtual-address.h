@@ -242,9 +242,8 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppadd
             *ppaddr = (vaddr & vaddr_mask) | (ppn & ~vaddr_mask);
             return true;
             // xwr == 0 means we have a pointer to the start of the next page table
-        } else {
-            pte_addr = ppn;
         }
+        pte_addr = ppn;
     }
     return false;
 }

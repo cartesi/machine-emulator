@@ -39,7 +39,8 @@ bool virtio_net::on_device_queue_available(i_device_state_access *a, uint32_t qu
     if (queue_idx == VIRTIO_NET_RECEIVEQ) { // Guest has a new slot available in the write queue
         // Write any pending packets from host to guest
         return poll_nowait(a);
-    } else if (queue_idx == VIRTIO_NET_TRANSMITQ) { // Guest sent a new packet to the host
+    }
+    if (queue_idx == VIRTIO_NET_TRANSMITQ) { // Guest sent a new packet to the host
         if (write_next_packet_to_host(a, queue_idx, desc_idx, read_avail_len)) {
             // When a packet is just sent, poll for a response right-away.
             // This is necessary to have fast communication between the guest and its host
@@ -48,11 +49,9 @@ bool virtio_net::on_device_queue_available(i_device_state_access *a, uint32_t qu
             return true;
         }
         return false;
-    } else {
-        // Other queues are unexpected
-        notify_device_needs_reset(a);
-        return false;
-    }
+    } // Other queues are unexpected
+    notify_device_needs_reset(a);
+    return false;
 }
 
 void virtio_net::prepare_select(select_fd_sets *fds, uint64_t *timeout_us) {

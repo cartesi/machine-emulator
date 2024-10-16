@@ -188,10 +188,8 @@ bool virtio_net_carrier_tuntap::read_packet_from_host(i_device_state_access *a, 
             // There is no packet available.
             *pwritten_len = 0;
             return true;
-        } else {
-            // Unexpected error, return false to reset the device.
-            return false;
-        }
+        } // Unexpected error, return false to reset the device.
+        return false;
     }
     const auto packet_len = static_cast<uint32_t>(read_len);
     // Is there enough space in the write buffer to write this packet?

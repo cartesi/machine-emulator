@@ -672,14 +672,13 @@ static void store_device_pma(const machine &m, const pma_entry &pma, const std::
         auto peek = pma.get_peek();
         if (!peek(pma, m, page_start_in_range, &page_data, scratch.get())) {
             throw std::runtime_error{"peek failed"};
-        } else {
-            if (page_data == nullptr) {
-                memset(scratch.get(), 0, PMA_PAGE_SIZE);
-                page_data = scratch.get();
-            }
-            if (fwrite(page_data, 1, PMA_PAGE_SIZE, fp.get()) != PMA_PAGE_SIZE) {
-                throw std::system_error{errno, std::generic_category(), "error writing to '" + name + "'"};
-            }
+        }
+        if (page_data == nullptr) {
+            memset(scratch.get(), 0, PMA_PAGE_SIZE);
+            page_data = scratch.get();
+        }
+        if (fwrite(page_data, 1, PMA_PAGE_SIZE, fp.get()) != PMA_PAGE_SIZE) {
+            throw std::system_error{errno, std::generic_category(), "error writing to '" + name + "'"};
         }
     }
 }
@@ -2114,9 +2113,8 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
         return m_t.get_proof(address, log2_size, page_data);
         // If proof concerns range bigger than a page, we already have its hash
         // stored in the tree itself
-    } else {
-        return m_t.get_proof(address, log2_size, nullptr);
     }
+    return m_t.get_proof(address, log2_size, nullptr);
 }
 
 machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_size) const {
@@ -2156,13 +2154,15 @@ void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length
         if (bytes_to_write == PMA_PAGE_SIZE) {
             if (!peek(pma, *this, page_address, &page_data, data)) {
                 throw std::runtime_error{"peek failed"};
-            } else if (page_data == nullptr) {
+            }
+            if (page_data == nullptr) {
                 memset(data, 0, bytes_to_write);
             }
         } else {
             if (!peek(pma, *this, page_address, &page_data, scratch.get())) {
                 throw std::runtime_error{"peek failed"};
-            } else if (page_data == nullptr) {
+            }
+            if (page_data == nullptr) {
                 memset(data, 0, bytes_to_write);
             } else {
                 memcpy(data, page_data + shift, bytes_to_write);
@@ -2296,9 +2296,8 @@ uint64_t machine::read_word(uint64_t word_address) const {
         const uint64_t word_start_in_range = (word_address - pma.get_start()) & (PMA_PAGE_SIZE - 1);
         return aliased_aligned_read<uint64_t>(page_data + word_start_in_range);
         // Otherwise, page is always pristine
-    } else {
-        return 0;
     }
+    return 0;
 }
 
 void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {

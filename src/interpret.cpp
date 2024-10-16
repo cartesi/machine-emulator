@@ -842,7 +842,8 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS
             const uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             a.read_memory_word(paddr, hpage, hoffset, pval);
             return {true, pc};
-        } else if (likely(pma.get_istart_IO())) {
+        }
+        if (likely(pma.get_istart_IO())) {
             const uint64_t offset = paddr - pma.get_start();
             uint64_t val{};
             // If we do not know how to read, we treat this as a PMA violation
@@ -917,7 +918,8 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(S
             const uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
             a.write_memory_word(paddr, hpage, hoffset, static_cast<T>(val64));
             return {execute_status::success, pc};
-        } else if (likely(pma.get_istart_IO())) {
+        }
+        if (likely(pma.get_istart_IO())) {
             const uint64_t offset = paddr - pma.get_start();
             auto status =
                 a.write_device(pma, mcycle, offset, static_cast<U>(static_cast<T>(val64)), log2_size<U>::value);
@@ -1192,9 +1194,8 @@ static FORCE_INLINE execute_status execute_AMOMIN_W(STATE_ACCESS &a, uint64_t &p
     return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t valm, int32_t valr) -> int32_t {
         if (valm < valr) {
             return valm;
-        } else {
-            return valr;
         }
+        return valr;
     });
 }
 
@@ -1205,9 +1206,8 @@ static FORCE_INLINE execute_status execute_AMOMAX_W(STATE_ACCESS &a, uint64_t &p
     return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t valm, int32_t valr) -> int32_t {
         if (valm > valr) {
             return valm;
-        } else {
-            return valr;
         }
+        return valr;
     });
 }
 
@@ -1218,9 +1218,8 @@ static FORCE_INLINE execute_status execute_AMOMINU_W(STATE_ACCESS &a, uint64_t &
     return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t valm, int32_t valr) -> int32_t {
         if (static_cast<uint32_t>(valm) < static_cast<uint32_t>(valr)) {
             return valm;
-        } else {
-            return valr;
         }
+        return valr;
     });
 }
 
@@ -1231,9 +1230,8 @@ static FORCE_INLINE execute_status execute_AMOMAXU_W(STATE_ACCESS &a, uint64_t &
     return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t valm, int32_t valr) -> int32_t {
         if (static_cast<uint32_t>(valm) > static_cast<uint32_t>(valr)) {
             return valm;
-        } else {
-            return valr;
         }
+        return valr;
     });
 }
 
@@ -1302,9 +1300,8 @@ static FORCE_INLINE execute_status execute_AMOMIN_D(STATE_ACCESS &a, uint64_t &p
     return execute_AMO<int64_t>(a, pc, mcycle, insn, [](int64_t valm, int64_t valr) -> int64_t {
         if (valm < valr) {
             return valm;
-        } else {
-            return valr;
         }
+        return valr;
     });
 }
 
@@ -1315,9 +1312,8 @@ static FORCE_INLINE execute_status execute_AMOMAX_D(STATE_ACCESS &a, uint64_t &p
     return execute_AMO<int64_t>(a, pc, mcycle, insn, [](int64_t valm, int64_t valr) -> int64_t {
         if (valm > valr) {
             return valm;
-        } else {
-            return valr;
         }
+        return valr;
     });
 }
 
@@ -1328,9 +1324,8 @@ static FORCE_INLINE execute_status execute_AMOMINU_D(STATE_ACCESS &a, uint64_t &
     return execute_AMO<uint64_t>(a, pc, mcycle, insn, [](uint64_t valm, uint64_t valr) -> uint64_t {
         if (valm < valr) {
             return valm;
-        } else {
-            return valr;
         }
+        return valr;
     });
 }
 
@@ -1341,9 +1336,8 @@ static FORCE_INLINE execute_status execute_AMOMAXU_D(STATE_ACCESS &a, uint64_t &
     return execute_AMO<uint64_t>(a, pc, mcycle, insn, [](uint64_t valm, uint64_t valr) -> uint64_t {
         if (valm > valr) {
             return valm;
-        } else {
-            return valr;
         }
+        return valr;
     });
 }
 
@@ -1433,11 +1427,11 @@ static FORCE_INLINE execute_status execute_DIVW(STATE_ACCESS &a, uint64_t &pc, u
         auto rs2w = static_cast<int32_t>(rs2);
         if (unlikely(rs2w == 0)) {
             return static_cast<uint64_t>(-1);
-        } else if (unlikely(rs2w == -1 && rs1w == (static_cast<int32_t>(1) << (32 - 1)))) {
-            return static_cast<uint64_t>(rs1w);
-        } else {
-            return static_cast<uint64_t>(rs1w / rs2w);
         }
+        if (unlikely(rs2w == -1 && rs1w == (static_cast<int32_t>(1) << (32 - 1)))) {
+            return static_cast<uint64_t>(rs1w);
+        }
+        return static_cast<uint64_t>(rs1w / rs2w);
     });
 }
 
@@ -1450,9 +1444,8 @@ static FORCE_INLINE execute_status execute_DIVUW(STATE_ACCESS &a, uint64_t &pc, 
         auto rs2w = static_cast<uint32_t>(rs2);
         if (unlikely(rs2w == 0)) {
             return static_cast<uint64_t>(-1);
-        } else {
-            return static_cast<uint64_t>(static_cast<int32_t>(rs1w / rs2w));
         }
+        return static_cast<uint64_t>(static_cast<int32_t>(rs1w / rs2w));
     });
 }
 
@@ -1468,11 +1461,11 @@ static FORCE_INLINE execute_status execute_REMW(STATE_ACCESS &a, uint64_t &pc, u
         auto rs2w = static_cast<int32_t>(rs2);
         if (unlikely(rs2w == 0)) {
             return static_cast<uint64_t>(rs1w);
-        } else if (unlikely(rs2w == -1 && rs1w == (static_cast<int32_t>(1) << (32 - 1)))) {
-            return static_cast<uint64_t>(0);
-        } else {
-            return static_cast<uint64_t>(rs1w % rs2w);
         }
+        if (unlikely(rs2w == -1 && rs1w == (static_cast<int32_t>(1) << (32 - 1)))) {
+            return static_cast<uint64_t>(0);
+        }
+        return static_cast<uint64_t>(rs1w % rs2w);
     });
 }
 
@@ -1491,9 +1484,8 @@ static FORCE_INLINE execute_status execute_REMUW(STATE_ACCESS &a, uint64_t &pc, 
         auto rs2w = static_cast<uint32_t>(rs2);
         if (unlikely(rs2w == 0)) {
             return static_cast<uint64_t>(static_cast<int32_t>(rs1w));
-        } else {
-            return static_cast<uint64_t>(static_cast<int32_t>(rs1w % rs2w));
         }
+        return static_cast<uint64_t>(static_cast<int32_t>(rs1w % rs2w));
     });
 }
 
@@ -1524,9 +1516,8 @@ template <typename STATE_ACCESS>
 static inline uint64_t read_csr_cycle(STATE_ACCESS &a, uint64_t mcycle, bool *status) {
     if (rdcounteren(a, MCOUNTEREN_CY_MASK)) {
         return read_csr_success(mcycle, status);
-    } else {
-        return read_csr_fail(status);
     }
+    return read_csr_fail(status);
 }
 
 template <typename STATE_ACCESS>
@@ -2813,11 +2804,11 @@ static FORCE_INLINE execute_status execute_DIV(STATE_ACCESS &a, uint64_t &pc, ui
         auto srs2 = static_cast<int64_t>(rs2);
         if (unlikely(srs2 == 0)) {
             return static_cast<uint64_t>(-1);
-        } else if (unlikely(srs2 == -1 && srs1 == (INT64_C(1) << (XLEN - 1)))) {
-            return static_cast<uint64_t>(srs1);
-        } else {
-            return static_cast<uint64_t>(srs1 / srs2);
         }
+        if (unlikely(srs2 == -1 && srs1 == (INT64_C(1) << (XLEN - 1)))) {
+            return static_cast<uint64_t>(srs1);
+        }
+        return static_cast<uint64_t>(srs1 / srs2);
     });
 }
 
@@ -2828,9 +2819,8 @@ static FORCE_INLINE execute_status execute_DIVU(STATE_ACCESS &a, uint64_t &pc, u
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         if (unlikely(rs2 == 0)) {
             return static_cast<uint64_t>(-1);
-        } else {
-            return rs1 / rs2;
         }
+        return rs1 / rs2;
     });
 }
 
@@ -2843,11 +2833,11 @@ static FORCE_INLINE execute_status execute_REM(STATE_ACCESS &a, uint64_t &pc, ui
         auto srs2 = static_cast<int64_t>(rs2);
         if (unlikely(srs2 == 0)) {
             return srs1;
-        } else if (unlikely(srs2 == -1 && srs1 == (INT64_C(1) << (XLEN - 1)))) {
-            return 0;
-        } else {
-            return static_cast<uint64_t>(srs1 % srs2);
         }
+        if (unlikely(srs2 == -1 && srs1 == (INT64_C(1) << (XLEN - 1)))) {
+            return 0;
+        }
+        return static_cast<uint64_t>(srs1 % srs2);
     });
 }
 
@@ -2858,9 +2848,8 @@ static FORCE_INLINE execute_status execute_REMU(STATE_ACCESS &a, uint64_t &pc, u
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         if (unlikely(rs2 == 0)) {
             return rs1;
-        } else {
-            return rs1 % rs2;
         }
+        return rs1 % rs2;
     });
 }
 
@@ -5610,13 +5599,12 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
                         if (likely(status == execute_status::success_and_serve_interrupts)) {
                             // We have to break the inner loop to check and serve any pending interrupt immediately
                             break;
-                        } else { // execute_status::success_and_yield or execute_status::success_and_halt
-                            // Commit machine state
-                            a.write_pc(pc);
-                            a.write_mcycle(mcycle);
-                            // Got an interruption that must be handled externally
-                            return status;
-                        }
+                        } // execute_status::success_and_yield or execute_status::success_and_halt
+                        // Commit machine state
+                        a.write_pc(pc);
+                        a.write_mcycle(mcycle);
+                        // Got an interruption that must be handled externally
+                        return status;
                     }
                 }
             }
@@ -5669,16 +5657,18 @@ interpreter_break_reason interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     // Detect and return the reason for stopping the interpreter loop
     if (a.read_iflags_H()) {
         return interpreter_break_reason::halted;
-    } else if (a.read_iflags_Y()) {
-        return interpreter_break_reason::yielded_manually;
-    } else if (a.read_iflags_X()) {
-        return interpreter_break_reason::yielded_automatically;
-    } else if (status == execute_status::success_and_yield) {
-        return interpreter_break_reason::yielded_softly;
-    } else {                                   // Reached mcycle_end
-        assert(a.read_mcycle() == mcycle_end); // LCOV_EXCL_LINE
-        return interpreter_break_reason::reached_target_mcycle;
     }
+    if (a.read_iflags_Y()) {
+        return interpreter_break_reason::yielded_manually;
+    }
+    if (a.read_iflags_X()) {
+        return interpreter_break_reason::yielded_automatically;
+    }
+    if (status == execute_status::success_and_yield) {
+        return interpreter_break_reason::yielded_softly;
+    } // Reached mcycle_end
+    assert(a.read_mcycle() == mcycle_end); // LCOV_EXCL_LINE
+    return interpreter_break_reason::reached_target_mcycle;
 }
 
 #ifdef MICROARCHITECTURE

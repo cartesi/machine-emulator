@@ -42,9 +42,8 @@ machine_merkle_tree::tree_node *machine_merkle_tree::get_page_node(address_type 
     auto it = m_page_node_map.find(page_index);
     if (it != m_page_node_map.end()) {
         return it->second;
-    } else {
-        return nullptr;
     }
+    return nullptr;
 }
 
 constexpr machine_merkle_tree::address_type machine_merkle_tree::get_offset_in_page(address_type address) {
@@ -334,9 +333,8 @@ bool machine_merkle_tree::verify_tree(hasher_type &h, tree_node *node, int log2_
         get_concat_hash(h, get_child_hash(child_log2_size, node, 0), get_child_hash(child_log2_size, node, 1), hash);
         return hash == node->hash;
         // Assume page nodes are correct
-    } else {
-        return true;
     }
+    return true;
 }
 
 machine_merkle_tree::proof_type machine_merkle_tree::get_proof(address_type target_address, int log2_target_size,

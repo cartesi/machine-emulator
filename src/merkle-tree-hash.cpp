@@ -136,11 +136,10 @@ static hash_type get_leaf_hash(hasher_type &h, const unsigned char *leaf_data, i
             get_leaf_hash(h, leaf_data + (1 << (log2_leaf_size - 1)), log2_leaf_size - 1, log2_word_size);
         get_concat_hash(h, left, right, left);
         return left;
-    } else {
-        hash_type leaf;
-        get_word_hash(h, leaf_data, log2_word_size, leaf);
-        return leaf;
     }
+    hash_type leaf;
+    get_word_hash(h, leaf_data, log2_word_size, leaf);
+    return leaf;
 }
 
 /// \brief Computes the Merkle hash of a leaf of data

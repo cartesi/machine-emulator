@@ -99,9 +99,8 @@ const complete_merkle_tree::hash_type &complete_merkle_tree::get_node_hash(addre
     }
     if (address < level.size()) {
         return level[address];
-    } else {
-        return m_pristine.get_hash(log2_size);
     }
+    return m_pristine.get_hash(log2_size);
 }
 
 void complete_merkle_tree::bubble_up() {

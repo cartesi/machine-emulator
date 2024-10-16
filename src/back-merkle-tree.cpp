@@ -134,9 +134,8 @@ back_merkle_tree::hash_type back_merkle_tree::get_root_hash() const {
             }
         }
         return root;
-    } else {
-        return m_context[depth];
     }
+    return m_context[depth];
 }
 
 back_merkle_tree::proof_type back_merkle_tree::get_next_leaf_proof() const {

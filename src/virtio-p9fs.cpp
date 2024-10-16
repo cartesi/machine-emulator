@@ -480,13 +480,12 @@ static std::string join_path_name(const std::string &path, const std::string &na
     }
     if (path[path.length() - 1] == '/') {
         return path + name;
-    } else {
-        std::string s;
-        s.append(path);
-        s.append("/");
-        s.append(name);
-        return s;
     }
+    std::string s;
+    s.append(path);
+    s.append("/");
+    s.append(name);
+    return s;
 }
 
 static std::string remove_path_name(const std::string &path) {
@@ -1668,10 +1667,8 @@ bool virtio_p9fs_device::op_walk(virtq_unserializer &&mmsg, uint16_t tag) {
                 // Return an error only for the first walk
                 if (nwalked == 0) {
                     return send_error(msg, tag, host_errno_to_p9(errno));
-                } else {
-                    // Otherwise, stop walk on error
-                    break;
-                }
+                } // Otherwise, stop walk on error
+                break;
             }
             path = std::move(next_path);
         }

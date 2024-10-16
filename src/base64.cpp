@@ -108,9 +108,8 @@ static size_t b64decode(uint8_t c, uint8_t *input, size_t size, std::ostringstre
     if (b64unbase[c] > 64) {
         if (c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r') { // ignore whitespace characters
             return size;
-        } else { // throw an error for invalid characters
-            throw std::domain_error(std::string("invalid base64 character code ") + std::to_string(c));
-        }
+        } // throw an error for invalid characters
+        throw std::domain_error(std::string("invalid base64 character code ") + std::to_string(c));
     }
     input[size++] = c;
     // decode atom
@@ -142,9 +141,8 @@ static size_t b64decode(uint8_t c, uint8_t *input, size_t size, std::ostringstre
         sout << std::string_view(reinterpret_cast<char *>(decoded), valid);
         return 0;
         // need more data
-    } else {
-        return size;
     }
+    return size;
 }
 
 std::string encode_base64(const std::string_view &input) {

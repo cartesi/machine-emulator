@@ -144,7 +144,7 @@ static int jsonrpc_machine_ctor(lua_State *L) {
     auto &managed_jsonrpc_connection = clua_check<clua_managed_cm_ptr<cm_jsonrpc_connection>>(L, conidx, ctxidx);
     auto &managed_machine = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr), ctxidx);
     const char *runtime_config = !lua_isnil(L, 3) ? clua_check_json_string(L, 3, -1, ctxidx) : nullptr;
-    if (!lua_isstring(L, 2)) {
+    if (lua_isstring(L, 2) == 0) {
         const char *config = clua_check_json_string(L, 2, -1, ctxidx);
         if (cm_jsonrpc_create_machine(managed_jsonrpc_connection.get(), lua_toboolean(L, 4), config, runtime_config,
                 &managed_machine.get()) != 0) {
@@ -201,7 +201,7 @@ static int jsonrpc_connection_class_rebind_server(lua_State *L) {
     if (cm_jsonrpc_rebind_server(managed_jsonrpc_connection.get(), address, &new_address) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    if (new_address) {
+    if (new_address != nullptr) {
         lua_pushstring(L, new_address);
     } else {
         lua_pushnil(L);

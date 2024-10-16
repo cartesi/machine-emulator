@@ -270,9 +270,9 @@ private:
     }
 
     void log_before_write_write_and_update(uint64_t paligned, bool &dest, bool val, const char *text) {
-        uint64_t dest64 = dest;
-        log_before_write_write_and_update(paligned, dest64, val, text);
-        dest = dest64;
+        auto dest64 = static_cast<uint64_t>(dest);
+        log_before_write_write_and_update(paligned, dest64, static_cast<uint64_t>(val), text);
+        dest = (dest64 != 0);
         update_after_write(paligned);
     }
 
@@ -315,8 +315,8 @@ private:
     }
 
     bool do_read_halt_flag() const {
-        return log_read(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag), m_us.halt_flag,
-            "uarch.halt_flag");
+        return log_read(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag),
+                   static_cast<uint64_t>(m_us.halt_flag), "uarch.halt_flag") != 0;
     }
 
     void do_set_halt_flag() {

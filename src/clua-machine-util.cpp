@@ -220,7 +220,7 @@ cm_reg clua_check_cm_proc_reg(lua_State *L, int idx) try {
 }
 
 void clua_check_cm_hash(lua_State *L, int idx, cm_hash *c_hash) {
-    if (lua_isstring(L, idx)) {
+    if (lua_isstring(L, idx) != 0) {
         size_t len = 0;
         const char *data = lua_tolstring(L, idx, &len);
         if (len != sizeof(cm_hash)) {
@@ -242,10 +242,10 @@ static int64_t clua_get_array_table_len(lua_State *L, int tabidx) {
         return -1;
     }
     int64_t len = 0;
-    lua_pushvalue(L, tabidx);        // push table
-    lua_pushnil(L);                  // push key
-    while (lua_next(L, -2)) {        // replace key, push value
-        if (!lua_isinteger(L, -2)) { // non integer key, not an array
+    lua_pushvalue(L, tabidx);            // push table
+    lua_pushnil(L);                      // push key
+    while (lua_next(L, -2) != 0) {       // replace key, push value
+        if (lua_isinteger(L, -2) == 0) { // non integer key, not an array
             lua_pop(L, 3);
             return -1;
         }
@@ -288,10 +288,10 @@ static nlohmann::json &clua_push_json_value_ref(lua_State *L, int idx, int ctxid
                 }
             } else { // object
                 j = nlohmann::json::object();
-                lua_pushvalue(L, idx);    // push table
-                lua_pushnil(L);           // push key
-                while (lua_next(L, -2)) { // update key, push value
-                    if (!lua_isstring(L, -2)) {
+                lua_pushvalue(L, idx);         // push table
+                lua_pushnil(L);                // push key
+                while (lua_next(L, -2) != 0) { // update key, push value
+                    if (lua_isstring(L, -2) == 0) {
                         luaL_error(L, "table maps cannot contain keys of type %s", lua_typename(L, lua_type(L, -2)));
                     }
                     const char *field_name = lua_tostring(L, -2);
@@ -304,7 +304,7 @@ static nlohmann::json &clua_push_json_value_ref(lua_State *L, int idx, int ctxid
             break;
         }
         case LUA_TNUMBER: {
-            if (lua_isinteger(L, idx)) {
+            if (lua_isinteger(L, idx) != 0) {
                 int64_t v = lua_tointeger(L, idx);
                 if (schema.is_string() && schema.template get<std::string_view>() == "ArrayIndex") {
                     v -= 1;
@@ -415,7 +415,7 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, int ctxi
             lua_pushnumber(L, j.template get<double>());
             break;
         case nlohmann::json::value_t::boolean:
-            lua_pushboolean(L, j.template get<bool>());
+            lua_pushboolean(L, static_cast<int>(j.template get<bool>()));
             break;
         case nlohmann::json::value_t::null:
             lua_pushnil(L);

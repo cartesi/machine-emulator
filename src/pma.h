@@ -478,7 +478,7 @@ public:
             auto page_number = address_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
             auto map_index = page_number >> 3;
             assert(map_index < m_dirty_page_map.size());
-            return m_dirty_page_map[map_index] & (1 << (page_number & 7));
+            return (m_dirty_page_map[map_index] & (1 << (page_number & 7))) != 0;
         } else {
             return true;
         }

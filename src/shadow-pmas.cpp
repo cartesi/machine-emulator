@@ -29,13 +29,13 @@ static bool shadow_pmas_read(void *context, i_device_state_access *a, uint64_t o
     static_assert(sizeof(shadow_pmas) == PMA_MAX * sizeof(shadow_pma_entry), "Unexpected size of Shadow PMA array ");
 
     // Our shadow only supports aligned 64-bit reads
-    if (offset & 7 || log2_size != 3) {
+    if (((offset & 7) != 0) || log2_size != 3) {
         return false;
     }
     if (offset < sizeof(shadow_pmas)) {
         offset >>= 3;
         const int p = static_cast<int>(offset >> 1);
-        if (offset & 1) {
+        if ((offset & 1) != 0) {
             *pval = a->read_pma_ilength(p);
         } else {
             *pval = a->read_pma_istart(p);

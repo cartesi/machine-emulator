@@ -81,7 +81,7 @@ std::ostream &operator<<(std::ostream &out, log_prefix prefix) {
     char stime[std::size("yyyy-mm-dd hh-mm-ss")];
     const time_t t = time(nullptr);
     struct tm ttime {};
-    if (strftime(std::data(stime), std::size(stime), "%Y-%m-%d %H-%M-%S", localtime_r(&t, &ttime))) {
+    if (strftime(std::data(stime), std::size(stime), "%Y-%m-%d %H-%M-%S", localtime_r(&t, &ttime)) != 0) {
         out << stime << " ";
     }
     out << to_string(prefix.level) << " ";
@@ -764,7 +764,7 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
     session->handler->ioc.notify_fork(asio::io_context::fork_prepare);
     // Done initializing, so we fork
     const char *err_msg = nullptr;
-    const int pid = cartesi::os_double_fork(true, &err_msg);
+    const int pid = cartesi::os_double_fork(static_cast<int>(true), &err_msg);
     if (pid == 0) { // child
         // Notify to ASIO that we are the child
         session->handler->ioc.notify_fork(asio::io_context::fork_child);
@@ -1576,10 +1576,10 @@ static bool stringval(const char *pre, const char *str, const char **val) {
 static void init_logger(const char *strlevel) {
     using namespace slog;
     severity_level level = severity_level::info;
-    if (!strlevel) {
+    if (strlevel == nullptr) {
         strlevel = std::getenv("REMOTE_CARTESI_MACHINE_LOG_LEVEL");
     }
-    if (strlevel) {
+    if (strlevel != nullptr) {
         level = from_string(strlevel);
     }
     log_level(level_operation::set, level);
@@ -1632,7 +1632,7 @@ int main(int argc, char *argv[]) try {
 
     tcp::acceptor acceptor(ioc);
     if (server_fd >= 0) {
-        if (server_address) {
+        if (server_address != nullptr) {
             SLOG(fatal) << "server-address and server-fd options are mutually exclusive";
             exit(1);
         }
@@ -1661,7 +1661,7 @@ int main(int argc, char *argv[]) try {
                 listen = 1;
             }
         }
-        if (!listen) {
+        if (listen == 0) {
             SLOG(fatal) << "inherited is fd not a listening socket";
             exit(1);
         }
@@ -1681,7 +1681,7 @@ int main(int argc, char *argv[]) try {
             acceptor.assign(boost::asio::ip::tcp::v6(), server_fd);
         }
     } else {
-        if (!server_address) {
+        if (server_address == nullptr) {
             server_address = "127.0.0.1:0";
         }
         acceptor = tcp::acceptor{ioc, address_to_endpoint(server_address)};

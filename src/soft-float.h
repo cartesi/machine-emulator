@@ -227,7 +227,7 @@ struct i_sfloat {
             default:
             case FRM_RDN:
             case FRM_RUP:
-                if (a_sign ^ (rm & 1)) {
+                if ((a_sign ^ (rm & 1)) != 0) {
                     addend = (1 << RND_SIZE) - 1;
                 } else {
                     addend = 0;
@@ -372,7 +372,7 @@ struct i_sfloat {
             a_mant -= b_mant;
             if (a_mant == 0) {
                 // zero result : the sign needs a specific handling
-                a_sign = (rm == FRM_RDN);
+                a_sign = static_cast<uint32_t>(rm == FRM_RDN);
             }
         }
         a_exp += (RND_SIZE - 3);
@@ -466,7 +466,7 @@ struct i_sfloat {
         if ((a_exp == 0 && a_mant == 0) || (b_exp == 0 && b_mant == 0)) {
             if (c_exp == 0 && c_mant == 0) {
                 if (c_sign != r_sign) {
-                    r_sign = (rm == FRM_RDN);
+                    r_sign = static_cast<uint32_t>(rm == FRM_RDN);
                 }
                 return pack(r_sign, 0, 0);
             } else {
@@ -549,7 +549,7 @@ struct i_sfloat {
             r_mant1 = r_mant1 - c_mant1 - (r_mant0 > tmp);
             if ((r_mant0 | r_mant1) == 0) {
                 // zero result : the sign needs a specific handling
-                r_sign = (rm == FRM_RDN);
+                r_sign = static_cast<uint32_t>(rm == FRM_RDN);
             }
         }
         return normalize2(r_sign, r_exp, r_mant1, r_mant0, rm, pfflags);
@@ -628,14 +628,14 @@ struct i_sfloat {
                     *pfflags |= FFLAGS_NV_MASK;
                 }
                 return F_QNAN;
-            } else if (a_sign) {
+            } else if (a_sign != 0) {
                 *pfflags |= FFLAGS_NV_MASK;
                 return F_QNAN;
             } else { // infinity
                 return a;
             }
         }
-        if (a_sign) {
+        if (a_sign != 0) {
             if (likely(a_exp == 0 && a_mant == 0)) { // zero
                 return a;
             }
@@ -652,7 +652,7 @@ struct i_sfloat {
         }
         a_exp -= EXP_MASK / 2;
         // simpler to handle an even exponent
-        if (a_exp & 1) {
+        if ((a_exp & 1) != 0) {
             a_exp--;
             a_mant <<= 1;
         }
@@ -688,7 +688,7 @@ struct i_sfloat {
         const uint32_t a_sign = a >> (F_SIZE - 1);
         const uint32_t b_sign = b >> (F_SIZE - 1);
         if (a_sign != b_sign) {
-            return a_sign ? a : b;
+            return (a_sign != 0) ? a : b;
         } else {
             return ((a < b) ^ a_sign) ? a : b;
         }
@@ -702,7 +702,7 @@ struct i_sfloat {
         const uint32_t a_sign = a >> (F_SIZE - 1);
         const uint32_t b_sign = b >> (F_SIZE - 1);
         if (a_sign != b_sign) {
-            return a_sign ? b : a;
+            return (a_sign != 0) ? b : a;
         } else {
             return ((a < b) ^ a_sign) ? b : a;
         }
@@ -733,7 +733,7 @@ struct i_sfloat {
         if (a_sign != b_sign) {
             return a_sign || (((a | b) << 1) == 0);
         } else {
-            return a_sign ? (a >= b) : (a <= b);
+            return (a_sign != 0) ? (a >= b) : (a <= b);
         }
     }
 
@@ -748,7 +748,7 @@ struct i_sfloat {
         if (a_sign != b_sign) {
             return a_sign && (((a | b) << 1) != 0);
         } else {
-            return a_sign ? (a > b) : (a < b);
+            return (a_sign != 0) ? (a > b) : (a < b);
         }
     }
 
@@ -761,16 +761,16 @@ struct i_sfloat {
             if (a_mant != 0) {
                 return (a_mant & QNAN_MASK) ? FCLASS_QNAN : FCLASS_SNAN;
             } else {
-                return a_sign ? FCLASS_NINF : FCLASS_PINF;
+                return (a_sign != 0) ? FCLASS_NINF : FCLASS_PINF;
             }
         } else if (a_exp == 0) {
             if (a_mant == 0) {
-                return a_sign ? FCLASS_NZERO : FCLASS_PZERO;
+                return (a_sign != 0) ? FCLASS_NZERO : FCLASS_PZERO;
             } else {
-                return a_sign ? FCLASS_NSUBNORMAL : FCLASS_PSUBNORMAL;
+                return (a_sign != 0) ? FCLASS_NSUBNORMAL : FCLASS_PSUBNORMAL;
             }
         } else {
-            return a_sign ? FCLASS_NNORMAL : FCLASS_PNORMAL;
+            return (a_sign != 0) ? FCLASS_NNORMAL : FCLASS_PNORMAL;
         }
     }
 

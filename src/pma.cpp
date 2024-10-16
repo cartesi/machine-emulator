@@ -61,7 +61,7 @@ pma_memory::pma_memory(const std::string &description, uint64_t length, const ca
     // use calloc to improve performance
     // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-prefer-member-initializer)
     m_host_memory = static_cast<unsigned char *>(std::calloc(1, length));
-    if (!m_host_memory) {
+    if (m_host_memory == nullptr) {
         throw std::runtime_error{"error allocating memory for "s + description};
     }
 }
@@ -84,12 +84,12 @@ pma_memory::pma_memory(const std::string &description, uint64_t length, const st
                 "error opening image file '"s + path + "' when initializing "s + description};
         }
         // Get file size
-        if (fseek(fp.get(), 0, SEEK_END)) {
+        if (fseek(fp.get(), 0, SEEK_END) != 0) {
             throw std::system_error{errno, std::generic_category(),
                 "error obtaining length of image file '"s + path + "' when initializing "s + description};
         }
         auto file_length = ftell(fp.get());
-        if (fseek(fp.get(), 0, SEEK_SET)) {
+        if (fseek(fp.get(), 0, SEEK_SET) != 0) {
             throw std::system_error{errno, std::generic_category(),
                 "error obtaining length of image file '"s + path + "' when initializing "s + description};
         }
@@ -100,7 +100,7 @@ pma_memory::pma_memory(const std::string &description, uint64_t length, const st
         // Read to host memory
         auto read = fread(m_host_memory, 1, length, fp.get());
         (void) read;
-        if (ferror(fp.get())) {
+        if (ferror(fp.get()) != 0) {
             throw std::system_error{errno, std::generic_category(),
                 "error reading from image file '"s + path + "' when initializing "s + description};
         }
@@ -157,7 +157,7 @@ void pma_entry::write_memory(uint64_t paddr, const unsigned char *data, uint64_t
     if (!contains(paddr, size)) {
         throw std::invalid_argument{"range not contained in pma"};
     }
-    if (!data) {
+    if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
     memcpy(get_memory().get_host_memory() + (paddr - get_start()), data, size);

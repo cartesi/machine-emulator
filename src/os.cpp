@@ -533,7 +533,7 @@ int os_mkdir(const char *path, int mode) {
 }
 
 unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
-    if (!path || *path == '\0') {
+    if ((path == nullptr) || *path == '\0') {
         throw std::runtime_error{"image file path must be specified"s};
     }
 
@@ -861,7 +861,7 @@ int os_double_fork_or_throw(int newpgid) {
                 close(fd[0]);
                 fd[0] = -1;
                 // break out into our own program group, if requested
-                if (newpgid) {
+                if (newpgid != 0) {
                     setpgid(0, 0);
                 }
                 // write fpid so parent can read
@@ -893,7 +893,8 @@ int os_double_fork_or_throw(int newpgid) {
             }
             try {
                 int fpid = 0;
-                if (const int ret = read(fd[0], &fpid, sizeof(fpid)) != sizeof(fpid)) {
+                const auto ret = read(fd[0], &fpid, sizeof(fpid));
+                if (ret != sizeof(fpid)) {
                     if (ret < 0) {
                         auto e = errno;
                         if (e == EINTR) {

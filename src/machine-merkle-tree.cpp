@@ -80,11 +80,11 @@ machine_merkle_tree::tree_node *machine_merkle_tree::new_page_node(address_type 
     // path determined by the page index,
     // creating the needed nodes along the way
     while (true) {
-        const int bit = (page_index & bit_mask) != 0;
+        const int bit = static_cast<int>((page_index & bit_mask) != 0);
         tree_node *child = node->child[bit];
-        if (!child) {
+        if (child == nullptr) {
             child = create_node();
-            if (!child) {
+            if (child == nullptr) {
                 return nullptr;
             }
             child->parent = node;
@@ -92,12 +92,12 @@ machine_merkle_tree::tree_node *machine_merkle_tree::new_page_node(address_type 
         }
         node = child;
         bit_mask >>= 1;
-        if (!(bit_mask & m_page_index_mask)) {
+        if ((bit_mask & m_page_index_mask) == 0) {
             break;
         }
     }
     // Finally associate page node to page index
-    if (!set_page_node_map(page_index, node)) {
+    if (set_page_node_map(page_index, node) == 0) {
         return nullptr;
     }
     // Only if all previous steps succeeded, do we return the node
@@ -122,7 +122,7 @@ void machine_merkle_tree::get_page_node_hash(hasher_type &h, const unsigned char
 }
 
 void machine_merkle_tree::get_page_node_hash(hasher_type &h, const unsigned char *page_data, hash_type &hash) const {
-    if (page_data) {
+    if (page_data != nullptr) {
         get_page_node_hash(h, page_data, get_log2_page_size(), hash);
     } else {
         hash = get_pristine_hash(get_log2_page_size());
@@ -132,7 +132,7 @@ void machine_merkle_tree::get_page_node_hash(hasher_type &h, const unsigned char
 void machine_merkle_tree::get_page_node_hash(address_type page_index, hash_type &hash) const {
     assert(page_index == get_page_index(page_index));
     tree_node *node = get_page_node(page_index);
-    if (!node) {
+    if (node == nullptr) {
         hash = get_pristine_hash(get_log2_page_size());
     } else {
         hash = node->hash;
@@ -142,7 +142,7 @@ void machine_merkle_tree::get_page_node_hash(address_type page_index, hash_type 
 const machine_merkle_tree::hash_type &machine_merkle_tree::get_child_hash(int child_log2_size, const tree_node *node,
     int bit) {
     const tree_node *child = node->child[bit];
-    return child ? child->hash : get_pristine_hash(child_log2_size);
+    return (child != nullptr) ? child->hash : get_pristine_hash(child_log2_size);
 }
 
 void machine_merkle_tree::update_inner_node_hash(hasher_type &h, int log2_size, tree_node *node) {
@@ -168,7 +168,7 @@ void machine_merkle_tree::dump_merkle_tree(tree_node *node, uint64_t address, in
     }
     std::cerr << "0x" << std::setfill('0') << std::setw(16) << std::hex << address << ":" << std::setfill('0')
               << std::setw(2) << std::dec << log2_size << ' ';
-    if (node) {
+    if (node != nullptr) {
         dump_hash(node->hash);
         if (log2_size > get_log2_page_size()) {
             dump_merkle_tree(node->child[0], address, log2_size - 1);
@@ -180,7 +180,7 @@ void machine_merkle_tree::dump_merkle_tree(tree_node *node, uint64_t address, in
 }
 
 void machine_merkle_tree::destroy_merkle_tree(tree_node *node, int log2_size) {
-    if (node) {
+    if (node != nullptr) {
         // If this is an inner node, invoke recursively
         if (log2_size > get_log2_page_size()) {
             destroy_merkle_tree(node->child[0], log2_size - 1);
@@ -206,11 +206,12 @@ void machine_merkle_tree::get_inside_page_sibling_hashes(hasher_type &h, address
         const address_type child_size = UINT64_C(1) << log2_child_size;
         hash_type first_hash;
         hash_type second_hash;
-        const int child_bit = (address & child_size) != 0;
+        const int child_bit = static_cast<int>((address & child_size) != 0);
         get_inside_page_sibling_hashes(h, address, log2_size, hash, curr_data, log2_child_size, first_hash,
-            parent_diverged || curr_diverged, child_bit != 0, proof);
+            static_cast<int>((parent_diverged != 0) || (curr_diverged) != 0), static_cast<int>(child_bit != 0), proof);
         get_inside_page_sibling_hashes(h, address, log2_size, hash, curr_data + child_size, log2_child_size,
-            second_hash, parent_diverged || curr_diverged, child_bit != 1, proof);
+            second_hash, static_cast<int>((parent_diverged != 0) || (curr_diverged) != 0),
+            static_cast<int>(child_bit != 1), proof);
         // Compute curr_hash from hashes of its children
         get_concat_hash(h, first_hash, second_hash, curr_hash);
         // Otherwise directly compute hash of word
@@ -219,10 +220,10 @@ void machine_merkle_tree::get_inside_page_sibling_hashes(hasher_type &h, address
         h.add_data(curr_data, get_word_size());
         h.end(curr_hash);
     }
-    if (!parent_diverged) {
+    if (parent_diverged == 0) {
         // So if the parent belongs to the path, but the node currently being
         // visited doesn't, it is a sibling and we store its hash.
-        if (curr_diverged && log2_curr_size >= proof.get_log2_target_size()) {
+        if ((curr_diverged != 0) && log2_curr_size >= proof.get_log2_target_size()) {
             proof.set_sibling_hash(curr_hash, log2_curr_size);
             // Otherwise, if the node hasn't diverged either and
             // it is has the same size as the target node, then it *is*
@@ -253,17 +254,17 @@ bool machine_merkle_tree::update_page_node_hash(address_type page_index, const h
     assert(get_page_index(page_index) == page_index);
     tree_node *node = get_page_node(page_index);
     // If there is no page node for this page index, allocate a fresh one
-    if (!node) {
+    if (node == nullptr) {
         node = new_page_node(page_index);
     }
     // If allocation failed, we fail
-    if (!node) {
+    if (node == nullptr) {
         return false;
     }
     // Copy new hash value to node
     node->hash = hash;
     // Add parent to fifo so we propagate changes
-    if (node->parent && node->parent->mark != m_merkle_update_nonce) {
+    if ((node->parent != nullptr) && node->parent->mark != m_merkle_update_nonce) {
         m_merkle_update_fifo.emplace_back(get_log2_page_size() + 1, node->parent);
         node->parent->mark = m_merkle_update_nonce;
     }
@@ -279,7 +280,7 @@ bool machine_merkle_tree::end_update(hasher_type &h) {
         std::tie(log2_size, node) = m_merkle_update_fifo.front();
         update_inner_node_hash(h, log2_size, node);
         m_merkle_update_fifo.pop_front();
-        if (node->parent && node->parent->mark != m_merkle_update_nonce) {
+        if ((node->parent != nullptr) && node->parent->mark != m_merkle_update_nonce) {
             m_merkle_update_fifo.emplace_back(log2_size + 1, node->parent);
             node->parent->mark = m_merkle_update_nonce;
         }
@@ -318,7 +319,7 @@ bool machine_merkle_tree::verify_tree() const {
 
 bool machine_merkle_tree::verify_tree(hasher_type &h, tree_node *node, int log2_size) const {
     // pristine node is always correct
-    if (!node) {
+    if (node == nullptr) {
         return true;
     }
     // verify inner node
@@ -346,7 +347,7 @@ machine_merkle_tree::proof_type machine_merkle_tree::get_proof(address_type targ
     }
 
     // Check target address alignment
-    if (target_address & ((~UINT64_C(0)) >> (get_log2_root_size() - log2_target_size))) {
+    if ((target_address & ((~UINT64_C(0)) >> (get_log2_root_size() - log2_target_size))) != 0) {
         throw std::runtime_error{"misaligned target address"};
     }
 
@@ -357,18 +358,19 @@ machine_merkle_tree::proof_type machine_merkle_tree::get_proof(address_type targ
     int log2_node_size = get_log2_root_size();
     const tree_node *node = m_root;
     // Copy non-pristine siblings hashes directly from tree nodes
-    while (node && log2_node_size > log2_stop_size) {
+    while ((node != nullptr) && log2_node_size > log2_stop_size) {
         const int log2_child_size = log2_node_size - 1;
-        const int path_bit = (target_address & (UINT64_C(1) << (log2_child_size))) != 0;
-        proof.set_sibling_hash(get_child_hash(log2_child_size, node, !path_bit), log2_child_size);
+        const int path_bit = static_cast<int>((target_address & (UINT64_C(1) << (log2_child_size))) != 0);
+        proof.set_sibling_hash(get_child_hash(log2_child_size, node, static_cast<int>(static_cast<int>(path_bit) == 0)),
+            log2_child_size);
         node = node->child[path_bit];
         log2_node_size = log2_child_size;
     }
     // At this point, there are three alternatives
     // Case 1
     // We hit a pristine node along the path to the target node
-    if (!node) {
-        if (page_data) {
+    if (node == nullptr) {
+        if (page_data != nullptr) {
             throw std::runtime_error{"inconsistent merkle tree"};
         }
         // All remaining siblings along the path are pristine
@@ -385,7 +387,7 @@ machine_merkle_tree::proof_type machine_merkle_tree::get_proof(address_type targ
         // If target node is smaller than page size
         if (log2_target_size < get_log2_page_size()) {
             // If we were given the page data, compute from it
-            if (page_data) {
+            if (page_data != nullptr) {
                 get_inside_page_sibling_hashes(target_address, log2_target_size, proof.get_target_hash(), page_data,
                     page_hash, proof);
                 // Otherwise, if page is pristine

@@ -115,7 +115,7 @@ private:
     uint64_t check_read(uint64_t paligned, const char *text) {
         static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size<uint64_t>::value,
             "Merkle tree word size must be at least as large as a machine word");
-        if (paligned & (sizeof(uint64_t) - 1)) {
+        if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
             throw std::invalid_argument{"address not aligned to word size"};
         }
         if (m_next_access >= m_accesses.size()) {
@@ -171,7 +171,7 @@ private:
     void check_write(uint64_t paligned, uint64_t word, const char *text) {
         static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size<uint64_t>::value,
             "Merkle tree word size must be at least as large as a machine word");
-        if (paligned & (sizeof(uint64_t) - 1)) {
+        if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
             throw std::invalid_argument{"paligned not aligned to word size"};
         }
         if (m_next_access >= m_accesses.size()) {
@@ -274,7 +274,7 @@ private:
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
         int write_length_log2_size) {
         hasher_type hasher{};
-        if (!data) {
+        if (data == nullptr) {
             throw std::invalid_argument("data is null");
         }
         const uint64_t write_length = static_cast<uint64_t>(1) << write_length_log2_size;

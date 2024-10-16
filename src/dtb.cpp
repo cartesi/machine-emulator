@@ -39,7 +39,7 @@ static std::string misa_to_isa_string(uint64_t misa) {
     std::ostringstream ss;
     ss << "rv64";
     for (int i = 0; i < 26; i++) {
-        if (misa & (1 << i)) {
+        if ((misa & (1 << i)) != 0) {
             ss << static_cast<char>('a' + i);
         }
     }

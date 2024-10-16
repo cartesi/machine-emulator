@@ -670,7 +670,7 @@ private:
 
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
         int write_length_log2_size) {
-        if (!data) {
+        if (data == nullptr) {
             throw std::runtime_error("data is null");
         }
         const uint64_t write_length = static_cast<uint64_t>(1) << write_length_log2_size;

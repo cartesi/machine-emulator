@@ -340,7 +340,7 @@ static p9_error host_errno_to_p9(int err) {
 static int p9_open_flags_to_host(uint32_t flags) {
     int oflags = 0;
     for (uint32_t i = 1; i <= P9_O_SYNC; i = i << 1) {
-        if (flags & i) {
+        if ((flags & i) != 0) {
             switch (i) {
                 case P9_O_RDONLY:
                     oflags |= O_RDONLY;
@@ -453,11 +453,11 @@ static bool is_same_stat_ino(const stat_t *a, const stat_t *b) {
 }
 
 static int close_fid_state(p9_fid_state *fidp) {
-    if (!fidp) {
+    if (fidp == nullptr) {
         return 0;
     }
     int err = 0;
-    if (fidp->dirp) {
+    if (fidp->dirp != nullptr) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         DIR *dirp = reinterpret_cast<DIR *>(fidp->dirp);
         if (closedir(dirp) != 0) {
@@ -663,7 +663,7 @@ bool virtio_p9fs_device::op_statfs(virtq_unserializer &&mmsg, uint16_t tag) {
 #endif
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     statfs_t stfs{};
@@ -714,7 +714,7 @@ bool virtio_p9fs_device::op_lopen(virtq_unserializer &&mmsg, uint16_t tag) {
 #endif
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // It's an error if the fid is already open
@@ -770,7 +770,7 @@ bool virtio_p9fs_device::op_lcreate(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // It's an error if the fid is already open
@@ -834,7 +834,7 @@ bool virtio_p9fs_device::op_symlink(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Get the fid state
     p9_fid_state *dfidp = get_fid_state(dfid);
-    if (!dfidp) {
+    if (dfidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Create the symlink
@@ -887,7 +887,7 @@ bool virtio_p9fs_device::op_mknod(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Get the fid state
     p9_fid_state *dfidp = get_fid_state(dfid);
-    if (!dfidp) {
+    if (dfidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Create the special or ordinary file
@@ -943,14 +943,14 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&mmsg, uint16_t tag) {
 #endif
     // Get the fid state
     const p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     bool ctime_updated = false;
     // Modify ownership
-    if (mask & (P9_SETATTR_UID | P9_SETATTR_GID)) {
-        const uid_t newuid = (mask & P9_SETATTR_UID) ? static_cast<uid_t>(uid) : -1;
-        const gid_t newgid = (mask & P9_SETATTR_GID) ? static_cast<gid_t>(gid) : -1;
+    if ((mask & (P9_SETATTR_UID | P9_SETATTR_GID)) != 0) {
+        const uid_t newuid = ((mask & P9_SETATTR_UID) != 0) ? static_cast<uid_t>(uid) : -1;
+        const gid_t newgid = ((mask & P9_SETATTR_GID) != 0) ? static_cast<gid_t>(gid) : -1;
         // Use fd when available, because its path might have been removed while fd still open
         if (fidp->fd >= 0) {
             if (fchown(fidp->fd, newuid, newgid) != 0) {
@@ -964,7 +964,7 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&mmsg, uint16_t tag) {
         ctime_updated = true;
     }
     // Modify mode
-    if (mask & P9_SETATTR_MODE) {
+    if ((mask & P9_SETATTR_MODE) != 0) {
         // Use fd when available, because its path might have been removed while fd still open
         if (fidp->fd >= 0) {
             if (fchmod(fidp->fd, static_cast<mode_t>(mode)) != 0) {
@@ -978,7 +978,7 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&mmsg, uint16_t tag) {
         ctime_updated = true;
     }
     // Modify size
-    if (mask & P9_SETATTR_SIZE) {
+    if ((mask & P9_SETATTR_SIZE) != 0) {
         // Use fd when available, because its path might have been removed while fd still open
         if (fidp->fd >= 0) {
             if (ftruncate(fidp->fd, static_cast<off_t>(size)) != 0) {
@@ -992,10 +992,10 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&mmsg, uint16_t tag) {
         ctime_updated = true;
     }
     // Modify times
-    if (mask & (P9_SETATTR_ATIME | P9_SETATTR_MTIME)) {
+    if ((mask & (P9_SETATTR_ATIME | P9_SETATTR_MTIME)) != 0) {
         timespec ts[2]{};
-        if (mask & P9_SETATTR_ATIME) {
-            if (mask & P9_SETATTR_ATIME_SET) {
+        if ((mask & P9_SETATTR_ATIME) != 0) {
+            if ((mask & P9_SETATTR_ATIME_SET) != 0) {
                 ts[0].tv_sec = static_cast<time_t>(atime_sec);
                 ts[0].tv_nsec = static_cast<int64_t>(atime_nsec);
             } else {
@@ -1006,8 +1006,8 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&mmsg, uint16_t tag) {
             ts[0].tv_sec = 0;
             ts[0].tv_nsec = UTIME_OMIT;
         }
-        if (mask & P9_SETATTR_MTIME) {
-            if (mask & P9_SETATTR_MTIME_SET) {
+        if ((mask & P9_SETATTR_MTIME) != 0) {
+            if ((mask & P9_SETATTR_MTIME_SET) != 0) {
                 ts[1].tv_sec = static_cast<time_t>(mtime_sec);
                 ts[1].tv_nsec = static_cast<int64_t>(mtime_nsec);
             } else {
@@ -1031,7 +1031,7 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&mmsg, uint16_t tag) {
         ctime_updated = true;
     }
     // Modify change time
-    if ((mask & P9_SETATTR_CTIME) && !ctime_updated) {
+    if (((mask & P9_SETATTR_CTIME) != 0) && !ctime_updated) {
         // Use fd when available, because its path might have been removed while fd still open
         if (fidp->fd >= 0) {
             if (fchown(fidp->fd, -1, -1) != 0) {
@@ -1058,7 +1058,7 @@ bool virtio_p9fs_device::op_readlink(virtq_unserializer &&mmsg, uint16_t tag) {
 #endif
     // Get the fid state
     const p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Read the link
@@ -1088,7 +1088,7 @@ bool virtio_p9fs_device::op_getattr(virtq_unserializer &&mmsg, uint16_t tag) {
 #endif
     // Get the fid state
     const p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     stat_t st{};
@@ -1108,25 +1108,25 @@ bool virtio_p9fs_device::op_getattr(virtq_unserializer &&mmsg, uint16_t tag) {
     p9_qid qid = stat_to_qid(st);
     // Fill stat attributes
     p9_stat rstat{};
-    if (mask & P9_GETATTR_MODE) {
+    if ((mask & P9_GETATTR_MODE) != 0) {
         rstat.mode = st.st_mode;
     }
-    if (mask & P9_GETATTR_UID) {
+    if ((mask & P9_GETATTR_UID) != 0) {
         rstat.uid = st.st_uid;
     }
-    if (mask & P9_GETATTR_GID) {
+    if ((mask & P9_GETATTR_GID) != 0) {
         rstat.gid = st.st_gid;
     }
-    if (mask & P9_GETATTR_NLINK) {
+    if ((mask & P9_GETATTR_NLINK) != 0) {
         rstat.nlink = st.st_nlink;
     }
-    if (mask & P9_GETATTR_RDEV) {
+    if ((mask & P9_GETATTR_RDEV) != 0) {
         rstat.rdev = st.st_rdev;
     }
-    if (mask & P9_GETATTR_SIZE) {
+    if ((mask & P9_GETATTR_SIZE) != 0) {
         rstat.size = st.st_size;
     }
-    if (mask & P9_GETATTR_BLOCKS) {
+    if ((mask & P9_GETATTR_BLOCKS) != 0) {
         rstat.blksize = st.st_blksize;
         rstat.blocks = st.st_blocks;
     }
@@ -1144,15 +1144,15 @@ bool virtio_p9fs_device::op_getattr(virtq_unserializer &&mmsg, uint16_t tag) {
         rstat.ctime_nsec = st.st_ctimespec.tv_nsec;
     }
 #else
-    if (mask & P9_GETATTR_ATIME) {
+    if ((mask & P9_GETATTR_ATIME) != 0) {
         rstat.atime_sec = st.st_atim.tv_sec;
         rstat.atime_nsec = st.st_atim.tv_nsec;
     }
-    if (mask & P9_GETATTR_MTIME) {
+    if ((mask & P9_GETATTR_MTIME) != 0) {
         rstat.mtime_sec = st.st_mtim.tv_sec;
         rstat.mtime_nsec = st.st_mtim.tv_nsec;
     }
-    if (mask & P9_GETATTR_CTIME) {
+    if ((mask & P9_GETATTR_CTIME) != 0) {
         rstat.ctime_sec = st.st_ctim.tv_sec;
         rstat.ctime_nsec = st.st_ctim.tv_nsec;
     }
@@ -1189,7 +1189,7 @@ bool virtio_p9fs_device::op_lock(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp || fidp->fd < 0) {
+    if ((fidp == nullptr) || fidp->fd < 0) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Lock the file
@@ -1199,7 +1199,7 @@ bool virtio_p9fs_device::op_lock(virtq_unserializer &&mmsg, uint16_t tag) {
     fl.l_start = static_cast<off_t>(start);
     fl.l_len = static_cast<off_t>(length);
     uint8_t status = P9_LOCK_SUCCESS;
-    if (flags & P9_LOCK_FLAGS_BLOCK) {
+    if ((flags & P9_LOCK_FLAGS_BLOCK) != 0) {
         // Blocking lock
         if (fcntl(fidp->fd, F_SETLKW, &fl) == -1) {
             status = P9_LOCK_ERROR;
@@ -1237,7 +1237,7 @@ bool virtio_p9fs_device::op_getlock(virtq_unserializer &&mmsg, uint16_t tag) {
 #endif
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp || fidp->fd < 0) {
+    if ((fidp == nullptr) || fidp->fd < 0) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Lock the file
@@ -1273,15 +1273,15 @@ bool virtio_p9fs_device::op_readdir(virtq_unserializer &&mmsg, uint16_t tag) {
 #endif
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     DIR *dirp = reinterpret_cast<DIR *>(fidp->dirp);
     // Open directory in case it's not yet
-    if (!dirp) {
+    if (dirp == nullptr) {
         dirp = opendir(fidp->path.c_str());
-        if (!dirp) {
+        if (dirp == nullptr) {
             return send_error(msg, tag, host_errno_to_p9(errno));
         }
         fidp->dirp = dirp;
@@ -1300,7 +1300,7 @@ bool virtio_p9fs_device::op_readdir(virtq_unserializer &&mmsg, uint16_t tag) {
         // Get the next directory entry
         errno = 0;
         dirent *dir_entry = readdir(dirp);
-        if (!dir_entry) {
+        if (dir_entry == nullptr) {
             if (errno != 0 && first_entry) {
                 return send_error(msg, tag, host_errno_to_p9(errno));
             }
@@ -1373,7 +1373,7 @@ bool virtio_p9fs_device::op_fsync(virtq_unserializer &&mmsg, uint16_t tag) {
 #endif
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp || fidp->fd < 0) {
+    if ((fidp == nullptr) || fidp->fd < 0) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Sync the file
@@ -1402,7 +1402,7 @@ bool virtio_p9fs_device::op_link(virtq_unserializer &&mmsg, uint16_t tag) {
     // Get the fid state
     p9_fid_state *dfidp = get_fid_state(dfid);
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!dfidp || !fidp) {
+    if ((dfidp == nullptr) || (fidp == nullptr)) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Create the hard link
@@ -1436,7 +1436,7 @@ bool virtio_p9fs_device::op_mkdir(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Get the fid state
     p9_fid_state *dfidp = get_fid_state(dfid);
-    if (!dfidp) {
+    if (dfidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Create the directory
@@ -1488,7 +1488,7 @@ bool virtio_p9fs_device::op_renameat(virtq_unserializer &&mmsg, uint16_t tag) {
     // Get the fid state
     const p9_fid_state *oldfidp = get_fid_state(oldfid);
     const p9_fid_state *newfidp = get_fid_state(newfid);
-    if (!newfidp || !oldfidp) {
+    if ((newfidp == nullptr) || (oldfidp == nullptr)) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Rename the file
@@ -1531,12 +1531,12 @@ bool virtio_p9fs_device::op_unlinkat(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Get the fid state
     const p9_fid_state *dfidp = get_fid_state(dfid);
-    if (!dfidp) {
+    if (dfidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Remove the path
     const std::string path = join_path_name(dfidp->path, name);
-    if (flags & P9_AT_REMOVEDIR) {
+    if ((flags & P9_AT_REMOVEDIR) != 0) {
         if (rmdir(path.c_str()) != 0) {
             return send_error(msg, tag, host_errno_to_p9(errno));
         }
@@ -1584,7 +1584,7 @@ bool virtio_p9fs_device::op_attach(virtq_unserializer &&mmsg, uint16_t tag) {
         aname);
 #endif
     // It's an error if the fid already exists
-    if (get_fid_state(fid)) {
+    if (get_fid_state(fid) != nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Check if root path exists
@@ -1628,11 +1628,11 @@ bool virtio_p9fs_device::op_walk(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Get the fid state, it must not have been opened for I/O by an open or create message
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // The newfid must not be in use unless it is the same as fid
-    if (newfid != fid && get_fid_state(newfid)) {
+    if (newfid != fid && (get_fid_state(newfid) != nullptr)) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Get the start for the starting path and root path
@@ -1723,7 +1723,7 @@ bool virtio_p9fs_device::op_read(virtq_unserializer &&mmsg, uint16_t tag) {
 #endif
     // Get the fid state, only file fids are accepted
     const p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp || fidp->fd < 0) {
+    if ((fidp == nullptr) || fidp->fd < 0) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Prepare temporary output buffer
@@ -1758,7 +1758,7 @@ bool virtio_p9fs_device::op_write(virtq_unserializer &&mmsg, uint16_t tag) {
 #endif
     // Get the fid state, only file fids are accepted
     const p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp || fidp->fd < 0) {
+    if ((fidp == nullptr) || fidp->fd < 0) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Read from input buffer
@@ -1790,7 +1790,7 @@ bool virtio_p9fs_device::op_clunk(virtq_unserializer &&mmsg, uint16_t tag) {
     (void) fprintf(stderr, "p9fs clunk: tag=%d fid=%d\n", tag, fid);
 #endif
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Close file descriptors

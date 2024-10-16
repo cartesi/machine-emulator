@@ -139,15 +139,16 @@ struct machine_state {
     /// \brief Reads the value of the iflags register.
     /// \returns The value of the register.
     uint64_t read_iflags() const {
-        return packed_iflags(iflags.PRV, iflags.X, iflags.Y, iflags.H);
+        return packed_iflags(iflags.PRV, static_cast<int>(iflags.X), static_cast<int>(iflags.Y),
+            static_cast<int>(iflags.H));
     }
 
     /// \brief Reads the value of the iflags register.
     /// \param val New register value.
     void write_iflags(uint64_t val) {
-        iflags.H = (val >> IFLAGS_H_SHIFT) & 1;
-        iflags.Y = (val >> IFLAGS_Y_SHIFT) & 1;
-        iflags.X = (val >> IFLAGS_X_SHIFT) & 1;
+        iflags.H = (((val >> IFLAGS_H_SHIFT) & 1) != 0);
+        iflags.Y = (((val >> IFLAGS_Y_SHIFT) & 1) != 0);
+        iflags.X = (((val >> IFLAGS_X_SHIFT) & 1) != 0);
         iflags.PRV = (val >> IFLAGS_PRV_SHIFT) & 3;
     }
 

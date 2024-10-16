@@ -65,7 +65,7 @@ static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb, const std::nothro
 
 static inline unique_file_ptr unique_fopen(const char *pathname, const char *mode) {
     FILE *fp = fopen(pathname, mode);
-    if (!fp) {
+    if (fp == nullptr) {
         throw std::system_error(errno, std::generic_category(),
             "unable to open '" + std::string{pathname} + "' in mode '" + std::string{mode} + "'");
     }

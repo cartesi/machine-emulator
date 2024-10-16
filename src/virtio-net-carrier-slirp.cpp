@@ -136,7 +136,7 @@ static void slirp_timer_free(void *timer_ptr, void *opaque) {
     auto *carrier = reinterpret_cast<virtio_net_carrier_slirp *>(opaque);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *timer = reinterpret_cast<slirp_timer *>(timer_ptr);
-    if (timer) {
+    if (timer != nullptr) {
         auto it = carrier->timers.find(timer);
         if (it != carrier->timers.end()) {
             carrier->timers.erase(it);
@@ -150,7 +150,7 @@ static void slirp_timer_mod(void *timer_ptr, int64_t expire_timer_msec, void *op
     auto *carrier = reinterpret_cast<virtio_net_carrier_slirp *>(opaque);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *timer = reinterpret_cast<slirp_timer *>(timer_ptr);
-    if (timer && carrier->timers.find(timer) != carrier->timers.end()) {
+    if ((timer != nullptr) && carrier->timers.find(timer) != carrier->timers.end()) {
         timer->expire_timer_msec = expire_timer_msec;
     }
 }
@@ -175,7 +175,7 @@ static void slirp_notify(void *opaque) {
 virtio_net_carrier_slirp::virtio_net_carrier_slirp(const cartesi::virtio_net_user_config &config) {
     // Configure slirp
     slirp_cfg.version = std::min<int>(SLIRP_CONFIG_VERSION_MAX, SLIRP_VERSION);
-    slirp_cfg.restricted = false;                                         // Don't isolate the guest from the host
+    slirp_cfg.restricted = 0;                                             // Don't isolate the guest from the host
     slirp_cfg.in_enabled = true;                                          // IPv4 is enabled
     slirp_cfg.vnetwork.s_addr = htonl(SLIRP_DEFAULT_IPV4_VNETWORK);       // Network
     slirp_cfg.vnetmask.s_addr = htonl(SLIRP_DEFAULT_IPV4_VNETMASK);       // Netmask
@@ -198,7 +198,7 @@ virtio_net_carrier_slirp::virtio_net_carrier_slirp(const cartesi::virtio_net_use
 
     // Initialize slirp
     slirp = slirp_new(&slirp_cfg, &slirp_cbs, this);
-    if (!slirp) {
+    if (slirp == nullptr) {
         throw std::runtime_error("could not configure slirp network device");
     }
 
@@ -208,8 +208,8 @@ virtio_net_carrier_slirp::virtio_net_carrier_slirp(const cartesi::virtio_net_use
         struct in_addr guest_addr {};
         host_addr.s_addr = htonl(hostfwd.host_ip);
         guest_addr.s_addr = htonl(hostfwd.guest_ip);
-        if (slirp_add_hostfwd(slirp, hostfwd.is_udp, host_addr, hostfwd.host_port, guest_addr, hostfwd.guest_port) <
-            0) {
+        if (slirp_add_hostfwd(slirp, static_cast<int>(hostfwd.is_udp), host_addr, hostfwd.host_port, guest_addr,
+                hostfwd.guest_port) < 0) {
             throw std::system_error{errno, std::generic_category(),
                 "failed to forward "s + (hostfwd.is_udp ? "UDP" : "TCP") + " host port " +
                     std::to_string(hostfwd.host_port) + " to guest port " + std::to_string(hostfwd.guest_port)};
@@ -219,7 +219,7 @@ virtio_net_carrier_slirp::virtio_net_carrier_slirp(const cartesi::virtio_net_use
 
 virtio_net_carrier_slirp::~virtio_net_carrier_slirp() {
     // Cleanup slirp
-    if (slirp) {
+    if (slirp != nullptr) {
         slirp_cleanup(slirp);
         slirp = nullptr;
     }
@@ -244,13 +244,13 @@ struct slirp_select_fds {
 static int slirp_add_poll_cb(int fd, int events, void *opaque) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *fds = reinterpret_cast<slirp_select_fds *>(opaque);
-    if (events & SLIRP_POLL_IN) {
+    if ((events & SLIRP_POLL_IN) != 0) {
         FD_SET(fd, fds->readfds);
     }
-    if (events & SLIRP_POLL_OUT) {
+    if ((events & SLIRP_POLL_OUT) != 0) {
         FD_SET(fd, fds->writefds);
     }
-    if (events & SLIRP_POLL_PRI) {
+    if ((events & SLIRP_POLL_PRI) != 0) {
         FD_SET(fd, fds->exceptfds);
     }
     if (fd > *fds->pmaxfd) {
@@ -277,7 +277,7 @@ static int slirp_get_revents_cb(int fd, void *opaque) {
 
 void virtio_net_carrier_slirp::do_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) {
     // Did device reset and slirp failed to reinitialize?
-    if (!slirp) {
+    if (slirp == nullptr) {
         return;
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -297,7 +297,7 @@ void virtio_net_carrier_slirp::do_prepare_select(select_fd_sets *fds, uint64_t *
 
 bool virtio_net_carrier_slirp::do_poll_selected(int select_ret, select_fd_sets *fds) {
     // Did device reset and slirp failed to reinitialize?
-    if (!slirp) {
+    if (slirp == nullptr) {
         return false;
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -307,12 +307,12 @@ bool virtio_net_carrier_slirp::do_poll_selected(int select_ret, select_fd_sets *
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *exceptfds = reinterpret_cast<fd_set *>(fds->exceptfds);
     slirp_select_fds slirp_fds{nullptr, readfds, writefds, exceptfds};
-    slirp_pollfds_poll(slirp, select_ret < 0, slirp_get_revents_cb, &slirp_fds);
+    slirp_pollfds_poll(slirp, static_cast<int>(select_ret < 0), slirp_get_revents_cb, &slirp_fds);
     // Fire expired timers
     const int64_t now_ms = slirp_clock_get_ns(nullptr) / 1000000;
     for (slirp_timer *timer : timers) {
         if (timer->expire_timer_msec != -1 && now_ms >= timer->expire_timer_msec) {
-            if (timer->cb) {
+            if (timer->cb != nullptr) {
                 timer->cb(timer->cb_opaque);
             }
             // The timer should not fire again until expire_timer_msec is modified by Slirp
@@ -325,7 +325,7 @@ bool virtio_net_carrier_slirp::do_poll_selected(int select_ret, select_fd_sets *
 bool virtio_net_carrier_slirp::write_packet_to_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx,
     uint32_t read_avail_len, uint32_t *pread_len) {
     // Did device reset and slirp failed to reinitialize?
-    if (!slirp) {
+    if (slirp == nullptr) {
         // Just drop it.
         *pread_len = 0;
         return true;

@@ -65,7 +65,7 @@ static bool htif_read(void *context, i_device_state_access *a, uint64_t offset, 
 
 static execute_status htif_halt(i_device_state_access *a, uint64_t cmd, uint64_t data) {
     (void) a;
-    if (cmd == HTIF_HALT_CMD_HALT && (data & 1)) {
+    if (cmd == HTIF_HALT_CMD_HALT && ((data & 1) != 0)) {
         a->set_iflags_H();
         return execute_status::success_and_halt;
     }
@@ -78,7 +78,7 @@ static execute_status htif_yield(i_device_state_access *a, uint64_t cmd, uint64_
     (void) data;
     execute_status status = execute_status::success;
     // If yield command is enabled, yield and acknowledge
-    if (cmd < 64 && (a->read_htif_iyield() >> cmd) & 1) {
+    if (cmd < 64 && (((a->read_htif_iyield() >> cmd) & 1) != 0)) {
         if (cmd == HTIF_YIELD_CMD_MANUAL) {
             a->set_iflags_Y();
             status = execute_status::success_and_yield;
@@ -96,12 +96,12 @@ static execute_status htif_yield(i_device_state_access *a, uint64_t cmd, uint64_
 static execute_status htif_console(htif_runtime_config *runtime_config, i_device_state_access *a, uint64_t cmd,
     uint64_t data) {
     // If console command is enabled, perform it and acknowledge
-    if (cmd < 64 && (a->read_htif_iconsole() >> cmd) & 1) {
+    if (cmd < 64 && (((a->read_htif_iconsole() >> cmd) & 1) != 0)) {
         if (cmd == HTIF_CONSOLE_CMD_PUTCHAR) {
             const uint8_t ch = data & 0xff;
             // In microarchitecture runtime_config will always be nullptr,
             // therefore the HTIF runtime config is actually ignored.
-            if (!runtime_config || !runtime_config->no_console_putchar) {
+            if ((runtime_config == nullptr) || !runtime_config->no_console_putchar) {
                 os_putchar(ch);
             }
             a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_CONSOLE, cmd, 0, 0));

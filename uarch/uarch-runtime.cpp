@@ -42,7 +42,7 @@ extern "C" void __assert_fail(const char * /*__assertion*/, const char * /*__fil
     const char * /*__function*/) {}
 
 extern "C" void *memmove(void *dest, const void *src, size_t n) {
-    if (!n || src == dest) {
+    if (n == 0 || src == dest) {
         return dest;
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast,cppcoreguidelines-pro-type-reinterpret-cast)
@@ -50,11 +50,11 @@ extern "C" void *memmove(void *dest, const void *src, size_t n) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *d = reinterpret_cast<char *>(dest);
     if (d < s) {
-        for (; n; n--) {
+        for (; n != 0; n--) {
             *d++ = *s++;
         }
     } else {
-        while (n--) {
+        while (n-- != 0) {
             d[n] = s[n];
         }
     }
@@ -66,7 +66,7 @@ extern "C" void *memcpy(void *dest, const void *src, size_t n) {
     const auto *s = reinterpret_cast<const unsigned char *>(src);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *d = reinterpret_cast<unsigned char *>(dest);
-    while (n--) {
+    while (n-- != 0) {
         *d++ = *s++;
     }
     return dest;
@@ -75,7 +75,7 @@ extern "C" void *memcpy(void *dest, const void *src, size_t n) {
 extern "C" void *memset(void *ptr, int value, size_t num) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     volatile unsigned char *p = reinterpret_cast<unsigned char *>(ptr);
-    while (num--) {
+    while (num-- != 0) {
         *p++ = value;
     }
     return ptr;

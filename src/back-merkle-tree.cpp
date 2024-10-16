@@ -62,7 +62,7 @@ void back_merkle_tree::push_back(const hash_type &new_leaf_hash) {
     }
     const int depth = m_log2_root_size - m_log2_leaf_size;
     for (int i = 0; i <= depth; ++i) {
-        if (m_leaf_count & (address_type{1} << i)) {
+        if ((m_leaf_count & (address_type{1} << i)) != 0) {
             const auto &left = m_context[i];
             get_concat_hash(h, left, right, right);
         } else {
@@ -125,7 +125,7 @@ back_merkle_tree::hash_type back_merkle_tree::get_root_hash() const {
     if (m_leaf_count < m_max_leaves) {
         auto root = m_pristine_hashes.get_hash(m_log2_leaf_size);
         for (int i = 0; i < depth; ++i) {
-            if (m_leaf_count & (address_type{1} << i)) {
+            if ((m_leaf_count & (address_type{1} << i)) != 0) {
                 const auto &left = m_context[i];
                 get_concat_hash(h, left, root, root);
             } else {
@@ -150,7 +150,7 @@ back_merkle_tree::proof_type back_merkle_tree::get_next_leaf_proof() const {
     proof.set_target_hash(m_pristine_hashes.get_hash(m_log2_leaf_size));
     hash_type hash = m_pristine_hashes.get_hash(m_log2_leaf_size);
     for (int i = 0; i < depth; ++i) {
-        if (m_leaf_count & (address_type{1} << i)) {
+        if ((m_leaf_count & (address_type{1} << i)) != 0) {
             const auto &left = m_context[i];
             proof.set_sibling_hash(left, m_log2_leaf_size + i);
             get_concat_hash(h, left, hash, hash);

@@ -109,7 +109,7 @@ private:
     uint64_t check_read(uint64_t paligned, const char *text) {
         static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size<uint64_t>::value,
             "Merkle tree word size must be at least as large as a machine word");
-        if (paligned & (sizeof(uint64_t) - 1)) {
+        if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
             throw std::invalid_argument{"address not aligned to word size"};
         }
         if (m_next_access >= m_accesses.size()) {
@@ -164,7 +164,7 @@ private:
     void check_write(uint64_t paligned, uint64_t word, const char *text) {
         static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size<uint64_t>::value,
             "Merkle tree word size must be at least as large as a machine word");
-        if (paligned & (sizeof(uint64_t) - 1)) {
+        if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
             throw std::invalid_argument{"paligned not aligned to word size"};
         }
         if (m_next_access >= m_accesses.size()) {
@@ -286,22 +286,25 @@ private:
     }
 
     bool do_read_halt_flag() {
-        return check_read(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag), "uarch.halt_flag");
+        return check_read(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag), "uarch.halt_flag") !=
+            0;
     }
 
     void do_set_halt_flag() {
-        check_write(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag), true, "uarch.halt_flag");
+        check_write(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag), static_cast<uint64_t>(true),
+            "uarch.halt_flag");
     }
 
     void do_reset_halt_flag() {
-        check_write(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag), false, "uarch.halt_flag");
+        check_write(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag),
+            static_cast<uint64_t>(false), "uarch.halt_flag");
     }
 
     uint64_t do_read_word(uint64_t paddr) {
         assert((paddr & (sizeof(uint64_t) - 1)) == 0);
         // Get the name of the state register identified by this address
         const auto *name = uarch_bridge::get_register_name(paddr);
-        if (!name) {
+        if (name == nullptr) {
             // this is a regular memory access
             name = "memory";
         }
@@ -312,7 +315,7 @@ private:
         assert((paddr & (sizeof(uint64_t) - 1)) == 0);
         // Get the name of the state register identified by this address
         const auto *name = uarch_bridge::get_register_name(paddr);
-        if (!name) {
+        if (name == nullptr) {
             // this is a regular memory access
             name = "memory";
         }

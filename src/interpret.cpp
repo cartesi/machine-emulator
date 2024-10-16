@@ -506,7 +506,7 @@ static inline uint32_t get_highest_priority_irq_num(uint32_t v) {
         MIP_SEIP_MASK, MIP_SSIP_MASK, MIP_STIP_MASK  // Supervisor interrupts
     };
     for (const uint32_t mask : interrupts_priority) {
-        if (v & mask) {
+        if ((v & mask) != 0) {
             return ilog2(mask);
         }
     }

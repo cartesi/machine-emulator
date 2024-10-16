@@ -38,7 +38,7 @@ static bool clint_read_msip(i_device_state_access *a, uint64_t *val, int log2_si
         "code expects msip0, mtimcmp, and mtime to be in different pages");
 
     if (log2_size == 2) {
-        *val = ((a->read_mip() & MIP_MSIP_MASK) == MIP_MSIP_MASK);
+        *val = static_cast<uint64_t>((a->read_mip() & MIP_MSIP_MASK) == MIP_MSIP_MASK);
         return true;
     }
     return false;
@@ -88,7 +88,7 @@ static execute_status clint_write(void *context, i_device_state_access *a, uint6
                 //??D I don't yet know why Linux tries to raise MSIP when we only have a single hart
                 //    It does so repeatedly before and after every command run in the shell
                 //    Will investigate.
-                if (val & 1) {
+                if ((val & 1) != 0) {
                     a->set_mip(MIP_MSIP_MASK);
                     return execute_status::success_and_serve_interrupts;
                 } else {

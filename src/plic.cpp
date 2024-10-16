@@ -111,7 +111,7 @@ static bool plic_read(void *context, i_device_state_access *a, uint64_t offset, 
 #endif
 
     // Our PLIC only supports aligned 32-bit reads
-    if (offset & 3 || log2_size != 2 || offset > PMA_PLIC_LENGTH) {
+    if (((offset & 3) != 0) || log2_size != 2 || offset > PMA_PLIC_LENGTH) {
         return false;
     }
 
@@ -178,7 +178,7 @@ static execute_status plic_write(void *context, i_device_state_access *a, uint64
 #endif
 
     // Our PLIC only supports aligned 32-bit reads
-    if (offset & 3 || log2_size != 2 || offset > PMA_PLIC_LENGTH) {
+    if (((offset & 3) != 0) || log2_size != 2 || offset > PMA_PLIC_LENGTH) {
         return execute_status::failure;
     }
 

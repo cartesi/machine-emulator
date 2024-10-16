@@ -402,7 +402,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
     // Initialize VirtIO devices
     if (!m_c.virtio.empty()) {
         // VirtIO devices are disallowed in unreproducible mode
-        if (!m_c.processor.iunrep) {
+        if (m_c.processor.iunrep == 0) {
             throw std::invalid_argument{"virtio devices are only supported in unreproducible machines"};
         }
 
@@ -497,7 +497,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
 
     // Initialize TTY if console input is enabled
     if (m_c.htif.console_getchar || has_virtio_console()) {
-        if (!m_c.processor.iunrep) {
+        if (m_c.processor.iunrep == 0) {
             throw std::invalid_argument{"TTY stdin is only supported in unreproducible machines"};
         }
         os_open_tty();
@@ -581,7 +581,7 @@ bool machine::has_htif_console() const {
 }
 
 machine_config machine::get_serialization_config() const {
-    if (read_reg(reg::iunrep)) {
+    if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error{"cannot serialize configuration of unreproducible machines"};
     }
     // Initialize with copy of original config
@@ -651,7 +651,7 @@ machine_config machine::get_serialization_config() const {
     c.cmio.rx_buffer.image_filename.clear();
     c.cmio.tx_buffer.image_filename.clear();
     c.uarch.processor.cycle = read_reg(reg::uarch_cycle);
-    c.uarch.processor.halt_flag = read_reg(reg::uarch_halt_flag);
+    c.uarch.processor.halt_flag = (read_reg(reg::uarch_halt_flag) != 0);
     c.uarch.processor.pc = read_reg(reg::uarch_pc);
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
         c.uarch.processor.x[i] = read_reg(static_cast<reg>(reg::uarch_x0 + i));
@@ -673,7 +673,7 @@ static void store_device_pma(const machine &m, const pma_entry &pma, const std::
         if (!peek(pma, m, page_start_in_range, &page_data, scratch.get())) {
             throw std::runtime_error{"peek failed"};
         } else {
-            if (!page_data) {
+            if (page_data == nullptr) {
                 memset(scratch.get(), 0, PMA_PAGE_SIZE);
                 page_data = scratch.get();
             }
@@ -741,7 +741,7 @@ static inline T &deref(T *t) {
 }
 
 void machine::store_pmas(const machine_config &c, const std::string &dir) const {
-    if (read_reg(reg::iunrep)) {
+    if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error{"cannot store PMAs of unreproducible machines"};
     }
     store_memory_pma(find_pma_entry<uint64_t>(PMA_DTB_START), dir);
@@ -768,7 +768,7 @@ static void store_hash(const machine::hash_type &h, const std::string &dir) {
 }
 
 void machine::store(const std::string &dir) const {
-    if (os_mkdir(dir.c_str(), 0700)) {
+    if (os_mkdir(dir.c_str(), 0700) != 0) {
         throw std::system_error{errno, std::generic_category(), "error creating directory '"s + dir + "'"s};
     }
     if (!m_r.skip_root_hash_store) {
@@ -1113,15 +1113,15 @@ uint64_t machine::read_reg(reg r) const {
         case reg::uarch_cycle:
             return m_uarch.get_state().cycle;
         case reg::uarch_halt_flag:
-            return m_uarch.get_state().halt_flag;
+            return static_cast<uint64_t>(m_uarch.get_state().halt_flag);
         case reg::iflags_prv:
             return m_s.iflags.PRV;
         case reg::iflags_x:
-            return m_s.iflags.X;
+            return static_cast<uint64_t>(m_s.iflags.X);
         case reg::iflags_y:
-            return m_s.iflags.Y;
+            return static_cast<uint64_t>(m_s.iflags.Y);
         case reg::iflags_h:
-            return m_s.iflags.H;
+            return static_cast<uint64_t>(m_s.iflags.H);
         case reg::htif_tohost_dev:
             return HTIF_DEV_FIELD(m_s.htif.tohost);
         case reg::htif_tohost_cmd:
@@ -1984,7 +1984,7 @@ bool machine::update_merkle_tree() const {
                 if (!peek(*pma, *this, page_start_in_range, &page_data, scratch.get())) {
                     return false;
                 }
-                if (page_data) {
+                if (page_data != nullptr) {
                     const bool is_pristine = std::all_of(page_data, page_data + PMA_PAGE_SIZE,
                         [](unsigned char pp) -> bool { return pp == '\0'; });
 
@@ -2043,7 +2043,7 @@ bool machine::update_merkle_tree_page(uint64_t address) {
         m_t.end_update(h);
         return false;
     }
-    if (page_data) {
+    if (page_data != nullptr) {
         const uint64_t page_address = pma.get_start() + page_start_in_range;
         hash_type hash;
         m_t.get_page_node_hash(h, page_data, hash);
@@ -2061,7 +2061,7 @@ const boost::container::static_vector<pma_entry, PMA_MAX> &machine::get_pmas() c
 }
 
 void machine::get_root_hash(hash_type &hash) const {
-    if (read_reg(reg::iunrep)) {
+    if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error("cannot compute root hash of unreproducible machines");
     }
     if (!update_merkle_tree()) {
@@ -2084,7 +2084,7 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
         throw std::invalid_argument{"invalid log2_size"};
     }
     // Check target address alignment
-    if (address & ((~UINT64_C(0)) >> (64 - log2_size))) {
+    if ((address & ((~UINT64_C(0)) >> (64 - log2_size))) != 0) {
         throw std::invalid_argument{"address not aligned to log2_size"};
     }
     // If proof concerns range smaller than a page, we may need to rebuild part
@@ -2130,7 +2130,7 @@ void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length
     if (length == 0) {
         return;
     }
-    if (!data) {
+    if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
     const pma_entry &pma = find_pma_entry(m_pmas, address, length);
@@ -2156,13 +2156,13 @@ void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length
         if (bytes_to_write == PMA_PAGE_SIZE) {
             if (!peek(pma, *this, page_address, &page_data, data)) {
                 throw std::runtime_error{"peek failed"};
-            } else if (!page_data) {
+            } else if (page_data == nullptr) {
                 memset(data, 0, bytes_to_write);
             }
         } else {
             if (!peek(pma, *this, page_address, &page_data, scratch.get())) {
                 throw std::runtime_error{"peek failed"};
-            } else if (!page_data) {
+            } else if (page_data == nullptr) {
                 memset(data, 0, bytes_to_write);
             } else {
                 memcpy(data, page_data + shift, bytes_to_write);
@@ -2180,7 +2180,7 @@ void machine::write_memory(uint64_t address, const unsigned char *data, uint64_t
     if (length == 0) {
         return;
     }
-    if (!data) {
+    if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
     pma_entry &pma = find_pma_entry(m_pmas, address, length);
@@ -2206,7 +2206,7 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
     if (length == 0) {
         return;
     }
-    if (!data) {
+    if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
     const uint64_t vaddr_limit = vaddr_start + length;
@@ -2237,7 +2237,7 @@ void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *da
     if (length == 0) {
         return;
     }
-    if (!data) {
+    if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
     const uint64_t vaddr_limit = vaddr_start + length;
@@ -2277,7 +2277,7 @@ uint64_t machine::translate_virtual_address(uint64_t vaddr) {
 
 uint64_t machine::read_word(uint64_t word_address) const {
     // Make sure address is aligned
-    if (word_address & (PMA_WORD_SIZE - 1)) {
+    if ((word_address & (PMA_WORD_SIZE - 1)) != 0) {
         throw std::invalid_argument{"address not aligned"};
     }
     const pma_entry &pma = find_pma_entry<uint64_t>(word_address);
@@ -2292,7 +2292,7 @@ uint64_t machine::read_word(uint64_t word_address) const {
         throw std::invalid_argument{"peek failed"};
     }
     // If peek returns a page, read from it
-    if (page_data) {
+    if (page_data != nullptr) {
         const uint64_t word_start_in_range = (word_address - pma.get_start()) & (PMA_PAGE_SIZE - 1);
         return aliased_aligned_read<uint64_t>(page_data + word_start_in_range);
         // Otherwise, page is always pristine
@@ -2430,7 +2430,7 @@ machine_config machine::get_default_config() {
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
-    if (read_reg(reg::iunrep)) {
+    if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error("microarchitecture cannot be used with unreproducible machines");
     }
     if (m_uarch.get_state().ram.get_istart_E()) {

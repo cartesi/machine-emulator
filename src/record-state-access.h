@@ -179,9 +179,9 @@ private:
     }
 
     void log_before_write_word_write_and_update(uint64_t paligned, bool &dest, bool val, const char *text) {
-        uint64_t dest64 = dest;
-        log_before_write_write_and_update(paligned, dest64, val, text);
-        dest = dest64;
+        auto dest64 = static_cast<uint64_t>(dest);
+        log_before_write_write_and_update(paligned, dest64, static_cast<uint64_t>(val), text);
+        dest = (dest64 != 0);
         update_after_write(paligned);
     }
 
@@ -193,8 +193,8 @@ private:
     }
 
     void do_reset_iflags_Y() {
-        auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, m_m.get_state().iflags.X,
-            false /* Y */, m_m.get_state().iflags.H);
+        auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV,
+            static_cast<int>(m_m.get_state().iflags.X), 0 /* Y */, static_cast<int>(m_m.get_state().iflags.H));
         const uint64_t iflags_addr = shadow_state_get_reg_abs_addr(shadow_state_reg::iflags);
         log_read(iflags_addr, "iflags.Y");
         log_before_write(iflags_addr, new_iflags, "iflags.Y");
@@ -214,10 +214,10 @@ private:
 
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
         int write_length_log2_size) {
-        if (paddr & (machine_merkle_tree::get_word_size() - 1)) {
+        if ((paddr & (machine_merkle_tree::get_word_size() - 1)) != 0) {
             throw std::invalid_argument("paddr is not aligned to tree leaf size");
         }
-        if (!data) {
+        if (data == nullptr) {
             throw std::invalid_argument("data is null");
         }
         const uint64_t write_length = static_cast<uint64_t>(1) << write_length_log2_size;

@@ -30,14 +30,14 @@ virtual_machine::~virtual_machine() {
 }
 
 machine *virtual_machine::get_machine() {
-    if (!m_machine) {
+    if (m_machine == nullptr) {
         throw std::runtime_error{"no machine"};
     }
     return m_machine;
 }
 
 const machine *virtual_machine::get_machine() const {
-    if (!m_machine) {
+    if (m_machine == nullptr) {
         throw std::runtime_error{"no machine"};
     }
     return m_machine;

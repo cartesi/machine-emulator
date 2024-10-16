@@ -82,7 +82,7 @@ cm_error cm_jsonrpc_connect(const char *address, int detach_server, cm_jsonrpc_c
     *con = reinterpret_cast<cm_jsonrpc_connection *>(cpp_con);
     return cm_result_success();
 } catch (...) {
-    if (con) {
+    if (con != nullptr) {
         *con = nullptr;
     }
     return cm_result_failure();
@@ -152,12 +152,12 @@ cm_error cm_jsonrpc_spawn_server(const char *address, int detach_server, cm_json
     // a.bind(endpoint);
     // a.listen(asio::socket_base::max_listen_connections);
     const char *bin = getenv("JSONRPC_REMOTE_CARTESI_MACHINE");
-    if (!bin) {
+    if (bin == nullptr) {
         bin = "jsonrpc-remote-cartesi-machine";
     }
     auto ppid = getpid();
     bool restore_grand_child = false;
-    const int32_t grand_child = cartesi::os_double_fork_or_throw(true);
+    const int32_t grand_child = cartesi::os_double_fork_or_throw(static_cast<int>(true));
     if (grand_child == 0) { // grand-child and double-fork() succeeded
         sigprocmask(SIG_SETMASK, &omask, nullptr);
         char sigusr1[256] = "";
@@ -260,15 +260,15 @@ cm_error cm_jsonrpc_create_machine(const cm_jsonrpc_connection *con, int detach_
     }
     const auto c = cartesi::from_json<cartesi::machine_config>(config);
     cartesi::machine_runtime_config r;
-    if (runtime_config) {
+    if (runtime_config != nullptr) {
         r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
     }
     const auto *cpp_con = convert_from_c(con);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    *new_machine = reinterpret_cast<cm_machine *>(new cartesi::jsonrpc_virtual_machine(*cpp_con, detach_machine, c, r));
+    *new_machine = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        reinterpret_cast<cm_machine *>(new cartesi::jsonrpc_virtual_machine(*cpp_con, detach_machine != 0, c, r));
     return cm_result_success();
 } catch (...) {
-    if (new_machine) {
+    if (new_machine != nullptr) {
         *new_machine = nullptr;
     }
     return cm_result_failure();
@@ -283,15 +283,15 @@ cm_error cm_jsonrpc_load_machine(const cm_jsonrpc_connection *con, int detach_ma
         throw std::invalid_argument("invalid dir");
     }
     cartesi::machine_runtime_config r;
-    if (runtime_config) {
+    if (runtime_config != nullptr) {
         r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
     }
     const auto *cpp_con = convert_from_c(con);
     *new_machine = // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        reinterpret_cast<cm_machine *>(new cartesi::jsonrpc_virtual_machine(*cpp_con, detach_machine, dir, r));
+        reinterpret_cast<cm_machine *>(new cartesi::jsonrpc_virtual_machine(*cpp_con, detach_machine != 0, dir, r));
     return cm_result_success();
 } catch (...) {
-    if (new_machine) {
+    if (new_machine != nullptr) {
         *new_machine = nullptr;
     }
     return cm_result_failure();
@@ -303,10 +303,10 @@ cm_error cm_jsonrpc_get_machine(const cm_jsonrpc_connection *con, int detach_mac
     }
     const auto *cpp_con = convert_from_c(con);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    *new_machine = reinterpret_cast<cm_machine *>(new cartesi::jsonrpc_virtual_machine(*cpp_con, detach_machine));
+    *new_machine = reinterpret_cast<cm_machine *>(new cartesi::jsonrpc_virtual_machine(*cpp_con, detach_machine != 0));
     return cm_result_success();
 } catch (...) {
-    if (new_machine) {
+    if (new_machine != nullptr) {
         *new_machine = nullptr;
     }
     return cm_result_failure();
@@ -315,7 +315,7 @@ cm_error cm_jsonrpc_get_machine(const cm_jsonrpc_connection *con, int detach_mac
 CM_API cm_error cm_jsonrpc_get_connection(cm_machine *m, const cm_jsonrpc_connection **con) try {
     auto *cpp_machine = convert_from_c(m);
     auto *cpp_json_machine = dynamic_cast<cartesi::jsonrpc_virtual_machine *>(cpp_machine);
-    if (!cpp_json_machine) {
+    if (cpp_json_machine == nullptr) {
         throw std::invalid_argument("not a remote machine");
     }
     auto *cpp_con = new cartesi::jsonrpc_connection_ptr(cpp_json_machine->get_connection());
@@ -336,7 +336,7 @@ cm_error cm_jsonrpc_get_default_config(const cm_jsonrpc_connection *con, const c
     *config = cm_set_temp_string(cartesi::to_json(cpp_config).dump());
     return cm_result_success();
 } catch (...) {
-    if (config) {
+    if (config != nullptr) {
         *config = nullptr;
     }
     return cm_result_failure();
@@ -381,15 +381,15 @@ cm_error cm_jsonrpc_fork_server(const cm_jsonrpc_connection *con, const char **a
     const auto *cpp_con = convert_from_c(con);
     const auto result = (*cpp_con)->fork_server();
     *address = cm_set_temp_string(result.address);
-    if (pid) {
+    if (pid != nullptr) {
         *pid = static_cast<int>(result.pid);
     }
     return cm_result_success();
 } catch (...) {
-    if (address) {
+    if (address != nullptr) {
         *address = nullptr;
     }
-    if (pid) {
+    if (pid != nullptr) {
         *pid = 0;
     }
     return cm_result_failure();
@@ -398,12 +398,12 @@ cm_error cm_jsonrpc_fork_server(const cm_jsonrpc_connection *con, const char **a
 cm_error cm_jsonrpc_rebind_server(const cm_jsonrpc_connection *con, const char *address, const char **new_address) try {
     const auto *cpp_con = convert_from_c(con);
     const std::string cpp_new_address = (*cpp_con)->rebind_server(address);
-    if (new_address) {
+    if (new_address != nullptr) {
         *new_address = cm_set_temp_string(cpp_new_address);
     }
     return cm_result_success();
 } catch (...) {
-    if (new_address) {
+    if (new_address != nullptr) {
         *new_address = nullptr;
     }
     return cm_result_failure();
@@ -418,7 +418,7 @@ cm_error cm_jsonrpc_get_reg_address(const cm_jsonrpc_connection *con, cm_reg reg
     *val = cartesi::jsonrpc_virtual_machine::get_reg_address(*cpp_con, cpp_reg);
     return cm_result_success();
 } catch (...) {
-    if (val) {
+    if (val != nullptr) {
         *val = 0;
     }
     return cm_result_failure();
@@ -433,7 +433,7 @@ cm_error cm_jsonrpc_get_server_version(const cm_jsonrpc_connection *con, const c
     *version = cm_set_temp_string(cartesi::to_json(cpp_version).dump());
     return cm_result_success();
 } catch (...) {
-    if (version) {
+    if (version != nullptr) {
         *version = nullptr;
     }
     return cm_result_failure();

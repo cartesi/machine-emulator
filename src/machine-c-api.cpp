@@ -158,14 +158,14 @@ cm_error cm_create(const char *config, const char *runtime_config, cm_machine **
     }
     const auto c = cartesi::from_json<cartesi::machine_config>(config);
     cartesi::machine_runtime_config r;
-    if (runtime_config) {
+    if (runtime_config != nullptr) {
         r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     *new_machine = reinterpret_cast<cm_machine *>(new cartesi::virtual_machine(c, r));
     return cm_result_success();
 } catch (...) {
-    if (new_machine) {
+    if (new_machine != nullptr) {
         *new_machine = nullptr;
     }
     return cm_result_failure();
@@ -179,14 +179,14 @@ cm_error cm_load(const char *dir, const char *runtime_config, cm_machine **new_m
         throw std::invalid_argument("invalid dir");
     }
     cartesi::machine_runtime_config r;
-    if (runtime_config) {
+    if (runtime_config != nullptr) {
         r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     *new_machine = reinterpret_cast<cm_machine *>(new cartesi::virtual_machine(dir, r));
     return cm_result_success();
 } catch (...) {
-    if (new_machine) {
+    if (new_machine != nullptr) {
         *new_machine = nullptr;
     }
     return cm_result_failure();
@@ -206,12 +206,12 @@ cm_error cm_store(const cm_machine *m, const char *dir) try {
 cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reason) try {
     auto *cpp_machine = convert_from_c(m);
     const auto status = cpp_machine->run(mcycle_end);
-    if (break_reason) {
+    if (break_reason != nullptr) {
         *break_reason = static_cast<cm_break_reason>(status);
     }
     return cm_result_success();
 } catch (...) {
-    if (break_reason) {
+    if (break_reason != nullptr) {
         *break_reason = CM_BREAK_REASON_FAILED;
     }
     return cm_result_failure();
@@ -222,7 +222,7 @@ cm_error cm_read_uarch_halt_flag(const cm_machine *m, bool *val) try {
     *val = static_cast<bool>(cpp_machine->read_reg(cartesi::machine::reg::uarch_halt_flag));
     return cm_result_success();
 } catch (...) {
-    if (val) {
+    if (val != nullptr) {
         *val = false;
     }
     return cm_result_failure();
@@ -254,7 +254,7 @@ cm_error cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char **log) t
     *log = cm_set_temp_string(cartesi::to_json(cpp_log).dump());
     return cm_result_success();
 } catch (...) {
-    if (log) {
+    if (log != nullptr) {
         *log = nullptr;
     }
     return cm_result_failure();
@@ -263,12 +263,12 @@ cm_error cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char **log) t
 cm_error cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_break_reason *uarch_break_reason) try {
     auto *cpp_machine = convert_from_c(m);
     const auto status = cpp_machine->run_uarch(uarch_cycle_end);
-    if (uarch_break_reason) {
+    if (uarch_break_reason != nullptr) {
         *uarch_break_reason = static_cast<cm_uarch_break_reason>(status);
     }
     return cm_result_success();
 } catch (...) {
-    if (uarch_break_reason) {
+    if (uarch_break_reason != nullptr) {
         *uarch_break_reason = CM_UARCH_BREAK_REASON_FAILED;
     }
     return cm_result_failure();
@@ -284,7 +284,7 @@ cm_error cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **log) tr
     *log = cm_set_temp_string(cartesi::to_json(cpp_log).dump());
     return cm_result_success();
 } catch (...) {
-    if (log) {
+    if (log != nullptr) {
         *log = nullptr;
     }
     return cm_result_failure();
@@ -327,7 +327,7 @@ cm_error cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_size, 
     *proof = cm_set_temp_string(cartesi::to_json(cpp_proof).dump());
     return cm_result_success();
 } catch (...) {
-    if (proof) {
+    if (proof != nullptr) {
         *proof = nullptr;
     }
     return cm_result_failure();
@@ -354,7 +354,7 @@ cm_error cm_verify_merkle_tree(cm_machine *m, bool *result) try {
     *result = cpp_machine->verify_merkle_tree();
     return cm_result_success();
 } catch (...) {
-    if (result) {
+    if (result != nullptr) {
         *result = false;
     }
     return cm_result_failure();
@@ -369,7 +369,7 @@ cm_error cm_read_reg(const cm_machine *m, cm_reg reg, uint64_t *val) try {
     *val = cpp_machine->read_reg(cpp_reg);
     return cm_result_success();
 } catch (...) {
-    if (val) {
+    if (val != nullptr) {
         *val = 0;
     }
     return cm_result_failure();
@@ -392,7 +392,7 @@ cm_error cm_get_reg_address(cm_reg reg, uint64_t *val) try {
     *val = cartesi::machine::get_reg_address(cpp_reg);
     return cm_result_success();
 } catch (...) {
-    if (val) {
+    if (val != nullptr) {
         *val = 0;
     }
     return cm_result_failure();
@@ -406,7 +406,7 @@ cm_error cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val) try 
     *val = cpp_machine->read_word(address);
     return cm_result_success();
 } catch (...) {
-    if (val) {
+    if (val != nullptr) {
         *val = 0;
     }
     return cm_result_failure();
@@ -449,7 +449,7 @@ cm_error cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *p
     *paddr = cpp_machine->translate_virtual_address(vaddr);
     return cm_result_success();
 } catch (...) {
-    if (paddr) {
+    if (paddr != nullptr) {
         *paddr = 0;
     }
     return cm_result_failure();
@@ -463,7 +463,7 @@ cm_error cm_read_mcycle(const cm_machine *m, uint64_t *val) try {
     *val = cpp_machine->read_reg(cartesi::machine::reg::mcycle);
     return cm_result_success();
 } catch (...) {
-    if (val) {
+    if (val != nullptr) {
         *val = 0;
     }
     return cm_result_failure();
@@ -477,7 +477,7 @@ cm_error cm_read_uarch_cycle(const cm_machine *m, uint64_t *val) try {
     *val = cpp_machine->read_reg(cartesi::machine::reg::uarch_cycle);
     return cm_result_success();
 } catch (...) {
-    if (val) {
+    if (val != nullptr) {
         *val = 0;
     }
     return cm_result_failure();
@@ -491,7 +491,7 @@ cm_error cm_read_iflags_Y(const cm_machine *m, bool *val) try {
     *val = static_cast<bool>(cpp_machine->read_reg(cartesi::machine::reg::iflags_y));
     return cm_result_success();
 } catch (...) {
-    if (val) {
+    if (val != nullptr) {
         *val = false;
     }
     return cm_result_failure();
@@ -521,7 +521,7 @@ cm_error cm_read_iflags_X(const cm_machine *m, bool *val) try {
     *val = static_cast<bool>(cpp_machine->read_reg(cartesi::machine::reg::iflags_x));
     return cm_result_success();
 } catch (...) {
-    if (val) {
+    if (val != nullptr) {
         *val = false;
     }
     return cm_result_failure();
@@ -535,7 +535,7 @@ cm_error cm_read_iflags_H(const cm_machine *m, bool *val) try {
     *val = static_cast<bool>(cpp_machine->read_reg(cartesi::machine::reg::iflags_h));
     return cm_result_success();
 } catch (...) {
-    if (val) {
+    if (val != nullptr) {
         *val = false;
     }
     return cm_result_failure();
@@ -549,7 +549,7 @@ cm_error cm_verify_dirty_page_maps(cm_machine *m, bool *result) try {
     *result = cpp_machine->verify_dirty_page_maps();
     return cm_result_success();
 } catch (...) {
-    if (result) {
+    if (result != nullptr) {
         *result = false;
     }
     return cm_result_failure();
@@ -564,7 +564,7 @@ cm_error cm_get_initial_config(const cm_machine *m, const char **config) try {
     *config = cm_set_temp_string(cartesi::to_json(cpp_config).dump());
     return cm_result_success();
 } catch (...) {
-    if (config) {
+    if (config != nullptr) {
         *config = nullptr;
     }
     return cm_result_failure();
@@ -578,7 +578,7 @@ cm_error cm_get_default_config(const char **config) try {
     *config = cm_set_temp_string(cartesi::to_json(cpp_config).dump());
     return cm_result_success();
 } catch (...) {
-    if (config) {
+    if (config != nullptr) {
         *config = nullptr;
     }
     return cm_result_failure();
@@ -591,7 +591,7 @@ cm_error cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length,
     cpp_range.start = start;
     cpp_range.length = length;
     cpp_range.shared = shared;
-    cpp_range.image_filename = image_filename ? image_filename : "";
+    cpp_range.image_filename = (image_filename != nullptr) ? image_filename : "";
     cpp_machine->replace_memory_range(cpp_range);
     return cm_result_success();
 } catch (...) {
@@ -648,7 +648,7 @@ cm_error cm_get_memory_ranges(const cm_machine *m, const char **ranges) try {
     *ranges = cm_set_temp_string(cartesi::to_json(cpp_ranges).dump());
     return cm_result_success();
 } catch (...) {
-    if (ranges) {
+    if (ranges != nullptr) {
         *ranges = nullptr;
     }
     return cm_result_failure();
@@ -662,8 +662,8 @@ cm_error cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16_t *re
     const auto *cpp_machine = convert_from_c(m);
     // NOTE(edubart): This can be implemented on top of other APIs,
     // implementing in the C++ machine class would add lot of boilerplate code in all interfaces.
-    if (!cpp_machine->read_reg(cartesi::machine::reg::iflags_x) &&
-        !cpp_machine->read_reg(cartesi::machine::reg::iflags_y)) {
+    if ((cpp_machine->read_reg(cartesi::machine::reg::iflags_x) == 0) &&
+        (cpp_machine->read_reg(cartesi::machine::reg::iflags_y) == 0)) {
         throw std::runtime_error{"machine is not yielded"};
     }
     const uint64_t tohost = cpp_machine->read_reg(cartesi::machine::reg::htif_tohost);
@@ -675,7 +675,7 @@ cm_error cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16_t *re
     if (tohost_cmd == cartesi::HTIF_YIELD_CMD_AUTOMATIC &&
         tohost_reason == cartesi::HTIF_YIELD_AUTOMATIC_REASON_PROGRESS) {
         data_length = sizeof(uint32_t);
-        if (data) { // Only actually read when data is not NULL
+        if (data != nullptr) { // Only actually read when data is not NULL
             if (data_length > *length) {
                 throw std::invalid_argument{"data buffer length is too small"};
             }
@@ -683,31 +683,31 @@ cm_error cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16_t *re
         }
     } else {
         data_length = tohost_data;
-        if (data) { // Only actually read when data is not NULL
+        if (data != nullptr) { // Only actually read when data is not NULL
             if (data_length > *length) {
                 throw std::invalid_argument{"data buffer length is too small"};
             }
             cpp_machine->read_memory(cartesi::PMA_CMIO_TX_BUFFER_START, data, data_length);
         }
     }
-    if (cmd) {
+    if (cmd != nullptr) {
         *cmd = tohost_cmd;
     }
-    if (reason) {
+    if (reason != nullptr) {
         *reason = tohost_reason;
     }
-    if (length) {
+    if (length != nullptr) {
         *length = data_length;
     }
     return cm_result_success();
 } catch (...) {
-    if (cmd) {
+    if (cmd != nullptr) {
         *cmd = 0;
     }
-    if (reason) {
+    if (reason != nullptr) {
         *reason = 0;
     }
-    if (length) {
+    if (length != nullptr) {
         *length = 0;
     }
     return cm_result_failure();
@@ -732,7 +732,7 @@ cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t
     *log = cm_set_temp_string(cartesi::to_json(cpp_log).dump());
     return cm_result_success();
 } catch (...) {
-    if (log) {
+    if (log != nullptr) {
         *log = nullptr;
     }
     return cm_result_failure();

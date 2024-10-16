@@ -22,10 +22,9 @@ local test_util = require("cartesi.tests.util")
 
 local remote_address
 local test_path = "./"
-local cleanup = {}
 local concurrency_update_merkle_tree = util.parse_number(os.getenv("CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE")) or 0
 
-local lua_cmd = arg[-1] .. " -e "
+-- local lua_cmd = arg[-1] .. " -e "
 
 -- There is no UINT64_MAX in Lua, so we have to use the signed representation
 local MAX_MCYCLE = -1

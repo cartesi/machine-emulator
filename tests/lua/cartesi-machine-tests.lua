@@ -401,7 +401,6 @@ local periodic_action = false
 local periodic_action_period = math.maxinteger
 local periodic_action_start = 0
 local concurrency_update_merkle_tree = util.parse_number(os.getenv("CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE")) or 0
-local cleanup = {}
 
 -- List of supported options
 -- Options are processed in order
@@ -604,10 +603,10 @@ local function run_machine_with_uarch(machine, ctx, max_mcycle)
 end
 
 local function connect()
-    local remote = protocol.connect(remote_address) -- server will be shutdown when remote is collected
+    local stub = protocol.connect(remote_address) -- server will be shutdown when remote is collected
     local version =
-        assert(remote.get_server_version(), "could not connect to remote cartesi machine at " .. remote_address)
-    return remote, version
+        assert(stub.get_server_version(), "could not connect to remote cartesi machine at " .. remote_address)
+    return stub, version
 end
 
 local function build_machine(ram_image)

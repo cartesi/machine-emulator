@@ -47,7 +47,7 @@ CFLAGS := -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) $(WAR
 	-I$(EMULATOR_SRC_DIR) \
 	-I$(BOOST_INC_DIR)
 
-CXXFLAGS := -std=c++17 -fno-rtti
+CXXFLAGS := -std=c++20 -fno-rtti
 
 UARCH_SOURCES=\
 	uarch-printf.c \
@@ -121,7 +121,7 @@ uarch-ram-entry.o: uarch-ram-entry.S
 	grep -v '^#' $@.tmp > $@
 
 %.clang-tidy: %.cpp
-	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- -target riscv64-linux-gnu $(CFLAGS) $(CXXFLAGS) -Wno-unused-command-line-argument 2>/dev/null
+	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- -target riscv64-linux-gnu $(CFLAGS) $(CXXFLAGS) -Wno-unused-command-line-argument 2>/dev/null
 	@touch $@
 
 lint: $(CLANG_TIDY_TARGETS)

@@ -97,7 +97,7 @@ CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.h)
 INCS=-I../../src -I../../third-party/tiny_sha3 -I../../third-party/nlohmann-json -I../../third-party/downloads
 WARNS=-Wall -Wpedantic
 
-CXXFLAGS+=-O2 -g -std=gnu++17 -fvisibility=hidden $(INCS) $(UBFLAGS) $(WARNS)
+CXXFLAGS+=-O2 -g -std=gnu++20 -fvisibility=hidden $(INCS) $(UBFLAGS) $(WARNS)
 
 ifeq ($(slirp),yes)
 LIBCARTESI_LIBS+=$(SLIRP_LIB)
@@ -116,7 +116,7 @@ $(BUILDDIR)/test-machine-c-api: test-machine-c-api.cpp ../../src/libcartesi.a ..
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(BOOST_INC) $(LIBCARTESI_LIBS)
 
 %.clang-tidy: %.cpp
-	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CXXFLAGS) $(BOOST_INC) 2>/dev/null
+	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- $(CXXFLAGS) $(BOOST_INC) 2>/dev/null
 	@$(CXX) $(CXXFLAGS) $(BOOST_INC) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 

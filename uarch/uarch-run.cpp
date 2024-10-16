@@ -26,6 +26,7 @@
 using namespace cartesi;
 
 static void set_uarch_halt_flag() {
+    // NOLINTNEXTLINE(hicpp-no-assembler)
     asm volatile("mv a7, %0\n"
                  "ecall\n"
                  : // no output

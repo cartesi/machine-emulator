@@ -17,7 +17,7 @@
 /// \file
 /// \brief This file is be converted to Solidity by the machine-solidity-step.
 
-// NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto)
+// NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)
 
 #include <stdexcept>
 
@@ -45,4 +45,4 @@ template void uarch_reset_state(uarch_record_state_access &a);
 template void uarch_reset_state(uarch_replay_state_access &a);
 
 } // namespace cartesi
-// NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto)
+// NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)

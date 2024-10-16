@@ -28,10 +28,10 @@ extern "C" void __cxa_pure_virtual() {
     abort();
 }
 
-// NOLINTNEXTLINE(cert-dcl54-cpp,misc-new-delete-overloads)
+// NOLINTNEXTLINE(cert-dcl54-cpp,misc-new-delete-overloads,hicpp-new-delete-operators)
 void operator delete(void * /*ptr*/) {}
 
-// NOLINTNEXTLINE(cert-dcl54-cpp,misc-new-delete-overloads)
+// NOLINTNEXTLINE(cert-dcl54-cpp,misc-new-delete-overloads,hicpp-new-delete-operators)
 void operator delete(void * /*ptr*/, size_t /*size*/) {}
 
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
@@ -82,6 +82,7 @@ extern "C" void *memset(void *ptr, int value, size_t num) {
 }
 
 extern "C" void _putchar(char c) {
+    // NOLINTNEXTLINE(hicpp-no-assembler)
     asm volatile("mv a7, %0\n"
                  "mv a6, %1\n"
                  "ecall\n"
@@ -93,6 +94,7 @@ extern "C" void _putchar(char c) {
 }
 
 extern "C" NO_RETURN void abort() {
+    // NOLINTNEXTLINE(hicpp-no-assembler)
     asm volatile("ebreak"
                  : // no output
                  : // no input

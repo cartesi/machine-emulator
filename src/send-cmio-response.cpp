@@ -17,7 +17,7 @@
 /// \file
 /// \brief This file is be converted to Solidity by the machine-solidity-step.
 
-// NOLINTBEGIN(google-readability-casting, misc-const-correctness)
+// NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto)
 
 #include <stdexcept>
 
@@ -66,4 +66,4 @@ template void send_cmio_response(record_state_access &a, uint16_t reason, const 
 template void send_cmio_response(replay_state_access &a, uint16_t reason, const unsigned char *data, uint32 length);
 
 } // namespace cartesi
-// NOLINTEND(google-readability-casting, misc-const-correctness)
+// NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto)

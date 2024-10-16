@@ -371,7 +371,7 @@ void os_prepare_tty_select(select_fd_sets *fds) {
     }
 #ifndef _WIN32
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    fd_set *readfds = reinterpret_cast<fd_set *>(fds->readfds);
+    auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     FD_SET(STDIN_FILENO, readfds);
     if (STDIN_FILENO > fds->maxfd) {
         fds->maxfd = STDIN_FILENO;
@@ -418,12 +418,12 @@ bool os_poll_selected_tty(int select_ret, select_fd_sets *fds) {
     }
 #else
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    fd_set *readfds = reinterpret_cast<fd_set *>(fds->readfds);
+    auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     // If the stdin file description is not ready, we can't obtain more characters
     if (select_ret <= 0 || !FD_ISSET(STDIN_FILENO, readfds)) {
         return false;
     }
-    const intptr_t len = static_cast<intptr_t>(read(STDIN_FILENO, s->buf.data(), s->buf.size()));
+    const auto len = static_cast<intptr_t>(read(STDIN_FILENO, s->buf.data(), s->buf.size()));
 
 #endif // _WIN32
 

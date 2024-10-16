@@ -25,7 +25,6 @@ Checks: >-
   -modernize-use-nodiscard,
   -modernize-use-trailing-return-type,
   -modernize-avoid-c-arrays,
-  -modernize-use-auto,
   -modernize-use-constraints,
   performance*,
   -performance-enum-size,

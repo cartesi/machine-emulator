@@ -404,7 +404,7 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, int ctxi
             break;
         }
         case nlohmann::json::value_t::number_unsigned: {
-            int64_t v = static_cast<int64_t>(j.template get<uint64_t>());
+            auto v = static_cast<int64_t>(j.template get<uint64_t>());
             if (schema.is_string() && schema.template get<std::string_view>() == "ArrayIndex") {
                 v += 1;
             }

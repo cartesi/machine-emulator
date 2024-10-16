@@ -145,7 +145,7 @@ static execute_status htif_write_tohost(htif_runtime_config *runtime_config, i_d
 static execute_status htif_write(void *context, i_device_state_access *a, uint64_t offset, uint64_t val,
     int log2_size) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    htif_runtime_config *runtime_config = reinterpret_cast<htif_runtime_config *>(context);
+    auto *runtime_config = reinterpret_cast<htif_runtime_config *>(context);
     // Our HTIF only supports 64-bit writes
     if (log2_size != 3) {
         return execute_status::failure;

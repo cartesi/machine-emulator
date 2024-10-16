@@ -679,13 +679,13 @@ bool virtio_p9fs_device::op_statfs(virtq_unserializer &&mmsg, uint16_t tag) {
             return send_error(msg, tag, host_errno_to_p9(errno));
         }
     }
-    uint32_t type = static_cast<uint32_t>(stfs.f_type);
-    uint32_t bsize = static_cast<uint32_t>(stfs.f_bsize);
-    uint64_t blocks = static_cast<uint64_t>(stfs.f_blocks);
-    uint64_t bfree = static_cast<uint64_t>(stfs.f_bfree);
-    uint64_t bavail = static_cast<uint64_t>(stfs.f_bavail);
-    uint64_t files = static_cast<uint64_t>(stfs.f_files);
-    uint64_t ffree = static_cast<uint64_t>(stfs.f_ffree);
+    auto type = static_cast<uint32_t>(stfs.f_type);
+    auto bsize = static_cast<uint32_t>(stfs.f_bsize);
+    auto blocks = static_cast<uint64_t>(stfs.f_blocks);
+    auto bfree = static_cast<uint64_t>(stfs.f_bfree);
+    auto bavail = static_cast<uint64_t>(stfs.f_bavail);
+    auto files = static_cast<uint64_t>(stfs.f_files);
+    auto ffree = static_cast<uint64_t>(stfs.f_ffree);
 #ifdef __APPLE__
     uint64_t fsid = static_cast<uint64_t>(stfs.f_fsid.val[0]) | (static_cast<uint64_t>(stfs.f_fsid.val[1]) << 32);
     uint32_t namelen =
@@ -780,7 +780,7 @@ bool virtio_p9fs_device::op_lcreate(virtq_unserializer &&mmsg, uint16_t tag) {
     // Create the file
     const std::string path = join_path_name(fidp->path, name);
     const int oflags = p9_open_flags_to_host(flags) | O_CREAT;
-    const mode_t omode = static_cast<mode_t>(mode);
+    const auto omode = static_cast<mode_t>(mode);
     const int fd = open(path.c_str(), oflags, omode);
     if (fd < 0) {
         return send_error(msg, tag, host_errno_to_p9(errno));
@@ -1250,8 +1250,8 @@ bool virtio_p9fs_device::op_getlock(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
     uint8_t lock_type = host_lock_type_to_p9(fl.l_type);
-    uint64_t lock_start = static_cast<uint64_t>(fl.l_start);
-    uint64_t lock_length = static_cast<uint64_t>(fl.l_len);
+    auto lock_start = static_cast<uint64_t>(fl.l_start);
+    auto lock_length = static_cast<uint64_t>(fl.l_len);
     // Reply
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&lock_type, &lock_start, &lock_length, &proc_id, &client_id)) {
@@ -1348,7 +1348,7 @@ bool virtio_p9fs_device::op_readdir(virtq_unserializer &&mmsg, uint16_t tag) {
             qid.path = dir_entry->d_ino;
         }
         // Add the entry to our reply
-        uint64_t off = static_cast<uint64_t>(entry_off);
+        auto off = static_cast<uint64_t>(entry_off);
         if (!out_msg.pack(&qid, &off, &type, name)) {
             return send_error(msg, tag, P9_EPROTO);
         }
@@ -1736,7 +1736,7 @@ bool virtio_p9fs_device::op_read(virtq_unserializer &&mmsg, uint16_t tag) {
     if (ret < 0) {
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
-    uint32_t ret_count = static_cast<uint32_t>(ret);
+    auto ret_count = static_cast<uint32_t>(ret);
     // Reply
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&ret_count) || !out_msg.write_bytes(buf.data(), count)) {
@@ -1771,7 +1771,7 @@ bool virtio_p9fs_device::op_write(virtq_unserializer &&mmsg, uint16_t tag) {
     if (ret < 0) {
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
-    uint32_t ret_count = static_cast<uint32_t>(ret);
+    auto ret_count = static_cast<uint32_t>(ret);
     // Reply
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&ret_count)) {

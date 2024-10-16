@@ -76,7 +76,7 @@ static int machine_class_index_verify_reset_uarch(lua_State *L) {
 /// \brief This is the machine.verify_send_cmio_response() method implementation.
 static int machine_class_index_verify_send_cmio_response(lua_State *L) {
     lua_settop(L, 6);
-    const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 1));
+    const auto reason = static_cast<uint16_t>(luaL_checkinteger(L, 1));
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &length));

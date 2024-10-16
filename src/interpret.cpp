@@ -1383,7 +1383,7 @@ static FORCE_INLINE execute_status execute_SLLW(STATE_ACCESS &a, uint64_t &pc, u
     }
     dump_insn(a, pc, insn, "sllw");
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
-        const int32_t rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) << (rs2 & 31));
+        const auto rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) << (rs2 & 31));
         return static_cast<uint64_t>(rs1w);
     });
 }
@@ -2977,7 +2977,7 @@ static FORCE_INLINE execute_status execute_SLLIW(STATE_ACCESS &a, uint64_t &pc, 
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         // No need to mask lower 5 bits in imm because of the if condition a above
         // We do it anyway here to prevent problems if this code is moved
-        const int32_t rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) << (imm & 0b11111));
+        const auto rs1w = static_cast<int32_t>(static_cast<uint32_t>(rs1) << (imm & 0b11111));
         return static_cast<uint64_t>(rs1w);
     });
 }
@@ -3561,7 +3561,7 @@ static FORCE_INLINE execute_status execute_float_ternary_op_rm(STATE_ACCESS &a, 
         return raise_illegal_insn_exception(a, pc, insn);
     }
     const uint32_t rd = insn_get_rd(insn);
-    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
     T s2 = float_unbox<T>(a.read_f(insn_get_rs2(insn)));
@@ -3583,7 +3583,7 @@ static FORCE_INLINE execute_status execute_float_binary_op_rm(STATE_ACCESS &a, u
         return raise_illegal_insn_exception(a, pc, insn);
     }
     const uint32_t rd = insn_get_rd(insn);
-    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
     T s2 = float_unbox<T>(a.read_f(insn_get_rs2(insn)));
@@ -3607,7 +3607,7 @@ static FORCE_INLINE execute_status execute_float_unary_op_rm(STATE_ACCESS &a, ui
         return raise_illegal_insn_exception(a, pc, insn);
     }
     const uint32_t rd = insn_get_rd(insn);
-    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
     // Must store a valid NaN-boxed value.
@@ -3883,7 +3883,7 @@ static FORCE_INLINE execute_status execute_float_binary_op(STATE_ACCESS &a, uint
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
     T s2 = float_unbox<T>(a.read_f(insn_get_rs2(insn)));
     const uint32_t rd = insn_get_rd(insn);
-    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK); // NOLINT(misc-const-correctness)
+    auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK); // NOLINT(misc-const-correctness)
     // Must store a valid NaN-boxed value.
     a.write_f(rd, float_box(f(s1, s2, &fflags)));
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
@@ -3897,7 +3897,7 @@ static FORCE_INLINE execute_status execute_float_cmp_op(STATE_ACCESS &a, uint64_
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
     T s2 = float_unbox<T>(a.read_f(insn_get_rs2(insn)));
     const uint32_t rd = insn_get_rd(insn);
-    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // Comparisons with NaNs may set NV (invalid operation) exception flag in fflags
     const uint64_t val = f(s1, s2, &fflags);
     a.write_fcsr((fcsr & ~FCSR_FFLAGS_RW_MASK) | fflags);
@@ -4058,7 +4058,7 @@ static FORCE_INLINE execute_status execute_FCVT_F_F(STATE_ACCESS &a, uint64_t &p
         return raise_illegal_insn_exception(a, pc, insn);
     }
     const uint32_t rd = insn_get_rd(insn);
-    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // We must always check if input operands are properly NaN-boxed.
     ST s1 = float_unbox<ST>(a.read_f(insn_get_rs1(insn)));
     DT val = f(s1, rm, &fflags);
@@ -4078,7 +4078,7 @@ static FORCE_INLINE execute_status execute_FCVT_X_F(STATE_ACCESS &a, uint64_t &p
         return raise_illegal_insn_exception(a, pc, insn);
     }
     const uint32_t rd = insn_get_rd(insn);
-    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     // We must always check if input operands are properly NaN-boxed.
     T s1 = float_unbox<T>(a.read_f(insn_get_rs1(insn)));
     const uint64_t val = f(s1, rm, &fflags);
@@ -4100,7 +4100,7 @@ static FORCE_INLINE execute_status execute_FCVT_F_X(STATE_ACCESS &a, uint64_t &p
         return raise_illegal_insn_exception(a, pc, insn);
     }
     const uint32_t rd = insn_get_rd(insn);
-    uint32_t fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
+    auto fflags = static_cast<uint32_t>(fcsr & FCSR_FFLAGS_RW_MASK);
     const uint64_t s1 = a.read_x(insn_get_rs1(insn));
     T val = f(s1, rm, &fflags);
     // Must store a valid NaN-boxed value.
@@ -4225,7 +4225,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_W_S(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.w.s");
     return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        const int32_t val = i_sfloat32::cvt_f_i<int32_t>(s1, static_cast<FRM_modes>(rm), fflags);
+        const auto val = i_sfloat32::cvt_f_i<int32_t>(s1, static_cast<FRM_modes>(rm), fflags);
         // For XLEN > 32, FCVT.W.S sign-extends the 32-bit result.
         return static_cast<uint64_t>(static_cast<int64_t>(val));
     });
@@ -4235,7 +4235,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_WU_S(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.wu.s");
     return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        const uint32_t val = i_sfloat32::cvt_f_i<uint32_t>(s1, static_cast<FRM_modes>(rm), fflags);
+        const auto val = i_sfloat32::cvt_f_i<uint32_t>(s1, static_cast<FRM_modes>(rm), fflags);
         // For XLEN > 32, FCVT.WU.S sign-extends the 32-bit result.
         return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(val)));
     });
@@ -4245,7 +4245,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_L_S(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.l.s");
     return execute_FCVT_X_F<uint32_t>(a, pc, insn, [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        const int64_t val = i_sfloat32::cvt_f_i<int64_t>(s1, static_cast<FRM_modes>(rm), fflags);
+        const auto val = i_sfloat32::cvt_f_i<int64_t>(s1, static_cast<FRM_modes>(rm), fflags);
         return static_cast<uint64_t>(val);
     });
 }
@@ -4262,7 +4262,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_W_D(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.w.d");
     return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        const int32_t val = i_sfloat64::cvt_f_i<int32_t>(s1, static_cast<FRM_modes>(rm), fflags);
+        const auto val = i_sfloat64::cvt_f_i<int32_t>(s1, static_cast<FRM_modes>(rm), fflags);
         // For RV64, FCVT.W.D sign-extends the 32-bit result.
         return static_cast<uint64_t>(static_cast<int64_t>(val));
     });
@@ -4272,7 +4272,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_WU_D(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.wu.d");
     return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        const uint32_t val = i_sfloat64::cvt_f_i<uint32_t>(s1, static_cast<FRM_modes>(rm), fflags);
+        const auto val = i_sfloat64::cvt_f_i<uint32_t>(s1, static_cast<FRM_modes>(rm), fflags);
         // For RV64, FCVT.WU.D sign-extends the 32-bit result.
         return static_cast<uint64_t>(static_cast<int64_t>(static_cast<int32_t>(val)));
     });
@@ -4282,7 +4282,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_L_D(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.l.d");
     return execute_FCVT_X_F<uint64_t>(a, pc, insn, [](uint64_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
-        const int64_t val = i_sfloat64::cvt_f_i<int64_t>(s1, static_cast<FRM_modes>(rm), fflags);
+        const auto val = i_sfloat64::cvt_f_i<int64_t>(s1, static_cast<FRM_modes>(rm), fflags);
         return static_cast<uint64_t>(val);
     });
 }
@@ -4397,7 +4397,7 @@ static FORCE_INLINE execute_status execute_FMV_X_W(STATE_ACCESS &a, uint64_t &pc
     if (unlikely(rd == 0)) {
         return advance_to_next_insn(a, pc);
     }
-    const uint32_t val = static_cast<uint32_t>(a.read_f(insn_get_rs1(insn)));
+    const auto val = static_cast<uint32_t>(a.read_f(insn_get_rs1(insn)));
     // For RV64, the higher 32 bits of the destination register are
     // filled with copies of the floating-point number’s sign bit.
     // We can perform this with a sign extension.
@@ -4808,7 +4808,7 @@ static FORCE_INLINE execute_status execute_C_SRAI(STATE_ACCESS &a, uint64_t &pc,
     if (unlikely(imm == 0)) {
         return advance_to_next_insn<2>(a, pc);
     }
-    const int64_t rs1_value = static_cast<int64_t>(a.read_x(rs1));
+    const auto rs1_value = static_cast<int64_t>(a.read_x(rs1));
     a.write_x(rs1, static_cast<uint64_t>(rs1_value >> imm));
     return advance_to_next_insn<2>(a, pc);
 }

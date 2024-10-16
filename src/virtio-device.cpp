@@ -544,7 +544,7 @@ bool virtio_device::mmio_read_config(i_device_state_access *a, uint64_t offset, 
     }
     // Only accept 1,2,4 byte config reads
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    const unsigned char *config_space_buf = reinterpret_cast<const unsigned char *>(config_space.data());
+    const auto *config_space_buf = reinterpret_cast<const unsigned char *>(config_space.data());
     switch (log2_size) {
         case 0:
             *pval = aliased_aligned_read<uint8_t>(&config_space_buf[offset]);
@@ -574,7 +574,7 @@ execute_status virtio_device::mmio_write_config(i_device_state_access *a, uint64
     }
     // Only accept 1,2,4 byte config writes
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    unsigned char *config_space_buf = reinterpret_cast<unsigned char *>(config_space.data());
+    auto *config_space_buf = reinterpret_cast<unsigned char *>(config_space.data());
     switch (log2_size) {
         case 0:
             aliased_aligned_write<uint8_t>(&config_space_buf[offset], val);
@@ -809,7 +809,7 @@ execute_status virtio_device::mmio_write(i_device_state_access *a, uint64_t offs
 
 /// \brief VirtIO device read callback. See ::pma_read.
 static bool virtio_read(void *context, i_device_state_access *a, uint64_t offset, uint64_t *pval, int log2_size) {
-    virtio_device *vdev = static_cast<virtio_device *>(context);
+    auto *vdev = static_cast<virtio_device *>(context);
     uint32_t val32 = 0;
     const bool status = vdev->mmio_read(a, offset, &val32, log2_size);
     if (status) {
@@ -831,7 +831,7 @@ static bool virtio_read(void *context, i_device_state_access *a, uint64_t offset
 /// \brief VirtIO device read callback. See ::pma_write.
 static execute_status virtio_write(void *context, i_device_state_access *a, uint64_t offset, uint64_t val,
     int log2_size) {
-    virtio_device *vdev = static_cast<virtio_device *>(context);
+    auto *vdev = static_cast<virtio_device *>(context);
 #ifdef DEBUG_VIRTIO_MMIO
     (void) fprintf(stderr, "virtio[%d]: mmio_write offset=0x%03lx (%s) value=%ld size=%d\n", vdev->get_virtio_index(),
         offset, get_virtio_mmio_offset_name(offset), val, 1 << log2_size);

@@ -102,7 +102,7 @@ static UINT divrem_u(UINT *pr, UINT ah, UINT al, UINT bl) {
     using ULONG = typename make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
     const ULONG a = (static_cast<ULONG>(ah) << UINT_SIZE) | al;
-    const ULONG b = static_cast<ULONG>(bl);
+    const auto b = static_cast<ULONG>(bl);
     const ULONG quo = a / b;
 #ifdef MICROARCHITECTURE
     // on microarchitecture, it's faster to compute the remainder using the quotient
@@ -860,7 +860,7 @@ struct i_sfloat {
         constexpr bool IS_UNSIGNED = std::is_unsigned_v<ICVT_INT>;
         constexpr int ICVT_SIZE = sizeof(ICVT_UINT) * 8;
         uint32_t a_sign = 0; // NOLINT(misc-const-correctness)
-        ICVT_UINT r = static_cast<ICVT_UINT>(a);
+        auto r = static_cast<ICVT_UINT>(a);
         if constexpr (!IS_UNSIGNED) {
             if (a < 0) {
                 a_sign = 1;

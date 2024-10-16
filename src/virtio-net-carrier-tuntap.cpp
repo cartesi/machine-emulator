@@ -114,7 +114,7 @@ void virtio_net_carrier_tuntap::reset() {
 void virtio_net_carrier_tuntap::do_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) {
     (void) timeout_us;
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    fd_set *readfds = reinterpret_cast<fd_set *>(fds->readfds);
+    auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     FD_SET(m_tapfd, readfds);
     if (m_tapfd > fds->maxfd) {
         fds->maxfd = m_tapfd;
@@ -123,7 +123,7 @@ void virtio_net_carrier_tuntap::do_prepare_select(select_fd_sets *fds, uint64_t 
 
 bool virtio_net_carrier_tuntap::do_poll_selected(int select_ret, select_fd_sets *fds) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    fd_set *readfds = reinterpret_cast<fd_set *>(fds->readfds);
+    auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     return select_ret > 0 && FD_ISSET(m_tapfd, readfds);
 }
 
@@ -193,7 +193,7 @@ bool virtio_net_carrier_tuntap::read_packet_from_host(i_device_state_access *a, 
             return false;
         }
     }
-    const uint32_t packet_len = static_cast<uint32_t>(read_len);
+    const auto packet_len = static_cast<uint32_t>(read_len);
     // Is there enough space in the write buffer to write this packet?
     if (VIRTIO_NET_ETHERNET_FRAME_OFFSET + packet_len > write_avail_len ||
         packet_len == VIRTIO_NET_ETHERNET_MAX_LENGTH) {

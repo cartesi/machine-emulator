@@ -258,7 +258,7 @@ cm_error cm_jsonrpc_create_machine(const cm_jsonrpc_connection *con, int detach_
     if (new_machine == nullptr) {
         throw std::invalid_argument("invalid new machine output");
     }
-    const cartesi::machine_config c = cartesi::from_json<cartesi::machine_config>(config);
+    const auto c = cartesi::from_json<cartesi::machine_config>(config);
     cartesi::machine_runtime_config r;
     if (runtime_config) {
         r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
@@ -314,7 +314,7 @@ cm_error cm_jsonrpc_get_machine(const cm_jsonrpc_connection *con, int detach_mac
 
 CM_API cm_error cm_jsonrpc_get_connection(cm_machine *m, const cm_jsonrpc_connection **con) try {
     auto *cpp_machine = convert_from_c(m);
-    cartesi::jsonrpc_virtual_machine *cpp_json_machine = dynamic_cast<cartesi::jsonrpc_virtual_machine *>(cpp_machine);
+    auto *cpp_json_machine = dynamic_cast<cartesi::jsonrpc_virtual_machine *>(cpp_machine);
     if (!cpp_json_machine) {
         throw std::invalid_argument("not a remote machine");
     }

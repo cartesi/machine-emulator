@@ -69,7 +69,7 @@ namespace cartesi {
 
 static ssize_t slirp_send_packet(const void *buf, size_t len, void *opaque) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    virtio_net_carrier_slirp *carrier = reinterpret_cast<virtio_net_carrier_slirp *>(opaque);
+    auto *carrier = reinterpret_cast<virtio_net_carrier_slirp *>(opaque);
     if (carrier->send_packets.size() >= SLIRP_MAX_PENDING_PACKETS) {
         // Too many send_packets in the write queue, we can just drop it.
         // Network re-transmission can recover from this.
@@ -118,9 +118,9 @@ static int64_t slirp_clock_get_ns(void *opaque) {
 
 static void *slirp_timer_new(SlirpTimerCb cb, void *cb_opaque, void *opaque) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    virtio_net_carrier_slirp *carrier = reinterpret_cast<virtio_net_carrier_slirp *>(opaque);
+    auto *carrier = reinterpret_cast<virtio_net_carrier_slirp *>(opaque);
     try {
-        slirp_timer *timer = new slirp_timer;
+        auto *timer = new slirp_timer;
         timer->cb = cb;
         timer->cb_opaque = cb_opaque;
         timer->expire_timer_msec = -1;
@@ -133,9 +133,9 @@ static void *slirp_timer_new(SlirpTimerCb cb, void *cb_opaque, void *opaque) {
 
 static void slirp_timer_free(void *timer_ptr, void *opaque) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    virtio_net_carrier_slirp *carrier = reinterpret_cast<virtio_net_carrier_slirp *>(opaque);
+    auto *carrier = reinterpret_cast<virtio_net_carrier_slirp *>(opaque);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    slirp_timer *timer = reinterpret_cast<slirp_timer *>(timer_ptr);
+    auto *timer = reinterpret_cast<slirp_timer *>(timer_ptr);
     if (timer) {
         auto it = carrier->timers.find(timer);
         if (it != carrier->timers.end()) {
@@ -147,9 +147,9 @@ static void slirp_timer_free(void *timer_ptr, void *opaque) {
 
 static void slirp_timer_mod(void *timer_ptr, int64_t expire_timer_msec, void *opaque) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    virtio_net_carrier_slirp *carrier = reinterpret_cast<virtio_net_carrier_slirp *>(opaque);
+    auto *carrier = reinterpret_cast<virtio_net_carrier_slirp *>(opaque);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    slirp_timer *timer = reinterpret_cast<slirp_timer *>(timer_ptr);
+    auto *timer = reinterpret_cast<slirp_timer *>(timer_ptr);
     if (timer && carrier->timers.find(timer) != carrier->timers.end()) {
         timer->expire_timer_msec = expire_timer_msec;
     }
@@ -243,7 +243,7 @@ struct slirp_select_fds {
 
 static int slirp_add_poll_cb(int fd, int events, void *opaque) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    slirp_select_fds *fds = reinterpret_cast<slirp_select_fds *>(opaque);
+    auto *fds = reinterpret_cast<slirp_select_fds *>(opaque);
     if (events & SLIRP_POLL_IN) {
         FD_SET(fd, fds->readfds);
     }
@@ -261,7 +261,7 @@ static int slirp_add_poll_cb(int fd, int events, void *opaque) {
 
 static int slirp_get_revents_cb(int fd, void *opaque) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    slirp_select_fds *fds = reinterpret_cast<slirp_select_fds *>(opaque);
+    auto *fds = reinterpret_cast<slirp_select_fds *>(opaque);
     int event = 0;
     if (FD_ISSET(fd, fds->readfds)) {
         event |= SLIRP_POLL_IN;
@@ -281,11 +281,11 @@ void virtio_net_carrier_slirp::do_prepare_select(select_fd_sets *fds, uint64_t *
         return;
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    fd_set *readfds = reinterpret_cast<fd_set *>(fds->readfds);
+    auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    fd_set *writefds = reinterpret_cast<fd_set *>(fds->writefds);
+    auto *writefds = reinterpret_cast<fd_set *>(fds->writefds);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    fd_set *exceptfds = reinterpret_cast<fd_set *>(fds->exceptfds);
+    auto *exceptfds = reinterpret_cast<fd_set *>(fds->exceptfds);
     slirp_select_fds slirp_fds{&fds->maxfd, readfds, writefds, exceptfds};
     const uint32_t initial_timeout_ms = *timeout_us / 1000;
     uint32_t timeout_ms = initial_timeout_ms;
@@ -301,11 +301,11 @@ bool virtio_net_carrier_slirp::do_poll_selected(int select_ret, select_fd_sets *
         return false;
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    fd_set *readfds = reinterpret_cast<fd_set *>(fds->readfds);
+    auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    fd_set *writefds = reinterpret_cast<fd_set *>(fds->writefds);
+    auto *writefds = reinterpret_cast<fd_set *>(fds->writefds);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    fd_set *exceptfds = reinterpret_cast<fd_set *>(fds->exceptfds);
+    auto *exceptfds = reinterpret_cast<fd_set *>(fds->exceptfds);
     slirp_select_fds slirp_fds{nullptr, readfds, writefds, exceptfds};
     slirp_pollfds_poll(slirp, select_ret < 0, slirp_get_revents_cb, &slirp_fds);
     // Fire expired timers

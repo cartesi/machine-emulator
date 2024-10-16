@@ -48,6 +48,3 @@ WarningsAsErrors: >-
   performance*,
   portability*,
   readability*,
-CheckOptions:
-  - key: performance-move-const-arg.CheckTriviallyCopyableMove
-    value: 'false'

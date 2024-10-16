@@ -44,9 +44,9 @@ pma_memory::~pma_memory() {
 }
 
 pma_memory::pma_memory(pma_memory &&other) noexcept :
-    m_length{std::move(other.m_length)},
-    m_host_memory{std::move(other.m_host_memory)},
-    m_mmapped{std::move(other.m_mmapped)} {
+    m_length{other.m_length},
+    m_host_memory{other.m_host_memory},
+    m_mmapped{other.m_mmapped} {
     // set other to safe state
     other.m_host_memory = nullptr;
     other.m_mmapped = false;
@@ -122,9 +122,9 @@ pma_memory::pma_memory(const std::string &description, uint64_t length, const st
 pma_memory &pma_memory::operator=(pma_memory &&other) noexcept {
     release();
     // copy from other
-    m_host_memory = std::move(other.m_host_memory);
-    m_mmapped = std::move(other.m_mmapped);
-    m_length = std::move(other.m_length);
+    m_host_memory = other.m_host_memory;
+    m_mmapped = other.m_mmapped;
+    m_length = other.m_length;
     // set other to safe state
     other.m_host_memory = nullptr;
     other.m_mmapped = false;

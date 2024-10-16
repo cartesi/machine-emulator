@@ -66,6 +66,12 @@ public:
         m_context{context} {
         (void) description;
     }
+    ~pma_device() = default;
+
+    pma_device(const pma_device &other) = delete;
+    pma_device(pma_device &&other) = default;
+    pma_device &operator=(const pma_device &other) = delete;
+    pma_device &operator=(pma_device &&other) = default;
 
     /// \brief Returns context to pass to callbacks.
     void *get_context() {

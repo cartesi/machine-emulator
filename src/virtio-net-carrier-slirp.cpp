@@ -91,7 +91,7 @@ static ssize_t slirp_send_packet(const void *buf, size_t len, void *opaque) {
     slirp_packet packet{len};
     memcpy(packet.buf.data(), buf, len);
     try {
-        carrier->send_packets.emplace_back(std::move(packet));
+        carrier->send_packets.emplace_back(packet);
         return static_cast<ssize_t>(len);
     } catch (...) {
 #ifdef DEBUG_VIRTIO_ERRORS
@@ -359,7 +359,7 @@ bool virtio_net_carrier_slirp::read_packet_from_host(i_device_state_access *a, v
         return true;
     }
     // Retrieve the next packet sent by slirp.
-    slirp_packet packet = std::move(send_packets.front());
+    slirp_packet packet = send_packets.front();
     send_packets.pop_front();
     // Is there enough space in the write buffer to write this packet?
     if (VIRTIO_NET_ETHERNET_FRAME_OFFSET + packet.len > write_avail_len) {

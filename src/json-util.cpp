@@ -1398,7 +1398,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, virtio_device_confi
                 ju_get_opt_field(jhostfwd, "guest_ip"s, hostfwd.guest_ip, hostfwd_path);
                 ju_get_opt_field(jhostfwd, "host_port"s, hostfwd.host_port, hostfwd_path);
                 ju_get_opt_field(jhostfwd, "guest_port"s, hostfwd.guest_port, hostfwd_path);
-                net_user_config.hostfwd.emplace_back(std::move(hostfwd));
+                net_user_config.hostfwd.emplace_back(hostfwd);
             }
         }
         value.emplace<virtio_net_user_config>(std::move(net_user_config));

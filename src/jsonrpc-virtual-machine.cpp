@@ -193,7 +193,7 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
         }
 
         // Return response body
-        return std::move(res.body().data());
+        return res.body();
     } catch (...) {
         // Close stream socket on errors
         beast::error_code ec;

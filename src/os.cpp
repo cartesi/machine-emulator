@@ -145,19 +145,23 @@ static int new_ttyfd(const char *path) {
 
 static int get_ttyfd() {
     char *path{};
-    // NOLINTBEGIN(bugprone-assignment-in-if-condition)
-    if ((path = ttyname(STDERR_FILENO)) != nullptr) {
+    path = ttyname(STDERR_FILENO);
+    if (path != nullptr) {
         return new_ttyfd(path);
-    } else if ((path = ttyname(STDOUT_FILENO)) != nullptr) {
-        return new_ttyfd(path);
-    } else if ((path = ttyname(STDIN_FILENO)) != nullptr) {
-        return new_ttyfd(path);
-    } else if ((path = ctermid(nullptr)) != nullptr) {
-        return new_ttyfd(path);
-    } else {
-        errno = ENOTTY; /* No terminal */
     }
-    // NOLINTEND(bugprone-assignment-in-if-condition)
+    path = ttyname(STDOUT_FILENO);
+    if (path != nullptr) {
+        return new_ttyfd(path);
+    }
+    path = ttyname(STDIN_FILENO);
+    if (path != nullptr) {
+        return new_ttyfd(path);
+    }
+    path = ctermid(nullptr);
+    if (path != nullptr) {
+        return new_ttyfd(path);
+    }
+    errno = ENOTTY; /* No terminal */
     return -1;
 }
 #endif // HAVE_TERMIOS

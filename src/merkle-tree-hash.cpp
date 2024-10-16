@@ -102,7 +102,7 @@ static std::optional<hash_type> read_hash(FILE *f) {
 /// \param ... Arguments, if any
 // NOLINTNEXTLINE(cert-dcl50-cpp): this vararg is safe because the compiler can check the format
 __attribute__((format(printf, 1, 2))) static void error(const char *fmt, ...) {
-    va_list ap; // NOLINT(cppcoreguidelines-init-variables): initialized by va_start
+    va_list ap{};
     va_start(ap, fmt);
     (void) vfprintf(stderr, fmt, ap);
     va_end(ap);

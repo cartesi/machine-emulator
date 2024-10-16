@@ -141,7 +141,7 @@ pma_entry machine::make_cmio_tx_buffer_pma_entry(const cmio_config &c) {
         .set_flags(m_cmio_tx_buffer_flags);
 }
 
-pma_entry &machine::register_pma_entry(pma_entry &&pma) { // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
+pma_entry &machine::register_pma_entry(pma_entry &&pma) {
     if (decltype(m_s.pmas)::capacity() <= m_s.pmas.size()) {
         throw std::runtime_error{"too many PMAs when adding "s + pma.get_description()};
     }

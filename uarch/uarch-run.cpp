@@ -16,10 +16,12 @@
 
 #include "uarch-runtime.h" // must be included first, because of assert
 
+#include "compiler-defines.h"
 #include "interpret.h"
-#include "shadow-uarch-state.h"
+#include "uarch-constants.h"
 #include "uarch-machine-state-access.h"
-#include <cinttypes>
+
+#include <cstdint>
 
 using namespace cartesi;
 
@@ -33,7 +35,7 @@ static void set_uarch_halt_flag() {
 }
 
 // Let the state accessor be on static memory storage to speed up uarch initialization
-static uarch_machine_state_access a;
+static uarch_machine_state_access a; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 namespace cartesi {
 

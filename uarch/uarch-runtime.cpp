@@ -15,20 +15,29 @@
 //
 
 #include "uarch-runtime.h"
+#include "compiler-defines.h"
 #include "uarch-constants.h"
-#include <algorithm>
+
+#include <cstddef>
+#include <cstdint>
 
 using namespace cartesi;
 
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 extern "C" void __cxa_pure_virtual() {
     abort();
 }
 
+// NOLINTNEXTLINE(cert-dcl54-cpp,misc-new-delete-overloads)
 void operator delete(void * /*ptr*/) {}
+
+// NOLINTNEXTLINE(cert-dcl54-cpp,misc-new-delete-overloads)
 void operator delete(void * /*ptr*/, size_t /*size*/) {}
 
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 extern "C" void __assert_func(const char * /*file*/, int /*line*/, const char * /*func*/, const char * /*e*/) {}
 
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 extern "C" void __assert_fail(const char * /*__assertion*/, const char * /*__file*/, unsigned int /*__line*/,
     const char * /*__function*/) {}
 
@@ -36,7 +45,9 @@ extern "C" void *memmove(void *dest, const void *src, size_t n) {
     if (!n || src == dest) {
         return dest;
     }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast,cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *s = const_cast<char *>(reinterpret_cast<const char *>(src));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *d = reinterpret_cast<char *>(dest);
     if (d < s) {
         for (; n; n--) {
@@ -51,7 +62,9 @@ extern "C" void *memmove(void *dest, const void *src, size_t n) {
 }
 
 extern "C" void *memcpy(void *dest, const void *src, size_t n) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *s = reinterpret_cast<const unsigned char *>(src);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *d = reinterpret_cast<unsigned char *>(dest);
     while (n--) {
         *d++ = *s++;
@@ -60,6 +73,7 @@ extern "C" void *memcpy(void *dest, const void *src, size_t n) {
 }
 
 extern "C" void *memset(void *ptr, int value, size_t num) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     volatile unsigned char *p = reinterpret_cast<unsigned char *>(ptr);
     while (num--) {
         *p++ = value;

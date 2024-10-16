@@ -15,7 +15,6 @@ Checks: >-
   -cppcoreguidelines-pro-bounds-pointer-arithmetic,
   -cppcoreguidelines-pro-type-vararg,
   -cppcoreguidelines-avoid-c-arrays,
-  -cppcoreguidelines-macro-to-enum,
   google*,
   -google-build-using-namespace,
   hicpp*,

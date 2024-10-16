@@ -15,7 +15,6 @@
 //
 
 #include "uarch-runtime.h"
-#include "os.h"
 #include "uarch-constants.h"
 #include <algorithm>
 
@@ -25,32 +24,35 @@ extern "C" void __cxa_pure_virtual() {
     abort();
 }
 
-void operator delete(void *, unsigned long) {}
+void operator delete(void * /*ptr*/) {}
+void operator delete(void * /*ptr*/, size_t /*size*/) {}
 
-extern "C" void __assert_func(const char *file, int line, const char *, const char *e) {}
+extern "C" void __assert_func(const char * /*file*/, int /*line*/, const char * /*func*/, const char * /*e*/) {}
 
-extern "C" void __assert_fail(const char *__assertion, const char *__file, unsigned int __line,
-    const char *__function) {}
+extern "C" void __assert_fail(const char * /*__assertion*/, const char * /*__file*/, unsigned int /*__line*/,
+    const char * /*__function*/) {}
 
 extern "C" void *memmove(void *dest, const void *src, size_t n) {
     if (!n || src == dest) {
         return dest;
     }
-    auto s = const_cast<char *>(reinterpret_cast<const char *>(src));
-    auto d = reinterpret_cast<char *>(dest);
+    const auto *s = const_cast<char *>(reinterpret_cast<const char *>(src));
+    auto *d = reinterpret_cast<char *>(dest);
     if (d < s) {
-        for (; n; n--)
+        for (; n; n--) {
             *d++ = *s++;
+        }
     } else {
-        while (n--)
+        while (n--) {
             d[n] = s[n];
+        }
     }
     return dest;
 }
 
 extern "C" void *memcpy(void *dest, const void *src, size_t n) {
-    auto s = reinterpret_cast<const unsigned char *>(src);
-    auto d = reinterpret_cast<unsigned char *>(dest);
+    const auto *s = reinterpret_cast<const unsigned char *>(src);
+    auto *d = reinterpret_cast<unsigned char *>(dest);
     while (n--) {
         *d++ = *s++;
     }

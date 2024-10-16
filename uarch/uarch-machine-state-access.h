@@ -52,24 +52,24 @@ static void raw_write_memory(uint64_t paddr, T val) {
 class uarch_pma_entry final {
 public:
     struct flags {
-        bool M;
-        bool IO;
-        bool E;
-        bool R;
-        bool W;
-        bool X;
-        bool IR;
-        bool IW;
-        PMA_ISTART_DID DID;
+        bool M{};
+        bool IO{};
+        bool E{};
+        bool R{};
+        bool W{};
+        bool X{};
+        bool IR{};
+        bool IW{};
+        PMA_ISTART_DID DID{PMA_ISTART_DID::memory};
     };
 
 private:
-    int m_pma_index;
-    uint64_t m_start;
-    uint64_t m_length;
+    int m_pma_index{-1};
+    uint64_t m_start{};
+    uint64_t m_length{};
     flags m_flags;
-    const pma_driver *m_device_driver;
-    void *m_device_context;
+    const pma_driver *m_device_driver{};
+    void *m_device_context{};
 
 public:
     uarch_pma_entry(int pma_index, uint64_t start, uint64_t length, flags flags,
@@ -137,7 +137,7 @@ public:
         return m_device_context;
     }
 
-    void mark_dirty_page(uint64_t address_in_range) {
+    void mark_dirty_page(uint64_t /*address_in_range*/) {
         // Dummy implementation here.
         // This runs in microarchitecture.
         // The Host pages affected by writes will be marked dirty by uarch_bridge.
@@ -150,10 +150,10 @@ class uarch_machine_state_access : public i_state_access<uarch_machine_state_acc
 
 public:
     uarch_machine_state_access() {}
-    uarch_machine_state_access(const uarch_machine_state_access &) = delete;
-    uarch_machine_state_access(uarch_machine_state_access &&) = delete;
-    uarch_machine_state_access &operator=(const uarch_machine_state_access &) = delete;
-    uarch_machine_state_access &operator=(uarch_machine_state_access &&) = delete;
+    uarch_machine_state_access(const uarch_machine_state_access &other) = delete;
+    uarch_machine_state_access(uarch_machine_state_access &&other) = delete;
+    uarch_machine_state_access &operator=(const uarch_machine_state_access &other) = delete;
+    uarch_machine_state_access &operator=(uarch_machine_state_access &&other) = delete;
     ~uarch_machine_state_access() = default;
 
 private:
@@ -530,7 +530,7 @@ private:
         return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(shadow_state_reg::htif_iyield));
     }
 
-    std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
+    std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t /*mcycle_max*/) {
         return {mcycle, false};
     }
     
@@ -549,13 +549,13 @@ private:
         *pval = raw_read_memory<T>(paddr);
     }
 
-    bool do_read_memory(uint64_t paddr, unsigned char *data, uint64_t length) {
+    bool do_read_memory(uint64_t /*paddr*/, unsigned char */*data*/, uint64_t /*length*/) {
         // This is not implemented yet because it's not being used
         abort();
         return false;
     }
 
-    bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
+    bool do_write_memory(uint64_t /*paddr*/, const unsigned char */*data*/, uint64_t /*length*/) {
         // This is not implemented yet because it's not being used
         abort();
         return false;
@@ -570,7 +570,7 @@ private:
 
     template <typename T>
     uarch_pma_entry &do_find_pma_entry(uint64_t paddr) {
-        for (int i = 0; i < m_pmas.size(); i++) {
+        for (unsigned int i = 0; i < m_pmas.size(); i++) {
             auto &pma = get_pma_entry(i);
             if (pma.get_istart_E()) {
                 return pma;
@@ -591,7 +591,7 @@ private:
         return m_pmas[index].value();
     }
 
-    unsigned char *do_get_host_memory(uarch_pma_entry &pma) {
+    unsigned char *do_get_host_memory(uarch_pma_entry &/*pma*/) {
         return nullptr;
     }
 

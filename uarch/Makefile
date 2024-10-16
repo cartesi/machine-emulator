@@ -31,8 +31,9 @@ OPTFLAGS=-O2 -g0
 
 # Flags to minimize undefined behavior
 UBFLAGS := -fno-strict-aliasing -fno-strict-overflow -fno-delete-null-pointer-checks
+WARNFLAGS := -Wall -Wextra -Wpedantic -Wno-array-bounds -Werror
 
-CFLAGS := -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) \
+CFLAGS := -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) $(WARNFLAGS) \
 	-DMICROARCHITECTURE=1 \
 	-DAVOID_NATIVE_UINT128_T=1 \
 	-ffreestanding \

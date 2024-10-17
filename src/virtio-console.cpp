@@ -15,7 +15,14 @@
 //
 
 #include "virtio-console.h"
+
+#include <algorithm>
+#include <array>
+#include <cstdint>
+
+#include "i-device-state-access.h"
 #include "os.h"
+#include "virtio-device.h"
 
 namespace cartesi {
 

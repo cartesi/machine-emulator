@@ -16,13 +16,19 @@
 
 #include "machine-config.h"
 
+#include <cerrno>
+#include <cstdint>
+#include <exception>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <string>
+#include <system_error>
 
 #include "json-util.h"
+#include "json.hpp"
 #include "pma-constants.h"
 
 static constexpr uint32_t archive_version = 5;

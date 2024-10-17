@@ -16,6 +16,8 @@
 
 #include "shadow-tlb.h"
 
+#include "pma-driver.h"
+
 namespace cartesi {
 
 const pma_driver shadow_tlb_driver = {"SHADOW TLB", device_read_error, device_write_error};

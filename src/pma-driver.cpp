@@ -16,6 +16,10 @@
 
 #include "pma-driver.h"
 
+#include <cstdint>
+
+#include "interpret.h"
+
 namespace cartesi {
 
 bool device_read_error(void * /*context*/, i_device_state_access * /*a*/, uint64_t /*offset*/, uint64_t * /*val*/,

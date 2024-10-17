@@ -15,12 +15,17 @@
 //
 
 #include "plic.h"
-#include "i-device-state-access.h"
-#include "pma-constants.h"
-#include "riscv-constants.h"
 
 #include <cassert>
+#include <cstdint>
 #include <cstdio>
+
+#include "i-device-state-access.h"
+#include "interpret.h"
+#include "pma-constants.h"
+#include "pma-defines.h"
+#include "pma-driver.h"
+#include "riscv-constants.h"
 
 // Enable these defines to debug PLIC
 // #define DEBUG_PLIC

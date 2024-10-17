@@ -15,6 +15,9 @@
 //
 
 #include "uarch-interpret.h"
+
+#include <cstdint>
+
 #include "uarch-state-access.h"
 #include "uarch-step.h"
 

@@ -16,26 +16,48 @@
 
 #include "machine.h"
 
+#include <algorithm>
+#include <cerrno>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <memory>
+#include <string>
+#include <system_error>
+#include <type_traits>
+#include <utility>
+#include <variant>
 
+#include <boost/container/static_vector.hpp>
 #include <boost/range/adaptor/sliced.hpp>
 
+#include "access-log.h"
+#include "bracket-note.h"
 #include "clint-factory.h"
 #include "dtb.h"
 #include "htif-factory.h"
 #include "htif.h"
+#include "i-device-state-access.h"
 #include "interpret.h"
+#include "machine-config.h"
+#include "machine-memory-range-descr.h"
+#include "machine-runtime-config.h"
+#include "os.h"
 #include "plic-factory.h"
+#include "pma-constants.h"
+#include "pma-defines.h"
+#include "pma.h"
 #include "record-state-access.h"
 #include "replay-state-access.h"
 #include "riscv-constants.h"
 #include "send-cmio-response.h"
 #include "shadow-pmas-factory.h"
 #include "shadow-state-factory.h"
+#include "shadow-state.h"
 #include "shadow-tlb-factory.h"
+#include "shadow-tlb.h"
 #include "shadow-uarch-state.h"
 #include "state-access.h"
 #include "strict-aliasing.h"
@@ -48,6 +70,7 @@
 #include "uarch-step.h"
 #include "unique-c-ptr.h"
 #include "virtio-console.h"
+#include "virtio-device.h"
 #include "virtio-factory.h"
 #include "virtio-net-carrier-slirp.h"
 #include "virtio-net-carrier-tuntap.h"

@@ -15,27 +15,35 @@
 //
 
 #include "machine-c-api.h"
-#include "machine-c-api-internal.h"
 
 #include <any>
+#include <cstdint>
 #include <cstring>
 #include <exception>
 #include <functional>
+#include <memory>
+#include <new>
 #include <optional>
 #include <regex>
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <typeinfo>
+#include <variant>
 
+#include "access-log.h"
+#include "htif.h"
 #include "i-virtual-machine.h"
 #include "json-util.h"
+#include "machine-c-api-internal.h"
 #include "machine-config.h"
+#include "machine-memory-range-descr.h"
+#include "machine-merkle-tree.h"
+#include "machine-runtime-config.h"
 #include "machine.h"
 #include "os-features.h"
-#include "virtual-machine.h"
-
-#include "htif.h"
 #include "pma-constants.h"
+#include "virtual-machine.h"
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static THREAD_LOCAL std::string last_err_msg;

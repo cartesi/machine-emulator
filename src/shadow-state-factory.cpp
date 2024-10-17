@@ -16,9 +16,14 @@
 
 #include "shadow-state-factory.h"
 
+#include <cstdint>
 #include <cstring>
 
 #include "machine.h"
+#include "pma-constants.h"
+#include "pma.h"
+#include "riscv-constants.h"
+#include "shadow-state.h"
 
 namespace cartesi {
 

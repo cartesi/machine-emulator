@@ -16,7 +16,11 @@
 
 #include "shadow-uarch-state-factory.h"
 
+#include "pma-constants.h"
+#include "pma.h"
+#include "riscv-constants.h"
 #include "shadow-uarch-state.h"
+#include <cstdint>
 #include <cstring>
 
 #include "machine.h"

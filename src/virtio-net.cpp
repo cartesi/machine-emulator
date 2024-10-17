@@ -18,6 +18,14 @@
 
 #if defined(HAVE_SLIRP) || defined(HAVE_TUNTAP)
 
+#include <cstdint>
+#include <memory>
+#include <utility>
+
+#include "i-device-state-access.h"
+#include "os.h"
+#include "virtio-device.h"
+
 namespace cartesi {
 
 virtio_net::virtio_net(uint32_t virtio_idx, std::unique_ptr<virtio_net_carrier> &&carrier) :

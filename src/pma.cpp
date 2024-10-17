@@ -17,11 +17,18 @@
 #include "pma.h"
 
 #include <cerrno>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <string>
 #include <system_error>
+#include <tuple>
 
 #include "os.h"
+#include "pma-constants.h"
+#include "pma-driver.h"
 #include "unique-c-ptr.h"
 
 namespace cartesi {

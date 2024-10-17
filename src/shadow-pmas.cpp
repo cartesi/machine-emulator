@@ -16,8 +16,11 @@
 
 #include "shadow-pmas.h"
 #include "i-device-state-access.h"
+#include "pma-constants.h"
+#include "pma-driver.h"
 
 #include <cstddef>
+#include <cstdint>
 
 namespace cartesi {
 

@@ -57,10 +57,22 @@
 
 #ifdef HAVE_SLIRP
 
+#include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <cstdint>
 #include <cstring>
+#include <stdexcept>
+#include <string>
 #include <system_error>
+
+#include <slirp/libslirp.h>
+
+#include "i-device-state-access.h"
+#include "machine-config.h"
+#include "os.h"
+#include "virtio-device.h"
+#include "virtio-net.h"
 
 using namespace std::string_literals;
 

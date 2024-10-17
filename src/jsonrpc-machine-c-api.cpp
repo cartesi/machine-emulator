@@ -15,6 +15,7 @@
 //
 
 #include <cassert>
+#include <cerrno>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
@@ -27,6 +28,7 @@
 #include <string>
 #include <sys/time.h>
 #include <system_error>
+#include <tuple>
 #include <unistd.h>
 
 #include "access-log.h"

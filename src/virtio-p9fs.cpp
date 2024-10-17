@@ -36,12 +36,23 @@
 
 #ifdef HAVE_POSIX_FS
 
+#include <algorithm>
+#include <array>
+#include <cerrno>
+#include <cstdint>
+#include <cstdio>
 #include <cstring>
+#include <ctime>
+#include <new>
 #include <stdexcept>
+#include <string>
+#include <tuple>
+#include <utility>
 
 #include <dirent.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #ifdef __APPLE__
 #include <sys/mount.h>
 #include <sys/param.h>
@@ -50,6 +61,10 @@
 #include <sys/sysmacros.h>
 #endif
 #include <unistd.h>
+
+#include "i-device-state-access.h"
+#include "virtio-device.h"
+#include "virtio-serializer.h"
 
 namespace cartesi {
 

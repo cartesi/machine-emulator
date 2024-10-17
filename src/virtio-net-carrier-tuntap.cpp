@@ -56,14 +56,25 @@
 
 #ifdef HAVE_TUNTAP
 
+#include <array>
 #include <cerrno>
+#include <cstdint>
+#include <cstring>
+#include <stdexcept>
+#include <string>
 
 #include <fcntl.h>
 #include <net/if.h>
 #include <sched.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
+#include <sys/types.h>
 #include <unistd.h>
+
+#include "i-device-state-access.h"
+#include "os.h"
+#include "virtio-device.h"
+#include "virtio-net.h"
 
 // Include TUN/TAP headers
 #ifdef __linux__

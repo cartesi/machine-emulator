@@ -15,12 +15,17 @@
 //
 
 #include <array>
+#include <cerrno>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <exception>
+#include <functional>
 #include <string>
 #include <system_error>
+#include <tuple>
 #include <vector>
 
 #include "compiler-defines.h"

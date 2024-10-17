@@ -16,6 +16,18 @@
 
 #include "virtual-machine.h"
 
+#include <cstdint>
+#include <string>
+
+#include "access-log.h"
+#include "interpret.h"
+#include "machine-config.h"
+#include "machine-memory-range-descr.h"
+#include "machine-merkle-tree.h"
+#include "machine-runtime-config.h"
+#include "machine.h"
+#include "uarch-interpret.h"
+
 namespace cartesi {
 
 virtual_machine::virtual_machine(const machine_config &c, const machine_runtime_config &r) :

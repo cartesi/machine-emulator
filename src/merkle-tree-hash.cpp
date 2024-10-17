@@ -22,8 +22,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <tuple>
 
 #include "back-merkle-tree.h"
+#include "i-hasher.h"
 #include "keccak-256-hasher.h"
 #include "unique-c-ptr.h"
 

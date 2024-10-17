@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <climits>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
@@ -26,6 +27,7 @@
 #include <exception>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -35,7 +37,9 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
+#include <sys/socket.h>
 #include <unistd.h>
 
 #pragma GCC diagnostic push
@@ -46,16 +50,24 @@
 #include <boost/beast/version.hpp>
 #pragma GCC diagnostic pop
 
+#include <json.hpp>
+
+#include "access-log.h"
 #include "base64.h"
+#include "interpret.h"
 #include "json-util.h"
+#include "jsonrpc-connection.h"
 #include "jsonrpc-discover.h"
+#include "machine-config.h"
+#include "machine-merkle-tree.h"
+#include "machine-runtime-config.h"
 #include "machine.h"
+#include "os.h"
+#include "uarch-interpret.h"
 #include "unique-c-ptr.h"
 
 #define SLOG_PREFIX log_prefix
 #include "slog.h"
-
-#include "os.h"
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define PROGRAM_NAME "jsonrpc-remote-cartesi-machine"

@@ -15,7 +15,16 @@
 //
 
 #include "shadow-tlb-factory.h"
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+
 #include "machine.h"
+#include "pma-constants.h"
+#include "pma.h"
+#include "shadow-tlb.h"
 #include "strict-aliasing.h"
 
 namespace cartesi {

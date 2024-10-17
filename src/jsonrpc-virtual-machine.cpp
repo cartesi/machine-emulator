@@ -17,8 +17,14 @@
 #include "jsonrpc-virtual-machine.h"
 
 #include <csignal>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <exception>
+#include <stdexcept>
 #include <string>
+#include <tuple>
+#include <utility>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -29,10 +35,19 @@
 #include <boost/beast/version.hpp>
 #pragma GCC diagnostic pop
 
+#include "access-log.h"
 #include "base64.h"
+#include "interpret.h"
 #include "json-util.h"
+#include "json.hpp"
 #include "jsonrpc-connection.h"
+#include "machine-config.h"
+#include "machine-memory-range-descr.h"
+#include "machine-merkle-tree.h"
+#include "machine-runtime-config.h"
 #include "os.h"
+#include "semantic-version.h"
+#include "uarch-interpret.h"
 
 using namespace std::string_literals;
 using json = nlohmann::json;

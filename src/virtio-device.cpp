@@ -20,10 +20,16 @@
 // #define DEBUG_VIRTIO_ERRORS
 
 #include "virtio-device.h"
+#include "i-device-state-access.h"
+#include "interpret.h"
+#include "os.h"
 #include "plic.h"
+#include "pma-driver.h"
 #include "strict-aliasing.h"
 
+#include <algorithm>
 #include <cassert>
+#include <cstdint>
 
 namespace cartesi {
 

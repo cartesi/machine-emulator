@@ -16,10 +16,16 @@
 
 #include "uarch-machine.h"
 
+#include <cstdint>
 #include <cstring>
+#include <stdexcept>
 #include <utility>
 
+#include "pma-constants.h"
+#include "pma.h"
+#include "riscv-constants.h"
 #include "shadow-uarch-state-factory.h"
+#include "uarch-config.h"
 #include "uarch-constants.h"
 #include "uarch-pristine.h"
 

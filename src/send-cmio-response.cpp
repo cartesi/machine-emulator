@@ -24,6 +24,9 @@
 #include "state-access.h"
 
 #include "send-cmio-response.h"
+
+#include "machine-merkle-tree.h"
+#include "pma-constants.h"
 #include "uarch-solidity-compat.h"
 
 namespace cartesi {

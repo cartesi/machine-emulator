@@ -16,7 +16,11 @@
 
 #include "plic-factory.h"
 
+#include <cstdint>
+
 #include "plic.h"
+#include "pma-constants.h"
+#include "pma.h"
 
 namespace cartesi {
 

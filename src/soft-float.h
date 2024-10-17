@@ -86,7 +86,7 @@ struct make_long_uint<uint64_t> {
 /// \param plow is used to store the high bits of the result.
 /// \returns The high bits of the result.
 template <typename UINT>
-static inline UINT mul_u(UINT *plow, UINT a, UINT b) {
+static UINT mul_u(UINT *plow, UINT a, UINT b) {
     using ULONG = typename make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
     const ULONG r = static_cast<ULONG>(a) * static_cast<ULONG>(b);
@@ -98,11 +98,11 @@ static inline UINT mul_u(UINT *plow, UINT a, UINT b) {
 /// \param pr is used to store the remainder.
 /// \returns the quotient.
 template <typename UINT>
-static inline UINT divrem_u(UINT *pr, UINT ah, UINT al, UINT bl) {
+static UINT divrem_u(UINT *pr, UINT ah, UINT al, UINT bl) {
     using ULONG = typename make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
     const ULONG a = (static_cast<ULONG>(ah) << UINT_SIZE) | al;
-    const ULONG b = static_cast<ULONG>(bl);
+    const auto b = static_cast<ULONG>(bl);
     const ULONG quo = a / b;
 #ifdef MICROARCHITECTURE
     // on microarchitecture, it's faster to compute the remainder using the quotient
@@ -120,7 +120,7 @@ static inline UINT divrem_u(UINT *pr, UINT ah, UINT al, UINT bl) {
 /// \param pr is used to store the result.
 /// \returns true if not an exact square.
 template <typename UINT>
-static inline bool sqrtrem_u(UINT *pr, UINT ah, UINT al) {
+static bool sqrtrem_u(UINT *pr, UINT ah, UINT al) {
     using ULONG = typename make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
     int l = 0;
@@ -180,33 +180,32 @@ struct i_sfloat {
     };
 
     /// \brief Packs a float to its binary representation.
-    static inline F_UINT pack(uint32_t a_sign, uint32_t a_exp, F_UINT a_mant) {
+    static F_UINT pack(uint32_t a_sign, uint32_t a_exp, F_UINT a_mant) {
         return (static_cast<F_UINT>(a_sign) << (F_SIZE - 1)) | (static_cast<F_UINT>(a_exp) << MANT_SIZE) |
             (a_mant & MANT_MASK);
     }
 
     /// \brief Unpacks a float from its binary representation.
-    static inline F_UINT unpack(uint32_t *pa_sign, int32_t *pa_exp, F_UINT a) {
+    static F_UINT unpack(uint32_t *pa_sign, int32_t *pa_exp, F_UINT a) {
         *pa_sign = a >> (F_SIZE - 1);
         *pa_exp = (a >> MANT_SIZE) & EXP_MASK;
         return a & MANT_MASK;
     }
 
     /// \brief Right shift that takes rounding in account, used for adjust mantissa.
-    static inline F_UINT mant_rshift_rnd(F_UINT a, int d) {
+    static F_UINT mant_rshift_rnd(F_UINT a, int d) {
         if (d != 0) {
             if (d >= F_SIZE) {
                 return (a != 0);
-            } else {
-                const F_UINT mask = (static_cast<F_UINT>(1) << d) - 1;
-                return (a >> d) | ((a & mask) != 0);
             }
+            const F_UINT mask = (static_cast<F_UINT>(1) << d) - 1;
+            return (a >> d) | ((a & mask) != 0);
         }
         return a;
     }
 
     /// \brief Normalizes mantissa of a subnormal float.
-    static inline F_UINT mant_normalize_subnormal(int32_t *pa_exp, F_UINT a_mant) {
+    static F_UINT mant_normalize_subnormal(int32_t *pa_exp, F_UINT a_mant) {
         const int shift = MANT_SIZE - ((F_SIZE - 1 - clz(a_mant)));
         *pa_exp = 1 - shift;
         return a_mant << shift;
@@ -214,7 +213,7 @@ struct i_sfloat {
 
     /// \brief Packs a float to its final binary representation, rounding as necessary.
     /// \details a_mant is considered to have its MSB at F_SIZE - 2 bits
-    static inline F_UINT round_pack(uint32_t a_sign, int a_exp, F_UINT a_mant, FRM_modes rm, uint32_t *pfflags) {
+    static F_UINT round_pack(uint32_t a_sign, int a_exp, F_UINT a_mant, FRM_modes rm, uint32_t *pfflags) {
         uint32_t addend = 0;
         switch (rm) {
             case FRM_RNE:
@@ -227,7 +226,7 @@ struct i_sfloat {
             default:
             case FRM_RDN:
             case FRM_RUP:
-                if (a_sign ^ (rm & 1)) {
+                if ((a_sign ^ (rm & 1)) != 0) {
                     addend = (1 << RND_SIZE) - 1;
                 } else {
                     addend = 0;
@@ -279,7 +278,7 @@ struct i_sfloat {
 
     /// \brief Normalizes a float to its final binary representation, shifting and rounding as necessary.
     /// \details a_mant is considered to have at most F_SIZE - 1 bits
-    static inline F_UINT normalize(uint32_t a_sign, int a_exp, F_UINT a_mant, FRM_modes rm, uint32_t *pfflags) {
+    static F_UINT normalize(uint32_t a_sign, int a_exp, F_UINT a_mant, FRM_modes rm, uint32_t *pfflags) {
         const int shift = clz(a_mant) - (F_SIZE - 1 - IMANT_SIZE);
         assert(shift >= 0); // LCOV_EXCL_LINE
         a_exp -= shift;
@@ -289,7 +288,7 @@ struct i_sfloat {
 
     /// \brief Same as normalize() but with a double word mantissa.
     /// \details a_mant1 is considered to have at most F_SIZE - 1 bits
-    static inline F_UINT normalize2(uint32_t a_sign, int a_exp, F_UINT a_mant1, F_UINT a_mant0, FRM_modes rm,
+    static F_UINT normalize2(uint32_t a_sign, int a_exp, F_UINT a_mant1, F_UINT a_mant0, FRM_modes rm,
         uint32_t *pfflags) {
         int l = 0;
         if (a_mant1 == 0) {
@@ -313,14 +312,14 @@ struct i_sfloat {
     }
 
     /// \brief Checks if a float is a signaling-NaN.
-    static inline bool issignan(F_UINT a) {
+    static bool issignan(F_UINT a) {
         const uint32_t a_exp1 = (a >> (MANT_SIZE - 1)) & ((1 << (EXP_SIZE + 1)) - 1);
         const F_UINT a_mant = a & MANT_MASK;
         return a_exp1 == (2 * EXP_MASK) && a_mant != 0;
     }
 
     /// \brief Checks if a float is a NaN.
-    static inline bool isnan(F_UINT a) {
+    static bool isnan(F_UINT a) {
         const uint32_t a_exp = (a >> MANT_SIZE) & EXP_MASK;
         const F_UINT a_mant = a & MANT_MASK;
         return a_exp == EXP_MASK && a_mant != 0;
@@ -346,12 +345,12 @@ struct i_sfloat {
                     *pfflags |= FFLAGS_NV_MASK;
                 }
                 return F_QNAN;
-            } else if (b_exp == EXP_MASK && a_sign != b_sign) {
+            }
+            if (b_exp == EXP_MASK && a_sign != b_sign) {
                 *pfflags |= FFLAGS_NV_MASK;
                 return F_QNAN;
-            } else { // infinity
-                return a;
-            }
+            } // infinity
+            return a;
         }
         if (a_exp == 0) {
             a_exp = 1;
@@ -372,7 +371,7 @@ struct i_sfloat {
             a_mant -= b_mant;
             if (a_mant == 0) {
                 // zero result : the sign needs a specific handling
-                a_sign = (rm == FRM_RDN);
+                a_sign = static_cast<uint32_t>(rm == FRM_RDN);
             }
         }
         a_exp += (RND_SIZE - 3);
@@ -394,15 +393,13 @@ struct i_sfloat {
                     *pfflags |= FFLAGS_NV_MASK;
                 }
                 return F_QNAN;
-            } else { // infinity
-                if ((a_exp == EXP_MASK && (b_exp == 0 && b_mant == 0)) ||
-                    (b_exp == EXP_MASK && (a_exp == 0 && a_mant == 0))) {
-                    *pfflags |= FFLAGS_NV_MASK;
-                    return F_QNAN;
-                } else {
-                    return pack(r_sign, EXP_MASK, 0);
-                }
+            } // infinity
+            if ((a_exp == EXP_MASK && (b_exp == 0 && b_mant == 0)) ||
+                (b_exp == EXP_MASK && (a_exp == 0 && a_mant == 0))) {
+                *pfflags |= FFLAGS_NV_MASK;
+                return F_QNAN;
             }
+            return pack(r_sign, EXP_MASK, 0);
         }
         if (a_exp == 0) {
             if (a_mant == 0) { // zero
@@ -452,26 +449,24 @@ struct i_sfloat {
                     *pfflags |= FFLAGS_NV_MASK;
                 }
                 return F_QNAN;
-            } else { // infinities
-                if ((a_exp == EXP_MASK || b_exp == EXP_MASK) && (c_exp == EXP_MASK && r_sign != c_sign)) {
-                    *pfflags |= FFLAGS_NV_MASK;
-                    return F_QNAN;
-                } else if (c_exp == EXP_MASK) {
-                    return pack(c_sign, EXP_MASK, 0);
-                } else {
-                    return pack(r_sign, EXP_MASK, 0);
-                }
+            } // infinities
+            if ((a_exp == EXP_MASK || b_exp == EXP_MASK) && (c_exp == EXP_MASK && r_sign != c_sign)) {
+                *pfflags |= FFLAGS_NV_MASK;
+                return F_QNAN;
             }
+            if (c_exp == EXP_MASK) {
+                return pack(c_sign, EXP_MASK, 0);
+            }
+            return pack(r_sign, EXP_MASK, 0);
         }
         if ((a_exp == 0 && a_mant == 0) || (b_exp == 0 && b_mant == 0)) {
             if (c_exp == 0 && c_mant == 0) {
                 if (c_sign != r_sign) {
-                    r_sign = (rm == FRM_RDN);
+                    r_sign = static_cast<uint32_t>(rm == FRM_RDN);
                 }
                 return pack(r_sign, 0, 0);
-            } else {
-                return c;
             }
+            return c;
         }
         if (a_exp == 0) {
             a_mant = mant_normalize_subnormal(&a_exp, a_mant);
@@ -549,7 +544,7 @@ struct i_sfloat {
             r_mant1 = r_mant1 - c_mant1 - (r_mant0 > tmp);
             if ((r_mant0 | r_mant1) == 0) {
                 // zero result : the sign needs a specific handling
-                r_sign = (rm == FRM_RDN);
+                r_sign = static_cast<uint32_t>(rm == FRM_RDN);
             }
         }
         return normalize2(r_sign, r_exp, r_mant1, r_mant0, rm, pfflags);
@@ -570,31 +565,30 @@ struct i_sfloat {
                     *pfflags |= FFLAGS_NV_MASK;
                 }
                 return F_QNAN;
-            } else if (b_exp == EXP_MASK) {
+            }
+            if (b_exp == EXP_MASK) {
                 *pfflags |= FFLAGS_NV_MASK;
                 return F_QNAN;
-            } else {
-                return pack(r_sign, EXP_MASK, 0);
             }
-        } else if (unlikely(b_exp == EXP_MASK)) {
+            return pack(r_sign, EXP_MASK, 0);
+        }
+        if (unlikely(b_exp == EXP_MASK)) {
             if (b_mant != 0) {
                 if (issignan(b)) {
                     *pfflags |= FFLAGS_NV_MASK;
                 }
                 return F_QNAN;
-            } else {
-                return pack(r_sign, 0, 0);
             }
+            return pack(r_sign, 0, 0);
         }
         if (b_exp == 0) {
             if (unlikely(b_mant == 0)) { // zero
                 if (a_exp == 0 && a_mant == 0) {
                     *pfflags |= FFLAGS_NV_MASK;
                     return F_QNAN;
-                } else {
-                    *pfflags |= FFLAGS_DZ_MASK;
-                    return pack(r_sign, EXP_MASK, 0);
                 }
+                *pfflags |= FFLAGS_DZ_MASK;
+                return pack(r_sign, EXP_MASK, 0);
             }
             b_mant = mant_normalize_subnormal(&b_exp, b_mant);
         } else {
@@ -628,14 +622,14 @@ struct i_sfloat {
                     *pfflags |= FFLAGS_NV_MASK;
                 }
                 return F_QNAN;
-            } else if (a_sign) {
+            }
+            if (a_sign != 0) {
                 *pfflags |= FFLAGS_NV_MASK;
                 return F_QNAN;
-            } else { // infinity
-                return a;
-            }
+            } // infinity
+            return a;
         }
-        if (a_sign) {
+        if (a_sign != 0) {
             if (likely(a_exp == 0 && a_mant == 0)) { // zero
                 return a;
             }
@@ -652,7 +646,7 @@ struct i_sfloat {
         }
         a_exp -= EXP_MASK / 2;
         // simpler to handle an even exponent
-        if (a_exp & 1) {
+        if ((a_exp & 1) != 0) {
             a_exp--;
             a_mant <<= 1;
         }
@@ -665,19 +659,17 @@ struct i_sfloat {
     }
 
     /// \brief Min/max operation for NaN float.
-    static inline F_UINT min_max_nan(F_UINT a, F_UINT b, uint32_t *pfflags) {
+    static F_UINT min_max_nan(F_UINT a, F_UINT b, uint32_t *pfflags) {
         if (issignan(a) || issignan(b)) {
             *pfflags |= FFLAGS_NV_MASK;
         }
         if (isnan(a)) {
             if (isnan(b)) {
                 return F_QNAN;
-            } else {
-                return b;
             }
-        } else {
-            return a;
+            return b;
         }
+        return a;
     }
 
     /// \brief Min operation.
@@ -688,10 +680,9 @@ struct i_sfloat {
         const uint32_t a_sign = a >> (F_SIZE - 1);
         const uint32_t b_sign = b >> (F_SIZE - 1);
         if (a_sign != b_sign) {
-            return a_sign ? a : b;
-        } else {
-            return ((a < b) ^ a_sign) ? a : b;
+            return (a_sign != 0) ? a : b;
         }
+        return ((a < b) ^ a_sign) ? a : b;
     }
 
     /// \brief Max operation.
@@ -702,10 +693,9 @@ struct i_sfloat {
         const uint32_t a_sign = a >> (F_SIZE - 1);
         const uint32_t b_sign = b >> (F_SIZE - 1);
         if (a_sign != b_sign) {
-            return a_sign ? b : a;
-        } else {
-            return ((a < b) ^ a_sign) ? b : a;
+            return (a_sign != 0) ? b : a;
         }
+        return ((a < b) ^ a_sign) ? b : a;
     }
 
     /// \brief Equal operation.
@@ -732,9 +722,8 @@ struct i_sfloat {
         const uint32_t b_sign = b >> (F_SIZE - 1);
         if (a_sign != b_sign) {
             return a_sign || (((a | b) << 1) == 0);
-        } else {
-            return a_sign ? (a >= b) : (a <= b);
         }
+        return (a_sign != 0) ? (a >= b) : (a <= b);
     }
 
     /// \brief Less than operation.
@@ -747,9 +736,8 @@ struct i_sfloat {
         const uint32_t b_sign = b >> (F_SIZE - 1);
         if (a_sign != b_sign) {
             return a_sign && (((a | b) << 1) != 0);
-        } else {
-            return a_sign ? (a > b) : (a < b);
         }
+        return (a_sign != 0) ? (a > b) : (a < b);
     }
 
     /// \brief Retrieves float class.
@@ -760,18 +748,16 @@ struct i_sfloat {
         if (unlikely(a_exp == EXP_MASK)) {
             if (a_mant != 0) {
                 return (a_mant & QNAN_MASK) ? FCLASS_QNAN : FCLASS_SNAN;
-            } else {
-                return a_sign ? FCLASS_NINF : FCLASS_PINF;
             }
-        } else if (a_exp == 0) {
-            if (a_mant == 0) {
-                return a_sign ? FCLASS_NZERO : FCLASS_PZERO;
-            } else {
-                return a_sign ? FCLASS_NSUBNORMAL : FCLASS_PSUBNORMAL;
-            }
-        } else {
-            return a_sign ? FCLASS_NNORMAL : FCLASS_PNORMAL;
+            return (a_sign != 0) ? FCLASS_NINF : FCLASS_PINF;
         }
+        if (a_exp == 0) {
+            if (a_mant == 0) {
+                return (a_sign != 0) ? FCLASS_NZERO : FCLASS_PZERO;
+            }
+            return (a_sign != 0) ? FCLASS_NSUBNORMAL : FCLASS_PSUBNORMAL;
+        }
+        return (a_sign != 0) ? FCLASS_NNORMAL : FCLASS_PNORMAL;
     }
 
     /// \brief Conversion from float to integer.
@@ -860,7 +846,7 @@ struct i_sfloat {
         constexpr bool IS_UNSIGNED = std::is_unsigned_v<ICVT_INT>;
         constexpr int ICVT_SIZE = sizeof(ICVT_UINT) * 8;
         uint32_t a_sign = 0; // NOLINT(misc-const-correctness)
-        ICVT_UINT r = static_cast<ICVT_UINT>(a);
+        auto r = static_cast<ICVT_UINT>(a);
         if constexpr (!IS_UNSIGNED) {
             if (a < 0) {
                 a_sign = 1;
@@ -894,9 +880,8 @@ static uint64_t sfloat_cvt_f32_f64(uint32_t a, uint32_t *pfflags) {
                 *pfflags |= FFLAGS_NV_MASK;
             }
             return i_sfloat64::F_QNAN;
-        } else { // infinity
-            return i_sfloat64::pack(a_sign, i_sfloat64::EXP_MASK, 0);
-        }
+        } // infinity
+        return i_sfloat64::pack(a_sign, i_sfloat64::EXP_MASK, 0);
     }
     if (a_exp == 0) {
         if (a_mant == 0) { // zero
@@ -924,9 +909,8 @@ static uint32_t sfloat_cvt_f64_f32(uint64_t a, FRM_modes rm, uint32_t *pfflags) 
                 *pfflags |= FFLAGS_NV_MASK;
             }
             return i_sfloat32::F_QNAN;
-        } else { // infinity
-            return i_sfloat32::pack(a_sign, 0xff, 0);
-        }
+        } // infinity
+        return i_sfloat32::pack(a_sign, 0xff, 0);
     }
     if (a_exp == 0) {
         if (a_mant == 0) { // zero

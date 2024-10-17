@@ -22,8 +22,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <tuple>
 
 #include "back-merkle-tree.h"
+#include "i-hasher.h"
 #include "keccak-256-hasher.h"
 #include "unique-c-ptr.h"
 
@@ -58,7 +60,7 @@ static bool intval(const char *pre, const char *str, int *val) {
         str += len;
         int end = 0;
         // NOLINTNEXTLINE(cert-err34-c): %n is used toverify conversion errors
-        return sscanf(str, "%d%n", val, &end) == 1 && !str[end];
+        return sscanf(str, "%d%n", val, &end) == 1 && (str[end] == 0);
     }
     return false;
 }
@@ -68,9 +70,9 @@ static bool intval(const char *pre, const char *str, int *val) {
 /// \param f File to print to
 static void print_hash(const hash_type &hash, FILE *f) {
     for (auto b : hash) {
-        (void) fprintf(f, "%02x", static_cast<int>(b));
+        std::ignore = fprintf(f, "%02x", static_cast<int>(b));
     }
-    (void) fprintf(f, "\n");
+    std::ignore = fprintf(f, "\n");
 }
 
 // NOLINTNEXTLINE
@@ -102,9 +104,9 @@ static std::optional<hash_type> read_hash(FILE *f) {
 /// \param ... Arguments, if any
 // NOLINTNEXTLINE(cert-dcl50-cpp): this vararg is safe because the compiler can check the format
 __attribute__((format(printf, 1, 2))) static void error(const char *fmt, ...) {
-    va_list ap; // NOLINT(cppcoreguidelines-init-variables): initialized by va_start
+    va_list ap{};
     va_start(ap, fmt);
-    (void) vfprintf(stderr, fmt, ap);
+    std::ignore = vfprintf(stderr, fmt, ap);
     va_end(ap);
     exit(1);
 }
@@ -128,6 +130,7 @@ static void get_word_hash(hasher_type &h, const unsigned char *word, int log2_wo
 /// \param log2_word_size Log<sub>2</sub> of word size
 /// \returns Merkle hash of leaf data
 static hash_type get_leaf_hash(hasher_type &h, const unsigned char *leaf_data, int log2_leaf_size, int log2_word_size) {
+    assert(log2_word_size >= 1);
     assert(log2_leaf_size >= log2_word_size);
     if (log2_leaf_size > log2_word_size) {
         hash_type left = get_leaf_hash(h, leaf_data, log2_leaf_size - 1, log2_word_size);
@@ -135,11 +138,10 @@ static hash_type get_leaf_hash(hasher_type &h, const unsigned char *leaf_data, i
             get_leaf_hash(h, leaf_data + (1 << (log2_leaf_size - 1)), log2_leaf_size - 1, log2_word_size);
         get_concat_hash(h, left, right, left);
         return left;
-    } else {
-        hash_type leaf;
-        get_word_hash(h, leaf_data, log2_word_size, leaf);
-        return leaf;
     }
+    hash_type leaf;
+    get_word_hash(h, leaf_data, log2_word_size, leaf);
+    return leaf;
 }
 
 /// \brief Computes the Merkle hash of a leaf of data
@@ -155,7 +157,7 @@ static hash_type get_leaf_hash(const unsigned char *leaf_data, int log2_leaf_siz
 
 /// \brief Prints help message
 static void help(const char *name) {
-    (void) fprintf(stderr, R"(Usage:
+    std::ignore = fprintf(stderr, R"(Usage:
 
   %s --log2-root-size=<integer> [options]
 
@@ -205,13 +207,10 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--help") == 0) {
             help(argv[0]);
-        } else if (stringval("--input=", argv[i], &input_name)) {
-            ;
-        } else if (intval("--log2-word-size=", argv[i], &log2_word_size)) {
-            ;
-        } else if (intval("--log2-leaf-size=", argv[i], &log2_leaf_size)) {
-            ;
-        } else if (intval("--log2-root-size=", argv[i], &log2_root_size)) {
+        } else if (stringval("--input=", argv[i], &input_name) ||
+            intval("--log2-word-size=", argv[i], &log2_word_size) ||
+            intval("--log2-leaf-size=", argv[i], &log2_leaf_size) ||
+            intval("--log2-root-size=", argv[i], &log2_root_size)) {
             ;
         } else if (intval("--page-log2-size=", argv[i], &log2_leaf_size)) {
             std::cerr << "--page-log2-size is deprecated. "
@@ -231,7 +230,7 @@ int main(int argc, char *argv[]) {
     }
     // Read from stdin if no input name was given
     auto input_file = unique_file_ptr{stdin};
-    if (input_name) {
+    if (input_name != nullptr) {
         input_file = unique_fopen(input_name, "ro", std::nothrow_t{});
         if (!input_file) {
             error("unable to open input file '%s'\n", input_name);
@@ -255,7 +254,7 @@ int main(int argc, char *argv[]) {
     while (true) {
         auto got = fread(leaf_buf.get(), 1, leaf_size, input_file.get());
         if (got == 0) {
-            if (ferror(input_file.get())) {
+            if (ferror(input_file.get()) != 0) {
                 error("error reading input\n");
             } else {
                 break;

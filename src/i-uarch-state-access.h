@@ -17,6 +17,8 @@
 #ifndef I_UARCH_STATE_ACCESS_H
 #define I_UARCH_STATE_ACCESS_H
 
+#include <cstdint>
+
 #include "bracket-note.h"
 #include "pma.h"
 
@@ -26,11 +28,11 @@ namespace cartesi {
 template <typename DERIVED>
 class i_uarch_state_access { // CRTP
 
-    DERIVED &derived(void) {
+    DERIVED &derived() {
         return *static_cast<DERIVED *>(this);
     }
 
-    const DERIVED &derived(void) const {
+    const DERIVED &derived() const {
         return *static_cast<const DERIVED *>(this);
     }
 
@@ -99,7 +101,7 @@ public:
     }
 
     /// \brief Resets uarch to pristine state
-    void reset_state(void) {
+    void reset_state() {
         return derived().do_reset_state();
     }
 };

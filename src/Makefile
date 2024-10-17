@@ -151,7 +151,7 @@ HASH_LIBS=
 
 #DEFS+= -DMT_ALL_DIRTY
 
-WARNS=-Wall -Wpedantic
+WARNS=-Wall -Wextra -Wpedantic
 
 # Place our include directories before the system's
 INCS+= \
@@ -163,6 +163,12 @@ INCS+= \
 
 # Use 64-bit offsets for file operations in POSIX APIs
 DEFS+=-D_FILE_OFFSET_BITS=64
+
+# Disable json filesystem to support more compilers
+DEFS+=-DJSON_HAS_FILESYSTEM=0
+
+# Disable ASIO threads and use asio select() backend to avoid potential issues fork()
+DEFS+=-DBOOST_ASIO_DISABLE_THREADS -DBOOST_ASIO_DISABLE_EPOLL -DBOOST_ASIO_DISABLE_EVENTFD
 
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS
@@ -536,12 +542,12 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	echo '} // namespace cartesi' >> jsonrpc-discover.cpp
 
 %.clang-tidy: %.cpp machine-c-version.h
-	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CXXFLAGS) $(LUA_INC) 2>/dev/null
+	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- $(CXXFLAGS) $(LUA_INC) 2>/dev/null
 	@$(CXX) $(CXXFLAGS) $(LUA_INC) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
 %.clang-tidy: %.c
-	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $< -- $(CFLAGS) 2>/dev/null
+	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- $(CFLAGS) 2>/dev/null
 	@$(CC) $(CFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 

@@ -20,12 +20,13 @@
 #include <string>
 #include <utility>
 
+#include <json.hpp>
+
 extern "C" {
 #include <lua.h>
 }
 
 #include "clua.h"
-#include "json-util.h"
 #include "machine-c-api.h"
 
 /// \file
@@ -63,7 +64,7 @@ public:
 
     explicit clua_managed_cm_ptr(T *ptr) : m_ptr{ptr} {}
 
-    explicit clua_managed_cm_ptr(clua_managed_cm_ptr &&other) noexcept : m_ptr{other.m_ptr} {
+    clua_managed_cm_ptr(clua_managed_cm_ptr &&other) noexcept : m_ptr{other.m_ptr} {
         other.m_ptr = nullptr;
     }
 
@@ -93,17 +94,17 @@ public:
         m_ptr = ptr;
     }
 
-    T *release(void) noexcept {
+    T *release() noexcept {
         auto *tmp_ptr = m_ptr;
         m_ptr = nullptr;
         return tmp_ptr;
     }
 
-    T *&get(void) noexcept { // return reference to internal ptr
+    T *&get() noexcept { // return reference to internal ptr
         return m_ptr;
     }
 
-    T *get(void) const noexcept {
+    T *get() const noexcept {
         return m_ptr;
     }
 

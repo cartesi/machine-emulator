@@ -17,15 +17,16 @@
 /// \file
 /// \brief This file is be converted to Solidity by the machine-solidity-step.
 
-// NOLINTBEGIN(google-readability-casting, misc-const-correctness)
-
-#include <stdexcept>
+// NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)
 
 #include "record-state-access.h"
 #include "replay-state-access.h"
 #include "state-access.h"
 
 #include "send-cmio-response.h"
+
+#include "machine-merkle-tree.h"
+#include "pma-constants.h"
 #include "uarch-solidity-compat.h"
 
 namespace cartesi {
@@ -66,4 +67,4 @@ template void send_cmio_response(record_state_access &a, uint16_t reason, const 
 template void send_cmio_response(replay_state_access &a, uint16_t reason, const unsigned char *data, uint32 length);
 
 } // namespace cartesi
-// NOLINTEND(google-readability-casting, misc-const-correctness)
+// NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)

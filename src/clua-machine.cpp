@@ -76,7 +76,7 @@ static int machine_class_index_verify_reset_uarch(lua_State *L) {
 /// \brief This is the machine.verify_send_cmio_response() method implementation.
 static int machine_class_index_verify_send_cmio_response(lua_State *L) {
     lua_settop(L, 6);
-    const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 1));
+    const auto reason = static_cast<uint16_t>(luaL_checkinteger(L, 1));
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 2, &length));
@@ -106,7 +106,7 @@ static int machine_ctor(lua_State *L) {
     lua_settop(L, 3);
     auto &managed_machine = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr));
     const char *runtime_config = !lua_isnil(L, 3) ? clua_check_json_string(L, 3) : nullptr;
-    if (!lua_isstring(L, 2)) {
+    if (lua_isstring(L, 2) == 0) {
         const char *config = clua_check_json_string(L, 2);
         if (cm_create(config, runtime_config, &managed_machine.get()) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
@@ -127,7 +127,7 @@ int clua_machine_init(lua_State *L, int ctxidx) {
     clua_createnewtype<clua_managed_cm_ptr<unsigned char>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<std::string>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<nlohmann::json>>(L, ctxidx);
-    if (!clua_typeexists<machine_class>(L, ctxidx)) {
+    if (clua_typeexists<machine_class>(L, ctxidx) == 0) {
         clua_createtype<machine_class>(L, "cartesi machine class", ctxidx);
         clua_setmethods<machine_class>(L, machine_class_index.data(), 0, ctxidx);
         static const auto machine_class_meta = cartesi::clua_make_luaL_Reg_array({

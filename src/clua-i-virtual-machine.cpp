@@ -102,7 +102,7 @@ static int machine_obj_index_read_iflags_H(lua_State *L) {
     if (cm_read_iflags_H(m.get(), &val) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    lua_pushboolean(L, val);
+    lua_pushboolean(L, static_cast<int>(val));
     return 1;
 }
 
@@ -114,7 +114,7 @@ static int machine_obj_index_read_iflags_Y(lua_State *L) {
     if (cm_read_iflags_Y(m.get(), &val) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    lua_pushboolean(L, val);
+    lua_pushboolean(L, static_cast<int>(val));
     return 1;
 }
 
@@ -126,7 +126,7 @@ static int machine_obj_index_read_iflags_X(lua_State *L) {
     if (cm_read_iflags_X(m.get(), &val) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    lua_pushboolean(L, val);
+    lua_pushboolean(L, static_cast<int>(val));
     return 1;
 }
 
@@ -229,7 +229,7 @@ static int machine_obj_index_read_uarch_halt_flag(lua_State *L) {
     if (cm_read_uarch_halt_flag(m.get(), &val) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    lua_pushboolean(L, val);
+    lua_pushboolean(L, static_cast<int>(val));
     return 1;
 }
 
@@ -322,7 +322,7 @@ static int machine_obj_index_verify_dirty_page_maps(lua_State *L) {
     if (cm_verify_dirty_page_maps(m.get(), &result) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    lua_pushboolean(L, result);
+    lua_pushboolean(L, static_cast<int>(result));
     return 1;
 }
 
@@ -334,7 +334,7 @@ static int machine_obj_index_verify_merkle_tree(lua_State *L) {
     if (cm_verify_merkle_tree(m.get(), &result) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
-    lua_pushboolean(L, result);
+    lua_pushboolean(L, static_cast<int>(result));
     return 1;
 }
 
@@ -395,7 +395,7 @@ static int machine_obj_index_replace_memory_range(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const uint64_t start = luaL_checkinteger(L, 2);
     const uint64_t length = luaL_checkinteger(L, 3);
-    const bool shared = lua_toboolean(L, 4);
+    const bool shared = lua_toboolean(L, 4) != 0;
     const char *image_filename = luaL_optstring(L, 5, nullptr);
     if (cm_replace_memory_range(m.get(), start, length, shared, image_filename) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
@@ -477,7 +477,7 @@ static int machine_obj_index_receive_cmio_request(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_send_cmio_response(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 2));
+    const auto reason = static_cast<uint16_t>(luaL_checkinteger(L, 2));
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 3, &length));
@@ -491,7 +491,7 @@ static int machine_obj_index_send_cmio_response(lua_State *L) {
 /// \param L Lua state.
 static int machine_obj_index_log_send_cmio_response(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const uint16_t reason = static_cast<uint16_t>(luaL_checkinteger(L, 2));
+    const auto reason = static_cast<uint16_t>(luaL_checkinteger(L, 2));
     const int log_type = static_cast<int>(luaL_optinteger(L, 4, 0));
     size_t length{0};
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -546,7 +546,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
 });
 
 int clua_i_virtual_machine_init(lua_State *L, int ctxidx) {
-    if (!clua_typeexists<clua_managed_cm_ptr<cm_machine>>(L, ctxidx)) {
+    if (clua_typeexists<clua_managed_cm_ptr<cm_machine>>(L, ctxidx) == 0) {
         clua_createtype<clua_managed_cm_ptr<cm_machine>>(L, "cartesi machine object", ctxidx);
         clua_setmethods<clua_managed_cm_ptr<cm_machine>>(L, machine_obj_index.data(), 0, ctxidx);
     }

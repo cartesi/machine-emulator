@@ -17,11 +17,11 @@
 #ifndef JSONRPC_CONNECTION_H
 #define JSONRPC_CONNECTION_H
 
+#include <cstdint>
 #include <string>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#include "asio-config.h" // must be included before any ASIO header
 #include <boost/asio/io_context.hpp>
 #include <boost/beast/core/tcp_stream.hpp>
 #include <boost/container/static_vector.hpp>
@@ -33,7 +33,7 @@ namespace cartesi {
 
 /// Result of a fork
 struct fork_result final {
-    std::string address{};
+    std::string address;
     uint32_t pid{};
 };
 
@@ -45,26 +45,26 @@ public:
     jsonrpc_connection &operator=(const jsonrpc_connection &other) = delete;
     jsonrpc_connection &operator=(jsonrpc_connection &&other) noexcept = delete;
     ~jsonrpc_connection();
-    bool is_snapshot(void) const;
-    bool is_shutdown(void) const;
-    boost::beast::tcp_stream &get_stream(void);
-    const boost::beast::tcp_stream &get_stream(void) const;
-    const std::string &get_remote_address(void) const;
-    const std::string &get_remote_parent_address(void) const;
-    void snapshot(void);
-    void commit(void);
-    void rollback(void);
 
-    void shutdown_server(void);
-    fork_result fork_server(void);
+    bool is_snapshot() const;
+    bool is_shutdown() const;
+    boost::beast::tcp_stream &get_stream();
+    const boost::beast::tcp_stream &get_stream() const;
+    const std::string &get_remote_address() const;
+    const std::string &get_remote_parent_address() const;
+    void snapshot();
+    void commit();
+    void rollback();
+
+    void shutdown_server();
+    fork_result fork_server();
     std::string rebind_server(const std::string &address);
-    semantic_version get_server_version(void);
+    semantic_version get_server_version();
 
-private:
     boost::asio::io_context m_ioc{1};         // The io_context is required for all I/O
     boost::beast::tcp_stream m_stream{m_ioc}; // TCP stream for keep alive connections
-    boost::container::static_vector<std::string, 2> m_address{};
-    const bool m_detach_server;
+    boost::container::static_vector<std::string, 2> m_address;
+    bool m_detach_server{};
 };
 
 } // namespace cartesi

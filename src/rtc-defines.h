@@ -16,7 +16,7 @@
 
 #ifndef RTC_DEFINES_H
 #define RTC_DEFINES_H
-// NOLINTBEGIN(cppcoreguidelines-macro-usage,modernize-macro-to-enum)
+// NOLINTBEGIN(cppcoreguidelines-macro-usage,cppcoreguidelines-macro-to-enum,modernize-macro-to-enum)
 
 /// \brief Number of cycles between RTC ticks
 /// Changing this value affects the machine state hash
@@ -27,5 +27,5 @@
 /// \brief Arbitrary CPU clock frequency.
 /// We have to make sure the clock frequency is divisible by RTC_FREQ_DIV_DEF and 10^6
 #define RTC_CLOCK_FREQ_DEF 128000000 ///< 128 MHz frequency
-// NOLINTEND(cppcoreguidelines-macro-usage,modernize-macro-to-enum)
+// NOLINTEND(cppcoreguidelines-macro-usage,cppcoreguidelines-macro-to-enum,modernize-macro-to-enum)
 #endif /* end of include guard: RTC_DEFINES_H */

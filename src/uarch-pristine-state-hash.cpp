@@ -15,9 +15,11 @@
 //
 
 #include "uarch-pristine-state-hash.h"
-#include "uarch-pristine.h"
 
-#include <algorithm>
+#include <cstddef>
+
+#include "machine-merkle-tree.h"
+#include "uarch-pristine.h"
 
 namespace cartesi {
 

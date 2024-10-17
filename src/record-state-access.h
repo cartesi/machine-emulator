@@ -21,11 +21,19 @@
 /// \brief State access implementation that records state accesses to an access log.
 
 #include <cassert>
+#include <cstdint>
+#include <cstring>
 #include <memory>
+#include <utility>
 
+#include "access-log.h"
+#include "i-hasher.h"
 #include "i-state-access.h"
 #include "machine-merkle-tree.h"
+#include "machine-state.h"
 #include "machine.h"
+#include "meta.h"
+#include "pma.h"
 #include "shadow-state.h"
 
 namespace cartesi {
@@ -69,12 +77,12 @@ public:
     ~record_state_access() = default;
 
     /// \brief Returns const pointer to access log.
-    std::shared_ptr<const access_log> get_log(void) const {
+    std::shared_ptr<const access_log> get_log() const {
         return m_log;
     }
 
     /// \brief Returns pointer to access log.
-    std::shared_ptr<access_log> get_log(void) {
+    std::shared_ptr<access_log> get_log() {
         return m_log;
     }
 
@@ -161,8 +169,7 @@ private:
     /// \param paligned Physical address in the machine state, aligned to a 64-bit word.
     void update_after_write(uint64_t paligned) {
         assert((paligned & (sizeof(uint64_t) - 1)) == 0);
-        const bool updated = m_m.update_merkle_tree_page(paligned);
-        (void) updated;
+        [[maybe_unused]] const bool updated = m_m.update_merkle_tree_page(paligned);
         assert(updated);
     }
 
@@ -179,9 +186,9 @@ private:
     }
 
     void log_before_write_word_write_and_update(uint64_t paligned, bool &dest, bool val, const char *text) {
-        uint64_t dest64 = dest;
-        log_before_write_write_and_update(paligned, dest64, val, text);
-        dest = dest64;
+        auto dest64 = static_cast<uint64_t>(dest);
+        log_before_write_write_and_update(paligned, dest64, static_cast<uint64_t>(val), text);
+        dest = (dest64 != 0);
         update_after_write(paligned);
     }
 
@@ -192,9 +199,9 @@ private:
         m_log->push_bracket(type, text);
     }
 
-    void do_reset_iflags_Y(void) {
-        auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV, m_m.get_state().iflags.X,
-            false /* Y */, m_m.get_state().iflags.H);
+    void do_reset_iflags_Y() {
+        auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV,
+            static_cast<int>(m_m.get_state().iflags.X), 0 /* Y */, static_cast<int>(m_m.get_state().iflags.H));
         const uint64_t iflags_addr = shadow_state_get_reg_abs_addr(shadow_state_reg::iflags);
         log_read(iflags_addr, "iflags.Y");
         log_before_write(iflags_addr, new_iflags, "iflags.Y");
@@ -202,7 +209,7 @@ private:
         update_after_write(iflags_addr);
     }
 
-    bool do_read_iflags_Y(void) const {
+    bool do_read_iflags_Y() const {
         log_read(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags), "iflags.Y");
         return m_m.get_state().iflags.Y;
     }
@@ -214,10 +221,10 @@ private:
 
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
         int write_length_log2_size) {
-        if (paddr & (machine_merkle_tree::get_word_size() - 1)) {
+        if ((paddr & (machine_merkle_tree::get_word_size() - 1)) != 0) {
             throw std::invalid_argument("paddr is not aligned to tree leaf size");
         }
-        if (!data) {
+        if (data == nullptr) {
             throw std::invalid_argument("data is null");
         }
         const uint64_t write_length = static_cast<uint64_t>(1) << write_length_log2_size;

@@ -17,6 +17,10 @@
 #ifndef VIRTIO_CONSOLE_H
 #define VIRTIO_CONSOLE_H
 
+#include <cstdint>
+
+#include "i-device-state-access.h"
+#include "os.h"
 #include "virtio-device.h"
 
 namespace cartesi {
@@ -47,7 +51,7 @@ class virtio_console final : public virtio_device {
     bool m_stdin_ready = false;
 
 public:
-    virtio_console(uint32_t virtio_idx);
+    explicit virtio_console(uint32_t virtio_idx);
 
     void on_device_reset() override;
     void on_device_ok(i_device_state_access *a) override;

@@ -56,14 +56,25 @@
 
 #ifdef HAVE_TUNTAP
 
+#include <array>
 #include <cerrno>
+#include <cstdint>
+#include <cstring>
+#include <stdexcept>
+#include <string>
 
 #include <fcntl.h>
 #include <net/if.h>
 #include <sched.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
+#include <sys/types.h>
 #include <unistd.h>
+
+#include "i-device-state-access.h"
+#include "os.h"
+#include "virtio-device.h"
+#include "virtio-net.h"
 
 // Include TUN/TAP headers
 #ifdef __linux__
@@ -111,10 +122,9 @@ void virtio_net_carrier_tuntap::reset() {
     // Nothing to do.
 }
 
-void virtio_net_carrier_tuntap::do_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) {
-    (void) timeout_us;
+void virtio_net_carrier_tuntap::do_prepare_select(select_fd_sets *fds, uint64_t * /*timeout_us*/) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    fd_set *readfds = reinterpret_cast<fd_set *>(fds->readfds);
+    auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     FD_SET(m_tapfd, readfds);
     if (m_tapfd > fds->maxfd) {
         fds->maxfd = m_tapfd;
@@ -123,7 +133,7 @@ void virtio_net_carrier_tuntap::do_prepare_select(select_fd_sets *fds, uint64_t 
 
 bool virtio_net_carrier_tuntap::do_poll_selected(int select_ret, select_fd_sets *fds) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    fd_set *readfds = reinterpret_cast<fd_set *>(fds->readfds);
+    auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     return select_ret > 0 && FD_ISSET(m_tapfd, readfds);
 }
 
@@ -135,7 +145,7 @@ bool virtio_net_carrier_tuntap::write_packet_to_host(i_device_state_access *a, v
         // This is unexpected, guest is trying to send jumbo Ethernet frames? Just drop it.
         *pread_len = 0;
 #ifdef DEBUG_VIRTIO_ERRORS
-        (void) fprintf(stderr, "tun: dropped large packet with length %u sent by the guest\n",
+        std::ignore = fprintf(stderr, "tun: dropped large packet with length %u sent by the guest\n",
             static_cast<unsigned int>(packet_len));
 #endif
         return true;
@@ -188,17 +198,15 @@ bool virtio_net_carrier_tuntap::read_packet_from_host(i_device_state_access *a, 
             // There is no packet available.
             *pwritten_len = 0;
             return true;
-        } else {
-            // Unexpected error, return false to reset the device.
-            return false;
-        }
+        } // Unexpected error, return false to reset the device.
+        return false;
     }
-    const uint32_t packet_len = static_cast<uint32_t>(read_len);
+    const auto packet_len = static_cast<uint32_t>(read_len);
     // Is there enough space in the write buffer to write this packet?
     if (VIRTIO_NET_ETHERNET_FRAME_OFFSET + packet_len > write_avail_len ||
         packet_len == VIRTIO_NET_ETHERNET_MAX_LENGTH) {
 #ifdef DEBUG_VIRTIO_ERRORS
-        (void) fprintf(stderr, "tun: dropped large packet with length %u sent by the host\n",
+        std::ignore = fprintf(stderr, "tun: dropped large packet with length %u sent by the host\n",
             static_cast<unsigned int>(packet_len));
 #endif
         // Despite being a failure, return true to only drop the packet, we don't want to reset the device.

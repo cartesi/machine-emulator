@@ -16,14 +16,18 @@
 
 #include "jsonrpc-virtual-machine.h"
 
-#include <algorithm>
 #include <csignal>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <exception>
+#include <stdexcept>
 #include <string>
+#include <tuple>
+#include <utility>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#include "asio-config.h" // must be included before any ASIO header
 #include <boost/asio/connect.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/beast/core.hpp>
@@ -31,13 +35,19 @@
 #include <boost/beast/version.hpp>
 #pragma GCC diagnostic pop
 
-#include <boost/type_index.hpp>
-
+#include "access-log.h"
 #include "base64.h"
-#include "htif.h"
+#include "interpret.h"
 #include "json-util.h"
+#include "json.hpp"
 #include "jsonrpc-connection.h"
+#include "machine-config.h"
+#include "machine-memory-range-descr.h"
+#include "machine-merkle-tree.h"
+#include "machine-runtime-config.h"
 #include "os.h"
+#include "semantic-version.h"
+#include "uarch-interpret.h"
 
 using namespace std::string_literals;
 using json = nlohmann::json;
@@ -49,7 +59,8 @@ namespace asio = boost::asio;   // from <boost/asio.hpp>
 using tcp = asio::ip::tcp;      // from <boost/asio/ip/tcp.hpp>
 
 template <typename... Ts, size_t... Is>
-std::string jsonrpc_post_data(const std::string &method, const std::tuple<Ts...> &params, std::index_sequence<Is...>) {
+std::string jsonrpc_post_data(const std::string &method, const std::tuple<Ts...> &params,
+    std::index_sequence<Is...> /*unused*/) {
     json array = json::array();
     ((array.push_back(json(std::get<Is>(params)))), ...);
     const json j = {{"jsonrpc", "2.0"}, {"method", method}, {"id", 0}, {"params", std::move(array)}};
@@ -90,8 +101,8 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
         const auto socket_remote_endpoint = stream.socket().remote_endpoint(ec);
         if (ec || socket_remote_endpoint != remote_endpoint) {
             // We can silently ignore socket shutdown/close errors from previous connections
-            (void) stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-            (void) stream.socket().close(ec);
+            std::ignore = stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+            std::ignore = stream.socket().close(ec);
         }
     }
 
@@ -103,7 +114,8 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
             stream.connect(remote_endpoint, ec);
             if (!ec) { // Success
                 break;
-            } else if (ec == asio::error::interrupted) {
+            }
+            if (ec == asio::error::interrupted) {
                 // Retry the operation during interrupts (SIGINT/SIGTERM),
                 // otherwise we may leave dead zombies processes during fork requests.
             } else { // Unexpected error
@@ -149,7 +161,8 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
             http::write(stream, req, ec);
             if (!ec) { // Success
                 break;
-            } else if (ec == asio::error::interrupted) {
+            }
+            if (ec == asio::error::interrupted) {
                 // Retry the operation during interrupts (SIGINT/SIGTERM),
                 // otherwise we may leave dead zombies processes during fork requests.
             } else { // Unexpected error
@@ -169,7 +182,8 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
             http::read(stream, buffer, res_parser, ec);
             if (!ec) { // Success
                 break;
-            } else if (ec == asio::error::interrupted) {
+            }
+            if (ec == asio::error::interrupted) {
                 // Retry the operation during interrupts (SIGINT/SIGTERM),
                 // otherwise we may leave dead zombies processes during fork requests.
             } else { // Unexpected error
@@ -187,17 +201,17 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
         if (!keep_alive || !res.keep_alive()) {
             beast::error_code ec;
             // The response was received so we can silently ignore socket shutdown/close errors
-            (void) stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-            (void) stream.socket().close(ec);
+            std::ignore = stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+            std::ignore = stream.socket().close(ec);
         }
 
         // Return response body
-        return std::move(res.body().data());
+        return res.body();
     } catch (...) {
         // Close stream socket on errors
         beast::error_code ec;
-        (void) stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-        (void) stream.socket().close(ec);
+        std::ignore = stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+        std::ignore = stream.socket().close(ec);
         // Re-throw exception
         throw;
     }
@@ -280,34 +294,34 @@ jsonrpc_connection::~jsonrpc_connection() {
     // Gracefully close any established keep alive connection
     if (m_stream.socket().is_open()) {
         beast::error_code ec;
-        (void) m_stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-        (void) m_stream.socket().close(ec);
+        std::ignore = m_stream.socket().shutdown(tcp::socket::shutdown_both, ec);
+        std::ignore = m_stream.socket().close(ec);
     }
 }
 
-beast::tcp_stream &jsonrpc_connection::get_stream(void) {
+beast::tcp_stream &jsonrpc_connection::get_stream() {
     return m_stream;
 }
 
-const beast::tcp_stream &jsonrpc_connection::get_stream(void) const {
+const beast::tcp_stream &jsonrpc_connection::get_stream() const {
     return m_stream;
 }
 
-const std::string &jsonrpc_connection::get_remote_address(void) const {
+const std::string &jsonrpc_connection::get_remote_address() const {
     if (is_shutdown()) {
         throw std::out_of_range("remote server is shutdown");
     }
     return m_address.back();
 }
 
-const std::string &jsonrpc_connection::get_remote_parent_address(void) const {
+const std::string &jsonrpc_connection::get_remote_parent_address() const {
     if (!is_snapshot()) {
         throw std::out_of_range("remote server is not forked");
     }
     return m_address[0];
 }
 
-void jsonrpc_connection::snapshot(void) {
+void jsonrpc_connection::snapshot() {
     // If we are forked, discard the pending snapshot
     if (is_snapshot()) {
         commit();
@@ -353,11 +367,11 @@ void jsonrpc_connection::rollback() {
     m_address.pop_back();
 }
 
-bool jsonrpc_connection::is_snapshot(void) const {
+bool jsonrpc_connection::is_snapshot() const {
     return m_address.size() > 1;
 }
 
-void jsonrpc_connection::shutdown_server(void) {
+void jsonrpc_connection::shutdown_server() {
     bool result = false;
     if (is_snapshot()) {
         jsonrpc_request(get_stream(), get_remote_parent_address(), "shutdown", std::tie(), result, false);
@@ -366,7 +380,7 @@ void jsonrpc_connection::shutdown_server(void) {
     m_address.clear();
 }
 
-bool jsonrpc_connection::is_shutdown(void) const {
+bool jsonrpc_connection::is_shutdown() const {
     return m_address.empty();
 }
 
@@ -392,7 +406,7 @@ jsonrpc_virtual_machine::jsonrpc_virtual_machine(jsonrpc_connection_ptr con, boo
         std::tie(config, runtime), result);
 }
 
-jsonrpc_virtual_machine::~jsonrpc_virtual_machine(void) {
+jsonrpc_virtual_machine::~jsonrpc_virtual_machine() {
     if (!m_detach_machine) {
         try {
             // If configured to destroy machine, do it
@@ -404,7 +418,7 @@ jsonrpc_virtual_machine::~jsonrpc_virtual_machine(void) {
     }
 }
 
-machine_config jsonrpc_virtual_machine::do_get_initial_config(void) const {
+machine_config jsonrpc_virtual_machine::do_get_initial_config() const {
     machine_config result;
     jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.get_initial_config",
         std::tie(), result);
@@ -417,18 +431,15 @@ machine_config jsonrpc_virtual_machine::get_default_config(const jsonrpc_connect
     return result;
 }
 
-semantic_version jsonrpc_connection::get_server_version(void) {
+semantic_version jsonrpc_connection::get_server_version() {
     semantic_version result;
     jsonrpc_request(get_stream(), get_remote_address(), "get_version", std::tie(), result);
     return result;
 }
 
-jsonrpc_connection_ptr jsonrpc_virtual_machine::get_connection(void) const {
+jsonrpc_connection_ptr jsonrpc_virtual_machine::get_connection() const {
     return m_connection;
 }
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 
 void jsonrpc_virtual_machine::verify_step_uarch(const jsonrpc_connection_ptr &con, const hash_type &root_hash_before,
     const access_log &log, const hash_type &root_hash_after) {
@@ -480,7 +491,7 @@ uint64_t jsonrpc_virtual_machine::get_reg_address(const jsonrpc_connection_ptr &
     return result;
 }
 
-fork_result jsonrpc_connection::fork_server(void) {
+fork_result jsonrpc_connection::fork_server() {
     fork_result result{};
     jsonrpc_request(get_stream(), get_remote_address(), "fork", std::tie(), result, false);
     return result;
@@ -535,7 +546,7 @@ uint64_t jsonrpc_virtual_machine::do_translate_virtual_address(uint64_t vaddr) {
     return result;
 }
 
-void jsonrpc_virtual_machine::do_reset_uarch(void) {
+void jsonrpc_virtual_machine::do_reset_uarch() {
     bool result = false;
     jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.reset_uarch", std::tie(),
         result);
@@ -588,7 +599,7 @@ void jsonrpc_virtual_machine::do_destroy() {
         result, false);
 }
 
-bool jsonrpc_virtual_machine::do_verify_dirty_page_maps(void) const {
+bool jsonrpc_virtual_machine::do_verify_dirty_page_maps() const {
     bool result = false;
     jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.verify_dirty_page_maps",
         std::tie(), result);
@@ -602,22 +613,22 @@ uint64_t jsonrpc_virtual_machine::do_read_word(uint64_t address) const {
     return result;
 }
 
-bool jsonrpc_virtual_machine::do_verify_merkle_tree(void) const {
+bool jsonrpc_virtual_machine::do_verify_merkle_tree() const {
     bool result = false;
     jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.verify_merkle_tree",
         std::tie(), result);
     return result;
 }
 
-void jsonrpc_virtual_machine::do_snapshot(void) {
+void jsonrpc_virtual_machine::do_snapshot() {
     m_connection->snapshot();
 }
 
-void jsonrpc_virtual_machine::do_commit(void) {
+void jsonrpc_virtual_machine::do_commit() {
     m_connection->commit();
 }
 
-void jsonrpc_virtual_machine::do_rollback(void) {
+void jsonrpc_virtual_machine::do_rollback() {
     m_connection->rollback();
 }
 
@@ -628,7 +639,7 @@ uarch_interpreter_break_reason jsonrpc_virtual_machine::do_run_uarch(uint64_t ua
     return result;
 }
 
-machine_memory_range_descrs jsonrpc_virtual_machine::do_get_memory_ranges(void) const {
+machine_memory_range_descrs jsonrpc_virtual_machine::do_get_memory_ranges() const {
     machine_memory_range_descrs result;
     jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.get_memory_ranges",
         std::tie(), result);
@@ -664,7 +675,5 @@ void jsonrpc_virtual_machine::verify_send_cmio_response(const jsonrpc_connection
     jsonrpc_request(con->get_stream(), con->get_remote_address(), "machine.verify_send_cmio_response",
         std::tie(reason, b64_data, b64_root_hash_before, log, b64_root_hash_after), result);
 }
-
-#pragma GCC diagnostic pop
 
 } // namespace cartesi

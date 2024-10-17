@@ -16,6 +16,11 @@
 
 #include "shadow-uarch-state-factory.h"
 
+#include "pma-constants.h"
+#include "pma.h"
+#include "riscv-constants.h"
+#include "shadow-uarch-state.h"
+#include <cstdint>
 #include <cstring>
 
 #include "machine.h"
@@ -23,9 +28,8 @@
 namespace cartesi {
 
 /// \brief Shadow uarch state device peek callback. See ::pma_peek.
-static bool shadow_uarch_state_peek(const pma_entry &pma, const machine &m, uint64_t page_offset,
+static bool shadow_uarch_state_peek(const pma_entry & /*pma*/, const machine &m, uint64_t page_offset,
     const unsigned char **page_data, unsigned char *scratch) {
-    (void) pma;
     static_assert(sizeof(shadow_uarch_state) <= PMA_PAGE_SIZE);
 
     // There is only one page: 0
@@ -40,7 +44,7 @@ static bool shadow_uarch_state_peek(const pma_entry &pma, const machine &m, uint
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *s = reinterpret_cast<shadow_uarch_state *>(scratch);
 
-    s->halt_flag = static_cast<bool>(m.read_reg(machine::reg::uarch_halt_flag));
+    s->halt_flag = m.read_reg(machine::reg::uarch_halt_flag);
     s->cycle = m.read_reg(machine::reg::uarch_cycle);
     s->pc = m.read_reg(machine::reg::uarch_pc);
     for (int i = 0; i < UARCH_X_REG_COUNT; ++i) {

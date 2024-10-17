@@ -28,7 +28,6 @@ local MAX_MCYCLE = -1
 
 local remote_address
 local test_path = "/tmp/"
-local cleanup = {}
 
 -- Print help and exit
 local function help()

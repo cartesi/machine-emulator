@@ -15,7 +15,16 @@
 //
 
 #include "shadow-tlb-factory.h"
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+
 #include "machine.h"
+#include "pma-constants.h"
+#include "pma.h"
+#include "shadow-tlb.h"
 #include "strict-aliasing.h"
 
 namespace cartesi {
@@ -23,8 +32,6 @@ namespace cartesi {
 /// \brief TLB device peek callback. See ::pma_peek.
 static bool shadow_tlb_peek(const pma_entry &pma, const machine &m, uint64_t page_offset,
     const unsigned char **page_data, unsigned char *scratch) {
-    (void) pma;
-
     // Check for alignment and range
     if (page_offset % PMA_PAGE_SIZE != 0 || page_offset >= pma.get_length()) {
         *page_data = nullptr;

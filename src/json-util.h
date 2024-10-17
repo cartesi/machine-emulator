@@ -17,19 +17,28 @@
 #ifndef JSON_UTIL_H
 #define JSON_UTIL_H
 
-#include <array>
+#include <cstdint>
+#include <cstring>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
+#include <vector>
 
-// Disable JSON filesystem support because it is not supported in some targets
-#define JSON_HAS_FILESYSTEM 0 // NOLINT(cppcoreguidelines-macro-usage)
 #include <json.hpp>
 
+#include "access-log.h"
+#include "bracket-note.h"
+#include "interpret.h"
 #include "jsonrpc-connection.h"
-#include "jsonrpc-virtual-machine.h"
+#include "machine-config.h"
+#include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"
+#include "machine-runtime-config.h"
 #include "machine.h"
 #include "semantic-version.h"
+#include "uarch-config.h"
+#include "uarch-interpret.h"
 
 namespace cartesi {
 
@@ -59,7 +68,7 @@ void ju_get_field(const nlohmann::json &j, const K &key, T &value, const std::st
 
 // Allows use contains when the index is an integer and j contains an array
 template <typename T>
-inline std::enable_if_t<std::is_integral_v<T>, bool> contains(const nlohmann::json &j, T i) {
+inline bool contains(const nlohmann::json &j, T i) requires(std::is_integral_v<T>) {
     if constexpr (std::is_signed_v<T>) {
         return j.is_array() && i >= 0 && i < static_cast<T>(j.size());
     } else {

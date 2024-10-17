@@ -26,7 +26,6 @@ end
 local MACHINES_DIR = adjust_images_path(test_util.cmio_path)
 
 local remote_address
-local cleanup = {}
 
 -- Print help and exit
 local function help()

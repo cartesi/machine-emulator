@@ -31,8 +31,9 @@ OPTFLAGS=-O2 -g0
 
 # Flags to minimize undefined behavior
 UBFLAGS := -fno-strict-aliasing -fno-strict-overflow -fno-delete-null-pointer-checks
+WARNFLAGS := -Wall -Wextra -Wpedantic -Wno-array-bounds -Werror
 
-CFLAGS := -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) \
+CFLAGS := -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) $(WARNFLAGS) \
 	-DMICROARCHITECTURE=1 \
 	-DAVOID_NATIVE_UINT128_T=1 \
 	-ffreestanding \
@@ -46,7 +47,7 @@ CFLAGS := -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) \
 	-I$(EMULATOR_SRC_DIR) \
 	-I$(BOOST_INC_DIR)
 
-CXXFLAGS := -std=c++17 -fno-rtti
+CXXFLAGS := -std=c++20 -fno-rtti
 
 UARCH_SOURCES=\
 	uarch-printf.c \
@@ -78,6 +79,16 @@ COMPUTE_UARCH_C_SOURCES=\
 UARCH_OBJS = $(patsubst %.c,%.uarch_c.o,$(patsubst %.cpp,%.uarch_cpp.o,$(UARCH_SOURCES)))
 EMULATOR_OBJS = $(patsubst %.c,%.emulator_c.o,$(patsubst %.cpp,%.emulator_cpp.o,$(EMULATOR_SOURCES)))
 
+LINTER_IGNORE_SOURCES=uarch-printf.c
+LINTER_IGNORE_HEADERS=uarch-printf.h
+LINTER_SOURCES=$(filter-out $(LINTER_IGNORE_SOURCES),$(strip $(wildcard uarch-*.cpp) $(wildcard uarch-*.c)))
+LINTER_HEADERS=$(filter-out $(LINTER_IGNORE_HEADERS),$(strip $(wildcard uarch-*.h)))
+EMPTY:=
+SPACE:=$(EMPTY) $(EMPTY)
+CLANG_TIDY_HEADER_FILTER=$(CURDIR)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
+CLANG_TIDY=clang-tidy
+CLANG_TIDY_TARGETS=$(patsubst %.cpp,%.clang-tidy,$(patsubst %.c,%.clang-tidy,$(LINTER_SOURCES)))
+
 .PHONY: all clean
 
 all: uarch-ram.bin uarch-pristine-ram.c uarch-pristine-hash.c
@@ -103,17 +114,23 @@ uarch-ram-entry.o: uarch-ram-entry.S
 	$(CC) $(CFLAGS) -c -o $@ $(<F)
 
 %.emulator_cpp.o: $(EMULATOR_SRC_DIR)/%.cpp
-	$(CXX) $(CXXFLAGS) $(CFLAGS) -c -o $@ $(EMULATOR_SRC_DIR)/$(<F)
+	$(CXX) $(CFLAGS) $(CXXFLAGS) -c -o $@ $(EMULATOR_SRC_DIR)/$(<F)
 
 %.uarch_c.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $(<F)
 
 %.uarch_cpp.o: %.cpp
-	$(CXX) $(CXXFLAGS) $(CFLAGS) -c -o $@ $(<F)
+	$(CXX) $(CFLAGS) $(CXXFLAGS) -c -o $@ $(<F)
 
 %.ld: %.ld.in
 	$(CC) -o $(@F).tmp -x c $(CFLAGS) -E $(^F)
 	grep -v '^#' $@.tmp > $@
+
+%.clang-tidy: %.cpp
+	$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- -target riscv64-linux-gnu $(CFLAGS) $(CXXFLAGS) -Wno-unused-command-line-argument 2>/dev/null
+	@touch $@
+
+lint: $(CLANG_TIDY_TARGETS)
 
 clean-executables:
 	@rm -f compute-uarch-pristine-hash
@@ -122,4 +139,4 @@ clean-auto-generated:
 	@rm -f uarch-pristine-hash.c uarch-pristine-ram.c
 
 clean: clean-executables clean-auto-generated
-	@rm -f *.ld *.elf *.bin *.tmp link.ld *.o
+	@rm -f *.ld *.elf *.bin *.tmp link.ld *.o *.clang-tidy

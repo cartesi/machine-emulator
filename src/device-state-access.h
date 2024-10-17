@@ -67,27 +67,27 @@ private:
         m_a.write_mip(mip);
     }
 
-    uint64_t do_read_mip(void) override {
+    uint64_t do_read_mip() override {
         return m_a.read_mip();
     }
 
-    uint64_t do_read_mcycle(void) override {
+    uint64_t do_read_mcycle() override {
         return m_mcycle;
     }
 
-    void do_set_iflags_H(void) override {
+    void do_set_iflags_H() override {
         m_a.set_iflags_H();
     }
 
-    void do_set_iflags_Y(void) override {
+    void do_set_iflags_Y() override {
         m_a.set_iflags_Y();
     }
 
-    void do_set_iflags_X(void) override {
+    void do_set_iflags_X() override {
         m_a.set_iflags_X();
     }
 
-    uint64_t do_read_clint_mtimecmp(void) override {
+    uint64_t do_read_clint_mtimecmp() override {
         return m_a.read_clint_mtimecmp();
     }
 
@@ -95,7 +95,7 @@ private:
         return m_a.write_clint_mtimecmp(val);
     }
 
-    uint64_t do_read_plic_girqpend(void) override {
+    uint64_t do_read_plic_girqpend() override {
         return m_a.read_plic_girqpend();
     }
 
@@ -103,7 +103,7 @@ private:
         return m_a.write_plic_girqpend(val);
     }
 
-    uint64_t do_read_plic_girqsrvd(void) override {
+    uint64_t do_read_plic_girqsrvd() override {
         return m_a.read_plic_girqsrvd();
     }
 
@@ -111,7 +111,7 @@ private:
         return m_a.write_plic_girqsrvd(val);
     }
 
-    uint64_t do_read_htif_fromhost(void) override {
+    uint64_t do_read_htif_fromhost() override {
         return m_a.read_htif_fromhost();
     }
 
@@ -119,7 +119,7 @@ private:
         return m_a.write_htif_fromhost(val);
     }
 
-    uint64_t do_read_htif_tohost(void) override {
+    uint64_t do_read_htif_tohost() override {
         return m_a.read_htif_tohost();
     }
 
@@ -127,15 +127,15 @@ private:
         return m_a.write_htif_tohost(val);
     }
 
-    uint64_t do_read_htif_ihalt(void) override {
+    uint64_t do_read_htif_ihalt() override {
         return m_a.read_htif_ihalt();
     }
 
-    uint64_t do_read_htif_iconsole(void) override {
+    uint64_t do_read_htif_iconsole() override {
         return m_a.read_htif_iconsole();
     }
 
-    uint64_t do_read_htif_iyield(void) override {
+    uint64_t do_read_htif_iyield() override {
         return m_a.read_htif_iyield();
     }
 

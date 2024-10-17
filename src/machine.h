@@ -20,10 +20,15 @@
 /// \file
 /// \brief Cartesi machine interface
 
-#include <boost/container/static_vector.hpp>
+#include <cstdint>
 #include <memory>
+#include <string>
+#include <vector>
+
+#include <boost/container/static_vector.hpp>
 
 #include "access-log.h"
+#include "i-device-state-access.h"
 #include "interpret.h"
 #include "machine-config.h"
 #include "machine-memory-range-descr.h"
@@ -31,6 +36,8 @@
 #include "machine-runtime-config.h"
 #include "machine-state.h"
 #include "os.h"
+#include "pma-constants.h"
+#include "pma.h"
 #include "uarch-interpret.h"
 #include "uarch-machine.h"
 #include "virtio-device.h"
@@ -299,7 +306,7 @@ public:
     void store(const std::string &directory) const;
 
     /// \brief No default constructor
-    machine(void) = delete;
+    machine() = delete;
     /// \brief No copy constructor
     machine(const machine &other) = delete;
     /// \brief No move constructor
@@ -349,20 +356,20 @@ public:
     static void verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after);
 
-    static machine_config get_default_config(void);
+    static machine_config get_default_config();
 
     /// \brief Returns machine state for direct access.
-    machine_state &get_state(void) {
+    machine_state &get_state() {
         return m_s;
     }
 
     /// \brief Returns machine state for direct read-only access.
-    const machine_state &get_state(void) const {
+    const machine_state &get_state() const {
         return m_s;
     }
 
     /// \brief Returns a list of descriptions for all PMA entries registered in the machine, sorted by start
-    machine_memory_range_descrs get_memory_ranges(void) const {
+    machine_memory_range_descrs get_memory_ranges() const {
         return m_mrds;
     }
 
@@ -401,7 +408,7 @@ public:
 
     /// \brief Update the Merkle tree so it matches the contents of the machine state.
     /// \returns true if succeeded, false otherwise.
-    bool update_merkle_tree(void) const;
+    bool update_merkle_tree() const;
 
     /// \brief Update the Merkle tree after a page has been modified in the machine state.
     /// \param address Any address inside modified page.
@@ -424,7 +431,8 @@ public:
     /// \param proof Receives the proof.
     /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
     /// This overload is used to optimize proof generation when the caller knows that the tree is already up to date.
-    machine_merkle_tree::proof_type get_proof(uint64_t address, int log2_size, skip_merkle_tree_update_t) const;
+    machine_merkle_tree::proof_type get_proof(uint64_t address, int log2_size,
+        skip_merkle_tree_update_t /*unused*/) const;
 
     /// \brief Obtains the root hash of the Merkle tree.
     /// \param hash Receives the hash.
@@ -432,7 +440,7 @@ public:
 
     /// \brief Verifies integrity of Merkle tree.
     /// \returns True if tree is self-consistent, false otherwise.
-    bool verify_merkle_tree(void) const;
+    bool verify_merkle_tree() const;
 
     /// \brief Read the value of any register
     /// \param r Register to read
@@ -497,7 +505,7 @@ public:
 
     /// \brief Get read-only access to container with all PMA entries.
     /// \returns The container.
-    const boost::container::static_vector<pma_entry, PMA_MAX> &get_pmas(void) const;
+    const boost::container::static_vector<pma_entry, PMA_MAX> &get_pmas() const;
 
     /// \brief Obtain PMA entry from the machine state that covers a given physical memory region
     /// \brief Microarchitecture PMAs are not considered.
@@ -522,23 +530,23 @@ public:
     }
 
     /// \brief Go over the write TLB and mark as dirty all pages currently there.
-    void mark_write_tlb_dirty_pages(void) const;
+    void mark_write_tlb_dirty_pages() const;
 
     /// \brief Verify if dirty page maps are consistent.
     /// \returns true if they are, false if there is an error.
-    bool verify_dirty_page_maps(void) const;
+    bool verify_dirty_page_maps() const;
 
     /// \brief Copies the current state into a configuration for serialization
     /// \returns The configuration
-    machine_config get_serialization_config(void) const;
+    machine_config get_serialization_config() const;
 
     /// \brief Returns copy of initialization config.
-    const machine_config &get_initial_config(void) const {
+    const machine_config &get_initial_config() const {
         return m_c;
     }
 
     /// \brief Returns the machine runtime config.
-    const machine_runtime_config &get_runtime_config(void) const {
+    const machine_runtime_config &get_runtime_config() const {
         return m_r;
     }
 

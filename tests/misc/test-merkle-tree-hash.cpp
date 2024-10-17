@@ -66,7 +66,7 @@ bool intval(const char *pre, const char *str, int *val) {
         str += len;
         int end = 0;
         // NOLINTNEXTLINE(cert-err34-c): %n is used toverify conversion errors
-        return sscanf(str, "%d%n", val, &end) == 1 && !str[end];
+        return sscanf(str, "%d%n", val, &end) == 1 && (str[end] == 0);
     }
     return false;
 }
@@ -76,9 +76,9 @@ bool intval(const char *pre, const char *str, int *val) {
 /// \param f File to print to
 void print_hash(const hash_type &hash, FILE *f) {
     for (auto b : hash) {
-        (void) fprintf(f, "%02x", static_cast<int>(b));
+        std::ignore = fprintf(f, "%02x", static_cast<int>(b));
     }
-    (void) fprintf(f, "\n");
+    std::ignore = fprintf(f, "\n");
 }
 
 // NOLINTNEXTLINE
@@ -112,7 +112,7 @@ static std::optional<hash_type> read_hash(FILE *f) {
 __attribute__((format(printf, 1, 2))) void error(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    (void) vfprintf(stderr, fmt, ap);
+    std::ignore = vfprintf(stderr, fmt, ap);
     va_end(ap);
     exit(1);
 }
@@ -143,11 +143,10 @@ hash_type get_leaf_hash(hasher_type &h, int log2_word_size, const unsigned char 
             get_leaf_hash(h, log2_word_size, leaf_data + (1 << (log2_leaf_size - 1)), log2_leaf_size - 1);
         get_concat_hash(h, left, right, left);
         return left;
-    } else {
-        hash_type leaf;
-        get_word_hash(h, leaf_data, log2_word_size, leaf);
-        return leaf;
     }
+    hash_type leaf;
+    get_word_hash(h, leaf_data, log2_word_size, leaf);
+    return leaf;
 }
 
 /// \brief Computes the Merkle hash of a leaf of data
@@ -163,7 +162,7 @@ hash_type get_leaf_hash(int log2_word_size, const unsigned char *leaf_data, int 
 
 /// \brief Prints help message
 void help(const char *name) {
-    (void) fprintf(stderr,
+    std::ignore = fprintf(stderr,
         "Usage:\n  %s [--input=<filename>] "
         "[--log2-word-size=<w>] [--log2-leaf-size=<p>] "
         "[--log2-root-size=<t>]\n",
@@ -183,13 +182,10 @@ int main(int argc, char *argv[]) try {
         if (strcmp(argv[i], "--help") == 0) {
             help(argv[0]);
             return 1;
-        } else if (stringval("--input=", argv[i], &input_name)) {
-            ;
-        } else if (intval("--log2-word-size=", argv[i], &log2_word_size)) {
-            ;
-        } else if (intval("--log2-leaf-size=", argv[i], &log2_leaf_size)) {
-            ;
-        } else if (intval("--log2-root-size=", argv[i], &log2_root_size)) {
+        }
+        if (stringval("--input=", argv[i], &input_name) || intval("--log2-word-size=", argv[i], &log2_word_size) ||
+            intval("--log2-leaf-size=", argv[i], &log2_leaf_size) ||
+            intval("--log2-root-size=", argv[i], &log2_root_size)) {
             ;
         } else {
             error("unrecognized option '%s'\n", argv[i]);
@@ -204,7 +200,7 @@ int main(int argc, char *argv[]) try {
     }
     // Read from stdin if no input name was given
     auto input_file = unique_file_ptr{stdin};
-    if (input_name) {
+    if (input_name != nullptr) {
         input_file = unique_fopen(input_name, "ro", std::nothrow_t{});
         if (!input_file) {
             error("unable to open input file '%s'\n", input_name);
@@ -246,12 +242,11 @@ int main(int argc, char *argv[]) try {
     while (true) {
         auto got = fread(leaf_buf.get(), 1, leaf_size, input_file.get());
         if (got == 0) {
-            if (ferror(input_file.get())) {
+            if (ferror(input_file.get()) != 0) {
                 error("error reading input\n");
                 return 1;
-            } else {
-                break;
             }
+            break;
         }
         if (leaf_count >= max_leaves) {
             error("too many leaves for tree\n");
@@ -309,7 +304,7 @@ int main(int argc, char *argv[]) try {
         }
         ++leaf_count;
     }
-    (void) fprintf(stderr, "passed test\n");
+    std::ignore = fprintf(stderr, "passed test\n");
     print_hash(back_tree.get_root_hash(), stdout);
     return 0;
 } catch (std::exception &x) {

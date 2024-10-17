@@ -27,15 +27,10 @@
 #include <boost/container/static_vector.hpp>
 #pragma GCC diagnostic pop
 
+#include "fork-result.h"
 #include "semantic-version.h"
 
 namespace cartesi {
-
-/// Result of a fork
-struct fork_result final {
-    std::string address;
-    uint32_t pid{};
-};
 
 class jsonrpc_connection final {
 public:

@@ -23,6 +23,8 @@
 #include "plic.h"
 #include "strict-aliasing.h"
 
+#include <cassert>
+
 namespace cartesi {
 
 static inline bool is_power_of_2(uint32_t val) {

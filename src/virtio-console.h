@@ -17,6 +17,10 @@
 #ifndef VIRTIO_CONSOLE_H
 #define VIRTIO_CONSOLE_H
 
+#include <cstdint>
+
+#include "i-device-state-access.h"
+#include "os.h"
 #include "virtio-device.h"
 
 namespace cartesi {

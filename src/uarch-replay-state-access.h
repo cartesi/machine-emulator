@@ -20,16 +20,24 @@
 /// \file
 /// \brief State access implementation that replays recorded state accesses
 
-#include <boost/container/static_vector.hpp>
 #include <cassert>
+#include <cstdint>
+#include <cstring>
+#include <ios>
 #include <sstream>
 #include <string>
+#include <vector>
 
+#include "access-log.h"
+#include "i-hasher.h"
+#include "i-state-access.h"
 #include "i-uarch-state-access.h"
 #include "machine-merkle-tree.h"
-#include "machine.h"
-#include "shadow-state.h"
+#include "meta.h"
+#include "shadow-uarch-state.h"
 #include "uarch-bridge.h"
+#include "uarch-constants.h"
+#include "uarch-pristine-state-hash.h"
 
 namespace cartesi {
 

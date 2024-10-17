@@ -18,6 +18,8 @@
 #define CLUA_H
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <utility>
 
 extern "C" {

@@ -19,7 +19,9 @@
 
 /// \file
 /// \brief Cartesi microarchitecture machine
+#include <cstdint>
 
+#include "pma.h"
 #include "uarch-config.h"
 #include "uarch-state.h"
 

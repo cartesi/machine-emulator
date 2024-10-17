@@ -16,10 +16,12 @@
 
 #include "uarch-machine.h"
 
+#include <cstring>
 #include <utility>
 
 #include "shadow-uarch-state-factory.h"
 #include "uarch-constants.h"
+#include "uarch-pristine.h"
 
 namespace cartesi {
 

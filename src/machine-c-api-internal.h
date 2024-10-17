@@ -19,12 +19,8 @@
 
 #include <string>
 
-#include "access-log.h"
 #include "machine-c-api.h"
-#include "machine-config.h"
 #include "machine-merkle-tree.h"
-#include "machine-runtime-config.h"
-#include "semantic-version.h"
 
 /// \brief Helper function that returns error result from C api function
 cm_error cm_result_failure();

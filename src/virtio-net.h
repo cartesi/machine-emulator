@@ -21,8 +21,12 @@
 
 #if defined(HAVE_SLIRP) || defined(HAVE_TUNTAP)
 
-#include "virtio-device.h"
+#include <cstdint>
 #include <memory>
+
+#include "i-device-state-access.h"
+#include "os.h"
+#include "virtio-device.h"
 
 namespace cartesi {
 

@@ -18,6 +18,7 @@
 #define UARCH_CONSTANTS_H
 
 #include "pma-constants.h"
+#include "pma-defines.h"
 #include "uarch-defines.h"
 
 #include <cstdint>

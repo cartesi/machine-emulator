@@ -21,7 +21,14 @@
 #include <memory>
 #include <string>
 
+#include "access-log.h"
 #include "i-virtual-machine.h"
+#include "interpret.h"
+#include "machine-config.h"
+#include "machine-memory-range-descr.h"
+#include "machine-merkle-tree.h"
+#include "machine-runtime-config.h"
+#include "uarch-interpret.h"
 
 namespace cartesi {
 

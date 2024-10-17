@@ -17,13 +17,18 @@
 #ifndef UARCH_BRIDGE_H
 #define UARCH_BRIDGE_H
 
+#include <array>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <stdexcept>
+
 #include "machine-state.h"
+#include "pma-constants.h"
 #include "riscv-constants.h"
 #include "shadow-state.h"
-#include "shadow-uarch-state.h"
+#include "shadow-tlb.h"
 #include "strict-aliasing.h"
-#include "uarch-constants.h"
-#include "uarch-state.h"
 
 namespace cartesi {
 

@@ -33,7 +33,6 @@
 #include "bracket-note.h"
 #include "interpret.h"
 #include "json-util.h"
-#include "jsonrpc-virtual-machine.h"
 #include "machine-config.h"
 #include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"

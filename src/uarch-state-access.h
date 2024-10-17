@@ -17,9 +17,18 @@
 #ifndef UARCH_STATE_ACCESS_H
 #define UARCH_STATE_ACCESS_H
 
+#include <cassert>
+#include <cstdint>
+#include <stdexcept>
+
+#include "bracket-note.h"
 #include "i-uarch-state-access.h"
 #include "machine-state.h"
+#include "pma.h"
+#include "riscv-constants.h"
+#include "strict-aliasing.h"
 #include "uarch-bridge.h"
+#include "uarch-pristine.h"
 #include "uarch-state.h"
 
 namespace cartesi {

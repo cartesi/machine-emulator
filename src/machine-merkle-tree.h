@@ -21,10 +21,12 @@
 /// \brief Merkle tree interface.
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <iosfwd>
 #include <unordered_map>
+#include <utility>
 
 #include "keccak-256-hasher.h"
 #include "merkle-tree-proof.h"

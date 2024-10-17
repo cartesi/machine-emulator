@@ -16,14 +16,12 @@
 
 #include "jsonrpc-virtual-machine.h"
 
-#include <algorithm>
 #include <csignal>
 #include <cstdint>
 #include <string>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#include "asio-config.h" // must be included before any ASIO header
 #include <boost/asio/connect.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/beast/core.hpp>
@@ -31,10 +29,7 @@
 #include <boost/beast/version.hpp>
 #pragma GCC diagnostic pop
 
-#include <boost/type_index.hpp>
-
 #include "base64.h"
-#include "htif.h"
 #include "json-util.h"
 #include "jsonrpc-connection.h"
 #include "os.h"

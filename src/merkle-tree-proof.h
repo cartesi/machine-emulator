@@ -20,8 +20,14 @@
 /// \file
 /// \brief Merkle tree proof structure
 
+#include <algorithm>
 #include <cstdint>
+#include <stdexcept>
+#include <type_traits>
 #include <vector>
+
+#include "i-hasher.h"
+#include "meta.h"
 
 namespace cartesi {
 

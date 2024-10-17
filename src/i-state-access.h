@@ -22,6 +22,7 @@
 
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 #include "meta.h"
 #include "shadow-tlb.h"

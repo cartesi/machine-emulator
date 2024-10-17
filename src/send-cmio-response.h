@@ -17,6 +17,8 @@
 #ifndef SEND_CMIO_RESPONSE_H
 #define SEND_CMIO_RESPONSE_H
 
+#include <cstdint>
+
 namespace cartesi {
 
 /// \brief Sends cmio response

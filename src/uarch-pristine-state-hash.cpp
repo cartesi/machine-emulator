@@ -17,8 +17,6 @@
 #include "uarch-pristine-state-hash.h"
 #include "uarch-pristine.h"
 
-#include <algorithm>
-
 namespace cartesi {
 
 static machine_merkle_tree::hash_type get_uarch_pristine_state_hash() noexcept {

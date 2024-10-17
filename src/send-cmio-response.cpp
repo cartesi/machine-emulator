@@ -19,8 +19,6 @@
 
 // NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)
 
-#include <stdexcept>
-
 #include "record-state-access.h"
 #include "replay-state-access.h"
 #include "state-access.h"

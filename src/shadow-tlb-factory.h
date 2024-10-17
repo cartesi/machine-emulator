@@ -20,6 +20,8 @@
 /// \file
 /// \brief TLB device factory.
 
+#include <cstdint>
+
 #include "pma.h"
 
 namespace cartesi {

@@ -20,10 +20,15 @@
 /// \file
 /// \brief Cartesi machine interface
 
-#include <boost/container/static_vector.hpp>
+#include <cstdint>
 #include <memory>
+#include <string>
+#include <vector>
+
+#include <boost/container/static_vector.hpp>
 
 #include "access-log.h"
+#include "i-device-state-access.h"
 #include "interpret.h"
 #include "machine-config.h"
 #include "machine-memory-range-descr.h"
@@ -31,6 +36,8 @@
 #include "machine-runtime-config.h"
 #include "machine-state.h"
 #include "os.h"
+#include "pma-constants.h"
+#include "pma.h"
 #include "uarch-interpret.h"
 #include "uarch-machine.h"
 #include "virtio-device.h"

@@ -36,12 +36,11 @@
 
 #ifdef HAVE_POSIX_FS
 
-#include <cerrno>
 #include <cstring>
+#include <stdexcept>
 
 #include <dirent.h>
 #include <fcntl.h>
-#include <sys/file.h>
 #include <sys/stat.h>
 #ifdef __APPLE__
 #include <sys/mount.h>

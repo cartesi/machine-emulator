@@ -22,8 +22,9 @@
 #include <cstring>
 
 #include "i-device-state-access.h"
+#include "interpret.h"
 #include "os.h"
-#include "pma.h"
+#include "pma-driver.h"
 
 namespace cartesi {
 

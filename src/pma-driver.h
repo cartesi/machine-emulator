@@ -17,8 +17,9 @@
 #ifndef PMA_DRIVER_H
 #define PMA_DRIVER_H
 
-#include "interpret.h"
 #include <cstdint>
+
+#include "interpret.h"
 
 namespace cartesi {
 

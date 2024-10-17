@@ -164,6 +164,12 @@ INCS+= \
 # Use 64-bit offsets for file operations in POSIX APIs
 DEFS+=-D_FILE_OFFSET_BITS=64
 
+# Disable json filesystem to support more compilers
+DEFS+=-DJSON_HAS_FILESYSTEM=0
+
+# Disable ASIO threads and use asio select() backend to avoid potential issues fork()
+DEFS+=-DBOOST_ASIO_DISABLE_THREADS -DBOOST_ASIO_DISABLE_EPOLL -DBOOST_ASIO_DISABLE_EVENTFD
+
 ifeq ($(dump),yes)
 #DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS
 #DEFS+=-DDUMP_EXCEPTIONS

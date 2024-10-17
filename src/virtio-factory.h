@@ -18,7 +18,9 @@
 #define VIRTIO_FACTORY_H
 
 #include <cstdint>
+#include <string>
 
+#include "pma-driver.h"
 #include "pma.h"
 
 namespace cartesi {

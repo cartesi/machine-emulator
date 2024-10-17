@@ -16,6 +16,8 @@
 
 #include "plic-factory.h"
 
+#include "plic.h"
+
 namespace cartesi {
 
 /// \brief PLIC device peek callback. See ::pma_peek.

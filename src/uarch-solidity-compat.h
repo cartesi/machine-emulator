@@ -20,6 +20,7 @@
 #include "os.h"
 #include <cassert>
 #include <cmath>
+#include <cstdint>
 #include <stdexcept>
 
 /// \file

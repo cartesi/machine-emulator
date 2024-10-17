@@ -20,12 +20,13 @@
 #include <string>
 #include <utility>
 
+#include <json.hpp>
+
 extern "C" {
 #include <lua.h>
 }
 
 #include "clua.h"
-#include "json-util.h"
 #include "machine-c-api.h"
 
 /// \file

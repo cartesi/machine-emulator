@@ -17,11 +17,14 @@
 #ifndef UNIQUE_C_PTR
 #define UNIQUE_C_PTR
 
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <new>
 #include <system_error>
+#include <tuple>
+#include <type_traits>
 
 namespace cartesi {
 

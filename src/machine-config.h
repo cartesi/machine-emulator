@@ -18,11 +18,11 @@
 #define MACHINE_CONFIG_H
 
 #include <array>
-#include <boost/container/static_vector.hpp>
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <variant>
+
+#include <boost/container/static_vector.hpp>
 
 #include "riscv-constants.h"
 #include "uarch-config.h"

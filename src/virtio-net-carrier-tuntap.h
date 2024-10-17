@@ -21,6 +21,12 @@
 
 #ifdef HAVE_TUNTAP
 
+#include <cstdint>
+#include <string>
+
+#include "i-device-state-access.h"
+#include "os.h"
+#include "virtio-device.h"
 #include "virtio-net.h"
 
 namespace cartesi {

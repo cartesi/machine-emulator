@@ -18,7 +18,6 @@
 #define UARCH_CONFIG_H
 
 #include <array>
-#include <boost/container/static_vector.hpp>
 #include <cstdint>
 #include <string>
 

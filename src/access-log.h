@@ -20,11 +20,17 @@
 /// \file
 /// \brief State access log implementation
 
-#include <boost/container/small_vector.hpp>
+#include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <optional>
+#include <stdexcept>
+#include <string>
+#include <utility>
 #include <vector>
+
+#include <boost/container/small_vector.hpp>
 
 #include "bracket-note.h"
 #include "machine-c-api.h"

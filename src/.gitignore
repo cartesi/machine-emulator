@@ -1,5 +1,3 @@
-*.pb.h
-*.pb.cc
 *.ext2
 *.bin
 *.gcno

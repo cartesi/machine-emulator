@@ -20,11 +20,11 @@
 /// \file
 /// \brief Cartesi microarchitecture machine state structure definition.
 
+#include <array>
 #include <cstdint>
 
 #include "pma.h"
 #include "riscv-constants.h"
-#include "uarch-pristine.h"
 
 namespace cartesi {
 

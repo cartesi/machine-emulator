@@ -16,11 +16,12 @@
 
 #include "machine.h"
 
-#include <boost/range/adaptor/sliced.hpp>
 #include <cstdio>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+
+#include <boost/range/adaptor/sliced.hpp>
 
 #include "clint-factory.h"
 #include "dtb.h"
@@ -35,6 +36,7 @@
 #include "shadow-pmas-factory.h"
 #include "shadow-state-factory.h"
 #include "shadow-tlb-factory.h"
+#include "shadow-uarch-state.h"
 #include "state-access.h"
 #include "strict-aliasing.h"
 #include "translate-virtual-address.h"

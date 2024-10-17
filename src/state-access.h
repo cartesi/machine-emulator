@@ -20,16 +20,24 @@
 /// \file
 /// \brief Fast state access implementation
 
+#include <algorithm>
 #include <cassert>
+#include <cstdint>
+#include <stdexcept>
+#include <utility>
 
 #include "compiler-defines.h"
 #include "device-state-access.h"
-#include "htif.h"
 #include "i-state-access.h"
+#include "interpret.h"
+#include "machine-state.h"
 #include "machine.h"
 #include "os.h"
+#include "pma-constants.h"
 #include "pma.h"
+#include "riscv-constants.h"
 #include "rtc.h"
+#include "shadow-tlb.h"
 #include "strict-aliasing.h"
 
 namespace cartesi {

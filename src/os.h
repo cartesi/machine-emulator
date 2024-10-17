@@ -17,6 +17,7 @@
 #ifndef OS_H
 #define OS_H
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 

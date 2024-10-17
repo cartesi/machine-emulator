@@ -26,15 +26,12 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
-#include <type_traits>
-#include <utility>
 
 #include "i-virtual-machine.h"
 #include "json-util.h"
 #include "machine-config.h"
 #include "machine.h"
 #include "os-features.h"
-#include "semantic-version.h"
 #include "virtual-machine.h"
 
 #include "htif.h"

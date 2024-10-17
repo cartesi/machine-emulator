@@ -17,6 +17,7 @@
 #ifndef META_H
 #define META_H
 
+#include <cstdint>
 #include <type_traits>
 
 /// \file

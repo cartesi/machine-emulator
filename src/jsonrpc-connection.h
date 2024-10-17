@@ -17,11 +17,11 @@
 #ifndef JSONRPC_CONNECTION_H
 #define JSONRPC_CONNECTION_H
 
+#include <cstdint>
 #include <string>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#include "asio-config.h" // must be included before any ASIO header
 #include <boost/asio/io_context.hpp>
 #include <boost/beast/core/tcp_stream.hpp>
 #include <boost/container/static_vector.hpp>

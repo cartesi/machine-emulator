@@ -19,19 +19,32 @@
 
 /// \file
 /// \brief State access implementation that record and logs all accesses
+#include <cassert>
+#include <cstdint>
+#include <cstring>
 #include <memory>
+#include <stdexcept>
+#include <string>
+#include <utility>
 
+#include "access-log.h"
+#include "i-hasher.h"
+#include "i-state-access.h"
 #include "i-uarch-state-access.h"
 #include "machine-merkle-tree.h"
-
+#include "machine-state.h"
 #include "machine.h"
+#include "meta.h"
+#include "pma.h"
+#include "riscv-constants.h"
+#include "shadow-uarch-state.h"
+#include "strict-aliasing.h"
 #include "uarch-bridge.h"
 #include "uarch-constants.h"
-#include "uarch-machine.h"
-
 #include "uarch-pristine-state-hash.h"
-#include "uarch-solidity-compat.h"
-#include "unique-c-ptr.h"
+#include "uarch-pristine.h"
+#include "uarch-state.h"
+
 namespace cartesi {
 
 /// \details The uarch_record_state_access logs all access to the machine state.

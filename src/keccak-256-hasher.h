@@ -17,6 +17,8 @@
 #ifndef KECCAK_256_HASHER_H
 #define KECCAK_256_HASHER_H
 
+#include <cstddef>
+#include <cstdint>
 #include <type_traits>
 
 #include "i-hasher.h"

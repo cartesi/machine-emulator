@@ -20,6 +20,7 @@
 /// \file
 /// \brief Cartesi machine state structure definition.
 
+#include <array>
 #include <cstdint>
 
 #ifdef DUMP_HIST
@@ -28,6 +29,7 @@
 
 #include <boost/container/static_vector.hpp>
 
+#include "pma-constants.h"
 #include "pma.h"
 #include "riscv-constants.h"
 #include "shadow-tlb.h"

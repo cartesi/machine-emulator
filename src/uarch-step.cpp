@@ -19,14 +19,11 @@
 
 // NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)
 
-#include <stdexcept>
-
-#include "riscv-constants.h"
+#include "uarch-step.h"
 #include "uarch-record-state-access.h"
 #include "uarch-replay-state-access.h"
 #include "uarch-solidity-compat.h"
 #include "uarch-state-access.h"
-#include "uarch-step.h"
 
 namespace cartesi {
 

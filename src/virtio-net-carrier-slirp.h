@@ -21,17 +21,22 @@
 
 #ifdef HAVE_SLIRP
 
-#include "machine-config.h"
-#include "virtio-net.h"
-
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <list>
 #include <unordered_set>
 
 #include <slirp/libslirp.h>
-
 #if SLIRP_CONFIG_VERSION_MAX < 3
 #error "slirp version must be 3 or higher"
 #endif
+
+#include "i-device-state-access.h"
+#include "machine-config.h"
+#include "os.h"
+#include "virtio-device.h"
+#include "virtio-net.h"
 
 /// \brief Slirp constants
 enum slirp_constants {

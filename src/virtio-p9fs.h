@@ -21,11 +21,16 @@
 
 #ifdef HAVE_POSIX_FS
 
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <string>
+#include <unordered_map>
+
 #include "compiler-defines.h"
+#include "i-device-state-access.h"
 #include "virtio-device.h"
 #include "virtio-serializer.h"
-
-#include <unordered_map>
 
 namespace cartesi {
 
@@ -121,65 +126,65 @@ enum p9_opcode : uint8_t {
 
 /// \brief 9P2000.L errors
 enum p9_error : uint32_t {
-    P9_EOK = 0,              ///< No error
-    P9_EPERM = 1,            ///< Operation not permitted
-    P9_ENOENT = 2,           ///< No such file or directory
-    P9_ESRCH = 3,            ///< No such process
-    P9_EINTR = 4,            ///< Interrupted system call
-    P9_EIO = 5,              ///< I/O error
-    P9_ENXIO = 6,            ///< No such device or address
-    P9_E2BIG = 7,            ///< Argument list too long
-    P9_ENOEXEC = 8,          ///< Exec format error
-    P9_EBADF = 9,            ///< Bad file number
-    P9_ECHILD = 10,          ///< No child processes
-    P9_EAGAIN = 11,          ///< Try again
-    P9_ENOMEM = 12,          ///< Out of memory
-    P9_EACCES = 13,          ///< Permission denied
-    P9_EFAULT = 14,          ///< Bad address
-    P9_ENOTBLK = 15,         ///< Block device required
-    P9_EBUSY = 16,           ///< Device or resource busy
-    P9_EEXIST = 17,          ///< File exists
-    P9_EXDEV = 18,           ///< Cross-device link
-    P9_ENODEV = 19,          ///< No such device
-    P9_ENOTDIR = 20,         ///< Not a directory
-    P9_EISDIR = 21,          ///< Is a directory
-    P9_EINVAL = 22,          ///< Invalid argument
-    P9_ENFILE = 23,          ///< File table overflow
-    P9_EMFILE = 24,          ///< Too many open files
-    P9_ENOTTY = 25,          ///< Not a typewriter
-    P9_ETXTBSY = 26,         ///< Text file busy
-    P9_EFBIG = 27,           ///< File too large
-    P9_ENOSPC = 28,          ///< No space left on device
-    P9_ESPIPE = 29,          ///< Illegal seek
-    P9_EROFS = 30,           ///< Read-only file system
-    P9_EMLINK = 31,          ///< Too many links
-    P9_EPIPE = 32,           ///< Broken pipe
-    P9_EDOM = 33,            ///< Math argument out of domain of func
-    P9_ERANGE = 34,          ///< Math result not representable
-    P9_EDEADLK = 35,         ///< Resource deadlock would occur
-    P9_ENAMETOOLONG = 36,    ///< File name too long
-    P9_ENOLCK = 37,          ///< No record locks available
-    P9_ENOSYS = 38,          ///< Invalid system call number
-    P9_ENOTEMPTY = 39,       ///< Directory not empty
-    P9_ELOOP = 40,           ///< Too many symbolic links encountered
-    P9_EWOULDBLOCK = EAGAIN, ///< Operation would block
-    P9_ENOMSG = 42,          ///< No message of desired type
-    P9_EIDRM = 43,           ///< Identifier removed
-    P9_ECHRNG = 44,          ///< Channel number out of range
-    P9_EL2NSYNC = 45,        ///< Level 2 not synchronized
-    P9_EL3HLT = 46,          ///< Level 3 halted
-    P9_EL3RST = 47,          ///< Level 3 reset
-    P9_ELNRNG = 48,          ///< Link number out of range
-    P9_EUNATCH = 49,         ///< Protocol driver not attached
-    P9_ENOCSI = 50,          ///< No CSI structure available
-    P9_EL2HLT = 51,          ///< Level 2 halted
-    P9_EBADE = 52,           ///< Invalid exchange
-    P9_EBADR = 53,           ///< Invalid request descriptor
-    P9_EXFULL = 54,          ///< Exchange full
-    P9_ENOANO = 55,          ///< No anode
-    P9_EBADRQC = 56,         ///< Invalid request code
-    P9_EBADSLT = 57,         ///< Invalid slot
-    P9_EDEADLOCK = EDEADLK,
+    P9_EOK = 0,                 ///< No error
+    P9_EPERM = 1,               ///< Operation not permitted
+    P9_ENOENT = 2,              ///< No such file or directory
+    P9_ESRCH = 3,               ///< No such process
+    P9_EINTR = 4,               ///< Interrupted system call
+    P9_EIO = 5,                 ///< I/O error
+    P9_ENXIO = 6,               ///< No such device or address
+    P9_E2BIG = 7,               ///< Argument list too long
+    P9_ENOEXEC = 8,             ///< Exec format error
+    P9_EBADF = 9,               ///< Bad file number
+    P9_ECHILD = 10,             ///< No child processes
+    P9_EAGAIN = 11,             ///< Try again
+    P9_ENOMEM = 12,             ///< Out of memory
+    P9_EACCES = 13,             ///< Permission denied
+    P9_EFAULT = 14,             ///< Bad address
+    P9_ENOTBLK = 15,            ///< Block device required
+    P9_EBUSY = 16,              ///< Device or resource busy
+    P9_EEXIST = 17,             ///< File exists
+    P9_EXDEV = 18,              ///< Cross-device link
+    P9_ENODEV = 19,             ///< No such device
+    P9_ENOTDIR = 20,            ///< Not a directory
+    P9_EISDIR = 21,             ///< Is a directory
+    P9_EINVAL = 22,             ///< Invalid argument
+    P9_ENFILE = 23,             ///< File table overflow
+    P9_EMFILE = 24,             ///< Too many open files
+    P9_ENOTTY = 25,             ///< Not a typewriter
+    P9_ETXTBSY = 26,            ///< Text file busy
+    P9_EFBIG = 27,              ///< File too large
+    P9_ENOSPC = 28,             ///< No space left on device
+    P9_ESPIPE = 29,             ///< Illegal seek
+    P9_EROFS = 30,              ///< Read-only file system
+    P9_EMLINK = 31,             ///< Too many links
+    P9_EPIPE = 32,              ///< Broken pipe
+    P9_EDOM = 33,               ///< Math argument out of domain of func
+    P9_ERANGE = 34,             ///< Math result not representable
+    P9_EDEADLK = 35,            ///< Resource deadlock would occur
+    P9_ENAMETOOLONG = 36,       ///< File name too long
+    P9_ENOLCK = 37,             ///< No record locks available
+    P9_ENOSYS = 38,             ///< Invalid system call number
+    P9_ENOTEMPTY = 39,          ///< Directory not empty
+    P9_ELOOP = 40,              ///< Too many symbolic links encountered
+    P9_EWOULDBLOCK = P9_EAGAIN, ///< Operation would block
+    P9_ENOMSG = 42,             ///< No message of desired type
+    P9_EIDRM = 43,              ///< Identifier removed
+    P9_ECHRNG = 44,             ///< Channel number out of range
+    P9_EL2NSYNC = 45,           ///< Level 2 not synchronized
+    P9_EL3HLT = 46,             ///< Level 3 halted
+    P9_EL3RST = 47,             ///< Level 3 reset
+    P9_ELNRNG = 48,             ///< Link number out of range
+    P9_EUNATCH = 49,            ///< Protocol driver not attached
+    P9_ENOCSI = 50,             ///< No CSI structure available
+    P9_EL2HLT = 51,             ///< Level 2 halted
+    P9_EBADE = 52,              ///< Invalid exchange
+    P9_EBADR = 53,              ///< Invalid request descriptor
+    P9_EXFULL = 54,             ///< Exchange full
+    P9_ENOANO = 55,             ///< No anode
+    P9_EBADRQC = 56,            ///< Invalid request code
+    P9_EBADSLT = 57,            ///< Invalid slot
+    P9_EDEADLOCK = P9_EDEADLK,
     P9_EBFONT = 59,           ///< Bad font file format
     P9_ENOSTR = 60,           ///< Device not a stream
     P9_ENODATA = 61,          ///< No data available

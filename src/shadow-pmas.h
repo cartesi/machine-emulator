@@ -53,7 +53,7 @@ static inline uint64_t shadow_pmas_get_pma_rel_addr(int p) {
 
 /// \brief Obtains the absolute address of a PMA entry in shadow memory.
 static inline uint64_t shadow_pmas_get_pma_abs_addr(int p) {
-    return PMA_SHADOW_PMAS_START_DEF + shadow_pmas_get_pma_rel_addr(p);
+    return PMA_SHADOW_PMAS_START + shadow_pmas_get_pma_rel_addr(p);
 }
 
 } // namespace cartesi

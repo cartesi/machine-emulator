@@ -17,6 +17,9 @@
 #ifndef FULL_MERKLE_TREE_H
 #define FULL_MERKLE_TREE_H
 
+#include <cstdint>
+#include <vector>
+
 #include "keccak-256-hasher.h"
 #include "merkle-tree-proof.h"
 #include "pristine-merkle-tree.h"

@@ -21,15 +21,22 @@
 /// \brief State access implementation that replays recorded state accesses
 
 #include <cassert>
-#include <iomanip>
+#include <cstdint>
+#include <cstring>
+#include <ios>
 #include <sstream>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 #include "access-log.h"
+#include "i-hasher.h"
 #include "i-state-access.h"
 #include "machine-merkle-tree.h"
-#include "machine.h"
+#include "meta.h"
+#include "pma.h"
+#include "riscv-constants.h"
 #include "shadow-state.h"
-#include "uarch-solidity-compat.h"
 #include "unique-c-ptr.h"
 
 namespace cartesi {

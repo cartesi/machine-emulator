@@ -19,7 +19,6 @@
 
 #include <cstdint>
 
-#include "plic.h"
 #include "pma.h"
 
 namespace cartesi {

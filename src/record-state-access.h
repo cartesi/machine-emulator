@@ -21,11 +21,19 @@
 /// \brief State access implementation that records state accesses to an access log.
 
 #include <cassert>
+#include <cstdint>
+#include <cstring>
 #include <memory>
+#include <utility>
 
+#include "access-log.h"
+#include "i-hasher.h"
 #include "i-state-access.h"
 #include "machine-merkle-tree.h"
+#include "machine-state.h"
 #include "machine.h"
+#include "meta.h"
+#include "pma.h"
 #include "shadow-state.h"
 
 namespace cartesi {

@@ -16,6 +16,7 @@
 
 #include "shadow-uarch-state-factory.h"
 
+#include "shadow-uarch-state.h"
 #include <cstring>
 
 #include "machine.h"

@@ -17,7 +17,6 @@ Checks: >-
   -google-build-using-namespace,
   hicpp*,
   -hicpp-avoid-c-arrays,
-  -hicpp-multiway-paths-covered,
   -hicpp-no-array-decay,
   -hicpp-no-malloc,
   -hicpp-signed-bitwise,

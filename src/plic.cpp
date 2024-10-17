@@ -180,14 +180,12 @@ static execute_status plic_write(void * /*context*/, i_device_state_access *a, u
         return execute_status::failure;
     }
 
-    switch (offset) {
-        case plic_csr_rel_addr::claim_complete:
-            return plic_write_claim_complete(a, val);
-        default:
-            // Most CSRs in PLIC spec are WARL,
-            // therefore we just ignore writes
-            return execute_status::success;
+    if (offset == plic_csr_rel_addr::claim_complete) {
+        return plic_write_claim_complete(a, val);
     }
+    // Most CSRs in PLIC spec are WARL,
+    // therefore we just ignore writes
+    return execute_status::success;
 }
 
 void plic_set_pending_irq(i_device_state_access *a, uint32_t irq_id) {

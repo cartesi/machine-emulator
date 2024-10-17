@@ -245,7 +245,6 @@ struct virtq {
 
 /// \brief VirtIO device common interface
 class virtio_device {
-protected:
     uint32_t virtio_idx = 0;          ///< VirtIO device index
     uint32_t int_status = 0;          ///< Interrupt status mask (see virtio_status)
     uint32_t device_id = 0;           ///< Device id (see virtio_devices)
@@ -258,11 +257,16 @@ protected:
     uint32_t device_status = 0;       ///< Device status mask (see virtio_status)
     uint32_t config_generation = 0;   ///< Configuration generation counter
     uint32_t config_space_size = 0;   ///< Configuration size
-    bool driver_ok = false;           ///< True when the device was successfully initialized by the driver
+
+protected:
+    // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes)
+    bool driver_ok = false; ///< True when the device was successfully initialized by the driver
 
     // Use an array of uint32 instead of uint8, to make sure we can perform 4-byte aligned reads on config space
     std::array<uint32_t, VIRTIO_MAX_CONFIG_SPACE_SIZE / sizeof(uint32_t)> config_space{}; ///< Configuration space
     std::array<virtq, VIRTIO_QUEUE_COUNT> queue{};                                        ///< Virtqueues
+
+    // NOLINTEND(cppcoreguidelines-non-private-member-variables-in-classes)
 
 public:
     explicit virtio_device(uint32_t virtio_idx, uint32_t device_id, uint64_t device_features,

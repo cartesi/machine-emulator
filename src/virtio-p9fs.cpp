@@ -511,7 +511,7 @@ static bool is_name_legal(const std::string &name) {
 
 virtio_p9fs_device::virtio_p9fs_device(uint32_t virtio_idx, const std::string &mount_tag,
     const std::string &root_path) :
-    virtio_device(virtio_idx, VIRTIO_DEVICE_9P, VIRTIO_9P_F_MOUNT_TAG, VIRTIO_MAX_CONFIG_SPACE_SIZE),
+    virtio_device(virtio_idx, VIRTIO_DEVICE_9P, VIRTIO_9P_F_MOUNT_TAG, mount_tag.length() + sizeof(uint16_t)),
     m_msize(P9_MAX_MSIZE),
     m_root_path(root_path) {
     if (root_path.length() + 1 >= P9_ROOT_PATH_MAX) {
@@ -528,7 +528,6 @@ virtio_p9fs_device::virtio_p9fs_device(uint32_t virtio_idx, const std::string &m
     virtio_p9fs_config_space *config = get_config();
     strncpy(config->mount_tag.data(), mount_tag.c_str(), mount_tag.length());
     config->mount_tag_len = mount_tag.length();
-    config_space_size = mount_tag.length() + sizeof(uint16_t);
 }
 
 virtio_p9fs_device::~virtio_p9fs_device() {

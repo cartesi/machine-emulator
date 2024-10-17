@@ -23,8 +23,10 @@
 #include <inttypes.h>
 #include <stddef.h>
 
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define fprintf(a, ...) printf(__VA_ARGS__)
 
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define assert(a)                                                                                                      \
     if (!(a)) {                                                                                                        \
         printf("Assertion failed\n");                                                                                  \

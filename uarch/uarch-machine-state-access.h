@@ -39,12 +39,14 @@ namespace cartesi {
 
 template <typename T>
 static T raw_read_memory(uint64_t paddr) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,performance-no-int-to-ptr)
     volatile T *p = reinterpret_cast<T *>(paddr);
     return *p;
 }
 
 template <typename T>
 static void raw_write_memory(uint64_t paddr, T val) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,performance-no-int-to-ptr)
     volatile T *p = reinterpret_cast<T *>(paddr);
     *p = val;
 }
@@ -149,7 +151,7 @@ class uarch_machine_state_access : public i_state_access<uarch_machine_state_acc
     std::array<std::optional<uarch_pma_entry>, PMA_MAX> m_pmas;
 
 public:
-    uarch_machine_state_access() {}
+    uarch_machine_state_access() = default;
     uarch_machine_state_access(const uarch_machine_state_access &other) = delete;
     uarch_machine_state_access(uarch_machine_state_access &&other) = delete;
     uarch_machine_state_access &operator=(const uarch_machine_state_access &other) = delete;
@@ -159,10 +161,12 @@ public:
 private:
     friend i_state_access<uarch_machine_state_access, uarch_pma_entry>;
 
+    // NOLINTBEGIN(readability-convert-member-functions-to-static)
+
     void do_push_bracket(bracket_type /*type*/, const char */*text*/) {
     }
 
-    int do_make_scoped_note(const char */*text*/) { // NOLINT(readability-convert-member-functions-to-static)
+    int do_make_scoped_note(const char */*text*/) {
         return 0;
     }
 
@@ -564,7 +568,7 @@ private:
     template <typename T>
     uarch_pma_entry &do_find_pma_entry(uint64_t paddr) {
         for (unsigned int i = 0; i < m_pmas.size(); i++) {
-            auto &pma = get_pma_entry(i);
+            auto &pma = get_pma_entry(static_cast<int>(i));
             if (pma.get_istart_E()) {
                 return pma;
             }
@@ -576,11 +580,12 @@ private:
     }
 
     uarch_pma_entry &do_get_pma_entry(int index) {
-        uint64_t istart = read_pma_istart(index);
-        uint64_t ilength = read_pma_ilength(index);
+        const uint64_t istart = read_pma_istart(index);
+        const uint64_t ilength = read_pma_ilength(index);
         if (!m_pmas[index]) {
             m_pmas[index] = build_uarch_pma_entry(index, istart, ilength);
         }
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         return m_pmas[index].value();
     }
 
@@ -599,7 +604,7 @@ private:
     }
 
     uarch_pma_entry build_uarch_pma_entry(int index, uint64_t istart, uint64_t ilength) {
-        uint64_t start;
+        uint64_t start = 0;
         uarch_pma_entry::flags flags;
         split_istart(istart, start, flags);
         const pma_driver *driver = nullptr;
@@ -634,14 +639,14 @@ private:
     }
 
     static constexpr void split_istart(uint64_t istart, uint64_t &start, uarch_pma_entry::flags &f) {
-        f.M = (istart & PMA_ISTART_M_MASK) >> PMA_ISTART_M_SHIFT;
-        f.IO = (istart & PMA_ISTART_IO_MASK) >> PMA_ISTART_IO_SHIFT;
-        f.E = (istart & PMA_ISTART_E_MASK) >> PMA_ISTART_E_SHIFT;
-        f.R = (istart & PMA_ISTART_R_MASK) >> PMA_ISTART_R_SHIFT;
-        f.W = (istart & PMA_ISTART_W_MASK) >> PMA_ISTART_W_SHIFT;
-        f.X = (istart & PMA_ISTART_X_MASK) >> PMA_ISTART_X_SHIFT;
-        f.IR = (istart & PMA_ISTART_IR_MASK) >> PMA_ISTART_IR_SHIFT;
-        f.IW = (istart & PMA_ISTART_IW_MASK) >> PMA_ISTART_IW_SHIFT;
+        f.M = (((istart & PMA_ISTART_M_MASK) >> PMA_ISTART_M_SHIFT) != 0);
+        f.IO = (((istart & PMA_ISTART_IO_MASK) >> PMA_ISTART_IO_SHIFT) != 0);
+        f.E = (((istart & PMA_ISTART_E_MASK) >> PMA_ISTART_E_SHIFT) != 0);
+        f.R = (((istart & PMA_ISTART_R_MASK) >> PMA_ISTART_R_SHIFT) != 0);
+        f.W = (((istart & PMA_ISTART_W_MASK) >> PMA_ISTART_W_SHIFT) != 0);
+        f.X = (((istart & PMA_ISTART_X_MASK) >> PMA_ISTART_X_SHIFT) != 0);
+        f.IR = (((istart & PMA_ISTART_IR_MASK) >> PMA_ISTART_IR_SHIFT) != 0);
+        f.IW = (((istart & PMA_ISTART_IW_MASK) >> PMA_ISTART_IW_SHIFT) != 0);
         f.DID = static_cast<PMA_ISTART_DID>((istart & PMA_ISTART_DID_MASK) >> PMA_ISTART_DID_SHIFT);
         start = istart & PMA_ISTART_START_MASK;
     }
@@ -649,6 +654,7 @@ private:
     template <TLB_entry_type ETYPE>
     volatile tlb_hot_entry& do_get_tlb_hot_entry(uint64_t eidx) {
         // Volatile is used, so the compiler does not optimize out, or do of order writes.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,performance-no-int-to-ptr)
         volatile tlb_hot_entry *tlbe = reinterpret_cast<tlb_hot_entry *>(tlb_get_entry_hot_abs_addr<ETYPE>(eidx));
         return *tlbe;
     }
@@ -656,6 +662,7 @@ private:
     template <TLB_entry_type ETYPE>
     volatile tlb_cold_entry& do_get_tlb_entry_cold(uint64_t eidx) {
         // Volatile is used, so the compiler does not optimize out, or do of order writes.
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,performance-no-int-to-ptr)
         volatile tlb_cold_entry *tlbe = reinterpret_cast<tlb_cold_entry *>(tlb_get_entry_cold_abs_addr<ETYPE>(eidx));
         return *tlbe;
     }
@@ -665,7 +672,7 @@ private:
         uint64_t eidx = tlb_get_entry_index(vaddr);
         const volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
         if (tlb_is_hit<T>(tlbhe.vaddr_page, vaddr)) {
-            uint64_t poffset = vaddr & PAGE_OFFSET_MASK;
+            const uint64_t poffset = vaddr & PAGE_OFFSET_MASK;
             const volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
             *phptr = cast_addr_to_ptr<unsigned char *>(tlbce.paddr_page + poffset);
             return true;
@@ -678,7 +685,7 @@ private:
         uint64_t eidx = tlb_get_entry_index(vaddr);
         const volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
         if (tlb_is_hit<T>(tlbhe.vaddr_page, vaddr)) {
-            uint64_t poffset = vaddr & PAGE_OFFSET_MASK;
+            const uint64_t poffset = vaddr & PAGE_OFFSET_MASK;
             const volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
             *pval = raw_read_memory<T>(tlbce.paddr_page + poffset);
             return true;
@@ -691,7 +698,7 @@ private:
         uint64_t eidx = tlb_get_entry_index(vaddr);
         volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
         if (tlb_is_hit<T>(tlbhe.vaddr_page, vaddr)) {
-            uint64_t poffset = vaddr & PAGE_OFFSET_MASK;
+            const uint64_t poffset = vaddr & PAGE_OFFSET_MASK;
             const volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
             raw_write_memory(tlbce.paddr_page + poffset, val);
             return true;
@@ -711,8 +718,8 @@ private:
                 pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
             }
         }
-        uint64_t vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
-        uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
+        const uint64_t vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
+        const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
         // Both pma_index and paddr_page MUST BE written while its state is invalidated,
         // otherwise TLB entry may be read in an incomplete state when computing root hash
         // while stepping over this function.
@@ -735,7 +742,7 @@ private:
         if constexpr (ETYPE == TLB_WRITE) {
             if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
                 tlbhe.vaddr_page = TLB_INVALID_PAGE;
-                volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
+                const volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
                 uarch_pma_entry &pma = do_get_pma_entry(static_cast<int>(tlbce.pma_index));
                 pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
             } else {
@@ -763,6 +770,8 @@ private:
         // Soft yield is meaningless in microarchitecture
         return false;
     }
+
+    // NOLINTEND(readability-convert-member-functions-to-static)
 };
 
 } // namespace cartesi

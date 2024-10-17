@@ -89,6 +89,7 @@ cm_error cm_jsonrpc_connect(const char *address, int detach_server, cm_jsonrpc_c
     return cm_result_failure();
 }
 
+#ifdef HAVE_FORK
 static boost::asio::ip::tcp::endpoint address_to_endpoint(const std::string &address) {
     try {
         const auto pos = address.find_last_of(':');
@@ -108,6 +109,7 @@ static std::string endpoint_to_string(const boost::asio::ip::tcp::endpoint &endp
     ss << endpoint;
     return ss.str();
 }
+#endif
 
 cm_error cm_jsonrpc_spawn_server(const char *address, int detach_server, cm_jsonrpc_connection **con,
     const char **bound_address, int32_t *pid) try {
@@ -131,6 +133,7 @@ cm_error cm_jsonrpc_spawn_server(const char *address, int detach_server, cm_json
     if (pid == nullptr) {
         throw std::invalid_argument("invalid pid output");
     }
+#ifdef HAVE_FORK
     sigset_t mask{};
     sigset_t omask{};
     sigemptyset(&mask);        // always returns 0
@@ -239,6 +242,10 @@ cm_error cm_jsonrpc_spawn_server(const char *address, int detach_server, cm_json
         }
     }
     return cm_result_success(); // code never reaches here
+#else
+    throw std::runtime_error{"spawn is unsupported in this platform"};
+
+#endif
 } catch (...) {
     *con = nullptr;
     *bound_address = nullptr;

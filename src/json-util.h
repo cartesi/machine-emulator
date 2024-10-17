@@ -29,8 +29,8 @@
 
 #include "access-log.h"
 #include "bracket-note.h"
+#include "fork-result.h"
 #include "interpret.h"
-#include "jsonrpc-connection.h"
 #include "machine-config.h"
 #include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"

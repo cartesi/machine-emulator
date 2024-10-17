@@ -76,14 +76,10 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_push_bracket(bracket_type type, const char *text) {
-        (void) type;
-        (void) text;
-    }
+    void do_push_bracket(bracket_type /*type*/, const char * /*text*/) {}
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    int do_make_scoped_note(const char *text) {
-        (void) text;
+    int do_make_scoped_note(const char * /*text*/) {
         return 0;
     }
 
@@ -483,14 +479,12 @@ private:
     }
 
     template <typename T>
-    void do_read_memory_word(uint64_t paddr, const unsigned char *hpage, uint64_t hoffset, T *pval) const {
-        (void) paddr;
+    void do_read_memory_word(uint64_t /*paddr*/, const unsigned char *hpage, uint64_t hoffset, T *pval) const {
         *pval = aliased_aligned_read<T>(hpage + hoffset);
     }
 
     template <typename T>
-    void do_write_memory_word(uint64_t paddr, unsigned char *hpage, uint64_t hoffset, T val) {
-        (void) paddr;
+    void do_write_memory_word(uint64_t /*paddr*/, unsigned char *hpage, uint64_t hoffset, T val) {
         aliased_aligned_write(hpage + hoffset, val);
     }
 
@@ -654,8 +648,7 @@ private:
         }
     }
 
-    void do_flush_tlb_vaddr(uint64_t vaddr) {
-        (void) vaddr;
+    void do_flush_tlb_vaddr(uint64_t /*vaddr*/) {
         // We can't flush just one TLB entry for that specific virtual address,
         // because megapages/gigapages may be in use while this TLB implementation ignores it,
         // so we have to flush all addresses.

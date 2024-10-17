@@ -121,7 +121,7 @@ static const std::array<const char *, F_REG_COUNT> f_reg_name{"ft0", "ft1", "ft2
     "fs8", "fs9", "fs10", "fs11", "ft8", "ft9", "ft10", "ft11"};
 
 static void print_uint64_t(uint64_t a) {
-    (void) fprintf(stderr, "%016" PRIx64, a);
+    std::ignore = fprintf(stderr, "%016" PRIx64, a);
 }
 #endif
 
@@ -158,94 +158,94 @@ static void dump_exception_or_interrupt(uint64_t cause, STATE &s) {
     if ((cause & MCAUSE_INTERRUPT_FLAG) != 0) {
         switch (cause & ~MCAUSE_INTERRUPT_FLAG) {
             case 0:
-                (void) fprintf(stderr, "reserved software interrupt");
+                std::ignore = fprintf(stderr, "reserved software interrupt");
                 break;
             case 1:
-                (void) fprintf(stderr, "supervisor software interrupt");
+                std::ignore = fprintf(stderr, "supervisor software interrupt");
                 break;
             case 2:
-                (void) fprintf(stderr, "reserved software interrupt");
+                std::ignore = fprintf(stderr, "reserved software interrupt");
                 break;
             case 3:
-                (void) fprintf(stderr, "machine software interrupt");
+                std::ignore = fprintf(stderr, "machine software interrupt");
                 break;
             case 4:
-                (void) fprintf(stderr, "reserved timer interrupt");
+                std::ignore = fprintf(stderr, "reserved timer interrupt");
                 break;
             case 5:
-                (void) fprintf(stderr, "supervisor timer interrupt");
+                std::ignore = fprintf(stderr, "supervisor timer interrupt");
                 break;
             case 6:
-                (void) fprintf(stderr, "reserved timer interrupt");
+                std::ignore = fprintf(stderr, "reserved timer interrupt");
                 break;
             case 7:
-                (void) fprintf(stderr, "machine timer interrupt");
+                std::ignore = fprintf(stderr, "machine timer interrupt");
                 break;
             case 8:
-                (void) fprintf(stderr, "reserved external interrupt");
+                std::ignore = fprintf(stderr, "reserved external interrupt");
                 break;
             case 9:
-                (void) fprintf(stderr, "supervisor external interrupt");
+                std::ignore = fprintf(stderr, "supervisor external interrupt");
                 break;
             case 10:
-                (void) fprintf(stderr, "reserved external interrupt");
+                std::ignore = fprintf(stderr, "reserved external interrupt");
                 break;
             case 11:
-                (void) fprintf(stderr, "machine external interrupt");
+                std::ignore = fprintf(stderr, "machine external interrupt");
                 break;
             default:
-                (void) fprintf(stderr, "unknown interrupt");
+                std::ignore = fprintf(stderr, "unknown interrupt");
                 break;
         }
     } else {
         switch (cause) {
             case 0:
-                (void) fprintf(stderr, "instruction address misaligned");
+                std::ignore = fprintf(stderr, "instruction address misaligned");
                 break;
             case 1:
-                (void) fprintf(stderr, "instruction access fault");
+                std::ignore = fprintf(stderr, "instruction access fault");
                 break;
             case 2:
-                (void) fprintf(stderr, "illegal instruction");
+                std::ignore = fprintf(stderr, "illegal instruction");
                 break;
             case 3:
-                (void) fprintf(stderr, "breakpoint");
+                std::ignore = fprintf(stderr, "breakpoint");
                 break;
             case 4:
-                (void) fprintf(stderr, "load address misaligned");
+                std::ignore = fprintf(stderr, "load address misaligned");
                 break;
             case 5:
-                (void) fprintf(stderr, "load access fault");
+                std::ignore = fprintf(stderr, "load access fault");
                 break;
             case 6:
-                (void) fprintf(stderr, "store/amo address misaligned");
+                std::ignore = fprintf(stderr, "store/amo address misaligned");
                 break;
             case 7:
-                (void) fprintf(stderr, "store/amo access fault");
+                std::ignore = fprintf(stderr, "store/amo access fault");
                 break;
             case 8:
-                (void) fprintf(stderr, "ecall %d from u-mode", static_cast<int>(a7));
+                std::ignore = fprintf(stderr, "ecall %d from u-mode", static_cast<int>(a7));
                 break;
             case 9:
-                (void) fprintf(stderr, "ecall %s(%d) from s-mode", sbi_ecall_name(a7), static_cast<int>(a7));
+                std::ignore = fprintf(stderr, "ecall %s(%d) from s-mode", sbi_ecall_name(a7), static_cast<int>(a7));
                 break;
             case 10:
-                (void) fprintf(stderr, "ecall %d reserved", static_cast<int>(a7));
+                std::ignore = fprintf(stderr, "ecall %d reserved", static_cast<int>(a7));
                 break;
             case 11:
-                (void) fprintf(stderr, "ecall %s(%d) from m-mode", sbi_ecall_name(a7), static_cast<int>(a7));
+                std::ignore = fprintf(stderr, "ecall %s(%d) from m-mode", sbi_ecall_name(a7), static_cast<int>(a7));
                 break;
             case 12:
-                (void) fprintf(stderr, "instruction page fault");
+                std::ignore = fprintf(stderr, "instruction page fault");
                 break;
             case 13:
-                (void) fprintf(stderr, "load page fault");
+                std::ignore = fprintf(stderr, "load page fault");
                 break;
             case 15:
-                (void) fprintf(stderr, "store/amo page fault");
+                std::ignore = fprintf(stderr, "store/amo page fault");
                 break;
             default:
-                (void) fprintf(stderr, "reserved");
+                std::ignore = fprintf(stderr, "reserved");
                 break;
         }
     }
@@ -257,40 +257,40 @@ template <typename STATE>
 static void dump_regs(const STATE &s) {
     const std::array<char, 5> priv_str{"USHM"};
     int cols = 256 / XLEN;
-    (void) fprintf(stderr, "pc = ");
+    std::ignore = fprintf(stderr, "pc = ");
     print_uint64_t(s.pc);
-    (void) fprintf(stderr, " ");
+    std::ignore = fprintf(stderr, " ");
     for (int i = 1; i < X_REG_COUNT; i++) {
-        (void) fprintf(stderr, "%-3s= ", reg_name[i]);
+        std::ignore = fprintf(stderr, "%-3s= ", reg_name[i]);
         print_uint64_t(s.x[i]);
         if ((i & (cols - 1)) == (cols - 1)) {
-            (void) fprintf(stderr, "\n");
+            std::ignore = fprintf(stderr, "\n");
         } else {
-            (void) fprintf(stderr, " ");
+            std::ignore = fprintf(stderr, " ");
         }
     }
     for (int i = 0; i < F_REG_COUNT; i++) {
-        (void) fprintf(stderr, "%-3s= ", f_reg_name[i]);
+        std::ignore = fprintf(stderr, "%-3s= ", f_reg_name[i]);
         print_uint64_t(s.f[i]);
         if ((i & (cols - 1)) == (cols - 1)) {
-            (void) fprintf(stderr, "\n");
+            std::ignore = fprintf(stderr, "\n");
         } else {
-            (void) fprintf(stderr, " ");
+            std::ignore = fprintf(stderr, " ");
         }
     }
-    (void) fprintf(stderr, "priv=%c", priv_str[s.iflags.PRV]);
-    (void) fprintf(stderr, " mstatus=");
+    std::ignore = fprintf(stderr, "priv=%c", priv_str[s.iflags.PRV]);
+    std::ignore = fprintf(stderr, " mstatus=");
     print_uint64_t(s.mstatus);
-    (void) fprintf(stderr, " cycles=%" PRId64, s.mcycle);
-    (void) fprintf(stderr, " insns=%" PRId64, s.mcycle - s.icycleinstret);
-    (void) fprintf(stderr, "\n");
-    (void) fprintf(stderr, "mideleg=");
+    std::ignore = fprintf(stderr, " cycles=%" PRId64, s.mcycle);
+    std::ignore = fprintf(stderr, " insns=%" PRId64, s.mcycle - s.icycleinstret);
+    std::ignore = fprintf(stderr, "\n");
+    std::ignore = fprintf(stderr, "mideleg=");
     print_uint64_t(s.mideleg);
-    (void) fprintf(stderr, " mie=");
+    std::ignore = fprintf(stderr, " mie=");
     print_uint64_t(s.mie);
-    (void) fprintf(stderr, " mip=");
+    std::ignore = fprintf(stderr, " mip=");
     print_uint64_t(s.mip);
-    (void) fprintf(stderr, "\n");
+    std::ignore = fprintf(stderr, "\n");
 }
 #endif
 
@@ -360,13 +360,13 @@ static NO_INLINE uint64_t raise_exception(STATE_ACCESS &a, uint64_t pc, uint64_t
             flag = 1;
 #endif
         if (flag) {
-            (void) fprintf(stderr, "raise_exception: cause=0x");
+            std::ignore = fprintf(stderr, "raise_exception: cause=0x");
             print_uint64_t(cause);
-            (void) fprintf(stderr, " tval=0x");
+            std::ignore = fprintf(stderr, " tval=0x");
             print_uint64_t(tval);
-            (void) fprintf(stderr, " (");
+            std::ignore = fprintf(stderr, " (");
             dump_exception_or_interrupt(cause, a.get_naked_state());
-            (void) fprintf(stderr, ")\n");
+            std::ignore = fprintf(stderr, ")\n");
 #ifdef DUMP_REGS
             dump_regs(a.get_naked_state());
 #endif
@@ -957,7 +957,8 @@ static FORCE_INLINE execute_status write_virtual_memory(STATE_ACCESS &a, uint64_
 }
 
 template <typename STATE_ACCESS>
-static void dump_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const char *name) {
+static void dump_insn([[maybe_unused]] STATE_ACCESS &a, [[maybe_unused]] uint64_t pc, [[maybe_unused]] uint32_t insn,
+    [[maybe_unused]] const char *name) {
 #ifdef DUMP_HIST
     a.get_naked_state().insn_hist[name]++;
 #endif
@@ -978,11 +979,6 @@ static void dump_insn(STATE_ACCESS &a, uint64_t pc, uint32_t insn, const char *n
     }
     fprintf(stderr, ":   %08" PRIx32 "   ", insn);
     fprintf(stderr, "%s\n", name);
-#else
-    (void) a;
-    (void) pc;
-    (void) insn;
-    (void) name;
 #endif
 }
 
@@ -1019,9 +1015,7 @@ static FORCE_INLINE execute_status raise_misaligned_fetch_exception(STATE_ACCESS
 /// \return execute_status::failure
 /// \details This function is tail-called whenever the caller identified a raised exception.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status advance_to_raised_exception(STATE_ACCESS &a, uint64_t &pc) {
-    (void) a;
-    (void) pc;
+static FORCE_INLINE execute_status advance_to_raised_exception(STATE_ACCESS & /*a*/, uint64_t & /*pc*/) {
     return execute_status::failure;
 }
 
@@ -1034,9 +1028,8 @@ static FORCE_INLINE execute_status advance_to_raised_exception(STATE_ACCESS &a, 
 /// \return status
 /// \details This function is tail-called whenever the caller wants move to the next instruction.
 template <uint64_t size = 4, typename STATE_ACCESS>
-static FORCE_INLINE execute_status advance_to_next_insn(STATE_ACCESS &a, uint64_t &pc,
+static FORCE_INLINE execute_status advance_to_next_insn(STATE_ACCESS & /*a*/, uint64_t &pc,
     execute_status status = execute_status::success) {
-    (void) a;
     pc += static_cast<uint32_t>(size);
     return status;
 }
@@ -1048,8 +1041,7 @@ static FORCE_INLINE execute_status advance_to_next_insn(STATE_ACCESS &a, uint64_
 /// \return execute_status::success
 /// \details This function is tail-called whenever the caller wants to jump.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_jump(STATE_ACCESS &a, uint64_t &pc, uint64_t new_pc) {
-    (void) a;
+static FORCE_INLINE execute_status execute_jump(STATE_ACCESS & /*a*/, uint64_t &pc, uint64_t new_pc) {
     pc = new_pc;
     return execute_status::success;
 }
@@ -1105,9 +1097,6 @@ static FORCE_INLINE execute_status execute_SC(STATE_ACCESS &a, uint64_t &pc, uin
 /// \brief Implementation of the LR.W instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_LR_W(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
-    (void) a;
-    (void) pc;
-    (void) insn;
     if (unlikely((insn & 0b00000001111100000000000000000000) != 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
@@ -1150,10 +1139,7 @@ static FORCE_INLINE execute_status execute_AMO(STATE_ACCESS &a, uint64_t &pc, ui
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_AMOSWAP_W(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "amoswap.w");
-    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t valm, int32_t valr) -> int32_t {
-        (void) valm;
-        return valr;
-    });
+    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t /*valm*/, int32_t valr) -> int32_t { return valr; });
 }
 
 /// \brief Implementation of the AMOADD.W instruction.
@@ -1256,10 +1242,7 @@ static FORCE_INLINE execute_status execute_SC_D(STATE_ACCESS &a, uint64_t &pc, u
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_AMOSWAP_D(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "amoswap.d");
-    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](int64_t valm, int64_t valr) -> int64_t {
-        (void) valm;
-        return valr;
-    });
+    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](int64_t /*valm*/, int64_t valr) -> int64_t { return valr; });
 }
 
 /// \brief Implementation of the AMOADD.D instruction.
@@ -1475,9 +1458,6 @@ static FORCE_INLINE execute_status execute_REMUW(STATE_ACCESS &a, uint64_t &pc, 
     if (unlikely((insn & 0b11111110000000000111000001111111) != 0b00000010000000000111000000111011)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    (void) a;
-    (void) pc;
-    (void) insn;
     dump_insn(a, pc, insn, "remuw");
     return execute_arithmetic(a, pc, insn, [](uint64_t rs1, uint64_t rs2) -> uint64_t {
         auto rs1w = static_cast<uint32_t>(rs1);
@@ -2145,15 +2125,13 @@ static execute_status write_csr_minstret(STATE_ACCESS &a, uint64_t mcycle, uint6
 }
 
 template <typename STATE_ACCESS>
-static execute_status write_csr_mcycle(STATE_ACCESS &a, uint64_t val) {
+static execute_status write_csr_mcycle(STATE_ACCESS & /*a*/, uint64_t /*val*/) {
     // We can't allow writes to mcycle because we use it to measure the progress in machine execution.
     // The specs say it is an MRW CSR, read-writeable in M-mode.
     // BBL enables all counters in both M- and S-modes.
     // In Spike, QEMU, and riscvemu, mcycle and minstret are the aliases for the same counter.
     // QEMU calls exit (!) on writes to mcycle or minstret.
     // We instead raise an exception.
-    (void) a;
-    (void) val;
     return execute_status::failure;
 }
 
@@ -2539,7 +2517,6 @@ static FORCE_INLINE execute_status execute_ECALL(STATE_ACCESS &a, uint64_t &pc, 
 /// \brief Implementation of the EBREAK instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_EBREAK(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    (void) a;
     dump_insn(a, pc, insn, "ebreak");
     pc = raise_exception(a, pc, MCAUSE_BREAKPOINT, pc);
     return execute_status::failure;
@@ -2636,7 +2613,6 @@ static FORCE_INLINE execute_status execute_WFI(STATE_ACCESS &a, uint64_t &pc, ui
 /// \brief Implementation of the FENCE instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FENCE(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    (void) insn;
     INC_COUNTER(a.get_statistics(), fence);
     dump_insn(a, pc, insn, "fence");
     // Really do nothing
@@ -2646,7 +2622,6 @@ static FORCE_INLINE execute_status execute_FENCE(STATE_ACCESS &a, uint64_t &pc, 
 /// \brief Implementation of the FENCE.I instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FENCE_I(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    (void) insn;
     INC_COUNTER(a.get_statistics(), fence_i);
     dump_insn(a, pc, insn, "fence.i");
     // Really do nothing
@@ -3905,8 +3880,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSGNJ_S(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsgnj.s");
     return execute_float_binary_op<uint32_t>(a, pc, insn,
-        [](uint32_t s1, uint32_t s2, const uint32_t *fflags) -> uint32_t {
-            (void) fflags;
+        [](uint32_t s1, uint32_t s2, const uint32_t * /*fflags*/) -> uint32_t {
             return (s1 & ~i_sfloat32::SIGN_MASK) | (s2 & i_sfloat32::SIGN_MASK);
         });
 }
@@ -3915,8 +3889,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSGNJN_S(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsgnjn.s");
     return execute_float_binary_op<uint32_t>(a, pc, insn,
-        [](uint32_t s1, uint32_t s2, const uint32_t *fflags) -> uint32_t {
-            (void) fflags;
+        [](uint32_t s1, uint32_t s2, const uint32_t * /*fflags*/) -> uint32_t {
             return (s1 & ~i_sfloat32::SIGN_MASK) | ((s2 & i_sfloat32::SIGN_MASK) ^ i_sfloat32::SIGN_MASK);
         });
 }
@@ -3925,8 +3898,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSGNJX_S(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsgnjx.s");
     return execute_float_binary_op<uint32_t>(a, pc, insn,
-        [](uint32_t s1, uint32_t s2, const uint32_t *fflags) -> uint32_t {
-            (void) fflags;
+        [](uint32_t s1, uint32_t s2, const uint32_t * /*fflags*/) -> uint32_t {
             return s1 ^ (s2 & i_sfloat32::SIGN_MASK);
         });
 }
@@ -3949,8 +3921,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSGNJ_D(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsgnj.d");
     return execute_float_binary_op<uint64_t>(a, pc, insn,
-        [](uint64_t s1, uint64_t s2, const uint32_t *fflags) -> uint64_t {
-            (void) fflags;
+        [](uint64_t s1, uint64_t s2, const uint32_t * /*fflags*/) -> uint64_t {
             return (s1 & ~i_sfloat64::SIGN_MASK) | (s2 & i_sfloat64::SIGN_MASK);
         });
 }
@@ -3959,8 +3930,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSGNJN_D(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsgnjn.d");
     return execute_float_binary_op<uint64_t>(a, pc, insn,
-        [](uint64_t s1, uint64_t s2, const uint32_t *fflags) -> uint64_t {
-            (void) fflags;
+        [](uint64_t s1, uint64_t s2, const uint32_t * /*fflags*/) -> uint64_t {
             return (s1 & ~i_sfloat64::SIGN_MASK) | ((s2 & i_sfloat64::SIGN_MASK) ^ i_sfloat64::SIGN_MASK);
         });
 }
@@ -3969,8 +3939,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FSGNJX_D(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsgnjx.d");
     return execute_float_binary_op<uint64_t>(a, pc, insn,
-        [](uint64_t s1, uint64_t s2, const uint32_t *fflags) -> uint64_t {
-            (void) fflags;
+        [](uint64_t s1, uint64_t s2, const uint32_t * /*fflags*/) -> uint64_t {
             return s1 ^ (s2 & i_sfloat64::SIGN_MASK);
         });
 }
@@ -4115,9 +4084,8 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FCVT_D_S(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fcvt.d.s");
     return execute_FCVT_F_F<uint32_t, uint64_t>(a, pc, insn,
-        [](uint32_t s1, uint32_t rm, uint32_t *fflags) -> uint64_t {
+        [](uint32_t s1, uint32_t /*rm*/, uint32_t *fflags) -> uint64_t {
             // FCVT.D.S will never round, since it's a widen operation.
-            (void) rm;
             return sfloat_cvt_f32_f64(s1, fflags);
         });
 }
@@ -4674,7 +4642,6 @@ static FORCE_INLINE execute_status execute_C_SD(STATE_ACCESS &a, uint64_t &pc, u
 /// \brief Implementation of the C.NOP instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_NOP(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    (void) insn;
     dump_insn(a, pc, insn, "c.nop");
     // C.NOP with imm != 0 is just a HINT that must execute as no-op (see RISC-V spec)
     // Really do nothing
@@ -5520,8 +5487,7 @@ static FORCE_INLINE fetch_status fetch_insn(STATE_ACCESS &a, uint64_t &pc, uint3
 
 /// \brief Checks that false brk is consistent with rest of state
 template <typename STATE_ACCESS>
-static void assert_no_brk(STATE_ACCESS &a) {
-    (void) a;
+static void assert_no_brk([[maybe_unused]] STATE_ACCESS &a) {
     assert(get_pending_irq_mask(a) == 0); // LCOV_EXCL_LINE
     assert(a.read_iflags_X() == 0);       // LCOV_EXCL_LINE
     assert(a.read_iflags_Y() == 0);       // LCOV_EXCL_LINE

@@ -32,8 +32,7 @@ void virtio_console::on_device_ok(i_device_state_access *a) {
 }
 
 bool virtio_console::on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
-    uint32_t read_avail_len, uint32_t write_avail_len) {
-    (void) write_avail_len;
+    uint32_t read_avail_len, uint32_t /*write_avail_len*/) {
     if (queue_idx == VIRTIO_CONSOLE_RECEIVEQ) { // Guest has a new slot available in the write queue
         // Do nothing, host stdin characters will be written to the guest in the next poll
         return false;

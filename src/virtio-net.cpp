@@ -28,14 +28,12 @@ void virtio_net::on_device_reset() {
     m_carrier->reset();
 }
 
-void virtio_net::on_device_ok(i_device_state_access *a) {
-    (void) a;
+void virtio_net::on_device_ok(i_device_state_access * /*a*/) {
     // Nothing to do.
 }
 
 bool virtio_net::on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
-    uint32_t read_avail_len, uint32_t write_avail_len) {
-    (void) write_avail_len;
+    uint32_t read_avail_len, uint32_t /*write_avail_len*/) {
     if (queue_idx == VIRTIO_NET_RECEIVEQ) { // Guest has a new slot available in the write queue
         // Write any pending packets from host to guest
         return poll_nowait(a);

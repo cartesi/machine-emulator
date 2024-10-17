@@ -68,9 +68,9 @@ static bool intval(const char *pre, const char *str, int *val) {
 /// \param f File to print to
 static void print_hash(const hash_type &hash, FILE *f) {
     for (auto b : hash) {
-        (void) fprintf(f, "%02x", static_cast<int>(b));
+        std::ignore = fprintf(f, "%02x", static_cast<int>(b));
     }
-    (void) fprintf(f, "\n");
+    std::ignore = fprintf(f, "\n");
 }
 
 // NOLINTNEXTLINE
@@ -104,7 +104,7 @@ static std::optional<hash_type> read_hash(FILE *f) {
 __attribute__((format(printf, 1, 2))) static void error(const char *fmt, ...) {
     va_list ap{};
     va_start(ap, fmt);
-    (void) vfprintf(stderr, fmt, ap);
+    std::ignore = vfprintf(stderr, fmt, ap);
     va_end(ap);
     exit(1);
 }
@@ -155,7 +155,7 @@ static hash_type get_leaf_hash(const unsigned char *leaf_data, int log2_leaf_siz
 
 /// \brief Prints help message
 static void help(const char *name) {
-    (void) fprintf(stderr, R"(Usage:
+    std::ignore = fprintf(stderr, R"(Usage:
 
   %s --log2-root-size=<integer> [options]
 

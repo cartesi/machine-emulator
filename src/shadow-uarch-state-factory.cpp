@@ -23,9 +23,8 @@
 namespace cartesi {
 
 /// \brief Shadow uarch state device peek callback. See ::pma_peek.
-static bool shadow_uarch_state_peek(const pma_entry &pma, const machine &m, uint64_t page_offset,
+static bool shadow_uarch_state_peek(const pma_entry & /*pma*/, const machine &m, uint64_t page_offset,
     const unsigned char **page_data, unsigned char *scratch) {
-    (void) pma;
     static_assert(sizeof(shadow_uarch_state) <= PMA_PAGE_SIZE);
 
     // There is only one page: 0

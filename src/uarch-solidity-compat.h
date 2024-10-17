@@ -20,6 +20,7 @@
 #include "os.h"
 #include <cassert>
 #include <cmath>
+#include <stdexcept>
 
 /// \file
 /// \brief Solidity Compatibility Layer
@@ -120,14 +121,12 @@ static inline void writeMemoryWithPadding(UarchState &a, uint64 paddr, bytes dat
 }
 
 template <typename UarchState>
-static inline void throwRuntimeError(UarchState &a, const char *message) {
-    (void) a;
+static inline void throwRuntimeError(UarchState & /*a*/, const char *message) {
     throw std::runtime_error(message);
 }
 
 template <typename UarchState>
-static inline void putChar(UarchState &a, unsigned char c) {
-    (void) a;
+static inline void putChar(UarchState & /*a*/, unsigned char c) {
     os_putchar(c);
 }
 
@@ -208,23 +207,17 @@ static inline uint32 uint32Log2(uint32 v) {
 }
 
 template <typename T1, typename T2>
-void require(T1 condition, T2 message) {
-    (void) condition;
-    (void) message;
+void require([[maybe_unused]] T1 condition, [[maybe_unused]] T2 message) {
     assert((condition) && (message));
 }
 
 template <typename UarchState>
-static void dumpInsn(UarchState &a, uint64 pc, uint32 insn, const char *name) {
+static void dumpInsn([[maybe_unused]] UarchState &a, [[maybe_unused]] uint64 pc, [[maybe_unused]] uint32 insn,
+    [[maybe_unused]] const char *name) {
 #ifdef DUMP_INSN
     fprintf(stderr, "%08" PRIx64, pc);
     fprintf(stderr, ":   %08" PRIx32 "   ", insn);
     fprintf(stderr, "%s\n", name);
-#else
-    (void) a;
-    (void) insn;
-    (void) pc;
-    (void) name;
 #endif
 }
 

@@ -61,11 +61,9 @@ public:
     /// \param description Informative description of PMA entry for use in error messages
     /// \param context Context to pass to callbacks.
     /// \param driver Pointer to driver with callbacks.
-    pma_device(const std::string &description, const pma_driver *driver, void *context) :
+    pma_device(const std::string & /*description*/, const pma_driver *driver, void *context) :
         m_driver{driver},
-        m_context{context} {
-        (void) description;
-    }
+        m_context{context} {}
     ~pma_device() = default;
 
     pma_device(const pma_device &other) = delete;

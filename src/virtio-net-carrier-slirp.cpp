@@ -74,14 +74,14 @@ static ssize_t slirp_send_packet(const void *buf, size_t len, void *opaque) {
         // Too many send_packets in the write queue, we can just drop it.
         // Network re-transmission can recover from this.
 #ifdef DEBUG_VIRTIO_ERRORS
-        (void) fprintf(stderr, "slirp: dropped packet sent by the host because the write queue is full\n");
+        std::ignore = fprintf(stderr, "slirp: dropped packet sent by the host because the write queue is full\n");
 #endif
         return 0;
     }
     if (len > VIRTIO_NET_ETHERNET_MAX_LENGTH) {
         // This is unexpected, slirp is trying to send an a jumbo Ethernet frames? Drop it.
 #ifdef DEBUG_VIRTIO_ERRORS
-        (void) fprintf(stderr, "slirp: dropped large packet with length %u sent by the host\n",
+        std::ignore = fprintf(stderr, "slirp: dropped large packet with length %u sent by the host\n",
             static_cast<unsigned int>(len));
 #endif
         return 0;
@@ -95,22 +95,19 @@ static ssize_t slirp_send_packet(const void *buf, size_t len, void *opaque) {
         return static_cast<ssize_t>(len);
     } catch (...) {
 #ifdef DEBUG_VIRTIO_ERRORS
-        (void) fprintf(stderr, "slirp: exception thrown while adding a send packet\n");
+        std::ignore = fprintf(stderr, "slirp: exception thrown while adding a send packet\n");
 #endif
         return 0;
     }
 }
 
-static void slirp_guest_error(const char *msg, void *opaque) {
-    (void) msg;
-    (void) opaque;
+static void slirp_guest_error([[maybe_unused]] const char *msg, void * /*opaque*/) {
 #ifdef DEBUG_VIRTIO_ERRORS
-    (void) fprintf(stderr, "slirp: %s\n", msg);
+    std::ignore = fprintf(stderr, "slirp: %s\n", msg);
 #endif
 }
 
-static int64_t slirp_clock_get_ns(void *opaque) {
-    (void) opaque;
+static int64_t slirp_clock_get_ns(void * /*opaque*/) {
     const auto now = std::chrono::steady_clock::now();
     const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch());
     return static_cast<int64_t>(ns.count());
@@ -155,20 +152,15 @@ static void slirp_timer_mod(void *timer_ptr, int64_t expire_timer_msec, void *op
     }
 }
 
-static void slirp_register_poll_fd(int fd, void *opaque) {
-    (void) fd;
-    (void) opaque;
+static void slirp_register_poll_fd(int /*fd*/, void * /*opaque*/) {
     // Nothing to do, this callback is only useful on implementations using poll() instead of select().
 }
 
-static void slirp_unregister_poll_fd(int fd, void *opaque) {
-    (void) fd;
-    (void) opaque;
+static void slirp_unregister_poll_fd(int /*fd*/, void * /*opaque*/) {
     // Nothing to do, this callback is only useful on implementations using poll() instead of select().
 }
 
-static void slirp_notify(void *opaque) {
-    (void) opaque;
+static void slirp_notify(void * /*opaque*/) {
     // Nothing to do
 }
 
@@ -335,7 +327,7 @@ bool virtio_net_carrier_slirp::write_packet_to_host(i_device_state_access *a, vi
         // This is unexpected, guest is trying to send jumbo Ethernet frames? Just drop it.
         *pread_len = 0;
 #ifdef DEBUG_VIRTIO_ERRORS
-        (void) fprintf(stderr, "slirp: dropped large packet with length %u sent by the guest\n",
+        std::ignore = fprintf(stderr, "slirp: dropped large packet with length %u sent by the guest\n",
             static_cast<unsigned int>(packet_len));
 #endif
         return true;
@@ -364,7 +356,7 @@ bool virtio_net_carrier_slirp::read_packet_from_host(i_device_state_access *a, v
     // Is there enough space in the write buffer to write this packet?
     if (VIRTIO_NET_ETHERNET_FRAME_OFFSET + packet.len > write_avail_len) {
 #ifdef DEBUG_VIRTIO_ERRORS
-        (void) fprintf(stderr, "slirp: dropped large packet with length %u sent by the host\n",
+        std::ignore = fprintf(stderr, "slirp: dropped large packet with length %u sent by the host\n",
             static_cast<unsigned int>(packet.len));
 #endif
         // Despite being a failure, return true to only drop the packet, we don't want to reset the device.

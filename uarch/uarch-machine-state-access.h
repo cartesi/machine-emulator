@@ -159,13 +159,10 @@ public:
 private:
     friend i_state_access<uarch_machine_state_access, uarch_pma_entry>;
 
-    void do_push_bracket(bracket_type type, const char *text) {
-        (void) type;
-        (void) text;
+    void do_push_bracket(bracket_type /*type*/, const char */*text*/) {
     }
 
-    int do_make_scoped_note(const char *text) { // NOLINT(readability-convert-member-functions-to-static)
-        (void) text;
+    int do_make_scoped_note(const char */*text*/) { // NOLINT(readability-convert-member-functions-to-static)
         return 0;
     }
 
@@ -543,9 +540,7 @@ private:
     }
 
     template <typename T>
-    void do_read_memory_word(uint64_t paddr, const unsigned char *hpage, uint64_t hoffset, T *pval) {
-        (void) hpage;
-        (void) hoffset;
+    void do_read_memory_word(uint64_t paddr, const unsigned char */*hpage*/, uint64_t /*hoffset*/, T *pval) {
         *pval = raw_read_memory<T>(paddr);
     }
 
@@ -562,9 +557,7 @@ private:
     }
 
     template <typename T>
-    void do_write_memory_word(uint64_t paddr, const unsigned char *hpage, uint64_t hoffset, T val) {
-        (void) hpage;
-        (void) hoffset;
+    void do_write_memory_word(uint64_t paddr, const unsigned char */*hpage*/, uint64_t /*hoffset*/, T val) {
         raw_write_memory(paddr, val);
     }
 
@@ -760,8 +753,7 @@ private:
         }
     }
 
-    void do_flush_tlb_vaddr(uint64_t vaddr) {
-        (void) vaddr;
+    void do_flush_tlb_vaddr(uint64_t /*vaddr*/) {
         do_flush_tlb_type<TLB_CODE>();
         do_flush_tlb_type<TLB_READ>();
         do_flush_tlb_type<TLB_WRITE>();

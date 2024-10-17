@@ -431,9 +431,6 @@ jsonrpc_connection_ptr jsonrpc_virtual_machine::get_connection() const {
     return m_connection;
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-
 void jsonrpc_virtual_machine::verify_step_uarch(const jsonrpc_connection_ptr &con, const hash_type &root_hash_before,
     const access_log &log, const hash_type &root_hash_after) {
     bool result = false;
@@ -668,7 +665,5 @@ void jsonrpc_virtual_machine::verify_send_cmio_response(const jsonrpc_connection
     jsonrpc_request(con->get_stream(), con->get_remote_address(), "machine.verify_send_cmio_response",
         std::tie(reason, b64_data, b64_root_hash_before, log, b64_root_hash_after), result);
 }
-
-#pragma GCC diagnostic pop
 
 } // namespace cartesi

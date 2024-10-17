@@ -110,8 +110,7 @@ void os_open_tty() {}
 
 void os_close_tty() {}
 
-bool os_poll_tty(uint64_t timeout_us) {
-    (void) timeout_us;
+bool os_poll_tty(uint64_t /*timeout_us*/) {
     return false;
 }
 

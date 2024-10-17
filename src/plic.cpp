@@ -41,7 +41,7 @@ static uint32_t plic_read_pending(i_device_state_access *a) {
     const uint32_t girqsrvd = a->read_plic_girqsrvd();
     const uint32_t ipmask = girqpend & ~girqsrvd;
 #ifdef DEBUG_PLIC
-    (void) fprintf(stderr, "plic: read pending ipmask=%d\n", ipmask);
+    std::ignore = fprintf(stderr, "plic: read pending ipmask=%d\n", ipmask);
 #endif
     return ipmask;
 }
@@ -74,7 +74,7 @@ static bool plic_read_claim_complete(i_device_state_access *a, uint64_t *val) {
         *val = 0;
     }
 #ifdef DEBUG_PLIC
-    (void) fprintf(stderr, "plic: claim irq_id=%d\n", (int) *val);
+    std::ignore = fprintf(stderr, "plic: claim irq_id=%d\n", (int) *val);
 #endif
     return true;
 }
@@ -82,7 +82,7 @@ static bool plic_read_claim_complete(i_device_state_access *a, uint64_t *val) {
 /// \brief Called only by the driver when it completes serving a pending interrupt request.
 static execute_status plic_write_claim_complete(i_device_state_access *a, uint32_t val) {
 #ifdef DEBUG_PLIC
-    (void) fprintf(stderr, "plic: claim complete irq_id=%d\n", val);
+    std::ignore = fprintf(stderr, "plic: claim complete irq_id=%d\n", val);
 #endif
     if (val >= 1 && val <= PMA_PLIC_MAX_IRQ_DEF) {
         // On completing, we need to clear its corresponding girqsrvd mask
@@ -104,10 +104,9 @@ static execute_status plic_write_claim_complete(i_device_state_access *a, uint32
 }
 
 /// \brief PLIC device read callback. See ::pma_read.
-static bool plic_read(void *context, i_device_state_access *a, uint64_t offset, uint64_t *val, int log2_size) {
-    (void) context;
+static bool plic_read(void * /*context*/, i_device_state_access *a, uint64_t offset, uint64_t *val, int log2_size) {
 #ifdef DEBUG_PLIC_MMIO
-    (void) fprintf(stderr, "plic: mmio read offset=0x%lx log2_size=%d\n", (long) offset, log2_size);
+    std::ignore = fprintf(stderr, "plic: mmio read offset=0x%lx log2_size=%d\n", (long) offset, log2_size);
 #endif
 
     // Our PLIC only supports aligned 32-bit reads
@@ -169,12 +168,11 @@ static bool plic_read(void *context, i_device_state_access *a, uint64_t offset, 
 }
 
 /// \brief PLIC device read callback. See ::pma_write.
-static execute_status plic_write(void *context, i_device_state_access *a, uint64_t offset, uint64_t val,
+static execute_status plic_write(void * /*context*/, i_device_state_access *a, uint64_t offset, uint64_t val,
     int log2_size) {
-    (void) context;
 #ifdef DEBUG_PLIC_MMIO
-    (void) fprintf(stderr, "plic: mmio write offset=0x%lx log2_size=%d val=0x%x\n", (long) offset, log2_size,
-        (int) val);
+    std::ignore =
+        fprintf(stderr, "plic: mmio write offset=0x%lx log2_size=%d val=0x%x\n", (long) offset, log2_size, (int) val);
 #endif
 
     // Our PLIC only supports aligned 32-bit reads

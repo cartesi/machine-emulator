@@ -25,9 +25,8 @@
 namespace cartesi {
 
 /// \brief CLINT device peek callback. See ::pma_peek.
-static bool clint_peek(const pma_entry &pma, const machine &m, uint64_t page_offset, const unsigned char **page_data,
-    unsigned char * /*scratch*/) {
-    (void) m;
+static bool clint_peek(const pma_entry &pma, const machine & /*m*/, uint64_t page_offset,
+    const unsigned char **page_data, unsigned char * /*scratch*/) {
     *page_data = nullptr;
     return (page_offset % PMA_PAGE_SIZE) == 0 && page_offset < pma.get_length();
 }

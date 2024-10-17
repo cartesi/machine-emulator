@@ -166,9 +166,7 @@ struct http_session : std::enable_shared_from_this<http_session> {
     }
 
     // Receives a complete HTTP request
-    void on_read_request(beast::error_code ec, std::size_t bytes_transferred) {
-        (void) bytes_transferred;
-
+    void on_read_request(beast::error_code ec, std::size_t /*bytes_transferred*/) {
         // Take ownership of request parser, so it can be freed on this scope termination
         auto parser = std::move(req_parser);
 
@@ -210,9 +208,7 @@ struct http_session : std::enable_shared_from_this<http_session> {
     }
 
     // Called when HTTP response is fully sent
-    void on_send_response(bool keep_alive, beast::error_code ec, std::size_t bytes_transferred) {
-        (void) bytes_transferred;
-
+    void on_send_response(bool keep_alive, beast::error_code ec, std::size_t /*bytes_transferred*/) {
         // Check error code
         if (ec == asio::error::operation_aborted) { // Operation may be aborted
             return;
@@ -530,8 +526,7 @@ size_t last_mandatory_param(const std::tuple<ARGS...> & /*unused*/, std::index_s
 /// \returns True if it has a value
 /// \details This is the default overload
 template <typename T>
-bool has_arg(const T &t) {
-    (void) t;
+bool has_arg(const T & /*t*/) {
     return true;
 }
 
@@ -703,8 +698,7 @@ static json jsonrpc_shutdown_handler(const json &j, const std::shared_ptr<http_s
 /// \param session HTTP session
 /// \returns JSON response object
 /// \details This RPC allows a client to download the entire schema of the service
-static json jsonrpc_rpc_discover_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    (void) session;
+static json jsonrpc_rpc_discover_handler(const json &j, const std::shared_ptr<http_session> & /*session*/) {
     const static json schema = json::parse(cartesi::jsonrpc_discover_json);
     return jsonrpc_response_ok(j, schema);
 }
@@ -713,8 +707,7 @@ static json jsonrpc_rpc_discover_handler(const json &j, const std::shared_ptr<ht
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_get_version_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    (void) session;
+static json jsonrpc_get_version_handler(const json &j, const std::shared_ptr<http_session> & /*session*/) {
     jsonrpc_check_no_params(j);
     return jsonrpc_response_ok(j,
         {
@@ -984,8 +977,8 @@ static json jsonrpc_machine_log_reset_uarch_handler(const json &j, const std::sh
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_step_uarch_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    (void) session;
+static json jsonrpc_machine_verify_step_uarch_handler(const json &j,
+    const std::shared_ptr<http_session> & /*session*/) {
     static const char *param_name[] = {"root_hash_before", "log", "root_hash_after"};
     auto args =
         parse_args<cartesi::machine_merkle_tree::hash_type, cartesi::not_default_constructible<cartesi::access_log>,
@@ -999,8 +992,8 @@ static json jsonrpc_machine_verify_step_uarch_handler(const json &j, const std::
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_reset_uarch_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    (void) session;
+static json jsonrpc_machine_verify_reset_uarch_handler(const json &j,
+    const std::shared_ptr<http_session> & /*session*/) {
     static const char *param_name[] = {"root_hash_before", "log", "root_hash_after"};
     auto args =
         parse_args<cartesi::machine_merkle_tree::hash_type, cartesi::not_default_constructible<cartesi::access_log>,
@@ -1195,8 +1188,7 @@ static json jsonrpc_machine_write_reg_handler(const json &j, const std::shared_p
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_get_reg_address_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    (void) session;
+static json jsonrpc_machine_get_reg_address_handler(const json &j, const std::shared_ptr<http_session> & /*session*/) {
     static const char *param_name[] = {"reg"};
     auto args = parse_args<cartesi::machine::reg>(j, param_name);
     return jsonrpc_response_ok(j, cartesi::machine::get_reg_address(std::get<0>(args)));
@@ -1231,8 +1223,8 @@ static json jsonrpc_machine_get_initial_config_handler(const json &j, const std:
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_get_default_config_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    (void) session;
+static json jsonrpc_machine_get_default_config_handler(const json &j,
+    const std::shared_ptr<http_session> & /*session*/) {
     jsonrpc_check_no_params(j);
     return jsonrpc_response_ok(j, cartesi::machine::get_default_config());
 }
@@ -1302,8 +1294,7 @@ static json jsonrpc_machine_log_send_cmio_response_handler(const json &j,
 /// \param session HTTP session
 /// \returns JSON response object
 static json jsonrpc_machine_verify_send_cmio_response_handler(const json &j,
-    const std::shared_ptr<http_session> &session) {
-    (void) session;
+    const std::shared_ptr<http_session> & /*session*/) {
     static const char *param_name[] = {"reason", "data", "root_hash_before", "log", "root_hash_after"};
     auto args = parse_args<uint16_t, std::string, cartesi::machine_merkle_tree::hash_type,
         cartesi::not_default_constructible<cartesi::access_log>, cartesi::machine_merkle_tree::hash_type>(j,
@@ -1522,7 +1513,7 @@ http::message_generator handle_request(HTTP_REQ &&rreq, const std::shared_ptr<ht
 /// \brief Prints help message
 /// \param name Executable name
 static void help(const char *name) {
-    (void) fprintf(stderr,
+    std::ignore = fprintf(stderr,
         R"(Usage:
 
     %s [options]

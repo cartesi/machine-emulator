@@ -79,14 +79,10 @@ private:
     friend i_uarch_state_access<uarch_state_access>;
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_push_bracket(bracket_type type, const char *text) {
-        (void) type;
-        (void) text;
-    }
+    void do_push_bracket(bracket_type /*type*/, const char * /*text*/) {}
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    int do_make_scoped_note(const char *text) {
-        (void) text;
+    int do_make_scoped_note(const char * /*text*/) {
         return 0;
     }
 

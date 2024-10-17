@@ -36,7 +36,7 @@ struct free_deleter {
 
 struct fclose_deleter {
     void operator()(FILE *p) const {
-        (void) std::fclose(p);
+        std::ignore = std::fclose(p);
     }
 };
 } // namespace detail
@@ -57,8 +57,7 @@ static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb) {
 }
 
 template <typename T>
-static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb, const std::nothrow_t &tag) {
-    (void) tag;
+static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb, const std::nothrow_t & /*tag*/) {
     // NOLINTNEXTLINE(cppcoreguidelines-no-malloc)
     return unique_calloc_ptr<T>(static_cast<T *>(calloc(nmemb, sizeof(T))));
 }
@@ -72,8 +71,7 @@ static inline unique_file_ptr unique_fopen(const char *pathname, const char *mod
     return unique_file_ptr{fp};
 }
 
-static inline unique_file_ptr unique_fopen(const char *pathname, const char *mode, const std::nothrow_t &tag) {
-    (void) tag;
+static inline unique_file_ptr unique_fopen(const char *pathname, const char *mode, const std::nothrow_t & /*tag*/) {
     return unique_file_ptr{fopen(pathname, mode)};
 }
 

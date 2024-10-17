@@ -549,15 +549,12 @@ void virtio_p9fs_device::on_device_reset() {
     m_fids.clear();
 }
 
-void virtio_p9fs_device::on_device_ok(i_device_state_access *a) {
-    (void) a;
+void virtio_p9fs_device::on_device_ok(i_device_state_access * /*a*/) {
     // Nothing to do.
 }
 
 bool virtio_p9fs_device::on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
-    uint32_t read_avail_len, uint32_t write_avail_len) {
-    (void) read_avail_len;
-    (void) write_avail_len;
+    uint32_t /*read_avail_len*/, uint32_t /*write_avail_len*/) {
     // We are only interested in queue 0 notifications
     if (queue_idx != 0) {
         return false;
@@ -632,12 +629,12 @@ bool virtio_p9fs_device::on_device_queue_available(i_device_state_access *a, uin
             case P9_TCREATE:      // Replaced by P9_TLCREATE in 9P2000.L
             case P9_TREMOVE:      // Replaced by P9_TUNLINKAT in 9P2000.L
 #ifdef DEBUG_VIRTIO_P9FS
-                (void) fprintf(stderr, "p9fs unsupported: tag=%d opcode=%d size=%d\n", tag, opcode, size);
+                std::ignore = fprintf(stderr, "p9fs unsupported: tag=%d opcode=%d size=%d\n", tag, opcode, size);
 #endif
                 return send_error(msg, tag, P9_EOPNOTSUPP);
             default:
 #ifdef DEBUG_VIRTIO_P9FS
-                (void) fprintf(stderr, "p9fs UNEXPECTED: tag=%d opcode=%d size=%d\n", tag, opcode, size);
+                std::ignore = fprintf(stderr, "p9fs UNEXPECTED: tag=%d opcode=%d size=%d\n", tag, opcode, size);
 #endif
                 return send_error(msg, tag, P9_EPROTO);
         }
@@ -657,7 +654,7 @@ bool virtio_p9fs_device::op_statfs(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs statfs: tag=%d fid=%d\n", tag, fid);
+    std::ignore = fprintf(stderr, "p9fs statfs: tag=%d fid=%d\n", tag, fid);
 #endif
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
@@ -708,7 +705,7 @@ bool virtio_p9fs_device::op_lopen(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs lopen: tag=%d fid=%d flags=%d\n", tag, fid, flags);
+    std::ignore = fprintf(stderr, "p9fs lopen: tag=%d fid=%d flags=%d\n", tag, fid, flags);
 #endif
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
@@ -728,7 +725,7 @@ bool virtio_p9fs_device::op_lopen(virtq_unserializer &&mmsg, uint16_t tag) {
     // Get the path qid
     stat_t st{};
     if (fstat(fd, &st) != 0) {
-        (void) close(fd);
+        std::ignore = close(fd);
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
     p9_qid qid = stat_to_qid(st);
@@ -736,11 +733,11 @@ bool virtio_p9fs_device::op_lopen(virtq_unserializer &&mmsg, uint16_t tag) {
     uint32_t iounit = get_iounit();
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&qid, &iounit)) {
-        (void) close(fd);
+        std::ignore = close(fd);
         return send_error(msg, tag, P9_EPROTO);
     }
     if (!send_reply(std::move(out_msg), tag, P9_RLOPEN)) {
-        (void) close(fd);
+        std::ignore = close(fd);
         return false;
     }
     // Update fid
@@ -759,8 +756,8 @@ bool virtio_p9fs_device::op_lcreate(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs lcreate: tag=%d fid=%d name=%s flags=%d mode=%d gid=%d\n", tag, fid, name, flags, mode,
-        gid);
+    std::ignore = fprintf(stderr, "p9fs lcreate: tag=%d fid=%d name=%s flags=%d mode=%d gid=%d\n", tag, fid, name,
+        flags, mode, gid);
 #endif
     // Check if name is valid
     if (!is_name_legal(name)) {
@@ -790,8 +787,8 @@ bool virtio_p9fs_device::op_lcreate(virtq_unserializer &&mmsg, uint16_t tag) {
     // Get the path qid
     stat_t st{};
     if (fstat(fd, &st) != 0) {
-        (void) close(fd);
-        (void) unlink(path.c_str());
+        std::ignore = close(fd);
+        std::ignore = unlink(path.c_str());
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
     p9_qid qid = stat_to_qid(st);
@@ -799,13 +796,13 @@ bool virtio_p9fs_device::op_lcreate(virtq_unserializer &&mmsg, uint16_t tag) {
     uint32_t iounit = get_iounit();
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&qid, &iounit)) {
-        (void) close(fd);
-        (void) unlink(path.c_str());
+        std::ignore = close(fd);
+        std::ignore = unlink(path.c_str());
         return send_error(msg, tag, P9_EPROTO);
     }
     if (!send_reply(std::move(out_msg), tag, P9_RLCREATE)) {
-        (void) close(fd);
-        (void) unlink(path.c_str());
+        std::ignore = close(fd);
+        std::ignore = unlink(path.c_str());
         return false;
     }
     // Update fid to represent the newly opened file
@@ -824,7 +821,8 @@ bool virtio_p9fs_device::op_symlink(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs symlink: tag=%d dfid=%d name=%s symtgt=%s gid=%d\n", tag, dfid, name, symtgt, gid);
+    std::ignore =
+        fprintf(stderr, "p9fs symlink: tag=%d dfid=%d name=%s symtgt=%s gid=%d\n", tag, dfid, name, symtgt, gid);
 #endif
     // Check if name is valid
     if (!is_name_legal(name)) {
@@ -847,18 +845,18 @@ bool virtio_p9fs_device::op_symlink(virtq_unserializer &&mmsg, uint16_t tag) {
     // Get the path qid
     stat_t st{};
     if (lstat(path.c_str(), &st) != 0) {
-        (void) unlink(path.c_str());
+        std::ignore = unlink(path.c_str());
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
     p9_qid qid = stat_to_qid(st);
     // Reply
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&qid)) {
-        (void) unlink(path.c_str());
+        std::ignore = unlink(path.c_str());
         return send_error(msg, tag, P9_EPROTO);
     }
     if (!send_reply(std::move(out_msg), tag, P9_RSYMLINK)) {
-        (void) unlink(path.c_str());
+        std::ignore = unlink(path.c_str());
         return false;
     }
     return true;
@@ -876,8 +874,8 @@ bool virtio_p9fs_device::op_mknod(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs mknod: tag=%d dfid=%d name=%s mode=%d major=%d minor=%d gid=%d\n", tag, dfid, name,
-        mode, major, minor, gid);
+    std::ignore = fprintf(stderr, "p9fs mknod: tag=%d dfid=%d name=%s mode=%d major=%d minor=%d gid=%d\n", tag, dfid,
+        name, mode, major, minor, gid);
 #endif
     // Check if name is valid
     if (!is_name_legal(name)) {
@@ -901,18 +899,18 @@ bool virtio_p9fs_device::op_mknod(virtq_unserializer &&mmsg, uint16_t tag) {
     // Get the path qid
     stat_t st{};
     if (lstat(path.c_str(), &st) != 0) {
-        (void) unlink(path.c_str());
+        std::ignore = unlink(path.c_str());
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
     p9_qid qid = stat_to_qid(st);
     // Reply
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&qid)) {
-        (void) unlink(path.c_str());
+        std::ignore = unlink(path.c_str());
         return send_error(msg, tag, P9_EPROTO);
     }
     if (!send_reply(std::move(out_msg), tag, P9_RMKNOD)) {
-        (void) unlink(path.c_str());
+        std::ignore = unlink(path.c_str());
         return false;
     }
     return true;
@@ -934,7 +932,7 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr,
+    std::ignore = fprintf(stderr,
         "p9fs setattr: tag=%d fid=%d mask=%d uid=%d gid=%d size=%ld atime_sec=%ld atime_nsec=%ld mtime_sec=%ld "
         "mtime_nsec=%ld\n",
         tag, fid, mask, uid, gid, size, atime_sec, atime_nsec, mtime_sec, mtime_nsec);
@@ -1052,7 +1050,7 @@ bool virtio_p9fs_device::op_readlink(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs readlink: tag=%d fid=%d\n", tag, fid);
+    std::ignore = fprintf(stderr, "p9fs readlink: tag=%d fid=%d\n", tag, fid);
 #endif
     // Get the fid state
     const p9_fid_state *fidp = get_fid_state(fid);
@@ -1082,7 +1080,7 @@ bool virtio_p9fs_device::op_getattr(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs getattr: tag=%d fid=%d mask=%lx\n", tag, fid, mask);
+    std::ignore = fprintf(stderr, "p9fs getattr: tag=%d fid=%d mask=%lx\n", tag, fid, mask);
 #endif
     // Get the fid state
     const p9_fid_state *fidp = get_fid_state(fid);
@@ -1178,8 +1176,9 @@ bool virtio_p9fs_device::op_lock(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs lock: tag=%d fid=%d type=%d flags=%d start=%ld length=%ld proc_id=%d client_id=%s\n",
-        tag, fid, type, flags, start, length, proc_id, client_id);
+    std::ignore =
+        fprintf(stderr, "p9fs lock: tag=%d fid=%d type=%d flags=%d start=%ld length=%ld proc_id=%d client_id=%s\n", tag,
+            fid, type, flags, start, length, proc_id, client_id);
 #endif
     // Only block flag is supported
     if (flags > P9_LOCK_FLAGS_BLOCK) {
@@ -1230,8 +1229,8 @@ bool virtio_p9fs_device::op_getlock(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs getlock: tag=%d fid=%d type=%d start=%ld length=%ld proc_id=%d client_id=%s\n", tag,
-        fid, type, start, length, proc_id, client_id);
+    std::ignore = fprintf(stderr, "p9fs getlock: tag=%d fid=%d type=%d start=%ld length=%ld proc_id=%d client_id=%s\n",
+        tag, fid, type, start, length, proc_id, client_id);
 #endif
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
@@ -1267,7 +1266,7 @@ bool virtio_p9fs_device::op_readdir(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs readdir: tag=%d fid=%d offset=%ld count=%d\n", tag, fid, offset, count);
+    std::ignore = fprintf(stderr, "p9fs readdir: tag=%d fid=%d offset=%ld count=%d\n", tag, fid, offset, count);
 #endif
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
@@ -1367,7 +1366,7 @@ bool virtio_p9fs_device::op_fsync(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs fsync: tag=%d fid=%d\n", tag, fid);
+    std::ignore = fprintf(stderr, "p9fs fsync: tag=%d fid=%d\n", tag, fid);
 #endif
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
@@ -1391,7 +1390,7 @@ bool virtio_p9fs_device::op_link(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs link: tag=%d dfid=%d fid=%d name=%s\n", tag, dfid, fid, name);
+    std::ignore = fprintf(stderr, "p9fs link: tag=%d dfid=%d fid=%d name=%s\n", tag, dfid, fid, name);
 #endif
     // Check if name is valid
     if (!is_name_legal(name)) {
@@ -1410,7 +1409,7 @@ bool virtio_p9fs_device::op_link(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Reply
     if (!send_ok(msg, tag, P9_RLINK)) {
-        (void) unlink(path.c_str());
+        std::ignore = unlink(path.c_str());
         return false;
     }
     return true;
@@ -1426,7 +1425,7 @@ bool virtio_p9fs_device::op_mkdir(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs mkdir: tag=%d dfid=%d name=%s mode=%d gid=%d\n", tag, dfid, name, mode, gid);
+    std::ignore = fprintf(stderr, "p9fs mkdir: tag=%d dfid=%d name=%s mode=%d gid=%d\n", tag, dfid, name, mode, gid);
 #endif
     // Check if name is valid
     if (!is_name_legal(name)) {
@@ -1449,18 +1448,18 @@ bool virtio_p9fs_device::op_mkdir(virtq_unserializer &&mmsg, uint16_t tag) {
     // Get the path qid
     stat_t st{};
     if (lstat(path.c_str(), &st) != 0) {
-        (void) rmdir(path.c_str());
+        std::ignore = rmdir(path.c_str());
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
     p9_qid qid = stat_to_qid(st);
     // Reply
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&qid)) {
-        (void) rmdir(path.c_str());
+        std::ignore = rmdir(path.c_str());
         return send_error(msg, tag, P9_EPROTO);
     }
     if (!send_reply(std::move(out_msg), tag, P9_RMKDIR)) {
-        (void) rmdir(path.c_str());
+        std::ignore = rmdir(path.c_str());
         return false;
     }
     return true;
@@ -1476,8 +1475,8 @@ bool virtio_p9fs_device::op_renameat(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs renameat: tag=%d oldfid=%d oldname=%s newfid=%d newname=%s\n", tag, oldfid, oldname,
-        newfid, newname);
+    std::ignore = fprintf(stderr, "p9fs renameat: tag=%d oldfid=%d oldname=%s newfid=%d newname=%s\n", tag, oldfid,
+        oldname, newfid, newname);
 #endif
     // Check if names are valid
     if (!is_name_legal(oldname) || !is_name_legal(newname)) {
@@ -1498,7 +1497,7 @@ bool virtio_p9fs_device::op_renameat(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Reply
     if (!send_ok(msg, tag, P9_RRENAMEAT)) {
-        (void) rename(newpath.c_str(), oldpath.c_str());
+        std::ignore = rename(newpath.c_str(), oldpath.c_str());
         return false;
     }
     // Fix path for all fids starting with the old path
@@ -1521,7 +1520,7 @@ bool virtio_p9fs_device::op_unlinkat(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs unlinkat: tag=%d dfid=%d name=%s flags=%d\n", tag, dfid, name, flags);
+    std::ignore = fprintf(stderr, "p9fs unlinkat: tag=%d dfid=%d name=%s flags=%d\n", tag, dfid, name, flags);
 #endif
     // Check if name is valid
     if (!is_name_legal(name)) {
@@ -1554,7 +1553,7 @@ bool virtio_p9fs_device::op_version(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs version: tag=%d msize=%d version=%s\n", tag, m_msize, version);
+    std::ignore = fprintf(stderr, "p9fs version: tag=%d msize=%d version=%s\n", tag, m_msize, version);
 #endif
     // Set msize
     m_msize = std::min<uint32_t>(m_msize, P9_MAX_MSIZE);
@@ -1578,8 +1577,8 @@ bool virtio_p9fs_device::op_attach(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs attach: tag=%d fid=%d afid=%d uid=%d uname=%s aname=%s\n", tag, fid, afid, uid, uname,
-        aname);
+    std::ignore = fprintf(stderr, "p9fs attach: tag=%d fid=%d afid=%d uid=%d uname=%s aname=%s\n", tag, fid, afid, uid,
+        uname, aname);
 #endif
     // It's an error if the fid already exists
     if (get_fid_state(fid) != nullptr) {
@@ -1597,11 +1596,11 @@ bool virtio_p9fs_device::op_attach(virtq_unserializer &&mmsg, uint16_t tag) {
     // Reply
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&qid)) {
-        (void) m_fids.erase(fid);
+        std::ignore = m_fids.erase(fid);
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
     if (!send_reply(std::move(out_msg), tag, P9_RATTACH)) {
-        (void) m_fids.erase(fid);
+        std::ignore = m_fids.erase(fid);
         return false;
     }
     // Update new fid state
@@ -1618,7 +1617,7 @@ bool virtio_p9fs_device::op_walk(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs walk: tag=%d fid=%d newfid=%d nwname=%d\n", tag, fid, newfid, nwname);
+    std::ignore = fprintf(stderr, "p9fs walk: tag=%d fid=%d newfid=%d nwname=%d\n", tag, fid, newfid, nwname);
 #endif
     // A maximum of sixteen name elements or qids may be packed in a single message
     if (nwname > P9_MAXWELEM) {
@@ -1690,14 +1689,14 @@ bool virtio_p9fs_device::op_walk(virtq_unserializer &&mmsg, uint16_t tag) {
     out_msg.offset = P9_OUT_MSG_OFFSET;
     if (!out_msg.pack(&nwalked)) {
         if (fid != newfid) {
-            (void) m_fids.erase(newfid);
+            std::ignore = m_fids.erase(newfid);
         }
         return send_error(msg, tag, P9_EPROTO);
     }
     // Reply
     if (!send_reply(std::move(out_msg), tag, P9_RWALK)) {
         if (fid != newfid) {
-            (void) m_fids.erase(newfid);
+            std::ignore = m_fids.erase(newfid);
         }
         return false;
     }
@@ -1715,7 +1714,7 @@ bool virtio_p9fs_device::op_read(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs read: tag=%d fid=%d offset=%ld count=%d\n", tag, fid, offset, count);
+    std::ignore = fprintf(stderr, "p9fs read: tag=%d fid=%d offset=%ld count=%d\n", tag, fid, offset, count);
 #endif
     // Get the fid state, only file fids are accepted
     const p9_fid_state *fidp = get_fid_state(fid);
@@ -1750,7 +1749,7 @@ bool virtio_p9fs_device::op_write(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs write: tag=%d fid=%d offset=%ld count=%d\n", tag, fid, offset, count);
+    std::ignore = fprintf(stderr, "p9fs write: tag=%d fid=%d offset=%ld count=%d\n", tag, fid, offset, count);
 #endif
     // Get the fid state, only file fids are accepted
     const p9_fid_state *fidp = get_fid_state(fid);
@@ -1783,7 +1782,7 @@ bool virtio_p9fs_device::op_clunk(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs clunk: tag=%d fid=%d\n", tag, fid);
+    std::ignore = fprintf(stderr, "p9fs clunk: tag=%d fid=%d\n", tag, fid);
 #endif
     p9_fid_state *fidp = get_fid_state(fid);
     if (fidp == nullptr) {
@@ -1793,7 +1792,7 @@ bool virtio_p9fs_device::op_clunk(virtq_unserializer &&mmsg, uint16_t tag) {
     const int close_errno = close_fid_state(fidp);
     // Remove from fid state list even on error
     fidp = nullptr;
-    (void) m_fids.erase(fid);
+    std::ignore = m_fids.erase(fid);
     // Propagate close error if any
     if (close_errno != 0) {
         return send_error(msg, tag, host_errno_to_p9(close_errno));
@@ -1806,7 +1805,7 @@ bool virtio_p9fs_device::send_reply(virtq_serializer &&mout_msg, uint16_t tag, p
     virtq_serializer out_msg = std::move(mout_msg);
 #ifdef DEBUG_VIRTIO_P9FS
     if (opcode != P9_RLERROR) {
-        (void) fprintf(stderr, "p9fs send_reply: tag=%d opcode=%d\n", tag, opcode);
+        std::ignore = fprintf(stderr, "p9fs send_reply: tag=%d opcode=%d\n", tag, opcode);
     }
 #endif
     // Rewind message write offset to its start
@@ -1833,9 +1832,9 @@ bool virtio_p9fs_device::send_ok(const virtq_unserializer &in_msg, uint16_t tag,
 bool virtio_p9fs_device::send_error(const virtq_unserializer &in_msg, uint16_t tag, p9_error error) {
 #ifdef DEBUG_VIRTIO_P9FS
     if (error == P9_EPROTO) {
-        (void) fprintf(stderr, "p9fs PROTOCOL ERROR: tag=%d\n", tag);
+        std::ignore = fprintf(stderr, "p9fs PROTOCOL ERROR: tag=%d\n", tag);
     } else {
-        (void) fprintf(stderr, "p9fs send_error: tag=%d error=%d\n", tag, error);
+        std::ignore = fprintf(stderr, "p9fs send_error: tag=%d error=%d\n", tag, error);
     }
 #endif
     virtq_serializer out_msg(in_msg.a, in_msg.vq, in_msg.queue_idx, in_msg.desc_idx, P9_OUT_MSG_OFFSET);

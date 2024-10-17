@@ -32,9 +32,7 @@ static constexpr auto htif_iconsole_rel_addr = static_cast<uint64_t>(htif_csr::i
 static constexpr auto htif_iyield_rel_addr = static_cast<uint64_t>(htif_csr::iyield);
 
 /// \brief HTIF device read callback. See ::pma_read.
-static bool htif_read(void *context, i_device_state_access *a, uint64_t offset, uint64_t *pval, int log2_size) {
-    (void) context;
-
+static bool htif_read(void * /*context*/, i_device_state_access *a, uint64_t offset, uint64_t *pval, int log2_size) {
     // Our HTIF only supports 64-bit reads
     if (log2_size != 3) {
         return false;
@@ -64,7 +62,6 @@ static bool htif_read(void *context, i_device_state_access *a, uint64_t offset, 
 }
 
 static execute_status htif_halt(i_device_state_access *a, uint64_t cmd, uint64_t data) {
-    (void) a;
     if (cmd == HTIF_HALT_CMD_HALT && ((data & 1) != 0)) {
         a->set_iflags_H();
         return execute_status::success_and_halt;
@@ -74,8 +71,7 @@ static execute_status htif_halt(i_device_state_access *a, uint64_t cmd, uint64_t
     return execute_status::success;
 }
 
-static execute_status htif_yield(i_device_state_access *a, uint64_t cmd, uint64_t data) {
-    (void) data;
+static execute_status htif_yield(i_device_state_access *a, uint64_t cmd, uint64_t /*data*/) {
     execute_status status = execute_status::success;
     // If yield command is enabled, yield and acknowledge
     if (cmd < 64 && (((a->read_htif_iyield() >> cmd) & 1) != 0)) {

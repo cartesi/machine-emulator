@@ -252,8 +252,7 @@ private:
     /// \param paligned Physical address in the machine state, aligned to a 64-bit word.
     void update_after_write(uint64_t paligned) {
         assert((paligned & (sizeof(uint64_t) - 1)) == 0);
-        const bool updated = m_m.update_merkle_tree_page(paligned);
-        (void) updated;
+        [[maybe_unused]] const bool updated = m_m.update_merkle_tree_page(paligned);
         assert(updated);
     }
 
@@ -399,9 +398,7 @@ private:
 
     /// \brief Fallback to error on all other word sizes
     template <typename T>
-    void write_register(uint64_t paddr, T data) {
-        (void) paddr;
-        (void) data;
+    void write_register(uint64_t /*paddr*/, T /*data*/) {
         throw std::runtime_error("invalid memory write access from microarchitecture");
     }
 

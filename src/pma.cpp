@@ -53,11 +53,10 @@ pma_memory::pma_memory(pma_memory &&other) noexcept :
     other.m_length = 0;
 }
 
-pma_memory::pma_memory(const std::string &description, uint64_t length, const callocd &c) :
+pma_memory::pma_memory(const std::string &description, uint64_t length, const callocd & /*c*/) :
     m_length{length},
     m_host_memory{nullptr},
     m_mmapped{false} {
-    (void) c;
     // use calloc to improve performance
     // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-prefer-member-initializer)
     m_host_memory = static_cast<unsigned char *>(std::calloc(1, length));
@@ -66,13 +65,10 @@ pma_memory::pma_memory(const std::string &description, uint64_t length, const ca
     }
 }
 
-pma_memory::pma_memory(const std::string &description, uint64_t length, const mockd &m) :
+pma_memory::pma_memory(const std::string & /*description*/, uint64_t length, const mockd & /*m*/) :
     m_length{length},
     m_host_memory{nullptr},
-    m_mmapped{false} {
-    (void) m;
-    (void) description;
-}
+    m_mmapped{false} {}
 
 pma_memory::pma_memory(const std::string &description, uint64_t length, const std::string &path, const callocd &c) :
     pma_memory{description, length, c} {
@@ -98,8 +94,7 @@ pma_memory::pma_memory(const std::string &description, uint64_t length, const st
             throw std::runtime_error{"image file '"s + path + "' of "s + description + " is too large for range"s};
         }
         // Read to host memory
-        auto read = fread(m_host_memory, 1, length, fp.get());
-        (void) read;
+        std::ignore = fread(m_host_memory, 1, length, fp.get());
         if (ferror(fp.get()) != 0) {
             throw std::system_error{errno, std::generic_category(),
                 "error reading from image file '"s + path + "' when initializing "s + description};
@@ -181,9 +176,8 @@ bool pma_peek_error(const pma_entry & /*pma*/, const machine & /*m*/, uint64_t /
 }
 
 /// \brief Memory range peek callback. See pma_peek.
-static bool memory_peek(const pma_entry &pma, const machine &m, uint64_t page_address, const unsigned char **page_data,
-    unsigned char *scratch) {
-    (void) m;
+static bool memory_peek(const pma_entry &pma, const machine & /*m*/, uint64_t page_address,
+    const unsigned char **page_data, unsigned char *scratch) {
     // If page_address is not aligned, or if it is out of range, return error
     if ((page_address & (PMA_PAGE_SIZE - 1)) != 0 || page_address > pma.get_length()) {
         *page_data = nullptr;

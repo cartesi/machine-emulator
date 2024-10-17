@@ -787,49 +787,50 @@ machine::~machine() {
         os_close_tty();
     }
 #ifdef DUMP_HIST
-    (void) fprintf(stderr, "\nInstruction Histogram:\n");
+    std::ignore = fprintf(stderr, "\nInstruction Histogram:\n");
     for (auto v : m_s.insn_hist) {
-        (void) fprintf(stderr, "%s: %" PRIu64 "\n", v.first.c_str(), v.second);
+        std::ignore = fprintf(stderr, "%s: %" PRIu64 "\n", v.first.c_str(), v.second);
     }
 #endif
 #if DUMP_COUNTERS
 #define TLB_HIT_RATIO(s, a, b) (((double) (s).stats.b) / ((s).stats.a + (s).stats.b))
-    (void) fprintf(stderr, "\nMachine Counters:\n");
-    (void) fprintf(stderr, "inner loops: %" PRIu64 "\n", m_s.stats.inner_loop);
-    (void) fprintf(stderr, "outers loops: %" PRIu64 "\n", m_s.stats.outer_loop);
-    (void) fprintf(stderr, "supervisor ints: %" PRIu64 "\n", m_s.stats.sv_int);
-    (void) fprintf(stderr, "supervisor ex: %" PRIu64 "\n", m_s.stats.sv_ex);
-    (void) fprintf(stderr, "machine ints: %" PRIu64 "\n", m_s.stats.m_int);
-    (void) fprintf(stderr, "machine ex: %" PRIu64 "\n", m_s.stats.m_ex);
-    (void) fprintf(stderr, "atomic mem ops: %" PRIu64 "\n", m_s.stats.atomic_mop);
-    (void) fprintf(stderr, "fence: %" PRIu64 "\n", m_s.stats.fence);
-    (void) fprintf(stderr, "fence.i: %" PRIu64 "\n", m_s.stats.fence_i);
-    (void) fprintf(stderr, "fence.vma: %" PRIu64 "\n", m_s.stats.fence_vma);
-    (void) fprintf(stderr, "max asid: %" PRIu64 "\n", m_s.stats.max_asid);
-    (void) fprintf(stderr, "User mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_U]);
-    (void) fprintf(stderr, "Supervisor mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_S]);
-    (void) fprintf(stderr, "Machine mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_M]);
+    std::ignore = fprintf(stderr, "\nMachine Counters:\n");
+    std::ignore = fprintf(stderr, "inner loops: %" PRIu64 "\n", m_s.stats.inner_loop);
+    std::ignore = fprintf(stderr, "outers loops: %" PRIu64 "\n", m_s.stats.outer_loop);
+    std::ignore = fprintf(stderr, "supervisor ints: %" PRIu64 "\n", m_s.stats.sv_int);
+    std::ignore = fprintf(stderr, "supervisor ex: %" PRIu64 "\n", m_s.stats.sv_ex);
+    std::ignore = fprintf(stderr, "machine ints: %" PRIu64 "\n", m_s.stats.m_int);
+    std::ignore = fprintf(stderr, "machine ex: %" PRIu64 "\n", m_s.stats.m_ex);
+    std::ignore = fprintf(stderr, "atomic mem ops: %" PRIu64 "\n", m_s.stats.atomic_mop);
+    std::ignore = fprintf(stderr, "fence: %" PRIu64 "\n", m_s.stats.fence);
+    std::ignore = fprintf(stderr, "fence.i: %" PRIu64 "\n", m_s.stats.fence_i);
+    std::ignore = fprintf(stderr, "fence.vma: %" PRIu64 "\n", m_s.stats.fence_vma);
+    std::ignore = fprintf(stderr, "max asid: %" PRIu64 "\n", m_s.stats.max_asid);
+    std::ignore = fprintf(stderr, "User mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_U]);
+    std::ignore = fprintf(stderr, "Supervisor mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_S]);
+    std::ignore = fprintf(stderr, "Machine mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_M]);
 
-    (void) fprintf(stderr, "tlb code hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_cmiss, tlb_chit));
-    (void) fprintf(stderr, "tlb read hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_rmiss, tlb_rhit));
-    (void) fprintf(stderr, "tlb write hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_wmiss, tlb_whit));
-    (void) fprintf(stderr, "tlb_chit: %" PRIu64 "\n", m_s.stats.tlb_chit);
-    (void) fprintf(stderr, "tlb_cmiss: %" PRIu64 "\n", m_s.stats.tlb_cmiss);
-    (void) fprintf(stderr, "tlb_rhit: %" PRIu64 "\n", m_s.stats.tlb_rhit);
-    (void) fprintf(stderr, "tlb_rmiss: %" PRIu64 "\n", m_s.stats.tlb_rmiss);
-    (void) fprintf(stderr, "tlb_whit: %" PRIu64 "\n", m_s.stats.tlb_whit);
-    (void) fprintf(stderr, "tlb_wmiss: %" PRIu64 "\n", m_s.stats.tlb_wmiss);
-    (void) fprintf(stderr, "tlb_flush_all: %" PRIu64 "\n", m_s.stats.tlb_flush_all);
-    (void) fprintf(stderr, "tlb_flush_read: %" PRIu64 "\n", m_s.stats.tlb_flush_read);
-    (void) fprintf(stderr, "tlb_flush_write: %" PRIu64 "\n", m_s.stats.tlb_flush_write);
-    (void) fprintf(stderr, "tlb_flush_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_vaddr);
-    (void) fprintf(stderr, "tlb_flush_satp: %" PRIu64 "\n", m_s.stats.tlb_flush_satp);
-    (void) fprintf(stderr, "tlb_flush_mstatus: %" PRIu64 "\n", m_s.stats.tlb_flush_mstatus);
-    (void) fprintf(stderr, "tlb_flush_set_priv: %" PRIu64 "\n", m_s.stats.tlb_flush_set_priv);
-    (void) fprintf(stderr, "tlb_flush_fence_vma_all: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_all);
-    (void) fprintf(stderr, "tlb_flush_fence_vma_asid: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_asid);
-    (void) fprintf(stderr, "tlb_flush_fence_vma_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_vaddr);
-    (void) fprintf(stderr, "tlb_flush_fence_vma_asid_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_asid_vaddr);
+    std::ignore = fprintf(stderr, "tlb code hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_cmiss, tlb_chit));
+    std::ignore = fprintf(stderr, "tlb read hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_rmiss, tlb_rhit));
+    std::ignore = fprintf(stderr, "tlb write hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_wmiss, tlb_whit));
+    std::ignore = fprintf(stderr, "tlb_chit: %" PRIu64 "\n", m_s.stats.tlb_chit);
+    std::ignore = fprintf(stderr, "tlb_cmiss: %" PRIu64 "\n", m_s.stats.tlb_cmiss);
+    std::ignore = fprintf(stderr, "tlb_rhit: %" PRIu64 "\n", m_s.stats.tlb_rhit);
+    std::ignore = fprintf(stderr, "tlb_rmiss: %" PRIu64 "\n", m_s.stats.tlb_rmiss);
+    std::ignore = fprintf(stderr, "tlb_whit: %" PRIu64 "\n", m_s.stats.tlb_whit);
+    std::ignore = fprintf(stderr, "tlb_wmiss: %" PRIu64 "\n", m_s.stats.tlb_wmiss);
+    std::ignore = fprintf(stderr, "tlb_flush_all: %" PRIu64 "\n", m_s.stats.tlb_flush_all);
+    std::ignore = fprintf(stderr, "tlb_flush_read: %" PRIu64 "\n", m_s.stats.tlb_flush_read);
+    std::ignore = fprintf(stderr, "tlb_flush_write: %" PRIu64 "\n", m_s.stats.tlb_flush_write);
+    std::ignore = fprintf(stderr, "tlb_flush_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_vaddr);
+    std::ignore = fprintf(stderr, "tlb_flush_satp: %" PRIu64 "\n", m_s.stats.tlb_flush_satp);
+    std::ignore = fprintf(stderr, "tlb_flush_mstatus: %" PRIu64 "\n", m_s.stats.tlb_flush_mstatus);
+    std::ignore = fprintf(stderr, "tlb_flush_set_priv: %" PRIu64 "\n", m_s.stats.tlb_flush_set_priv);
+    std::ignore = fprintf(stderr, "tlb_flush_fence_vma_all: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_all);
+    std::ignore = fprintf(stderr, "tlb_flush_fence_vma_asid: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_asid);
+    std::ignore = fprintf(stderr, "tlb_flush_fence_vma_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_vaddr);
+    std::ignore =
+        fprintf(stderr, "tlb_flush_fence_vma_asid_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_asid_vaddr);
 #endif
 }
 

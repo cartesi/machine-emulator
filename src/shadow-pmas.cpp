@@ -22,8 +22,8 @@
 namespace cartesi {
 
 /// \brief Shadow device read callback. See ::pma_read.
-static bool shadow_pmas_read(void *context, i_device_state_access *a, uint64_t offset, uint64_t *pval, int log2_size) {
-    (void) context;
+static bool shadow_pmas_read(void * /*context*/, i_device_state_access *a, uint64_t offset, uint64_t *pval,
+    int log2_size) {
     static_assert(offsetof(shadow_pmas, pmas) == 0, "Unexpected offswet of PMA board");
     static_assert(sizeof(shadow_pma_entry) == 2 * sizeof(uint64_t), "Unexpected size of shadow PMA entry");
     static_assert(sizeof(shadow_pmas) == PMA_MAX * sizeof(shadow_pma_entry), "Unexpected size of Shadow PMA array ");

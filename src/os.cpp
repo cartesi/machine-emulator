@@ -168,8 +168,7 @@ static int get_ttyfd() {
 
 #ifdef HAVE_SIGACTION
 /// \brief Signal raised whenever TTY size changes
-static void os_SIGWINCH_handler(int sig) {
-    (void) sig;
+static void os_SIGWINCH_handler(int /*sig*/) {
     auto *s = get_state();
     if (!s->initialized) {
         return;
@@ -192,7 +191,7 @@ bool os_update_tty_size(tty_state *s) {
         }
     } else {
 #ifdef DEBUG_OS
-        (void) fprintf(stderr, "os_update_tty_size(): ioctl TIOCGWINSZ failed\n");
+        std::ignore = fprintf(stderr, "os_update_tty_size(): ioctl TIOCGWINSZ failed\n");
 #endif
     }
 
@@ -208,7 +207,7 @@ bool os_update_tty_size(tty_state *s) {
         }
     } else {
 #ifdef DEBUG_OS
-        (void) fprintf(stderr, "os_update_tty_size(): GetConsoleScreenBufferInfo failed\n");
+        std::ignore = fprintf(stderr, "os_update_tty_size(): GetConsoleScreenBufferInfo failed\n");
 #endif
     }
 
@@ -230,21 +229,21 @@ void os_open_tty() {
 #ifdef HAVE_TERMIOS
     if (s->ttyfd >= 0) { // Already open
 #ifdef DEBUG_OS
-        (void) fprintf(stderr, "os_open_tty(): tty already open\n");
+        std::ignore = fprintf(stderr, "os_open_tty(): tty already open\n");
 #endif
         return;
     }
     const int ttyfd = get_ttyfd();
     if (ttyfd < 0) { // Failed to open tty fd
 #ifdef DEBUG_OS
-        (void) fprintf(stderr, "os_open_tty(): get_tty() failed\n");
+        std::ignore = fprintf(stderr, "os_open_tty(): get_tty() failed\n");
 #endif
         return;
     }
     struct termios tty {};
     if (tcgetattr(ttyfd, &tty) < 0) { // Failed to retrieve old mode
 #ifdef DEBUG_OS
-        (void) fprintf(stderr, "os_open_tty(): failed retrieve old mode\n");
+        std::ignore = fprintf(stderr, "os_open_tty(): failed retrieve old mode\n");
 #endif
         close(ttyfd);
         return;
@@ -275,7 +274,7 @@ void os_open_tty() {
     tty.c_cc[VTIME] = 0;
     if (tcsetattr(ttyfd, TCSANOW, &tty) < 0) { // Failed to set raw mode
 #ifdef DEBUG_OS
-        (void) fprintf(stderr, "os_open_tty(): failed to set raw mode\n");
+        std::ignore = fprintf(stderr, "os_open_tty(): failed to set raw mode\n");
 #endif
         close(ttyfd);
         return;
@@ -286,7 +285,7 @@ void os_open_tty() {
     s->hStdin = GetStdHandle(STD_INPUT_HANDLE);
     if (!s->hStdin) {
 #ifdef DEBUG_OS
-        (void) fprintf(stderr, "os_open_tty(): GetStdHandle() failed\n");
+        std::ignore = fprintf(stderr, "os_open_tty(): GetStdHandle() failed\n");
 #endif
         return;
     }
@@ -297,7 +296,7 @@ void os_open_tty() {
         dwMode |= ENABLE_VIRTUAL_TERMINAL_INPUT;
         if (!SetConsoleMode(s->hStdin, dwMode)) {
 #ifdef DEBUG_OS
-            (void) fprintf(stderr, "os_open_tty(): SetConsoleMode() failed\n");
+            std::ignore = fprintf(stderr, "os_open_tty(): SetConsoleMode() failed\n");
 #endif
         }
     }
@@ -313,7 +312,7 @@ void os_open_tty() {
     sigact.sa_handler = os_SIGWINCH_handler;
     if (sigemptyset(&sigact.sa_mask) != 0 || sigaction(SIGWINCH, &sigact, nullptr) != 0) {
 #ifdef DEBUG_OS
-        (void) fprintf(stderr, "os_open_tty(): failed to install SIGWINCH handler\n");
+        std::ignore = fprintf(stderr, "os_open_tty(): failed to install SIGWINCH handler\n");
 #endif
     }
 #endif
@@ -362,7 +361,7 @@ void os_get_tty_size(uint16_t *pwidth, uint16_t *pheight) {
     *pheight = s->rows;
 }
 
-void os_prepare_tty_select(select_fd_sets *fds) {
+void os_prepare_tty_select([[maybe_unused]] select_fd_sets *fds) {
 #ifdef HAVE_TTY
     auto *s = get_state();
     // Ignore if TTY is not initialized or stdin was closed
@@ -376,8 +375,6 @@ void os_prepare_tty_select(select_fd_sets *fds) {
     if (STDIN_FILENO > fds->maxfd) {
         fds->maxfd = STDIN_FILENO;
     }
-#else
-    (void) fds;
 #endif
 #endif
 }
@@ -456,10 +453,7 @@ bool os_poll_tty(uint64_t timeout_us) {
 
 #else
     return os_select_fds(
-        [](select_fd_sets *fds, const uint64_t *timeout_us) -> void {
-            (void) timeout_us;
-            os_prepare_tty_select(fds);
-        },
+        [](select_fd_sets *fds, const uint64_t * /*timeout_us*/) -> void { os_prepare_tty_select(fds); },
         [](int select_ret, select_fd_sets *fds) -> bool { return os_poll_selected_tty(select_ret, fds); }, &timeout_us);
 
 #endif // _WIN32
@@ -492,11 +486,11 @@ size_t os_getchars(unsigned char *data, size_t max_len) {
 
 static void fputc_with_line_buffering(uint8_t ch) {
     // Write through fputc(), so we can take advantage of buffering.
-    (void) fputc(ch, stdout);
+    std::ignore = fputc(ch, stdout);
     // On Linux, stdout in fully buffered by default when it's not a TTY,
     // here we flush every new line to perform line buffering.
     if (ch == '\n') {
-        (void) fflush(stdout);
+        std::ignore = fflush(stdout);
     }
 }
 
@@ -653,8 +647,7 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
     }
 
     // Read to host memory
-    auto read = fread(host_memory, 1, length, fp.get());
-    (void) read;
+    std::ignore = fread(host_memory, 1, length, fp.get());
     if (ferror(fp.get())) {
         throw std::system_error{errno, std::generic_category(), "error reading from image file '"s + path + "'"s};
     }
@@ -663,16 +656,14 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
 #endif // HAVE_MMAP
 }
 
-void os_unmap_file(unsigned char *host_memory, uint64_t length) {
+void os_unmap_file(unsigned char *host_memory, [[maybe_unused]] uint64_t length) {
 #ifdef HAVE_MMAP
     munmap(host_memory, length);
 
 #elif defined(_WIN32)
-    (void) length;
     UnmapViewOfFile(host_memory);
 
 #else
-    (void) length;
     std::free(host_memory);
 
 #endif // HAVE_MMAP
@@ -765,7 +756,7 @@ void os_disable_sigpipe() {
     sigact.sa_flags = SA_RESTART;
     if (sigemptyset(&sigact.sa_mask) != 0 || sigaction(SIGPIPE, &sigact, nullptr) != 0) {
 #ifdef DEBUG_OS
-        (void) fprintf(stderr, "os_disable_sigpipe(): failed to disable SIGPIPE handler\n");
+        std::ignore = fprintf(stderr, "os_disable_sigpipe(): failed to disable SIGPIPE handler\n");
 #endif
     }
 #endif
@@ -777,17 +768,8 @@ void os_sleep_us(uint64_t timeout_us) {
     }
 #ifdef HAVE_SELECT
     // Select without fds just to sleep
-    os_select_fds(
-        [](select_fd_sets *fds, const uint64_t *timeout_us) -> void {
-            (void) fds;
-            (void) timeout_us;
-        },
-        [](int select_ret, select_fd_sets *fds) -> bool {
-            (void) select_ret;
-            (void) fds;
-            return false;
-        },
-        &timeout_us);
+    os_select_fds([](select_fd_sets * /*fds*/, const uint64_t * /*timeout_us*/) -> void {},
+        [](int /*select_ret*/, select_fd_sets * /*fds*/) -> bool { return false; }, &timeout_us);
 #elif defined(HAVE_USLEEP)
     usleep(static_cast<useconds_t>(*timeout_us));
 #elif defined(_WIN32)

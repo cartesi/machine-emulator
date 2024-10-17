@@ -76,9 +76,9 @@ bool intval(const char *pre, const char *str, int *val) {
 /// \param f File to print to
 void print_hash(const hash_type &hash, FILE *f) {
     for (auto b : hash) {
-        (void) fprintf(f, "%02x", static_cast<int>(b));
+        std::ignore = fprintf(f, "%02x", static_cast<int>(b));
     }
-    (void) fprintf(f, "\n");
+    std::ignore = fprintf(f, "\n");
 }
 
 // NOLINTNEXTLINE
@@ -112,7 +112,7 @@ static std::optional<hash_type> read_hash(FILE *f) {
 __attribute__((format(printf, 1, 2))) void error(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    (void) vfprintf(stderr, fmt, ap);
+    std::ignore = vfprintf(stderr, fmt, ap);
     va_end(ap);
     exit(1);
 }
@@ -162,7 +162,7 @@ hash_type get_leaf_hash(int log2_word_size, const unsigned char *leaf_data, int 
 
 /// \brief Prints help message
 void help(const char *name) {
-    (void) fprintf(stderr,
+    std::ignore = fprintf(stderr,
         "Usage:\n  %s [--input=<filename>] "
         "[--log2-word-size=<w>] [--log2-leaf-size=<p>] "
         "[--log2-root-size=<t>]\n",
@@ -304,7 +304,7 @@ int main(int argc, char *argv[]) try {
         }
         ++leaf_count;
     }
-    (void) fprintf(stderr, "passed test\n");
+    std::ignore = fprintf(stderr, "passed test\n");
     print_hash(back_tree.get_root_hash(), stdout);
     return 0;
 } catch (std::exception &x) {

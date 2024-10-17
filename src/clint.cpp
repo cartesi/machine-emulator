@@ -61,9 +61,7 @@ static bool clint_read_mtimecmp(i_device_state_access *a, uint64_t *val, int log
 }
 
 /// \brief CLINT device read callback. See ::pma_read.
-static bool clint_read(void *context, i_device_state_access *a, uint64_t offset, uint64_t *val, int log2_size) {
-    (void) context;
-
+static bool clint_read(void * /*context*/, i_device_state_access *a, uint64_t offset, uint64_t *val, int log2_size) {
     switch (offset) {
         case clint_msip0_rel_addr:
             return clint_read_msip(a, val, log2_size);
@@ -78,10 +76,8 @@ static bool clint_read(void *context, i_device_state_access *a, uint64_t offset,
 }
 
 /// \brief CLINT device read callback. See ::pma_write.
-static execute_status clint_write(void *context, i_device_state_access *a, uint64_t offset, uint64_t val,
+static execute_status clint_write(void * /*context*/, i_device_state_access *a, uint64_t offset, uint64_t val,
     int log2_size) {
-    (void) context;
-
     switch (offset) {
         case clint_msip0_rel_addr:
             if (log2_size == 2) {

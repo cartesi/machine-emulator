@@ -37,6 +37,7 @@
 
 #include "access-log.h"
 #include "base64.h"
+#include "fork-result.h"
 #include "interpret.h"
 #include "json-util.h"
 #include "json.hpp"

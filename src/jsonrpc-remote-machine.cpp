@@ -1601,15 +1601,12 @@ int main(int argc, char *argv[]) try {
     }
 
     for (int i = 1; i < argc; i++) {
-        if (stringval("--server-address=", argv[i], &server_address)) {
-            ;
+        if (int end = 0; stringval("--server-address=", argv[i], &server_address) ||
+            stringval("--log-level=", argv[i], &log_level) ||
             // NOLINTNEXTLINE(cert-err34-c)
-        } else if (int end = 0; sscanf(argv[i], "--server-fd=%d%n", &server_fd, &end) == 1 && argv[i][end] == 0) {
-            ;
-        } else if (stringval("--log-level=", argv[i], &log_level)) {
-            ;
+            (sscanf(argv[i], "--server-fd=%d%n", &server_fd, &end) == 1 && argv[i][end] == 0) ||
             // NOLINTNEXTLINE(cert-err34-c)
-        } else if (int end = 0; sscanf(argv[i], "--sigusr1=%d%n", &sigusr1, &end) == 1 && argv[i][end] == 0) {
+            (sscanf(argv[i], "--sigusr1=%d%n", &sigusr1, &end) == 1 && argv[i][end] == 0)) {
             ;
         } else if (strcmp(argv[i], "--help") == 0) {
             help(program_name);

@@ -205,13 +205,10 @@ int main(int argc, char *argv[]) {
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--help") == 0) {
             help(argv[0]);
-        } else if (stringval("--input=", argv[i], &input_name)) {
-            ;
-        } else if (intval("--log2-word-size=", argv[i], &log2_word_size)) {
-            ;
-        } else if (intval("--log2-leaf-size=", argv[i], &log2_leaf_size)) {
-            ;
-        } else if (intval("--log2-root-size=", argv[i], &log2_root_size)) {
+        } else if (stringval("--input=", argv[i], &input_name) ||
+            intval("--log2-word-size=", argv[i], &log2_word_size) ||
+            intval("--log2-leaf-size=", argv[i], &log2_leaf_size) ||
+            intval("--log2-root-size=", argv[i], &log2_root_size)) {
             ;
         } else if (intval("--page-log2-size=", argv[i], &log2_leaf_size)) {
             std::cerr << "--page-log2-size is deprecated. "

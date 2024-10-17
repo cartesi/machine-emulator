@@ -181,9 +181,7 @@ pma_entry &machine::register_pma_entry(pma_entry &&pma) {
 static bool DID_is_protected(PMA_ISTART_DID DID) {
     switch (DID) {
         case PMA_ISTART_DID::flash_drive:
-            return false;
         case PMA_ISTART_DID::cmio_rx_buffer:
-            return false;
         case PMA_ISTART_DID::cmio_tx_buffer:
             return false;
         default:

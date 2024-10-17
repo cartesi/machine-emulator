@@ -3235,9 +3235,10 @@ static FORCE_INLINE execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t 
         return raise_illegal_insn_exception(a, pc, insn);
     }
     const uint32_t rs1 = insn_get_rs1(insn);
-    const uint32_t rs2 = insn_get_rs2(insn);
+    [[maybe_unused]] const uint32_t rs2 = insn_get_rs2(insn);
     if (rs1 == 0) {
         a.flush_all_tlb();
+#ifdef DUMP_COUNTERS
         INC_COUNTER(a.get_statistics(), tlb_flush_all);
         if (rs2 == 0) {
             // Invalidates all address-translation cache entries, for all address spaces
@@ -3248,9 +3249,11 @@ static FORCE_INLINE execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t 
             // except for entries containing global mappings.
             INC_COUNTER(a.get_statistics(), tlb_flush_fence_vma_asid);
         }
+#endif
     } else {
         const uint64_t vaddr = a.read_x(rs1);
         a.flush_tlb_vaddr(vaddr);
+#ifdef DUMP_COUNTERS
         INC_COUNTER(a.get_statistics(), tlb_flush_vaddr);
         if (rs2 == 0) {
             // Invalidates all address-translation cache entries that contain leaf page table entries
@@ -3263,6 +3266,7 @@ static FORCE_INLINE execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t 
             // except for entries containing global mappings.
             INC_COUNTER(a.get_statistics(), tlb_flush_fence_vma_asid_vaddr);
         }
+#endif
     }
     return advance_to_next_insn(a, pc, execute_status::success_and_flush_fetch);
 }

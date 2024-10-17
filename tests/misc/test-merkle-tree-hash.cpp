@@ -183,13 +183,9 @@ int main(int argc, char *argv[]) try {
             help(argv[0]);
             return 1;
         }
-        if (stringval("--input=", argv[i], &input_name)) {
-            ;
-        } else if (intval("--log2-word-size=", argv[i], &log2_word_size)) {
-            ;
-        } else if (intval("--log2-leaf-size=", argv[i], &log2_leaf_size)) {
-            ;
-        } else if (intval("--log2-root-size=", argv[i], &log2_root_size)) {
+        if (stringval("--input=", argv[i], &input_name) || intval("--log2-word-size=", argv[i], &log2_word_size) ||
+            intval("--log2-leaf-size=", argv[i], &log2_leaf_size) ||
+            intval("--log2-root-size=", argv[i], &log2_root_size)) {
             ;
         } else {
             error("unrecognized option '%s'\n", argv[i]);

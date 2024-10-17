@@ -18,7 +18,6 @@ Checks: >-
   hicpp*,
   -hicpp-avoid-c-arrays,
   -hicpp-no-array-decay,
-  -hicpp-no-malloc,
   -hicpp-signed-bitwise,
   -hicpp-vararg,
   misc*,

@@ -33,7 +33,7 @@ void pma_memory::release() {
         os_unmap_file(m_host_memory, m_length);
         m_mmapped = false;
     } else {
-        std::free(m_host_memory); // NOLINT(cppcoreguidelines-no-malloc)
+        std::free(m_host_memory); // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
     }
     m_host_memory = nullptr;
     m_length = 0;
@@ -58,7 +58,7 @@ pma_memory::pma_memory(const std::string &description, uint64_t length, const ca
     m_host_memory{nullptr},
     m_mmapped{false} {
     // use calloc to improve performance
-    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc, cppcoreguidelines-prefer-member-initializer)
+    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc,hicpp-no-malloc,cppcoreguidelines-prefer-member-initializer)
     m_host_memory = static_cast<unsigned char *>(std::calloc(1, length));
     if (m_host_memory == nullptr) {
         throw std::runtime_error{"error allocating memory for "s + description};

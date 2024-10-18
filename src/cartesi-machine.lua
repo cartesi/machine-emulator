@@ -2101,8 +2101,8 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
         -- we have fed an advance state input
         if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
             if reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
-                local output = save_cmio_output(cmio_advance, data)
-                local output_hash = cartesi.keccak(output)
+                save_cmio_output(cmio_advance, data)
+                local output_hash = cartesi.keccak(data)
                 output_hashes[#output_hashes + 1] = output_hash
                 cmio_advance.output_index = cmio_advance.output_index + 1
             elseif reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT then

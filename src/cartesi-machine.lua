@@ -2045,7 +2045,7 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
                 if cmio_advance.next_input_index > cmio_advance.input_index_begin then
                     assert(#data == 32, "expected root hash in tx buffer")
                     save_cmio_output_hashes_root_hash(cmio_advance, data)
-                    check_outputs_root_hash(data, output_hashes)
+                    if cmio_advance.input_index_begin == 0 then check_outputs_root_hash(data, output_hashes) end
                 end
             -- previous reason was a reject
             elseif reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_REJECTED then
@@ -2053,7 +2053,6 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
             else
                 error("unexpected manual yield reason")
             end
-            output_hashes = {}
             stderr("\nBefore input %d\n", cmio_advance.next_input_index)
             if cmio_advance.hashes then print_root_hash(machine) end
             do_snapshot(machine)
@@ -2068,8 +2067,7 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
                 if reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED then
                     assert(#data == 32, "expected root hash in tx buffer")
                     save_cmio_output_hashes_root_hash(cmio_advance, data)
-                    check_outputs_root_hash(data, output_hashes)
-                    output_hashes = {}
+                    if cmio_advance.input_index_begin == 0 then check_outputs_root_hash(data, output_hashes) end
                     do_commit(machine)
                 elseif reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_REJECTED then
                     do_rollback(machine)

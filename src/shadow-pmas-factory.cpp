@@ -16,16 +16,18 @@
 
 #include "shadow-pmas-factory.h"
 
+#include <cstdint>
 #include <cstring>
 
 #include "machine.h"
+#include "pma-constants.h"
+#include "pma.h"
 #include "shadow-pmas.h"
 
 namespace cartesi {
 
-static bool shadow_pmas_peek(const pma_entry &pma, const machine &m, uint64_t page_offset,
+static bool shadow_pmas_peek(const pma_entry & /*pma*/, const machine &m, uint64_t page_offset,
     const unsigned char **page_data, unsigned char *scratch) {
-    (void) pma;
     static_assert(sizeof(shadow_pmas) <= PMA_PAGE_SIZE);
 
     // There is only one page: 0

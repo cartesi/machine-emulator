@@ -6,14 +6,22 @@ ARG SANITIZE=no
 
 RUN apt-get update && \
     DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends -y \
-    build-essential vim wget git clang-tidy-16 clang-format-16 lcov \
+    build-essential vim wget git lcov \
     libboost1.81-dev libssl-dev libslirp-dev \
     ca-certificates pkg-config lua5.4 liblua5.4-dev \
     luarocks xxd procps && \
-    update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-16 120 && \
-    update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-16 120 && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
+RUN apt-get update && \
+    DEBIAN_FRONTEND="noninteractive" apt-get install --no-install-recommends -y wget software-properties-common gnupg && \
+    wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc && \
+    add-apt-repository -y 'deb http://apt.llvm.org/bookworm/  llvm-toolchain-bookworm-18 main' && \
+    add-apt-repository -y 'deb http://apt.llvm.org/bookworm/  llvm-toolchain-bookworm-18 main' && \
+    apt-get update && \
+    apt-get install --no-install-recommends -y clang-tidy-18 clang-format-18 && \
+    update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-18 120 && \
+    update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-18 120 && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
 RUN luarocks install --lua-version=5.4 luasocket && \
     luarocks install --lua-version=5.4 luasec && \

@@ -17,6 +17,11 @@
 #ifndef VIRTIO_SERIALIZER_H
 #define VIRTIO_SERIALIZER_H
 
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+
+#include "i-device-state-access.h"
 #include "virtio-device.h"
 
 namespace cartesi {

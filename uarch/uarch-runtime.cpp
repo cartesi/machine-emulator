@@ -15,57 +15,74 @@
 //
 
 #include "uarch-runtime.h"
-#include "os.h"
+#include "compiler-defines.h"
 #include "uarch-constants.h"
-#include <algorithm>
+
+#include <cstddef>
+#include <cstdint>
 
 using namespace cartesi;
 
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 extern "C" void __cxa_pure_virtual() {
     abort();
 }
 
-void operator delete(void *, unsigned long) {}
+// NOLINTNEXTLINE(cert-dcl54-cpp,misc-new-delete-overloads,hicpp-new-delete-operators)
+void operator delete(void * /*ptr*/) {}
 
-extern "C" void __assert_func(const char *file, int line, const char *, const char *e) {}
+// NOLINTNEXTLINE(cert-dcl54-cpp,misc-new-delete-overloads,hicpp-new-delete-operators)
+void operator delete(void * /*ptr*/, size_t /*size*/) {}
 
-extern "C" void __assert_fail(const char *__assertion, const char *__file, unsigned int __line,
-    const char *__function) {}
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
+extern "C" void __assert_func(const char * /*file*/, int /*line*/, const char * /*func*/, const char * /*e*/) {}
+
+// NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
+extern "C" void __assert_fail(const char * /*__assertion*/, const char * /*__file*/, unsigned int /*__line*/,
+    const char * /*__function*/) {}
 
 extern "C" void *memmove(void *dest, const void *src, size_t n) {
-    if (!n || src == dest) {
+    if (n == 0 || src == dest) {
         return dest;
     }
-    auto s = const_cast<char *>(reinterpret_cast<const char *>(src));
-    auto d = reinterpret_cast<char *>(dest);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast,cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *s = const_cast<char *>(reinterpret_cast<const char *>(src));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto *d = reinterpret_cast<char *>(dest);
     if (d < s) {
-        for (; n; n--)
+        for (; n != 0; n--) {
             *d++ = *s++;
+        }
     } else {
-        while (n--)
+        while (n-- != 0) {
             d[n] = s[n];
+        }
     }
     return dest;
 }
 
 extern "C" void *memcpy(void *dest, const void *src, size_t n) {
-    auto s = reinterpret_cast<const unsigned char *>(src);
-    auto d = reinterpret_cast<unsigned char *>(dest);
-    while (n--) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *s = reinterpret_cast<const unsigned char *>(src);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    auto *d = reinterpret_cast<unsigned char *>(dest);
+    while (n-- != 0) {
         *d++ = *s++;
     }
     return dest;
 }
 
 extern "C" void *memset(void *ptr, int value, size_t num) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     volatile unsigned char *p = reinterpret_cast<unsigned char *>(ptr);
-    while (num--) {
+    while (num-- != 0) {
         *p++ = value;
     }
     return ptr;
 }
 
 extern "C" void _putchar(char c) {
+    // NOLINTNEXTLINE(hicpp-no-assembler)
     asm volatile("mv a7, %0\n"
                  "mv a6, %1\n"
                  "ecall\n"
@@ -76,7 +93,8 @@ extern "C" void _putchar(char c) {
     );
 }
 
-extern "C" NO_RETURN void abort(void) {
+extern "C" NO_RETURN void abort() {
+    // NOLINTNEXTLINE(hicpp-no-assembler)
     asm volatile("ebreak"
                  : // no output
                  : // no input
@@ -88,16 +106,15 @@ extern "C" NO_RETURN void abort(void) {
 
 namespace cartesi {
 
-void os_open_tty(void) {}
+void os_open_tty() {}
 
-void os_close_tty(void) {}
+void os_close_tty() {}
 
-bool os_poll_tty(uint64_t timeout_us) {
-    (void) timeout_us;
+bool os_poll_tty(uint64_t /*timeout_us*/) {
     return false;
 }
 
-int os_getchar(void) {
+int os_getchar() {
     return -1;
 }
 

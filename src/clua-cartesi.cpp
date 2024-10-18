@@ -14,12 +14,13 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <boost/config.hpp>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <string>
 #include <string_view>
+
+#include <boost/config.hpp>
 
 #include "base64.h"
 #include "clua-i-virtual-machine.h"
@@ -63,7 +64,7 @@ static int cartesi_mod_keccak(lua_State *L) {
     if (lua_gettop(L) < 1) {
         luaL_argerror(L, 1, "too few arguments");
     }
-    if (lua_isinteger(L, 1)) {
+    if (lua_isinteger(L, 1) != 0) {
         if (lua_gettop(L) > 1) {
             luaL_argerror(L, 2, "too many arguments");
         }
@@ -75,21 +76,20 @@ static int cartesi_mod_keccak(lua_State *L) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()), hash.size());
         return 1;
-    } else {
-        h.begin();
-        size_t len1 = 0;
-        const char *hash1 = luaL_checklstring(L, 1, &len1);
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        h.add_data(reinterpret_cast<const unsigned char *>(hash1), len1);
-        size_t len2 = 0;
-        const char *hash2 = luaL_optlstring(L, 2, "", &len2);
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        h.add_data(reinterpret_cast<const unsigned char *>(hash2), len2);
-        h.end(hash);
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()), hash.size());
-        return 1;
     }
+    h.begin();
+    size_t len1 = 0;
+    const char *hash1 = luaL_checklstring(L, 1, &len1);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    h.add_data(reinterpret_cast<const unsigned char *>(hash1), len1);
+    size_t len2 = 0;
+    const char *hash2 = luaL_optlstring(L, 2, "", &len2);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    h.add_data(reinterpret_cast<const unsigned char *>(hash2), len2);
+    h.end(hash);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()), hash.size());
+    return 1;
 }
 
 static int cartesi_mod_tobase64(lua_State *L) try {

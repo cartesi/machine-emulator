@@ -16,25 +16,49 @@
 
 #include "machine.h"
 
-#include <boost/range/adaptor/sliced.hpp>
+#include <algorithm>
+#include <cerrno>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <memory>
+#include <string>
+#include <system_error>
+#include <type_traits>
+#include <utility>
+#include <variant>
 
+#include <boost/container/static_vector.hpp>
+#include <boost/range/adaptor/sliced.hpp>
+
+#include "access-log.h"
+#include "bracket-note.h"
 #include "clint-factory.h"
 #include "dtb.h"
 #include "htif-factory.h"
 #include "htif.h"
+#include "i-device-state-access.h"
 #include "interpret.h"
+#include "machine-config.h"
+#include "machine-memory-range-descr.h"
+#include "machine-runtime-config.h"
+#include "os.h"
 #include "plic-factory.h"
+#include "pma-constants.h"
+#include "pma-defines.h"
+#include "pma.h"
 #include "record-state-access.h"
 #include "replay-state-access.h"
 #include "riscv-constants.h"
 #include "send-cmio-response.h"
 #include "shadow-pmas-factory.h"
 #include "shadow-state-factory.h"
+#include "shadow-state.h"
 #include "shadow-tlb-factory.h"
+#include "shadow-tlb.h"
+#include "shadow-uarch-state.h"
 #include "state-access.h"
 #include "strict-aliasing.h"
 #include "translate-virtual-address.h"
@@ -46,6 +70,7 @@
 #include "uarch-step.h"
 #include "unique-c-ptr.h"
 #include "virtio-console.h"
+#include "virtio-device.h"
 #include "virtio-factory.h"
 #include "virtio-net-carrier-slirp.h"
 #include "virtio-net-carrier-tuntap.h"
@@ -141,8 +166,8 @@ pma_entry machine::make_cmio_tx_buffer_pma_entry(const cmio_config &c) {
         .set_flags(m_cmio_tx_buffer_flags);
 }
 
-pma_entry &machine::register_pma_entry(pma_entry &&pma) { // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
-    if (m_s.pmas.capacity() <= m_s.pmas.size()) {         // NOLINT(readability-static-accessed-through-instance)
+pma_entry &machine::register_pma_entry(pma_entry &&pma) {
+    if (decltype(m_s.pmas)::capacity() <= m_s.pmas.size()) {
         throw std::runtime_error{"too many PMAs when adding "s + pma.get_description()};
     }
     auto start = pma.get_start();
@@ -181,9 +206,7 @@ pma_entry &machine::register_pma_entry(pma_entry &&pma) { // NOLINT(cppcoreguide
 static bool DID_is_protected(PMA_ISTART_DID DID) {
     switch (DID) {
         case PMA_ISTART_DID::flash_drive:
-            return false;
         case PMA_ISTART_DID::cmio_rx_buffer:
-            return false;
         case PMA_ISTART_DID::cmio_tx_buffer:
             return false;
         default:
@@ -250,12 +273,7 @@ static void init_tlb_entry(machine &m, uint64_t eidx) {
     tlbce.pma_index = TLB_INVALID_PMA;
 }
 
-machine::machine(const machine_config &c, const machine_runtime_config &r) :
-    m_s{},
-    m_t{},
-    m_c{c},
-    m_uarch{c.uarch},
-    m_r{r} {
+machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c{c}, m_uarch{c.uarch}, m_r{r} {
 
     if (m_c.processor.marchid == UINT64_C(-1)) {
         m_c.processor.marchid = MARCHID_INIT;
@@ -407,7 +425,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
     // Initialize VirtIO devices
     if (!m_c.virtio.empty()) {
         // VirtIO devices are disallowed in unreproducible mode
-        if (!m_c.processor.iunrep) {
+        if (m_c.processor.iunrep == 0) {
             throw std::invalid_argument{"virtio devices are only supported in unreproducible machines"};
         }
 
@@ -502,7 +520,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) :
 
     // Initialize TTY if console input is enabled
     if (m_c.htif.console_getchar || has_virtio_console()) {
-        if (!m_c.processor.iunrep) {
+        if (m_c.processor.iunrep == 0) {
             throw std::invalid_argument{"TTY stdin is only supported in unreproducible machines"};
         }
         os_open_tty();
@@ -585,8 +603,8 @@ bool machine::has_htif_console() const {
     return static_cast<bool>(read_reg(reg::htif_iconsole) & (1 << HTIF_CONSOLE_CMD_GETCHAR));
 }
 
-machine_config machine::get_serialization_config(void) const {
-    if (read_reg(reg::iunrep)) {
+machine_config machine::get_serialization_config() const {
+    if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error{"cannot serialize configuration of unreproducible machines"};
     }
     // Initialize with copy of original config
@@ -656,7 +674,7 @@ machine_config machine::get_serialization_config(void) const {
     c.cmio.rx_buffer.image_filename.clear();
     c.cmio.tx_buffer.image_filename.clear();
     c.uarch.processor.cycle = read_reg(reg::uarch_cycle);
-    c.uarch.processor.halt_flag = read_reg(reg::uarch_halt_flag);
+    c.uarch.processor.halt_flag = (read_reg(reg::uarch_halt_flag) != 0);
     c.uarch.processor.pc = read_reg(reg::uarch_pc);
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
         c.uarch.processor.x[i] = read_reg(static_cast<reg>(reg::uarch_x0 + i));
@@ -677,14 +695,13 @@ static void store_device_pma(const machine &m, const pma_entry &pma, const std::
         auto peek = pma.get_peek();
         if (!peek(pma, m, page_start_in_range, &page_data, scratch.get())) {
             throw std::runtime_error{"peek failed"};
-        } else {
-            if (!page_data) {
-                memset(scratch.get(), 0, PMA_PAGE_SIZE);
-                page_data = scratch.get();
-            }
-            if (fwrite(page_data, 1, PMA_PAGE_SIZE, fp.get()) != PMA_PAGE_SIZE) {
-                throw std::system_error{errno, std::generic_category(), "error writing to '" + name + "'"};
-            }
+        }
+        if (page_data == nullptr) {
+            memset(scratch.get(), 0, PMA_PAGE_SIZE);
+            page_data = scratch.get();
+        }
+        if (fwrite(page_data, 1, PMA_PAGE_SIZE, fp.get()) != PMA_PAGE_SIZE) {
+            throw std::system_error{errno, std::generic_category(), "error writing to '" + name + "'"};
         }
     }
 }
@@ -746,7 +763,7 @@ static inline T &deref(T *t) {
 }
 
 void machine::store_pmas(const machine_config &c, const std::string &dir) const {
-    if (read_reg(reg::iunrep)) {
+    if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error{"cannot store PMAs of unreproducible machines"};
     }
     store_memory_pma(find_pma_entry<uint64_t>(PMA_DTB_START), dir);
@@ -773,7 +790,7 @@ static void store_hash(const machine::hash_type &h, const std::string &dir) {
 }
 
 void machine::store(const std::string &dir) const {
-    if (os_mkdir(dir.c_str(), 0700)) {
+    if (os_mkdir(dir.c_str(), 0700) != 0) {
         throw std::system_error{errno, std::generic_category(), "error creating directory '"s + dir + "'"s};
     }
     if (!m_r.skip_root_hash_store) {
@@ -789,56 +806,56 @@ void machine::store(const std::string &dir) const {
     store_pmas(c, dir);
 }
 
-// NOLINTNEXTLINE(modernize-use-equals-default)
 machine::~machine() {
     // Cleanup TTY if console input was enabled
     if (m_c.htif.console_getchar || has_virtio_console()) {
         os_close_tty();
     }
 #ifdef DUMP_HIST
-    (void) fprintf(stderr, "\nInstruction Histogram:\n");
+    std::ignore = fprintf(stderr, "\nInstruction Histogram:\n");
     for (auto v : m_s.insn_hist) {
-        (void) fprintf(stderr, "%s: %" PRIu64 "\n", v.first.c_str(), v.second);
+        std::ignore = fprintf(stderr, "%s: %" PRIu64 "\n", v.first.c_str(), v.second);
     }
 #endif
 #if DUMP_COUNTERS
 #define TLB_HIT_RATIO(s, a, b) (((double) (s).stats.b) / ((s).stats.a + (s).stats.b))
-    (void) fprintf(stderr, "\nMachine Counters:\n");
-    (void) fprintf(stderr, "inner loops: %" PRIu64 "\n", m_s.stats.inner_loop);
-    (void) fprintf(stderr, "outers loops: %" PRIu64 "\n", m_s.stats.outer_loop);
-    (void) fprintf(stderr, "supervisor ints: %" PRIu64 "\n", m_s.stats.sv_int);
-    (void) fprintf(stderr, "supervisor ex: %" PRIu64 "\n", m_s.stats.sv_ex);
-    (void) fprintf(stderr, "machine ints: %" PRIu64 "\n", m_s.stats.m_int);
-    (void) fprintf(stderr, "machine ex: %" PRIu64 "\n", m_s.stats.m_ex);
-    (void) fprintf(stderr, "atomic mem ops: %" PRIu64 "\n", m_s.stats.atomic_mop);
-    (void) fprintf(stderr, "fence: %" PRIu64 "\n", m_s.stats.fence);
-    (void) fprintf(stderr, "fence.i: %" PRIu64 "\n", m_s.stats.fence_i);
-    (void) fprintf(stderr, "fence.vma: %" PRIu64 "\n", m_s.stats.fence_vma);
-    (void) fprintf(stderr, "max asid: %" PRIu64 "\n", m_s.stats.max_asid);
-    (void) fprintf(stderr, "User mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_U]);
-    (void) fprintf(stderr, "Supervisor mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_S]);
-    (void) fprintf(stderr, "Machine mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_M]);
+    std::ignore = fprintf(stderr, "\nMachine Counters:\n");
+    std::ignore = fprintf(stderr, "inner loops: %" PRIu64 "\n", m_s.stats.inner_loop);
+    std::ignore = fprintf(stderr, "outers loops: %" PRIu64 "\n", m_s.stats.outer_loop);
+    std::ignore = fprintf(stderr, "supervisor ints: %" PRIu64 "\n", m_s.stats.sv_int);
+    std::ignore = fprintf(stderr, "supervisor ex: %" PRIu64 "\n", m_s.stats.sv_ex);
+    std::ignore = fprintf(stderr, "machine ints: %" PRIu64 "\n", m_s.stats.m_int);
+    std::ignore = fprintf(stderr, "machine ex: %" PRIu64 "\n", m_s.stats.m_ex);
+    std::ignore = fprintf(stderr, "atomic mem ops: %" PRIu64 "\n", m_s.stats.atomic_mop);
+    std::ignore = fprintf(stderr, "fence: %" PRIu64 "\n", m_s.stats.fence);
+    std::ignore = fprintf(stderr, "fence.i: %" PRIu64 "\n", m_s.stats.fence_i);
+    std::ignore = fprintf(stderr, "fence.vma: %" PRIu64 "\n", m_s.stats.fence_vma);
+    std::ignore = fprintf(stderr, "max asid: %" PRIu64 "\n", m_s.stats.max_asid);
+    std::ignore = fprintf(stderr, "User mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_U]);
+    std::ignore = fprintf(stderr, "Supervisor mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_S]);
+    std::ignore = fprintf(stderr, "Machine mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_M]);
 
-    (void) fprintf(stderr, "tlb code hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_cmiss, tlb_chit));
-    (void) fprintf(stderr, "tlb read hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_rmiss, tlb_rhit));
-    (void) fprintf(stderr, "tlb write hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_wmiss, tlb_whit));
-    (void) fprintf(stderr, "tlb_chit: %" PRIu64 "\n", m_s.stats.tlb_chit);
-    (void) fprintf(stderr, "tlb_cmiss: %" PRIu64 "\n", m_s.stats.tlb_cmiss);
-    (void) fprintf(stderr, "tlb_rhit: %" PRIu64 "\n", m_s.stats.tlb_rhit);
-    (void) fprintf(stderr, "tlb_rmiss: %" PRIu64 "\n", m_s.stats.tlb_rmiss);
-    (void) fprintf(stderr, "tlb_whit: %" PRIu64 "\n", m_s.stats.tlb_whit);
-    (void) fprintf(stderr, "tlb_wmiss: %" PRIu64 "\n", m_s.stats.tlb_wmiss);
-    (void) fprintf(stderr, "tlb_flush_all: %" PRIu64 "\n", m_s.stats.tlb_flush_all);
-    (void) fprintf(stderr, "tlb_flush_read: %" PRIu64 "\n", m_s.stats.tlb_flush_read);
-    (void) fprintf(stderr, "tlb_flush_write: %" PRIu64 "\n", m_s.stats.tlb_flush_write);
-    (void) fprintf(stderr, "tlb_flush_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_vaddr);
-    (void) fprintf(stderr, "tlb_flush_satp: %" PRIu64 "\n", m_s.stats.tlb_flush_satp);
-    (void) fprintf(stderr, "tlb_flush_mstatus: %" PRIu64 "\n", m_s.stats.tlb_flush_mstatus);
-    (void) fprintf(stderr, "tlb_flush_set_priv: %" PRIu64 "\n", m_s.stats.tlb_flush_set_priv);
-    (void) fprintf(stderr, "tlb_flush_fence_vma_all: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_all);
-    (void) fprintf(stderr, "tlb_flush_fence_vma_asid: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_asid);
-    (void) fprintf(stderr, "tlb_flush_fence_vma_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_vaddr);
-    (void) fprintf(stderr, "tlb_flush_fence_vma_asid_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_asid_vaddr);
+    std::ignore = fprintf(stderr, "tlb code hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_cmiss, tlb_chit));
+    std::ignore = fprintf(stderr, "tlb read hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_rmiss, tlb_rhit));
+    std::ignore = fprintf(stderr, "tlb write hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_wmiss, tlb_whit));
+    std::ignore = fprintf(stderr, "tlb_chit: %" PRIu64 "\n", m_s.stats.tlb_chit);
+    std::ignore = fprintf(stderr, "tlb_cmiss: %" PRIu64 "\n", m_s.stats.tlb_cmiss);
+    std::ignore = fprintf(stderr, "tlb_rhit: %" PRIu64 "\n", m_s.stats.tlb_rhit);
+    std::ignore = fprintf(stderr, "tlb_rmiss: %" PRIu64 "\n", m_s.stats.tlb_rmiss);
+    std::ignore = fprintf(stderr, "tlb_whit: %" PRIu64 "\n", m_s.stats.tlb_whit);
+    std::ignore = fprintf(stderr, "tlb_wmiss: %" PRIu64 "\n", m_s.stats.tlb_wmiss);
+    std::ignore = fprintf(stderr, "tlb_flush_all: %" PRIu64 "\n", m_s.stats.tlb_flush_all);
+    std::ignore = fprintf(stderr, "tlb_flush_read: %" PRIu64 "\n", m_s.stats.tlb_flush_read);
+    std::ignore = fprintf(stderr, "tlb_flush_write: %" PRIu64 "\n", m_s.stats.tlb_flush_write);
+    std::ignore = fprintf(stderr, "tlb_flush_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_vaddr);
+    std::ignore = fprintf(stderr, "tlb_flush_satp: %" PRIu64 "\n", m_s.stats.tlb_flush_satp);
+    std::ignore = fprintf(stderr, "tlb_flush_mstatus: %" PRIu64 "\n", m_s.stats.tlb_flush_mstatus);
+    std::ignore = fprintf(stderr, "tlb_flush_set_priv: %" PRIu64 "\n", m_s.stats.tlb_flush_set_priv);
+    std::ignore = fprintf(stderr, "tlb_flush_fence_vma_all: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_all);
+    std::ignore = fprintf(stderr, "tlb_flush_fence_vma_asid: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_asid);
+    std::ignore = fprintf(stderr, "tlb_flush_fence_vma_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_vaddr);
+    std::ignore =
+        fprintf(stderr, "tlb_flush_fence_vma_asid_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_asid_vaddr);
 #endif
 }
 
@@ -1119,15 +1136,15 @@ uint64_t machine::read_reg(reg r) const {
         case reg::uarch_cycle:
             return m_uarch.get_state().cycle;
         case reg::uarch_halt_flag:
-            return m_uarch.get_state().halt_flag;
+            return static_cast<uint64_t>(m_uarch.get_state().halt_flag);
         case reg::iflags_prv:
             return m_s.iflags.PRV;
         case reg::iflags_x:
-            return m_s.iflags.X;
+            return static_cast<uint64_t>(m_s.iflags.X);
         case reg::iflags_y:
-            return m_s.iflags.Y;
+            return static_cast<uint64_t>(m_s.iflags.Y);
         case reg::iflags_h:
-            return m_s.iflags.H;
+            return static_cast<uint64_t>(m_s.iflags.H);
         case reg::htif_tohost_dev:
             return HTIF_DEV_FIELD(m_s.htif.tohost);
         case reg::htif_tohost_cmd:
@@ -1885,7 +1902,7 @@ uint64_t machine::get_reg_address(reg r) {
     }
 }
 
-void machine::mark_write_tlb_dirty_pages(void) const {
+void machine::mark_write_tlb_dirty_pages() const {
     for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
         const tlb_hot_entry &tlbhe = m_s.tlb.hot[TLB_WRITE][i];
         if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
@@ -1902,7 +1919,7 @@ void machine::mark_write_tlb_dirty_pages(void) const {
     }
 }
 
-bool machine::verify_dirty_page_maps(void) const {
+bool machine::verify_dirty_page_maps() const {
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
         "PMA and machine_merkle_tree page sizes must match");
     machine_merkle_tree::hasher_type h;
@@ -1955,7 +1972,7 @@ static uint64_t get_task_concurrency(uint64_t value) {
     return std::min(concurrency, static_cast<uint64_t>(THREADS_MAX));
 }
 
-bool machine::update_merkle_tree(void) const {
+bool machine::update_merkle_tree() const {
     machine_merkle_tree::hasher_type gh;
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
         "PMA and machine_merkle_tree page sizes must match");
@@ -1990,7 +2007,7 @@ bool machine::update_merkle_tree(void) const {
                 if (!peek(*pma, *this, page_start_in_range, &page_data, scratch.get())) {
                     return false;
                 }
-                if (page_data) {
+                if (page_data != nullptr) {
                     const bool is_pristine = std::all_of(page_data, page_data + PMA_PAGE_SIZE,
                         [](unsigned char pp) -> bool { return pp == '\0'; });
 
@@ -2049,7 +2066,7 @@ bool machine::update_merkle_tree_page(uint64_t address) {
         m_t.end_update(h);
         return false;
     }
-    if (page_data) {
+    if (page_data != nullptr) {
         const uint64_t page_address = pma.get_start() + page_start_in_range;
         hash_type hash;
         m_t.get_page_node_hash(h, page_data, hash);
@@ -2062,12 +2079,12 @@ bool machine::update_merkle_tree_page(uint64_t address) {
     return m_t.end_update(h);
 }
 
-const boost::container::static_vector<pma_entry, PMA_MAX> &machine::get_pmas(void) const {
+const boost::container::static_vector<pma_entry, PMA_MAX> &machine::get_pmas() const {
     return m_s.pmas;
 }
 
 void machine::get_root_hash(hash_type &hash) const {
-    if (read_reg(reg::iunrep)) {
+    if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error("cannot compute root hash of unreproducible machines");
     }
     if (!update_merkle_tree()) {
@@ -2076,11 +2093,12 @@ void machine::get_root_hash(hash_type &hash) const {
     m_t.get_root_hash(hash);
 }
 
-bool machine::verify_merkle_tree(void) const {
+bool machine::verify_merkle_tree() const {
     return m_t.verify_tree();
 }
 
-machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_size, skip_merkle_tree_update_t) const {
+machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_size,
+    skip_merkle_tree_update_t /*unused*/) const {
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
         "PMA and machine_merkle_tree page sizes must match");
     // Check for valid target node size
@@ -2089,7 +2107,7 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
         throw std::invalid_argument{"invalid log2_size"};
     }
     // Check target address alignment
-    if (address & ((~UINT64_C(0)) >> (64 - log2_size))) {
+    if ((address & ((~UINT64_C(0)) >> (64 - log2_size))) != 0) {
         throw std::invalid_argument{"address not aligned to log2_size"};
     }
     // If proof concerns range smaller than a page, we may need to rebuild part
@@ -2119,9 +2137,8 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
         return m_t.get_proof(address, log2_size, page_data);
         // If proof concerns range bigger than a page, we already have its hash
         // stored in the tree itself
-    } else {
-        return m_t.get_proof(address, log2_size, nullptr);
     }
+    return m_t.get_proof(address, log2_size, nullptr);
 }
 
 machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_size) const {
@@ -2135,7 +2152,7 @@ void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length
     if (length == 0) {
         return;
     }
-    if (!data) {
+    if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
     const pma_entry &pma = find_pma_entry(m_pmas, address, length);
@@ -2161,13 +2178,15 @@ void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length
         if (bytes_to_write == PMA_PAGE_SIZE) {
             if (!peek(pma, *this, page_address, &page_data, data)) {
                 throw std::runtime_error{"peek failed"};
-            } else if (!page_data) {
+            }
+            if (page_data == nullptr) {
                 memset(data, 0, bytes_to_write);
             }
         } else {
             if (!peek(pma, *this, page_address, &page_data, scratch.get())) {
                 throw std::runtime_error{"peek failed"};
-            } else if (!page_data) {
+            }
+            if (page_data == nullptr) {
                 memset(data, 0, bytes_to_write);
             } else {
                 memcpy(data, page_data + shift, bytes_to_write);
@@ -2185,7 +2204,7 @@ void machine::write_memory(uint64_t address, const unsigned char *data, uint64_t
     if (length == 0) {
         return;
     }
-    if (!data) {
+    if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
     pma_entry &pma = find_pma_entry(m_pmas, address, length);
@@ -2211,7 +2230,7 @@ void machine::read_virtual_memory(uint64_t vaddr_start, unsigned char *data, uin
     if (length == 0) {
         return;
     }
-    if (!data) {
+    if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
     const uint64_t vaddr_limit = vaddr_start + length;
@@ -2242,7 +2261,7 @@ void machine::write_virtual_memory(uint64_t vaddr_start, const unsigned char *da
     if (length == 0) {
         return;
     }
-    if (!data) {
+    if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
     const uint64_t vaddr_limit = vaddr_start + length;
@@ -2282,7 +2301,7 @@ uint64_t machine::translate_virtual_address(uint64_t vaddr) {
 
 uint64_t machine::read_word(uint64_t word_address) const {
     // Make sure address is aligned
-    if (word_address & (PMA_WORD_SIZE - 1)) {
+    if ((word_address & (PMA_WORD_SIZE - 1)) != 0) {
         throw std::invalid_argument{"address not aligned"};
     }
     const pma_entry &pma = find_pma_entry<uint64_t>(word_address);
@@ -2297,13 +2316,12 @@ uint64_t machine::read_word(uint64_t word_address) const {
         throw std::invalid_argument{"peek failed"};
     }
     // If peek returns a page, read from it
-    if (page_data) {
+    if (page_data != nullptr) {
         const uint64_t word_start_in_range = (word_address - pma.get_start()) & (PMA_PAGE_SIZE - 1);
         return aliased_aligned_read<uint64_t>(page_data + word_start_in_range);
         // Otherwise, page is always pristine
-    } else {
-        return 0;
     }
+    return 0;
 }
 
 void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {
@@ -2429,13 +2447,13 @@ void machine::verify_step_uarch(const hash_type &root_hash_before, const access_
     }
 }
 
-machine_config machine::get_default_config(void) {
+machine_config machine::get_default_config() {
     return machine_config{};
 }
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
-    if (read_reg(reg::iunrep)) {
+    if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error("microarchitecture cannot be used with unreproducible machines");
     }
     if (m_uarch.get_state().ram.get_istart_E()) {

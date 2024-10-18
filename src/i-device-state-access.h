@@ -52,119 +52,119 @@ public:
 
     /// \brief Sets bits in mip.
     void set_mip(uint64_t mask) {
-        return do_set_mip(mask);
+        do_set_mip(mask);
     }
 
     /// \brief Resets bits in mip.
     void reset_mip(uint64_t mask) {
-        return do_reset_mip(mask);
+        do_reset_mip(mask);
     }
 
     /// \brief Reads the value of the mip register.
     /// \returns Register value.
-    uint64_t read_mip(void) {
+    uint64_t read_mip() {
         return do_read_mip();
     }
 
     /// \brief Reads CSR mcycle.
     /// \returns Register value.
-    uint64_t read_mcycle(void) {
+    uint64_t read_mcycle() {
         return do_read_mcycle();
     }
 
     /// \brief Sets the iflags_H flag.
     /// \details This is Cartesi-specific.
-    void set_iflags_H(void) {
-        return do_set_iflags_H();
+    void set_iflags_H() {
+        do_set_iflags_H();
     }
 
     /// \brief Sets the iflags_Y flag.
     /// \details This is Cartesi-specific.
-    void set_iflags_Y(void) {
-        return do_set_iflags_Y();
+    void set_iflags_Y() {
+        do_set_iflags_Y();
     }
 
     /// \brief Sets the iflags_X flag.
     /// \details This is Cartesi-specific.
-    void set_iflags_X(void) {
-        return do_set_iflags_X();
+    void set_iflags_X() {
+        do_set_iflags_X();
     }
 
     /// \brief Reads CLINT's mtimecmp.
     /// \returns Register value.
-    uint64_t read_clint_mtimecmp(void) {
+    uint64_t read_clint_mtimecmp() {
         return do_read_clint_mtimecmp();
     }
 
     /// \brief Writes CLINT's mtimecmp.
     /// \param val New register value.
     void write_clint_mtimecmp(uint64_t val) {
-        return do_write_clint_mtimecmp(val);
+        do_write_clint_mtimecmp(val);
     }
 
     /// \brief Reads PLIC's girqpend.
     /// \returns Register value.
-    uint64_t read_plic_girqpend(void) {
+    uint64_t read_plic_girqpend() {
         return do_read_plic_girqpend();
     }
 
     /// \brief Writes PLIC's girqpend.
     /// \param val New register value.
     void write_plic_girqpend(uint64_t val) {
-        return do_write_plic_girqpend(val);
+        do_write_plic_girqpend(val);
     }
 
     /// \brief Reads PLIC's girqsrvd.
     /// \returns Register value.
-    uint64_t read_plic_girqsrvd(void) {
+    uint64_t read_plic_girqsrvd() {
         return do_read_plic_girqsrvd();
     }
 
     /// \brief Writes PLIC's girqsrvd.
     /// \param val New register value.
     void write_plic_girqsrvd(uint64_t val) {
-        return do_write_plic_girqsrvd(val);
+        do_write_plic_girqsrvd(val);
     }
 
     /// \brief Reads HTIF's fromhost.
     /// \returns Register value.
-    uint64_t read_htif_fromhost(void) {
+    uint64_t read_htif_fromhost() {
         return do_read_htif_fromhost();
     }
 
     /// \brief Writes HTIF's fromhost.
     /// \param val New register value.
     void write_htif_fromhost(uint64_t val) {
-        return do_write_htif_fromhost(val);
+        do_write_htif_fromhost(val);
     }
 
     /// \brief Reads HTIF's tohost.
     /// \returns Register value.
-    uint64_t read_htif_tohost(void) {
+    uint64_t read_htif_tohost() {
         return do_read_htif_tohost();
     }
 
     /// \brief Writes HTIF's tohost.
     /// \param val New register value.
     void write_htif_tohost(uint64_t val) {
-        return do_write_htif_tohost(val);
+        do_write_htif_tohost(val);
     }
 
     /// \brief Reads HTIF's ihalt.
     /// \returns Register value.
-    uint64_t read_htif_ihalt(void) {
+    uint64_t read_htif_ihalt() {
         return do_read_htif_ihalt();
     }
 
     /// \brief Reads HTIF's iconsole.
     /// \returns Register value.
-    uint64_t read_htif_iconsole(void) {
+    uint64_t read_htif_iconsole() {
         return do_read_htif_iconsole();
     }
 
     /// \brief Reads HTIF's yield.
     /// \returns Register value.
-    uint64_t read_htif_iyield(void) {
+    uint64_t read_htif_iyield() {
         return do_read_htif_iyield();
     }
 
@@ -205,24 +205,24 @@ public:
 private:
     virtual void do_set_mip(uint64_t mask) = 0;
     virtual void do_reset_mip(uint64_t mask) = 0;
-    virtual uint64_t do_read_mip(void) = 0;
-    virtual uint64_t do_read_mcycle(void) = 0;
-    virtual void do_set_iflags_H(void) = 0;
-    virtual void do_set_iflags_Y(void) = 0;
-    virtual void do_set_iflags_X(void) = 0;
-    virtual uint64_t do_read_clint_mtimecmp(void) = 0;
+    virtual uint64_t do_read_mip() = 0;
+    virtual uint64_t do_read_mcycle() = 0;
+    virtual void do_set_iflags_H() = 0;
+    virtual void do_set_iflags_Y() = 0;
+    virtual void do_set_iflags_X() = 0;
+    virtual uint64_t do_read_clint_mtimecmp() = 0;
     virtual void do_write_clint_mtimecmp(uint64_t val) = 0;
-    virtual uint64_t do_read_plic_girqpend(void) = 0;
+    virtual uint64_t do_read_plic_girqpend() = 0;
     virtual void do_write_plic_girqpend(uint64_t val) = 0;
-    virtual uint64_t do_read_plic_girqsrvd(void) = 0;
+    virtual uint64_t do_read_plic_girqsrvd() = 0;
     virtual void do_write_plic_girqsrvd(uint64_t val) = 0;
-    virtual uint64_t do_read_htif_fromhost(void) = 0;
+    virtual uint64_t do_read_htif_fromhost() = 0;
     virtual void do_write_htif_fromhost(uint64_t val) = 0;
-    virtual uint64_t do_read_htif_tohost(void) = 0;
+    virtual uint64_t do_read_htif_tohost() = 0;
     virtual void do_write_htif_tohost(uint64_t val) = 0;
-    virtual uint64_t do_read_htif_ihalt(void) = 0;
-    virtual uint64_t do_read_htif_iconsole(void) = 0;
-    virtual uint64_t do_read_htif_iyield(void) = 0;
+    virtual uint64_t do_read_htif_ihalt() = 0;
+    virtual uint64_t do_read_htif_iconsole() = 0;
+    virtual uint64_t do_read_htif_iyield() = 0;
     virtual bool do_read_memory(uint64_t paddr, unsigned char *data, uint64_t length) = 0;
     virtual bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) = 0;
     virtual uint64_t do_read_pma_istart(int p) = 0;

@@ -20,11 +20,17 @@
 /// \file
 /// \brief State access log implementation
 
-#include <boost/container/small_vector.hpp>
+#include <algorithm>
+#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <optional>
+#include <stdexcept>
+#include <string>
+#include <utility>
 #include <vector>
+
+#include <boost/container/small_vector.hpp>
 
 #include "bracket-note.h"
 #include "machine-c-api.h"
@@ -59,7 +65,6 @@ static inline uint64_t get_word_access_data(const access_data &ad, int offset = 
 }
 
 /// \brief Records an access to the machine state
-/// NOLINTNEXTLINE(bugprone-exception-escape)
 class access {
 
     using hasher_type = machine_merkle_tree::hasher_type;
@@ -72,7 +77,7 @@ public:
     void set_type(access_type type) {
         m_type = type;
     }
-    access_type get_type(void) const {
+    access_type get_type() const {
         return m_type;
     }
 
@@ -84,7 +89,7 @@ public:
 
     /// \brief Gets log<sub>2</sub> of size of access.
     /// \returns log<sub>2</sub> of size.
-    int get_log2_size(void) const {
+    int get_log2_size() const {
         return m_log2_size;
     }
 
@@ -96,7 +101,7 @@ public:
 
     /// \brief Gets address of access.
     /// \returns Address.
-    uint64_t get_address(void) const {
+    uint64_t get_address() const {
         return m_address;
     }
 
@@ -111,10 +116,10 @@ public:
 
     /// \brief Gets data that can be read at address before access.
     /// \returns Data at address.
-    const std::optional<access_data> &get_read(void) const {
+    const std::optional<access_data> &get_read() const {
         return m_read;
     }
-    std::optional<access_data> &get_read(void) {
+    std::optional<access_data> &get_read() {
         return m_read;
     }
 
@@ -129,10 +134,10 @@ public:
 
     /// \brief Gets data that was written at address after access.
     /// \returns Data at address.
-    const std::optional<access_data> &get_written(void) const {
+    const std::optional<access_data> &get_written() const {
         return m_written;
     }
-    std::optional<access_data> &get_written(void) {
+    std::optional<access_data> &get_written() {
         return m_written;
     }
 
@@ -144,10 +149,10 @@ public:
 
     /// \brief Gets hash of data that was written at address after access.
     /// \returns Hash of written data at address.
-    const std::optional<hash_type> &get_written_hash(void) const {
+    const std::optional<hash_type> &get_written_hash() const {
         return m_written_hash;
     }
-    std::optional<hash_type> &get_written_hash(void) {
+    std::optional<hash_type> &get_written_hash() {
         return m_written_hash;
     }
 
@@ -159,10 +164,10 @@ public:
 
     /// \brief Gets hash of data that can be read at address before access.
     /// \returns Hash of data at address.
-    const hash_type &get_read_hash(void) const {
+    const hash_type &get_read_hash() const {
         return m_read_hash;
     }
-    hash_type &get_read_hash(void) {
+    hash_type &get_read_hash() {
         return m_read_hash;
     }
 
@@ -209,14 +214,14 @@ public:
     }
 
 private:
-    access_type m_type{0};                                 ///< Type of access
-    uint64_t m_address{0};                                 ///< Address of access
-    int m_log2_size{0};                                    ///< Log2 of size of access
-    std::optional<access_data> m_read{};                   ///< Data before access
-    hash_type m_read_hash{};                               ///< Hash of data before access
-    std::optional<access_data> m_written{};                ///< Written data
-    std::optional<hash_type> m_written_hash{};             ///< Hash of written data
-    std::optional<sibling_hashes_type> m_sibling_hashes{}; ///< Hashes of siblings in path from address to root
+    access_type m_type{0};                               ///< Type of access
+    uint64_t m_address{0};                               ///< Address of access
+    int m_log2_size{0};                                  ///< Log2 of size of access
+    std::optional<access_data> m_read;                   ///< Data before access
+    hash_type m_read_hash{};                             ///< Hash of data before access
+    std::optional<access_data> m_written;                ///< Written data
+    std::optional<hash_type> m_written_hash;             ///< Hash of written data
+    std::optional<sibling_hashes_type> m_sibling_hashes; ///< Hashes of siblings in path from address to root
 };
 
 /// \brief Log of state accesses
@@ -242,21 +247,21 @@ public:
         }
 
         /// \brief Returns whether log includes annotations
-        bool has_annotations(void) const {
+        bool has_annotations() const {
             return m_annotations;
         }
 
         /// \brief Returns whether log includes data bigger than 8 bytes
-        bool has_large_data(void) const {
+        bool has_large_data() const {
             return m_large_data;
         }
     };
 
 private:
-    std::vector<access> m_accesses{};       ///< List of all accesses
-    std::vector<bracket_note> m_brackets{}; ///< Begin/End annotations
-    std::vector<std::string> m_notes{};     ///< Per-access annotations
-    type m_log_type;                        ///< Log type
+    std::vector<access> m_accesses;       ///< List of all accesses
+    std::vector<bracket_note> m_brackets; ///< Begin/End annotations
+    std::vector<std::string> m_notes;     ///< Per-access annotations
+    type m_log_type;                      ///< Log type
 
 public:
     explicit access_log(type log_type) : m_log_type(log_type) {
@@ -273,7 +278,7 @@ public:
     }
 
     /// \brief Clear the log
-    void clear(void) {
+    void clear() {
         m_accesses.clear();
         m_notes.clear();
         m_brackets.clear();
@@ -309,25 +314,25 @@ public:
 
     /// \brief Returns the array of notes
     /// \return Constant reference to array
-    const std::vector<std::string> &get_notes(void) const {
+    const std::vector<std::string> &get_notes() const {
         return m_notes;
     }
 
     /// \brief Returns the array of accesses
     /// \return Constant reference to array
-    const std::vector<access> &get_accesses(void) const {
+    const std::vector<access> &get_accesses() const {
         return m_accesses;
     }
 
     /// \brief Returns the array of brackets
     /// \return Constant reference to array
-    const std::vector<bracket_note> &get_brackets(void) const {
+    const std::vector<bracket_note> &get_brackets() const {
         return m_brackets;
     }
 
     /// \brief Returns the log type
     /// \return Log type
-    type get_log_type(void) const {
+    type get_log_type() const {
         return m_log_type;
     }
 };

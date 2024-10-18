@@ -17,6 +17,9 @@
 #ifndef FULL_MERKLE_TREE_H
 #define FULL_MERKLE_TREE_H
 
+#include <cstdint>
+#include <vector>
+
 #include "keccak-256-hasher.h"
 #include "merkle-tree-proof.h"
 #include "pristine-merkle-tree.h"
@@ -56,18 +59,18 @@ public:
     full_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, const std::vector<hash_type> &leaves);
 
     /// \brief Returns log<sub>2</sub> of size of tree
-    int get_log2_root_size(void) const {
+    int get_log2_root_size() const {
         return m_log2_root_size;
     }
 
     /// \brief Returns log<sub>2</sub> of size of leaf
-    int get_log2_leaf_size(void) const {
+    int get_log2_leaf_size() const {
         return m_log2_leaf_size;
     }
 
     /// \brief Returns the tree's root hash
     /// \returns Root hash
-    const hash_type &get_root_hash(void) const {
+    const hash_type &get_root_hash() const {
         return get_node_hash(0, get_log2_root_size());
     }
 

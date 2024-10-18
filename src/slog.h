@@ -23,7 +23,7 @@ namespace slog {
 
 /// \brief Encapsulates a stream and automatically adds end-of-line
 struct autoendl {
-    autoendl(std::ostream &out) : _out(out) {}
+    explicit autoendl(std::ostream &out) : _out(out) {}
 
     template <class Rhs>
     autoendl &operator<<(Rhs &&rhs) {
@@ -86,7 +86,7 @@ struct null_prefix {
 };
 
 /// \brief Stream-out operator for null prefix class
-static inline std::ostream &operator<<(std::ostream &out, null_prefix) {
+static inline std::ostream &operator<<(std::ostream &out, null_prefix /*unused*/) {
     return out;
 }
 

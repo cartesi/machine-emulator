@@ -18,11 +18,11 @@
 #define MACHINE_CONFIG_H
 
 #include <array>
-#include <boost/container/static_vector.hpp>
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <variant>
+
+#include <boost/container/static_vector.hpp>
 
 #include "riscv-constants.h"
 #include "uarch-config.h"
@@ -77,35 +77,35 @@ struct processor_config final {
 };
 
 /// \brief RAM state configuration
-struct ram_config final {         // NOLINT(bugprone-exception-escape)
-    uint64_t length{0};           ///< RAM length
-    std::string image_filename{}; ///< RAM image file name
+struct ram_config final {
+    uint64_t length{0};         ///< RAM length
+    std::string image_filename; ///< RAM image file name
 };
 
 /// \brief DTB state configuration
-struct dtb_config final { // NOLINT(bugprone-exception-escape)
+struct dtb_config final {
     std::string bootargs{
         "quiet earlycon=sbi console=hvc0 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"}; ///< Bootargs to pass
                                                                                            ///< to kernel
-    std::string init{};           ///< Initialization commands to be executed as root on boot
-    std::string entrypoint{};     ///< Commands to execute the main application
-    std::string image_filename{}; ///< DTB image file
+    std::string init;           ///< Initialization commands to be executed as root on boot
+    std::string entrypoint;     ///< Commands to execute the main application
+    std::string image_filename; ///< DTB image file
 };
 
 /// \brief Memory range configuration
-struct memory_range_config final {         // NOLINT(bugprone-exception-escape)
+struct memory_range_config final {
     uint64_t start{0xffffffffffffffffUL};  ///< Memory range start position, default is to auto detect
     uint64_t length{0xffffffffffffffffUL}; ///< Memory range length, default is to auto detect
     bool shared{false};                    ///< Target changes to memory affect image file?
-    std::string image_filename{};          ///< Memory range image file name
+    std::string image_filename;            ///< Memory range image file name
 };
 
 /// \brief List of flash drives
 using flash_drive_configs = boost::container::static_vector<memory_range_config, FLASH_DRIVE_MAX>;
 
 /// \brief TLB device state configuration
-struct tlb_config final {         // NOLINT(bugprone-exception-escape)
-    std::string image_filename{}; ///< TLB image file name
+struct tlb_config final {
+    std::string image_filename; ///< TLB image file name
 };
 
 /// \brief CLINT device state configuration
@@ -133,8 +133,8 @@ struct virtio_console_config final {};
 
 /// \brief VirtIO Plan 9 filesystem device state config
 struct virtio_p9fs_config final {
-    std::string tag{};            ///< Guest mount tag
-    std::string host_directory{}; ///< Path to the host shared directory
+    std::string tag;            ///< Guest mount tag
+    std::string host_directory; ///< Path to the host shared directory
 };
 
 /// \brief VirtIO host forward state config
@@ -151,12 +151,12 @@ using virtio_hostfwd_configs = boost::container::static_vector<virtio_hostfwd_co
 
 /// \brief VirtIO user network device state config
 struct virtio_net_user_config final {
-    virtio_hostfwd_configs hostfwd{};
+    virtio_hostfwd_configs hostfwd;
 };
 
 /// \brief VirtIO TUN/TAP network device state config
 struct virtio_net_tuntap_config final {
-    std::string iface{}; ///< Host's tap network interface (e.g "tap0")
+    std::string iface; ///< Host's tap network interface (e.g "tap0")
 };
 
 /// \brief VirtIO device state config
@@ -170,31 +170,30 @@ using virtio_device_config = std::variant<virtio_console_config, ///< Console
 using virtio_configs = boost::container::static_vector<virtio_device_config, VIRTIO_DEVICE_MAX>;
 
 /// \brief cmio buffer configuration
-struct cmio_buffer_config final { // NOLINT(bugprone-exception-escape)
-    bool shared{false};           ///< Target changes to memory affect image file?
-    std::string image_filename{}; ///< Memory range image file name
+struct cmio_buffer_config final {
+    bool shared{false};         ///< Target changes to memory affect image file?
+    std::string image_filename; ///< Memory range image file name
 };
 
 /// \brief Cmio configuration
-struct cmio_config {              // NOLINT(bugprone-exception-escape)
+struct cmio_config final {
     cmio_buffer_config rx_buffer; ///< RX buffer configuration
     cmio_buffer_config tx_buffer; ///< TX buffer configuration
 };
 
 /// \brief Machine state configuration
-/// NOLINTNEXTLINE(bugprone-exception-escape)
 struct machine_config final {
-    processor_config processor{};      ///< Processor state
-    ram_config ram{};                  ///< RAM state
-    dtb_config dtb{};                  ///< DTB state
-    flash_drive_configs flash_drive{}; ///< Flash drives state
-    tlb_config tlb{};                  ///< TLB device state
-    clint_config clint{};              ///< CLINT device state
-    plic_config plic{};                ///< PLIC device state
-    htif_config htif{};                ///< HTIF device state
-    virtio_configs virtio{};           ///< VirtIO devices state
-    uarch_config uarch{};              ///< microarchitecture configuration
-    cmio_config cmio{};                ///< Cmio state
+    processor_config processor{};    ///< Processor state
+    ram_config ram{};                ///< RAM state
+    dtb_config dtb{};                ///< DTB state
+    flash_drive_configs flash_drive; ///< Flash drives state
+    tlb_config tlb{};                ///< TLB device state
+    clint_config clint{};            ///< CLINT device state
+    plic_config plic{};              ///< PLIC device state
+    htif_config htif{};              ///< HTIF device state
+    virtio_configs virtio;           ///< VirtIO devices state
+    uarch_config uarch{};            ///< microarchitecture configuration
+    cmio_config cmio{};              ///< Cmio state
 
     /// \brief Get the name where config will be stored in a directory
     static std::string get_config_filename(const std::string &dir);

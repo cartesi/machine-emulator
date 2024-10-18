@@ -17,14 +17,11 @@
 /// \file
 /// \brief This file is be converted to Solidity by the machine-solidity-step.
 
-// NOLINTBEGIN(google-readability-casting, misc-const-correctness)
+// NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)
 
-#include <stdexcept>
-
-#include "riscv-constants.h"
+#include "uarch-reset-state.h"
 #include "uarch-record-state-access.h"
 #include "uarch-replay-state-access.h"
-#include "uarch-reset-state.h"
 #include "uarch-solidity-compat.h"
 #include "uarch-state-access.h"
 
@@ -45,4 +42,4 @@ template void uarch_reset_state(uarch_record_state_access &a);
 template void uarch_reset_state(uarch_replay_state_access &a);
 
 } // namespace cartesi
-// NOLINTEND(google-readability-casting, misc-const-correctness)
+// NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)

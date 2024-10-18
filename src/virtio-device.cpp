@@ -20,8 +20,16 @@
 // #define DEBUG_VIRTIO_ERRORS
 
 #include "virtio-device.h"
+#include "i-device-state-access.h"
+#include "interpret.h"
+#include "os.h"
 #include "plic.h"
+#include "pma-driver.h"
 #include "strict-aliasing.h"
+
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
 
 namespace cartesi {
 
@@ -151,7 +159,7 @@ bool virtq::get_desc_rw_avail_len(i_device_state_access *a, uint16_t desc_idx, u
             break;
         }
         // We are only interested in read-only buffers
-        if (desc.flags & VIRTQ_DESC_F_WRITE) {
+        if ((desc.flags & VIRTQ_DESC_F_WRITE) != 0) {
             write_len += desc.len;
             write_part = true;
         } else {
@@ -162,17 +170,17 @@ bool virtq::get_desc_rw_avail_len(i_device_state_access *a, uint16_t desc_idx, u
             read_len += desc.len;
         }
         // Stop when there are no more buffers in queue
-        if (!(desc.flags & VIRTQ_DESC_F_NEXT)) {
+        if ((desc.flags & VIRTQ_DESC_F_NEXT) == 0) {
             ret = true;
             break;
         }
         // Move to the next buffer description
         desc_idx = desc.next;
     }
-    if (pread_avail_len) {
+    if (pread_avail_len != nullptr) {
         *pread_avail_len = read_len;
     }
-    if (pwrite_avail_len) {
+    if (pwrite_avail_len != nullptr) {
         *pwrite_avail_len = write_len;
     }
     return ret;
@@ -194,7 +202,7 @@ bool virtq::read_desc_mem(i_device_state_access *a, uint16_t desc_idx, uint32_t 
             return false;
         }
         // We are only interested in read-only buffers
-        if (!(desc.flags & VIRTQ_DESC_F_WRITE)) {
+        if ((desc.flags & VIRTQ_DESC_F_WRITE) == 0) {
             // Read from target physical memory in chunks
             const uint32_t buf_end_off = buf_start_off + desc.len;
             const uint32_t chunk_start_off = std::max(buf_start_off, start_off);
@@ -216,7 +224,7 @@ bool virtq::read_desc_mem(i_device_state_access *a, uint16_t desc_idx, uint32_t 
             }
         }
         // Stop when there are no more buffers in queue
-        if (!(desc.flags & VIRTQ_DESC_F_NEXT)) {
+        if ((desc.flags & VIRTQ_DESC_F_NEXT) == 0) {
             // Operation failed because more chunks were expected
             return false;
         }
@@ -241,7 +249,7 @@ bool virtq::write_desc_mem(i_device_state_access *a, uint16_t desc_idx, uint32_t
             return false;
         }
         // We are only interested in write-only buffers
-        if (desc.flags & VIRTQ_DESC_F_WRITE) {
+        if ((desc.flags & VIRTQ_DESC_F_WRITE) != 0) {
             // Read from target physical memory in chunks
             const uint32_t buf_end_off = buf_start_off + desc.len;
             const uint32_t chunk_start_off = std::max(buf_start_off, start_off);
@@ -263,7 +271,7 @@ bool virtq::write_desc_mem(i_device_state_access *a, uint16_t desc_idx, uint32_t
             }
         }
         // Stop when there are no more buffers in queue
-        if (!(desc.flags & VIRTQ_DESC_F_NEXT)) {
+        if ((desc.flags & VIRTQ_DESC_F_NEXT) == 0) {
             // Operation failed because more chunks were expected
             return false;
         }
@@ -330,7 +338,7 @@ void virtio_device::reset(i_device_state_access *a) {
 void virtio_device::set_irq(i_device_state_access *a, uint32_t add_int_status) {
     int_status |= add_int_status;
 #ifdef DEBUG_VIRTIO
-    (void) fprintf(stderr, "virtio[%d]: set_irq int_status=%d\n", virtio_idx, int_status);
+    std::ignore = fprintf(stderr, "virtio[%d]: set_irq int_status=%d\n", virtio_idx, int_status);
 #endif
     // When interrupt status is non-zero, we should set pending IRQ to the PLIC device
     if (int_status != 0) {
@@ -341,7 +349,7 @@ void virtio_device::set_irq(i_device_state_access *a, uint32_t add_int_status) {
 void virtio_device::reset_irq(i_device_state_access *a, uint32_t rem_int_status) {
     int_status &= ~rem_int_status;
 #ifdef DEBUG_VIRTIO
-    (void) fprintf(stderr, "virtio[%d]: reset_irq int_status=%d\n", virtio_idx, int_status);
+    std::ignore = fprintf(stderr, "virtio[%d]: reset_irq int_status=%d\n", virtio_idx, int_status);
 #endif
     // When interrupt status is zero, we should clear pending IRQ from the PLIC device
     if (int_status == 0) {
@@ -354,7 +362,7 @@ void virtio_device::reset_irq(i_device_state_access *a, uint32_t rem_int_status)
 
 void virtio_device::notify_queue_used(i_device_state_access *a) {
 #if defined(DEBUG_VIRTIO)
-    (void) fprintf(stderr, "virtio[%d]: notify_queue_used\n", virtio_idx);
+    std::ignore = fprintf(stderr, "virtio[%d]: notify_queue_used\n", virtio_idx);
 #endif
     // A device MUST NOT consume buffers or send any used buffer notifications to the driver before DRIVER_OK.
     if (driver_ok) {
@@ -365,7 +373,7 @@ void virtio_device::notify_queue_used(i_device_state_access *a) {
 void virtio_device::notify_device_needs_reset(i_device_state_access *a) {
     // A fatal failure happened while processing a queue.
 #if defined(DEBUG_VIRTIO) || defined(DEBUG_VIRTIO_ERRORS)
-    (void) fprintf(stderr, "virtio[%d]: notify_device_needs_reset\n", virtio_idx);
+    std::ignore = fprintf(stderr, "virtio[%d]: notify_device_needs_reset\n", virtio_idx);
 #endif
     // The device SHOULD set DEVICE_NEEDS_RESET when it enters an error state that a reset is needed.
     device_status |= VIRTIO_STATUS_DEVICE_NEEDS_RESET;
@@ -379,7 +387,8 @@ void virtio_device::notify_config_change(i_device_state_access *a) {
     // so the driver knows that it should re-read its configuration.
     config_generation++;
 #if defined(DEBUG_VIRTIO)
-    (void) fprintf(stderr, "virtio[%d]: notify_config_change config_generation=%d\n", virtio_idx, config_generation);
+    std::ignore =
+        fprintf(stderr, "virtio[%d]: notify_config_change config_generation=%d\n", virtio_idx, config_generation);
 #endif
     // A device MUST NOT send config notifications until the driver initializes the device.
     if (driver_ok) {
@@ -397,7 +406,7 @@ bool virtio_device::prepare_queue_write(i_device_state_access *a, uint32_t queue
     // Retrieve queue
     const virtq &vq = queue[queue_idx];
     // Silently ignore when the queue is not ready yet
-    if (!vq.ready) {
+    if (vq.ready == 0) {
         return true;
     }
     // Retrieve available buffer
@@ -441,8 +450,8 @@ bool virtio_device::consume_and_notify_queue(i_device_state_access *a, uint32_t 
         return false;
     }
 #ifdef DEBUG_VIRTIO
-    (void) fprintf(stderr, "virtio[%d]: consume_and_notify_queue queue_idx=%d desc_idx=%d written_len=%d\n", virtio_idx,
-        queue_idx, desc_idx, written_len);
+    std::ignore = fprintf(stderr, "virtio[%d]: consume_and_notify_queue queue_idx=%d desc_idx=%d written_len=%d\n",
+        virtio_idx, queue_idx, desc_idx, written_len);
 #endif
     // After consuming a queue, we must notify the driver right-away
     notify_queue_used(a);
@@ -457,7 +466,7 @@ void virtio_device::on_device_queue_notify(i_device_state_access *a, uint32_t qu
     // Retrieve queue
     const virtq &vq = queue[queue_idx];
     // The device MUST NOT access virtual queue contents when QueueReady is zero.
-    if (!vq.ready) {
+    if (vq.ready == 0) {
         return;
     }
     // When the driver wants to send a buffer to the device, it fills in a slot in the descriptor table
@@ -484,7 +493,7 @@ void virtio_device::on_device_queue_notify(i_device_state_access *a, uint32_t qu
             return;
         }
 #if defined(DEBUG_VIRTIO)
-        (void) fprintf(stderr,
+        std::ignore = fprintf(stderr,
             "virtio[%d]: on_device_queue_available queue_idx=%d last_avail_idx=%d last_used_idx=%d desc_idx=%d "
             "read_avail_len=%d write_avail_len=%d\n",
             virtio_idx, queue_idx, last_avail_idx, last_used_idx, desc_idx, read_avail_len, write_avail_len);
@@ -499,15 +508,9 @@ void virtio_device::on_device_queue_notify(i_device_state_access *a, uint32_t qu
     }
 }
 
-void virtio_device::prepare_select(select_fd_sets *fds, uint64_t *timeout_us) {
-    (void) fds;
-    (void) timeout_us;
-}
+void virtio_device::prepare_select(select_fd_sets * /*fds*/, uint64_t * /*timeout_us*/) {}
 
-bool virtio_device::poll_selected(int select_ret, select_fd_sets *fds, i_device_state_access *da) {
-    (void) select_ret;
-    (void) fds;
-    (void) da;
+bool virtio_device::poll_selected(int /*select_ret*/, select_fd_sets * /*fds*/, i_device_state_access * /*da*/) {
     return false;
 };
 
@@ -519,20 +522,17 @@ bool virtio_device::poll_nowait(i_device_state_access *da) {
         &timeout_us);
 }
 
-uint64_t virtio_device::read_shm_base(uint32_t shm_sel) {
-    (void) shm_sel;
+uint64_t virtio_device::read_shm_base(uint32_t /*shm_sel*/) {
     // Reading from a non-existent region results in a base of 0xffffffffffffffff.
     return UINT64_C(-1);
 }
 
-uint64_t virtio_device::read_shm_length(uint32_t shm_sel) {
-    (void) shm_sel;
+uint64_t virtio_device::read_shm_length(uint32_t /*shm_sel*/) {
     // Reading from a non-existent region results in a length of 0xffffffffffffffff.
     return UINT64_C(-1);
 }
 
-bool virtio_device::mmio_read_config(i_device_state_access *a, uint64_t offset, uint32_t *pval, int log2_size) {
-    (void) a;
+bool virtio_device::mmio_read_config(i_device_state_access * /*a*/, uint64_t offset, uint32_t *pval, int log2_size) {
     const int size = 1 << log2_size;
     // Only accept aligned reads
     if ((offset & (size - 1)) != 0) {
@@ -544,7 +544,7 @@ bool virtio_device::mmio_read_config(i_device_state_access *a, uint64_t offset, 
     }
     // Only accept 1,2,4 byte config reads
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    const unsigned char *config_space_buf = reinterpret_cast<const unsigned char *>(config_space.data());
+    const auto *config_space_buf = reinterpret_cast<const unsigned char *>(config_space.data());
     switch (log2_size) {
         case 0:
             *pval = aliased_aligned_read<uint8_t>(&config_space_buf[offset]);
@@ -560,9 +560,8 @@ bool virtio_device::mmio_read_config(i_device_state_access *a, uint64_t offset, 
     }
 }
 
-execute_status virtio_device::mmio_write_config(i_device_state_access *a, uint64_t offset, uint32_t val,
+execute_status virtio_device::mmio_write_config(i_device_state_access * /*a*/, uint64_t offset, uint32_t val,
     int log2_size) {
-    (void) a;
     const int size = 1 << log2_size;
     // Only accept aligned writes
     if ((offset & (size - 1)) != 0) {
@@ -574,7 +573,7 @@ execute_status virtio_device::mmio_write_config(i_device_state_access *a, uint64
     }
     // Only accept 1,2,4 byte config writes
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    unsigned char *config_space_buf = reinterpret_cast<unsigned char *>(config_space.data());
+    auto *config_space_buf = reinterpret_cast<unsigned char *>(config_space.data());
     switch (log2_size) {
         case 0:
             aliased_aligned_write<uint8_t>(&config_space_buf[offset], val);
@@ -596,7 +595,7 @@ bool virtio_device::mmio_read(i_device_state_access *a, uint64_t offset, uint32_
         return mmio_read_config(a, offset - VIRTIO_MMIO_CONFIG, pval, log2_size);
     }
     // The driver MUST only use 32 bit wide and aligned reads to access the control registers
-    if (offset & 3 || log2_size != 2) {
+    if (((offset & 3) != 0) || log2_size != 2) {
         return false;
     }
     // Support only MMIO readable offsets according to the VirtIO spec
@@ -673,7 +672,7 @@ execute_status virtio_device::mmio_write(i_device_state_access *a, uint64_t offs
         return mmio_write_config(a, offset - VIRTIO_MMIO_CONFIG, val, log2_size);
     }
     // The driver MUST only use 32 bit wide and aligned writes to access the control registers
-    if (offset & 3 || log2_size != 2) {
+    if (((offset & 3) != 0) || log2_size != 2) {
         return execute_status::failure;
     }
     // Support only MMIO writable offsets according to the VirtIO spec
@@ -743,7 +742,7 @@ execute_status virtio_device::mmio_write(i_device_state_access *a, uint64_t offs
             } else {
                 const uint32_t old_status = device_status;
                 const uint64_t enabling_status = (device_status ^ val) & val;
-                if (enabling_status & VIRTIO_STATUS_FEATURES_OK) {
+                if ((enabling_status & VIRTIO_STATUS_FEATURES_OK) != 0) {
                     // The driver will re-read device status to ensure the FEATURES_OK bit is really set.
                     // We allow the device initialization to succeed only if the driver supports our device
                     // features.
@@ -753,10 +752,10 @@ execute_status virtio_device::mmio_write(i_device_state_access *a, uint64_t offs
                 }
                 // Writing non-zero values to this register sets the status flags, indicating the driver progress.
                 device_status = val;
-                if (enabling_status & VIRTIO_STATUS_DRIVER_OK) {
+                if ((enabling_status & VIRTIO_STATUS_DRIVER_OK) != 0) {
                     // If DRIVER_OK is set, after it sets DEVICE_NEEDS_RESET, the device MUST send a device
                     // configuration change notification to the driver.
-                    if (old_status & VIRTIO_STATUS_DEVICE_NEEDS_RESET) {
+                    if ((old_status & VIRTIO_STATUS_DEVICE_NEEDS_RESET) != 0) {
                         set_irq(a, VIRTIO_INT_STATUS_CONFIG_CHANGE);
                     } else {
                         driver_ok = true;
@@ -809,20 +808,20 @@ execute_status virtio_device::mmio_write(i_device_state_access *a, uint64_t offs
 
 /// \brief VirtIO device read callback. See ::pma_read.
 static bool virtio_read(void *context, i_device_state_access *a, uint64_t offset, uint64_t *pval, int log2_size) {
-    virtio_device *vdev = static_cast<virtio_device *>(context);
+    auto *vdev = static_cast<virtio_device *>(context);
     uint32_t val32 = 0;
     const bool status = vdev->mmio_read(a, offset, &val32, log2_size);
     if (status) {
         *pval = val32;
     }
 #ifdef DEBUG_VIRTIO_MMIO
-    (void) fprintf(stderr, "virtio[%d]: mmio_read  offset=0x%03lx (%s) value=%d size=%d\n", vdev->get_virtio_index(),
-        offset, get_virtio_mmio_offset_name(offset), val32, 1 << log2_size);
+    std::ignore = fprintf(stderr, "virtio[%d]: mmio_read  offset=0x%03lx (%s) value=%d size=%d\n",
+        vdev->get_virtio_index(), offset, get_virtio_mmio_offset_name(offset), val32, 1 << log2_size);
 #endif
 #if defined(DEBUG_VIRTIO_MMIO) || defined(DEBUG_VIRTIO_ERRORS)
     if (!status) {
-        (void) fprintf(stderr, "virtio[%d]: mmio_read FAILED!  offset=0x%03lx(%s) size=%d\n", vdev->get_virtio_index(),
-            offset, get_virtio_mmio_offset_name(offset), 1 << log2_size);
+        std::ignore = fprintf(stderr, "virtio[%d]: mmio_read FAILED!  offset=0x%03lx(%s) size=%d\n",
+            vdev->get_virtio_index(), offset, get_virtio_mmio_offset_name(offset), 1 << log2_size);
     }
 #endif
     return status;
@@ -831,15 +830,15 @@ static bool virtio_read(void *context, i_device_state_access *a, uint64_t offset
 /// \brief VirtIO device read callback. See ::pma_write.
 static execute_status virtio_write(void *context, i_device_state_access *a, uint64_t offset, uint64_t val,
     int log2_size) {
-    virtio_device *vdev = static_cast<virtio_device *>(context);
+    auto *vdev = static_cast<virtio_device *>(context);
 #ifdef DEBUG_VIRTIO_MMIO
-    (void) fprintf(stderr, "virtio[%d]: mmio_write offset=0x%03lx (%s) value=%ld size=%d\n", vdev->get_virtio_index(),
-        offset, get_virtio_mmio_offset_name(offset), val, 1 << log2_size);
+    std::ignore = fprintf(stderr, "virtio[%d]: mmio_write offset=0x%03lx (%s) value=%ld size=%d\n",
+        vdev->get_virtio_index(), offset, get_virtio_mmio_offset_name(offset), val, 1 << log2_size);
 #endif
     const execute_status status = vdev->mmio_write(a, offset, val, log2_size);
 #if defined(DEBUG_VIRTIO_MMIO) || defined(DEBUG_VIRTIO_ERRORS)
     if (status == execute_status::failure) {
-        (void) fprintf(stderr, "virtio[%d]: mmio_write FAILED! offset=0x%03lx (%s) value=%ld size=%d\n",
+        std::ignore = fprintf(stderr, "virtio[%d]: mmio_write FAILED! offset=0x%03lx (%s) value=%ld size=%d\n",
             vdev->get_virtio_index(), offset, get_virtio_mmio_offset_name(offset), val, 1 << log2_size);
     }
 #endif

@@ -17,8 +17,9 @@
 #ifndef PLIC_H
 #define PLIC_H
 
-#include "pma-driver.h"
 #include <cstdint>
+
+#include "pma-driver.h"
 
 /// \file
 /// \brief Clock interruptor device.

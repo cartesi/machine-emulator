@@ -17,9 +17,18 @@
 #ifndef UARCH_STATE_ACCESS_H
 #define UARCH_STATE_ACCESS_H
 
+#include <cassert>
+#include <cstdint>
+#include <stdexcept>
+
+#include "bracket-note.h"
 #include "i-uarch-state-access.h"
 #include "machine-state.h"
+#include "pma.h"
+#include "riscv-constants.h"
+#include "strict-aliasing.h"
 #include "uarch-bridge.h"
+#include "uarch-pristine.h"
 #include "uarch-state.h"
 
 namespace cartesi {
@@ -79,14 +88,10 @@ private:
     friend i_uarch_state_access<uarch_state_access>;
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_push_bracket(bracket_type type, const char *text) {
-        (void) type;
-        (void) text;
-    }
+    void do_push_bracket(bracket_type /*type*/, const char * /*text*/) {}
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    int do_make_scoped_note(const char *text) {
-        (void) text;
+    int do_make_scoped_note(const char * /*text*/) {
         return 0;
     }
 
@@ -158,7 +163,8 @@ private:
         if (pma.get_istart_E()) {
             // This word doesn't fall within any memory PMA range.
             // Check if uarch is trying to access a machine state register
-            return write_register(paddr, data);
+            write_register(paddr, data);
+            return;
         }
         if (!pma.get_istart_W()) {
             throw std::runtime_error("pma is not writable");
@@ -175,10 +181,10 @@ private:
     /// \param paddr Address of the state register
     /// \param data New register value
     void write_register(uint64_t paddr, uint64_t data) {
-        return uarch_bridge::write_register(paddr, m_s, data);
+        uarch_bridge::write_register(paddr, m_s, data);
     }
 
-    void do_reset_state(void) {
+    void do_reset_state() {
         m_us.halt_flag = false;
         m_us.pc = UARCH_PC_INIT;
         m_us.cycle = UARCH_CYCLE_INIT;

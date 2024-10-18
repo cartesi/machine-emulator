@@ -47,7 +47,7 @@ static size_t b64encode(uint8_t c, uint8_t *input, size_t size, std::ostringstre
     input[size++] = c;
     if (size == 3) {
         uint8_t code[4];
-        unsigned long value = 0;
+        uint64_t value = 0;
         value += input[0];
         value <<= 8;
         value += input[1];
@@ -71,7 +71,7 @@ static size_t b64encode(uint8_t c, uint8_t *input, size_t size, std::ostringstre
 // Result, if any, is appended to buffer.
 // Returns 0.
 static size_t b64pad(const uint8_t *input, size_t size, std::ostringstream &sout) {
-    unsigned long value = 0;
+    uint64_t value = 0;
     uint8_t code[4] = {'=', '=', '=', '='};
     switch (size) {
         case 1:
@@ -108,9 +108,8 @@ static size_t b64decode(uint8_t c, uint8_t *input, size_t size, std::ostringstre
     if (b64unbase[c] > 64) {
         if (c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r') { // ignore whitespace characters
             return size;
-        } else { // throw an error for invalid characters
-            throw std::domain_error(std::string("invalid base64 character code ") + std::to_string(c));
-        }
+        } // throw an error for invalid characters
+        throw std::domain_error(std::string("invalid base64 character code ") + std::to_string(c));
     }
     input[size++] = c;
     // decode atom
@@ -131,14 +130,19 @@ static size_t b64decode(uint8_t c, uint8_t *input, size_t size, std::ostringstre
         value >>= 8;
         decoded[0] = static_cast<uint8_t>(value);
         // take care of paddding
-        valid = (input[2] == '=') ? 1 : (input[3] == '=') ? 2 : 3;
+        if (input[2] == '=') {
+            valid = 1;
+        } else if (input[3] == '=') {
+            valid = 2;
+        } else {
+            valid = 3;
+        }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         sout << std::string_view(reinterpret_cast<char *>(decoded), valid);
         return 0;
         // need more data
-    } else {
-        return size;
     }
+    return size;
 }
 
 std::string encode_base64(const std::string_view &input) {

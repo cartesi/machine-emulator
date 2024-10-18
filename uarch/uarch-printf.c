@@ -30,6 +30,9 @@
 //
 ///////////////////////////////////////////////////////////////////////////////
 
+#define PRINTF_DISABLE_SUPPORT_FLOAT
+#define PRINTF_DISABLE_SUPPORT_EXPONENTIAL
+
 #include <stdbool.h>
 #include <stdint.h>
 

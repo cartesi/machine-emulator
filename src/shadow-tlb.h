@@ -22,11 +22,13 @@
 /// \details The Translation Lookaside Buffer is a small cache used to speed up translation between
 /// virtual target addresses and the corresponding memory address in the host.
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+
 #include "pma-constants.h"
 #include "pma-driver.h"
 #include "riscv-constants.h"
-#include <array>
-#include <cstddef>
 
 namespace cartesi {
 

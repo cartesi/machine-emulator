@@ -17,6 +17,7 @@
 #ifndef OS_H
 #define OS_H
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 
@@ -42,10 +43,10 @@ struct select_fd_sets {
 };
 
 /// \brief Initialize console
-void os_open_tty(void);
+void os_open_tty();
 
 /// \brief Cleanup console initialization
-void os_close_tty(void);
+void os_close_tty();
 
 /// \brief Fill file descriptors to be polled by select() with TTY's file descriptors.
 /// \param fds Pointer to sets of read, write and except file descriptors to be updated.
@@ -68,7 +69,7 @@ void os_get_tty_size(uint16_t *pwidth, uint16_t *pheight);
 
 /// \brief Reads a character from the console input.
 /// \return Character read from console, it may be -1 if there is no character.
-int os_getchar(void);
+int os_getchar();
 
 /// \brief Reads multiple characters from the console input.
 /// \param data Buffer to receive the console characters.
@@ -108,10 +109,10 @@ struct parallel_for_mutex {
 
 /// \brief Mutex guard for os_parallel_for()
 struct parallel_for_mutex_guard {
-    parallel_for_mutex_guard(const parallel_for_mutex &mutex) : mutex(mutex) {
+    explicit parallel_for_mutex_guard(const parallel_for_mutex &mutex) : mutex(mutex) {
         mutex.lock();
     }
-    ~parallel_for_mutex_guard() { // NOLINT(bugprone-exception-escape)
+    ~parallel_for_mutex_guard() {
         mutex.unlock();
     }
 

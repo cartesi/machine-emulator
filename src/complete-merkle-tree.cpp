@@ -99,12 +99,11 @@ const complete_merkle_tree::hash_type &complete_merkle_tree::get_node_hash(addre
     }
     if (address < level.size()) {
         return level[address];
-    } else {
-        return m_pristine.get_hash(log2_size);
     }
+    return m_pristine.get_hash(log2_size);
 }
 
-void complete_merkle_tree::bubble_up(void) {
+void complete_merkle_tree::bubble_up() {
     hasher_type h;
     // Go bottom up, updating hashes
     for (int log2_next_size = get_log2_leaf_size() + 1; log2_next_size <= get_log2_root_size(); ++log2_next_size) {

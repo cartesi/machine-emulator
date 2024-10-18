@@ -32,9 +32,7 @@ static constexpr auto htif_iconsole_rel_addr = static_cast<uint64_t>(htif_csr::i
 static constexpr auto htif_iyield_rel_addr = static_cast<uint64_t>(htif_csr::iyield);
 
 /// \brief HTIF device read callback. See ::pma_read.
-static bool htif_read(void *context, i_device_state_access *a, uint64_t offset, uint64_t *pval, int log2_size) {
-    (void) context;
-
+static bool htif_read(void * /*context*/, i_device_state_access *a, uint64_t offset, uint64_t *pval, int log2_size) {
     // Our HTIF only supports 64-bit reads
     if (log2_size != 3) {
         return false;
@@ -64,8 +62,7 @@ static bool htif_read(void *context, i_device_state_access *a, uint64_t offset, 
 }
 
 static execute_status htif_halt(i_device_state_access *a, uint64_t cmd, uint64_t data) {
-    (void) a;
-    if (cmd == HTIF_HALT_CMD_HALT && (data & 1)) {
+    if (cmd == HTIF_HALT_CMD_HALT && ((data & 1) != 0)) {
         a->set_iflags_H();
         return execute_status::success_and_halt;
     }
@@ -74,11 +71,10 @@ static execute_status htif_halt(i_device_state_access *a, uint64_t cmd, uint64_t
     return execute_status::success;
 }
 
-static execute_status htif_yield(i_device_state_access *a, uint64_t cmd, uint64_t data) {
-    (void) data;
+static execute_status htif_yield(i_device_state_access *a, uint64_t cmd, uint64_t /*data*/) {
     execute_status status = execute_status::success;
     // If yield command is enabled, yield and acknowledge
-    if (cmd < 64 && (a->read_htif_iyield() >> cmd) & 1) {
+    if (cmd < 64 && (((a->read_htif_iyield() >> cmd) & 1) != 0)) {
         if (cmd == HTIF_YIELD_CMD_MANUAL) {
             a->set_iflags_Y();
             status = execute_status::success_and_yield;
@@ -96,12 +92,12 @@ static execute_status htif_yield(i_device_state_access *a, uint64_t cmd, uint64_
 static execute_status htif_console(htif_runtime_config *runtime_config, i_device_state_access *a, uint64_t cmd,
     uint64_t data) {
     // If console command is enabled, perform it and acknowledge
-    if (cmd < 64 && (a->read_htif_iconsole() >> cmd) & 1) {
+    if (cmd < 64 && (((a->read_htif_iconsole() >> cmd) & 1) != 0)) {
         if (cmd == HTIF_CONSOLE_CMD_PUTCHAR) {
             const uint8_t ch = data & 0xff;
             // In microarchitecture runtime_config will always be nullptr,
             // therefore the HTIF runtime config is actually ignored.
-            if (!runtime_config || !runtime_config->no_console_putchar) {
+            if ((runtime_config == nullptr) || !runtime_config->no_console_putchar) {
                 os_putchar(ch);
             }
             a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_CONSOLE, cmd, 0, 0));
@@ -145,7 +141,7 @@ static execute_status htif_write_tohost(htif_runtime_config *runtime_config, i_d
 static execute_status htif_write(void *context, i_device_state_access *a, uint64_t offset, uint64_t val,
     int log2_size) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    htif_runtime_config *runtime_config = reinterpret_cast<htif_runtime_config *>(context);
+    auto *runtime_config = reinterpret_cast<htif_runtime_config *>(context);
     // Our HTIF only supports 64-bit writes
     if (log2_size != 3) {
         return execute_status::failure;

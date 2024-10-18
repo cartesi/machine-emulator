@@ -17,10 +17,11 @@
 #ifndef RISCV_CONSTANTS_H
 #define RISCV_CONSTANTS_H
 
+#include <cstdint>
+
 #include "machine-c-version.h"
 #include "pma-constants.h"
 #include "pma-defines.h"
-#include <cstdint>
 
 /// \file
 /// \brief RISC-V constants

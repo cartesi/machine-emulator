@@ -19,19 +19,32 @@
 
 /// \file
 /// \brief State access implementation that record and logs all accesses
+#include <cassert>
+#include <cstdint>
+#include <cstring>
 #include <memory>
+#include <stdexcept>
+#include <string>
+#include <utility>
 
+#include "access-log.h"
+#include "i-hasher.h"
+#include "i-state-access.h"
 #include "i-uarch-state-access.h"
 #include "machine-merkle-tree.h"
-
+#include "machine-state.h"
 #include "machine.h"
+#include "meta.h"
+#include "pma.h"
+#include "riscv-constants.h"
+#include "shadow-uarch-state.h"
+#include "strict-aliasing.h"
 #include "uarch-bridge.h"
 #include "uarch-constants.h"
-#include "uarch-machine.h"
-
 #include "uarch-pristine-state-hash.h"
-#include "uarch-solidity-compat.h"
-#include "unique-c-ptr.h"
+#include "uarch-pristine.h"
+#include "uarch-state.h"
+
 namespace cartesi {
 
 /// \details The uarch_record_state_access logs all access to the machine state.
@@ -101,12 +114,12 @@ public:
     ~uarch_record_state_access() = default;
 
     /// \brief Returns const pointer to access log.
-    std::shared_ptr<const access_log> get_log(void) const {
+    std::shared_ptr<const access_log> get_log() const {
         return m_log;
     }
 
     /// \brief Returns pointer to access log.
-    std::shared_ptr<access_log> get_log(void) {
+    std::shared_ptr<access_log> get_log() {
         return m_log;
     }
 
@@ -252,8 +265,7 @@ private:
     /// \param paligned Physical address in the machine state, aligned to a 64-bit word.
     void update_after_write(uint64_t paligned) {
         assert((paligned & (sizeof(uint64_t) - 1)) == 0);
-        const bool updated = m_m.update_merkle_tree_page(paligned);
-        (void) updated;
+        [[maybe_unused]] const bool updated = m_m.update_merkle_tree_page(paligned);
         assert(updated);
     }
 
@@ -270,9 +282,9 @@ private:
     }
 
     void log_before_write_write_and_update(uint64_t paligned, bool &dest, bool val, const char *text) {
-        uint64_t dest64 = dest;
-        log_before_write_write_and_update(paligned, dest64, val, text);
-        dest = dest64;
+        auto dest64 = static_cast<uint64_t>(dest);
+        log_before_write_write_and_update(paligned, dest64, static_cast<uint64_t>(val), text);
+        dest = (dest64 != 0);
         update_after_write(paligned);
     }
 
@@ -293,7 +305,7 @@ private:
 
     void do_write_x(int reg, uint64_t val) {
         assert(reg != 0);
-        return log_before_write_write_and_update(shadow_uarch_state_get_x_abs_addr(reg), m_us.x[reg], val, "uarch.x");
+        log_before_write_write_and_update(shadow_uarch_state_get_x_abs_addr(reg), m_us.x[reg], val, "uarch.x");
     }
 
     uint64_t do_read_pc() const {
@@ -301,8 +313,8 @@ private:
     }
 
     void do_write_pc(uint64_t val) {
-        return log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::pc),
-            m_us.pc, val, "uarch.pc");
+        log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::pc), m_us.pc, val,
+            "uarch.pc");
     }
 
     uint64_t do_read_cycle() const {
@@ -310,13 +322,13 @@ private:
     }
 
     void do_write_cycle(uint64_t val) {
-        return log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::cycle),
+        log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::cycle),
             m_us.cycle, val, "uarch.cycle");
     }
 
     bool do_read_halt_flag() const {
-        return log_read(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag), m_us.halt_flag,
-            "uarch.halt_flag");
+        return log_read(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag),
+                   static_cast<uint64_t>(m_us.halt_flag), "uarch.halt_flag") != 0;
     }
 
     void do_set_halt_flag() {
@@ -325,7 +337,7 @@ private:
     }
 
     void do_reset_halt_flag() {
-        return log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag),
+        log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag),
             m_us.halt_flag, false, "uarch.halt_flag");
     }
 
@@ -364,7 +376,8 @@ private:
         auto &pma = find_memory_pma_entry(paddr, sizeof(uint64_t));
         if (pma.get_istart_E()) {
             // Memory not found. Try to write a machine state register
-            return write_register(paddr, data);
+            write_register(paddr, data);
+            return;
         }
         if (!pma.get_istart_W()) {
             throw std::runtime_error("pma is not writable");
@@ -398,13 +411,11 @@ private:
 
     /// \brief Fallback to error on all other word sizes
     template <typename T>
-    void write_register(uint64_t paddr, T data) {
-        (void) paddr;
-        (void) data;
+    void write_register(uint64_t /*paddr*/, T /*data*/) {
         throw std::runtime_error("invalid memory write access from microarchitecture");
     }
 
-    void do_reset_state(void) {
+    void do_reset_state() {
         // The pristine uarch state decided at compile time and never changes.
         // We set all uarch registers and RAM to their initial values and
         // log a single write access to the entire uarch memory range.
@@ -449,7 +460,7 @@ private:
 
     /// \brief Returns the image of the entire uarch state
     /// \return access_data containing the image of the current uarch state
-    access_data get_uarch_state_image(void) {
+    access_data get_uarch_state_image() {
         constexpr int uarch_data_len = uint64_t{1} << UARCH_STATE_LOG2_SIZE;
         access_data data(uarch_data_len, 0);
         constexpr auto ram_offset = UARCH_RAM_START_ADDRESS - UARCH_STATE_START_ADDRESS;

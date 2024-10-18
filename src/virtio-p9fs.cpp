@@ -36,13 +36,23 @@
 
 #ifdef HAVE_POSIX_FS
 
+#include <algorithm>
+#include <array>
 #include <cerrno>
+#include <cstdint>
+#include <cstdio>
 #include <cstring>
+#include <ctime>
+#include <new>
+#include <stdexcept>
+#include <string>
+#include <tuple>
+#include <utility>
 
 #include <dirent.h>
 #include <fcntl.h>
-#include <sys/file.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #ifdef __APPLE__
 #include <sys/mount.h>
 #include <sys/param.h>
@@ -51,6 +61,10 @@
 #include <sys/sysmacros.h>
 #endif
 #include <unistd.h>
+
+#include "i-device-state-access.h"
+#include "virtio-device.h"
+#include "virtio-serializer.h"
 
 namespace cartesi {
 
@@ -340,7 +354,7 @@ static p9_error host_errno_to_p9(int err) {
 static int p9_open_flags_to_host(uint32_t flags) {
     int oflags = 0;
     for (uint32_t i = 1; i <= P9_O_SYNC; i = i << 1) {
-        if (flags & i) {
+        if ((flags & i) != 0) {
             switch (i) {
                 case P9_O_RDONLY:
                     oflags |= O_RDONLY;
@@ -408,7 +422,7 @@ static int p9_open_flags_to_host(uint32_t flags) {
     return oflags;
 }
 
-static short p9_lock_type_to_host(uint8_t type) {
+static int16_t p9_lock_type_to_host(uint8_t type) {
     switch (type) {
         case P9_LOCK_TYPE_RDLCK:
             return F_RDLCK;
@@ -421,7 +435,7 @@ static short p9_lock_type_to_host(uint8_t type) {
     }
 }
 
-static uint8_t host_lock_type_to_p9(short type) {
+static uint8_t host_lock_type_to_p9(int16_t type) {
     switch (type) {
         case F_RDLCK:
             return P9_LOCK_TYPE_RDLCK;
@@ -453,11 +467,11 @@ static bool is_same_stat_ino(const stat_t *a, const stat_t *b) {
 }
 
 static int close_fid_state(p9_fid_state *fidp) {
-    if (!fidp) {
+    if (fidp == nullptr) {
         return 0;
     }
     int err = 0;
-    if (fidp->dirp) {
+    if (fidp->dirp != nullptr) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         DIR *dirp = reinterpret_cast<DIR *>(fidp->dirp);
         if (closedir(dirp) != 0) {
@@ -480,13 +494,12 @@ static std::string join_path_name(const std::string &path, const std::string &na
     }
     if (path[path.length() - 1] == '/') {
         return path + name;
-    } else {
-        std::string s;
-        s.append(path);
-        s.append("/");
-        s.append(name);
-        return s;
     }
+    std::string s;
+    s.append(path);
+    s.append("/");
+    s.append(name);
+    return s;
 }
 
 static std::string remove_path_name(const std::string &path) {
@@ -512,7 +525,7 @@ static bool is_name_legal(const std::string &name) {
 
 virtio_p9fs_device::virtio_p9fs_device(uint32_t virtio_idx, const std::string &mount_tag,
     const std::string &root_path) :
-    virtio_device(virtio_idx, VIRTIO_DEVICE_9P, VIRTIO_9P_F_MOUNT_TAG, VIRTIO_MAX_CONFIG_SPACE_SIZE),
+    virtio_device(virtio_idx, VIRTIO_DEVICE_9P, VIRTIO_9P_F_MOUNT_TAG, mount_tag.length() + sizeof(uint16_t)),
     m_msize(P9_MAX_MSIZE),
     m_root_path(root_path) {
     if (root_path.length() + 1 >= P9_ROOT_PATH_MAX) {
@@ -529,7 +542,6 @@ virtio_p9fs_device::virtio_p9fs_device(uint32_t virtio_idx, const std::string &m
     virtio_p9fs_config_space *config = get_config();
     strncpy(config->mount_tag.data(), mount_tag.c_str(), mount_tag.length());
     config->mount_tag_len = mount_tag.length();
-    config_space_size = mount_tag.length() + sizeof(uint16_t);
 }
 
 virtio_p9fs_device::~virtio_p9fs_device() {
@@ -551,15 +563,12 @@ void virtio_p9fs_device::on_device_reset() {
     m_fids.clear();
 }
 
-void virtio_p9fs_device::on_device_ok(i_device_state_access *a) {
-    (void) a;
+void virtio_p9fs_device::on_device_ok(i_device_state_access * /*a*/) {
     // Nothing to do.
 }
 
 bool virtio_p9fs_device::on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
-    uint32_t read_avail_len, uint32_t write_avail_len) {
-    (void) read_avail_len;
-    (void) write_avail_len;
+    uint32_t /*read_avail_len*/, uint32_t /*write_avail_len*/) {
     // We are only interested in queue 0 notifications
     if (queue_idx != 0) {
         return false;
@@ -634,12 +643,12 @@ bool virtio_p9fs_device::on_device_queue_available(i_device_state_access *a, uin
             case P9_TCREATE:      // Replaced by P9_TLCREATE in 9P2000.L
             case P9_TREMOVE:      // Replaced by P9_TUNLINKAT in 9P2000.L
 #ifdef DEBUG_VIRTIO_P9FS
-                (void) fprintf(stderr, "p9fs unsupported: tag=%d opcode=%d size=%d\n", tag, opcode, size);
+                std::ignore = fprintf(stderr, "p9fs unsupported: tag=%d opcode=%d size=%d\n", tag, opcode, size);
 #endif
                 return send_error(msg, tag, P9_EOPNOTSUPP);
             default:
 #ifdef DEBUG_VIRTIO_P9FS
-                (void) fprintf(stderr, "p9fs UNEXPECTED: tag=%d opcode=%d size=%d\n", tag, opcode, size);
+                std::ignore = fprintf(stderr, "p9fs UNEXPECTED: tag=%d opcode=%d size=%d\n", tag, opcode, size);
 #endif
                 return send_error(msg, tag, P9_EPROTO);
         }
@@ -659,11 +668,11 @@ bool virtio_p9fs_device::op_statfs(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs statfs: tag=%d fid=%d\n", tag, fid);
+    std::ignore = fprintf(stderr, "p9fs statfs: tag=%d fid=%d\n", tag, fid);
 #endif
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     statfs_t stfs{};
@@ -679,13 +688,13 @@ bool virtio_p9fs_device::op_statfs(virtq_unserializer &&mmsg, uint16_t tag) {
             return send_error(msg, tag, host_errno_to_p9(errno));
         }
     }
-    uint32_t type = static_cast<uint32_t>(stfs.f_type);
-    uint32_t bsize = static_cast<uint32_t>(stfs.f_bsize);
-    uint64_t blocks = static_cast<uint64_t>(stfs.f_blocks);
-    uint64_t bfree = static_cast<uint64_t>(stfs.f_bfree);
-    uint64_t bavail = static_cast<uint64_t>(stfs.f_bavail);
-    uint64_t files = static_cast<uint64_t>(stfs.f_files);
-    uint64_t ffree = static_cast<uint64_t>(stfs.f_ffree);
+    auto type = static_cast<uint32_t>(stfs.f_type);
+    auto bsize = static_cast<uint32_t>(stfs.f_bsize);
+    auto blocks = static_cast<uint64_t>(stfs.f_blocks);
+    auto bfree = static_cast<uint64_t>(stfs.f_bfree);
+    auto bavail = static_cast<uint64_t>(stfs.f_bavail);
+    auto files = static_cast<uint64_t>(stfs.f_files);
+    auto ffree = static_cast<uint64_t>(stfs.f_ffree);
 #ifdef __APPLE__
     uint64_t fsid = static_cast<uint64_t>(stfs.f_fsid.val[0]) | (static_cast<uint64_t>(stfs.f_fsid.val[1]) << 32);
     uint32_t namelen =
@@ -710,11 +719,11 @@ bool virtio_p9fs_device::op_lopen(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs lopen: tag=%d fid=%d flags=%d\n", tag, fid, flags);
+    std::ignore = fprintf(stderr, "p9fs lopen: tag=%d fid=%d flags=%d\n", tag, fid, flags);
 #endif
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // It's an error if the fid is already open
@@ -730,7 +739,7 @@ bool virtio_p9fs_device::op_lopen(virtq_unserializer &&mmsg, uint16_t tag) {
     // Get the path qid
     stat_t st{};
     if (fstat(fd, &st) != 0) {
-        (void) close(fd);
+        std::ignore = close(fd);
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
     p9_qid qid = stat_to_qid(st);
@@ -738,11 +747,11 @@ bool virtio_p9fs_device::op_lopen(virtq_unserializer &&mmsg, uint16_t tag) {
     uint32_t iounit = get_iounit();
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&qid, &iounit)) {
-        (void) close(fd);
+        std::ignore = close(fd);
         return send_error(msg, tag, P9_EPROTO);
     }
     if (!send_reply(std::move(out_msg), tag, P9_RLOPEN)) {
-        (void) close(fd);
+        std::ignore = close(fd);
         return false;
     }
     // Update fid
@@ -761,8 +770,8 @@ bool virtio_p9fs_device::op_lcreate(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs lcreate: tag=%d fid=%d name=%s flags=%d mode=%d gid=%d\n", tag, fid, name, flags, mode,
-        gid);
+    std::ignore = fprintf(stderr, "p9fs lcreate: tag=%d fid=%d name=%s flags=%d mode=%d gid=%d\n", tag, fid, name,
+        flags, mode, gid);
 #endif
     // Check if name is valid
     if (!is_name_legal(name)) {
@@ -770,7 +779,7 @@ bool virtio_p9fs_device::op_lcreate(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // It's an error if the fid is already open
@@ -780,7 +789,7 @@ bool virtio_p9fs_device::op_lcreate(virtq_unserializer &&mmsg, uint16_t tag) {
     // Create the file
     const std::string path = join_path_name(fidp->path, name);
     const int oflags = p9_open_flags_to_host(flags) | O_CREAT;
-    const mode_t omode = static_cast<mode_t>(mode);
+    const auto omode = static_cast<mode_t>(mode);
     const int fd = open(path.c_str(), oflags, omode);
     if (fd < 0) {
         return send_error(msg, tag, host_errno_to_p9(errno));
@@ -792,8 +801,8 @@ bool virtio_p9fs_device::op_lcreate(virtq_unserializer &&mmsg, uint16_t tag) {
     // Get the path qid
     stat_t st{};
     if (fstat(fd, &st) != 0) {
-        (void) close(fd);
-        (void) unlink(path.c_str());
+        std::ignore = close(fd);
+        std::ignore = unlink(path.c_str());
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
     p9_qid qid = stat_to_qid(st);
@@ -801,13 +810,13 @@ bool virtio_p9fs_device::op_lcreate(virtq_unserializer &&mmsg, uint16_t tag) {
     uint32_t iounit = get_iounit();
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&qid, &iounit)) {
-        (void) close(fd);
-        (void) unlink(path.c_str());
+        std::ignore = close(fd);
+        std::ignore = unlink(path.c_str());
         return send_error(msg, tag, P9_EPROTO);
     }
     if (!send_reply(std::move(out_msg), tag, P9_RLCREATE)) {
-        (void) close(fd);
-        (void) unlink(path.c_str());
+        std::ignore = close(fd);
+        std::ignore = unlink(path.c_str());
         return false;
     }
     // Update fid to represent the newly opened file
@@ -826,7 +835,8 @@ bool virtio_p9fs_device::op_symlink(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs symlink: tag=%d dfid=%d name=%s symtgt=%s gid=%d\n", tag, dfid, name, symtgt, gid);
+    std::ignore =
+        fprintf(stderr, "p9fs symlink: tag=%d dfid=%d name=%s symtgt=%s gid=%d\n", tag, dfid, name, symtgt, gid);
 #endif
     // Check if name is valid
     if (!is_name_legal(name)) {
@@ -834,7 +844,7 @@ bool virtio_p9fs_device::op_symlink(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Get the fid state
     p9_fid_state *dfidp = get_fid_state(dfid);
-    if (!dfidp) {
+    if (dfidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Create the symlink
@@ -849,18 +859,18 @@ bool virtio_p9fs_device::op_symlink(virtq_unserializer &&mmsg, uint16_t tag) {
     // Get the path qid
     stat_t st{};
     if (lstat(path.c_str(), &st) != 0) {
-        (void) unlink(path.c_str());
+        std::ignore = unlink(path.c_str());
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
     p9_qid qid = stat_to_qid(st);
     // Reply
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&qid)) {
-        (void) unlink(path.c_str());
+        std::ignore = unlink(path.c_str());
         return send_error(msg, tag, P9_EPROTO);
     }
     if (!send_reply(std::move(out_msg), tag, P9_RSYMLINK)) {
-        (void) unlink(path.c_str());
+        std::ignore = unlink(path.c_str());
         return false;
     }
     return true;
@@ -878,8 +888,8 @@ bool virtio_p9fs_device::op_mknod(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs mknod: tag=%d dfid=%d name=%s mode=%d major=%d minor=%d gid=%d\n", tag, dfid, name,
-        mode, major, minor, gid);
+    std::ignore = fprintf(stderr, "p9fs mknod: tag=%d dfid=%d name=%s mode=%d major=%d minor=%d gid=%d\n", tag, dfid,
+        name, mode, major, minor, gid);
 #endif
     // Check if name is valid
     if (!is_name_legal(name)) {
@@ -887,7 +897,7 @@ bool virtio_p9fs_device::op_mknod(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Get the fid state
     p9_fid_state *dfidp = get_fid_state(dfid);
-    if (!dfidp) {
+    if (dfidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Create the special or ordinary file
@@ -903,18 +913,18 @@ bool virtio_p9fs_device::op_mknod(virtq_unserializer &&mmsg, uint16_t tag) {
     // Get the path qid
     stat_t st{};
     if (lstat(path.c_str(), &st) != 0) {
-        (void) unlink(path.c_str());
+        std::ignore = unlink(path.c_str());
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
     p9_qid qid = stat_to_qid(st);
     // Reply
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&qid)) {
-        (void) unlink(path.c_str());
+        std::ignore = unlink(path.c_str());
         return send_error(msg, tag, P9_EPROTO);
     }
     if (!send_reply(std::move(out_msg), tag, P9_RMKNOD)) {
-        (void) unlink(path.c_str());
+        std::ignore = unlink(path.c_str());
         return false;
     }
     return true;
@@ -936,21 +946,21 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr,
+    std::ignore = fprintf(stderr,
         "p9fs setattr: tag=%d fid=%d mask=%d uid=%d gid=%d size=%ld atime_sec=%ld atime_nsec=%ld mtime_sec=%ld "
         "mtime_nsec=%ld\n",
         tag, fid, mask, uid, gid, size, atime_sec, atime_nsec, mtime_sec, mtime_nsec);
 #endif
     // Get the fid state
     const p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     bool ctime_updated = false;
     // Modify ownership
-    if (mask & (P9_SETATTR_UID | P9_SETATTR_GID)) {
-        const uid_t newuid = (mask & P9_SETATTR_UID) ? static_cast<uid_t>(uid) : -1;
-        const gid_t newgid = (mask & P9_SETATTR_GID) ? static_cast<gid_t>(gid) : -1;
+    if ((mask & (P9_SETATTR_UID | P9_SETATTR_GID)) != 0) {
+        const uid_t newuid = ((mask & P9_SETATTR_UID) != 0) ? static_cast<uid_t>(uid) : -1;
+        const gid_t newgid = ((mask & P9_SETATTR_GID) != 0) ? static_cast<gid_t>(gid) : -1;
         // Use fd when available, because its path might have been removed while fd still open
         if (fidp->fd >= 0) {
             if (fchown(fidp->fd, newuid, newgid) != 0) {
@@ -964,7 +974,7 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&mmsg, uint16_t tag) {
         ctime_updated = true;
     }
     // Modify mode
-    if (mask & P9_SETATTR_MODE) {
+    if ((mask & P9_SETATTR_MODE) != 0) {
         // Use fd when available, because its path might have been removed while fd still open
         if (fidp->fd >= 0) {
             if (fchmod(fidp->fd, static_cast<mode_t>(mode)) != 0) {
@@ -978,7 +988,7 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&mmsg, uint16_t tag) {
         ctime_updated = true;
     }
     // Modify size
-    if (mask & P9_SETATTR_SIZE) {
+    if ((mask & P9_SETATTR_SIZE) != 0) {
         // Use fd when available, because its path might have been removed while fd still open
         if (fidp->fd >= 0) {
             if (ftruncate(fidp->fd, static_cast<off_t>(size)) != 0) {
@@ -992,12 +1002,12 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&mmsg, uint16_t tag) {
         ctime_updated = true;
     }
     // Modify times
-    if (mask & (P9_SETATTR_ATIME | P9_SETATTR_MTIME)) {
+    if ((mask & (P9_SETATTR_ATIME | P9_SETATTR_MTIME)) != 0) {
         timespec ts[2]{};
-        if (mask & P9_SETATTR_ATIME) {
-            if (mask & P9_SETATTR_ATIME_SET) {
+        if ((mask & P9_SETATTR_ATIME) != 0) {
+            if ((mask & P9_SETATTR_ATIME_SET) != 0) {
                 ts[0].tv_sec = static_cast<time_t>(atime_sec);
-                ts[0].tv_nsec = static_cast<long>(atime_nsec);
+                ts[0].tv_nsec = static_cast<int64_t>(atime_nsec);
             } else {
                 ts[0].tv_sec = 0;
                 ts[0].tv_nsec = UTIME_NOW;
@@ -1006,10 +1016,10 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&mmsg, uint16_t tag) {
             ts[0].tv_sec = 0;
             ts[0].tv_nsec = UTIME_OMIT;
         }
-        if (mask & P9_SETATTR_MTIME) {
-            if (mask & P9_SETATTR_MTIME_SET) {
+        if ((mask & P9_SETATTR_MTIME) != 0) {
+            if ((mask & P9_SETATTR_MTIME_SET) != 0) {
                 ts[1].tv_sec = static_cast<time_t>(mtime_sec);
-                ts[1].tv_nsec = static_cast<long>(mtime_nsec);
+                ts[1].tv_nsec = static_cast<int64_t>(mtime_nsec);
             } else {
                 ts[1].tv_sec = 0;
                 ts[1].tv_nsec = UTIME_NOW;
@@ -1031,7 +1041,7 @@ bool virtio_p9fs_device::op_setattr(virtq_unserializer &&mmsg, uint16_t tag) {
         ctime_updated = true;
     }
     // Modify change time
-    if ((mask & P9_SETATTR_CTIME) && !ctime_updated) {
+    if (((mask & P9_SETATTR_CTIME) != 0) && !ctime_updated) {
         // Use fd when available, because its path might have been removed while fd still open
         if (fidp->fd >= 0) {
             if (fchown(fidp->fd, -1, -1) != 0) {
@@ -1054,11 +1064,11 @@ bool virtio_p9fs_device::op_readlink(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs readlink: tag=%d fid=%d\n", tag, fid);
+    std::ignore = fprintf(stderr, "p9fs readlink: tag=%d fid=%d\n", tag, fid);
 #endif
     // Get the fid state
     const p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Read the link
@@ -1084,11 +1094,11 @@ bool virtio_p9fs_device::op_getattr(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs getattr: tag=%d fid=%d mask=%lx\n", tag, fid, mask);
+    std::ignore = fprintf(stderr, "p9fs getattr: tag=%d fid=%d mask=%lx\n", tag, fid, mask);
 #endif
     // Get the fid state
     const p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     stat_t st{};
@@ -1108,25 +1118,25 @@ bool virtio_p9fs_device::op_getattr(virtq_unserializer &&mmsg, uint16_t tag) {
     p9_qid qid = stat_to_qid(st);
     // Fill stat attributes
     p9_stat rstat{};
-    if (mask & P9_GETATTR_MODE) {
+    if ((mask & P9_GETATTR_MODE) != 0) {
         rstat.mode = st.st_mode;
     }
-    if (mask & P9_GETATTR_UID) {
+    if ((mask & P9_GETATTR_UID) != 0) {
         rstat.uid = st.st_uid;
     }
-    if (mask & P9_GETATTR_GID) {
+    if ((mask & P9_GETATTR_GID) != 0) {
         rstat.gid = st.st_gid;
     }
-    if (mask & P9_GETATTR_NLINK) {
+    if ((mask & P9_GETATTR_NLINK) != 0) {
         rstat.nlink = st.st_nlink;
     }
-    if (mask & P9_GETATTR_RDEV) {
+    if ((mask & P9_GETATTR_RDEV) != 0) {
         rstat.rdev = st.st_rdev;
     }
-    if (mask & P9_GETATTR_SIZE) {
+    if ((mask & P9_GETATTR_SIZE) != 0) {
         rstat.size = st.st_size;
     }
-    if (mask & P9_GETATTR_BLOCKS) {
+    if ((mask & P9_GETATTR_BLOCKS) != 0) {
         rstat.blksize = st.st_blksize;
         rstat.blocks = st.st_blocks;
     }
@@ -1144,15 +1154,15 @@ bool virtio_p9fs_device::op_getattr(virtq_unserializer &&mmsg, uint16_t tag) {
         rstat.ctime_nsec = st.st_ctimespec.tv_nsec;
     }
 #else
-    if (mask & P9_GETATTR_ATIME) {
+    if ((mask & P9_GETATTR_ATIME) != 0) {
         rstat.atime_sec = st.st_atim.tv_sec;
         rstat.atime_nsec = st.st_atim.tv_nsec;
     }
-    if (mask & P9_GETATTR_MTIME) {
+    if ((mask & P9_GETATTR_MTIME) != 0) {
         rstat.mtime_sec = st.st_mtim.tv_sec;
         rstat.mtime_nsec = st.st_mtim.tv_nsec;
     }
-    if (mask & P9_GETATTR_CTIME) {
+    if ((mask & P9_GETATTR_CTIME) != 0) {
         rstat.ctime_sec = st.st_ctim.tv_sec;
         rstat.ctime_nsec = st.st_ctim.tv_nsec;
     }
@@ -1180,8 +1190,9 @@ bool virtio_p9fs_device::op_lock(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs lock: tag=%d fid=%d type=%d flags=%d start=%ld length=%ld proc_id=%d client_id=%s\n",
-        tag, fid, type, flags, start, length, proc_id, client_id);
+    std::ignore =
+        fprintf(stderr, "p9fs lock: tag=%d fid=%d type=%d flags=%d start=%ld length=%ld proc_id=%d client_id=%s\n", tag,
+            fid, type, flags, start, length, proc_id, client_id);
 #endif
     // Only block flag is supported
     if (flags > P9_LOCK_FLAGS_BLOCK) {
@@ -1189,7 +1200,7 @@ bool virtio_p9fs_device::op_lock(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp || fidp->fd < 0) {
+    if ((fidp == nullptr) || fidp->fd < 0) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Lock the file
@@ -1199,7 +1210,7 @@ bool virtio_p9fs_device::op_lock(virtq_unserializer &&mmsg, uint16_t tag) {
     fl.l_start = static_cast<off_t>(start);
     fl.l_len = static_cast<off_t>(length);
     uint8_t status = P9_LOCK_SUCCESS;
-    if (flags & P9_LOCK_FLAGS_BLOCK) {
+    if ((flags & P9_LOCK_FLAGS_BLOCK) != 0) {
         // Blocking lock
         if (fcntl(fidp->fd, F_SETLKW, &fl) == -1) {
             status = P9_LOCK_ERROR;
@@ -1232,12 +1243,12 @@ bool virtio_p9fs_device::op_getlock(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs getlock: tag=%d fid=%d type=%d start=%ld length=%ld proc_id=%d client_id=%s\n", tag,
-        fid, type, start, length, proc_id, client_id);
+    std::ignore = fprintf(stderr, "p9fs getlock: tag=%d fid=%d type=%d start=%ld length=%ld proc_id=%d client_id=%s\n",
+        tag, fid, type, start, length, proc_id, client_id);
 #endif
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp || fidp->fd < 0) {
+    if ((fidp == nullptr) || fidp->fd < 0) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Lock the file
@@ -1250,8 +1261,8 @@ bool virtio_p9fs_device::op_getlock(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
     uint8_t lock_type = host_lock_type_to_p9(fl.l_type);
-    uint64_t lock_start = static_cast<uint64_t>(fl.l_start);
-    uint64_t lock_length = static_cast<uint64_t>(fl.l_len);
+    auto lock_start = static_cast<uint64_t>(fl.l_start);
+    auto lock_length = static_cast<uint64_t>(fl.l_len);
     // Reply
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&lock_type, &lock_start, &lock_length, &proc_id, &client_id)) {
@@ -1269,19 +1280,19 @@ bool virtio_p9fs_device::op_readdir(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs readdir: tag=%d fid=%d offset=%ld count=%d\n", tag, fid, offset, count);
+    std::ignore = fprintf(stderr, "p9fs readdir: tag=%d fid=%d offset=%ld count=%d\n", tag, fid, offset, count);
 #endif
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     DIR *dirp = reinterpret_cast<DIR *>(fidp->dirp);
     // Open directory in case it's not yet
-    if (!dirp) {
+    if (dirp == nullptr) {
         dirp = opendir(fidp->path.c_str());
-        if (!dirp) {
+        if (dirp == nullptr) {
             return send_error(msg, tag, host_errno_to_p9(errno));
         }
         fidp->dirp = dirp;
@@ -1292,7 +1303,7 @@ bool virtio_p9fs_device::op_readdir(virtq_unserializer &&mmsg, uint16_t tag) {
     if (offset == 0) {
         rewinddir(dirp);
     } else {
-        seekdir(dirp, static_cast<long>(offset));
+        seekdir(dirp, static_cast<int64_t>(offset));
     }
     // Traverse directory entries
     while (true) {
@@ -1300,7 +1311,7 @@ bool virtio_p9fs_device::op_readdir(virtq_unserializer &&mmsg, uint16_t tag) {
         // Get the next directory entry
         errno = 0;
         dirent *dir_entry = readdir(dirp);
-        if (!dir_entry) {
+        if (dir_entry == nullptr) {
             if (errno != 0 && first_entry) {
                 return send_error(msg, tag, host_errno_to_p9(errno));
             }
@@ -1315,7 +1326,7 @@ bool virtio_p9fs_device::op_readdir(virtq_unserializer &&mmsg, uint16_t tag) {
             break;
         }
         // Get entry offset
-        const long entry_off = telldir(dirp);
+        const int64_t entry_off = telldir(dirp);
         if (entry_off < 0) {
             if (first_entry) {
                 return send_error(msg, tag, host_errno_to_p9(errno));
@@ -1348,7 +1359,7 @@ bool virtio_p9fs_device::op_readdir(virtq_unserializer &&mmsg, uint16_t tag) {
             qid.path = dir_entry->d_ino;
         }
         // Add the entry to our reply
-        uint64_t off = static_cast<uint64_t>(entry_off);
+        auto off = static_cast<uint64_t>(entry_off);
         if (!out_msg.pack(&qid, &off, &type, name)) {
             return send_error(msg, tag, P9_EPROTO);
         }
@@ -1369,11 +1380,11 @@ bool virtio_p9fs_device::op_fsync(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs fsync: tag=%d fid=%d\n", tag, fid);
+    std::ignore = fprintf(stderr, "p9fs fsync: tag=%d fid=%d\n", tag, fid);
 #endif
     // Get the fid state
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp || fidp->fd < 0) {
+    if ((fidp == nullptr) || fidp->fd < 0) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Sync the file
@@ -1393,7 +1404,7 @@ bool virtio_p9fs_device::op_link(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs link: tag=%d dfid=%d fid=%d name=%s\n", tag, dfid, fid, name);
+    std::ignore = fprintf(stderr, "p9fs link: tag=%d dfid=%d fid=%d name=%s\n", tag, dfid, fid, name);
 #endif
     // Check if name is valid
     if (!is_name_legal(name)) {
@@ -1402,7 +1413,7 @@ bool virtio_p9fs_device::op_link(virtq_unserializer &&mmsg, uint16_t tag) {
     // Get the fid state
     p9_fid_state *dfidp = get_fid_state(dfid);
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!dfidp || !fidp) {
+    if ((dfidp == nullptr) || (fidp == nullptr)) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Create the hard link
@@ -1412,7 +1423,7 @@ bool virtio_p9fs_device::op_link(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Reply
     if (!send_ok(msg, tag, P9_RLINK)) {
-        (void) unlink(path.c_str());
+        std::ignore = unlink(path.c_str());
         return false;
     }
     return true;
@@ -1428,7 +1439,7 @@ bool virtio_p9fs_device::op_mkdir(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs mkdir: tag=%d dfid=%d name=%s mode=%d gid=%d\n", tag, dfid, name, mode, gid);
+    std::ignore = fprintf(stderr, "p9fs mkdir: tag=%d dfid=%d name=%s mode=%d gid=%d\n", tag, dfid, name, mode, gid);
 #endif
     // Check if name is valid
     if (!is_name_legal(name)) {
@@ -1436,7 +1447,7 @@ bool virtio_p9fs_device::op_mkdir(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Get the fid state
     p9_fid_state *dfidp = get_fid_state(dfid);
-    if (!dfidp) {
+    if (dfidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Create the directory
@@ -1451,18 +1462,18 @@ bool virtio_p9fs_device::op_mkdir(virtq_unserializer &&mmsg, uint16_t tag) {
     // Get the path qid
     stat_t st{};
     if (lstat(path.c_str(), &st) != 0) {
-        (void) rmdir(path.c_str());
+        std::ignore = rmdir(path.c_str());
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
     p9_qid qid = stat_to_qid(st);
     // Reply
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&qid)) {
-        (void) rmdir(path.c_str());
+        std::ignore = rmdir(path.c_str());
         return send_error(msg, tag, P9_EPROTO);
     }
     if (!send_reply(std::move(out_msg), tag, P9_RMKDIR)) {
-        (void) rmdir(path.c_str());
+        std::ignore = rmdir(path.c_str());
         return false;
     }
     return true;
@@ -1478,8 +1489,8 @@ bool virtio_p9fs_device::op_renameat(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs renameat: tag=%d oldfid=%d oldname=%s newfid=%d newname=%s\n", tag, oldfid, oldname,
-        newfid, newname);
+    std::ignore = fprintf(stderr, "p9fs renameat: tag=%d oldfid=%d oldname=%s newfid=%d newname=%s\n", tag, oldfid,
+        oldname, newfid, newname);
 #endif
     // Check if names are valid
     if (!is_name_legal(oldname) || !is_name_legal(newname)) {
@@ -1488,7 +1499,7 @@ bool virtio_p9fs_device::op_renameat(virtq_unserializer &&mmsg, uint16_t tag) {
     // Get the fid state
     const p9_fid_state *oldfidp = get_fid_state(oldfid);
     const p9_fid_state *newfidp = get_fid_state(newfid);
-    if (!newfidp || !oldfidp) {
+    if ((newfidp == nullptr) || (oldfidp == nullptr)) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Rename the file
@@ -1500,7 +1511,7 @@ bool virtio_p9fs_device::op_renameat(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Reply
     if (!send_ok(msg, tag, P9_RRENAMEAT)) {
-        (void) rename(newpath.c_str(), oldpath.c_str());
+        std::ignore = rename(newpath.c_str(), oldpath.c_str());
         return false;
     }
     // Fix path for all fids starting with the old path
@@ -1523,7 +1534,7 @@ bool virtio_p9fs_device::op_unlinkat(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs unlinkat: tag=%d dfid=%d name=%s flags=%d\n", tag, dfid, name, flags);
+    std::ignore = fprintf(stderr, "p9fs unlinkat: tag=%d dfid=%d name=%s flags=%d\n", tag, dfid, name, flags);
 #endif
     // Check if name is valid
     if (!is_name_legal(name)) {
@@ -1531,12 +1542,12 @@ bool virtio_p9fs_device::op_unlinkat(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Get the fid state
     const p9_fid_state *dfidp = get_fid_state(dfid);
-    if (!dfidp) {
+    if (dfidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Remove the path
     const std::string path = join_path_name(dfidp->path, name);
-    if (flags & P9_AT_REMOVEDIR) {
+    if ((flags & P9_AT_REMOVEDIR) != 0) {
         if (rmdir(path.c_str()) != 0) {
             return send_error(msg, tag, host_errno_to_p9(errno));
         }
@@ -1556,7 +1567,7 @@ bool virtio_p9fs_device::op_version(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs version: tag=%d msize=%d version=%s\n", tag, m_msize, version);
+    std::ignore = fprintf(stderr, "p9fs version: tag=%d msize=%d version=%s\n", tag, m_msize, version);
 #endif
     // Set msize
     m_msize = std::min<uint32_t>(m_msize, P9_MAX_MSIZE);
@@ -1580,11 +1591,11 @@ bool virtio_p9fs_device::op_attach(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs attach: tag=%d fid=%d afid=%d uid=%d uname=%s aname=%s\n", tag, fid, afid, uid, uname,
-        aname);
+    std::ignore = fprintf(stderr, "p9fs attach: tag=%d fid=%d afid=%d uid=%d uname=%s aname=%s\n", tag, fid, afid, uid,
+        uname, aname);
 #endif
     // It's an error if the fid already exists
-    if (get_fid_state(fid)) {
+    if (get_fid_state(fid) != nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Check if root path exists
@@ -1599,11 +1610,11 @@ bool virtio_p9fs_device::op_attach(virtq_unserializer &&mmsg, uint16_t tag) {
     // Reply
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&qid)) {
-        (void) m_fids.erase(fid);
+        std::ignore = m_fids.erase(fid);
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
     if (!send_reply(std::move(out_msg), tag, P9_RATTACH)) {
-        (void) m_fids.erase(fid);
+        std::ignore = m_fids.erase(fid);
         return false;
     }
     // Update new fid state
@@ -1620,7 +1631,7 @@ bool virtio_p9fs_device::op_walk(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs walk: tag=%d fid=%d newfid=%d nwname=%d\n", tag, fid, newfid, nwname);
+    std::ignore = fprintf(stderr, "p9fs walk: tag=%d fid=%d newfid=%d nwname=%d\n", tag, fid, newfid, nwname);
 #endif
     // A maximum of sixteen name elements or qids may be packed in a single message
     if (nwname > P9_MAXWELEM) {
@@ -1628,11 +1639,11 @@ bool virtio_p9fs_device::op_walk(virtq_unserializer &&mmsg, uint16_t tag) {
     }
     // Get the fid state, it must not have been opened for I/O by an open or create message
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // The newfid must not be in use unless it is the same as fid
-    if (newfid != fid && get_fid_state(newfid)) {
+    if (newfid != fid && (get_fid_state(newfid) != nullptr)) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Get the start for the starting path and root path
@@ -1668,10 +1679,8 @@ bool virtio_p9fs_device::op_walk(virtq_unserializer &&mmsg, uint16_t tag) {
                 // Return an error only for the first walk
                 if (nwalked == 0) {
                     return send_error(msg, tag, host_errno_to_p9(errno));
-                } else {
-                    // Otherwise, stop walk on error
-                    break;
-                }
+                } // Otherwise, stop walk on error
+                break;
             }
             path = std::move(next_path);
         }
@@ -1694,14 +1703,14 @@ bool virtio_p9fs_device::op_walk(virtq_unserializer &&mmsg, uint16_t tag) {
     out_msg.offset = P9_OUT_MSG_OFFSET;
     if (!out_msg.pack(&nwalked)) {
         if (fid != newfid) {
-            (void) m_fids.erase(newfid);
+            std::ignore = m_fids.erase(newfid);
         }
         return send_error(msg, tag, P9_EPROTO);
     }
     // Reply
     if (!send_reply(std::move(out_msg), tag, P9_RWALK)) {
         if (fid != newfid) {
-            (void) m_fids.erase(newfid);
+            std::ignore = m_fids.erase(newfid);
         }
         return false;
     }
@@ -1719,11 +1728,11 @@ bool virtio_p9fs_device::op_read(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs read: tag=%d fid=%d offset=%ld count=%d\n", tag, fid, offset, count);
+    std::ignore = fprintf(stderr, "p9fs read: tag=%d fid=%d offset=%ld count=%d\n", tag, fid, offset, count);
 #endif
     // Get the fid state, only file fids are accepted
     const p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp || fidp->fd < 0) {
+    if ((fidp == nullptr) || fidp->fd < 0) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Prepare temporary output buffer
@@ -1736,7 +1745,7 @@ bool virtio_p9fs_device::op_read(virtq_unserializer &&mmsg, uint16_t tag) {
     if (ret < 0) {
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
-    uint32_t ret_count = static_cast<uint32_t>(ret);
+    auto ret_count = static_cast<uint32_t>(ret);
     // Reply
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&ret_count) || !out_msg.write_bytes(buf.data(), count)) {
@@ -1754,11 +1763,11 @@ bool virtio_p9fs_device::op_write(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs write: tag=%d fid=%d offset=%ld count=%d\n", tag, fid, offset, count);
+    std::ignore = fprintf(stderr, "p9fs write: tag=%d fid=%d offset=%ld count=%d\n", tag, fid, offset, count);
 #endif
     // Get the fid state, only file fids are accepted
     const p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp || fidp->fd < 0) {
+    if ((fidp == nullptr) || fidp->fd < 0) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Read from input buffer
@@ -1771,7 +1780,7 @@ bool virtio_p9fs_device::op_write(virtq_unserializer &&mmsg, uint16_t tag) {
     if (ret < 0) {
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
-    uint32_t ret_count = static_cast<uint32_t>(ret);
+    auto ret_count = static_cast<uint32_t>(ret);
     // Reply
     virtq_serializer out_msg(msg.a, msg.vq, msg.queue_idx, msg.desc_idx, P9_OUT_MSG_OFFSET);
     if (!out_msg.pack(&ret_count)) {
@@ -1787,17 +1796,17 @@ bool virtio_p9fs_device::op_clunk(virtq_unserializer &&mmsg, uint16_t tag) {
         return send_error(msg, tag, P9_EPROTO);
     }
 #ifdef DEBUG_VIRTIO_P9FS
-    (void) fprintf(stderr, "p9fs clunk: tag=%d fid=%d\n", tag, fid);
+    std::ignore = fprintf(stderr, "p9fs clunk: tag=%d fid=%d\n", tag, fid);
 #endif
     p9_fid_state *fidp = get_fid_state(fid);
-    if (!fidp) {
+    if (fidp == nullptr) {
         return send_error(msg, tag, P9_EPROTO);
     }
     // Close file descriptors
     const int close_errno = close_fid_state(fidp);
     // Remove from fid state list even on error
     fidp = nullptr;
-    (void) m_fids.erase(fid);
+    std::ignore = m_fids.erase(fid);
     // Propagate close error if any
     if (close_errno != 0) {
         return send_error(msg, tag, host_errno_to_p9(close_errno));
@@ -1810,7 +1819,7 @@ bool virtio_p9fs_device::send_reply(virtq_serializer &&mout_msg, uint16_t tag, p
     virtq_serializer out_msg = std::move(mout_msg);
 #ifdef DEBUG_VIRTIO_P9FS
     if (opcode != P9_RLERROR) {
-        (void) fprintf(stderr, "p9fs send_reply: tag=%d opcode=%d\n", tag, opcode);
+        std::ignore = fprintf(stderr, "p9fs send_reply: tag=%d opcode=%d\n", tag, opcode);
     }
 #endif
     // Rewind message write offset to its start
@@ -1837,9 +1846,9 @@ bool virtio_p9fs_device::send_ok(const virtq_unserializer &in_msg, uint16_t tag,
 bool virtio_p9fs_device::send_error(const virtq_unserializer &in_msg, uint16_t tag, p9_error error) {
 #ifdef DEBUG_VIRTIO_P9FS
     if (error == P9_EPROTO) {
-        (void) fprintf(stderr, "p9fs PROTOCOL ERROR: tag=%d\n", tag);
+        std::ignore = fprintf(stderr, "p9fs PROTOCOL ERROR: tag=%d\n", tag);
     } else {
-        (void) fprintf(stderr, "p9fs send_error: tag=%d error=%d\n", tag, error);
+        std::ignore = fprintf(stderr, "p9fs send_error: tag=%d error=%d\n", tag, error);
     }
 #endif
     virtq_serializer out_msg(in_msg.a, in_msg.vq, in_msg.queue_idx, in_msg.desc_idx, P9_OUT_MSG_OFFSET);

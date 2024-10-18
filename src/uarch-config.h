@@ -18,7 +18,6 @@
 #define UARCH_CONFIG_H
 
 #include <array>
-#include <boost/container/static_vector.hpp>
 #include <cstdint>
 #include <string>
 
@@ -27,8 +26,8 @@
 namespace cartesi {
 
 /// \brief RAM state configuration for the microarchitecture
-struct uarch_ram_config final {   // NOLINT(bugprone-exception-escape)
-    std::string image_filename{}; ///< RAM image file name
+struct uarch_ram_config final {
+    std::string image_filename; ///< RAM image file name
 };
 
 /// \brief Microarchitecture processor configuration
@@ -40,7 +39,7 @@ struct uarch_processor_config final {
 };
 
 /// \brief Microarchitecture configuration
-struct uarch_config final {             // NOLINT(bugprone-exception-escape)
+struct uarch_config final {
     uarch_processor_config processor{}; ///< processor configuration
     uarch_ram_config ram{};             ///< RAM configuration
 };

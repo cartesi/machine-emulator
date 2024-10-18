@@ -18,7 +18,7 @@
 #define UARCH_DEFINES_H
 
 #include "pma-defines.h"
-// NOLINTBEGIN(cppcoreguidelines-macro-usage,modernize-macro-to-enum)
+// NOLINTBEGIN(cppcoreguidelines-macro-usage,cppcoreguidelines-macro-to-enum,modernize-macro-to-enum)
 /// \brief Start address of the entire uarch memory range: shadow and ram
 #define UARCH_STATE_START_ADDRESS_DEF PMA_SHADOW_UARCH_STATE_START_DEF
 
@@ -29,5 +29,5 @@
 #define UARCH_ECALL_FN_HALT_DEF 1    // halt uarch
 #define UARCH_ECALL_FN_PUTCHAR_DEF 2 // putchar
 
-// NOLINTEND(cppcoreguidelines-macro-usage,modernize-macro-to-enum)
+// NOLINTEND(cppcoreguidelines-macro-usage,cppcoreguidelines-macro-to-enum,modernize-macro-to-enum)
 #endif /* end of include guard: UARCH_DEFINES_H */

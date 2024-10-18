@@ -16,7 +16,7 @@
 
 #ifndef PMA_DEFINES_H
 #define PMA_DEFINES_H
-// NOLINTBEGIN(cppcoreguidelines-macro-usage,modernize-macro-to-enum)
+// NOLINTBEGIN(cppcoreguidelines-macro-usage,cppcoreguidelines-macro-to-enum,modernize-macro-to-enum)
 #define PMA_SHADOW_STATE_START_DEF 0x0            ///< Shadow start address
 #define PMA_SHADOW_STATE_LENGTH_DEF 0x1000        ///< Shadow length in bytes
 #define PMA_SHADOW_PMAS_START_DEF 0x10000         ///< PMA Array start address
@@ -70,5 +70,5 @@
 #ifndef EXPAND_UINT64_C
 #define EXPAND_UINT64_C(a) UINT64_C(a)
 #endif
-// NOLINTEND(cppcoreguidelines-macro-usage,modernize-macro-to-enum)
+// NOLINTEND(cppcoreguidelines-macro-usage,cppcoreguidelines-macro-to-enum,modernize-macro-to-enum)
 #endif /* end of include guard: PMA_DEFINES_H */

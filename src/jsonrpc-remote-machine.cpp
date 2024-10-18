@@ -16,6 +16,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
+#include <climits>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
@@ -25,6 +27,7 @@
 #include <exception>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -34,33 +37,37 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
-#include <fcntl.h>
-#include <sys/errno.h>
 #include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#include "asio-config.h" // must be included before any ASIO header
 #include <boost/asio/signal_set.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/beast/version.hpp>
 #pragma GCC diagnostic pop
 
+#include <json.hpp>
+
+#include "access-log.h"
 #include "base64.h"
+#include "interpret.h"
 #include "json-util.h"
+#include "jsonrpc-connection.h"
 #include "jsonrpc-discover.h"
+#include "machine-config.h"
+#include "machine-merkle-tree.h"
+#include "machine-runtime-config.h"
 #include "machine.h"
+#include "os.h"
+#include "uarch-interpret.h"
 #include "unique-c-ptr.h"
 
 #define SLOG_PREFIX log_prefix
 #include "slog.h"
-
-#include "os.h"
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define PROGRAM_NAME "jsonrpc-remote-cartesi-machine"
@@ -81,7 +88,7 @@ std::ostream &operator<<(std::ostream &out, log_prefix prefix) {
     char stime[std::size("yyyy-mm-dd hh-mm-ss")];
     const time_t t = time(nullptr);
     struct tm ttime {};
-    if (strftime(std::data(stime), std::size(stime), "%Y-%m-%d %H-%M-%S", localtime_r(&t, &ttime))) {
+    if (strftime(std::data(stime), std::size(stime), "%Y-%m-%d %H-%M-%S", localtime_r(&t, &ttime)) != 0) {
         out << stime << " ";
     }
     out << to_string(prefix.level) << " ";
@@ -113,7 +120,7 @@ static void install_signal_handler(int signum, HANDLER handler) {
     if (sigemptyset(&act.sa_mask) < 0) {
         throw std::system_error{errno, std::generic_category(), "sigemptyset failed"};
     }
-    act.sa_handler = handler; // NOLINT(cppcoreguidelines-pro-type-union-access)
+    act.sa_handler = handler;
     act.sa_flags = SA_RESTART;
     if (sigaction(signum, &act, nullptr) < 0) {
         throw std::system_error{errno, std::generic_category(), "sigaction failed"};
@@ -121,7 +128,7 @@ static void install_signal_handler(int signum, HANDLER handler) {
 }
 
 /// \brief Installs signal handlers that should not stop read()/write() primitives.
-static void install_restart_signal_handlers(void) {
+static void install_restart_signal_handlers() {
     // Prevent dead children from becoming zombies
     install_signal_handler(SIGCHLD, SIG_IGN);
     // Prevent this process from suspending after issuing a SIGTTOU when trying
@@ -166,19 +173,19 @@ struct http_session : std::enable_shared_from_this<http_session> {
     }
 
     // Receives a complete HTTP request
-    void on_read_request(beast::error_code ec, std::size_t bytes_transferred) {
-        (void) bytes_transferred;
-
+    void on_read_request(beast::error_code ec, std::size_t /*bytes_transferred*/) {
         // Take ownership of request parser, so it can be freed on this scope termination
         auto parser = std::move(req_parser);
 
         // Check error code
         if (ec == asio::error::operation_aborted) { // Operation may be aborted
             return;
-        } else if (ec == http::error::end_of_stream) { // This means the connection was closed by the client
+        }
+        if (ec == http::error::end_of_stream) { // This means the connection was closed by the client
             shutdown_send();
             return;
-        } else if (ec) { // Unexpected error
+        }
+        if (ec) { // Unexpected error
             SLOG(error) << "read request error:" << ec.what();
             return;
         }
@@ -208,13 +215,12 @@ struct http_session : std::enable_shared_from_this<http_session> {
     }
 
     // Called when HTTP response is fully sent
-    void on_send_response(bool keep_alive, beast::error_code ec, std::size_t bytes_transferred) {
-        (void) bytes_transferred;
-
+    void on_send_response(bool keep_alive, beast::error_code ec, std::size_t /*bytes_transferred*/) {
         // Check error code
         if (ec == asio::error::operation_aborted) { // Operation may be aborted
             return;
-        } else if (ec) { // Unexpected error
+        }
+        if (ec) { // Unexpected error
             SLOG(error) << "send response error:" << ec.what();
             shutdown_send();
             return;
@@ -237,7 +243,7 @@ struct http_session : std::enable_shared_from_this<http_session> {
 
         // Send a TCP send shutdown.
         beast::error_code ec;
-        (void) stream.socket().shutdown(tcp::socket::shutdown_send, ec);
+        std::ignore = stream.socket().shutdown(tcp::socket::shutdown_send, ec);
 
         // At this point the connection is closed gracefully
     }
@@ -245,8 +251,8 @@ struct http_session : std::enable_shared_from_this<http_session> {
     // Called by HTTP handler to cancel asynchronous operations and close the session
     void close() {
         beast::error_code ec;
-        (void) stream.socket().cancel(ec);
-        (void) stream.socket().close(ec);
+        std::ignore = stream.socket().cancel(ec);
+        std::ignore = stream.socket().close(ec);
     }
 };
 
@@ -287,8 +293,8 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
     void rebind(tcp::acceptor &&new_acceptor) {
         // Stop asynchronous accept and close the acceptor
         beast::error_code ec;
-        (void) acceptor.cancel(ec);
-        (void) acceptor.close(ec);
+        std::ignore = acceptor.cancel(ec);
+        std::ignore = acceptor.close(ec);
         // Replace current acceptor with the new one
         acceptor = std::move(new_acceptor);
         local_endpoint = acceptor.local_endpoint();
@@ -298,10 +304,10 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
     // Stop accepting new connections
     void stop() {
         beast::error_code ec;
-        (void) acceptor.close(ec);
-        (void) acceptor.cancel(ec);
-        (void) signals.cancel(ec);
-        (void) signals.clear(ec);
+        std::ignore = acceptor.close(ec);
+        std::ignore = acceptor.cancel(ec);
+        std::ignore = signals.cancel(ec);
+        std::ignore = signals.clear(ec);
     }
 
     // Close open sessions
@@ -330,7 +336,8 @@ private:
         // Operation may be aborted (e.g rebind() or stop() was called)
         if (ec == asio::error::operation_aborted) {
             return;
-        } else if (ec) {
+        }
+        if (ec) {
             SLOG(error) << local_endpoint << " accept error: " << ec.what();
             return;
         }
@@ -490,7 +497,7 @@ inline constexpr bool is_optional_param_v = is_optional_param<T>::value;
 /// \tparam ARGS Parameter pack to test
 /// \returns Number of parameters wrapped in optional_param
 template <typename... ARGS>
-constexpr size_t count_mandatory_params(void) {
+constexpr size_t count_mandatory_params() {
     return ((is_optional_param_v<ARGS> ? 0 : 1) + ... + 0);
 }
 
@@ -499,7 +506,7 @@ constexpr size_t count_mandatory_params(void) {
 /// \tparam I Parameter pack with indices of each parameter
 /// \returns Index of first parameter that is optional
 template <typename... ARGS, size_t... I>
-size_t first_optional_param(const std::tuple<ARGS...> &, std::index_sequence<I...>) {
+size_t first_optional_param(const std::tuple<ARGS...> & /*unused*/, std::index_sequence<I...> /*unused*/) {
     if constexpr (sizeof...(ARGS) > 0) {
         return std::min({(is_optional_param_v<ARGS> ? I + 1 : sizeof...(ARGS) + 1)...});
     } else {
@@ -512,7 +519,7 @@ size_t first_optional_param(const std::tuple<ARGS...> &, std::index_sequence<I..
 /// \tparam I Parameter pack with indices of each parameter
 /// \returns Index of first parameter that is optional
 template <typename... ARGS, size_t... I>
-size_t last_mandatory_param(const std::tuple<ARGS...> &, std::index_sequence<I...>) {
+size_t last_mandatory_param(const std::tuple<ARGS...> & /*unused*/, std::index_sequence<I...> /*unused*/) {
     if constexpr (sizeof...(ARGS) > 0) {
         return std::max({(!is_optional_param_v<ARGS> ? I + 1 : 0)...});
     } else {
@@ -526,8 +533,7 @@ size_t last_mandatory_param(const std::tuple<ARGS...> &, std::index_sequence<I..
 /// \returns True if it has a value
 /// \details This is the default overload
 template <typename T>
-bool has_arg(const T &t) {
-    (void) t;
+bool has_arg(const T & /*t*/) {
     return true;
 }
 
@@ -547,7 +553,7 @@ bool has_arg(const cartesi::optional_param<T> &t) {
 /// \returns Index of first optional argument that is missing
 /// \details The function returns the index + 1, so that sizeof...(ARGS)+1 means no missing optional arguments
 template <typename... ARGS, size_t... I>
-size_t first_missing_optional_arg(const std::tuple<ARGS...> &tup, std::index_sequence<I...>) {
+size_t first_missing_optional_arg(const std::tuple<ARGS...> &tup, std::index_sequence<I...> /*unused*/) {
     if constexpr (sizeof...(ARGS) > 0) {
         return std::min({(!has_arg(std::get<I>(tup)) ? I + 1 : sizeof...(ARGS) + 1)...});
     } else {
@@ -561,7 +567,7 @@ size_t first_missing_optional_arg(const std::tuple<ARGS...> &tup, std::index_seq
 /// \returns Index of last argument that is present
 /// \details The function returns the index + 1, so that 0 means no arguments are present
 template <typename... ARGS, size_t... I>
-size_t last_present_arg(const std::tuple<ARGS...> &tup, std::index_sequence<I...>) {
+size_t last_present_arg(const std::tuple<ARGS...> &tup, std::index_sequence<I...> /*unused*/) {
     if constexpr (sizeof...(ARGS) > 0) {
         return std::max({(has_arg(std::get<I>(tup)) ? I + 1 : 0)...});
     } else {
@@ -607,7 +613,7 @@ size_t count_args(const std::tuple<ARGS...> &tup) {
 /// \param j JSONRPC request params
 /// \returns tuple with arguments
 template <typename... ARGS, size_t... I>
-std::tuple<ARGS...> parse_array_args(const json &j, std::index_sequence<I...>) {
+std::tuple<ARGS...> parse_array_args(const json &j, std::index_sequence<I...> /*unused*/) {
     std::tuple<ARGS...> tp;
     (cartesi::ju_get_field(j, static_cast<uint64_t>(I), std::get<I>(tp)), ...);
     return tp;
@@ -630,7 +636,7 @@ std::tuple<ARGS...> parse_array_args(const json &j) {
 /// \returns tuple with arguments
 template <typename... ARGS, size_t... I>
 std::tuple<ARGS...> parse_object_args(const json &j, const char *(&param_name)[sizeof...(ARGS)],
-    std::index_sequence<I...>) {
+    std::index_sequence<I...> /*unused*/) {
     std::tuple<ARGS...> tp;
     (cartesi::ju_get_field(j, std::string(param_name[I]), std::get<I>(tp)), ...);
     return tp;
@@ -699,8 +705,7 @@ static json jsonrpc_shutdown_handler(const json &j, const std::shared_ptr<http_s
 /// \param session HTTP session
 /// \returns JSON response object
 /// \details This RPC allows a client to download the entire schema of the service
-static json jsonrpc_rpc_discover_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    (void) session;
+static json jsonrpc_rpc_discover_handler(const json &j, const std::shared_ptr<http_session> & /*session*/) {
     const static json schema = json::parse(cartesi::jsonrpc_discover_json);
     return jsonrpc_response_ok(j, schema);
 }
@@ -709,8 +714,7 @@ static json jsonrpc_rpc_discover_handler(const json &j, const std::shared_ptr<ht
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_get_version_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    (void) session;
+static json jsonrpc_get_version_handler(const json &j, const std::shared_ptr<http_session> & /*session*/) {
     jsonrpc_check_no_params(j);
     return jsonrpc_response_ok(j,
         {
@@ -764,7 +768,7 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
     session->handler->ioc.notify_fork(asio::io_context::fork_prepare);
     // Done initializing, so we fork
     const char *err_msg = nullptr;
-    const int pid = cartesi::os_double_fork(true, &err_msg);
+    const int pid = cartesi::os_double_fork(static_cast<int>(true), &err_msg);
     if (pid == 0) { // child
         // Notify to ASIO that we are the child
         session->handler->ioc.notify_fork(asio::io_context::fork_child);
@@ -779,7 +783,7 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
         // Note that the parent doesn't need the server that will be used by the child,
         // we can close it.
         beast::error_code ec;
-        (void) acceptor.close(ec);
+        std::ignore = acceptor.close(ec);
         SLOG(trace) << session->handler->local_endpoint << " fork parent";
     } else { // parent and fork() failed
         SLOG(error) << session->handler->local_endpoint << " fork failed (" << err_msg << ")";
@@ -980,8 +984,8 @@ static json jsonrpc_machine_log_reset_uarch_handler(const json &j, const std::sh
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_step_uarch_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    (void) session;
+static json jsonrpc_machine_verify_step_uarch_handler(const json &j,
+    const std::shared_ptr<http_session> & /*session*/) {
     static const char *param_name[] = {"root_hash_before", "log", "root_hash_after"};
     auto args =
         parse_args<cartesi::machine_merkle_tree::hash_type, cartesi::not_default_constructible<cartesi::access_log>,
@@ -995,8 +999,8 @@ static json jsonrpc_machine_verify_step_uarch_handler(const json &j, const std::
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_verify_reset_uarch_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    (void) session;
+static json jsonrpc_machine_verify_reset_uarch_handler(const json &j,
+    const std::shared_ptr<http_session> & /*session*/) {
     static const char *param_name[] = {"root_hash_before", "log", "root_hash_after"};
     auto args =
         parse_args<cartesi::machine_merkle_tree::hash_type, cartesi::not_default_constructible<cartesi::access_log>,
@@ -1191,8 +1195,7 @@ static json jsonrpc_machine_write_reg_handler(const json &j, const std::shared_p
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_get_reg_address_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    (void) session;
+static json jsonrpc_machine_get_reg_address_handler(const json &j, const std::shared_ptr<http_session> & /*session*/) {
     static const char *param_name[] = {"reg"};
     auto args = parse_args<cartesi::machine::reg>(j, param_name);
     return jsonrpc_response_ok(j, cartesi::machine::get_reg_address(std::get<0>(args)));
@@ -1227,8 +1230,8 @@ static json jsonrpc_machine_get_initial_config_handler(const json &j, const std:
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_get_default_config_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    (void) session;
+static json jsonrpc_machine_get_default_config_handler(const json &j,
+    const std::shared_ptr<http_session> & /*session*/) {
     jsonrpc_check_no_params(j);
     return jsonrpc_response_ok(j, cartesi::machine::get_default_config());
 }
@@ -1298,8 +1301,7 @@ static json jsonrpc_machine_log_send_cmio_response_handler(const json &j,
 /// \param session HTTP session
 /// \returns JSON response object
 static json jsonrpc_machine_verify_send_cmio_response_handler(const json &j,
-    const std::shared_ptr<http_session> &session) {
-    (void) session;
+    const std::shared_ptr<http_session> & /*session*/) {
     static const char *param_name[] = {"reason", "data", "root_hash_before", "log", "root_hash_after"};
     auto args = parse_args<uint16_t, std::string, cartesi::machine_merkle_tree::hash_type,
         cartesi::not_default_constructible<cartesi::access_log>, cartesi::machine_merkle_tree::hash_type>(j,
@@ -1518,7 +1520,7 @@ http::message_generator handle_request(HTTP_REQ &&rreq, const std::shared_ptr<ht
 /// \brief Prints help message
 /// \param name Executable name
 static void help(const char *name) {
-    (void) fprintf(stderr,
+    std::ignore = fprintf(stderr,
         R"(Usage:
 
     %s [options]
@@ -1576,10 +1578,10 @@ static bool stringval(const char *pre, const char *str, const char **val) {
 static void init_logger(const char *strlevel) {
     using namespace slog;
     severity_level level = severity_level::info;
-    if (!strlevel) {
+    if (strlevel == nullptr) {
         strlevel = std::getenv("REMOTE_CARTESI_MACHINE_LOG_LEVEL");
     }
-    if (strlevel) {
+    if (strlevel != nullptr) {
         level = from_string(strlevel);
     }
     log_level(level_operation::set, level);
@@ -1597,15 +1599,12 @@ int main(int argc, char *argv[]) try {
     }
 
     for (int i = 1; i < argc; i++) {
-        if (stringval("--server-address=", argv[i], &server_address)) {
-            ;
+        if (int end = 0; stringval("--server-address=", argv[i], &server_address) ||
+            stringval("--log-level=", argv[i], &log_level) ||
             // NOLINTNEXTLINE(cert-err34-c)
-        } else if (int end = 0; sscanf(argv[i], "--server-fd=%d%n", &server_fd, &end) == 1 && argv[i][end] == 0) {
-            ;
-        } else if (stringval("--log-level=", argv[i], &log_level)) {
-            ;
+            (sscanf(argv[i], "--server-fd=%d%n", &server_fd, &end) == 1 && argv[i][end] == 0) ||
             // NOLINTNEXTLINE(cert-err34-c)
-        } else if (int end = 0; sscanf(argv[i], "--sigusr1=%d%n", &sigusr1, &end) == 1 && argv[i][end] == 0) {
+            (sscanf(argv[i], "--sigusr1=%d%n", &sigusr1, &end) == 1 && argv[i][end] == 0)) {
             ;
         } else if (strcmp(argv[i], "--help") == 0) {
             help(program_name);
@@ -1632,7 +1631,7 @@ int main(int argc, char *argv[]) try {
 
     tcp::acceptor acceptor(ioc);
     if (server_fd >= 0) {
-        if (server_address) {
+        if (server_address != nullptr) {
             SLOG(fatal) << "server-address and server-fd options are mutually exclusive";
             exit(1);
         }
@@ -1661,7 +1660,7 @@ int main(int argc, char *argv[]) try {
                 listen = 1;
             }
         }
-        if (!listen) {
+        if (listen == 0) {
             SLOG(fatal) << "inherited is fd not a listening socket";
             exit(1);
         }
@@ -1681,7 +1680,7 @@ int main(int argc, char *argv[]) try {
             acceptor.assign(boost::asio::ip::tcp::v6(), server_fd);
         }
     } else {
-        if (!server_address) {
+        if (server_address == nullptr) {
             server_address = "127.0.0.1:0";
         }
         acceptor = tcp::acceptor{ioc, address_to_endpoint(server_address)};

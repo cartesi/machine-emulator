@@ -16,8 +16,13 @@
 
 #include "pristine-merkle-tree.h"
 
+#include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <stdexcept>
+#include <vector>
+
+#include "i-hasher.h"
 
 /// \file
 /// \brief Pristine Merkle tree implementation.

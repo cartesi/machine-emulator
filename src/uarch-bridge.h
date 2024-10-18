@@ -17,13 +17,18 @@
 #ifndef UARCH_BRIDGE_H
 #define UARCH_BRIDGE_H
 
+#include <array>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <stdexcept>
+
 #include "machine-state.h"
+#include "pma-constants.h"
 #include "riscv-constants.h"
 #include "shadow-state.h"
-#include "shadow-uarch-state.h"
+#include "shadow-tlb.h"
 #include "strict-aliasing.h"
-#include "uarch-constants.h"
-#include "uarch-state.h"
 
 namespace cartesi {
 
@@ -788,9 +793,8 @@ public:
             auto word_index = (paddr - PMA_SHADOW_PMAS_START) >> 3;
             if ((word_index & 1) == 0) {
                 return "pma.istart";
-            } else {
-                return "pma.ilength";
             }
+            return "pma.ilength";
         }
 
         if (paddr >= PMA_SHADOW_TLB_START && paddr < PMA_SHADOW_TLB_START + PMA_SHADOW_TLB_LENGTH &&
@@ -798,7 +802,8 @@ public:
             const uint64_t tlboff = paddr - PMA_SHADOW_TLB_START;
             if (tlboff < offsetof(shadow_tlb_state, cold)) {
                 return "cold_tlb_entry_field";
-            } else if (tlboff < sizeof(shadow_tlb_state)) {
+            }
+            if (tlboff < sizeof(shadow_tlb_state)) {
                 return "hot_tlb_entry_field";
             }
         }
@@ -846,21 +851,18 @@ private:
         }
         const uint64_t tlboff = paddr - PMA_SHADOW_TLB_START;
         if (tlboff < offsetof(shadow_tlb_state, cold)) { // Hot entry
-            // NOLINTBEGIN(cppcoreguidelines-init-variables)
             const uint64_t etype = tlboff / sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>);
             const uint64_t etypeoff = tlboff % sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>);
             const uint64_t eidx = etypeoff / sizeof(tlb_hot_entry);
             const uint64_t fieldoff = etypeoff % sizeof(tlb_hot_entry);
-            // NOLINTEND(cppcoreguidelines-init-variables)
             return read_tlb_entry_field(s, true, etype, eidx, fieldoff, data);
-        } else if (tlboff < sizeof(shadow_tlb_state)) { // Cold entry
-            // NOLINTBEGIN(cppcoreguidelines-init-variables)
+        }
+        if (tlboff < sizeof(shadow_tlb_state)) { // Cold entry
             const uint64_t coldoff = tlboff - offsetof(shadow_tlb_state, cold);
             const uint64_t etype = coldoff / sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
             const uint64_t etypeoff = coldoff % sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
             const uint64_t eidx = etypeoff / sizeof(tlb_cold_entry);
             const uint64_t fieldoff = etypeoff % sizeof(tlb_cold_entry);
-            // NOLINTEND(cppcoreguidelines-init-variables)
             return read_tlb_entry_field(s, false, etype, eidx, fieldoff, data);
         }
         return false;
@@ -886,7 +888,8 @@ private:
             const uint64_t eidx = etypeoff / sizeof(tlb_hot_entry);
             const uint64_t fieldoff = etypeoff % sizeof(tlb_hot_entry);
             return write_tlb_entry_field(s, true, etype, eidx, fieldoff, data);
-        } else if (tlboff < sizeof(shadow_tlb_state)) { // Cold entry
+        }
+        if (tlboff < sizeof(shadow_tlb_state)) { // Cold entry
             const uint64_t coldoff = tlboff - offsetof(shadow_tlb_state, cold);
             const uint64_t etype = coldoff / sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
             const uint64_t etypeoff = coldoff % sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
@@ -913,25 +916,23 @@ private:
         const tlb_hot_entry &tlbhe = s.tlb.hot[etype][eidx];
         const tlb_cold_entry &tlbce = s.tlb.cold[etype][eidx];
         if (hot) {
-            switch (fieldoff) {
-                case offsetof(tlb_hot_entry, vaddr_page):
-                    *pval = tlbhe.vaddr_page;
-                    return true;
-                default:
-                    // Other fields like vh_offset contains host data, and cannot be read
-                    return false;
+            if (fieldoff == offsetof(tlb_hot_entry, vaddr_page)) {
+                *pval = tlbhe.vaddr_page;
+                return true;
             }
-        } else {
-            switch (fieldoff) {
-                case offsetof(tlb_cold_entry, paddr_page):
-                    *pval = tlbce.paddr_page;
-                    return true;
-                case offsetof(tlb_cold_entry, pma_index):
-                    *pval = tlbce.pma_index;
-                    return true;
-                default:
-                    return false;
-            }
+            // Other fields like vh_offset contains host data, and cannot be read
+            return false;
+        }
+        // Cold
+        switch (fieldoff) {
+            case offsetof(tlb_cold_entry, paddr_page):
+                *pval = tlbce.paddr_page;
+                return true;
+            case offsetof(tlb_cold_entry, pma_index):
+                *pval = tlbce.pma_index;
+                return true;
+            default:
+                return false;
         }
     }
 
@@ -951,33 +952,31 @@ private:
         tlb_hot_entry &tlbhe = s.tlb.hot[etype][eidx];
         tlb_cold_entry &tlbce = s.tlb.cold[etype][eidx];
         if (hot) {
-            switch (fieldoff) {
-                case offsetof(tlb_hot_entry, vaddr_page):
-                    tlbhe.vaddr_page = val;
-                    // Update vh_offset
-                    if (val != TLB_INVALID_PAGE) {
-                        const pma_entry &pma = find_pma_entry<uint64_t>(s, tlbce.paddr_page);
-                        assert(pma.get_istart_M()); // TLB only works for memory mapped PMAs
-                        const unsigned char *hpage =
-                            pma.get_memory().get_host_memory() + (tlbce.paddr_page - pma.get_start());
-                        tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - tlbhe.vaddr_page;
-                    }
-                    return true;
-                default:
-                    // Other fields like vh_offset contains host data, and cannot be written
-                    return false;
+            if (fieldoff == offsetof(tlb_hot_entry, vaddr_page)) {
+                tlbhe.vaddr_page = val;
+                // Update vh_offset
+                if (val != TLB_INVALID_PAGE) {
+                    const pma_entry &pma = find_pma_entry<uint64_t>(s, tlbce.paddr_page);
+                    assert(pma.get_istart_M()); // TLB only works for memory mapped PMAs
+                    const unsigned char *hpage =
+                        pma.get_memory().get_host_memory() + (tlbce.paddr_page - pma.get_start());
+                    tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - tlbhe.vaddr_page;
+                }
+                return true;
             }
-        } else {
-            switch (fieldoff) {
-                case offsetof(tlb_cold_entry, paddr_page):
-                    tlbce.paddr_page = val;
-                    return true;
-                case offsetof(tlb_cold_entry, pma_index):
-                    tlbce.pma_index = val;
-                    return true;
-                default:
-                    return false;
-            }
+            // Other fields like vh_offset contains host data, and cannot be written
+            return false;
+        }
+        // Cold
+        switch (fieldoff) {
+            case offsetof(tlb_cold_entry, paddr_page):
+                tlbce.paddr_page = val;
+                return true;
+            case offsetof(tlb_cold_entry, pma_index):
+                tlbce.pma_index = val;
+                return true;
+            default:
+                return false;
         }
     }
 

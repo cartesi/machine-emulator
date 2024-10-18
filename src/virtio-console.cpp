@@ -15,7 +15,14 @@
 //
 
 #include "virtio-console.h"
+
+#include <algorithm>
+#include <array>
+#include <cstdint>
+
+#include "i-device-state-access.h"
 #include "os.h"
+#include "virtio-device.h"
 
 namespace cartesi {
 
@@ -32,19 +39,17 @@ void virtio_console::on_device_ok(i_device_state_access *a) {
 }
 
 bool virtio_console::on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
-    uint32_t read_avail_len, uint32_t write_avail_len) {
-    (void) write_avail_len;
+    uint32_t read_avail_len, uint32_t /*write_avail_len*/) {
     if (queue_idx == VIRTIO_CONSOLE_RECEIVEQ) { // Guest has a new slot available in the write queue
         // Do nothing, host stdin characters will be written to the guest in the next poll
         return false;
-    } else if (queue_idx == VIRTIO_CONSOLE_TRANSMITQ) { // Guest sent new characters to the host
+    }
+    if (queue_idx == VIRTIO_CONSOLE_TRANSMITQ) { // Guest sent new characters to the host
         // Write guest characters to host stdout
         return write_next_chars_to_host(a, queue_idx, desc_idx, read_avail_len);
-    } else {
-        // Other queues are unexpected
-        notify_device_needs_reset(a);
-        return false;
-    }
+    } // Other queues are unexpected
+    notify_device_needs_reset(a);
+    return false;
 }
 
 bool virtio_console::write_next_chars_to_host(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,

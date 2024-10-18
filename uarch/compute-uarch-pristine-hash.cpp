@@ -21,6 +21,7 @@
 #include <machine-merkle-tree.h>
 #include <shadow-uarch-state.h>
 #include <uarch-constants.h>
+#include <uarch-pristine.h>
 #include <uarch-state.h>
 #include <unique-c-ptr.h>
 

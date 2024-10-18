@@ -16,6 +16,13 @@
 
 #include "virtio-factory.h"
 
+#include <cstdint>
+#include <string>
+
+#include "pma-constants.h"
+#include "pma-driver.h"
+#include "pma.h"
+
 namespace cartesi {
 
 pma_entry make_virtio_pma_entry(uint64_t start, uint64_t length, const std::string &description,

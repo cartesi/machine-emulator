@@ -2319,7 +2319,7 @@ if assert_rolling_template then
     local cmd, reason = get_yield(machine)
     if
         not (
-            cmd == cartesi.machine.HTIF_YIELD_MANUAL
+            cmd == cartesi.machine.HTIF_YIELD_CMD_MANUAL
             and reason == cartesi.machine.HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED
         )
     then

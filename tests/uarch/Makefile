@@ -19,7 +19,7 @@ INSTALLDIR = $(PREFIX)/tests
 
 UARCH_ENV_DIR := $(abspath .)
 EMULATOR_SRC_DIR := $(abspath ../../src)
-RISCV_PREFIX ?= riscv64-cartesi-linux-gnu-
+RISCV_PREFIX ?= riscv64-unknown-elf-
 RISCV_GCC ?= $(RISCV_PREFIX)gcc
 RISCV_GCC_OPTS ?= -static  -march=rv64i -mabi=lp64 -mcmodel=medany -fvisibility=hidden -nostdlib -nostartfiles
 RISCV_OBJDUMP ?= $(RISCV_PREFIX)objdump --disassemble-all --disassemble-zeroes --section=.text --section=.text.startup --section=.text.init --section=.data
@@ -84,14 +84,14 @@ clean:
 catalog:
 	cp rv64ui-uarch-catalog.json $(BUILDDIR)/
 
-$(TARGET_THIRDPARTY_TESTS): $(BUILDDIR) $(THIRDPARTY_TESTS_SOURCES)
+$(TARGET_THIRDPARTY_TESTS): $(THIRDPARTY_TESTS_SOURCES) | $(BUILDDIR)
 	$(RISCV_GCC) $(RISCV_GCC_OPTS) -I$(UARCH_ENV_DIR) \
 		-I$(THIRDPARTY_SRC_DIR)/../macros/scalar \
 		-I$(EMULATOR_SRC_DIR) \
 		-T$(UARCH_ENV_DIR)/link.ld \
 		$(subst $(TESTS_PREFIX),$(THIRDPARTY_SRC_DIR)/,$@).S -o $@
 
-$(TARGET_TESTS): $(BUILDDIR) $(TESTS_SOURCES)
+$(TARGET_TESTS): $(TESTS_SOURCES) | $(BUILDDIR)
 	$(RISCV_GCC) $(RISCV_GCC_OPTS) -I$(UARCH_ENV_DIR) \
 		-I$(THIRDPARTY_SRC_DIR)/../macros/scalar \
 		-I$(EMULATOR_SRC_DIR) \

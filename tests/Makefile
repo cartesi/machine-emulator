@@ -19,11 +19,9 @@ INSTALLDIR = $(PREFIX)/tests
 
 LUA_BIN ?= $(shell which lua5.4)
 
-TOOLCHAIN_DOCKER_REPOSITORY ?= cartesi/toolchain
-TOOLCHAIN_TAG ?= 0.17.0
-
 BUILDDIR = $(abspath build)
-RISCV_PREFIX = riscv64-cartesi-linux-gnu-
+RISCV_PREFIX = riscv64-unknown-elf-
+RISCV_GCC_OPTS = -static -mcmodel=medany -fvisibility=hidden -ffreestanding -nostdlib -nostartfiles -I/usr/riscv64-linux-gnu/include
 
 MACHINE_EMULATOR_SRC_DIR = $(abspath ../src)
 
@@ -97,18 +95,19 @@ build-tests-misc: misc
 
 build-tests-images: images
 
-build-tests-uarch-with-toolchain uarch-with-toolchain riscv-arch-test-with-toolchain: TOOLCHAIN_TAG:=0.17.0-rv64ima-lp64
-
+build-tests-uarch-with-toolchain uarch-with-toolchain riscv-arch-test-with-toolchain:
 machine uarch misc:
 	@$(MAKE) $(BUILDDIR)/$@
 	@$(MAKE) -C $@ BUILDDIR=$(BUILDDIR)/$@
 
-riscv-tests: $(BUILDDIR)/riscv-tests $(BUILDDIR)/machine
+riscv-tests:  $(BUILDDIR)/riscv-tests/Makefile | $(BUILDDIR)/machine
 	@cd $(BUILDDIR)/$@ && ../../../third-party/riscv-tests/configure
-	@$(MAKE) -C $(BUILDDIR)/$@ RISCV_PREFIX=$(RISCV_PREFIX) isa
+	@$(MAKE) -C $(BUILDDIR)/$@ RISCV_PREFIX=$(RISCV_PREFIX) RISCV_GCC_OPTS="$(RISCV_GCC_OPTS)" isa
 	@cp -a $(BUILDDIR)/riscv-tests/isa/*.bin $(BUILDDIR)/riscv-tests/isa/*.dump $(BUILDDIR)/machine
 	@cd $(BUILDDIR)/riscv-tests/isa && find . -maxdepth 1 -type f ! -name "*.*" -exec cp -a {} $(BUILDDIR)/machine/{}.elf \;
-	@rm -rf $(BUILDDIR)/riscv-tests
+
+$(BUILDDIR)/riscv-tests/Makefile: | $(BUILDDIR)/riscv-tests
+	@cd $(BUILDDIR)/riscv-tests && ../../../third-party/riscv-tests/configure
 
 riscv-arch-test:
 	@$(MAKE) $(BUILDDIR)/uarch-$@
@@ -144,7 +143,7 @@ toolchain-env:
 		-e GID=$$(id -g) \
 		-v `pwd`/../:/usr/src/emulator \
 		-w /usr/src/emulator/tests \
-		$(TOOLCHAIN_DOCKER_REPOSITORY):$(TOOLCHAIN_TAG) /bin/bash
+		cartesi/machine-emulator:toolchain /bin/bash
 
 toolchain-exec:
 	@docker run --hostname toolchain-env --rm \
@@ -154,7 +153,7 @@ toolchain-exec:
 		-e GID=$$(id -g) \
 		-v `pwd`/../:/usr/src/emulator \
 		-w /usr/src/emulator/tests \
-		$(TOOLCHAIN_DOCKER_REPOSITORY):$(TOOLCHAIN_TAG) $(CONTAINER_COMMAND)
+		cartesi/machine-emulator:toolchain $(CONTAINER_COMMAND)
 
 emulator-builder-exec:
 	@docker run --hostname toolchain-env --rm \
@@ -167,7 +166,7 @@ emulator-builder-exec:
 		cartesi/machine-emulator:builder $(CONTAINER_COMMAND)
 
 $(TARGETS_WITH_TOOLCHAIN):
-	$(MAKE) toolchain-exec CONTAINER_COMMAND="make -j\$$(nproc) $(subst -with-toolchain,,$@)" TOOLCHAIN_DOCKER_REPOSITORY=$(TOOLCHAIN_DOCKER_REPOSITORY) TOOLCHAIN_TAG=$(TOOLCHAIN_TAG)
+	$(MAKE) toolchain-exec CONTAINER_COMMAND="make -j\$$(nproc) $(subst -with-toolchain,,$@)"
 
 build-tests-misc-with-builder-image:
 	$(MAKE) emulator-builder-exec CONTAINER_COMMAND="make -j\$$(nproc) build-tests-misc"

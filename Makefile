@@ -117,6 +117,7 @@ relwithdebinfo?=no
 release?=no
 sanitize?=no
 coverage?=no
+git_commit?=
 
 # If not build type is chosen, set the default to release with debug information,
 # so the emulator is packaged correctly by default.
@@ -129,6 +130,7 @@ export debug
 export relwithdebinfo
 export release
 export coverage
+export git_commit
 
 COVERAGE_TOOLCHAIN?=gcc
 export COVERAGE_TOOLCHAIN
@@ -161,7 +163,7 @@ help:
 	@echo 'Main targets:'
 	@echo '* all                                 - Build the src/ code. To build from a clean clone, run: make submodules all'
 	@echo '  uarch                               - Build microarchitecture (requires riscv64-cartesi-linux-gnu-* toolchain)'
-	@echo '  uarch-with-linux-env                - Build microarchitecture using the linux-env docker image'
+	@echo '  uarch-with-toolchain                - Build microarchitecture using the toolchain docker image'
 	@echo '  build-tests-all                     - Build all tests (machine, uarch and misc)'
 	@echo '  build-tests-machine                 - Build machine emulator tests (requires rv64gc-lp64d riscv64-cartesi-linux-gnu-* toolchain)'
 	@echo '  build-tests-machine-with-toolchain  - Build machine emulator tests using the rv64gc-lp64d toolchain docker image'
@@ -177,7 +179,7 @@ help:
 	@echo 'Docker images targets:'
 	@echo '  build-emulator-image                - Build the machine-emulator debian based docker image'
 	@echo '  build-debian-package                - Build the cartesi-machine.deb package from image'
-	@echo '  build-linux-env                     - Build the linux environment docker image'
+	@echo '  build-toolchain                     - Build the emulator toolchain docker image'
 	@echo '  create-generated-files-patch        - Create patch that adds generated files to source tree'
 	@echo 'Cleaning targets:'
 	@echo '  clean                               - Clean the src/ artifacts'
@@ -251,8 +253,8 @@ $(SRCDIR)/machine-c-version.h:
 build-emulator-builder-image:
 	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --target builder -t cartesi/machine-emulator:builder -f Dockerfile .
 
-build-emulator-linux-env-image build-linux-env:
-	docker build $(DOCKER_PLATFORM) --target linux-env -t cartesi/machine-emulator:linux-env -f Dockerfile .
+build-emulator-toolchain-image build-toolchain:
+	docker build $(DOCKER_PLATFORM) --target toolchain -t cartesi/machine-emulator:toolchain -f Dockerfile .
 
 build-emulator-image:
 	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) -t cartesi/machine-emulator:$(TAG) -f Dockerfile .
@@ -285,36 +287,36 @@ copy:
 	docker cp uarch-ram-bin:/usr/src/emulator/uarch/uarch-pristine-hash.c .
 	docker rm uarch-ram-bin
 
-check-linux-env:
-	@if docker images $(DOCKER_PLATFORM) -q cartesi/machine-emulator:linux-env 2>/dev/null | grep -q .; then \
-		echo "Docker image cartesi/machine-emulator:linux-env exists"; \
+check-toolchain:
+	@if docker images $(DOCKER_PLATFORM) -q cartesi/machine-emulator:toolchain 2>/dev/null | grep -q .; then \
+		echo "Docker image cartesi/machine-emulator:toolchain exists"; \
 	else \
-		echo "Docker image cartesi/machine-emulator:linux-env does not exist. Creating:"; \
-		$(MAKE) build-linux-env; \
+		echo "Docker image cartesi/machine-emulator:toolchain does not exist. Creating:"; \
+		$(MAKE) build-toolchain; \
 	fi
 
-linux-env: check-linux-env
-	@docker run $(DOCKER_PLATFORM) --hostname linux-env -it --rm \
+toolchain-env: check-toolchain
+	@docker run $(DOCKER_PLATFORM) --hostname toolchain -it --rm \
 		-e USER=$$(id -u -n) \
 		-e GROUP=$$(id -g -n) \
 		-e UID=$$(id -u) \
 		-e GID=$$(id -g) \
 		-v `pwd`:/opt/cartesi/machine-emulator \
 		-w /opt/cartesi/machine-emulator \
-		cartesi/machine-emulator:linux-env /bin/bash
+		cartesi/machine-emulator:toolchain /bin/bash
 
-linux-env-exec: check-linux-env
-	@docker run --hostname linux-env --rm \
+toolchain-exec: check-toolchain
+	@docker run --hostname toolchain --rm \
 		-e USER=$$(id -u -n) \
 		-e GROUP=$$(id -g -n) \
 		-e UID=$$(id -u) \
 		-e GID=$$(id -g) \
 		-v `pwd`:/opt/cartesi/machine-emulator \
 		-w /opt/cartesi/machine-emulator \
-		cartesi/machine-emulator:linux-env /bin/bash -c "$(CONTAINER_COMMAND)"
+		cartesi/machine-emulator:toolchain /bin/bash -c "$(CONTAINER_COMMAND)"
 
-uarch-with-linux-env:
-	@$(MAKE) linux-env-exec CONTAINER_COMMAND="make uarch"
+uarch-with-toolchain:
+	@$(MAKE) toolchain-exec CONTAINER_COMMAND="make uarch"
 
 # Create install directories
 $(BIN_INSTALL_PATH) $(LIB_INSTALL_PATH) $(LUA_INSTALL_PATH) $(LUA_INSTALL_CPATH) $(LUA_INSTALL_CPATH)/cartesi $(LUA_INSTALL_PATH)/cartesi $(INC_INSTALL_PATH) $(IMAGES_INSTALL_PATH) $(UARCH_INSTALL_PATH) $(TESTS_DATA_INSTALL_PATH) $(TESTS_SCRIPTS_INSTALL_PATH) $(TESTS_LUA_INSTALL_PATH):

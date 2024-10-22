@@ -8,7 +8,6 @@ The Cartesi Machine Tests is a repository containing RISC-V testing code.
 
 - RISCV64 C/C++ Compiler with support for C++20 (tested with GCC >= 8+).
 - GNU Make >= 3.81
-- Docker image `cartesi/toolchain`
 
 ### Build
 

@@ -21,7 +21,7 @@ SRCDIR := $(abspath src)
 BUILDDIR ?= $(abspath build)
 SRCCLEAN := $(addsuffix .clean,$(SRCDIR))
 
-RISCV_PREFIX = riscv64-cartesi-linux-gnu-
+RISCV_PREFIX = riscv64-unknown-elf-
 RVCC  = $(RISCV_PREFIX)gcc
 RVCXX = $(RISCV_PREFIX)g++
 RVCOPY = $(RISCV_PREFIX)objcopy

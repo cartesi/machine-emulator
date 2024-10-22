@@ -1,17 +1,20 @@
-TOOLCHAIN_PREFIX ?= riscv64-cartesi-linux-gnu-
+TOOLCHAIN_PREFIX ?= riscv64-unknown-elf-
+TOOLCHAIN_LIBS = -lgcc
+
+ifeq ($(DEV_ENV_HAS_TOOLCHAIN),yes)
+TOOLCHAIN_INCS=\
+	-I/usr/riscv64-linux-gnu/include/c++/12 \
+	-I/usr/riscv64-linux-gnu/include/c++/12/riscv64-linux-gnu \
+	-I/usr/riscv64-linux-gnu/include
+else
+TOOLCHAIN_INCS=
+endif
 
 EMULATOR_SRC_DIR = ../src
 THIRD_PARTY_DIR := ../third-party
 
-BOOST_INC_DIR = /usr/include/boost
 ifeq ($(UNAME),Darwin)
 HOST_CXX := clang++
-# Homebrew installation
-ifneq (,$(wildcard /usr/local/opt/boost/lib))
-BOOST_INC_DIR =/usr/local/opt/boost/include
-else # Macports installation
-BOOST_INC_DIR = /opt/local/include
-endif
 else
 HOST_CXX := g++
 endif
@@ -23,6 +26,11 @@ LD := $(TOOLCHAIN_PREFIX)ld
 CXX := $(TOOLCHAIN_PREFIX)g++
 OBJCOPY := $(TOOLCHAIN_PREFIX)objcopy
 OBJDUMP := $(TOOLCHAIN_PREFIX)objdump
+
+# Instructions supported by the microarchitecture interpreter (rv64ui)
+SUPPORTED_UARCH_INSN := add|addi|addiw|addw|and|andi|auipc|beq|bge|bgeu|blt|bltu|bne|ebreak|ecall|fence|jal|jalr|lb|lbu|ld|lh|$\
+	lhu|lui|lw|lwu|or|ori|sb|sd|sh|sll|slli|slliw|sllw|slt|slti|sltiu|sltu|sra|srai|sraiw|sraw|srl|srli|srliw|srlw|sub|$\
+	subw|sw|xor|xori
 
 OPTFLAGS=-O2 -g0
 
@@ -45,7 +53,7 @@ CFLAGS := -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) $(WAR
 	-I. \
 	-I$(THIRD_PARTY_DIR)/llvm-flang-uint128 \
 	-I$(EMULATOR_SRC_DIR) \
-	-I$(BOOST_INC_DIR)
+	$(TOOLCHAIN_INCS)
 
 CXXFLAGS := -std=c++20 -fno-rtti
 
@@ -89,9 +97,9 @@ CLANG_TIDY_HEADER_FILTER=$(CURDIR)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
 CLANG_TIDY=clang-tidy
 CLANG_TIDY_TARGETS=$(patsubst %.cpp,%.clang-tidy,$(patsubst %.c,%.clang-tidy,$(LINTER_SOURCES)))
 
-.PHONY: all clean
+.PHONY: all clean validate-instruction-set
 
-all: uarch-ram.bin uarch-pristine-ram.c uarch-pristine-hash.c
+all: uarch-ram.bin uarch-pristine-ram.c uarch-pristine-hash.c validate-instruction-set
 
 compute-uarch-pristine-hash: $(COMPUTE_UARCH_CPP_SOURCES) $(COMPUTE_UARCH_C_SOURCES)
 	$(HOST_CXX) $(HOST_CFLAGS) -o $@ -x c $(COMPUTE_UARCH_C_SOURCES) -x c++ $(COMPUTE_UARCH_CPP_SOURCES)
@@ -107,8 +115,21 @@ uarch-pristine-ram.c: uarch-ram.bin
 uarch-ram.bin: uarch-ram.elf
 	$(OBJCOPY) -S -O binary  $^ $@
 
+uarch-ram.elf.insn.txt: uarch-ram.elf.objdump
+	grep -oP '^\s*[0-9a-f]{4,8}\:\s+[0-9a-f]{4,8}\s+\K[a-z]\S+' $(^F) | sort -u > $@
+
+uarch-ram.elf.objdump: uarch-ram.elf
+	@$(OBJDUMP) -M no-aliases  -d $(^F) > $@
+
+validate-instruction-set: uarch-ram.elf.insn.txt
+	@grep  -v -w -E "$(SUPPORTED_UARCH_INSN)" $(<F);\
+	if [ $$? -eq 0 ]; then\
+		echo "Unsupported uarch instruction(s) detected. See objdump output in in uarch-ram.elf.objdump"; \
+		false;\
+	fi
+
 uarch-ram.elf: $(EMULATOR_OBJS) $(UARCH_OBJS) uarch-ram-entry.o uarch-ram.ld
-	$(CXX) $(CFLAGS) $(CXXFLAGS) -Wl,-Tuarch-ram.ld  -o $@ $(EMULATOR_OBJS) $(UARCH_OBJS) uarch-ram-entry.o  -lgcc
+	$(CXX) $(CFLAGS) $(CXXFLAGS) -Wl,-Tuarch-ram.ld  -o $@ $(EMULATOR_OBJS) $(UARCH_OBJS) uarch-ram-entry.o $(TOOLCHAIN_LIBS)
 
 uarch-ram-entry.o: uarch-ram-entry.S
 	$(CC) $(CFLAGS) -c -o $@ $(<F)
@@ -139,4 +160,4 @@ clean-auto-generated:
 	@rm -f uarch-pristine-hash.c uarch-pristine-ram.c
 
 clean: clean-executables clean-auto-generated
-	@rm -f *.ld *.elf *.bin *.tmp link.ld *.o *.clang-tidy
+	@rm -f *.ld *.elf *.bin *.tmp link.ld *.o *.clang-tidy *.insn.txt *.objdump

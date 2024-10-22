@@ -17,7 +17,7 @@
 BUILDDIR ?= $(abspath ../build)
 RISCV_TESTS_DIR ?= $(abspath ../../../third-party/riscv-tests)
 
-RISCV_PREFIX = riscv64-cartesi-linux-gnu-
+RISCV_PREFIX = riscv64-unknown-elf-
 CC  = $(RISCV_PREFIX)gcc
 CXX = $(RISCV_PREFIX)g++
 OBJCOPY = $(RISCV_PREFIX)objcopy
@@ -30,7 +30,7 @@ INCS=\
 	-I$(RISCV_TESTS_DIR)/isa/macros/scalar \
 	-I$(abspath ../../../src)
 
-CFLAGS=-g -march=rv64g -mabi=lp64d -static -mcmodel=medany -fvisibility=hidden -nostdlib -nostartfiles $(INCS)
+CFLAGS=-g -march=rv64g -mabi=lp64d -static -mcmodel=medany -fvisibility=hidden -ffreestanding -nostdlib -nostartfiles $(INCS)
 CXXFLAGS=-fno-exceptions $(CFLAGS)
 
 SRCS  := $(wildcard *.S)

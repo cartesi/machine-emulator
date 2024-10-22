@@ -575,7 +575,7 @@ ifeq (,$(wildcard ../uarch/uarch-pristine-hash.c))
 	@if [ "$(DEV_ENV_HAS_TOOLCHAIN)" = "yes" ]; then \
 		$(MAKE) -C .. uarch; \
 	else \
-		$(MAKE) -C .. uarch-with-linux-env; \
+		$(MAKE) -C .. uarch-with-toolchain; \
 	fi
 endif
 

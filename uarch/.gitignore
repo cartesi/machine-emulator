@@ -8,3 +8,5 @@
 uarch-pristine-hash.c
 uarch-pristine-ram.c
 compute-uarch-pristine-hash
+*.insn.txt
+*.objdump

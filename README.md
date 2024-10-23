@@ -12,7 +12,7 @@ Run `make help` for a list of target options. Here are some of them:
 Main targets:
 * all                                 - Build the src/ code. To build from a clean clone, run: make submodules all
   uarch                               - Build microarchitecture (requires riscv64-cartesi-linux-gnu-* toolchain)
-  uarch-with-linux-env                - Build microarchitecture using the linux-env docker image
+  uarch-with-toolchain                - Build microarchitecture using the toolchain docker image
   build-tests-all                     - Build all tests (machine, uarch and misc)
   build-tests-machine                 - Build machine emulator tests (requires rv64gc-lp64d riscv64-cartesi-linux-gnu-* toolchain)
   build-tests-machine-with-toolchain  - Build machine emulator tests using the rv64gc-lp64d toolchain docker image
@@ -28,7 +28,7 @@ Main targets:
 Docker images targets:
   build-emulator-image                - Build the machine-emulator debian based docker image
   build-debian-package                - Build the cartesi-machine.deb package from image
-  build-linux-env                     - Build the linux environment docker image
+  build-toolchain                     - Build the emulator toolchain docker image
   create-generated-files-patch        - Create patch that adds generated files to source tree
 Cleaning targets:
   clean                               - Clean the src/ artifacts

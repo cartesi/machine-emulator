@@ -41,10 +41,13 @@ void send_cmio_response(STATE_ACCESS &a, uint16 reason, bytes data, uint32 dataL
         // Find the write length: the smallest power of 2 that is >= dataLength and >= tree leaf size
         uint32 writeLengthLog2Size = uint32Log2(dataLength);
         if (writeLengthLog2Size < machine_merkle_tree::get_log2_word_size()) {
-            writeLengthLog2Size = 5; // minimum write size is the tree leaf size
+            writeLengthLog2Size = machine_merkle_tree::get_log2_word_size(); // minimum write size is the tree leaf size
         }
         if (uint32ShiftLeft(1, writeLengthLog2Size) < dataLength) {
             writeLengthLog2Size += 1;
+        }
+        if (writeLengthLog2Size > PMA_CMIO_RX_BUFFER_LOG2_SIZE) {
+            throwRuntimeError(a, "CMIO response data is too large");
         }
         writeMemoryWithPadding(a, PMA_CMIO_RX_BUFFER_START, data, dataLength, writeLengthLog2Size);
     }

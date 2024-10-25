@@ -321,7 +321,11 @@ for i = 0, ((1 << mask_bits) - 1) do
         table.insert(labels, { name = name, i = firstindex })
     end
     assert(#name < 18, namekey)
-    table.insert(jumptable, { name = name, mask = mask })
+    for rd=0,31 do
+        local mask2 = mask:sub(1, 20)..tobase2(rd,5)..mask:sub(26, 32)
+        local idx = tonumber(mask2:match('[0-1]+'), 2)
+        jumptable[idx+1] = { name = name, mask = mask2 }
+    end
 end
 
 local f <close> = io.open("src/interpret-jump-table.h", "w")
@@ -386,7 +390,7 @@ f:write([[};
 
 ]])
 
-f:write("static const INSN_JUMPTABLE_TYPE insn_jumptable[2048] = {\n")
+f:write("static const INSN_JUMPTABLE_TYPE insn_jumptable[",#jumptable,"] = {\n")
 for i, entry in ipairs(jumptable) do
     f:write()
     f:write(

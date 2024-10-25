@@ -544,7 +544,7 @@ static inline void set_rtc_interrupt(STATE_ACCESS &a, uint64_t mcycle) {
 /// \brief Obtains the id fields an instruction.
 /// \param insn Instruction.
 static FORCE_INLINE uint32_t insn_get_id(uint32_t insn) {
-    return ((insn >> 5) & 0b1111'0000000) | (insn & 0b1111111);
+    return insn & 0b1111'11111'1111111;
 }
 
 /// \brief Obtains the funct3 and trailing 0 bits from an instruction.

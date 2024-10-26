@@ -111,6 +111,11 @@
 
 namespace cartesi {
 
+enum class rd_kind {
+    x0, // rd = 0
+    xN, // rd is a positive natural number (1, 2, 3 ... 31)
+};
+
 #ifdef DUMP_REGS
 static const std::array<const char *, X_REG_COUNT> reg_name{"zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0",
     "s1", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11",
@@ -3134,51 +3139,51 @@ static FORCE_INLINE execute_status execute_BGEU(STATE_ACCESS &a, uint64_t &pc, u
 }
 
 /// \brief Implementation of the LUI instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_LUI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "lui");
-    const uint32_t rd = insn_get_rd(insn);
-    if (unlikely(rd == 0)) {
+    if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
+    const uint32_t rd = insn_get_rd(insn);
     a.write_x(rd, insn_U_get_imm(insn));
     return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the AUIPC instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_AUIPC(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "auipc");
-    const uint32_t rd = insn_get_rd(insn);
-    if (unlikely(rd == 0)) {
+    if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
+    const uint32_t rd = insn_get_rd(insn);
     a.write_x(rd, pc + insn_U_get_imm(insn));
     return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the JAL instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_JAL(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "jal");
     const uint64_t new_pc = pc + insn_J_get_imm(insn);
-    const uint32_t rd = insn_get_rd(insn);
-    if (unlikely(rd == 0)) {
+    if constexpr (rd_kind == rd_kind::x0) {
         return execute_jump(a, pc, new_pc);
     }
+    const uint32_t rd = insn_get_rd(insn);
     a.write_x(rd, pc + 4);
     return execute_jump(a, pc, new_pc);
 }
 
 /// \brief Implementation of the JALR instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_JALR(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "jalr");
     const uint64_t val = pc + 4;
     const uint64_t new_pc =
         static_cast<int64_t>(a.read_x(insn_get_rs1(insn)) + insn_I_get_imm(insn)) & ~static_cast<uint64_t>(1);
     const uint32_t rd = insn_get_rd(insn);
-    if (unlikely(rd != 0)) {
+    if constexpr (rd_kind != rd_kind::x0) {
         a.write_x(rd, val);
         return execute_jump(a, pc, new_pc);
     }
@@ -5339,17 +5344,29 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
                 // This will use computed goto on supported compilers,
                 // otherwise normal switch in unsupported platforms.
                 INSN_SWITCH(insn_get_id(insn)) {
-                    INSN_CASE(LUI):
-                        status = execute_LUI(a, pc, insn);
+                    INSN_CASE(LUI_rd0):
+                        status = execute_LUI<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(AUIPC):
-                        status = execute_AUIPC(a, pc, insn);
+                    INSN_CASE(LUI_rdN):
+                        status = execute_LUI<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(JAL):
-                        status = execute_JAL(a, pc, insn);
+                    INSN_CASE(AUIPC_rd0):
+                        status = execute_AUIPC<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(JALR):
-                        status = execute_JALR(a, pc, insn);
+                    INSN_CASE(AUIPC_rdN):
+                        status = execute_AUIPC<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(JAL_rd0):
+                        status = execute_JAL<rd_kind::x0>(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(JAL_rdN):
+                        status = execute_JAL<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(JALR_rd0):
+                        status = execute_JALR<rd_kind::x0>(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(JALR_rdN):
+                        status = execute_JALR<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(BEQ):
                         status = execute_BEQ(a, pc, insn);

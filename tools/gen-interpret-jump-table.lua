@@ -7,10 +7,10 @@ so we can decode most instructions with a single jump.
 -- List of RISC-V instructions taken from RISC-V spec
 local insns = {
     -- RV32I
-    { bits = "_________________________0110111", name = "LUI" },
-    { bits = "_________________________0010111", name = "AUIPC" },
-    { bits = "_________________________1101111", name = "JAL" },
-    { bits = "_________________000_____1100111", name = "JALR" },
+    { bits = "_________________________0110111", name = "LUI", rd0=true },
+    { bits = "_________________________0010111", name = "AUIPC", rd0=true },
+    { bits = "_________________________1101111", name = "JAL", rd0=true },
+    { bits = "_________________000_____1100111", name = "JALR", rd0=true },
     { bits = "_________________000_____1100011", name = "BEQ" },
     { bits = "_________________001_____1100011", name = "BNE" },
     { bits = "_________________100_____1100011", name = "BLT" },
@@ -306,8 +306,14 @@ for i = 0, ((1 << mask_bits) - 1) do
     local match_insns = {}
     local matches = {}
     local firstindex
+    local rd0
     for j, insn in ipairs(insns) do
         if matchmask(insn.bits, mask) and not matches[insn.name] then
+            if #matches == 0 then
+                rd0 = insn.rd0
+            elseif rd0 ~= insn.rd0 then
+                rd0 = nil
+            end
             matches[insn.name] = true
             table.insert(matches, insn.name)
             firstindex = math.min(firstindex or j, j)
@@ -318,13 +324,26 @@ for i = 0, ((1 << mask_bits) - 1) do
     if #name == 0 then name = "ILLEGAL" end
     if not labels[name] then
         labels[name] = true
-        table.insert(labels, { name = name, i = firstindex })
+        if rd0 then
+            table.insert(labels, { name = name..'_rd0', i = firstindex * 10 + 1})
+            table.insert(labels, { name = name..'_rdN', i = firstindex * 10 + 2})
+        else
+            table.insert(labels, { name = name, i = firstindex * 10 })
+        end
     end
     assert(#name < 18, namekey)
     for rd=0,31 do
-        local mask2 = mask:sub(1, 20)..tobase2(rd,5)..mask:sub(26, 32)
-        local idx = tonumber(mask2:match('[0-1]+'), 2)
-        jumptable[idx+1] = { name = name, mask = mask2 }
+        local ename = name
+        if rd0 then
+            if rd == 0 then
+                ename = ename .. '_rd0'
+            else
+                ename = ename .. '_rdN'
+            end
+        end
+        local emask = mask:sub(1, 20)..tobase2(rd,5)..mask:sub(26, 32)
+        local idx = tonumber(emask:match('[0-1]+'), 2)
+        jumptable[idx+1] = { name = ename, mask = emask }
     end
 end
 

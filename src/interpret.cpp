@@ -2831,9 +2831,6 @@ template <typename STATE_ACCESS, typename F>
 static FORCE_INLINE execute_status execute_arithmetic_immediate(STATE_ACCESS &a, uint64_t &pc, uint32_t insn,
     const F &f) {
     const uint32_t rd = insn_get_rd(insn);
-    if (unlikely(rd == 0)) {
-        return advance_to_next_insn(a, pc);
-    }
     const uint64_t rs1 = a.read_x(insn_get_rs1(insn));
     const int32_t imm = insn_I_get_imm(insn);
     a.write_x(rd, f(rs1, imm));
@@ -2841,26 +2838,35 @@ static FORCE_INLINE execute_status execute_arithmetic_immediate(STATE_ACCESS &a,
 }
 
 /// \brief Implementation of the SRLI instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRLI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "srli");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
     return execute_arithmetic_immediate(a, pc, insn,
         [](uint64_t rs1, int32_t imm) -> uint64_t { return rs1 >> (imm & (XLEN - 1)); });
 }
 
 /// \brief Implementation of the SRAI instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRAI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "srai");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         return static_cast<uint64_t>(static_cast<int64_t>(rs1) >> (imm & (XLEN - 1)));
     });
 }
 
 /// \brief Implementation of the ADDI instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_ADDI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "addi");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         int64_t val = 0;
         __builtin_add_overflow(static_cast<int64_t>(rs1), static_cast<int64_t>(imm), &val);
@@ -2869,49 +2875,67 @@ static FORCE_INLINE execute_status execute_ADDI(STATE_ACCESS &a, uint64_t &pc, u
 }
 
 /// \brief Implementation of the SLTI instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SLTI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "slti");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
     return execute_arithmetic_immediate(a, pc, insn,
         [](uint64_t rs1, int32_t imm) -> uint64_t { return static_cast<int64_t>(rs1) < static_cast<int64_t>(imm); });
 }
 
 /// \brief Implementation of the SLTIU instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SLTIU(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sltiu");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
     return execute_arithmetic_immediate(a, pc, insn,
         [](uint64_t rs1, int32_t imm) -> uint64_t { return rs1 < static_cast<uint64_t>(imm); });
 }
 
 /// \brief Implementation of the XORI instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_XORI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "xori");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t { return rs1 ^ imm; });
 }
 
 /// \brief Implementation of the ORI instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_ORI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "ori");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t { return rs1 | imm; });
 }
 
 /// \brief Implementation of the ANDI instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_ANDI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "andi");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t { return rs1 & imm; });
 }
 
 /// \brief Implementation of the SLLI instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SLLI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     if (unlikely((insn & (0b111111 << 26)) != 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     dump_insn(a, pc, insn, "slli");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         // No need to mask lower 6 bits in imm because of the if condition a above
         // We do it anyway here to prevent problems if this code is moved
@@ -2920,9 +2944,12 @@ static FORCE_INLINE execute_status execute_SLLI(STATE_ACCESS &a, uint64_t &pc, u
 }
 
 /// \brief Implementation of the ADDIW instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_ADDIW(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "addiw");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         int32_t val = 0;
         __builtin_add_overflow(static_cast<int32_t>(rs1), imm, &val);
@@ -2931,12 +2958,15 @@ static FORCE_INLINE execute_status execute_ADDIW(STATE_ACCESS &a, uint64_t &pc, 
 }
 
 /// \brief Implementation of the SLLIW instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SLLIW(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     if (unlikely(insn_get_funct7(insn) != 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     dump_insn(a, pc, insn, "slliw");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         // No need to mask lower 5 bits in imm because of the if condition a above
         // We do it anyway here to prevent problems if this code is moved
@@ -2946,9 +2976,12 @@ static FORCE_INLINE execute_status execute_SLLIW(STATE_ACCESS &a, uint64_t &pc, 
 }
 
 /// \brief Implementation of the SRLIW instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRLIW(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "srliw");
+    if constexpr (rd_kind == rd_kind::x0) {
+        return advance_to_next_insn(a, pc);
+    }
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         // No need to mask lower 5 bits in imm because of funct7 test in caller
         // We do it anyway here to prevent problems if this code is moved
@@ -2958,13 +2991,16 @@ static FORCE_INLINE execute_status execute_SRLIW(STATE_ACCESS &a, uint64_t &pc, 
 }
 
 /// \brief Implementation of the SRAIW instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRAIW(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sraiw");
-    // When rd=0 the instruction is a HINT, and we consider it as a soft yield when rs1 == 31
-    if (unlikely(insn_get_rd(insn) == 0 && insn_get_rs1(insn) == 31 && a.get_soft_yield())) {
-        // Force the main interpreter loop to break
-        return advance_to_next_insn(a, pc, execute_status::success_and_yield);
+    if constexpr (rd_kind == rd_kind::x0) {
+        // When rd=0 the instruction is a HINT, and we consider it as a soft yield when rs1 == 31
+        if (unlikely(insn_get_rs1(insn) == 31 && a.get_soft_yield())) {
+            // Force the main interpreter loop to break
+            return advance_to_next_insn(a, pc, execute_status::success_and_yield);
+        }
+        return advance_to_next_insn(a, pc);
     }
     return execute_arithmetic_immediate(a, pc, insn, [](uint64_t rs1, int32_t imm) -> uint64_t {
         const int32_t rs1w = static_cast<int32_t>(rs1) >> (imm & 0b11111);
@@ -3245,25 +3281,25 @@ static FORCE_INLINE execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t 
     return advance_to_next_insn(a, pc, execute_status::success_and_flush_fetch);
 }
 
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRLI_SRAI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     switch (static_cast<insn_SRLI_SRAI_funct7_sr1>(insn_get_funct7_sr1(insn))) {
         case insn_SRLI_SRAI_funct7_sr1::SRLI:
-            return execute_SRLI(a, pc, insn);
+            return execute_SRLI<rd_kind>(a, pc, insn);
         case insn_SRLI_SRAI_funct7_sr1::SRAI:
-            return execute_SRAI(a, pc, insn);
+            return execute_SRAI<rd_kind>(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRLIW_SRAIW(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     switch (static_cast<insn_SRLIW_SRAIW_funct7>(insn_get_funct7(insn))) {
         case insn_SRLIW_SRAIW_funct7::SRLIW:
-            return execute_SRLIW(a, pc, insn);
+            return execute_SRLIW<rd_kind>(a, pc, insn);
         case insn_SRLIW_SRAIW_funct7::SRAIW:
-            return execute_SRAIW(a, pc, insn);
+            return execute_SRAIW<rd_kind>(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
     }
@@ -5410,29 +5446,53 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
                     INSN_CASE(SW):
                         status = execute_SW(a, pc, mcycle, insn);
                         INSN_BREAK();
-                    INSN_CASE(ADDI):
-                        status = execute_ADDI(a, pc, insn);
+                    INSN_CASE(ADDI_rd0):
+                        status = execute_ADDI<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLTI):
-                        status = execute_SLTI(a, pc, insn);
+                    INSN_CASE(ADDI_rdN):
+                        status = execute_ADDI<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLTIU):
-                        status = execute_SLTIU(a, pc, insn);
+                    INSN_CASE(SLTI_rd0):
+                        status = execute_SLTI<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(XORI):
-                        status = execute_XORI(a, pc, insn);
+                    INSN_CASE(SLTI_rdN):
+                        status = execute_SLTI<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(ORI):
-                        status = execute_ORI(a, pc, insn);
+                    INSN_CASE(SLTIU_rd0):
+                        status = execute_SLTIU<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(ANDI):
-                        status = execute_ANDI(a, pc, insn);
+                    INSN_CASE(SLTIU_rdN):
+                        status = execute_SLTIU<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLLI):
-                        status = execute_SLLI(a, pc, insn);
+                    INSN_CASE(XORI_rd0):
+                        status = execute_XORI<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SRLI_SRAI):
-                        status = execute_SRLI_SRAI(a, pc, insn);
+                    INSN_CASE(XORI_rdN):
+                        status = execute_XORI<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(ORI_rd0):
+                        status = execute_ORI<rd_kind::x0>(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(ORI_rdN):
+                        status = execute_ORI<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(ANDI_rd0):
+                        status = execute_ANDI<rd_kind::x0>(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(ANDI_rdN):
+                        status = execute_ANDI<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SLLI_rd0):
+                        status = execute_SLLI<rd_kind::x0>(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SLLI_rdN):
+                        status = execute_SLLI<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SRLI_SRAI_rd0):
+                        status = execute_SRLI_SRAI<rd_kind::x0>(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SRLI_SRAI_rdN):
+                        status = execute_SRLI_SRAI<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(ADD_MUL_SUB):
                         status = execute_ADD_MUL_SUB(a, pc, insn);
@@ -5473,14 +5533,23 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
                     INSN_CASE(SD):
                         status = execute_SD(a, pc, mcycle, insn);
                         INSN_BREAK();
-                    INSN_CASE(ADDIW):
-                        status = execute_ADDIW(a, pc, insn);
+                    INSN_CASE(ADDIW_rd0):
+                        status = execute_ADDIW<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SLLIW):
-                        status = execute_SLLIW(a, pc, insn);
+                    INSN_CASE(ADDIW_rdN):
+                        status = execute_ADDIW<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(SRLIW_SRAIW):
-                        status = execute_SRLIW_SRAIW(a, pc, insn);
+                    INSN_CASE(SLLIW_rd0):
+                        status = execute_SLLIW<rd_kind::x0>(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SLLIW_rdN):
+                        status = execute_SLLIW<rd_kind::xN>(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SRLIW_SRAIW_rd0):
+                        status = execute_SRLIW_SRAIW<rd_kind::x0>(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(SRLIW_SRAIW_rdN):
+                        status = execute_SRLIW_SRAIW<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(ADDW_MULW_SUBW):
                         status = execute_ADDW_MULW_SUBW(a, pc, insn);

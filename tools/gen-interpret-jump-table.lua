@@ -7,10 +7,10 @@ so we can decode most instructions with a single jump.
 -- List of RISC-V instructions taken from RISC-V spec
 local insns = {
     -- RV32I
-    { bits = "_________________________0110111", name = "LUI", rd0=true },
-    { bits = "_________________________0010111", name = "AUIPC", rd0=true },
-    { bits = "_________________________1101111", name = "JAL", rd0=true },
-    { bits = "_________________000_____1100111", name = "JALR", rd0=true },
+    { bits = "_________________________0110111", name = "LUI", rd0 = true },
+    { bits = "_________________________0010111", name = "AUIPC", rd0 = true },
+    { bits = "_________________________1101111", name = "JAL", rd0 = true },
+    { bits = "_________________000_____1100111", name = "JALR", rd0 = true },
     { bits = "_________________000_____1100011", name = "BEQ" },
     { bits = "_________________001_____1100011", name = "BNE" },
     { bits = "_________________100_____1100011", name = "BLT" },
@@ -25,25 +25,25 @@ local insns = {
     { bits = "_________________000_____0100011", name = "SB" },
     { bits = "_________________001_____0100011", name = "SH" },
     { bits = "_________________010_____0100011", name = "SW" },
-    { bits = "_________________000_____0010011", name = "ADDI", rd0=true },
-    { bits = "_________________010_____0010011", name = "SLTI", rd0=true },
-    { bits = "_________________011_____0010011", name = "SLTIU", rd0=true },
-    { bits = "_________________100_____0010011", name = "XORI", rd0=true },
-    { bits = "_________________110_____0010011", name = "ORI", rd0=true },
-    { bits = "_________________111_____0010011", name = "ANDI", rd0=true },
-    { bits = "000000___________001_____0010011", name = "SLLI", rd0=true },
-    { bits = "000000___________101_____0010011", name = "SRLI", rd0=true },
-    { bits = "010000___________101_____0010011", name = "SRAI", rd0=true },
-    { bits = "0000000__________000_____0110011", name = "ADD", rd0=true },
-    { bits = "0100000__________000_____0110011", name = "SUB", rd0=true },
-    { bits = "0000000__________001_____0110011", name = "SLL", rd0=true },
-    { bits = "0000000__________010_____0110011", name = "SLT", rd0=true },
-    { bits = "0000000__________011_____0110011", name = "SLTU", rd0=true },
-    { bits = "0000000__________100_____0110011", name = "XOR", rd0=true },
-    { bits = "0000000__________101_____0110011", name = "SRL", rd0=true },
-    { bits = "0100000__________101_____0110011", name = "SRA", rd0=true },
-    { bits = "0000000__________110_____0110011", name = "OR", rd0=true },
-    { bits = "0000000__________111_____0110011", name = "AND", rd0=true },
+    { bits = "_________________000_____0010011", name = "ADDI", rd0 = true },
+    { bits = "_________________010_____0010011", name = "SLTI", rd0 = true },
+    { bits = "_________________011_____0010011", name = "SLTIU", rd0 = true },
+    { bits = "_________________100_____0010011", name = "XORI", rd0 = true },
+    { bits = "_________________110_____0010011", name = "ORI", rd0 = true },
+    { bits = "_________________111_____0010011", name = "ANDI", rd0 = true },
+    { bits = "000000___________001_____0010011", name = "SLLI", rd0 = true },
+    { bits = "000000___________101_____0010011", name = "SRLI", rd0 = true },
+    { bits = "010000___________101_____0010011", name = "SRAI", rd0 = true },
+    { bits = "0000000__________000_____0110011", name = "ADD", rd0 = true },
+    { bits = "0100000__________000_____0110011", name = "SUB", rd0 = true },
+    { bits = "0000000__________001_____0110011", name = "SLL", rd0 = true },
+    { bits = "0000000__________010_____0110011", name = "SLT", rd0 = true },
+    { bits = "0000000__________011_____0110011", name = "SLTU", rd0 = true },
+    { bits = "0000000__________100_____0110011", name = "XOR", rd0 = true },
+    { bits = "0000000__________101_____0110011", name = "SRL", rd0 = true },
+    { bits = "0100000__________101_____0110011", name = "SRA", rd0 = true },
+    { bits = "0000000__________110_____0110011", name = "OR", rd0 = true },
+    { bits = "0000000__________111_____0110011", name = "AND", rd0 = true },
     { bits = "_________________000_____0001111", name = "FENCE" },
     { bits = "00000000000000000000000001110011", name = "ECALL" },
     { bits = "00000000000100000000000001110011", name = "EBREAK" },
@@ -52,32 +52,32 @@ local insns = {
     { bits = "_________________110_____0000011", name = "LWU" },
     { bits = "_________________011_____0000011", name = "LD" },
     { bits = "_________________011_____0100011", name = "SD" },
-    { bits = "_________________000_____0011011", name = "ADDIW", rd0=true },
-    { bits = "0000000__________001_____0011011", name = "SLLIW", rd0=true },
-    { bits = "0000000__________101_____0011011", name = "SRLIW", rd0=true },
-    { bits = "0100000__________101_____0011011", name = "SRAIW", rd0=true },
-    { bits = "0000000__________000_____0111011", name = "ADDW", rd0=true },
-    { bits = "0100000__________000_____0111011", name = "SUBW", rd0=true },
-    { bits = "0000000__________001_____0111011", name = "SLLW", rd0=true },
-    { bits = "0000000__________101_____0111011", name = "SRLW", rd0=true },
-    { bits = "0100000__________101_____0111011", name = "SRAW", rd0=true },
+    { bits = "_________________000_____0011011", name = "ADDIW", rd0 = true },
+    { bits = "0000000__________001_____0011011", name = "SLLIW", rd0 = true },
+    { bits = "0000000__________101_____0011011", name = "SRLIW", rd0 = true },
+    { bits = "0100000__________101_____0011011", name = "SRAIW", rd0 = true },
+    { bits = "0000000__________000_____0111011", name = "ADDW", rd0 = true },
+    { bits = "0100000__________000_____0111011", name = "SUBW", rd0 = true },
+    { bits = "0000000__________001_____0111011", name = "SLLW", rd0 = true },
+    { bits = "0000000__________101_____0111011", name = "SRLW", rd0 = true },
+    { bits = "0100000__________101_____0111011", name = "SRAW", rd0 = true },
 
     -- RV32M extension
-    { bits = "0000001__________000_____0110011", name = "MUL", rd0=true },
-    { bits = "0000001__________001_____0110011", name = "MULH", rd0=true },
-    { bits = "0000001__________010_____0110011", name = "MULHSU", rd0=true },
-    { bits = "0000001__________011_____0110011", name = "MULHU", rd0=true },
-    { bits = "0000001__________100_____0110011", name = "DIV", rd0=true },
-    { bits = "0000001__________101_____0110011", name = "DIVU", rd0=true },
-    { bits = "0000001__________110_____0110011", name = "REM", rd0=true },
-    { bits = "0000001__________111_____0110011", name = "REMU", rd0=true },
+    { bits = "0000001__________000_____0110011", name = "MUL", rd0 = true },
+    { bits = "0000001__________001_____0110011", name = "MULH", rd0 = true },
+    { bits = "0000001__________010_____0110011", name = "MULHSU", rd0 = true },
+    { bits = "0000001__________011_____0110011", name = "MULHU", rd0 = true },
+    { bits = "0000001__________100_____0110011", name = "DIV", rd0 = true },
+    { bits = "0000001__________101_____0110011", name = "DIVU", rd0 = true },
+    { bits = "0000001__________110_____0110011", name = "REM", rd0 = true },
+    { bits = "0000001__________111_____0110011", name = "REMU", rd0 = true },
 
     -- RV64M
-    { bits = "0000001__________000_____0111011", name = "MULW", rd0=true },
-    { bits = "0000001__________100_____0111011", name = "DIVW", rd0=true },
-    { bits = "0000001__________101_____0111011", name = "DIVUW", rd0=true },
-    { bits = "0000001__________110_____0111011", name = "REMW", rd0=true },
-    { bits = "0000001__________111_____0111011", name = "REMUW", rd0=true },
+    { bits = "0000001__________000_____0111011", name = "MULW", rd0 = true },
+    { bits = "0000001__________100_____0111011", name = "DIVW", rd0 = true },
+    { bits = "0000001__________101_____0111011", name = "DIVUW", rd0 = true },
+    { bits = "0000001__________110_____0111011", name = "REMW", rd0 = true },
+    { bits = "0000001__________111_____0111011", name = "REMUW", rd0 = true },
 
     -- RV32A
     { bits = "00010__00000_____010_____0101111", name = "LR.W" },
@@ -325,25 +325,25 @@ for i = 0, ((1 << mask_bits) - 1) do
     if not labels[name] then
         labels[name] = true
         if rd0 then
-            table.insert(labels, { name = name..'_rd0', i = firstindex * 10 + 1})
-            table.insert(labels, { name = name..'_rdN', i = firstindex * 10 + 2})
+            table.insert(labels, { name = name .. "_rd0", i = firstindex * 10 + 1 })
+            table.insert(labels, { name = name .. "_rdN", i = firstindex * 10 + 2 })
         else
             table.insert(labels, { name = name, i = firstindex * 10 })
         end
     end
     assert(#name < 18, namekey)
-    for rd=0,31 do
+    for rd = 0, 31 do
         local ename = name
         if rd0 then
             if rd == 0 then
-                ename = ename .. '_rd0'
+                ename = ename .. "_rd0"
             else
-                ename = ename .. '_rdN'
+                ename = ename .. "_rdN"
             end
         end
-        local emask = mask:sub(1, 20)..tobase2(rd,5)..mask:sub(26, 32)
-        local idx = tonumber(emask:match('[0-1]+'), 2)
-        jumptable[idx+1] = { name = ename, mask = emask }
+        local emask = mask:sub(1, 20) .. tobase2(rd, 5) .. mask:sub(26, 32)
+        local idx = tonumber(emask:match("[0-1]+"), 2)
+        jumptable[idx + 1] = { name = ename, mask = emask }
     end
 end
 
@@ -399,6 +399,7 @@ f:write([[
 ]])
 
 table.sort(labels, function(a, b) return a.i < b.i end)
+assert(#labels <= 256)
 f:write("enum class insn_label_id : unsigned char {\n")
 for _, label in ipairs(labels) do
     f:write("    " .. label.name .. ",\n")
@@ -409,14 +410,18 @@ f:write([[};
 
 ]])
 
-f:write("static const INSN_JUMPTABLE_TYPE insn_jumptable[",#jumptable,"] = {\n")
+assert(#jumptable == 65536)
+f:write("static const INSN_JUMPTABLE_TYPE insn_jumptable[", #jumptable, "] = {\n")
+f:write("#ifndef CLANG_TIDY_LINT // Disable clang-tidy via an ifdef because it's too slow\n")
 for i, entry in ipairs(jumptable) do
-    f:write()
     f:write(
         string.format("%-32s", "    INSN_LABEL(" .. entry.name .. "),"),
         " // " .. string.format("%4d", (i - 1)) .. " => " .. entry.mask .. "\n"
     )
 end
+f:write("#else\n")
+f:write("    INSN_LABEL(ILLEGAL)\n")
+f:write("#endif\n")
 f:write("};\n")
 
 f:write([[

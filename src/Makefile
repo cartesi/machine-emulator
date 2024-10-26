@@ -262,7 +262,7 @@ PGO_WORKLOAD=\
 	whetstone 25000
 
 LINTER_IGNORE_SOURCES=
-LINTER_IGNORE_HEADERS=
+LINTER_IGNORE_HEADERS=interpret-jump-table.h
 LINTER_SOURCES=$(filter-out $(LINTER_IGNORE_SOURCES),$(strip $(wildcard *.cpp) $(wildcard *.c)))
 LINTER_HEADERS=$(filter-out $(LINTER_IGNORE_HEADERS),$(strip $(wildcard *.hpp) $(wildcard *.h)))
 
@@ -273,7 +273,7 @@ CLANG_FORMAT=clang-format
 CLANG_FORMAT_UARCH_FILES:=$(wildcard ../uarch/*.cpp)
 CLANG_FORMAT_UARCH_FILES:=$(filter-out %uarch-printf%,$(strip $(CLANG_FORMAT_UARCH_FILES)))
 CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.c) $(wildcard *.h) $(wildcard *.hpp) $(CLANG_FORMAT_UARCH_FILES)
-CLANG_FORMAT_IGNORE_FILES:=
+CLANG_FORMAT_IGNORE_FILES:=interpret-jump-table.h
 CLANG_FORMAT_FILES:=$(strip $(CLANG_FORMAT_FILES))
 CLANG_FORMAT_FILES:=$(filter-out $(CLANG_FORMAT_IGNORE_FILES),$(strip $(CLANG_FORMAT_FILES)))
 
@@ -543,12 +543,12 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	echo '} // namespace cartesi' >> jsonrpc-discover.cpp
 
 %.clang-tidy: %.cpp machine-c-version.h
-	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- $(CXXFLAGS) $(LUA_INC) 2>/dev/null
+	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- $(CXXFLAGS) $(LUA_INC) -DCLANG_TIDY_LINT 2>/dev/null
 	@$(CXX) $(CXXFLAGS) $(LUA_INC) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
 %.clang-tidy: %.c
-	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- $(CFLAGS) 2>/dev/null
+	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- $(CFLAGS) -DCLANG_TIDY_LINT 2>/dev/null
 	@$(CC) $(CFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 

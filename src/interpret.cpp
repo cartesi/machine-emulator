@@ -5450,8 +5450,7 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
             // Try to fetch the next instruction
             if (likely(fetch_insn(a, pc, insn, fetch_vaddr_page, fetch_vh_offset) == fetch_status::success)) {
                 // clang-format off
-
-                // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
+                // NOLINTBEGIN
                 execute_status status; // explicit uninitialized as an optimization
 
                 // This header define the instruction jump table table, which is very large.
@@ -5821,6 +5820,7 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
                 }
                 INSN_SWITCH_OUT();
 
+                // NOLINTEND
                 // clang-format on
 
                 // When execute status is above success, we have to deal with special loop conditions,

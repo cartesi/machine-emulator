@@ -671,18 +671,6 @@ static inline uint32_t insn_get_rs3(uint32_t insn) {
     return (insn >> 27);
 }
 
-/// \brief Obtains the compressed instruction funct6, funct2 and opcode fields an instruction.
-/// \param insn Instruction.
-static inline uint32_t insn_get_CA_funct6_funct2(uint32_t insn) {
-    return insn & 0b1111110001100011;
-}
-
-/// \brief Obtains the compressed instruction funct2 and opcode fields an instruction.
-/// \param insn Instruction.
-static inline uint32_t insn_get_CB_funct2(uint32_t insn) {
-    return insn & 0b1110110000000011;
-}
-
 /// \brief Obtains the RD field from a compressed instructions that uses the CIW
 /// or CL format and RS2 field from CS or CA.
 /// \param insn Instruction.
@@ -4713,17 +4701,11 @@ static FORCE_INLINE execute_status execute_C_FS(STATE_ACCESS &a, uint64_t &pc, u
 /// \brief Implementation of the C.ADDI4SPN instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ADDI4SPN(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    // "A 16-bit instruction with all bits zero is permanently reserved as an illegal instruction."
-    if (unlikely(insn == 0)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     dump_insn(a, pc, insn, "c.addi4spn");
-    // rd cannot be zero
+    // rd cannot be zero (guaranteed by RISC-V spec design)
     const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
+    // imm cannot be zero (guaranteed by the jump table)
     const uint32_t imm = insn_get_CIW_imm(insn);
-    if (unlikely(imm == 0)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     const uint64_t rs1 = a.read_x(2);
     int64_t val = 0;
     __builtin_add_overflow(static_cast<int64_t>(rs1), static_cast<int64_t>(imm), &val);
@@ -4805,20 +4787,18 @@ static FORCE_INLINE execute_status execute_C_SD(STATE_ACCESS &a, uint64_t &pc, u
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_NOP(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.nop");
-    // C.NOP with imm != 0 is just a HINT that must execute as no-op (see RISC-V spec)
     // Really do nothing
     return advance_to_next_insn<2>(a, pc);
 }
 
 /// \brief Implementation of the C.ADDI instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_ADDI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, uint32_t rd) {
+static FORCE_INLINE execute_status execute_C_ADDI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.addi");
+    // rd cannot be zero (guaranteed by jump table)
+    const uint32_t rd = insn_get_rd(insn);
     const int32_t imm = insn_get_CI_CB_imm_se(insn);
-    // C.ADDI with imm == 0 is just a HINT that must execute as no-op (see RISC-V spec)
-    if (unlikely(imm == 0)) {
-        return advance_to_next_insn<2>(a, pc);
-    }
+    // imm cannot be zero (guaranteed by jump table)
     const uint64_t rd_value = a.read_x(rd);
     int64_t val = 0;
     __builtin_add_overflow(static_cast<int64_t>(rd_value), static_cast<int64_t>(imm), &val);
@@ -4826,23 +4806,12 @@ static FORCE_INLINE execute_status execute_C_ADDI(STATE_ACCESS &a, uint64_t &pc,
     return advance_to_next_insn<2>(a, pc);
 }
 
-template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_Q1_SET0(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    const uint32_t rd = insn_get_rd(insn);
-    if (unlikely(rd == 0)) {
-        return execute_C_NOP(a, pc, insn);
-    }
-    return execute_C_ADDI(a, pc, insn, rd);
-}
-
 /// \brief Implementation of the C.addiw instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ADDIW(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.addiw");
+    // rd cannot be zero (guaranteed by jump table)
     const uint32_t rd = insn_get_rd(insn);
-    if (unlikely(rd == 0)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     const uint64_t rd_value = a.read_x(rd);
     const int32_t imm = insn_get_CI_CB_imm_se(insn);
     int32_t val = 0;
@@ -4855,11 +4824,8 @@ static FORCE_INLINE execute_status execute_C_ADDIW(STATE_ACCESS &a, uint64_t &pc
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_LI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.li");
+    // rd cannot be zero (guaranteed by jump table)
     const uint32_t rd = insn_get_rd(insn);
-    // C.LI with rd == 0 is just a HINT that must execute as no-op (see RISC-V spec)
-    if (unlikely(rd == 0)) {
-        return advance_to_next_insn<2>(a, pc);
-    }
     const int32_t imm = insn_get_CI_CB_imm_se(insn);
     a.write_x(rd, static_cast<uint64_t>(imm));
     return advance_to_next_insn<2>(a, pc);
@@ -4869,10 +4835,8 @@ static FORCE_INLINE execute_status execute_C_LI(STATE_ACCESS &a, uint64_t &pc, u
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ADDI16SP(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.addi16sp");
+    // imm cannot be zero (guaranteed by the jump table)
     const int32_t imm = insn_get_C_ADDI16SP_imm(insn);
-    if (unlikely(imm == 0)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     const uint64_t rs1_value = a.read_x(2);
     int64_t val = 0;
     __builtin_add_overflow(static_cast<int64_t>(rs1_value), static_cast<int64_t>(imm), &val);
@@ -4882,27 +4846,14 @@ static FORCE_INLINE execute_status execute_C_ADDI16SP(STATE_ACCESS &a, uint64_t 
 
 /// \brief Implementation of the C.LUI instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_LUI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, uint32_t rd) {
+static FORCE_INLINE execute_status execute_C_LUI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.lui");
+    // imm cannot be zero (guaranteed by the jump table)
     const int32_t imm = insn_get_C_LUI_imm(insn);
-    if (unlikely(imm == 0)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
-    // C.LUI with rd == 0 is just a HINT that must execute as no-op (see RISC-V spec)
-    if (unlikely(rd == 0)) {
-        return advance_to_next_insn<2>(a, pc);
-    }
+    // rd cannot be zero (guaranteed by the jump table)
+    const uint32_t rd = insn_get_rd(insn);
     a.write_x(rd, static_cast<uint64_t>(imm));
     return advance_to_next_insn<2>(a, pc);
-}
-
-template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_Q1_SET1(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    const uint32_t rd = insn_get_rd(insn);
-    if (rd == 2) {
-        return execute_C_ADDI16SP(a, pc, insn);
-    }
-    return execute_C_LUI(a, pc, insn, rd);
 }
 
 /// \brief Implementation of the C.SRLI instruction.
@@ -4910,11 +4861,8 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SRLI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.srli");
     const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    // imm cannot be zero (guaranteed by the jump table)
     const uint32_t imm = insn_get_CI_CB_imm(insn);
-    // C.SRLI with imm == 0 is just a HINT that must execute as no-op (see RISC-V spec)
-    if (unlikely(imm == 0)) {
-        return advance_to_next_insn<2>(a, pc);
-    }
     const uint64_t rs1_value = a.read_x(rs1);
     a.write_x(rs1, rs1_value >> imm);
     return advance_to_next_insn<2>(a, pc);
@@ -4925,11 +4873,8 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SRAI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.srai");
     const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
+    // imm cannot be zero (guaranteed by the jump table)
     const uint32_t imm = insn_get_CI_CB_imm(insn);
-    // C.SRAI with imm == 0 is just a HINT that must execute as no-op (see RISC-V spec)
-    if (unlikely(imm == 0)) {
-        return advance_to_next_insn<2>(a, pc);
-    }
     const auto rs1_value = static_cast<int64_t>(a.read_x(rs1));
     a.write_x(rs1, static_cast<uint64_t>(rs1_value >> imm));
     return advance_to_next_insn<2>(a, pc);
@@ -5021,42 +4966,6 @@ static FORCE_INLINE execute_status execute_C_ADDW(STATE_ACCESS &a, uint64_t &pc,
     });
 }
 
-template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_CB_funct2(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    auto cb_funct2 = static_cast<insn_CB_funct2>(insn_get_CB_funct2(insn));
-    switch (cb_funct2) {
-        case insn_CB_funct2::C_SRLI:
-            return execute_C_SRLI(a, pc, insn);
-        case insn_CB_funct2::C_SRAI:
-            return execute_C_SRAI(a, pc, insn);
-        case insn_CB_funct2::C_ANDI:
-            return execute_C_ANDI(a, pc, insn);
-    }
-    return raise_illegal_insn_exception(a, pc, insn);
-}
-
-template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_Q1_SET2(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    auto ca_funct6_funct2 = static_cast<insn_CA_funct6_funct2>(insn_get_CA_funct6_funct2(insn));
-    switch (ca_funct6_funct2) {
-        case insn_CA_funct6_funct2::C_SUB:
-            return execute_C_SUB(a, pc, insn);
-        case insn_CA_funct6_funct2::C_XOR:
-            return execute_C_XOR(a, pc, insn);
-        case insn_CA_funct6_funct2::C_OR:
-            return execute_C_OR(a, pc, insn);
-        case insn_CA_funct6_funct2::C_AND:
-            return execute_C_AND(a, pc, insn);
-        case insn_CA_funct6_funct2::C_SUBW:
-            return execute_C_SUBW(a, pc, insn);
-        case insn_CA_funct6_funct2::C_ADDW:
-            return execute_C_ADDW(a, pc, insn);
-        default:
-            return execute_CB_funct2(a, pc, insn);
-    }
-    return raise_illegal_insn_exception(a, pc, insn);
-}
-
 /// \brief Implementation of the C_J instruction.
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_J(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
@@ -5095,16 +5004,10 @@ static FORCE_INLINE execute_status execute_C_BNEZ(STATE_ACCESS &a, uint64_t &pc,
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_SLLI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.slli");
+    // rd cannot be zero (guaranteed by jump table)
     const uint32_t rd = insn_get_rd(insn);
-    // C.SLLI with rd == 0 is just a HINT that must execute as no-op (see RISC-V spec)
-    if (unlikely(rd == 0)) {
-        return advance_to_next_insn<2>(a, pc);
-    }
+    // imm cannot be zero (guaranteed by jump table)
     const uint32_t imm = insn_get_CI_CB_imm(insn);
-    // C.SLLI with imm == 0 is just a HINT that must execute as no-op (see RISC-V spec)
-    if (unlikely(imm == 0)) {
-        return advance_to_next_insn<2>(a, pc);
-    }
     const uint64_t rs1_value = a.read_x(rd);
     a.write_x(rd, rs1_value << imm);
     return advance_to_next_insn<2>(a, pc);
@@ -5128,10 +5031,8 @@ static FORCE_INLINE execute_status execute_C_FLDSP(STATE_ACCESS &a, uint64_t &pc
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_LWSP(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.lwsp");
+    // rd cannot be zero (guaranteed by jump table)
     const uint32_t rd = insn_get_rd(insn);
-    if (unlikely(rd == 0)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     const int32_t imm = insn_get_C_LWSP_imm(insn);
     return execute_C_L<int32_t>(a, pc, mcycle, rd, 0x2, imm);
 }
@@ -5140,34 +5041,29 @@ static FORCE_INLINE execute_status execute_C_LWSP(STATE_ACCESS &a, uint64_t &pc,
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_LDSP(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "c.ldsp");
+    // rd cannot be zero (guaranteed by jump table)
     const uint32_t rd = insn_get_rd(insn);
-    if (unlikely(rd == 0)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
     const int32_t imm = insn_get_C_FLDSP_LDSP_imm(insn);
     return execute_C_L<int64_t>(a, pc, mcycle, rd, 0x2, imm);
 }
 
 /// \brief Implementation of the C.JR instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_JR(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, uint32_t rs1) {
+static FORCE_INLINE execute_status execute_C_JR(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.jr");
-    if (unlikely(rs1 == 0)) {
-        return raise_illegal_insn_exception(a, pc, insn);
-    }
+    // rs1 cannot be zero (guaranteed by the jump table)
+    const uint32_t rs1 = insn_get_rd(insn);
     const uint64_t new_pc = a.read_x(rs1) & ~static_cast<uint64_t>(1);
     return execute_jump(a, pc, new_pc);
 }
 
 /// \brief Implementation of the C.MV instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_MV(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, uint32_t rd,
-    uint32_t rs2) {
+static FORCE_INLINE execute_status execute_C_MV(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.mv");
-    // C.SLLI with rd == 0 is just a HINT that must execute as no-op (see RISC-V spec)
-    if (unlikely(rd == 0)) {
-        return advance_to_next_insn<2>(a, pc);
-    }
+    // rd cannot be zero (guaranteed by the jump table)
+    const uint32_t rd = insn_get_rd(insn);
+    const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
     const uint64_t val = a.read_x(rs2);
     a.write_x(rd, val);
     return advance_to_next_insn<2>(a, pc);
@@ -5183,8 +5079,9 @@ static FORCE_INLINE execute_status execute_C_EBREAK(STATE_ACCESS &a, uint64_t &p
 
 /// \brief Implementation of the C.JALR instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_JALR(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, uint32_t rs1) {
+static FORCE_INLINE execute_status execute_C_JALR(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.jalr");
+    const uint32_t rs1 = insn_get_rd(insn);
     const uint64_t new_pc = a.read_x(rs1) & ~static_cast<uint64_t>(1);
     const uint64_t val = pc + 2;
     a.write_x(0x1, val);
@@ -5193,38 +5090,17 @@ static FORCE_INLINE execute_status execute_C_JALR(STATE_ACCESS &a, uint64_t &pc,
 
 /// \brief Implementation of the C.ADD instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_ADD(STATE_ACCESS &a, uint64_t &pc, uint32_t insn, uint32_t rd,
-    uint32_t rs2) {
+static FORCE_INLINE execute_status execute_C_ADD(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "c.add");
-    // C.ADD with rd == 0 is just a HINT that must execute as no-op (see RISC-V spec)
-    if (unlikely(rd == 0)) {
-        return advance_to_next_insn<2>(a, pc);
-    }
+    // rd cannot be zero (guaranteed by the jump table)
+    const uint32_t rd = insn_get_rd(insn);
+    const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
     const uint64_t rd_value = a.read_x(rd);
     const uint64_t rs2_value = a.read_x(rs2);
     uint64_t val = 0;
     __builtin_add_overflow(rd_value, rs2_value, &val);
     a.write_x(rd, val);
     return advance_to_next_insn<2>(a, pc);
-}
-
-template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_Q2_SET0(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    const uint32_t rs1 = insn_get_rd(insn);
-    const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
-    if (insn & 0b0001000000000000) {
-        if (rs2 != 0) {
-            return execute_C_ADD(a, pc, insn, rs1, rs2);
-        }
-        if (rs1 != 0) {
-            return execute_C_JALR(a, pc, insn, rs1);
-        }
-        return execute_C_EBREAK(a, pc, insn);
-    }
-    if (rs2 != 0) {
-        return execute_C_MV(a, pc, insn, rs1, rs2);
-    }
-    return execute_C_JR(a, pc, insn, rs1);
 }
 
 /// \brief Implementation of the C.FSDSP instruction.
@@ -5609,11 +5485,27 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
                         status = execute_SB(a, pc, mcycle, insn);
                         INSN_BREAK();
                     // C extension
+                    INSN_CASE(C_HINT):
+                    INSN_CASE(C_NOP):
+                        status = execute_C_NOP(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_LUI):
+                        status = execute_C_LUI(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
                     INSN_CASE(C_LI):
                         status = execute_C_LI(a, pc, static_cast<uint16_t>(insn));
                         INSN_BREAK();
                     INSN_CASE(C_J):
                         status = execute_C_J(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_JR):
+                        status = execute_C_JR(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_JALR):
+                        status = execute_C_JALR(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_MV):
+                        status = execute_C_MV(a, pc, static_cast<uint16_t>(insn));
                         INSN_BREAK();
                     INSN_CASE(C_BEQZ):
                         status = execute_C_BEQZ(a, pc, static_cast<uint16_t>(insn));
@@ -5621,26 +5513,50 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
                     INSN_CASE(C_BNEZ):
                         status = execute_C_BNEZ(a, pc, static_cast<uint16_t>(insn));
                         INSN_BREAK();
-                    INSN_CASE(C_ADDI4SPN):
-                        status = execute_C_ADDI4SPN(a, pc, static_cast<uint16_t>(insn));
+                    INSN_CASE(C_ADDI):
+                        status = execute_C_ADDI(a, pc, static_cast<uint16_t>(insn));
                         INSN_BREAK();
                     INSN_CASE(C_ADDIW):
                         status = execute_C_ADDIW(a, pc, static_cast<uint16_t>(insn));
                         INSN_BREAK();
+                    INSN_CASE(C_ADDI4SPN):
+                        status = execute_C_ADDI4SPN(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_ADDI16SP):
+                        status = execute_C_ADDI16SP(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_ANDI):
+                        status = execute_C_ANDI(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
                     INSN_CASE(C_SLLI):
                         status = execute_C_SLLI(a, pc, static_cast<uint16_t>(insn));
                         INSN_BREAK();
-                    INSN_CASE(C_Q1_SET0):
-                        status = execute_C_Q1_SET0(a, pc, static_cast<uint16_t>(insn));
+                    INSN_CASE(C_SRAI):
+                        status = execute_C_SRAI(a, pc, static_cast<uint16_t>(insn));
                         INSN_BREAK();
-                    INSN_CASE(C_Q1_SET1):
-                        status = execute_C_Q1_SET1(a, pc, static_cast<uint16_t>(insn));
+                    INSN_CASE(C_SRLI):
+                        status = execute_C_SRLI(a, pc, static_cast<uint16_t>(insn));
                         INSN_BREAK();
-                    INSN_CASE(C_Q1_SET2):
-                        status = execute_C_Q1_SET2(a, pc, static_cast<uint16_t>(insn));
+                    INSN_CASE(C_ADD):
+                        status = execute_C_ADD(a, pc, static_cast<uint16_t>(insn));
                         INSN_BREAK();
-                    INSN_CASE(C_Q2_SET0):
-                        status = execute_C_Q2_SET0(a, pc, static_cast<uint16_t>(insn));
+                    INSN_CASE(C_SUB):
+                        status = execute_C_SUB(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_XOR):
+                        status = execute_C_XOR(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_OR):
+                        status = execute_C_OR(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_AND):
+                        status = execute_C_AND(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_ADDW):
+                        status = execute_C_ADDW(a, pc, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_SUBW):
+                        status = execute_C_SUBW(a, pc, static_cast<uint16_t>(insn));
                         INSN_BREAK();
                     INSN_CASE(C_LD):
                         status = execute_C_LD(a, pc, mcycle, static_cast<uint16_t>(insn));
@@ -5677,6 +5593,9 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
                         INSN_BREAK();
                     INSN_CASE(C_FSDSP):
                         status = execute_C_FSDSP(a, pc, mcycle, static_cast<uint16_t>(insn));
+                        INSN_BREAK();
+                    INSN_CASE(C_EBREAK):
+                        status = execute_C_EBREAK(a, pc, static_cast<uint16_t>(insn));
                         INSN_BREAK();
                     // FD extensions
                     INSN_CASE(FD):
@@ -5824,7 +5743,7 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
                     INSN_CASE(REMUW_rd0):
                         status = execute_REMUW<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
-                    // Illegal instruction
+                    // Illegal instructions
                     INSN_CASE(ILLEGAL):
                         status = raise_illegal_insn_exception(a, pc, ((insn & 3) != 3) ? static_cast<uint16_t>(insn) : insn);
                         INSN_BREAK();

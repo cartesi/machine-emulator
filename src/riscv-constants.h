@@ -634,25 +634,6 @@ enum class CSR_address : uint32_t {
     tdata3 = 0x7a3,
 };
 
-/// \brief The result of insn & 0b1110110000000011 can be used to identify
-/// most compressed instructions directly
-enum class insn_CB_funct2 : uint32_t {
-    C_SRLI = 0b1000000000000001,
-    C_SRAI = 0b1000010000000001,
-    C_ANDI = 0b1000100000000001,
-};
-
-/// \brief The result of insn & 0b1111110001100011 can be used to identify
-/// most compressed instructions directly
-enum class insn_CA_funct6_funct2 : uint32_t {
-    C_SUB = 0b1000110000000001,
-    C_XOR = 0b1000110000100001,
-    C_OR = 0b1000110001000001,
-    C_AND = 0b1000110001100001,
-    C_SUBW = 0b1001110000000001,
-    C_ADDW = 0b1001110000100001,
-};
-
 /// \brief The result of insn >> 26 (6 most significant bits of funct7) can be
 /// used to identify the SRI instructions
 enum insn_SRLI_SRAI_funct7_sr1 : uint32_t { SRLI = 0b000000, SRAI = 0b010000 };

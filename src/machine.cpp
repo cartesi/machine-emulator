@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -814,7 +815,7 @@ machine::~machine() {
 #ifdef DUMP_HIST
     std::ignore = fprintf(stderr, "\nInstruction Histogram:\n");
     for (auto v : m_s.insn_hist) {
-        std::ignore = fprintf(stderr, "%s: %" PRIu64 "\n", v.first.c_str(), v.second);
+        std::ignore = fprintf(stderr, "%12" PRIu64 "  %s\n", v.second, v.first.c_str());
     }
 #endif
 #if DUMP_COUNTERS

@@ -218,16 +218,20 @@ ifneq (,$(filter gcc,$(CC)))
 # saving some host instructions and improving performance.
 # This flag is usually enabled by default at -O3,
 # but we don't use -O3 because it enables some other flags that are not worth for the interpreter.
-INTERPRET_CXXFLAGS+=-fgcse-after-reload -fpredictive-commoning -fsplit-paths -ftree-partial-pre -fpeel-loops
-# GCC manual says that we should disable gcse when using computed gotos
-INTERPRET_CXXFLAGS+=-fno-gcse
+INTERPRET_CXXFLAGS+=-fgcse-after-reload -fpeel-loops
 # The interpreter dispatch loop performs better as a big inlined function
 INTERPRET_CXXFLAGS+=-finline-limit=1024
-# The following optimization improves register allocation in the interpret hot loop
-INTERPRET_CXXFLAGS+=-funroll-loops
+# The interpreter hot loop is big and puts pressure on register allocation, this improves register use
+INTERPRET_CXXFLAGS+=-frename-registers -fweb
+# The interpreter instruction dispatch is ordered by hand, we don't want the compiler to shuffle it
+INTERPRET_CXXFLAGS+=-freorder-blocks-algorithm=simple
+# The following is known to save instructions in the hop loop
+INTERPRET_CXXFLAGS+=-fgcse-sm
+endif
+endif
+
+# Make testing new optimization options easier
 INTERPRET_CXXFLAGS+=$(MYINTERPRET_CXXFLAGS)
-endif
-endif
 
 # Link time optimizations
 ifeq ($(lto),yes)

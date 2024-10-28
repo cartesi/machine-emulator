@@ -2011,7 +2011,7 @@ static NO_INLINE execute_status write_csr_satp(STATE_ACCESS &a, uint64_t val) {
 }
 
 template <typename STATE_ACCESS>
-static execute_status write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
+static NO_INLINE execute_status write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
     const uint64_t old_mstatus = a.read_mstatus() & MSTATUS_R_MASK;
 
     // M-mode software can determine whether a privilege mode is implemented

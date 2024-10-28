@@ -223,6 +223,9 @@ INTERPRET_CXXFLAGS+=-fgcse-after-reload -fpredictive-commoning -fsplit-paths -ft
 INTERPRET_CXXFLAGS+=-fno-gcse
 # The interpreter dispatch loop performs better as a big inlined function
 INTERPRET_CXXFLAGS+=-finline-limit=1024
+# The following optimization improves register allocation in the interpret hot loop
+INTERPRET_CXXFLAGS+=-funroll-loops
+INTERPRET_CXXFLAGS+=$(MYINTERPRET_CXXFLAGS)
 endif
 endif
 

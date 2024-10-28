@@ -3352,26 +3352,28 @@ static FORCE_INLINE execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t 
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRLI_SRAI(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    switch (static_cast<insn_SRLI_SRAI_funct7_sr1>(insn_get_funct7_sr1(insn))) {
-        case insn_SRLI_SRAI_funct7_sr1::SRLI:
-            return execute_SRLI<rd_kind>(a, pc, insn);
-        case insn_SRLI_SRAI_funct7_sr1::SRAI:
-            return execute_SRAI<rd_kind>(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
+    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
+    const auto funct7_sr1 = static_cast<insn_SRLI_SRAI_funct7_sr1>(insn_get_funct7_sr1(insn));
+    if (funct7_sr1 == insn_SRLI_SRAI_funct7_sr1::SRLI) {
+        return execute_SRLI<rd_kind>(a, pc, insn);
     }
+    if (funct7_sr1 == insn_SRLI_SRAI_funct7_sr1::SRAI) {
+        return execute_SRAI<rd_kind>(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRLIW_SRAIW(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    switch (static_cast<insn_SRLIW_SRAIW_funct7>(insn_get_funct7(insn))) {
-        case insn_SRLIW_SRAIW_funct7::SRLIW:
-            return execute_SRLIW<rd_kind>(a, pc, insn);
-        case insn_SRLIW_SRAIW_funct7::SRAIW:
-            return execute_SRAIW<rd_kind>(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
+    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
+    const auto funct7 = static_cast<insn_SRLIW_SRAIW_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_SRLIW_SRAIW_funct7::SRLIW) {
+        return execute_SRLIW<rd_kind>(a, pc, insn);
     }
+    if (funct7 == insn_SRLIW_SRAIW_funct7::SRAIW) {
+        return execute_SRAIW<rd_kind>(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -3436,130 +3438,144 @@ static FORCE_INLINE execute_status execute_AMO_D(STATE_ACCESS &a, uint64_t &pc, 
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_ADD_MUL_SUB(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    switch (static_cast<insn_ADD_MUL_SUB_funct7>(insn_get_funct7(insn))) {
-        case insn_ADD_MUL_SUB_funct7::ADD:
-            return execute_ADD<rd_kind>(a, pc, insn);
-        case insn_ADD_MUL_SUB_funct7::MUL:
-            return execute_MUL<rd_kind>(a, pc, insn);
-        case insn_ADD_MUL_SUB_funct7::SUB:
-            return execute_SUB<rd_kind>(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
+    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
+    const auto funct7 = static_cast<insn_ADD_MUL_SUB_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_ADD_MUL_SUB_funct7::ADD) {
+        return execute_ADD<rd_kind>(a, pc, insn);
     }
+    if (funct7 == insn_ADD_MUL_SUB_funct7::MUL) {
+        return execute_MUL<rd_kind>(a, pc, insn);
+    }
+    if (funct7 == insn_ADD_MUL_SUB_funct7::SUB) {
+        return execute_SUB<rd_kind>(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SLL_MULH(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    switch (static_cast<insn_SLL_MULH_funct7>(insn_get_funct7(insn))) {
-        case insn_SLL_MULH_funct7::SLL:
-            return execute_SLL<rd_kind>(a, pc, insn);
-        case insn_SLL_MULH_funct7::MULH:
-            return execute_MULH<rd_kind>(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
+    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
+    const auto funct7 = static_cast<insn_SLL_MULH_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_SLL_MULH_funct7::SLL) {
+        return execute_SLL<rd_kind>(a, pc, insn);
     }
+    if (funct7 == insn_SLL_MULH_funct7::MULH) {
+        return execute_MULH<rd_kind>(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SLT_MULHSU(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    switch (static_cast<insn_SLT_MULHSU_funct7>(insn_get_funct7(insn))) {
-        case insn_SLT_MULHSU_funct7::SLT:
-            return execute_SLT<rd_kind>(a, pc, insn);
-        case insn_SLT_MULHSU_funct7::MULHSU:
-            return execute_MULHSU<rd_kind>(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
+    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
+    const auto funct7 = static_cast<insn_SLT_MULHSU_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_SLT_MULHSU_funct7::SLT) {
+        return execute_SLT<rd_kind>(a, pc, insn);
     }
+    if (funct7 == insn_SLT_MULHSU_funct7::MULHSU) {
+        return execute_MULHSU<rd_kind>(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SLTU_MULHU(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    switch (static_cast<insn_SLTU_MULHU_funct7>(insn_get_funct7(insn))) {
-        case insn_SLTU_MULHU_funct7::SLTU:
-            return execute_SLTU<rd_kind>(a, pc, insn);
-        case insn_SLTU_MULHU_funct7::MULHU:
-            return execute_MULHU<rd_kind>(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
+    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
+    const auto funct7 = static_cast<insn_SLTU_MULHU_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_SLTU_MULHU_funct7::SLTU) {
+        return execute_SLTU<rd_kind>(a, pc, insn);
     }
+    if (funct7 == insn_SLTU_MULHU_funct7::MULHU) {
+        return execute_MULHU<rd_kind>(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_XOR_DIV(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    switch (static_cast<insn_XOR_DIV_funct7>(insn_get_funct7(insn))) {
-        case insn_XOR_DIV_funct7::XOR:
-            return execute_XOR<rd_kind>(a, pc, insn);
-        case insn_XOR_DIV_funct7::DIV:
-            return execute_DIV<rd_kind>(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
+    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
+    const auto funct7 = static_cast<insn_XOR_DIV_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_XOR_DIV_funct7::XOR) {
+        return execute_XOR<rd_kind>(a, pc, insn);
     }
+    if (funct7 == insn_XOR_DIV_funct7::DIV) {
+        return execute_DIV<rd_kind>(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRL_DIVU_SRA(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    switch (static_cast<insn_SRL_DIVU_SRA_funct7>(insn_get_funct7(insn))) {
-        case insn_SRL_DIVU_SRA_funct7::SRL:
-            return execute_SRL<rd_kind>(a, pc, insn);
-        case insn_SRL_DIVU_SRA_funct7::DIVU:
-            return execute_DIVU<rd_kind>(a, pc, insn);
-        case insn_SRL_DIVU_SRA_funct7::SRA:
-            return execute_SRA<rd_kind>(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
+    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
+    const auto funct7 = static_cast<insn_SRL_DIVU_SRA_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_SRL_DIVU_SRA_funct7::SRL) {
+        return execute_SRL<rd_kind>(a, pc, insn);
     }
+    if (funct7 == insn_SRL_DIVU_SRA_funct7::SRA) {
+        return execute_SRA<rd_kind>(a, pc, insn);
+    }
+    if (funct7 == insn_SRL_DIVU_SRA_funct7::DIVU) {
+        return execute_DIVU<rd_kind>(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_OR_REM(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    switch (static_cast<insn_OR_REM_funct7>(insn_get_funct7(insn))) {
-        case insn_OR_REM_funct7::OR:
-            return execute_OR<rd_kind>(a, pc, insn);
-        case insn_OR_REM_funct7::REM:
-            return execute_REM<rd_kind>(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
+    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
+    const auto funct7 = static_cast<insn_OR_REM_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_OR_REM_funct7::OR) {
+        return execute_OR<rd_kind>(a, pc, insn);
     }
+    if (funct7 == insn_OR_REM_funct7::REM) {
+        return execute_REM<rd_kind>(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_AND_REMU(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    switch (static_cast<insn_AND_REMU_funct7>(insn_get_funct7(insn))) {
-        case insn_AND_REMU_funct7::AND:
-            return execute_AND<rd_kind>(a, pc, insn);
-        case insn_AND_REMU_funct7::REMU:
-            return execute_REMU<rd_kind>(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
+    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
+    const auto funct7 = static_cast<insn_AND_REMU_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_AND_REMU_funct7::AND) {
+        return execute_AND<rd_kind>(a, pc, insn);
     }
+    if (funct7 == insn_AND_REMU_funct7::REMU) {
+        return execute_REMU<rd_kind>(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_ADDW_MULW_SUBW(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    switch (static_cast<insn_ADDW_MULW_SUBW_funct7>(insn_get_funct7(insn))) {
-        case insn_ADDW_MULW_SUBW_funct7::ADDW:
-            return execute_ADDW<rd_kind>(a, pc, insn);
-        case insn_ADDW_MULW_SUBW_funct7::MULW:
-            return execute_MULW<rd_kind>(a, pc, insn);
-        case insn_ADDW_MULW_SUBW_funct7::SUBW:
-            return execute_SUBW<rd_kind>(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
+    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
+    const auto funct7 = static_cast<insn_ADDW_MULW_SUBW_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_ADDW_MULW_SUBW_funct7::ADDW) {
+        return execute_ADDW<rd_kind>(a, pc, insn);
     }
+    if (funct7 == insn_ADDW_MULW_SUBW_funct7::MULW) {
+        return execute_MULW<rd_kind>(a, pc, insn);
+    }
+    if (funct7 == insn_ADDW_MULW_SUBW_funct7::SUBW) {
+        return execute_SUBW<rd_kind>(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRLW_DIVUW_SRAW(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
-    switch (static_cast<insn_SRLW_DIVUW_SRAW_funct7>(insn_get_funct7(insn))) {
-        case insn_SRLW_DIVUW_SRAW_funct7::SRLW:
-            return execute_SRLW<rd_kind>(a, pc, insn);
-        case insn_SRLW_DIVUW_SRAW_funct7::DIVUW:
-            return execute_DIVUW<rd_kind>(a, pc, insn);
-        case insn_SRLW_DIVUW_SRAW_funct7::SRAW:
-            return execute_SRAW<rd_kind>(a, pc, insn);
-        default:
-            return raise_illegal_insn_exception(a, pc, insn);
+    // Use ifs instead of a switch to produce fewer branches for the most frequent instructions
+    const auto funct7 = static_cast<insn_SRLW_DIVUW_SRAW_funct7>(insn_get_funct7(insn));
+    if (funct7 == insn_SRLW_DIVUW_SRAW_funct7::SRLW) {
+        return execute_SRLW<rd_kind>(a, pc, insn);
     }
+    if (funct7 == insn_SRLW_DIVUW_SRAW_funct7::DIVUW) {
+        return execute_DIVUW<rd_kind>(a, pc, insn);
+    }
+    if (funct7 == insn_SRLW_DIVUW_SRAW_funct7::SRAW) {
+        return execute_SRAW<rd_kind>(a, pc, insn);
+    }
+    return raise_illegal_insn_exception(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>

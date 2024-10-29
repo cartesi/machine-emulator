@@ -326,7 +326,7 @@ struct i_sfloat {
     }
 
     /// \brief Addition operation.
-    static F_UINT add(F_UINT a, F_UINT b, FRM_modes rm, uint32_t *pfflags) {
+    static NO_INLINE F_UINT add(F_UINT a, F_UINT b, FRM_modes rm, uint32_t *pfflags) {
         // swap so that  abs(a) >= abs(b)
         if ((a & ~SIGN_MASK) < (b & ~SIGN_MASK)) {
             const F_UINT tmp = a;
@@ -379,7 +379,7 @@ struct i_sfloat {
     }
 
     /// \brief Multiply operation.
-    static F_UINT mul(F_UINT a, F_UINT b, FRM_modes rm, uint32_t *pfflags) {
+    static NO_INLINE F_UINT mul(F_UINT a, F_UINT b, FRM_modes rm, uint32_t *pfflags) {
         const uint32_t a_sign = a >> (F_SIZE - 1);
         const uint32_t b_sign = b >> (F_SIZE - 1);
         const uint32_t r_sign = a_sign ^ b_sign;
@@ -425,7 +425,7 @@ struct i_sfloat {
     }
 
     /// \brief Fused multiply and add operation.
-    static F_UINT fma(F_UINT a, F_UINT b, F_UINT c, FRM_modes rm, uint32_t *pfflags) {
+    static NO_INLINE F_UINT fma(F_UINT a, F_UINT b, F_UINT c, FRM_modes rm, uint32_t *pfflags) {
         const uint32_t a_sign = a >> (F_SIZE - 1);
         const uint32_t b_sign = b >> (F_SIZE - 1);
         uint32_t c_sign = c >> (F_SIZE - 1);
@@ -551,7 +551,7 @@ struct i_sfloat {
     }
 
     /// \brief Division operation.
-    static F_UINT div(F_UINT a, F_UINT b, FRM_modes rm, uint32_t *pfflags) {
+    static NO_INLINE F_UINT div(F_UINT a, F_UINT b, FRM_modes rm, uint32_t *pfflags) {
         const uint32_t a_sign = a >> (F_SIZE - 1);
         const uint32_t b_sign = b >> (F_SIZE - 1);
         const uint32_t r_sign = a_sign ^ b_sign;
@@ -612,7 +612,7 @@ struct i_sfloat {
     }
 
     /// \brief Square root operation.
-    static F_UINT sqrt(F_UINT a, FRM_modes rm, uint32_t *pfflags) {
+    static NO_INLINE F_UINT sqrt(F_UINT a, FRM_modes rm, uint32_t *pfflags) {
         const uint32_t a_sign = a >> (F_SIZE - 1);
         int32_t a_exp = (a >> MANT_SIZE) & EXP_MASK;
         F_UINT a_mant = a & MANT_MASK;
@@ -762,7 +762,7 @@ struct i_sfloat {
 
     /// \brief Conversion from float to integer.
     template <typename ICVT_INT>
-    static ICVT_INT cvt_f_i(F_UINT a, FRM_modes rm, uint32_t *pfflags) {
+    static NO_INLINE ICVT_INT cvt_f_i(F_UINT a, FRM_modes rm, uint32_t *pfflags) {
         using ICVT_UINT = std::make_unsigned_t<ICVT_INT>;
         constexpr bool IS_UNSIGNED = std::is_unsigned_v<ICVT_INT>;
         constexpr int ICVT_SIZE = sizeof(ICVT_UINT) * 8;
@@ -841,7 +841,7 @@ struct i_sfloat {
 
     /// \brief Conversion from integer to float.
     template <typename ICVT_INT>
-    static F_UINT cvt_i_f(ICVT_INT a, FRM_modes rm, uint32_t *pfflags) {
+    static NO_INLINE F_UINT cvt_i_f(ICVT_INT a, FRM_modes rm, uint32_t *pfflags) {
         using ICVT_UINT = std::make_unsigned_t<ICVT_INT>;
         constexpr bool IS_UNSIGNED = std::is_unsigned_v<ICVT_INT>;
         constexpr int ICVT_SIZE = sizeof(ICVT_UINT) * 8;
@@ -870,7 +870,7 @@ using i_sfloat32 = i_sfloat<uint32_t, 23, 8>;  // Interface for single-precision
 using i_sfloat64 = i_sfloat<uint64_t, 52, 11>; // Interface for double-precision floating-point
 
 /// \brief Conversion from float32 to float64.
-static uint64_t sfloat_cvt_f32_f64(uint32_t a, uint32_t *pfflags) {
+static NO_INLINE uint64_t sfloat_cvt_f32_f64(uint32_t a, uint32_t *pfflags) {
     uint32_t a_sign = 0;
     int32_t a_exp = 0;
     i_sfloat64::F_UINT a_mant = i_sfloat32::unpack(&a_sign, &a_exp, a);
@@ -899,7 +899,7 @@ static uint64_t sfloat_cvt_f32_f64(uint32_t a, uint32_t *pfflags) {
 }
 
 /// \brief Conversion from float64 to float32.
-static uint32_t sfloat_cvt_f64_f32(uint64_t a, FRM_modes rm, uint32_t *pfflags) {
+static NO_INLINE uint32_t sfloat_cvt_f64_f32(uint64_t a, FRM_modes rm, uint32_t *pfflags) {
     uint32_t a_sign = 0;
     int32_t a_exp = 0;
     i_sfloat64::F_UINT a_mant = i_sfloat64::unpack(&a_sign, &a_exp, a);

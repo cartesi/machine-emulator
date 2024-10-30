@@ -148,14 +148,10 @@ public:
 
 // Provides access to the state of the big emulator from microcode
 class uarch_machine_state_access : public i_state_access<uarch_machine_state_access, uarch_pma_entry> {
-    std::array<std::optional<uarch_pma_entry>, PMA_MAX> m_pmas;
+    std::array<std::optional<uarch_pma_entry>, PMA_MAX> &m_pmas;
 
 public:
-    uarch_machine_state_access() = default;
-    uarch_machine_state_access(const uarch_machine_state_access &other) = delete;
-    uarch_machine_state_access(uarch_machine_state_access &&other) = delete;
-    uarch_machine_state_access &operator=(const uarch_machine_state_access &other) = delete;
-    uarch_machine_state_access &operator=(uarch_machine_state_access &&other) = delete;
+    explicit uarch_machine_state_access(std::array<std::optional<uarch_pma_entry>, PMA_MAX>& pmas) : m_pmas(pmas) {}
     ~uarch_machine_state_access() = default;
 
 private:

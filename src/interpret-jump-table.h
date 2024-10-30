@@ -59,11 +59,16 @@ enum class insn_label_id : unsigned char {
     BGE,
     BLTU,
     BGEU,
-    LB,
-    LH,
-    LW,
-    LBU,
-    LHU,
+    LB_rd0,
+    LB_rdN,
+    LH_rd0,
+    LH_rdN,
+    LW_rd0,
+    LW_rdN,
+    LBU_rd0,
+    LBU_rdN,
+    LHU_rd0,
+    LHU_rdN,
     SB,
     SH,
     SW,
@@ -101,8 +106,10 @@ enum class insn_label_id : unsigned char {
     AND_REMU_rdN,
     FENCE,
     PRIVILEGED,
-    LWU,
-    LD,
+    LWU_rd0,
+    LWU_rdN,
+    LD_rd0,
+    LD_rdN,
     SD,
     ADDIW_rd0,
     ADDIW_rdN,
@@ -188,7 +195,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 //    0
     INSN_LABEL(C_HINT),                  //    1
     INSN_LABEL(C_HINT),                  //    2
-    INSN_LABEL(LB),                      //    3
+    INSN_LABEL(LB_rd0),                  //    3
     INSN_LABEL(ILLEGAL),                 //    4
     INSN_LABEL(C_NOP),                   //    5
     INSN_LABEL(C_HINT),                  //    6
@@ -316,7 +323,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              //  128
     INSN_LABEL(C_HINT),                  //  129
     INSN_LABEL(C_HINT),                  //  130
-    INSN_LABEL(LB),                      //  131
+    INSN_LABEL(LB_rdN),                  //  131
     INSN_LABEL(C_ADDI4SPN),              //  132
     INSN_LABEL(C_ADDI),                  //  133
     INSN_LABEL(C_SLLI),                  //  134
@@ -444,7 +451,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              //  256
     INSN_LABEL(C_HINT),                  //  257
     INSN_LABEL(C_HINT),                  //  258
-    INSN_LABEL(LB),                      //  259
+    INSN_LABEL(LB_rdN),                  //  259
     INSN_LABEL(C_ADDI4SPN),              //  260
     INSN_LABEL(C_ADDI),                  //  261
     INSN_LABEL(C_SLLI),                  //  262
@@ -572,7 +579,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              //  384
     INSN_LABEL(C_HINT),                  //  385
     INSN_LABEL(C_HINT),                  //  386
-    INSN_LABEL(LB),                      //  387
+    INSN_LABEL(LB_rdN),                  //  387
     INSN_LABEL(C_ADDI4SPN),              //  388
     INSN_LABEL(C_ADDI),                  //  389
     INSN_LABEL(C_SLLI),                  //  390
@@ -700,7 +707,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              //  512
     INSN_LABEL(C_HINT),                  //  513
     INSN_LABEL(C_HINT),                  //  514
-    INSN_LABEL(LB),                      //  515
+    INSN_LABEL(LB_rdN),                  //  515
     INSN_LABEL(C_ADDI4SPN),              //  516
     INSN_LABEL(C_ADDI),                  //  517
     INSN_LABEL(C_SLLI),                  //  518
@@ -828,7 +835,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              //  640
     INSN_LABEL(C_HINT),                  //  641
     INSN_LABEL(C_HINT),                  //  642
-    INSN_LABEL(LB),                      //  643
+    INSN_LABEL(LB_rdN),                  //  643
     INSN_LABEL(C_ADDI4SPN),              //  644
     INSN_LABEL(C_ADDI),                  //  645
     INSN_LABEL(C_SLLI),                  //  646
@@ -956,7 +963,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              //  768
     INSN_LABEL(C_HINT),                  //  769
     INSN_LABEL(C_HINT),                  //  770
-    INSN_LABEL(LB),                      //  771
+    INSN_LABEL(LB_rdN),                  //  771
     INSN_LABEL(C_ADDI4SPN),              //  772
     INSN_LABEL(C_ADDI),                  //  773
     INSN_LABEL(C_SLLI),                  //  774
@@ -1084,7 +1091,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              //  896
     INSN_LABEL(C_HINT),                  //  897
     INSN_LABEL(C_HINT),                  //  898
-    INSN_LABEL(LB),                      //  899
+    INSN_LABEL(LB_rdN),                  //  899
     INSN_LABEL(C_ADDI4SPN),              //  900
     INSN_LABEL(C_ADDI),                  //  901
     INSN_LABEL(C_SLLI),                  //  902
@@ -1212,7 +1219,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 1024
     INSN_LABEL(C_HINT),                  // 1025
     INSN_LABEL(C_HINT),                  // 1026
-    INSN_LABEL(LB),                      // 1027
+    INSN_LABEL(LB_rdN),                  // 1027
     INSN_LABEL(C_ADDI4SPN),              // 1028
     INSN_LABEL(C_ADDI),                  // 1029
     INSN_LABEL(C_SLLI),                  // 1030
@@ -1340,7 +1347,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 1152
     INSN_LABEL(C_HINT),                  // 1153
     INSN_LABEL(C_HINT),                  // 1154
-    INSN_LABEL(LB),                      // 1155
+    INSN_LABEL(LB_rdN),                  // 1155
     INSN_LABEL(C_ADDI4SPN),              // 1156
     INSN_LABEL(C_ADDI),                  // 1157
     INSN_LABEL(C_SLLI),                  // 1158
@@ -1468,7 +1475,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 1280
     INSN_LABEL(C_HINT),                  // 1281
     INSN_LABEL(C_HINT),                  // 1282
-    INSN_LABEL(LB),                      // 1283
+    INSN_LABEL(LB_rdN),                  // 1283
     INSN_LABEL(C_ADDI4SPN),              // 1284
     INSN_LABEL(C_ADDI),                  // 1285
     INSN_LABEL(C_SLLI),                  // 1286
@@ -1596,7 +1603,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 1408
     INSN_LABEL(C_HINT),                  // 1409
     INSN_LABEL(C_HINT),                  // 1410
-    INSN_LABEL(LB),                      // 1411
+    INSN_LABEL(LB_rdN),                  // 1411
     INSN_LABEL(C_ADDI4SPN),              // 1412
     INSN_LABEL(C_ADDI),                  // 1413
     INSN_LABEL(C_SLLI),                  // 1414
@@ -1724,7 +1731,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 1536
     INSN_LABEL(C_HINT),                  // 1537
     INSN_LABEL(C_HINT),                  // 1538
-    INSN_LABEL(LB),                      // 1539
+    INSN_LABEL(LB_rdN),                  // 1539
     INSN_LABEL(C_ADDI4SPN),              // 1540
     INSN_LABEL(C_ADDI),                  // 1541
     INSN_LABEL(C_SLLI),                  // 1542
@@ -1852,7 +1859,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 1664
     INSN_LABEL(C_HINT),                  // 1665
     INSN_LABEL(C_HINT),                  // 1666
-    INSN_LABEL(LB),                      // 1667
+    INSN_LABEL(LB_rdN),                  // 1667
     INSN_LABEL(C_ADDI4SPN),              // 1668
     INSN_LABEL(C_ADDI),                  // 1669
     INSN_LABEL(C_SLLI),                  // 1670
@@ -1980,7 +1987,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 1792
     INSN_LABEL(C_HINT),                  // 1793
     INSN_LABEL(C_HINT),                  // 1794
-    INSN_LABEL(LB),                      // 1795
+    INSN_LABEL(LB_rdN),                  // 1795
     INSN_LABEL(C_ADDI4SPN),              // 1796
     INSN_LABEL(C_ADDI),                  // 1797
     INSN_LABEL(C_SLLI),                  // 1798
@@ -2108,7 +2115,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 1920
     INSN_LABEL(C_HINT),                  // 1921
     INSN_LABEL(C_HINT),                  // 1922
-    INSN_LABEL(LB),                      // 1923
+    INSN_LABEL(LB_rdN),                  // 1923
     INSN_LABEL(C_ADDI4SPN),              // 1924
     INSN_LABEL(C_ADDI),                  // 1925
     INSN_LABEL(C_SLLI),                  // 1926
@@ -2236,7 +2243,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 2048
     INSN_LABEL(C_HINT),                  // 2049
     INSN_LABEL(C_HINT),                  // 2050
-    INSN_LABEL(LB),                      // 2051
+    INSN_LABEL(LB_rdN),                  // 2051
     INSN_LABEL(C_ADDI4SPN),              // 2052
     INSN_LABEL(C_ADDI),                  // 2053
     INSN_LABEL(C_SLLI),                  // 2054
@@ -2364,7 +2371,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 2176
     INSN_LABEL(C_HINT),                  // 2177
     INSN_LABEL(C_HINT),                  // 2178
-    INSN_LABEL(LB),                      // 2179
+    INSN_LABEL(LB_rdN),                  // 2179
     INSN_LABEL(C_ADDI4SPN),              // 2180
     INSN_LABEL(C_ADDI),                  // 2181
     INSN_LABEL(C_SLLI),                  // 2182
@@ -2492,7 +2499,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 2304
     INSN_LABEL(C_HINT),                  // 2305
     INSN_LABEL(C_HINT),                  // 2306
-    INSN_LABEL(LB),                      // 2307
+    INSN_LABEL(LB_rdN),                  // 2307
     INSN_LABEL(C_ADDI4SPN),              // 2308
     INSN_LABEL(C_ADDI),                  // 2309
     INSN_LABEL(C_SLLI),                  // 2310
@@ -2620,7 +2627,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 2432
     INSN_LABEL(C_HINT),                  // 2433
     INSN_LABEL(C_HINT),                  // 2434
-    INSN_LABEL(LB),                      // 2435
+    INSN_LABEL(LB_rdN),                  // 2435
     INSN_LABEL(C_ADDI4SPN),              // 2436
     INSN_LABEL(C_ADDI),                  // 2437
     INSN_LABEL(C_SLLI),                  // 2438
@@ -2748,7 +2755,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 2560
     INSN_LABEL(C_HINT),                  // 2561
     INSN_LABEL(C_HINT),                  // 2562
-    INSN_LABEL(LB),                      // 2563
+    INSN_LABEL(LB_rdN),                  // 2563
     INSN_LABEL(C_ADDI4SPN),              // 2564
     INSN_LABEL(C_ADDI),                  // 2565
     INSN_LABEL(C_SLLI),                  // 2566
@@ -2876,7 +2883,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 2688
     INSN_LABEL(C_HINT),                  // 2689
     INSN_LABEL(C_HINT),                  // 2690
-    INSN_LABEL(LB),                      // 2691
+    INSN_LABEL(LB_rdN),                  // 2691
     INSN_LABEL(C_ADDI4SPN),              // 2692
     INSN_LABEL(C_ADDI),                  // 2693
     INSN_LABEL(C_SLLI),                  // 2694
@@ -3004,7 +3011,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 2816
     INSN_LABEL(C_HINT),                  // 2817
     INSN_LABEL(C_HINT),                  // 2818
-    INSN_LABEL(LB),                      // 2819
+    INSN_LABEL(LB_rdN),                  // 2819
     INSN_LABEL(C_ADDI4SPN),              // 2820
     INSN_LABEL(C_ADDI),                  // 2821
     INSN_LABEL(C_SLLI),                  // 2822
@@ -3132,7 +3139,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 2944
     INSN_LABEL(C_HINT),                  // 2945
     INSN_LABEL(C_HINT),                  // 2946
-    INSN_LABEL(LB),                      // 2947
+    INSN_LABEL(LB_rdN),                  // 2947
     INSN_LABEL(C_ADDI4SPN),              // 2948
     INSN_LABEL(C_ADDI),                  // 2949
     INSN_LABEL(C_SLLI),                  // 2950
@@ -3260,7 +3267,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 3072
     INSN_LABEL(C_HINT),                  // 3073
     INSN_LABEL(C_HINT),                  // 3074
-    INSN_LABEL(LB),                      // 3075
+    INSN_LABEL(LB_rdN),                  // 3075
     INSN_LABEL(C_ADDI4SPN),              // 3076
     INSN_LABEL(C_ADDI),                  // 3077
     INSN_LABEL(C_SLLI),                  // 3078
@@ -3388,7 +3395,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 3200
     INSN_LABEL(C_HINT),                  // 3201
     INSN_LABEL(C_HINT),                  // 3202
-    INSN_LABEL(LB),                      // 3203
+    INSN_LABEL(LB_rdN),                  // 3203
     INSN_LABEL(C_ADDI4SPN),              // 3204
     INSN_LABEL(C_ADDI),                  // 3205
     INSN_LABEL(C_SLLI),                  // 3206
@@ -3516,7 +3523,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 3328
     INSN_LABEL(C_HINT),                  // 3329
     INSN_LABEL(C_HINT),                  // 3330
-    INSN_LABEL(LB),                      // 3331
+    INSN_LABEL(LB_rdN),                  // 3331
     INSN_LABEL(C_ADDI4SPN),              // 3332
     INSN_LABEL(C_ADDI),                  // 3333
     INSN_LABEL(C_SLLI),                  // 3334
@@ -3644,7 +3651,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 3456
     INSN_LABEL(C_HINT),                  // 3457
     INSN_LABEL(C_HINT),                  // 3458
-    INSN_LABEL(LB),                      // 3459
+    INSN_LABEL(LB_rdN),                  // 3459
     INSN_LABEL(C_ADDI4SPN),              // 3460
     INSN_LABEL(C_ADDI),                  // 3461
     INSN_LABEL(C_SLLI),                  // 3462
@@ -3772,7 +3779,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 3584
     INSN_LABEL(C_HINT),                  // 3585
     INSN_LABEL(C_HINT),                  // 3586
-    INSN_LABEL(LB),                      // 3587
+    INSN_LABEL(LB_rdN),                  // 3587
     INSN_LABEL(C_ADDI4SPN),              // 3588
     INSN_LABEL(C_ADDI),                  // 3589
     INSN_LABEL(C_SLLI),                  // 3590
@@ -3900,7 +3907,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 3712
     INSN_LABEL(C_HINT),                  // 3713
     INSN_LABEL(C_HINT),                  // 3714
-    INSN_LABEL(LB),                      // 3715
+    INSN_LABEL(LB_rdN),                  // 3715
     INSN_LABEL(C_ADDI4SPN),              // 3716
     INSN_LABEL(C_ADDI),                  // 3717
     INSN_LABEL(C_SLLI),                  // 3718
@@ -4028,7 +4035,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 3840
     INSN_LABEL(C_HINT),                  // 3841
     INSN_LABEL(C_HINT),                  // 3842
-    INSN_LABEL(LB),                      // 3843
+    INSN_LABEL(LB_rdN),                  // 3843
     INSN_LABEL(C_ADDI4SPN),              // 3844
     INSN_LABEL(C_ADDI),                  // 3845
     INSN_LABEL(C_SLLI),                  // 3846
@@ -4156,7 +4163,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 3968
     INSN_LABEL(C_HINT),                  // 3969
     INSN_LABEL(C_HINT),                  // 3970
-    INSN_LABEL(LB),                      // 3971
+    INSN_LABEL(LB_rdN),                  // 3971
     INSN_LABEL(C_ADDI4SPN),              // 3972
     INSN_LABEL(C_ADDI),                  // 3973
     INSN_LABEL(C_SLLI),                  // 3974
@@ -4284,7 +4291,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 4096
     INSN_LABEL(C_NOP),                   // 4097
     INSN_LABEL(C_HINT),                  // 4098
-    INSN_LABEL(LH),                      // 4099
+    INSN_LABEL(LH_rd0),                  // 4099
     INSN_LABEL(C_ADDI4SPN),              // 4100
     INSN_LABEL(C_NOP),                   // 4101
     INSN_LABEL(C_HINT),                  // 4102
@@ -4412,7 +4419,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 4224
     INSN_LABEL(C_ADDI),                  // 4225
     INSN_LABEL(C_SLLI),                  // 4226
-    INSN_LABEL(LH),                      // 4227
+    INSN_LABEL(LH_rdN),                  // 4227
     INSN_LABEL(C_ADDI4SPN),              // 4228
     INSN_LABEL(C_ADDI),                  // 4229
     INSN_LABEL(C_SLLI),                  // 4230
@@ -4540,7 +4547,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 4352
     INSN_LABEL(C_ADDI),                  // 4353
     INSN_LABEL(C_SLLI),                  // 4354
-    INSN_LABEL(LH),                      // 4355
+    INSN_LABEL(LH_rdN),                  // 4355
     INSN_LABEL(C_ADDI4SPN),              // 4356
     INSN_LABEL(C_ADDI),                  // 4357
     INSN_LABEL(C_SLLI),                  // 4358
@@ -4668,7 +4675,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 4480
     INSN_LABEL(C_ADDI),                  // 4481
     INSN_LABEL(C_SLLI),                  // 4482
-    INSN_LABEL(LH),                      // 4483
+    INSN_LABEL(LH_rdN),                  // 4483
     INSN_LABEL(C_ADDI4SPN),              // 4484
     INSN_LABEL(C_ADDI),                  // 4485
     INSN_LABEL(C_SLLI),                  // 4486
@@ -4796,7 +4803,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 4608
     INSN_LABEL(C_ADDI),                  // 4609
     INSN_LABEL(C_SLLI),                  // 4610
-    INSN_LABEL(LH),                      // 4611
+    INSN_LABEL(LH_rdN),                  // 4611
     INSN_LABEL(C_ADDI4SPN),              // 4612
     INSN_LABEL(C_ADDI),                  // 4613
     INSN_LABEL(C_SLLI),                  // 4614
@@ -4924,7 +4931,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 4736
     INSN_LABEL(C_ADDI),                  // 4737
     INSN_LABEL(C_SLLI),                  // 4738
-    INSN_LABEL(LH),                      // 4739
+    INSN_LABEL(LH_rdN),                  // 4739
     INSN_LABEL(C_ADDI4SPN),              // 4740
     INSN_LABEL(C_ADDI),                  // 4741
     INSN_LABEL(C_SLLI),                  // 4742
@@ -5052,7 +5059,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 4864
     INSN_LABEL(C_ADDI),                  // 4865
     INSN_LABEL(C_SLLI),                  // 4866
-    INSN_LABEL(LH),                      // 4867
+    INSN_LABEL(LH_rdN),                  // 4867
     INSN_LABEL(C_ADDI4SPN),              // 4868
     INSN_LABEL(C_ADDI),                  // 4869
     INSN_LABEL(C_SLLI),                  // 4870
@@ -5180,7 +5187,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 4992
     INSN_LABEL(C_ADDI),                  // 4993
     INSN_LABEL(C_SLLI),                  // 4994
-    INSN_LABEL(LH),                      // 4995
+    INSN_LABEL(LH_rdN),                  // 4995
     INSN_LABEL(C_ADDI4SPN),              // 4996
     INSN_LABEL(C_ADDI),                  // 4997
     INSN_LABEL(C_SLLI),                  // 4998
@@ -5308,7 +5315,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 5120
     INSN_LABEL(C_ADDI),                  // 5121
     INSN_LABEL(C_SLLI),                  // 5122
-    INSN_LABEL(LH),                      // 5123
+    INSN_LABEL(LH_rdN),                  // 5123
     INSN_LABEL(C_ADDI4SPN),              // 5124
     INSN_LABEL(C_ADDI),                  // 5125
     INSN_LABEL(C_SLLI),                  // 5126
@@ -5436,7 +5443,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 5248
     INSN_LABEL(C_ADDI),                  // 5249
     INSN_LABEL(C_SLLI),                  // 5250
-    INSN_LABEL(LH),                      // 5251
+    INSN_LABEL(LH_rdN),                  // 5251
     INSN_LABEL(C_ADDI4SPN),              // 5252
     INSN_LABEL(C_ADDI),                  // 5253
     INSN_LABEL(C_SLLI),                  // 5254
@@ -5564,7 +5571,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 5376
     INSN_LABEL(C_ADDI),                  // 5377
     INSN_LABEL(C_SLLI),                  // 5378
-    INSN_LABEL(LH),                      // 5379
+    INSN_LABEL(LH_rdN),                  // 5379
     INSN_LABEL(C_ADDI4SPN),              // 5380
     INSN_LABEL(C_ADDI),                  // 5381
     INSN_LABEL(C_SLLI),                  // 5382
@@ -5692,7 +5699,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 5504
     INSN_LABEL(C_ADDI),                  // 5505
     INSN_LABEL(C_SLLI),                  // 5506
-    INSN_LABEL(LH),                      // 5507
+    INSN_LABEL(LH_rdN),                  // 5507
     INSN_LABEL(C_ADDI4SPN),              // 5508
     INSN_LABEL(C_ADDI),                  // 5509
     INSN_LABEL(C_SLLI),                  // 5510
@@ -5820,7 +5827,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 5632
     INSN_LABEL(C_ADDI),                  // 5633
     INSN_LABEL(C_SLLI),                  // 5634
-    INSN_LABEL(LH),                      // 5635
+    INSN_LABEL(LH_rdN),                  // 5635
     INSN_LABEL(C_ADDI4SPN),              // 5636
     INSN_LABEL(C_ADDI),                  // 5637
     INSN_LABEL(C_SLLI),                  // 5638
@@ -5948,7 +5955,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 5760
     INSN_LABEL(C_ADDI),                  // 5761
     INSN_LABEL(C_SLLI),                  // 5762
-    INSN_LABEL(LH),                      // 5763
+    INSN_LABEL(LH_rdN),                  // 5763
     INSN_LABEL(C_ADDI4SPN),              // 5764
     INSN_LABEL(C_ADDI),                  // 5765
     INSN_LABEL(C_SLLI),                  // 5766
@@ -6076,7 +6083,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 5888
     INSN_LABEL(C_ADDI),                  // 5889
     INSN_LABEL(C_SLLI),                  // 5890
-    INSN_LABEL(LH),                      // 5891
+    INSN_LABEL(LH_rdN),                  // 5891
     INSN_LABEL(C_ADDI4SPN),              // 5892
     INSN_LABEL(C_ADDI),                  // 5893
     INSN_LABEL(C_SLLI),                  // 5894
@@ -6204,7 +6211,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 6016
     INSN_LABEL(C_ADDI),                  // 6017
     INSN_LABEL(C_SLLI),                  // 6018
-    INSN_LABEL(LH),                      // 6019
+    INSN_LABEL(LH_rdN),                  // 6019
     INSN_LABEL(C_ADDI4SPN),              // 6020
     INSN_LABEL(C_ADDI),                  // 6021
     INSN_LABEL(C_SLLI),                  // 6022
@@ -6332,7 +6339,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 6144
     INSN_LABEL(C_ADDI),                  // 6145
     INSN_LABEL(C_SLLI),                  // 6146
-    INSN_LABEL(LH),                      // 6147
+    INSN_LABEL(LH_rdN),                  // 6147
     INSN_LABEL(C_ADDI4SPN),              // 6148
     INSN_LABEL(C_ADDI),                  // 6149
     INSN_LABEL(C_SLLI),                  // 6150
@@ -6460,7 +6467,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 6272
     INSN_LABEL(C_ADDI),                  // 6273
     INSN_LABEL(C_SLLI),                  // 6274
-    INSN_LABEL(LH),                      // 6275
+    INSN_LABEL(LH_rdN),                  // 6275
     INSN_LABEL(C_ADDI4SPN),              // 6276
     INSN_LABEL(C_ADDI),                  // 6277
     INSN_LABEL(C_SLLI),                  // 6278
@@ -6588,7 +6595,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 6400
     INSN_LABEL(C_ADDI),                  // 6401
     INSN_LABEL(C_SLLI),                  // 6402
-    INSN_LABEL(LH),                      // 6403
+    INSN_LABEL(LH_rdN),                  // 6403
     INSN_LABEL(C_ADDI4SPN),              // 6404
     INSN_LABEL(C_ADDI),                  // 6405
     INSN_LABEL(C_SLLI),                  // 6406
@@ -6716,7 +6723,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 6528
     INSN_LABEL(C_ADDI),                  // 6529
     INSN_LABEL(C_SLLI),                  // 6530
-    INSN_LABEL(LH),                      // 6531
+    INSN_LABEL(LH_rdN),                  // 6531
     INSN_LABEL(C_ADDI4SPN),              // 6532
     INSN_LABEL(C_ADDI),                  // 6533
     INSN_LABEL(C_SLLI),                  // 6534
@@ -6844,7 +6851,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 6656
     INSN_LABEL(C_ADDI),                  // 6657
     INSN_LABEL(C_SLLI),                  // 6658
-    INSN_LABEL(LH),                      // 6659
+    INSN_LABEL(LH_rdN),                  // 6659
     INSN_LABEL(C_ADDI4SPN),              // 6660
     INSN_LABEL(C_ADDI),                  // 6661
     INSN_LABEL(C_SLLI),                  // 6662
@@ -6972,7 +6979,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 6784
     INSN_LABEL(C_ADDI),                  // 6785
     INSN_LABEL(C_SLLI),                  // 6786
-    INSN_LABEL(LH),                      // 6787
+    INSN_LABEL(LH_rdN),                  // 6787
     INSN_LABEL(C_ADDI4SPN),              // 6788
     INSN_LABEL(C_ADDI),                  // 6789
     INSN_LABEL(C_SLLI),                  // 6790
@@ -7100,7 +7107,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 6912
     INSN_LABEL(C_ADDI),                  // 6913
     INSN_LABEL(C_SLLI),                  // 6914
-    INSN_LABEL(LH),                      // 6915
+    INSN_LABEL(LH_rdN),                  // 6915
     INSN_LABEL(C_ADDI4SPN),              // 6916
     INSN_LABEL(C_ADDI),                  // 6917
     INSN_LABEL(C_SLLI),                  // 6918
@@ -7228,7 +7235,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 7040
     INSN_LABEL(C_ADDI),                  // 7041
     INSN_LABEL(C_SLLI),                  // 7042
-    INSN_LABEL(LH),                      // 7043
+    INSN_LABEL(LH_rdN),                  // 7043
     INSN_LABEL(C_ADDI4SPN),              // 7044
     INSN_LABEL(C_ADDI),                  // 7045
     INSN_LABEL(C_SLLI),                  // 7046
@@ -7356,7 +7363,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 7168
     INSN_LABEL(C_ADDI),                  // 7169
     INSN_LABEL(C_SLLI),                  // 7170
-    INSN_LABEL(LH),                      // 7171
+    INSN_LABEL(LH_rdN),                  // 7171
     INSN_LABEL(C_ADDI4SPN),              // 7172
     INSN_LABEL(C_ADDI),                  // 7173
     INSN_LABEL(C_SLLI),                  // 7174
@@ -7484,7 +7491,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 7296
     INSN_LABEL(C_ADDI),                  // 7297
     INSN_LABEL(C_SLLI),                  // 7298
-    INSN_LABEL(LH),                      // 7299
+    INSN_LABEL(LH_rdN),                  // 7299
     INSN_LABEL(C_ADDI4SPN),              // 7300
     INSN_LABEL(C_ADDI),                  // 7301
     INSN_LABEL(C_SLLI),                  // 7302
@@ -7612,7 +7619,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 7424
     INSN_LABEL(C_ADDI),                  // 7425
     INSN_LABEL(C_SLLI),                  // 7426
-    INSN_LABEL(LH),                      // 7427
+    INSN_LABEL(LH_rdN),                  // 7427
     INSN_LABEL(C_ADDI4SPN),              // 7428
     INSN_LABEL(C_ADDI),                  // 7429
     INSN_LABEL(C_SLLI),                  // 7430
@@ -7740,7 +7747,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 7552
     INSN_LABEL(C_ADDI),                  // 7553
     INSN_LABEL(C_SLLI),                  // 7554
-    INSN_LABEL(LH),                      // 7555
+    INSN_LABEL(LH_rdN),                  // 7555
     INSN_LABEL(C_ADDI4SPN),              // 7556
     INSN_LABEL(C_ADDI),                  // 7557
     INSN_LABEL(C_SLLI),                  // 7558
@@ -7868,7 +7875,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 7680
     INSN_LABEL(C_ADDI),                  // 7681
     INSN_LABEL(C_SLLI),                  // 7682
-    INSN_LABEL(LH),                      // 7683
+    INSN_LABEL(LH_rdN),                  // 7683
     INSN_LABEL(C_ADDI4SPN),              // 7684
     INSN_LABEL(C_ADDI),                  // 7685
     INSN_LABEL(C_SLLI),                  // 7686
@@ -7996,7 +8003,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 7808
     INSN_LABEL(C_ADDI),                  // 7809
     INSN_LABEL(C_SLLI),                  // 7810
-    INSN_LABEL(LH),                      // 7811
+    INSN_LABEL(LH_rdN),                  // 7811
     INSN_LABEL(C_ADDI4SPN),              // 7812
     INSN_LABEL(C_ADDI),                  // 7813
     INSN_LABEL(C_SLLI),                  // 7814
@@ -8124,7 +8131,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 7936
     INSN_LABEL(C_ADDI),                  // 7937
     INSN_LABEL(C_SLLI),                  // 7938
-    INSN_LABEL(LH),                      // 7939
+    INSN_LABEL(LH_rdN),                  // 7939
     INSN_LABEL(C_ADDI4SPN),              // 7940
     INSN_LABEL(C_ADDI),                  // 7941
     INSN_LABEL(C_SLLI),                  // 7942
@@ -8252,7 +8259,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_ADDI4SPN),              // 8064
     INSN_LABEL(C_ADDI),                  // 8065
     INSN_LABEL(C_SLLI),                  // 8066
-    INSN_LABEL(LH),                      // 8067
+    INSN_LABEL(LH_rdN),                  // 8067
     INSN_LABEL(C_ADDI4SPN),              // 8068
     INSN_LABEL(C_ADDI),                  // 8069
     INSN_LABEL(C_SLLI),                  // 8070
@@ -8380,7 +8387,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 8192
     INSN_LABEL(ILLEGAL),                 // 8193
     INSN_LABEL(C_FLDSP),                 // 8194
-    INSN_LABEL(LW),                      // 8195
+    INSN_LABEL(LW_rd0),                  // 8195
     INSN_LABEL(C_FLD),                   // 8196
     INSN_LABEL(ILLEGAL),                 // 8197
     INSN_LABEL(C_FLDSP),                 // 8198
@@ -8508,7 +8515,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 8320
     INSN_LABEL(C_ADDIW),                 // 8321
     INSN_LABEL(C_FLDSP),                 // 8322
-    INSN_LABEL(LW),                      // 8323
+    INSN_LABEL(LW_rdN),                  // 8323
     INSN_LABEL(C_FLD),                   // 8324
     INSN_LABEL(C_ADDIW),                 // 8325
     INSN_LABEL(C_FLDSP),                 // 8326
@@ -8636,7 +8643,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 8448
     INSN_LABEL(C_ADDIW),                 // 8449
     INSN_LABEL(C_FLDSP),                 // 8450
-    INSN_LABEL(LW),                      // 8451
+    INSN_LABEL(LW_rdN),                  // 8451
     INSN_LABEL(C_FLD),                   // 8452
     INSN_LABEL(C_ADDIW),                 // 8453
     INSN_LABEL(C_FLDSP),                 // 8454
@@ -8764,7 +8771,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 8576
     INSN_LABEL(C_ADDIW),                 // 8577
     INSN_LABEL(C_FLDSP),                 // 8578
-    INSN_LABEL(LW),                      // 8579
+    INSN_LABEL(LW_rdN),                  // 8579
     INSN_LABEL(C_FLD),                   // 8580
     INSN_LABEL(C_ADDIW),                 // 8581
     INSN_LABEL(C_FLDSP),                 // 8582
@@ -8892,7 +8899,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 8704
     INSN_LABEL(C_ADDIW),                 // 8705
     INSN_LABEL(C_FLDSP),                 // 8706
-    INSN_LABEL(LW),                      // 8707
+    INSN_LABEL(LW_rdN),                  // 8707
     INSN_LABEL(C_FLD),                   // 8708
     INSN_LABEL(C_ADDIW),                 // 8709
     INSN_LABEL(C_FLDSP),                 // 8710
@@ -9020,7 +9027,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 8832
     INSN_LABEL(C_ADDIW),                 // 8833
     INSN_LABEL(C_FLDSP),                 // 8834
-    INSN_LABEL(LW),                      // 8835
+    INSN_LABEL(LW_rdN),                  // 8835
     INSN_LABEL(C_FLD),                   // 8836
     INSN_LABEL(C_ADDIW),                 // 8837
     INSN_LABEL(C_FLDSP),                 // 8838
@@ -9148,7 +9155,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 8960
     INSN_LABEL(C_ADDIW),                 // 8961
     INSN_LABEL(C_FLDSP),                 // 8962
-    INSN_LABEL(LW),                      // 8963
+    INSN_LABEL(LW_rdN),                  // 8963
     INSN_LABEL(C_FLD),                   // 8964
     INSN_LABEL(C_ADDIW),                 // 8965
     INSN_LABEL(C_FLDSP),                 // 8966
@@ -9276,7 +9283,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 9088
     INSN_LABEL(C_ADDIW),                 // 9089
     INSN_LABEL(C_FLDSP),                 // 9090
-    INSN_LABEL(LW),                      // 9091
+    INSN_LABEL(LW_rdN),                  // 9091
     INSN_LABEL(C_FLD),                   // 9092
     INSN_LABEL(C_ADDIW),                 // 9093
     INSN_LABEL(C_FLDSP),                 // 9094
@@ -9404,7 +9411,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 9216
     INSN_LABEL(C_ADDIW),                 // 9217
     INSN_LABEL(C_FLDSP),                 // 9218
-    INSN_LABEL(LW),                      // 9219
+    INSN_LABEL(LW_rdN),                  // 9219
     INSN_LABEL(C_FLD),                   // 9220
     INSN_LABEL(C_ADDIW),                 // 9221
     INSN_LABEL(C_FLDSP),                 // 9222
@@ -9532,7 +9539,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 9344
     INSN_LABEL(C_ADDIW),                 // 9345
     INSN_LABEL(C_FLDSP),                 // 9346
-    INSN_LABEL(LW),                      // 9347
+    INSN_LABEL(LW_rdN),                  // 9347
     INSN_LABEL(C_FLD),                   // 9348
     INSN_LABEL(C_ADDIW),                 // 9349
     INSN_LABEL(C_FLDSP),                 // 9350
@@ -9660,7 +9667,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 9472
     INSN_LABEL(C_ADDIW),                 // 9473
     INSN_LABEL(C_FLDSP),                 // 9474
-    INSN_LABEL(LW),                      // 9475
+    INSN_LABEL(LW_rdN),                  // 9475
     INSN_LABEL(C_FLD),                   // 9476
     INSN_LABEL(C_ADDIW),                 // 9477
     INSN_LABEL(C_FLDSP),                 // 9478
@@ -9788,7 +9795,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 9600
     INSN_LABEL(C_ADDIW),                 // 9601
     INSN_LABEL(C_FLDSP),                 // 9602
-    INSN_LABEL(LW),                      // 9603
+    INSN_LABEL(LW_rdN),                  // 9603
     INSN_LABEL(C_FLD),                   // 9604
     INSN_LABEL(C_ADDIW),                 // 9605
     INSN_LABEL(C_FLDSP),                 // 9606
@@ -9916,7 +9923,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 9728
     INSN_LABEL(C_ADDIW),                 // 9729
     INSN_LABEL(C_FLDSP),                 // 9730
-    INSN_LABEL(LW),                      // 9731
+    INSN_LABEL(LW_rdN),                  // 9731
     INSN_LABEL(C_FLD),                   // 9732
     INSN_LABEL(C_ADDIW),                 // 9733
     INSN_LABEL(C_FLDSP),                 // 9734
@@ -10044,7 +10051,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 9856
     INSN_LABEL(C_ADDIW),                 // 9857
     INSN_LABEL(C_FLDSP),                 // 9858
-    INSN_LABEL(LW),                      // 9859
+    INSN_LABEL(LW_rdN),                  // 9859
     INSN_LABEL(C_FLD),                   // 9860
     INSN_LABEL(C_ADDIW),                 // 9861
     INSN_LABEL(C_FLDSP),                 // 9862
@@ -10172,7 +10179,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 9984
     INSN_LABEL(C_ADDIW),                 // 9985
     INSN_LABEL(C_FLDSP),                 // 9986
-    INSN_LABEL(LW),                      // 9987
+    INSN_LABEL(LW_rdN),                  // 9987
     INSN_LABEL(C_FLD),                   // 9988
     INSN_LABEL(C_ADDIW),                 // 9989
     INSN_LABEL(C_FLDSP),                 // 9990
@@ -10300,7 +10307,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 10112
     INSN_LABEL(C_ADDIW),                 // 10113
     INSN_LABEL(C_FLDSP),                 // 10114
-    INSN_LABEL(LW),                      // 10115
+    INSN_LABEL(LW_rdN),                  // 10115
     INSN_LABEL(C_FLD),                   // 10116
     INSN_LABEL(C_ADDIW),                 // 10117
     INSN_LABEL(C_FLDSP),                 // 10118
@@ -10428,7 +10435,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 10240
     INSN_LABEL(C_ADDIW),                 // 10241
     INSN_LABEL(C_FLDSP),                 // 10242
-    INSN_LABEL(LW),                      // 10243
+    INSN_LABEL(LW_rdN),                  // 10243
     INSN_LABEL(C_FLD),                   // 10244
     INSN_LABEL(C_ADDIW),                 // 10245
     INSN_LABEL(C_FLDSP),                 // 10246
@@ -10556,7 +10563,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 10368
     INSN_LABEL(C_ADDIW),                 // 10369
     INSN_LABEL(C_FLDSP),                 // 10370
-    INSN_LABEL(LW),                      // 10371
+    INSN_LABEL(LW_rdN),                  // 10371
     INSN_LABEL(C_FLD),                   // 10372
     INSN_LABEL(C_ADDIW),                 // 10373
     INSN_LABEL(C_FLDSP),                 // 10374
@@ -10684,7 +10691,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 10496
     INSN_LABEL(C_ADDIW),                 // 10497
     INSN_LABEL(C_FLDSP),                 // 10498
-    INSN_LABEL(LW),                      // 10499
+    INSN_LABEL(LW_rdN),                  // 10499
     INSN_LABEL(C_FLD),                   // 10500
     INSN_LABEL(C_ADDIW),                 // 10501
     INSN_LABEL(C_FLDSP),                 // 10502
@@ -10812,7 +10819,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 10624
     INSN_LABEL(C_ADDIW),                 // 10625
     INSN_LABEL(C_FLDSP),                 // 10626
-    INSN_LABEL(LW),                      // 10627
+    INSN_LABEL(LW_rdN),                  // 10627
     INSN_LABEL(C_FLD),                   // 10628
     INSN_LABEL(C_ADDIW),                 // 10629
     INSN_LABEL(C_FLDSP),                 // 10630
@@ -10940,7 +10947,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 10752
     INSN_LABEL(C_ADDIW),                 // 10753
     INSN_LABEL(C_FLDSP),                 // 10754
-    INSN_LABEL(LW),                      // 10755
+    INSN_LABEL(LW_rdN),                  // 10755
     INSN_LABEL(C_FLD),                   // 10756
     INSN_LABEL(C_ADDIW),                 // 10757
     INSN_LABEL(C_FLDSP),                 // 10758
@@ -11068,7 +11075,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 10880
     INSN_LABEL(C_ADDIW),                 // 10881
     INSN_LABEL(C_FLDSP),                 // 10882
-    INSN_LABEL(LW),                      // 10883
+    INSN_LABEL(LW_rdN),                  // 10883
     INSN_LABEL(C_FLD),                   // 10884
     INSN_LABEL(C_ADDIW),                 // 10885
     INSN_LABEL(C_FLDSP),                 // 10886
@@ -11196,7 +11203,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 11008
     INSN_LABEL(C_ADDIW),                 // 11009
     INSN_LABEL(C_FLDSP),                 // 11010
-    INSN_LABEL(LW),                      // 11011
+    INSN_LABEL(LW_rdN),                  // 11011
     INSN_LABEL(C_FLD),                   // 11012
     INSN_LABEL(C_ADDIW),                 // 11013
     INSN_LABEL(C_FLDSP),                 // 11014
@@ -11324,7 +11331,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 11136
     INSN_LABEL(C_ADDIW),                 // 11137
     INSN_LABEL(C_FLDSP),                 // 11138
-    INSN_LABEL(LW),                      // 11139
+    INSN_LABEL(LW_rdN),                  // 11139
     INSN_LABEL(C_FLD),                   // 11140
     INSN_LABEL(C_ADDIW),                 // 11141
     INSN_LABEL(C_FLDSP),                 // 11142
@@ -11452,7 +11459,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 11264
     INSN_LABEL(C_ADDIW),                 // 11265
     INSN_LABEL(C_FLDSP),                 // 11266
-    INSN_LABEL(LW),                      // 11267
+    INSN_LABEL(LW_rdN),                  // 11267
     INSN_LABEL(C_FLD),                   // 11268
     INSN_LABEL(C_ADDIW),                 // 11269
     INSN_LABEL(C_FLDSP),                 // 11270
@@ -11580,7 +11587,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 11392
     INSN_LABEL(C_ADDIW),                 // 11393
     INSN_LABEL(C_FLDSP),                 // 11394
-    INSN_LABEL(LW),                      // 11395
+    INSN_LABEL(LW_rdN),                  // 11395
     INSN_LABEL(C_FLD),                   // 11396
     INSN_LABEL(C_ADDIW),                 // 11397
     INSN_LABEL(C_FLDSP),                 // 11398
@@ -11708,7 +11715,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 11520
     INSN_LABEL(C_ADDIW),                 // 11521
     INSN_LABEL(C_FLDSP),                 // 11522
-    INSN_LABEL(LW),                      // 11523
+    INSN_LABEL(LW_rdN),                  // 11523
     INSN_LABEL(C_FLD),                   // 11524
     INSN_LABEL(C_ADDIW),                 // 11525
     INSN_LABEL(C_FLDSP),                 // 11526
@@ -11836,7 +11843,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 11648
     INSN_LABEL(C_ADDIW),                 // 11649
     INSN_LABEL(C_FLDSP),                 // 11650
-    INSN_LABEL(LW),                      // 11651
+    INSN_LABEL(LW_rdN),                  // 11651
     INSN_LABEL(C_FLD),                   // 11652
     INSN_LABEL(C_ADDIW),                 // 11653
     INSN_LABEL(C_FLDSP),                 // 11654
@@ -11964,7 +11971,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 11776
     INSN_LABEL(C_ADDIW),                 // 11777
     INSN_LABEL(C_FLDSP),                 // 11778
-    INSN_LABEL(LW),                      // 11779
+    INSN_LABEL(LW_rdN),                  // 11779
     INSN_LABEL(C_FLD),                   // 11780
     INSN_LABEL(C_ADDIW),                 // 11781
     INSN_LABEL(C_FLDSP),                 // 11782
@@ -12092,7 +12099,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 11904
     INSN_LABEL(C_ADDIW),                 // 11905
     INSN_LABEL(C_FLDSP),                 // 11906
-    INSN_LABEL(LW),                      // 11907
+    INSN_LABEL(LW_rdN),                  // 11907
     INSN_LABEL(C_FLD),                   // 11908
     INSN_LABEL(C_ADDIW),                 // 11909
     INSN_LABEL(C_FLDSP),                 // 11910
@@ -12220,7 +12227,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 12032
     INSN_LABEL(C_ADDIW),                 // 12033
     INSN_LABEL(C_FLDSP),                 // 12034
-    INSN_LABEL(LW),                      // 12035
+    INSN_LABEL(LW_rdN),                  // 12035
     INSN_LABEL(C_FLD),                   // 12036
     INSN_LABEL(C_ADDIW),                 // 12037
     INSN_LABEL(C_FLDSP),                 // 12038
@@ -12348,7 +12355,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 12160
     INSN_LABEL(C_ADDIW),                 // 12161
     INSN_LABEL(C_FLDSP),                 // 12162
-    INSN_LABEL(LW),                      // 12163
+    INSN_LABEL(LW_rdN),                  // 12163
     INSN_LABEL(C_FLD),                   // 12164
     INSN_LABEL(C_ADDIW),                 // 12165
     INSN_LABEL(C_FLDSP),                 // 12166
@@ -12476,7 +12483,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 12288
     INSN_LABEL(ILLEGAL),                 // 12289
     INSN_LABEL(C_FLDSP),                 // 12290
-    INSN_LABEL(LD),                      // 12291
+    INSN_LABEL(LD_rd0),                  // 12291
     INSN_LABEL(C_FLD),                   // 12292
     INSN_LABEL(ILLEGAL),                 // 12293
     INSN_LABEL(C_FLDSP),                 // 12294
@@ -12604,7 +12611,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 12416
     INSN_LABEL(C_ADDIW),                 // 12417
     INSN_LABEL(C_FLDSP),                 // 12418
-    INSN_LABEL(LD),                      // 12419
+    INSN_LABEL(LD_rdN),                  // 12419
     INSN_LABEL(C_FLD),                   // 12420
     INSN_LABEL(C_ADDIW),                 // 12421
     INSN_LABEL(C_FLDSP),                 // 12422
@@ -12732,7 +12739,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 12544
     INSN_LABEL(C_ADDIW),                 // 12545
     INSN_LABEL(C_FLDSP),                 // 12546
-    INSN_LABEL(LD),                      // 12547
+    INSN_LABEL(LD_rdN),                  // 12547
     INSN_LABEL(C_FLD),                   // 12548
     INSN_LABEL(C_ADDIW),                 // 12549
     INSN_LABEL(C_FLDSP),                 // 12550
@@ -12860,7 +12867,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 12672
     INSN_LABEL(C_ADDIW),                 // 12673
     INSN_LABEL(C_FLDSP),                 // 12674
-    INSN_LABEL(LD),                      // 12675
+    INSN_LABEL(LD_rdN),                  // 12675
     INSN_LABEL(C_FLD),                   // 12676
     INSN_LABEL(C_ADDIW),                 // 12677
     INSN_LABEL(C_FLDSP),                 // 12678
@@ -12988,7 +12995,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 12800
     INSN_LABEL(C_ADDIW),                 // 12801
     INSN_LABEL(C_FLDSP),                 // 12802
-    INSN_LABEL(LD),                      // 12803
+    INSN_LABEL(LD_rdN),                  // 12803
     INSN_LABEL(C_FLD),                   // 12804
     INSN_LABEL(C_ADDIW),                 // 12805
     INSN_LABEL(C_FLDSP),                 // 12806
@@ -13116,7 +13123,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 12928
     INSN_LABEL(C_ADDIW),                 // 12929
     INSN_LABEL(C_FLDSP),                 // 12930
-    INSN_LABEL(LD),                      // 12931
+    INSN_LABEL(LD_rdN),                  // 12931
     INSN_LABEL(C_FLD),                   // 12932
     INSN_LABEL(C_ADDIW),                 // 12933
     INSN_LABEL(C_FLDSP),                 // 12934
@@ -13244,7 +13251,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 13056
     INSN_LABEL(C_ADDIW),                 // 13057
     INSN_LABEL(C_FLDSP),                 // 13058
-    INSN_LABEL(LD),                      // 13059
+    INSN_LABEL(LD_rdN),                  // 13059
     INSN_LABEL(C_FLD),                   // 13060
     INSN_LABEL(C_ADDIW),                 // 13061
     INSN_LABEL(C_FLDSP),                 // 13062
@@ -13372,7 +13379,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 13184
     INSN_LABEL(C_ADDIW),                 // 13185
     INSN_LABEL(C_FLDSP),                 // 13186
-    INSN_LABEL(LD),                      // 13187
+    INSN_LABEL(LD_rdN),                  // 13187
     INSN_LABEL(C_FLD),                   // 13188
     INSN_LABEL(C_ADDIW),                 // 13189
     INSN_LABEL(C_FLDSP),                 // 13190
@@ -13500,7 +13507,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 13312
     INSN_LABEL(C_ADDIW),                 // 13313
     INSN_LABEL(C_FLDSP),                 // 13314
-    INSN_LABEL(LD),                      // 13315
+    INSN_LABEL(LD_rdN),                  // 13315
     INSN_LABEL(C_FLD),                   // 13316
     INSN_LABEL(C_ADDIW),                 // 13317
     INSN_LABEL(C_FLDSP),                 // 13318
@@ -13628,7 +13635,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 13440
     INSN_LABEL(C_ADDIW),                 // 13441
     INSN_LABEL(C_FLDSP),                 // 13442
-    INSN_LABEL(LD),                      // 13443
+    INSN_LABEL(LD_rdN),                  // 13443
     INSN_LABEL(C_FLD),                   // 13444
     INSN_LABEL(C_ADDIW),                 // 13445
     INSN_LABEL(C_FLDSP),                 // 13446
@@ -13756,7 +13763,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 13568
     INSN_LABEL(C_ADDIW),                 // 13569
     INSN_LABEL(C_FLDSP),                 // 13570
-    INSN_LABEL(LD),                      // 13571
+    INSN_LABEL(LD_rdN),                  // 13571
     INSN_LABEL(C_FLD),                   // 13572
     INSN_LABEL(C_ADDIW),                 // 13573
     INSN_LABEL(C_FLDSP),                 // 13574
@@ -13884,7 +13891,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 13696
     INSN_LABEL(C_ADDIW),                 // 13697
     INSN_LABEL(C_FLDSP),                 // 13698
-    INSN_LABEL(LD),                      // 13699
+    INSN_LABEL(LD_rdN),                  // 13699
     INSN_LABEL(C_FLD),                   // 13700
     INSN_LABEL(C_ADDIW),                 // 13701
     INSN_LABEL(C_FLDSP),                 // 13702
@@ -14012,7 +14019,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 13824
     INSN_LABEL(C_ADDIW),                 // 13825
     INSN_LABEL(C_FLDSP),                 // 13826
-    INSN_LABEL(LD),                      // 13827
+    INSN_LABEL(LD_rdN),                  // 13827
     INSN_LABEL(C_FLD),                   // 13828
     INSN_LABEL(C_ADDIW),                 // 13829
     INSN_LABEL(C_FLDSP),                 // 13830
@@ -14140,7 +14147,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 13952
     INSN_LABEL(C_ADDIW),                 // 13953
     INSN_LABEL(C_FLDSP),                 // 13954
-    INSN_LABEL(LD),                      // 13955
+    INSN_LABEL(LD_rdN),                  // 13955
     INSN_LABEL(C_FLD),                   // 13956
     INSN_LABEL(C_ADDIW),                 // 13957
     INSN_LABEL(C_FLDSP),                 // 13958
@@ -14268,7 +14275,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 14080
     INSN_LABEL(C_ADDIW),                 // 14081
     INSN_LABEL(C_FLDSP),                 // 14082
-    INSN_LABEL(LD),                      // 14083
+    INSN_LABEL(LD_rdN),                  // 14083
     INSN_LABEL(C_FLD),                   // 14084
     INSN_LABEL(C_ADDIW),                 // 14085
     INSN_LABEL(C_FLDSP),                 // 14086
@@ -14396,7 +14403,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 14208
     INSN_LABEL(C_ADDIW),                 // 14209
     INSN_LABEL(C_FLDSP),                 // 14210
-    INSN_LABEL(LD),                      // 14211
+    INSN_LABEL(LD_rdN),                  // 14211
     INSN_LABEL(C_FLD),                   // 14212
     INSN_LABEL(C_ADDIW),                 // 14213
     INSN_LABEL(C_FLDSP),                 // 14214
@@ -14524,7 +14531,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 14336
     INSN_LABEL(C_ADDIW),                 // 14337
     INSN_LABEL(C_FLDSP),                 // 14338
-    INSN_LABEL(LD),                      // 14339
+    INSN_LABEL(LD_rdN),                  // 14339
     INSN_LABEL(C_FLD),                   // 14340
     INSN_LABEL(C_ADDIW),                 // 14341
     INSN_LABEL(C_FLDSP),                 // 14342
@@ -14652,7 +14659,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 14464
     INSN_LABEL(C_ADDIW),                 // 14465
     INSN_LABEL(C_FLDSP),                 // 14466
-    INSN_LABEL(LD),                      // 14467
+    INSN_LABEL(LD_rdN),                  // 14467
     INSN_LABEL(C_FLD),                   // 14468
     INSN_LABEL(C_ADDIW),                 // 14469
     INSN_LABEL(C_FLDSP),                 // 14470
@@ -14780,7 +14787,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 14592
     INSN_LABEL(C_ADDIW),                 // 14593
     INSN_LABEL(C_FLDSP),                 // 14594
-    INSN_LABEL(LD),                      // 14595
+    INSN_LABEL(LD_rdN),                  // 14595
     INSN_LABEL(C_FLD),                   // 14596
     INSN_LABEL(C_ADDIW),                 // 14597
     INSN_LABEL(C_FLDSP),                 // 14598
@@ -14908,7 +14915,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 14720
     INSN_LABEL(C_ADDIW),                 // 14721
     INSN_LABEL(C_FLDSP),                 // 14722
-    INSN_LABEL(LD),                      // 14723
+    INSN_LABEL(LD_rdN),                  // 14723
     INSN_LABEL(C_FLD),                   // 14724
     INSN_LABEL(C_ADDIW),                 // 14725
     INSN_LABEL(C_FLDSP),                 // 14726
@@ -15036,7 +15043,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 14848
     INSN_LABEL(C_ADDIW),                 // 14849
     INSN_LABEL(C_FLDSP),                 // 14850
-    INSN_LABEL(LD),                      // 14851
+    INSN_LABEL(LD_rdN),                  // 14851
     INSN_LABEL(C_FLD),                   // 14852
     INSN_LABEL(C_ADDIW),                 // 14853
     INSN_LABEL(C_FLDSP),                 // 14854
@@ -15164,7 +15171,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 14976
     INSN_LABEL(C_ADDIW),                 // 14977
     INSN_LABEL(C_FLDSP),                 // 14978
-    INSN_LABEL(LD),                      // 14979
+    INSN_LABEL(LD_rdN),                  // 14979
     INSN_LABEL(C_FLD),                   // 14980
     INSN_LABEL(C_ADDIW),                 // 14981
     INSN_LABEL(C_FLDSP),                 // 14982
@@ -15292,7 +15299,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 15104
     INSN_LABEL(C_ADDIW),                 // 15105
     INSN_LABEL(C_FLDSP),                 // 15106
-    INSN_LABEL(LD),                      // 15107
+    INSN_LABEL(LD_rdN),                  // 15107
     INSN_LABEL(C_FLD),                   // 15108
     INSN_LABEL(C_ADDIW),                 // 15109
     INSN_LABEL(C_FLDSP),                 // 15110
@@ -15420,7 +15427,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 15232
     INSN_LABEL(C_ADDIW),                 // 15233
     INSN_LABEL(C_FLDSP),                 // 15234
-    INSN_LABEL(LD),                      // 15235
+    INSN_LABEL(LD_rdN),                  // 15235
     INSN_LABEL(C_FLD),                   // 15236
     INSN_LABEL(C_ADDIW),                 // 15237
     INSN_LABEL(C_FLDSP),                 // 15238
@@ -15548,7 +15555,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 15360
     INSN_LABEL(C_ADDIW),                 // 15361
     INSN_LABEL(C_FLDSP),                 // 15362
-    INSN_LABEL(LD),                      // 15363
+    INSN_LABEL(LD_rdN),                  // 15363
     INSN_LABEL(C_FLD),                   // 15364
     INSN_LABEL(C_ADDIW),                 // 15365
     INSN_LABEL(C_FLDSP),                 // 15366
@@ -15676,7 +15683,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 15488
     INSN_LABEL(C_ADDIW),                 // 15489
     INSN_LABEL(C_FLDSP),                 // 15490
-    INSN_LABEL(LD),                      // 15491
+    INSN_LABEL(LD_rdN),                  // 15491
     INSN_LABEL(C_FLD),                   // 15492
     INSN_LABEL(C_ADDIW),                 // 15493
     INSN_LABEL(C_FLDSP),                 // 15494
@@ -15804,7 +15811,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 15616
     INSN_LABEL(C_ADDIW),                 // 15617
     INSN_LABEL(C_FLDSP),                 // 15618
-    INSN_LABEL(LD),                      // 15619
+    INSN_LABEL(LD_rdN),                  // 15619
     INSN_LABEL(C_FLD),                   // 15620
     INSN_LABEL(C_ADDIW),                 // 15621
     INSN_LABEL(C_FLDSP),                 // 15622
@@ -15932,7 +15939,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 15744
     INSN_LABEL(C_ADDIW),                 // 15745
     INSN_LABEL(C_FLDSP),                 // 15746
-    INSN_LABEL(LD),                      // 15747
+    INSN_LABEL(LD_rdN),                  // 15747
     INSN_LABEL(C_FLD),                   // 15748
     INSN_LABEL(C_ADDIW),                 // 15749
     INSN_LABEL(C_FLDSP),                 // 15750
@@ -16060,7 +16067,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 15872
     INSN_LABEL(C_ADDIW),                 // 15873
     INSN_LABEL(C_FLDSP),                 // 15874
-    INSN_LABEL(LD),                      // 15875
+    INSN_LABEL(LD_rdN),                  // 15875
     INSN_LABEL(C_FLD),                   // 15876
     INSN_LABEL(C_ADDIW),                 // 15877
     INSN_LABEL(C_FLDSP),                 // 15878
@@ -16188,7 +16195,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 16000
     INSN_LABEL(C_ADDIW),                 // 16001
     INSN_LABEL(C_FLDSP),                 // 16002
-    INSN_LABEL(LD),                      // 16003
+    INSN_LABEL(LD_rdN),                  // 16003
     INSN_LABEL(C_FLD),                   // 16004
     INSN_LABEL(C_ADDIW),                 // 16005
     INSN_LABEL(C_FLDSP),                 // 16006
@@ -16316,7 +16323,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 16128
     INSN_LABEL(C_ADDIW),                 // 16129
     INSN_LABEL(C_FLDSP),                 // 16130
-    INSN_LABEL(LD),                      // 16131
+    INSN_LABEL(LD_rdN),                  // 16131
     INSN_LABEL(C_FLD),                   // 16132
     INSN_LABEL(C_ADDIW),                 // 16133
     INSN_LABEL(C_FLDSP),                 // 16134
@@ -16444,7 +16451,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FLD),                   // 16256
     INSN_LABEL(C_ADDIW),                 // 16257
     INSN_LABEL(C_FLDSP),                 // 16258
-    INSN_LABEL(LD),                      // 16259
+    INSN_LABEL(LD_rdN),                  // 16259
     INSN_LABEL(C_FLD),                   // 16260
     INSN_LABEL(C_ADDIW),                 // 16261
     INSN_LABEL(C_FLDSP),                 // 16262
@@ -16572,7 +16579,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 16384
     INSN_LABEL(C_HINT),                  // 16385
     INSN_LABEL(ILLEGAL),                 // 16386
-    INSN_LABEL(LBU),                     // 16387
+    INSN_LABEL(LBU_rd0),                 // 16387
     INSN_LABEL(C_LW),                    // 16388
     INSN_LABEL(C_HINT),                  // 16389
     INSN_LABEL(ILLEGAL),                 // 16390
@@ -16700,7 +16707,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 16512
     INSN_LABEL(C_LI),                    // 16513
     INSN_LABEL(C_LWSP),                  // 16514
-    INSN_LABEL(LBU),                     // 16515
+    INSN_LABEL(LBU_rdN),                 // 16515
     INSN_LABEL(C_LW),                    // 16516
     INSN_LABEL(C_LI),                    // 16517
     INSN_LABEL(C_LWSP),                  // 16518
@@ -16828,7 +16835,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 16640
     INSN_LABEL(C_LI),                    // 16641
     INSN_LABEL(C_LWSP),                  // 16642
-    INSN_LABEL(LBU),                     // 16643
+    INSN_LABEL(LBU_rdN),                 // 16643
     INSN_LABEL(C_LW),                    // 16644
     INSN_LABEL(C_LI),                    // 16645
     INSN_LABEL(C_LWSP),                  // 16646
@@ -16956,7 +16963,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 16768
     INSN_LABEL(C_LI),                    // 16769
     INSN_LABEL(C_LWSP),                  // 16770
-    INSN_LABEL(LBU),                     // 16771
+    INSN_LABEL(LBU_rdN),                 // 16771
     INSN_LABEL(C_LW),                    // 16772
     INSN_LABEL(C_LI),                    // 16773
     INSN_LABEL(C_LWSP),                  // 16774
@@ -17084,7 +17091,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 16896
     INSN_LABEL(C_LI),                    // 16897
     INSN_LABEL(C_LWSP),                  // 16898
-    INSN_LABEL(LBU),                     // 16899
+    INSN_LABEL(LBU_rdN),                 // 16899
     INSN_LABEL(C_LW),                    // 16900
     INSN_LABEL(C_LI),                    // 16901
     INSN_LABEL(C_LWSP),                  // 16902
@@ -17212,7 +17219,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 17024
     INSN_LABEL(C_LI),                    // 17025
     INSN_LABEL(C_LWSP),                  // 17026
-    INSN_LABEL(LBU),                     // 17027
+    INSN_LABEL(LBU_rdN),                 // 17027
     INSN_LABEL(C_LW),                    // 17028
     INSN_LABEL(C_LI),                    // 17029
     INSN_LABEL(C_LWSP),                  // 17030
@@ -17340,7 +17347,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 17152
     INSN_LABEL(C_LI),                    // 17153
     INSN_LABEL(C_LWSP),                  // 17154
-    INSN_LABEL(LBU),                     // 17155
+    INSN_LABEL(LBU_rdN),                 // 17155
     INSN_LABEL(C_LW),                    // 17156
     INSN_LABEL(C_LI),                    // 17157
     INSN_LABEL(C_LWSP),                  // 17158
@@ -17468,7 +17475,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 17280
     INSN_LABEL(C_LI),                    // 17281
     INSN_LABEL(C_LWSP),                  // 17282
-    INSN_LABEL(LBU),                     // 17283
+    INSN_LABEL(LBU_rdN),                 // 17283
     INSN_LABEL(C_LW),                    // 17284
     INSN_LABEL(C_LI),                    // 17285
     INSN_LABEL(C_LWSP),                  // 17286
@@ -17596,7 +17603,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 17408
     INSN_LABEL(C_LI),                    // 17409
     INSN_LABEL(C_LWSP),                  // 17410
-    INSN_LABEL(LBU),                     // 17411
+    INSN_LABEL(LBU_rdN),                 // 17411
     INSN_LABEL(C_LW),                    // 17412
     INSN_LABEL(C_LI),                    // 17413
     INSN_LABEL(C_LWSP),                  // 17414
@@ -17724,7 +17731,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 17536
     INSN_LABEL(C_LI),                    // 17537
     INSN_LABEL(C_LWSP),                  // 17538
-    INSN_LABEL(LBU),                     // 17539
+    INSN_LABEL(LBU_rdN),                 // 17539
     INSN_LABEL(C_LW),                    // 17540
     INSN_LABEL(C_LI),                    // 17541
     INSN_LABEL(C_LWSP),                  // 17542
@@ -17852,7 +17859,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 17664
     INSN_LABEL(C_LI),                    // 17665
     INSN_LABEL(C_LWSP),                  // 17666
-    INSN_LABEL(LBU),                     // 17667
+    INSN_LABEL(LBU_rdN),                 // 17667
     INSN_LABEL(C_LW),                    // 17668
     INSN_LABEL(C_LI),                    // 17669
     INSN_LABEL(C_LWSP),                  // 17670
@@ -17980,7 +17987,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 17792
     INSN_LABEL(C_LI),                    // 17793
     INSN_LABEL(C_LWSP),                  // 17794
-    INSN_LABEL(LBU),                     // 17795
+    INSN_LABEL(LBU_rdN),                 // 17795
     INSN_LABEL(C_LW),                    // 17796
     INSN_LABEL(C_LI),                    // 17797
     INSN_LABEL(C_LWSP),                  // 17798
@@ -18108,7 +18115,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 17920
     INSN_LABEL(C_LI),                    // 17921
     INSN_LABEL(C_LWSP),                  // 17922
-    INSN_LABEL(LBU),                     // 17923
+    INSN_LABEL(LBU_rdN),                 // 17923
     INSN_LABEL(C_LW),                    // 17924
     INSN_LABEL(C_LI),                    // 17925
     INSN_LABEL(C_LWSP),                  // 17926
@@ -18236,7 +18243,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 18048
     INSN_LABEL(C_LI),                    // 18049
     INSN_LABEL(C_LWSP),                  // 18050
-    INSN_LABEL(LBU),                     // 18051
+    INSN_LABEL(LBU_rdN),                 // 18051
     INSN_LABEL(C_LW),                    // 18052
     INSN_LABEL(C_LI),                    // 18053
     INSN_LABEL(C_LWSP),                  // 18054
@@ -18364,7 +18371,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 18176
     INSN_LABEL(C_LI),                    // 18177
     INSN_LABEL(C_LWSP),                  // 18178
-    INSN_LABEL(LBU),                     // 18179
+    INSN_LABEL(LBU_rdN),                 // 18179
     INSN_LABEL(C_LW),                    // 18180
     INSN_LABEL(C_LI),                    // 18181
     INSN_LABEL(C_LWSP),                  // 18182
@@ -18492,7 +18499,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 18304
     INSN_LABEL(C_LI),                    // 18305
     INSN_LABEL(C_LWSP),                  // 18306
-    INSN_LABEL(LBU),                     // 18307
+    INSN_LABEL(LBU_rdN),                 // 18307
     INSN_LABEL(C_LW),                    // 18308
     INSN_LABEL(C_LI),                    // 18309
     INSN_LABEL(C_LWSP),                  // 18310
@@ -18620,7 +18627,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 18432
     INSN_LABEL(C_LI),                    // 18433
     INSN_LABEL(C_LWSP),                  // 18434
-    INSN_LABEL(LBU),                     // 18435
+    INSN_LABEL(LBU_rdN),                 // 18435
     INSN_LABEL(C_LW),                    // 18436
     INSN_LABEL(C_LI),                    // 18437
     INSN_LABEL(C_LWSP),                  // 18438
@@ -18748,7 +18755,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 18560
     INSN_LABEL(C_LI),                    // 18561
     INSN_LABEL(C_LWSP),                  // 18562
-    INSN_LABEL(LBU),                     // 18563
+    INSN_LABEL(LBU_rdN),                 // 18563
     INSN_LABEL(C_LW),                    // 18564
     INSN_LABEL(C_LI),                    // 18565
     INSN_LABEL(C_LWSP),                  // 18566
@@ -18876,7 +18883,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 18688
     INSN_LABEL(C_LI),                    // 18689
     INSN_LABEL(C_LWSP),                  // 18690
-    INSN_LABEL(LBU),                     // 18691
+    INSN_LABEL(LBU_rdN),                 // 18691
     INSN_LABEL(C_LW),                    // 18692
     INSN_LABEL(C_LI),                    // 18693
     INSN_LABEL(C_LWSP),                  // 18694
@@ -19004,7 +19011,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 18816
     INSN_LABEL(C_LI),                    // 18817
     INSN_LABEL(C_LWSP),                  // 18818
-    INSN_LABEL(LBU),                     // 18819
+    INSN_LABEL(LBU_rdN),                 // 18819
     INSN_LABEL(C_LW),                    // 18820
     INSN_LABEL(C_LI),                    // 18821
     INSN_LABEL(C_LWSP),                  // 18822
@@ -19132,7 +19139,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 18944
     INSN_LABEL(C_LI),                    // 18945
     INSN_LABEL(C_LWSP),                  // 18946
-    INSN_LABEL(LBU),                     // 18947
+    INSN_LABEL(LBU_rdN),                 // 18947
     INSN_LABEL(C_LW),                    // 18948
     INSN_LABEL(C_LI),                    // 18949
     INSN_LABEL(C_LWSP),                  // 18950
@@ -19260,7 +19267,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 19072
     INSN_LABEL(C_LI),                    // 19073
     INSN_LABEL(C_LWSP),                  // 19074
-    INSN_LABEL(LBU),                     // 19075
+    INSN_LABEL(LBU_rdN),                 // 19075
     INSN_LABEL(C_LW),                    // 19076
     INSN_LABEL(C_LI),                    // 19077
     INSN_LABEL(C_LWSP),                  // 19078
@@ -19388,7 +19395,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 19200
     INSN_LABEL(C_LI),                    // 19201
     INSN_LABEL(C_LWSP),                  // 19202
-    INSN_LABEL(LBU),                     // 19203
+    INSN_LABEL(LBU_rdN),                 // 19203
     INSN_LABEL(C_LW),                    // 19204
     INSN_LABEL(C_LI),                    // 19205
     INSN_LABEL(C_LWSP),                  // 19206
@@ -19516,7 +19523,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 19328
     INSN_LABEL(C_LI),                    // 19329
     INSN_LABEL(C_LWSP),                  // 19330
-    INSN_LABEL(LBU),                     // 19331
+    INSN_LABEL(LBU_rdN),                 // 19331
     INSN_LABEL(C_LW),                    // 19332
     INSN_LABEL(C_LI),                    // 19333
     INSN_LABEL(C_LWSP),                  // 19334
@@ -19644,7 +19651,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 19456
     INSN_LABEL(C_LI),                    // 19457
     INSN_LABEL(C_LWSP),                  // 19458
-    INSN_LABEL(LBU),                     // 19459
+    INSN_LABEL(LBU_rdN),                 // 19459
     INSN_LABEL(C_LW),                    // 19460
     INSN_LABEL(C_LI),                    // 19461
     INSN_LABEL(C_LWSP),                  // 19462
@@ -19772,7 +19779,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 19584
     INSN_LABEL(C_LI),                    // 19585
     INSN_LABEL(C_LWSP),                  // 19586
-    INSN_LABEL(LBU),                     // 19587
+    INSN_LABEL(LBU_rdN),                 // 19587
     INSN_LABEL(C_LW),                    // 19588
     INSN_LABEL(C_LI),                    // 19589
     INSN_LABEL(C_LWSP),                  // 19590
@@ -19900,7 +19907,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 19712
     INSN_LABEL(C_LI),                    // 19713
     INSN_LABEL(C_LWSP),                  // 19714
-    INSN_LABEL(LBU),                     // 19715
+    INSN_LABEL(LBU_rdN),                 // 19715
     INSN_LABEL(C_LW),                    // 19716
     INSN_LABEL(C_LI),                    // 19717
     INSN_LABEL(C_LWSP),                  // 19718
@@ -20028,7 +20035,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 19840
     INSN_LABEL(C_LI),                    // 19841
     INSN_LABEL(C_LWSP),                  // 19842
-    INSN_LABEL(LBU),                     // 19843
+    INSN_LABEL(LBU_rdN),                 // 19843
     INSN_LABEL(C_LW),                    // 19844
     INSN_LABEL(C_LI),                    // 19845
     INSN_LABEL(C_LWSP),                  // 19846
@@ -20156,7 +20163,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 19968
     INSN_LABEL(C_LI),                    // 19969
     INSN_LABEL(C_LWSP),                  // 19970
-    INSN_LABEL(LBU),                     // 19971
+    INSN_LABEL(LBU_rdN),                 // 19971
     INSN_LABEL(C_LW),                    // 19972
     INSN_LABEL(C_LI),                    // 19973
     INSN_LABEL(C_LWSP),                  // 19974
@@ -20284,7 +20291,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 20096
     INSN_LABEL(C_LI),                    // 20097
     INSN_LABEL(C_LWSP),                  // 20098
-    INSN_LABEL(LBU),                     // 20099
+    INSN_LABEL(LBU_rdN),                 // 20099
     INSN_LABEL(C_LW),                    // 20100
     INSN_LABEL(C_LI),                    // 20101
     INSN_LABEL(C_LWSP),                  // 20102
@@ -20412,7 +20419,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 20224
     INSN_LABEL(C_LI),                    // 20225
     INSN_LABEL(C_LWSP),                  // 20226
-    INSN_LABEL(LBU),                     // 20227
+    INSN_LABEL(LBU_rdN),                 // 20227
     INSN_LABEL(C_LW),                    // 20228
     INSN_LABEL(C_LI),                    // 20229
     INSN_LABEL(C_LWSP),                  // 20230
@@ -20540,7 +20547,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 20352
     INSN_LABEL(C_LI),                    // 20353
     INSN_LABEL(C_LWSP),                  // 20354
-    INSN_LABEL(LBU),                     // 20355
+    INSN_LABEL(LBU_rdN),                 // 20355
     INSN_LABEL(C_LW),                    // 20356
     INSN_LABEL(C_LI),                    // 20357
     INSN_LABEL(C_LWSP),                  // 20358
@@ -20668,7 +20675,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 20480
     INSN_LABEL(C_HINT),                  // 20481
     INSN_LABEL(ILLEGAL),                 // 20482
-    INSN_LABEL(LHU),                     // 20483
+    INSN_LABEL(LHU_rd0),                 // 20483
     INSN_LABEL(C_LW),                    // 20484
     INSN_LABEL(C_HINT),                  // 20485
     INSN_LABEL(ILLEGAL),                 // 20486
@@ -20796,7 +20803,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 20608
     INSN_LABEL(C_LI),                    // 20609
     INSN_LABEL(C_LWSP),                  // 20610
-    INSN_LABEL(LHU),                     // 20611
+    INSN_LABEL(LHU_rdN),                 // 20611
     INSN_LABEL(C_LW),                    // 20612
     INSN_LABEL(C_LI),                    // 20613
     INSN_LABEL(C_LWSP),                  // 20614
@@ -20924,7 +20931,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 20736
     INSN_LABEL(C_LI),                    // 20737
     INSN_LABEL(C_LWSP),                  // 20738
-    INSN_LABEL(LHU),                     // 20739
+    INSN_LABEL(LHU_rdN),                 // 20739
     INSN_LABEL(C_LW),                    // 20740
     INSN_LABEL(C_LI),                    // 20741
     INSN_LABEL(C_LWSP),                  // 20742
@@ -21052,7 +21059,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 20864
     INSN_LABEL(C_LI),                    // 20865
     INSN_LABEL(C_LWSP),                  // 20866
-    INSN_LABEL(LHU),                     // 20867
+    INSN_LABEL(LHU_rdN),                 // 20867
     INSN_LABEL(C_LW),                    // 20868
     INSN_LABEL(C_LI),                    // 20869
     INSN_LABEL(C_LWSP),                  // 20870
@@ -21180,7 +21187,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 20992
     INSN_LABEL(C_LI),                    // 20993
     INSN_LABEL(C_LWSP),                  // 20994
-    INSN_LABEL(LHU),                     // 20995
+    INSN_LABEL(LHU_rdN),                 // 20995
     INSN_LABEL(C_LW),                    // 20996
     INSN_LABEL(C_LI),                    // 20997
     INSN_LABEL(C_LWSP),                  // 20998
@@ -21308,7 +21315,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 21120
     INSN_LABEL(C_LI),                    // 21121
     INSN_LABEL(C_LWSP),                  // 21122
-    INSN_LABEL(LHU),                     // 21123
+    INSN_LABEL(LHU_rdN),                 // 21123
     INSN_LABEL(C_LW),                    // 21124
     INSN_LABEL(C_LI),                    // 21125
     INSN_LABEL(C_LWSP),                  // 21126
@@ -21436,7 +21443,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 21248
     INSN_LABEL(C_LI),                    // 21249
     INSN_LABEL(C_LWSP),                  // 21250
-    INSN_LABEL(LHU),                     // 21251
+    INSN_LABEL(LHU_rdN),                 // 21251
     INSN_LABEL(C_LW),                    // 21252
     INSN_LABEL(C_LI),                    // 21253
     INSN_LABEL(C_LWSP),                  // 21254
@@ -21564,7 +21571,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 21376
     INSN_LABEL(C_LI),                    // 21377
     INSN_LABEL(C_LWSP),                  // 21378
-    INSN_LABEL(LHU),                     // 21379
+    INSN_LABEL(LHU_rdN),                 // 21379
     INSN_LABEL(C_LW),                    // 21380
     INSN_LABEL(C_LI),                    // 21381
     INSN_LABEL(C_LWSP),                  // 21382
@@ -21692,7 +21699,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 21504
     INSN_LABEL(C_LI),                    // 21505
     INSN_LABEL(C_LWSP),                  // 21506
-    INSN_LABEL(LHU),                     // 21507
+    INSN_LABEL(LHU_rdN),                 // 21507
     INSN_LABEL(C_LW),                    // 21508
     INSN_LABEL(C_LI),                    // 21509
     INSN_LABEL(C_LWSP),                  // 21510
@@ -21820,7 +21827,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 21632
     INSN_LABEL(C_LI),                    // 21633
     INSN_LABEL(C_LWSP),                  // 21634
-    INSN_LABEL(LHU),                     // 21635
+    INSN_LABEL(LHU_rdN),                 // 21635
     INSN_LABEL(C_LW),                    // 21636
     INSN_LABEL(C_LI),                    // 21637
     INSN_LABEL(C_LWSP),                  // 21638
@@ -21948,7 +21955,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 21760
     INSN_LABEL(C_LI),                    // 21761
     INSN_LABEL(C_LWSP),                  // 21762
-    INSN_LABEL(LHU),                     // 21763
+    INSN_LABEL(LHU_rdN),                 // 21763
     INSN_LABEL(C_LW),                    // 21764
     INSN_LABEL(C_LI),                    // 21765
     INSN_LABEL(C_LWSP),                  // 21766
@@ -22076,7 +22083,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 21888
     INSN_LABEL(C_LI),                    // 21889
     INSN_LABEL(C_LWSP),                  // 21890
-    INSN_LABEL(LHU),                     // 21891
+    INSN_LABEL(LHU_rdN),                 // 21891
     INSN_LABEL(C_LW),                    // 21892
     INSN_LABEL(C_LI),                    // 21893
     INSN_LABEL(C_LWSP),                  // 21894
@@ -22204,7 +22211,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 22016
     INSN_LABEL(C_LI),                    // 22017
     INSN_LABEL(C_LWSP),                  // 22018
-    INSN_LABEL(LHU),                     // 22019
+    INSN_LABEL(LHU_rdN),                 // 22019
     INSN_LABEL(C_LW),                    // 22020
     INSN_LABEL(C_LI),                    // 22021
     INSN_LABEL(C_LWSP),                  // 22022
@@ -22332,7 +22339,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 22144
     INSN_LABEL(C_LI),                    // 22145
     INSN_LABEL(C_LWSP),                  // 22146
-    INSN_LABEL(LHU),                     // 22147
+    INSN_LABEL(LHU_rdN),                 // 22147
     INSN_LABEL(C_LW),                    // 22148
     INSN_LABEL(C_LI),                    // 22149
     INSN_LABEL(C_LWSP),                  // 22150
@@ -22460,7 +22467,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 22272
     INSN_LABEL(C_LI),                    // 22273
     INSN_LABEL(C_LWSP),                  // 22274
-    INSN_LABEL(LHU),                     // 22275
+    INSN_LABEL(LHU_rdN),                 // 22275
     INSN_LABEL(C_LW),                    // 22276
     INSN_LABEL(C_LI),                    // 22277
     INSN_LABEL(C_LWSP),                  // 22278
@@ -22588,7 +22595,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 22400
     INSN_LABEL(C_LI),                    // 22401
     INSN_LABEL(C_LWSP),                  // 22402
-    INSN_LABEL(LHU),                     // 22403
+    INSN_LABEL(LHU_rdN),                 // 22403
     INSN_LABEL(C_LW),                    // 22404
     INSN_LABEL(C_LI),                    // 22405
     INSN_LABEL(C_LWSP),                  // 22406
@@ -22716,7 +22723,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 22528
     INSN_LABEL(C_LI),                    // 22529
     INSN_LABEL(C_LWSP),                  // 22530
-    INSN_LABEL(LHU),                     // 22531
+    INSN_LABEL(LHU_rdN),                 // 22531
     INSN_LABEL(C_LW),                    // 22532
     INSN_LABEL(C_LI),                    // 22533
     INSN_LABEL(C_LWSP),                  // 22534
@@ -22844,7 +22851,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 22656
     INSN_LABEL(C_LI),                    // 22657
     INSN_LABEL(C_LWSP),                  // 22658
-    INSN_LABEL(LHU),                     // 22659
+    INSN_LABEL(LHU_rdN),                 // 22659
     INSN_LABEL(C_LW),                    // 22660
     INSN_LABEL(C_LI),                    // 22661
     INSN_LABEL(C_LWSP),                  // 22662
@@ -22972,7 +22979,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 22784
     INSN_LABEL(C_LI),                    // 22785
     INSN_LABEL(C_LWSP),                  // 22786
-    INSN_LABEL(LHU),                     // 22787
+    INSN_LABEL(LHU_rdN),                 // 22787
     INSN_LABEL(C_LW),                    // 22788
     INSN_LABEL(C_LI),                    // 22789
     INSN_LABEL(C_LWSP),                  // 22790
@@ -23100,7 +23107,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 22912
     INSN_LABEL(C_LI),                    // 22913
     INSN_LABEL(C_LWSP),                  // 22914
-    INSN_LABEL(LHU),                     // 22915
+    INSN_LABEL(LHU_rdN),                 // 22915
     INSN_LABEL(C_LW),                    // 22916
     INSN_LABEL(C_LI),                    // 22917
     INSN_LABEL(C_LWSP),                  // 22918
@@ -23228,7 +23235,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 23040
     INSN_LABEL(C_LI),                    // 23041
     INSN_LABEL(C_LWSP),                  // 23042
-    INSN_LABEL(LHU),                     // 23043
+    INSN_LABEL(LHU_rdN),                 // 23043
     INSN_LABEL(C_LW),                    // 23044
     INSN_LABEL(C_LI),                    // 23045
     INSN_LABEL(C_LWSP),                  // 23046
@@ -23356,7 +23363,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 23168
     INSN_LABEL(C_LI),                    // 23169
     INSN_LABEL(C_LWSP),                  // 23170
-    INSN_LABEL(LHU),                     // 23171
+    INSN_LABEL(LHU_rdN),                 // 23171
     INSN_LABEL(C_LW),                    // 23172
     INSN_LABEL(C_LI),                    // 23173
     INSN_LABEL(C_LWSP),                  // 23174
@@ -23484,7 +23491,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 23296
     INSN_LABEL(C_LI),                    // 23297
     INSN_LABEL(C_LWSP),                  // 23298
-    INSN_LABEL(LHU),                     // 23299
+    INSN_LABEL(LHU_rdN),                 // 23299
     INSN_LABEL(C_LW),                    // 23300
     INSN_LABEL(C_LI),                    // 23301
     INSN_LABEL(C_LWSP),                  // 23302
@@ -23612,7 +23619,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 23424
     INSN_LABEL(C_LI),                    // 23425
     INSN_LABEL(C_LWSP),                  // 23426
-    INSN_LABEL(LHU),                     // 23427
+    INSN_LABEL(LHU_rdN),                 // 23427
     INSN_LABEL(C_LW),                    // 23428
     INSN_LABEL(C_LI),                    // 23429
     INSN_LABEL(C_LWSP),                  // 23430
@@ -23740,7 +23747,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 23552
     INSN_LABEL(C_LI),                    // 23553
     INSN_LABEL(C_LWSP),                  // 23554
-    INSN_LABEL(LHU),                     // 23555
+    INSN_LABEL(LHU_rdN),                 // 23555
     INSN_LABEL(C_LW),                    // 23556
     INSN_LABEL(C_LI),                    // 23557
     INSN_LABEL(C_LWSP),                  // 23558
@@ -23868,7 +23875,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 23680
     INSN_LABEL(C_LI),                    // 23681
     INSN_LABEL(C_LWSP),                  // 23682
-    INSN_LABEL(LHU),                     // 23683
+    INSN_LABEL(LHU_rdN),                 // 23683
     INSN_LABEL(C_LW),                    // 23684
     INSN_LABEL(C_LI),                    // 23685
     INSN_LABEL(C_LWSP),                  // 23686
@@ -23996,7 +24003,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 23808
     INSN_LABEL(C_LI),                    // 23809
     INSN_LABEL(C_LWSP),                  // 23810
-    INSN_LABEL(LHU),                     // 23811
+    INSN_LABEL(LHU_rdN),                 // 23811
     INSN_LABEL(C_LW),                    // 23812
     INSN_LABEL(C_LI),                    // 23813
     INSN_LABEL(C_LWSP),                  // 23814
@@ -24124,7 +24131,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 23936
     INSN_LABEL(C_LI),                    // 23937
     INSN_LABEL(C_LWSP),                  // 23938
-    INSN_LABEL(LHU),                     // 23939
+    INSN_LABEL(LHU_rdN),                 // 23939
     INSN_LABEL(C_LW),                    // 23940
     INSN_LABEL(C_LI),                    // 23941
     INSN_LABEL(C_LWSP),                  // 23942
@@ -24252,7 +24259,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 24064
     INSN_LABEL(C_LI),                    // 24065
     INSN_LABEL(C_LWSP),                  // 24066
-    INSN_LABEL(LHU),                     // 24067
+    INSN_LABEL(LHU_rdN),                 // 24067
     INSN_LABEL(C_LW),                    // 24068
     INSN_LABEL(C_LI),                    // 24069
     INSN_LABEL(C_LWSP),                  // 24070
@@ -24380,7 +24387,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 24192
     INSN_LABEL(C_LI),                    // 24193
     INSN_LABEL(C_LWSP),                  // 24194
-    INSN_LABEL(LHU),                     // 24195
+    INSN_LABEL(LHU_rdN),                 // 24195
     INSN_LABEL(C_LW),                    // 24196
     INSN_LABEL(C_LI),                    // 24197
     INSN_LABEL(C_LWSP),                  // 24198
@@ -24508,7 +24515,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 24320
     INSN_LABEL(C_LI),                    // 24321
     INSN_LABEL(C_LWSP),                  // 24322
-    INSN_LABEL(LHU),                     // 24323
+    INSN_LABEL(LHU_rdN),                 // 24323
     INSN_LABEL(C_LW),                    // 24324
     INSN_LABEL(C_LI),                    // 24325
     INSN_LABEL(C_LWSP),                  // 24326
@@ -24636,7 +24643,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LW),                    // 24448
     INSN_LABEL(C_LI),                    // 24449
     INSN_LABEL(C_LWSP),                  // 24450
-    INSN_LABEL(LHU),                     // 24451
+    INSN_LABEL(LHU_rdN),                 // 24451
     INSN_LABEL(C_LW),                    // 24452
     INSN_LABEL(C_LI),                    // 24453
     INSN_LABEL(C_LWSP),                  // 24454
@@ -24764,7 +24771,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 24576
     INSN_LABEL(ILLEGAL),                 // 24577
     INSN_LABEL(ILLEGAL),                 // 24578
-    INSN_LABEL(LWU),                     // 24579
+    INSN_LABEL(LWU_rd0),                 // 24579
     INSN_LABEL(C_LD),                    // 24580
     INSN_LABEL(C_HINT),                  // 24581
     INSN_LABEL(ILLEGAL),                 // 24582
@@ -24892,7 +24899,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 24704
     INSN_LABEL(ILLEGAL),                 // 24705
     INSN_LABEL(C_LDSP),                  // 24706
-    INSN_LABEL(LWU),                     // 24707
+    INSN_LABEL(LWU_rdN),                 // 24707
     INSN_LABEL(C_LD),                    // 24708
     INSN_LABEL(C_LUI),                   // 24709
     INSN_LABEL(C_LDSP),                  // 24710
@@ -25020,7 +25027,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 24832
     INSN_LABEL(ILLEGAL),                 // 24833
     INSN_LABEL(C_LDSP),                  // 24834
-    INSN_LABEL(LWU),                     // 24835
+    INSN_LABEL(LWU_rdN),                 // 24835
     INSN_LABEL(C_LD),                    // 24836
     INSN_LABEL(C_ADDI16SP),              // 24837
     INSN_LABEL(C_LDSP),                  // 24838
@@ -25148,7 +25155,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 24960
     INSN_LABEL(ILLEGAL),                 // 24961
     INSN_LABEL(C_LDSP),                  // 24962
-    INSN_LABEL(LWU),                     // 24963
+    INSN_LABEL(LWU_rdN),                 // 24963
     INSN_LABEL(C_LD),                    // 24964
     INSN_LABEL(C_LUI),                   // 24965
     INSN_LABEL(C_LDSP),                  // 24966
@@ -25276,7 +25283,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 25088
     INSN_LABEL(ILLEGAL),                 // 25089
     INSN_LABEL(C_LDSP),                  // 25090
-    INSN_LABEL(LWU),                     // 25091
+    INSN_LABEL(LWU_rdN),                 // 25091
     INSN_LABEL(C_LD),                    // 25092
     INSN_LABEL(C_LUI),                   // 25093
     INSN_LABEL(C_LDSP),                  // 25094
@@ -25404,7 +25411,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 25216
     INSN_LABEL(ILLEGAL),                 // 25217
     INSN_LABEL(C_LDSP),                  // 25218
-    INSN_LABEL(LWU),                     // 25219
+    INSN_LABEL(LWU_rdN),                 // 25219
     INSN_LABEL(C_LD),                    // 25220
     INSN_LABEL(C_LUI),                   // 25221
     INSN_LABEL(C_LDSP),                  // 25222
@@ -25532,7 +25539,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 25344
     INSN_LABEL(ILLEGAL),                 // 25345
     INSN_LABEL(C_LDSP),                  // 25346
-    INSN_LABEL(LWU),                     // 25347
+    INSN_LABEL(LWU_rdN),                 // 25347
     INSN_LABEL(C_LD),                    // 25348
     INSN_LABEL(C_LUI),                   // 25349
     INSN_LABEL(C_LDSP),                  // 25350
@@ -25660,7 +25667,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 25472
     INSN_LABEL(ILLEGAL),                 // 25473
     INSN_LABEL(C_LDSP),                  // 25474
-    INSN_LABEL(LWU),                     // 25475
+    INSN_LABEL(LWU_rdN),                 // 25475
     INSN_LABEL(C_LD),                    // 25476
     INSN_LABEL(C_LUI),                   // 25477
     INSN_LABEL(C_LDSP),                  // 25478
@@ -25788,7 +25795,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 25600
     INSN_LABEL(ILLEGAL),                 // 25601
     INSN_LABEL(C_LDSP),                  // 25602
-    INSN_LABEL(LWU),                     // 25603
+    INSN_LABEL(LWU_rdN),                 // 25603
     INSN_LABEL(C_LD),                    // 25604
     INSN_LABEL(C_LUI),                   // 25605
     INSN_LABEL(C_LDSP),                  // 25606
@@ -25916,7 +25923,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 25728
     INSN_LABEL(ILLEGAL),                 // 25729
     INSN_LABEL(C_LDSP),                  // 25730
-    INSN_LABEL(LWU),                     // 25731
+    INSN_LABEL(LWU_rdN),                 // 25731
     INSN_LABEL(C_LD),                    // 25732
     INSN_LABEL(C_LUI),                   // 25733
     INSN_LABEL(C_LDSP),                  // 25734
@@ -26044,7 +26051,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 25856
     INSN_LABEL(ILLEGAL),                 // 25857
     INSN_LABEL(C_LDSP),                  // 25858
-    INSN_LABEL(LWU),                     // 25859
+    INSN_LABEL(LWU_rdN),                 // 25859
     INSN_LABEL(C_LD),                    // 25860
     INSN_LABEL(C_LUI),                   // 25861
     INSN_LABEL(C_LDSP),                  // 25862
@@ -26172,7 +26179,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 25984
     INSN_LABEL(ILLEGAL),                 // 25985
     INSN_LABEL(C_LDSP),                  // 25986
-    INSN_LABEL(LWU),                     // 25987
+    INSN_LABEL(LWU_rdN),                 // 25987
     INSN_LABEL(C_LD),                    // 25988
     INSN_LABEL(C_LUI),                   // 25989
     INSN_LABEL(C_LDSP),                  // 25990
@@ -26300,7 +26307,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 26112
     INSN_LABEL(ILLEGAL),                 // 26113
     INSN_LABEL(C_LDSP),                  // 26114
-    INSN_LABEL(LWU),                     // 26115
+    INSN_LABEL(LWU_rdN),                 // 26115
     INSN_LABEL(C_LD),                    // 26116
     INSN_LABEL(C_LUI),                   // 26117
     INSN_LABEL(C_LDSP),                  // 26118
@@ -26428,7 +26435,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 26240
     INSN_LABEL(ILLEGAL),                 // 26241
     INSN_LABEL(C_LDSP),                  // 26242
-    INSN_LABEL(LWU),                     // 26243
+    INSN_LABEL(LWU_rdN),                 // 26243
     INSN_LABEL(C_LD),                    // 26244
     INSN_LABEL(C_LUI),                   // 26245
     INSN_LABEL(C_LDSP),                  // 26246
@@ -26556,7 +26563,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 26368
     INSN_LABEL(ILLEGAL),                 // 26369
     INSN_LABEL(C_LDSP),                  // 26370
-    INSN_LABEL(LWU),                     // 26371
+    INSN_LABEL(LWU_rdN),                 // 26371
     INSN_LABEL(C_LD),                    // 26372
     INSN_LABEL(C_LUI),                   // 26373
     INSN_LABEL(C_LDSP),                  // 26374
@@ -26684,7 +26691,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 26496
     INSN_LABEL(ILLEGAL),                 // 26497
     INSN_LABEL(C_LDSP),                  // 26498
-    INSN_LABEL(LWU),                     // 26499
+    INSN_LABEL(LWU_rdN),                 // 26499
     INSN_LABEL(C_LD),                    // 26500
     INSN_LABEL(C_LUI),                   // 26501
     INSN_LABEL(C_LDSP),                  // 26502
@@ -26812,7 +26819,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 26624
     INSN_LABEL(ILLEGAL),                 // 26625
     INSN_LABEL(C_LDSP),                  // 26626
-    INSN_LABEL(LWU),                     // 26627
+    INSN_LABEL(LWU_rdN),                 // 26627
     INSN_LABEL(C_LD),                    // 26628
     INSN_LABEL(C_LUI),                   // 26629
     INSN_LABEL(C_LDSP),                  // 26630
@@ -26940,7 +26947,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 26752
     INSN_LABEL(ILLEGAL),                 // 26753
     INSN_LABEL(C_LDSP),                  // 26754
-    INSN_LABEL(LWU),                     // 26755
+    INSN_LABEL(LWU_rdN),                 // 26755
     INSN_LABEL(C_LD),                    // 26756
     INSN_LABEL(C_LUI),                   // 26757
     INSN_LABEL(C_LDSP),                  // 26758
@@ -27068,7 +27075,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 26880
     INSN_LABEL(ILLEGAL),                 // 26881
     INSN_LABEL(C_LDSP),                  // 26882
-    INSN_LABEL(LWU),                     // 26883
+    INSN_LABEL(LWU_rdN),                 // 26883
     INSN_LABEL(C_LD),                    // 26884
     INSN_LABEL(C_LUI),                   // 26885
     INSN_LABEL(C_LDSP),                  // 26886
@@ -27196,7 +27203,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 27008
     INSN_LABEL(ILLEGAL),                 // 27009
     INSN_LABEL(C_LDSP),                  // 27010
-    INSN_LABEL(LWU),                     // 27011
+    INSN_LABEL(LWU_rdN),                 // 27011
     INSN_LABEL(C_LD),                    // 27012
     INSN_LABEL(C_LUI),                   // 27013
     INSN_LABEL(C_LDSP),                  // 27014
@@ -27324,7 +27331,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 27136
     INSN_LABEL(ILLEGAL),                 // 27137
     INSN_LABEL(C_LDSP),                  // 27138
-    INSN_LABEL(LWU),                     // 27139
+    INSN_LABEL(LWU_rdN),                 // 27139
     INSN_LABEL(C_LD),                    // 27140
     INSN_LABEL(C_LUI),                   // 27141
     INSN_LABEL(C_LDSP),                  // 27142
@@ -27452,7 +27459,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 27264
     INSN_LABEL(ILLEGAL),                 // 27265
     INSN_LABEL(C_LDSP),                  // 27266
-    INSN_LABEL(LWU),                     // 27267
+    INSN_LABEL(LWU_rdN),                 // 27267
     INSN_LABEL(C_LD),                    // 27268
     INSN_LABEL(C_LUI),                   // 27269
     INSN_LABEL(C_LDSP),                  // 27270
@@ -27580,7 +27587,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 27392
     INSN_LABEL(ILLEGAL),                 // 27393
     INSN_LABEL(C_LDSP),                  // 27394
-    INSN_LABEL(LWU),                     // 27395
+    INSN_LABEL(LWU_rdN),                 // 27395
     INSN_LABEL(C_LD),                    // 27396
     INSN_LABEL(C_LUI),                   // 27397
     INSN_LABEL(C_LDSP),                  // 27398
@@ -27708,7 +27715,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 27520
     INSN_LABEL(ILLEGAL),                 // 27521
     INSN_LABEL(C_LDSP),                  // 27522
-    INSN_LABEL(LWU),                     // 27523
+    INSN_LABEL(LWU_rdN),                 // 27523
     INSN_LABEL(C_LD),                    // 27524
     INSN_LABEL(C_LUI),                   // 27525
     INSN_LABEL(C_LDSP),                  // 27526
@@ -27836,7 +27843,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 27648
     INSN_LABEL(ILLEGAL),                 // 27649
     INSN_LABEL(C_LDSP),                  // 27650
-    INSN_LABEL(LWU),                     // 27651
+    INSN_LABEL(LWU_rdN),                 // 27651
     INSN_LABEL(C_LD),                    // 27652
     INSN_LABEL(C_LUI),                   // 27653
     INSN_LABEL(C_LDSP),                  // 27654
@@ -27964,7 +27971,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 27776
     INSN_LABEL(ILLEGAL),                 // 27777
     INSN_LABEL(C_LDSP),                  // 27778
-    INSN_LABEL(LWU),                     // 27779
+    INSN_LABEL(LWU_rdN),                 // 27779
     INSN_LABEL(C_LD),                    // 27780
     INSN_LABEL(C_LUI),                   // 27781
     INSN_LABEL(C_LDSP),                  // 27782
@@ -28092,7 +28099,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 27904
     INSN_LABEL(ILLEGAL),                 // 27905
     INSN_LABEL(C_LDSP),                  // 27906
-    INSN_LABEL(LWU),                     // 27907
+    INSN_LABEL(LWU_rdN),                 // 27907
     INSN_LABEL(C_LD),                    // 27908
     INSN_LABEL(C_LUI),                   // 27909
     INSN_LABEL(C_LDSP),                  // 27910
@@ -28220,7 +28227,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 28032
     INSN_LABEL(ILLEGAL),                 // 28033
     INSN_LABEL(C_LDSP),                  // 28034
-    INSN_LABEL(LWU),                     // 28035
+    INSN_LABEL(LWU_rdN),                 // 28035
     INSN_LABEL(C_LD),                    // 28036
     INSN_LABEL(C_LUI),                   // 28037
     INSN_LABEL(C_LDSP),                  // 28038
@@ -28348,7 +28355,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 28160
     INSN_LABEL(ILLEGAL),                 // 28161
     INSN_LABEL(C_LDSP),                  // 28162
-    INSN_LABEL(LWU),                     // 28163
+    INSN_LABEL(LWU_rdN),                 // 28163
     INSN_LABEL(C_LD),                    // 28164
     INSN_LABEL(C_LUI),                   // 28165
     INSN_LABEL(C_LDSP),                  // 28166
@@ -28476,7 +28483,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 28288
     INSN_LABEL(ILLEGAL),                 // 28289
     INSN_LABEL(C_LDSP),                  // 28290
-    INSN_LABEL(LWU),                     // 28291
+    INSN_LABEL(LWU_rdN),                 // 28291
     INSN_LABEL(C_LD),                    // 28292
     INSN_LABEL(C_LUI),                   // 28293
     INSN_LABEL(C_LDSP),                  // 28294
@@ -28604,7 +28611,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 28416
     INSN_LABEL(ILLEGAL),                 // 28417
     INSN_LABEL(C_LDSP),                  // 28418
-    INSN_LABEL(LWU),                     // 28419
+    INSN_LABEL(LWU_rdN),                 // 28419
     INSN_LABEL(C_LD),                    // 28420
     INSN_LABEL(C_LUI),                   // 28421
     INSN_LABEL(C_LDSP),                  // 28422
@@ -28732,7 +28739,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_LD),                    // 28544
     INSN_LABEL(ILLEGAL),                 // 28545
     INSN_LABEL(C_LDSP),                  // 28546
-    INSN_LABEL(LWU),                     // 28547
+    INSN_LABEL(LWU_rdN),                 // 28547
     INSN_LABEL(C_LD),                    // 28548
     INSN_LABEL(C_LUI),                   // 28549
     INSN_LABEL(C_LDSP),                  // 28550
@@ -32956,7 +32963,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 32768
     INSN_LABEL(C_HINT),                  // 32769
     INSN_LABEL(ILLEGAL),                 // 32770
-    INSN_LABEL(LB),                      // 32771
+    INSN_LABEL(LB_rd0),                  // 32771
     INSN_LABEL(ILLEGAL),                 // 32772
     INSN_LABEL(C_SRLI),                  // 32773
     INSN_LABEL(C_HINT),                  // 32774
@@ -33084,7 +33091,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 32896
     INSN_LABEL(C_HINT),                  // 32897
     INSN_LABEL(C_JR),                    // 32898
-    INSN_LABEL(LB),                      // 32899
+    INSN_LABEL(LB_rdN),                  // 32899
     INSN_LABEL(ILLEGAL),                 // 32900
     INSN_LABEL(C_SRLI),                  // 32901
     INSN_LABEL(C_MV),                    // 32902
@@ -33212,7 +33219,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 33024
     INSN_LABEL(C_HINT),                  // 33025
     INSN_LABEL(C_JR),                    // 33026
-    INSN_LABEL(LB),                      // 33027
+    INSN_LABEL(LB_rdN),                  // 33027
     INSN_LABEL(ILLEGAL),                 // 33028
     INSN_LABEL(C_SRLI),                  // 33029
     INSN_LABEL(C_MV),                    // 33030
@@ -33340,7 +33347,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 33152
     INSN_LABEL(C_HINT),                  // 33153
     INSN_LABEL(C_JR),                    // 33154
-    INSN_LABEL(LB),                      // 33155
+    INSN_LABEL(LB_rdN),                  // 33155
     INSN_LABEL(ILLEGAL),                 // 33156
     INSN_LABEL(C_SRLI),                  // 33157
     INSN_LABEL(C_MV),                    // 33158
@@ -33468,7 +33475,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 33280
     INSN_LABEL(C_HINT),                  // 33281
     INSN_LABEL(C_JR),                    // 33282
-    INSN_LABEL(LB),                      // 33283
+    INSN_LABEL(LB_rdN),                  // 33283
     INSN_LABEL(ILLEGAL),                 // 33284
     INSN_LABEL(C_SRLI),                  // 33285
     INSN_LABEL(C_MV),                    // 33286
@@ -33596,7 +33603,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 33408
     INSN_LABEL(C_HINT),                  // 33409
     INSN_LABEL(C_JR),                    // 33410
-    INSN_LABEL(LB),                      // 33411
+    INSN_LABEL(LB_rdN),                  // 33411
     INSN_LABEL(ILLEGAL),                 // 33412
     INSN_LABEL(C_SRLI),                  // 33413
     INSN_LABEL(C_MV),                    // 33414
@@ -33724,7 +33731,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 33536
     INSN_LABEL(C_HINT),                  // 33537
     INSN_LABEL(C_JR),                    // 33538
-    INSN_LABEL(LB),                      // 33539
+    INSN_LABEL(LB_rdN),                  // 33539
     INSN_LABEL(ILLEGAL),                 // 33540
     INSN_LABEL(C_SRLI),                  // 33541
     INSN_LABEL(C_MV),                    // 33542
@@ -33852,7 +33859,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 33664
     INSN_LABEL(C_HINT),                  // 33665
     INSN_LABEL(C_JR),                    // 33666
-    INSN_LABEL(LB),                      // 33667
+    INSN_LABEL(LB_rdN),                  // 33667
     INSN_LABEL(ILLEGAL),                 // 33668
     INSN_LABEL(C_SRLI),                  // 33669
     INSN_LABEL(C_MV),                    // 33670
@@ -33980,7 +33987,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 33792
     INSN_LABEL(C_HINT),                  // 33793
     INSN_LABEL(C_JR),                    // 33794
-    INSN_LABEL(LB),                      // 33795
+    INSN_LABEL(LB_rdN),                  // 33795
     INSN_LABEL(ILLEGAL),                 // 33796
     INSN_LABEL(C_SRAI),                  // 33797
     INSN_LABEL(C_MV),                    // 33798
@@ -34108,7 +34115,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 33920
     INSN_LABEL(C_HINT),                  // 33921
     INSN_LABEL(C_JR),                    // 33922
-    INSN_LABEL(LB),                      // 33923
+    INSN_LABEL(LB_rdN),                  // 33923
     INSN_LABEL(ILLEGAL),                 // 33924
     INSN_LABEL(C_SRAI),                  // 33925
     INSN_LABEL(C_MV),                    // 33926
@@ -34236,7 +34243,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 34048
     INSN_LABEL(C_HINT),                  // 34049
     INSN_LABEL(C_JR),                    // 34050
-    INSN_LABEL(LB),                      // 34051
+    INSN_LABEL(LB_rdN),                  // 34051
     INSN_LABEL(ILLEGAL),                 // 34052
     INSN_LABEL(C_SRAI),                  // 34053
     INSN_LABEL(C_MV),                    // 34054
@@ -34364,7 +34371,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 34176
     INSN_LABEL(C_HINT),                  // 34177
     INSN_LABEL(C_JR),                    // 34178
-    INSN_LABEL(LB),                      // 34179
+    INSN_LABEL(LB_rdN),                  // 34179
     INSN_LABEL(ILLEGAL),                 // 34180
     INSN_LABEL(C_SRAI),                  // 34181
     INSN_LABEL(C_MV),                    // 34182
@@ -34492,7 +34499,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 34304
     INSN_LABEL(C_HINT),                  // 34305
     INSN_LABEL(C_JR),                    // 34306
-    INSN_LABEL(LB),                      // 34307
+    INSN_LABEL(LB_rdN),                  // 34307
     INSN_LABEL(ILLEGAL),                 // 34308
     INSN_LABEL(C_SRAI),                  // 34309
     INSN_LABEL(C_MV),                    // 34310
@@ -34620,7 +34627,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 34432
     INSN_LABEL(C_HINT),                  // 34433
     INSN_LABEL(C_JR),                    // 34434
-    INSN_LABEL(LB),                      // 34435
+    INSN_LABEL(LB_rdN),                  // 34435
     INSN_LABEL(ILLEGAL),                 // 34436
     INSN_LABEL(C_SRAI),                  // 34437
     INSN_LABEL(C_MV),                    // 34438
@@ -34748,7 +34755,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 34560
     INSN_LABEL(C_HINT),                  // 34561
     INSN_LABEL(C_JR),                    // 34562
-    INSN_LABEL(LB),                      // 34563
+    INSN_LABEL(LB_rdN),                  // 34563
     INSN_LABEL(ILLEGAL),                 // 34564
     INSN_LABEL(C_SRAI),                  // 34565
     INSN_LABEL(C_MV),                    // 34566
@@ -34876,7 +34883,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 34688
     INSN_LABEL(C_HINT),                  // 34689
     INSN_LABEL(C_JR),                    // 34690
-    INSN_LABEL(LB),                      // 34691
+    INSN_LABEL(LB_rdN),                  // 34691
     INSN_LABEL(ILLEGAL),                 // 34692
     INSN_LABEL(C_SRAI),                  // 34693
     INSN_LABEL(C_MV),                    // 34694
@@ -35004,7 +35011,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 34816
     INSN_LABEL(C_ANDI),                  // 34817
     INSN_LABEL(C_JR),                    // 34818
-    INSN_LABEL(LB),                      // 34819
+    INSN_LABEL(LB_rdN),                  // 34819
     INSN_LABEL(ILLEGAL),                 // 34820
     INSN_LABEL(C_ANDI),                  // 34821
     INSN_LABEL(C_MV),                    // 34822
@@ -35132,7 +35139,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 34944
     INSN_LABEL(C_ANDI),                  // 34945
     INSN_LABEL(C_JR),                    // 34946
-    INSN_LABEL(LB),                      // 34947
+    INSN_LABEL(LB_rdN),                  // 34947
     INSN_LABEL(ILLEGAL),                 // 34948
     INSN_LABEL(C_ANDI),                  // 34949
     INSN_LABEL(C_MV),                    // 34950
@@ -35260,7 +35267,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 35072
     INSN_LABEL(C_ANDI),                  // 35073
     INSN_LABEL(C_JR),                    // 35074
-    INSN_LABEL(LB),                      // 35075
+    INSN_LABEL(LB_rdN),                  // 35075
     INSN_LABEL(ILLEGAL),                 // 35076
     INSN_LABEL(C_ANDI),                  // 35077
     INSN_LABEL(C_MV),                    // 35078
@@ -35388,7 +35395,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 35200
     INSN_LABEL(C_ANDI),                  // 35201
     INSN_LABEL(C_JR),                    // 35202
-    INSN_LABEL(LB),                      // 35203
+    INSN_LABEL(LB_rdN),                  // 35203
     INSN_LABEL(ILLEGAL),                 // 35204
     INSN_LABEL(C_ANDI),                  // 35205
     INSN_LABEL(C_MV),                    // 35206
@@ -35516,7 +35523,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 35328
     INSN_LABEL(C_ANDI),                  // 35329
     INSN_LABEL(C_JR),                    // 35330
-    INSN_LABEL(LB),                      // 35331
+    INSN_LABEL(LB_rdN),                  // 35331
     INSN_LABEL(ILLEGAL),                 // 35332
     INSN_LABEL(C_ANDI),                  // 35333
     INSN_LABEL(C_MV),                    // 35334
@@ -35644,7 +35651,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 35456
     INSN_LABEL(C_ANDI),                  // 35457
     INSN_LABEL(C_JR),                    // 35458
-    INSN_LABEL(LB),                      // 35459
+    INSN_LABEL(LB_rdN),                  // 35459
     INSN_LABEL(ILLEGAL),                 // 35460
     INSN_LABEL(C_ANDI),                  // 35461
     INSN_LABEL(C_MV),                    // 35462
@@ -35772,7 +35779,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 35584
     INSN_LABEL(C_ANDI),                  // 35585
     INSN_LABEL(C_JR),                    // 35586
-    INSN_LABEL(LB),                      // 35587
+    INSN_LABEL(LB_rdN),                  // 35587
     INSN_LABEL(ILLEGAL),                 // 35588
     INSN_LABEL(C_ANDI),                  // 35589
     INSN_LABEL(C_MV),                    // 35590
@@ -35900,7 +35907,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 35712
     INSN_LABEL(C_ANDI),                  // 35713
     INSN_LABEL(C_JR),                    // 35714
-    INSN_LABEL(LB),                      // 35715
+    INSN_LABEL(LB_rdN),                  // 35715
     INSN_LABEL(ILLEGAL),                 // 35716
     INSN_LABEL(C_ANDI),                  // 35717
     INSN_LABEL(C_MV),                    // 35718
@@ -36028,7 +36035,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 35840
     INSN_LABEL(C_SUB),                   // 35841
     INSN_LABEL(C_JR),                    // 35842
-    INSN_LABEL(LB),                      // 35843
+    INSN_LABEL(LB_rdN),                  // 35843
     INSN_LABEL(ILLEGAL),                 // 35844
     INSN_LABEL(C_SUB),                   // 35845
     INSN_LABEL(C_MV),                    // 35846
@@ -36156,7 +36163,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 35968
     INSN_LABEL(C_SUB),                   // 35969
     INSN_LABEL(C_JR),                    // 35970
-    INSN_LABEL(LB),                      // 35971
+    INSN_LABEL(LB_rdN),                  // 35971
     INSN_LABEL(ILLEGAL),                 // 35972
     INSN_LABEL(C_SUB),                   // 35973
     INSN_LABEL(C_MV),                    // 35974
@@ -36284,7 +36291,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 36096
     INSN_LABEL(C_SUB),                   // 36097
     INSN_LABEL(C_JR),                    // 36098
-    INSN_LABEL(LB),                      // 36099
+    INSN_LABEL(LB_rdN),                  // 36099
     INSN_LABEL(ILLEGAL),                 // 36100
     INSN_LABEL(C_SUB),                   // 36101
     INSN_LABEL(C_MV),                    // 36102
@@ -36412,7 +36419,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 36224
     INSN_LABEL(C_SUB),                   // 36225
     INSN_LABEL(C_JR),                    // 36226
-    INSN_LABEL(LB),                      // 36227
+    INSN_LABEL(LB_rdN),                  // 36227
     INSN_LABEL(ILLEGAL),                 // 36228
     INSN_LABEL(C_SUB),                   // 36229
     INSN_LABEL(C_MV),                    // 36230
@@ -36540,7 +36547,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 36352
     INSN_LABEL(C_SUB),                   // 36353
     INSN_LABEL(C_JR),                    // 36354
-    INSN_LABEL(LB),                      // 36355
+    INSN_LABEL(LB_rdN),                  // 36355
     INSN_LABEL(ILLEGAL),                 // 36356
     INSN_LABEL(C_SUB),                   // 36357
     INSN_LABEL(C_MV),                    // 36358
@@ -36668,7 +36675,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 36480
     INSN_LABEL(C_SUB),                   // 36481
     INSN_LABEL(C_JR),                    // 36482
-    INSN_LABEL(LB),                      // 36483
+    INSN_LABEL(LB_rdN),                  // 36483
     INSN_LABEL(ILLEGAL),                 // 36484
     INSN_LABEL(C_SUB),                   // 36485
     INSN_LABEL(C_MV),                    // 36486
@@ -36796,7 +36803,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 36608
     INSN_LABEL(C_SUB),                   // 36609
     INSN_LABEL(C_JR),                    // 36610
-    INSN_LABEL(LB),                      // 36611
+    INSN_LABEL(LB_rdN),                  // 36611
     INSN_LABEL(ILLEGAL),                 // 36612
     INSN_LABEL(C_SUB),                   // 36613
     INSN_LABEL(C_MV),                    // 36614
@@ -36924,7 +36931,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 36736
     INSN_LABEL(C_SUB),                   // 36737
     INSN_LABEL(C_JR),                    // 36738
-    INSN_LABEL(LB),                      // 36739
+    INSN_LABEL(LB_rdN),                  // 36739
     INSN_LABEL(ILLEGAL),                 // 36740
     INSN_LABEL(C_SUB),                   // 36741
     INSN_LABEL(C_MV),                    // 36742
@@ -37052,7 +37059,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 36864
     INSN_LABEL(C_SRLI),                  // 36865
     INSN_LABEL(C_EBREAK),                // 36866
-    INSN_LABEL(LH),                      // 36867
+    INSN_LABEL(LH_rd0),                  // 36867
     INSN_LABEL(ILLEGAL),                 // 36868
     INSN_LABEL(C_SRLI),                  // 36869
     INSN_LABEL(C_HINT),                  // 36870
@@ -37180,7 +37187,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 36992
     INSN_LABEL(C_SRLI),                  // 36993
     INSN_LABEL(C_JALR),                  // 36994
-    INSN_LABEL(LH),                      // 36995
+    INSN_LABEL(LH_rdN),                  // 36995
     INSN_LABEL(ILLEGAL),                 // 36996
     INSN_LABEL(C_SRLI),                  // 36997
     INSN_LABEL(C_ADD),                   // 36998
@@ -37308,7 +37315,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 37120
     INSN_LABEL(C_SRLI),                  // 37121
     INSN_LABEL(C_JALR),                  // 37122
-    INSN_LABEL(LH),                      // 37123
+    INSN_LABEL(LH_rdN),                  // 37123
     INSN_LABEL(ILLEGAL),                 // 37124
     INSN_LABEL(C_SRLI),                  // 37125
     INSN_LABEL(C_ADD),                   // 37126
@@ -37436,7 +37443,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 37248
     INSN_LABEL(C_SRLI),                  // 37249
     INSN_LABEL(C_JALR),                  // 37250
-    INSN_LABEL(LH),                      // 37251
+    INSN_LABEL(LH_rdN),                  // 37251
     INSN_LABEL(ILLEGAL),                 // 37252
     INSN_LABEL(C_SRLI),                  // 37253
     INSN_LABEL(C_ADD),                   // 37254
@@ -37564,7 +37571,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 37376
     INSN_LABEL(C_SRLI),                  // 37377
     INSN_LABEL(C_JALR),                  // 37378
-    INSN_LABEL(LH),                      // 37379
+    INSN_LABEL(LH_rdN),                  // 37379
     INSN_LABEL(ILLEGAL),                 // 37380
     INSN_LABEL(C_SRLI),                  // 37381
     INSN_LABEL(C_ADD),                   // 37382
@@ -37692,7 +37699,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 37504
     INSN_LABEL(C_SRLI),                  // 37505
     INSN_LABEL(C_JALR),                  // 37506
-    INSN_LABEL(LH),                      // 37507
+    INSN_LABEL(LH_rdN),                  // 37507
     INSN_LABEL(ILLEGAL),                 // 37508
     INSN_LABEL(C_SRLI),                  // 37509
     INSN_LABEL(C_ADD),                   // 37510
@@ -37820,7 +37827,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 37632
     INSN_LABEL(C_SRLI),                  // 37633
     INSN_LABEL(C_JALR),                  // 37634
-    INSN_LABEL(LH),                      // 37635
+    INSN_LABEL(LH_rdN),                  // 37635
     INSN_LABEL(ILLEGAL),                 // 37636
     INSN_LABEL(C_SRLI),                  // 37637
     INSN_LABEL(C_ADD),                   // 37638
@@ -37948,7 +37955,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 37760
     INSN_LABEL(C_SRLI),                  // 37761
     INSN_LABEL(C_JALR),                  // 37762
-    INSN_LABEL(LH),                      // 37763
+    INSN_LABEL(LH_rdN),                  // 37763
     INSN_LABEL(ILLEGAL),                 // 37764
     INSN_LABEL(C_SRLI),                  // 37765
     INSN_LABEL(C_ADD),                   // 37766
@@ -38076,7 +38083,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 37888
     INSN_LABEL(C_SRAI),                  // 37889
     INSN_LABEL(C_JALR),                  // 37890
-    INSN_LABEL(LH),                      // 37891
+    INSN_LABEL(LH_rdN),                  // 37891
     INSN_LABEL(ILLEGAL),                 // 37892
     INSN_LABEL(C_SRAI),                  // 37893
     INSN_LABEL(C_ADD),                   // 37894
@@ -38204,7 +38211,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 38016
     INSN_LABEL(C_SRAI),                  // 38017
     INSN_LABEL(C_JALR),                  // 38018
-    INSN_LABEL(LH),                      // 38019
+    INSN_LABEL(LH_rdN),                  // 38019
     INSN_LABEL(ILLEGAL),                 // 38020
     INSN_LABEL(C_SRAI),                  // 38021
     INSN_LABEL(C_ADD),                   // 38022
@@ -38332,7 +38339,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 38144
     INSN_LABEL(C_SRAI),                  // 38145
     INSN_LABEL(C_JALR),                  // 38146
-    INSN_LABEL(LH),                      // 38147
+    INSN_LABEL(LH_rdN),                  // 38147
     INSN_LABEL(ILLEGAL),                 // 38148
     INSN_LABEL(C_SRAI),                  // 38149
     INSN_LABEL(C_ADD),                   // 38150
@@ -38460,7 +38467,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 38272
     INSN_LABEL(C_SRAI),                  // 38273
     INSN_LABEL(C_JALR),                  // 38274
-    INSN_LABEL(LH),                      // 38275
+    INSN_LABEL(LH_rdN),                  // 38275
     INSN_LABEL(ILLEGAL),                 // 38276
     INSN_LABEL(C_SRAI),                  // 38277
     INSN_LABEL(C_ADD),                   // 38278
@@ -38588,7 +38595,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 38400
     INSN_LABEL(C_SRAI),                  // 38401
     INSN_LABEL(C_JALR),                  // 38402
-    INSN_LABEL(LH),                      // 38403
+    INSN_LABEL(LH_rdN),                  // 38403
     INSN_LABEL(ILLEGAL),                 // 38404
     INSN_LABEL(C_SRAI),                  // 38405
     INSN_LABEL(C_ADD),                   // 38406
@@ -38716,7 +38723,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 38528
     INSN_LABEL(C_SRAI),                  // 38529
     INSN_LABEL(C_JALR),                  // 38530
-    INSN_LABEL(LH),                      // 38531
+    INSN_LABEL(LH_rdN),                  // 38531
     INSN_LABEL(ILLEGAL),                 // 38532
     INSN_LABEL(C_SRAI),                  // 38533
     INSN_LABEL(C_ADD),                   // 38534
@@ -38844,7 +38851,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 38656
     INSN_LABEL(C_SRAI),                  // 38657
     INSN_LABEL(C_JALR),                  // 38658
-    INSN_LABEL(LH),                      // 38659
+    INSN_LABEL(LH_rdN),                  // 38659
     INSN_LABEL(ILLEGAL),                 // 38660
     INSN_LABEL(C_SRAI),                  // 38661
     INSN_LABEL(C_ADD),                   // 38662
@@ -38972,7 +38979,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 38784
     INSN_LABEL(C_SRAI),                  // 38785
     INSN_LABEL(C_JALR),                  // 38786
-    INSN_LABEL(LH),                      // 38787
+    INSN_LABEL(LH_rdN),                  // 38787
     INSN_LABEL(ILLEGAL),                 // 38788
     INSN_LABEL(C_SRAI),                  // 38789
     INSN_LABEL(C_ADD),                   // 38790
@@ -39100,7 +39107,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 38912
     INSN_LABEL(C_ANDI),                  // 38913
     INSN_LABEL(C_JALR),                  // 38914
-    INSN_LABEL(LH),                      // 38915
+    INSN_LABEL(LH_rdN),                  // 38915
     INSN_LABEL(ILLEGAL),                 // 38916
     INSN_LABEL(C_ANDI),                  // 38917
     INSN_LABEL(C_ADD),                   // 38918
@@ -39228,7 +39235,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 39040
     INSN_LABEL(C_ANDI),                  // 39041
     INSN_LABEL(C_JALR),                  // 39042
-    INSN_LABEL(LH),                      // 39043
+    INSN_LABEL(LH_rdN),                  // 39043
     INSN_LABEL(ILLEGAL),                 // 39044
     INSN_LABEL(C_ANDI),                  // 39045
     INSN_LABEL(C_ADD),                   // 39046
@@ -39356,7 +39363,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 39168
     INSN_LABEL(C_ANDI),                  // 39169
     INSN_LABEL(C_JALR),                  // 39170
-    INSN_LABEL(LH),                      // 39171
+    INSN_LABEL(LH_rdN),                  // 39171
     INSN_LABEL(ILLEGAL),                 // 39172
     INSN_LABEL(C_ANDI),                  // 39173
     INSN_LABEL(C_ADD),                   // 39174
@@ -39484,7 +39491,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 39296
     INSN_LABEL(C_ANDI),                  // 39297
     INSN_LABEL(C_JALR),                  // 39298
-    INSN_LABEL(LH),                      // 39299
+    INSN_LABEL(LH_rdN),                  // 39299
     INSN_LABEL(ILLEGAL),                 // 39300
     INSN_LABEL(C_ANDI),                  // 39301
     INSN_LABEL(C_ADD),                   // 39302
@@ -39612,7 +39619,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 39424
     INSN_LABEL(C_ANDI),                  // 39425
     INSN_LABEL(C_JALR),                  // 39426
-    INSN_LABEL(LH),                      // 39427
+    INSN_LABEL(LH_rdN),                  // 39427
     INSN_LABEL(ILLEGAL),                 // 39428
     INSN_LABEL(C_ANDI),                  // 39429
     INSN_LABEL(C_ADD),                   // 39430
@@ -39740,7 +39747,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 39552
     INSN_LABEL(C_ANDI),                  // 39553
     INSN_LABEL(C_JALR),                  // 39554
-    INSN_LABEL(LH),                      // 39555
+    INSN_LABEL(LH_rdN),                  // 39555
     INSN_LABEL(ILLEGAL),                 // 39556
     INSN_LABEL(C_ANDI),                  // 39557
     INSN_LABEL(C_ADD),                   // 39558
@@ -39868,7 +39875,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 39680
     INSN_LABEL(C_ANDI),                  // 39681
     INSN_LABEL(C_JALR),                  // 39682
-    INSN_LABEL(LH),                      // 39683
+    INSN_LABEL(LH_rdN),                  // 39683
     INSN_LABEL(ILLEGAL),                 // 39684
     INSN_LABEL(C_ANDI),                  // 39685
     INSN_LABEL(C_ADD),                   // 39686
@@ -39996,7 +40003,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 39808
     INSN_LABEL(C_ANDI),                  // 39809
     INSN_LABEL(C_JALR),                  // 39810
-    INSN_LABEL(LH),                      // 39811
+    INSN_LABEL(LH_rdN),                  // 39811
     INSN_LABEL(ILLEGAL),                 // 39812
     INSN_LABEL(C_ANDI),                  // 39813
     INSN_LABEL(C_ADD),                   // 39814
@@ -40124,7 +40131,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 39936
     INSN_LABEL(C_SUBW),                  // 39937
     INSN_LABEL(C_JALR),                  // 39938
-    INSN_LABEL(LH),                      // 39939
+    INSN_LABEL(LH_rdN),                  // 39939
     INSN_LABEL(ILLEGAL),                 // 39940
     INSN_LABEL(C_SUBW),                  // 39941
     INSN_LABEL(C_ADD),                   // 39942
@@ -40252,7 +40259,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 40064
     INSN_LABEL(C_SUBW),                  // 40065
     INSN_LABEL(C_JALR),                  // 40066
-    INSN_LABEL(LH),                      // 40067
+    INSN_LABEL(LH_rdN),                  // 40067
     INSN_LABEL(ILLEGAL),                 // 40068
     INSN_LABEL(C_SUBW),                  // 40069
     INSN_LABEL(C_ADD),                   // 40070
@@ -40380,7 +40387,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 40192
     INSN_LABEL(C_SUBW),                  // 40193
     INSN_LABEL(C_JALR),                  // 40194
-    INSN_LABEL(LH),                      // 40195
+    INSN_LABEL(LH_rdN),                  // 40195
     INSN_LABEL(ILLEGAL),                 // 40196
     INSN_LABEL(C_SUBW),                  // 40197
     INSN_LABEL(C_ADD),                   // 40198
@@ -40508,7 +40515,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 40320
     INSN_LABEL(C_SUBW),                  // 40321
     INSN_LABEL(C_JALR),                  // 40322
-    INSN_LABEL(LH),                      // 40323
+    INSN_LABEL(LH_rdN),                  // 40323
     INSN_LABEL(ILLEGAL),                 // 40324
     INSN_LABEL(C_SUBW),                  // 40325
     INSN_LABEL(C_ADD),                   // 40326
@@ -40636,7 +40643,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 40448
     INSN_LABEL(C_SUBW),                  // 40449
     INSN_LABEL(C_JALR),                  // 40450
-    INSN_LABEL(LH),                      // 40451
+    INSN_LABEL(LH_rdN),                  // 40451
     INSN_LABEL(ILLEGAL),                 // 40452
     INSN_LABEL(C_SUBW),                  // 40453
     INSN_LABEL(C_ADD),                   // 40454
@@ -40764,7 +40771,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 40576
     INSN_LABEL(C_SUBW),                  // 40577
     INSN_LABEL(C_JALR),                  // 40578
-    INSN_LABEL(LH),                      // 40579
+    INSN_LABEL(LH_rdN),                  // 40579
     INSN_LABEL(ILLEGAL),                 // 40580
     INSN_LABEL(C_SUBW),                  // 40581
     INSN_LABEL(C_ADD),                   // 40582
@@ -40892,7 +40899,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 40704
     INSN_LABEL(C_SUBW),                  // 40705
     INSN_LABEL(C_JALR),                  // 40706
-    INSN_LABEL(LH),                      // 40707
+    INSN_LABEL(LH_rdN),                  // 40707
     INSN_LABEL(ILLEGAL),                 // 40708
     INSN_LABEL(C_SUBW),                  // 40709
     INSN_LABEL(C_ADD),                   // 40710
@@ -41020,7 +41027,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(ILLEGAL),                 // 40832
     INSN_LABEL(C_SUBW),                  // 40833
     INSN_LABEL(C_JALR),                  // 40834
-    INSN_LABEL(LH),                      // 40835
+    INSN_LABEL(LH_rdN),                  // 40835
     INSN_LABEL(ILLEGAL),                 // 40836
     INSN_LABEL(C_SUBW),                  // 40837
     INSN_LABEL(C_ADD),                   // 40838
@@ -41148,7 +41155,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 40960
     INSN_LABEL(C_J),                     // 40961
     INSN_LABEL(C_FSDSP),                 // 40962
-    INSN_LABEL(LW),                      // 40963
+    INSN_LABEL(LW_rd0),                  // 40963
     INSN_LABEL(C_FSD),                   // 40964
     INSN_LABEL(C_J),                     // 40965
     INSN_LABEL(C_FSDSP),                 // 40966
@@ -41276,7 +41283,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 41088
     INSN_LABEL(C_J),                     // 41089
     INSN_LABEL(C_FSDSP),                 // 41090
-    INSN_LABEL(LW),                      // 41091
+    INSN_LABEL(LW_rdN),                  // 41091
     INSN_LABEL(C_FSD),                   // 41092
     INSN_LABEL(C_J),                     // 41093
     INSN_LABEL(C_FSDSP),                 // 41094
@@ -41404,7 +41411,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 41216
     INSN_LABEL(C_J),                     // 41217
     INSN_LABEL(C_FSDSP),                 // 41218
-    INSN_LABEL(LW),                      // 41219
+    INSN_LABEL(LW_rdN),                  // 41219
     INSN_LABEL(C_FSD),                   // 41220
     INSN_LABEL(C_J),                     // 41221
     INSN_LABEL(C_FSDSP),                 // 41222
@@ -41532,7 +41539,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 41344
     INSN_LABEL(C_J),                     // 41345
     INSN_LABEL(C_FSDSP),                 // 41346
-    INSN_LABEL(LW),                      // 41347
+    INSN_LABEL(LW_rdN),                  // 41347
     INSN_LABEL(C_FSD),                   // 41348
     INSN_LABEL(C_J),                     // 41349
     INSN_LABEL(C_FSDSP),                 // 41350
@@ -41660,7 +41667,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 41472
     INSN_LABEL(C_J),                     // 41473
     INSN_LABEL(C_FSDSP),                 // 41474
-    INSN_LABEL(LW),                      // 41475
+    INSN_LABEL(LW_rdN),                  // 41475
     INSN_LABEL(C_FSD),                   // 41476
     INSN_LABEL(C_J),                     // 41477
     INSN_LABEL(C_FSDSP),                 // 41478
@@ -41788,7 +41795,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 41600
     INSN_LABEL(C_J),                     // 41601
     INSN_LABEL(C_FSDSP),                 // 41602
-    INSN_LABEL(LW),                      // 41603
+    INSN_LABEL(LW_rdN),                  // 41603
     INSN_LABEL(C_FSD),                   // 41604
     INSN_LABEL(C_J),                     // 41605
     INSN_LABEL(C_FSDSP),                 // 41606
@@ -41916,7 +41923,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 41728
     INSN_LABEL(C_J),                     // 41729
     INSN_LABEL(C_FSDSP),                 // 41730
-    INSN_LABEL(LW),                      // 41731
+    INSN_LABEL(LW_rdN),                  // 41731
     INSN_LABEL(C_FSD),                   // 41732
     INSN_LABEL(C_J),                     // 41733
     INSN_LABEL(C_FSDSP),                 // 41734
@@ -42044,7 +42051,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 41856
     INSN_LABEL(C_J),                     // 41857
     INSN_LABEL(C_FSDSP),                 // 41858
-    INSN_LABEL(LW),                      // 41859
+    INSN_LABEL(LW_rdN),                  // 41859
     INSN_LABEL(C_FSD),                   // 41860
     INSN_LABEL(C_J),                     // 41861
     INSN_LABEL(C_FSDSP),                 // 41862
@@ -42172,7 +42179,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 41984
     INSN_LABEL(C_J),                     // 41985
     INSN_LABEL(C_FSDSP),                 // 41986
-    INSN_LABEL(LW),                      // 41987
+    INSN_LABEL(LW_rdN),                  // 41987
     INSN_LABEL(C_FSD),                   // 41988
     INSN_LABEL(C_J),                     // 41989
     INSN_LABEL(C_FSDSP),                 // 41990
@@ -42300,7 +42307,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 42112
     INSN_LABEL(C_J),                     // 42113
     INSN_LABEL(C_FSDSP),                 // 42114
-    INSN_LABEL(LW),                      // 42115
+    INSN_LABEL(LW_rdN),                  // 42115
     INSN_LABEL(C_FSD),                   // 42116
     INSN_LABEL(C_J),                     // 42117
     INSN_LABEL(C_FSDSP),                 // 42118
@@ -42428,7 +42435,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 42240
     INSN_LABEL(C_J),                     // 42241
     INSN_LABEL(C_FSDSP),                 // 42242
-    INSN_LABEL(LW),                      // 42243
+    INSN_LABEL(LW_rdN),                  // 42243
     INSN_LABEL(C_FSD),                   // 42244
     INSN_LABEL(C_J),                     // 42245
     INSN_LABEL(C_FSDSP),                 // 42246
@@ -42556,7 +42563,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 42368
     INSN_LABEL(C_J),                     // 42369
     INSN_LABEL(C_FSDSP),                 // 42370
-    INSN_LABEL(LW),                      // 42371
+    INSN_LABEL(LW_rdN),                  // 42371
     INSN_LABEL(C_FSD),                   // 42372
     INSN_LABEL(C_J),                     // 42373
     INSN_LABEL(C_FSDSP),                 // 42374
@@ -42684,7 +42691,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 42496
     INSN_LABEL(C_J),                     // 42497
     INSN_LABEL(C_FSDSP),                 // 42498
-    INSN_LABEL(LW),                      // 42499
+    INSN_LABEL(LW_rdN),                  // 42499
     INSN_LABEL(C_FSD),                   // 42500
     INSN_LABEL(C_J),                     // 42501
     INSN_LABEL(C_FSDSP),                 // 42502
@@ -42812,7 +42819,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 42624
     INSN_LABEL(C_J),                     // 42625
     INSN_LABEL(C_FSDSP),                 // 42626
-    INSN_LABEL(LW),                      // 42627
+    INSN_LABEL(LW_rdN),                  // 42627
     INSN_LABEL(C_FSD),                   // 42628
     INSN_LABEL(C_J),                     // 42629
     INSN_LABEL(C_FSDSP),                 // 42630
@@ -42940,7 +42947,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 42752
     INSN_LABEL(C_J),                     // 42753
     INSN_LABEL(C_FSDSP),                 // 42754
-    INSN_LABEL(LW),                      // 42755
+    INSN_LABEL(LW_rdN),                  // 42755
     INSN_LABEL(C_FSD),                   // 42756
     INSN_LABEL(C_J),                     // 42757
     INSN_LABEL(C_FSDSP),                 // 42758
@@ -43068,7 +43075,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 42880
     INSN_LABEL(C_J),                     // 42881
     INSN_LABEL(C_FSDSP),                 // 42882
-    INSN_LABEL(LW),                      // 42883
+    INSN_LABEL(LW_rdN),                  // 42883
     INSN_LABEL(C_FSD),                   // 42884
     INSN_LABEL(C_J),                     // 42885
     INSN_LABEL(C_FSDSP),                 // 42886
@@ -43196,7 +43203,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 43008
     INSN_LABEL(C_J),                     // 43009
     INSN_LABEL(C_FSDSP),                 // 43010
-    INSN_LABEL(LW),                      // 43011
+    INSN_LABEL(LW_rdN),                  // 43011
     INSN_LABEL(C_FSD),                   // 43012
     INSN_LABEL(C_J),                     // 43013
     INSN_LABEL(C_FSDSP),                 // 43014
@@ -43324,7 +43331,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 43136
     INSN_LABEL(C_J),                     // 43137
     INSN_LABEL(C_FSDSP),                 // 43138
-    INSN_LABEL(LW),                      // 43139
+    INSN_LABEL(LW_rdN),                  // 43139
     INSN_LABEL(C_FSD),                   // 43140
     INSN_LABEL(C_J),                     // 43141
     INSN_LABEL(C_FSDSP),                 // 43142
@@ -43452,7 +43459,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 43264
     INSN_LABEL(C_J),                     // 43265
     INSN_LABEL(C_FSDSP),                 // 43266
-    INSN_LABEL(LW),                      // 43267
+    INSN_LABEL(LW_rdN),                  // 43267
     INSN_LABEL(C_FSD),                   // 43268
     INSN_LABEL(C_J),                     // 43269
     INSN_LABEL(C_FSDSP),                 // 43270
@@ -43580,7 +43587,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 43392
     INSN_LABEL(C_J),                     // 43393
     INSN_LABEL(C_FSDSP),                 // 43394
-    INSN_LABEL(LW),                      // 43395
+    INSN_LABEL(LW_rdN),                  // 43395
     INSN_LABEL(C_FSD),                   // 43396
     INSN_LABEL(C_J),                     // 43397
     INSN_LABEL(C_FSDSP),                 // 43398
@@ -43708,7 +43715,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 43520
     INSN_LABEL(C_J),                     // 43521
     INSN_LABEL(C_FSDSP),                 // 43522
-    INSN_LABEL(LW),                      // 43523
+    INSN_LABEL(LW_rdN),                  // 43523
     INSN_LABEL(C_FSD),                   // 43524
     INSN_LABEL(C_J),                     // 43525
     INSN_LABEL(C_FSDSP),                 // 43526
@@ -43836,7 +43843,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 43648
     INSN_LABEL(C_J),                     // 43649
     INSN_LABEL(C_FSDSP),                 // 43650
-    INSN_LABEL(LW),                      // 43651
+    INSN_LABEL(LW_rdN),                  // 43651
     INSN_LABEL(C_FSD),                   // 43652
     INSN_LABEL(C_J),                     // 43653
     INSN_LABEL(C_FSDSP),                 // 43654
@@ -43964,7 +43971,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 43776
     INSN_LABEL(C_J),                     // 43777
     INSN_LABEL(C_FSDSP),                 // 43778
-    INSN_LABEL(LW),                      // 43779
+    INSN_LABEL(LW_rdN),                  // 43779
     INSN_LABEL(C_FSD),                   // 43780
     INSN_LABEL(C_J),                     // 43781
     INSN_LABEL(C_FSDSP),                 // 43782
@@ -44092,7 +44099,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 43904
     INSN_LABEL(C_J),                     // 43905
     INSN_LABEL(C_FSDSP),                 // 43906
-    INSN_LABEL(LW),                      // 43907
+    INSN_LABEL(LW_rdN),                  // 43907
     INSN_LABEL(C_FSD),                   // 43908
     INSN_LABEL(C_J),                     // 43909
     INSN_LABEL(C_FSDSP),                 // 43910
@@ -44220,7 +44227,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 44032
     INSN_LABEL(C_J),                     // 44033
     INSN_LABEL(C_FSDSP),                 // 44034
-    INSN_LABEL(LW),                      // 44035
+    INSN_LABEL(LW_rdN),                  // 44035
     INSN_LABEL(C_FSD),                   // 44036
     INSN_LABEL(C_J),                     // 44037
     INSN_LABEL(C_FSDSP),                 // 44038
@@ -44348,7 +44355,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 44160
     INSN_LABEL(C_J),                     // 44161
     INSN_LABEL(C_FSDSP),                 // 44162
-    INSN_LABEL(LW),                      // 44163
+    INSN_LABEL(LW_rdN),                  // 44163
     INSN_LABEL(C_FSD),                   // 44164
     INSN_LABEL(C_J),                     // 44165
     INSN_LABEL(C_FSDSP),                 // 44166
@@ -44476,7 +44483,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 44288
     INSN_LABEL(C_J),                     // 44289
     INSN_LABEL(C_FSDSP),                 // 44290
-    INSN_LABEL(LW),                      // 44291
+    INSN_LABEL(LW_rdN),                  // 44291
     INSN_LABEL(C_FSD),                   // 44292
     INSN_LABEL(C_J),                     // 44293
     INSN_LABEL(C_FSDSP),                 // 44294
@@ -44604,7 +44611,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 44416
     INSN_LABEL(C_J),                     // 44417
     INSN_LABEL(C_FSDSP),                 // 44418
-    INSN_LABEL(LW),                      // 44419
+    INSN_LABEL(LW_rdN),                  // 44419
     INSN_LABEL(C_FSD),                   // 44420
     INSN_LABEL(C_J),                     // 44421
     INSN_LABEL(C_FSDSP),                 // 44422
@@ -44732,7 +44739,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 44544
     INSN_LABEL(C_J),                     // 44545
     INSN_LABEL(C_FSDSP),                 // 44546
-    INSN_LABEL(LW),                      // 44547
+    INSN_LABEL(LW_rdN),                  // 44547
     INSN_LABEL(C_FSD),                   // 44548
     INSN_LABEL(C_J),                     // 44549
     INSN_LABEL(C_FSDSP),                 // 44550
@@ -44860,7 +44867,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 44672
     INSN_LABEL(C_J),                     // 44673
     INSN_LABEL(C_FSDSP),                 // 44674
-    INSN_LABEL(LW),                      // 44675
+    INSN_LABEL(LW_rdN),                  // 44675
     INSN_LABEL(C_FSD),                   // 44676
     INSN_LABEL(C_J),                     // 44677
     INSN_LABEL(C_FSDSP),                 // 44678
@@ -44988,7 +44995,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 44800
     INSN_LABEL(C_J),                     // 44801
     INSN_LABEL(C_FSDSP),                 // 44802
-    INSN_LABEL(LW),                      // 44803
+    INSN_LABEL(LW_rdN),                  // 44803
     INSN_LABEL(C_FSD),                   // 44804
     INSN_LABEL(C_J),                     // 44805
     INSN_LABEL(C_FSDSP),                 // 44806
@@ -45116,7 +45123,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 44928
     INSN_LABEL(C_J),                     // 44929
     INSN_LABEL(C_FSDSP),                 // 44930
-    INSN_LABEL(LW),                      // 44931
+    INSN_LABEL(LW_rdN),                  // 44931
     INSN_LABEL(C_FSD),                   // 44932
     INSN_LABEL(C_J),                     // 44933
     INSN_LABEL(C_FSDSP),                 // 44934
@@ -45244,7 +45251,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 45056
     INSN_LABEL(C_J),                     // 45057
     INSN_LABEL(C_FSDSP),                 // 45058
-    INSN_LABEL(LD),                      // 45059
+    INSN_LABEL(LD_rd0),                  // 45059
     INSN_LABEL(C_FSD),                   // 45060
     INSN_LABEL(C_J),                     // 45061
     INSN_LABEL(C_FSDSP),                 // 45062
@@ -45372,7 +45379,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 45184
     INSN_LABEL(C_J),                     // 45185
     INSN_LABEL(C_FSDSP),                 // 45186
-    INSN_LABEL(LD),                      // 45187
+    INSN_LABEL(LD_rdN),                  // 45187
     INSN_LABEL(C_FSD),                   // 45188
     INSN_LABEL(C_J),                     // 45189
     INSN_LABEL(C_FSDSP),                 // 45190
@@ -45500,7 +45507,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 45312
     INSN_LABEL(C_J),                     // 45313
     INSN_LABEL(C_FSDSP),                 // 45314
-    INSN_LABEL(LD),                      // 45315
+    INSN_LABEL(LD_rdN),                  // 45315
     INSN_LABEL(C_FSD),                   // 45316
     INSN_LABEL(C_J),                     // 45317
     INSN_LABEL(C_FSDSP),                 // 45318
@@ -45628,7 +45635,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 45440
     INSN_LABEL(C_J),                     // 45441
     INSN_LABEL(C_FSDSP),                 // 45442
-    INSN_LABEL(LD),                      // 45443
+    INSN_LABEL(LD_rdN),                  // 45443
     INSN_LABEL(C_FSD),                   // 45444
     INSN_LABEL(C_J),                     // 45445
     INSN_LABEL(C_FSDSP),                 // 45446
@@ -45756,7 +45763,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 45568
     INSN_LABEL(C_J),                     // 45569
     INSN_LABEL(C_FSDSP),                 // 45570
-    INSN_LABEL(LD),                      // 45571
+    INSN_LABEL(LD_rdN),                  // 45571
     INSN_LABEL(C_FSD),                   // 45572
     INSN_LABEL(C_J),                     // 45573
     INSN_LABEL(C_FSDSP),                 // 45574
@@ -45884,7 +45891,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 45696
     INSN_LABEL(C_J),                     // 45697
     INSN_LABEL(C_FSDSP),                 // 45698
-    INSN_LABEL(LD),                      // 45699
+    INSN_LABEL(LD_rdN),                  // 45699
     INSN_LABEL(C_FSD),                   // 45700
     INSN_LABEL(C_J),                     // 45701
     INSN_LABEL(C_FSDSP),                 // 45702
@@ -46012,7 +46019,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 45824
     INSN_LABEL(C_J),                     // 45825
     INSN_LABEL(C_FSDSP),                 // 45826
-    INSN_LABEL(LD),                      // 45827
+    INSN_LABEL(LD_rdN),                  // 45827
     INSN_LABEL(C_FSD),                   // 45828
     INSN_LABEL(C_J),                     // 45829
     INSN_LABEL(C_FSDSP),                 // 45830
@@ -46140,7 +46147,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 45952
     INSN_LABEL(C_J),                     // 45953
     INSN_LABEL(C_FSDSP),                 // 45954
-    INSN_LABEL(LD),                      // 45955
+    INSN_LABEL(LD_rdN),                  // 45955
     INSN_LABEL(C_FSD),                   // 45956
     INSN_LABEL(C_J),                     // 45957
     INSN_LABEL(C_FSDSP),                 // 45958
@@ -46268,7 +46275,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 46080
     INSN_LABEL(C_J),                     // 46081
     INSN_LABEL(C_FSDSP),                 // 46082
-    INSN_LABEL(LD),                      // 46083
+    INSN_LABEL(LD_rdN),                  // 46083
     INSN_LABEL(C_FSD),                   // 46084
     INSN_LABEL(C_J),                     // 46085
     INSN_LABEL(C_FSDSP),                 // 46086
@@ -46396,7 +46403,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 46208
     INSN_LABEL(C_J),                     // 46209
     INSN_LABEL(C_FSDSP),                 // 46210
-    INSN_LABEL(LD),                      // 46211
+    INSN_LABEL(LD_rdN),                  // 46211
     INSN_LABEL(C_FSD),                   // 46212
     INSN_LABEL(C_J),                     // 46213
     INSN_LABEL(C_FSDSP),                 // 46214
@@ -46524,7 +46531,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 46336
     INSN_LABEL(C_J),                     // 46337
     INSN_LABEL(C_FSDSP),                 // 46338
-    INSN_LABEL(LD),                      // 46339
+    INSN_LABEL(LD_rdN),                  // 46339
     INSN_LABEL(C_FSD),                   // 46340
     INSN_LABEL(C_J),                     // 46341
     INSN_LABEL(C_FSDSP),                 // 46342
@@ -46652,7 +46659,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 46464
     INSN_LABEL(C_J),                     // 46465
     INSN_LABEL(C_FSDSP),                 // 46466
-    INSN_LABEL(LD),                      // 46467
+    INSN_LABEL(LD_rdN),                  // 46467
     INSN_LABEL(C_FSD),                   // 46468
     INSN_LABEL(C_J),                     // 46469
     INSN_LABEL(C_FSDSP),                 // 46470
@@ -46780,7 +46787,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 46592
     INSN_LABEL(C_J),                     // 46593
     INSN_LABEL(C_FSDSP),                 // 46594
-    INSN_LABEL(LD),                      // 46595
+    INSN_LABEL(LD_rdN),                  // 46595
     INSN_LABEL(C_FSD),                   // 46596
     INSN_LABEL(C_J),                     // 46597
     INSN_LABEL(C_FSDSP),                 // 46598
@@ -46908,7 +46915,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 46720
     INSN_LABEL(C_J),                     // 46721
     INSN_LABEL(C_FSDSP),                 // 46722
-    INSN_LABEL(LD),                      // 46723
+    INSN_LABEL(LD_rdN),                  // 46723
     INSN_LABEL(C_FSD),                   // 46724
     INSN_LABEL(C_J),                     // 46725
     INSN_LABEL(C_FSDSP),                 // 46726
@@ -47036,7 +47043,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 46848
     INSN_LABEL(C_J),                     // 46849
     INSN_LABEL(C_FSDSP),                 // 46850
-    INSN_LABEL(LD),                      // 46851
+    INSN_LABEL(LD_rdN),                  // 46851
     INSN_LABEL(C_FSD),                   // 46852
     INSN_LABEL(C_J),                     // 46853
     INSN_LABEL(C_FSDSP),                 // 46854
@@ -47164,7 +47171,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 46976
     INSN_LABEL(C_J),                     // 46977
     INSN_LABEL(C_FSDSP),                 // 46978
-    INSN_LABEL(LD),                      // 46979
+    INSN_LABEL(LD_rdN),                  // 46979
     INSN_LABEL(C_FSD),                   // 46980
     INSN_LABEL(C_J),                     // 46981
     INSN_LABEL(C_FSDSP),                 // 46982
@@ -47292,7 +47299,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 47104
     INSN_LABEL(C_J),                     // 47105
     INSN_LABEL(C_FSDSP),                 // 47106
-    INSN_LABEL(LD),                      // 47107
+    INSN_LABEL(LD_rdN),                  // 47107
     INSN_LABEL(C_FSD),                   // 47108
     INSN_LABEL(C_J),                     // 47109
     INSN_LABEL(C_FSDSP),                 // 47110
@@ -47420,7 +47427,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 47232
     INSN_LABEL(C_J),                     // 47233
     INSN_LABEL(C_FSDSP),                 // 47234
-    INSN_LABEL(LD),                      // 47235
+    INSN_LABEL(LD_rdN),                  // 47235
     INSN_LABEL(C_FSD),                   // 47236
     INSN_LABEL(C_J),                     // 47237
     INSN_LABEL(C_FSDSP),                 // 47238
@@ -47548,7 +47555,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 47360
     INSN_LABEL(C_J),                     // 47361
     INSN_LABEL(C_FSDSP),                 // 47362
-    INSN_LABEL(LD),                      // 47363
+    INSN_LABEL(LD_rdN),                  // 47363
     INSN_LABEL(C_FSD),                   // 47364
     INSN_LABEL(C_J),                     // 47365
     INSN_LABEL(C_FSDSP),                 // 47366
@@ -47676,7 +47683,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 47488
     INSN_LABEL(C_J),                     // 47489
     INSN_LABEL(C_FSDSP),                 // 47490
-    INSN_LABEL(LD),                      // 47491
+    INSN_LABEL(LD_rdN),                  // 47491
     INSN_LABEL(C_FSD),                   // 47492
     INSN_LABEL(C_J),                     // 47493
     INSN_LABEL(C_FSDSP),                 // 47494
@@ -47804,7 +47811,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 47616
     INSN_LABEL(C_J),                     // 47617
     INSN_LABEL(C_FSDSP),                 // 47618
-    INSN_LABEL(LD),                      // 47619
+    INSN_LABEL(LD_rdN),                  // 47619
     INSN_LABEL(C_FSD),                   // 47620
     INSN_LABEL(C_J),                     // 47621
     INSN_LABEL(C_FSDSP),                 // 47622
@@ -47932,7 +47939,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 47744
     INSN_LABEL(C_J),                     // 47745
     INSN_LABEL(C_FSDSP),                 // 47746
-    INSN_LABEL(LD),                      // 47747
+    INSN_LABEL(LD_rdN),                  // 47747
     INSN_LABEL(C_FSD),                   // 47748
     INSN_LABEL(C_J),                     // 47749
     INSN_LABEL(C_FSDSP),                 // 47750
@@ -48060,7 +48067,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 47872
     INSN_LABEL(C_J),                     // 47873
     INSN_LABEL(C_FSDSP),                 // 47874
-    INSN_LABEL(LD),                      // 47875
+    INSN_LABEL(LD_rdN),                  // 47875
     INSN_LABEL(C_FSD),                   // 47876
     INSN_LABEL(C_J),                     // 47877
     INSN_LABEL(C_FSDSP),                 // 47878
@@ -48188,7 +48195,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 48000
     INSN_LABEL(C_J),                     // 48001
     INSN_LABEL(C_FSDSP),                 // 48002
-    INSN_LABEL(LD),                      // 48003
+    INSN_LABEL(LD_rdN),                  // 48003
     INSN_LABEL(C_FSD),                   // 48004
     INSN_LABEL(C_J),                     // 48005
     INSN_LABEL(C_FSDSP),                 // 48006
@@ -48316,7 +48323,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 48128
     INSN_LABEL(C_J),                     // 48129
     INSN_LABEL(C_FSDSP),                 // 48130
-    INSN_LABEL(LD),                      // 48131
+    INSN_LABEL(LD_rdN),                  // 48131
     INSN_LABEL(C_FSD),                   // 48132
     INSN_LABEL(C_J),                     // 48133
     INSN_LABEL(C_FSDSP),                 // 48134
@@ -48444,7 +48451,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 48256
     INSN_LABEL(C_J),                     // 48257
     INSN_LABEL(C_FSDSP),                 // 48258
-    INSN_LABEL(LD),                      // 48259
+    INSN_LABEL(LD_rdN),                  // 48259
     INSN_LABEL(C_FSD),                   // 48260
     INSN_LABEL(C_J),                     // 48261
     INSN_LABEL(C_FSDSP),                 // 48262
@@ -48572,7 +48579,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 48384
     INSN_LABEL(C_J),                     // 48385
     INSN_LABEL(C_FSDSP),                 // 48386
-    INSN_LABEL(LD),                      // 48387
+    INSN_LABEL(LD_rdN),                  // 48387
     INSN_LABEL(C_FSD),                   // 48388
     INSN_LABEL(C_J),                     // 48389
     INSN_LABEL(C_FSDSP),                 // 48390
@@ -48700,7 +48707,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 48512
     INSN_LABEL(C_J),                     // 48513
     INSN_LABEL(C_FSDSP),                 // 48514
-    INSN_LABEL(LD),                      // 48515
+    INSN_LABEL(LD_rdN),                  // 48515
     INSN_LABEL(C_FSD),                   // 48516
     INSN_LABEL(C_J),                     // 48517
     INSN_LABEL(C_FSDSP),                 // 48518
@@ -48828,7 +48835,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 48640
     INSN_LABEL(C_J),                     // 48641
     INSN_LABEL(C_FSDSP),                 // 48642
-    INSN_LABEL(LD),                      // 48643
+    INSN_LABEL(LD_rdN),                  // 48643
     INSN_LABEL(C_FSD),                   // 48644
     INSN_LABEL(C_J),                     // 48645
     INSN_LABEL(C_FSDSP),                 // 48646
@@ -48956,7 +48963,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 48768
     INSN_LABEL(C_J),                     // 48769
     INSN_LABEL(C_FSDSP),                 // 48770
-    INSN_LABEL(LD),                      // 48771
+    INSN_LABEL(LD_rdN),                  // 48771
     INSN_LABEL(C_FSD),                   // 48772
     INSN_LABEL(C_J),                     // 48773
     INSN_LABEL(C_FSDSP),                 // 48774
@@ -49084,7 +49091,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 48896
     INSN_LABEL(C_J),                     // 48897
     INSN_LABEL(C_FSDSP),                 // 48898
-    INSN_LABEL(LD),                      // 48899
+    INSN_LABEL(LD_rdN),                  // 48899
     INSN_LABEL(C_FSD),                   // 48900
     INSN_LABEL(C_J),                     // 48901
     INSN_LABEL(C_FSDSP),                 // 48902
@@ -49212,7 +49219,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_FSD),                   // 49024
     INSN_LABEL(C_J),                     // 49025
     INSN_LABEL(C_FSDSP),                 // 49026
-    INSN_LABEL(LD),                      // 49027
+    INSN_LABEL(LD_rdN),                  // 49027
     INSN_LABEL(C_FSD),                   // 49028
     INSN_LABEL(C_J),                     // 49029
     INSN_LABEL(C_FSDSP),                 // 49030
@@ -49340,7 +49347,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 49152
     INSN_LABEL(C_BEQZ),                  // 49153
     INSN_LABEL(C_SWSP),                  // 49154
-    INSN_LABEL(LBU),                     // 49155
+    INSN_LABEL(LBU_rd0),                 // 49155
     INSN_LABEL(C_SW),                    // 49156
     INSN_LABEL(C_BEQZ),                  // 49157
     INSN_LABEL(C_SWSP),                  // 49158
@@ -49468,7 +49475,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 49280
     INSN_LABEL(C_BEQZ),                  // 49281
     INSN_LABEL(C_SWSP),                  // 49282
-    INSN_LABEL(LBU),                     // 49283
+    INSN_LABEL(LBU_rdN),                 // 49283
     INSN_LABEL(C_SW),                    // 49284
     INSN_LABEL(C_BEQZ),                  // 49285
     INSN_LABEL(C_SWSP),                  // 49286
@@ -49596,7 +49603,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 49408
     INSN_LABEL(C_BEQZ),                  // 49409
     INSN_LABEL(C_SWSP),                  // 49410
-    INSN_LABEL(LBU),                     // 49411
+    INSN_LABEL(LBU_rdN),                 // 49411
     INSN_LABEL(C_SW),                    // 49412
     INSN_LABEL(C_BEQZ),                  // 49413
     INSN_LABEL(C_SWSP),                  // 49414
@@ -49724,7 +49731,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 49536
     INSN_LABEL(C_BEQZ),                  // 49537
     INSN_LABEL(C_SWSP),                  // 49538
-    INSN_LABEL(LBU),                     // 49539
+    INSN_LABEL(LBU_rdN),                 // 49539
     INSN_LABEL(C_SW),                    // 49540
     INSN_LABEL(C_BEQZ),                  // 49541
     INSN_LABEL(C_SWSP),                  // 49542
@@ -49852,7 +49859,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 49664
     INSN_LABEL(C_BEQZ),                  // 49665
     INSN_LABEL(C_SWSP),                  // 49666
-    INSN_LABEL(LBU),                     // 49667
+    INSN_LABEL(LBU_rdN),                 // 49667
     INSN_LABEL(C_SW),                    // 49668
     INSN_LABEL(C_BEQZ),                  // 49669
     INSN_LABEL(C_SWSP),                  // 49670
@@ -49980,7 +49987,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 49792
     INSN_LABEL(C_BEQZ),                  // 49793
     INSN_LABEL(C_SWSP),                  // 49794
-    INSN_LABEL(LBU),                     // 49795
+    INSN_LABEL(LBU_rdN),                 // 49795
     INSN_LABEL(C_SW),                    // 49796
     INSN_LABEL(C_BEQZ),                  // 49797
     INSN_LABEL(C_SWSP),                  // 49798
@@ -50108,7 +50115,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 49920
     INSN_LABEL(C_BEQZ),                  // 49921
     INSN_LABEL(C_SWSP),                  // 49922
-    INSN_LABEL(LBU),                     // 49923
+    INSN_LABEL(LBU_rdN),                 // 49923
     INSN_LABEL(C_SW),                    // 49924
     INSN_LABEL(C_BEQZ),                  // 49925
     INSN_LABEL(C_SWSP),                  // 49926
@@ -50236,7 +50243,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 50048
     INSN_LABEL(C_BEQZ),                  // 50049
     INSN_LABEL(C_SWSP),                  // 50050
-    INSN_LABEL(LBU),                     // 50051
+    INSN_LABEL(LBU_rdN),                 // 50051
     INSN_LABEL(C_SW),                    // 50052
     INSN_LABEL(C_BEQZ),                  // 50053
     INSN_LABEL(C_SWSP),                  // 50054
@@ -50364,7 +50371,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 50176
     INSN_LABEL(C_BEQZ),                  // 50177
     INSN_LABEL(C_SWSP),                  // 50178
-    INSN_LABEL(LBU),                     // 50179
+    INSN_LABEL(LBU_rdN),                 // 50179
     INSN_LABEL(C_SW),                    // 50180
     INSN_LABEL(C_BEQZ),                  // 50181
     INSN_LABEL(C_SWSP),                  // 50182
@@ -50492,7 +50499,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 50304
     INSN_LABEL(C_BEQZ),                  // 50305
     INSN_LABEL(C_SWSP),                  // 50306
-    INSN_LABEL(LBU),                     // 50307
+    INSN_LABEL(LBU_rdN),                 // 50307
     INSN_LABEL(C_SW),                    // 50308
     INSN_LABEL(C_BEQZ),                  // 50309
     INSN_LABEL(C_SWSP),                  // 50310
@@ -50620,7 +50627,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 50432
     INSN_LABEL(C_BEQZ),                  // 50433
     INSN_LABEL(C_SWSP),                  // 50434
-    INSN_LABEL(LBU),                     // 50435
+    INSN_LABEL(LBU_rdN),                 // 50435
     INSN_LABEL(C_SW),                    // 50436
     INSN_LABEL(C_BEQZ),                  // 50437
     INSN_LABEL(C_SWSP),                  // 50438
@@ -50748,7 +50755,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 50560
     INSN_LABEL(C_BEQZ),                  // 50561
     INSN_LABEL(C_SWSP),                  // 50562
-    INSN_LABEL(LBU),                     // 50563
+    INSN_LABEL(LBU_rdN),                 // 50563
     INSN_LABEL(C_SW),                    // 50564
     INSN_LABEL(C_BEQZ),                  // 50565
     INSN_LABEL(C_SWSP),                  // 50566
@@ -50876,7 +50883,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 50688
     INSN_LABEL(C_BEQZ),                  // 50689
     INSN_LABEL(C_SWSP),                  // 50690
-    INSN_LABEL(LBU),                     // 50691
+    INSN_LABEL(LBU_rdN),                 // 50691
     INSN_LABEL(C_SW),                    // 50692
     INSN_LABEL(C_BEQZ),                  // 50693
     INSN_LABEL(C_SWSP),                  // 50694
@@ -51004,7 +51011,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 50816
     INSN_LABEL(C_BEQZ),                  // 50817
     INSN_LABEL(C_SWSP),                  // 50818
-    INSN_LABEL(LBU),                     // 50819
+    INSN_LABEL(LBU_rdN),                 // 50819
     INSN_LABEL(C_SW),                    // 50820
     INSN_LABEL(C_BEQZ),                  // 50821
     INSN_LABEL(C_SWSP),                  // 50822
@@ -51132,7 +51139,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 50944
     INSN_LABEL(C_BEQZ),                  // 50945
     INSN_LABEL(C_SWSP),                  // 50946
-    INSN_LABEL(LBU),                     // 50947
+    INSN_LABEL(LBU_rdN),                 // 50947
     INSN_LABEL(C_SW),                    // 50948
     INSN_LABEL(C_BEQZ),                  // 50949
     INSN_LABEL(C_SWSP),                  // 50950
@@ -51260,7 +51267,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 51072
     INSN_LABEL(C_BEQZ),                  // 51073
     INSN_LABEL(C_SWSP),                  // 51074
-    INSN_LABEL(LBU),                     // 51075
+    INSN_LABEL(LBU_rdN),                 // 51075
     INSN_LABEL(C_SW),                    // 51076
     INSN_LABEL(C_BEQZ),                  // 51077
     INSN_LABEL(C_SWSP),                  // 51078
@@ -51388,7 +51395,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 51200
     INSN_LABEL(C_BEQZ),                  // 51201
     INSN_LABEL(C_SWSP),                  // 51202
-    INSN_LABEL(LBU),                     // 51203
+    INSN_LABEL(LBU_rdN),                 // 51203
     INSN_LABEL(C_SW),                    // 51204
     INSN_LABEL(C_BEQZ),                  // 51205
     INSN_LABEL(C_SWSP),                  // 51206
@@ -51516,7 +51523,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 51328
     INSN_LABEL(C_BEQZ),                  // 51329
     INSN_LABEL(C_SWSP),                  // 51330
-    INSN_LABEL(LBU),                     // 51331
+    INSN_LABEL(LBU_rdN),                 // 51331
     INSN_LABEL(C_SW),                    // 51332
     INSN_LABEL(C_BEQZ),                  // 51333
     INSN_LABEL(C_SWSP),                  // 51334
@@ -51644,7 +51651,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 51456
     INSN_LABEL(C_BEQZ),                  // 51457
     INSN_LABEL(C_SWSP),                  // 51458
-    INSN_LABEL(LBU),                     // 51459
+    INSN_LABEL(LBU_rdN),                 // 51459
     INSN_LABEL(C_SW),                    // 51460
     INSN_LABEL(C_BEQZ),                  // 51461
     INSN_LABEL(C_SWSP),                  // 51462
@@ -51772,7 +51779,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 51584
     INSN_LABEL(C_BEQZ),                  // 51585
     INSN_LABEL(C_SWSP),                  // 51586
-    INSN_LABEL(LBU),                     // 51587
+    INSN_LABEL(LBU_rdN),                 // 51587
     INSN_LABEL(C_SW),                    // 51588
     INSN_LABEL(C_BEQZ),                  // 51589
     INSN_LABEL(C_SWSP),                  // 51590
@@ -51900,7 +51907,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 51712
     INSN_LABEL(C_BEQZ),                  // 51713
     INSN_LABEL(C_SWSP),                  // 51714
-    INSN_LABEL(LBU),                     // 51715
+    INSN_LABEL(LBU_rdN),                 // 51715
     INSN_LABEL(C_SW),                    // 51716
     INSN_LABEL(C_BEQZ),                  // 51717
     INSN_LABEL(C_SWSP),                  // 51718
@@ -52028,7 +52035,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 51840
     INSN_LABEL(C_BEQZ),                  // 51841
     INSN_LABEL(C_SWSP),                  // 51842
-    INSN_LABEL(LBU),                     // 51843
+    INSN_LABEL(LBU_rdN),                 // 51843
     INSN_LABEL(C_SW),                    // 51844
     INSN_LABEL(C_BEQZ),                  // 51845
     INSN_LABEL(C_SWSP),                  // 51846
@@ -52156,7 +52163,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 51968
     INSN_LABEL(C_BEQZ),                  // 51969
     INSN_LABEL(C_SWSP),                  // 51970
-    INSN_LABEL(LBU),                     // 51971
+    INSN_LABEL(LBU_rdN),                 // 51971
     INSN_LABEL(C_SW),                    // 51972
     INSN_LABEL(C_BEQZ),                  // 51973
     INSN_LABEL(C_SWSP),                  // 51974
@@ -52284,7 +52291,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 52096
     INSN_LABEL(C_BEQZ),                  // 52097
     INSN_LABEL(C_SWSP),                  // 52098
-    INSN_LABEL(LBU),                     // 52099
+    INSN_LABEL(LBU_rdN),                 // 52099
     INSN_LABEL(C_SW),                    // 52100
     INSN_LABEL(C_BEQZ),                  // 52101
     INSN_LABEL(C_SWSP),                  // 52102
@@ -52412,7 +52419,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 52224
     INSN_LABEL(C_BEQZ),                  // 52225
     INSN_LABEL(C_SWSP),                  // 52226
-    INSN_LABEL(LBU),                     // 52227
+    INSN_LABEL(LBU_rdN),                 // 52227
     INSN_LABEL(C_SW),                    // 52228
     INSN_LABEL(C_BEQZ),                  // 52229
     INSN_LABEL(C_SWSP),                  // 52230
@@ -52540,7 +52547,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 52352
     INSN_LABEL(C_BEQZ),                  // 52353
     INSN_LABEL(C_SWSP),                  // 52354
-    INSN_LABEL(LBU),                     // 52355
+    INSN_LABEL(LBU_rdN),                 // 52355
     INSN_LABEL(C_SW),                    // 52356
     INSN_LABEL(C_BEQZ),                  // 52357
     INSN_LABEL(C_SWSP),                  // 52358
@@ -52668,7 +52675,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 52480
     INSN_LABEL(C_BEQZ),                  // 52481
     INSN_LABEL(C_SWSP),                  // 52482
-    INSN_LABEL(LBU),                     // 52483
+    INSN_LABEL(LBU_rdN),                 // 52483
     INSN_LABEL(C_SW),                    // 52484
     INSN_LABEL(C_BEQZ),                  // 52485
     INSN_LABEL(C_SWSP),                  // 52486
@@ -52796,7 +52803,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 52608
     INSN_LABEL(C_BEQZ),                  // 52609
     INSN_LABEL(C_SWSP),                  // 52610
-    INSN_LABEL(LBU),                     // 52611
+    INSN_LABEL(LBU_rdN),                 // 52611
     INSN_LABEL(C_SW),                    // 52612
     INSN_LABEL(C_BEQZ),                  // 52613
     INSN_LABEL(C_SWSP),                  // 52614
@@ -52924,7 +52931,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 52736
     INSN_LABEL(C_BEQZ),                  // 52737
     INSN_LABEL(C_SWSP),                  // 52738
-    INSN_LABEL(LBU),                     // 52739
+    INSN_LABEL(LBU_rdN),                 // 52739
     INSN_LABEL(C_SW),                    // 52740
     INSN_LABEL(C_BEQZ),                  // 52741
     INSN_LABEL(C_SWSP),                  // 52742
@@ -53052,7 +53059,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 52864
     INSN_LABEL(C_BEQZ),                  // 52865
     INSN_LABEL(C_SWSP),                  // 52866
-    INSN_LABEL(LBU),                     // 52867
+    INSN_LABEL(LBU_rdN),                 // 52867
     INSN_LABEL(C_SW),                    // 52868
     INSN_LABEL(C_BEQZ),                  // 52869
     INSN_LABEL(C_SWSP),                  // 52870
@@ -53180,7 +53187,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 52992
     INSN_LABEL(C_BEQZ),                  // 52993
     INSN_LABEL(C_SWSP),                  // 52994
-    INSN_LABEL(LBU),                     // 52995
+    INSN_LABEL(LBU_rdN),                 // 52995
     INSN_LABEL(C_SW),                    // 52996
     INSN_LABEL(C_BEQZ),                  // 52997
     INSN_LABEL(C_SWSP),                  // 52998
@@ -53308,7 +53315,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 53120
     INSN_LABEL(C_BEQZ),                  // 53121
     INSN_LABEL(C_SWSP),                  // 53122
-    INSN_LABEL(LBU),                     // 53123
+    INSN_LABEL(LBU_rdN),                 // 53123
     INSN_LABEL(C_SW),                    // 53124
     INSN_LABEL(C_BEQZ),                  // 53125
     INSN_LABEL(C_SWSP),                  // 53126
@@ -53436,7 +53443,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 53248
     INSN_LABEL(C_BEQZ),                  // 53249
     INSN_LABEL(C_SWSP),                  // 53250
-    INSN_LABEL(LHU),                     // 53251
+    INSN_LABEL(LHU_rd0),                 // 53251
     INSN_LABEL(C_SW),                    // 53252
     INSN_LABEL(C_BEQZ),                  // 53253
     INSN_LABEL(C_SWSP),                  // 53254
@@ -53564,7 +53571,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 53376
     INSN_LABEL(C_BEQZ),                  // 53377
     INSN_LABEL(C_SWSP),                  // 53378
-    INSN_LABEL(LHU),                     // 53379
+    INSN_LABEL(LHU_rdN),                 // 53379
     INSN_LABEL(C_SW),                    // 53380
     INSN_LABEL(C_BEQZ),                  // 53381
     INSN_LABEL(C_SWSP),                  // 53382
@@ -53692,7 +53699,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 53504
     INSN_LABEL(C_BEQZ),                  // 53505
     INSN_LABEL(C_SWSP),                  // 53506
-    INSN_LABEL(LHU),                     // 53507
+    INSN_LABEL(LHU_rdN),                 // 53507
     INSN_LABEL(C_SW),                    // 53508
     INSN_LABEL(C_BEQZ),                  // 53509
     INSN_LABEL(C_SWSP),                  // 53510
@@ -53820,7 +53827,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 53632
     INSN_LABEL(C_BEQZ),                  // 53633
     INSN_LABEL(C_SWSP),                  // 53634
-    INSN_LABEL(LHU),                     // 53635
+    INSN_LABEL(LHU_rdN),                 // 53635
     INSN_LABEL(C_SW),                    // 53636
     INSN_LABEL(C_BEQZ),                  // 53637
     INSN_LABEL(C_SWSP),                  // 53638
@@ -53948,7 +53955,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 53760
     INSN_LABEL(C_BEQZ),                  // 53761
     INSN_LABEL(C_SWSP),                  // 53762
-    INSN_LABEL(LHU),                     // 53763
+    INSN_LABEL(LHU_rdN),                 // 53763
     INSN_LABEL(C_SW),                    // 53764
     INSN_LABEL(C_BEQZ),                  // 53765
     INSN_LABEL(C_SWSP),                  // 53766
@@ -54076,7 +54083,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 53888
     INSN_LABEL(C_BEQZ),                  // 53889
     INSN_LABEL(C_SWSP),                  // 53890
-    INSN_LABEL(LHU),                     // 53891
+    INSN_LABEL(LHU_rdN),                 // 53891
     INSN_LABEL(C_SW),                    // 53892
     INSN_LABEL(C_BEQZ),                  // 53893
     INSN_LABEL(C_SWSP),                  // 53894
@@ -54204,7 +54211,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 54016
     INSN_LABEL(C_BEQZ),                  // 54017
     INSN_LABEL(C_SWSP),                  // 54018
-    INSN_LABEL(LHU),                     // 54019
+    INSN_LABEL(LHU_rdN),                 // 54019
     INSN_LABEL(C_SW),                    // 54020
     INSN_LABEL(C_BEQZ),                  // 54021
     INSN_LABEL(C_SWSP),                  // 54022
@@ -54332,7 +54339,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 54144
     INSN_LABEL(C_BEQZ),                  // 54145
     INSN_LABEL(C_SWSP),                  // 54146
-    INSN_LABEL(LHU),                     // 54147
+    INSN_LABEL(LHU_rdN),                 // 54147
     INSN_LABEL(C_SW),                    // 54148
     INSN_LABEL(C_BEQZ),                  // 54149
     INSN_LABEL(C_SWSP),                  // 54150
@@ -54460,7 +54467,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 54272
     INSN_LABEL(C_BEQZ),                  // 54273
     INSN_LABEL(C_SWSP),                  // 54274
-    INSN_LABEL(LHU),                     // 54275
+    INSN_LABEL(LHU_rdN),                 // 54275
     INSN_LABEL(C_SW),                    // 54276
     INSN_LABEL(C_BEQZ),                  // 54277
     INSN_LABEL(C_SWSP),                  // 54278
@@ -54588,7 +54595,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 54400
     INSN_LABEL(C_BEQZ),                  // 54401
     INSN_LABEL(C_SWSP),                  // 54402
-    INSN_LABEL(LHU),                     // 54403
+    INSN_LABEL(LHU_rdN),                 // 54403
     INSN_LABEL(C_SW),                    // 54404
     INSN_LABEL(C_BEQZ),                  // 54405
     INSN_LABEL(C_SWSP),                  // 54406
@@ -54716,7 +54723,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 54528
     INSN_LABEL(C_BEQZ),                  // 54529
     INSN_LABEL(C_SWSP),                  // 54530
-    INSN_LABEL(LHU),                     // 54531
+    INSN_LABEL(LHU_rdN),                 // 54531
     INSN_LABEL(C_SW),                    // 54532
     INSN_LABEL(C_BEQZ),                  // 54533
     INSN_LABEL(C_SWSP),                  // 54534
@@ -54844,7 +54851,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 54656
     INSN_LABEL(C_BEQZ),                  // 54657
     INSN_LABEL(C_SWSP),                  // 54658
-    INSN_LABEL(LHU),                     // 54659
+    INSN_LABEL(LHU_rdN),                 // 54659
     INSN_LABEL(C_SW),                    // 54660
     INSN_LABEL(C_BEQZ),                  // 54661
     INSN_LABEL(C_SWSP),                  // 54662
@@ -54972,7 +54979,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 54784
     INSN_LABEL(C_BEQZ),                  // 54785
     INSN_LABEL(C_SWSP),                  // 54786
-    INSN_LABEL(LHU),                     // 54787
+    INSN_LABEL(LHU_rdN),                 // 54787
     INSN_LABEL(C_SW),                    // 54788
     INSN_LABEL(C_BEQZ),                  // 54789
     INSN_LABEL(C_SWSP),                  // 54790
@@ -55100,7 +55107,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 54912
     INSN_LABEL(C_BEQZ),                  // 54913
     INSN_LABEL(C_SWSP),                  // 54914
-    INSN_LABEL(LHU),                     // 54915
+    INSN_LABEL(LHU_rdN),                 // 54915
     INSN_LABEL(C_SW),                    // 54916
     INSN_LABEL(C_BEQZ),                  // 54917
     INSN_LABEL(C_SWSP),                  // 54918
@@ -55228,7 +55235,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 55040
     INSN_LABEL(C_BEQZ),                  // 55041
     INSN_LABEL(C_SWSP),                  // 55042
-    INSN_LABEL(LHU),                     // 55043
+    INSN_LABEL(LHU_rdN),                 // 55043
     INSN_LABEL(C_SW),                    // 55044
     INSN_LABEL(C_BEQZ),                  // 55045
     INSN_LABEL(C_SWSP),                  // 55046
@@ -55356,7 +55363,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 55168
     INSN_LABEL(C_BEQZ),                  // 55169
     INSN_LABEL(C_SWSP),                  // 55170
-    INSN_LABEL(LHU),                     // 55171
+    INSN_LABEL(LHU_rdN),                 // 55171
     INSN_LABEL(C_SW),                    // 55172
     INSN_LABEL(C_BEQZ),                  // 55173
     INSN_LABEL(C_SWSP),                  // 55174
@@ -55484,7 +55491,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 55296
     INSN_LABEL(C_BEQZ),                  // 55297
     INSN_LABEL(C_SWSP),                  // 55298
-    INSN_LABEL(LHU),                     // 55299
+    INSN_LABEL(LHU_rdN),                 // 55299
     INSN_LABEL(C_SW),                    // 55300
     INSN_LABEL(C_BEQZ),                  // 55301
     INSN_LABEL(C_SWSP),                  // 55302
@@ -55612,7 +55619,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 55424
     INSN_LABEL(C_BEQZ),                  // 55425
     INSN_LABEL(C_SWSP),                  // 55426
-    INSN_LABEL(LHU),                     // 55427
+    INSN_LABEL(LHU_rdN),                 // 55427
     INSN_LABEL(C_SW),                    // 55428
     INSN_LABEL(C_BEQZ),                  // 55429
     INSN_LABEL(C_SWSP),                  // 55430
@@ -55740,7 +55747,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 55552
     INSN_LABEL(C_BEQZ),                  // 55553
     INSN_LABEL(C_SWSP),                  // 55554
-    INSN_LABEL(LHU),                     // 55555
+    INSN_LABEL(LHU_rdN),                 // 55555
     INSN_LABEL(C_SW),                    // 55556
     INSN_LABEL(C_BEQZ),                  // 55557
     INSN_LABEL(C_SWSP),                  // 55558
@@ -55868,7 +55875,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 55680
     INSN_LABEL(C_BEQZ),                  // 55681
     INSN_LABEL(C_SWSP),                  // 55682
-    INSN_LABEL(LHU),                     // 55683
+    INSN_LABEL(LHU_rdN),                 // 55683
     INSN_LABEL(C_SW),                    // 55684
     INSN_LABEL(C_BEQZ),                  // 55685
     INSN_LABEL(C_SWSP),                  // 55686
@@ -55996,7 +56003,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 55808
     INSN_LABEL(C_BEQZ),                  // 55809
     INSN_LABEL(C_SWSP),                  // 55810
-    INSN_LABEL(LHU),                     // 55811
+    INSN_LABEL(LHU_rdN),                 // 55811
     INSN_LABEL(C_SW),                    // 55812
     INSN_LABEL(C_BEQZ),                  // 55813
     INSN_LABEL(C_SWSP),                  // 55814
@@ -56124,7 +56131,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 55936
     INSN_LABEL(C_BEQZ),                  // 55937
     INSN_LABEL(C_SWSP),                  // 55938
-    INSN_LABEL(LHU),                     // 55939
+    INSN_LABEL(LHU_rdN),                 // 55939
     INSN_LABEL(C_SW),                    // 55940
     INSN_LABEL(C_BEQZ),                  // 55941
     INSN_LABEL(C_SWSP),                  // 55942
@@ -56252,7 +56259,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 56064
     INSN_LABEL(C_BEQZ),                  // 56065
     INSN_LABEL(C_SWSP),                  // 56066
-    INSN_LABEL(LHU),                     // 56067
+    INSN_LABEL(LHU_rdN),                 // 56067
     INSN_LABEL(C_SW),                    // 56068
     INSN_LABEL(C_BEQZ),                  // 56069
     INSN_LABEL(C_SWSP),                  // 56070
@@ -56380,7 +56387,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 56192
     INSN_LABEL(C_BEQZ),                  // 56193
     INSN_LABEL(C_SWSP),                  // 56194
-    INSN_LABEL(LHU),                     // 56195
+    INSN_LABEL(LHU_rdN),                 // 56195
     INSN_LABEL(C_SW),                    // 56196
     INSN_LABEL(C_BEQZ),                  // 56197
     INSN_LABEL(C_SWSP),                  // 56198
@@ -56508,7 +56515,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 56320
     INSN_LABEL(C_BEQZ),                  // 56321
     INSN_LABEL(C_SWSP),                  // 56322
-    INSN_LABEL(LHU),                     // 56323
+    INSN_LABEL(LHU_rdN),                 // 56323
     INSN_LABEL(C_SW),                    // 56324
     INSN_LABEL(C_BEQZ),                  // 56325
     INSN_LABEL(C_SWSP),                  // 56326
@@ -56636,7 +56643,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 56448
     INSN_LABEL(C_BEQZ),                  // 56449
     INSN_LABEL(C_SWSP),                  // 56450
-    INSN_LABEL(LHU),                     // 56451
+    INSN_LABEL(LHU_rdN),                 // 56451
     INSN_LABEL(C_SW),                    // 56452
     INSN_LABEL(C_BEQZ),                  // 56453
     INSN_LABEL(C_SWSP),                  // 56454
@@ -56764,7 +56771,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 56576
     INSN_LABEL(C_BEQZ),                  // 56577
     INSN_LABEL(C_SWSP),                  // 56578
-    INSN_LABEL(LHU),                     // 56579
+    INSN_LABEL(LHU_rdN),                 // 56579
     INSN_LABEL(C_SW),                    // 56580
     INSN_LABEL(C_BEQZ),                  // 56581
     INSN_LABEL(C_SWSP),                  // 56582
@@ -56892,7 +56899,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 56704
     INSN_LABEL(C_BEQZ),                  // 56705
     INSN_LABEL(C_SWSP),                  // 56706
-    INSN_LABEL(LHU),                     // 56707
+    INSN_LABEL(LHU_rdN),                 // 56707
     INSN_LABEL(C_SW),                    // 56708
     INSN_LABEL(C_BEQZ),                  // 56709
     INSN_LABEL(C_SWSP),                  // 56710
@@ -57020,7 +57027,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 56832
     INSN_LABEL(C_BEQZ),                  // 56833
     INSN_LABEL(C_SWSP),                  // 56834
-    INSN_LABEL(LHU),                     // 56835
+    INSN_LABEL(LHU_rdN),                 // 56835
     INSN_LABEL(C_SW),                    // 56836
     INSN_LABEL(C_BEQZ),                  // 56837
     INSN_LABEL(C_SWSP),                  // 56838
@@ -57148,7 +57155,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 56960
     INSN_LABEL(C_BEQZ),                  // 56961
     INSN_LABEL(C_SWSP),                  // 56962
-    INSN_LABEL(LHU),                     // 56963
+    INSN_LABEL(LHU_rdN),                 // 56963
     INSN_LABEL(C_SW),                    // 56964
     INSN_LABEL(C_BEQZ),                  // 56965
     INSN_LABEL(C_SWSP),                  // 56966
@@ -57276,7 +57283,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 57088
     INSN_LABEL(C_BEQZ),                  // 57089
     INSN_LABEL(C_SWSP),                  // 57090
-    INSN_LABEL(LHU),                     // 57091
+    INSN_LABEL(LHU_rdN),                 // 57091
     INSN_LABEL(C_SW),                    // 57092
     INSN_LABEL(C_BEQZ),                  // 57093
     INSN_LABEL(C_SWSP),                  // 57094
@@ -57404,7 +57411,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SW),                    // 57216
     INSN_LABEL(C_BEQZ),                  // 57217
     INSN_LABEL(C_SWSP),                  // 57218
-    INSN_LABEL(LHU),                     // 57219
+    INSN_LABEL(LHU_rdN),                 // 57219
     INSN_LABEL(C_SW),                    // 57220
     INSN_LABEL(C_BEQZ),                  // 57221
     INSN_LABEL(C_SWSP),                  // 57222
@@ -57532,7 +57539,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 57344
     INSN_LABEL(C_BNEZ),                  // 57345
     INSN_LABEL(C_SDSP),                  // 57346
-    INSN_LABEL(LWU),                     // 57347
+    INSN_LABEL(LWU_rd0),                 // 57347
     INSN_LABEL(C_SD),                    // 57348
     INSN_LABEL(C_BNEZ),                  // 57349
     INSN_LABEL(C_SDSP),                  // 57350
@@ -57660,7 +57667,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 57472
     INSN_LABEL(C_BNEZ),                  // 57473
     INSN_LABEL(C_SDSP),                  // 57474
-    INSN_LABEL(LWU),                     // 57475
+    INSN_LABEL(LWU_rdN),                 // 57475
     INSN_LABEL(C_SD),                    // 57476
     INSN_LABEL(C_BNEZ),                  // 57477
     INSN_LABEL(C_SDSP),                  // 57478
@@ -57788,7 +57795,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 57600
     INSN_LABEL(C_BNEZ),                  // 57601
     INSN_LABEL(C_SDSP),                  // 57602
-    INSN_LABEL(LWU),                     // 57603
+    INSN_LABEL(LWU_rdN),                 // 57603
     INSN_LABEL(C_SD),                    // 57604
     INSN_LABEL(C_BNEZ),                  // 57605
     INSN_LABEL(C_SDSP),                  // 57606
@@ -57916,7 +57923,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 57728
     INSN_LABEL(C_BNEZ),                  // 57729
     INSN_LABEL(C_SDSP),                  // 57730
-    INSN_LABEL(LWU),                     // 57731
+    INSN_LABEL(LWU_rdN),                 // 57731
     INSN_LABEL(C_SD),                    // 57732
     INSN_LABEL(C_BNEZ),                  // 57733
     INSN_LABEL(C_SDSP),                  // 57734
@@ -58044,7 +58051,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 57856
     INSN_LABEL(C_BNEZ),                  // 57857
     INSN_LABEL(C_SDSP),                  // 57858
-    INSN_LABEL(LWU),                     // 57859
+    INSN_LABEL(LWU_rdN),                 // 57859
     INSN_LABEL(C_SD),                    // 57860
     INSN_LABEL(C_BNEZ),                  // 57861
     INSN_LABEL(C_SDSP),                  // 57862
@@ -58172,7 +58179,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 57984
     INSN_LABEL(C_BNEZ),                  // 57985
     INSN_LABEL(C_SDSP),                  // 57986
-    INSN_LABEL(LWU),                     // 57987
+    INSN_LABEL(LWU_rdN),                 // 57987
     INSN_LABEL(C_SD),                    // 57988
     INSN_LABEL(C_BNEZ),                  // 57989
     INSN_LABEL(C_SDSP),                  // 57990
@@ -58300,7 +58307,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 58112
     INSN_LABEL(C_BNEZ),                  // 58113
     INSN_LABEL(C_SDSP),                  // 58114
-    INSN_LABEL(LWU),                     // 58115
+    INSN_LABEL(LWU_rdN),                 // 58115
     INSN_LABEL(C_SD),                    // 58116
     INSN_LABEL(C_BNEZ),                  // 58117
     INSN_LABEL(C_SDSP),                  // 58118
@@ -58428,7 +58435,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 58240
     INSN_LABEL(C_BNEZ),                  // 58241
     INSN_LABEL(C_SDSP),                  // 58242
-    INSN_LABEL(LWU),                     // 58243
+    INSN_LABEL(LWU_rdN),                 // 58243
     INSN_LABEL(C_SD),                    // 58244
     INSN_LABEL(C_BNEZ),                  // 58245
     INSN_LABEL(C_SDSP),                  // 58246
@@ -58556,7 +58563,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 58368
     INSN_LABEL(C_BNEZ),                  // 58369
     INSN_LABEL(C_SDSP),                  // 58370
-    INSN_LABEL(LWU),                     // 58371
+    INSN_LABEL(LWU_rdN),                 // 58371
     INSN_LABEL(C_SD),                    // 58372
     INSN_LABEL(C_BNEZ),                  // 58373
     INSN_LABEL(C_SDSP),                  // 58374
@@ -58684,7 +58691,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 58496
     INSN_LABEL(C_BNEZ),                  // 58497
     INSN_LABEL(C_SDSP),                  // 58498
-    INSN_LABEL(LWU),                     // 58499
+    INSN_LABEL(LWU_rdN),                 // 58499
     INSN_LABEL(C_SD),                    // 58500
     INSN_LABEL(C_BNEZ),                  // 58501
     INSN_LABEL(C_SDSP),                  // 58502
@@ -58812,7 +58819,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 58624
     INSN_LABEL(C_BNEZ),                  // 58625
     INSN_LABEL(C_SDSP),                  // 58626
-    INSN_LABEL(LWU),                     // 58627
+    INSN_LABEL(LWU_rdN),                 // 58627
     INSN_LABEL(C_SD),                    // 58628
     INSN_LABEL(C_BNEZ),                  // 58629
     INSN_LABEL(C_SDSP),                  // 58630
@@ -58940,7 +58947,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 58752
     INSN_LABEL(C_BNEZ),                  // 58753
     INSN_LABEL(C_SDSP),                  // 58754
-    INSN_LABEL(LWU),                     // 58755
+    INSN_LABEL(LWU_rdN),                 // 58755
     INSN_LABEL(C_SD),                    // 58756
     INSN_LABEL(C_BNEZ),                  // 58757
     INSN_LABEL(C_SDSP),                  // 58758
@@ -59068,7 +59075,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 58880
     INSN_LABEL(C_BNEZ),                  // 58881
     INSN_LABEL(C_SDSP),                  // 58882
-    INSN_LABEL(LWU),                     // 58883
+    INSN_LABEL(LWU_rdN),                 // 58883
     INSN_LABEL(C_SD),                    // 58884
     INSN_LABEL(C_BNEZ),                  // 58885
     INSN_LABEL(C_SDSP),                  // 58886
@@ -59196,7 +59203,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 59008
     INSN_LABEL(C_BNEZ),                  // 59009
     INSN_LABEL(C_SDSP),                  // 59010
-    INSN_LABEL(LWU),                     // 59011
+    INSN_LABEL(LWU_rdN),                 // 59011
     INSN_LABEL(C_SD),                    // 59012
     INSN_LABEL(C_BNEZ),                  // 59013
     INSN_LABEL(C_SDSP),                  // 59014
@@ -59324,7 +59331,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 59136
     INSN_LABEL(C_BNEZ),                  // 59137
     INSN_LABEL(C_SDSP),                  // 59138
-    INSN_LABEL(LWU),                     // 59139
+    INSN_LABEL(LWU_rdN),                 // 59139
     INSN_LABEL(C_SD),                    // 59140
     INSN_LABEL(C_BNEZ),                  // 59141
     INSN_LABEL(C_SDSP),                  // 59142
@@ -59452,7 +59459,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 59264
     INSN_LABEL(C_BNEZ),                  // 59265
     INSN_LABEL(C_SDSP),                  // 59266
-    INSN_LABEL(LWU),                     // 59267
+    INSN_LABEL(LWU_rdN),                 // 59267
     INSN_LABEL(C_SD),                    // 59268
     INSN_LABEL(C_BNEZ),                  // 59269
     INSN_LABEL(C_SDSP),                  // 59270
@@ -59580,7 +59587,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 59392
     INSN_LABEL(C_BNEZ),                  // 59393
     INSN_LABEL(C_SDSP),                  // 59394
-    INSN_LABEL(LWU),                     // 59395
+    INSN_LABEL(LWU_rdN),                 // 59395
     INSN_LABEL(C_SD),                    // 59396
     INSN_LABEL(C_BNEZ),                  // 59397
     INSN_LABEL(C_SDSP),                  // 59398
@@ -59708,7 +59715,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 59520
     INSN_LABEL(C_BNEZ),                  // 59521
     INSN_LABEL(C_SDSP),                  // 59522
-    INSN_LABEL(LWU),                     // 59523
+    INSN_LABEL(LWU_rdN),                 // 59523
     INSN_LABEL(C_SD),                    // 59524
     INSN_LABEL(C_BNEZ),                  // 59525
     INSN_LABEL(C_SDSP),                  // 59526
@@ -59836,7 +59843,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 59648
     INSN_LABEL(C_BNEZ),                  // 59649
     INSN_LABEL(C_SDSP),                  // 59650
-    INSN_LABEL(LWU),                     // 59651
+    INSN_LABEL(LWU_rdN),                 // 59651
     INSN_LABEL(C_SD),                    // 59652
     INSN_LABEL(C_BNEZ),                  // 59653
     INSN_LABEL(C_SDSP),                  // 59654
@@ -59964,7 +59971,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 59776
     INSN_LABEL(C_BNEZ),                  // 59777
     INSN_LABEL(C_SDSP),                  // 59778
-    INSN_LABEL(LWU),                     // 59779
+    INSN_LABEL(LWU_rdN),                 // 59779
     INSN_LABEL(C_SD),                    // 59780
     INSN_LABEL(C_BNEZ),                  // 59781
     INSN_LABEL(C_SDSP),                  // 59782
@@ -60092,7 +60099,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 59904
     INSN_LABEL(C_BNEZ),                  // 59905
     INSN_LABEL(C_SDSP),                  // 59906
-    INSN_LABEL(LWU),                     // 59907
+    INSN_LABEL(LWU_rdN),                 // 59907
     INSN_LABEL(C_SD),                    // 59908
     INSN_LABEL(C_BNEZ),                  // 59909
     INSN_LABEL(C_SDSP),                  // 59910
@@ -60220,7 +60227,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 60032
     INSN_LABEL(C_BNEZ),                  // 60033
     INSN_LABEL(C_SDSP),                  // 60034
-    INSN_LABEL(LWU),                     // 60035
+    INSN_LABEL(LWU_rdN),                 // 60035
     INSN_LABEL(C_SD),                    // 60036
     INSN_LABEL(C_BNEZ),                  // 60037
     INSN_LABEL(C_SDSP),                  // 60038
@@ -60348,7 +60355,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 60160
     INSN_LABEL(C_BNEZ),                  // 60161
     INSN_LABEL(C_SDSP),                  // 60162
-    INSN_LABEL(LWU),                     // 60163
+    INSN_LABEL(LWU_rdN),                 // 60163
     INSN_LABEL(C_SD),                    // 60164
     INSN_LABEL(C_BNEZ),                  // 60165
     INSN_LABEL(C_SDSP),                  // 60166
@@ -60476,7 +60483,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 60288
     INSN_LABEL(C_BNEZ),                  // 60289
     INSN_LABEL(C_SDSP),                  // 60290
-    INSN_LABEL(LWU),                     // 60291
+    INSN_LABEL(LWU_rdN),                 // 60291
     INSN_LABEL(C_SD),                    // 60292
     INSN_LABEL(C_BNEZ),                  // 60293
     INSN_LABEL(C_SDSP),                  // 60294
@@ -60604,7 +60611,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 60416
     INSN_LABEL(C_BNEZ),                  // 60417
     INSN_LABEL(C_SDSP),                  // 60418
-    INSN_LABEL(LWU),                     // 60419
+    INSN_LABEL(LWU_rdN),                 // 60419
     INSN_LABEL(C_SD),                    // 60420
     INSN_LABEL(C_BNEZ),                  // 60421
     INSN_LABEL(C_SDSP),                  // 60422
@@ -60732,7 +60739,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 60544
     INSN_LABEL(C_BNEZ),                  // 60545
     INSN_LABEL(C_SDSP),                  // 60546
-    INSN_LABEL(LWU),                     // 60547
+    INSN_LABEL(LWU_rdN),                 // 60547
     INSN_LABEL(C_SD),                    // 60548
     INSN_LABEL(C_BNEZ),                  // 60549
     INSN_LABEL(C_SDSP),                  // 60550
@@ -60860,7 +60867,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 60672
     INSN_LABEL(C_BNEZ),                  // 60673
     INSN_LABEL(C_SDSP),                  // 60674
-    INSN_LABEL(LWU),                     // 60675
+    INSN_LABEL(LWU_rdN),                 // 60675
     INSN_LABEL(C_SD),                    // 60676
     INSN_LABEL(C_BNEZ),                  // 60677
     INSN_LABEL(C_SDSP),                  // 60678
@@ -60988,7 +60995,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 60800
     INSN_LABEL(C_BNEZ),                  // 60801
     INSN_LABEL(C_SDSP),                  // 60802
-    INSN_LABEL(LWU),                     // 60803
+    INSN_LABEL(LWU_rdN),                 // 60803
     INSN_LABEL(C_SD),                    // 60804
     INSN_LABEL(C_BNEZ),                  // 60805
     INSN_LABEL(C_SDSP),                  // 60806
@@ -61116,7 +61123,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 60928
     INSN_LABEL(C_BNEZ),                  // 60929
     INSN_LABEL(C_SDSP),                  // 60930
-    INSN_LABEL(LWU),                     // 60931
+    INSN_LABEL(LWU_rdN),                 // 60931
     INSN_LABEL(C_SD),                    // 60932
     INSN_LABEL(C_BNEZ),                  // 60933
     INSN_LABEL(C_SDSP),                  // 60934
@@ -61244,7 +61251,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 61056
     INSN_LABEL(C_BNEZ),                  // 61057
     INSN_LABEL(C_SDSP),                  // 61058
-    INSN_LABEL(LWU),                     // 61059
+    INSN_LABEL(LWU_rdN),                 // 61059
     INSN_LABEL(C_SD),                    // 61060
     INSN_LABEL(C_BNEZ),                  // 61061
     INSN_LABEL(C_SDSP),                  // 61062
@@ -61372,7 +61379,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 61184
     INSN_LABEL(C_BNEZ),                  // 61185
     INSN_LABEL(C_SDSP),                  // 61186
-    INSN_LABEL(LWU),                     // 61187
+    INSN_LABEL(LWU_rdN),                 // 61187
     INSN_LABEL(C_SD),                    // 61188
     INSN_LABEL(C_BNEZ),                  // 61189
     INSN_LABEL(C_SDSP),                  // 61190
@@ -61500,7 +61507,7 @@ static const INSN_JUMPTABLE_TYPE insn_jumptable[65536] = {
     INSN_LABEL(C_SD),                    // 61312
     INSN_LABEL(C_BNEZ),                  // 61313
     INSN_LABEL(C_SDSP),                  // 61314
-    INSN_LABEL(LWU),                     // 61315
+    INSN_LABEL(LWU_rdN),                 // 61315
     INSN_LABEL(C_SD),                    // 61316
     INSN_LABEL(C_BNEZ),                  // 61317
     INSN_LABEL(C_SDSP),                  // 61318

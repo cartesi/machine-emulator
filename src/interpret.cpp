@@ -3129,7 +3129,7 @@ static FORCE_INLINE execute_status execute_SD(STATE_ACCESS a, uint64_t &pc, uint
     return execute_S<uint64_t>(a, pc, mcycle, insn);
 }
 
-template <typename T, typename STATE_ACCESS>
+template <typename T, rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_L(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     const int32_t imm = insn_I_get_imm(insn);
@@ -3139,7 +3139,7 @@ static FORCE_INLINE execute_status execute_L(STATE_ACCESS a, uint64_t &pc, uint6
     }
     const uint32_t rd = insn_get_rd(insn);
     // don't write x0
-    if (unlikely(rd == 0)) {
+    if constexpr (rd_kind == rd_kind::x0) {
         return advance_to_next_insn(a, pc);
     }
     // This static branch is eliminated by the compiler
@@ -3152,52 +3152,52 @@ static FORCE_INLINE execute_status execute_L(STATE_ACCESS a, uint64_t &pc, uint6
 }
 
 /// \brief Implementation of the LB instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_LB(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "lb");
-    return execute_L<int8_t>(a, pc, mcycle, insn);
+    return execute_L<int8_t, rd_kind>(a, pc, mcycle, insn);
 }
 
 /// \brief Implementation of the LH instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_LH(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "lh");
-    return execute_L<int16_t>(a, pc, mcycle, insn);
+    return execute_L<int16_t, rd_kind>(a, pc, mcycle, insn);
 }
 
 /// \brief Implementation of the LW instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_LW(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "lw");
-    return execute_L<int32_t>(a, pc, mcycle, insn);
+    return execute_L<int32_t, rd_kind>(a, pc, mcycle, insn);
 }
 
 /// \brief Implementation of the LD instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_LD(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "ld");
-    return execute_L<int64_t>(a, pc, mcycle, insn);
+    return execute_L<int64_t, rd_kind>(a, pc, mcycle, insn);
 }
 
 /// \brief Implementation of the LBU instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_LBU(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "lbu");
-    return execute_L<uint8_t>(a, pc, mcycle, insn);
+    return execute_L<uint8_t, rd_kind>(a, pc, mcycle, insn);
 }
 
 /// \brief Implementation of the LHU instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_LHU(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "lhu");
-    return execute_L<uint16_t>(a, pc, mcycle, insn);
+    return execute_L<uint16_t, rd_kind>(a, pc, mcycle, insn);
 }
 
 /// \brief Implementation of the LWU instruction.
-template <typename STATE_ACCESS>
+template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_LWU(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "lwu");
-    return execute_L<uint32_t>(a, pc, mcycle, insn);
+    return execute_L<uint32_t, rd_kind>(a, pc, mcycle, insn);
 }
 
 template <typename STATE_ACCESS, typename F>
@@ -5478,26 +5478,26 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS a, uint64_t mcycle_e
                     INSN_CASE(REMUW_rdN):
                         status = execute_REMUW<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
-                    INSN_CASE(LD):
-                        status = execute_LD(a, pc, mcycle, insn);
+                    INSN_CASE(LD_rdN):
+                        status = execute_LD<rd_kind::xN>(a, pc, mcycle, insn);
                         INSN_BREAK();
-                    INSN_CASE(LW):
-                        status = execute_LW(a, pc, mcycle, insn);
+                    INSN_CASE(LW_rdN):
+                        status = execute_LW<rd_kind::xN>(a, pc, mcycle, insn);
                         INSN_BREAK();
-                    INSN_CASE(LWU):
-                        status = execute_LWU(a, pc, mcycle, insn);
+                    INSN_CASE(LWU_rdN):
+                        status = execute_LWU<rd_kind::xN>(a, pc, mcycle, insn);
                         INSN_BREAK();
-                    INSN_CASE(LH):
-                        status = execute_LH(a, pc, mcycle, insn);
+                    INSN_CASE(LH_rdN):
+                        status = execute_LH<rd_kind::xN>(a, pc, mcycle, insn);
                         INSN_BREAK();
-                    INSN_CASE(LHU):
-                        status = execute_LHU(a, pc, mcycle, insn);
+                    INSN_CASE(LHU_rdN):
+                        status = execute_LHU<rd_kind::xN>(a, pc, mcycle, insn);
                         INSN_BREAK();
-                    INSN_CASE(LB):
-                        status = execute_LB(a, pc, mcycle, insn);
+                    INSN_CASE(LB_rdN):
+                        status = execute_LB<rd_kind::xN>(a, pc, mcycle, insn);
                         INSN_BREAK();
-                    INSN_CASE(LBU):
-                        status = execute_LBU(a, pc, mcycle, insn);
+                    INSN_CASE(LBU_rdN):
+                        status = execute_LBU<rd_kind::xN>(a, pc, mcycle, insn);
                         INSN_BREAK();
                     INSN_CASE(SD):
                         status = execute_SD(a, pc, mcycle, insn);
@@ -5769,6 +5769,27 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS a, uint64_t mcycle_e
                         INSN_BREAK();
                     INSN_CASE(REMUW_rd0):
                         status = execute_REMUW<rd_kind::x0>(a, pc, insn);
+                        INSN_BREAK();
+                    INSN_CASE(LD_rd0):
+                        status = execute_LD<rd_kind::x0>(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(LW_rd0):
+                        status = execute_LW<rd_kind::x0>(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(LWU_rd0):
+                        status = execute_LWU<rd_kind::x0>(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(LH_rd0):
+                        status = execute_LH<rd_kind::x0>(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(LHU_rd0):
+                        status = execute_LHU<rd_kind::x0>(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(LB_rd0):
+                        status = execute_LB<rd_kind::x0>(a, pc, mcycle, insn);
+                        INSN_BREAK();
+                    INSN_CASE(LBU_rd0):
+                        status = execute_LBU<rd_kind::x0>(a, pc, mcycle, insn);
                         INSN_BREAK();
                     // Illegal instructions
                     INSN_CASE(ILLEGAL):

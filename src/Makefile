@@ -223,7 +223,7 @@ INTERPRET_CXXFLAGS+=-fgcse-after-reload -fpeel-loops
 INTERPRET_CXXFLAGS+=-finline-limit=1024
 # The interpreter hot loop is big and puts pressure on register allocation, this improves register use
 INTERPRET_CXXFLAGS+=-frename-registers -fweb
-# The interpreter instruction dispatch is ordered by hand, we don't want the compiler to shuffle it
+# The interpreter instruction dispatch is big, we don't want the compiler duplicating its blocks.
 INTERPRET_CXXFLAGS+=-freorder-blocks-algorithm=simple
 # The following is known to save instructions in the hop loop
 INTERPRET_CXXFLAGS+=-fgcse-sm

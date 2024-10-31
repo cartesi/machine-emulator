@@ -673,7 +673,7 @@ struct i_sfloat {
     }
 
     /// \brief Min operation.
-    static F_UINT min(F_UINT a, F_UINT b, uint32_t *pfflags) {
+    static NO_INLINE F_UINT min(F_UINT a, F_UINT b, uint32_t *pfflags) {
         if (isnan(a) || isnan(b)) {
             return min_max_nan(a, b, pfflags);
         }
@@ -686,7 +686,7 @@ struct i_sfloat {
     }
 
     /// \brief Max operation.
-    static F_UINT max(F_UINT a, F_UINT b, uint32_t *pfflags) {
+    static NO_INLINE F_UINT max(F_UINT a, F_UINT b, uint32_t *pfflags) {
         if (isnan(a) || isnan(b)) {
             return min_max_nan(a, b, pfflags);
         }
@@ -699,7 +699,7 @@ struct i_sfloat {
     }
 
     /// \brief Equal operation.
-    static bool eq(F_UINT a, F_UINT b, uint32_t *pfflags) {
+    static NO_INLINE bool eq(F_UINT a, F_UINT b, uint32_t *pfflags) {
         if (unlikely(isnan(a) || isnan(b))) {
             if (issignan(a) || issignan(b)) {
                 *pfflags |= FFLAGS_NV_MASK;
@@ -713,7 +713,7 @@ struct i_sfloat {
     }
 
     /// \brief Less or equal than operation.
-    static bool le(F_UINT a, F_UINT b, uint32_t *pfflags) {
+    static NO_INLINE bool le(F_UINT a, F_UINT b, uint32_t *pfflags) {
         if (unlikely(isnan(a) || isnan(b))) {
             *pfflags |= FFLAGS_NV_MASK;
             return false;
@@ -727,7 +727,7 @@ struct i_sfloat {
     }
 
     /// \brief Less than operation.
-    static bool lt(F_UINT a, F_UINT b, uint32_t *pfflags) { // NOLINT(misc-confusable-identifiers)
+    static NO_INLINE bool lt(F_UINT a, F_UINT b, uint32_t *pfflags) { // NOLINT(misc-confusable-identifiers)
         if (unlikely(isnan(a) || isnan(b))) {
             *pfflags |= FFLAGS_NV_MASK;
             return false;
@@ -741,7 +741,7 @@ struct i_sfloat {
     }
 
     /// \brief Retrieves float class.
-    static uint32_t fclass(F_UINT a) {
+    static NO_INLINE uint32_t fclass(F_UINT a) {
         const uint32_t a_sign = a >> (F_SIZE - 1);
         const int32_t a_exp = (a >> MANT_SIZE) & EXP_MASK;
         const F_UINT a_mant = a & MANT_MASK;

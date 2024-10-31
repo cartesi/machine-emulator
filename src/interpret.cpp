@@ -327,7 +327,7 @@ static inline uint32_t csr_priv(CSR_address csr) {
 /// \param new_prv New privilege level.
 /// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static NO_INLINE void set_priv(STATE_ACCESS a, int new_prv) {
+static FORCE_INLINE void set_priv(STATE_ACCESS a, int new_prv) {
     INC_COUNTER(a.get_statistics(), priv_level[new_prv]);
     a.write_iflags_PRV(new_prv);
     // Invalidate all TLB entries
@@ -706,19 +706,29 @@ static inline uint32_t insn_get_CR_CSS_rs2(uint32_t insn) {
 /// \param insn Instruction.
 /// \details This function is forced to be inline because GCC may not always inline it.
 static FORCE_INLINE int32_t insn_get_C_J_imm(uint32_t insn) {
-    auto imm = static_cast<int32_t>(((insn >> (12 - 11)) & 0x800) | ((insn >> (11 - 4)) & 0x10) |
-        ((insn >> (9 - 8)) & 0x300) | ((insn << (10 - 8)) & 0x400) | ((insn >> (7 - 6)) & 0x40) |
-        ((insn << (7 - 6)) & 0x80) | ((insn >> (3 - 1)) & 0xe) | ((insn << (5 - 2)) & 0x20));
-    return (imm << 20) >> 20;
+    return static_cast<int32_t>(
+        (static_cast<uint32_t>(static_cast<int32_t>(insn << 19) >> 20) & ~0b11111111111) | // imm[11]
+        ((insn >> (11 - 4)) & 0b10000) |                                                   // imm[4]
+        ((insn >> (9 - 8)) & 0b1100000000) |                                               // imm[9:8]
+        ((insn << (10 - 8)) & 0b10000000000) |                                             // imm[10]
+        ((insn >> (7 - 6)) & 0b1000000) |                                                  // imm[6]
+        ((insn << (7 - 6)) & 0b10000000) |                                                 // imm[7]
+        ((insn >> (3 - 1)) & 0b1110) |                                                     // imm[3:1]
+        ((insn << (5 - 2)) & 0b100000)                                                     // imm[5]
+    );
 }
 
 /// \brief Obtains the immediate value from a C_BEQZ and C_BNEZ instruction.
 /// \param insn Instruction.
 /// \details This function is forced to be inline because GCC may not always inline it.
 static FORCE_INLINE int32_t insn_get_C_BEQZ_BNEZ_imm(uint32_t insn) {
-    auto imm = static_cast<int32_t>(((insn >> (12 - 8)) & 0x100) | ((insn >> (10 - 3)) & 0x18) |
-        ((insn << (6 - 5)) & 0xc0) | ((insn >> (3 - 1)) & 0x6) | ((insn << (5 - 2)) & 0x20));
-    return (imm << 23) >> 23;
+    return static_cast<int32_t>(
+        (static_cast<uint32_t>(static_cast<int32_t>(insn << 19) >> 23) & ~0b11111111) | // imm[8]
+        ((insn >> 7) & 0b11000) |                                                       // imm[4:3]
+        ((insn << 1) & 0b11000000) |                                                    // imm[7:6]
+        ((insn >> 2) & 0b110) |                                                         // imm[2:1]
+        ((insn << 3) & 0b100000)                                                        // imm[5]
+    );
 }
 
 /// \brief Obtains the immediate value from a CL/CS-type instruction.
@@ -739,7 +749,9 @@ static FORCE_INLINE uint32_t insn_get_CI_CB_imm(uint32_t insn) {
 /// \param insn Instruction.
 /// \details This function is forced to be inline because GCC may not always inline it.
 static FORCE_INLINE int32_t insn_get_CI_CB_imm_se(uint32_t insn) {
-    return static_cast<int32_t>(insn_get_CI_CB_imm(insn) << 26) >> 26;
+    return static_cast<int32_t>((static_cast<uint32_t>(static_cast<int32_t>(insn << 19) >> 26) & ~0b11111) | // imm[5]
+        ((insn >> 2) & 0b11111)                                                                              // imm[4:0]
+    );
 }
 
 /// \brief Obtains the immediate value from a C.LW and C.SW instructions.
@@ -761,17 +773,23 @@ static FORCE_INLINE uint32_t insn_get_CIW_imm(uint32_t insn) {
 /// \param insn Instruction.
 /// \details This function is forced to be inline because GCC may not always inline it.
 static FORCE_INLINE int32_t insn_get_C_ADDI16SP_imm(uint32_t insn) {
-    auto imm = static_cast<int32_t>(((insn >> (12 - 9)) & 0x200) | ((insn >> (6 - 4)) & 0x10) |
-        ((insn << (6 - 5)) & 0x40) | ((insn << (7 - 3)) & 0x180) | ((insn << (5 - 2)) & 0x20));
-    return (imm << 22) >> 22;
+    return static_cast<int32_t>(
+        (static_cast<uint32_t>(static_cast<int32_t>(insn << 19) >> 22) & ~0b111111111) | // imm[9]
+        ((insn >> 2) & 0b10000) |                                                        // imm[4]
+        ((insn << 1) & 0b1000000) |                                                      // imm[6]
+        ((insn << 4) & 0b110000000) |                                                    // imm[8:7]
+        ((insn << 3) & 0b100000)                                                         // imm[5]
+    );
 }
 
 /// \brief Obtains the immediate value from a C.LUI instruction.
 /// \param insn Instruction.
 /// \details This function is forced to be inline because GCC may not always inline it.
 static FORCE_INLINE int32_t insn_get_C_LUI_imm(uint32_t insn) {
-    auto imm = static_cast<int32_t>(((insn << (17 - 12)) & 0x20000) | ((insn << (12 - 2)) & 0x1F000));
-    return (imm << 14) >> 14;
+    return static_cast<int32_t>(
+        (static_cast<uint32_t>(static_cast<int32_t>(insn << 19) >> 14) & ~0b11111111111111111) | // imm[17]
+        ((insn << 10) & 0b11111000000000000)                                                     // imm[16:12]
+    );
 }
 
 /// \brief Obtains the immediate value from a C.FLDSP and C.LDSP instructions.

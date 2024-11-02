@@ -3115,10 +3115,13 @@ static FORCE_INLINE execute_status execute_S(STATE_ACCESS a, uint64_t &pc, uint6
     const int32_t imm = insn_S_get_imm(insn);
     const uint64_t val = a.read_x(insn_get_rs2(insn));
     const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
-    if (unlikely(status == execute_status::failure)) {
-        return advance_to_raised_exception(a, pc);
+    if (unlikely(status != execute_status::success)) {
+        if (status == execute_status::failure) {
+            return advance_to_raised_exception(a, pc);
+        }
+        return advance_to_next_insn(a, pc, status);
     }
-    return advance_to_next_insn(a, pc, status);
+    return advance_to_next_insn(a, pc);
 }
 
 /// \brief Implementation of the SB instruction.
@@ -3743,10 +3746,13 @@ static FORCE_INLINE execute_status execute_FS(STATE_ACCESS a, uint64_t &pc, uint
     // registers will transfer the lower n bits of the register ignoring the upper FLEN−n bits.
     T val = static_cast<T>(a.read_f(insn_get_rs2(insn)));
     const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
-    if (unlikely(status == execute_status::failure)) {
-        return advance_to_raised_exception(a, pc);
+    if (unlikely(status != execute_status::success)) {
+        if (status == execute_status::failure) {
+            return advance_to_raised_exception(a, pc);
+        }
+        return advance_to_next_insn(a, pc, status);
     }
-    return advance_to_next_insn(a, pc, status);
+    return advance_to_next_insn(a, pc);
 }
 
 template <typename STATE_ACCESS>
@@ -4710,10 +4716,13 @@ static FORCE_INLINE execute_status execute_C_S(STATE_ACCESS a, uint64_t &pc, uin
     const uint64_t vaddr = a.read_x(rs1);
     const uint64_t val = a.read_x(rs2);
     const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
-    if (unlikely(status == execute_status::failure)) {
-        return advance_to_raised_exception(a, pc);
+    if (unlikely(status != execute_status::success)) {
+        if (status == execute_status::failure) {
+            return advance_to_raised_exception(a, pc);
+        }
+        return advance_to_next_insn<2>(a, pc, status);
     }
-    return advance_to_next_insn<2>(a, pc, status);
+    return advance_to_next_insn<2>(a, pc);
 }
 
 template <typename T, typename STATE_ACCESS>
@@ -4739,10 +4748,13 @@ static FORCE_INLINE execute_status execute_C_FS(STATE_ACCESS a, uint64_t &pc, ui
     // registers will transfer the lower n bits of the register ignoring the upper FLEN−n bits.
     T val = static_cast<T>(a.read_f(rs2));
     const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
-    if (unlikely(status == execute_status::failure)) {
-        return advance_to_raised_exception(a, pc);
+    if (unlikely(status != execute_status::success)) {
+        if (status == execute_status::failure) {
+            return advance_to_raised_exception(a, pc);
+        }
+        return advance_to_next_insn<2>(a, pc, status);
     }
-    return advance_to_next_insn<2>(a, pc, status);
+    return advance_to_next_insn<2>(a, pc);
 }
 
 /// \brief Implementation of the C.ADDI4SPN instruction.

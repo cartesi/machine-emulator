@@ -19,4 +19,4 @@ Please note the below! We appreciate everyone following the guidelines.
 ## Get in Touch
 
 When contributing in a deeper manner to this repository, please first discuss the change you wish to make via our 
-[Discord channel here](https://discord.gg/Pt2NrnS), or contact us at info@cartesi.io email before working on the change.
+[Discord channel here](https://discord.com/invite/cartesi), or contact us at info@cartesi.io email before working on the change.

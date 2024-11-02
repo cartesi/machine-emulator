@@ -890,8 +890,10 @@ static FORCE_INLINE bool read_virtual_memory(STATE_ACCESS a, uint64_t &pc, uint6
     if (unlikely(!(a.template read_memory_word_via_tlb<TLB_READ>(vaddr, pval)))) {
         // Outline the slow path into a function call to minimize host CPU code cache pressure
         INC_COUNTER(a.get_statistics(), tlb_rmiss);
+        T val = 0; // Don't pass pval reference directly so the compiler can store it in a register
         auto [status, new_pc] =
-            read_virtual_memory_slow<T, STATE_ACCESS, RAISE_STORE_EXCEPTIONS>(a, pc, mcycle, vaddr, pval);
+            read_virtual_memory_slow<T, STATE_ACCESS, RAISE_STORE_EXCEPTIONS>(a, pc, mcycle, vaddr, &val);
+        *pval = val;
         pc = new_pc;
         return status;
     }

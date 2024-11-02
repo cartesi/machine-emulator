@@ -214,14 +214,18 @@ SHA3_CFLAGS=-O3
 # Optimization flags for the interpreter
 ifneq (,$(filter yes,$(relwithdebinfo) $(release)))
 ifneq (,$(findstring gcc,$(CC)))
-# The following is known to improve the interpret loop efficiency
-INTERPRET_CXXFLAGS+=-fgcse-after-reload -fgcse-sm
+# The following improves computed goto dispatch as stated in GCC manual
+INTERPRET_CXXFLAGS+=-fno-gcse
+# The following remove extra jumps in the computed goto dispatch
+INTERPRET_CXXFLAGS+=-fno-crossjumping
+# The following remove extra NOPs before jumping back to the interpret hot loop
+INTERPRET_CXXFLAGS+=-fno-align-loops
 # The interpreter dispatch loop performs better as a big inlined function
 INTERPRET_CXXFLAGS+=-finline-limit=1024
 # The interpreter hot loop is big and puts pressure on register allocation, this improves register use
 INTERPRET_CXXFLAGS+=-frename-registers -fweb
 # The interpreter instruction dispatch is big, the following reduces its size minimizing CPU cache pressure
-INTERPRET_CXXFLAGS+=-freorder-blocks-algorithm=simple -fno-align-loops
+INTERPRET_CXXFLAGS+=-freorder-blocks-algorithm=simple
 # Some distributions enables stack protector by default, make sure it's disabled
 INTERPRET_CXXFLAGS+=-fno-stack-protector
 endif

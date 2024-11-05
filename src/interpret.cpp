@@ -5827,6 +5827,14 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS a, uint64_t mcycle_e
                     INSN_CASE(ILLEGAL):
                         status = raise_illegal_insn_exception(a, pc, insn);
                         INSN_BREAK();
+#ifndef USE_COMPUTED_GOTO
+                    // When using a naive switch statement, other cases are impossible.
+                    // The following will give a hint to the compiler that it can remove range checks
+                    // (relevant for the WebAssembly target, which cannot use computed gotos).
+                    default:
+                        __builtin_unreachable();
+                        break;
+#endif
                 }
                 INSN_SWITCH_OUT();
 

@@ -608,31 +608,36 @@ static inline uint32_t insn_I_get_uimm(uint32_t insn) {
 
 /// \brief Obtains the immediate value from a U-type instruction.
 /// \param insn Instruction.
-static inline int32_t insn_U_get_imm(uint32_t insn) {
-    return static_cast<int32_t>(insn & 0xfffff000);
+static inline int64_t insn_U_get_imm(uint32_t insn) {
+    return static_cast<int64_t>(static_cast<int32_t>(insn)) & ~INT64_C(0b111111111111);
 }
 
 /// \brief Obtains the immediate value from a B-type instruction.
 /// \param insn Instruction.
 /// \details This function is forced to be inline because GCC may not always inline it.
-static FORCE_INLINE int32_t insn_B_get_imm(uint32_t insn) {
-    return static_cast<int32_t>(static_cast<uint32_t>(static_cast<int32_t>(insn) >> 31) << 12 |
-        ((insn << 1) >> 26) << 5 | ((insn << 20) >> 28) << 1 | ((insn << 24) >> 31) << 11);
+static FORCE_INLINE int64_t insn_B_get_imm(uint32_t insn) {
+    return ((static_cast<int64_t>(static_cast<int32_t>(insn)) >> 51) & ~INT64_C(0b111111111111)) | // imm[12]
+        ((insn >> 20) & 0b11111100000) |                                                           // imm[10:5]
+        ((insn >> 7) & 0b11110) |                                                                  // imm[4:1]
+        ((insn << 4) & 0b100000000000);                                                            // imm[11]
 }
 
 /// \brief Obtains the immediate value from a J-type instruction.
 /// \param insn Instruction.
 /// \details This function is forced to be inline because GCC may not always inline it.
-static FORCE_INLINE int32_t insn_J_get_imm(uint32_t insn) {
-    return static_cast<int32_t>(static_cast<uint32_t>(static_cast<int32_t>(insn) >> 31) << 20 |
-        ((insn << 1) >> 22) << 1 | ((insn << 11) >> 31) << 11 | ((insn << 12) >> 24) << 12);
+static FORCE_INLINE int64_t insn_J_get_imm(uint32_t insn) {
+    return ((static_cast<int64_t>(static_cast<int32_t>(insn)) >> 43) & ~INT64_C(0b11111111111111111111)) | // imm[20]
+        ((insn >> 20) & 0b11111111110) |                                                                   // imm[10:1]
+        ((insn >> 9) & 0b100000000000) |                                                                   // imm[11]
+        (insn & 0b11111111000000000000);                                                                   // imm[19:12]
 }
 
 /// \brief Obtains the immediate value from a S-type instruction.
 /// \param insn Instruction.
 /// \details This function is forced to be inline because GCC may not always inline it.
-static FORCE_INLINE int32_t insn_S_get_imm(uint32_t insn) {
-    return (static_cast<int32_t>(insn & 0xfe000000) >> (25 - 5)) | static_cast<int32_t>((insn >> 7) & 0b11111);
+static FORCE_INLINE int64_t insn_S_get_imm(uint32_t insn) {
+    return ((static_cast<int64_t>(static_cast<int32_t>(insn)) >> 20) & ~INT64_C(0b11111)) | // imm[11:5]
+        ((insn >> 7) & 0b11111);                                                            // imm[4:0]
 }
 
 /// \brief Obtains the 5 most significant bits of the funct7 field from an instruction.
@@ -748,10 +753,17 @@ static FORCE_INLINE uint32_t insn_get_CI_CB_imm(uint32_t insn) {
 /// \brief Obtains the immediate (sign-extended) value from a CI/CB-type instruction.
 /// \param insn Instruction.
 /// \details This function is forced to be inline because GCC may not always inline it.
-static FORCE_INLINE int32_t insn_get_CI_CB_imm_se(uint32_t insn) {
-    return static_cast<int32_t>((static_cast<uint32_t>(static_cast<int32_t>(insn << 19) >> 26) & ~0b11111) | // imm[5]
-        ((insn >> 2) & 0b11111)                                                                              // imm[4:0]
-    );
+static FORCE_INLINE int32_t insn_get_CI_CB_imm_se32(uint32_t insn) {
+    return ((static_cast<int32_t>(insn << 19) >> 26) & ~0b11111) | // imm[5]
+        ((insn >> 2) & 0b11111);                                   // imm[4:0]
+}
+
+/// \brief Obtains the immediate (sign-extended) value from a CI/CB-type instruction.
+/// \param insn Instruction.
+/// \details This function is forced to be inline because GCC may not always inline it.
+static FORCE_INLINE int64_t insn_get_CI_CB_imm_se64(uint32_t insn) {
+    return (((static_cast<int64_t>(insn) << 51) >> 58) & ~0b11111) | // imm[5]
+        ((insn >> 2) & 0b11111);                                     // imm[4:0]
 }
 
 /// \brief Obtains the immediate value from a C.LW and C.SW instructions.
@@ -3112,7 +3124,7 @@ static FORCE_INLINE execute_status execute_SRAIW(STATE_ACCESS a, uint64_t &pc, u
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_S(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
-    const int32_t imm = insn_S_get_imm(insn);
+    const int64_t imm = insn_S_get_imm(insn);
     const uint64_t val = a.read_x(insn_get_rs2(insn));
     const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
     if (unlikely(status != execute_status::success)) {
@@ -3320,8 +3332,9 @@ template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_JALR(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "jalr");
     const uint64_t val = pc + 4;
-    const uint64_t new_pc =
-        static_cast<int64_t>(a.read_x(insn_get_rs1(insn)) + insn_I_get_imm(insn)) & ~static_cast<uint64_t>(1);
+    const int32_t imm = insn_I_get_imm(insn);
+    const uint64_t rs1_value = a.read_x(insn_get_rs1(insn));
+    const uint64_t new_pc = static_cast<int64_t>(rs1_value + imm) & ~static_cast<uint64_t>(1);
     const uint32_t rd = insn_get_rd(insn);
     if constexpr (rd_kind != rd_kind::x0) {
         a.write_x(rd, val);
@@ -3741,7 +3754,7 @@ static FORCE_INLINE execute_status execute_float_unary_op_rm(STATE_ACCESS a, uin
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_FS(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
     const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
-    const int32_t imm = insn_S_get_imm(insn);
+    const int64_t imm = insn_S_get_imm(insn);
     // A narrower n-bit transfer out of the floating-point
     // registers will transfer the lower n bits of the register ignoring the upper FLEN−n bits.
     T val = static_cast<T>(a.read_f(insn_get_rs2(insn)));
@@ -4856,11 +4869,11 @@ static FORCE_INLINE execute_status execute_C_ADDI(STATE_ACCESS a, uint64_t &pc, 
     dump_insn(a, pc, static_cast<uint16_t>(insn), "c.addi");
     // rd cannot be zero (guaranteed by jump table)
     const uint32_t rd = insn_get_rd(insn);
-    const int32_t imm = insn_get_CI_CB_imm_se(insn);
+    const int64_t imm = insn_get_CI_CB_imm_se64(insn);
     // imm cannot be zero (guaranteed by jump table)
     const uint64_t rd_value = a.read_x(rd);
     int64_t val = 0;
-    __builtin_add_overflow(static_cast<int64_t>(rd_value), static_cast<int64_t>(imm), &val);
+    __builtin_add_overflow(static_cast<int64_t>(rd_value), imm, &val);
     a.write_x(rd, static_cast<uint64_t>(val));
     return advance_to_next_insn<2>(a, pc);
 }
@@ -4872,7 +4885,7 @@ static FORCE_INLINE execute_status execute_C_ADDIW(STATE_ACCESS a, uint64_t &pc,
     // rd cannot be zero (guaranteed by jump table)
     const uint32_t rd = insn_get_rd(insn);
     const uint64_t rd_value = a.read_x(rd);
-    const int32_t imm = insn_get_CI_CB_imm_se(insn);
+    const int32_t imm = insn_get_CI_CB_imm_se32(insn);
     int32_t val = 0;
     __builtin_add_overflow(static_cast<int32_t>(rd_value), imm, &val);
     a.write_x(rd, static_cast<uint64_t>(val));
@@ -4885,7 +4898,7 @@ static FORCE_INLINE execute_status execute_C_LI(STATE_ACCESS a, uint64_t &pc, ui
     dump_insn(a, pc, static_cast<uint16_t>(insn), "c.li");
     // rd cannot be zero (guaranteed by jump table)
     const uint32_t rd = insn_get_rd(insn);
-    const int32_t imm = insn_get_CI_CB_imm_se(insn);
+    const int64_t imm = insn_get_CI_CB_imm_se64(insn);
     a.write_x(rd, static_cast<uint64_t>(imm));
     return advance_to_next_insn<2>(a, pc);
 }
@@ -4944,7 +4957,7 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_C_ANDI(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, static_cast<uint16_t>(insn), "c.andi");
     const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
-    const int32_t imm = insn_get_CI_CB_imm_se(insn);
+    const int64_t imm = insn_get_CI_CB_imm_se64(insn);
     const uint64_t rs1_value = a.read_x(rs1);
     a.write_x(rs1, rs1_value & static_cast<uint64_t>(imm));
     return advance_to_next_insn<2>(a, pc);

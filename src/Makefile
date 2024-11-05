@@ -218,8 +218,6 @@ ifneq (,$(findstring gcc,$(CC)))
 INTERPRET_CXXFLAGS+=-fno-gcse
 # The following remove extra jumps in the computed goto dispatch
 INTERPRET_CXXFLAGS+=-fno-crossjumping
-# The following remove extra NOPs before jumping back to the interpret hot loop
-INTERPRET_CXXFLAGS+=-fno-align-loops
 # The interpreter dispatch loop performs better as a big inlined function
 INTERPRET_CXXFLAGS+=-finline-limit=1024
 # The interpreter hot loop is big and puts pressure on register allocation, this improves register use

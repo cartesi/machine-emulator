@@ -21,6 +21,7 @@ local util = require("cartesi.util")
 local test_util = require("cartesi.tests.util")
 local tabular = require("cartesi.tabular")
 local parallel = require("cartesi.parallel")
+local jsonrpc
 
 -- Tests Cases
 -- format {"ram_image_file", number_of_cycles, halt_payload}
@@ -330,8 +331,8 @@ where options are:
     uarch cycle. Only take effect with hash and step commands.
     (default: none)
 
-  --remote-address=<address>
-    use a remote cartesi machine listening to <address> instead of
+  --remote-address=<ip>:<port>
+    use a remote cartesi machine listening to <ip>:<port> instead of
     running a local cartesi machine.
 
   --output=<filename>
@@ -375,12 +376,6 @@ and command can be:
 <number> can be specified in decimal (e.g., 16) or hexadeximal (e.g., 0x10),
 with a suffix multiplier (i.e., Ki, Mi, Gi for 2^10, 2^20, 2^30, respectively),
 or a left shift (e.g., 2 << 20).
-
-<address> is one of the following formats:
-  <host>:<port>
-   unix:<path>
-
-<host> can be a host name, IPv4 or IPv6 address.
 
 ]=],
         arg[0]
@@ -571,8 +566,10 @@ end
 local command = assert(values[1], "missing command")
 assert(test_path, "missing test path")
 
+local to_shutdown
 if remote_address then
-    protocol = require("cartesi." .. remote_protocol)
+    jsonrpc = require("cartesi.jsonrpc")
+    to_shutdown = jsonrpc.connect_server(remote_address):set_cleanup_call(jsonrpc.SHUTDOWN)
 end
 
 local function advance_machine(machine, max_mcycle)
@@ -602,13 +599,6 @@ local function run_machine_with_uarch(machine, ctx, max_mcycle)
     run_machine(machine, ctx, max_mcycle, advance_machine_with_uarch)
 end
 
-local function connect()
-    local stub = protocol.connect(remote_address) -- server will be shutdown when remote is collected
-    local version =
-        assert(stub.get_server_version(), "could not connect to remote cartesi machine at " .. remote_address)
-    return stub, version
-end
-
 local function build_machine(ram_image)
     local config = {
         ram = {
@@ -629,10 +619,8 @@ local function build_machine(ram_image)
         },
     }
     if remote_address then
-        if not remote then
-            remote = connect()
-        end
-        return assert(remote.machine(config, runtime))
+        local jsonrpc_machine <close> = assert(jsonrpc.connect_server(remote_address))
+        return assert(jsonrpc_machine(config, runtime):set_cleanup_call(jsonrpc.SHUTDOWN))
     end
     return assert(cartesi.machine(config, runtime))
 end
@@ -694,7 +682,7 @@ local function hash(tests)
         local ram_image = test[1]
         local expected_cycles = test[2]
         local expected_payload = test[3] or 0
-        local machine = build_machine(ram_image)
+        local machine <close> = build_machine(ram_image)
         local total_cycles = 0
         local max_mcycle = 2 * expected_cycles
         while math.ult(machine:read_mcycle(), max_mcycle) do
@@ -738,7 +726,6 @@ local function hash(tests)
             util.hexhash(machine:get_root_hash()),
             "\n"
         )
-        machine:destroy()
     end
 end
 
@@ -762,7 +749,7 @@ local function step(tests)
         local ram_image = test[1]
         local expected_cycles = test[2]
         local expected_payload = test[3] or 0
-        local machine = build_machine(ram_image)
+        local machine <close> = build_machine(ram_image)
         indentout(out, 1, "{\n")
         indentout(out, 2, '"test": "%s",\n', ram_image)
         if periodic_action then
@@ -829,20 +816,18 @@ local function step(tests)
         then
             os.exit(1, true)
         end
-        machine:destroy()
     end
     out:write("]\n")
 end
 
 local function dump(tests)
     local ram_image = tests[1][1]
-    local machine = build_machine(ram_image)
+    local machine <close> = build_machine(ram_image)
     for _, v in machine:get_memory_ranges() do
         local filename = string.format("%016x--%016x.bin", v.start, v.length)
         local file <close> = assert(io.open(filename, "w"))
         assert(file:write(machine:read_memory(v.start, v.length)))
     end
-    machine:destroy()
 end
 
 local function list(tests)
@@ -883,9 +868,7 @@ for _, test in ipairs(riscv_tests) do
     end
 end
 
-local function run_host_and_uarch_machines(target, ctx, max_mcycle)
-    local host_machine = target.host
-    local uarch_machine = target.uarch
+local function run_host_and_uarch_machines(host_machine, uarch_machine, ctx, max_mcycle)
     local host_cycles = host_machine:read_mcycle()
     local uarch_cycles = uarch_machine:read_mcycle()
     assert(host_cycles == uarch_cycles)
@@ -946,27 +929,21 @@ if #selected_tests < 1 then
     error("no test selected")
 elseif command == "run" then
     failures = parallel.run(contexts, jobs, function(row)
-        local machine = build_machine(row.ram_image)
+        local machine <close> = build_machine(row.ram_image)
         run_machine(machine, row, 2 * row.expected_cycles)
         check_and_print_result(machine, row)
-        machine:destroy()
     end)
 elseif command == "run_uarch" then
     failures = parallel.run(contexts, jobs, function(row)
-        local machine = build_machine(row.ram_image)
+        local machine <close> = build_machine(row.ram_image)
         run_machine_with_uarch(machine, row, 2 * row.expected_cycles)
         check_and_print_result(machine, row)
-        machine:destroy()
     end)
 elseif command == "run_host_and_uarch" then
     failures = parallel.run(contexts, jobs, function(row)
-        local targets = {
-            host = build_machine(row.ram_image),
-            uarch = build_machine(row.ram_image),
-        }
-        run_host_and_uarch_machines(targets, row, 2 * row.expected_cycles)
-        targets.host:destroy()
-        targets.uarch:destroy()
+        local host_machine <close> = build_machine(row.ram_image)
+        local uarch_machine <close> = build_machine(row.ram_image)
+        run_host_and_uarch_machines(host_machine, uarch_machine, row, 2 * row.expected_cycles)
     end)
 elseif command == "hash" then
     hash(selected_tests)

@@ -18,6 +18,7 @@
 
 local cartesi = require("cartesi")
 local test_util = require("cartesi.tests.util")
+local jsonrpc
 
 -- Note: for jsonrpc machine test to work, jsonrpc-remote-cartesi-machine must
 -- run on the same computer and jsonrpc-remote-cartesi-machine execution path
@@ -39,7 +40,7 @@ Usage:
 
 where options are:
 
-  --remote-address=<address>
+  --remote-address=<ip>:<port>
     run tests on a remote cartesi machine (when machine type is jsonrpc).
 
   --test-path=<dir>
@@ -47,11 +48,6 @@ where options are:
     working directory of jsonrpc-remote-cartesi-machine and must be locally readable
     (default: "./")
 
-<address> is one of the following formats:
-  <host>:<port>
-   unix:<path>
-
-<host> can be a host name, IPv4 or IPv6 address.
 ]=],
         arg[0]
     ))
@@ -124,21 +120,14 @@ end
 
 local machine_type = assert(arguments[1], "missing machine type")
 assert(machine_type == "local" or machine_type == "jsonrpc", "unknown machine type, should be 'local' or 'jsonrpc'")
-local protocol
+local to_shutdown
 if machine_type == "jsonrpc" then
     assert(remote_address ~= nil, "remote cartesi machine address is missing")
     assert(test_path ~= nil, "test path must be provided and must be working directory of remote cartesi machine")
-    protocol = require("cartesi.jsonrpc")
+    jsonrpc = require("cartesi.jsonrpc")
+    to_shutdown = jsonrpc.connect_server(remote_address):set_cleanup_call(jsonrpc.SHUTDOWN)
 end
 
-local function connect()
-    local remote = protocol.connect(remote_address) -- server will be shutdown when connection is collected
-    local version =
-        assert(remote.get_server_version(), "could not connect to remote cartesi machine at " .. remote_address)
-    return remote, version
-end
-
-local remote
 local function build_machine(type, config, runtime_config)
     config = config or {
         ram = { length = 1 << 20 },
@@ -148,16 +137,12 @@ local function build_machine(type, config, runtime_config)
             update_merkle_tree = 0,
         },
     }
-    local new_machine
     if type ~= "local" then
-        if not remote then
-            remote = connect()
-        end
-        new_machine = assert(remote.machine(config, runtime_config))
+        local jsonrpc_machine <close> = assert(jsonrpc.connect_server(remote_address))
+        return assert(jsonrpc_machine(config, runtime_config):set_cleanup_call(jsonrpc.SHUTDOWN))
     else
-        new_machine = assert(cartesi.machine(config, runtime_config))
+        return assert(cartesi.machine(config, runtime_config))
     end
-    return new_machine
 end
 
 local do_test = test_util.make_do_test(build_machine, machine_type)
@@ -290,7 +275,6 @@ if machine_type == "local" then
         local soft_yield_insn = sraiw(0, 31, 7)
 
         machine:write_memory(machine:read_reg("pc"), string.pack("<I4", soft_yield_insn))
-
         assert(machine:run(1000) == cartesi.BREAK_REASON_YIELDED_SOFTLY)
 
         -- Check machine state
@@ -406,7 +390,7 @@ end)
 if machine_type ~= "local" then
     print("\n\n check remote get_machine")
     do_test("get_machine should get reference to working machine", function(machine)
-        local machine_2 = remote.get_machine()
+        local machine_2 = jsonrpc.connect_server(machine:get_server_address())
         assert(machine:get_root_hash() == machine_2:get_root_hash())
         machine_2:destroy()
         local ret, err = pcall(function()

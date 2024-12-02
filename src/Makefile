@@ -195,6 +195,7 @@ INTERPRET_CXXFLAGS+=-DNDEBUG # disable asserts only for interpret.cpp
 else ifeq ($(release),yes)
 OPTFLAGS+=-O2
 DEFS+=-DNDEBUG # disable all asserts
+DEFS+=-DBOOST_ASIO_DISABLE_ERROR_LOCATION # remove line/function location from error messages
 else ifeq ($(debug),yes)
 OPTFLAGS+=-Og -g -fno-omit-frame-pointer
 OPTFLAGS+=-D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS -fstack-clash-protection -fstack-protector-strong
@@ -378,14 +379,12 @@ LIBCARTESI_OBJS:= \
 CARTESI_CLUA_OBJS:= \
 	clua.o \
 	clua-i-virtual-machine.o \
-	clua-machine-util.o \
 	uarch-pristine-ram.o \
 	uarch-pristine-state-hash.o \
 	uarch-pristine-hash.o
 
 LUACARTESI_OBJS:= \
 	clua-cartesi.o \
-	clua-machine.o \
 	$(CARTESI_CLUA_OBJS)
 
 LIBCARTESI_MERKLE_TREE_OBJS:= \
@@ -401,6 +400,7 @@ MERKLE_TREE_HASH_OBJS:= \
 
 LIBCARTESI_JSONRPC_OBJS:= \
 	jsonrpc-virtual-machine.o \
+	os.o \
 	jsonrpc-machine-c-api.o \
 	uarch-pristine-ram.o \
 	uarch-pristine-state-hash.o \
@@ -408,7 +408,6 @@ LIBCARTESI_JSONRPC_OBJS:= \
 
 LUACARTESI_JSONRPC_OBJS:= \
 	clua-cartesi-jsonrpc.o \
-	clua-jsonrpc-machine.o \
 	$(CARTESI_CLUA_OBJS)
 
 JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \

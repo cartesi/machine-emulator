@@ -109,14 +109,13 @@ local function clone_x(x)
 end
 
 local function fork_tree(address, x, depth)
-    local stub = assert(jsonrpc.connect(address), true) -- detatch server, we will manage it
+    local machine = assert(jsonrpc.connect_server(address))
     local node = {
         address = address,
-        stub = stub,
+        machine = machine,
     }
-    local machine
     if depth == 0 then
-        local config = stub.machine.get_default_config()
+        local config = machine:get_default_config()
         x = {}
         for k, v in pairs(config.processor) do
             if k:sub(1, 1) == "x" then
@@ -124,9 +123,7 @@ local function fork_tree(address, x, depth)
             end
         end
         config.ram.length = 1 << 22
-        machine = stub.machine(config, nil, true) -- detatch machine, we will manage it
-    else
-        machine = stub.get_machine(true) -- detatch machine, we will manage it
+        machine:create(config)
     end
     node.x = x
     local children = {}
@@ -135,7 +132,7 @@ local function fork_tree(address, x, depth)
         for child_index = 1, FANOUT do
             machine:write_reg("x" .. child_index, depth)
             x[child_index] = depth
-            local child_address, child_pid = stub.fork_server()
+            local child_machine, child_address, child_pid = machine:fork_server()
             assert(child_pid > 0)
             local child = fork_tree(child_address, clone_x(x), depth + 1)
             children[#children + 1] = child
@@ -154,7 +151,7 @@ end
 
 local function check_tree(root)
     pre_order(root, function(node, depth)
-        local machine = node.stub.get_machine()
+        local machine = node.machine
         local x = node.x
         io.write(string.rep("  ", depth), "{", table.concat(node.x, ","), "}\n")
         for i = 1, 31 do
@@ -167,7 +164,7 @@ end
 
 local function kill_tree(root)
     pre_order(root, function(node)
-        node.stub.shutdown_server()
+        node.machine:shutdown_server()
     end)
 end
 

@@ -603,6 +603,25 @@ bool machine::has_htif_console() const {
     return static_cast<bool>(read_reg(reg::htif_iconsole) & (1 << HTIF_CONSOLE_CMD_GETCHAR));
 }
 
+/// \brief Returns copy of initialization config.
+const machine_config &machine::get_initial_config() const {
+    return m_c;
+}
+
+/// \brief Returns the machine runtime config.
+const machine_runtime_config &machine::get_runtime_config() const {
+    return m_r;
+}
+
+/// \brief Changes the machine runtime config.
+void machine::set_runtime_config(const machine_runtime_config &r) {
+    if (r.htif.no_console_putchar != m_r.htif.no_console_putchar) {
+        throw std::runtime_error{"cannot change htif runtime configuration"};
+    }
+    m_r = r;
+    m_s.soft_yield = m_r.soft_yield;
+}
+
 machine_config machine::get_serialization_config() const {
     if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error{"cannot serialize configuration of unreproducible machines"};
@@ -1367,7 +1386,7 @@ void machine::write_reg(reg w, uint64_t value) {
             m_s.fcsr = value;
             break;
         case reg::mvendorid:
-            [[fallthrough]];
+            throw std::invalid_argument{"register is read-only"};
         case reg::marchid:
             [[fallthrough]];
         case reg::mimpid:

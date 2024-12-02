@@ -24,54 +24,82 @@
 #include "access-log.h"
 #include "i-virtual-machine.h"
 #include "interpret.h"
+#include "jsonrpc-fork-result.h"
 #include "machine-config.h"
 #include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
+#include "semantic-version.h"
 #include "uarch-interpret.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#include <boost/asio/io_context.hpp>
+#include <boost/beast/core/tcp_stream.hpp>
+#include <boost/container/static_vector.hpp>
+#pragma GCC diagnostic pop
+
 namespace cartesi {
-
-/// \class jsonrpc_connection
-/// \brief Connection to the server
-class jsonrpc_connection;
-
-using jsonrpc_connection_ptr = std::shared_ptr<jsonrpc_connection>;
 
 /// \class jsonrpc_virtual_machine
 /// \brief JSONRPC implementation of the i_virtual_machine interface
 class jsonrpc_virtual_machine final : public i_virtual_machine {
 public:
-    jsonrpc_virtual_machine(jsonrpc_connection_ptr con, bool detach_machine);
-    jsonrpc_virtual_machine(jsonrpc_connection_ptr con, bool detach_machine, const std::string &dir,
-        const machine_runtime_config &r = {});
-    jsonrpc_virtual_machine(jsonrpc_connection_ptr con, bool detach_machine, const machine_config &c,
-        const machine_runtime_config &r = {});
+    enum class cleanup_call { nothing, destroy, shutdown };
 
+    /// \brief Constructor that connects to existing server
+    jsonrpc_virtual_machine(std::string address);
+
+    /// \brief Constructor that spawns a new server
+    jsonrpc_virtual_machine(const std::string &address, fork_result &spawned);
+
+    // no copies or assignments
     jsonrpc_virtual_machine(const jsonrpc_virtual_machine &other) = delete;
     jsonrpc_virtual_machine(jsonrpc_virtual_machine &&other) noexcept = delete;
     jsonrpc_virtual_machine &operator=(const jsonrpc_virtual_machine &other) = delete;
     jsonrpc_virtual_machine &operator=(jsonrpc_virtual_machine &&other) noexcept = delete;
+
     ~jsonrpc_virtual_machine() final;
 
-    jsonrpc_connection_ptr get_connection() const;
+    /// \brief Asks remote server to shutdown
+    void shutdown_server();
 
-    static machine_config get_default_config(const jsonrpc_connection_ptr &con);
+    /// \brief Forks remote server
+    fork_result fork_server() const;
 
-    static void verify_step_uarch(const jsonrpc_connection_ptr &con, const hash_type &root_hash_before,
-        const access_log &log, const hash_type &root_hash_after);
+    /// \brief Ask remote server to change the address from which it accepts connections
+    std::string rebind_server(const std::string &address);
 
-    static void verify_reset_uarch(const jsonrpc_connection_ptr &con, const hash_type &root_hash_before,
-        const access_log &log, const hash_type &root_hash_after);
+    /// \brief Obtains the remote server version
+    semantic_version get_server_version() const;
 
-    static void verify_send_cmio_response(const jsonrpc_connection_ptr &con, uint16_t reason, const unsigned char *data,
-        uint64_t length, const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after);
+    /// \brief Breaks server out of parent program group
+    void emancipate_server() const;
 
-    static uint64_t get_reg_address(const jsonrpc_connection_ptr &con, reg r);
+    /// \brief Sets timeout for communicating with server
+    void set_timeout(int64_t ms);
+
+    /// \brief Asks server to delay next request by a given amount of time
+    void delay_next_request(uint64_t ms) const;
+
+    /// \brief Gets timeout for communicating with server
+    int64_t get_timeout() const;
+
+    /// \brief Sets timeout for communicating with server
+    void set_cleanup_call(cleanup_call call);
+
+    /// \brief Sets timeout for communicating with server
+    cleanup_call get_cleanup_call() const;
+
+    /// \brief Returns address of remote remote server
+    const std::string &get_server_address() const;
 
 private:
     machine_config do_get_initial_config() const override;
-
+    i_virtual_machine *do_clone_empty() const override;
+    bool do_is_empty() const override;
+    void do_create(const machine_config &config, const machine_runtime_config &runtime) override;
+    void do_load(const std::string &directory, const machine_runtime_config &runtime) override;
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
     void do_store(const std::string &dir) const override;
     uint64_t do_read_reg(reg r) const override;
@@ -87,10 +115,9 @@ private:
     machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const override;
     void do_replace_memory_range(const memory_range_config &new_range) override;
     access_log do_log_step_uarch(const access_log::type &log_type) override;
+    machine_runtime_config do_get_runtime_config() const override;
+    void do_set_runtime_config(const machine_runtime_config &r) override;
     void do_destroy() override;
-    void do_snapshot() override;
-    void do_commit() override;
-    void do_rollback() override;
     bool do_verify_dirty_page_maps() const override;
     uint64_t do_read_word(uint64_t address) const override;
     bool do_verify_merkle_tree() const override;
@@ -99,8 +126,21 @@ private:
     void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) override;
     access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const access_log::type &log_type) override;
-    jsonrpc_connection_ptr m_connection;
-    bool m_detach_machine;
+    uint64_t do_get_reg_address(reg r) const override;
+    machine_config do_get_default_config() const override;
+    void do_verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after) const override;
+    void do_verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after) const override;
+    void do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const override;
+    virtual bool do_is_jsonrpc_virtual_machine() const override;
+
+    mutable boost::asio::io_context m_ioc{1};         // The io_context is required for all I/O
+    mutable boost::beast::tcp_stream m_stream{m_ioc}; // TCP stream for keep alive connections
+    cleanup_call m_call{cleanup_call::nothing};
+    std::string m_address{};
+    int64_t m_timeout = -1;
 };
 
 } // namespace cartesi

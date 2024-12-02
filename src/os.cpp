@@ -791,7 +791,7 @@ static void sig_alrm(int /*unused*/) {
 // the parent returns the final child pid
 // the final child returns 0
 // on error, the parent throws and the final child does not return
-int os_double_fork_or_throw(int newpgid) {
+int os_double_fork_or_throw(bool emancipate) {
     int fd[2] = {-1, -1};
     struct sigaction chld_act {};
     bool restore_sigchld = false;
@@ -847,7 +847,7 @@ int os_double_fork_or_throw(int newpgid) {
                 close(fd[0]);
                 fd[0] = -1;
                 // break out into our own program group, if requested
-                if (newpgid != 0) {
+                if (emancipate) {
                     setpgid(0, 0);
                 }
                 // write fpid so parent can read
@@ -860,7 +860,7 @@ int os_double_fork_or_throw(int newpgid) {
                 fd[1] = -1;
                 // we are done and can return to whatever caller wants to do as a child
                 return 0;
-            } // intermediate child, fork either failed or succeeded
+            }        // intermediate child, fork either failed or succeeded
             exit(0); // intermediate child exits right away
 
         } else if (ipid > 0) {         // still parent (fork succeeded)
@@ -928,11 +928,11 @@ int os_double_fork_or_throw(int newpgid) {
     }
 }
 
-int os_double_fork(int newpgid, const char **err_msg) {
+int os_double_fork(bool emancipate, const char **err_msg) {
     static THREAD_LOCAL std::string error_storage;
     try {
         *err_msg = nullptr;
-        return os_double_fork_or_throw(newpgid);
+        return os_double_fork_or_throw(emancipate);
     } catch (std::exception &e) {
         error_storage = e.what();
         *err_msg = error_storage.c_str();

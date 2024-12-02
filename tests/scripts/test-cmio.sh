@@ -32,8 +32,8 @@ tests=(
 )
 
 is_server_running () {
-    echo $cartesi_machine --remote-address=$server_address --max-mcycle=0
-    eval $cartesi_machine --remote-address=$server_address --max-mcycle=0 &> /dev/null
+    echo $cartesi_machine --remote-address=$server_address --remote-health-check
+    eval $cartesi_machine --remote-address=$server_address --remote-health-check
 }
 
 wait_for_server () {
@@ -49,19 +49,13 @@ wait_for_server () {
 }
 
 wait_for_shutdown () {
+    sleep 1
     pid=$1
-
-    for i in $(seq 1 10); do
-        if ps -p $pid > /dev/null; then
-            kill $pid
-            echo "waiting for pid: $pid..."
-            sleep 1
-        fi
-    done
-
-    if ps -p $pid > /dev/null; then
-        kill $pid
-        echo "$0 killed $pid (server was still running after shutdown)" >&2
+    if ps -g $pid > /dev/null; then
+        kill -- -$pid
+        echo >&2
+        echo "FAILED: servers still running after tests" >&2
+        echo >&2
         exit 1
     fi
 }
@@ -82,4 +76,3 @@ do
 done
 
 eval "$lua $script_dir/../lua/cmio-test.lua local"
-

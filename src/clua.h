@@ -94,11 +94,11 @@ void clua_gettypemetatable(lua_State *L, int ctxidx = lua_upvalueindex(1)) {
 /// \param L Lua state.
 /// \param ctxidx Index (or pseudo-index) of clua context
 template <typename T>
-int clua_typeexists(lua_State *L, int ctxidx = lua_upvalueindex(1)) {
+bool clua_typeexists(lua_State *L, int ctxidx = lua_upvalueindex(1)) {
     ctxidx = lua_absindex(L, ctxidx);
     lua_pushstring(L, clua_rawname<T>());
     lua_rawget(L, ctxidx);
-    const int exists = !lua_isnil(L, -1);
+    const auto exists = !lua_isnil(L, -1);
     lua_pop(L, 1);
     return exists;
 }
@@ -225,6 +225,7 @@ void clua_setmetatable(lua_State *L, int objidx, int ctxidx = lua_upvalueindex(1
 ///
 template <typename T>
 int clua_push(lua_State *L, T &&value, int ctxidx = lua_upvalueindex(1)) {
+    ctxidx = lua_absindex(L, ctxidx);
     T *ptr = static_cast<T *>(lua_newuserdata(L, sizeof(T)));
     new (ptr) T{std::forward<T>(value)};
     clua_setmetatable<T>(L, -1, ctxidx);

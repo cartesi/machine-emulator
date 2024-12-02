@@ -58,6 +58,26 @@ public:
     i_virtual_machine &operator=(const i_virtual_machine &other) = delete;
     i_virtual_machine &operator=(i_virtual_machine &&other) noexcept = delete;
 
+    /// \brief Clone an object of same underlying type but without a machine instance
+    i_virtual_machine *clone_empty() const {
+        return do_clone_empty();
+    }
+
+    /// \brief Tells if object is empty (does not holds a machine instance)
+    bool is_empty() const {
+        return do_is_empty();
+    }
+
+    /// \brief Create a machine from config
+    void create(const machine_config &config, const machine_runtime_config &runtime = {}) {
+        return do_create(config, runtime);
+    }
+
+    /// \brief Load Create a machine from config
+    void load(const std::string &directory, const machine_runtime_config &runtime = {}) {
+        return do_load(directory, runtime);
+    }
+
     /// \brief Runs the machine until mcycle reaches mcycle_end or the machine halts.
     interpreter_break_reason run(uint64_t mcycle_end) {
         return do_run(mcycle_end);
@@ -143,24 +163,17 @@ public:
         return do_get_initial_config();
     }
 
+    machine_runtime_config get_runtime_config() const {
+        return do_get_runtime_config();
+    }
+
+    void set_runtime_config(const machine_runtime_config &r) {
+        return do_set_runtime_config(r);
+    }
+
     /// \brief destroy
     void destroy() {
         do_destroy();
-    }
-
-    /// \brief snapshot
-    void snapshot() {
-        do_snapshot();
-    }
-
-    /// \brief commit
-    void commit() {
-        do_commit();
-    }
-
-    /// \brief rollback
-    void rollback() {
-        do_rollback();
     }
 
     /// \brief Resets the microarchitecture state to pristine value
@@ -191,13 +204,50 @@ public:
         do_send_cmio_response(reason, data, length);
     }
 
-    /// \brief Sends cmio response. and returns an access log
+    /// \brief Sends cmio response and returns an access log
     access_log log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const access_log::type &log_type) {
         return do_log_send_cmio_response(reason, data, length, log_type);
     }
 
+    /// \brief Gets the address of any register
+    uint64_t get_reg_address(reg r) const {
+        return do_get_reg_address(r);
+    }
+
+    /// \brief Returns copy of default machine config
+    machine_config get_default_config() const {
+        return do_get_default_config();
+    }
+
+    /// \brief Checks the validity of a state transition caused by log_step_uarch.
+    void verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after) const {
+        return do_verify_step_uarch(root_hash_before, log, root_hash_after);
+    }
+
+    /// \brief Checks the validity of a state transition caused by log_reset_uarch.
+    void verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after) const {
+        return do_verify_reset_uarch(root_hash_before, log, root_hash_after);
+    }
+
+    /// \brief Checks the validity of state transitions caused by log_send_cmio_response.
+    void verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const {
+        return do_verify_send_cmio_response(reason, data, length, root_hash_before, log, root_hash_after);
+    }
+
+    /// \brief Checks if implementation is jsorpc-virtual-machine
+    bool is_jsonrpc_virtual_machine() const {
+        return do_is_jsonrpc_virtual_machine();
+    }
+
 private:
+    virtual i_virtual_machine *do_clone_empty() const = 0;
+    virtual bool do_is_empty() const = 0;
+    virtual void do_create(const machine_config &config, const machine_runtime_config &runtime) = 0;
+    virtual void do_load(const std::string &directory, const machine_runtime_config &runtime) = 0;
     virtual interpreter_break_reason do_run(uint64_t mcycle_end) = 0;
     virtual void do_store(const std::string &dir) const = 0;
     virtual access_log do_log_step_uarch(const access_log::type &log_type) = 0;
@@ -215,10 +265,9 @@ private:
     virtual uint64_t do_read_word(uint64_t address) const = 0;
     virtual bool do_verify_dirty_page_maps() const = 0;
     virtual machine_config do_get_initial_config() const = 0;
-    virtual void do_snapshot() = 0;
+    virtual machine_runtime_config do_get_runtime_config() const = 0;
+    virtual void do_set_runtime_config(const machine_runtime_config &r) = 0;
     virtual void do_destroy() = 0;
-    virtual void do_commit() = 0;
-    virtual void do_rollback() = 0;
     virtual void do_reset_uarch() = 0;
     virtual access_log do_log_reset_uarch(const access_log::type &log_type) = 0;
     virtual uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) = 0;
@@ -226,6 +275,17 @@ private:
     virtual void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) = 0;
     virtual access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const access_log::type &log_type) = 0;
+    virtual uint64_t do_get_reg_address(reg r) const = 0;
+    virtual machine_config do_get_default_config() const = 0;
+    virtual void do_verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after) const = 0;
+    virtual void do_verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after) const = 0;
+    virtual void do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const = 0;
+    virtual bool do_is_jsonrpc_virtual_machine() const {
+        return false;
+    }
 };
 
 } // namespace cartesi

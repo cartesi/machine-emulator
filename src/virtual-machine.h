@@ -35,12 +35,8 @@ namespace cartesi {
 /// \class virtual_machine
 /// \brief i_virtual_machine implementation pointing to a local machine instance
 class virtual_machine : public i_virtual_machine {
-    using machine = cartesi::machine;
-    machine *m_machine;
-
 public:
-    explicit virtual_machine(const machine_config &c, const machine_runtime_config &r = {});
-    explicit virtual_machine(const std::string &dir, const machine_runtime_config &r = {});
+    virtual_machine() = default;
     virtual_machine(const virtual_machine &other) = delete;
     virtual_machine(virtual_machine &&other) noexcept = delete;
     virtual_machine &operator=(const virtual_machine &other) = delete;
@@ -48,10 +44,12 @@ public:
     ~virtual_machine() override;
 
 private:
-    machine *get_machine();
-    const machine *get_machine() const;
-    void do_store(const std::string &dir) const override;
+    i_virtual_machine *do_clone_empty() const override;
+    bool do_is_empty() const override;
+    void do_create(const machine_config &config, const machine_runtime_config &runtime) override;
+    void do_load(const std::string &directory, const machine_runtime_config &runtime) override;
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
+    void do_store(const std::string &directory) const override;
     access_log do_log_step_uarch(const access_log::type &log_type) override;
     machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const override;
     void do_get_root_hash(hash_type &hash) const override;
@@ -67,10 +65,9 @@ private:
     uint64_t do_read_word(uint64_t address) const override;
     bool do_verify_dirty_page_maps() const override;
     machine_config do_get_initial_config() const override;
-    void do_snapshot() override;
+    machine_runtime_config do_get_runtime_config() const override;
+    void do_set_runtime_config(const machine_runtime_config &r) override;
     void do_destroy() override;
-    void do_commit() override;
-    void do_rollback() override;
     void do_reset_uarch() override;
     access_log do_log_reset_uarch(const access_log::type &log_type) override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
@@ -78,6 +75,19 @@ private:
     void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) override;
     access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const access_log::type &log_type) override;
+    uint64_t do_get_reg_address(reg r) const override;
+    machine_config do_get_default_config() const override;
+    void do_verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after) const override;
+    void do_verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
+        const hash_type &root_hash_after) const override;
+    void do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+        const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const override;
+
+    machine *get_machine();
+    const machine *get_machine() const;
+
+    machine *m_machine = nullptr;
 };
 
 } // namespace cartesi

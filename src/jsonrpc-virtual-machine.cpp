@@ -16,15 +16,22 @@
 
 #include "jsonrpc-virtual-machine.h"
 
+#include <cerrno>
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <exception>
+#include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <tuple>
 #include <utility>
+
+#include <sys/time.h>
+#include <unistd.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -40,7 +47,6 @@
 #include "interpret.h"
 #include "json-util.h"
 #include "json.hpp"
-#include "jsonrpc-connection.h"
 #include "machine-config.h"
 #include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"
@@ -90,10 +96,36 @@ static asio::ip::tcp::endpoint parse_endpoint(const std::string &address) {
     }
 }
 
+class expiration {
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
+    beast::tcp_stream &m_stream;
+
+public:
+    expiration(beast::tcp_stream &stream, int64_t ms) : m_stream(stream) {
+        if (ms > 0) {
+            beast::get_lowest_layer(m_stream).expires_after(std::chrono::milliseconds(ms));
+        } else {
+            beast::get_lowest_layer(m_stream).expires_never();
+        }
+    }
+    expiration(const expiration &) = delete;
+    expiration &operator=(const expiration &) = delete;
+    expiration(expiration &&) = delete;
+    expiration &operator=(expiration &&) = delete;
+    // NOLINTNEXTLINE(bugprone-exception-escape)
+    ~expiration() {
+        beast::get_lowest_layer(m_stream).expires_never();
+    }
+};
+
 static std::string json_post(beast::tcp_stream &stream, const std::string &remote_address, const std::string &post_data,
-    bool keep_alive) {
+    int64_t ms, bool keep_alive) {
     // Determine remote endpoint from remote address
     const asio::ip::tcp::endpoint remote_endpoint = parse_endpoint(remote_address);
+
+    // Set expiration to ms milliseconds into the fiture, automatically clear it
+    // when function exits
+    const expiration exp(stream, ms);
 
     // Close current stream socket when the remote endpoint is different
     if (stream.socket().is_open()) {
@@ -118,6 +150,8 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
             if (ec == asio::error::interrupted) {
                 // Retry the operation during interrupts (SIGINT/SIGTERM),
                 // otherwise we may leave dead zombies processes during fork requests.
+            } else if (ec == beast::error::timeout) {
+                throw std::runtime_error("jsonrpc error: timeout");
             } else { // Unexpected error
                 throw beast::system_error(ec);
             }
@@ -165,6 +199,8 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
             if (ec == asio::error::interrupted) {
                 // Retry the operation during interrupts (SIGINT/SIGTERM),
                 // otherwise we may leave dead zombies processes during fork requests.
+            } else if (ec == beast::error::timeout) {
+                throw std::runtime_error("jsonrpc error: timeout");
             } else { // Unexpected error
                 throw beast::system_error(ec);
             }
@@ -186,6 +222,8 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
             if (ec == asio::error::interrupted) {
                 // Retry the operation during interrupts (SIGINT/SIGTERM),
                 // otherwise we may leave dead zombies processes during fork requests.
+            } else if (ec == beast::error::timeout) {
+                throw std::runtime_error("jsonrpc error: timeout");
             } else { // Unexpected error
                 throw beast::system_error(ec);
             }
@@ -193,7 +231,7 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
 
         http::response<http::string_body> res = res_parser.release();
         if (res.result() != http::status::ok) {
-            throw std::runtime_error("http error: reason  "s + std::string(res.reason()) + " (code "s +
+            throw std::runtime_error("http error: reason "s + std::string(res.reason()) + " (code "s +
                 std::to_string(res.result_int()) + ")"s);
         }
 
@@ -219,13 +257,13 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
 
 template <typename R, typename... Ts>
 void jsonrpc_request(beast::tcp_stream &stream, const std::string &remote_address, const std::string &method,
-    const std::tuple<Ts...> &tp, R &result, bool keep_alive = true) {
+    const std::tuple<Ts...> &tp, R &result, int64_t ms, bool keep_alive = true) {
     auto request = jsonrpc_post_data(method, tp);
     std::string response_s;
     try {
-        response_s = json_post(stream, remote_address, request, keep_alive);
+        response_s = json_post(stream, remote_address, request, ms, keep_alive);
     } catch (std::exception &x) {
-        throw std::runtime_error("jsonrpc server error: post error ("s + x.what() + ")"s);
+        throw std::runtime_error("jsonrpc error: post error contacting "s + remote_address + " ("s + x.what() + ")"s);
     }
     json response;
     try {
@@ -275,16 +313,215 @@ void jsonrpc_request(beast::tcp_stream &stream, const std::string &remote_addres
 
 namespace cartesi {
 
-jsonrpc_connection::jsonrpc_connection(std::string address, bool detach_server) : m_detach_server(detach_server) {
-    m_address.push_back(std::move(address));
+void jsonrpc_virtual_machine::shutdown_server() {
+    bool result = false;
+    jsonrpc_request(m_stream, m_address, "shutdown", std::tie(), result, m_timeout, false);
+}
+
+void jsonrpc_virtual_machine::delay_next_request(uint64_t ms) const {
+    bool result = false;
+    jsonrpc_request(m_stream, m_address, "delay_next_request", std::tie(ms), result, m_timeout);
+}
+
+void jsonrpc_virtual_machine::set_timeout(int64_t ms) {
+    m_timeout = ms;
+}
+
+int64_t jsonrpc_virtual_machine::get_timeout() const {
+    return m_timeout;
+}
+
+void jsonrpc_virtual_machine::set_cleanup_call(cleanup_call call) {
+    m_call = call;
+}
+
+auto jsonrpc_virtual_machine::get_cleanup_call() const -> cleanup_call {
+    return m_call;
+}
+
+const std::string &jsonrpc_virtual_machine::get_server_address() const {
+    return m_address;
+}
+
+jsonrpc_virtual_machine::jsonrpc_virtual_machine(std::string address) : m_address(std::move(address)) {
     // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
     os_disable_sigpipe();
 }
 
-jsonrpc_connection::~jsonrpc_connection() {
-    if (!m_detach_server) {
+static boost::asio::ip::tcp::endpoint address_to_endpoint(const std::string &address) {
+    try {
+        const auto pos = address.find_last_of(':');
+        const std::string ip = address.substr(0, pos);
+        const int port = std::stoi(address.substr(pos + 1));
+        if (port < 0 || port > 65535) {
+            throw std::runtime_error{"invalid port"};
+        }
+        return {boost::asio::ip::make_address(ip), static_cast<uint16_t>(port)};
+    } catch (std::exception &e) {
+        throw std::runtime_error{"invalid endpoint address \"" + address + "\""};
+    }
+}
+
+static std::string endpoint_to_string(const boost::asio::ip::tcp::endpoint &endpoint) {
+    std::ostringstream ss;
+    ss << endpoint;
+    return ss.str();
+}
+
+jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, fork_result &spawned) {
+    // this function first blocks SIGUSR1, SIGUSR2 and SIGALRM.
+    // then it double-forks.
+    // the grand-child sends the parent a SIGUSR2 and suicides if failed before execing jsonrpc-remote-cartesi-machine.
+    // otherwise, jsonrpc-remote-cartesi-machine itself sends the parent a SIGUSR1 to notify it is ready.
+    // the parent sets up to receive a SIGALRM after 15 seconds and then waits for SIGUSR1, SIGUSR2 or SIGALRM
+    // if it gets SIGALRM, the grand-child is unresponsive, so the parent kills it and the constructor fails.
+    // if it gets SIGUSR2, the grand-child failed before exec and suicided, so the constructor fails.
+    // if it gets SIGUSR1, jsonrpc-remote-cartesi-machine is ready and the constructor succeeds.
+    boost::asio::io_context ioc{1};
+    // NOLINTNEXTLINE(clang-analyzer-optin.cplusplus.VirtualCall)
+    boost::asio::ip::tcp::acceptor a(ioc, address_to_endpoint(address));
+    // already done by constructor
+    // a.open(endpoint.protocol());
+    // a.set_option(asio::socket_base::reuse_address(true));
+    // a.bind(endpoint);
+    // a.listen(asio::socket_base::max_listen_connections);
+    sigset_t mask{};
+    sigset_t omask{};
+    sigemptyset(&mask);        // always returns 0
+    sigaddset(&mask, SIGUSR1); // always returns 0
+    sigaddset(&mask, SIGUSR2); // always returns 0
+    sigaddset(&mask, SIGALRM); // always returns 0
+    if (sigprocmask(SIG_BLOCK, &mask, &omask) < 0) {
+        // sigprocmask can only fail if we screwed up the values. this can't happen.
+        // being paranoid, if it *did* happen, we are trying to avoid a situation where
+        // our process gets killed when the grand-child or the alarm tries to signal us
+        // and the signals are not blocked
+        throw std::system_error{errno, std::generic_category(), "sigprocmask failed"};
+    }
+    bool restore_sigprocmask = true;
+    const char *bin = getenv("JSONRPC_REMOTE_CARTESI_MACHINE");
+    if (bin == nullptr) {
+        bin = "jsonrpc-remote-cartesi-machine";
+    }
+    auto ppid = getpid();
+    bool restore_grand_child = false;
+    const int32_t grand_child = cartesi::os_double_fork_or_throw(false);
+    if (grand_child == 0) { // grand-child and double-fork() succeeded
+        sigprocmask(SIG_SETMASK, &omask, nullptr);
+        char sigusr1[256] = "";
+        (void) snprintf(sigusr1, std::size(sigusr1), "--sigusr1=%d", ppid);
+        char server_fd[256] = "";
+        (void) snprintf(server_fd, std::size(server_fd), "--server-fd=%d", a.native_handle());
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+        char *args[] = {const_cast<char *>(bin), server_fd, sigusr1, nullptr};
+        if (execvp(bin, args) < 0) {
+            // here we failed to run jsonrpc-remote-cartesi-machine. nothing we can do.
+            kill(ppid, SIGUSR2); // notify parent as soon as possible that we failed.
+            exit(1);
+        };
+        // code never reaches here
+    } else if (grand_child > 0) {   // parent and double-fork() succeeded
+        restore_grand_child = true; // make sure grand-child is killed if we fail
+        m_address = endpoint_to_string(a.local_endpoint());
+        a.close();
+        struct itimerval ovalue {};
+        bool restore_itimer = false;
         try {
-            // If configured to shutdown server, do it
+            struct itimerval value {};
+            memset(&value, 0, sizeof(value));
+            value.it_interval.tv_sec = 0;
+            value.it_interval.tv_usec = 0;
+            value.it_value.tv_sec = 15;
+            value.it_value.tv_usec = 0;
+            if (setitimer(ITIMER_REAL, &value, &ovalue) < 0) {
+                // setitimer only fails if we screwed up with the values. this should not happen.
+                // being paranoid, if it *did* happen, and if the grand-child also failed to signal us,
+                // we might hang forever in the following call to sigwait.
+                // we prefer to give up instead of risking a deadlock.
+                throw std::system_error{errno, std::generic_category(), "setitimer failed"};
+            }
+            restore_itimer = true;
+            int sig = 0;
+            if (auto ret = sigwait(&mask, &sig); ret != 0) {
+                throw std::system_error{ret, std::generic_category(), "sigwait failed"};
+            }
+            if (sig == SIGALRM) { // grand-child didn't signal us before alarm
+                throw std::runtime_error{"grand-child process unresponsive"};
+            }
+            if (sig == SIGUSR2) { // grand-child signaled us that it failed to exec
+                // grand-child will have exited on its own
+                restore_grand_child = false;
+                throw std::runtime_error{"failed to run '"s + bin + "'"s};
+            }
+            // grand-child signaled us that everything is fine
+            assert(sig == SIGUSR1);
+            setitimer(ITIMER_REAL, &ovalue, nullptr);
+            restore_itimer = false;
+            sigprocmask(SIG_SETMASK, &omask, nullptr);
+            restore_sigprocmask = false;
+            spawned.pid = grand_child;
+            spawned.address = m_address;
+            // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
+            os_disable_sigpipe();
+        } catch (...) {
+            if (restore_sigprocmask) {
+                sigprocmask(SIG_SETMASK, &omask, nullptr);
+            }
+            if (restore_grand_child) {
+                kill(grand_child, SIGTERM);
+            }
+            if (restore_itimer) {
+                setitimer(ITIMER_REAL, &ovalue, nullptr);
+            }
+            throw;
+        }
+    }
+}
+
+void jsonrpc_virtual_machine::do_load(const std::string &directory, const machine_runtime_config &runtime) {
+    bool result = false;
+    jsonrpc_request(m_stream, m_address, "machine.load", std::tie(directory, runtime), result, m_timeout);
+}
+
+bool jsonrpc_virtual_machine::do_is_empty() const {
+    bool result = false;
+    jsonrpc_request(m_stream, m_address, "machine.is_empty", std::tie(), result, m_timeout);
+    return result;
+}
+
+i_virtual_machine *jsonrpc_virtual_machine::do_clone_empty() const {
+    auto fork_result = fork_server();
+    auto *clone = new jsonrpc_virtual_machine(fork_result.address);
+    try {
+        if (!clone->is_empty()) {
+            clone->destroy();
+        }
+    } catch (...) {
+        clone->shutdown_server();
+        delete clone;
+        throw;
+    }
+    return clone;
+};
+
+void jsonrpc_virtual_machine::do_create(const machine_config &config, const machine_runtime_config &runtime) {
+    bool result = false;
+    jsonrpc_request(m_stream, m_address, "machine.create", std::tie(config, runtime), result, m_timeout);
+}
+
+jsonrpc_virtual_machine::~jsonrpc_virtual_machine() {
+    // If configured to destroy machine, do it
+    if (m_call == cleanup_call::destroy) {
+        try {
+            destroy();
+        } catch (...) { // NOLINT(bugprone-empty-catch)
+            // We guard against exceptions here, which would only mean we failed to cleanup.
+            // We do not guarantee that we will cleanup. It's a best-effort thing.
+        }
+    }
+    // If configured to shutdown server, do it
+    if (m_call == cleanup_call::shutdown) {
+        try {
             shutdown_server();
         } catch (...) { // NOLINT(bugprone-empty-catch)
             // We guard against exceptions here, which would only mean we failed to cleanup.
@@ -299,214 +536,72 @@ jsonrpc_connection::~jsonrpc_connection() {
     }
 }
 
-beast::tcp_stream &jsonrpc_connection::get_stream() {
-    return m_stream;
-}
-
-const beast::tcp_stream &jsonrpc_connection::get_stream() const {
-    return m_stream;
-}
-
-const std::string &jsonrpc_connection::get_remote_address() const {
-    if (is_shutdown()) {
-        throw std::out_of_range("remote server is shutdown");
-    }
-    return m_address.back();
-}
-
-const std::string &jsonrpc_connection::get_remote_parent_address() const {
-    if (!is_snapshot()) {
-        throw std::out_of_range("remote server is not forked");
-    }
-    return m_address[0];
-}
-
-void jsonrpc_connection::snapshot() {
-    // If we are forked, discard the pending snapshot
-    if (is_snapshot()) {
-        commit();
-    }
-
-    // To create a snapshot, we fork a new server as the child and get its remote address
-    fork_result result{};
-    jsonrpc_request(get_stream(), get_remote_address(), "fork", std::tie(), result, false);
-    m_address.push_back(std::move(result.address));
-}
-
-void jsonrpc_connection::commit() {
-    // If we are not forked, there is no pending snapshot to discard, therefore we are already committed
-    if (!is_snapshot()) {
-        return;
-    }
-
-    // To commit, we kill the parent server and replace its address with the child's
-    try {
-        bool result = false;
-        jsonrpc_request(get_stream(), get_remote_parent_address(), "shutdown", std::tie(), result, false);
-    } catch (std::exception &e) { // NOLINT(bugprone-empty-catch)
-        // It's possible that the remote server was killed before the shutdown (e.g SIGTERM was sent),
-        // so we silently ignore errors here.
-        // If the server still up, the next rebind request will fail anyway with port already in use.
-    }
-
-    // Rebind the remote server to continue listening in the original port
-    std::string result;
-    jsonrpc_request(get_stream(), get_remote_address(), "rebind", std::tie(m_address[0]), result, false);
-    m_address.pop_back();
-}
-
-void jsonrpc_connection::rollback() {
-    // If we are not forked, there is no snapshot to rollback to
-    if (!is_snapshot()) {
-        throw std::out_of_range("remote server has no pending snapshot to rollback to");
-    }
-
-    // To rollback, we kill the child and expose the parent server
-    bool result = false;
-    jsonrpc_request(get_stream(), get_remote_address(), "shutdown", std::tie(), result, false);
-    m_address.pop_back();
-}
-
-bool jsonrpc_connection::is_snapshot() const {
-    return m_address.size() > 1;
-}
-
-void jsonrpc_connection::shutdown_server() {
-    bool result = false;
-    if (is_snapshot()) {
-        jsonrpc_request(get_stream(), get_remote_parent_address(), "shutdown", std::tie(), result, false);
-    }
-    jsonrpc_request(get_stream(), get_remote_address(), "shutdown", std::tie(), result, false);
-    m_address.clear();
-}
-
-bool jsonrpc_connection::is_shutdown() const {
-    return m_address.empty();
-}
-
-jsonrpc_virtual_machine::jsonrpc_virtual_machine(jsonrpc_connection_ptr con, bool detach_machine) :
-    m_connection(std::move(con)),
-    m_detach_machine(detach_machine) {}
-
-jsonrpc_virtual_machine::jsonrpc_virtual_machine(jsonrpc_connection_ptr con, bool detach_machine,
-    const std::string &directory, const machine_runtime_config &runtime) :
-    m_connection(std::move(con)),
-    m_detach_machine(detach_machine) {
-    bool result = false;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.machine.directory",
-        std::tie(directory, runtime), result);
-}
-
-jsonrpc_virtual_machine::jsonrpc_virtual_machine(jsonrpc_connection_ptr con, bool detach_machine,
-    const machine_config &config, const machine_runtime_config &runtime) :
-    m_connection(std::move(con)),
-    m_detach_machine(detach_machine) {
-    bool result = false;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.machine.config",
-        std::tie(config, runtime), result);
-}
-
-jsonrpc_virtual_machine::~jsonrpc_virtual_machine() {
-    if (!m_detach_machine) {
-        try {
-            // If configured to destroy machine, do it
-            destroy();
-        } catch (...) { // NOLINT(bugprone-empty-catch)
-            // We guard against exceptions here, which would only mean we failed to cleanup.
-            // We do not guarantee that we will cleanup. It's a best-effort thing.
-        }
-    }
-}
-
 machine_config jsonrpc_virtual_machine::do_get_initial_config() const {
     machine_config result;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.get_initial_config",
-        std::tie(), result);
+    jsonrpc_request(m_stream, m_address, "machine.get_initial_config", std::tie(), result, m_timeout);
     return result;
 }
 
-machine_config jsonrpc_virtual_machine::get_default_config(const jsonrpc_connection_ptr &con) {
-    machine_config result;
-    jsonrpc_request(con->get_stream(), con->get_remote_address(), "machine.get_default_config", std::tie(), result);
+machine_runtime_config jsonrpc_virtual_machine::do_get_runtime_config() const {
+    machine_runtime_config result;
+    jsonrpc_request(m_stream, m_address, "machine.get_runtime_config", std::tie(), result, m_timeout);
     return result;
 }
 
-semantic_version jsonrpc_connection::get_server_version() {
+void jsonrpc_virtual_machine::do_set_runtime_config(const machine_runtime_config &r) {
+    bool result = false;
+    jsonrpc_request(m_stream, m_address, "machine.set_runtime_config", std::tie(r), result, m_timeout);
+}
+
+semantic_version jsonrpc_virtual_machine::get_server_version() const {
     semantic_version result;
-    jsonrpc_request(get_stream(), get_remote_address(), "get_version", std::tie(), result);
+    jsonrpc_request(m_stream, m_address, "get_version", std::tie(), result, m_timeout);
     return result;
-}
-
-jsonrpc_connection_ptr jsonrpc_virtual_machine::get_connection() const {
-    return m_connection;
-}
-
-void jsonrpc_virtual_machine::verify_step_uarch(const jsonrpc_connection_ptr &con, const hash_type &root_hash_before,
-    const access_log &log, const hash_type &root_hash_after) {
-    bool result = false;
-    auto b64_root_hash_before = encode_base64(root_hash_before);
-    auto b64_root_hash_after = encode_base64(root_hash_after);
-    jsonrpc_request(con->get_stream(), con->get_remote_address(), "machine.verify_step_uarch",
-        std::tie(b64_root_hash_before, log, b64_root_hash_after), result);
-}
-
-void jsonrpc_virtual_machine::verify_reset_uarch(const jsonrpc_connection_ptr &con, const hash_type &root_hash_before,
-    const access_log &log, const hash_type &root_hash_after) {
-    bool result = false;
-    auto b64_root_hash_before = encode_base64(root_hash_before);
-    auto b64_root_hash_after = encode_base64(root_hash_after);
-    jsonrpc_request(con->get_stream(), con->get_remote_address(), "machine.verify_reset_uarch",
-        std::tie(b64_root_hash_before, log, b64_root_hash_after), result);
 }
 
 interpreter_break_reason jsonrpc_virtual_machine::do_run(uint64_t mcycle_end) {
     interpreter_break_reason result = interpreter_break_reason::failed;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.run", std::tie(mcycle_end),
-        result);
+    jsonrpc_request(m_stream, m_address, "machine.run", std::tie(mcycle_end), result, m_timeout);
     return result;
 }
 
 void jsonrpc_virtual_machine::do_store(const std::string &directory) const {
     bool result = false;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.store",
-        std::tie(directory), result);
+    jsonrpc_request(m_stream, m_address, "machine.store", std::tie(directory), result, m_timeout);
 }
 
 uint64_t jsonrpc_virtual_machine::do_read_reg(reg r) const {
     uint64_t result = 0;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.read_reg", std::tie(r),
-        result);
+    jsonrpc_request(m_stream, m_address, "machine.read_reg", std::tie(r), result, m_timeout);
     return result;
 }
 
 void jsonrpc_virtual_machine::do_write_reg(reg w, uint64_t val) {
     bool result = false;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.write_reg",
-        std::tie(w, val), result);
+    jsonrpc_request(m_stream, m_address, "machine.write_reg", std::tie(w, val), result, m_timeout);
 }
 
-uint64_t jsonrpc_virtual_machine::get_reg_address(const jsonrpc_connection_ptr &con, reg r) {
-    uint64_t result = 0;
-    jsonrpc_request(con->get_stream(), con->get_remote_address(), "machine.get_reg_address", std::tie(r), result);
-    return result;
-}
-
-fork_result jsonrpc_connection::fork_server() {
+auto jsonrpc_virtual_machine::fork_server() const -> fork_result {
     fork_result result{};
-    jsonrpc_request(get_stream(), get_remote_address(), "fork", std::tie(), result, false);
+    jsonrpc_request(m_stream, m_address, "fork", std::tie(), result, m_timeout, false);
     return result;
 }
 
-std::string jsonrpc_connection::rebind_server(const std::string &address) {
+std::string jsonrpc_virtual_machine::rebind_server(const std::string &address) {
     std::string result;
-    jsonrpc_request(get_stream(), get_remote_address(), "rebind", std::tie(address), result, false);
+    jsonrpc_request(m_stream, m_address, "rebind", std::tie(address), result, m_timeout, false);
+    m_address = result;
     return result;
+}
+
+void jsonrpc_virtual_machine::emancipate_server() const {
+    bool result = false;
+    jsonrpc_request(m_stream, m_address, "emancipate", std::tie(), result, m_timeout);
 }
 
 void jsonrpc_virtual_machine::do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const {
     std::string result;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.read_memory",
-        std::tie(address, length), result);
+    jsonrpc_request(m_stream, m_address, "machine.read_memory", std::tie(address, length), result, m_timeout);
     std::string bin = cartesi::decode_base64(result);
     if (bin.size() != length) {
         throw std::runtime_error("jsonrpc server error: invalid decoded base64 data length");
@@ -517,14 +612,12 @@ void jsonrpc_virtual_machine::do_read_memory(uint64_t address, unsigned char *da
 void jsonrpc_virtual_machine::do_write_memory(uint64_t address, const unsigned char *data, uint64_t length) {
     bool result = false;
     std::string b64 = cartesi::encode_base64(data, length);
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.write_memory",
-        std::tie(address, b64), result);
+    jsonrpc_request(m_stream, m_address, "machine.write_memory", std::tie(address, b64), result, m_timeout);
 }
 
 void jsonrpc_virtual_machine::do_read_virtual_memory(uint64_t address, unsigned char *data, uint64_t length) {
     std::string result;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.read_virtual_memory",
-        std::tie(address, length), result);
+    jsonrpc_request(m_stream, m_address, "machine.read_virtual_memory", std::tie(address, length), result, m_timeout);
     std::string bin = cartesi::decode_base64(result);
     if (bin.size() != length) {
         throw std::runtime_error("jsonrpc server error: invalid decoded base64 data length");
@@ -535,27 +628,23 @@ void jsonrpc_virtual_machine::do_read_virtual_memory(uint64_t address, unsigned 
 void jsonrpc_virtual_machine::do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) {
     bool result = false;
     std::string b64 = cartesi::encode_base64(data, length);
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.write_virtual_memory",
-        std::tie(address, b64), result);
+    jsonrpc_request(m_stream, m_address, "machine.write_virtual_memory", std::tie(address, b64), result, m_timeout);
 }
 
 uint64_t jsonrpc_virtual_machine::do_translate_virtual_address(uint64_t vaddr) {
     uint64_t result = 0;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.translate_virtual_address",
-        std::tie(vaddr), result);
+    jsonrpc_request(m_stream, m_address, "machine.translate_virtual_address", std::tie(vaddr), result, m_timeout);
     return result;
 }
 
 void jsonrpc_virtual_machine::do_reset_uarch() {
     bool result = false;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.reset_uarch", std::tie(),
-        result);
+    jsonrpc_request(m_stream, m_address, "machine.reset_uarch", std::tie(), result, m_timeout);
 }
 
 access_log jsonrpc_virtual_machine::do_log_reset_uarch(const access_log::type &log_type) {
     not_default_constructible<access_log> result;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.log_reset_uarch",
-        std::tie(log_type), result);
+    jsonrpc_request(m_stream, m_address, "machine.log_reset_uarch", std::tie(log_type), result, m_timeout);
     if (!result.has_value()) {
         throw std::runtime_error("jsonrpc server error: missing result");
     }
@@ -563,14 +652,12 @@ access_log jsonrpc_virtual_machine::do_log_reset_uarch(const access_log::type &l
 }
 
 void jsonrpc_virtual_machine::do_get_root_hash(hash_type &hash) const {
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.get_root_hash", std::tie(),
-        hash);
+    jsonrpc_request(m_stream, m_address, "machine.get_root_hash", std::tie(), hash, m_timeout);
 }
 
 machine_merkle_tree::proof_type jsonrpc_virtual_machine::do_get_proof(uint64_t address, int log2_size) const {
     not_default_constructible<machine_merkle_tree::proof_type> result;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.get_proof",
-        std::tie(address, log2_size), result);
+    jsonrpc_request(m_stream, m_address, "machine.get_proof", std::tie(address, log2_size), result, m_timeout);
     if (!result.has_value()) {
         throw std::runtime_error("jsonrpc server error: missing result");
     }
@@ -579,14 +666,12 @@ machine_merkle_tree::proof_type jsonrpc_virtual_machine::do_get_proof(uint64_t a
 
 void jsonrpc_virtual_machine::do_replace_memory_range(const memory_range_config &new_range) {
     bool result = false;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.replace_memory_range",
-        std::tie(new_range), result);
+    jsonrpc_request(m_stream, m_address, "machine.replace_memory_range", std::tie(new_range), result, m_timeout);
 }
 
 access_log jsonrpc_virtual_machine::do_log_step_uarch(const access_log::type &log_type) {
     not_default_constructible<access_log> result;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.log_step_uarch",
-        std::tie(log_type), result);
+    jsonrpc_request(m_stream, m_address, "machine.log_step_uarch", std::tie(log_type), result, m_timeout);
     if (!result.has_value()) {
         throw std::runtime_error("jsonrpc server error: missing result");
     }
@@ -595,85 +680,99 @@ access_log jsonrpc_virtual_machine::do_log_step_uarch(const access_log::type &lo
 
 void jsonrpc_virtual_machine::do_destroy() {
     bool result = false;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.destroy", std::tie(),
-        result, false);
+    jsonrpc_request(m_stream, m_address, "machine.destroy", std::tie(), result, m_timeout);
 }
 
 bool jsonrpc_virtual_machine::do_verify_dirty_page_maps() const {
     bool result = false;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.verify_dirty_page_maps",
-        std::tie(), result);
+    jsonrpc_request(m_stream, m_address, "machine.verify_dirty_page_maps", std::tie(), result, m_timeout);
     return result;
 }
 
 uint64_t jsonrpc_virtual_machine::do_read_word(uint64_t address) const {
     uint64_t result = 0;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.read_word",
-        std::tie(address), result);
+    jsonrpc_request(m_stream, m_address, "machine.read_word", std::tie(address), result, m_timeout);
     return result;
 }
 
 bool jsonrpc_virtual_machine::do_verify_merkle_tree() const {
     bool result = false;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.verify_merkle_tree",
-        std::tie(), result);
+    jsonrpc_request(m_stream, m_address, "machine.verify_merkle_tree", std::tie(), result, m_timeout);
     return result;
-}
-
-void jsonrpc_virtual_machine::do_snapshot() {
-    m_connection->snapshot();
-}
-
-void jsonrpc_virtual_machine::do_commit() {
-    m_connection->commit();
-}
-
-void jsonrpc_virtual_machine::do_rollback() {
-    m_connection->rollback();
 }
 
 uarch_interpreter_break_reason jsonrpc_virtual_machine::do_run_uarch(uint64_t uarch_cycle_end) {
     uarch_interpreter_break_reason result = uarch_interpreter_break_reason::reached_target_cycle;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.run_uarch",
-        std::tie(uarch_cycle_end), result);
+    jsonrpc_request(m_stream, m_address, "machine.run_uarch", std::tie(uarch_cycle_end), result, m_timeout);
     return result;
 }
 
 machine_memory_range_descrs jsonrpc_virtual_machine::do_get_memory_ranges() const {
     machine_memory_range_descrs result;
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.get_memory_ranges",
-        std::tie(), result);
+    jsonrpc_request(m_stream, m_address, "machine.get_memory_ranges", std::tie(), result, m_timeout);
     return result;
 }
 
 void jsonrpc_virtual_machine::do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {
     bool result = false;
     std::string b64 = cartesi::encode_base64(data, length);
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.send_cmio_response",
-        std::tie(reason, b64), result);
+    jsonrpc_request(m_stream, m_address, "machine.send_cmio_response", std::tie(reason, b64), result, m_timeout);
 }
 
 access_log jsonrpc_virtual_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data,
     uint64_t length, const access_log::type &log_type) {
     not_default_constructible<access_log> result;
     std::string b64 = cartesi::encode_base64(data, length);
-    jsonrpc_request(m_connection->get_stream(), m_connection->get_remote_address(), "machine.log_send_cmio_response",
-        std::tie(reason, b64, log_type), result);
+    jsonrpc_request(m_stream, m_address, "machine.log_send_cmio_response", std::tie(reason, b64, log_type), result,
+        m_timeout);
     if (!result.has_value()) {
         throw std::runtime_error("jsonrpc server error: missing result");
     }
     return std::move(result).value();
 }
 
-void jsonrpc_virtual_machine::verify_send_cmio_response(const jsonrpc_connection_ptr &con, uint16_t reason,
-    const unsigned char *data, uint64_t length, const hash_type &root_hash_before, const access_log &log,
-    const hash_type &root_hash_after) {
+uint64_t jsonrpc_virtual_machine::do_get_reg_address(reg r) const {
+    uint64_t result = 0;
+    jsonrpc_request(m_stream, m_address, "machine.get_reg_address", std::tie(r), result, m_timeout);
+    return result;
+}
+
+machine_config jsonrpc_virtual_machine::do_get_default_config() const {
+    machine_config result;
+    jsonrpc_request(m_stream, m_address, "machine.get_default_config", std::tie(), result, m_timeout);
+    return result;
+}
+
+void jsonrpc_virtual_machine::do_verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
+    const hash_type &root_hash_after) const {
+    bool result = false;
+    auto b64_root_hash_before = encode_base64(root_hash_before);
+    auto b64_root_hash_after = encode_base64(root_hash_after);
+    jsonrpc_request(m_stream, m_address, "machine.verify_step_uarch",
+        std::tie(b64_root_hash_before, log, b64_root_hash_after), result, m_timeout);
+}
+
+void jsonrpc_virtual_machine::do_verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
+    const hash_type &root_hash_after) const {
+    bool result = false;
+    auto b64_root_hash_before = encode_base64(root_hash_before);
+    auto b64_root_hash_after = encode_base64(root_hash_after);
+    jsonrpc_request(m_stream, m_address, "machine.verify_reset_uarch",
+        std::tie(b64_root_hash_before, log, b64_root_hash_after), result, m_timeout);
+}
+
+void jsonrpc_virtual_machine::do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+    const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const {
     bool result = false;
     std::string b64_data = cartesi::encode_base64(data, length);
     auto b64_root_hash_before = encode_base64(root_hash_before);
     auto b64_root_hash_after = encode_base64(root_hash_after);
-    jsonrpc_request(con->get_stream(), con->get_remote_address(), "machine.verify_send_cmio_response",
-        std::tie(reason, b64_data, b64_root_hash_before, log, b64_root_hash_after), result);
+    jsonrpc_request(m_stream, m_address, "machine.verify_send_cmio_response",
+        std::tie(reason, b64_data, b64_root_hash_before, log, b64_root_hash_after), result, m_timeout);
+}
+
+bool jsonrpc_virtual_machine::do_is_jsonrpc_virtual_machine() const {
+    return true;
 }
 
 } // namespace cartesi

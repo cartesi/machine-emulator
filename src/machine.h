@@ -356,6 +356,7 @@ public:
     static void verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after);
 
+    /// \brief Returns copy of default machine config
     static machine_config get_default_config();
 
     /// \brief Returns machine state for direct access.
@@ -541,14 +542,15 @@ public:
     machine_config get_serialization_config() const;
 
     /// \brief Returns copy of initialization config.
-    const machine_config &get_initial_config() const {
-        return m_c;
-    }
+    const machine_config &get_initial_config() const;
 
     /// \brief Returns the machine runtime config.
-    const machine_runtime_config &get_runtime_config() const {
-        return m_r;
-    }
+    const machine_runtime_config &get_runtime_config() const;
+
+    /// \brief Changes the machine runtime config.
+    /// \param range Configuration of the new memory range.
+    /// \details Some runtime options cannot be changed.
+    void set_runtime_config(const machine_runtime_config &r);
 
     /// \brief Replaces a memory range.
     /// \param range Configuration of the new memory range.

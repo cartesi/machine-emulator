@@ -1,43 +1,31 @@
 {
   "openrpc": "1.0.0-rc1",
   "info": {
-    "version": "0.0.2",
     "title": "Remote Cartesi Machine",
+    "version": "0.5.0",
+    "description": "API for controling a remote Cartesi Machine server",
     "license": {
       "name": "MIT"
     }
   },
   "methods": [
-
-    {
-      "name": "rpc.discover",
-      "description": "Returns an OpenRPC schema as a description of this service",
-      "params": [],
-      "result": {
-        "name": "OpenRPC Schema",
-        "schema": {
-          "$ref": "https://raw.githubusercontent.com/open-rpc/meta-schema/master/schema.json"
-        }
-      }
-    },
-
     {
       "name": "fork",
       "summary": "Forks the server",
       "params": [],
       "result": {
         "name": "fork_result",
-        "description": "Result of the fork containing address and pid",
+        "description": "Information about the forked child",
         "schema": {
           "$ref": "#/components/schemas/ForkResult"
         }
       }
     },
-
     {
       "name": "rebind",
       "summary": "Changes the address the server is listening to",
-      "params": [ {
+      "params": [
+        {
           "name": "address",
           "description": "URL of the new address",
           "required": true,
@@ -48,13 +36,12 @@
       ],
       "result": {
         "name": "address",
-        "description": "URL of the rebound address",
+        "description": "URL of address server actually bound to",
         "schema": {
           "type": "string"
         }
       }
     },
-
     {
       "name": "shutdown",
       "summary": "Causes the server to shutdown and exit",
@@ -67,7 +54,6 @@
         }
       }
     },
-
     {
       "name": "get_version",
       "summary": "Returns the server version",
@@ -80,19 +66,65 @@
         }
       }
     },
-
     {
-      "name": "machine.machine.config",
+      "name": "is_empty",
+      "summary": "Checks if server has no machine instance",
+      "params": [],
+      "result": {
+        "name": "empty",
+        "description": "True if server has no machine",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "name": "machine.set_runtime_config",
+      "summary": "Changes the machine runtime configuration",
+      "params": [
+        {
+          "name": "runtime_config",
+          "description": "Machine runtime configuration",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/MachineRuntimeConfig"
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "description": "True when operation succeeded",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "name": "machine.get_runtime_config",
+      "summary": "Returns the current machine runtime configuration",
+      "params": [],
+      "result": {
+        "name": "runtime_config",
+        "description": "Machine runtime configuration",
+        "schema": {
+          "$ref": "#/components/schemas/MachineRuntimeConfig"
+        }
+      }
+    },
+    {
+      "name": "machine.create",
       "summary": "Instantiates a machine from a machine configuration",
-      "params": [ {
-          "name":"config",
+      "params": [
+        {
+          "name": "config",
           "description": "Machine configuration",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/MachineConfig"
           }
-        }, {
-          "name":"runtime",
+        },
+        {
+          "name": "runtime_config",
           "description": "Machine runtime configuration",
           "required": false,
           "schema": {
@@ -108,19 +140,20 @@
         }
       }
     },
-
     {
-      "name": "machine.machine.directory",
+      "name": "machine.load",
       "summary": "Instantiates a machine from a directory where a machine instance was stored",
-      "params": [ {
-          "name":"directory",
+      "params": [
+        {
+          "name": "directory",
           "description": "Directory with stored machine instance",
           "required": true,
           "schema": {
             "type": "string"
           }
-        }, {
-          "name":"runtime",
+        },
+        {
+          "name": "runtime_config",
           "description": "Machine runtime configuration",
           "required": false,
           "schema": {
@@ -136,11 +169,10 @@
         }
       }
     },
-
     {
       "name": "machine.destroy",
       "summary": "Destroys current machine instance",
-      "params": [ ],
+      "params": [],
       "result": {
         "name": "status",
         "description": "True when operation succeeded",
@@ -149,12 +181,12 @@
         }
       }
     },
-
     {
       "name": "machine.store",
       "summary": "Stores machine instance in a directory",
-      "params": [ {
-          "name":"directory",
+      "params": [
+        {
+          "name": "directory",
           "description": "Directory to stored machine instance",
           "required": true,
           "schema": {
@@ -170,12 +202,12 @@
         }
       }
     },
-
     {
       "name": "machine.run",
       "summary": "Runs the emulator until a given cycle",
-      "params": [ {
-          "name":"mcycle_end",
+      "params": [
+        {
+          "name": "mcycle_end",
           "description": "The maximum value of the cycle counter",
           "required": true,
           "schema": {
@@ -191,12 +223,12 @@
         }
       }
     },
-
     {
       "name": "machine.run_uarch",
       "summary": "Runs the small emulator until a given cycle",
-      "params": [ {
-          "name":"uarch_cycle_end",
+      "params": [
+        {
+          "name": "uarch_cycle_end",
           "description": "The maximum value of the cycle counter",
           "required": true,
           "schema": {
@@ -212,12 +244,12 @@
         }
       }
     },
-
     {
       "name": "machine.log_step_uarch",
       "summary": "Runs the small emulator for one cycle and return a log of state accesses",
-      "params": [ {
-          "name":"log_type",
+      "params": [
+        {
+          "name": "log_type",
           "description": "The maximum value of the cycle counter",
           "required": true,
           "schema": {
@@ -233,26 +265,28 @@
         }
       }
     },
-
     {
       "name": "machine.verify_step_uarch",
       "summary": "Verifies a state transition caused by log_step_uarch",
-      "params": [ {
-          "name":"root_hash_before",
+      "params": [
+        {
+          "name": "root_hash_before",
           "description": "State hash before transition described by access log",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/Base64Hash"
           }
-        }, {
-          "name":"log",
+        },
+        {
+          "name": "log",
           "description": "Access log describing transition",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/AccessLog"
           }
-        }, {
-          "name":"root_hash_after",
+        },
+        {
+          "name": "root_hash_after",
           "description": "State hash after transition described by access log",
           "required": true,
           "schema": {
@@ -268,26 +302,28 @@
         }
       }
     },
-
     {
       "name": "machine.verify_reset_uarch",
       "summary": "Verifies a state transition caused by log_reset_uarch",
-      "params": [ {
-          "name":"root_hash_before",
+      "params": [
+        {
+          "name": "root_hash_before",
           "description": "State hash before transition described by access log",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/Base64Hash"
           }
-        }, {
-          "name":"log",
+        },
+        {
+          "name": "log",
           "description": "Access log describing transition",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/AccessLog"
           }
-        }, {
-          "name":"root_hash_after",
+        },
+        {
+          "name": "root_hash_after",
           "description": "State hash after transition described by access log",
           "required": true,
           "schema": {
@@ -303,11 +339,10 @@
         }
       }
     },
-
     {
       "name": "machine.get_root_hash",
       "summary": "Obtains the Merkle hash of the current machine state",
-      "params": [ ],
+      "params": [],
       "result": {
         "name": "hash",
         "description": "Merkle hash",
@@ -316,19 +351,20 @@
         }
       }
     },
-
     {
       "name": "machine.get_proof",
       "summary": "Obtains a Merkle proof for a range in the machine state",
-      "params": [ {
-          "name":"address",
+      "params": [
+        {
+          "name": "address",
           "description": "Starting address of range in state (must be aligned to size)",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"
           }
-        }, {
-          "name":"log2_size",
+        },
+        {
+          "name": "log2_size",
           "description": "Log2 of size of range",
           "required": true,
           "schema": {
@@ -344,12 +380,12 @@
         }
       }
     },
-
     {
       "name": "machine.read_word",
       "summary": "Reads a 64-bit word from memory (must be aligned)",
-      "params": [ {
-          "name":"address",
+      "params": [
+        {
+          "name": "address",
           "description": "Starting physical address of word",
           "required": true,
           "schema": {
@@ -365,19 +401,20 @@
         }
       }
     },
-
     {
       "name": "machine.read_memory",
       "summary": "Reads a span of memory from the state (must be contained in the same memory range)",
-      "params": [ {
-          "name":"address",
+      "params": [
+        {
+          "name": "address",
           "description": "Starting physical address of span",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"
           }
-        } , {
-          "name":"length",
+        },
+        {
+          "name": "length",
           "description": "Length of span",
           "required": true,
           "schema": {
@@ -393,19 +430,20 @@
         }
       }
     },
-
     {
       "name": "machine.write_memory",
       "summary": "Writes a span of memory to the state (must be contained in the same memory range)",
-      "params": [ {
-          "name":"address",
+      "params": [
+        {
+          "name": "address",
           "description": "Starting physical address of span",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"
           }
-        } , {
-          "name":"data",
+        },
+        {
+          "name": "data",
           "description": "Span of memory",
           "required": true,
           "schema": {
@@ -421,19 +459,20 @@
         }
       }
     },
-
     {
       "name": "machine.read_virtual_memory",
       "summary": "Reads a span of memory from the state (must be contained in the same memory range)",
-      "params": [ {
-          "name":"address",
+      "params": [
+        {
+          "name": "address",
           "description": "Starting virtual address of span according to current mapping",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"
           }
-        } , {
-          "name":"length",
+        },
+        {
+          "name": "length",
           "description": "Length of span",
           "required": true,
           "schema": {
@@ -449,19 +488,20 @@
         }
       }
     },
-
     {
       "name": "machine.write_virtual_memory",
       "summary": "Writes a span of memory to the state (must be contained in the same memory range)",
-      "params": [ {
-          "name":"address",
+      "params": [
+        {
+          "name": "address",
           "description": "Starting virtual address of span according to current mapping",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"
           }
-        } , {
-          "name":"data",
+        },
+        {
+          "name": "data",
           "description": "Span of memory",
           "required": true,
           "schema": {
@@ -477,12 +517,12 @@
         }
       }
     },
-
     {
       "name": "machine.translate_virtual_address",
       "summary": "Translates a virtual memory address to its corresponding physical memory address",
-      "params": [ {
-          "name":"vaddr",
+      "params": [
+        {
+          "name": "vaddr",
           "description": "Virtual address to translate",
           "required": true,
           "schema": {
@@ -498,12 +538,12 @@
         }
       }
     },
-
     {
       "name": "machine.replace_memory_range",
       "summary": "Replaces a memory range",
-      "params": [ {
-          "name":"range",
+      "params": [
+        {
+          "name": "range",
           "description": "New memory range (must be compatible with existing range)",
           "required": true,
           "schema": {
@@ -519,12 +559,12 @@
         }
       }
     },
-
     {
       "name": "machine.read_register",
       "summary": "Reads the value of a register",
-      "params": [ {
-          "name":"reg",
+      "params": [
+        {
+          "name": "reg",
           "description": "Register to read",
           "required": true,
           "schema": {
@@ -540,19 +580,20 @@
         }
       }
     },
-
     {
       "name": "machine.write_reg",
       "summary": "Writes the value of a register",
-      "params": [ {
-          "name":"reg",
+      "params": [
+        {
+          "name": "reg",
           "description": "Register to write",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/REG"
           }
-        }, {
-          "name":"value",
+        },
+        {
+          "name": "value",
           "description": "Value of register (little-endian)",
           "required": true,
           "schema": {
@@ -568,12 +609,12 @@
         }
       }
     },
-
     {
       "name": "machine.get_reg_address",
       "summary": "Returns the address of a register",
-      "params": [ {
-          "name":"reg",
+      "params": [
+        {
+          "name": "reg",
           "description": "Register to obtain address",
           "required": true,
           "schema": {
@@ -589,7 +630,6 @@
         }
       }
     },
-
     {
       "name": "machine.reset_uarch",
       "summary": "Reset uarch to pristine state",
@@ -602,12 +642,12 @@
         }
       }
     },
-
     {
       "name": "machine.log_reset_uarch",
       "summary": "Reset uarch to pristine state and return a log of state accesses",
-      "params": [ {
-          "name":"log_type",
+      "params": [
+        {
+          "name": "log_type",
           "description": "The maximum value of the cycle counter",
           "required": true,
           "schema": {
@@ -623,7 +663,6 @@
         }
       }
     },
-
     {
       "name": "machine.get_initial_config",
       "summary": "Returns initial machine configuration for instance",
@@ -636,7 +675,6 @@
         }
       }
     },
-
     {
       "name": "machine.get_default_config",
       "summary": "Returns default machine configuration",
@@ -649,7 +687,6 @@
         }
       }
     },
-
     {
       "name": "machine.verify_merkle_tree",
       "summary": "Verifies sanity of Merkle tree",
@@ -662,7 +699,6 @@
         }
       }
     },
-
     {
       "name": "machine.verify_dirty_page_maps",
       "summary": "Verifies sanity of dirty page maps",
@@ -675,7 +711,6 @@
         }
       }
     },
-
     {
       "name": "machine.get_memory_ranges",
       "summary": "Returns a list with descriptions for all of the machine's memory ranges",
@@ -688,19 +723,20 @@
         }
       }
     },
-
     {
       "name": "machine.send_cmio_response",
       "summary": "Sends cmio response.",
-      "params": [ {
-          "name":"reason",
+      "params": [
+        {
+          "name": "reason",
           "description": "Reason for sending response",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/UnsignedInteger"
           }
-        },{
-          "name":"data",
+        },
+        {
+          "name": "data",
           "description": "Response data to send",
           "required": true,
           "schema": {
@@ -716,26 +752,28 @@
         }
       }
     },
-
     {
       "name": "machine.log_send_cmio_response",
       "summary": "Sends cmio response and returns an access log",
-      "params": [ {
-        "name":"reason",
-        "description": "Reason for sending response",
-        "required": true,
-        "schema": {
-          "$ref": "#/components/schemas/UnsignedInteger"
-        }
-        }, {
-          "name":"data",
+      "params": [
+        {
+          "name": "reason",
+          "description": "Reason for sending response",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        },
+        {
+          "name": "data",
           "description": "Response data to send",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/Base64String"
           }
-        },{
-          "name":"log_type",
+        },
+        {
+          "name": "log_type",
           "description": "The log type to generate",
           "required": true,
           "schema": {
@@ -751,40 +789,44 @@
         }
       }
     },
-
     {
       "name": "machine.verify_send_cmio_response",
       "summary": "Verifies a state transition caused by log_send_cmio_response",
-      "params": [ {
-        "name":"reason",
-        "description": "Reason for sending response",
-        "required": true,
-        "schema": {
-          "$ref": "#/components/schemas/UnsignedInteger"
-        }
-        },  {
-          "name":"data",
+      "params": [
+        {
+          "name": "reason",
+          "description": "Reason for sending response",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        },
+        {
+          "name": "data",
           "description": "The response data sent when the log was generated.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/Base64String"
           }
-        },  {
-          "name":"root_hash_before",
+        },
+        {
+          "name": "root_hash_before",
           "description": "State hash before response was sent.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/Base64Hash"
           }
-        }, {
-          "name":"log",
+        },
+        {
+          "name": "log",
           "description": "State access log to be verified.",
           "required": true,
           "schema": {
             "$ref": "#/components/schemas/AccessLog"
           }
-        }, {
-          "name":"root_hash_after",
+        },
+        {
+          "name": "root_hash_after",
           "description": "State hash after response was sent.",
           "required": true,
           "schema": {
@@ -800,188 +842,26 @@
         }
       }
     }
-
   ],
-
   "components": {
     "schemas": {
-
-      "REG": {
-        "title": "REG",
-        "enum": [
-          "x0",
-          "x1",
-          "x2",
-          "x3",
-          "x4",
-          "x5",
-          "x6",
-          "x7",
-          "x8",
-          "x9",
-          "x10",
-          "x11",
-          "x12",
-          "x13",
-          "x14",
-          "x15",
-          "x16",
-          "x17",
-          "x18",
-          "x19",
-          "x20",
-          "x21",
-          "x22",
-          "x23",
-          "x24",
-          "x25",
-          "x26",
-          "x27",
-          "x28",
-          "x29",
-          "x30",
-          "x31",
-          "f0",
-          "f1",
-          "f2",
-          "f3",
-          "f4",
-          "f5",
-          "f6",
-          "f7",
-          "f8",
-          "f9",
-          "f10",
-          "f11",
-          "f12",
-          "f13",
-          "f14",
-          "f15",
-          "f16",
-          "f17",
-          "f18",
-          "f19",
-          "f20",
-          "f21",
-          "f22",
-          "f23",
-          "f24",
-          "f25",
-          "f26",
-          "f27",
-          "f28",
-          "f29",
-          "f30",
-          "f31",
-          "pc",
-          "fcsr",
-          "mvendorid",
-          "marchid",
-          "mimpid",
-          "mcycle",
-          "icycleinstret",
-          "mstatus",
-          "mtvec",
-          "mscratch",
-          "mepc",
-          "mcause",
-          "mtval",
-          "misa",
-          "mie",
-          "mip",
-          "medeleg",
-          "mideleg",
-          "mcounteren",
-          "menvcfg",
-          "stvec",
-          "sscratch",
-          "sepc",
-          "scause",
-          "stval",
-          "satp",
-          "scounteren",
-          "senvcfg",
-          "ilrsc",
-          "iflags",
-          "iunrep",
-          "clint_mtimecmp",
-          "plic_girqpend",
-          "plic_girqsrvd",
-          "htif_tohost",
-          "htif_fromhost",
-          "htif_ihalt",
-          "htif_iconsole",
-          "htif_iyield",
-          "uarch_x0",
-          "uarch_x1",
-          "uarch_x2",
-          "uarch_x3",
-          "uarch_x4",
-          "uarch_x5",
-          "uarch_x6",
-          "uarch_x7",
-          "uarch_x8",
-          "uarch_x9",
-          "uarch_x10",
-          "uarch_x11",
-          "uarch_x12",
-          "uarch_x13",
-          "uarch_x14",
-          "uarch_x15",
-          "uarch_x16",
-          "uarch_x17",
-          "uarch_x18",
-          "uarch_x19",
-          "uarch_x20",
-          "uarch_x21",
-          "uarch_x22",
-          "uarch_x23",
-          "uarch_x24",
-          "uarch_x25",
-          "uarch_x26",
-          "uarch_x27",
-          "uarch_x28",
-          "uarch_x29",
-          "uarch_x30",
-          "uarch_x31",
-          "uarch_pc",
-          "uarch_cycle",
-          "uarch_halt_flag",
-          "iflags_prv",
-          "iflags_x",
-          "iflags_y",
-          "iflags_h",
-          "htif_tohost_dev",
-          "htif_tohost_cmd",
-          "htif_tohost_reason",
-          "htif_tohost_data",
-          "htif_fromhost_dev",
-          "htif_fromhost_cmd",
-          "htif_fromhost_reason",
-          "htif_fromhost_data"
-        ]
+      "UnsignedInteger": {
+        "title": "UnsignedInteger",
+        "type": "integer",
+        "minimum": 0
       },
-
-      "InterpreterBreakReason": {
-        "title": "InterpreterBreakReason",
-        "enum": [
-          "failed",
-          "halted",
-          "yielded_manually",
-          "yielded_automatically",
-          "yielded_softly",
-          "reached_target_mcycle"
-        ]
+      "ForkResult": {
+        "title": "ForkResult",
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "pid": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
       },
-
-      "UarchInterpreterBreakReason": {
-        "title": "UarchInterpreterBreakReason",
-        "enum": [
-          "reached_target_cycle",
-          "uarch_halted"
-        ]
-      },
-
       "SemanticVersion": {
         "title": "SemanticVersion",
         "type": "object",
@@ -1008,7 +888,48 @@
           }
         }
       },
-
+      "ConcurrencyRuntimeConfig": {
+        "title": "ConcurrencyRuntimeConfig",
+        "type": "object",
+        "properties": {
+          "update_merkle_tree": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      },
+      "HTIFRuntimeConfig": {
+        "title": "HTIFRuntimeConfig",
+        "type": "object",
+        "properties": {
+          "no_console_putchar": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MachineRuntimeConfig": {
+        "title": "MachineRuntimeConfig",
+        "type": "object",
+        "properties": {
+          "concurrency": {
+            "$ref": "#/components/schemas/ConcurrencyRuntimeConfig"
+          },
+          "htif": {
+            "$ref": "#/components/schemas/HTIFRuntimeConfig"
+          },
+          "skip_root_hash_check": {
+            "type": "boolean"
+          },
+          "skip_root_hash_store": {
+            "type": "boolean"
+          },
+          "skip_version_check": {
+            "type": "boolean"
+          },
+          "soft_yield": {
+            "type": "boolean"
+          }
+        }
+      },
       "ProcessorConfig": {
         "title": "ProcessorConfig",
         "type": "object",
@@ -1300,206 +1221,6 @@
           }
         }
       },
-
-      "UnsignedInteger": {
-        "title": "UnsignedInteger",
-        "type": "integer",
-        "minimum": 0
-      },
-
-      "Base64String": {
-        "title": "Base64String",
-        "type": "string",
-        "contentEncoding": "base64"
-      },
-
-      "Base64Hash": {
-        "title": "Base64Hash",
-        "type": "string",
-        "contentEncoding": "base64",
-        "minLength": 45,
-        "maxLength": 45
-      },
-
-      "Base64HashArray": {
-        "title": "Base64HashArray",
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/Base64Hash"
-        }
-      },
-
-      "NoteArray": {
-        "title": "NoteArray",
-        "type": "array",
-        "items": {
-          "type": "string"
-        }
-      },
-
-      "BracketArray": {
-        "title": "BracketArray",
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/Bracket"
-        }
-      },
-
-      "BracketType": {
-        "title": "BracketType",
-        "enum": [
-          "begin",
-          "end"
-        ]
-      },
-
-      "Bracket": {
-        "title": "Bracket",
-        "type": "object",
-        "properties": {
-          "type": {
-            "$ref": "#/components/schemas/BracketType"
-          },
-          "where": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          },
-          "text": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "type",
-          "where",
-          "text"
-        ]
-      },
-
-      "Proof": {
-        "title": "Proof",
-        "type": "object",
-        "properties": {
-          "target_address": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          },
-          "log2_target_size": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          },
-          "target_hash": {
-            "$ref": "#/components/schemas/Base64Hash"
-          },
-          "log2_root_size": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          },
-          "root_hash": {
-            "$ref": "#/components/schemas/Base64Hash"
-          },
-          "sibling_hashes": {
-            "$ref": "#/components/schemas/Base64HashArray"
-          }
-        },
-        "required": [
-          "target_address",
-          "log2_target_size",
-          "target_hash",
-          "log2_root_size",
-          "root_hash",
-          "sibling_hashes"
-        ]
-      },
-
-      "Access": {
-        "title": "Access",
-        "type": "object",
-        "properties": {
-          "type": {
-            "$ref": "#/components/schemas/AccessType"
-          },
-          "address": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          },
-          "log2_size": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          },
-          "read_hash": {
-            "$ref": "#/components/schemas/Base64String"
-          },
-          "read": {
-            "$ref": "#/components/schemas/Base64String"
-          },
-          "written_hash": {
-            "$ref": "#/components/schemas/Base64String"
-          },
-          "written": {
-            "$ref": "#/components/schemas/Base64String"
-          },
-          "sibling_hashes": {
-            "$ref": "#/components/schemas/Base64HashArray"
-          }
-        },
-        "required": [
-          "type",
-          "address",
-          "log2_size",
-          "read_hash"
-        ]
-      },
-
-      "AccessArray": {
-        "title": "AccessArray",
-        "type": "array",
-        "items": {
-          "$ref": "#/components/schemas/Access"
-        }
-      },
-
-      "AccessType": {
-        "title": "AccessType",
-        "enum": [
-          "read",
-          "write"
-        ]
-      },
-
-      "AccessLogType": {
-        "title": "AccessLogType",
-        "type": "object",
-        "properties": {
-          "has_annotations": {
-            "type": "boolean"
-          },
-          "has_large_data": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "has_annotations",
-          "has_large_data"
-        ]
-      },
-
-      "AccessLog": {
-        "title": "AccessLog",
-        "type": "object",
-        "properties": {
-          "log_type": {
-            "$ref": "#/components/schemas/AccessLogType"
-          },
-          "accesses": {
-            "$ref": "#/components/schemas/AccessArray"
-          },
-          "notes": {
-            "$ref": "#/components/schemas/NoteArray"
-          },
-          "brackets": {
-            "$ref": "#/components/schemas/BracketArray"
-          }
-        },
-        "required": [
-          "log_type",
-          "accesses"
-        ]
-      },
-
       "RAMConfig": {
         "title": "RAMConfig",
         "type": "object",
@@ -1515,7 +1236,6 @@
           "length"
         ]
       },
-
       "DTBConfig": {
         "title": "DTBConfig",
         "type": "object",
@@ -1534,7 +1254,6 @@
           }
         }
       },
-
       "MemoryRangeConfig": {
         "title": "MemoryRangeConfig",
         "type": "object",
@@ -1553,7 +1272,6 @@
           }
         }
       },
-      
       "CmioBufferConfig": {
         "title": "CmioBufferConfig",
         "type": "object",
@@ -1566,7 +1284,6 @@
           }
         }
       },
-
       "VirtIOHostfwd": {
         "title": "VirtIOHostfwd",
         "type": "object",
@@ -1588,7 +1305,6 @@
           }
         }
       },
-
       "VirtIOHostfwdArray": {
         "title": "VirtIOHostfwdArray",
         "type": "array",
@@ -1596,7 +1312,6 @@
           "$ref": "#/components/schemas/VirtIOHostfwd"
         }
       },
-
       "VirtIODeviceConfig": {
         "title": "VirtIODeviceConfig",
         "type": "object",
@@ -1621,7 +1336,6 @@
           }
         }
       },
-
       "FlashDriveConfigs": {
         "title": "FlashDriveConfigs",
         "type": "array",
@@ -1629,7 +1343,6 @@
           "$ref": "#/components/schemas/MemoryRangeConfig"
         }
       },
-
       "TLBConfig": {
         "title": "TLBConfig",
         "type": "object",
@@ -1639,7 +1352,6 @@
           }
         }
       },
-
       "CLINTConfig": {
         "title": "CLINTConfig",
         "type": "object",
@@ -1649,7 +1361,6 @@
           }
         }
       },
-
       "PLICConfig": {
         "title": "PLICConfig",
         "type": "object",
@@ -1662,7 +1373,6 @@
           }
         }
       },
-
       "HTIFConfig": {
         "title": "HTIFConfig",
         "type": "object",
@@ -1684,7 +1394,6 @@
           }
         }
       },
-
       "UarchProcessorConfig": {
         "title": "UarchProcessorConfig",
         "type": "object",
@@ -1796,7 +1505,6 @@
           }
         }
       },
-
       "UarchRAMConfig": {
         "title": "UarchRAMConfig",
         "type": "object",
@@ -1809,7 +1517,6 @@
           }
         }
       },
-
       "UarchConfig": {
         "title": "UarchConfig",
         "type": "object",
@@ -1822,7 +1529,6 @@
           }
         }
       },
-
       "CmioConfig": {
         "title": "CmioConfig",
         "type": "object",
@@ -1835,7 +1541,6 @@
           }
         }
       },
-
       "VirtIOConfigs": {
         "title": "VirtIOConfigs",
         "type": "array",
@@ -1843,7 +1548,6 @@
           "$ref": "#/components/schemas/VirtIODeviceConfig"
         }
       },
-
       "MachineConfig": {
         "title": "MachineConfig",
         "type": "object",
@@ -1883,52 +1587,359 @@
           }
         }
       },
-
-      "ConcurrencyRuntimeConfig": {
-        "title": "ConcurrencyRuntimeConfig",
+      "InterpreterBreakReason": {
+        "title": "InterpreterBreakReason",
+        "enum": [
+          "failed",
+          "halted",
+          "yielded_manually",
+          "yielded_automatically",
+          "yielded_softly",
+          "reached_target_mcycle"
+        ]
+      },
+      "UarchInterpreterBreakReason": {
+        "title": "UarchInterpreterBreakReason",
+        "enum": [
+          "reached_target_cycle",
+          "uarch_halted"
+        ]
+      },
+      "Base64String": {
+        "title": "Base64String",
+        "type": "string",
+        "contentEncoding": "base64"
+      },
+      "Base64Hash": {
+        "title": "Base64Hash",
+        "type": "string",
+        "contentEncoding": "base64",
+        "minLength": 45,
+        "maxLength": 45
+      },
+      "Base64HashArray": {
+        "title": "Base64HashArray",
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/Base64Hash"
+        }
+      },
+      "NoteArray": {
+        "title": "NoteArray",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "BracketArray": {
+        "title": "BracketArray",
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/Bracket"
+        }
+      },
+      "BracketType": {
+        "title": "BracketType",
+        "enum": [
+          "begin",
+          "end"
+        ]
+      },
+      "Bracket": {
+        "title": "Bracket",
         "type": "object",
         "properties": {
-          "update_merkle_tree": {
+          "type": {
+            "$ref": "#/components/schemas/BracketType"
+          },
+          "where": {
             "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "text": {
+            "type": "string"
           }
-        }
+        },
+        "required": [
+          "type",
+          "where",
+          "text"
+        ]
       },
-
-      "HTIFRuntimeConfig": {
-        "title": "HTIFRuntimeConfig",
+      "Proof": {
+        "title": "Proof",
         "type": "object",
         "properties": {
-          "no_console_putchar": {
-            "type": "boolean"
+          "target_address": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "log2_target_size": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "target_hash": {
+            "$ref": "#/components/schemas/Base64Hash"
+          },
+          "log2_root_size": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "root_hash": {
+            "$ref": "#/components/schemas/Base64Hash"
+          },
+          "sibling_hashes": {
+            "$ref": "#/components/schemas/Base64HashArray"
           }
-        }
+        },
+        "required": [
+          "target_address",
+          "log2_target_size",
+          "target_hash",
+          "log2_root_size",
+          "root_hash",
+          "sibling_hashes"
+        ]
       },
-
-      "MachineRuntimeConfig": {
-        "title": "MachineRuntimeConfig",
+      "Access": {
+        "title": "Access",
         "type": "object",
         "properties": {
-          "concurrency": {
-            "$ref": "#/components/schemas/ConcurrencyRuntimeConfig"
+          "type": {
+            "$ref": "#/components/schemas/AccessType"
           },
-          "htif": {
-            "$ref": "#/components/schemas/HTIFRuntimeConfig"
+          "address": {
+            "$ref": "#/components/schemas/UnsignedInteger"
           },
-          "skip_root_hash_check": {
-            "type": "boolean"
+          "log2_size": {
+            "$ref": "#/components/schemas/UnsignedInteger"
           },
-          "skip_root_hash_store": {
-            "type": "boolean"
+          "read_hash": {
+            "$ref": "#/components/schemas/Base64String"
           },
-          "skip_version_check": {
-            "type": "boolean"
+          "read": {
+            "$ref": "#/components/schemas/Base64String"
           },
-          "soft_yield": {
-            "type": "boolean"
+          "written_hash": {
+            "$ref": "#/components/schemas/Base64String"
+          },
+          "written": {
+            "$ref": "#/components/schemas/Base64String"
+          },
+          "sibling_hashes": {
+            "$ref": "#/components/schemas/Base64HashArray"
           }
+        },
+        "required": [
+          "type",
+          "address",
+          "log2_size",
+          "read_hash"
+        ]
+      },
+      "AccessArray": {
+        "title": "AccessArray",
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/Access"
         }
       },
-
+      "AccessType": {
+        "title": "AccessType",
+        "enum": [
+          "read",
+          "write"
+        ]
+      },
+      "AccessLogType": {
+        "title": "AccessLogType",
+        "type": "object",
+        "properties": {
+          "has_annotations": {
+            "type": "boolean"
+          },
+          "has_large_data": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "has_annotations",
+          "has_large_data"
+        ]
+      },
+      "AccessLog": {
+        "title": "AccessLog",
+        "type": "object",
+        "properties": {
+          "log_type": {
+            "$ref": "#/components/schemas/AccessLogType"
+          },
+          "accesses": {
+            "$ref": "#/components/schemas/AccessArray"
+          },
+          "notes": {
+            "$ref": "#/components/schemas/NoteArray"
+          },
+          "brackets": {
+            "$ref": "#/components/schemas/BracketArray"
+          }
+        },
+        "required": [
+          "log_type",
+          "accesses"
+        ]
+      },
+      "REG": {
+        "title": "REG",
+        "enum": [
+          "x0",
+          "x1",
+          "x2",
+          "x3",
+          "x4",
+          "x5",
+          "x6",
+          "x7",
+          "x8",
+          "x9",
+          "x10",
+          "x11",
+          "x12",
+          "x13",
+          "x14",
+          "x15",
+          "x16",
+          "x17",
+          "x18",
+          "x19",
+          "x20",
+          "x21",
+          "x22",
+          "x23",
+          "x24",
+          "x25",
+          "x26",
+          "x27",
+          "x28",
+          "x29",
+          "x30",
+          "x31",
+          "f0",
+          "f1",
+          "f2",
+          "f3",
+          "f4",
+          "f5",
+          "f6",
+          "f7",
+          "f8",
+          "f9",
+          "f10",
+          "f11",
+          "f12",
+          "f13",
+          "f14",
+          "f15",
+          "f16",
+          "f17",
+          "f18",
+          "f19",
+          "f20",
+          "f21",
+          "f22",
+          "f23",
+          "f24",
+          "f25",
+          "f26",
+          "f27",
+          "f28",
+          "f29",
+          "f30",
+          "f31",
+          "pc",
+          "fcsr",
+          "mvendorid",
+          "marchid",
+          "mimpid",
+          "mcycle",
+          "icycleinstret",
+          "mstatus",
+          "mtvec",
+          "mscratch",
+          "mepc",
+          "mcause",
+          "mtval",
+          "misa",
+          "mie",
+          "mip",
+          "medeleg",
+          "mideleg",
+          "mcounteren",
+          "menvcfg",
+          "stvec",
+          "sscratch",
+          "sepc",
+          "scause",
+          "stval",
+          "satp",
+          "scounteren",
+          "senvcfg",
+          "ilrsc",
+          "iflags",
+          "iunrep",
+          "clint_mtimecmp",
+          "plic_girqpend",
+          "plic_girqsrvd",
+          "htif_tohost",
+          "htif_fromhost",
+          "htif_ihalt",
+          "htif_iconsole",
+          "htif_iyield",
+          "uarch_x0",
+          "uarch_x1",
+          "uarch_x2",
+          "uarch_x3",
+          "uarch_x4",
+          "uarch_x5",
+          "uarch_x6",
+          "uarch_x7",
+          "uarch_x8",
+          "uarch_x9",
+          "uarch_x10",
+          "uarch_x11",
+          "uarch_x12",
+          "uarch_x13",
+          "uarch_x14",
+          "uarch_x15",
+          "uarch_x16",
+          "uarch_x17",
+          "uarch_x18",
+          "uarch_x19",
+          "uarch_x20",
+          "uarch_x21",
+          "uarch_x22",
+          "uarch_x23",
+          "uarch_x24",
+          "uarch_x25",
+          "uarch_x26",
+          "uarch_x27",
+          "uarch_x28",
+          "uarch_x29",
+          "uarch_x30",
+          "uarch_x31",
+          "uarch_pc",
+          "uarch_cycle",
+          "uarch_halt_flag",
+          "iflags_prv",
+          "iflags_x",
+          "iflags_y",
+          "iflags_h",
+          "htif_tohost_dev",
+          "htif_tohost_cmd",
+          "htif_tohost_reason",
+          "htif_tohost_data",
+          "htif_fromhost_dev",
+          "htif_fromhost_cmd",
+          "htif_fromhost_reason",
+          "htif_fromhost_data"
+        ]
+      },
       "MemoryRangeDescription": {
         "title": "MemoryRangeDescription",
         "type": "object",
@@ -1944,25 +1955,11 @@
           }
         }
       },
-
       "MemoryRangeDescriptionArray": {
         "title": "MemoryRangeDescriptionArray",
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/MemoryRangeDescription"
-        }
-      },
-
-      "ForkResult": {
-        "title": "ForkResult",
-        "type": "object",
-        "properties": {
-          "address": {
-            "type": "string"
-          },
-          "pid": {
-            "$ref": "#/components/schemas/UnsignedInteger"
-          }
         }
       }
     }

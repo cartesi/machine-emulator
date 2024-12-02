@@ -19,6 +19,7 @@
 local cartesi = require("cartesi")
 local test_util = require("cartesi.tests.util")
 local test_data = require("cartesi.tests.data")
+local jsonrpc
 
 local function adjust_images_path(path)
     return string.gsub(path or ".", "/*$", "") .. "/"
@@ -37,14 +38,9 @@ Usage:
 
 where options are:
 
-  --remote-address=<address>
+  --remote-address=<ip>:<port>
     run tests on a remote cartesi machine (when machine type is jsonrpc).
 
-<address> is one of the following formats:
-  <host>:<port>
-   unix:<path>
-
-<host> can be a host name, IPv4 or IPv6 address.
 ]=],
         arg[0]
     ))
@@ -105,20 +101,12 @@ end
 local machine_type = assert(arguments[1], "missing machine type")
 assert(machine_type == "local" or machine_type == "jsonrpc", "unknown machine type, should be 'local' or 'jsonrpc'")
 
-local protocol
+local to_shutdown
 if machine_type == "jsonrpc" then
     assert(remote_address ~= nil, "remote cartesi machine address is missing")
-    protocol = require("cartesi.jsonrpc")
+    jsonrpc = require("cartesi.jsonrpc")
+    to_shutdown = jsonrpc.connect_server(remote_address):set_cleanup_call(jsonrpc.SHUTDOWN)
 end
-
-local function connect()
-    local remote = protocol.connect(remote_address) -- server will be shutdown when remote is collected
-    local version =
-        assert(remote.get_server_version(), "could not connect to remote cartesi machine at " .. remote_address)
-    return remote, version
-end
-
-local remote
 
 -- There is no UINT64_MAX in Lua, so we have to use the signed representation
 local MAX_MCYCLE = -1
@@ -132,10 +120,8 @@ local function load_machine(name)
         skip_root_hash_store = true,
     }
     if machine_type ~= "local" then
-        if not remote then
-            remote = connect()
-        end
-        return assert(remote.machine(MACHINES_DIR .. name, runtime))
+        local jsonrpc_machine <close> = assert(jsonrpc.connect_server(remote_address))
+        return assert(jsonrpc_machine(MACHINES_DIR .. name, runtime):set_cleanup_call(jsonrpc.SHUTDOWN))
     else
         return assert(cartesi.machine(MACHINES_DIR .. name, runtime))
     end

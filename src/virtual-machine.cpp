@@ -30,11 +30,21 @@
 
 namespace cartesi {
 
-virtual_machine::virtual_machine(const machine_config &c, const machine_runtime_config &r) :
-    m_machine(new machine(c, r)) {}
+i_virtual_machine *virtual_machine::do_clone_empty() const {
+    return new virtual_machine();
+}
 
-virtual_machine::virtual_machine(const std::string &dir, const machine_runtime_config &r) :
-    m_machine(new machine(dir, r)) {}
+bool virtual_machine::do_is_empty() const {
+    return m_machine == nullptr;
+}
+
+void virtual_machine::do_create(const machine_config &config, const machine_runtime_config &runtime) {
+    m_machine = new machine(config, runtime);
+}
+
+void virtual_machine::do_load(const std::string &directory, const machine_runtime_config &runtime) {
+    m_machine = new machine(directory, runtime);
+}
 
 virtual_machine::~virtual_machine() {
     delete m_machine;
@@ -55,8 +65,8 @@ const machine *virtual_machine::get_machine() const {
     return m_machine;
 }
 
-void virtual_machine::do_store(const std::string &dir) const {
-    get_machine()->store(dir);
+void virtual_machine::do_store(const std::string &directory) const {
+    get_machine()->store(directory);
 }
 
 interpreter_break_reason virtual_machine::do_run(uint64_t mcycle_end) {
@@ -123,21 +133,17 @@ machine_config virtual_machine::do_get_initial_config() const {
     return get_machine()->get_initial_config();
 }
 
+machine_runtime_config virtual_machine::do_get_runtime_config() const {
+    return get_machine()->get_runtime_config();
+}
+
+void virtual_machine::do_set_runtime_config(const machine_runtime_config &r) {
+    return get_machine()->set_runtime_config(r);
+}
+
 void virtual_machine::do_destroy() {
-    delete m_machine;
+    delete get_machine();
     m_machine = nullptr;
-}
-
-void virtual_machine::do_snapshot() {
-    throw std::runtime_error("snapshot is not supported");
-}
-
-void virtual_machine::do_commit() {
-    // no-op, we are always committed
-}
-
-void virtual_machine::do_rollback() {
-    throw std::runtime_error("rollback is not supported");
 }
 
 void virtual_machine::do_reset_uarch() {
@@ -163,6 +169,29 @@ void virtual_machine::do_send_cmio_response(uint16_t reason, const unsigned char
 access_log virtual_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
     const access_log::type &log_type) {
     return get_machine()->log_send_cmio_response(reason, data, length, log_type);
+}
+
+uint64_t virtual_machine::do_get_reg_address(reg r) const {
+    return machine::get_reg_address(r);
+}
+
+machine_config virtual_machine::do_get_default_config() const {
+    return machine::get_default_config();
+}
+
+void virtual_machine::do_verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
+    const hash_type &root_hash_after) const {
+    return machine::verify_step_uarch(root_hash_before, log, root_hash_after);
+}
+
+void virtual_machine::do_verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
+    const hash_type &root_hash_after) const {
+    return machine::verify_reset_uarch(root_hash_before, log, root_hash_after);
+}
+
+void virtual_machine::do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
+    const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const {
+    return machine::verify_send_cmio_response(reason, data, length, root_hash_before, log, root_hash_after);
 }
 
 } // namespace cartesi

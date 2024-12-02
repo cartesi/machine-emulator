@@ -35,8 +35,8 @@ tests=(
 )
 
 is_server_running () {
-    echo $cartesi_machine --remote-address=$server_address --max-mcycle=0
-    eval $cartesi_machine --remote-address=$server_address --max-mcycle=0 &> /dev/null
+    echo $cartesi_machine --remote-address=$server_address --remote-health-check
+    eval $cartesi_machine --remote-address=$server_address --remote-health-check
 }
 
 wait_for_server () {
@@ -55,10 +55,12 @@ wait_for_server () {
 wait_for_shutdown () {
     pid=$1
     sleep 1
-    if ps -p $pid > /dev/null
+    if ps -g $pid > /dev/null
     then
-        kill $pid
-        echo "$0 killed $pid (server was still running after shutdown)" >&2
+        kill -- -$pid
+        echo >&2
+        echo "FAILED: servers still running after tests" >&2
+        echo >&2
         exit 1
     fi
 }

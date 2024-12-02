@@ -24,8 +24,6 @@
 
 #include "base64.h"
 #include "clua-i-virtual-machine.h"
-#include "clua-machine-util.h"
-#include "clua-machine.h"
 #include "clua.h"
 #include "keccak-256-hasher.h"
 #include "machine-c-api.h"
@@ -41,13 +39,15 @@
 #include "gperftools/profiler.h"
 #endif
 
+namespace cartesi {
+
 #ifdef GPERF
 static int gperf_gc(lua_State *) {
     ProfilerStop();
     return 0;
 }
 
-static const auto gperf_meta = cartesi::clua_make_luaL_Reg_array({
+static const auto gperf_meta = clua_make_luaL_Reg_array({
     {"__gc", gperf_gc},
 });
 #endif
@@ -95,8 +95,7 @@ static int cartesi_mod_keccak(lua_State *L) {
 static int cartesi_mod_tobase64(lua_State *L) try {
     size_t size = 0;
     const char *data = luaL_checklstring(L, 1, &size);
-    std::string &value =
-        *cartesi::clua_push_new_managed_toclose_ptr(L, cartesi::encode_base64(std::string_view(data, size)));
+    std::string &value = *clua_push_new_managed_toclose_ptr(L, encode_base64(std::string_view(data, size)));
     lua_pushlstring(L, value.data(), value.size());
     value.clear();
     return 1;
@@ -108,8 +107,7 @@ static int cartesi_mod_tobase64(lua_State *L) try {
 static int cartesi_mod_frombase64(lua_State *L) try {
     size_t size = 0;
     const char *data = luaL_checklstring(L, 1, &size);
-    std::string &value =
-        *cartesi::clua_push_new_managed_toclose_ptr(L, cartesi::decode_base64(std::string_view(data, size)));
+    std::string &value = *clua_push_new_managed_toclose_ptr(L, decode_base64(std::string_view(data, size)));
     lua_pushlstring(L, value.data(), value.size());
     value.clear();
     return 1;
@@ -121,7 +119,7 @@ static int cartesi_mod_frombase64(lua_State *L) try {
 static int cartesi_mod_tojson(lua_State *L) try {
     const int indent = static_cast<int>(luaL_optinteger(L, 2, -1));
     lua_settop(L, 1);
-    cartesi::clua_check_json_string(L, 1, indent);
+    clua_check_json_string(L, 1, indent);
     return 1;
 } catch (std::exception &e) {
     luaL_error(L, "%s", e.what());
@@ -129,7 +127,18 @@ static int cartesi_mod_tojson(lua_State *L) try {
 }
 
 static int cartesi_mod_fromjson(lua_State *L) try {
-    cartesi::clua_push_json_table(L, luaL_checkstring(L, 1));
+    clua_push_json_table(L, luaL_checkstring(L, 1));
+    return 1;
+} catch (std::exception &e) {
+    luaL_error(L, "%s", e.what());
+    return 1;
+}
+
+static int cartesi_mod_new(lua_State *L) try {
+    auto &m = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr));
+    if (cm_new(nullptr, &m.get()) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
     return 1;
 } catch (std::exception &e) {
     luaL_error(L, "%s", e.what());
@@ -137,13 +146,16 @@ static int cartesi_mod_fromjson(lua_State *L) try {
 }
 
 /// \brief Contents of the cartesi module table.
-static const auto cartesi_mod = cartesi::clua_make_luaL_Reg_array({
+static const auto cartesi_mod = clua_make_luaL_Reg_array({
     {"keccak", cartesi_mod_keccak},
     {"tobase64", cartesi_mod_tobase64},
     {"frombase64", cartesi_mod_frombase64},
     {"tojson", cartesi_mod_tojson},
     {"fromjson", cartesi_mod_fromjson},
+    {"new", cartesi_mod_new},
 });
+
+} // namespace cartesi
 
 extern "C" {
 
@@ -160,17 +172,19 @@ CM_API int luaopen_cartesi(lua_State *L) {
     lua_settable(L, LUA_REGISTRYINDEX);     //
     ProfilerStart("cartesi.prof");
 #endif
-
     // Initialize clua
     clua_init(L);    // cluactx
     lua_newtable(L); // cluactx cartesi
     // Initialize and export machine bind
     clua_i_virtual_machine_export(L, -2); // cluactx cartesi
-    clua_machine_export(L, -2);           // cluactx cartesi
     // Set module functions
-    lua_pushvalue(L, -2);                    // cluactx cartesi cluactx
-    luaL_setfuncs(L, cartesi_mod.data(), 1); // cluactx cartesi
-
+    lua_pushvalue(L, -2);                                                    // cluactx cartesi cluactx
+    luaL_setfuncs(L, cartesi_mod.data(), 1);                                 // cluactx cartesi
+    auto &m = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr), -2); // cluactx cartesi machine
+    if (cm_new(nullptr, &m.get()) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    lua_setfield(L, -2, "machine"); // cluactx cartesi
     // Set public C API constants
     clua_setstringfield(L, CM_VERSION_LABEL, "VERSION_LABEL", -1);
     clua_setstringfield(L, CM_VERSION, "VERSION", -1);
@@ -207,7 +221,6 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_PMA_CMIO_TX_BUFFER_START, "PMA_CMIO_TX_BUFFER_START", -1);
     clua_setintegerfield(L, CM_PMA_CMIO_TX_BUFFER_LOG2_SIZE, "PMA_CMIO_TX_BUFFER_LOG2_SIZE", -1);
     clua_setintegerfield(L, CM_PMA_RAM_START, "PMA_RAM_START", -1);
-
     // Set other constants used by internal tests
     clua_setintegerfield(L, UARCH_STATE_START_ADDRESS, "UARCH_STATE_START_ADDRESS", -1);
     clua_setintegerfield(L, UARCH_STATE_LOG2_SIZE, "UARCH_STATE_LOG2_SIZE", -1);
@@ -223,8 +236,7 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, MVENDORID_INIT, "MVENDORID", -1);
     clua_setintegerfield(L, MARCHID_INIT, "MARCHID", -1);
     clua_setintegerfield(L, MIMPID_INIT, "MIMPID", -1);
-
-    // Build related constants
+    // Build-related constants
     clua_setstringfield(L, BOOST_COMPILER, "COMPILER", -1);
     clua_setstringfield(L, BOOST_PLATFORM, "PLATFORM", -1);
 #ifdef GIT_COMMIT

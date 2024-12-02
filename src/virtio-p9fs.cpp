@@ -1141,15 +1141,15 @@ bool virtio_p9fs_device::op_getattr(virtq_unserializer &&mmsg, uint16_t tag) {
         rstat.blocks = st.st_blocks;
     }
 #ifdef __APPLE__
-    if (mask & P9_GETATTR_ATIME) {
+    if ((mask & P9_GETATTR_ATIME) != 0) {
         rstat.atime_sec = st.st_atimespec.tv_sec;
         rstat.atime_nsec = st.st_atimespec.tv_nsec;
     }
-    if (mask & P9_GETATTR_MTIME) {
+    if ((mask & P9_GETATTR_MTIME) != 0) {
         rstat.mtime_sec = st.st_mtimespec.tv_sec;
         rstat.mtime_nsec = st.st_mtimespec.tv_nsec;
     }
-    if (mask & P9_GETATTR_CTIME) {
+    if ((mask & P9_GETATTR_CTIME) != 0) {
         rstat.ctime_sec = st.st_ctimespec.tv_sec;
         rstat.ctime_nsec = st.st_ctimespec.tv_nsec;
     }

@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <chrono>
 #include <climits>
 #include <csignal>
 #include <cstdint>
@@ -32,6 +33,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <tuple>
 #include <type_traits>
 #include <unordered_map>
@@ -39,7 +41,10 @@
 #include <utility>
 #include <vector>
 
+#include <fcntl.h>
 #include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #pragma GCC diagnostic push
@@ -56,7 +61,6 @@
 #include "base64.h"
 #include "interpret.h"
 #include "json-util.h"
-#include "jsonrpc-connection.h"
 #include "jsonrpc-discover.h"
 #include "machine-config.h"
 #include "machine-merkle-tree.h"
@@ -265,6 +269,7 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
     asio::signal_set signals;                          ///< Signal set used for process termination notifications
     tcp::endpoint local_endpoint;                      ///< Address server receives requests at
     tcp::acceptor acceptor;                            ///< TCP connection acceptor
+    uint64_t delay{0};                                 ///< How much to delay next request in ms
     std::unique_ptr<cartesi::machine> machine;         ///< Cartesi Machine, if any
     std::vector<std::weak_ptr<http_session>> sessions; ///< HTTP sessions
 
@@ -768,7 +773,7 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
     session->handler->ioc.notify_fork(asio::io_context::fork_prepare);
     // Done initializing, so we fork
     const char *err_msg = nullptr;
-    const int pid = cartesi::os_double_fork(static_cast<int>(true), &err_msg);
+    const int pid = cartesi::os_double_fork(false, &err_msg);
     if (pid == 0) { // child
         // Notify to ASIO that we are the child
         session->handler->ioc.notify_fork(asio::io_context::fork_child);
@@ -789,7 +794,10 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
         SLOG(error) << session->handler->local_endpoint << " fork failed (" << err_msg << ")";
         return jsonrpc_response_server_error(j, "fork failed ("s + err_msg + ")"s);
     }
-    const cartesi::fork_result result{new_server_address, static_cast<uint32_t>(pid)};
+    const cartesi::fork_result result{
+        new_server_address,
+        static_cast<uint32_t>(pid),
+    };
     return jsonrpc_response_ok(j, result);
 }
 
@@ -809,21 +817,21 @@ static json jsonrpc_rebind_handler(const json &j, const std::shared_ptr<http_ses
         session->handler->rebind(tcp::acceptor{session->handler->ioc, new_local_endpoint});
         SLOG(trace) << session->handler->local_endpoint << " rebound to " << session->handler->local_endpoint;
     } else {
-        SLOG(trace) << session->handler->local_endpoint << " rebind skipped";
+        SLOG(trace) << session->handler->local_endpoint << " rebind unecessary";
     }
     const std::string result = endpoint_to_string(session->handler->local_endpoint);
     return jsonrpc_response_ok(j, result);
 }
 
-/// \brief JSONRPC handler for the machine.machine.directory method
+/// \brief JSONRPC handler for the machine.load method
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_machine_directory_handler(const json &j, const std::shared_ptr<http_session> &session) {
+static json jsonrpc_machine_load_handler(const json &j, const std::shared_ptr<http_session> &session) {
     if (session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "machine exists");
     }
-    static const char *param_name[] = {"directory", "runtime"};
+    static const char *param_name[] = {"directory", "runtime_config"};
     auto args = parse_args<std::string, cartesi::optional_param<cartesi::machine_runtime_config>>(j, param_name);
     switch (count_args(args)) {
         case 1:
@@ -839,15 +847,15 @@ static json jsonrpc_machine_machine_directory_handler(const json &j, const std::
     return jsonrpc_response_ok(j);
 }
 
-/// \brief JSONRPC handler for the machine.machine.config method
+/// \brief JSONRPC handler for the machine.create method
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_machine_config_handler(const json &j, const std::shared_ptr<http_session> &session) {
+static json jsonrpc_machine_create_handler(const json &j, const std::shared_ptr<http_session> &session) {
     if (session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "machine exists");
     }
-    static const char *param_name[] = {"config", "runtime"};
+    static const char *param_name[] = {"config", "runtime_config"};
     auto args =
         parse_args<cartesi::machine_config, cartesi::optional_param<cartesi::machine_runtime_config>>(j, param_name);
     switch (count_args(args)) {
@@ -871,6 +879,38 @@ static json jsonrpc_machine_machine_config_handler(const json &j, const std::sha
 static json jsonrpc_machine_destroy_handler(const json &j, const std::shared_ptr<http_session> &session) {
     jsonrpc_check_no_params(j);
     session->handler->machine.reset();
+    return jsonrpc_response_ok(j);
+}
+
+/// \brief JSONRPC handler for the delay_next_request method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+/// \details This method causes the server to sleep for a number of miliseconds before the next call
+static json jsonrpc_delay_next_request_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    static const char *param_name[] = {"ms"};
+    auto args = parse_args<uint64_t>(j, param_name);
+    session->handler->delay = std::get<0>(args);
+    return jsonrpc_response_ok(j);
+}
+
+/// \brief JSONRPC handler for the machine.destroy method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_machine_is_empty_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    jsonrpc_check_no_params(j);
+    return jsonrpc_response_ok(j, session->handler->machine == nullptr);
+}
+
+/// \brief JSONRPC handler for the emancipate method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_emancipate_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    (void) session;
+    jsonrpc_check_no_params(j);
+    setpgid(0, 0);
     return jsonrpc_response_ok(j);
 }
 
@@ -1226,6 +1266,32 @@ static json jsonrpc_machine_get_initial_config_handler(const json &j, const std:
     return jsonrpc_response_ok(j, session->handler->machine->get_initial_config());
 }
 
+/// \brief JSONRPC handler for the machine.get_runtime_config method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_machine_get_runtime_config_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    jsonrpc_check_no_params(j);
+    return jsonrpc_response_ok(j, session->handler->machine->get_runtime_config());
+}
+
+/// \brief JSONRPC handler for the machine.set_runtime_config method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_machine_set_runtime_config_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    static const char *param_name[] = {"runtime_config"};
+    auto args = parse_args<cartesi::machine_runtime_config>(j, param_name);
+    session->handler->machine->set_runtime_config(std::get<0>(args));
+    return jsonrpc_response_ok(j);
+}
+
 /// \brief JSONRPC handler for the machine.get_default_config method
 /// \param j JSON request object
 /// \param session HTTP session
@@ -1363,10 +1429,13 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"fork", jsonrpc_fork_handler},
         {"rebind", jsonrpc_rebind_handler},
         {"shutdown", jsonrpc_shutdown_handler},
+        {"emancipate", jsonrpc_emancipate_handler},
         {"get_version", jsonrpc_get_version_handler},
+        {"delay_next_request", jsonrpc_delay_next_request_handler},
         {"rpc.discover", jsonrpc_rpc_discover_handler},
-        {"machine.machine.config", jsonrpc_machine_machine_config_handler},
-        {"machine.machine.directory", jsonrpc_machine_machine_directory_handler},
+        {"machine.create", jsonrpc_machine_create_handler},
+        {"machine.is_empty", jsonrpc_machine_is_empty_handler},
+        {"machine.load", jsonrpc_machine_load_handler},
         {"machine.destroy", jsonrpc_machine_destroy_handler},
         {"machine.store", jsonrpc_machine_store_handler},
         {"machine.run", jsonrpc_machine_run_handler},
@@ -1390,6 +1459,8 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.get_reg_address", jsonrpc_machine_get_reg_address_handler},
         {"machine.get_initial_config", jsonrpc_machine_get_initial_config_handler},
         {"machine.get_default_config", jsonrpc_machine_get_default_config_handler},
+        {"machine.get_runtime_config", jsonrpc_machine_get_runtime_config_handler},
+        {"machine.set_runtime_config", jsonrpc_machine_set_runtime_config_handler},
         {"machine.verify_merkle_tree", jsonrpc_machine_verify_merkle_tree_handler},
         {"machine.verify_dirty_page_maps", jsonrpc_machine_verify_dirty_page_maps_handler},
         {"machine.get_memory_ranges", jsonrpc_machine_get_memory_ranges_handler},
@@ -1499,6 +1570,11 @@ http::message_generator handle_request(HTTP_REQ &&rreq, const std::shared_ptr<ht
                 jr.push_back(
                     jsonrpc_response_invalid_request(ji, "invalid field \"id\" (expected string, number, or null)"));
             }
+        }
+        if (session->handler->delay != 0) {
+            SLOG(trace) << session->handler->local_endpoint << " sleeping for " << session->handler->delay << "ms";
+            std::this_thread::sleep_for(std::chrono::milliseconds(session->handler->delay));
+            session->handler->delay = 0;
         }
         json jri = jsonrpc_dispatch_method(ji, session);
         // Except for errors, do not add result of "notification" requests

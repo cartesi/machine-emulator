@@ -19,6 +19,7 @@
 local cartesi = require("cartesi")
 local util = require("cartesi.util")
 local test_util = require("cartesi.tests.util")
+local jsonrpc
 
 local remote_address
 local test_path = "./"
@@ -40,7 +41,7 @@ Usage:
 
 where options are:
 
-  --remote-address=<address>
+  --remote-address=<ip>:<port>
     run tests on a remote cartesi machine (when machine type is jsonrpc).
 
   --test-path=<dir>
@@ -59,11 +60,6 @@ where options are:
         when omitted or defined as 0, the number of hardware threads is used if
         it can be identified or else a single thread is used.
 
-<address> is one of the following formats:
-  <host>:<port>
-   unix:<path>
-
-<host> can be a host name, IPv4 or IPv6 address.
 ]=],
         arg[0]
     ))
@@ -245,21 +241,13 @@ end
 
 local machine_type = assert(arguments[1], "missing machine type")
 assert(machine_type == "local" or machine_type == "jsonrpc", "unknown machine type, should be 'local' or 'jsonrpc'")
-local protocol
+local to_shutdown
 if machine_type == "jsonrpc" then
     assert(remote_address ~= nil, "remote cartesi machine address is missing")
     assert(test_path ~= nil, "test path must be provided and must be working directory of remote cartesi machine")
-    protocol = require("cartesi.jsonrpc")
+    jsonrpc = require("cartesi.jsonrpc")
+    to_shutdown = jsonrpc.connect_server(remote_address):set_cleanup_call(jsonrpc.SHUTDOWN)
 end
-
-local function connect()
-    local remote = protocol.connect(remote_address) -- server will be shutdown when remote is collected
-    local version =
-        assert(remote.get_server_version(), "could not connect to remote cartesi machine at " .. remote_address)
-    return remote, version
-end
-
-local remote
 
 local function build_machine_config(config_options)
     if not config_options then
@@ -293,10 +281,8 @@ local function build_machine(type, config_options)
     local config, runtime = build_machine_config(config_options)
     local new_machine
     if type ~= "local" then
-        if not remote then
-            remote = connect()
-        end
-        new_machine = assert(remote.machine(config, runtime))
+        local jsonrpc_machine <close> = assert(jsonrpc.connect_server(remote_address))
+        new_machine = assert(jsonrpc_machine(config, runtime):set_cleanup_call(jsonrpc.SHUTDOWN))
     else
         new_machine = assert(cartesi.machine(config, runtime))
     end
@@ -348,44 +334,29 @@ do_test("should provide proof for values in registers", function(machine)
 end)
 
 print("\n\ntesting get_reg_address function binding")
-do_test("should return address value for registers", function()
-    local module = cartesi
-    if machine_type ~= "local" then
-        if not remote then
-            remote = connect()
-        end
-        module = remote
-    end
+do_test("should return address value for registers", function(machine)
     -- Check register address
     for k, v in pairs(cpu_reg_addr) do
-        local u = module.machine.get_reg_address(k)
+        local u = machine:get_reg_address(k)
         assert(u == v, "invalid return for " .. v)
     end
 end)
 
 print("\n\ntesting get x address function binding")
-do_test("should return address value for x registers", function()
-    local module = cartesi
-    if machine_type ~= "local" then
-        if not remote then
-            remote = connect()
-        end
-        module = remote
-    end
+do_test("should return address value for x registers", function(machine)
     -- Check x address
     for i = 0, 31 do
-        assert(module.machine.get_reg_address("x" .. i) == SHADOW_BASE + i * 8, "invalid return for x" .. i)
+        assert(machine:get_reg_address("x" .. i) == SHADOW_BASE + i * 8, "invalid return for x" .. i)
     end
 end)
 
 print("\n\ntesting get x uarch_address function binding")
-do_test("should return address value for uarch x registers", function()
+do_test("should return address value for uarch x registers", function(machine)
     local SHADOW_UARCH_XBASE = cartesi.UARCH_SHADOW_START_ADDRESS + 24
-    local module = cartesi
     -- Check x address
     for i = 0, 31 do
         assert(
-            module.machine.get_reg_address("uarch_x" .. i) == SHADOW_UARCH_XBASE + i * 8,
+            machine:get_reg_address("uarch_x" .. i) == SHADOW_UARCH_XBASE + i * 8,
             "invalid return for uarch x" .. i
         )
     end
@@ -449,15 +420,8 @@ local function test_config(config)
 end
 
 print("\n\ntesting get_default_config function binding")
-do_test("should return default machine config", function()
-    local module = cartesi
-    if machine_type ~= "local" then
-        if not remote then
-            remote = connect()
-        end
-        module = remote
-    end
-    test_config(module.machine.get_default_config())
+do_test("should return default machine config", function(machine)
+    test_config(machine:get_default_config())
 end)
 
 print("\n\n test verifying integrity of the merkle tree")
@@ -700,39 +664,25 @@ end)
 
 print("\n\ntesting step and verification")
 do_test("machine step should pass verifications", function(machine)
-    local module = cartesi
-    if machine_type ~= "local" then
-        if not remote then
-            remote = connect()
-        end
-        module = remote
-    end
     local initial_hash = machine:get_root_hash()
     local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
     local final_hash = machine:get_root_hash()
-    module.machine.verify_step_uarch(initial_hash, log, final_hash)
+    machine:verify_step_uarch(initial_hash, log, final_hash)
 end)
 
 print("\n\ntesting step and verification")
 do_test("Step log must contain conssitent data hashes", function(machine)
     local wrong_hash = string.rep("\0", cartesi.HASH_SIZE)
-    local module = cartesi
-    if machine_type ~= "local" then
-        if not remote then
-            remote = connect()
-        end
-        module = remote
-    end
     local initial_hash = machine:get_root_hash()
     local log = machine:log_step_uarch()
     local final_hash = machine:get_root_hash()
-    module.machine.verify_step_uarch(initial_hash, log, final_hash)
+    machine:verify_step_uarch(initial_hash, log, final_hash)
     local read_access = log.accesses[1]
     assert(read_access.type == "read")
     local read_hash = read_access.read_hash
     -- ensure that verification fails with wrong read hash
     read_access.read_hash = wrong_hash
-    local _, err = pcall(module.machine.verify_step_uarch, initial_hash, log, final_hash)
+    local _, err = pcall(machine.verify_step_uarch, machine, initial_hash, log, final_hash)
     assert(err:match("logged read data of uarch.uarch_cycle data does not hash to the logged read hash at 1st access"))
     read_access.read_hash = read_hash -- restore correct value
 
@@ -741,24 +691,17 @@ do_test("Step log must contain conssitent data hashes", function(machine)
     assert(write_access.type == "write")
     read_hash = write_access.read_hash
     write_access.read_hash = wrong_hash
-    _, err = pcall(module.machine.verify_step_uarch, initial_hash, log, final_hash)
+    _, err = pcall(machine.verify_step_uarch, machine, initial_hash, log, final_hash)
     assert(err:match("logged read data of uarch.cycle does not hash to the logged read hash at 8th access"))
     write_access.read_hash = read_hash -- restore correct value
 
     -- ensure that verification fails with wrong written hash
     write_access.written_hash = wrong_hash
-    _, err = pcall(module.machine.verify_step_uarch, initial_hash, log, final_hash)
+    _, err = pcall(machine.verify_step_uarch, machine, initial_hash, log, final_hash)
     assert(err:match("logged written data of uarch.cycle does not hash to the logged written hash at 8th access"))
 end)
 
 do_test("step when uarch cycle is max", function(machine)
-    local module = cartesi
-    if machine_type ~= "local" then
-        if not remote then
-            remote = connect()
-        end
-        module = remote
-    end
     machine:write_reg("uarch_cycle", MAX_UARCH_CYCLE)
     assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
     local initial_hash = machine:get_root_hash()
@@ -766,7 +709,7 @@ do_test("step when uarch cycle is max", function(machine)
     assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
     local final_hash = machine:get_root_hash()
     assert(final_hash == initial_hash)
-    module.machine.verify_step_uarch(initial_hash, log, final_hash)
+    machine:verify_step_uarch(initial_hash, log, final_hash)
 end)
 
 local uarch_proof_step_program = {
@@ -947,21 +890,17 @@ end
 test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
     "Testing verify_reset_uarch",
     function(machine)
-        local module = cartesi
-        if machine_type ~= "local" then
-            module = remote
-        end
         local initial_hash = machine:get_root_hash()
         local log = machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
         local final_hash = machine:get_root_hash()
         -- verify happy path
-        module.machine.verify_reset_uarch(initial_hash, log, final_hash)
+        machine:verify_reset_uarch(initial_hash, log, final_hash)
         -- verifying incorrect initial hash
         local wrong_hash = string.rep("0", cartesi.HASH_SIZE)
-        local _, err = pcall(module.machine.verify_reset_uarch, wrong_hash, log, final_hash)
+        local _, err = pcall(machine.verify_reset_uarch, machine, wrong_hash, log, final_hash)
         assert(err:match("Mismatch in root hash of 1st access"))
         -- verifying incorrect final hash
-        _, err = pcall(module.machine.verify_reset_uarch, initial_hash, log, wrong_hash)
+        _, err = pcall(machine.verify_reset_uarch, machine, initial_hash, log, wrong_hash)
         assert(err:match("mismatch in root hash after replay"))
     end
 )
@@ -969,14 +908,10 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
 test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
     "Testing verify_reset_uarch",
     function(machine)
-        local module = cartesi
-        if machine_type ~= "local" then
-            module = remote
-        end
         local initial_hash = machine:get_root_hash()
         local log = machine:log_reset_uarch()
         local final_hash = machine:get_root_hash()
-        module.machine.verify_reset_uarch(initial_hash, log, final_hash)
+        machine:verify_reset_uarch(initial_hash, log, final_hash)
     end
 )
 
@@ -1015,10 +950,6 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
 test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
     "Log uarch reset with large_data option set must have consistent read and written data",
     function(machine)
-        local module = cartesi
-        if machine_type ~= "local" then
-            module = remote
-        end
         -- reset uarch and get log
         local initial_hash = machine:get_root_hash()
         local log = machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS | cartesi.ACCESS_LOG_TYPE_LARGE_DATA)
@@ -1029,30 +960,23 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         assert(access.read ~= nil, "read data should not be nil")
         assert(access.written ~= nil, "written data should not be nil")
         -- verify returned log
-        module.machine.verify_reset_uarch(initial_hash, log, final_hash)
+        machine:verify_reset_uarch(initial_hash, log, final_hash)
         -- save logged read and written data
         local original_read = access.read
         -- tamper with read data to produce a hash mismatch
         access.read = "X" .. access.read:sub(2)
-        local _, err = pcall(module.machine.verify_reset_uarch, initial_hash, log, final_hash)
+        local _, err = pcall(machine.verify_reset_uarch, machine, initial_hash, log, final_hash)
         assert(err:match("hash of read data and read hash at 1st access does not match read hash"))
         -- restore correct read
         access.read = original_read
         --  change written data to produce a hash mismatch
         access.written = "X" .. access.written:sub(2)
-        _, err = pcall(module.machine.verify_reset_uarch, initial_hash, log, final_hash)
+        _, err = pcall(machine.verify_reset_uarch, machine, initial_hash, log, final_hash)
         assert(err:match("written hash and written data mismatch at 1st access"))
     end
 )
 
 do_test("Test unhappy paths of verify_reset_uarch", function(machine)
-    local module = cartesi
-    if machine_type ~= "local" then
-        if not remote then
-            remote = connect()
-        end
-        module = remote
-    end
     local bad_hash = string.rep("\0", cartesi.HASH_SIZE)
     local function assert_error(expected_error, callback)
         machine:reset_uarch()
@@ -1060,7 +984,7 @@ do_test("Test unhappy paths of verify_reset_uarch", function(machine)
         local log = machine:log_reset_uarch()
         local final_hash = machine:get_root_hash()
         callback(log)
-        local _, err = pcall(module.machine.verify_reset_uarch, initial_hash, log, final_hash)
+        local _, err = pcall(machine.verify_reset_uarch, machine, initial_hash, log, final_hash)
         assert(
             err:match(expected_error),
             'Error text "' .. err .. '"  does not match expected "' .. expected_error .. '"'
@@ -1101,13 +1025,6 @@ do_test("Test unhappy paths of verify_reset_uarch", function(machine)
 end)
 
 do_test("Test unhappy paths of verify_step_uarch", function(machine)
-    local module = cartesi
-    if machine_type ~= "local" then
-        if not remote then
-            remote = connect()
-        end
-        module = remote
-    end
     local bad_hash = string.rep("\0", cartesi.HASH_SIZE)
     local function assert_error(expected_error, callback)
         machine:reset_uarch()
@@ -1115,7 +1032,7 @@ do_test("Test unhappy paths of verify_step_uarch", function(machine)
         local log = machine:log_step_uarch()
         local final_hash = machine:get_root_hash()
         callback(log)
-        local _, err = pcall(module.machine.verify_step_uarch, initial_hash, log, final_hash)
+        local _, err = pcall(machine.verify_step_uarch, machine, initial_hash, log, final_hash)
         assert(
             err:match(expected_error),
             'Error text "' .. err .. '"  does not match expected "' .. expected_error .. '"'
@@ -1294,13 +1211,6 @@ local function test_send_cmio_input_with_different_arguments()
             function(machine)
                 local log_type = (annotations and cartesi.ACCESS_LOG_TYPE_ANNOTATIONS or 0)
                     | (large_data and cartesi.ACCESS_LOG_TYPE_LARGE_DATA or 0)
-                local module = cartesi
-                if machine_type ~= "local" then
-                    if not remote then
-                        remote = connect()
-                    end
-                    module = remote
-                end
                 assert_before_cmio_response_sent(machine)
                 local root_hash_before = machine:get_root_hash()
                 local log = machine:log_send_cmio_response(reason, data, log_type)
@@ -1311,7 +1221,7 @@ local function test_send_cmio_input_with_different_arguments()
                 assert(#accesses == 5)
                 assert_access(accesses, 1, {
                     type = "read",
-                    address = module.machine.get_reg_address("iflags"),
+                    address = machine:get_reg_address("iflags"),
                     log2_size = 3,
                 })
                 assert_access(accesses, 2, {
@@ -1325,21 +1235,21 @@ local function test_send_cmio_input_with_different_arguments()
                 })
                 assert_access(accesses, 3, {
                     type = "write",
-                    address = module.machine.get_reg_address("htif_fromhost"),
+                    address = machine:get_reg_address("htif_fromhost"),
                     log2_size = 3,
                 })
                 assert_access(accesses, 4, {
                     type = "read",
-                    address = module.machine.get_reg_address("iflags"),
+                    address = machine:get_reg_address("iflags"),
                     log2_size = 3,
                 })
                 assert_access(accesses, 5, {
                     type = "write",
-                    address = module.machine.get_reg_address("iflags"),
+                    address = machine:get_reg_address("iflags"),
                     log2_size = 3,
                 })
                 -- ask machine to verify state transitions
-                module.machine.verify_send_cmio_response(
+                machine:verify_send_cmio_response(
                     reason,
                     data,
                     root_hash_before,
@@ -1435,13 +1345,6 @@ do_test("send_cmio_response with different data sizes", function(machine)
 end)
 
 do_test("send_cmio_response of zero bytes", function(machine)
-    local module = cartesi
-    if machine_type ~= "local" then
-        if not remote then
-            remote = connect()
-        end
-        module = remote
-    end
     local rx_buffer_size = 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE
     local initial_rx_buffer = string.rep("x", rx_buffer_size)
     machine:write_memory(cartesi.PMA_CMIO_RX_BUFFER_START, initial_rx_buffer)
@@ -1459,7 +1362,7 @@ do_test("send_cmio_response of zero bytes", function(machine)
     local log = machine:log_send_cmio_response(reason, data)
     assert(#log.accesses == 4, "log should have 4 accesses")
     local hash_after = machine:get_root_hash()
-    module.machine.verify_send_cmio_response(reason, data, hash_before, log, hash_after)
+    machine:verify_send_cmio_response(reason, data, hash_before, log, hash_after)
 end)
 
 local function test_cmio_buffers_backed_by_files()

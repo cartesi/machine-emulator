@@ -149,19 +149,19 @@ void os_disable_sigpipe();
 void os_sleep_us(uint64_t timeout_us);
 
 // \brief Double-fork implementation
-// \param newpgid If non-zero, the grand-child breaks out of parent program group into its own
+// \param emancipate If true, the grand-child breaks out of grand-parent program group into its own.
 // \returns In case of success, grand-child returns 0 and the parent returns the grand-child pid.
 // In case of error, parent throws and there is no grand-child.
-int os_double_fork_or_throw(int newpgid);
+int os_double_fork_or_throw(bool emancipate);
 
 // \brief Double-fork implementation
-// \param newpgid If non-zero, the grand-child breaks out of parent program group into its own
+// \param emancipate If true, the grand-child breaks out of grand-parent program group into its own.
 // \err_msg In case of error, returns a string with an error message, guaranteed
 // to remain valid only until the the next time this same function is called
 // again on the same thread. Set to nullptr otherwise.
 // \returns In case of success, grand-child returns 0 and the parent returns the grand-child pid.
 // In case of error, parent returns -1 and there is no grand-child.
-int os_double_fork(int newpgid, const char **err_msg);
+int os_double_fork(bool emancipate, const char **err_msg);
 
 } // namespace cartesi
 

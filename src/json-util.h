@@ -68,7 +68,9 @@ void ju_get_field(const nlohmann::json &j, const K &key, T &value, const std::st
 
 // Allows use contains when the index is an integer and j contains an array
 template <typename T>
-inline bool contains(const nlohmann::json &j, T i) requires(std::is_integral_v<T>) {
+inline bool contains(const nlohmann::json &j, T i)
+    requires(std::is_integral_v<T>)
+{
     if constexpr (std::is_signed_v<T>) {
         return j.is_array() && i >= 0 && i < static_cast<T>(j.size());
     } else {

@@ -16,4 +16,4 @@ ConstructorInitializerAllOnOneLineOrOnePerLine: true
 IndentCaseLabels: true
 IndentWidth: 4
 SpaceAfterCStyleCast: true
-Standard: c++17
+Standard: c++20

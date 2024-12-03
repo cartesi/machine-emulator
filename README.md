@@ -38,7 +38,7 @@ Cleaning targets:
 
 ### Requirements
 
-- C++ Compiler with support for C++17 (tested with GCC >= 8+ and Clang >= 8.x).
+- C++ Compiler with support for C++20 (tested with GCC >= 8+ and Clang >= 8.x).
 - GNU Make >= 3.81
 - Lua >= 5.4.4
 - Libslirp >= 4.6.0

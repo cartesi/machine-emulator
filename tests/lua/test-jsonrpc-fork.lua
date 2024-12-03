@@ -132,7 +132,7 @@ local function fork_tree(address, x, depth)
         for child_index = 1, FANOUT do
             machine:write_reg("x" .. child_index, depth)
             x[child_index] = depth
-            local child_machine, child_address, child_pid = machine:fork_server()
+            local _, child_address, child_pid = machine:fork_server()
             assert(child_pid > 0)
             local child = fork_tree(child_address, clone_x(x), depth + 1)
             children[#children + 1] = child

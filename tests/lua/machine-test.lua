@@ -120,7 +120,7 @@ end
 
 local machine_type = assert(arguments[1], "missing machine type")
 assert(machine_type == "local" or machine_type == "jsonrpc", "unknown machine type, should be 'local' or 'jsonrpc'")
-local to_shutdown
+local to_shutdown -- luacheck: no unused
 if machine_type == "jsonrpc" then
     assert(remote_address ~= nil, "remote cartesi machine address is missing")
     assert(test_path ~= nil, "test path must be provided and must be working directory of remote cartesi machine")

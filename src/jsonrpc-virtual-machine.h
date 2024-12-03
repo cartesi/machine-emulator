@@ -48,7 +48,7 @@ public:
     enum class cleanup_call { nothing, destroy, shutdown };
 
     /// \brief Constructor that connects to existing server
-    jsonrpc_virtual_machine(std::string address);
+    explicit jsonrpc_virtual_machine(std::string address);
 
     /// \brief Constructor that spawns a new server
     jsonrpc_virtual_machine(const std::string &address, fork_result &spawned);
@@ -134,12 +134,12 @@ private:
         const hash_type &root_hash_after) const override;
     void do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const override;
-    virtual bool do_is_jsonrpc_virtual_machine() const override;
+    bool do_is_jsonrpc_virtual_machine() const override;
 
     mutable boost::asio::io_context m_ioc{1};         // The io_context is required for all I/O
     mutable boost::beast::tcp_stream m_stream{m_ioc}; // TCP stream for keep alive connections
     cleanup_call m_call{cleanup_call::nothing};
-    std::string m_address{};
+    std::string m_address;
     int64_t m_timeout = -1;
 };
 

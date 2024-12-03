@@ -27,8 +27,6 @@ local function adjust_images_path(path)
     return string.gsub(path, "/*$", "") .. "/"
 end
 
-local output_hashes = {}
-
 -- Print help and exit
 local function help()
     print(string.format(
@@ -1905,31 +1903,6 @@ local function save_cmio_inspect_state_report(inspect, data)
     f:close()
 end
 
-local function check_outputs_root_hash(root_hash, hashes)
-    local z = string.rep("\0", 32)
-    if #hashes == 0 then hashes = { z } end
-    for _ = 1, 63 do
-        local parent_output_hashes = {}
-        local child = 1
-        local parent = 1
-        while true do
-            local c1 = hashes[child]
-            if not c1 then break end
-            local c2 = hashes[child + 1]
-            if c2 then
-                parent_output_hashes[parent] = cartesi.keccak(c1, c2)
-            else
-                parent_output_hashes[parent] = cartesi.keccak(c1, z)
-            end
-            parent = parent + 1
-            child = child + 2
-        end
-        z = cartesi.keccak(z, z)
-        hashes = parent_output_hashes
-    end
-    --assert(root_hash == hashes[1], "output root hash mismatch")
-end
-
 local function store_machine(machine, config, dir)
     assert(config.processor.iunrep == 0, "hashes are meaningless in unreproducible mode")
     stderr("Storing machine: please wait\n")
@@ -1990,7 +1963,7 @@ local function do_snapshot(m)
 end
 
 -- To commit, we simply shut down the backup server.
-local function do_commit(m)
+local function do_commit()
     if perform_rollbacks then
         if backup_machine then
             backup_machine:shutdown_server()
@@ -2069,7 +2042,6 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
                 if cmio_advance.next_input_index > cmio_advance.input_index_begin then
                     assert(#data == 32, "expected root hash in tx buffer")
                     save_cmio_output_hashes_root_hash(cmio_advance, data)
-                    check_outputs_root_hash(data, output_hashes)
                 end
             -- previous reason was a reject
             elseif reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_REJECTED then
@@ -2077,7 +2049,6 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
             else
                 error("unexpected manual yield reason")
             end
-            output_hashes = {}
             stderr("\nBefore input %d\n", cmio_advance.next_input_index)
             if cmio_advance.hashes then print_root_hash(machine) end
             do_snapshot(machine)
@@ -2092,8 +2063,6 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
                 if reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED then
                     assert(#data == 32, "expected root hash in tx buffer")
                     save_cmio_output_hashes_root_hash(cmio_advance, data)
-                    check_outputs_root_hash(data, output_hashes)
-                    output_hashes = {}
                     do_commit(machine)
                 elseif reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_REJECTED then
                     do_rollback(machine)
@@ -2126,8 +2095,6 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
         if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
             if reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
                 save_cmio_output(cmio_advance, data)
-                local output_hash = cartesi.keccak(data)
-                output_hashes[#output_hashes + 1] = output_hash
                 cmio_advance.output_index = cmio_advance.output_index + 1
             elseif reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT then
                 save_cmio_report(cmio_advance, data)

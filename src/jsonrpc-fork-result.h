@@ -20,7 +20,7 @@
 namespace cartesi {
 
 struct fork_result final {
-    std::string address{};
+    std::string address;
     uint32_t pid{};
 };
 

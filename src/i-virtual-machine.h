@@ -70,12 +70,12 @@ public:
 
     /// \brief Create a machine from config
     void create(const machine_config &config, const machine_runtime_config &runtime = {}) {
-        return do_create(config, runtime);
+        do_create(config, runtime);
     }
 
     /// \brief Load Create a machine from config
     void load(const std::string &directory, const machine_runtime_config &runtime = {}) {
-        return do_load(directory, runtime);
+        do_load(directory, runtime);
     }
 
     /// \brief Runs the machine until mcycle reaches mcycle_end or the machine halts.
@@ -168,7 +168,7 @@ public:
     }
 
     void set_runtime_config(const machine_runtime_config &r) {
-        return do_set_runtime_config(r);
+        do_set_runtime_config(r);
     }
 
     /// \brief destroy
@@ -223,19 +223,19 @@ public:
     /// \brief Checks the validity of a state transition caused by log_step_uarch.
     void verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after) const {
-        return do_verify_step_uarch(root_hash_before, log, root_hash_after);
+        do_verify_step_uarch(root_hash_before, log, root_hash_after);
     }
 
     /// \brief Checks the validity of a state transition caused by log_reset_uarch.
     void verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after) const {
-        return do_verify_reset_uarch(root_hash_before, log, root_hash_after);
+        do_verify_reset_uarch(root_hash_before, log, root_hash_after);
     }
 
     /// \brief Checks the validity of state transitions caused by log_send_cmio_response.
     void verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const {
-        return do_verify_send_cmio_response(reason, data, length, root_hash_before, log, root_hash_after);
+        do_verify_send_cmio_response(reason, data, length, root_hash_before, log, root_hash_after);
     }
 
     /// \brief Checks if implementation is jsorpc-virtual-machine

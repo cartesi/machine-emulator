@@ -241,7 +241,7 @@ end
 
 local machine_type = assert(arguments[1], "missing machine type")
 assert(machine_type == "local" or machine_type == "jsonrpc", "unknown machine type, should be 'local' or 'jsonrpc'")
-local to_shutdown
+local to_shutdown -- luacheck: no unused
 if machine_type == "jsonrpc" then
     assert(remote_address ~= nil, "remote cartesi machine address is missing")
     assert(test_path ~= nil, "test path must be provided and must be working directory of remote cartesi machine")
@@ -355,10 +355,7 @@ do_test("should return address value for uarch x registers", function(machine)
     local SHADOW_UARCH_XBASE = cartesi.UARCH_SHADOW_START_ADDRESS + 24
     -- Check x address
     for i = 0, 31 do
-        assert(
-            machine:get_reg_address("uarch_x" .. i) == SHADOW_UARCH_XBASE + i * 8,
-            "invalid return for uarch x" .. i
-        )
+        assert(machine:get_reg_address("uarch_x" .. i) == SHADOW_UARCH_XBASE + i * 8, "invalid return for uarch x" .. i)
     end
 end)
 
@@ -1249,15 +1246,7 @@ local function test_send_cmio_input_with_different_arguments()
                     log2_size = 3,
                 })
                 -- ask machine to verify state transitions
-                machine:verify_send_cmio_response(
-                    reason,
-                    data,
-                    root_hash_before,
-                    log,
-                    root_hash_after,
-                    log_type,
-                    {}
-                )
+                machine:verify_send_cmio_response(reason, data, root_hash_before, log, root_hash_after, log_type, {})
             end
         )
     end

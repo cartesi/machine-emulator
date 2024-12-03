@@ -860,7 +860,8 @@ int os_double_fork_or_throw(bool emancipate) {
                 fd[1] = -1;
                 // we are done and can return to whatever caller wants to do as a child
                 return 0;
-            }        // intermediate child, fork either failed or succeeded
+            }
+            // intermediate child, fork either failed or succeeded
             exit(0); // intermediate child exits right away
 
         } else if (ipid > 0) {         // still parent (fork succeeded)

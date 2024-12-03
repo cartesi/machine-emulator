@@ -385,10 +385,7 @@ end
 
 local test_path = test_util.tests_path
 local test_pattern = ".*"
-local protocol
-local remote_protocol = "jsonrpc"
 local remote_address
-local remote
 local output
 local jobs = 1
 local json_list = false
@@ -566,7 +563,7 @@ end
 local command = assert(values[1], "missing command")
 assert(test_path, "missing test path")
 
-local to_shutdown
+local to_shutdown -- luacheck: no unused
 if remote_address then
     jsonrpc = require("cartesi.jsonrpc")
     to_shutdown = jsonrpc.connect_server(remote_address):set_cleanup_call(jsonrpc.SHUTDOWN)

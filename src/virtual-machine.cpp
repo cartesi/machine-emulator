@@ -138,7 +138,7 @@ machine_runtime_config virtual_machine::do_get_runtime_config() const {
 }
 
 void virtual_machine::do_set_runtime_config(const machine_runtime_config &r) {
-    return get_machine()->set_runtime_config(r);
+    get_machine()->set_runtime_config(r);
 }
 
 void virtual_machine::do_destroy() {
@@ -181,17 +181,17 @@ machine_config virtual_machine::do_get_default_config() const {
 
 void virtual_machine::do_verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
     const hash_type &root_hash_after) const {
-    return machine::verify_step_uarch(root_hash_before, log, root_hash_after);
+    machine::verify_step_uarch(root_hash_before, log, root_hash_after);
 }
 
 void virtual_machine::do_verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
     const hash_type &root_hash_after) const {
-    return machine::verify_reset_uarch(root_hash_before, log, root_hash_after);
+    machine::verify_reset_uarch(root_hash_before, log, root_hash_after);
 }
 
 void virtual_machine::do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
     const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const {
-    return machine::verify_send_cmio_response(reason, data, length, root_hash_before, log, root_hash_after);
+    machine::verify_send_cmio_response(reason, data, length, root_hash_before, log, root_hash_after);
 }
 
 } // namespace cartesi

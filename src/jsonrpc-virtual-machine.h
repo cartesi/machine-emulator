@@ -59,7 +59,7 @@ public:
     jsonrpc_virtual_machine &operator=(const jsonrpc_virtual_machine &other) = delete;
     jsonrpc_virtual_machine &operator=(jsonrpc_virtual_machine &&other) noexcept = delete;
 
-    ~jsonrpc_virtual_machine() final;
+    ~jsonrpc_virtual_machine() override;
 
     /// \brief Asks remote server to shutdown
     void shutdown_server();

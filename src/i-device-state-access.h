@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef I_DEVICE_STATE_ACCESS
-#define I_DEVICE_STATE_ACCESS
+#ifndef I_DEVICE_STATE_ACCESS_H
+#define I_DEVICE_STATE_ACCESS_H
 
 #include <cstdint>
 
@@ -231,4 +231,4 @@ private:
 
 } // namespace cartesi
 
-#endif
+#endif // I_DEVICE_STATE_ACCESS_H

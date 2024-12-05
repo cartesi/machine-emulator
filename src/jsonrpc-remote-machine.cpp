@@ -62,6 +62,7 @@
 #include "interpret.h"
 #include "json-util.h"
 #include "jsonrpc-discover.h"
+#include "jsonrpc-version.h"
 #include "machine-config.h"
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
@@ -105,17 +106,6 @@ std::ostream &operator<<(std::ostream &out, log_prefix prefix) {
 
 using namespace std::string_literals;
 using json = nlohmann::json;
-
-/// \brief Server semantic version major
-static constexpr uint32_t server_version_major = 0;
-/// \brief Server semantic version minor
-static constexpr uint32_t server_version_minor = 5;
-/// \brief Server semantic version patch
-static constexpr uint32_t server_version_patch = 0;
-/// \brief Server semantic version pre_release
-static constexpr const char *server_version_pre_release = "";
-/// \brief Server semantic version build
-static constexpr const char *server_version_build = "";
 
 /// \brief Installs a signal handler
 template <typename HANDLER>
@@ -723,11 +713,11 @@ static json jsonrpc_get_version_handler(const json &j, const std::shared_ptr<htt
     jsonrpc_check_no_params(j);
     return jsonrpc_response_ok(j,
         {
-            {"major", server_version_major},
-            {"minor", server_version_minor},
-            {"patch", server_version_patch},
-            {"pre_release", server_version_pre_release},
-            {"build", server_version_build},
+            {"major", cartesi::JSONRPC_VERSION_MAJOR},
+            {"minor", cartesi::JSONRPC_VERSION_MINOR},
+            {"patch", cartesi::JSONRPC_VERSION_PATCH},
+            {"pre_release", cartesi::JSONRPC_VERSION_PRE_RELEASE},
+            {"build", cartesi::JSONRPC_VERSION_BUILD},
         });
 }
 
@@ -1697,8 +1687,8 @@ int main(int argc, char *argv[]) try {
 
     init_logger(log_level);
 
-    SLOG(info) << "remote machine server version is " << server_version_major << "." << server_version_minor << "."
-               << server_version_patch;
+    SLOG(info) << "remote machine server version is " << cartesi::JSONRPC_VERSION_MAJOR << "."
+               << cartesi::JSONRPC_VERSION_MINOR << "." << cartesi::JSONRPC_VERSION_PATCH;
 
     install_restart_signal_handlers();
 

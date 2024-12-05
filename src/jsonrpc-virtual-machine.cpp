@@ -47,6 +47,7 @@
 #include "interpret.h"
 #include "json-util.h"
 #include "json.hpp"
+#include "jsonrpc-version.h"
 #include "machine-config.h"
 #include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"
@@ -330,9 +331,23 @@ const std::string &jsonrpc_virtual_machine::get_server_address() const {
     return m_address;
 }
 
+static inline std::string semver_to_string(uint32_t major, uint32_t minor) {
+    return std::to_string(major) + "." + std::to_string(minor);
+}
+
+void jsonrpc_virtual_machine::check_server_version() const {
+    const auto server_version = get_server_version();
+    if (server_version.major != JSONRPC_VERSION_MAJOR || server_version.minor != JSONRPC_VERSION_MINOR) {
+        throw std::runtime_error{"expected server version "s +
+            semver_to_string(JSONRPC_VERSION_MAJOR, JSONRPC_VERSION_MINOR) + " (got "s +
+            semver_to_string(server_version.major, server_version.minor) + ")"s};
+    }
+}
+
 jsonrpc_virtual_machine::jsonrpc_virtual_machine(std::string address) : m_address(std::move(address)) {
     // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
     os_disable_sigpipe();
+    check_server_version();
 }
 
 static boost::asio::ip::tcp::endpoint address_to_endpoint(const std::string &address) {
@@ -450,6 +465,7 @@ jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, for
             spawned.address = m_address;
             // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
             os_disable_sigpipe();
+            check_server_version();
         } catch (...) {
             if (restore_sigprocmask) {
                 sigprocmask(SIG_SETMASK, &omask, nullptr);

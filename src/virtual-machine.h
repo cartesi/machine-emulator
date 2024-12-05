@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef VIRTUAL_MACHINE
-#define VIRTUAL_MACHINE
+#ifndef VIRTUAL_MACHINE_H
+#define VIRTUAL_MACHINE_H
 
 #include <cstdint>
 #include <string>
@@ -92,4 +92,4 @@ private:
 
 } // namespace cartesi
 
-#endif
+#endif // VIRTUAL_MACHINE_H

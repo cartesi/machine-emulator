@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef JSONRPC_VIRTUAL_MACHINE
-#define JSONRPC_VIRTUAL_MACHINE
+#ifndef JSONRPC_VIRTUAL_MACHINE_H
+#define JSONRPC_VIRTUAL_MACHINE_H
 
 #include <cstdint>
 #include <memory>
@@ -136,6 +136,8 @@ private:
         const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const override;
     bool do_is_jsonrpc_virtual_machine() const override;
 
+    void check_server_version() const;
+
     mutable boost::asio::io_context m_ioc{1};         // The io_context is required for all I/O
     mutable boost::beast::tcp_stream m_stream{m_ioc}; // TCP stream for keep alive connections
     cleanup_call m_call{cleanup_call::nothing};
@@ -145,4 +147,4 @@ private:
 
 } // namespace cartesi
 
-#endif
+#endif // JSONRPC_VIRTUAL_MACHINE_H

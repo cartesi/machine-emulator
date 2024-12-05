@@ -122,12 +122,6 @@ CM_API cm_error cm_jsonrpc_get_server_version(const cm_machine *m, const char **
 /// This function makes it the leader of its own program group.
 CM_API cm_error cm_jsonrpc_emancipate_server(cm_machine *m);
 
-/// \brief Asks server to delay next request by a given amount of time.
-/// \param m Pointer to a valid JSONRPC remote machine object.
-/// \param ms Number of milliseconds to delay next request.
-/// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_jsonrpc_delay_next_request(cm_machine *m, uint64_t ms);
-
 // -----------------------------------------------------------------------------
 // Client API functions
 // -----------------------------------------------------------------------------
@@ -166,6 +160,16 @@ CM_API cm_error cm_jsonrpc_get_cleanup_call(cm_machine *m, cm_jsonrpc_cleanup_ca
 /// the next CM_API function is called again on the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_jsonrpc_get_server_address(cm_machine *m, const char **address);
+
+// -----------------------------------------------------------------------------
+// Debugging and testing
+// -----------------------------------------------------------------------------
+
+/// \brief Asks server to delay next request by a given amount of time.
+/// \param m Pointer to a valid JSONRPC remote machine object.
+/// \param ms Number of milliseconds to delay next request.
+/// \returns 0 for success, non zero code for error.
+CM_API cm_error cm_jsonrpc_delay_next_request(cm_machine *m, uint64_t ms);
 
 #ifdef __cplusplus
 }

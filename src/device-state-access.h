@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef DEVICE_STATE_ACCESS
-#define DEVICE_STATE_ACCESS
+#ifndef DEVICE_STATE_ACCESS_H
+#define DEVICE_STATE_ACCESS_H
 
 /// \file
 /// \brief Virtual state access implementation
@@ -158,4 +158,4 @@ private:
 
 } // namespace cartesi
 
-#endif
+#endif // DEVICE_STATE_ACCESS_H

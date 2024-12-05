@@ -388,8 +388,8 @@ do_test("register values should match", function(machine)
 end)
 
 if machine_type ~= "local" then
-    print("\n\n check remote get_machine")
-    do_test("get_machine should get reference to working machine", function(machine)
+    print("\n\n checking remote-machine-specific functionality")
+    do_test("connect should get give access to working machine", function(machine)
         local machine_2 = jsonrpc.connect_server(machine:get_server_address())
         assert(machine:get_root_hash() == machine_2:get_root_hash())
         machine_2:destroy()
@@ -398,6 +398,52 @@ if machine_type ~= "local" then
         end)
         assert(ret == false)
         assert(err:match("no machine"))
+    end)
+
+    do_test("timeout mechanism should be respected", function(machine)
+        -- default timeout is -1 (meaning wait indefinitely)
+        local old_tm = machine:get_timeout()
+        assert(old_tm == -1)
+        -- set timeout to 100ms
+        machine:set_timeout(100)
+        -- make sure it stuck
+        assert(machine:get_timeout() == 100)
+        -- ask server to delay response by 1000ms
+        machine:delay_next_request(1000)
+        -- next call should fail with timeout
+        local ret, err = pcall(function()
+            machine:get_root_hash()
+        end)
+        assert(ret == false)
+        assert(err:match("jsonrpc error: timeout"))
+        machine:set_timeout(old_tm)
+    end)
+
+    do_test("cleanup call should be respected", function(machine)
+        -- all machines returned by build_machine are configured to shutdown server
+        assert(machine:get_cleanup_call() == jsonrpc.SHUTDOWN)
+        local address
+        do
+            -- fork server, get address of new server, make sure fork holds a
+            -- machine, and set cleanup to destroy it on close
+            local m2 <close> = machine:fork_server()
+            address = m2:get_server_address()
+            assert(not m2:is_empty())
+            m2:set_cleanup_call(jsonrpc.DESTROY)
+        end
+        do
+            -- connect to server again, make sure it does not have a machine
+            -- anymore, and set cleanup to shut it down on close
+            local m2 <close> = jsonrpc.connect_server(address)
+            assert(m2:is_empty())
+            m2:set_cleanup_call(jsonrpc.SHUTDOWN)
+        end
+        -- now there should be no server at that address
+        local ret, err = pcall(function()
+            jsonrpc.connect_server(address)
+        end)
+        assert(ret == false)
+        assert(err:match("jsonrpc error: post error contacting " .. address))
     end)
 
     do_test("jsonrpc connection error 49 after rapid successive requests ", function(machine)

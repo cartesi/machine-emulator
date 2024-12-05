@@ -14,16 +14,19 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef JSONRPC_FORK_RESULT_H
-#define JSONRPC_FORK_RESULT_H
+#ifndef JSONRPC_VERSION_H
+#define JSONRPC_VERSION_H
+
+#include <cstdint>
 
 namespace cartesi {
 
-struct fork_result final {
-    std::string address;
-    uint32_t pid{};
-};
+constexpr uint32_t JSONRPC_VERSION_MAJOR = 0;
+constexpr uint32_t JSONRPC_VERSION_MINOR = 5;
+constexpr uint32_t JSONRPC_VERSION_PATCH = 0;
+constexpr const char *JSONRPC_VERSION_PRE_RELEASE = "";
+constexpr const char *JSONRPC_VERSION_BUILD = "";
 
 } // namespace cartesi
 
-#endif // JSONRPC_FORK_RESULT_H
+#endif // JSONRPC_VERSION_H

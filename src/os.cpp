@@ -34,7 +34,6 @@
 #include "unique-c-ptr.h"
 
 #include <sys/time.h>
-#include <sys/wait.h>
 
 #ifdef HAVE_SIGACTION
 #include <csignal>
@@ -93,7 +92,11 @@
 #else // not _WIN32
 
 #if defined(HAVE_TTY) || defined(HAVE_MMAP) || defined(HAVE_TERMIOS) || defined(HAVE_USLEEP)
-#include <unistd.h> // write/read/close
+#include <unistd.h> // write/read/close/usleep/fork
+#endif
+
+#if defined(HAVE_FORK)
+#include <sys/wait.h> // waitpid
 #endif
 
 #if defined(HAVE_SELECT)
@@ -183,7 +186,7 @@ static void os_SIGWINCH_handler(int /*sig*/) {
 }
 #endif
 
-bool os_update_tty_size(tty_state *s) {
+bool os_update_tty_size([[maybe_unused]] tty_state *s) {
 #ifdef HAVE_TTY
 #if defined(HAVE_TERMIOS) && defined(HAVE_IOCTL)
     winsize ws{};
@@ -383,7 +386,7 @@ void os_prepare_tty_select([[maybe_unused]] select_fd_sets *fds) {
 #endif
 }
 
-bool os_poll_selected_tty(int select_ret, select_fd_sets *fds) {
+bool os_poll_selected_tty([[maybe_unused]] int select_ret, [[maybe_unused]] select_fd_sets *fds) {
     auto *s = get_state();
     if (!s->initialized) { // We can't poll when TTY is not initialized
         return false;
@@ -522,7 +525,7 @@ void os_putchars(const uint8_t *data, size_t len) {
     }
 }
 
-int os_mkdir(const char *path, int mode) {
+int os_mkdir(const char *path, [[maybe_unused]] int mode) {
 #ifdef HAVE_MKDIR
     return plat_mkdir(path, mode);
 #else
@@ -781,9 +784,11 @@ void os_sleep_us(uint64_t timeout_us) {
 #endif
 }
 
+#ifdef HAVE_FORK
 static void sig_alrm(int /*unused*/) {
     ;
 }
+#endif
 
 // this function forks and intermediate child, and the intermediate child forks a final child
 // the intermediate child simply exits immediately
@@ -791,7 +796,8 @@ static void sig_alrm(int /*unused*/) {
 // the parent returns the final child pid
 // the final child returns 0
 // on error, the parent throws and the final child does not return
-int os_double_fork_or_throw(bool emancipate) {
+int os_double_fork_or_throw([[maybe_unused]] bool emancipate) {
+#ifdef HAVE_FORK
     int fd[2] = {-1, -1};
     struct sigaction chld_act {};
     bool restore_sigchld = false;
@@ -927,9 +933,15 @@ int os_double_fork_or_throw(bool emancipate) {
         }
         throw; // rethrow so caller can see why we failed
     }
+
+#else
+    throw std::runtime_error{"fork() is unsupported in this platform"s};
+
+#endif
 }
 
-int os_double_fork(bool emancipate, const char **err_msg) {
+int os_double_fork([[maybe_unused]] bool emancipate, [[maybe_unused]] const char **err_msg) {
+#ifdef HAVE_FORK
     static THREAD_LOCAL std::string error_storage;
     try {
         *err_msg = nullptr;
@@ -939,6 +951,11 @@ int os_double_fork(bool emancipate, const char **err_msg) {
         *err_msg = error_storage.c_str();
         return -1;
     }
+
+#else
+    *err_msg = "fork() is unsupported in this platform";
+
+#endif
 }
 
 } // namespace cartesi

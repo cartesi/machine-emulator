@@ -30,8 +30,12 @@
 #include <tuple>
 #include <utility>
 
+#include "os-features.h"
+
+#ifdef HAVE_FORK
 #include <sys/time.h>
 #include <unistd.h>
+#endif
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -363,6 +367,8 @@ jsonrpc_virtual_machine::jsonrpc_virtual_machine(std::string address) :
     check_server_version();
 }
 
+#ifdef HAVE_FORK
+
 static boost::asio::ip::tcp::endpoint address_to_endpoint(const std::string &address) {
     try {
         const auto pos = address.find_last_of(':');
@@ -426,9 +432,9 @@ jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, for
     if (grand_child == 0) { // grand-child and double-fork() succeeded
         sigprocmask(SIG_SETMASK, &omask, nullptr);
         char sigusr1[256] = "";
-        (void) snprintf(sigusr1, std::size(sigusr1), "--sigusr1=%d", ppid);
+        std::ignore = snprintf(sigusr1, std::size(sigusr1), "--sigusr1=%d", ppid);
         char server_fd[256] = "";
-        (void) snprintf(server_fd, std::size(server_fd), "--server-fd=%d", a.native_handle());
+        std::ignore = snprintf(server_fd, std::size(server_fd), "--server-fd=%d", a.native_handle());
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
         char *args[] = {const_cast<char *>(bin), server_fd, sigusr1, nullptr};
         if (execvp(bin, args) < 0) {
@@ -495,6 +501,14 @@ jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, for
         }
     }
 }
+
+#else
+
+jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string & /*address*/, fork_result & /*spawned*/) {
+    throw std::runtime_error{"fork() is unsupported in this platform"s};
+}
+
+#endif
 
 void jsonrpc_virtual_machine::do_load(const std::string &directory, const machine_runtime_config &runtime) {
     bool result = false;

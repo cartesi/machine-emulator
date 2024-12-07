@@ -68,4 +68,8 @@
 #define HAVE_USLEEP
 #endif
 
+#if !defined(NO_FORK) && (defined(__linux__) || defined(__unix__)) && !defined(__wasi__)
+#define HAVE_FORK
+#endif
+
 #endif

@@ -897,8 +897,7 @@ static json jsonrpc_machine_is_empty_handler(const json &j, const std::shared_pt
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_emancipate_handler(const json &j, const std::shared_ptr<http_session> &session) {
-    (void) session;
+static json jsonrpc_emancipate_handler(const json &j, const std::shared_ptr<http_session> & /*session*/) {
     jsonrpc_check_no_params(j);
     setpgid(0, 0);
     return jsonrpc_response_ok(j);

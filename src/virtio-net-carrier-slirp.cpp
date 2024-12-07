@@ -185,7 +185,6 @@ virtio_net_carrier_slirp::virtio_net_carrier_slirp(const cartesi::virtio_net_use
     slirp_cfg.vhost.s_addr = htonl(SLIRP_DEFAULT_IPV4_VHOST);             // Host address/gateway
     slirp_cfg.vdhcp_start.s_addr = htonl(SLIRP_DEFAULT_IPV4_VDHCP_START); // DHCP start address
     slirp_cfg.vnameserver.s_addr = htonl(SLIRP_DEFAULT_IPV4_VNAMESERVER); // DNS server address
-    slirp_cfg.disable_dhcp = true;
     // ??(edubart): Should all the above settings be configurable by the user?
     // ??(edubart): Should we add support for IPv6? It is disabled by default.
     // Configure required slirp callbacks
@@ -195,8 +194,11 @@ virtio_net_carrier_slirp::virtio_net_carrier_slirp(const cartesi::virtio_net_use
     slirp_cbs.timer_new = slirp_timer_new;
     slirp_cbs.timer_free = slirp_timer_free;
     slirp_cbs.timer_mod = slirp_timer_mod;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     slirp_cbs.register_poll_fd = slirp_register_poll_fd;
     slirp_cbs.unregister_poll_fd = slirp_unregister_poll_fd;
+#pragma GCC diagnostic pop
     slirp_cbs.notify = slirp_notify;
 
     // Initialize slirp
@@ -292,7 +294,10 @@ void virtio_net_carrier_slirp::do_prepare_select(select_fd_sets *fds, uint64_t *
     slirp_select_fds slirp_fds{&fds->maxfd, readfds, writefds, exceptfds};
     const uint32_t initial_timeout_ms = *timeout_us / 1000;
     uint32_t timeout_ms = initial_timeout_ms;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     slirp_pollfds_fill(slirp, &timeout_ms, slirp_add_poll_cb, &slirp_fds);
+#pragma GCC diagnostic pop
     if (initial_timeout_ms != timeout_ms) {
         *timeout_us = static_cast<uint64_t>(timeout_ms) * 1000;
     }

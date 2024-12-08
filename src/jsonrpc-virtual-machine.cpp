@@ -244,12 +244,16 @@ static std::string json_post(boost::asio::io_context &ioc, beast::tcp_stream &st
 }
 
 template <typename R, typename... Ts>
-void jsonrpc_request(boost::asio::io_context &ioc, beast::tcp_stream &stream, const std::string &remote_address,
-    const std::string &method, const std::tuple<Ts...> &tp, R &result, int64_t ms, bool keep_alive = true) {
+void jsonrpc_request(std::unique_ptr<boost::asio::io_context> &ioc, std::unique_ptr<beast::tcp_stream> &stream,
+    const std::string &remote_address, const std::string &method, const std::tuple<Ts...> &tp, R &result, int64_t ms,
+    bool keep_alive = true) {
+    if (!stream || !ioc) {
+        throw std::runtime_error{"remote server was shutdown"s};
+    }
     auto request = jsonrpc_post_data(method, tp);
     std::string response_s;
     try {
-        response_s = json_post(ioc, stream, remote_address, request, ms, keep_alive);
+        response_s = json_post(*ioc, *stream, remote_address, request, ms, keep_alive);
     } catch (std::exception &x) {
         throw std::runtime_error("jsonrpc error: post error contacting "s + remote_address + " ("s + x.what() + ")"s);
     }
@@ -304,6 +308,12 @@ namespace cartesi {
 void jsonrpc_virtual_machine::shutdown_server() {
     bool result = false;
     jsonrpc_request(m_ioc, m_stream, m_address, "shutdown", std::tie(), result, m_timeout, false);
+
+    // Destroy ASIO context early to release its socket before the destructor,
+    // otherwise we may end up with too many open sockets in garbage collected environments.
+    // This will also invalidate any further jsonrpc request.
+    m_stream.reset();
+    m_ioc.reset();
 }
 
 void jsonrpc_virtual_machine::delay_next_request(uint64_t ms) const {
@@ -344,7 +354,10 @@ void jsonrpc_virtual_machine::check_server_version() const {
     }
 }
 
-jsonrpc_virtual_machine::jsonrpc_virtual_machine(std::string address) : m_address(std::move(address)) {
+jsonrpc_virtual_machine::jsonrpc_virtual_machine(std::string address) :
+    m_ioc(new boost::asio::io_context{1}),
+    m_stream(new boost::beast::tcp_stream(*m_ioc)),
+    m_address(std::move(address)) {
     // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
     os_disable_sigpipe();
     check_server_version();
@@ -370,7 +383,9 @@ static std::string endpoint_to_string(const boost::asio::ip::tcp::endpoint &endp
     return ss.str();
 }
 
-jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, fork_result &spawned) {
+jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, fork_result &spawned) :
+    m_ioc(new boost::asio::io_context{1}),
+    m_stream(new boost::beast::tcp_stream(*m_ioc)) {
     // this function first blocks SIGUSR1, SIGUSR2 and SIGALRM.
     // then it double-forks.
     // the grand-child sends the parent a SIGUSR2 and suicides if failed before execing jsonrpc-remote-cartesi-machine.
@@ -500,7 +515,11 @@ i_virtual_machine *jsonrpc_virtual_machine::do_clone_empty() const {
             clone->destroy();
         }
     } catch (...) {
-        clone->shutdown_server();
+        try {
+            clone->shutdown_server();
+        } catch (...) { // NOLINT(bugprone-empty-catch)
+            // We guard against exceptions here, so clone doesn't leak
+        }
         delete clone;
         throw;
     }
@@ -514,7 +533,7 @@ void jsonrpc_virtual_machine::do_create(const machine_config &config, const mach
 
 jsonrpc_virtual_machine::~jsonrpc_virtual_machine() {
     // If configured to destroy machine, do it
-    if (m_call == cleanup_call::destroy) {
+    if (m_stream && m_call == cleanup_call::destroy) {
         try {
             destroy();
         } catch (...) { // NOLINT(bugprone-empty-catch)
@@ -523,7 +542,7 @@ jsonrpc_virtual_machine::~jsonrpc_virtual_machine() {
         }
     }
     // If configured to shutdown server, do it
-    if (m_call == cleanup_call::shutdown) {
+    if (m_stream && m_call == cleanup_call::shutdown) {
         try {
             shutdown_server();
         } catch (...) { // NOLINT(bugprone-empty-catch)
@@ -532,10 +551,10 @@ jsonrpc_virtual_machine::~jsonrpc_virtual_machine() {
         }
     }
     // Gracefully close any established keep alive connection
-    if (m_stream.socket().is_open()) {
+    if (m_stream && m_stream->socket().is_open()) {
         beast::error_code ec;
-        std::ignore = m_stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-        std::ignore = m_stream.socket().close(ec);
+        std::ignore = m_stream->socket().shutdown(tcp::socket::shutdown_both, ec);
+        std::ignore = m_stream->socket().close(ec);
     }
 }
 

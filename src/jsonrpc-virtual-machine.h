@@ -138,8 +138,8 @@ private:
 
     void check_server_version() const;
 
-    mutable boost::asio::io_context m_ioc{1};         // The io_context is required for all I/O
-    mutable boost::beast::tcp_stream m_stream{m_ioc}; // TCP stream for keep alive connections
+    mutable std::unique_ptr<boost::asio::io_context> m_ioc;     // The io_context is required for all I/O
+    mutable std::unique_ptr<boost::beast::tcp_stream> m_stream; // TCP stream for keep alive connections
     cleanup_call m_call{cleanup_call::nothing};
     std::string m_address;
     int64_t m_timeout = -1;

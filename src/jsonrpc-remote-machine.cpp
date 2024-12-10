@@ -1642,7 +1642,7 @@ static bool stringval(const char *pre, const char *str, const char **val) {
 
 static void init_logger(const char *strlevel) {
     using namespace slog;
-    severity_level level = severity_level::info;
+    severity_level level = severity_level::warning;
     if (strlevel == nullptr) {
         strlevel = std::getenv("REMOTE_CARTESI_MACHINE_LOG_LEVEL");
     }

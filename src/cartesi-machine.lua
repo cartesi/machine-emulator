@@ -45,9 +45,10 @@ where options are:
   --version-json
     display cartesi machine semantic version and exit.
 
-  --remote-spawn[=<ip>:<port>]
-    spawns a remote cartesi machine listening to <ip>:<port> and uses it,
-    in case the address is omitted, it defaults to "127.0.0.1:0"
+  --remote-spawn
+    spawns a remote cartesi machine,
+    when --remote-address is specified, it listens on the specified address,
+    otherwise it listens on "127.0.0.1:0".
 
   --remote-address=<ip>:<port>
     use a remote cartesi machine listening to <ip>:<port> instead of
@@ -1307,17 +1308,10 @@ local options = {
         end,
     },
     {
-        "^%-%-remote%-spawn(%=?)(.*)$",
-        function(o, v)
+        "^%-%-remote%-spawn$",
+        function(o)
             if not o then return false end
-            if o == "=" then
-                if not v or #v < 1 then return false end
-                remote_spawn = v
-            elseif #v ~= 0 then
-                return false
-            else
-                remote_spawn = "127.0.0.1:0"
-            end
+            remote_spawn = true
             return true
         end,
     },
@@ -1620,7 +1614,6 @@ end
 local function new_machine()
     assert(not remote_health_check or remote_address, "missing remote address")
     if remote_address then
-        stderr("Connecting to JSONRPC remote cartesi machine at '%s'\n", remote_address)
         local jsonrpc = require("cartesi.jsonrpc")
         local new_m = assert(jsonrpc.connect_server(remote_address))
         if remote_fork then
@@ -1632,8 +1625,8 @@ local function new_machine()
                 stderr("Rebound forked JSONRPC remote cartesi machine at '%s'\n", remote_fork)
             end
         end
-        local v = assert(new_m:get_server_version())
-        stderr("Connected to JSONRPC remote cartesi machine, version is %d.%d.%d\n", v.major, v.minor, v.patch)
+        if remote_health_check then os.exit(0, true) end
+        stderr("Connected to JSONRPC remote cartesi machine at '%s'\n", remote_address)
         local shutdown = function() new_m:shutdown_server() end
         setmetatable(remote_closer, {
             __gc = function()
@@ -1641,7 +1634,7 @@ local function new_machine()
                 if remote_shutdown then
                     local ok, err = pcall(shutdown)
                     if ok then
-                        stderr("Shutted down JSONRPC remote cartesi machine at '%s'\n", address)
+                        stderr("Shutdown JSONRPC remote cartesi machine at '%s'\n", address)
                     else
                         stderr("Failed to shutdown JSONRPC remote cartesi machine: %s\n", err)
                     end
@@ -1653,7 +1646,6 @@ local function new_machine()
                 end
             end,
         })
-        if remote_health_check then os.exit(0, true) end
         return new_m
     else
         return cartesi.new()
@@ -1673,10 +1665,8 @@ local runtime_config = {
 }
 
 if remote_spawn then
-    assert(not remote_address, "--remote-spawn cannot be used with --remote-address")
     local jsonrpc = require("cartesi.jsonrpc")
-    stderr("Spawning JSONRPC remote cartesi machine at '%s'\n", remote_spawn)
-    local _ <close>, address, pid = jsonrpc.spawn_server(remote_spawn)
+    local _ <close>, address, pid = jsonrpc.spawn_server(remote_address)
     stderr("Spawned JSONRPC remote cartesi machine at '%s' with pid %d\n", address, pid)
     remote_address = address
 end

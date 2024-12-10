@@ -173,7 +173,7 @@ static int mod_connect_server(lua_State *L) {
 /// \brief This is the jsonrpc.spawn_server() method implementation.
 static int mod_spawn_server(lua_State *L) {
     lua_settop(L, 1);
-    const char *address = !lua_isnil(L, 1) ? luaL_checkstring(L, 1) : "127.0.0.1:0";
+    const char *address = luaL_optstring(L, 1, "127.0.0.1:0");
     lua_newtable(L);                                                     // server
     auto &m = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr)); // server object
     const char *bound_address = nullptr;

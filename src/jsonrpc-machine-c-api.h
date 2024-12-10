@@ -75,7 +75,7 @@ CM_API cm_error cm_jsonrpc_connect_server(const char *address, cm_machine **new_
 /// \param address If function succeeds, receives address the forked server bound to,
 /// guaranteed to remain valid only until the next CM_API function is called again on the same thread.
 /// Set to NULL on failure.
-/// \param pid If function suceeds, receives the forked child process id (can be NULL). Set to 0 on failure.
+/// \param pid If function succeeds, receives the forked child process id (can be NULL). Set to 0 on failure.
 /// \returns 0 for success, non zero code for error.
 /// \details If the remote machine server already holds a machine instance, the forked copy is ready for use.
 /// Otherwise, use cm_create() or cm_load() to instantiate a machine into the forked server object.

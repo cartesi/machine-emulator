@@ -476,7 +476,7 @@ local options = {
             if not o or #o < 1 then
                 return false
             end
-            jobs = tonumber(o)
+            jobs = assert(tonumber(o))
             assert(jobs and jobs >= 1, "invalid number of jobs")
             return true
         end,

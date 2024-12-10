@@ -63,7 +63,7 @@ local s2, _ = string.find(mem, "END_CTSI_SIGNATURE______")
 local sig = string.sub(mem, e1 + 1, s2 - 1)
 
 -- write signature to file, in the format expected by the arch test script
-local fd = io.open(output_signature_file, "w")
+local fd = assert(io.open(output_signature_file, "w"))
 for i = 1, #sig, 4 do
     local w = string.reverse(string.sub(sig, i, i + 3))
     for j = 1, 4, 1 do

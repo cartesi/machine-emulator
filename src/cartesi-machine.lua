@@ -574,7 +574,7 @@ local flash_start = {}
 local flash_length = {}
 local unreproducible = false
 local virtio = {}
-local virtio_net_user_config = false
+local virtio_net_user_config
 local virtio_volume_count = 0
 local has_virtio_console = false
 local has_network = false
@@ -1775,11 +1775,12 @@ echo "
 
     if load_config then
         local env = {}
-        local ok, ret = loadfile(load_config, "t", env)
-        if ok then
-            local chunk = ok
-            ok, ret = pcall(chunk)
+        local chunk, err = loadfile(load_config, "t", env)
+        if not chunk then
+            stderr("Failed to load machine config (%s):\n", load_config)
+            error(err)
         end
+        local ok, ret = pcall(chunk)
         if not ok then
             stderr("Failed to load machine config (%s):\n", load_config)
             error(ret)
@@ -2083,7 +2084,7 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
         elseif cmio_advance and cmio_advance.next_input_index < cmio_advance.input_index_end then
             -- previous reason was an accept
             if reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED then
-                do_commit(machine)
+                do_commit()
                 -- save only if we have already run an input and have just accepted it
                 if cmio_advance.next_input_index > cmio_advance.input_index_begin then
                     assert(#data == 32, "expected root hash in tx buffer")
@@ -2109,7 +2110,7 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
                 if reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED then
                     assert(#data == 32, "expected root hash in tx buffer")
                     save_cmio_output_hashes_root_hash(cmio_advance, data)
-                    do_commit(machine)
+                    do_commit()
                 elseif reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_REJECTED then
                     do_rollback(machine)
                 end
@@ -2159,7 +2160,7 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
     end
     if machine:read_iflags_Y() then
         -- commit any pending snapshot
-        do_commit(machine)
+        do_commit()
         break
     end
     if machine:read_mcycle() == next_hash_mcycle then

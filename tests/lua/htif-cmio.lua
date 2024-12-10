@@ -22,7 +22,7 @@ local test_util = require("cartesi.tests.util")
 local config_base = {
     ram = {
         -- This test will fetch the cmio buffers from the PMA entries; check
-        -- that `rx_buffer` is filled with a byte patern;
+        -- that `rx_buffer` is filled with a byte pattern;
         -- then write a byte pattern into `tx_buffer` to be checked inside.
         image_filename = test_util.tests_path .. "htif_cmio.bin",
         length = 0x4000000,

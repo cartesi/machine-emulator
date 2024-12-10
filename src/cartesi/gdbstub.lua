@@ -91,7 +91,7 @@ function GDBStub:_recv()
         sum = sum + c:byte()
         escaped_data[#escaped_data + 1] = c
     end
-    escaped_data = table.concat(escaped_data)
+    local escaped_data_str = table.concat(escaped_data)
     -- validate checksum
     local checksum = assert(self.conn:receive(2))
     if sum % 256 ~= hex2int(checksum) then
@@ -104,7 +104,7 @@ function GDBStub:_recv()
         assert(self.conn:send("+")) -- send acknowledge packet
     end
     -- escape packet data
-    local data = escaped_data:gsub("}(.)", xorchr)
+    local data = escaped_data_str:gsub("}(.)", xorchr)
     if GDBSTUB_DEBUG_PROTOCOL then stderr("Packet recv: %s", data) end
     return data
 end
@@ -174,8 +174,7 @@ function GDBStub:_handle_query(_, query)
             if supported_features[feature] then table.insert(res, feature .. "+") end
         end
         -- reply with features we support
-        res = table.concat(res, ";")
-        return self:_send(res)
+        return self:_send(table.concat(res, ";"))
     elseif query == "qTStatus" then -- GDB is asking whether a trace experiment is currently running
         return self:_send_unsupported()
     elseif query == "qfThreadInfo" or query == "qC" or query:find("^qL") then -- GDB is asking thread info
@@ -341,8 +340,7 @@ function GDBStub:_handle_read_all_regs()
     end
     -- read program counter
     table.insert(res, reg2hex(self.machine:read_reg("pc")))
-    res = table.concat(res)
-    return self:_send(res)
+    return self:_send(table.concat(res))
 end
 
 -- GDB is writing all machine registers.

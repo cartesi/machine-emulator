@@ -192,7 +192,7 @@ private:
         update_after_write(paligned);
     }
 
-    // Declare interface as friend to it can forward calls to the "overriden" methods.
+    // Declare interface as friend to it can forward calls to the "overridden" methods.
     friend i_state_access<record_state_access, pma_entry>;
 
     void do_push_bracket(bracket_type &type, const char *text) {

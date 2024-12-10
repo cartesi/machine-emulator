@@ -3,7 +3,7 @@
   "info": {
     "title": "Remote Cartesi Machine",
     "version": "0.5.0",
-    "description": "API for controling a remote Cartesi Machine server",
+    "description": "API for controlling a remote Cartesi Machine server",
     "license": {
       "name": "MIT"
     }
@@ -865,11 +865,7 @@
       "SemanticVersion": {
         "title": "SemanticVersion",
         "type": "object",
-        "required": [
-          "major",
-          "minor",
-          "patch"
-        ],
+        "required": ["major", "minor", "patch"],
         "properties": {
           "major": {
             "$ref": "#/components/schemas/UnsignedInteger"
@@ -1232,9 +1228,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "length"
-        ]
+        "required": ["length"]
       },
       "DTBConfig": {
         "title": "DTBConfig",
@@ -1315,9 +1309,7 @@
       "VirtIODeviceConfig": {
         "title": "VirtIODeviceConfig",
         "type": "object",
-        "required": [
-          "type"
-        ],
+        "required": ["type"],
         "properties": {
           "type": {
             "type": "string"
@@ -1600,10 +1592,7 @@
       },
       "UarchInterpreterBreakReason": {
         "title": "UarchInterpreterBreakReason",
-        "enum": [
-          "reached_target_cycle",
-          "uarch_halted"
-        ]
+        "enum": ["reached_target_cycle", "uarch_halted"]
       },
       "Base64String": {
         "title": "Base64String",
@@ -1640,10 +1629,7 @@
       },
       "BracketType": {
         "title": "BracketType",
-        "enum": [
-          "begin",
-          "end"
-        ]
+        "enum": ["begin", "end"]
       },
       "Bracket": {
         "title": "Bracket",
@@ -1659,11 +1645,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "type",
-          "where",
-          "text"
-        ]
+        "required": ["type", "where", "text"]
       },
       "Proof": {
         "title": "Proof",
@@ -1726,12 +1708,7 @@
             "$ref": "#/components/schemas/Base64HashArray"
           }
         },
-        "required": [
-          "type",
-          "address",
-          "log2_size",
-          "read_hash"
-        ]
+        "required": ["type", "address", "log2_size", "read_hash"]
       },
       "AccessArray": {
         "title": "AccessArray",
@@ -1742,10 +1719,7 @@
       },
       "AccessType": {
         "title": "AccessType",
-        "enum": [
-          "read",
-          "write"
-        ]
+        "enum": ["read", "write"]
       },
       "AccessLogType": {
         "title": "AccessLogType",
@@ -1758,10 +1732,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "has_annotations",
-          "has_large_data"
-        ]
+        "required": ["has_annotations", "has_large_data"]
       },
       "AccessLog": {
         "title": "AccessLog",
@@ -1780,10 +1751,7 @@
             "$ref": "#/components/schemas/BracketArray"
           }
         },
-        "required": [
-          "log_type",
-          "accesses"
-        ]
+        "required": ["log_type", "accesses"]
       },
       "REG": {
         "title": "REG",

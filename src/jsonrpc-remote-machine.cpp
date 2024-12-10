@@ -807,7 +807,7 @@ static json jsonrpc_rebind_handler(const json &j, const std::shared_ptr<http_ses
         session->handler->rebind(tcp::acceptor{session->handler->ioc, new_local_endpoint});
         SLOG(trace) << session->handler->local_endpoint << " rebound to " << session->handler->local_endpoint;
     } else {
-        SLOG(trace) << session->handler->local_endpoint << " rebind unecessary";
+        SLOG(trace) << session->handler->local_endpoint << " rebind unnecessary";
     }
     const std::string result = endpoint_to_string(session->handler->local_endpoint);
     return jsonrpc_response_ok(j, result);
@@ -876,7 +876,7 @@ static json jsonrpc_machine_destroy_handler(const json &j, const std::shared_ptr
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-/// \details This method causes the server to sleep for a number of miliseconds before the next call
+/// \details This method causes the server to sleep for a number of milliseconds before the next call
 static json jsonrpc_delay_next_request_handler(const json &j, const std::shared_ptr<http_session> &session) {
     static const char *param_name[] = {"ms"};
     auto args = parse_args<uint64_t>(j, param_name);

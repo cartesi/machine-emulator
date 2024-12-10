@@ -560,13 +560,13 @@ public:
 
     /// \brief Sends cmio response
     /// \param reason Reason for sending response.
-    /// \param data Reponse data.
+    /// \param data Response data.
     /// \param length Length of response data.
     void send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length);
 
     /// \brief Sends cmio response and returns an access log
     /// \param reason Reason for sending response.
-    /// \param data Reponse data.
+    /// \param data Response data.
     /// \param length Length of response data.
     /// \param log_type Type of access log to generate.
     /// \return The state access log.

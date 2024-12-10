@@ -64,7 +64,7 @@ function test_util.create_test_uarch_program(instructions)
         instructions = test_util.uarch_programs.default
     end
     local file_path = os.tmpname()
-    local f <close> = io.open(file_path, "wb")
+    local f <close> = assert(io.open(file_path, "wb"))
     for _, insn in pairs(instructions) do
         f:write(string.pack("I4", insn))
     end

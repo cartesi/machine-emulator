@@ -184,7 +184,7 @@ do_test("machine root hash after step one should match", function(machine)
     local calculated_root_hash = test_util.calculate_emulator_hash(machine)
     assert(root_hash == calculated_root_hash, "Initial root hash does not match")
 
-    -- Perform step and check if hash maches
+    -- Perform step and check if hash matches
     machine:log_step_uarch()
     local root_hash_step1 = machine:get_root_hash()
     local calculated_root_hash_step1 = test_util.calculate_emulator_hash(machine)
@@ -359,7 +359,7 @@ test_util.make_do_test(build_machine, machine_type, {
         .. tostring(rootfs_length)
         .. " "
         .. input_path
-    local p = io.popen(command)
+    local p = assert(io.popen(command))
     p:close()
 
     local flash_address_start = 0x80000000000000
@@ -397,7 +397,7 @@ if machine_type ~= "local" then
             machine:get_root_hash()
         end)
         assert(ret == false)
-        assert(err:match("no machine"))
+        assert(err and err:match("no machine"))
     end)
 
     do_test("timeout mechanism should be respected", function(machine)
@@ -415,7 +415,7 @@ if machine_type ~= "local" then
             machine:get_root_hash()
         end)
         assert(ret == false)
-        assert(err:match("jsonrpc error: timeout"))
+        assert(err and err:match("jsonrpc error: timeout"))
         machine:set_timeout(old_tm)
     end)
 
@@ -443,7 +443,7 @@ if machine_type ~= "local" then
             jsonrpc.connect_server(address)
         end)
         assert(ret == false)
-        assert(err:match("jsonrpc error: post error contacting " .. address))
+        assert(err and err:match("jsonrpc error: post error contacting " .. address))
     end)
 
     do_test("jsonrpc connection error 49 after rapid successive requests ", function(machine)

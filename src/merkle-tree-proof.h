@@ -225,7 +225,7 @@ public:
             throw std::out_of_range{"log2_root_size is too large"};
         }
         if (new_log2_target_size < get_log2_target_size()) {
-            throw std::out_of_range{"log2_taget_size is too small"};
+            throw std::out_of_range{"log2_target_size is too small"};
         }
         merkle_tree_proof<HASH_TYPE, ADDRESS_TYPE> sliced(new_log2_root_size, new_log2_target_size);
         hash_type hash = get_target_hash();
@@ -258,7 +258,7 @@ public:
 
 private:
     /// \brief Converts log2_size to index into siblings array
-    /// \return Index into siblings array, or throws exception if out of bouds
+    /// \return Index into siblings array, or throws exception if out of bounds
     int log2_size_to_index(int log2_size) const {
         const int index = log2_size - m_log2_target_size;
         if (index < 0 || index >= static_cast<int>(m_sibling_hashes.size())) {

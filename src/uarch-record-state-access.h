@@ -129,7 +129,7 @@ public:
         std::string m_text;                ///< String with the text for the annotation
 
     public:
-        /// \brief Constructor adds the "begin" bracketting note
+        /// \brief Constructor adds the "begin" bracketing note
         /// \param log Pointer to access log receiving annotations
         /// \param text Pointer to annotation text
         /// \details A note is added at the moment of construction
@@ -148,16 +148,16 @@ public:
         /// \brief Default move constructor
         /// \details This is OK because the shared_ptr to log will be
         /// empty afterwards and we explicitly test for this
-        /// condition before writing the "end" bracketting note
+        /// condition before writing the "end" bracketing note
         scoped_note(scoped_note &&) = default;
 
         /// \brief Default move assignment
         /// \details This is OK because the shared_ptr to log will be
         /// empty afterwards and we explicitly test for this
-        /// condition before writing the "end" bracketting note
+        /// condition before writing the "end" bracketing note
         scoped_note &operator=(scoped_note &&) = default;
 
-        /// \brief Destructor adds the "end" bracketting note
+        /// \brief Destructor adds the "end" bracketing note
         /// if the log shared_ptr is not empty
         ~scoped_note() {
             if (m_log) {
@@ -167,7 +167,7 @@ public:
                     // push_bracket with type begin always reserves space for the end bracket
                     // so either the user using unbalanced with begin/end, or there
                     // is no way we ran out of memory. therefore, if we did run out of
-                    // memory, it was because the sytem is completely screwed anyway *and* the
+                    // memory, it was because the system is completely screwed anyway *and* the
                     // user is using unbalanced brackets. it's ok to quietly ignore, as the user's
                     // brackets were already unbalanced anyway...
                 }
@@ -288,7 +288,7 @@ private:
         update_after_write(paligned);
     }
 
-    // Declare interface as friend to it can forward calls to the "overriden" methods.
+    // Declare interface as friend to it can forward calls to the "overridden" methods.
     friend i_uarch_state_access<uarch_record_state_access>;
 
     void do_push_bracket(bracket_type &type, const char *text) {

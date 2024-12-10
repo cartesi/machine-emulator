@@ -362,7 +362,7 @@ CM_API void cm_delete(cm_machine *m);
 /// \param config Machine configuration as a JSON object in a string.
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \returns 0 for success, non zero code for error.
-/// \details Use cm_destroy() to destroy the machine istance and remove it from the object.
+/// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
 CM_API cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config);
 
 /// \brief Combines cm_new() and cm_create() for convenience.
@@ -370,7 +370,7 @@ CM_API cm_error cm_create(cm_machine *m, const char *config, const char *runtime
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \param new_m Receives the pointer to the new machine object with a machine instance. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
-/// \details Use cm_destroy() to destroy the machine istance and remove it from the object.
+/// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
 /// \details Use cm_delete() to delete the object.
 CM_API cm_error cm_create_new(const char *config, const char *runtime_config, cm_machine **new_m);
 
@@ -379,7 +379,7 @@ CM_API cm_error cm_create_new(const char *config, const char *runtime_config, cm
 /// \param dir Directory where previous machine is stored.
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \returns 0 for success, non zero code for error.
-/// \details Use cm_destroy() to destroy the machine istance and remove it from the object.
+/// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
 CM_API cm_error cm_load(cm_machine *m, const char *dir, const char *runtime_config);
 
 /// \brief Combines cm_new() and cm_load() for convenience.
@@ -387,7 +387,7 @@ CM_API cm_error cm_load(cm_machine *m, const char *dir, const char *runtime_conf
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \param new_m Receives the pointer to the new machine object with a machine instance. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
-/// \details Use cm_destroy() to destroy the machine istance and remove it from the object.
+/// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
 /// \details Use cm_delete() to delete the object.
 CM_API cm_error cm_load_new(const char *dir, const char *runtime_config, cm_machine **new_m);
 

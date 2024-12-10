@@ -117,7 +117,7 @@ void complete_merkle_tree::bubble_up() {
         // Next level needs half as many (rounded up) as previous
         next.resize((prev.size() + 1) / 2);
         assert(first_entry <= next.size());
-        // Last safe entry has two non-pristine leafs
+        // Last safe entry has two non-pristine leaves
         auto last_safe_entry = prev.size() / 2;
         // Do all entries for which we have two non-pristine children
         for (; first_entry < last_safe_entry; ++first_entry) {

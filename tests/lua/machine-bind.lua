@@ -328,7 +328,7 @@ do_test("should provide proof for values in registers", function(machine)
     for _, v in pairs(initial_reg_values) do
         for el = cartesi.TREE_LOG2_WORD_SIZE, cartesi.TREE_LOG2_ROOT_SIZE - 1 do
             local a = test_util.align(v, el)
-            assert(test_util.check_proof(assert(machine:get_proof(a, el)), "no proof"), "proof failed")
+            assert(test_util.check_proof(assert(machine:get_proof(a, el), "no proof")), "proof failed")
         end
     end
 end)
@@ -545,7 +545,7 @@ do_test("should error if target mcycle is smaller than current mcycle", function
         machine:run(MAX_MCYCLE - 1)
     end)
     assert(success == false)
-    assert(err:match("mcycle is past"))
+    assert(err and err:match("mcycle is past"))
     assert(machine:read_mcycle() == MAX_MCYCLE)
 end)
 
@@ -556,7 +556,7 @@ do_test("should error if target uarch_cycle is smaller than current uarch_cycle"
         machine:run_uarch(MAX_UARCH_CYCLE - 1)
     end)
     assert(success == false)
-    assert(err:match("uarch_cycle is past"))
+    assert(err and err:match("uarch_cycle is past"))
     assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
 end)
 
@@ -798,8 +798,8 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })(
         assert(hash_after_step ~= initial_hash)
         -- reset should restore initial hash
         machine:reset_uarch()
-        local hash_after_2nd_reset = machine:get_root_hash()
-        assert(hash_after_2nd_reset == initial_hash)
+        local hash_after_second_reset = machine:get_root_hash()
+        assert(hash_after_second_reset == initial_hash)
         -- Modifying uarch ram changes hash
         machine:write_memory(cartesi.UARCH_RAM_START_ADDRESS, string.rep("X", 1 << 8))
         local hash_after_write = machine:get_root_hash()
@@ -928,7 +928,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
                 os.remove(tmpname)
             end,
         })
-        local tmp <close> = io.open(tmpname, "w+")
+        local tmp <close> = assert(io.open(tmpname, "w+"))
         util.dump_log(log, tmp)
         tmp:seek("set", 0)
         local actual_dump = tmp:read("*all")
@@ -1367,10 +1367,10 @@ local function test_cmio_buffers_backed_by_files()
         end,
     })
     -- initialize test cmio files
-    local rx = io.open(rx_filename, "w+")
+    local rx = assert(io.open(rx_filename, "w+"))
     rx:write(rx_init_data)
     rx:close()
-    local tx = io.open(tx_filename, "w+")
+    local tx = assert(io.open(tx_filename, "w+"))
     tx:write(tx_init_data)
     tx:close()
     local tx_new_data = string.rep("x", 1 << cartesi.PMA_CMIO_TX_BUFFER_LOG2_SIZE)

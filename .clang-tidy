@@ -15,6 +15,7 @@ Checks: >-
   -cppcoreguidelines-avoid-c-arrays,
   google*,
   -google-build-using-namespace,
+  -google-objc-*,
   hicpp*,
   -hicpp-avoid-c-arrays,
   -hicpp-no-array-decay,

@@ -1,0 +1,11 @@
+[files]
+extend-exclude = ["third-party/*", "*.S"]
+
+[default.extend-words]
+fle = "fle"
+sie = "sie"
+stip = "stip"
+stap = "stap"
+wronly = "wronly"
+optin = "optin"
+sxl = "sxl"

@@ -34,7 +34,7 @@
     ((((reason) & 0xffffUL) << 32UL) | (((data) & 0xffffffffUL)))
 
 // Issue a HTIF call with `ireg` as the input, place the output in `oreg`.
-// NOTE: `base` will be used as scrach register
+// NOTE: `base` will be used as scratch register
 #define htif_call(base, ireg, oreg) \
     li base, PMA_HTIF_START_DEF; \
     sd zero, O_FROMHOST (base); \

@@ -129,7 +129,7 @@ static size_t b64decode(uint8_t c, uint8_t *input, size_t size, std::ostringstre
         decoded[1] = static_cast<uint8_t>(value & 0xff);
         value >>= 8;
         decoded[0] = static_cast<uint8_t>(value);
-        // take care of paddding
+        // take care of padding
         if (input[2] == '=') {
             valid = 1;
         } else if (input[3] == '=') {

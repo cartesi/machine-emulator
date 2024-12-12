@@ -933,10 +933,9 @@ int os_double_fork_or_throw([[maybe_unused]] bool emancipate) {
         }
         throw; // rethrow so caller can see why we failed
     }
-
 #else
     throw std::runtime_error{"fork() is unsupported in this platform"s};
-
+    return -1;
 #endif
 }
 
@@ -951,10 +950,9 @@ int os_double_fork([[maybe_unused]] bool emancipate, [[maybe_unused]] const char
         *err_msg = error_storage.c_str();
         return -1;
     }
-
 #else
     *err_msg = "fork() is unsupported in this platform";
-
+    return -1;
 #endif
 }
 

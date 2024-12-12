@@ -1,4 +1,4 @@
-FROM --platform=$TARGETPLATFORM debian:bookworm-20241016 AS toolchain
+FROM debian:bookworm-20241016 AS toolchain
 
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
@@ -65,7 +65,7 @@ WORKDIR /usr/src/emulator
 CMD ["/bin/bash", "-l"]
 
 ####################################################################################################
-FROM --platform=$TARGETPLATFORM toolchain AS builder
+FROM toolchain AS builder
 ARG GIT_COMMIT=""
 ARG DEBUG=no
 ARG COVERAGE=no
@@ -75,12 +75,12 @@ COPY . .
 RUN make -j$(nproc) git_commit=$GIT_COMMIT debug=$DEBUG coverage=$COVERAGE sanitize=$SANITIZE
 
 ####################################################################################################
-FROM --platform=$TARGETPLATFORM builder as debian-packager
+FROM builder AS debian-packager
 
 RUN make install-uarch debian-package DESTDIR=$PWD/_install
 
 ####################################################################################################
-FROM --platform=$TARGETPLATFORM debian:bookworm-20241016-slim
+FROM debian:bookworm-20241016-slim
 ARG MACHINE_EMULATOR_VERSION=0.0.0
 ARG TARGETARCH
 

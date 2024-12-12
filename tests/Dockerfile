@@ -1,5 +1,5 @@
 ARG TAG=devel
-FROM --platform=$TARGETPLATFORM cartesi/machine-emulator:builder AS tests-builder
+FROM cartesi/machine-emulator:builder AS tests-builder
 ARG DEBUG=no
 ARG COVERAGE=no
 ARG SANITIZE=no
@@ -14,7 +14,7 @@ RUN make tests-debian-package DESTDIR=$PWD/dpkg/tests-install && \
     make tests-data-debian-package DESTDIR=$PWD/dpkg/tests-data-install
 
 ####################################################################################################
-FROM --platform=$TARGETPLATFORM cartesi/machine-emulator:$TAG
+FROM cartesi/machine-emulator:$TAG
 
 ENV CARTESI_IMAGES_PATH=/usr/share/cartesi-machine/tests/data/images
 ENV CARTESI_TESTS_PATH=/usr/share/cartesi-machine/tests/data/machine

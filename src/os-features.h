@@ -64,11 +64,11 @@
 #define HAVE_POSIX_FS
 #endif
 
-#if !defined(NO_USLEEP) && defined(__unix__)
+#if !defined(NO_USLEEP) && (defined(__unix__) || defined(__APPLE__))
 #define HAVE_USLEEP
 #endif
 
-#if !defined(NO_FORK) && (defined(__linux__) || defined(__unix__)) && !defined(__wasi__)
+#if !defined(NO_FORK) && (defined(__linux__) || defined(__unix__) || defined(__APPLE__)) && !defined(__wasi__)
 #define HAVE_FORK
 #endif
 

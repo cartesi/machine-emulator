@@ -1,0 +1,37 @@
+Source: cartesi-machine-emulator
+Section: libs
+Priority: optional
+Maintainer: root <root@unknown>
+Rules-Requires-Root: no
+Build-Depends:
+ debhelper-compat (= 13),
+ devscripts,
+ libboost1.81-dev,
+ liblua5.4-dev,
+ libslirp-dev,
+ wget,
+ xxd,
+Standards-Version: 4.6.2
+Homepage: https://cartesi.io
+#Vcs-Browser: https://salsa.debian.org/debian/cartesi-machine-emulator
+#Vcs-Git: https://salsa.debian.org/debian/cartesi-machine-emulator.git
+
+Package: cartesi-machine-emulator-dev
+Section: libdevel
+Architecture: any
+Multi-Arch: same
+Depends:
+ cartesi-machine-emulator0 (= ${binary:Version}),
+ lua5.4,
+ ${misc:Depends},
+Description: <insert up to 60 chars description>
+ <Insert long description, indented with spaces.>
+
+Package: cartesi-machine-emulator0
+Architecture: any
+Multi-Arch: same
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+Description: <insert up to 60 chars description>
+ <Insert long description, indented with spaces.>

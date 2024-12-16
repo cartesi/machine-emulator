@@ -136,7 +136,7 @@ static int cartesi_mod_fromjson(lua_State *L) try {
 
 static int cartesi_mod_new(lua_State *L) try {
     auto &m = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr));
-    if (cm_new(nullptr, &m.get()) != 0) {
+    if (cm_new(&m.get()) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     return 1;
@@ -181,7 +181,7 @@ CM_API int luaopen_cartesi(lua_State *L) {
     lua_pushvalue(L, -2);                                                    // cluactx cartesi cluactx
     luaL_setfuncs(L, cartesi_mod.data(), 1);                                 // cluactx cartesi
     auto &m = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr), -2); // cluactx cartesi machine
-    if (cm_new(nullptr, &m.get()) != 0) {
+    if (cm_new(&m.get()) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     lua_setfield(L, -2, "machine"); // cluactx cartesi

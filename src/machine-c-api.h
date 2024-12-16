@@ -333,18 +333,27 @@ CM_API cm_error cm_get_reg_address(const cm_machine *m, cm_reg reg, uint64_t *va
 // Machine API functions
 // -----------------------------------------------------------------------------
 
-/// \brief Creates a new machine object.
-/// \param m Pointer to the existing machine object (can be NULL).
+/// \brief Creates a new local machine object.
 /// \param new_m Receives the pointer to the new machine object. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
-/// \details If the parameter \p m is not NULL, the new machine object will be of
-/// the same type. Otherwise, it will be a local machine.
+/// \detail A newly created object is empty (does not hold a machine instance).
+/// Use cm_create() or cm_load() to instantiate a machine into the object.
+/// Use cm_create_new() or cm_load_new() as single-call shortcuts.
+/// Use cm_delete() to delete the object.
+CM_API cm_error cm_new(cm_machine **new_m);
+
+/// \brief Clones empty machine object from existing one.
+/// \param m Pointer to the existing machine object to clone from.
+/// \param new_m Receives the pointer to the new machine object. Set to NULL on failure.
+/// \returns 0 for success, non zero code for error.
+/// \details The new machine object will be of the same type as \p m.
+/// Local if \p m is local, remote on the same host if \p is remote.
 /// Regardless, a newly created object is empty (does not hold a machine instance).
 /// Use cm_create() or cm_load() to instantiate a machine into the object.
 /// Use cm_delete() to delete the object.
-CM_API cm_error cm_new(const cm_machine *m, cm_machine **new_m);
+CM_API cm_error cm_clone_empty(const cm_machine *m, cm_machine **new_m);
 
-/// \brief Checks if object is empty (does not holds a machine instance).
+/// \brief Checks if object is empty (does not hold a machine instance).
 /// \param m Pointer to the existing machine object.
 /// \param yes Receives true if empty, false otherwise.
 /// \returns 0 for success, non zero code for error.

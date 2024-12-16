@@ -141,6 +141,11 @@ static const cartesi::i_virtual_machine *convert_from_c(const cm_machine *m) {
     return reinterpret_cast<const cartesi::i_virtual_machine *>(m);
 }
 
+static cm_machine *convert_to_c(cartesi::i_virtual_machine *cpp_m) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<cm_machine *>(cpp_m);
+}
+
 cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash) {
     if (c_hash == nullptr) {
         throw std::invalid_argument("invalid hash");
@@ -154,18 +159,25 @@ cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash) {
 // The C API implementation
 // ----------------------------------------------
 
-cm_error cm_new(const cm_machine *m, cm_machine **new_m) try {
+cm_error cm_new(cm_machine **new_m) try {
     if (new_m == nullptr) {
         throw std::invalid_argument("invalid new machine output");
     }
-    if (m == nullptr) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        *new_m = reinterpret_cast<cm_machine *>(new cartesi::virtual_machine());
-    } else {
-        const auto *cpp_m = convert_from_c(m);
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        *new_m = reinterpret_cast<cm_machine *>(cpp_m->clone_empty());
+    *new_m = convert_to_c(new cartesi::virtual_machine());
+    return cm_result_success();
+} catch (...) {
+    if (new_m != nullptr) {
+        *new_m = nullptr;
     }
+    return cm_result_failure();
+}
+
+cm_error cm_clone_empty(const cm_machine *m, cm_machine **new_m) try {
+    if (new_m == nullptr) {
+        throw std::invalid_argument("invalid new machine output");
+    }
+    const auto *cpp_m = convert_from_c(m);
+    *new_m = convert_to_c(cpp_m->clone_empty());
     return cm_result_success();
 } catch (...) {
     if (new_m != nullptr) {
@@ -217,7 +229,7 @@ cm_error cm_load(cm_machine *m, const char *dir, const char *runtime_config) try
 }
 
 cm_error cm_load_new(const char *dir, const char *runtime_config, cm_machine **new_m) {
-    auto err = cm_new(nullptr, new_m);
+    auto err = cm_new(new_m);
     if (err != 0) {
         return err;
     }
@@ -230,7 +242,7 @@ cm_error cm_load_new(const char *dir, const char *runtime_config, cm_machine **n
 }
 
 cm_error cm_create_new(const char *config, const char *runtime_config, cm_machine **new_m) {
-    auto err = cm_new(nullptr, new_m);
+    auto err = cm_new(new_m);
     if (err != 0) {
         return err;
     }

@@ -1166,11 +1166,10 @@ static int machine_meta_call(lua_State *L) {
     lua_settop(L, 3);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1); // source machine
     // We could be creating a local machine or a remote machine.
-    // The type is decided by source machine, which will be a cm_machine created with
-    // either cm_new(nullptr, ...) or with cm_jsonrpc_connect_server/spawn_server/fork_server
-    // When we call cm_new(m.get(), ...), it creates a new empty object from the same underlying type as m.get().
+    // When we call cm_clone_empty(m.get(), ...), it creates a new empty object from the same underlying type as
+    // m.get().
     auto &new_m = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr));
-    if (cm_new(m.get(), &new_m.get()) != 0) {
+    if (cm_clone_empty(m.get(), &new_m.get()) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     const char *runtime_config = !lua_isnil(L, 3) ? clua_check_json_string(L, 3) : nullptr;

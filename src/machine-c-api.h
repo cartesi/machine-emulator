@@ -320,6 +320,8 @@ CM_API const char *cm_get_last_error_message();
 /// \returns 0 for success, non zero code for error.
 /// \details The returned config is not sufficient to run a machine.
 /// Additional configurations, such as RAM length, RAM image, flash drives, and entrypoint are still needed.
+/// It's unnecessary to base configs on the default config,
+/// because unset fields are automatically filled with defaults.
 CM_API cm_error cm_get_default_config(const cm_machine *m, const char **config);
 
 /// \brief Gets the address of any x, f, or control state register.
@@ -368,19 +370,36 @@ CM_API void cm_delete(cm_machine *m);
 
 /// \brief Creates a new machine instance from configuration.
 /// \param m Pointer to an empty machine object (does not hold a machine instance).
-/// \param config Machine configuration as a JSON object in a string.
+/// \param config Machine configuration as a JSON object in a string (at least RAM length must be set).
+/// An useful config needs at least RAM length and image, a rootfs flash drive image and DTB entrypoint to be set.
+/// For example:
+/// ```json
+/// {
+///     "ram": {
+///         "length": 134217728,
+///         "image_filename": "linux.bin"
+///     },
+///     "flash_drive": [{
+///         "image_filename": "rootfs.ext2"
+///     }],
+///     "dtb": {
+///         "entrypoint": "echo Hello world!"
+///     }
+/// }
+/// ```
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \returns 0 for success, non zero code for error.
 /// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
 CM_API cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config);
 
 /// \brief Combines cm_new() and cm_create() for convenience.
-/// \param config Machine configuration as a JSON object in a string.
+/// \param config Machine configuration as a JSON object in a string (at least RAM length must be set).
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \param new_m Receives the pointer to the new machine object with a machine instance. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
 /// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
 /// \details Use cm_delete() to delete the object.
+/// \details See cm_load() and cm_create() for more details.
 CM_API cm_error cm_create_new(const char *config, const char *runtime_config, cm_machine **new_m);
 
 /// \brief Loads a new machine instance from a previously stored directory.
@@ -398,6 +417,7 @@ CM_API cm_error cm_load(cm_machine *m, const char *dir, const char *runtime_conf
 /// \returns 0 for success, non zero code for error.
 /// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
 /// \details Use cm_delete() to delete the object.
+/// \details See cm_load() and cm_create() for more details.
 CM_API cm_error cm_load_new(const char *dir, const char *runtime_config, cm_machine **new_m);
 
 /// \brief Stores a machine instance to a directory, serializing its entire state.

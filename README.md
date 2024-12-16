@@ -1,324 +1,278 @@
 # Cartesi Machine Emulator
 
-The Cartesi Machine Emulator is the reference off-chain implementation of the Cartesi Machine Specification. It's written in C/C++ with POSIX dependencies restricted to the terminal, process, and memory-mapping facilities. It is distributed as a library and scriptable in the Lua programming language.
+[![Latest Release](https://img.shields.io/github/v/release/cartesi/machine-emulator?label=version)](https://github.com/cartesi/machine-emulator/releases)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/cartesi/machine-emulator/build.yml?branch=main)](https://github.com/cartesi/machine-emulator/actions)
+[![License](https://img.shields.io/github/license/cartesi/machine-emulator)](LICENSE)
 
-The emulator implements RISC-V's RV64IMASU ISA. The letters after RV specify the extension set. This selection corresponds to a 64-bit machine, Integer arithmetic with Multiplication and division, Atomic operations, as well as the optional Supervisor and User privilege levels. In addition, Cartesi Machines support the Sv48 mode of address translation and memory protection.
+The Cartesi Machine Emulator is the basis of Cartesi's verifiable computation framework.
+It is a portable, deterministic, high-performance RISC-V emulator (a.k.a. a virtual machine) that can run complex computations off-chain but supports on-chain verification via fraud proofs.
+
+Under the hood, the emulator implements the RISC-V RV64GC ISA (including the unprivileged and privileged specifications).
+This allows it to boot Linux, which in turn, gives creators access to traditional software development stacks when developing and running their applications.
+
+Written in C++, the Cartesi Machine Emulator is available as a standalone CLI application or as a library for embedding into other applications.
+It can be controlled via a well-defined C API that can be easily accessed from multiple programming languages.
+In particular, it can be scripted in Lua, for fast prototyping and testing.
+
+*TL;DR:*
+> I can use the Cartesi Machine to disprove a dishonest result of a computation `M' = F(M)`, where `F` is a deterministic state transition function that corresponds to running an application on top of the Linux operating system to process some input, `M = (S, I)` is the initial state `S` of the machine and the input `I`, and `M' = (S', O')` is the final state `S'` of the machine and its output `O'`.
+
+## Features
+
+- **Powerful**
+  - **High-performance RISC-V emulation**, delivering high execution speed for demanding applications.
+  - **Complete RISC-V RV64GC ISA support**, covering both privileged and unprivileged specifications.
+  - **Linux kernel execution**, enabling running of standard Linux distributions (e.g., Ubuntu).
+  - **Full-featured Linux environment**, enabling applications to use traditional software stacks.
+  - **Large state address space**, enabling applications to utilize gigabytes of data.
+  - **Forking support**, enabling parallel execution and efficient rollback of state transitions.
+  - **State inspection capabilities**, enabling examination of the entire address space and processor.
+- **Developer Friendly**
+  - **Simple C API**, facilitating integration with various languages (e.g., C++, Rust, Go, Python, JavaScript).
+  - **Lua scripting interface**, for rapid prototyping and testing.
+  - **JSON-RPC API endpoint**, enabling remote machine control.
+  - **Interactive CLI application**, for prototyping in the terminal.
+  - **VirtIO network and shared filesystem devices**, allowing access to host state during prototyping.
+  - **State serialization**, for storing and loading of machine snapshots.
+- **Verifiable**
+  - **Deterministic execution**, ensuring every instruction is reproducible (including floating-point).
+  - **State Merkle tree computation**, for generating cryptographic proofs.
+  - **State transition access logging**, enabling on-chain verification of state transitions.
+  - **Cycle-level execution control**, for interactive fraud-proof bisection.
+  - **Microarchitecture-based emulation** of its interpreter for simplifying on-chain verification.
+  - **Generic I/O interface**, enabling handling of data input/output through state transitions.
+- **Portable**
+  - **Cross-platform compatibility**, including Linux, macOS and Windows.
+  - **WebAssembly compatibility**, bringing all capabilities to browser environments.
+  - **Freestanding compilation**, suitable for embedding in other applications (e.g., in a zkVM).
+  - **Minimal runtime dependencies**, ensuring easy installation and integration.
+
+## Overview
+
+For a comprehensive technical overview of the Cartesi Machine emulator and its blockchain use cases,
+you can watch this detailed presentation by Diego Nehab,
+the principal architect of the Cartesi Machine, at the Ethereum Engineering Group:
+
+[![Cartesi Machine Overview](https://img.youtube.com/vi/ofb7MJ8dK0U/0.jpg)](https://www.youtube.com/watch?v=ofb7MJ8dK0U)
+
+In addition, you can watch an insightful interview with Diego Nehab about the Cartesi Machine on Cartesi's YouTube channel:
+
+[![Cartesi Machine Deep Dive](https://img.youtube.com/vi/uUzn_vdWyDM/0.jpg)](https://www.youtube.com/watch?v=uUzn_vdWyDM)
 
 ## Getting Started
 
-Run `make help` for a list of target options. Here are some of them:
+### Installation
 
-```
-Main targets:
-* all                                 - Build the src/ code. To build from a clean clone, run: make submodules all
-  uarch                               - Build microarchitecture (requires riscv64-cartesi-linux-gnu-* toolchain)
-  uarch-with-toolchain                - Build microarchitecture using the toolchain docker image
-  build-tests-all                     - Build all tests (machine, uarch and misc)
-  build-tests-machine                 - Build machine emulator tests (requires rv64gc-lp64d riscv64-cartesi-linux-gnu-* toolchain)
-  build-tests-machine-with-toolchain  - Build machine emulator tests using the rv64gc-lp64d toolchain docker image
-  build-tests-uarch                   - Build microarchitecture rv64i instruction tests (requires rv64ima-lp64 riscv64-cartesi-linux-gnu-* toolchain)
-  build-tests-uarch-with-toolchain    - Build microarchitecture rv64i instruction tests using the rv64ima-lp64 toolchain docker image
-  build-tests-misc                    - Build miscellaneous tests
-  build-tests-misc-with-builder-image - Build miscellaneous tests using the cartesi/machine-emulator:builder image
-  test-machine                        - Run machine emulator tests
-  test-uarch                          - Run uarch tests
-  test-misc                           - Run miscellaneous tests
-  test                                - Run all tests
-  doc                                 - Build the doxygen documentation (requires doxygen)
-Docker images targets:
-  build-emulator-image                - Build the machine-emulator debian based docker image
-  build-debian-package                - Build the cartesi-machine.deb package from image
-  build-toolchain                     - Build the emulator toolchain docker image
-  create-generated-files-patch        - Create patch that adds generated files to source tree
-Cleaning targets:
-  clean                               - Clean the src/ artifacts
-  depclean                            - Clean + dependencies
-  distclean                           - Depclean + profile information and downloads
+We provide official packages for some distributions, but you can also build from source.
+
+#### Debian or Ubuntu
+
+We maintain an APT package repository containing binary packages for *amd64*, *arm64* and *riscv64*, you can install with:
+
+```sh
+# Add package repository
+wget -qO - https://dist.cartesi.io/apt/keys/cartesi-deb-key.gpg | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/cartesi-deb-key.gpg
+echo "deb https://dist.cartesi.io/apt stable/" | sudo tee /etc/apt/sources.list.d/cartesi-deb-apt.list
+sudo apt-get update
+# Install cartesi-machine
+sudo apt-get install cartesi-machine
 ```
 
-### Requirements
+The packages provided in this APT repository are known to work with **Debian 12** (Bookworm) and **Ubuntu 24.04** (Noble).
 
-- C++ Compiler with support for C++20 (tested with GCC >= 8+ and Clang >= 8.x).
+#### Alpine Linux
+
+We maintain an APK package repository containing binary packages for *amd64*, *arm64* and *riscv64*, you can install with:
+
+```sh
+# Add package repository
+wget -qO /etc/apk/keys/cartesi-apk-key.rsa.pub https://dist.cartesi.io/apk/keys/cartesi-apk-key.rsa.pub
+echo "https://dist.cartesi.io/apk/stable" >> /etc/apk/repositories
+apk update
+# Install cartesi-machine
+apk add cartesi-machine
+```
+
+#### Arch Linux
+
+We maintain an official Arch Linux package in [AUR](https://aur.archlinux.org/packages/cartesi-machine), you can install with:
+
+```sh
+yay -S cartesi-machine
+```
+
+#### Homebrew
+
+We maintain a Homebrew tap for macOS, you can install with:
+
+```sh
+brew tap cartesi/tap
+brew install cartesi-machine
+```
+
+#### From Sources
+
+##### System Requirements
+
+- C++ Compiler with support for C++20 (tested with GCC >= 11.x and Clang >= 14.x).
 - GNU Make >= 3.81
-- Lua >= 5.4.4
-- Libslirp >= 4.6.0
 - Boost >= 1.81
+- Lua >= 5.4.4 (optional, required for scripting support and interactive terminal)
+- Libslirp >= 4.6.0 (optional, required for networking support)
 
-Obs: Please note that Apple Clang Version number does not follow upstream LLVM/Clang.
+###### Debian Requirements
 
-#### Debian Bookworm
-
-```bash
-sudo apt-get install build-essential wget git clang-tidy-16 clang-format-16 \
-        libboost1.81-dev libssl-dev libslirp-dev \
-        ca-certificates pkg-config lua5.4 liblua5.4-dev \
-        luarocks
-
-sudo luarocks install --lua-version=5.4 luasocket
-sudo luarocks install --lua-version=5.4 luasec
-sudo luarocks install --lua-version=5.4 luaposix
+```sh
+sudo apt-get install build-essential git wget libboost1.81-dev liblua5.4-dev libslirp-dev lua5.4
 ```
 
-For more information, see the [Configuring Lua 5.4](#configuring-lua-54) section.
+###### MacPorts Requirements
 
-#### MacOS
-
-##### MacPorts
-
-```bash
-sudo port install clang-16 boost181 wget pkgconfig lua54 lua-luarocks libslirp
-
-sudo luarocks install --lua-version=5.4 luasocket
-sudo luarocks install --lua-version=5.4 luasec
-sudo luarocks install --lua-version=5.4 luaposix
+```sh
+sudo port install clang boost181 wget pkgconfig lua54 libslirp
 ```
 
-For more information, see the [Configuring Lua 5.4](#configuring-lua-54) section.
+###### Homebrew Requirements
 
-##### Homebrew
-
-```bash
-brew install llvm@16 boost wget pkg-config openssl lua luarocks libslirp
-
-luarocks --lua-dir=$(brew --prefix)/opt/lua install luasocket
-luarocks --lua-dir=$(brew --prefix)/opt/lua install luasec
-luarocks --lua-dir=$(brew --prefix)/opt/lua install luaposix
+```sh
+brew install llvm boost wget pkg-config lua libslirp
 ```
 
-For more information, see the [Configuring Lua 5.4](#configuring-lua-54) section.
+#### Build
 
-##### Configuring Lua 5.4
+First, make sure to have all the system requirements, then run the following to build and install a stable release of the machine:
 
-For emulator scripts to function properly, it is necessary for the lua5.4 binary to be available in the system PATH. If your operating system or package manager provides a Lua binary under a different name (e.g., lua instead of lua5.4, which is common on Homebrew), you will need to create a symbolic link or an alias named lua5.4. This can be done as follows:
+```sh
+# clone a stable branch of the emulator
+git clone --branch v0.19.0 https://github.com/cartesi/machine-emulator.git
+cd machine-emulator
 
-```bash
-ln -s $(which lua) /usr/local/bin/lua5.4  # Create a symbolic link (adjust as needed for your system)
-# or
-alias lua5.4='lua'  # Create an alias (add this line to your shell profile file like .bashrc or .zshrc)
-```
+# patch the sources with required generated files
+wget https://github.com/cartesi/machine-emulator/releases/download/v0.19.0/add-generated-files.diff
+git apply add-generated-files.diff
 
-###### Setting Up LuaRocks Modules
-
-To use features that require LuaRocks modules, you must ensure your environment is configured to find these modules. Export the output of `luarocks path --lua-version=5.4` to your environment by executing them or adding it to your .bashrc or .zshrc file. E.g.:
-
-```bash
-eval "$(luarocks path --lua-version=5.4)"
-```
-
-This command adjusts the environment variables for your shell sessions, ensuring LuaRocks-installed modules are correctly discovered by Lua scripts.
-
-### Build
-
-```bash
-git clone --recurse-submodules -j3 https://github.com/cartesi/machine-emulator.git
+# compile
 make
 ```
 
-Cleaning:
+*Note*: We recommend running only stable releases. If you want to build the `main` development branch, you will need to regenerate files instead of patching the sources, which will require Docker on your system. For more details, please check our [development guide](https://github.com/cartesi/machine-emulator/wiki/Development-Guide).
 
-```bash
-make clean
-```
+Finally, you can install it in your system in any path you would like with:
 
-Microarchitecture:
-
-If you want to use a pre-built uarch RAM image instead of building one, use the variable `UARCH_RAM_IMAGE` to specify the path to the desired image file.
-
-```bash
-$ make UARCH_RAM_IMAGE=<path-to-your-uarch-ram.bin>
-```
-
-### Install
-
-```bash
+```sh
+# install the emulator
 sudo make install PREFIX=/usr/local
 ```
 
-### Build C libraries in standalone
+After installation, to boot a Linux system with the `cartesi-machine` command, you will need to also download:
 
-Both `libcartesi` and `libcartes_jsonrpc` C libraries can be compiled in standalone, either as static or shared library:
+- Guest [Linux image](https://github.com/cartesi/machine-linux-image) and place it at `$PREFIX/cartesi/images/linux.bin`
+- Guest [rootfs image](https://github.com/cartesi/machine-rootfs-image) and place it at `$PREFIX/cartesi/images/rootfs.ext2`.
 
-```bash
-make bundle-boost
-make -C src libcartesi.a libcartesi_jsonrpc.a libcartesi.so libcartesi_jsonrpc.so
+### Usage
+
+Once you have the emulator, guest Linux image, and guest rootfs images installed, you can boot a Linux operating system by running:
+
+```sh
+cartesi-machine
 ```
 
-The `.a` and `.so` files will be available in `src` directory, you can use any of them to link your application.
-
-You can even use other toolchains to cross compile targeting other platforms:
-
-```bash
-# Target WASM with Emscripten toolchain
-make -C src \
-  CC=emcc CXX=em++ AR="emar rcs" \
-  libcartesi.a
-
-# Target WASM with WASI SDK toolchain
-make -C src \
-  CC=/opt/wasi-sdk/bin/clang CXX=/opt/wasi-sdk/bin/clang++ AR="/opt/wasi-sdk/bin/llvm-ar rcs" \
-  libcartesi.a
-
-# Target Windows with mingw-w64 toolchain
-make -C src \
-  CC=x86_64-w64-mingw32-gcc \
-  CXX=x86_64-w64-mingw32-g++ \
-  AR="x86_64-w64-mingw32-ar rcs" \
-  libcartesi.a
+It should output something similar to:
 ```
 
-## Running Tests
+         .
+        / \
+      /    \
+\---/---\  /----\
+ \       X       \
+  \----/  \---/---\
+       \    / CARTESI
+        \ /   MACHINE
+         '
 
-To build and execute the all tests run:
+Nothing to do.
 
-```bash
-make build-tests-all
-make test
+Halted
+Cycles: 48415113
 ```
 
-To execute the machine test suite run:
+You can start an interactive terminal to play around with:
 
-```bash
-make build-tests-machine-with-toolchain
-make test-machine
+```sh
+cartesi-machine -it bash
 ```
 
-To execute the uarch test suite run:
+And there you have a full Linux running in a RISC-V emulated CPU that you can interact with.
+You can check the `cartesi-machine --help` for more information on how to use the CLI application.
 
-```bash
-make build-tests-uarch-with-toolchain
-make test-uarch
-```
+### Library
 
-## Linter
+You can use the emulator as library in other applications, its `libcartesi` library provides a [C API](https://github.com/cartesi/machine-emulator/blob/refactor/new-readme/src/machine-c-api.h) that is very simple to use.
 
-We use clang-tidy 15 as the linter.
+Check the following wiki guides on how to use with different languages:
+- [C/C++](https://github.com/cartesi/machine-emulator/wiki/Using-the-C-API)
+- [Rust](https://github.com/cartesi/machine-emulator/wiki/Using-the-C-API-with-Rust)
+- [Go](https://github.com/cartesi/machine-emulator/wiki/Using-the-C-API-with-Go)
+- [JavaScript](https://github.com/cartesi/machine-emulator/wiki/Using-the-C-API-with-JavaScript)
+- [Python](https://github.com/cartesi/machine-emulator/wiki/Using-the-C-API-with-Python)
+- [Lua](https://github.com/cartesi/machine-emulator/wiki/Using-the-Lua-API)
+- [WebAssembly](https://github.com/cartesi/machine-emulator/wiki/Using-the-C-API-with-WebAssembly)
 
-### Install
+## Use Cases
 
-#### Debian Bookworm
+The following projects have been using the emulator:
+- [Cartesi Rollups Node](https://github.com/cartesi/rollups-node) - Uses the emulator's library in Go for Layer 2 rollups on Ethereum.
+- [Cartesi Dave](https://github.com/cartesi/dave) - Uses the emulator's library in Rust for on-chain fraud-proofs validation.
+- [Cartesi CLI](https://github.com/cartesi/machine-emulator/projects) - Uses the emulator's CLI in TypeScript for DApp development.
 
-You need to install the package clang-tidy-16 and set it as the default executable with update-alternatives.
+## Related Projects
 
-```bash
-apt install clang-tidy-16
-update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-16 120
-```
+The Cartesi Machine emulator is directly related to the following important projects that are also maintained by us:
+- [Cartesi Machine Guest Tools](https://github.com/cartesi/machine-guest-tools) - System utilities used inside guest machines.
+- [Cartesi Machine Linux Image](https://github.com/cartesi/machine-linux-image) - Linux kernel image used by guest machines.
+- [Cartesi Machine Rootfs Image](https://github.com/cartesi/machine-rootfs-image) - Root filesystem image used by guest machines.
+- [Cartesi Machine Solidity Step](https://github.com/cartesi/machine-solidity-step) - Solidity smart contracts of machine microarchitecture step for on-chain fraud-proofs validation.
 
-### Running Lint
+## Benchmarks
 
-```bash
-make lint -j$(nproc)
-```
+The emulator's RISC-V interpreter is optimized for high performance given the requirements of on-chain verification.
+For detailed performance metrics comparing the emulator against bare-metal execution and other virtual machines,
+please see our [benchmarks](https://github.com/cartesi/machine-emulator/wiki/Benchmarks) page.
 
-## Code format
+## Documentation
 
-We use clang-format to format the code base.
+The Cartesi Machine emulator documentation is undergoing a comprehensive update.
+While the full documentation is being refreshed, you can find guides and tutorials in our [wiki](https://github.com/cartesi/machine-emulator/wiki).
 
-### Install
+## Change Log
 
-#### Debian Bookworm
+Changes between emulator releases are documented in [CHANGELOG](CHANGELOG).
 
-You need to install the package clang-format-16 and set is as the default executable with update-alternatives.
+## Roadmap
 
-```bash
-apt install clang-format-16
-update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-16 120
-```
+We are continually improving the emulator with new features and enhancements.
+Check out our roadmap at [GitHub Projects](https://github.com/cartesi/machine-emulator/projects) to see what's coming in the future.
 
-### Formatting code
+## Community & Support
 
-```bash
-make format
-```
+- Join our [Discord](https://discord.gg/cartesi) `#cartesi-machine` channel to engage with the emulator users and developers.
+- Report issues on our [GitHub Issues](https://github.com/cartesi/machine-emulator/issues).
 
-### Checking whether the code is formatted
+## Developing
 
-```bash
-make check-format
-```
-
-## Coverage
-
-### Dependencies
-
-#### Debian Bookworm
-
-If you want to run the GCC-based coverage, you should install the lcov package with the following command.
-
-```bash
-sudo apt install lcov
-```
-
-If you want to run the clang-based coverage, you should install the clang package with the following command.
-
-```bash
-sudo apt install clang llvm
-```
-
-### Compilation
-
-Before running the coverage, you should build the emulator with the flag coverage-toolchain=gcc or coverage-toolchain=clang.
-Make sure you run `make clean` to clean up any previous compilation.
-For GCC-based coverage run the following command.
-
-```bash
-make coverage=yes COVERAGE_TOOLCHAIN=gcc -j$(nproc)
-make build-tests-all coverage=yes COVERAGE_TOOLCHAIN=gcc -j$(nproc)
-```
-
-For clang-based coverage run the following command.
-
-```bash
-make coverage=yes COVERAGE_TOOLCHAIN=clang -j$(nproc)
-make build-tests-all coverage=yes COVERAGE_TOOLCHAIN=clang -j$(nproc)
-```
-
-### Running coverage
-
-After building the emulator with coverage enable, you should run the following command.
-For instance:
-
-```bash
-make test coverage-report coverage=yes COVERAGE_TOOLCHAIN=gcc
-```
-
-This command will generate a coverage report in the src directory.
-For clang coverage, repeat the same command but with the flag coverage-toolchain=clang.
+For more detailed information about developing the emulator, including instructions for running tests, using the linter, and code formatting, please refer to our [development guide](https://github.com/cartesi/machine-emulator/wiki/Development-Guide) in the wiki.
 
 ## Contributing
 
-Thank you for your interest in Cartesi! Head over to our [Contributing Guidelines](CONTRIBUTING.md) for instructions on how to sign our Contributors Agreement and get started with
-Cartesi!
+Please see our [contributing guidelines](CONTRIBUTING.md) for instructions on how to start contributing to the project.
+Note we have a [code of conduct](CODE_OF_CONDUCT.md), please follow it in all your interactions with the project.
 
-Please note we have a [Code of Conduct](CODE_OF_CONDUCT.md), please follow it in all your interactions with the project.
+## Authors
+
+The Cartesi Machine emulator is actively developed by [Cartesi](https://cartesi.io/)'s Machine Reference Unit, with significant contributions from many open-source developers.
+For a complete list of authors, see the [AUTHORS](AUTHORS) file.
 
 ## License
 
-The `machine-emulator` repository and all contributions to it are licensed under the [LGPL 3.0](https://www.gnu.org/licenses/lgpl-3.0.html), unless otherwise specified below or in subdirectory LICENSE / COPYING files. Please review our [COPYING](COPYING) file for the LGPL 3.0 license.
-
-### Submodules and Dependencies
-
-This project includes several submodules and dependencies, each with its own licensing:
-
-- `tests/machine`: Licensed under the Apache License 2.0. See the license terms in [tests/machine/LICENSE](tests/machine/LICENSE).
-- `tests/uarch`: Licensed under the Apache License 2.0. Licensing details are available in [tests/uarch/LICENSE](tests/uarch/LICENSE).
-- `third-party/llvm-flang-uint128`: Licensed under the Apache License 2.0 with LLVM exceptions. The license can be found at [third-party/llvm-flang-uint128/LICENSE](third-party/llvm-flang-uint128/LICENSE).
-- `third-party/riscv-arch-test`: Source code licensed under the Apache 2.0 and BSD 3-Clause licenses. Documentation under `CC-BY-4.0`. License information is provided in README.md and other COPYING.* files like [third-party/riscv-arch-test/COPYING.APACHE](third-party/riscv-arch-test/COPYING.APACHE).
-- `third-party/riscv-tests`: Licensed under the BSD 3-Clause "New" or "Revised" License. See [third-party/riscv-tests/LICENSE](third-party/riscv-tests/LICENSE) for license details.
-- `third-party/riscv-tests/env`: Licensed under the BSD 3-Clause "New" or "Revised" License. License details are in [third-party/riscv-tests/env/LICENSE](third-party/riscv-tests/env/LICENSE).
-- `third-party/tiny_sha3`: Licensed under the MIT License. The license can be found at [third-party/tiny_sha3/LICENSE](third-party/tiny_sha3/LICENSE).
-- `third-party/nlohmann-json`: Licensed under the MIT License. The license can be found at [third-party/nlohmann-json/LICENSE.MIT](third-party/nlohmann-json/LICENSE.MIT).
-
-### Debian Packages
-
-The project releases several Debian packages, each subject to its specific licensing terms:
-
-- `cartesi-machine-[VERSION]_[ARCHITECTURE].deb` and `cartesi-machine-tests-[VERSION]_[ARCHITECTURE].deb` packages are licensed under LGPL v3.0 and may include or link to other software components with different licenses.
-- `cartesi-machine-tests-data-[VERSION].deb`: This package contains files that are individually licensed under various terms, including but not limited to Apache-2.0, BSD-3-Clause-Regents, BSD-3-Clause, and GPL-2.0-only. For a comprehensive overview of the licenses applicable to specific files within this package, please refer to its copyright file, e.g., [tools/template/tests-data-copyright.template](tools/template/tests-data-copyright.template).
-
-For detailed licensing information of each Debian package, please refer to the copyright file included within the package.
-
-### Additional Notes
-
-This project may include or link to other software components with different licenses. Contributors and users are responsible for ensuring compliance with each component's licensing terms. For detailed information, please refer to the individual LICENSE files within each directory or submodule, and for the Debian packages, please review the respective copyright and licensing details as mentioned above.
-
+The repository and all contributions to it are licensed under the [LGPL 3.0](https://www.gnu.org/licenses/lgpl-3.0.html), unless otherwise specified below or in subdirectory LICENSE / COPYING files.
+Please review our [COPYING](COPYING) file for the LGPL 3.0 license and also [LICENSES](LICENSES.md) file for additional information on third-party software licenses.

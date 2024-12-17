@@ -40,6 +40,7 @@
 #include "htif.h"
 #include "i-device-state-access.h"
 #include "interpret.h"
+#include "is-pristine.h"
 #include "machine-config.h"
 #include "machine-memory-range-descr.h"
 #include "machine-runtime-config.h"
@@ -1765,10 +1766,7 @@ bool machine::update_merkle_tree() const {
                     return false;
                 }
                 if (page_data != nullptr) {
-                    const bool is_pristine = std::all_of(page_data, page_data + PMA_PAGE_SIZE,
-                        [](unsigned char pp) -> bool { return pp == '\0'; });
-
-                    if (is_pristine) {
+                    if (is_pristine(page_data, PMA_PAGE_SIZE)) {
                         // The update_page_node_hash function in the machine_merkle_tree is not thread
                         // safe, so we protect it with a mutex
                         const parallel_for_mutex_guard lock(mutex);

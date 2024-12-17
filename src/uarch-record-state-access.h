@@ -448,8 +448,9 @@ private:
         for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
             m_us.x[i] = UARCH_X_INIT;
         }
-        m_us.ram.fill_memory(m_us.ram.get_start(), 0, m_us.ram.get_length());
         m_us.ram.write_memory(m_us.ram.get_start(), uarch_pristine_ram, uarch_pristine_ram_len);
+        m_us.ram.fill_memory(m_us.ram.get_start() + uarch_pristine_ram_len, 0,
+            m_us.ram.get_length() - uarch_pristine_ram_len);
         if (m_log->get_log_type().has_large_data()) {
             // log written data, if debug info is enabled
             a.get_written().emplace(get_uarch_state_image());

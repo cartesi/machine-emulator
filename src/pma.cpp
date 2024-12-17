@@ -26,6 +26,7 @@
 #include <system_error>
 #include <tuple>
 
+#include "is-pristine.h"
 #include "os.h"
 #include "pma-constants.h"
 #include "pma-driver.h"
@@ -162,8 +163,24 @@ void pma_entry::write_memory(uint64_t paddr, const unsigned char *data, uint64_t
     if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
-    memcpy(get_memory().get_host_memory() + (paddr - get_start()), data, size);
-    mark_dirty_pages(paddr, size);
+    // The case of writing a large range chunk is special and optimized for uarch reset
+    if (size > PMA_PAGE_SIZE) {
+        // Copy in chunks of page size, to avoid marking dirty pages unnecessarily
+        for (uint64_t offset = 0; offset < size; offset += PMA_PAGE_SIZE) {
+            const uint64_t paddr_offset = paddr + offset;
+            const uint64_t chunk_len = std::min<uint64_t>(PMA_PAGE_SIZE, size - offset);
+            const unsigned char *src = data + offset;
+            unsigned char *dest = get_memory().get_host_memory() + (paddr_offset - get_start());
+            if (memcmp(dest, src, chunk_len) != 0) {
+                // Page is different, we have to copy memory
+                memcpy(dest, src, chunk_len);
+                mark_dirty_pages(paddr + offset, chunk_len);
+            }
+        }
+    } else {
+        memcpy(get_memory().get_host_memory() + (paddr - get_start()), data, size);
+        mark_dirty_pages(paddr, size);
+    }
 }
 
 void pma_entry::fill_memory(uint64_t paddr, unsigned char value, uint64_t size) {
@@ -173,8 +190,23 @@ void pma_entry::fill_memory(uint64_t paddr, unsigned char value, uint64_t size) 
     if (!contains(paddr, size)) {
         throw std::invalid_argument{"range not contained in pma"};
     }
-    memset(get_memory().get_host_memory() + (paddr - get_start()), value, size);
-    mark_dirty_pages(paddr, size);
+    // The case of filling a large range with zeros is special and optimized for uarch reset
+    if (value == 0 && size > PMA_PAGE_SIZE) {
+        // Fill in chunks of page size, to avoid marking dirty pages unnecessarily
+        for (uint64_t offset = 0; offset < size; offset += PMA_PAGE_SIZE) {
+            const uint64_t paddr_offset = paddr + offset;
+            const uint64_t chunk_len = std::min<uint64_t>(PMA_PAGE_SIZE, size - offset);
+            unsigned char *dest = get_memory().get_host_memory() + (paddr_offset - get_start());
+            if (!is_pristine(dest, chunk_len)) {
+                // Page is different, we have to fill memory
+                memset(dest, 0, chunk_len);
+                mark_dirty_pages(paddr + offset, chunk_len);
+            }
+        }
+    } else {
+        memset(get_memory().get_host_memory() + (paddr - get_start()), value, size);
+        mark_dirty_pages(paddr, size);
+    }
 }
 
 bool pma_peek_error(const pma_entry & /*pma*/, const machine & /*m*/, uint64_t /*page_address*/,

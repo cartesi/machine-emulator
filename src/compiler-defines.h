@@ -40,4 +40,10 @@
 
 #define PACKED __attribute__((packed))
 
+#if defined(__GNUC__)
+#define FORCE_OPTIMIZE_O3 __attribute__((optimize("-O3")))
+#else
+#define FORCE_OPTIMIZE_O3
+#endif
+
 #endif

@@ -50,7 +50,9 @@
 #include "pma-defines.h"
 #include "pma.h"
 #include "record-state-access.h"
+#include "record-step-state-access.h"
 #include "replay-state-access.h"
+#include "replay-step-state-access.h"
 #include "riscv-constants.h"
 #include "send-cmio-response.h"
 #include "shadow-pmas-factory.h"
@@ -2112,6 +2114,18 @@ void machine::get_root_hash(hash_type &hash) const {
     m_t.get_root_hash(hash);
 }
 
+machine::hash_type machine::get_merkle_tree_node_hash(uint64_t address, int log2_size,
+    skip_merkle_tree_update_t /* unused */) const {
+    return m_t.get_node_hash(address, log2_size);
+}
+
+machine::hash_type machine::get_merkle_tree_node_hash(uint64_t address, int log2_size) const {
+    if (!update_merkle_tree()) {
+        throw std::runtime_error{"error updating Merkle tree"};
+    }
+    return get_merkle_tree_node_hash(address, log2_size, skip_merkle_tree_update);
+}
+
 bool machine::verify_merkle_tree() const {
     return m_t.verify_tree();
 }
@@ -2480,6 +2494,39 @@ uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
     }
     uarch_state_access a(m_uarch.get_state(), get_state());
     return uarch_interpret(a, uarch_cycle_end);
+}
+
+interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::string &filename) {
+    if (!update_merkle_tree()) {
+        throw std::runtime_error{"error updating Merkle tree"};
+    }
+    hash_type root_hash_before;
+    get_root_hash(root_hash_before);
+    record_step_state_access a(*this, filename);
+    uint64_t mcycle_end{};
+    if (__builtin_add_overflow(a.read_mcycle(), mcycle_count, &mcycle_end)) {
+        mcycle_end = UINT64_MAX;
+    }
+    auto break_reason = interpret(a, mcycle_end);
+    a.finish();
+    hash_type root_hash_after;
+    get_root_hash(root_hash_after);
+    verify_step(root_hash_before, filename, mcycle_count, root_hash_after);
+    return break_reason;
+}
+
+void machine::verify_step(const hash_type &root_hash_before, const std::string &filename, uint64_t mcycle_count,
+    const hash_type &root_hash_after) {
+    auto data_length = os_get_file_length(filename.c_str(), "step log file");
+    auto *data = os_map_file(filename.c_str(), data_length, false /* not shared */);
+    replay_step_state_access a(data, data_length, root_hash_before);
+    uint64_t mcycle_end{};
+    if (__builtin_add_overflow(a.read_mcycle(), mcycle_count, &mcycle_end)) {
+        mcycle_end = UINT64_MAX;
+    }
+    interpret(a, mcycle_end);
+    a.finish(root_hash_after);
+    os_unmap_file(data, data_length);
 }
 
 interpreter_break_reason machine::run(uint64_t mcycle_end) {

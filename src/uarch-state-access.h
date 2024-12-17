@@ -195,8 +195,9 @@ private:
         if (uarch_pristine_ram_len > m_us.ram.get_length()) {
             throw std::runtime_error("embedded uarch ram image does not fit in uarch ram pma");
         }
-        m_us.ram.fill_memory(m_us.ram.get_start(), 0, m_us.ram.get_length());
         m_us.ram.write_memory(m_us.ram.get_start(), uarch_pristine_ram, uarch_pristine_ram_len);
+        m_us.ram.fill_memory(m_us.ram.get_start() + uarch_pristine_ram_len, 0,
+            m_us.ram.get_length() - uarch_pristine_ram_len);
     }
 };
 

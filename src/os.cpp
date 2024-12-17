@@ -956,4 +956,23 @@ int os_double_fork([[maybe_unused]] bool emancipate, [[maybe_unused]] const char
 #endif
 }
 
+int64_t os_get_file_length(const char *filename, const char *text) {
+    auto fp = unique_fopen(filename, "rb");
+    if (fseek(fp.get(), 0, SEEK_END) != 0) {
+        throw std::system_error{errno, std::generic_category(),
+            "unable to obtain length of file '"s + filename + "' "s + text};
+    }
+    const auto length = ftell(fp.get());
+    if (length < 0) {
+        throw std::system_error{errno, std::generic_category(),
+            "unable to obtain length of file '"s + filename + "' "s + text};
+    }
+    return length;
+}
+
+bool os_file_exists(const char *filename) {
+    struct stat buffer {};
+    return (stat(filename, &buffer) == 0);
+}
+
 } // namespace cartesi

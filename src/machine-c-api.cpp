@@ -336,6 +336,21 @@ cm_error cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_break_re
     return cm_result_failure();
 }
 
+CM_API cm_error cm_log_step(cm_machine *m, uint64_t mcycle_count, const char *log_filename,
+    cm_break_reason *break_reason) try {
+    if (log_filename == nullptr) {
+        throw std::invalid_argument("invalid log_filename");
+    }
+    auto *cpp_m = convert_from_c(m);
+    const auto status = cpp_m->log_step(mcycle_count, log_filename);
+    if (break_reason != nullptr) {
+        *break_reason = static_cast<cm_break_reason>(status);
+    }
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
 cm_error cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **log) try {
     if (log == nullptr) {
         throw std::invalid_argument("invalid access log output");
@@ -349,6 +364,28 @@ cm_error cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **log) tr
     if (log != nullptr) {
         *log = nullptr;
     }
+    return cm_result_failure();
+}
+
+cm_error cm_verify_step(const cm_machine *m, const cm_hash *root_hash_before, const char *log_filename,
+    uint64_t mcycle_count, const cm_hash *root_hash_after, cm_break_reason *break_reason) try {
+    if (log_filename == nullptr) {
+        throw std::invalid_argument("invalid log_filename");
+    }
+    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    cartesi::interpreter_break_reason status{};
+    if (m != nullptr) {
+        const auto *cpp_m = convert_from_c(m);
+        status = cpp_m->verify_step(cpp_root_hash_before, log_filename, mcycle_count, cpp_root_hash_after);
+    } else {
+        status = cartesi::machine::verify_step(cpp_root_hash_before, log_filename, mcycle_count, cpp_root_hash_after);
+    }
+    if (break_reason != nullptr) {
+        *break_reason = static_cast<cm_break_reason>(status);
+    }
+    return cm_result_success();
+} catch (...) {
     return cm_result_failure();
 }
 

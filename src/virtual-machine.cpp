@@ -73,6 +73,10 @@ interpreter_break_reason virtual_machine::do_run(uint64_t mcycle_end) {
     return get_machine()->run(mcycle_end);
 }
 
+interpreter_break_reason virtual_machine::do_log_step(uint64_t mcycle_count, const std::string &filename) {
+    return m_machine->log_step(mcycle_count, filename);
+}
+
 access_log virtual_machine::do_log_step_uarch(const access_log::type &log_type) {
     return get_machine()->log_step_uarch(log_type);
 }
@@ -177,6 +181,11 @@ uint64_t virtual_machine::do_get_reg_address(reg r) const {
 
 machine_config virtual_machine::do_get_default_config() const {
     return machine::get_default_config();
+}
+
+interpreter_break_reason virtual_machine::do_verify_step(const hash_type &root_hash_before,
+    const std::string &log_filename, uint64_t mcycle_count, const hash_type &root_hash_after) const {
+    return machine::verify_step(root_hash_before, log_filename, mcycle_count, root_hash_after);
 }
 
 void virtual_machine::do_verify_step_uarch(const hash_type &root_hash_before, const access_log &log,

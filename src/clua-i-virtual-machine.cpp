@@ -733,6 +733,16 @@ static int machine_obj_index_run(lua_State *L) {
     return 1;
 }
 
+static int machine_obj_index_log_step(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    cm_break_reason break_reason = CM_BREAK_REASON_FAILED;
+    if (cm_log_step(m.get(), luaL_checkinteger(L, 2), luaL_checkstring(L, 3), &break_reason) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    lua_pushinteger(L, static_cast<lua_Integer>(break_reason));
+    return 1;
+}
+
 /// \brief This is the machine:read_uarch_halt_flag() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_read_uarch_halt_flag(lua_State *L) {
@@ -1048,6 +1058,23 @@ static int machine_obj_index_get_reg_address(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine.verify_step() method implementation.
+static int machine_obj_index_verify_step(lua_State *L) {
+    lua_settop(L, 5);
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    cm_hash root_hash_before{};
+    clua_check_cm_hash(L, 2, &root_hash_before);
+    cm_hash root_hash_after{};
+    clua_check_cm_hash(L, 5, &root_hash_after);
+    cm_break_reason break_reason{};
+    if (cm_verify_step(m.get(), &root_hash_before, luaL_checkstring(L, 3), luaL_checkinteger(L, 4), &root_hash_after,
+            &break_reason) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    lua_pushinteger(L, static_cast<lua_Integer>(break_reason));
+    return 1;
+}
+
 /// \brief This is the machine:verify_step_uarch() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_verify_step_uarch(lua_State *L) {
@@ -1131,6 +1158,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"read_virtual_memory", machine_obj_index_read_virtual_memory},
     {"read_word", machine_obj_index_read_word},
     {"run", machine_obj_index_run},
+    {"log_step", machine_obj_index_log_step},
     {"run_uarch", machine_obj_index_run_uarch},
     {"log_step_uarch", machine_obj_index_log_step_uarch},
     {"store", machine_obj_index_store},
@@ -1152,6 +1180,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"log_send_cmio_response", machine_obj_index_log_send_cmio_response},
     {"get_default_config", machine_obj_index_get_default_config},
     {"get_reg_address", machine_obj_index_get_reg_address},
+    {"verify_step", machine_obj_index_verify_step},
     {"verify_step_uarch", machine_obj_index_verify_step_uarch},
     {"verify_reset_uarch", machine_obj_index_verify_reset_uarch},
     {"verify_send_cmio_response", machine_obj_index_verify_send_cmio_response},

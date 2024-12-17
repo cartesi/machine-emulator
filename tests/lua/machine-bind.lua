@@ -597,14 +597,14 @@ print("\n\n run machine to 1000 mcycle")
 do_test("mcycle value should be 1000 after execution", function(machine)
     -- Run machine
     machine:write_reg("mcycle", 0)
-    assert(machine:read_reg("mcycle") == 0)
+    assert(machine:read_mcycle() == 0)
 
     local test = machine:read_mcycle()
     while test < 1000 do
         machine:run(1000)
         test = machine:read_mcycle()
     end
-    assert(machine:read_reg("mcycle") == 1000)
+    assert(machine:read_mcycle() == 1000)
 end)
 
 print("\n\n check reading and writing htif registers")
@@ -1495,6 +1495,220 @@ test_util.make_do_test(build_machine, machine_type, {
     leaf_data = machine:read_memory(leaf_address, leaf_size)
     assert(leaf_data == make_leaf("\xaa", "\xbb", "\xcc", "\xdd"))
     assert(log.accesses[7].written == leaf_data)
+end)
+
+-- helper function to load a step log file into a table
+local function read_step_log_file(filename)
+    local file <close> = assert(io.open(filename, "rb"))
+    local page_count = string.unpack("<I8", file:read(8))
+    local log = { pages = {}, siblings = {} }
+    for i = 1, page_count do
+        log.pages[i] = {
+            index = string.unpack("<I8", file:read(8)),
+            data = file:read(4096),
+            hash = file:read(32),
+        }
+    end
+    local sibling_count = string.unpack("<I8", file:read(8))
+    for i = 1, sibling_count do
+        log.siblings[i] = file:read(32)
+    end
+    return log
+end
+
+-- helper function to write a step log file from a table
+local function write_step_log_file(logdata, filename)
+    local file <close> = assert(io.open(filename, "wb"))
+    local page_count = #logdata.pages
+    if logdata.override_page_count then
+        page_count = logdata.override_page_count
+    end
+    file:write(string.pack("<I8", page_count))
+    for _, page in ipairs(logdata.pages) do
+        file:write(string.pack("<I8", page.index))
+        file:write(page.data)
+        file:write(page.hash)
+    end
+    local sibling_count = #logdata.siblings
+    if logdata.override_sibling_count then
+        sibling_count = logdata.override_sibling_count
+    end
+    file:write(string.pack("<I8", sibling_count))
+    for _, sibling in ipairs(logdata.siblings) do
+        file:write(sibling)
+    end
+end
+
+-- helper function to easily create a modified copy of a step log file
+local function copy_step_log(original_filename, new_filename, callback)
+    local log_data = read_step_log_file(original_filename)
+    callback(log_data)
+    os.remove(new_filename)
+    write_step_log_file(log_data, new_filename)
+end
+
+test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sanity check", function(machine)
+    local success, err, _
+    local filename1 = os.tmpname()
+    local filename2 = os.tmpname()
+    local deleter = {}
+    setmetatable(deleter, {
+        __gc = function()
+            os.remove(filename1)
+            os.remove(filename2)
+        end,
+    })
+
+    machine:write_reg("mcycle", 0)
+    assert(machine:read_mcycle() == 0)
+    -- log_step should fail because the temp file already exists
+    success, err = pcall(function()
+        machine:log_step(1, filename1)
+    end)
+    assert(not success)
+    assert(err:match("file already exists"))
+    -- delete file and confirm that machine is on same mcycle
+    os.remove(filename1)
+    assert(machine:read_mcycle() == 0)
+    -- get current root hash and log step
+    local root_hash_before = machine:get_root_hash()
+    local mcycle_count = 10
+    local status = machine:log_step(mcycle_count, filename1)
+    assert(status == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+    assert(machine:read_mcycle() == mcycle_count)
+    local root_hash_after = machine:get_root_hash()
+    assert(root_hash_before ~= root_hash_after)
+    -- verify step should pass
+    status = machine:verify_step(root_hash_before, filename1, mcycle_count, root_hash_after)
+    assert(status == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+    -- with incorrect hash args, verify step should fail
+    local bad_hash = string.rep("\0", 32)
+    _, err = pcall(function()
+        machine:verify_step(bad_hash, filename1, mcycle_count, root_hash_after)
+    end)
+    assert(err:match("initial root hash mismatch"))
+    _, err = pcall(function()
+        machine:verify_step(root_hash_before, filename1, mcycle_count, bad_hash)
+    end)
+    assert(err:match("final root hash mismatch"))
+    -- ensure that copy_step_log() works
+    copy_step_log(filename1, filename2, function()
+        -- copy original file without modifications
+    end)
+    machine:verify_step(root_hash_before, filename2, mcycle_count, root_hash_after)
+    -- modify page data
+    copy_step_log(filename1, filename2, function(log_data)
+        log_data.pages[1].data = string.reverse(log_data.pages[1].data)
+    end)
+    _, err = pcall(function()
+        machine:verify_step(root_hash_before, filename2, mcycle_count, root_hash_after)
+    end)
+    assert(err:match("initial root hash mismatch"))
+    -- page indices not in ascending order should fail
+    copy_step_log(filename1, filename2, function(log_data)
+        log_data.pages[2].index = log_data.pages[1].index
+    end)
+    _, err = pcall(function()
+        machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
+    end)
+    assert(err:match("invalid log format: page index is not in increasing order"))
+    -- page scratch hash area not zeroed
+    copy_step_log(filename1, filename2, function(log_data)
+        log_data.pages[1].hash = string.rep("\1", 32)
+    end)
+    _, err = pcall(function()
+        machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
+    end)
+    assert(err:match("invalid log format: page scratch hash area is not zero"))
+    -- add one extra page
+    copy_step_log(filename1, filename2, function(log_data)
+        table.insert(log_data.pages, {
+            index = log_data.pages[#log_data.pages].index + 1,
+            data = log_data.pages[#log_data.pages].data,
+            hash = log_data.pages[#log_data.pages].hash,
+        })
+    end)
+    _, err = pcall(function()
+        machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
+    end)
+    assert(err:match("trying to access beyond sibling count while skipping range"))
+    -- remove one page
+    copy_step_log(filename1, filename2, function(log_data)
+        table.remove(log_data.pages)
+    end)
+    _, err = pcall(function()
+        machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
+    end)
+    assert(err:match("initial root hash mismatch"))
+    -- override page count to zero
+    copy_step_log(filename1, filename2, function(log_data)
+        log_data.override_page_count = 0
+    end)
+    _, err = pcall(function()
+        machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
+    end)
+    assert(err:match("page count is zero"))
+    -- override page count to overflow
+    copy_step_log(filename1, filename2, function(log_data)
+        -- There is no UINT64_MAX in Lua, so we have to use the signed representation
+        local MAX_MCYCLE_COUNT = -1
+        log_data.override_page_count = MAX_MCYCLE_COUNT
+    end)
+    _, err = pcall(function()
+        machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
+    end)
+    assert(err:match("page data past end of step log"))
+    -- remove one sibling
+    copy_step_log(filename1, filename2, function(log_data)
+        table.remove(log_data.siblings)
+    end)
+    _, err = pcall(function()
+        machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
+    end)
+    assert(err:match("trying to access beyond sibling count while skipping range"))
+    -- add an extra sibling
+    copy_step_log(filename1, filename2, function(log_data)
+        table.insert(log_data.siblings, bad_hash)
+    end)
+    _, err = pcall(function()
+        machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
+    end)
+    assert(err:match("sibling hashes not totally consumed"))
+    -- modify one sibling hash
+    copy_step_log(filename1, filename2, function(log_data)
+        log_data.siblings[1] = bad_hash
+    end)
+    _, err = pcall(function()
+        machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
+    end)
+    assert(err:match("initial root hash mismatch"))
+    -- empty siblings
+    copy_step_log(filename1, filename2, function(log_data)
+        log_data.siblings = {}
+    end)
+    _, err = pcall(function()
+        machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
+    end)
+    assert(err:match("compute_root_hash_impl: trying to access beyond sibling count while skipping range"))
+    -- override sibling count to overflow
+    copy_step_log(filename1, filename2, function(log_data)
+        log_data.override_sibling_count = 0xffffffff
+    end)
+    _, err = pcall(function()
+        machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
+    end)
+    assert(err:match("sibling hashes past end of step log"))
+    -- log_step should fail if uarch is not reset
+    machine:run_uarch(1) -- advance 1 micro step 0< uarch is not reset
+    os.remove(filename1)
+    _, err = pcall(function()
+        machine:log_step(1, filename1)
+    end)
+    assert(err:match("microarchitecture is not reset"))
+    -- after uarch is reset, log_step should work
+    machine:reset_uarch()
+    status = machine:log_step(1, filename1)
+    assert(status == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
 end)
 
 print("\n\nAll machine binding tests for type " .. machine_type .. " passed")

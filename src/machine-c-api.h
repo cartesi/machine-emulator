@@ -672,6 +672,15 @@ CM_API cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint
 // Logging
 // ------------------------------------
 
+/// \brief Runs the machine for the given mcycle count and generates a log of accessed pages and proof data.
+/// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param mcycle_count Number of mcycles to run
+/// \param log_filename Name of the log file to be generated
+/// \param break_reason Receives reason for returning (can be NULL).
+/// \returns 0 for success, non zero code for error.
+CM_API cm_error cm_log_step(cm_machine *m, uint64_t mcycle_count, const char *log_filename,
+    cm_break_reason *break_reason_result);
+
 /// \brief Runs the machine in the microarchitecture for one micro cycle logging all accesses to the state.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param log_type Type of access log to generate.
@@ -703,6 +712,16 @@ CM_API cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const 
 // ------------------------------------
 // Verifying
 // ------------------------------------
+
+/// \brief Checks the validity of a step log file.
+/// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param root_hash_before State hash before step
+/// \param log_filename Path to the step log file to be verified
+/// \param mcycle_count Number of mcycles in the step
+/// \param root_hash_after State hash after step
+/// \returns 0 for success, non zero code for error
+CM_API cm_error cm_verify_step(const cm_machine *m, const cm_hash *root_hash_before, const char *log_filename,
+    uint64_t mcycle_count, const cm_hash *root_hash_after, cm_break_reason *break_reason);
 
 /// \brief Checks the validity of a state transition produced by cm_log_step_uarch.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).

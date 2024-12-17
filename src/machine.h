@@ -323,6 +323,20 @@ public:
     ///  frequent scenario is when the program executes a WFI instruction. Another example is when the machine halts.
     interpreter_break_reason run(uint64_t mcycle_end);
 
+    /// \brief Runs the machine for the given mcycle count and generates a log of accessed pages and proof data.
+    /// \param mcycle_count Number of mcycles to run the machine for.
+    /// \param filename Name of the file to store the log.
+    /// \returns The reason the machine was interrupted.
+    interpreter_break_reason log_step(uint64_t mcycle_count, const std::string &filename);
+
+    /// \brief Checks the validity of a step log file.
+    /// \param root_hash_before Hash of the state before the step.
+    /// \param log_filename Name of the file containing the log.
+    /// \param mcycle_count Number of mcycles the machine was run for.
+    /// \param root_hash_after Hash of the state after the step.
+    static interpreter_break_reason verify_step(const hash_type &root_hash_before, const std::string &log_filename,
+        uint64_t mcycle_count, const hash_type &root_hash_after);
+
     /// \brief Runs the machine in the microarchitecture until the mcycles advances by one unit or the micro cycle
     /// counter (uarch_cycle) reaches uarch_cycle_end
     /// \param uarch_cycle_end uarch_cycle limit
@@ -438,6 +452,18 @@ public:
     /// \brief Obtains the root hash of the Merkle tree.
     /// \param hash Receives the hash.
     void get_root_hash(hash_type &hash) const;
+
+    /// \brief Obtains the hash of a node in the Merkle tree.
+    /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
+    /// \param log2_size log<sub>2</sub> of size subintended by target node.
+    /// \returns The hash of the target node.
+    hash_type get_merkle_tree_node_hash(uint64_t address, int log2_size) const;
+
+    /// \brief Obtains the hash of a node in the Merkle tree without making any modifications to the tree.
+    /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
+    /// \param log2_size log<sub>2</sub> of size subintended by target node.
+    /// \returns The hash of the target node.
+    hash_type get_merkle_tree_node_hash(uint64_t address, int log2_size, skip_merkle_tree_update_t /*unused*/) const;
 
     /// \brief Verifies integrity of Merkle tree.
     /// \returns True if tree is self-consistent, false otherwise.

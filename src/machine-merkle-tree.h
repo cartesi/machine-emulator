@@ -349,6 +349,12 @@ public:
     /// \param hash Receives the hash.
     void get_page_node_hash(address_type page_index, hash_type &hash) const;
 
+    /// \brief Get the hash of a node in the Merkle tree.
+    /// \param target_address Address of target node.
+    /// \param log2_target_size log2 of the node size.
+    /// \return Hash of the node.
+    hash_type get_node_hash(address_type target_address, int log2_target_size) const;
+
     /// \brief Returns the hash for a log2_size pristine node.
     /// \param log2_size log<sub>2</sub> of size subintended by node.
     /// \return Reference to precomputed hash.

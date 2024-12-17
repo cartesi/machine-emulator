@@ -352,6 +352,9 @@ and command can be:
   run
     run test and report if payload and cycles match expected
 
+  run_step
+    run all tests by recording and verifying each test execution into a step log file
+
   run_uarch
     run test in the microarchitecture and report if payload and cycles match expected
 
@@ -919,6 +922,33 @@ local function run_host_and_uarch_machines(host_machine, uarch_machine, ctx, max
     return host_cycles
 end
 
+local function run_machine_step(machine, reference_machine, ctx, mcycle_count)
+    local log_filename = os.tmpname()
+    local deleter = {}
+    setmetatable(deleter, {
+        __gc = function()
+            os.remove(log_filename)
+        end,
+    })
+    os.remove(log_filename)
+    local root_hash_before = machine:get_root_hash()
+    local reference_hash = reference_machine:get_root_hash()
+    if root_hash_before ~= reference_hash then
+        fatal("%s: failed. Initial hash does not match reference machine\n", ctx.ram_image)
+        return
+    end
+    machine:log_step(mcycle_count, log_filename)
+    local root_hash_after = machine:get_root_hash()
+    cartesi.machine:verify_step(root_hash_before, log_filename, mcycle_count, root_hash_after)
+    -- run the reference machine normally and check final hashes
+    reference_machine:run(mcycle_count)
+    reference_hash = reference_machine:get_root_hash()
+    if root_hash_after ~= reference_hash then
+        fatal("%s: failed. Final hash does not match reference machine\n", ctx.ram_image)
+    end
+    ctx.read_htif_tohost_data = machine:read_reg("htif_tohost_data")
+end
+
 local failures = nil
 local contexts = tabular.expand({ "ram_image", "expected_cycles", "expected_halt_payload" }, selected_tests)
 
@@ -928,6 +958,13 @@ elseif command == "run" then
     failures = parallel.run(contexts, jobs, function(row)
         local machine <close> = build_machine(row.ram_image)
         run_machine(machine, row, 2 * row.expected_cycles)
+        check_and_print_result(machine, row)
+    end)
+elseif command == "run_step" then
+    failures = parallel.run(contexts, jobs, function(row)
+        local machine <close> = build_machine(row.ram_image)
+        local reference_machine <close> = build_machine(row.ram_image)
+        run_machine_step(machine, reference_machine, row, row.expected_cycles)
         check_and_print_result(machine, row)
     end)
 elseif command == "run_uarch" then

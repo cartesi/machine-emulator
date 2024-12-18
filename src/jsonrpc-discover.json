@@ -841,6 +841,80 @@
           "type": "boolean"
         }
       }
+    },
+    {
+      "name": "machine.log_step",
+      "summary": "Logs a step of a given number of cycles",
+      "params": [
+        {
+          "name": "mcycle_count",
+          "description": "Number of cycles to log",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        },
+        {
+          "name": "filename",
+          "description": "Filename to store the log",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "result": {
+        "name": "reason",
+        "description": "Reason call returned",
+        "schema": {
+          "$ref": "#/components/schemas/InterpreterBreakReason"
+        }
+      }
+    },
+    {
+      "name": "machine.verify_step",
+      "summary": "Checks the validity of a step log file.",
+      "params": [
+        {
+          "name": "root_hash_before",
+          "description": "State hash before step",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64Hash"
+          }
+        },
+        {
+          "name": "filename",
+          "description": "Filename containing the log of the step",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "mcycle_count",
+          "description": "Number of cycles in step",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        },
+        {
+          "name": "root_hash_after",
+          "description": "State hash after step",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/Base64Hash"
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "description": "True when operation succeeded",
+        "schema": {
+          "type": "boolean"
+        }
+      }
     }
   ],
   "components": {

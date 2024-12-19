@@ -24,6 +24,8 @@
 #include "uarch-machine-state-access.h"
 #include "uarch-runtime.h"
 #else
+#include "record-step-state-access.h"
+#include "replay-step-state-access.h"
 #include "state-access.h"
 #include <cassert>
 #endif // MICROARCHITECTURE
@@ -5647,6 +5649,10 @@ template interpreter_break_reason interpret(uarch_machine_state_access &a, uint6
 #else
 // Explicit instantiation for state_access
 template interpreter_break_reason interpret(state_access &a, uint64_t mcycle_end);
+// Explicit instantiation for record_step_state_access
+template interpreter_break_reason interpret(record_step_state_access &a, uint64_t mcycle_end);
+// Explicit instantiation for replay_step_state_access
+template interpreter_break_reason interpret(replay_step_state_access &a, uint64_t mcycle_end);
 #endif // MICROARCHITECTURE
 
 } // namespace cartesi

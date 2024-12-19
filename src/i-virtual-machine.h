@@ -88,6 +88,11 @@ public:
         do_store(dir);
     }
 
+    /// \brief  Runs the machine for the given mcycle count and generates a log file of accessed pages and proof data.
+    interpreter_break_reason log_step(uint64_t mcycle_count, const std::string &filename) {
+        return do_log_step(mcycle_count, filename);
+    }
+
     /// \brief Runs the machine for one micro cycle logging all accesses to the state.
     access_log log_step_uarch(const access_log::type &log_type) {
         return do_log_step_uarch(log_type);
@@ -220,6 +225,12 @@ public:
         return do_get_default_config();
     }
 
+    /// \brief Checks the validity of a state transition caused by log_step.
+    interpreter_break_reason verify_step(const hash_type &root_hash_before, const std::string &log_filename,
+        uint64_t mcycle_count, const hash_type &root_hash_after) const {
+        return do_verify_step(root_hash_before, log_filename, mcycle_count, root_hash_after);
+    }
+
     /// \brief Checks the validity of a state transition caused by log_step_uarch.
     void verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after) const {
@@ -250,6 +261,7 @@ private:
     virtual void do_load(const std::string &directory, const machine_runtime_config &runtime) = 0;
     virtual interpreter_break_reason do_run(uint64_t mcycle_end) = 0;
     virtual void do_store(const std::string &dir) const = 0;
+    virtual interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) = 0;
     virtual access_log do_log_step_uarch(const access_log::type &log_type) = 0;
     virtual machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const = 0;
     virtual void do_get_root_hash(hash_type &hash) const = 0;
@@ -277,6 +289,8 @@ private:
         const access_log::type &log_type) = 0;
     virtual uint64_t do_get_reg_address(reg r) const = 0;
     virtual machine_config do_get_default_config() const = 0;
+    virtual interpreter_break_reason do_verify_step(const hash_type &root_hash_before, const std::string &log_filename,
+        uint64_t mcycle_count, const hash_type &root_hash_after) const = 0;
     virtual void do_verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after) const = 0;
     virtual void do_verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,

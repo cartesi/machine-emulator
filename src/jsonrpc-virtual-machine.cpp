@@ -601,6 +601,13 @@ interpreter_break_reason jsonrpc_virtual_machine::do_run(uint64_t mcycle_end) {
     return result;
 }
 
+interpreter_break_reason jsonrpc_virtual_machine::do_log_step(uint64_t mcycle_count, const std::string &filename) {
+    interpreter_break_reason result = interpreter_break_reason::failed;
+    jsonrpc_request(m_ioc, m_stream, m_address, "machine.log_step", std::tie(mcycle_count, filename), result,
+        m_timeout);
+    return result;
+}
+
 void jsonrpc_virtual_machine::do_store(const std::string &directory) const {
     bool result = false;
     jsonrpc_request(m_ioc, m_stream, m_address, "machine.store", std::tie(directory), result, m_timeout);
@@ -779,6 +786,16 @@ uint64_t jsonrpc_virtual_machine::do_get_reg_address(reg r) const {
 machine_config jsonrpc_virtual_machine::do_get_default_config() const {
     machine_config result;
     jsonrpc_request(m_ioc, m_stream, m_address, "machine.get_default_config", std::tie(), result, m_timeout);
+    return result;
+}
+
+interpreter_break_reason jsonrpc_virtual_machine::do_verify_step(const hash_type &root_hash_before,
+    const std::string &log_filename, uint64_t mcycle_count, const hash_type &root_hash_after) const {
+    interpreter_break_reason result = interpreter_break_reason::failed;
+    auto b64_root_hash_before = encode_base64(root_hash_before);
+    auto b64_root_hash_after = encode_base64(root_hash_after);
+    jsonrpc_request(m_ioc, m_stream, m_address, "machine.verify_step",
+        std::tie(b64_root_hash_before, log_filename, mcycle_count, b64_root_hash_after), result, m_timeout);
     return result;
 }
 

@@ -101,6 +101,7 @@ private:
     void do_create(const machine_config &config, const machine_runtime_config &runtime) override;
     void do_load(const std::string &directory, const machine_runtime_config &runtime) override;
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
+    interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) override;
     void do_store(const std::string &dir) const override;
     uint64_t do_read_reg(reg r) const override;
     void do_write_reg(reg w, uint64_t val) override;
@@ -128,6 +129,8 @@ private:
         const access_log::type &log_type) override;
     uint64_t do_get_reg_address(reg r) const override;
     machine_config do_get_default_config() const override;
+    interpreter_break_reason do_verify_step(const hash_type &root_hash_before, const std::string &log_filename,
+        uint64_t mcycle_count, const hash_type &root_hash_after) const override;
     void do_verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
         const hash_type &root_hash_after) const override;
     void do_verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,

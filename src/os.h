@@ -163,6 +163,12 @@ int os_double_fork_or_throw(bool emancipate);
 // In case of error, parent returns -1 and there is no grand-child.
 int os_double_fork(bool emancipate, const char **err_msg);
 
+/// \brief Get the length of a file
+int64_t os_get_file_length(const char *filename, const char *text = "");
+
+/// \brief Check if a file exists
+bool os_file_exists(const char *filename);
+
 } // namespace cartesi
 
 #endif

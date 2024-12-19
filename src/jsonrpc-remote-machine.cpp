@@ -953,6 +953,20 @@ static json jsonrpc_machine_run_handler(const json &j, const std::shared_ptr<htt
     return jsonrpc_response_ok(j, interpreter_break_reason_name(reason));
 }
 
+/// \brief JSONRPC handler for the machine.log_step method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_machine_log_step_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    static const char *param_name[] = {"mcycle_count", "filename"};
+    auto args = parse_args<uint64_t, std::string>(j, param_name);
+    auto reason = session->handler->machine->log_step(std::get<0>(args), std::get<1>(args));
+    return jsonrpc_response_ok(j, interpreter_break_reason_name(reason));
+}
+
 /// \brief Translate an uarch_interpret_break_reason value to string
 /// \param reason uarch_interpret_break_reason value to translate
 /// \returns String representation of value
@@ -1007,6 +1021,21 @@ static json jsonrpc_machine_log_reset_uarch_handler(const json &j, const std::sh
     auto args = parse_args<cartesi::not_default_constructible<cartesi::access_log::type>>(j, param_name);
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
     return jsonrpc_response_ok(j, session->handler->machine->log_reset_uarch(std::get<0>(args).value()));
+}
+
+/// \brief JSONRPC handler for the machine.verify_send_cmio_response method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_machine_verify_step_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    (void) session;
+    static const char *param_name[] = {"root_hash_before", "filename", "mcycle_count", "root_hash_after"};
+    auto args = parse_args<cartesi::machine_merkle_tree::hash_type, std::string, uint64_t,
+        cartesi::machine_merkle_tree::hash_type>(j, param_name);
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+    auto reason =
+        cartesi::machine::verify_step(std::get<0>(args), std::get<1>(args), std::get<2>(args), std::get<3>(args));
+    return jsonrpc_response_ok(j, interpreter_break_reason_name(reason));
 }
 
 /// \brief JSONRPC handler for the machine.verify_step_uarch method
@@ -1428,6 +1457,7 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.destroy", jsonrpc_machine_destroy_handler},
         {"machine.store", jsonrpc_machine_store_handler},
         {"machine.run", jsonrpc_machine_run_handler},
+        {"machine.log_step", jsonrpc_machine_log_step_handler},
         {"machine.run_uarch", jsonrpc_machine_run_uarch_handler},
         {"machine.log_step_uarch", jsonrpc_machine_log_step_uarch_handler},
         {"machine.reset_uarch", jsonrpc_machine_reset_uarch_handler},
@@ -1456,6 +1486,7 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.send_cmio_response", jsonrpc_machine_send_cmio_response_handler},
         {"machine.log_send_cmio_response", jsonrpc_machine_log_send_cmio_response_handler},
         {"machine.verify_send_cmio_response", jsonrpc_machine_verify_send_cmio_response_handler},
+        {"machine.verify_step", jsonrpc_machine_verify_step_handler},
     };
     auto method = j["method"].get<std::string>();
     SLOG(debug) << session->handler->local_endpoint << " handling \"" << method << "\" method";

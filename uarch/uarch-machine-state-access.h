@@ -26,8 +26,7 @@
 #include "i-state-access.h"
 #include "pma-constants.h"
 #include "riscv-constants.h"
-#include "shadow-state.h"
-#include "shadow-uarch-state.h"
+#include "machine-reg.h"
 #include "shadow-pmas.h"
 #include "uarch-constants.h"
 #include "uarch-defines.h"
@@ -171,247 +170,247 @@ private:
     }
 
     uint64_t do_read_x(int reg) {
-        return raw_read_memory<uint64_t>(shadow_state_get_x_abs_addr(reg));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::x0, reg));
     }
 
     void do_write_x(int reg, uint64_t val) {
-        raw_write_memory(shadow_state_get_x_abs_addr(reg), val);
+        raw_write_memory(machine_reg_address(machine_reg::x0, reg), val);
     }
 
     uint64_t do_read_f(int reg) {
-        return raw_read_memory<uint64_t>(shadow_state_get_f_abs_addr(reg));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::f0, reg));
     }
 
     void do_write_f(int reg, uint64_t val) {
-        raw_write_memory(shadow_state_get_f_abs_addr(reg), val);
+        raw_write_memory(machine_reg_address(machine_reg::f0, reg), val);
     }
 
     uint64_t do_read_pc() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::pc));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::pc));
     }
 
     void do_write_pc(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::pc), val);
+        raw_write_memory(machine_reg_address(machine_reg::pc), val);
     }
 
     uint64_t do_read_fcsr() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::fcsr));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::fcsr));
     }
 
     void do_write_fcsr(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::fcsr), val);
+        raw_write_memory(machine_reg_address(machine_reg::fcsr), val);
     }
 
     uint64_t do_read_icycleinstret() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::icycleinstret));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::icycleinstret));
     }
 
     void do_write_icycleinstret(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::icycleinstret), val);
+        raw_write_memory(machine_reg_address(machine_reg::icycleinstret), val);
     }
 
     uint64_t do_read_mvendorid() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::mvendorid));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mvendorid));
     }
 
     uint64_t do_read_marchid() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::marchid));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::marchid));
     }
 
     uint64_t do_read_mimpid() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::mimpid));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mimpid));
     }
 
     uint64_t do_read_mcycle() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::mcycle));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mcycle));
     }
 
     void do_write_mcycle(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::mcycle), val);
+        raw_write_memory(machine_reg_address(machine_reg::mcycle), val);
     }
 
     uint64_t do_read_mstatus() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::mstatus));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mstatus));
     }
 
     void do_write_mstatus(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::mstatus), val);
+        raw_write_memory(machine_reg_address(machine_reg::mstatus), val);
     }
 
     uint64_t do_read_mtvec() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::mtvec));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mtvec));
     }
 
     void do_write_mtvec(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::mtvec), val);
+        raw_write_memory(machine_reg_address(machine_reg::mtvec), val);
     }
 
     uint64_t do_read_mscratch() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::mscratch));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mscratch));
     }
 
     void do_write_mscratch(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::mscratch), val);
+        raw_write_memory(machine_reg_address(machine_reg::mscratch), val);
     }
 
     uint64_t do_read_mepc() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::mepc));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mepc));
     }
 
     void do_write_mepc(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::mepc), val);
+        raw_write_memory(machine_reg_address(machine_reg::mepc), val);
     }
 
     uint64_t do_read_mcause() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::mcause));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mcause));
     }
 
     void do_write_mcause(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::mcause), val);
+        raw_write_memory(machine_reg_address(machine_reg::mcause), val);
     }
 
     uint64_t do_read_mtval() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::mtval));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mtval));
     }
 
     void do_write_mtval(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::mtval), val);
+        raw_write_memory(machine_reg_address(machine_reg::mtval), val);
     }
 
     uint64_t do_read_misa() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::misa));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::misa));
     }
 
     void do_write_misa(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::misa), val);
+        raw_write_memory(machine_reg_address(machine_reg::misa), val);
     }
 
     uint64_t do_read_mie() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::mie));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mie));
     }
 
     void do_write_mie(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::mie), val);
+        raw_write_memory(machine_reg_address(machine_reg::mie), val);
     }
 
     uint64_t do_read_mip() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::mip));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mip));
     }
 
     void do_write_mip(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::mip), val);
+        raw_write_memory(machine_reg_address(machine_reg::mip), val);
     }
 
     uint64_t do_read_medeleg() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::medeleg));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::medeleg));
     }
 
     void do_write_medeleg(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::medeleg), val);
+        raw_write_memory(machine_reg_address(machine_reg::medeleg), val);
     }
 
     uint64_t do_read_mideleg() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::mideleg));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mideleg));
     }
 
     void do_write_mideleg(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::mideleg), val);
+        raw_write_memory(machine_reg_address(machine_reg::mideleg), val);
     }
 
     uint64_t do_read_mcounteren() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::mcounteren));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mcounteren));
     }
 
     void do_write_mcounteren(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::mcounteren), val);
+        raw_write_memory(machine_reg_address(machine_reg::mcounteren), val);
     }
 
     uint64_t do_read_senvcfg() const {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::senvcfg));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::senvcfg));
     }
 
     void do_write_senvcfg(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::senvcfg), val);
+        raw_write_memory(machine_reg_address(machine_reg::senvcfg), val);
     }
 
     uint64_t do_read_menvcfg() const {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::menvcfg));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::menvcfg));
     }
 
     void do_write_menvcfg(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::menvcfg), val);
+        raw_write_memory(machine_reg_address(machine_reg::menvcfg), val);
     }
 
     uint64_t do_read_stvec() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::stvec));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::stvec));
     }
 
     void do_write_stvec(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::stvec), val);
+        raw_write_memory(machine_reg_address(machine_reg::stvec), val);
     }
 
     uint64_t do_read_sscratch() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::sscratch));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::sscratch));
     }
 
     void do_write_sscratch(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::sscratch), val);
+        raw_write_memory(machine_reg_address(machine_reg::sscratch), val);
     }
 
     uint64_t do_read_sepc() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::sepc));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::sepc));
     }
 
     void do_write_sepc(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::sepc), val);
+        raw_write_memory(machine_reg_address(machine_reg::sepc), val);
     }
 
     uint64_t do_read_scause() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::scause));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::scause));
     }
 
     void do_write_scause(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::scause), val);
+        raw_write_memory(machine_reg_address(machine_reg::scause), val);
     }
 
     uint64_t do_read_stval() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::stval));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::stval));
     }
 
     void do_write_stval(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::stval), val);
+        raw_write_memory(machine_reg_address(machine_reg::stval), val);
     }
 
     uint64_t do_read_satp() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::satp));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::satp));
     }
 
     void do_write_satp(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::satp), val);
+        raw_write_memory(machine_reg_address(machine_reg::satp), val);
     }
 
     uint64_t do_read_scounteren() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::scounteren));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::scounteren));
     }
 
     void do_write_scounteren(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::scounteren), val);
+        raw_write_memory(machine_reg_address(machine_reg::scounteren), val);
     }
 
     uint64_t do_read_ilrsc() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::ilrsc));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::ilrsc));
     }
 
     void do_write_ilrsc(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::ilrsc), val);
+        raw_write_memory(machine_reg_address(machine_reg::ilrsc), val);
     }
 
     uint64_t do_read_iflags() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::iflags));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::iflags));
     }
 
     void do_write_iflags(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::iflags), val);
+        raw_write_memory(machine_reg_address(machine_reg::iflags), val);
     }
 
     void do_set_iflags_H() {
@@ -472,69 +471,69 @@ private:
     }
 
     uint64_t do_read_iunrep() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::iunrep));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::iunrep));
     }
 
     void do_write_iunrep(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::iunrep), val);
+        raw_write_memory(machine_reg_address(machine_reg::iunrep), val);
     }
 
     uint64_t do_read_clint_mtimecmp() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::clint_mtimecmp));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::clint_mtimecmp));
     }
 
     void do_write_clint_mtimecmp(uint64_t val) {
-        raw_write_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::clint_mtimecmp), val);
+        raw_write_memory<uint64_t>(machine_reg_address(machine_reg::clint_mtimecmp), val);
     }
 
     uint64_t do_read_plic_girqpend() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::plic_girqpend));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::plic_girqpend));
     }
 
     void do_write_plic_girqpend(uint64_t val) {
-        raw_write_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::plic_girqpend), val);
+        raw_write_memory<uint64_t>(machine_reg_address(machine_reg::plic_girqpend), val);
     }
 
     uint64_t do_read_plic_girqsrvd() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::plic_girqsrvd));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::plic_girqsrvd));
     }
 
     void do_write_plic_girqsrvd(uint64_t val) {
-        raw_write_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::plic_girqsrvd), val);
+        raw_write_memory<uint64_t>(machine_reg_address(machine_reg::plic_girqsrvd), val);
     }
 
     uint64_t do_read_htif_fromhost() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::htif_fromhost));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::htif_fromhost));
     }
 
     void do_write_htif_fromhost(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::htif_fromhost), val);
+        raw_write_memory(machine_reg_address(machine_reg::htif_fromhost), val);
     }
 
     uint64_t do_read_htif_tohost() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::htif_tohost));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::htif_tohost));
     }
 
     void do_write_htif_tohost(uint64_t val) {
-        raw_write_memory(shadow_state_get_reg_abs_addr(machine_reg::htif_tohost), val);
+        raw_write_memory(machine_reg_address(machine_reg::htif_tohost), val);
     }
 
     uint64_t do_read_htif_ihalt() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::htif_ihalt));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::htif_ihalt));
     }
 
     uint64_t do_read_htif_iconsole() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::htif_iconsole));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::htif_iconsole));
     }
 
     uint64_t do_read_htif_iyield() {
-        return raw_read_memory<uint64_t>(shadow_state_get_reg_abs_addr(machine_reg::htif_iyield));
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::htif_iyield));
     }
 
     std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t /*mcycle_max*/) {
         return {mcycle, false};
     }
-    
+
     uint64_t do_read_pma_istart(int i) {
         return raw_read_memory<uint64_t>(shadow_pmas_get_pma_abs_addr(i));
     }

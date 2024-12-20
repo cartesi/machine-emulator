@@ -264,18 +264,18 @@ private:
     void do_push_bracket(bracket_type & /*type*/, const char * /*text*/) {}
 
     void do_reset_iflags_Y() {
-        auto old_iflags = check_read(shadow_state_get_reg_abs_addr(machine_reg::iflags), "iflags.Y");
+        auto old_iflags = check_read(machine_reg_address(machine_reg::iflags), "iflags.Y");
         auto new_iflags = old_iflags & (~IFLAGS_Y_MASK);
-        check_write(shadow_state_get_reg_abs_addr(machine_reg::iflags), new_iflags, "iflags.Y");
+        check_write(machine_reg_address(machine_reg::iflags), new_iflags, "iflags.Y");
     }
 
     bool do_read_iflags_Y() {
-        auto iflags = check_read(shadow_state_get_reg_abs_addr(machine_reg::iflags), "iflags.Y");
+        auto iflags = check_read(machine_reg_address(machine_reg::iflags), "iflags.Y");
         return (iflags & IFLAGS_Y_MASK) != 0;
     }
 
     void do_write_htif_fromhost(uint64_t val) {
-        check_write(shadow_state_get_reg_abs_addr(machine_reg::htif_fromhost), val, "htif.fromhost");
+        check_write(machine_reg_address(machine_reg::htif_fromhost), val, "htif.fromhost");
     }
 
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,

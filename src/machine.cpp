@@ -306,14 +306,15 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
 
     // General purpose registers
     for (int i = 1; i < X_REG_COUNT; i++) {
-        write_reg(static_cast<reg>(static_cast<int>(reg::x0) + i), m_c.processor.x[i]);
+        write_reg(machine_reg_enum(reg::x0, i), m_c.processor.x[i]);
     }
 
     // Floating-point registers
     for (int i = 0; i < F_REG_COUNT; i++) {
-        write_reg(static_cast<reg>(static_cast<int>(reg::f0) + i), m_c.processor.f[i]);
+        write_reg(machine_reg_enum(reg::f0, i), m_c.processor.f[i]);
     }
 
+    // Named registers
     write_reg(reg::pc, m_c.processor.pc);
     write_reg(reg::fcsr, m_c.processor.fcsr);
     write_reg(reg::mcycle, m_c.processor.mcycle);
@@ -633,10 +634,10 @@ machine_config machine::get_serialization_config() const {
     machine_config c = m_c;
     // Copy current processor state to config
     for (int i = 1; i < X_REG_COUNT; ++i) {
-        c.processor.x[i] = read_reg(static_cast<reg>(static_cast<int>(reg::x0) + i));
+        c.processor.x[i] = read_reg(machine_reg_enum(reg::x0, i));
     }
     for (int i = 0; i < F_REG_COUNT; ++i) {
-        c.processor.f[i] = read_reg(static_cast<reg>(static_cast<int>(reg::f0) + i));
+        c.processor.f[i] = read_reg(machine_reg_enum(reg::f0, i));
     }
     c.processor.pc = read_reg(reg::pc);
     c.processor.fcsr = read_reg(reg::fcsr);
@@ -699,7 +700,7 @@ machine_config machine::get_serialization_config() const {
     c.uarch.processor.halt_flag = (read_reg(reg::uarch_halt_flag) != 0);
     c.uarch.processor.pc = read_reg(reg::uarch_pc);
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
-        c.uarch.processor.x[i] = read_reg(static_cast<reg>(static_cast<int>(reg::uarch_x0) + i));
+        c.uarch.processor.x[i] = read_reg(machine_reg_enum(reg::uarch_x0, i));
     }
     return c;
 }
@@ -1642,12 +1643,13 @@ void machine::write_reg(reg w, uint64_t value) {
 }
 
 uint64_t machine::get_reg_address(reg r) {
-    if (static_cast<int>(r) >= static_cast<int>(reg::uarch_first_) &&
-        static_cast<int>(r) <= static_cast<int>(reg::uarch_last_)) {
-        return shadow_uarch_state_get_reg_abs_addr(r);
+    if (machine_reg_address(r) >= machine_reg_address(reg::uarch_first_) &&
+        machine_reg_address(r) <= machine_reg_address(reg::uarch_last_)) {
+        return machine_reg_address(r);
     }
-    if (static_cast<int>(r) >= static_cast<int>(reg::first_) && static_cast<int>(r) <= static_cast<int>(reg::last_)) {
-        return shadow_state_get_reg_abs_addr(r);
+    if (machine_reg_address(r) >= machine_reg_address(reg::first_) &&
+        machine_reg_address(r) <= machine_reg_address(reg::last_)) {
+        return machine_reg_address(r);
     }
     throw std::domain_error{"invalid register"};
 }

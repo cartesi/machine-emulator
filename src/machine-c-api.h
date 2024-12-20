@@ -273,8 +273,6 @@ typedef enum cm_reg {
     CM_REG_UARCH_PC,
     CM_REG_UARCH_CYCLE,
     CM_REG_UARCH_HALT_FLAG,
-    // Amount of registers
-    CM_REG_COUNT,
     // Views of registers
     CM_REG_IFLAGS_PRV,
     CM_REG_IFLAGS_X,
@@ -288,7 +286,10 @@ typedef enum cm_reg {
     CM_REG_HTIF_FROMHOST_CMD,
     CM_REG_HTIF_FROMHOST_REASON,
     CM_REG_HTIF_FROMHOST_DATA,
-    CM_REG_UNKNOWN,
+    // Enumeration helpers
+    CM_REG_UNKNOWN_,
+    CM_REG_FIRST_ = CM_REG_X0,
+    CM_REG_LAST_ = CM_REG_UARCH_HALT_FLAG,
 } cm_reg;
 
 /// \brief Storage for machine hash.

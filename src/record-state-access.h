@@ -202,7 +202,7 @@ private:
     void do_reset_iflags_Y() {
         auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV,
             static_cast<int>(m_m.get_state().iflags.X), 0 /* Y */, static_cast<int>(m_m.get_state().iflags.H));
-        const uint64_t iflags_addr = shadow_state_get_reg_abs_addr(machine_reg::iflags);
+        const uint64_t iflags_addr = machine_reg_address(machine_reg::iflags);
         log_read(iflags_addr, "iflags.Y");
         log_before_write(iflags_addr, new_iflags, "iflags.Y");
         m_m.get_state().iflags.Y = false;
@@ -210,12 +210,12 @@ private:
     }
 
     bool do_read_iflags_Y() const {
-        log_read(shadow_state_get_reg_abs_addr(machine_reg::iflags), "iflags.Y");
+        log_read(machine_reg_address(machine_reg::iflags), "iflags.Y");
         return m_m.get_state().iflags.Y;
     }
 
     void do_write_htif_fromhost(uint64_t val) {
-        log_before_write_write_and_update(shadow_state_get_reg_abs_addr(machine_reg::htif_fromhost),
+        log_before_write_write_and_update(machine_reg_address(machine_reg::htif_fromhost),
             m_m.get_state().htif.fromhost, val, "htif.fromhost");
     }
 

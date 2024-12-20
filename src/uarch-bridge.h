@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <stdexcept>
 
+#include "machine-reg.h"
 #include "machine-state.h"
 #include "pma-constants.h"
 #include "riscv-constants.h"
@@ -43,301 +44,298 @@ public:
     /// An exception is thrown if paddr can't me mapped to a valid state register.
     //// \}
     static void write_register(uint64_t paddr, machine_state &s, uint64_t data) {
-        if (paddr >= PMA_SHADOW_STATE_START) {
-            using reg = shadow_state_reg_rel_addr;
-            paddr -= PMA_SHADOW_STATE_START;
-            switch (static_cast<reg>(paddr)) {
-                case reg::x0:
-                    s.x[0] = data;
-                    return;
-                case reg::x1:
-                    s.x[1] = data;
-                    return;
-                case reg::x2:
-                    s.x[2] = data;
-                    return;
-                case reg::x3:
-                    s.x[3] = data;
-                    return;
-                case reg::x4:
-                    s.x[4] = data;
-                    return;
-                case reg::x5:
-                    s.x[5] = data;
-                    return;
-                case reg::x6:
-                    s.x[6] = data;
-                    return;
-                case reg::x7:
-                    s.x[7] = data;
-                    return;
-                case reg::x8:
-                    s.x[8] = data;
-                    return;
-                case reg::x9:
-                    s.x[9] = data;
-                    return;
-                case reg::x10:
-                    s.x[10] = data;
-                    return;
-                case reg::x11:
-                    s.x[11] = data;
-                    return;
-                case reg::x12:
-                    s.x[12] = data;
-                    return;
-                case reg::x13:
-                    s.x[13] = data;
-                    return;
-                case reg::x14:
-                    s.x[14] = data;
-                    return;
-                case reg::x15:
-                    s.x[15] = data;
-                    return;
-                case reg::x16:
-                    s.x[16] = data;
-                    return;
-                case reg::x17:
-                    s.x[17] = data;
-                    return;
-                case reg::x18:
-                    s.x[18] = data;
-                    return;
-                case reg::x19:
-                    s.x[19] = data;
-                    return;
-                case reg::x20:
-                    s.x[20] = data;
-                    return;
-                case reg::x21:
-                    s.x[21] = data;
-                    return;
-                case reg::x22:
-                    s.x[22] = data;
-                    return;
-                case reg::x23:
-                    s.x[23] = data;
-                    return;
-                case reg::x24:
-                    s.x[24] = data;
-                    return;
-                case reg::x25:
-                    s.x[25] = data;
-                    return;
-                case reg::x26:
-                    s.x[26] = data;
-                    return;
-                case reg::x27:
-                    s.x[27] = data;
-                    return;
-                case reg::x28:
-                    s.x[28] = data;
-                    return;
-                case reg::x29:
-                    s.x[29] = data;
-                    return;
-                case reg::x30:
-                    s.x[30] = data;
-                    return;
-                case reg::x31:
-                    s.x[31] = data;
-                    return;
-                case reg::f0:
-                    s.f[0] = data;
-                    return;
-                case reg::f1:
-                    s.f[1] = data;
-                    return;
-                case reg::f2:
-                    s.f[2] = data;
-                    return;
-                case reg::f3:
-                    s.f[3] = data;
-                    return;
-                case reg::f4:
-                    s.f[4] = data;
-                    return;
-                case reg::f5:
-                    s.f[5] = data;
-                    return;
-                case reg::f6:
-                    s.f[6] = data;
-                    return;
-                case reg::f7:
-                    s.f[7] = data;
-                    return;
-                case reg::f8:
-                    s.f[8] = data;
-                    return;
-                case reg::f9:
-                    s.f[9] = data;
-                    return;
-                case reg::f10:
-                    s.f[10] = data;
-                    return;
-                case reg::f11:
-                    s.f[11] = data;
-                    return;
-                case reg::f12:
-                    s.f[12] = data;
-                    return;
-                case reg::f13:
-                    s.f[13] = data;
-                    return;
-                case reg::f14:
-                    s.f[14] = data;
-                    return;
-                case reg::f15:
-                    s.f[15] = data;
-                    return;
-                case reg::f16:
-                    s.f[16] = data;
-                    return;
-                case reg::f17:
-                    s.f[17] = data;
-                    return;
-                case reg::f18:
-                    s.f[18] = data;
-                    return;
-                case reg::f19:
-                    s.f[19] = data;
-                    return;
-                case reg::f20:
-                    s.f[20] = data;
-                    return;
-                case reg::f21:
-                    s.f[21] = data;
-                    return;
-                case reg::f22:
-                    s.f[22] = data;
-                    return;
-                case reg::f23:
-                    s.f[23] = data;
-                    return;
-                case reg::f24:
-                    s.f[24] = data;
-                    return;
-                case reg::f25:
-                    s.f[25] = data;
-                    return;
-                case reg::f26:
-                    s.f[26] = data;
-                    return;
-                case reg::f27:
-                    s.f[27] = data;
-                    return;
-                case reg::f28:
-                    s.f[28] = data;
-                    return;
-                case reg::f29:
-                    s.f[29] = data;
-                    return;
-                case reg::f30:
-                    s.f[30] = data;
-                    return;
-                case reg::f31:
-                    s.f[31] = data;
-                    return;
-                case reg::pc:
-                    s.pc = data;
-                    return;
-                case reg::fcsr:
-                    s.fcsr = data;
-                    return;
-                case reg::mcycle:
-                    s.mcycle = data;
-                    return;
-                case reg::icycleinstret:
-                    s.icycleinstret = data;
-                    return;
-                case reg::mstatus:
-                    s.mstatus = data;
-                    return;
-                case reg::mtvec:
-                    s.mtvec = data;
-                    return;
-                case reg::mscratch:
-                    s.mscratch = data;
-                    return;
-                case reg::mepc:
-                    s.mepc = data;
-                    return;
-                case reg::mcause:
-                    s.mcause = data;
-                    return;
-                case reg::mtval:
-                    s.mtval = data;
-                    return;
-                case reg::misa:
-                    s.misa = data;
-                    return;
-                case reg::mie:
-                    s.mie = data;
-                    return;
-                case reg::mip:
-                    s.mip = data;
-                    return;
-                case reg::medeleg:
-                    s.medeleg = data;
-                    return;
-                case reg::mideleg:
-                    s.mideleg = data;
-                    return;
-                case reg::mcounteren:
-                    s.mcounteren = data;
-                    return;
-                case reg::menvcfg:
-                    s.menvcfg = data;
-                    return;
-                case reg::stvec:
-                    s.stvec = data;
-                    return;
-                case reg::sscratch:
-                    s.sscratch = data;
-                    return;
-                case reg::sepc:
-                    s.sepc = data;
-                    return;
-                case reg::scause:
-                    s.scause = data;
-                    return;
-                case reg::stval:
-                    s.stval = data;
-                    return;
-                case reg::satp:
-                    s.satp = data;
-                    return;
-                case reg::scounteren:
-                    s.scounteren = data;
-                    return;
-                case reg::senvcfg:
-                    s.senvcfg = data;
-                    return;
-                case reg::ilrsc:
-                    s.ilrsc = data;
-                    return;
-                case reg::iflags:
-                    s.write_iflags(data);
-                    return;
-                case reg::clint_mtimecmp:
-                    s.clint.mtimecmp = data;
-                    return;
-                case reg::plic_girqpend:
-                    s.plic.girqpend = data;
-                    return;
-                case reg::plic_girqsrvd:
-                    s.plic.girqsrvd = data;
-                    return;
-                case reg::htif_tohost:
-                    s.htif.tohost = data;
-                    return;
-                case reg::htif_fromhost:
-                    s.htif.fromhost = data;
-                    return;
-                default:
-                    break;
-            }
+        using reg = machine_reg;
+        switch (static_cast<reg>(paddr)) {
+            case reg::x0:
+                s.x[0] = data;
+                return;
+            case reg::x1:
+                s.x[1] = data;
+                return;
+            case reg::x2:
+                s.x[2] = data;
+                return;
+            case reg::x3:
+                s.x[3] = data;
+                return;
+            case reg::x4:
+                s.x[4] = data;
+                return;
+            case reg::x5:
+                s.x[5] = data;
+                return;
+            case reg::x6:
+                s.x[6] = data;
+                return;
+            case reg::x7:
+                s.x[7] = data;
+                return;
+            case reg::x8:
+                s.x[8] = data;
+                return;
+            case reg::x9:
+                s.x[9] = data;
+                return;
+            case reg::x10:
+                s.x[10] = data;
+                return;
+            case reg::x11:
+                s.x[11] = data;
+                return;
+            case reg::x12:
+                s.x[12] = data;
+                return;
+            case reg::x13:
+                s.x[13] = data;
+                return;
+            case reg::x14:
+                s.x[14] = data;
+                return;
+            case reg::x15:
+                s.x[15] = data;
+                return;
+            case reg::x16:
+                s.x[16] = data;
+                return;
+            case reg::x17:
+                s.x[17] = data;
+                return;
+            case reg::x18:
+                s.x[18] = data;
+                return;
+            case reg::x19:
+                s.x[19] = data;
+                return;
+            case reg::x20:
+                s.x[20] = data;
+                return;
+            case reg::x21:
+                s.x[21] = data;
+                return;
+            case reg::x22:
+                s.x[22] = data;
+                return;
+            case reg::x23:
+                s.x[23] = data;
+                return;
+            case reg::x24:
+                s.x[24] = data;
+                return;
+            case reg::x25:
+                s.x[25] = data;
+                return;
+            case reg::x26:
+                s.x[26] = data;
+                return;
+            case reg::x27:
+                s.x[27] = data;
+                return;
+            case reg::x28:
+                s.x[28] = data;
+                return;
+            case reg::x29:
+                s.x[29] = data;
+                return;
+            case reg::x30:
+                s.x[30] = data;
+                return;
+            case reg::x31:
+                s.x[31] = data;
+                return;
+            case reg::f0:
+                s.f[0] = data;
+                return;
+            case reg::f1:
+                s.f[1] = data;
+                return;
+            case reg::f2:
+                s.f[2] = data;
+                return;
+            case reg::f3:
+                s.f[3] = data;
+                return;
+            case reg::f4:
+                s.f[4] = data;
+                return;
+            case reg::f5:
+                s.f[5] = data;
+                return;
+            case reg::f6:
+                s.f[6] = data;
+                return;
+            case reg::f7:
+                s.f[7] = data;
+                return;
+            case reg::f8:
+                s.f[8] = data;
+                return;
+            case reg::f9:
+                s.f[9] = data;
+                return;
+            case reg::f10:
+                s.f[10] = data;
+                return;
+            case reg::f11:
+                s.f[11] = data;
+                return;
+            case reg::f12:
+                s.f[12] = data;
+                return;
+            case reg::f13:
+                s.f[13] = data;
+                return;
+            case reg::f14:
+                s.f[14] = data;
+                return;
+            case reg::f15:
+                s.f[15] = data;
+                return;
+            case reg::f16:
+                s.f[16] = data;
+                return;
+            case reg::f17:
+                s.f[17] = data;
+                return;
+            case reg::f18:
+                s.f[18] = data;
+                return;
+            case reg::f19:
+                s.f[19] = data;
+                return;
+            case reg::f20:
+                s.f[20] = data;
+                return;
+            case reg::f21:
+                s.f[21] = data;
+                return;
+            case reg::f22:
+                s.f[22] = data;
+                return;
+            case reg::f23:
+                s.f[23] = data;
+                return;
+            case reg::f24:
+                s.f[24] = data;
+                return;
+            case reg::f25:
+                s.f[25] = data;
+                return;
+            case reg::f26:
+                s.f[26] = data;
+                return;
+            case reg::f27:
+                s.f[27] = data;
+                return;
+            case reg::f28:
+                s.f[28] = data;
+                return;
+            case reg::f29:
+                s.f[29] = data;
+                return;
+            case reg::f30:
+                s.f[30] = data;
+                return;
+            case reg::f31:
+                s.f[31] = data;
+                return;
+            case reg::pc:
+                s.pc = data;
+                return;
+            case reg::fcsr:
+                s.fcsr = data;
+                return;
+            case reg::mcycle:
+                s.mcycle = data;
+                return;
+            case reg::icycleinstret:
+                s.icycleinstret = data;
+                return;
+            case reg::mstatus:
+                s.mstatus = data;
+                return;
+            case reg::mtvec:
+                s.mtvec = data;
+                return;
+            case reg::mscratch:
+                s.mscratch = data;
+                return;
+            case reg::mepc:
+                s.mepc = data;
+                return;
+            case reg::mcause:
+                s.mcause = data;
+                return;
+            case reg::mtval:
+                s.mtval = data;
+                return;
+            case reg::misa:
+                s.misa = data;
+                return;
+            case reg::mie:
+                s.mie = data;
+                return;
+            case reg::mip:
+                s.mip = data;
+                return;
+            case reg::medeleg:
+                s.medeleg = data;
+                return;
+            case reg::mideleg:
+                s.mideleg = data;
+                return;
+            case reg::mcounteren:
+                s.mcounteren = data;
+                return;
+            case reg::menvcfg:
+                s.menvcfg = data;
+                return;
+            case reg::stvec:
+                s.stvec = data;
+                return;
+            case reg::sscratch:
+                s.sscratch = data;
+                return;
+            case reg::sepc:
+                s.sepc = data;
+                return;
+            case reg::scause:
+                s.scause = data;
+                return;
+            case reg::stval:
+                s.stval = data;
+                return;
+            case reg::satp:
+                s.satp = data;
+                return;
+            case reg::scounteren:
+                s.scounteren = data;
+                return;
+            case reg::senvcfg:
+                s.senvcfg = data;
+                return;
+            case reg::ilrsc:
+                s.ilrsc = data;
+                return;
+            case reg::iflags:
+                s.write_iflags(data);
+                return;
+            case reg::clint_mtimecmp:
+                s.clint.mtimecmp = data;
+                return;
+            case reg::plic_girqpend:
+                s.plic.girqpend = data;
+                return;
+            case reg::plic_girqsrvd:
+                s.plic.girqsrvd = data;
+                return;
+            case reg::htif_tohost:
+                s.htif.tohost = data;
+                return;
+            case reg::htif_fromhost:
+                s.htif.fromhost = data;
+                return;
+            default:
+                break;
         }
         if (try_write_tlb(s, paddr, data)) {
             return;
@@ -353,217 +351,214 @@ public:
     /// An exception is thrown if paddr can't me mapped to a valid state register.
     //// \}
     static uint64_t read_register(uint64_t paddr, machine_state &s) {
-        if (paddr >= PMA_SHADOW_STATE_START) {
-            using reg = shadow_state_reg_rel_addr;
-            paddr -= PMA_SHADOW_STATE_START;
-            switch (static_cast<reg>(paddr)) {
-                case reg::x0:
-                    return s.x[0];
-                case reg::x1:
-                    return s.x[1];
-                case reg::x2:
-                    return s.x[2];
-                case reg::x3:
-                    return s.x[3];
-                case reg::x4:
-                    return s.x[4];
-                case reg::x5:
-                    return s.x[5];
-                case reg::x6:
-                    return s.x[6];
-                case reg::x7:
-                    return s.x[7];
-                case reg::x8:
-                    return s.x[8];
-                case reg::x9:
-                    return s.x[9];
-                case reg::x10:
-                    return s.x[10];
-                case reg::x11:
-                    return s.x[11];
-                case reg::x12:
-                    return s.x[12];
-                case reg::x13:
-                    return s.x[13];
-                case reg::x14:
-                    return s.x[14];
-                case reg::x15:
-                    return s.x[15];
-                case reg::x16:
-                    return s.x[16];
-                case reg::x17:
-                    return s.x[17];
-                case reg::x18:
-                    return s.x[18];
-                case reg::x19:
-                    return s.x[19];
-                case reg::x20:
-                    return s.x[20];
-                case reg::x21:
-                    return s.x[21];
-                case reg::x22:
-                    return s.x[22];
-                case reg::x23:
-                    return s.x[23];
-                case reg::x24:
-                    return s.x[24];
-                case reg::x25:
-                    return s.x[25];
-                case reg::x26:
-                    return s.x[26];
-                case reg::x27:
-                    return s.x[27];
-                case reg::x28:
-                    return s.x[28];
-                case reg::x29:
-                    return s.x[29];
-                case reg::x30:
-                    return s.x[30];
-                case reg::x31:
-                    return s.x[31];
-                case reg::f0:
-                    return s.f[0];
-                case reg::f1:
-                    return s.f[1];
-                case reg::f2:
-                    return s.f[2];
-                case reg::f3:
-                    return s.f[3];
-                case reg::f4:
-                    return s.f[4];
-                case reg::f5:
-                    return s.f[5];
-                case reg::f6:
-                    return s.f[6];
-                case reg::f7:
-                    return s.f[7];
-                case reg::f8:
-                    return s.f[8];
-                case reg::f9:
-                    return s.f[9];
-                case reg::f10:
-                    return s.f[10];
-                case reg::f11:
-                    return s.f[11];
-                case reg::f12:
-                    return s.f[12];
-                case reg::f13:
-                    return s.f[13];
-                case reg::f14:
-                    return s.f[14];
-                case reg::f15:
-                    return s.f[15];
-                case reg::f16:
-                    return s.f[16];
-                case reg::f17:
-                    return s.f[17];
-                case reg::f18:
-                    return s.f[18];
-                case reg::f19:
-                    return s.f[19];
-                case reg::f20:
-                    return s.f[20];
-                case reg::f21:
-                    return s.f[21];
-                case reg::f22:
-                    return s.f[22];
-                case reg::f23:
-                    return s.f[23];
-                case reg::f24:
-                    return s.f[24];
-                case reg::f25:
-                    return s.f[25];
-                case reg::f26:
-                    return s.f[26];
-                case reg::f27:
-                    return s.f[27];
-                case reg::f28:
-                    return s.f[28];
-                case reg::f29:
-                    return s.f[29];
-                case reg::f30:
-                    return s.f[30];
-                case reg::f31:
-                    return s.f[31];
-                case reg::pc:
-                    return s.pc;
-                case reg::fcsr:
-                    return s.fcsr;
-                case reg::mvendorid:
-                    return MVENDORID_INIT;
-                case reg::marchid:
-                    return MARCHID_INIT;
-                case reg::mimpid:
-                    return MIMPID_INIT;
-                case reg::mcycle:
-                    return s.mcycle;
-                case reg::icycleinstret:
-                    return s.icycleinstret;
-                case reg::mstatus:
-                    return s.mstatus;
-                case reg::mtvec:
-                    return s.mtvec;
-                case reg::mscratch:
-                    return s.mscratch;
-                case reg::mepc:
-                    return s.mepc;
-                case reg::mcause:
-                    return s.mcause;
-                case reg::mtval:
-                    return s.mtval;
-                case reg::misa:
-                    return s.misa;
-                case reg::mie:
-                    return s.mie;
-                case reg::mip:
-                    return s.mip;
-                case reg::medeleg:
-                    return s.medeleg;
-                case reg::mideleg:
-                    return s.mideleg;
-                case reg::mcounteren:
-                    return s.mcounteren;
-                case reg::menvcfg:
-                    return s.menvcfg;
-                case reg::stvec:
-                    return s.stvec;
-                case reg::sscratch:
-                    return s.sscratch;
-                case reg::sepc:
-                    return s.sepc;
-                case reg::scause:
-                    return s.scause;
-                case reg::stval:
-                    return s.stval;
-                case reg::satp:
-                    return s.satp;
-                case reg::scounteren:
-                    return s.scounteren;
-                case reg::senvcfg:
-                    return s.senvcfg;
-                case reg::ilrsc:
-                    return s.ilrsc;
-                case reg::iflags:
-                    return s.read_iflags();
-                case reg::clint_mtimecmp:
-                    return s.clint.mtimecmp;
-                case reg::plic_girqpend:
-                    return s.plic.girqpend;
-                case reg::plic_girqsrvd:
-                    return s.plic.girqsrvd;
-                case reg::htif_tohost:
-                    return s.htif.tohost;
-                case reg::htif_fromhost:
-                    return s.htif.fromhost;
-                case reg::htif_ihalt:
-                    return s.htif.ihalt;
-                case reg::htif_iconsole:
-                    return s.htif.iconsole;
-                case reg::htif_iyield:
-                    return s.htif.iyield;
-                default:
-                    break;
-            }
+        using reg = machine_reg;
+        switch (static_cast<reg>(paddr)) {
+            case reg::x0:
+                return s.x[0];
+            case reg::x1:
+                return s.x[1];
+            case reg::x2:
+                return s.x[2];
+            case reg::x3:
+                return s.x[3];
+            case reg::x4:
+                return s.x[4];
+            case reg::x5:
+                return s.x[5];
+            case reg::x6:
+                return s.x[6];
+            case reg::x7:
+                return s.x[7];
+            case reg::x8:
+                return s.x[8];
+            case reg::x9:
+                return s.x[9];
+            case reg::x10:
+                return s.x[10];
+            case reg::x11:
+                return s.x[11];
+            case reg::x12:
+                return s.x[12];
+            case reg::x13:
+                return s.x[13];
+            case reg::x14:
+                return s.x[14];
+            case reg::x15:
+                return s.x[15];
+            case reg::x16:
+                return s.x[16];
+            case reg::x17:
+                return s.x[17];
+            case reg::x18:
+                return s.x[18];
+            case reg::x19:
+                return s.x[19];
+            case reg::x20:
+                return s.x[20];
+            case reg::x21:
+                return s.x[21];
+            case reg::x22:
+                return s.x[22];
+            case reg::x23:
+                return s.x[23];
+            case reg::x24:
+                return s.x[24];
+            case reg::x25:
+                return s.x[25];
+            case reg::x26:
+                return s.x[26];
+            case reg::x27:
+                return s.x[27];
+            case reg::x28:
+                return s.x[28];
+            case reg::x29:
+                return s.x[29];
+            case reg::x30:
+                return s.x[30];
+            case reg::x31:
+                return s.x[31];
+            case reg::f0:
+                return s.f[0];
+            case reg::f1:
+                return s.f[1];
+            case reg::f2:
+                return s.f[2];
+            case reg::f3:
+                return s.f[3];
+            case reg::f4:
+                return s.f[4];
+            case reg::f5:
+                return s.f[5];
+            case reg::f6:
+                return s.f[6];
+            case reg::f7:
+                return s.f[7];
+            case reg::f8:
+                return s.f[8];
+            case reg::f9:
+                return s.f[9];
+            case reg::f10:
+                return s.f[10];
+            case reg::f11:
+                return s.f[11];
+            case reg::f12:
+                return s.f[12];
+            case reg::f13:
+                return s.f[13];
+            case reg::f14:
+                return s.f[14];
+            case reg::f15:
+                return s.f[15];
+            case reg::f16:
+                return s.f[16];
+            case reg::f17:
+                return s.f[17];
+            case reg::f18:
+                return s.f[18];
+            case reg::f19:
+                return s.f[19];
+            case reg::f20:
+                return s.f[20];
+            case reg::f21:
+                return s.f[21];
+            case reg::f22:
+                return s.f[22];
+            case reg::f23:
+                return s.f[23];
+            case reg::f24:
+                return s.f[24];
+            case reg::f25:
+                return s.f[25];
+            case reg::f26:
+                return s.f[26];
+            case reg::f27:
+                return s.f[27];
+            case reg::f28:
+                return s.f[28];
+            case reg::f29:
+                return s.f[29];
+            case reg::f30:
+                return s.f[30];
+            case reg::f31:
+                return s.f[31];
+            case reg::pc:
+                return s.pc;
+            case reg::fcsr:
+                return s.fcsr;
+            case reg::mvendorid:
+                return MVENDORID_INIT;
+            case reg::marchid:
+                return MARCHID_INIT;
+            case reg::mimpid:
+                return MIMPID_INIT;
+            case reg::mcycle:
+                return s.mcycle;
+            case reg::icycleinstret:
+                return s.icycleinstret;
+            case reg::mstatus:
+                return s.mstatus;
+            case reg::mtvec:
+                return s.mtvec;
+            case reg::mscratch:
+                return s.mscratch;
+            case reg::mepc:
+                return s.mepc;
+            case reg::mcause:
+                return s.mcause;
+            case reg::mtval:
+                return s.mtval;
+            case reg::misa:
+                return s.misa;
+            case reg::mie:
+                return s.mie;
+            case reg::mip:
+                return s.mip;
+            case reg::medeleg:
+                return s.medeleg;
+            case reg::mideleg:
+                return s.mideleg;
+            case reg::mcounteren:
+                return s.mcounteren;
+            case reg::menvcfg:
+                return s.menvcfg;
+            case reg::stvec:
+                return s.stvec;
+            case reg::sscratch:
+                return s.sscratch;
+            case reg::sepc:
+                return s.sepc;
+            case reg::scause:
+                return s.scause;
+            case reg::stval:
+                return s.stval;
+            case reg::satp:
+                return s.satp;
+            case reg::scounteren:
+                return s.scounteren;
+            case reg::senvcfg:
+                return s.senvcfg;
+            case reg::ilrsc:
+                return s.ilrsc;
+            case reg::iflags:
+                return s.read_iflags();
+            case reg::clint_mtimecmp:
+                return s.clint.mtimecmp;
+            case reg::plic_girqpend:
+                return s.plic.girqpend;
+            case reg::plic_girqsrvd:
+                return s.plic.girqsrvd;
+            case reg::htif_tohost:
+                return s.htif.tohost;
+            case reg::htif_fromhost:
+                return s.htif.fromhost;
+            case reg::htif_ihalt:
+                return s.htif.ihalt;
+            case reg::htif_iconsole:
+                return s.htif.iconsole;
+            case reg::htif_iyield:
+                return s.htif.iyield;
+            default:
+                break;
         }
         uint64_t data = 0;
         if (try_read_tlb(s, paddr, &data)) {
@@ -579,7 +574,7 @@ public:
     /// \param paddr Address of the state register.
     /// \returns The register name, if paddr maps to a register, or nullptr otherwise.
     static const char *get_register_name(uint64_t paddr) {
-        using reg = shadow_state_reg_rel_addr;
+        using reg = machine_reg;
         switch (static_cast<reg>(paddr)) {
             case reg::x0:
                 return "x0";
@@ -788,12 +783,12 @@ public:
             default:
                 break;
         }
-        if (paddr >= shadow_state_get_x_abs_addr(0) && paddr <= shadow_state_get_x_abs_addr(X_REG_COUNT - 1) &&
+        if (paddr >= machine_reg_address(machine_reg::x0) && paddr <= machine_reg_address(machine_reg::x31) &&
             (paddr & 0b111) == 0) {
             return "x";
         }
 
-        if (paddr >= shadow_state_get_f_abs_addr(0) && paddr <= shadow_state_get_f_abs_addr(F_REG_COUNT - 1) &&
+        if (paddr >= machine_reg_address(machine_reg::f0) && paddr <= machine_reg_address(machine_reg::f31) &&
             (paddr & 0b111) == 0) {
             return "f";
         }

@@ -125,6 +125,316 @@ cm_error cm_result_success() {
 // --------------------------------------------
 // Conversion functions
 // --------------------------------------------
+
+static cartesi::machine_reg convert_from_c(cm_reg r) {
+    using reg = cartesi::machine_reg;
+    switch (r) {
+        case CM_REG_X0:
+            return reg::x0;
+        case CM_REG_X1:
+            return reg::x1;
+        case CM_REG_X2:
+            return reg::x2;
+        case CM_REG_X3:
+            return reg::x3;
+        case CM_REG_X4:
+            return reg::x4;
+        case CM_REG_X5:
+            return reg::x5;
+        case CM_REG_X6:
+            return reg::x6;
+        case CM_REG_X7:
+            return reg::x7;
+        case CM_REG_X8:
+            return reg::x8;
+        case CM_REG_X9:
+            return reg::x9;
+        case CM_REG_X10:
+            return reg::x10;
+        case CM_REG_X11:
+            return reg::x11;
+        case CM_REG_X12:
+            return reg::x12;
+        case CM_REG_X13:
+            return reg::x13;
+        case CM_REG_X14:
+            return reg::x14;
+        case CM_REG_X15:
+            return reg::x15;
+        case CM_REG_X16:
+            return reg::x16;
+        case CM_REG_X17:
+            return reg::x17;
+        case CM_REG_X18:
+            return reg::x18;
+        case CM_REG_X19:
+            return reg::x19;
+        case CM_REG_X20:
+            return reg::x20;
+        case CM_REG_X21:
+            return reg::x21;
+        case CM_REG_X22:
+            return reg::x22;
+        case CM_REG_X23:
+            return reg::x23;
+        case CM_REG_X24:
+            return reg::x24;
+        case CM_REG_X25:
+            return reg::x25;
+        case CM_REG_X26:
+            return reg::x26;
+        case CM_REG_X27:
+            return reg::x27;
+        case CM_REG_X28:
+            return reg::x28;
+        case CM_REG_X29:
+            return reg::x29;
+        case CM_REG_X30:
+            return reg::x30;
+        case CM_REG_X31:
+            return reg::x31;
+        case CM_REG_F0:
+            return reg::f0;
+        case CM_REG_F1:
+            return reg::f1;
+        case CM_REG_F2:
+            return reg::f2;
+        case CM_REG_F3:
+            return reg::f3;
+        case CM_REG_F4:
+            return reg::f4;
+        case CM_REG_F5:
+            return reg::f5;
+        case CM_REG_F6:
+            return reg::f6;
+        case CM_REG_F7:
+            return reg::f7;
+        case CM_REG_F8:
+            return reg::f8;
+        case CM_REG_F9:
+            return reg::f9;
+        case CM_REG_F10:
+            return reg::f10;
+        case CM_REG_F11:
+            return reg::f11;
+        case CM_REG_F12:
+            return reg::f12;
+        case CM_REG_F13:
+            return reg::f13;
+        case CM_REG_F14:
+            return reg::f14;
+        case CM_REG_F15:
+            return reg::f15;
+        case CM_REG_F16:
+            return reg::f16;
+        case CM_REG_F17:
+            return reg::f17;
+        case CM_REG_F18:
+            return reg::f18;
+        case CM_REG_F19:
+            return reg::f19;
+        case CM_REG_F20:
+            return reg::f20;
+        case CM_REG_F21:
+            return reg::f21;
+        case CM_REG_F22:
+            return reg::f22;
+        case CM_REG_F23:
+            return reg::f23;
+        case CM_REG_F24:
+            return reg::f24;
+        case CM_REG_F25:
+            return reg::f25;
+        case CM_REG_F26:
+            return reg::f26;
+        case CM_REG_F27:
+            return reg::f27;
+        case CM_REG_F28:
+            return reg::f28;
+        case CM_REG_F29:
+            return reg::f29;
+        case CM_REG_F30:
+            return reg::f30;
+        case CM_REG_F31:
+            return reg::f31;
+        case CM_REG_PC:
+            return reg::pc;
+        case CM_REG_FCSR:
+            return reg::fcsr;
+        case CM_REG_MVENDORID:
+            return reg::mvendorid;
+        case CM_REG_MARCHID:
+            return reg::marchid;
+        case CM_REG_MIMPID:
+            return reg::mimpid;
+        case CM_REG_MCYCLE:
+            return reg::mcycle;
+        case CM_REG_ICYCLEINSTRET:
+            return reg::icycleinstret;
+        case CM_REG_MSTATUS:
+            return reg::mstatus;
+        case CM_REG_MTVEC:
+            return reg::mtvec;
+        case CM_REG_MSCRATCH:
+            return reg::mscratch;
+        case CM_REG_MEPC:
+            return reg::mepc;
+        case CM_REG_MCAUSE:
+            return reg::mcause;
+        case CM_REG_MTVAL:
+            return reg::mtval;
+        case CM_REG_MISA:
+            return reg::misa;
+        case CM_REG_MIE:
+            return reg::mie;
+        case CM_REG_MIP:
+            return reg::mip;
+        case CM_REG_MEDELEG:
+            return reg::medeleg;
+        case CM_REG_MIDELEG:
+            return reg::mideleg;
+        case CM_REG_MCOUNTEREN:
+            return reg::mcounteren;
+        case CM_REG_MENVCFG:
+            return reg::menvcfg;
+        case CM_REG_STVEC:
+            return reg::stvec;
+        case CM_REG_SSCRATCH:
+            return reg::sscratch;
+        case CM_REG_SEPC:
+            return reg::sepc;
+        case CM_REG_SCAUSE:
+            return reg::scause;
+        case CM_REG_STVAL:
+            return reg::stval;
+        case CM_REG_SATP:
+            return reg::satp;
+        case CM_REG_SCOUNTEREN:
+            return reg::scounteren;
+        case CM_REG_SENVCFG:
+            return reg::senvcfg;
+        case CM_REG_ILRSC:
+            return reg::ilrsc;
+        case CM_REG_IFLAGS:
+            return reg::iflags;
+        case CM_REG_IUNREP:
+            return reg::iunrep;
+        case CM_REG_CLINT_MTIMECMP:
+            return reg::clint_mtimecmp;
+        case CM_REG_PLIC_GIRQPEND:
+            return reg::plic_girqpend;
+        case CM_REG_PLIC_GIRQSRVD:
+            return reg::plic_girqsrvd;
+        case CM_REG_HTIF_TOHOST:
+            return reg::htif_tohost;
+        case CM_REG_HTIF_FROMHOST:
+            return reg::htif_fromhost;
+        case CM_REG_HTIF_IHALT:
+            return reg::htif_ihalt;
+        case CM_REG_HTIF_ICONSOLE:
+            return reg::htif_iconsole;
+        case CM_REG_HTIF_IYIELD:
+            return reg::htif_iyield;
+        case CM_REG_UARCH_X0:
+            return reg::uarch_x0;
+        case CM_REG_UARCH_X1:
+            return reg::uarch_x1;
+        case CM_REG_UARCH_X2:
+            return reg::uarch_x2;
+        case CM_REG_UARCH_X3:
+            return reg::uarch_x3;
+        case CM_REG_UARCH_X4:
+            return reg::uarch_x4;
+        case CM_REG_UARCH_X5:
+            return reg::uarch_x5;
+        case CM_REG_UARCH_X6:
+            return reg::uarch_x6;
+        case CM_REG_UARCH_X7:
+            return reg::uarch_x7;
+        case CM_REG_UARCH_X8:
+            return reg::uarch_x8;
+        case CM_REG_UARCH_X9:
+            return reg::uarch_x9;
+        case CM_REG_UARCH_X10:
+            return reg::uarch_x10;
+        case CM_REG_UARCH_X11:
+            return reg::uarch_x11;
+        case CM_REG_UARCH_X12:
+            return reg::uarch_x12;
+        case CM_REG_UARCH_X13:
+            return reg::uarch_x13;
+        case CM_REG_UARCH_X14:
+            return reg::uarch_x14;
+        case CM_REG_UARCH_X15:
+            return reg::uarch_x15;
+        case CM_REG_UARCH_X16:
+            return reg::uarch_x16;
+        case CM_REG_UARCH_X17:
+            return reg::uarch_x17;
+        case CM_REG_UARCH_X18:
+            return reg::uarch_x18;
+        case CM_REG_UARCH_X19:
+            return reg::uarch_x19;
+        case CM_REG_UARCH_X20:
+            return reg::uarch_x20;
+        case CM_REG_UARCH_X21:
+            return reg::uarch_x21;
+        case CM_REG_UARCH_X22:
+            return reg::uarch_x22;
+        case CM_REG_UARCH_X23:
+            return reg::uarch_x23;
+        case CM_REG_UARCH_X24:
+            return reg::uarch_x24;
+        case CM_REG_UARCH_X25:
+            return reg::uarch_x25;
+        case CM_REG_UARCH_X26:
+            return reg::uarch_x26;
+        case CM_REG_UARCH_X27:
+            return reg::uarch_x27;
+        case CM_REG_UARCH_X28:
+            return reg::uarch_x28;
+        case CM_REG_UARCH_X29:
+            return reg::uarch_x29;
+        case CM_REG_UARCH_X30:
+            return reg::uarch_x30;
+        case CM_REG_UARCH_X31:
+            return reg::uarch_x31;
+        case CM_REG_UARCH_PC:
+            return reg::uarch_pc;
+        case CM_REG_UARCH_CYCLE:
+            return reg::uarch_cycle;
+        case CM_REG_UARCH_HALT_FLAG:
+            return reg::uarch_halt_flag;
+        case CM_REG_IFLAGS_PRV:
+            return reg::iflags_prv;
+        case CM_REG_IFLAGS_X:
+            return reg::iflags_x;
+        case CM_REG_IFLAGS_Y:
+            return reg::iflags_y;
+        case CM_REG_IFLAGS_H:
+            return reg::iflags_h;
+        case CM_REG_HTIF_TOHOST_DEV:
+            return reg::htif_tohost_dev;
+        case CM_REG_HTIF_TOHOST_CMD:
+            return reg::htif_tohost_cmd;
+        case CM_REG_HTIF_TOHOST_REASON:
+            return reg::htif_tohost_reason;
+        case CM_REG_HTIF_TOHOST_DATA:
+            return reg::htif_tohost_data;
+        case CM_REG_HTIF_FROMHOST_DEV:
+            return reg::htif_fromhost_dev;
+        case CM_REG_HTIF_FROMHOST_CMD:
+            return reg::htif_fromhost_cmd;
+        case CM_REG_HTIF_FROMHOST_REASON:
+            return reg::htif_fromhost_reason;
+        case CM_REG_HTIF_FROMHOST_DATA:
+            return reg::htif_fromhost_data;
+        case CM_REG_UNKNOWN_:
+            return reg::unknown_;
+    }
+    throw std::domain_error{"unknown register"};
+}
+
 static cartesi::i_virtual_machine *convert_from_c(cm_machine *m) {
     if (m == nullptr) {
         throw std::invalid_argument("invalid machine");
@@ -482,7 +792,7 @@ cm_error cm_read_reg(const cm_machine *m, cm_reg reg, uint64_t *val) try {
         throw std::invalid_argument("invalid val output");
     }
     const auto *cpp_m = convert_from_c(m);
-    auto cpp_reg = static_cast<cartesi::machine::reg>(reg);
+    auto cpp_reg = convert_from_c(reg);
     *val = cpp_m->read_reg(cpp_reg);
     return cm_result_success();
 } catch (...) {
@@ -494,7 +804,7 @@ cm_error cm_read_reg(const cm_machine *m, cm_reg reg, uint64_t *val) try {
 
 cm_error cm_write_reg(cm_machine *m, cm_reg reg, uint64_t val) try {
     auto *cpp_m = convert_from_c(m);
-    auto cpp_reg = static_cast<cartesi::machine::reg>(reg);
+    auto cpp_reg = convert_from_c(reg);
     cpp_m->write_reg(cpp_reg, val);
     return cm_result_success();
 } catch (...) {
@@ -505,7 +815,7 @@ cm_error cm_get_reg_address(const cm_machine *m, cm_reg reg, uint64_t *val) try 
     if (val == nullptr) {
         throw std::invalid_argument("invalid val output");
     }
-    auto cpp_reg = static_cast<cartesi::machine::reg>(reg);
+    auto cpp_reg = convert_from_c(reg);
     if (m != nullptr) {
         const auto *cpp_m = convert_from_c(m);
         *val = cpp_m->get_reg_address(cpp_reg);

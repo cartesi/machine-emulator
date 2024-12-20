@@ -300,45 +300,44 @@ private:
     }
 
     uint64_t do_read_x(int reg) const {
-        return log_read(shadow_uarch_state_get_x_abs_addr(reg), m_us.x[reg], "uarch.x");
+        return log_read(machine_reg_address(machine_reg::uarch_x0, reg), m_us.x[reg], "uarch.x");
     }
 
     void do_write_x(int reg, uint64_t val) {
         assert(reg != 0);
-        log_before_write_write_and_update(shadow_uarch_state_get_x_abs_addr(reg), m_us.x[reg], val, "uarch.x");
+        log_before_write_write_and_update(machine_reg_address(machine_reg::uarch_x0, reg), m_us.x[reg], val, "uarch.x");
     }
 
     uint64_t do_read_pc() const {
-        return log_read(shadow_uarch_state_get_reg_abs_addr(machine_reg::uarch_pc), m_us.pc, "uarch.pc");
+        return log_read(machine_reg_address(machine_reg::uarch_pc), m_us.pc, "uarch.pc");
     }
 
     void do_write_pc(uint64_t val) {
-        log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(machine_reg::uarch_pc), m_us.pc, val,
-            "uarch.pc");
+        log_before_write_write_and_update(machine_reg_address(machine_reg::uarch_pc), m_us.pc, val, "uarch.pc");
     }
 
     uint64_t do_read_cycle() const {
-        return log_read(shadow_uarch_state_get_reg_abs_addr(machine_reg::uarch_cycle), m_us.cycle, "uarch.cycle");
+        return log_read(machine_reg_address(machine_reg::uarch_cycle), m_us.cycle, "uarch.cycle");
     }
 
     void do_write_cycle(uint64_t val) {
-        log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(machine_reg::uarch_cycle), m_us.cycle,
-            val, "uarch.cycle");
+        log_before_write_write_and_update(machine_reg_address(machine_reg::uarch_cycle), m_us.cycle, val,
+            "uarch.cycle");
     }
 
     bool do_read_halt_flag() const {
-        return log_read(shadow_uarch_state_get_reg_abs_addr(machine_reg::uarch_halt_flag),
-                   static_cast<uint64_t>(m_us.halt_flag), "uarch.halt_flag") != 0;
+        return log_read(machine_reg_address(machine_reg::uarch_halt_flag), static_cast<uint64_t>(m_us.halt_flag),
+                   "uarch.halt_flag") != 0;
     }
 
     void do_set_halt_flag() {
-        log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(machine_reg::uarch_halt_flag),
-            m_us.halt_flag, true, "uarch.halt_flag");
+        log_before_write_write_and_update(machine_reg_address(machine_reg::uarch_halt_flag), m_us.halt_flag, true,
+            "uarch.halt_flag");
     }
 
     void do_reset_halt_flag() {
-        log_before_write_write_and_update(shadow_uarch_state_get_reg_abs_addr(machine_reg::uarch_halt_flag),
-            m_us.halt_flag, false, "uarch.halt_flag");
+        log_before_write_write_and_update(machine_reg_address(machine_reg::uarch_halt_flag), m_us.halt_flag, false,
+            "uarch.halt_flag");
     }
 
     uint64_t do_read_word(uint64_t paddr) {

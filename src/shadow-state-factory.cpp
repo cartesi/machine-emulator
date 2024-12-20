@@ -46,12 +46,14 @@ static bool shadow_state_peek(const pma_entry & /*pma*/, const machine &m, uint6
 
     // Copy general-purpose registers
     for (int i = 0; i < X_REG_COUNT; ++i) {
-        s->x[i] = m.read_reg(static_cast<machine_reg>(static_cast<int>(machine_reg::x0) + i));
+        s->x[i] = m.read_reg(machine_reg_enum(machine_reg::x0, i));
     }
+
     // Copy floating-point registers
     for (int i = 0; i < F_REG_COUNT; ++i) {
-        s->f[i] = m.read_reg(static_cast<machine_reg>(static_cast<int>(machine_reg::f0) + i));
+        s->f[i] = m.read_reg(machine_reg_enum(machine_reg::f0, i));
     }
+
     // Copy named registers
     s->pc = m.read_reg(machine_reg::pc);
     s->fcsr = m.read_reg(machine_reg::fcsr);

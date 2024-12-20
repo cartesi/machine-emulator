@@ -348,6 +348,9 @@ CM_API cm_error cm_log_step(cm_machine *m, uint64_t mcycle_count, const char *lo
     }
     return cm_result_success();
 } catch (...) {
+    if (break_reason != nullptr) {
+        *break_reason = CM_BREAK_REASON_FAILED;
+    }
     return cm_result_failure();
 }
 
@@ -386,6 +389,9 @@ cm_error cm_verify_step(const cm_machine *m, const cm_hash *root_hash_before, co
     }
     return cm_result_success();
 } catch (...) {
+    if (break_reason != nullptr) {
+        *break_reason = CM_BREAK_REASON_FAILED;
+    }
     return cm_result_failure();
 }
 

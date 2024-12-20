@@ -193,402 +193,402 @@ private:
 
     uint64_t do_read_pc() const {
         // get phys address of pc in dhadow
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::pc));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::pc));
         return m_m.get_state().pc;
     }
 
     void do_write_pc(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::pc));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::pc));
         m_m.get_state().pc = val;
     }
 
     uint64_t do_read_fcsr() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::fcsr));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::fcsr));
         return m_m.get_state().fcsr;
     }
 
     void do_write_fcsr(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::fcsr));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::fcsr));
         m_m.get_state().fcsr = val;
     }
 
     uint64_t do_read_icycleinstret() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::icycleinstret));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::icycleinstret));
         return m_m.get_state().icycleinstret;
     }
 
     void do_write_icycleinstret(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::icycleinstret));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::icycleinstret));
         m_m.get_state().icycleinstret = val;
     }
 
     uint64_t do_read_mvendorid() const { // NOLINT(readability-convert-member-functions-to-static)
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mvendorid));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mvendorid));
         return MVENDORID_INIT;
     }
 
     uint64_t do_read_marchid() const { // NOLINT(readability-convert-member-functions-to-static)
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::marchid));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::marchid));
         return MARCHID_INIT;
     }
 
     uint64_t do_read_mimpid() const { // NOLINT(readability-convert-member-functions-to-static)
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mimpid));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mimpid));
         return MIMPID_INIT;
     }
 
     uint64_t do_read_mcycle() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mcycle));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mcycle));
         return m_m.get_state().mcycle;
     }
 
     void do_write_mcycle(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mcycle));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mcycle));
         m_m.get_state().mcycle = val;
     }
 
     uint64_t do_read_mstatus() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mstatus));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mstatus));
         return m_m.get_state().mstatus;
     }
 
     void do_write_mstatus(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mstatus));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mstatus));
         m_m.get_state().mstatus = val;
     }
 
     uint64_t do_read_menvcfg() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::menvcfg));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::menvcfg));
         return m_m.get_state().menvcfg;
     }
 
     void do_write_menvcfg(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::menvcfg));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::menvcfg));
         m_m.get_state().menvcfg = val;
     }
 
     uint64_t do_read_mtvec() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mtvec));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mtvec));
         return m_m.get_state().mtvec;
     }
 
     void do_write_mtvec(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mtvec));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mtvec));
         m_m.get_state().mtvec = val;
     }
 
     uint64_t do_read_mscratch() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mscratch));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mscratch));
         return m_m.get_state().mscratch;
     }
 
     void do_write_mscratch(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mscratch));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mscratch));
         m_m.get_state().mscratch = val;
     }
 
     uint64_t do_read_mepc() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mepc));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mepc));
         return m_m.get_state().mepc;
     }
 
     void do_write_mepc(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mepc));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mepc));
         m_m.get_state().mepc = val;
     }
 
     uint64_t do_read_mcause() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mcause));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mcause));
         return m_m.get_state().mcause;
     }
 
     void do_write_mcause(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mcause));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mcause));
         m_m.get_state().mcause = val;
     }
 
     uint64_t do_read_mtval() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mtval));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mtval));
         return m_m.get_state().mtval;
     }
 
     void do_write_mtval(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mtval));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mtval));
         m_m.get_state().mtval = val;
     }
 
     uint64_t do_read_misa() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::misa));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::misa));
         return m_m.get_state().misa;
     }
 
     void do_write_misa(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::misa));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::misa));
         m_m.get_state().misa = val;
     }
 
     uint64_t do_read_mie() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mie));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mie));
         return m_m.get_state().mie;
     }
 
     void do_write_mie(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mie));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mie));
         m_m.get_state().mie = val;
     }
 
     uint64_t do_read_mip() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mip));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mip));
         return m_m.get_state().mip;
     }
 
     void do_write_mip(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mip));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mip));
         m_m.get_state().mip = val;
     }
 
     uint64_t do_read_medeleg() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::medeleg));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::medeleg));
         return m_m.get_state().medeleg;
     }
 
     void do_write_medeleg(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::medeleg));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::medeleg));
         m_m.get_state().medeleg = val;
     }
 
     uint64_t do_read_mideleg() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mideleg));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mideleg));
         return m_m.get_state().mideleg;
     }
 
     void do_write_mideleg(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mideleg));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mideleg));
         m_m.get_state().mideleg = val;
     }
 
     uint64_t do_read_mcounteren() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mcounteren));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mcounteren));
         return m_m.get_state().mcounteren;
     }
 
     void do_write_mcounteren(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::mcounteren));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::mcounteren));
         m_m.get_state().mcounteren = val;
     }
 
     uint64_t do_read_senvcfg() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::senvcfg));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::senvcfg));
         return m_m.get_state().senvcfg;
     }
 
     void do_write_senvcfg(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::senvcfg));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::senvcfg));
         m_m.get_state().senvcfg = val;
     }
 
     uint64_t do_read_stvec() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::stvec));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::stvec));
         return m_m.get_state().stvec;
     }
 
     void do_write_stvec(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::stvec));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::stvec));
         m_m.get_state().stvec = val;
     }
 
     uint64_t do_read_sscratch() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::sscratch));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::sscratch));
         return m_m.get_state().sscratch;
     }
 
     void do_write_sscratch(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::sscratch));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::sscratch));
         m_m.get_state().sscratch = val;
     }
 
     uint64_t do_read_sepc() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::sepc));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::sepc));
         return m_m.get_state().sepc;
     }
 
     void do_write_sepc(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::sepc));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::sepc));
         m_m.get_state().sepc = val;
     }
 
     uint64_t do_read_scause() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::scause));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::scause));
         return m_m.get_state().scause;
     }
 
     void do_write_scause(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::scause));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::scause));
         m_m.get_state().scause = val;
     }
 
     uint64_t do_read_stval() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::stval));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::stval));
         return m_m.get_state().stval;
     }
 
     void do_write_stval(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::stval));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::stval));
         m_m.get_state().stval = val;
     }
 
     uint64_t do_read_satp() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::satp));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::satp));
         return m_m.get_state().satp;
     }
 
     void do_write_satp(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::satp));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::satp));
         m_m.get_state().satp = val;
     }
 
     uint64_t do_read_scounteren() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::scounteren));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::scounteren));
         return m_m.get_state().scounteren;
     }
 
     void do_write_scounteren(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::scounteren));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::scounteren));
         m_m.get_state().scounteren = val;
     }
 
     uint64_t do_read_ilrsc() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::ilrsc));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::ilrsc));
         return m_m.get_state().ilrsc;
     }
 
     void do_write_ilrsc(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::ilrsc));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::ilrsc));
         m_m.get_state().ilrsc = val;
     }
 
     void do_set_iflags_H() {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::iflags));
         m_m.get_state().iflags.H = true;
     }
 
     bool do_read_iflags_H() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::iflags));
         return m_m.get_state().iflags.H;
     }
 
     void do_set_iflags_X() {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::iflags));
         m_m.get_state().iflags.X = true;
     }
 
     void do_reset_iflags_X() {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::iflags));
         m_m.get_state().iflags.X = false;
     }
 
     bool do_read_iflags_X() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::iflags));
         return m_m.get_state().iflags.X;
     }
 
     void do_set_iflags_Y() {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::iflags));
         m_m.get_state().iflags.Y = true;
     }
 
     void do_reset_iflags_Y() {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::iflags));
         m_m.get_state().iflags.Y = false;
     }
 
     bool do_read_iflags_Y() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::iflags));
         return m_m.get_state().iflags.Y;
     }
 
     uint8_t do_read_iflags_PRV() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::iflags));
         return m_m.get_state().iflags.PRV;
     }
 
     void do_write_iflags_PRV(uint8_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::iflags));
         m_m.get_state().iflags.PRV = val;
     }
 
     uint64_t do_read_iunrep() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::iunrep));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::iunrep));
         return m_m.get_state().iunrep;
     }
 
     void do_write_iunrep(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::iunrep));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::iunrep));
         m_m.get_state().iunrep = val;
     }
 
     uint64_t do_read_clint_mtimecmp() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::clint_mtimecmp));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::clint_mtimecmp));
         return m_m.get_state().clint.mtimecmp;
     }
 
     void do_write_clint_mtimecmp(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::clint_mtimecmp));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::clint_mtimecmp));
         m_m.get_state().clint.mtimecmp = val;
     }
 
     uint64_t do_read_plic_girqpend() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::plic_girqpend));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::plic_girqpend));
         return m_m.get_state().plic.girqpend;
     }
 
     void do_write_plic_girqpend(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::plic_girqpend));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::plic_girqpend));
         m_m.get_state().plic.girqpend = val;
     }
 
     uint64_t do_read_plic_girqsrvd() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::plic_girqsrvd));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::plic_girqsrvd));
         return m_m.get_state().plic.girqsrvd;
     }
 
     void do_write_plic_girqsrvd(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::plic_girqsrvd));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::plic_girqsrvd));
         m_m.get_state().plic.girqsrvd = val;
     }
 
     uint64_t do_read_htif_fromhost() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::htif_fromhost));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::htif_fromhost));
         return m_m.get_state().htif.fromhost;
     }
 
     void do_write_htif_fromhost(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::htif_fromhost));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::htif_fromhost));
         m_m.get_state().htif.fromhost = val;
     }
 
     uint64_t do_read_htif_tohost() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::htif_tohost));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::htif_tohost));
         return m_m.get_state().htif.tohost;
     }
 
     void do_write_htif_tohost(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::htif_tohost));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::htif_tohost));
         m_m.get_state().htif.tohost = val;
     }
 
     uint64_t do_read_htif_ihalt() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::htif_ihalt));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::htif_ihalt));
         return m_m.get_state().htif.ihalt;
     }
 
     uint64_t do_read_htif_iconsole() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::htif_iconsole));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::htif_iconsole));
         return m_m.get_state().htif.iconsole;
     }
 
     uint64_t do_read_htif_iyield() const {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::htif_iyield));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::htif_iyield));
         return m_m.get_state().htif.iyield;
     }
 
@@ -692,12 +692,12 @@ private:
     }
 
     uint64_t do_read_iflags() {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::iflags));
         return m_m.get_state().read_iflags();
     }
 
     void do_write_iflags(uint64_t val) {
-        touch_page(shadow_state_get_reg_abs_addr(shadow_state_reg::iflags));
+        touch_page(shadow_state_get_reg_abs_addr(machine_reg::iflags));
         m_m.get_state().write_iflags(val);
     }
 

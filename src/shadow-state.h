@@ -22,6 +22,7 @@
 #include <cstdint>
 
 #include "compiler-defines.h"
+#include "machine-reg.h"
 #include "pma-constants.h"
 #include "pma-driver.h"
 #include "riscv-constants.h"
@@ -80,7 +81,7 @@ struct PACKED shadow_state {
 extern const pma_driver shadow_state_driver;
 
 /// \brief Mapping between registers and their relative addresses in shadow memory
-enum class shadow_state_reg {
+enum class shadow_state_reg_rel_addr : uint64_t {
     x0 = offsetof(shadow_state, x[0]),
     x1 = offsetof(shadow_state, x[1]),
     x2 = offsetof(shadow_state, x[2]),
@@ -186,18 +187,6 @@ enum class shadow_state_reg {
     htif_iyield = offsetof(shadow_state, htif_iyield),
 };
 
-/// \brief Obtains the relative address of a register in shadow memory.
-/// \param reg Register name.
-/// \returns The address.
-constexpr uint64_t shadow_state_get_reg_rel_addr(shadow_state_reg reg) {
-    return static_cast<uint64_t>(reg);
-}
-
-/// \brief Obtains the absolute address of a register in shadow memory.
-constexpr uint64_t shadow_state_get_reg_abs_addr(shadow_state_reg reg) {
-    return PMA_SHADOW_STATE_START + shadow_state_get_reg_rel_addr(reg);
-}
-
 /// \brief Obtains the relative address of a general purpose register
 /// in shadow memory.
 /// \param reg Register index in 0...31, for x0...x31, respectively.
@@ -207,14 +196,240 @@ static inline uint64_t shadow_state_get_x_rel_addr(int reg) {
     return offsetof(shadow_state, x) + reg * sizeof(uint64_t);
 }
 
-/// \brief Obtains the absolute address of a general purpose register
-static inline uint64_t shadow_state_get_x_abs_addr(int reg) {
-    return PMA_SHADOW_STATE_START + shadow_state_get_x_rel_addr(reg);
-}
 /// \brief Obtains the relative address of a floating-point register
 static inline uint64_t shadow_state_get_f_rel_addr(int reg) {
     assert(reg >= 0 && reg < F_REG_COUNT);
     return offsetof(shadow_state, f) + reg * sizeof(uint64_t);
+}
+
+/// \brief Obtains the relative address of a register in shadow memory.
+/// \param r Register name.
+/// \returns The address.
+static inline uint64_t shadow_state_get_reg_rel_addr(machine_reg r) {
+    using reg = machine_reg;
+    switch (r) {
+        case reg::x0:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x0);
+        case reg::x1:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x1);
+        case reg::x2:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x2);
+        case reg::x3:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x3);
+        case reg::x4:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x4);
+        case reg::x5:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x5);
+        case reg::x6:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x6);
+        case reg::x7:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x7);
+        case reg::x8:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x8);
+        case reg::x9:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x9);
+        case reg::x10:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x10);
+        case reg::x11:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x11);
+        case reg::x12:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x12);
+        case reg::x13:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x13);
+        case reg::x14:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x14);
+        case reg::x15:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x15);
+        case reg::x16:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x16);
+        case reg::x17:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x17);
+        case reg::x18:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x18);
+        case reg::x19:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x19);
+        case reg::x20:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x20);
+        case reg::x21:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x21);
+        case reg::x22:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x22);
+        case reg::x23:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x23);
+        case reg::x24:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x24);
+        case reg::x25:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x25);
+        case reg::x26:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x26);
+        case reg::x27:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x27);
+        case reg::x28:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x28);
+        case reg::x29:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x29);
+        case reg::x30:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x30);
+        case reg::x31:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::x31);
+        case reg::f0:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f0);
+        case reg::f1:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f1);
+        case reg::f2:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f2);
+        case reg::f3:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f3);
+        case reg::f4:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f4);
+        case reg::f5:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f5);
+        case reg::f6:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f6);
+        case reg::f7:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f7);
+        case reg::f8:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f8);
+        case reg::f9:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f9);
+        case reg::f10:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f10);
+        case reg::f11:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f11);
+        case reg::f12:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f12);
+        case reg::f13:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f13);
+        case reg::f14:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f14);
+        case reg::f15:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f15);
+        case reg::f16:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f16);
+        case reg::f17:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f17);
+        case reg::f18:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f18);
+        case reg::f19:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f19);
+        case reg::f20:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f20);
+        case reg::f21:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f21);
+        case reg::f22:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f22);
+        case reg::f23:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f23);
+        case reg::f24:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f24);
+        case reg::f25:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f25);
+        case reg::f26:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f26);
+        case reg::f27:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f27);
+        case reg::f28:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f28);
+        case reg::f29:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f29);
+        case reg::f30:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f30);
+        case reg::f31:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::f31);
+        case reg::pc:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::pc);
+        case reg::fcsr:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::fcsr);
+        case reg::mvendorid:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::mvendorid);
+        case reg::marchid:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::marchid);
+        case reg::mimpid:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::mimpid);
+        case reg::mcycle:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::mcycle);
+        case reg::icycleinstret:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::icycleinstret);
+        case reg::mstatus:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::mstatus);
+        case reg::mtvec:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::mtvec);
+        case reg::mscratch:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::mscratch);
+        case reg::mepc:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::mepc);
+        case reg::mcause:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::mcause);
+        case reg::mtval:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::mtval);
+        case reg::misa:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::misa);
+        case reg::mie:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::mie);
+        case reg::mip:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::mip);
+        case reg::medeleg:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::medeleg);
+        case reg::mideleg:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::mideleg);
+        case reg::mcounteren:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::mcounteren);
+        case reg::menvcfg:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::menvcfg);
+        case reg::stvec:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::stvec);
+        case reg::sscratch:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::sscratch);
+        case reg::sepc:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::sepc);
+        case reg::scause:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::scause);
+        case reg::stval:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::stval);
+        case reg::satp:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::satp);
+        case reg::scounteren:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::scounteren);
+        case reg::senvcfg:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::senvcfg);
+        case reg::ilrsc:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::ilrsc);
+        case reg::iflags:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::iflags);
+        case reg::iunrep:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::iunrep);
+        case reg::clint_mtimecmp:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::clint_mtimecmp);
+        case reg::plic_girqpend:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::plic_girqpend);
+        case reg::plic_girqsrvd:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::plic_girqsrvd);
+        case reg::htif_tohost:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::htif_tohost);
+        case reg::htif_fromhost:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::htif_fromhost);
+        case reg::htif_ihalt:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::htif_ihalt);
+        case reg::htif_iconsole:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::htif_iconsole);
+        case reg::htif_iyield:
+            return static_cast<uint64_t>(shadow_state_reg_rel_addr::htif_iyield);
+        default:
+            assert(0);
+            return 0;
+    }
+}
+
+/// \brief Obtains the absolute address of a register in shadow memory.
+/// \param r Register name.
+/// \returns The address.
+static inline uint64_t shadow_state_get_reg_abs_addr(machine_reg r) {
+    return PMA_SHADOW_STATE_START + shadow_state_get_reg_rel_addr(r);
+}
+
+/// \brief Obtains the absolute address of a general purpose register
+static inline uint64_t shadow_state_get_x_abs_addr(int reg) {
+    return PMA_SHADOW_STATE_START + shadow_state_get_x_rel_addr(reg);
 }
 
 /// \brief Obtains the absolute address of a floating-point register

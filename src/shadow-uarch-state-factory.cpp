@@ -44,11 +44,11 @@ static bool shadow_uarch_state_peek(const pma_entry & /*pma*/, const machine &m,
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *s = reinterpret_cast<shadow_uarch_state *>(scratch);
 
-    s->halt_flag = m.read_reg(machine::reg::uarch_halt_flag);
-    s->cycle = m.read_reg(machine::reg::uarch_cycle);
-    s->pc = m.read_reg(machine::reg::uarch_pc);
+    s->halt_flag = m.read_reg(machine_reg::uarch_halt_flag);
+    s->cycle = m.read_reg(machine_reg::uarch_cycle);
+    s->pc = m.read_reg(machine_reg::uarch_pc);
     for (int i = 0; i < UARCH_X_REG_COUNT; ++i) {
-        s->x[i] = m.read_reg(static_cast<machine::reg>(machine::reg::uarch_x0 + i));
+        s->x[i] = m.read_reg(static_cast<machine_reg>(static_cast<int>(machine_reg::uarch_x0) + i));
     }
     *page_data = scratch;
     return true;

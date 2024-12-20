@@ -33,8 +33,8 @@ local function stderr(...)
     io.stderr:write(string.format(...))
 end
 
-local final_mcycle = 2137
-local exit_payload = 42
+local expected_final_mcycle = 2137
+local expected_exit_payload = 42
 
 local function test(config, console_getchar_enable)
     stderr("  testing console_getchar:%s\n", console_getchar_enable and "on" or "off")
@@ -48,15 +48,17 @@ local function test(config, console_getchar_enable)
     assert(machine:read_iflags_H(), "expected iflags_H set")
 
     -- with the expected payload
+    local exit_payload = machine:read_reg("htif_tohost_data") >> 1
     assert(
-        (machine:read_reg("htif_tohost_data") >> 1) == exit_payload,
-        string.format("exit payload: expected %u, got %u\n", exit_payload, machine:read_reg("htif_tohost_data") >> 1)
+        exit_payload == expected_exit_payload,
+        string.format("exit payload: expected %u, got %u\n", expected_exit_payload, exit_payload)
     )
 
     -- at the expected mcycle
+    local final_mcycle = machine:read_mcycle()
     assert(
-        machine:read_mcycle() == final_mcycle,
-        string.format("mcycle: expected, %u got %u", final_mcycle, machine:read_mcycle())
+        final_mcycle == expected_final_mcycle,
+        string.format("mcycle: expected, %u got %u", expected_final_mcycle, final_mcycle)
     )
 
     stderr("    passed\n")

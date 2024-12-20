@@ -275,34 +275,33 @@ private:
     }
 
     uint64_t do_read_pc() {
-        return check_read(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::pc), "uarch.pc");
+        return check_read(shadow_uarch_state_get_reg_abs_addr(machine_reg::uarch_pc), "uarch.pc");
     }
 
     void do_write_pc(uint64_t val) {
-        check_write(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::pc), val, "uarch.pc");
+        check_write(shadow_uarch_state_get_reg_abs_addr(machine_reg::uarch_pc), val, "uarch.pc");
     }
 
     uint64_t do_read_cycle() {
-        return check_read(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::cycle), "uarch.uarch_cycle");
+        return check_read(shadow_uarch_state_get_reg_abs_addr(machine_reg::uarch_cycle), "uarch.uarch_cycle");
     }
 
     void do_write_cycle(uint64_t val) {
-        check_write(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::cycle), val, "uarch.cycle");
+        check_write(shadow_uarch_state_get_reg_abs_addr(machine_reg::uarch_cycle), val, "uarch.cycle");
     }
 
     bool do_read_halt_flag() {
-        return check_read(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag), "uarch.halt_flag") !=
-            0;
+        return check_read(shadow_uarch_state_get_reg_abs_addr(machine_reg::uarch_halt_flag), "uarch.halt_flag") != 0;
     }
 
     void do_set_halt_flag() {
-        check_write(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag), static_cast<uint64_t>(true),
+        check_write(shadow_uarch_state_get_reg_abs_addr(machine_reg::uarch_halt_flag), static_cast<uint64_t>(true),
             "uarch.halt_flag");
     }
 
     void do_reset_halt_flag() {
-        check_write(shadow_uarch_state_get_reg_abs_addr(shadow_uarch_state_reg::halt_flag),
-            static_cast<uint64_t>(false), "uarch.halt_flag");
+        check_write(shadow_uarch_state_get_reg_abs_addr(machine_reg::uarch_halt_flag), static_cast<uint64_t>(false),
+            "uarch.halt_flag");
     }
 
     uint64_t do_read_word(uint64_t paddr) {

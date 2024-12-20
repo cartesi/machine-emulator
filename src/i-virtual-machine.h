@@ -45,7 +45,7 @@ namespace cartesi {
 class i_virtual_machine {
 public:
     using hash_type = machine_merkle_tree::hash_type;
-    using reg = machine::reg;
+    using reg = machine_reg;
 
     /// \brief Constructor
     i_virtual_machine() = default;

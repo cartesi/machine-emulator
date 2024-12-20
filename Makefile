@@ -154,7 +154,7 @@ export CXX=g++
 
 endif
 
-GENERATED_FILES= uarch/uarch-pristine-hash.c uarch/uarch-pristine-ram.c src/machine-c-version.h
+GENERATED_FILES= uarch/uarch-pristine-hash.c uarch/uarch-pristine-ram.c src/machine-c-version.h src/interpret-jump-table.h
 ADD_GENERATED_FILES_DIFF= add-generated-files.diff
 
 all: source-default
@@ -244,11 +244,14 @@ lint-% check-format-% format-% check-format-lua-% check-lua-% format-lua-%:
 source-default:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR)
 
-uarch: $(SRCDIR)/machine-c-version.h
+uarch: $(SRCDIR)/machine-c-version.h $(SRCDIR)/interpret-jump-table.h
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C uarch
 
 $(SRCDIR)/machine-c-version.h:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) machine-c-version.h
+
+$(SRCDIR)/interpret-jump-table.h:
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) interpret-jump-table.h
 
 build-emulator-builder-image:
 	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --target builder -t cartesi/machine-emulator:builder -f Dockerfile .
@@ -282,6 +285,7 @@ copy:
 	docker create --name uarch-ram-bin $(DOCKER_PLATFORM) $(DEBIAN_IMG)
 	docker cp uarch-ram-bin:/usr/src/emulator/$(DEB_FILENAME) .
 	docker cp uarch-ram-bin:/usr/src/emulator/src/machine-c-version.h .
+	docker cp uarch-ram-bin:/usr/src/emulator/src/interpret-jump-table.h .
 	docker cp uarch-ram-bin:/usr/src/emulator/uarch/uarch-ram.bin .
 	docker cp uarch-ram-bin:/usr/src/emulator/uarch/uarch-pristine-ram.c .
 	docker cp uarch-ram-bin:/usr/src/emulator/uarch/uarch-pristine-hash.c .
@@ -399,4 +403,3 @@ $(ADD_GENERATED_FILES_DIFF): $(GENERATED_FILES)
 
 .PHONY: help all submodules doc clean distclean src luacartesi hash uarch \
 	create-generated-files-patch $(SUBDIRS) $(SUBCLEAN)
-

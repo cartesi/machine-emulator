@@ -36,18 +36,20 @@ static void set_uarch_halt_flag() {
 }
 
 // Let the state accessor be on static memory storage to speed up uarch initialization
-static uarch_machine_state_access a; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+static std::array<std::optional<uarch_pma_entry>, PMA_MAX>
+    pmas; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
 namespace cartesi {
 
 // Declaration of explicit instantiation in module interpret.cpp when compiled with microarchitecture
-extern template interpreter_break_reason interpret(uarch_machine_state_access &a, uint64_t mcycle_end);
+extern template interpreter_break_reason interpret(uarch_machine_state_access a, uint64_t mcycle_end);
 
 } // namespace cartesi
 
 /// \brief  Advances one mcycle by executing the "big machine interpreter" compiled to the microarchitecture
 /// \return This function never returns
 extern "C" NO_RETURN void interpret_next_mcycle_with_uarch() {
+    uarch_machine_state_access a(pmas);
     const uint64_t mcycle_end = a.read_mcycle() + 1;
     interpret(a, mcycle_end);
     // Finished executing a whole mcycle: halt the microarchitecture

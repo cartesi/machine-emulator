@@ -140,6 +140,8 @@ private:
     bool do_is_jsonrpc_virtual_machine() const override;
 
     void check_server_version() const;
+    template <typename R, typename... Ts>
+    void request(const std::string &method, const std::tuple<Ts...> &tp, R &result, bool keep_alive = true) const;
 
     mutable std::unique_ptr<boost::asio::io_context> m_ioc;     // The io_context is required for all I/O
     mutable std::unique_ptr<boost::beast::tcp_stream> m_stream; // TCP stream for keep alive connections

@@ -273,8 +273,6 @@ typedef enum cm_reg {
     CM_REG_UARCH_PC,
     CM_REG_UARCH_CYCLE,
     CM_REG_UARCH_HALT_FLAG,
-    // Amount of registers
-    CM_REG_COUNT,
     // Views of registers
     CM_REG_IFLAGS_PRV,
     CM_REG_IFLAGS_X,
@@ -288,7 +286,10 @@ typedef enum cm_reg {
     CM_REG_HTIF_FROMHOST_CMD,
     CM_REG_HTIF_FROMHOST_REASON,
     CM_REG_HTIF_FROMHOST_DATA,
-    CM_REG_UNKNOWN,
+    // Enumeration helpers
+    CM_REG_UNKNOWN_,
+    CM_REG_FIRST_ = CM_REG_X0,
+    CM_REG_LAST_ = CM_REG_UARCH_HALT_FLAG,
 } cm_reg;
 
 /// \brief Storage for machine hash.
@@ -625,7 +626,7 @@ CM_API cm_error cm_set_uarch_halt_flag(cm_machine *m);
 /// \brief Runs the machine until CM_REG_MCYCLE reaches mcycle_end, machine yields, or halts.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param mcycle_end End cycle value.
-/// \param break_reason Receives reason for returning (can be NULL).
+/// \param break_reason Receives reason for returning (can be NULL). Set to CM_BREAK_REASON_FAILED on failure.
 /// \returns 0 for success, non zero code for error.
 /// \details You may want to receive cmio requests depending on the run break reason.
 CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reason);
@@ -676,7 +677,7 @@ CM_API cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param mcycle_count Number of mcycles to run
 /// \param log_filename Name of the log file to be generated
-/// \param break_reason Receives reason for returning (can be NULL).
+/// \param break_reason Receives reason for returning (can be NULL). Set to CM_BREAK_REASON_FAILED on failure.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_log_step(cm_machine *m, uint64_t mcycle_count, const char *log_filename,
     cm_break_reason *break_reason_result);
@@ -719,6 +720,7 @@ CM_API cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const 
 /// \param log_filename Path to the step log file to be verified
 /// \param mcycle_count Number of mcycles in the step
 /// \param root_hash_after State hash after step
+/// \param break_reason Receives reason for returning (can be NULL). Set to CM_BREAK_REASON_FAILED on failure.
 /// \returns 0 for success, non zero code for error
 CM_API cm_error cm_verify_step(const cm_machine *m, const cm_hash *root_hash_before, const char *log_filename,
     uint64_t mcycle_count, const cm_hash *root_hash_after, cm_break_reason *break_reason);

@@ -206,6 +206,9 @@ cm_reg clua_check_cm_proc_reg(lua_State *L, int idx) try {
         {"uarch_pc", CM_REG_UARCH_PC},
         {"uarch_cycle", CM_REG_UARCH_CYCLE},
         {"uarch_halt_flag", CM_REG_UARCH_HALT_FLAG},
+        {"unknown_", CM_REG_UNKNOWN_},
+        {"first_", CM_REG_FIRST_},
+        {"last_", CM_REG_LAST_},
         // clang-format on
     };
     const char *name = luaL_checkstring(L, idx);
@@ -216,10 +219,10 @@ cm_reg clua_check_cm_proc_reg(lua_State *L, int idx) try {
     return got->second;
 } catch (const std::exception &e) {
     luaL_error(L, "%s", e.what());
-    return CM_REG_UNKNOWN; // will not be reached
+    return CM_REG_UNKNOWN_; // will not be reached
 } catch (...) {
     luaL_error(L, "unknown error with register type conversion");
-    return CM_REG_UNKNOWN; // will not be reached
+    return CM_REG_UNKNOWN_; // will not be reached
 }
 
 void clua_check_cm_hash(lua_State *L, int idx, cm_hash *c_hash) {

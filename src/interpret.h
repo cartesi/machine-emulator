@@ -54,7 +54,7 @@ enum class interpreter_break_reason {
 /// \details The interpret may stop early if the machine halts permanently or becomes temporarily idle (waiting for
 /// interrupts).
 template <typename STATE_ACCESS>
-interpreter_break_reason interpret(STATE_ACCESS &a, uint64_t mcycle_end);
+interpreter_break_reason interpret(STATE_ACCESS a, uint64_t mcycle_end);
 
 } // namespace cartesi
 

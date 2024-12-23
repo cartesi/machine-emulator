@@ -316,8 +316,17 @@ public:
             case reg::ilrsc:
                 s.ilrsc = data;
                 return;
-            case reg::iflags:
-                s.write_iflags(data);
+            case reg::iprv:
+                s.iprv = data;
+                return;
+            case reg::iflags_X:
+                s.iflags.X = data;
+                return;
+            case reg::iflags_Y:
+                s.iflags.Y = data;
+                return;
+            case reg::iflags_H:
+                s.iflags.H = data;
                 return;
             case reg::clint_mtimecmp:
                 s.clint.mtimecmp = data;
@@ -539,8 +548,14 @@ public:
                 return s.senvcfg;
             case reg::ilrsc:
                 return s.ilrsc;
-            case reg::iflags:
-                return s.read_iflags();
+            case reg::iprv:
+                return s.iprv;
+            case reg::iflags_X:
+                return s.iflags.X;
+            case reg::iflags_Y:
+                return s.iflags.Y;
+            case reg::iflags_H:
+                return s.iflags.H;
             case reg::clint_mtimecmp:
                 return s.clint.mtimecmp;
             case reg::plic_girqpend:
@@ -762,8 +777,14 @@ public:
                 return "senvcfg";
             case reg::ilrsc:
                 return "ilrsc";
-            case reg::iflags:
-                return "iflags";
+            case reg::iprv:
+                return "iprv";
+            case reg::iflags_X:
+                return "iflags.X";
+            case reg::iflags_Y:
+                return "iflags.Y";
+            case reg::iflags_H:
+                return "iflags.H";
             case reg::clint_mtimecmp:
                 return "clint.mtimecmp";
             case reg::plic_girqpend:

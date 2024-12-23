@@ -149,11 +149,10 @@ cm_reg clua_check_cm_proc_reg(lua_State *L, int idx) try {
         {"scounteren", CM_REG_SCOUNTEREN},
         {"senvcfg", CM_REG_SENVCFG},
         {"ilrsc", CM_REG_ILRSC},
-        {"iflags", CM_REG_IFLAGS},
-        {"iflags_prv", CM_REG_IFLAGS_PRV},
-        {"iflags_x", CM_REG_IFLAGS_X},
-        {"iflags_y", CM_REG_IFLAGS_Y},
-        {"iflags_h", CM_REG_IFLAGS_H},
+        {"iprv", CM_REG_IPRV},
+        {"iflags_X", CM_REG_IFLAGS_X},
+        {"iflags_Y", CM_REG_IFLAGS_Y},
+        {"iflags_H", CM_REG_IFLAGS_H},
         {"iunrep", CM_REG_IUNREP},
         {"clint_mtimecmp", CM_REG_CLINT_MTIMECMP},
         {"plic_girqpend", CM_REG_PLIC_GIRQPEND},
@@ -577,26 +576,6 @@ static int machine_obj_index_get_root_hash(lua_State *L) {
     return 1;
 }
 
-static int machine_obj_index_read_mcycle(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    uint64_t val{};
-    if (cm_read_mcycle(m.get(), &val) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushinteger(L, static_cast<lua_Integer>(val));
-    return 1;
-}
-
-static int machine_obj_index_read_uarch_cycle(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    uint64_t val{};
-    if (cm_read_uarch_cycle(m.get(), &val) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushinteger(L, static_cast<lua_Integer>(val));
-    return 1;
-}
-
 /// \brief This is the machine:read_reg() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_read_reg(lua_State *L) {
@@ -607,62 +586,6 @@ static int machine_obj_index_read_reg(lua_State *L) {
     }
     lua_pushinteger(L, static_cast<lua_Integer>(val));
     return 1;
-}
-
-/// \brief This is the machine:read_iflags_H() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_iflags_H(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    bool val{};
-    if (cm_read_iflags_H(m.get(), &val) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushboolean(L, static_cast<int>(val));
-    return 1;
-}
-
-/// \brief This is the machine:read_iflags_Y() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_iflags_Y(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    bool val{};
-    if (cm_read_iflags_Y(m.get(), &val) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushboolean(L, static_cast<int>(val));
-    return 1;
-}
-
-/// \brief This is the machine:read_iflags_X() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_iflags_X(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    bool val{};
-    if (cm_read_iflags_X(m.get(), &val) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushboolean(L, static_cast<int>(val));
-    return 1;
-}
-
-/// \brief This is the machine:set_iflags_Y() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_set_iflags_Y(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    if (cm_set_iflags_Y(m.get()) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    return 0;
-}
-
-/// \brief This is the machine:reset_iflags_Y() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_reset_iflags_Y(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    if (cm_reset_iflags_Y(m.get()) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    return 0;
 }
 
 /// \brief This is the machine:read_memory() method implementation.
@@ -744,28 +667,6 @@ static int machine_obj_index_log_step(lua_State *L) {
     }
     lua_pushinteger(L, static_cast<lua_Integer>(break_reason));
     return 1;
-}
-
-/// \brief This is the machine:read_uarch_halt_flag() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_read_uarch_halt_flag(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    bool val{};
-    if (cm_read_uarch_halt_flag(m.get(), &val) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushboolean(L, static_cast<int>(val));
-    return 1;
-}
-
-/// \brief This is the machine:set_uarch_halt_flag() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_set_uarch_halt_flag(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    if (cm_set_uarch_halt_flag(m.get()) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    return 0;
 }
 
 /// \brief This is the machine:reset_uarch() method implementation.
@@ -1141,53 +1042,44 @@ static int machine_obj_index_swap(lua_State *L) {
 
 /// \brief Contents of the machine object metatable __index table.
 static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
-    {"is_empty", machine_obj_index_is_empty},
     {"create", machine_obj_index_create},
-    {"load", machine_obj_index_load},
-    {"get_proof", machine_obj_index_get_proof},
+    {"destroy", machine_obj_index_destroy},
+    {"get_default_config", machine_obj_index_get_default_config},
     {"get_initial_config", machine_obj_index_get_initial_config},
-    {"get_runtime_config", machine_obj_index_get_runtime_config},
-    {"set_runtime_config", machine_obj_index_set_runtime_config},
+    {"get_memory_ranges", machine_obj_index_get_memory_ranges},
+    {"get_proof", machine_obj_index_get_proof},
+    {"get_reg_address", machine_obj_index_get_reg_address},
     {"get_root_hash", machine_obj_index_get_root_hash},
-    {"read_reg", machine_obj_index_read_reg},
-    {"read_uarch_cycle", machine_obj_index_read_uarch_cycle},
-    {"read_iflags_H", machine_obj_index_read_iflags_H},
-    {"read_iflags_Y", machine_obj_index_read_iflags_Y},
-    {"read_iflags_X", machine_obj_index_read_iflags_X},
-    {"set_iflags_Y", machine_obj_index_set_iflags_Y},
-    {"reset_iflags_Y", machine_obj_index_reset_iflags_Y},
-    {"read_mcycle", machine_obj_index_read_mcycle},
+    {"get_runtime_config", machine_obj_index_get_runtime_config},
+    {"is_empty", machine_obj_index_is_empty},
+    {"load", machine_obj_index_load},
+    {"log_reset_uarch", machine_obj_index_log_reset_uarch},
+    {"log_send_cmio_response", machine_obj_index_log_send_cmio_response},
+    {"log_step", machine_obj_index_log_step},
+    {"log_step_uarch", machine_obj_index_log_step_uarch},
     {"read_memory", machine_obj_index_read_memory},
+    {"read_reg", machine_obj_index_read_reg},
     {"read_virtual_memory", machine_obj_index_read_virtual_memory},
     {"read_word", machine_obj_index_read_word},
+    {"receive_cmio_request", machine_obj_index_receive_cmio_request},
+    {"replace_memory_range", machine_obj_index_replace_memory_range},
+    {"reset_uarch", machine_obj_index_reset_uarch},
     {"run", machine_obj_index_run},
-    {"log_step", machine_obj_index_log_step},
     {"run_uarch", machine_obj_index_run_uarch},
-    {"log_step_uarch", machine_obj_index_log_step_uarch},
+    {"send_cmio_response", machine_obj_index_send_cmio_response},
+    {"set_runtime_config", machine_obj_index_set_runtime_config},
     {"store", machine_obj_index_store},
+    {"swap", machine_obj_index_swap},
+    {"translate_virtual_address", machine_obj_index_translate_virtual_address},
     {"verify_dirty_page_maps", machine_obj_index_verify_dirty_page_maps},
     {"verify_merkle_tree", machine_obj_index_verify_merkle_tree},
-    {"write_reg", machine_obj_index_write_reg},
-    {"write_memory", machine_obj_index_write_memory},
-    {"write_virtual_memory", machine_obj_index_write_virtual_memory},
-    {"translate_virtual_address", machine_obj_index_translate_virtual_address},
-    {"replace_memory_range", machine_obj_index_replace_memory_range},
-    {"destroy", machine_obj_index_destroy},
-    {"read_uarch_halt_flag", machine_obj_index_read_uarch_halt_flag},
-    {"set_uarch_halt_flag", machine_obj_index_set_uarch_halt_flag},
-    {"get_memory_ranges", machine_obj_index_get_memory_ranges},
-    {"reset_uarch", machine_obj_index_reset_uarch},
-    {"log_reset_uarch", machine_obj_index_log_reset_uarch},
-    {"receive_cmio_request", machine_obj_index_receive_cmio_request},
-    {"send_cmio_response", machine_obj_index_send_cmio_response},
-    {"log_send_cmio_response", machine_obj_index_log_send_cmio_response},
-    {"get_default_config", machine_obj_index_get_default_config},
-    {"get_reg_address", machine_obj_index_get_reg_address},
-    {"verify_step", machine_obj_index_verify_step},
-    {"verify_step_uarch", machine_obj_index_verify_step_uarch},
     {"verify_reset_uarch", machine_obj_index_verify_reset_uarch},
     {"verify_send_cmio_response", machine_obj_index_verify_send_cmio_response},
-    {"swap", machine_obj_index_swap},
+    {"verify_step", machine_obj_index_verify_step},
+    {"verify_step_uarch", machine_obj_index_verify_step_uarch},
+    {"write_memory", machine_obj_index_write_memory},
+    {"write_reg", machine_obj_index_write_reg},
+    {"write_virtual_memory", machine_obj_index_write_virtual_memory},
 });
 
 /// \brief This is the class() constructor implementation.

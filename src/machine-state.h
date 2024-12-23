@@ -36,14 +36,6 @@
 
 namespace cartesi {
 
-/// \brief Cartesi-specific unpacked CSR iflags.
-struct unpacked_iflags {
-    uint8_t PRV; ///< Privilege level.
-    bool X;      ///< CPU has yielded with automatic reset.
-    bool Y;      ///< CPU has yielded with manual reset.
-    bool H;      ///< CPU has been permanently halted.
-};
-
 /// \brief Machine state.
 /// \details The machine_state structure contains the entire
 /// state of a Cartesi machine.
@@ -92,10 +84,14 @@ struct machine_state {
     uint64_t senvcfg{};    ///< CSR senvcfg.
 
     // Cartesi-specific state
-    uint64_t ilrsc{};  ///< Cartesi-specific CSR ilrsc (For LR/SC instructions).
-    uint64_t iunrep{}; ///< Cartesi-specific CSR iunrep
-
-    unpacked_iflags iflags{}; ///< Cartesi-specific unpacked CSR iflags.
+    uint64_t ilrsc{}; ///< For LR/SC instructions (Cartesi-specific).
+    uint64_t iprv{};  ///< Privilege level (Cartesi-specific).
+    struct {
+        uint64_t X{}; ///< CPU has yielded with automatic reset (Cartesi-specific).
+        uint64_t Y{}; ///< CPU has yielded with manual reset (Cartesi-specific).
+        uint64_t H{}; ///< CPU has been permanently halted (Cartesi-specific).
+    } iflags;
+    uint64_t iunrep{}; ///< Unreproducible mode (Cartesi-specific).
 
     /// \brief CLINT state
     struct {
@@ -137,32 +133,6 @@ struct machine_state {
 #ifdef DUMP_HIST
     std::unordered_map<std::string, uint64_t> insn_hist;
 #endif
-
-    /// \brief Reads the value of the iflags register.
-    /// \returns The value of the register.
-    uint64_t read_iflags() const {
-        return packed_iflags(iflags.PRV, static_cast<int>(iflags.X), static_cast<int>(iflags.Y),
-            static_cast<int>(iflags.H));
-    }
-
-    /// \brief Reads the value of the iflags register.
-    /// \param val New register value.
-    void write_iflags(uint64_t val) {
-        iflags.H = (((val >> IFLAGS_H_SHIFT) & 1) != 0);
-        iflags.Y = (((val >> IFLAGS_Y_SHIFT) & 1) != 0);
-        iflags.X = (((val >> IFLAGS_X_SHIFT) & 1) != 0);
-        iflags.PRV = (val >> IFLAGS_PRV_SHIFT) & 3;
-    }
-
-    /// \brief Packs iflags into the CSR value
-    /// \param PRV privilege level
-    /// \param I Waiting for interrupts flag
-    /// \param Y Yielded flag
-    /// \param H Halted flag
-    /// \returns Packed iflags
-    static uint64_t packed_iflags(int PRV, int X, int Y, int H) {
-        return (PRV << IFLAGS_PRV_SHIFT) | (X << IFLAGS_X_SHIFT) | (Y << IFLAGS_Y_SHIFT) | (H << IFLAGS_H_SHIFT);
-    }
 };
 
 } // namespace cartesi

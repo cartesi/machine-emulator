@@ -101,13 +101,13 @@ static inline void resetState(UarchState &a) {
 }
 
 template <typename UarchState>
-static inline bool readIflagsY(UarchState &a) {
+static inline uint64 readIflagsY(UarchState &a) {
     return a.read_iflags_Y();
 }
 
 template <typename UarchState>
-static inline void resetIflagsY(UarchState &a) {
-    a.reset_iflags_Y();
+static inline void writeIflagsY(UarchState &a, uint64 val) {
+    a.write_iflags_Y(val);
 }
 
 template <typename UarchState>

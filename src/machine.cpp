@@ -341,7 +341,10 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
     write_reg(reg::scounteren, m_c.processor.scounteren);
     write_reg(reg::senvcfg, m_c.processor.senvcfg);
     write_reg(reg::ilrsc, m_c.processor.ilrsc);
-    write_reg(reg::iflags, m_c.processor.iflags);
+    write_reg(reg::iprv, m_c.processor.iprv);
+    write_reg(reg::iflags_X, m_c.processor.iflags_X);
+    write_reg(reg::iflags_Y, m_c.processor.iflags_Y);
+    write_reg(reg::iflags_H, m_c.processor.iflags_H);
     write_reg(reg::iunrep, m_c.processor.iunrep);
 
     // Register RAM
@@ -668,7 +671,10 @@ machine_config machine::get_serialization_config() const {
     c.processor.scounteren = read_reg(reg::scounteren);
     c.processor.senvcfg = read_reg(reg::senvcfg);
     c.processor.ilrsc = read_reg(reg::ilrsc);
-    c.processor.iflags = read_reg(reg::iflags);
+    c.processor.iprv = read_reg(reg::iprv);
+    c.processor.iflags_X = read_reg(reg::iflags_X);
+    c.processor.iflags_Y = read_reg(reg::iflags_Y);
+    c.processor.iflags_H = read_reg(reg::iflags_H);
     c.processor.iunrep = read_reg(reg::iunrep);
     // Copy current CLINT state to config
     c.clint.mtimecmp = read_reg(reg::clint_mtimecmp);
@@ -854,9 +860,9 @@ machine::~machine() {
     std::ignore = fprintf(stderr, "fence.i: %" PRIu64 "\n", m_s.stats.fence_i);
     std::ignore = fprintf(stderr, "fence.vma: %" PRIu64 "\n", m_s.stats.fence_vma);
     std::ignore = fprintf(stderr, "max asid: %" PRIu64 "\n", m_s.stats.max_asid);
-    std::ignore = fprintf(stderr, "User mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_U]);
-    std::ignore = fprintf(stderr, "Supervisor mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_S]);
-    std::ignore = fprintf(stderr, "Machine mode: %" PRIu64 "\n", m_s.stats.priv_level[PRV_M]);
+    std::ignore = fprintf(stderr, "User mode: %" PRIu64 "\n", m_s.stats.prv_level[PRV_U]);
+    std::ignore = fprintf(stderr, "Supervisor mode: %" PRIu64 "\n", m_s.stats.prv_level[PRV_S]);
+    std::ignore = fprintf(stderr, "Machine mode: %" PRIu64 "\n", m_s.stats.prv_level[PRV_M]);
 
     std::ignore = fprintf(stderr, "tlb code hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_cmiss, tlb_chit));
     std::ignore = fprintf(stderr, "tlb read hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_rmiss, tlb_rhit));
@@ -873,7 +879,7 @@ machine::~machine() {
     std::ignore = fprintf(stderr, "tlb_flush_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_vaddr);
     std::ignore = fprintf(stderr, "tlb_flush_satp: %" PRIu64 "\n", m_s.stats.tlb_flush_satp);
     std::ignore = fprintf(stderr, "tlb_flush_mstatus: %" PRIu64 "\n", m_s.stats.tlb_flush_mstatus);
-    std::ignore = fprintf(stderr, "tlb_flush_set_priv: %" PRIu64 "\n", m_s.stats.tlb_flush_set_priv);
+    std::ignore = fprintf(stderr, "tlb_flush_set_prv: %" PRIu64 "\n", m_s.stats.tlb_flush_set_prv);
     std::ignore = fprintf(stderr, "tlb_flush_fence_vma_all: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_all);
     std::ignore = fprintf(stderr, "tlb_flush_fence_vma_asid: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_asid);
     std::ignore = fprintf(stderr, "tlb_flush_fence_vma_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_vaddr);
@@ -1070,8 +1076,14 @@ uint64_t machine::read_reg(reg r) const {
             return m_s.senvcfg;
         case reg::ilrsc:
             return m_s.ilrsc;
-        case reg::iflags:
-            return m_s.read_iflags();
+        case reg::iprv:
+            return m_s.iprv;
+        case reg::iflags_X:
+            return m_s.iflags.X;
+        case reg::iflags_Y:
+            return m_s.iflags.Y;
+        case reg::iflags_H:
+            return m_s.iflags.H;
         case reg::iunrep:
             return m_s.iunrep;
         case reg::clint_mtimecmp:
@@ -1160,14 +1172,6 @@ uint64_t machine::read_reg(reg r) const {
             return m_uarch.get_state().cycle;
         case reg::uarch_halt_flag:
             return static_cast<uint64_t>(m_uarch.get_state().halt_flag);
-        case reg::iflags_prv:
-            return m_s.iflags.PRV;
-        case reg::iflags_x:
-            return static_cast<uint64_t>(m_s.iflags.X);
-        case reg::iflags_y:
-            return static_cast<uint64_t>(m_s.iflags.Y);
-        case reg::iflags_h:
-            return static_cast<uint64_t>(m_s.iflags.H);
         case reg::htif_tohost_dev:
             return HTIF_DEV_FIELD(m_s.htif.tohost);
         case reg::htif_tohost_cmd:
@@ -1467,8 +1471,17 @@ void machine::write_reg(reg w, uint64_t value) {
         case reg::ilrsc:
             m_s.ilrsc = value;
             break;
-        case reg::iflags:
-            m_s.write_iflags(value);
+        case reg::iprv:
+            m_s.iprv = value;
+            break;
+        case reg::iflags_X:
+            m_s.iflags.X = value;
+            break;
+        case reg::iflags_Y:
+            m_s.iflags.Y = value;
+            break;
+        case reg::iflags_H:
+            m_s.iflags.H = value;
             break;
         case reg::iunrep:
             m_s.iunrep = value;
@@ -1600,18 +1613,6 @@ void machine::write_reg(reg w, uint64_t value) {
             break;
         case reg::uarch_halt_flag:
             m_uarch.get_state().halt_flag = static_cast<bool>(value);
-            break;
-        case reg::iflags_prv:
-            m_s.iflags.PRV = static_cast<uint8_t>(value);
-            break;
-        case reg::iflags_x:
-            m_s.iflags.X = static_cast<bool>(value);
-            break;
-        case reg::iflags_y:
-            m_s.iflags.Y = static_cast<bool>(value);
-            break;
-        case reg::iflags_h:
-            m_s.iflags.H = static_cast<bool>(value);
             break;
         case reg::htif_tohost_dev:
             m_s.htif.tohost = HTIF_REPLACE_DEV(m_s.htif.tohost, value);

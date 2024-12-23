@@ -226,7 +226,10 @@ typedef enum cm_reg {
     CM_REG_SCOUNTEREN,
     CM_REG_SENVCFG,
     CM_REG_ILRSC,
-    CM_REG_IFLAGS,
+    CM_REG_IPRV,
+    CM_REG_IFLAGS_X,
+    CM_REG_IFLAGS_Y,
+    CM_REG_IFLAGS_H,
     CM_REG_IUNREP,
     // Device registers
     CM_REG_CLINT_MTIMECMP,
@@ -274,10 +277,6 @@ typedef enum cm_reg {
     CM_REG_UARCH_CYCLE,
     CM_REG_UARCH_HALT_FLAG,
     // Views of registers
-    CM_REG_IFLAGS_PRV,
-    CM_REG_IFLAGS_X,
-    CM_REG_IFLAGS_Y,
-    CM_REG_IFLAGS_H,
     CM_REG_HTIF_TOHOST_DEV,
     CM_REG_HTIF_TOHOST_CMD,
     CM_REG_HTIF_TOHOST_REASON,
@@ -567,57 +566,6 @@ CM_API cm_error cm_write_virtual_memory(cm_machine *m, uint64_t address, const u
 /// \returns 0 for success, non zero code for error.
 /// \detail The translation is based on the current mapping, as defined in CM_REG_SATP.
 CM_API cm_error cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *paddr);
-
-/// \brief Reads the value of the CM_REG_MCYCLE.
-/// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param val Receives the value.
-/// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_read_mcycle(const cm_machine *m, uint64_t *val);
-
-/// \brief Reads the value of the X flag in CM_REG_IFLAGS.
-/// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param val Receives the value.
-/// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_read_iflags_X(const cm_machine *m, bool *val);
-
-/// \brief Reads the value of the Y flag in CM_REG_IFLAGS.
-/// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param val Receives the value.
-/// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_read_iflags_Y(const cm_machine *m, bool *val);
-
-/// \brief Resets the value of the Y flag in CM_REG_IFLAGS.
-/// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_reset_iflags_Y(cm_machine *m);
-
-/// \brief Sets the Y flag in CM_REG_IFLAGS.
-/// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_set_iflags_Y(cm_machine *m);
-
-/// \brief Reads the value of the H flag in CM_REG_IFLAGS.
-/// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param val Receives the value.
-/// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_read_iflags_H(const cm_machine *m, bool *val);
-
-/// \brief Reads the value of CM_REG_UARCH_CYCLE.
-/// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param val Receives the value.
-/// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_read_uarch_cycle(const cm_machine *m, uint64_t *val);
-
-/// \brief Reads the value of CM_REG_UARCH_HALT_FLAG.
-/// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param val Receives the value.
-/// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_read_uarch_halt_flag(const cm_machine *m, bool *val);
-
-/// \brief Sets the value of CM_REG_UARCH_HALT_FLAG.
-/// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_set_uarch_halt_flag(cm_machine *m);
 
 // ------------------------------------
 // Running

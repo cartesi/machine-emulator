@@ -158,9 +158,9 @@ do_test("machine halt and yield flags and config matches", function(machine)
     assert(initial_config["processor"]["pc"] == cartesi.PMA_RAM_START, "pc value does not match")
     assert(initial_config["ram"]["length"] == 1048576, "ram length value does not match")
     -- Check machine is not halted
-    assert(not machine:read_iflags_H(), "machine shouldn't be halted")
+    assert(machine:read_reg("iflags_H") == 0, "machine shouldn't be halted")
     -- Check machine is not yielded
-    assert(not machine:read_iflags_Y(), "machine shouldn't be yielded")
+    assert(machine:read_reg("iflags_Y") == 0, "machine shouldn't be yielded")
 end)
 
 print("\n\ntesting if machine initial hash is correct")
@@ -221,13 +221,13 @@ end)
 print("\n\nrun machine to 1000 mcycle and check for mcycle and root hash")
 do_test("mcycle and root hash should match", function(machine)
     -- Run to 1000 cycle tics
-    local current_mcycle = machine:read_mcycle()
+    local current_mcycle = machine:read_reg("mcycle")
     while current_mcycle < 1000 do
         machine:run(1000)
-        current_mcycle = machine:read_mcycle()
+        current_mcycle = machine:read_reg("mcycle")
     end
 
-    assert(machine:read_mcycle() == 1000, "machine mcycle should be 1000")
+    assert(machine:read_reg("mcycle") == 1000, "machine mcycle should be 1000")
 
     local root_hash = machine:get_root_hash()
 
@@ -248,9 +248,9 @@ do_test("mcycle and root hash should match", function(machine)
 
     machine:run(MAX_MCYCLE)
     -- Check machine is halted
-    assert(machine:read_iflags_H(), "machine should be halted")
+    assert(machine:read_reg("iflags_H") ~= 0, "machine should be halted")
     -- Check for end mcycle
-    local end_mcycle = machine:read_mcycle()
+    local end_mcycle = machine:read_reg("mcycle")
     assert(end_mcycle == 3, "machine mcycle should be 3")
 
     local root_hash = machine:get_root_hash()
@@ -278,10 +278,10 @@ if machine_type == "local" then
         assert(machine:run(1000) == cartesi.BREAK_REASON_YIELDED_SOFTLY)
 
         -- Check machine state
-        assert(machine:read_mcycle() == 1, "machine mcycle should be 1")
-        assert(not machine:read_iflags_H())
-        assert(not machine:read_iflags_Y())
-        assert(not machine:read_iflags_X())
+        assert(machine:read_reg("mcycle") == 1, "machine mcycle should be 1")
+        assert(machine:read_reg("iflags_H") == 0)
+        assert(machine:read_reg("iflags_Y") == 0)
+        assert(machine:read_reg("iflags_X") == 0)
 
         -- Check if previous instruction match
         local prev_insn = string.unpack("<I4", machine:read_virtual_memory(machine:read_reg("pc") - 4, 4))
@@ -376,12 +376,12 @@ end)
 print("\n\n check for relevant register values after step 1")
 do_test("register values should match", function(machine)
     local uarch_pc_before = machine:read_reg("uarch_pc")
-    local uarch_cycle_before = machine:read_uarch_cycle()
+    local uarch_cycle_before = machine:read_reg("uarch_cycle")
 
     machine:log_step_uarch()
 
     local uarch_pc_after = machine:read_reg("uarch_pc")
-    local uarch_cycle_after = machine:read_uarch_cycle()
+    local uarch_cycle_after = machine:read_reg("uarch_cycle")
 
     assert(uarch_pc_before + 4 == uarch_pc_after, "wrong uarch_pc value")
     assert(uarch_cycle_before + 1 == uarch_cycle_after, "wrong uarch_cycle value")

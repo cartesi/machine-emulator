@@ -63,7 +63,10 @@ struct PACKED shadow_state {
     uint64_t scounteren;
     uint64_t senvcfg;
     uint64_t ilrsc;
-    uint64_t iflags;
+    uint64_t iprv;
+    uint64_t iflags_X;
+    uint64_t iflags_Y;
+    uint64_t iflags_H;
     uint64_t iunrep;
     uint64_t clint_mtimecmp;
     uint64_t plic_girqpend;

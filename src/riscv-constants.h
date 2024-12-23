@@ -111,7 +111,7 @@ enum MEDELEG_RW_masks : uint64_t {
 };
 
 /// \brief Privilege modes
-enum PRV_constants : uint8_t {
+enum PRV_constants : uint64_t {
     PRV_U = 0,  ///< User mode
     PRV_S = 1,  ///< Supervisor mode
     PRV_HS = 2, ///< Hypervisor-extended supervisor mode
@@ -421,16 +421,6 @@ enum COUNTEREN_rw_masks : uint64_t {
     SCOUNTEREN_RW_MASK = MCOUNTEREN_RW_MASK
 };
 
-/// \brief Cartesi-specific iflags shifts
-enum IFLAGS_shifts { IFLAGS_H_SHIFT = 0, IFLAGS_Y_SHIFT = 1, IFLAGS_X_SHIFT = 2, IFLAGS_PRV_SHIFT = 3 };
-
-enum IFLAGS_masks : uint64_t {
-    IFLAGS_H_MASK = UINT64_C(1) << IFLAGS_H_SHIFT,
-    IFLAGS_Y_MASK = UINT64_C(1) << IFLAGS_Y_SHIFT,
-    IFLAGS_X_MASK = UINT64_C(1) << IFLAGS_X_SHIFT,
-    IFLAGS_PRV_MASK = UINT64_C(3) << IFLAGS_PRV_SHIFT
-};
-
 /// \brief Initial values for Cartesi machines
 enum CARTESI_init : uint64_t {
     // The machines starts executing instructions from RAM start by default,
@@ -451,31 +441,34 @@ enum CARTESI_init : uint64_t {
     MTVAL_INIT = UINT64_C(0),                                                          ///< Initial value for mtval
     MISA_INIT = (MISA_MXL_VALUE << MISA_MXL_SHIFT) | MISA_EXT_S_MASK | MISA_EXT_U_MASK | MISA_EXT_I_MASK |
         MISA_EXT_M_MASK | MISA_EXT_A_MASK | MISA_EXT_F_MASK | MISA_EXT_D_MASK |
-        MISA_EXT_C_MASK,                                            ///< Initial value for misa
-    MIE_INIT = UINT64_C(0),                                         ///< Initial value for mie
-    MIP_INIT = UINT64_C(0),                                         ///< Initial value for mip
-    MEDELEG_INIT = UINT64_C(0),                                     ///< Initial value for medeleg
-    MIDELEG_INIT = UINT64_C(0),                                     ///< Initial value for mideleg
-    MCOUNTEREN_INIT = UINT64_C(0),                                  ///< Initial value for mcounteren
-    STVEC_INIT = UINT64_C(0),                                       ///< Initial value for stvec
-    SSCRATCH_INIT = UINT64_C(0),                                    ///< Initial value for sscratch
-    SEPC_INIT = UINT64_C(0),                                        ///< Initial value for sepc
-    SCAUSE_INIT = UINT64_C(0),                                      ///< Initial value for scause
-    STVAL_INIT = UINT64_C(0),                                       ///< Initial value for stval
-    SATP_INIT = UINT64_C(0),                                        ///< Initial value for satp
-    SCOUNTEREN_INIT = UINT64_C(0),                                  ///< Initial value for scounteren
-    ILRSC_INIT = UINT64_C(-1),                                      ///< Initial value for ilrsc
-    IFLAGS_INIT = static_cast<uint64_t>(PRV_M) << IFLAGS_PRV_SHIFT, ///< Initial value for iflags
-    IUNREP_INIT = UINT64_C(0),                                      ///< Initial value for iunrep
-    MTIMECMP_INIT = UINT64_C(0),                                    ///< Initial value for mtimecmp
-    GIRQPEND_INIT = UINT64_C(0),                                    ///< Initial value for girqpend
-    GIRQSRVD_INIT = UINT64_C(0),                                    ///< Initial value for girqsrvd
-    FROMHOST_INIT = UINT64_C(0),                                    ///< Initial value for fromhost
-    TOHOST_INIT = UINT64_C(0),                                      ///< Initial value for tohost
-    MENVCFG_INIT = UINT64_C(0),                                     ///< Initial value for menvcfg
-    SENVCFG_INIT = UINT64_C(0),                                     ///< Initial value for senvcfg
-    UARCH_HALT_FLAG_INIT = UINT64_C(0),                             ///< Initial value for microarchitecture halt flag
-    UARCH_X_INIT = UINT64_C(0), ///< Initial value for microarchitecture general purpose register x
+        MISA_EXT_C_MASK,                ///< Initial value for misa
+    MIE_INIT = UINT64_C(0),             ///< Initial value for mie
+    MIP_INIT = UINT64_C(0),             ///< Initial value for mip
+    MEDELEG_INIT = UINT64_C(0),         ///< Initial value for medeleg
+    MIDELEG_INIT = UINT64_C(0),         ///< Initial value for mideleg
+    MCOUNTEREN_INIT = UINT64_C(0),      ///< Initial value for mcounteren
+    STVEC_INIT = UINT64_C(0),           ///< Initial value for stvec
+    SSCRATCH_INIT = UINT64_C(0),        ///< Initial value for sscratch
+    SEPC_INIT = UINT64_C(0),            ///< Initial value for sepc
+    SCAUSE_INIT = UINT64_C(0),          ///< Initial value for scause
+    STVAL_INIT = UINT64_C(0),           ///< Initial value for stval
+    SATP_INIT = UINT64_C(0),            ///< Initial value for satp
+    SCOUNTEREN_INIT = UINT64_C(0),      ///< Initial value for scounteren
+    ILRSC_INIT = UINT64_C(-1),          ///< Initial value for ilrsc
+    IPRV_INIT = PRV_M,                  ///< Initial value for iprv
+    IFLAGS_X_INIT = UINT64_C(0),        ///< Initial value for iflags_X
+    IFLAGS_Y_INIT = UINT64_C(0),        ///< Initial value for iflags_Y
+    IFLAGS_H_INIT = UINT64_C(0),        ///< Initial value for iflags_H
+    IUNREP_INIT = UINT64_C(0),          ///< Initial value for iunrep
+    MTIMECMP_INIT = UINT64_C(0),        ///< Initial value for mtimecmp
+    GIRQPEND_INIT = UINT64_C(0),        ///< Initial value for girqpend
+    GIRQSRVD_INIT = UINT64_C(0),        ///< Initial value for girqsrvd
+    FROMHOST_INIT = UINT64_C(0),        ///< Initial value for fromhost
+    TOHOST_INIT = UINT64_C(0),          ///< Initial value for tohost
+    MENVCFG_INIT = UINT64_C(0),         ///< Initial value for menvcfg
+    SENVCFG_INIT = UINT64_C(0),         ///< Initial value for senvcfg
+    UARCH_HALT_FLAG_INIT = UINT64_C(0), ///< Initial value for microarchitecture halt flag
+    UARCH_X_INIT = UINT64_C(0),         ///< Initial value for microarchitecture general purpose register x
     UARCH_PC_INIT = EXPAND_UINT64_C(PMA_UARCH_RAM_START_DEF), ///< Initial value for microarchitecture pc
     UARCH_CYCLE_INIT = UINT64_C(0),                           ///< Initial value for microarchitecture cycle
     MHARTID_INIT = UINT64_C(0),                               ///< Initial mhartid

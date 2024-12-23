@@ -57,7 +57,7 @@ void send_cmio_response(STATE_ACCESS &a, uint16 reason, bytes data, uint32 dataL
     uint64 yieldData = uint64ShiftLeft((uint64(reason) & mask16), 32) | (uint64(dataLength) & mask32);
     writeHtifFromhost(a, yieldData);
     // Reset iflags.Y
-    resetIflagsY(a);
+    writeIflagsY(a, 0);
 }
 
 // Explicit instantiation for state_access

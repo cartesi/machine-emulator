@@ -271,7 +271,7 @@ local function read_all(path)
 end
 
 local function check_test_result(machine, ctx)
-    local actual_cycle = machine:read_uarch_cycle()
+    local actual_cycle = machine:read_reg("uarch_cycle")
     if ctx.uarch_run_success then
         if ctx.expected_error_pattern then
             fatal(
@@ -477,10 +477,10 @@ local function run_machine_writing_json_logs(machine, ctx)
     local indent = 0
     util.indentout(out, indent, '{ "steps":[\n')
     local step_count = 0
-    while math.ult(machine:read_uarch_cycle(), max_cycle) do
+    while math.ult(machine:read_reg("uarch_cycle"), max_cycle) do
         local log = machine:log_step_uarch()
         step_count = step_count + 1
-        local halted = machine:read_uarch_halt_flag()
+        local halted = machine:read_reg("uarch_halt_flag") ~= 0
         write_log_to_file(log, out, indent + 1, halted)
         if halted then
             break
@@ -495,7 +495,7 @@ end
 local function create_json_reset_log()
     local machine <close> = build_machine()
     local test_name = "reset-uarch"
-    machine:set_uarch_halt_flag()
+    machine:write_reg("uarch_halt_flag", 1)
     local initial_root_hash = machine:get_root_hash()
     local log = machine:log_reset_uarch()
     local out = create_json_log_file(test_name .. "-steps")
@@ -519,7 +519,7 @@ local function create_json_send_cmio_response_log()
     local test_name = "send-cmio-response"
     local response_data = "This is a test cmio response"
     local reason = 1
-    machine:set_iflags_Y()
+    machine:write_reg("iflags_Y", 1)
     local initial_root_hash = machine:get_root_hash()
     local log = machine:log_send_cmio_response(reason, response_data)
     local out = create_json_log_file(test_name .. "-steps")

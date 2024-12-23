@@ -72,7 +72,10 @@ struct processor_config final {
     uint64_t scounteren{SCOUNTEREN_INIT};       ///< Value of scounteren CSR
     uint64_t senvcfg{SENVCFG_INIT};             ///< Value of senvcfg CSR
     uint64_t ilrsc{ILRSC_INIT};                 ///< Value of ilrsc CSR
-    uint64_t iflags{IFLAGS_INIT};               ///< Value of iflags CSR
+    uint64_t iprv{IPRV_INIT};                   ///< Value of iprv CSR
+    uint64_t iflags_X{IFLAGS_X_INIT};           ///< Value of iflags_X CSR
+    uint64_t iflags_Y{IFLAGS_Y_INIT};           ///< Value of iflags_Y CSR
+    uint64_t iflags_H{IFLAGS_H_INIT};           ///< Value of iflags_H CSR
     uint64_t iunrep{IUNREP_INIT};               ///< Value of iunrep CSR
 };
 

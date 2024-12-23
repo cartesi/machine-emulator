@@ -257,7 +257,7 @@ static void dump_exception_or_interrupt(uint64_t cause, STATE &s) {
 #ifdef DUMP_REGS
 template <typename STATE>
 static void dump_regs(const STATE &s) {
-    const std::array<char, 5> priv_str{"USHM"};
+    const std::array<char, 5> prv_str{"USHM"};
     int cols = 256 / XLEN;
     std::ignore = fprintf(stderr, "pc = ");
     print_uint64_t(s.pc);
@@ -280,7 +280,7 @@ static void dump_regs(const STATE &s) {
             std::ignore = fprintf(stderr, " ");
         }
     }
-    std::ignore = fprintf(stderr, "priv=%c", priv_str[s.iflags.PRV]);
+    std::ignore = fprintf(stderr, "prv=%c", prv_str[s.iprv]);
     std::ignore = fprintf(stderr, " mstatus=");
     print_uint64_t(s.mstatus);
     std::ignore = fprintf(stderr, " cycles=%" PRId64, s.mcycle);
@@ -308,7 +308,7 @@ static inline bool csr_is_read_only(CSR_address csraddr) {
 /// \brief Extract privilege level from CSR address.
 /// \param csr Address of CSR in file.
 /// \returns Privilege level.
-static inline uint32_t csr_priv(CSR_address csr) {
+static inline uint32_t csr_prv(CSR_address csr) {
     return (to_underlying(csr) >> 8) & 3;
 }
 
@@ -318,14 +318,14 @@ static inline uint32_t csr_priv(CSR_address csr) {
 /// \param new_prv New privilege level.
 /// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static NO_INLINE void set_priv(STATE_ACCESS &a, int new_prv) {
-    INC_COUNTER(a.get_statistics(), priv_level[new_prv]);
-    a.write_iflags_PRV(new_prv);
+static NO_INLINE void set_prv(STATE_ACCESS &a, uint64_t new_prv) {
+    INC_COUNTER(a.get_statistics(), prv_level[new_prv]);
+    a.write_iprv(new_prv);
     // Invalidate all TLB entries
     a.flush_all_tlb();
     INC_COUNTER(a.get_statistics(), tlb_flush_all);
-    INC_COUNTER(a.get_statistics(), tlb_flush_set_priv);
-    //??D new priv 1.11 draft says invalidation should
+    INC_COUNTER(a.get_statistics(), tlb_flush_set_prv);
+    //??D new privileged 1.11 draft says invalidation should
     // happen within a trap handler, although it could
     // also happen in xRET insn.
     a.write_ilrsc(-1); // invalidate reserved address
@@ -380,8 +380,8 @@ static NO_INLINE uint64_t raise_exception(STATE_ACCESS &a, uint64_t pc, uint64_t
     // For each interrupt or exception number, there is a bit at mideleg
     // or medeleg saying if it should be delegated
     bool deleg = false;
-    auto priv = a.read_iflags_PRV();
-    if (priv <= PRV_S) {
+    auto prv = a.read_iprv();
+    if (prv <= PRV_S) {
         if (cause & MCAUSE_INTERRUPT_FLAG) {
             // Clear the MCAUSE_INTERRUPT_FLAG bit before shifting
             deleg = (a.read_mideleg() >> (cause & (XLEN - 1))) & 1;
@@ -400,11 +400,11 @@ static NO_INLINE uint64_t raise_exception(STATE_ACCESS &a, uint64_t pc, uint64_t
         a.write_stval(tval);
         uint64_t mstatus = a.read_mstatus();
         mstatus = (mstatus & ~MSTATUS_SPIE_MASK) | (((mstatus >> MSTATUS_SIE_SHIFT) & 1) << MSTATUS_SPIE_SHIFT);
-        mstatus = (mstatus & ~MSTATUS_SPP_MASK) | (priv << MSTATUS_SPP_SHIFT);
+        mstatus = (mstatus & ~MSTATUS_SPP_MASK) | (prv << MSTATUS_SPP_SHIFT);
         mstatus &= ~MSTATUS_SIE_MASK;
         a.write_mstatus(mstatus);
-        if (priv != PRV_S) {
-            set_priv(a, PRV_S);
+        if (prv != PRV_S) {
+            set_prv(a, PRV_S);
         }
         new_pc = a.read_stvec();
 #ifdef DUMP_COUNTERS
@@ -420,11 +420,11 @@ static NO_INLINE uint64_t raise_exception(STATE_ACCESS &a, uint64_t pc, uint64_t
         a.write_mtval(tval);
         uint64_t mstatus = a.read_mstatus();
         mstatus = (mstatus & ~MSTATUS_MPIE_MASK) | (((mstatus >> MSTATUS_MIE_SHIFT) & 1) << MSTATUS_MPIE_SHIFT);
-        mstatus = (mstatus & ~MSTATUS_MPP_MASK) | (priv << MSTATUS_MPP_SHIFT);
+        mstatus = (mstatus & ~MSTATUS_MPP_MASK) | (prv << MSTATUS_MPP_SHIFT);
         mstatus &= ~MSTATUS_MIE_MASK;
         a.write_mstatus(mstatus);
-        if (priv != PRV_M) {
-            set_priv(a, PRV_M);
+        if (prv != PRV_M) {
+            set_prv(a, PRV_M);
         }
         new_pc = a.read_mtvec();
 #ifdef DUMP_COUNTERS
@@ -453,8 +453,8 @@ static inline uint32_t get_pending_irq_mask(STATE_ACCESS &a) {
     }
 
     uint32_t enabled_ints = 0;
-    auto priv = a.read_iflags_PRV();
-    switch (priv) {
+    auto prv = a.read_iprv();
+    switch (prv) {
         // interrupt trap condition 1a: the current privilege mode is M
         case PRV_M: {
             const uint64_t mstatus = a.read_mstatus();
@@ -1484,10 +1484,10 @@ static inline uint64_t read_csr_success(uint64_t val, bool *status) {
 template <typename STATE_ACCESS>
 static inline bool rdcounteren(STATE_ACCESS &a, uint64_t mask) {
     uint64_t counteren = MCOUNTEREN_R_MASK;
-    auto priv = a.read_iflags_PRV();
-    if (priv <= PRV_S) {
+    auto prv = a.read_iprv();
+    if (prv <= PRV_S) {
         counteren &= a.read_mcounteren();
-        if (priv < PRV_S) {
+        if (prv < PRV_S) {
             counteren &= a.read_scounteren();
         }
     }
@@ -1579,10 +1579,10 @@ static inline uint64_t read_csr_sip(STATE_ACCESS &a, bool *status) {
 template <typename STATE_ACCESS>
 static inline uint64_t read_csr_satp(STATE_ACCESS &a, bool *status) {
     const uint64_t mstatus = a.read_mstatus();
-    auto priv = a.read_iflags_PRV();
+    auto prv = a.read_iprv();
     // When TVM=1, attempts to read or write the satp CSR
     // while executing in S-mode will raise an illegal instruction exception
-    if (unlikely(priv == PRV_S && (mstatus & MSTATUS_TVM_MASK))) {
+    if (unlikely(prv == PRV_S && (mstatus & MSTATUS_TVM_MASK))) {
         return read_csr_fail(status);
     }
     return read_csr_success(a.read_satp(), status);
@@ -1716,7 +1716,7 @@ static inline uint64_t read_csr_fcsr(STATE_ACCESS &a, bool *status) {
 /// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
 static NO_INLINE uint64_t read_csr(STATE_ACCESS &a, uint64_t mcycle, CSR_address csraddr, bool *status) {
-    if (unlikely(csr_priv(csraddr) > a.read_iflags_PRV())) {
+    if (unlikely(csr_prv(csraddr) > a.read_iprv())) {
         return read_csr_fail(status);
     }
 
@@ -1945,11 +1945,11 @@ static execute_status write_csr_sip(STATE_ACCESS &a, uint64_t val) {
 template <typename STATE_ACCESS>
 static NO_INLINE execute_status write_csr_satp(STATE_ACCESS &a, uint64_t val) {
     const uint64_t mstatus = a.read_mstatus();
-    auto priv = a.read_iflags_PRV();
+    auto prv = a.read_iprv();
 
     // When TVM=1, attempts to read or write the satp CSR
     // while executing in S-mode will raise an illegal instruction exception
-    if (unlikely(priv == PRV_S && (mstatus & MSTATUS_TVM_MASK))) {
+    if (unlikely(prv == PRV_S && (mstatus & MSTATUS_TVM_MASK))) {
         return execute_status::failure;
     }
 
@@ -2222,7 +2222,7 @@ static NO_INLINE execute_status write_csr(STATE_ACCESS &a, uint64_t mcycle, CSR_
     if (unlikely(csr_is_read_only(csraddr))) {
         return execute_status::failure;
     }
-    if (unlikely(csr_priv(csraddr) > a.read_iflags_PRV())) {
+    if (unlikely(csr_prv(csraddr) > a.read_iprv())) {
         return execute_status::failure;
     }
 
@@ -2511,8 +2511,8 @@ static FORCE_INLINE execute_status execute_CSRRCI(STATE_ACCESS &a, uint64_t &pc,
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_ECALL(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "ecall");
-    auto priv = a.read_iflags_PRV();
-    pc = raise_exception(a, pc, MCAUSE_ECALL_BASE + priv, 0);
+    auto prv = a.read_iprv();
+    pc = raise_exception(a, pc, MCAUSE_ECALL_BASE + prv, 0);
     return execute_status::failure;
 }
 
@@ -2528,9 +2528,9 @@ static FORCE_INLINE execute_status execute_EBREAK(STATE_ACCESS &a, uint64_t &pc,
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRET(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sret");
-    auto priv = a.read_iflags_PRV();
+    auto prv = a.read_iprv();
     uint64_t mstatus = a.read_mstatus();
-    if (unlikely(priv < PRV_S || (priv == PRV_S && (mstatus & MSTATUS_TSR_MASK)))) {
+    if (unlikely(prv < PRV_S || (prv == PRV_S && (mstatus & MSTATUS_TSR_MASK)))) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     auto spp = (mstatus & MSTATUS_SPP_MASK) >> MSTATUS_SPP_SHIFT;
@@ -2547,8 +2547,8 @@ static FORCE_INLINE execute_status execute_SRET(STATE_ACCESS &a, uint64_t &pc, u
         mstatus &= ~MSTATUS_MPRV_MASK;
     }
     a.write_mstatus(mstatus);
-    if (priv != spp) {
-        set_priv(a, spp);
+    if (prv != spp) {
+        set_prv(a, spp);
     }
     pc = a.read_sepc();
     return execute_status::success_and_serve_interrupts;
@@ -2558,8 +2558,8 @@ static FORCE_INLINE execute_status execute_SRET(STATE_ACCESS &a, uint64_t &pc, u
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_MRET(STATE_ACCESS &a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "mret");
-    auto priv = a.read_iflags_PRV();
-    if (unlikely(priv < PRV_M)) {
+    auto prv = a.read_iprv();
+    if (unlikely(prv < PRV_M)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     uint64_t mstatus = a.read_mstatus();
@@ -2578,8 +2578,8 @@ static FORCE_INLINE execute_status execute_MRET(STATE_ACCESS &a, uint64_t &pc, u
         mstatus &= ~MSTATUS_MPRV_MASK;
     }
     a.write_mstatus(mstatus);
-    if (priv != mpp) {
-        set_priv(a, mpp);
+    if (prv != mpp) {
+        set_prv(a, mpp);
     }
     pc = a.read_mepc();
     return execute_status::success_and_serve_interrupts;
@@ -2591,10 +2591,10 @@ template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_WFI(STATE_ACCESS &a, uint64_t &pc, uint64_t &mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "wfi");
     // Check privileges and do nothing else
-    auto priv = a.read_iflags_PRV();
+    auto prv = a.read_iprv();
     const uint64_t mstatus = a.read_mstatus();
     // WFI can always causes an illegal instruction exception in less-privileged modes when TW=1
-    if (unlikely(priv == PRV_U || (priv < PRV_M && (mstatus & MSTATUS_TW_MASK)))) {
+    if (unlikely(prv == PRV_U || (prv < PRV_M && (mstatus & MSTATUS_TW_MASK)))) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     // We wait for interrupts until the next timer interrupt.
@@ -3203,12 +3203,12 @@ static FORCE_INLINE execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t 
     }
     INC_COUNTER(a.get_statistics(), fence_vma);
     dump_insn(a, pc, insn, "sfence.vma");
-    auto priv = a.read_iflags_PRV();
+    auto prv = a.read_iprv();
     const uint64_t mstatus = a.read_mstatus();
 
     // When TVM=1, attempts to execute an SFENCE.VMA while executing in S-mode
     // will raise an illegal instruction exception.
-    if (unlikely(priv == PRV_U || (priv == PRV_S && (mstatus & MSTATUS_TVM_MASK)))) {
+    if (unlikely(prv == PRV_U || (prv == PRV_S && (mstatus & MSTATUS_TVM_MASK)))) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     const uint32_t rs1 = insn_get_rs1(insn);
@@ -5620,20 +5620,20 @@ interpreter_break_reason interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     }
 
     // Just reset the automatic yield flag and continue
-    a.reset_iflags_X();
+    a.write_iflags_X(0);
 
     // Run the interpreter loop,
     // the loop is outlined in a dedicated function so the compiler can optimize it better
     const execute_status status = interpret_loop(a, mcycle_end, mcycle);
 
     // Detect and return the reason for stopping the interpreter loop
-    if (a.read_iflags_H()) {
+    if (a.read_iflags_H() != 0) {
         return interpreter_break_reason::halted;
     }
-    if (a.read_iflags_Y()) {
+    if (a.read_iflags_Y() != 0) {
         return interpreter_break_reason::yielded_manually;
     }
-    if (a.read_iflags_X()) {
+    if (a.read_iflags_X() != 0) {
         return interpreter_break_reason::yielded_automatically;
     }
     if (status == execute_status::success_and_yield) {

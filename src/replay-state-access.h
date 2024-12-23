@@ -263,15 +263,12 @@ private:
 
     void do_push_bracket(bracket_type & /*type*/, const char * /*text*/) {}
 
-    void do_reset_iflags_Y() {
-        auto old_iflags = check_read(machine_reg_address(machine_reg::iflags), "iflags.Y");
-        auto new_iflags = old_iflags & (~IFLAGS_Y_MASK);
-        check_write(machine_reg_address(machine_reg::iflags), new_iflags, "iflags.Y");
+    void do_write_iflags_Y(uint64_t val) {
+        check_write(machine_reg_address(machine_reg::iflags_Y), val, "iflags.Y");
     }
 
-    bool do_read_iflags_Y() {
-        auto iflags = check_read(machine_reg_address(machine_reg::iflags), "iflags.Y");
-        return (iflags & IFLAGS_Y_MASK) != 0;
+    uint64_t do_read_iflags_Y() {
+        return check_read(machine_reg_address(machine_reg::iflags_Y), "iflags.Y");
     }
 
     void do_write_htif_fromhost(uint64_t val) {

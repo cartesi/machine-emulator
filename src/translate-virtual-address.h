@@ -103,19 +103,19 @@ static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pv
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS, bool UPDATE_PTE = true>
 static NO_INLINE bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppaddr, uint64_t vaddr, int xwr_shift) {
-    auto priv = a.read_iflags_PRV();
+    auto prv = a.read_iprv();
     const uint64_t mstatus = a.read_mstatus();
 
     // When MPRV is set, data loads and stores use privilege in MPP
     // instead of the current privilege level (code access is unaffected)
     if (xwr_shift != PTE_XWR_X_SHIFT && (mstatus & MSTATUS_MPRV_MASK)) {
-        priv = (mstatus & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT;
+        prv = (mstatus & MSTATUS_MPP_MASK) >> MSTATUS_MPP_SHIFT;
     }
 
     // The satp register is considered active when the effective privilege mode is S-mode or U-mode.
     // Executions of the address-translation algorithm may only begin using a given value of satp when
     // satp is active.
-    if (unlikely(priv > PRV_S)) {
+    if (unlikely(prv > PRV_S)) {
         // We are in M-mode (or in HS-mode if Hypervisor extension is active)
         *ppaddr = vaddr;
         return true;
@@ -196,7 +196,7 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppadd
                 return false;
             }
             // (We know we are not PRV_M if we reached here)
-            if (priv == PRV_S) {
+            if (prv == PRV_S) {
                 if ((pte & PTE_U_MASK)) {
                     // S-mode can never execute instructions from user pages, regardless of the state of SUM
                     if (unlikely(xwr_shift == PTE_XWR_X_SHIFT)) {

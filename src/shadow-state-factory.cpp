@@ -84,7 +84,10 @@ static bool shadow_state_peek(const pma_entry & /*pma*/, const machine &m, uint6
     s->scounteren = m.read_reg(machine_reg::scounteren);
     s->senvcfg = m.read_reg(machine_reg::senvcfg);
     s->ilrsc = m.read_reg(machine_reg::ilrsc);
-    s->iflags = m.read_reg(machine_reg::iflags);
+    s->iprv = m.read_reg(machine_reg::iprv);
+    s->iflags_X = m.read_reg(machine_reg::iflags_X);
+    s->iflags_Y = m.read_reg(machine_reg::iflags_Y);
+    s->iflags_H = m.read_reg(machine_reg::iflags_H);
     s->iunrep = m.read_reg(machine_reg::iunrep);
     s->clint_mtimecmp = m.read_reg(machine_reg::clint_mtimecmp);
     s->plic_girqpend = m.read_reg(machine_reg::plic_girqpend);

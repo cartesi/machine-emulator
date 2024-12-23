@@ -163,15 +163,15 @@ local function run_machine_with_uarch(machine)
         local ubr = machine:run_uarch()
         if ubr == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
             machine:reset_uarch()
-            if machine:read_iflags_H() then
+            if machine:read_reg("iflags_H") ~= 0 then
                 -- iflags.H was set during the last mcycle
                 return cartesi.BREAK_REASON_HALTED
             end
-            if machine:read_iflags_Y() then
+            if machine:read_reg("iflags_Y") ~= 0 then
                 -- iflags.Y was set during the last mcycle
                 return cartesi.BREAK_REASON_YIELDED_MANUALLY
             end
-            if machine:read_iflags_X() then
+            if machine:read_reg("iflags_X") ~= 0 then
                 -- machine was yielded with automatic reset. iflags.X will be cleared on the next mcycle
                 return cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY
             end
@@ -214,7 +214,7 @@ local function test(machine_config, yield_automatic_enable, yield_manual_enable)
             local break_reason = run_machine(machine)
 
             -- mcycle should be as expected
-            local mcycle = machine:read_mcycle()
+            local mcycle = machine:read_reg("mcycle")
             assert(mcycle == v.mcycle, string.format("mcycle: expected %d, got %d", v.mcycle, mcycle))
 
             if yield_automatic_enable and v.cmd == YIELD_AUTOMATIC then
@@ -222,12 +222,12 @@ local function test(machine_config, yield_automatic_enable, yield_manual_enable)
                     break_reason == cartesi.BREAK_REASON_YIELDED_AUTOMATICALLY,
                     "expected break reason yielded automatically"
                 )
-                assert(machine:read_iflags_X(), "expected iflags_X set")
-                assert(not machine:read_iflags_Y(), "expected iflags_Y not set")
+                assert(machine:read_reg("iflags_X") ~= 0, "expected iflags_X set")
+                assert(machine:read_reg("iflags_Y") == 0, "expected iflags_Y not set")
             elseif yield_manual_enable and v.cmd == YIELD_MANUAL then
                 assert(break_reason == cartesi.BREAK_REASON_YIELDED_MANUALLY, "expected break reason yielded manually")
-                assert(machine:read_iflags_Y(), "expected iflags_Y set")
-                assert(not machine:read_iflags_X(), "expected iflags_X not set")
+                assert(machine:read_reg("iflags_Y") ~= 0, "expected iflags_Y set")
+                assert(machine:read_reg("iflags_X") == 0, "expected iflags_X not set")
             else
                 assert(false)
             end
@@ -240,24 +240,24 @@ local function test(machine_config, yield_automatic_enable, yield_manual_enable)
             -- cmd should be as expected
             assert(machine:read_reg("htif_tohost_cmd") == v.cmd)
             -- trying to run it without resetting iflags.Y should not advance
-            if machine:read_iflags_Y() then
+            if machine:read_reg("iflags_Y") ~= 0 then
                 run_machine(machine)
-                assert(mcycle == machine:read_mcycle())
-                assert(machine:read_iflags_Y())
+                assert(mcycle == machine:read_reg("mcycle"))
+                assert(machine:read_reg("iflags_Y") ~= 0)
             end
             -- now reset it so the machine can be advanced
-            machine:reset_iflags_Y()
+            machine:write_reg("iflags_Y", 0)
         end
     end
     -- finally run to completion
     local break_reason = run_machine(machine)
     -- should be halted
     assert(break_reason == cartesi.BREAK_REASON_HALTED)
-    assert(machine:read_iflags_H(), "expected iflags_H set")
+    assert(machine:read_reg("iflags_H") ~= 0, "expected iflags_H set")
     -- at the expected mcycle
     assert(
-        machine:read_mcycle() == final_mcycle,
-        string.format("mcycle: expected, %u got %u", final_mcycle, machine:read_mcycle())
+        machine:read_reg("mcycle") == final_mcycle,
+        string.format("mcycle: expected, %u got %u", final_mcycle, machine:read_reg("mcycle"))
     )
     -- with the expected payload
     assert(

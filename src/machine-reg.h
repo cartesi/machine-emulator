@@ -122,7 +122,10 @@ enum class machine_reg : uint64_t {
     scounteren = PMA_SHADOW_STATE_START + offsetof(shadow_state, scounteren),
     senvcfg = PMA_SHADOW_STATE_START + offsetof(shadow_state, senvcfg),
     ilrsc = PMA_SHADOW_STATE_START + offsetof(shadow_state, ilrsc),
-    iflags = PMA_SHADOW_STATE_START + offsetof(shadow_state, iflags),
+    iprv = PMA_SHADOW_STATE_START + offsetof(shadow_state, iprv),
+    iflags_X = PMA_SHADOW_STATE_START + offsetof(shadow_state, iflags_X),
+    iflags_Y = PMA_SHADOW_STATE_START + offsetof(shadow_state, iflags_Y),
+    iflags_H = PMA_SHADOW_STATE_START + offsetof(shadow_state, iflags_H),
     iunrep = PMA_SHADOW_STATE_START + offsetof(shadow_state, iunrep),
     clint_mtimecmp = PMA_SHADOW_STATE_START + offsetof(shadow_state, clint_mtimecmp),
     plic_girqpend = PMA_SHADOW_STATE_START + offsetof(shadow_state, plic_girqpend),
@@ -174,10 +177,6 @@ enum class machine_reg : uint64_t {
     uarch_last_ = uarch_x31,
 
     // Views of registers
-    iflags_prv,
-    iflags_x,
-    iflags_y,
-    iflags_h,
     htif_tohost_dev,
     htif_tohost_cmd,
     htif_tohost_reason,

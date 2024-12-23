@@ -166,11 +166,10 @@ static auto reg_from_name(const std::string &name) {
         {"scounteren", reg::scounteren},
         {"senvcfg", reg::senvcfg},
         {"ilrsc", reg::ilrsc},
-        {"iflags", reg::iflags},
-        {"iflags_prv", reg::iflags_prv},
-        {"iflags_x", reg::iflags_x},
-        {"iflags_y", reg::iflags_y},
-        {"iflags_h", reg::iflags_h},
+        {"iprv", reg::iprv},
+        {"iflags_X", reg::iflags_X},
+        {"iflags_Y", reg::iflags_Y},
+        {"iflags_H", reg::iflags_H},
         {"iunrep", reg::iunrep},
         {"clint_mtimecmp", reg::clint_mtimecmp},
         {"plic_girqpend", reg::plic_girqpend},
@@ -420,16 +419,14 @@ static auto reg_to_name(machine::reg r) {
             return "senvcfg";
         case reg::ilrsc:
             return "ilrsc";
-        case reg::iflags:
-            return "iflags";
-        case reg::iflags_prv:
-            return "iflags_prv";
-        case reg::iflags_x:
-            return "iflags_x";
-        case reg::iflags_y:
-            return "iflags_y";
-        case reg::iflags_h:
-            return "iflags_h";
+        case reg::iprv:
+            return "iprv";
+        case reg::iflags_X:
+            return "iflags_X";
+        case reg::iflags_Y:
+            return "iflags_Y";
+        case reg::iflags_H:
+            return "iflags_H";
         case reg::iunrep:
             return "iunrep";
         case reg::clint_mtimecmp:
@@ -1261,7 +1258,10 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, processor_config &v
     ju_get_opt_field(jconfig, "scounteren"s, value.scounteren, new_path);
     ju_get_opt_field(jconfig, "senvcfg"s, value.senvcfg, new_path);
     ju_get_opt_field(jconfig, "ilrsc"s, value.ilrsc, new_path);
-    ju_get_opt_field(jconfig, "iflags"s, value.iflags, new_path);
+    ju_get_opt_field(jconfig, "iprv"s, value.iprv, new_path);
+    ju_get_opt_field(jconfig, "iflags_X"s, value.iflags_X, new_path);
+    ju_get_opt_field(jconfig, "iflags_Y"s, value.iflags_Y, new_path);
+    ju_get_opt_field(jconfig, "iflags_H"s, value.iflags_H, new_path);
     ju_get_opt_field(jconfig, "iunrep"s, value.iunrep, new_path);
 }
 
@@ -1803,7 +1803,8 @@ void to_json(nlohmann::json &j, const processor_config &config) {
         {"medeleg", config.medeleg}, {"mideleg", config.mideleg}, {"mcounteren", config.mcounteren},
         {"menvcfg", config.menvcfg}, {"stvec", config.stvec}, {"sscratch", config.sscratch}, {"sepc", config.sepc},
         {"scause", config.scause}, {"stval", config.stval}, {"satp", config.satp}, {"scounteren", config.scounteren},
-        {"senvcfg", config.senvcfg}, {"ilrsc", config.ilrsc}, {"iflags", config.iflags}, {"iunrep", config.iunrep}};
+        {"senvcfg", config.senvcfg}, {"ilrsc", config.ilrsc}, {"iprv", config.iprv}, {"iflags_X", config.iflags_X},
+        {"iflags_Y", config.iflags_Y}, {"iflags_H", config.iflags_H}, {"iunrep", config.iunrep}};
 }
 
 void to_json(nlohmann::json &j, const flash_drive_configs &fs) {

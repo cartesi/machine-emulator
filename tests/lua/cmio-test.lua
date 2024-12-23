@@ -143,12 +143,12 @@ local function setup_inspect(machine, data)
 end
 
 local function get_exit_code(machine)
-    assert(machine:read_iflags_H())
+    assert(machine:read_reg("iflags_H") ~= 0)
     return machine:read_reg("htif_tohost_data") >> 1
 end
 
 local function check_output(machine, expected)
-    assert(machine:read_iflags_X())
+    assert(machine:read_reg("iflags_X") ~= 0)
     local cmd, reason, output = machine:receive_cmio_request()
     assert(cmd == cartesi.CMIO_YIELD_COMMAND_AUTOMATIC)
     assert(reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT)
@@ -164,7 +164,7 @@ local function check_output(machine, expected)
 end
 
 local function check_report(machine, expected)
-    assert(machine:read_iflags_X())
+    assert(machine:read_reg("iflags_X") ~= 0)
     local cmd, reason, output = machine:receive_cmio_request()
     assert(cmd == cartesi.CMIO_YIELD_COMMAND_AUTOMATIC)
     assert(reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT)
@@ -172,7 +172,7 @@ local function check_report(machine, expected)
 end
 
 local function check_exception(machine, expected)
-    assert(machine:read_iflags_Y())
+    assert(machine:read_reg("iflags_Y") ~= 0)
     local cmd, reason, output = machine:receive_cmio_request()
     assert(cmd == cartesi.CMIO_YIELD_COMMAND_MANUAL)
     assert(reason == cartesi.CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION)
@@ -210,7 +210,7 @@ end
 
 local function check_finish(machine, output_hashes, expected_reason)
     local cmd, reason, output = machine:receive_cmio_request()
-    assert(machine:read_iflags_Y())
+    assert(machine:read_reg("iflags_Y") ~= 0)
     assert(cmd == cartesi.CMIO_YIELD_COMMAND_MANUAL)
     assert(reason == expected_reason)
 

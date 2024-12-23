@@ -467,54 +467,44 @@ private:
         m_m.get_state().ilrsc = val;
     }
 
-    void do_set_iflags_H() {
-        touch_page(machine_reg_address(machine_reg::iflags));
-        m_m.get_state().iflags.H = true;
+    uint64_t do_read_iprv() const {
+        touch_page(machine_reg_address(machine_reg::iprv));
+        return m_m.get_state().iprv;
     }
 
-    bool do_read_iflags_H() const {
-        touch_page(machine_reg_address(machine_reg::iflags));
-        return m_m.get_state().iflags.H;
+    void do_write_iprv(uint64_t val) {
+        touch_page(machine_reg_address(machine_reg::iprv));
+        m_m.get_state().iprv = val;
     }
 
-    void do_set_iflags_X() {
-        touch_page(machine_reg_address(machine_reg::iflags));
-        m_m.get_state().iflags.X = true;
+    void do_write_iflags_X(uint64_t val) {
+        touch_page(machine_reg_address(machine_reg::iflags_X));
+        m_m.get_state().iflags.X = val;
     }
 
-    void do_reset_iflags_X() {
-        touch_page(machine_reg_address(machine_reg::iflags));
-        m_m.get_state().iflags.X = false;
-    }
-
-    bool do_read_iflags_X() const {
-        touch_page(machine_reg_address(machine_reg::iflags));
+    uint64_t do_read_iflags_X() const {
+        touch_page(machine_reg_address(machine_reg::iflags_X));
         return m_m.get_state().iflags.X;
     }
 
-    void do_set_iflags_Y() {
-        touch_page(machine_reg_address(machine_reg::iflags));
-        m_m.get_state().iflags.Y = true;
+    void do_write_iflags_Y(uint64_t val) {
+        touch_page(machine_reg_address(machine_reg::iflags_Y));
+        m_m.get_state().iflags.Y = val;
     }
 
-    void do_reset_iflags_Y() {
-        touch_page(machine_reg_address(machine_reg::iflags));
-        m_m.get_state().iflags.Y = false;
-    }
-
-    bool do_read_iflags_Y() const {
-        touch_page(machine_reg_address(machine_reg::iflags));
+    uint64_t do_read_iflags_Y() const {
+        touch_page(machine_reg_address(machine_reg::iflags_Y));
         return m_m.get_state().iflags.Y;
     }
 
-    uint8_t do_read_iflags_PRV() const {
-        touch_page(machine_reg_address(machine_reg::iflags));
-        return m_m.get_state().iflags.PRV;
+    void do_write_iflags_H(uint64_t val) {
+        touch_page(machine_reg_address(machine_reg::iflags_H));
+        m_m.get_state().iflags.H = val;
     }
 
-    void do_write_iflags_PRV(uint8_t val) {
-        touch_page(machine_reg_address(machine_reg::iflags));
-        m_m.get_state().iflags.PRV = val;
+    uint64_t do_read_iflags_H() const {
+        touch_page(machine_reg_address(machine_reg::iflags_H));
+        return m_m.get_state().iflags.H;
     }
 
     uint64_t do_read_iunrep() const {
@@ -689,16 +679,6 @@ private:
         }
         touch_page(shadow_pmas_get_pma_abs_addr(index));
         return pmas[index];
-    }
-
-    uint64_t do_read_iflags() {
-        touch_page(machine_reg_address(machine_reg::iflags));
-        return m_m.get_state().read_iflags();
-    }
-
-    void do_write_iflags(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::iflags));
-        m_m.get_state().write_iflags(val);
     }
 
     bool do_read_device(pma_entry &pma, uint64_t mcycle, uint64_t offset, uint64_t *pval, int log2_size) {

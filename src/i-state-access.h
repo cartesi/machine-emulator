@@ -326,16 +326,52 @@ public:
         return derived().do_write_mideleg(val);
     }
 
-    /// \brief Reads CSR iflags.
+    /// \brief Reads CSR iprv.
     /// \returns Register value.
-    auto read_iflags() {
-        return derived().do_read_iflags();
+    uint64_t read_iprv() {
+        return derived().do_read_iprv();
     }
 
-    /// \brief Writes CSR iflags.
+    /// \brief Writes CSR iprv.
     /// \param val New register value.
-    auto write_iflags(uint64_t val) {
-        return derived().do_write_iflags(val);
+    void write_iprv(uint64_t val) {
+        return derived().do_write_iprv(val);
+    }
+
+    /// \brief Reads CSR iflags_X.
+    /// \returns Register value.
+    uint64_t read_iflags_X() {
+        return derived().do_read_iflags_X();
+    }
+
+    /// \brief Writes CSR iflags_X.
+    /// \param val New register value.
+    void write_iflags_X(uint64_t val) {
+        return derived().do_write_iflags_X(val);
+    }
+
+    /// \brief Reads CSR iflags_Y.
+    /// \returns Register value.
+    uint64_t read_iflags_Y() {
+        return derived().do_read_iflags_Y();
+    }
+
+    /// \brief Writes CSR iflags_Y.
+    /// \param val New register value.
+    void write_iflags_Y(uint64_t val) {
+        return derived().do_write_iflags_Y(val);
+    }
+
+    /// \brief Reads CSR iflags_H.
+    /// \returns Register value.
+    uint64_t read_iflags_H() {
+        return derived().do_read_iflags_H();
+    }
+
+    /// \brief Writes CSR iflags_H.
+    /// \param val New register value.
+    void write_iflags_H(uint64_t val) {
+        return derived().do_write_iflags_H(val);
     }
 
     /// \brief Reads CSR mcounteren.
@@ -458,70 +494,6 @@ public:
     /// \details This is Cartesi-specific.
     void write_ilrsc(uint64_t val) {
         return derived().do_write_ilrsc(val);
-    }
-
-    /// \brief Sets the iflags_H flag.
-    /// \details This is Cartesi-specific.
-    void set_iflags_H() {
-        return derived().do_set_iflags_H();
-    }
-
-    /// \brief Reads the iflags_H flag.
-    /// \returns The flag value.
-    /// \details This is Cartesi-specific.
-    bool read_iflags_H() {
-        return derived().do_read_iflags_H();
-    }
-
-    /// \brief Sets the iflags_Y flag.
-    /// \details This is Cartesi-specific.
-    void set_iflags_Y() {
-        return derived().do_set_iflags_Y();
-    }
-
-    /// \brief Sets the iflags_X flag.
-    /// \details This is Cartesi-specific.
-    void set_iflags_X() {
-        return derived().do_set_iflags_X();
-    }
-
-    /// \brief Resets the iflags_Y flag.
-    /// \details This is Cartesi-specific.
-    void reset_iflags_Y() {
-        return derived().do_reset_iflags_Y();
-    }
-
-    /// \brief Resets the iflags_X flag.
-    /// \details This is Cartesi-specific.
-    void reset_iflags_X() {
-        return derived().do_reset_iflags_X();
-    }
-
-    /// \brief Reads the iflags_Y flag.
-    /// \returns The flag value.
-    /// \details This is Cartesi-specific.
-    bool read_iflags_Y() {
-        return derived().do_read_iflags_Y();
-    }
-
-    /// \brief Reads the iflags_X flag.
-    /// \returns The flag value.
-    /// \details This is Cartesi-specific.
-    bool read_iflags_X() {
-        return derived().do_read_iflags_X();
-    }
-
-    /// \brief Reads the current privilege mode from iflags_PRV.
-    /// \details This is Cartesi-specific.
-    /// \returns Current privilege mode.
-    uint8_t read_iflags_PRV() {
-        return derived().do_read_iflags_PRV();
-    }
-
-    /// \brief Changes the privilege mode in iflags_PRV.
-    /// \details This is Cartesi-specific.
-    void write_iflags_PRV(uint8_t val) {
-        return derived().do_write_iflags_PRV(val);
     }
 
     /// \brief Reads CSR iunrep.

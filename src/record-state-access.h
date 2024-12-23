@@ -199,18 +199,13 @@ private:
         m_log->push_bracket(type, text);
     }
 
-    void do_reset_iflags_Y() {
-        auto new_iflags = machine_state::packed_iflags(m_m.get_state().iflags.PRV,
-            static_cast<int>(m_m.get_state().iflags.X), 0 /* Y */, static_cast<int>(m_m.get_state().iflags.H));
-        const uint64_t iflags_addr = machine_reg_address(machine_reg::iflags);
-        log_read(iflags_addr, "iflags.Y");
-        log_before_write(iflags_addr, new_iflags, "iflags.Y");
-        m_m.get_state().iflags.Y = false;
-        update_after_write(iflags_addr);
+    void do_write_iflags_Y(uint64_t val) {
+        log_before_write_write_and_update(machine_reg_address(machine_reg::iflags_Y), m_m.get_state().iflags.Y, val,
+            "iflags.Y");
     }
 
-    bool do_read_iflags_Y() const {
-        log_read(machine_reg_address(machine_reg::iflags), "iflags.Y");
+    uint64_t do_read_iflags_Y() const {
+        log_read(machine_reg_address(machine_reg::iflags_Y), "iflags.Y");
         return m_m.get_state().iflags.Y;
     }
 

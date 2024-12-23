@@ -75,16 +75,16 @@ private:
         return m_mcycle;
     }
 
-    void do_set_iflags_H() override {
-        m_a.set_iflags_H();
+    void do_write_iflags_H(uint64_t val) override {
+        m_a.write_iflags_H(val);
     }
 
-    void do_set_iflags_Y() override {
-        m_a.set_iflags_Y();
+    void do_write_iflags_Y(uint64_t val) override {
+        m_a.write_iflags_Y(val);
     }
 
-    void do_set_iflags_X() override {
-        m_a.set_iflags_X();
+    void do_write_iflags_X(uint64_t val) override {
+        m_a.write_iflags_X(val);
     }
 
     uint64_t do_read_clint_mtimecmp() override {

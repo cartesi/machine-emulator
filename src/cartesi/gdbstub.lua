@@ -189,16 +189,16 @@ function GDBStub:_handle_query(_, query)
     elseif query:find("^qRcmd,") then -- custom command
         local payload = hex2str(query:sub(7))
         if payload:find("^stepc %d+$") then -- step a fixed number of cycles
-            self.mcycle_limit = self.machine:read_mcycle() + tonumber(payload:match("^stepc (%d+)$"))
+            self.mcycle_limit = self.machine:read_reg("mcycle") + tonumber(payload:match("^stepc (%d+)$"))
             return self:_send_ok()
         elseif payload:find("^stepu %d+$") then -- step until a cycle number
-            self.mcycle_limit = math.max(self.machine:read_mcycle(), tonumber(payload:match("^stepu (%d+)$")))
+            self.mcycle_limit = math.max(self.machine:read_reg("mcycle"), tonumber(payload:match("^stepu (%d+)$")))
             return self:_send_ok()
         elseif payload == "stepc_clear" then -- remove stepping breakpoint
             self.mcycle_limit = nil
             return self:_send_ok()
         elseif payload == "cycles" then -- print current cycle
-            self:_send_rcmd_reply(string.format("%u\n", self.machine:read_mcycle()))
+            self:_send_rcmd_reply(string.format("%u\n", self.machine:read_reg("mcycle")))
             return self:_send_ok()
         elseif payload:find("^reg [%w_]+$") then -- read machine registers
             local reg_name = payload:match("^reg ([%w_]+)$")
@@ -244,7 +244,7 @@ function GDBStub:_handle_query(_, query)
                 self.performed_first_hash = true
             end
             local hash = self.machine:get_root_hash()
-            self:_send_rcmd_reply(string.format("%u: %s\n", self.machine:read_mcycle(), str2hex(hash)))
+            self:_send_rcmd_reply(string.format("%u: %s\n", self.machine:read_reg("mcycle"), str2hex(hash)))
             return self:_send_ok()
         elseif payload:find("^store .*$") then -- store the machine state
             local store_dir = payload:match("^store (.*)$")
@@ -393,7 +393,7 @@ end
 -- GDB is asking to let the machine continue.
 function GDBStub:_handle_continue()
     local machine = self.machine
-    local mcycle = machine:read_mcycle()
+    local mcycle = machine:read_reg("mcycle")
     local mcycle_end = self.max_mcycle
     local ult = math.ult -- localized to speed up Lua loop
     if self.mcycle_limit and ult(self.mcycle_limit, self.max_mcycle) then
@@ -407,22 +407,22 @@ function GDBStub:_handle_continue()
             machine:run(mcycle + 1)
             if breakpoints[machine:read_reg("pc")] then -- breakpoint reached
                 return self:_send_signal(signals.SIGTRAP)
-            elseif machine:read_iflags_H() then -- machined halted
+            elseif machine:read_reg("iflags_H") ~= 0 then -- machined halted
                 return self:_send_signal(signals.SIGTERM)
-            elseif machine:read_iflags_Y() or machine:read_iflags_X() then -- machine yielded
+            elseif machine:read_reg("iflags_Y") ~= 0 or machine:read_reg("iflags_X") ~= 0 then -- machine yielded
                 self.yielded = true
                 return true -- a reply will be sent to GDB in the next run loop
             end
-            mcycle = machine:read_mcycle()
+            mcycle = machine:read_reg("mcycle")
         end
     else -- no breakpoint set, we can run through the fast path
         machine:run(mcycle_end)
     end
-    if machine:read_iflags_H() then -- machine halted
+    if machine:read_reg("iflags_H") ~= 0 then -- machine halted
         return self:_send_signal(signals.SIGTERM)
-    elseif machine:read_mcycle() == self.max_mcycle then -- reached max cycles
+    elseif machine:read_reg("mcycle") == self.max_mcycle then -- reached max cycles
         return self:_send_signal(signals.SIGQUIT)
-    elseif machine:read_iflags_Y() or machine:read_iflags_X() then -- machine yielded
+    elseif machine:read_reg("iflags_Y") ~= 0 or machine:read_reg("iflags_X") ~= 0 then -- machine yielded
         self.yielded = true
         return true -- a reply will be sent to GDB in the next run loop
     else -- reached step cycles limit

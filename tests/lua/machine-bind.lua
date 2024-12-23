@@ -177,16 +177,19 @@ local cpu_reg_addr = {
     scounteren = 720,
     senvcfg = 728,
     ilrsc = 736,
-    iflags = 744,
-    iunrep = 752,
-    clint_mtimecmp = 760,
-    plic_girqpend = 768,
-    plic_girqsrvd = 776,
-    htif_tohost = 784,
-    htif_fromhost = 792,
-    htif_ihalt = 800,
-    htif_iconsole = 808,
-    htif_iyield = 816,
+    iprv = 744,
+    iflags_X = 752,
+    iflags_Y = 760,
+    iflags_H = 768,
+    iunrep = 776,
+    clint_mtimecmp = 784,
+    plic_girqpend = 792,
+    plic_girqsrvd = 800,
+    htif_tohost = 808,
+    htif_fromhost = 816,
+    htif_ihalt = 824,
+    htif_iconsole = 832,
+    htif_iyield = 840,
 }
 for i = 0, 31 do
     cpu_reg_addr["x" .. i] = i * 8
@@ -299,9 +302,9 @@ print("Testing machine bindings for type " .. machine_type)
 print("\n\ntesting machine initial flags")
 do_test("machine should not have halt and yield initial flags set", function(machine)
     -- Check machine is not halted
-    assert(not machine:read_iflags_H(), "machine shouldn't be halted")
+    assert(machine:read_reg("iflags_H") == 0, "machine shouldn't be halted")
     -- Check machine is not yielded
-    assert(not machine:read_iflags_Y(), "machine shouldn't be yielded")
+    assert(machine:read_reg("iflags_Y") == 0, "machine shouldn't be yielded")
 end)
 
 print("\n\ntesting machine register initial flag values ")
@@ -469,7 +472,10 @@ do_test("should return expected values", function(machine)
 
     -- Check register read
     local to_ignore = {
-        iflags = true,
+        iflags_X = true,
+        iflags_Y = true,
+        iflags_H = true,
+        iprv = true,
         clint_mtimecmp = true,
         plic_girqpend = true,
         plic_girqsrvd = true,
@@ -540,71 +546,71 @@ end)
 
 do_test("should error if target mcycle is smaller than current mcycle", function(machine)
     machine:write_reg("mcycle", MAX_MCYCLE)
-    assert(machine:read_mcycle() == MAX_MCYCLE)
+    assert(machine:read_reg("mcycle") == MAX_MCYCLE)
     local success, err = pcall(function()
         machine:run(MAX_MCYCLE - 1)
     end)
     assert(success == false)
     assert(err and err:match("mcycle is past"))
-    assert(machine:read_mcycle() == MAX_MCYCLE)
+    assert(machine:read_reg("mcycle") == MAX_MCYCLE)
 end)
 
 do_test("should error if target uarch_cycle is smaller than current uarch_cycle", function(machine)
     machine:write_reg("uarch_cycle", MAX_UARCH_CYCLE)
-    assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
+    assert(machine:read_reg("uarch_cycle") == MAX_UARCH_CYCLE)
     local success, err = pcall(function()
         machine:run_uarch(MAX_UARCH_CYCLE - 1)
     end)
     assert(success == false)
     assert(err and err:match("uarch_cycle is past"))
-    assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
+    assert(machine:read_reg("uarch_cycle") == MAX_UARCH_CYCLE)
 end)
 
 print("\n\n run_uarch tests")
 
 do_test("advance one micro cycle without halting", function(machine)
-    assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
-    assert(machine:read_uarch_halt_flag() == false, "uarch halt flag should be cleared")
-    assert(machine:read_iflags_Y() == false, "iflags.Y should be cleared")
-    assert(machine:read_iflags_H() == false, "iflags.H should be cleared")
+    assert(machine:read_reg("uarch_cycle") == 0, "uarch cycle should be 0")
+    assert(machine:read_reg("uarch_halt_flag") == 0, "uarch halt flag should be cleared")
+    assert(machine:read_reg("iflags_Y") == 0, "iflags.Y should be cleared")
+    assert(machine:read_reg("iflags_H") == 0, "iflags.H should be cleared")
     local status = machine:run_uarch(1)
     assert(status == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_CYCLE)
-    assert(machine:read_uarch_cycle() == 1, "uarch cycle should be 1")
-    assert(machine:read_uarch_halt_flag() == false, "uarch should not be halted")
+    assert(machine:read_reg("uarch_cycle") == 1, "uarch cycle should be 1")
+    assert(machine:read_reg("uarch_halt_flag") == 0, "uarch should not be halted")
 end)
 
 do_test("do not advance micro cycle if uarch is halted", function(machine)
-    machine:set_uarch_halt_flag()
-    assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
-    assert(machine:read_uarch_halt_flag() == true, "uarch halt flag should be set")
-    assert(machine:read_iflags_Y() == false, "iflags.Y should be cleared")
-    assert(machine:read_iflags_H() == false, "iflags.H should be cleared")
+    machine:write_reg("uarch_halt_flag", 1)
+    assert(machine:read_reg("uarch_cycle") == 0, "uarch cycle should be 0")
+    assert(machine:read_reg("uarch_halt_flag") ~= 0, "uarch halt flag should be set")
+    assert(machine:read_reg("iflags_Y") == 0, "iflags.Y should be cleared")
+    assert(machine:read_reg("iflags_H") == 0, "iflags.H should be cleared")
     local status = machine:run_uarch(1)
     assert(status == cartesi.UARCH_BREAK_REASON_UARCH_HALTED, "run_uarch should return UARCH_BREAK_REASON_UARCH_HALTED")
-    assert(machine:read_uarch_cycle() == 0, "uarch cycle should still be 0")
+    assert(machine:read_reg("uarch_cycle") == 0, "uarch cycle should still be 0")
 end)
 
 do_test("advance micro cycles until halt", function(machine)
-    assert(machine:read_uarch_cycle() == 0, "uarch cycle should be 0")
-    assert(machine:read_uarch_halt_flag() == false, "machine should not be halted")
+    assert(machine:read_reg("uarch_cycle") == 0, "uarch cycle should be 0")
+    assert(machine:read_reg("uarch_halt_flag") == 0, "machine should not be halted")
     local status = machine:run_uarch()
     assert(status == cartesi.UARCH_BREAK_REASON_UARCH_HALTED)
-    assert(machine:read_uarch_cycle() == 3, "uarch cycle should be 4")
-    assert(machine:read_uarch_halt_flag() == true, "uarch should be halted")
+    assert(machine:read_reg("uarch_cycle") == 3, "uarch cycle should be 4")
+    assert(machine:read_reg("uarch_halt_flag") ~= 0, "uarch should be halted")
 end)
 
 print("\n\n run machine to 1000 mcycle")
 do_test("mcycle value should be 1000 after execution", function(machine)
     -- Run machine
     machine:write_reg("mcycle", 0)
-    assert(machine:read_mcycle() == 0)
+    assert(machine:read_reg("mcycle") == 0)
 
-    local test = machine:read_mcycle()
+    local test = machine:read_reg("mcycle")
     while test < 1000 do
         machine:run(1000)
-        test = machine:read_mcycle()
+        test = machine:read_reg("mcycle")
     end
-    assert(machine:read_mcycle() == 1000)
+    assert(machine:read_reg("mcycle") == 1000)
 end)
 
 print("\n\n check reading and writing htif registers")
@@ -700,10 +706,10 @@ end)
 
 do_test("step when uarch cycle is max", function(machine)
     machine:write_reg("uarch_cycle", MAX_UARCH_CYCLE)
-    assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
+    assert(machine:read_reg("uarch_cycle") == MAX_UARCH_CYCLE)
     local initial_hash = machine:get_root_hash()
     local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
-    assert(machine:read_uarch_cycle() == MAX_UARCH_CYCLE)
+    assert(machine:read_reg("uarch_cycle") == MAX_UARCH_CYCLE)
     local final_hash = machine:get_root_hash()
     assert(final_hash == initial_hash)
     machine:verify_step_uarch(initial_hash, log, final_hash)
@@ -771,14 +777,14 @@ end)
 test_util.make_do_test(build_machine, machine_type, { processor = { mcycle = 1 }, uarch = {} })(
     "It should use the embedded uarch-ram.bin when the uarch config is not provided",
     function(machine)
-        assert(machine:read_mcycle() == 1)
+        assert(machine:read_reg("mcycle") == 1)
 
         -- Advance one mcycle by running the "big interpreter" compiled to the microarchitecture that is embedded
         -- in the emulator executable. Note that the config used to create the machine has an empty uarch key;
         -- therefore, the embedded uarch image is used.
         machine:run_uarch()
 
-        assert(machine:read_mcycle() == 2)
+        assert(machine:read_reg("mcycle") == 2)
     end
 )
 
@@ -824,8 +830,8 @@ end
 
 local function test_reset_uarch(machine, with_log, with_annotations)
     -- assert initial fixture state
-    assert(machine:read_uarch_halt_flag() == true)
-    assert(machine:read_uarch_cycle() == 1)
+    assert(machine:read_reg("uarch_halt_flag") ~= 0)
+    assert(machine:read_reg("uarch_cycle") == 1)
     assert(machine:read_reg("uarch_pc") == 0)
     for i = 1, 31 do
         assert(machine:read_reg("uarch_x" .. i) == test_reset_uarch_config.processor["x" .. i])
@@ -854,8 +860,8 @@ local function test_reset_uarch(machine, with_log, with_annotations)
         machine:reset_uarch()
     end
     --- assert registers are reset to pristine values
-    assert(machine:read_uarch_halt_flag() == false)
-    assert(machine:read_uarch_cycle() == 0)
+    assert(machine:read_reg("uarch_halt_flag") == 0)
+    assert(machine:read_reg("uarch_cycle") == 0)
     assert(machine:read_reg("uarch_pc") == cartesi.UARCH_RAM_START_ADDRESS)
     for i = 1, 31 do
         assert(machine:read_reg("uarch_x" .. i) == 0)
@@ -1138,8 +1144,8 @@ print("\n\ntesting send cmio response ")
 do_test("send_cmio_response fails if iflags.Y is not set", function(machine)
     local reason = 1
     local data = string.rep("a", 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
-    machine:reset_iflags_Y()
-    assert(machine:read_iflags_Y() == false)
+    machine:write_reg("iflags_Y", 0)
+    assert(machine:read_reg("iflags_Y") == 0)
     test_util.assert_error("iflags.Y is not set", function()
         machine:send_cmio_response(reason, data)
     end)
@@ -1151,7 +1157,7 @@ end)
 do_test("send_cmio_response fails if data is too big", function(machine)
     local reason = 1
     local data_too_big = string.rep("a", 1 + (1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE))
-    machine:set_iflags_Y()
+    machine:write_reg("iflags_Y", 1)
     test_util.assert_error("CMIO response data is too large", function()
         machine:send_cmio_response(reason, data_too_big)
     end)
@@ -1178,7 +1184,7 @@ local function test_send_cmio_input_with_different_arguments()
     local all_zeros_hash = test_util.merkle_hash(all_zeros, 0, cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
     -- prepares and asserts the state before send_cmio_response is called
     local function assert_before_cmio_response_sent(machine)
-        machine:set_iflags_Y()
+        machine:write_reg("iflags_Y", 1)
         -- initial rx buffer should be all zeros
         assert(machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, max_rx_buffer_len) == all_zeros)
     end
@@ -1187,7 +1193,7 @@ local function test_send_cmio_input_with_different_arguments()
         -- rx buffer should now contain the data
         assert(machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, max_rx_buffer_len) == data)
         -- iflags.Y should be cleared
-        assert(machine:read_iflags_Y() == false)
+        assert(machine:read_reg("iflags_Y") == 0)
         -- fromhost should reflect the reason and data length
         local expected_fromhost = ((reason & 0xffff) << 32) | (#data & 0xffffffff)
         assert(machine:read_reg("htif_fromhost") == expected_fromhost)
@@ -1215,10 +1221,10 @@ local function test_send_cmio_input_with_different_arguments()
                 local root_hash_after = machine:get_root_hash()
                 -- check log
                 local accesses = log.accesses
-                assert(#accesses == 5)
+                assert(#accesses == 4)
                 assert_access(accesses, 1, {
                     type = "read",
-                    address = machine:get_reg_address("iflags"),
+                    address = machine:get_reg_address("iflags_Y"),
                     log2_size = 3,
                 })
                 assert_access(accesses, 2, {
@@ -1236,13 +1242,8 @@ local function test_send_cmio_input_with_different_arguments()
                     log2_size = 3,
                 })
                 assert_access(accesses, 4, {
-                    type = "read",
-                    address = machine:get_reg_address("iflags"),
-                    log2_size = 3,
-                })
-                assert_access(accesses, 5, {
                     type = "write",
-                    address = machine:get_reg_address("iflags"),
+                    address = machine:get_reg_address("iflags_Y"),
                     log2_size = 3,
                 })
                 -- ask machine to verify state transitions
@@ -1251,20 +1252,20 @@ local function test_send_cmio_input_with_different_arguments()
         )
     end
 end
+
 test_send_cmio_input_with_different_arguments()
 
 do_test("Dump of log produced by send_cmio_response should match", function(machine)
-    machine:set_iflags_Y()
+    machine:write_reg("iflags_Y", 1)
     local data = "0123456789"
     local reason = 7
     local log = machine:log_send_cmio_response(reason, data, cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
     -- luacheck: push no max line length
     local expected_dump = "begin send cmio response\n"
-        .. "  1: read iflags.Y@0x2e8(744): 0x1a(26)\n"
+        .. "  1: read iflags.Y@0x2f8(760): 0x1(1)\n"
         .. '  2: write cmio rx buffer@0x60000000(1610612736): hash:"290decd9"(2^5 bytes) -> hash:"555b1f6d"(2^5 bytes)\n'
-        .. "  3: write htif.fromhost@0x318(792): 0x0(0) -> 0x70000000a(30064771082)\n"
-        .. "  4: read iflags.Y@0x2e8(744): 0x1a(26)\n"
-        .. "  5: write iflags.Y@0x2e8(744): 0x1a(26) -> 0x18(24)\n"
+        .. "  3: write htif.fromhost@0x330(816): 0x0(0) -> 0x70000000a(30064771082)\n"
+        .. "  4: write iflags.Y@0x2f8(760): 0x1(1) -> 0x0(0)\n"
         .. "end send cmio response\n"
     -- luacheck: pop
     local temp_file <close> = test_util.new_temp_file()
@@ -1307,10 +1308,10 @@ do_test("send_cmio_response with different data sizes", function(machine)
             machine:write_memory(cartesi.PMA_CMIO_RX_BUFFER_START, initial_rx_buffer)
             assert(machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, rx_buffer_size) == initial_rx_buffer)
             local data = string.rep("a", case.data_len)
-            machine:set_iflags_Y()
+            machine:write_reg("iflags_Y", 1)
             if logging then
                 local log = machine:log_send_cmio_response(reason, data)
-                assert(#log.accesses == 5, string.format("log should have 5 accesses, but it has %s", #log.accesses))
+                assert(#log.accesses == 4, string.format("log should have 4 accesses, but it has %s", #log.accesses))
                 assert(log.accesses[2].type == "write", "access 2 should be a write")
                 assert(1 << log.accesses[2].log2_size == case.write_len, "log2_size of write access does not match")
             else
@@ -1338,18 +1339,19 @@ do_test("send_cmio_response of zero bytes", function(machine)
     local initial_rx_buffer = string.rep("x", rx_buffer_size)
     machine:write_memory(cartesi.PMA_CMIO_RX_BUFFER_START, initial_rx_buffer)
     assert(machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, rx_buffer_size) == initial_rx_buffer)
-    machine:set_iflags_Y()
+    machine:write_reg("iflags_Y", 1)
     local reason = 1
     local data = ""
     machine:send_cmio_response(reason, data)
     local new_rx_buffer = machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, rx_buffer_size)
     assert(new_rx_buffer == initial_rx_buffer, "rx_buffer should not have been modified")
-    assert(machine:read_iflags_Y() == false, "iflags.Y should be cleared")
+    assert(machine:read_reg("iflags_Y") == 0, "iflags.Y should be cleared")
     -- log and verify
-    machine:set_iflags_Y()
+    machine:write_reg("iflags_Y", 1)
     local hash_before = machine:get_root_hash()
     local log = machine:log_send_cmio_response(reason, data)
-    assert(#log.accesses == 4, "log should have 4 accesses")
+    util.dump_log(log, io.stderr)
+    assert(#log.accesses == 3, "log should have 3 accesses")
     local hash_after = machine:get_root_hash()
     machine:verify_send_cmio_response(reason, data, hash_before, log, hash_after)
 end)
@@ -1560,7 +1562,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
     })
 
     machine:write_reg("mcycle", 0)
-    assert(machine:read_mcycle() == 0)
+    assert(machine:read_reg("mcycle") == 0)
     -- log_step should fail because the temp file already exists
     success, err = pcall(function()
         machine:log_step(1, filename1)
@@ -1569,13 +1571,13 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
     assert(err:match("file already exists"))
     -- delete file and confirm that machine is on same mcycle
     os.remove(filename1)
-    assert(machine:read_mcycle() == 0)
+    assert(machine:read_reg("mcycle") == 0)
     -- get current root hash and log step
     local root_hash_before = machine:get_root_hash()
     local mcycle_count = 10
     local status = machine:log_step(mcycle_count, filename1)
     assert(status == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
-    assert(machine:read_mcycle() == mcycle_count)
+    assert(machine:read_reg("mcycle") == mcycle_count)
     local root_hash_after = machine:get_root_hash()
     assert(root_hash_before ~= root_hash_after)
     -- verify step should pass

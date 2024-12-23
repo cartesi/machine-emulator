@@ -315,8 +315,14 @@ static cartesi::machine_reg convert_from_c(cm_reg r) {
             return reg::senvcfg;
         case CM_REG_ILRSC:
             return reg::ilrsc;
-        case CM_REG_IFLAGS:
-            return reg::iflags;
+        case CM_REG_IPRV:
+            return reg::iprv;
+        case CM_REG_IFLAGS_X:
+            return reg::iflags_X;
+        case CM_REG_IFLAGS_Y:
+            return reg::iflags_Y;
+        case CM_REG_IFLAGS_H:
+            return reg::iflags_H;
         case CM_REG_IUNREP:
             return reg::iunrep;
         case CM_REG_CLINT_MTIMECMP:
@@ -405,14 +411,6 @@ static cartesi::machine_reg convert_from_c(cm_reg r) {
             return reg::uarch_cycle;
         case CM_REG_UARCH_HALT_FLAG:
             return reg::uarch_halt_flag;
-        case CM_REG_IFLAGS_PRV:
-            return reg::iflags_prv;
-        case CM_REG_IFLAGS_X:
-            return reg::iflags_x;
-        case CM_REG_IFLAGS_Y:
-            return reg::iflags_y;
-        case CM_REG_IFLAGS_H:
-            return reg::iflags_h;
         case CM_REG_HTIF_TOHOST_DEV:
             return reg::htif_tohost_dev;
         case CM_REG_HTIF_TOHOST_CMD:
@@ -915,64 +913,6 @@ cm_error cm_read_uarch_cycle(const cm_machine *m, uint64_t *val) try {
     return cm_result_failure();
 }
 
-cm_error cm_read_iflags_Y(const cm_machine *m, bool *val) try {
-    if (val == nullptr) {
-        throw std::invalid_argument("invalid val output");
-    }
-    const auto *cpp_m = convert_from_c(m);
-    *val = static_cast<bool>(cpp_m->read_reg(cartesi::machine::reg::iflags_y));
-    return cm_result_success();
-} catch (...) {
-    if (val != nullptr) {
-        *val = false;
-    }
-    return cm_result_failure();
-}
-
-cm_error cm_reset_iflags_Y(cm_machine *m) try {
-    auto *cpp_m = convert_from_c(m);
-    cpp_m->write_reg(cartesi::machine::reg::iflags_y, 0);
-    return cm_result_success();
-} catch (...) {
-    return cm_result_failure();
-}
-
-cm_error cm_set_iflags_Y(cm_machine *m) try {
-    auto *cpp_m = convert_from_c(m);
-    cpp_m->write_reg(cartesi::machine::reg::iflags_y, 1);
-    return cm_result_success();
-} catch (...) {
-    return cm_result_failure();
-}
-
-cm_error cm_read_iflags_X(const cm_machine *m, bool *val) try {
-    if (val == nullptr) {
-        throw std::invalid_argument("invalid val output");
-    }
-    const auto *cpp_m = convert_from_c(m);
-    *val = static_cast<bool>(cpp_m->read_reg(cartesi::machine::reg::iflags_x));
-    return cm_result_success();
-} catch (...) {
-    if (val != nullptr) {
-        *val = false;
-    }
-    return cm_result_failure();
-}
-
-cm_error cm_read_iflags_H(const cm_machine *m, bool *val) try {
-    if (val == nullptr) {
-        throw std::invalid_argument("invalid val output");
-    }
-    const auto *cpp_m = convert_from_c(m);
-    *val = static_cast<bool>(cpp_m->read_reg(cartesi::machine::reg::iflags_h));
-    return cm_result_success();
-} catch (...) {
-    if (val != nullptr) {
-        *val = false;
-    }
-    return cm_result_failure();
-}
-
 cm_error cm_verify_dirty_page_maps(cm_machine *m, bool *result) try {
     if (result == nullptr) {
         throw std::invalid_argument("invalid result output");
@@ -1101,8 +1041,8 @@ cm_error cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16_t *re
     const auto *cpp_m = convert_from_c(m);
     // NOTE(edubart): This can be implemented on top of other APIs,
     // implementing in the C++ machine class would add lot of boilerplate code in all interfaces.
-    if ((cpp_m->read_reg(cartesi::machine::reg::iflags_x) == 0) &&
-        (cpp_m->read_reg(cartesi::machine::reg::iflags_y) == 0)) {
+    if ((cpp_m->read_reg(cartesi::machine::reg::iflags_X) == 0) &&
+        (cpp_m->read_reg(cartesi::machine::reg::iflags_Y) == 0)) {
         throw std::runtime_error{"machine is not yielded"};
     }
     const uint64_t tohost = cpp_m->read_reg(cartesi::machine::reg::htif_tohost);

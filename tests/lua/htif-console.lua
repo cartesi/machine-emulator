@@ -45,7 +45,7 @@ local function test(config, console_getchar_enable)
     machine:run(math.maxinteger)
 
     -- should be halted
-    assert(machine:read_iflags_H(), "expected iflags_H set")
+    assert(machine:read_reg("iflags_H") ~= 0, "expected iflags_H set")
 
     -- with the expected payload
     local exit_payload = machine:read_reg("htif_tohost_data") >> 1
@@ -55,7 +55,7 @@ local function test(config, console_getchar_enable)
     )
 
     -- at the expected mcycle
-    local final_mcycle = machine:read_mcycle()
+    local final_mcycle = machine:read_reg("mcycle")
     assert(
         final_mcycle == expected_final_mcycle,
         string.format("mcycle: expected, %u got %u", expected_final_mcycle, final_mcycle)

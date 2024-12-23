@@ -1283,7 +1283,16 @@
           "ilrsc": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
-          "iflags": {
+          "iprv": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "iflags_X": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "iflags_Y": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "iflags_H": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
           "iunrep": {

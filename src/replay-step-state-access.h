@@ -722,69 +722,36 @@ private:
         raw_write_memory(machine_reg_address(machine_reg::ilrsc), val);
     }
 
-    uint64_t do_read_iflags() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::iflags));
+    uint64_t do_read_iprv() {
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::iprv));
     }
 
-    void do_write_iflags(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::iflags), val);
+    void do_write_iprv(uint64_t val) {
+        raw_write_memory(machine_reg_address(machine_reg::iprv), val);
     }
 
-    void do_set_iflags_H() {
-        auto old_iflags = read_iflags();
-        auto new_iflags = old_iflags | IFLAGS_H_MASK;
-        write_iflags(new_iflags);
+    uint64_t do_read_iflags_X() {
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::iflags_X));
     }
 
-    bool do_read_iflags_H() {
-        auto iflags = read_iflags();
-        return (iflags & IFLAGS_H_MASK) != 0;
+    void do_write_iflags_X(uint64_t val) {
+        raw_write_memory(machine_reg_address(machine_reg::iflags_X), val);
     }
 
-    void do_set_iflags_X() {
-        auto old_iflags = read_iflags();
-        auto new_iflags = old_iflags | IFLAGS_X_MASK;
-        write_iflags(new_iflags);
+    uint64_t do_read_iflags_Y() {
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::iflags_Y));
     }
 
-    void do_reset_iflags_X() {
-        auto old_iflags = read_iflags();
-        auto new_iflags = old_iflags & (~IFLAGS_X_MASK);
-        write_iflags(new_iflags);
+    void do_write_iflags_Y(uint64_t val) {
+        raw_write_memory(machine_reg_address(machine_reg::iflags_Y), val);
     }
 
-    bool do_read_iflags_X() {
-        auto iflags = read_iflags();
-        return (iflags & IFLAGS_X_MASK) != 0;
+    uint64_t do_read_iflags_H() {
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::iflags_H));
     }
 
-    void do_set_iflags_Y() {
-        auto old_iflags = read_iflags();
-        auto new_iflags = old_iflags | IFLAGS_Y_MASK;
-        write_iflags(new_iflags);
-    }
-
-    void do_reset_iflags_Y() {
-        auto old_iflags = read_iflags();
-        auto new_iflags = old_iflags & (~IFLAGS_Y_MASK);
-        write_iflags(new_iflags);
-    }
-
-    bool do_read_iflags_Y() {
-        auto iflags = read_iflags();
-        return (iflags & IFLAGS_Y_MASK) != 0;
-    }
-
-    uint8_t do_read_iflags_PRV() {
-        auto iflags = read_iflags();
-        return (iflags & IFLAGS_PRV_MASK) >> IFLAGS_PRV_SHIFT;
-    }
-
-    void do_write_iflags_PRV(uint8_t val) {
-        auto old_iflags = read_iflags();
-        auto new_iflags =
-            (old_iflags & (~IFLAGS_PRV_MASK)) | ((static_cast<uint64_t>(val) << IFLAGS_PRV_SHIFT) & IFLAGS_PRV_MASK);
-        write_iflags(new_iflags);
+    void do_write_iflags_H(uint64_t val) {
+        raw_write_memory(machine_reg_address(machine_reg::iflags_H), val);
     }
 
     uint64_t do_read_iunrep() {

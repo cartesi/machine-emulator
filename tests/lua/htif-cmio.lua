@@ -50,9 +50,9 @@ local function test(config)
     local tx_length = 1 << cartesi.PMA_CMIO_TX_BUFFER_LOG2_SIZE
     assert(string.rep(pattern, tx_length / 8) == machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, tx_length))
 
-    assert(machine:read_iflags_H())
+    assert(machine:read_reg("iflags_H") ~= 0)
 
-    local mcycle = machine:read_mcycle()
+    local mcycle = machine:read_reg("mcycle")
     assert(mcycle == final_mcycle, "[mcycle] expected:" .. final_mcycle .. " got: " .. mcycle)
 
     local exit = machine:read_reg("htif_tohost_data") >> 1

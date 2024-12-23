@@ -63,7 +63,7 @@ static bool htif_read(void * /*context*/, i_device_state_access *a, uint64_t off
 
 static execute_status htif_halt(i_device_state_access *a, uint64_t cmd, uint64_t data) {
     if (cmd == HTIF_HALT_CMD_HALT && ((data & 1) != 0)) {
-        a->set_iflags_H();
+        a->write_iflags_H(1);
         return execute_status::success_and_halt;
     }
     //??D Write acknowledgement to fromhost???
@@ -76,11 +76,11 @@ static execute_status htif_yield(i_device_state_access *a, uint64_t cmd, uint64_
     // If yield command is enabled, yield and acknowledge
     if (cmd < 64 && (((a->read_htif_iyield() >> cmd) & 1) != 0)) {
         if (cmd == HTIF_YIELD_CMD_MANUAL) {
-            a->set_iflags_Y();
+            a->write_iflags_Y(1);
             status = execute_status::success_and_yield;
             a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_YIELD, cmd, 0, 0));
         } else if (cmd == HTIF_YIELD_CMD_AUTOMATIC) {
-            a->set_iflags_X();
+            a->write_iflags_X(1);
             status = execute_status::success_and_yield;
             a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_YIELD, cmd, 0, 0));
         }

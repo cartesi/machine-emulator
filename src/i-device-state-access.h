@@ -73,21 +73,24 @@ public:
     }
 
     /// \brief Sets the iflags_H flag.
+    /// \param val New register value.
     /// \details This is Cartesi-specific.
-    void set_iflags_H() {
-        do_set_iflags_H();
+    void write_iflags_H(uint64_t val) {
+        do_write_iflags_H(val);
     }
 
     /// \brief Sets the iflags_Y flag.
+    /// \param val New register value.
     /// \details This is Cartesi-specific.
-    void set_iflags_Y() {
-        do_set_iflags_Y();
+    void write_iflags_Y(uint64_t val) {
+        do_write_iflags_Y(val);
     }
 
     /// \brief Sets the iflags_X flag.
+    /// \param val New register value.
     /// \details This is Cartesi-specific.
-    void set_iflags_X() {
-        do_set_iflags_X();
+    void write_iflags_X(uint64_t val) {
+        do_write_iflags_X(val);
     }
 
     /// \brief Reads CLINT's mtimecmp.
@@ -207,9 +210,9 @@ private:
     virtual void do_reset_mip(uint64_t mask) = 0;
     virtual uint64_t do_read_mip() = 0;
     virtual uint64_t do_read_mcycle() = 0;
-    virtual void do_set_iflags_H() = 0;
-    virtual void do_set_iflags_Y() = 0;
-    virtual void do_set_iflags_X() = 0;
+    virtual void do_write_iflags_H(uint64_t val) = 0;
+    virtual void do_write_iflags_Y(uint64_t val) = 0;
+    virtual void do_write_iflags_X(uint64_t val) = 0;
     virtual uint64_t do_read_clint_mtimecmp() = 0;
     virtual void do_write_clint_mtimecmp(uint64_t val) = 0;
     virtual uint64_t do_read_plic_girqpend() = 0;

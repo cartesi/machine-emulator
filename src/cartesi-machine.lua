@@ -1609,7 +1609,7 @@ for _, a in ipairs(arg) do
 end
 
 local function print_root_hash(machine, print)
-    (print or stderr)("%u: %s\n", machine:read_mcycle(), util.hexhash(machine:get_root_hash()))
+    (print or stderr)("%u: %s\n", machine:read_reg("mcycle"), util.hexhash(machine:get_root_hash()))
 end
 
 local function dump_value_proofs(machine, desired_proofs, config)
@@ -1906,7 +1906,7 @@ local function get_and_print_yield(machine, htif)
         reason_str = cmio_yield_manual_reason[reason] or reason_str
     end
     stderr("\n%s yield %s (%d) (0x%06x data)\n", cmd_str, reason_str, reason, #data)
-    stderr("Cycles: %u\n", machine:read_mcycle())
+    stderr("Cycles: %u\n", machine:read_reg("mcycle"))
     return cmd, reason, data
 end
 
@@ -2068,7 +2068,7 @@ local backup_closer <close> = setmetatable({}, {
 -- once all inputs for advance state have been consumed, we check if the user selected cmio inspect state
 -- if so, we feed the query, reset iflags_Y, and resume the machine
 -- the machine can now continue processing and may yield automatic to produce reports we save
-while math.ult(machine:read_mcycle(), max_mcycle) do
+while math.ult(machine:read_reg("mcycle"), max_mcycle) do
     local next_mcycle = math.min(next_hash_mcycle, max_mcycle)
     if gdb_stub and gdb_stub:is_connected() then
         gdb_stub:run(next_mcycle)
@@ -2076,17 +2076,17 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
         machine:run(next_mcycle)
     end
     -- deal with halt
-    if machine:read_iflags_H() then
+    if machine:read_reg("iflags_H") ~= 0 then
         exit_code = machine:read_reg("htif_tohost_data") >> 1
         if exit_code ~= 0 then
             stderr("\nHalted with payload: %u\n", exit_code)
         else
             stderr("\nHalted\n")
         end
-        stderr("Cycles: %u\n", machine:read_mcycle())
+        stderr("Cycles: %u\n", machine:read_reg("mcycle"))
         break
     -- deal with yield manual
-    elseif machine:read_iflags_Y() then
+    elseif machine:read_reg("iflags_Y") ~= 0 then
         local _, reason, data = get_and_print_yield(machine, config.htif)
         -- there was an exception
         if reason == cartesi.CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION then
@@ -2150,7 +2150,7 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
             end
         end
     -- deal with yield automatic
-    elseif machine:read_iflags_X() then
+    elseif machine:read_reg("iflags_X") ~= 0 then
         local _, reason, data = get_and_print_yield(machine, config.htif)
         -- we have fed an advance state input
         if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
@@ -2172,12 +2172,12 @@ while math.ult(machine:read_mcycle(), max_mcycle) do
         end
         -- otherwise ignore
     end
-    if machine:read_iflags_Y() then
+    if machine:read_reg("iflags_Y") ~= 0 then
         -- commit any pending snapshot
         do_commit()
         break
     end
-    if machine:read_mcycle() == next_hash_mcycle then
+    if machine:read_reg("mcycle") == next_hash_mcycle then
         print_root_hash(machine)
         next_hash_mcycle = next_hash_mcycle + periodic_hashes_period
     end
@@ -2192,16 +2192,16 @@ end
 -- Advance micro cycles
 if max_uarch_cycle > 0 then
     -- Save halt flag before micro cycles
-    local previously_halted = machine:read_iflags_H()
+    local previously_halted = machine:read_reg("iflags_H") ~= 0
     if machine:run_uarch(max_uarch_cycle) == cartesi.UARCH_BREAK_REASON_UARCH_HALTED then
         -- Microarchitecture  halted. This means that one "macro" instruction was totally executed
         -- The mcycle counter was incremented, unless the machine was already halted
-        if machine:read_iflags_H() and not previously_halted then stderr("Halted\n") end
-        stderr("Cycles: %u\n", machine:read_mcycle())
+        if machine:read_reg("iflags_H") ~= 0 and not previously_halted then stderr("Halted\n") end
+        stderr("Cycles: %u\n", machine:read_reg("mcycle"))
         if auto_reset_uarch then
             machine:reset_uarch()
         else
-            stderr("uCycles: %u\n", machine:read_uarch_cycle())
+            stderr("uCycles: %u\n", machine:read_reg("uarch_cycle"))
         end
     end
 end

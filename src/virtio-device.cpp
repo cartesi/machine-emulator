@@ -438,24 +438,19 @@ bool virtio_device::prepare_queue_write(i_device_state_access *a, uint32_t queue
     return true;
 }
 
-bool virtio_device::consume_and_notify_queue(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
-    uint32_t written_len, uint16_t used_flags) {
+bool virtio_device::consume_queue(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx, uint32_t written_len,
+    uint16_t used_flags) {
     // A device MUST NOT consume buffers or send any used buffer notifications to the driver before DRIVER_OK.
     assert(driver_ok);
     assert(queue_idx < VIRTIO_QUEUE_COUNT);
+#ifdef DEBUG_VIRTIO
+    std::ignore = fprintf(stderr, "virtio[%d]: consume_queue queue_idx=%d desc_idx=%d written_len=%d\n", virtio_idx,
+        queue_idx, desc_idx, written_len);
+#endif
     // Retrieve queue
     virtq &vq = queue[queue_idx];
     // Consume the buffer, so the driver is free to reuse it again
-    if (!vq.consume_desc(a, desc_idx, written_len, used_flags)) {
-        return false;
-    }
-#ifdef DEBUG_VIRTIO
-    std::ignore = fprintf(stderr, "virtio[%d]: consume_and_notify_queue queue_idx=%d desc_idx=%d written_len=%d\n",
-        virtio_idx, queue_idx, desc_idx, written_len);
-#endif
-    // After consuming a queue, we must notify the driver right-away
-    notify_queue_used(a);
-    return true;
+    return vq.consume_desc(a, desc_idx, written_len, used_flags);
 }
 
 void virtio_device::on_device_queue_notify(i_device_state_access *a, uint32_t queue_idx) {

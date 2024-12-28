@@ -2468,10 +2468,12 @@ bool virtio_p9fs_device::send_reply(virtq_serializer &&mout_msg, uint16_t tag, p
         return false;
     }
     // Consume the queue and notify the driver
-    if (!consume_and_notify_queue(out_msg.a, out_msg.queue_idx, out_msg.desc_idx, out_msg.length, 0)) {
+    if (!consume_queue(out_msg.a, out_msg.queue_idx, out_msg.desc_idx, out_msg.length, 0)) {
         notify_device_needs_reset(out_msg.a);
         return false;
     }
+    // After consuming a queue, we must notify the driver right-away
+    notify_queue_used(out_msg.a);
     return true;
 }
 

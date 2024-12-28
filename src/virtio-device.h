@@ -314,14 +314,14 @@ public:
     bool prepare_queue_write(i_device_state_access *a, uint32_t queue_idx, uint16_t *pdesc_idx,
         uint32_t *pwrite_avail_len) const;
 
-    /// Consume an available queue's descriptor (sets it as used) and notify the driver.
+    /// Consume an available queue's descriptor (sets it as used).
     /// \param queue_idx Queue index to consume and notify.
     /// \param desc_idx Queue's available descriptor index to set as used.
     /// \param written_len Amount of bytes written to the descriptor buffer.
     /// \param used_flags Used flags, see virtq_used_flags.
     /// \returns True if there are no errors, false otherwise.
-    bool consume_and_notify_queue(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
-        uint32_t written_len = 0, uint16_t used_flags = 0);
+    bool consume_queue(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx, uint32_t written_len = 0,
+        uint16_t used_flags = 0);
 
     /// \brief Called when driver request a device reset, this function must clean-up all device internal state.
     virtual void on_device_reset() = 0;

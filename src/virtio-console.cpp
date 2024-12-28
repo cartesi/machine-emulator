@@ -68,7 +68,7 @@ bool virtio_console::write_next_chars_to_host(i_device_state_access *a, uint32_t
         os_putchars(chunk.data(), chunk_len);
     }
     // Consume the queue and notify the driver
-    if (!consume_and_notify_queue(a, queue_idx, desc_idx)) {
+    if (!consume_queue(a, queue_idx, desc_idx)) {
         notify_device_needs_reset(a);
         return false;
     }
@@ -106,10 +106,12 @@ bool virtio_console::write_next_chars_to_guest(i_device_state_access *a) {
         return false;
     }
     // Consume the queue and notify the driver
-    if (!consume_and_notify_queue(a, queue_idx, desc_idx, chunk_len, VIRTQ_USED_F_NO_NOTIFY)) {
+    if (!consume_queue(a, queue_idx, desc_idx, chunk_len, VIRTQ_USED_F_NO_NOTIFY)) {
         notify_device_needs_reset(a);
         return false;
     }
+    // After consuming a queue, we must notify the driver right-away
+    notify_queue_used(a);
     return true;
 }
 

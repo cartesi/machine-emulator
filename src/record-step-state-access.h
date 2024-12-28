@@ -33,12 +33,12 @@ namespace cartesi {
 /// \class record_step_state_access
 /// \brief Records machine state access into a step log file
 class record_step_state_access : public i_state_access<record_step_state_access, pma_entry> {
-    constexpr static int LOG2_ROOT_SIZE = machine_merkle_tree::get_log2_root_size();
-    constexpr static int LOG2_PAGE_SIZE = machine_merkle_tree::get_log2_page_size();
-    constexpr static uint64_t PAGE_SIZE = UINT64_C(1) << LOG2_PAGE_SIZE;
+    constexpr static int TREE_LOG2_ROOT_SIZE = machine_merkle_tree::get_log2_root_size();
+    constexpr static int TREE_LOG2_PAGE_SIZE = machine_merkle_tree::get_log2_page_size();
+    constexpr static uint64_t TREE_PAGE_SIZE = UINT64_C(1) << TREE_LOG2_PAGE_SIZE;
 
     using address_type = machine_merkle_tree::address_type;
-    using page_data_type = std::array<uint8_t, PAGE_SIZE>;
+    using page_data_type = std::array<uint8_t, TREE_PAGE_SIZE>;
     using pages_type = std::map<address_type, page_data_type>;
     using hash_type = machine_merkle_tree::hash_type;
     using sibling_hashes_type = std::vector<hash_type>;
@@ -83,7 +83,7 @@ public:
             throw std::runtime_error("Could not write page count to log file");
         }
         for (auto &[address, data] : m_touched_pages) {
-            const auto page_index = address >> LOG2_PAGE_SIZE;
+            const auto page_index = address >> TREE_LOG2_PAGE_SIZE;
             if (fwrite(&page_index, sizeof(page_index), 1, fp.get()) != 1) {
                 throw std::runtime_error("Could not write page index to log file");
             }
@@ -111,7 +111,7 @@ private:
     /// \brief Mark a page as touched and save its contents
     /// \param address address of the page
     void touch_page(address_type address) const {
-        auto page = address & ~(PAGE_SIZE - 1);
+        auto page = address & ~(TREE_PAGE_SIZE - 1);
         if (m_touched_pages.find(page) != m_touched_pages.end()) {
             return; // already saved
         }
@@ -126,10 +126,11 @@ private:
         page_indices_type page_indices{};
         // iterate in ascending order of page addresses (the container is ordered by key)
         for (const auto &[address, _] : m_touched_pages) {
-            page_indices.push_back(address >> LOG2_PAGE_SIZE);
+            page_indices.push_back(address >> TREE_LOG2_PAGE_SIZE);
         }
         auto next_page_index = page_indices.cbegin();
-        get_sibling_hashes_impl(0, LOG2_ROOT_SIZE - LOG2_PAGE_SIZE, page_indices, next_page_index, sibling_hashes);
+        get_sibling_hashes_impl(0, TREE_LOG2_ROOT_SIZE - TREE_LOG2_PAGE_SIZE, page_indices, next_page_index,
+            sibling_hashes);
         if (next_page_index != page_indices.cend()) {
             throw std::runtime_error("get_sibling_hashes failed to consume all pages");
         }
@@ -147,8 +148,8 @@ private:
         auto page_count = UINT64_C(1) << page_count_log2_size;
         if (next_page_index == page_indices.cend() || page_index + page_count <= *next_page_index) {
             // we can skip the merkle tree update, because a full update was done before the recording started
-            sibling_hashes.push_back(m_m.get_merkle_tree_node_hash(page_index << LOG2_PAGE_SIZE,
-                page_count_log2_size + LOG2_PAGE_SIZE, skip_merkle_tree_update));
+            sibling_hashes.push_back(m_m.get_merkle_tree_node_hash(page_index << TREE_LOG2_PAGE_SIZE,
+                page_count_log2_size + TREE_LOG2_PAGE_SIZE, skip_merkle_tree_update));
         } else if (page_count_log2_size > 0) {
             get_sibling_hashes_impl(page_index, page_count_log2_size - 1, page_indices, next_page_index,
                 sibling_hashes);

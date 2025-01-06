@@ -64,13 +64,13 @@ private:
     //    not constantly going through the extra indirection. We
     //    should test this.
 
-    mutable machine_state m_s;          ///< Opaque machine state
-    mutable machine_merkle_tree m_t;    ///< Merkle tree of state
-    std::vector<pma_entry *> m_pmas;    ///< List of all pmas used to compute the machine hash: big machine and uarch
-    machine_config m_c;                 ///< Copy of initialization config
-    uarch_machine m_uarch;              ///< Microarchitecture machine
-    machine_runtime_config m_r;         ///< Copy of initialization runtime config
-    machine_memory_range_descrs m_mrds; ///< List of memory ranges returned by get_memory_ranges().
+    mutable machine_state m_s;              ///< Opaque machine state
+    mutable machine_merkle_tree m_t;        ///< Merkle tree of state
+    std::vector<pma_entry *> m_merkle_pmas; ///< PMAs considered by the Merkle tree: from big machine and uarch
+    machine_config m_c;                     ///< Copy of initialization config
+    uarch_machine m_uarch;                  ///< Microarchitecture machine
+    machine_runtime_config m_r;             ///< Copy of initialization runtime config
+    machine_memory_range_descrs m_mrds;     ///< List of memory ranges returned by get_memory_ranges().
 
     boost::container::static_vector<std::unique_ptr<virtio_device>, VIRTIO_MAX> m_vdevs; ///< Array of VirtIO devices
 

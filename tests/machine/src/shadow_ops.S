@@ -56,24 +56,6 @@ _start:
     la t0, skip_insn_trap;
     csrw mtvec, t0;
 
-    // Attempt to load a non 8-bytes value from the shadow PMAs
-    expect_trap(MCAUSE_LOAD_ACCESS_FAULT,
-        li t0, PMA_SHADOW_PMAS_START_DEF;
-        lw t1, 0(t0);
-    )
-
-    // Attempt to load from a misaligned shadow PMAs offset
-    expect_trap(MCAUSE_LOAD_ACCESS_FAULT,
-        li t0, PMA_SHADOW_PMAS_START_DEF;
-        lb t1, 1(t0);
-    )
-
-    // Attempt to load a PMA entry out of bounds from shadow PMAs
-    expect_trap(MCAUSE_LOAD_ACCESS_FAULT,
-        li t0, PMA_SHADOW_PMAS_START_DEF;
-        ld t1, SHADOWS_PMA_TOTAL_SIZE(t0);
-    )
-
     // Attempt to load a value from the shadow state
     expect_trap(MCAUSE_LOAD_ACCESS_FAULT,
         li t0, PMA_SHADOW_STATE_START_DEF;

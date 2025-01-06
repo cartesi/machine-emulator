@@ -31,7 +31,6 @@
 #include <variant>
 
 #include <boost/container/static_vector.hpp>
-#include <boost/range/adaptor/sliced.hpp>
 
 #include "access-log.h"
 #include "bracket-note.h"
@@ -86,7 +85,6 @@
 namespace cartesi {
 
 using namespace std::string_literals;
-using namespace boost::adaptors;
 
 const pma_entry::flags machine::m_ram_flags{
     true,                  // R
@@ -426,8 +424,14 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
     // Register state shadow device
     register_pma_entry(make_shadow_state_pma_entry(PMA_SHADOW_STATE_START, PMA_SHADOW_STATE_LENGTH));
 
-    // Register pma board shadow device
-    register_pma_entry(make_shadow_pmas_pma_entry(PMA_SHADOW_PMAS_START, PMA_SHADOW_PMAS_LENGTH));
+    // Register memory range that holds shadow PMA state, keep pointer to populate later
+    shadow_pmas_state *shadow_pmas = nullptr;
+    {
+        auto shadow_pmas_pma_entry = make_shadow_pmas_pma_entry(PMA_SHADOW_PMAS_START, PMA_SHADOW_PMAS_LENGTH);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        shadow_pmas = reinterpret_cast<shadow_pmas_state *>(shadow_pmas_pma_entry.get_memory().get_host_memory());
+        register_pma_entry(std::move(shadow_pmas_pma_entry));
+    }
 
     // Initialize VirtIO devices
     if (!m_c.virtio.empty()) {
@@ -489,21 +493,22 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
         dtb_init(m_c, dtb.get_memory().get_host_memory(), PMA_DTB_LENGTH);
     }
 
+    // Include machine PMAs in set considered by the Merkle tree.
+    for (auto &pma : m_s.pmas) {
+        m_merkle_pmas.push_back(&pma);
+    }
+
     // Add sentinel to PMA vector
     register_pma_entry(make_empty_pma_entry("sentinel"s, 0, 0));
 
-    // Initialize the vector of the pmas used by the merkle tree to compute hashes.
-    // First, add the pmas visible to the big machine, except the sentinel
-    for (auto &pma : m_s.pmas | sliced(0, m_s.pmas.size() - 1)) {
-        m_pmas.push_back(&pma);
-    }
+    // Populate shadow PMAs
+    populate_shadow_pmas_state(m_s.pmas, shadow_pmas);
 
-    // Second, push uarch pmas that are visible only to the microarchitecture interpreter
-    m_pmas.push_back(&m_uarch.get_state().shadow_state);
-    m_pmas.push_back(&m_uarch.get_state().ram);
-
-    // Last, add sentinel
-    m_pmas.push_back(&m_s.empty_pma);
+    // Include uarch PMAs in set considered by Merkle tree
+    m_merkle_pmas.push_back(&m_uarch.get_state().shadow_state);
+    m_merkle_pmas.push_back(&m_uarch.get_state().ram);
+    // Last, add sentinel PMA
+    m_merkle_pmas.push_back(&m_s.empty_pma);
 
     // Initialize TLB device
     // this must be done after all PMA entries are already registered, so we can lookup page addresses
@@ -534,7 +539,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
     }
 
     // Initialize memory range descriptions returned by get_memory_ranges method
-    for (auto *pma : m_pmas) {
+    for (const auto *pma : m_merkle_pmas) {
         if (pma->get_length() != 0) {
             m_mrds.push_back(machine_memory_range_descr{pma->get_start(), pma->get_length(), pma->get_description()});
         }
@@ -1733,7 +1738,7 @@ bool machine::update_merkle_tree() const {
     mark_write_tlb_dirty_pages();
     // Now go over all PMAs and updating the Merkle tree
     m_t.begin_update();
-    for (const auto &pma : m_pmas) {
+    for (const auto &pma : m_merkle_pmas) {
         auto peek = pma->get_peek();
         // Each PMA has a number of pages
         auto pages_in_range = (pma->get_length() + PMA_PAGE_SIZE - 1) / PMA_PAGE_SIZE;
@@ -1805,7 +1810,7 @@ bool machine::update_merkle_tree_page(uint64_t address) {
         "PMA and machine_merkle_tree page sizes must match");
     // Align address to beginning of page
     address &= ~(PMA_PAGE_SIZE - 1);
-    pma_entry &pma = find_pma_entry(m_pmas, address, sizeof(uint64_t));
+    pma_entry &pma = find_pma_entry(m_merkle_pmas, address, sizeof(uint64_t));
     const uint64_t page_start_in_range = address - pma.get_start();
     machine_merkle_tree::hasher_type h;
     auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
@@ -1885,7 +1890,7 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
     // or entirely outside it.
     if (log2_size < machine_merkle_tree::get_log2_page_size()) {
         const uint64_t length = UINT64_C(1) << log2_size;
-        const pma_entry &pma = find_pma_entry(m_pmas, address, length);
+        const pma_entry &pma = find_pma_entry(m_merkle_pmas, address, length);
         auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
         const unsigned char *page_data = nullptr;
         // If the PMA range is empty, we know the desired range is
@@ -1920,7 +1925,7 @@ void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length
     if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
-    const pma_entry &pma = find_pma_entry(m_pmas, address, length);
+    const pma_entry &pma = find_pma_entry(m_merkle_pmas, address, length);
     if (pma.get_istart_M()) {
         memcpy(data, pma.get_memory().get_host_memory() + (address - pma.get_start()), length);
         return;
@@ -1972,7 +1977,7 @@ void machine::write_memory(uint64_t address, const unsigned char *data, uint64_t
     if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
-    pma_entry &pma = find_pma_entry(m_pmas, address, length);
+    pma_entry &pma = find_pma_entry(m_merkle_pmas, address, length);
     if (!pma.get_istart_M() || pma.get_istart_E()) {
         throw std::invalid_argument{"address range not entirely in memory PMA"};
     }
@@ -1983,7 +1988,7 @@ void machine::fill_memory(uint64_t address, uint8_t data, uint64_t length) {
     if (length == 0) {
         return;
     }
-    pma_entry &pma = find_pma_entry(m_pmas, address, length);
+    pma_entry &pma = find_pma_entry(m_merkle_pmas, address, length);
     if (!pma.get_istart_M() || pma.get_istart_E()) {
         throw std::invalid_argument{"address range not entirely in memory PMA"};
     }

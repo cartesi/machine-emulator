@@ -350,7 +350,6 @@ LIBCARTESI_OBJS:= \
 	htif-factory.o \
 	shadow-state.o \
 	shadow-state-factory.o \
-	shadow-pmas.o \
 	shadow-pmas-factory.o \
 	shadow-tlb.o \
 	shadow-tlb-factory.o \

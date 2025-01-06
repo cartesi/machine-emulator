@@ -607,18 +607,6 @@ public:
         return derived().do_read_pma(pma, i);
     }
 
-    /// \brief Reads the istart field of a PMA entry
-    /// \param p Index of PMA
-    uint64_t read_pma_istart(int p) {
-        return derived().do_read_pma_istart(p);
-    }
-
-    /// \brief Reads the ilength field of a PMA entry
-    /// \param p Index of PMA
-    uint64_t read_pma_ilength(int p) {
-        return derived().do_read_pma_ilength(p);
-    }
-
     /// \brief Reads a chunk of data from a memory PMA range.
     /// \param paddr Target physical address.
     /// \param data Receives chunk of memory.

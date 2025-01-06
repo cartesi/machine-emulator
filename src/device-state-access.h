@@ -146,14 +146,6 @@ private:
     bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) override {
         return m_a.write_memory(paddr, data, length);
     }
-
-    uint64_t do_read_pma_istart(int p) override {
-        return m_a.read_pma_istart(p);
-    }
-
-    uint64_t do_read_pma_ilength(int p) override {
-        return m_a.read_pma_ilength(p);
-    }
 };
 
 } // namespace cartesi

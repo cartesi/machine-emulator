@@ -23,10 +23,22 @@
 /// \brief Shadow device.
 
 #include "pma.h"
+#include "shadow-pmas.h"
 
 namespace cartesi {
 
 pma_entry make_shadow_pmas_pma_entry(uint64_t start, uint64_t length);
+
+template <typename PMAS>
+void populate_shadow_pmas_state(const PMAS &pmas, shadow_pmas_state *shadow) {
+    static_assert(PMA_SHADOW_PMAS_LENGTH >= sizeof(shadow_pmas_state), "shadow PMAs length is too small");
+    unsigned index = 0;
+    for (const auto &pma : pmas) {
+        shadow->pmas[index].istart = pma.get_istart();
+        shadow->pmas[index].ilength = pma.get_ilength();
+        ++index;
+    }
+}
 
 } // namespace cartesi
 

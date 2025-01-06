@@ -193,18 +193,6 @@ public:
         return do_write_memory(paddr, data, length);
     }
 
-    /// \brief Reads the istart field of a PMA entry
-    /// \param p Index of PMA
-    uint64_t read_pma_istart(int p) {
-        return do_read_pma_istart(p);
-    }
-
-    /// \brief Reads the ilength field of a PMA entry
-    /// \param p Index of PMA
-    uint64_t read_pma_ilength(int p) {
-        return do_read_pma_ilength(p);
-    }
-
 private:
     virtual void do_set_mip(uint64_t mask) = 0;
     virtual void do_reset_mip(uint64_t mask) = 0;
@@ -228,8 +216,6 @@ private:
     virtual uint64_t do_read_htif_iyield() = 0;
     virtual bool do_read_memory(uint64_t paddr, unsigned char *data, uint64_t length) = 0;
     virtual bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) = 0;
-    virtual uint64_t do_read_pma_istart(int p) = 0;
-    virtual uint64_t do_read_pma_ilength(int p) = 0;
 };
 
 } // namespace cartesi

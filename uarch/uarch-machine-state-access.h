@@ -501,11 +501,11 @@ private:
         return {mcycle, false};
     }
 
-    uint64_t do_read_pma_istart(int i) {
+    uint64_t read_pma_istart(int i) {
         return raw_read_memory<uint64_t>(shadow_pmas_get_pma_abs_addr(i));
     }
 
-    uint64_t do_read_pma_ilength(int i) {
+    uint64_t read_pma_ilength(int i) {
         return raw_read_memory<uint64_t>(shadow_pmas_get_pma_abs_addr(i) + sizeof(uint64_t));
     }
 
@@ -579,9 +579,6 @@ private:
             switch (flags.DID) {
                 case PMA_ISTART_DID::shadow_state:
                     driver = &shadow_state_driver;
-                    break;
-                case PMA_ISTART_DID::shadow_pmas:
-                    driver = &shadow_pmas_driver;
                     break;
                 case PMA_ISTART_DID::shadow_TLB:
                     driver = &shadow_tlb_driver;

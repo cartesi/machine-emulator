@@ -458,26 +458,6 @@ private:
         return {mcycle, interrupt_raised};
     }
 
-    uint64_t do_read_pma_istart(int i) const {
-        assert(i >= 0 && i < (int) PMA_MAX);
-        const auto &pmas = m_m.get_pmas();
-        uint64_t istart = 0;
-        if (i >= 0 && i < static_cast<int>(pmas.size())) {
-            istart = pmas[i].get_istart();
-        }
-        return istart;
-    }
-
-    uint64_t do_read_pma_ilength(int i) const {
-        assert(i >= 0 && i < (int) PMA_MAX);
-        const auto &pmas = m_m.get_pmas();
-        uint64_t ilength = 0;
-        if (i >= 0 && i < static_cast<int>(pmas.size())) {
-            ilength = pmas[i].get_ilength();
-        }
-        return ilength;
-    }
-
     template <typename T>
     void do_read_memory_word(uint64_t /*paddr*/, const unsigned char *hpage, uint64_t hoffset, T *pval) const {
         *pval = aliased_aligned_read<T>(hpage + hoffset);

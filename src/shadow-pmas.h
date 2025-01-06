@@ -32,16 +32,13 @@ namespace cartesi {
 /// \brief Shadow memory layout
 
 struct PACKED shadow_pma_entry {
-    uint64_t start;
-    uint64_t length;
+    uint64_t istart;
+    uint64_t ilength;
 };
 
-struct PACKED shadow_pmas {
+struct PACKED shadow_pmas_state {
     shadow_pma_entry pmas[PMA_MAX];
 };
-
-/// \brief Global instance of the pma board shadow device driver.
-extern const pma_driver shadow_pmas_driver;
 
 /// \brief Obtains the relative address of a PMA entry in shadow memory.
 /// \param p Index of desired shadow PMA entry, in 0..31.

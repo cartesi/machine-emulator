@@ -490,40 +490,14 @@ private:
         }
     }
 
-    template <typename T>
-    pma_entry &do_find_pma_entry(uint64_t paddr) {
-        int i = 0;
-        while (true) {
-            auto &pma = m_m.get_state().pmas[i];
-            // The pmas array always contain a sentinel. It is an entry with
-            // zero length. If we hit it, return it
-            if (pma.get_length() == 0) {
-                return pma;
-            }
-            // Otherwise, if we found an entry where the access fits, return it
-            // Note the "strange" order of arithmetic operations.
-            // This is to ensure there is no overflow.
-            // Since we know paddr >= start, there is no chance of overflow
-            // in the first subtraction.
-            // Since length is at least 4096 (an entire page), there is no
-            // chance of overflow in the second subtraction.
-            if (paddr >= pma.get_start() && paddr - pma.get_start() <= pma.get_length() - sizeof(T)) {
-                return pma;
-            }
-            i++;
-        }
-    }
-
     static unsigned char *do_get_host_memory(pma_entry &pma) {
         return pma.get_memory_noexcept().get_host_memory();
     }
 
-    pma_entry &do_get_pma_entry(int index) {
-        auto &pmas = m_m.get_state().pmas;
-        if (index >= static_cast<int>(pmas.size())) {
-            return pmas[pmas.size() - 1];
-        }
-        return pmas[index];
+    pma_entry &do_read_pma_entry(uint64_t index) {
+        assert(index < PMA_MAX);
+        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
+        return m_m.get_state().pmas[static_cast<int>(index)];
     }
 
     bool do_read_device(pma_entry &pma, uint64_t mcycle, uint64_t offset, uint64_t *pval, int log2_size) {
@@ -581,7 +555,7 @@ private:
         // Mark page that was on TLB as dirty so we know to update the Merkle tree
         if constexpr (ETYPE == TLB_WRITE) {
             if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
-                pma_entry &pma = do_get_pma_entry(static_cast<int>(tlbce.pma_index));
+                pma_entry &pma = do_read_pma_entry(tlbce.pma_index);
                 pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
             }
         }
@@ -603,7 +577,7 @@ private:
             if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
                 tlbhe.vaddr_page = TLB_INVALID_PAGE;
                 const tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[ETYPE][eidx];
-                pma_entry &pma = do_get_pma_entry(static_cast<int>(tlbce.pma_index));
+                pma_entry &pma = do_read_pma_entry(tlbce.pma_index);
                 pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
             } else {
                 tlbhe.vaddr_page = TLB_INVALID_PAGE;

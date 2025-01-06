@@ -46,6 +46,7 @@
 #include <cstdint>
 
 #include "compiler-defines.h"
+#include "find-pma-entry.h"
 #include "riscv-constants.h"
 
 namespace cartesi {
@@ -58,7 +59,7 @@ namespace cartesi {
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
 static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t val) {
-    auto &pma = a.template find_pma_entry<uint64_t>(paddr);
+    auto &pma = find_pma_entry<uint64_t>(a, paddr);
     if (unlikely(!pma.get_istart_M() || !pma.get_istart_W())) {
         return false;
     }
@@ -80,7 +81,7 @@ static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t va
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
 static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pval) {
-    auto &pma = a.template find_pma_entry<uint64_t>(paddr);
+    auto &pma = find_pma_entry<uint64_t>(a, paddr);
     if (unlikely(!pma.get_istart_M() || !pma.get_istart_R())) {
         return false;
     }

@@ -291,7 +291,7 @@ local riscv_tests = {
     { "translate_vaddr.bin", 343 },
     { "htif_invalid_ops.bin", 109 },
     { "clint_ops.bin", 133 },
-    { "shadow_ops.bin", 78 },
+    { "shadow_ops.bin", 80 },
     { "compressed.bin", 410 },
 }
 

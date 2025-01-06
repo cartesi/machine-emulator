@@ -57,7 +57,7 @@ public:
     };
 
 private:
-    int m_pma_index;
+    uint64_t m_pma_index;
     uint64_t m_start;
     uint64_t m_length;
     flags m_flags;
@@ -65,8 +65,8 @@ private:
     void *m_device_context;
 
 public:
-    mock_pma_entry(int pma_index, uint64_t start, uint64_t length, flags flags, const pma_driver *pma_driver = nullptr,
-        void *device_context = nullptr) :
+    mock_pma_entry(uint64_t pma_index, uint64_t start, uint64_t length, flags flags,
+        const pma_driver *pma_driver = nullptr, void *device_context = nullptr) :
         m_pma_index{pma_index},
         m_start{start},
         m_length{length},
@@ -79,7 +79,7 @@ public:
         ;
     }
 
-    int get_index() const {
+    uint64_t get_index() const {
         return m_pma_index;
     }
 
@@ -820,11 +820,11 @@ private:
         return {mcycle, false};
     }
 
-    uint64_t read_pma_istart(int i) {
+    uint64_t read_pma_istart(uint64_t i) {
         return raw_read_memory<uint64_t>(shadow_pmas_get_pma_abs_addr(i));
     }
 
-    uint64_t read_pma_ilength(int i) {
+    uint64_t read_pma_ilength(uint64_t i) {
         return raw_read_memory<uint64_t>(shadow_pmas_get_pma_abs_addr(i) + sizeof(uint64_t));
     }
 
@@ -858,28 +858,17 @@ private:
         raw_write_memory(paddr, val);
     }
 
-    template <typename T>
-    mock_pma_entry &do_find_pma_entry(uint64_t paddr) {
-        for (size_t i = 0; i < m_pmas.size(); i++) {
-            auto &pma = get_pma_entry(static_cast<int>(i));
-            if (pma.get_istart_E()) {
-                return pma;
-            }
-            if (paddr >= pma.get_start() && paddr - pma.get_start() <= pma.get_length() - sizeof(T)) {
-                return pma;
-            }
-        }
-        interop_throw_runtime_error("do_find_pma_entry failed to find address");
-    }
-
-    mock_pma_entry &do_get_pma_entry(int index) {
+    mock_pma_entry &do_read_pma_entry(uint64_t index) {
+        assert(index < PMA_MAX);
         const uint64_t istart = read_pma_istart(index);
         const uint64_t ilength = read_pma_ilength(index);
-        if (!m_pmas[index]) {
-            m_pmas[index] = build_mock_pma_entry(index, istart, ilength);
+        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
+        const int i = static_cast<int>(index);
+        if (!m_pmas[i]) {
+            m_pmas[i] = build_mock_pma_entry(index, istart, ilength);
         }
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        return m_pmas[index].value();
+        return m_pmas[i].value();
     }
 
     unsigned char *do_get_host_memory(mock_pma_entry &pma) { // NOLINT(readability-convert-member-functions-to-static)
@@ -898,7 +887,7 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    mock_pma_entry build_mock_pma_entry(int index, uint64_t istart, uint64_t ilength) {
+    mock_pma_entry build_mock_pma_entry(uint64_t index, uint64_t istart, uint64_t ilength) {
         uint64_t start{};
         mock_pma_entry::flags flags{};
         split_istart(istart, start, flags);
@@ -1004,7 +993,7 @@ private:
         volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
         if constexpr (ETYPE == TLB_WRITE) {
             if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
-                mock_pma_entry &pma = do_get_pma_entry(static_cast<int>(tlbce.pma_index));
+                mock_pma_entry &pma = do_read_pma_entry(tlbce.pma_index);
                 pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
             }
         }
@@ -1017,7 +1006,7 @@ private:
         tlbhe.vaddr_page = vaddr_page;
         tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - vaddr_page;
         tlbce.paddr_page = paddr_page;
-        tlbce.pma_index = static_cast<uint64_t>(pma.get_index());
+        tlbce.pma_index = pma.get_index();
         return hpage;
     }
 
@@ -1029,7 +1018,7 @@ private:
             if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
                 tlbhe.vaddr_page = TLB_INVALID_PAGE;
                 const volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
-                mock_pma_entry &pma = do_get_pma_entry(static_cast<int>(tlbce.pma_index));
+                mock_pma_entry &pma = do_read_pma_entry(tlbce.pma_index);
                 pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
             } else {
                 tlbhe.vaddr_page = TLB_INVALID_PAGE;

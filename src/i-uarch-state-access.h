@@ -95,11 +95,6 @@ public:
         return derived().do_write_word(paddr, data);
     }
 
-    template <typename T>
-    pma_entry &find_pma_entry(uint64_t paddr) {
-        return derived().template do_find_pma_entry<T>(paddr);
-    }
-
     /// \brief Resets uarch to pristine state
     void reset_state() {
         return derived().do_reset_state();

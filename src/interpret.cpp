@@ -102,6 +102,7 @@
 ///   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Arrays-and-pointers-implementation.html#Arrays-and-pointers-implementation
 /// \}
 
+#include "find-pma-entry.h"
 #include "interpret.h"
 #include "meta.h"
 #include "riscv-constants.h"
@@ -837,7 +838,7 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS
             vaddr);
         return {false, pc};
     }
-    auto &pma = a.template find_pma_entry<T>(paddr);
+    auto &pma = find_pma_entry<T>(a, paddr);
     if (likely(pma.get_istart_R())) {
         if (likely(pma.get_istart_M())) {
             unsigned char *hpage = a.template replace_tlb_entry<TLB_READ>(vaddr, paddr, pma);
@@ -913,7 +914,7 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(S
         pc = raise_exception(a, pc, MCAUSE_STORE_AMO_PAGE_FAULT, vaddr);
         return {execute_status::failure, pc};
     }
-    auto &pma = a.template find_pma_entry<T>(paddr);
+    auto &pma = find_pma_entry<T>(a, paddr);
     if (likely(pma.get_istart_W())) {
         if (likely(pma.get_istart_M())) {
             unsigned char *hpage = a.template replace_tlb_entry<TLB_WRITE>(vaddr, paddr, pma);
@@ -5397,7 +5398,7 @@ static FORCE_INLINE fetch_status fetch_translate_pc_slow(STATE_ACCESS &a, uint64
         return fetch_status::exception;
     }
     // Walk memory map to find the range that contains the physical address
-    auto &pma = a.template find_pma_entry<uint16_t>(paddr);
+    auto &pma = find_pma_entry<uint16_t>(a, paddr);
     // We only execute directly from RAM (as in "random access memory")
     // If the range is not memory or not executable, this as a PMA violation
     if (unlikely(!pma.get_istart_M() || !pma.get_istart_X())) {
@@ -5638,7 +5639,7 @@ interpreter_break_reason interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     }
     if (status == execute_status::success_and_yield) {
         return interpreter_break_reason::yielded_softly;
-    }                                      // Reached mcycle_end
+    } // Reached mcycle_end
     assert(a.read_mcycle() == mcycle_end); // LCOV_EXCL_LINE
     return interpreter_break_reason::reached_target_mcycle;
 }

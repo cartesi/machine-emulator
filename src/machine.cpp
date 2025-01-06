@@ -498,8 +498,16 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
         m_merkle_pmas.push_back(&pma);
     }
 
-    // Add sentinel to PMA vector
+    // Last, add empty sentinels until we reach capacity (need at least one sentinel)
     register_pma_entry(make_empty_pma_entry("sentinel"s, 0, 0));
+
+    // NOLINTNEXTLINE(readability-static-accessed-through-instance)
+    if (m_s.pmas.capacity() != PMA_MAX) {
+        throw std::logic_error{"PMAs array must be able to hold PMA_MAX entries"};
+    }
+    while (m_s.pmas.size() < PMA_MAX) {
+        register_pma_entry(make_empty_pma_entry("sentinel"s, 0, 0));
+    }
 
     // Populate shadow PMAs
     populate_shadow_pmas_state(m_s.pmas, shadow_pmas);

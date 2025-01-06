@@ -531,21 +531,7 @@ private:
         raw_write_memory(paddr, val);
     }
 
-    template <typename T>
-    uarch_pma_entry &do_find_pma_entry(uint64_t paddr) {
-        for (unsigned int i = 0; i < m_pmas.size(); i++) {
-            auto &pma = get_pma_entry(static_cast<int>(i));
-            if (pma.get_istart_E()) {
-                return pma;
-            }
-            if (paddr >= pma.get_start() && paddr - pma.get_start() <= pma.get_length() - sizeof(T)) {
-                return pma;
-            }
-        }
-        abort();
-    }
-
-    uarch_pma_entry &do_get_pma_entry(int index) {
+    uarch_pma_entry &do_read_pma_entry(int index) {
         const uint64_t istart = read_pma_istart(index);
         const uint64_t ilength = read_pma_ilength(index);
         if (!m_pmas[index]) {
@@ -677,7 +663,7 @@ private:
         // Mark page that was on TLB as dirty so we know to update the Merkle tree
         if constexpr (ETYPE == TLB_WRITE) {
             if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
-                uarch_pma_entry &pma = do_get_pma_entry(static_cast<int>(tlbce.pma_index));
+                uarch_pma_entry &pma = do_read_pma_entry(tlbce.pma_index);
                 pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
             }
         }
@@ -706,7 +692,7 @@ private:
             if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
                 tlbhe.vaddr_page = TLB_INVALID_PAGE;
                 const volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
-                uarch_pma_entry &pma = do_get_pma_entry(static_cast<int>(tlbce.pma_index));
+                uarch_pma_entry &pma = do_read_pma_entry(tlbce.pma_index);
                 pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
             } else {
                 tlbhe.vaddr_page = TLB_INVALID_PAGE;

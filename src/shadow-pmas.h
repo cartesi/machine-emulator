@@ -43,13 +43,13 @@ struct PACKED shadow_pmas_state {
 /// \brief Obtains the relative address of a PMA entry in shadow memory.
 /// \param p Index of desired shadow PMA entry, in 0..31.
 /// \returns The address.
-static inline uint64_t shadow_pmas_get_pma_rel_addr(int p) {
-    assert(p >= 0 && p < (int) PMA_MAX);
+static inline uint64_t shadow_pmas_get_pma_rel_addr(uint64_t p) {
+    assert(p < (int) PMA_MAX);
     return p * sizeof(shadow_pma_entry);
 }
 
 /// \brief Obtains the absolute address of a PMA entry in shadow memory.
-static inline uint64_t shadow_pmas_get_pma_abs_addr(int p) {
+static inline uint64_t shadow_pmas_get_pma_abs_addr(uint64_t p) {
     return PMA_SHADOW_PMAS_START + shadow_pmas_get_pma_rel_addr(p);
 }
 

@@ -600,11 +600,10 @@ public:
         return derived().do_poll_external_interrupts(mcycle, mcycle_max);
     }
 
-    /// \brief Reads PMA at a given index.
-    /// \param pma PMA entry.
-    /// \param i Index of PMA index.
-    void read_pma(const PMA_ENTRY_TYPE &pma, int i) {
-        return derived().do_read_pma(pma, i);
+    /// \brief Reads PMA entry at a given index.
+    /// \param index Index of PMA
+    PMA_ENTRY_TYPE &read_pma_entry(uint64_t index) {
+        return derived().do_read_pma_entry(index);
     }
 
     /// \brief Reads a chunk of data from a memory PMA range.
@@ -653,22 +652,8 @@ public:
         return derived().template do_write_memory_word<T>(paddr, hpage, hoffset, val);
     }
 
-    /// \brief Obtain PMA entry covering a physical memory word
-    /// \param paddr Target physical address.
-    /// \returns Corresponding entry if found, or a sentinel entry
-    /// for an empty range.
-    /// \tparam T Type of word.
-    template <typename T>
-    PMA_ENTRY_TYPE &find_pma_entry(uint64_t paddr) {
-        return derived().template do_find_pma_entry<T>(paddr);
-    }
-
     auto get_host_memory(PMA_ENTRY_TYPE &pma) {
         return derived().do_get_host_memory(pma);
-    }
-
-    PMA_ENTRY_TYPE &get_pma_entry(int index) {
-        return derived().do_get_pma_entry(index);
     }
 
     auto read_device(PMA_ENTRY_TYPE &pma, uint64_t mcycle, uint64_t offset, uint64_t *pval, int log2_size) {

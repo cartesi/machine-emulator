@@ -32,9 +32,11 @@
 
 #define MCAUSE_STORE_AMO_ACCESS_FAULT 0x7
 #define MCAUSE_LOAD_ACCESS_FAULT 0x5
-#define SHADOWS_PMA_LAST_ENTRY_START (31*16)
-#define SHADOWS_PMA_LAST_ENTRY_LENGTH (31*16+8)
+#define SHADOWS_PMA_LAST_ENTRY_ISTART (31*16)
+#define SHADOWS_PMA_LAST_ENTRY_ILENGTH (31*16+8)
 #define SHADOWS_PMA_TOTAL_SIZE (32*16)
+#define EMPTY_PMA_ISTART (4)
+#define EMPTY_PMA_ILENGTH (0)
 
 // Section with code
 .section .text.init
@@ -47,10 +49,12 @@ _start:
 
     // We are allowed to read the shadow PMAs
     li t0, PMA_SHADOW_PMAS_START_DEF;
-    ld t1, SHADOWS_PMA_LAST_ENTRY_START(t0);
-    bnez t1, fail;
-    ld t1, SHADOWS_PMA_LAST_ENTRY_LENGTH(t0);
-    bnez t1, fail;
+    ld t1, SHADOWS_PMA_LAST_ENTRY_ISTART(t0);
+    li t2, EMPTY_PMA_ISTART
+    bne t1, t2, fail;
+    ld t1, SHADOWS_PMA_LAST_ENTRY_ILENGTH(t0);
+    li t2, EMPTY_PMA_ILENGTH
+    bne t1, t2, fail;
 
     // Set the exception handler to skip instructions
     la t0, skip_insn_trap;

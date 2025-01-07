@@ -42,6 +42,8 @@ namespace cartesi {
 // \file this code is designed to be compiled for a free-standing environment.
 // Environment-specific functions have the prefix "interop_" and are declared in "replay-step-state-access-interop.h"
 
+//??D can we merge this calss with uarch_pma_entry in uarch/uarch-machine-state-access.h ?
+//??D maybe implement base class in pma.h and subclass here if there is some minor difference?
 class mock_pma_entry final {
 public:
     struct flags {
@@ -61,22 +63,50 @@ private:
     uint64_t m_start;
     uint64_t m_length;
     flags m_flags;
-    const pma_driver *m_device_driver;
-    void *m_device_context;
+    const pma_driver *m_driver{nullptr};
+
+    static constexpr flags split_flags(uint64_t istart) {
+        flags f{};
+        f.M = ((istart & PMA_ISTART_M_MASK) >> PMA_ISTART_M_SHIFT) != 0;
+        f.IO = ((istart & PMA_ISTART_IO_MASK) >> PMA_ISTART_IO_SHIFT) != 0;
+        f.E = ((istart & PMA_ISTART_E_MASK) >> PMA_ISTART_E_SHIFT) != 0;
+        f.R = ((istart & PMA_ISTART_R_MASK) >> PMA_ISTART_R_SHIFT) != 0;
+        f.W = ((istart & PMA_ISTART_W_MASK) >> PMA_ISTART_W_SHIFT) != 0;
+        f.X = ((istart & PMA_ISTART_X_MASK) >> PMA_ISTART_X_SHIFT) != 0;
+        f.IR = ((istart & PMA_ISTART_IR_MASK) >> PMA_ISTART_IR_SHIFT) != 0;
+        f.IW = ((istart & PMA_ISTART_IW_MASK) >> PMA_ISTART_IW_SHIFT) != 0;
+        f.DID = static_cast<PMA_ISTART_DID>((istart & PMA_ISTART_DID_MASK) >> PMA_ISTART_DID_SHIFT);
+        return f;
+    }
 
 public:
-    mock_pma_entry(uint64_t pma_index, uint64_t start, uint64_t length, flags flags,
-        const pma_driver *pma_driver = nullptr, void *device_context = nullptr) :
+    mock_pma_entry(uint64_t pma_index, uint64_t istart, uint64_t ilength) :
         m_pma_index{pma_index},
-        m_start{start},
-        m_length{length},
-        m_flags{flags},
-        m_device_driver{pma_driver},
-        m_device_context{device_context} {}
-
-    mock_pma_entry() :
-        mock_pma_entry(-1, 0, 0, {false, false, true, false, false, false, false, false, PMA_ISTART_DID{}}) {
-        ;
+        m_start{istart & PMA_ISTART_START_MASK},
+        m_length{ilength},
+        m_flags{split_flags(istart)} {
+        if (m_flags.IO) {
+            switch (m_flags.DID) {
+                case PMA_ISTART_DID::shadow_state:
+                    m_driver = &shadow_state_driver;
+                    break;
+                case PMA_ISTART_DID::shadow_TLB:
+                    m_driver = &shadow_tlb_driver;
+                    break;
+                case PMA_ISTART_DID::CLINT:
+                    m_driver = &clint_driver;
+                    break;
+                case PMA_ISTART_DID::PLIC:
+                    m_driver = &plic_driver;
+                    break;
+                case PMA_ISTART_DID::HTIF:
+                    m_driver = &htif_driver;
+                    break;
+                default:
+                    interop_throw_runtime_error("unsupported device in build_mock_pma_entry");
+                    break;
+            }
+        }
     }
 
     uint64_t get_index() const {
@@ -123,12 +153,16 @@ public:
         return m_flags.IR;
     }
 
-    const pma_driver *get_device_driver() {
-        return m_device_driver;
+    const auto *get_driver() const {
+        return m_driver;
     }
 
-    void *get_device_context() {
-        return m_device_context;
+    const auto &get_device_noexcept() const {
+        return *this;
+    }
+
+    static void *get_context() {
+        return nullptr;
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
@@ -865,7 +899,7 @@ private:
         // NOLINTNEXTLINE(bugprone-narrowing-conversions)
         const int i = static_cast<int>(index);
         if (!m_pmas[i]) {
-            m_pmas[i] = build_mock_pma_entry(index, istart, ilength);
+            m_pmas[i] = mock_pma_entry(index, istart, ilength);
         }
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         return m_pmas[i].value();
@@ -874,61 +908,6 @@ private:
     unsigned char *do_get_host_memory(mock_pma_entry &pma) { // NOLINT(readability-convert-member-functions-to-static)
         (void) pma;
         return nullptr;
-    }
-
-    bool do_read_device(mock_pma_entry &pma, uint64_t mcycle, uint64_t offset, uint64_t *pval, int log2_size) {
-        device_state_access da(*this, mcycle);
-        return pma.get_device_driver()->read(pma.get_device_context(), &da, offset, pval, log2_size);
-    }
-
-    execute_status do_write_device(mock_pma_entry &pma, uint64_t mcycle, uint64_t offset, uint64_t val, int log2_size) {
-        device_state_access da(*this, mcycle);
-        return pma.get_device_driver()->write(pma.get_device_context(), &da, offset, val, log2_size);
-    }
-
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    mock_pma_entry build_mock_pma_entry(uint64_t index, uint64_t istart, uint64_t ilength) {
-        uint64_t start{};
-        mock_pma_entry::flags flags{};
-        split_istart(istart, start, flags);
-        const pma_driver *driver = nullptr;
-        void *device_ctx = nullptr;
-        if (flags.IO) {
-            switch (flags.DID) {
-                case PMA_ISTART_DID::shadow_state:
-                    driver = &shadow_state_driver;
-                    break;
-                case PMA_ISTART_DID::shadow_TLB:
-                    driver = &shadow_tlb_driver;
-                    break;
-                case PMA_ISTART_DID::CLINT:
-                    driver = &clint_driver;
-                    break;
-                case PMA_ISTART_DID::PLIC:
-                    driver = &plic_driver;
-                    break;
-                case PMA_ISTART_DID::HTIF:
-                    driver = &htif_driver;
-                    break;
-                default:
-                    interop_throw_runtime_error("Unsupported device in build_mock_pma_entry");
-                    break;
-            }
-        }
-        return mock_pma_entry{index, start, ilength, flags, driver, device_ctx};
-    }
-
-    static constexpr void split_istart(uint64_t istart, uint64_t &start, mock_pma_entry::flags &f) {
-        f.M = ((istart & PMA_ISTART_M_MASK) >> PMA_ISTART_M_SHIFT) != 0;
-        f.IO = ((istart & PMA_ISTART_IO_MASK) >> PMA_ISTART_IO_SHIFT) != 0;
-        f.E = ((istart & PMA_ISTART_E_MASK) >> PMA_ISTART_E_SHIFT) != 0;
-        f.R = ((istart & PMA_ISTART_R_MASK) >> PMA_ISTART_R_SHIFT) != 0;
-        f.W = ((istart & PMA_ISTART_W_MASK) >> PMA_ISTART_W_SHIFT) != 0;
-        f.X = ((istart & PMA_ISTART_X_MASK) >> PMA_ISTART_X_SHIFT) != 0;
-        f.IR = ((istart & PMA_ISTART_IR_MASK) >> PMA_ISTART_IR_SHIFT) != 0;
-        f.IW = ((istart & PMA_ISTART_IW_MASK) >> PMA_ISTART_IW_SHIFT) != 0;
-        f.DID = static_cast<PMA_ISTART_DID>((istart & PMA_ISTART_DID_MASK) >> PMA_ISTART_DID_SHIFT);
-        start = istart & PMA_ISTART_START_MASK;
     }
 
     template <TLB_entry_type ETYPE>

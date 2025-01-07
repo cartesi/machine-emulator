@@ -392,7 +392,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
     register_pma_entry(make_cmio_rx_buffer_pma_entry(m_c.cmio));
 
     // Register HTIF device
-    register_pma_entry(make_htif_pma_entry(PMA_HTIF_START, PMA_HTIF_LENGTH, &m_r.htif));
+    register_pma_entry(make_htif_pma_entry(PMA_HTIF_START, PMA_HTIF_LENGTH));
 
     // Copy HTIF state to from config to machine
     write_reg(reg::htif_tohost, m_c.htif.tohost);
@@ -545,6 +545,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
         }
         os_open_tty();
     }
+    os_silence_putchar(m_r.htif.no_console_putchar);
 
     // Initialize memory range descriptions returned by get_memory_ranges method
     for (const auto *pma : m_merkle_pmas) {
@@ -635,11 +636,9 @@ const machine_runtime_config &machine::get_runtime_config() const {
 
 /// \brief Changes the machine runtime config.
 void machine::set_runtime_config(const machine_runtime_config &r) {
-    if (r.htif.no_console_putchar != m_r.htif.no_console_putchar) {
-        throw std::runtime_error{"cannot change htif runtime configuration"};
-    }
     m_r = r;
     m_s.soft_yield = m_r.soft_yield;
+    os_silence_putchar(r.htif.no_console_putchar);
 }
 
 machine_config machine::get_serialization_config() const {

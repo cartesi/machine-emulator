@@ -849,8 +849,11 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS
         if (likely(pma.get_istart_IO())) {
             const uint64_t offset = paddr - pma.get_start();
             uint64_t val{};
+            device_state_access da(a, mcycle);
             // If we do not know how to read, we treat this as a PMA violation
-            if (likely(a.read_device(pma, mcycle, offset, &val, log2_size<U>::value))) {
+            const bool status = pma.get_device_noexcept().get_driver()->read(pma.get_device_noexcept().get_context(),
+                &da, offset, &val, log2_size<U>::value);
+            if (likely(status)) {
                 *pval = static_cast<T>(val);
                 // device logs its own state accesses
                 return {true, pc};
@@ -924,8 +927,9 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(S
         }
         if (likely(pma.get_istart_IO())) {
             const uint64_t offset = paddr - pma.get_start();
-            auto status =
-                a.write_device(pma, mcycle, offset, static_cast<U>(static_cast<T>(val64)), log2_size<U>::value);
+            device_state_access da(a, mcycle);
+            auto status = pma.get_device_noexcept().get_driver()->write(pma.get_device_noexcept().get_context(), &da,
+                offset, static_cast<U>(static_cast<T>(val64)), log2_size<U>::value);
             // If we do not know how to write, we treat this as a PMA violation
             if (likely(status != execute_status::failure)) {
                 return {status, pc};

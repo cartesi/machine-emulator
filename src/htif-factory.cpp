@@ -32,7 +32,7 @@ static bool htif_peek(const pma_entry &pma, const machine & /*m*/, uint64_t page
     return (page_offset % PMA_PAGE_SIZE) == 0 && page_offset < pma.get_length();
 }
 
-pma_entry make_htif_pma_entry(uint64_t start, uint64_t length, htif_runtime_config *context) {
+pma_entry make_htif_pma_entry(uint64_t start, uint64_t length) {
     const pma_entry::flags f{
         true,                // R
         true,                // W
@@ -41,7 +41,7 @@ pma_entry make_htif_pma_entry(uint64_t start, uint64_t length, htif_runtime_conf
         false,               // IW
         PMA_ISTART_DID::HTIF // DID
     };
-    return make_device_pma_entry("HTIF device", start, length, htif_peek, &htif_driver, context).set_flags(f);
+    return make_device_pma_entry("HTIF device", start, length, htif_peek, &htif_driver).set_flags(f);
 }
 
 } // namespace cartesi

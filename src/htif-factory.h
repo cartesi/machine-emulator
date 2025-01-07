@@ -25,7 +25,7 @@
 namespace cartesi {
 
 /// \brief Creates a PMA entry for the HTIF device
-pma_entry make_htif_pma_entry(uint64_t start, uint64_t length, htif_runtime_config *context);
+pma_entry make_htif_pma_entry(uint64_t start, uint64_t length);
 
 } // namespace cartesi
 

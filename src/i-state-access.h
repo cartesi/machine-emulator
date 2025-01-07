@@ -656,14 +656,6 @@ public:
         return derived().do_get_host_memory(pma);
     }
 
-    auto read_device(PMA_ENTRY_TYPE &pma, uint64_t mcycle, uint64_t offset, uint64_t *pval, int log2_size) {
-        return derived().do_read_device(pma, mcycle, offset, pval, log2_size);
-    }
-
-    auto write_device(PMA_ENTRY_TYPE &pma, uint64_t mcycle, uint64_t offset, uint64_t pval, int log2_size) {
-        return derived().do_write_device(pma, mcycle, offset, pval, log2_size);
-    }
-
     /// \brief Try to translate a virtual address to a host pointer through the TLB.
     /// \tparam ETYPE TLB entry type.
     /// \tparam T Type of word that would be read with the pointer.

@@ -120,6 +120,7 @@ using namespace std::string_literals;
 struct tty_state {
     bool initialized{false};
     bool resize_pending{false};
+    bool silence_putchar{false};
     std::array<char, TTY_BUF_SIZE> buf{}; // Characters in console input buffer
     intptr_t buf_pos{};
     intptr_t buf_len{};
@@ -135,11 +136,22 @@ struct tty_state {
 };
 
 /// Returns pointer to the global TTY state
-static tty_state *get_state() {
+static tty_state *get_tty_state() {
     static tty_state data;
     return &data;
 }
 #endif // HAVE_TTY
+
+/// \brief putchar global state
+struct putchar_state {
+    bool silence;
+};
+
+/// Returns pointer to the global TTY state
+static putchar_state *get_putchar_state() {
+    static putchar_state data;
+    return &data;
+}
 
 #ifdef HAVE_TERMIOS
 static int new_ttyfd(const char *path) {
@@ -176,7 +188,7 @@ static int get_ttyfd() {
 #ifdef HAVE_SIGACTION
 /// \brief Signal raised whenever TTY size changes
 static void os_SIGWINCH_handler(int /*sig*/) {
-    auto *s = get_state();
+    auto *s = get_tty_state();
     if (!s->initialized) {
         return;
     }
@@ -225,7 +237,7 @@ bool os_update_tty_size([[maybe_unused]] tty_state *s) {
 
 void os_open_tty() {
 #ifdef HAVE_TTY
-    auto *s = get_state();
+    auto *s = get_tty_state();
     if (s->initialized) {
         // Already initialized
         return;
@@ -332,7 +344,7 @@ void os_open_tty() {
 void os_close_tty() {
 #ifdef HAVE_TTY
 #ifdef HAVE_TERMIOS
-    auto *s = get_state();
+    auto *s = get_tty_state();
     if (s->ttyfd >= 0) { // Restore old mode
         tcsetattr(s->ttyfd, TCSANOW, &s->oldtty);
         close(s->ttyfd);
@@ -340,7 +352,7 @@ void os_close_tty() {
     }
 
 #elif defined(_WIN32)
-    auto *s = get_state();
+    auto *s = get_tty_state();
     if (s->hStdin) {
         SetConsoleMode(s->hStdin, s->dwOldStdinMode);
         s->hStdin = NULL;
@@ -351,7 +363,7 @@ void os_close_tty() {
 }
 
 void os_get_tty_size(uint16_t *pwidth, uint16_t *pheight) {
-    auto *s = get_state();
+    auto *s = get_tty_state();
     if (!s->initialized) {
         // fallback values
         *pwidth = TTY_DEFAULT_COLS;
@@ -370,7 +382,7 @@ void os_get_tty_size(uint16_t *pwidth, uint16_t *pheight) {
 
 void os_prepare_tty_select([[maybe_unused]] select_fd_sets *fds) {
 #ifdef HAVE_TTY
-    auto *s = get_state();
+    auto *s = get_tty_state();
     // Ignore if TTY is not initialized or stdin was closed
     if (!s->initialized) {
         return;
@@ -387,7 +399,7 @@ void os_prepare_tty_select([[maybe_unused]] select_fd_sets *fds) {
 }
 
 bool os_poll_selected_tty([[maybe_unused]] int select_ret, [[maybe_unused]] select_fd_sets *fds) {
-    auto *s = get_state();
+    auto *s = get_tty_state();
     if (!s->initialized) { // We can't poll when TTY is not initialized
         return false;
     }
@@ -444,7 +456,7 @@ bool os_poll_selected_tty([[maybe_unused]] int select_ret, [[maybe_unused]] sele
 
 bool os_poll_tty(uint64_t timeout_us) {
 #ifdef _WIN32
-    auto *s = get_state();
+    auto *s = get_tty_state();
     if (!s->initialized) { // We can't poll when TTY is not initialized
         return false;
     }
@@ -468,7 +480,7 @@ bool os_poll_tty(uint64_t timeout_us) {
 
 int os_getchar() {
 #ifdef HAVE_TTY
-    auto *s = get_state();
+    auto *s = get_tty_state();
     if (!s->initialized) {
         return -1;
     }
@@ -501,9 +513,18 @@ static void fputc_with_line_buffering(uint8_t ch) {
     }
 }
 
+void os_silence_putchar(bool yes) {
+    auto *ps = get_putchar_state();
+    ps->silence = yes;
+}
+
 void os_putchar(uint8_t ch) {
+    auto *ps = get_putchar_state();
+    if (ps->silence) {
+        return;
+    }
 #ifdef HAVE_TTY
-    auto *s = get_state();
+    auto *s = get_tty_state();
     if (!s->initialized) {
         // Write through fputc(), so we can take advantage of buffering.
         fputc_with_line_buffering(ch);
@@ -520,6 +541,10 @@ void os_putchar(uint8_t ch) {
 }
 
 void os_putchars(const uint8_t *data, size_t len) {
+    auto *ps = get_putchar_state();
+    if (ps->silence) {
+        return;
+    }
     for (size_t i = 0; i < len; ++i) {
         os_putchar(data[i]);
     }

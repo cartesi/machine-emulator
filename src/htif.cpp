@@ -19,7 +19,6 @@
 #include "htif.h"
 #include "i-device-state-access.h"
 #include "interpret.h"
-#include "machine-runtime-config.h"
 #include "os.h"
 #include "pma-driver.h"
 
@@ -89,17 +88,12 @@ static execute_status htif_yield(i_device_state_access *a, uint64_t cmd, uint64_
     return status;
 }
 
-static execute_status htif_console(htif_runtime_config *runtime_config, i_device_state_access *a, uint64_t cmd,
-    uint64_t data) {
+static execute_status htif_console(i_device_state_access *a, uint64_t cmd, uint64_t data) {
     // If console command is enabled, perform it and acknowledge
     if (cmd < 64 && (((a->read_htif_iconsole() >> cmd) & 1) != 0)) {
         if (cmd == HTIF_CONSOLE_CMD_PUTCHAR) {
             const uint8_t ch = data & 0xff;
-            // In microarchitecture runtime_config will always be nullptr,
-            // therefore the HTIF runtime config is actually ignored.
-            if ((runtime_config == nullptr) || !runtime_config->no_console_putchar) {
-                os_putchar(ch);
-            }
+            os_putchar(ch);
             a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_CONSOLE, cmd, 0, 0));
         } else if (cmd == HTIF_CONSOLE_CMD_GETCHAR) {
             // In blockchain, this command will never be enabled as there is no way to input the same character
@@ -115,8 +109,7 @@ static execute_status htif_console(htif_runtime_config *runtime_config, i_device
     return execute_status::success;
 }
 
-static execute_status htif_write_tohost(htif_runtime_config *runtime_config, i_device_state_access *a,
-    uint64_t tohost) {
+static execute_status htif_write_tohost(i_device_state_access *a, uint64_t tohost) {
     // Decode tohost
     const uint32_t device = HTIF_DEV_FIELD(tohost);
     const uint32_t cmd = HTIF_CMD_FIELD(tohost);
@@ -128,7 +121,7 @@ static execute_status htif_write_tohost(htif_runtime_config *runtime_config, i_d
         case HTIF_DEV_HALT:
             return htif_halt(a, cmd, data);
         case HTIF_DEV_CONSOLE:
-            return htif_console(runtime_config, a, cmd, data);
+            return htif_console(a, cmd, data);
         case HTIF_DEV_YIELD:
             return htif_yield(a, cmd, data);
         //??D Unknown HTIF devices are silently ignored
@@ -138,10 +131,8 @@ static execute_status htif_write_tohost(htif_runtime_config *runtime_config, i_d
 }
 
 /// \brief HTIF device write callback. See ::pma_write.
-static execute_status htif_write(void *context, i_device_state_access *a, uint64_t offset, uint64_t val,
+static execute_status htif_write(void * /*context*/, i_device_state_access *a, uint64_t offset, uint64_t val,
     int log2_size) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    auto *runtime_config = reinterpret_cast<htif_runtime_config *>(context);
     // Our HTIF only supports 64-bit writes
     if (log2_size != 3) {
         return execute_status::failure;
@@ -150,7 +141,7 @@ static execute_status htif_write(void *context, i_device_state_access *a, uint64
     // Only these 64-bit aligned offsets are valid
     switch (offset) {
         case htif_tohost_rel_addr:
-            return htif_write_tohost(runtime_config, a, val);
+            return htif_write_tohost(a, val);
         case htif_fromhost_rel_addr:
             a->write_htif_fromhost(val);
             return execute_status::success;

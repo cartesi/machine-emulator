@@ -86,6 +86,10 @@ void os_putchar(uint8_t ch);
 /// \param len Length of buffer.
 void os_putchars(const uint8_t *data, size_t len);
 
+/// \brief Silences putchar (and putchars) output
+/// \param yes If true, putchar is silenced
+void os_silence_putchar(bool yes);
+
 /// \brief Creates a new directory
 int os_mkdir(const char *path, int mode);
 

@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef uarch_machine_state_access_H
-#define uarch_machine_state_access_H
+#ifndef UARCH_MACHINE_STATE_ACCESS_H
+#define UARCH_MACHINE_STATE_ACCESS_H
 
 #include "uarch-runtime.h" // must be included first, because of assert
 
@@ -50,6 +50,8 @@ static void raw_write_memory(uint64_t paddr, T val) {
     *p = val;
 }
 
+//??D can we merge this class with the mock_pma_entry in src/replay-step-state-access.h ?
+//??D maybe implement base class in pma.h and subclass here if there is some minor difference?
 class uarch_pma_entry final {
 public:
     struct flags {
@@ -65,28 +67,61 @@ public:
     };
 
 private:
-    int m_pma_index{-1};
-    uint64_t m_start{};
-    uint64_t m_length{};
+
+    uint64_t m_pma_index;
+    uint64_t m_start;
+    uint64_t m_length;
     flags m_flags;
-    const pma_driver *m_device_driver{};
-    void *m_device_context{};
+    const pma_driver *m_driver{nullptr};
 
-public:
-    uarch_pma_entry(int pma_index, uint64_t start, uint64_t length, flags flags,
-        const pma_driver *pma_driver = nullptr, void *device_context = nullptr) :
-        m_pma_index{pma_index},
-        m_start{start},
-        m_length{length},
-        m_flags{flags},
-        m_device_driver{pma_driver},
-        m_device_context{device_context} {}
-
-    uarch_pma_entry() : uarch_pma_entry(-1, 0, 0, {false, false, true /* empty */}) {
-        ;
+    static constexpr flags split_flags(uint64_t istart) {
+        flags f{};
+        f.M = (((istart & PMA_ISTART_M_MASK) >> PMA_ISTART_M_SHIFT) != 0);
+        f.IO = (((istart & PMA_ISTART_IO_MASK) >> PMA_ISTART_IO_SHIFT) != 0);
+        f.E = (((istart & PMA_ISTART_E_MASK) >> PMA_ISTART_E_SHIFT) != 0);
+        f.R = (((istart & PMA_ISTART_R_MASK) >> PMA_ISTART_R_SHIFT) != 0);
+        f.W = (((istart & PMA_ISTART_W_MASK) >> PMA_ISTART_W_SHIFT) != 0);
+        f.X = (((istart & PMA_ISTART_X_MASK) >> PMA_ISTART_X_SHIFT) != 0);
+        f.IR = (((istart & PMA_ISTART_IR_MASK) >> PMA_ISTART_IR_SHIFT) != 0);
+        f.IW = (((istart & PMA_ISTART_IW_MASK) >> PMA_ISTART_IW_SHIFT) != 0);
+        f.DID = static_cast<PMA_ISTART_DID>((istart & PMA_ISTART_DID_MASK) >> PMA_ISTART_DID_SHIFT);
+        return f;
     }
 
-    int get_index() const {
+public:
+
+    uarch_pma_entry(uint64_t pma_index, uint64_t istart, uint64_t ilength) :
+        m_pma_index{pma_index},
+        m_start{istart & PMA_ISTART_START_MASK},
+        m_length{ilength},
+        m_flags{split_flags(istart)},
+        m_driver{nullptr} {
+        if (m_flags.IO) {
+            switch (m_flags.DID) {
+                case PMA_ISTART_DID::shadow_state:
+                    m_driver = &shadow_state_driver;
+                    break;
+                case PMA_ISTART_DID::shadow_TLB:
+                    m_driver = &shadow_tlb_driver;
+                    break;
+                case PMA_ISTART_DID::CLINT:
+                    m_driver = &clint_driver;
+                    break;
+                case PMA_ISTART_DID::PLIC:
+                    m_driver = &plic_driver;
+                    break;
+                case PMA_ISTART_DID::HTIF:
+                    m_driver = &htif_driver;
+                    break;
+                default:
+                    // Other unsupported device in uarch (eg. VirtIO)
+                    abort();
+                    break;
+            }
+        }
+    }
+
+    uint64_t get_index() const {
         return m_pma_index;
     }
 
@@ -130,12 +165,16 @@ public:
         return m_flags.IR;
     }
 
-    const pma_driver *get_device_driver() {
-        return m_device_driver;
+    const pma_driver *get_driver() const {
+        return m_driver;
     }
 
-    void *get_device_context() {
-        return m_device_context;
+    const auto &get_device_noexcept() const {
+        return *this;
+    }
+
+    static void *get_context() {
+        return nullptr;
     }
 
     void mark_dirty_page(uint64_t /*address_in_range*/) {
@@ -531,73 +570,20 @@ private:
         raw_write_memory(paddr, val);
     }
 
-    uarch_pma_entry &do_read_pma_entry(int index) {
+    uarch_pma_entry &do_read_pma_entry(uint64_t index) {
         const uint64_t istart = read_pma_istart(index);
         const uint64_t ilength = read_pma_ilength(index);
-        if (!m_pmas[index]) {
-            m_pmas[index] = build_uarch_pma_entry(index, istart, ilength);
+        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
+        int i = static_cast<int>(index);
+        if (!m_pmas[i]) {
+            m_pmas[i] = uarch_pma_entry{index, istart, ilength};
         }
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        return m_pmas[index].value();
+        return m_pmas[i].value();
     }
 
     unsigned char *do_get_host_memory(uarch_pma_entry &/*pma*/) {
         return nullptr;
-    }
-
-    bool do_read_device(uarch_pma_entry &pma, uint64_t mcycle, uint64_t offset, uint64_t *pval, int log2_size) {
-        device_state_access da(*this, mcycle);
-        return pma.get_device_driver()->read(pma.get_device_context(), &da, offset, pval, log2_size);
-    }
-
-    execute_status do_write_device(uarch_pma_entry &pma, uint64_t mcycle, uint64_t offset, uint64_t val, int log2_size) {
-        device_state_access da(*this, mcycle);
-        return pma.get_device_driver()->write(pma.get_device_context(), &da, offset, val, log2_size);
-    }
-
-    uarch_pma_entry build_uarch_pma_entry(int index, uint64_t istart, uint64_t ilength) {
-        uint64_t start = 0;
-        uarch_pma_entry::flags flags;
-        split_istart(istart, start, flags);
-        const pma_driver *driver = nullptr;
-        void *device_ctx = nullptr;
-        if (flags.IO) {
-            switch (flags.DID) {
-                case PMA_ISTART_DID::shadow_state:
-                    driver = &shadow_state_driver;
-                    break;
-                case PMA_ISTART_DID::shadow_TLB:
-                    driver = &shadow_tlb_driver;
-                    break;
-                case PMA_ISTART_DID::CLINT:
-                    driver = &clint_driver;
-                    break;
-                case PMA_ISTART_DID::PLIC:
-                    driver = &plic_driver;
-                    break;
-                case PMA_ISTART_DID::HTIF:
-                    driver = &htif_driver;
-                    break;
-                default:
-                    // Other unsupported device in uarch (eg. VirtIO)
-                    abort();
-                    break;
-            }
-        }
-        return uarch_pma_entry{index, start, ilength, flags, driver, device_ctx};
-    }
-
-    static constexpr void split_istart(uint64_t istart, uint64_t &start, uarch_pma_entry::flags &f) {
-        f.M = (((istart & PMA_ISTART_M_MASK) >> PMA_ISTART_M_SHIFT) != 0);
-        f.IO = (((istart & PMA_ISTART_IO_MASK) >> PMA_ISTART_IO_SHIFT) != 0);
-        f.E = (((istart & PMA_ISTART_E_MASK) >> PMA_ISTART_E_SHIFT) != 0);
-        f.R = (((istart & PMA_ISTART_R_MASK) >> PMA_ISTART_R_SHIFT) != 0);
-        f.W = (((istart & PMA_ISTART_W_MASK) >> PMA_ISTART_W_SHIFT) != 0);
-        f.X = (((istart & PMA_ISTART_X_MASK) >> PMA_ISTART_X_SHIFT) != 0);
-        f.IR = (((istart & PMA_ISTART_IR_MASK) >> PMA_ISTART_IR_SHIFT) != 0);
-        f.IW = (((istart & PMA_ISTART_IW_MASK) >> PMA_ISTART_IW_SHIFT) != 0);
-        f.DID = static_cast<PMA_ISTART_DID>((istart & PMA_ISTART_DID_MASK) >> PMA_ISTART_DID_SHIFT);
-        start = istart & PMA_ISTART_START_MASK;
     }
 
     template <TLB_entry_type ETYPE>

@@ -500,18 +500,6 @@ private:
         return m_m.get_state().pmas[static_cast<int>(index)];
     }
 
-    bool do_read_device(pma_entry &pma, uint64_t mcycle, uint64_t offset, uint64_t *pval, int log2_size) {
-        device_state_access da(*this, mcycle);
-        return pma.get_device_noexcept().get_driver()->read(pma.get_device_noexcept().get_context(), &da, offset, pval,
-            log2_size);
-    }
-
-    execute_status do_write_device(pma_entry &pma, uint64_t mcycle, uint64_t offset, uint64_t val, int log2_size) {
-        device_state_access da(*this, mcycle);
-        return pma.get_device_noexcept().get_driver()->write(pma.get_device_noexcept().get_context(), &da, offset, val,
-            log2_size);
-    }
-
     template <TLB_entry_type ETYPE, typename T>
     bool do_translate_vaddr_via_tlb(uint64_t vaddr, unsigned char **phptr) {
         const uint64_t eidx = tlb_get_entry_index(vaddr);

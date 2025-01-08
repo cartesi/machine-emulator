@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef REPLAY_STATE_ACCESS_H
-#define REPLAY_STATE_ACCESS_H
+#ifndef REPLAY_SEND_CMIO_STATE_ACCESS_H
+#define REPLAY_SEND_CMIO_STATE_ACCESS_H
 
 /// \file
 /// \brief State access implementation that replays recorded state accesses
@@ -41,8 +41,8 @@
 
 namespace cartesi {
 
-/// \brief Allows replaying a uarch reset operation from an access log.
-class replay_state_access : public i_state_access<replay_state_access, pma_entry> {
+/// \brief Allows replaying a machine::send_cmio_response() from an access log.
+class replay_send_cmio_state_access : public i_state_access<replay_send_cmio_state_access, pma_entry> {
     using tree_type = machine_merkle_tree;
     using hash_type = tree_type::hash_type;
     using hasher_type = tree_type::hasher_type;
@@ -61,7 +61,7 @@ public:
     /// \brief Constructor from access log
     /// \param log Access log to be replayed
     /// \param initial_hash Initial root hash
-    explicit replay_state_access(const access_log &log, const hash_type &initial_hash) :
+    explicit replay_send_cmio_state_access(const access_log &log, const hash_type &initial_hash) :
         m_accesses(log.get_accesses()),
         m_root_hash{initial_hash} {
         if (m_accesses.empty()) {
@@ -70,15 +70,15 @@ public:
     }
 
     /// \brief No copy constructor
-    replay_state_access(const replay_state_access &) = delete;
+    replay_send_cmio_state_access(const replay_send_cmio_state_access &) = delete;
     /// \brief No copy assignment
-    replay_state_access &operator=(const replay_state_access &) = delete;
+    replay_send_cmio_state_access &operator=(const replay_send_cmio_state_access &) = delete;
     /// \brief No move constructor
-    replay_state_access(replay_state_access &&) = delete;
+    replay_send_cmio_state_access(replay_send_cmio_state_access &&) = delete;
     /// \brief No move assignment
-    replay_state_access &operator=(replay_state_access &&) = delete;
+    replay_send_cmio_state_access &operator=(replay_send_cmio_state_access &&) = delete;
     /// \brief Default destructor
-    ~replay_state_access() = default;
+    ~replay_send_cmio_state_access() = default;
 
     void get_root_hash(machine_merkle_tree::hash_type &hash) const {
         hash = m_root_hash;
@@ -92,7 +92,7 @@ public:
     }
 
 private:
-    friend i_state_access<replay_state_access, pma_entry>;
+    friend i_state_access<replay_send_cmio_state_access, pma_entry>;
 
     std::string access_to_report() const {
         auto index = m_next_access + 1;

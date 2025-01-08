@@ -48,9 +48,9 @@
 #include "pma-constants.h"
 #include "pma-defines.h"
 #include "pma.h"
-#include "record-state-access.h"
+#include "record-send-cmio-state-access.h"
 #include "record-step-state-access.h"
-#include "replay-state-access.h"
+#include "replay-send-cmio-state-access.h"
 #include "replay-step-state-access.h"
 #include "riscv-constants.h"
 #include "send-cmio-response.h"
@@ -2111,7 +2111,7 @@ access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char 
     hash_type root_hash_before;
     get_root_hash(root_hash_before);
     // Call send_cmio_response  with the recording state accessor
-    record_state_access a(*this, log_type);
+    record_send_cmio_state_access a(*this, log_type);
     a.push_bracket(bracket_type::begin, "send cmio response");
     cartesi::send_cmio_response(a, reason, data, length);
     a.push_bracket(bracket_type::end, "send cmio response");
@@ -2131,7 +2131,7 @@ void machine::verify_send_cmio_response(uint16_t reason, const unsigned char *da
     }
 
     // Verify all intermediate state transitions
-    replay_state_access a(log, root_hash_before);
+    replay_send_cmio_state_access a(log, root_hash_before);
     cartesi::send_cmio_response(a, reason, data, length);
     a.finish();
 

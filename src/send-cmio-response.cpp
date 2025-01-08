@@ -19,8 +19,8 @@
 
 // NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)
 
-#include "record-state-access.h"
-#include "replay-state-access.h"
+#include "record-send-cmio-state-access.h"
+#include "replay-send-cmio-state-access.h"
 #include "state-access.h"
 
 #include "send-cmio-response.h"
@@ -64,10 +64,12 @@ void send_cmio_response(STATE_ACCESS &a, uint16 reason, bytes data, uint32 dataL
 template void send_cmio_response(state_access &a, uint16_t reason, const unsigned char *data, uint32 length);
 
 // Explicit instantiation for record_state_access
-template void send_cmio_response(record_state_access &a, uint16_t reason, const unsigned char *data, uint32 length);
+template void send_cmio_response(record_send_cmio_state_access &a, uint16_t reason, const unsigned char *data,
+    uint32 length);
 
 // Explicit instantiation for replay_state_access
-template void send_cmio_response(replay_state_access &a, uint16_t reason, const unsigned char *data, uint32 length);
+template void send_cmio_response(replay_send_cmio_state_access &a, uint16_t reason, const unsigned char *data,
+    uint32 length);
 
 } // namespace cartesi
 // NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)

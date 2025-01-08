@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef RECORD_STATE_ACCESS_H
-#define RECORD_STATE_ACCESS_H
+#ifndef RECORD_SEND_CMIO_STATE_ACCESS_H
+#define RECORD_SEND_CMIO_STATE_ACCESS_H
 
 /// \file
 /// \brief State access implementation that records state accesses to an access log.
@@ -38,10 +38,10 @@
 
 namespace cartesi {
 
-/// \class record_state_access
-/// \details This ....
-/// access to the machine state. No logs are kept.
-class record_state_access : public i_state_access<record_state_access, pma_entry> {
+/// \class record_send_cmio_state_access
+/// \details This records all state accesses that happen during the execution of
+/// a machine::send_cmio_response() function call
+class record_send_cmio_state_access : public i_state_access<record_send_cmio_state_access, pma_entry> {
     using hasher_type = machine_merkle_tree::hasher_type;
     using hash_type = machine_merkle_tree::hash_type;
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
@@ -58,7 +58,7 @@ class record_state_access : public i_state_access<record_state_access, pma_entry
 public:
     /// \brief Constructor from machine state.
     /// \param m Pointer to machine state.
-    explicit record_state_access(machine &m, access_log::type log_type) :
+    explicit record_send_cmio_state_access(machine &m, access_log::type log_type) :
         m_m(m),
         m_s(m.get_state()),
         m_log(std::make_shared<access_log>(log_type)) {
@@ -66,15 +66,15 @@ public:
     }
 
     /// \brief No copy constructor
-    record_state_access(const record_state_access &) = delete;
+    record_send_cmio_state_access(const record_send_cmio_state_access &) = delete;
     /// \brief No copy assignment
-    record_state_access &operator=(const record_state_access &) = delete;
+    record_send_cmio_state_access &operator=(const record_send_cmio_state_access &) = delete;
     /// \brief No move constructor
-    record_state_access(record_state_access &&) = delete;
+    record_send_cmio_state_access(record_send_cmio_state_access &&) = delete;
     /// \brief No move assignment
-    record_state_access &operator=(record_state_access &&) = delete;
+    record_send_cmio_state_access &operator=(record_send_cmio_state_access &&) = delete;
     /// \brief Default destructor
-    ~record_state_access() = default;
+    ~record_send_cmio_state_access() = default;
 
     /// \brief Returns const pointer to access log.
     std::shared_ptr<const access_log> get_log() const {
@@ -193,7 +193,7 @@ private:
     }
 
     // Declare interface as friend to it can forward calls to the "overridden" methods.
-    friend i_state_access<record_state_access, pma_entry>;
+    friend i_state_access<record_send_cmio_state_access, pma_entry>;
 
     void do_push_bracket(bracket_type &type, const char *text) {
         m_log->push_bracket(type, text);

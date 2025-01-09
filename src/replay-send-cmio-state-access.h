@@ -34,15 +34,28 @@
 #include "i-state-access.h"
 #include "machine-merkle-tree.h"
 #include "meta.h"
-#include "pma.h"
+#include "mock-pma-entry.h"
 #include "riscv-constants.h"
 #include "shadow-state.h"
 #include "unique-c-ptr.h"
 
 namespace cartesi {
 
+class replay_send_cmio_state_access;
+
+// Type trait that should return the pma_entry type for a state access class
+template <>
+struct i_state_access_pma_entry<replay_send_cmio_state_access> {
+    using type = mock_pma_entry;
+};
+// Type trait that should return the fast_addr type for a state access class
+template <>
+struct i_state_access_fast_addr<replay_send_cmio_state_access> {
+    using type = uint64_t;
+};
+
 /// \brief Allows replaying a machine::send_cmio_response() from an access log.
-class replay_send_cmio_state_access : public i_state_access<replay_send_cmio_state_access, pma_entry> {
+class replay_send_cmio_state_access : public i_state_access<replay_send_cmio_state_access> {
     using tree_type = machine_merkle_tree;
     using hash_type = tree_type::hash_type;
     using hasher_type = tree_type::hasher_type;
@@ -92,7 +105,7 @@ public:
     }
 
 private:
-    friend i_state_access<replay_send_cmio_state_access, pma_entry>;
+    friend i_state_access<replay_send_cmio_state_access>;
 
     std::string access_to_report() const {
         auto index = m_next_access + 1;

@@ -25,12 +25,24 @@
 #include <utility>
 
 #include "meta.h"
-#include "shadow-tlb.h"
+#include "tlb.h"
 
 namespace cartesi {
 
 // Forward declarations
 enum class bracket_type;
+
+// Type trait that should return the pma_entry type for a state access class
+template <typename STATE_ACCESS>
+struct i_state_access_pma_entry {};
+template <typename STATE_ACCESS>
+using i_state_access_pma_entry_t = typename i_state_access_pma_entry<STATE_ACCESS>::type;
+
+// Type trait that should return the fast_addr type for a state access class
+template <typename STATE_ACCESS>
+struct i_state_access_fast_addr {};
+template <typename STATE_ACCESS>
+using i_state_access_fast_addr_t = typename i_state_access_fast_addr<STATE_ACCESS>::type;
 
 /// \class i_state_access
 /// \brief Interface for machine state access.
@@ -39,8 +51,8 @@ enum class bracket_type;
 /// The "run" function does not need a log, and must be as fast as possible.
 /// Both functions share the exact same implementation of what it means to advance the machine state by one cycle.
 /// In this common implementation, all state accesses go through a class that implements the i_state_access interface.
-/// When looging is needed, a logged_state_access class is used.
-/// When no logging is needed, a state_access class is used.
+/// When logging is needed, a record state access class is used.
+/// When no logging is needed, a direct state access class is used.
 ///
 /// In a typical design, i_state_access would be pure virtual.
 /// For speed, we avoid virtual methods and instead use templates.
@@ -53,7 +65,7 @@ enum class bracket_type;
 /// Methods are provided to read and write each state component.
 /// \}
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
-template <typename DERIVED, typename PMA_ENTRY_TYPE>
+template <typename DERIVED>
 class i_state_access { // CRTP
 
     /// \brief Returns object cast as the derived class
@@ -67,6 +79,10 @@ class i_state_access { // CRTP
     }
 
 public:
+    using pma_entry = i_state_access_pma_entry_t<DERIVED>;
+    using fast_addr = i_state_access_fast_addr_t<DERIVED>;
+
+    //??D We should probably remove this from the interface
     /// \brief Returns machine state for direct access.
     auto &get_naked_state() {
         return derived().do_get_naked_state();
@@ -96,8 +112,8 @@ public:
     /// \brief Writes register to general-purpose register.
     /// \param reg Register index.
     /// \param val New register value.
-    /// \details Writes to register zero *break* the machine. There is an assertion to catch this, but NDEBUG will let
-    /// the value pass through.
+    /// \details Writes to register zero *break* the machine.
+    /// There is an assertion to catch this, but NDEBUG will let the value pass through.
     void write_x(int reg, uint64_t val) {
         return derived().do_write_x(reg, val);
     }
@@ -588,21 +604,9 @@ public:
         return derived().do_read_htif_iyield();
     }
 
-    /// \brief Poll for external interrupts.
-    /// \param mcycle Current machine mcycle.
-    /// \param mcycle_max Maximum mcycle to wait for interrupts.
-    /// \returns A pair, the first value is the new machine mcycle advanced by the relative elapsed time while
-    /// polling, the second value is a boolean that is true when the poll is stopped due do an external interrupt
-    /// request.
-    /// \details When mcycle_max is greater than mcycle, this function will sleep until an external interrupt
-    /// is triggered or mcycle_max relative elapsed time is reached.
-    std::pair<uint64_t, bool> poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
-        return derived().do_poll_external_interrupts(mcycle, mcycle_max);
-    }
-
     /// \brief Reads PMA entry at a given index.
     /// \param index Index of PMA
-    PMA_ENTRY_TYPE &read_pma_entry(uint64_t index) {
+    pma_entry &read_pma_entry(uint64_t index) {
         return derived().do_read_pma_entry(index);
     }
 
@@ -628,105 +632,6 @@ public:
         return derived().do_write_memory(paddr, data, length);
     }
 
-    /// \brief Reads a word from memory.
-    /// \tparam T Type of word to read.
-    /// \param paddr Target physical address.
-    /// \param hpage Pointer to page start in host memory.
-    /// \param hoffset Offset in page (must be aligned to sizeof(T)).
-    /// \param pval Pointer to word receiving value.
-    template <typename T>
-    void read_memory_word(uint64_t paddr, const unsigned char *hpage, uint64_t hoffset, T *pval) {
-        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
-        return derived().template do_read_memory_word<T>(paddr, hpage, hoffset, pval);
-    }
-
-    /// \brief Writes a word to memory.
-    /// \tparam T Type of word to write.
-    /// \param paddr Target physical address.
-    /// \param hpage Pointer to page start in host memory.
-    /// \param hoffset Offset in page (must be aligned to sizeof(T)).
-    /// \param val Value to be written.
-    template <typename T>
-    void write_memory_word(uint64_t paddr, unsigned char *hpage, uint64_t hoffset, T val) {
-        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
-        return derived().template do_write_memory_word<T>(paddr, hpage, hoffset, val);
-    }
-
-    auto get_host_memory(PMA_ENTRY_TYPE &pma) {
-        return derived().do_get_host_memory(pma);
-    }
-
-    /// \brief Try to translate a virtual address to a host pointer through the TLB.
-    /// \tparam ETYPE TLB entry type.
-    /// \tparam T Type of word that would be read with the pointer.
-    /// \param vaddr Target virtual address.
-    /// \param phptr Pointer to host pointer receiving value.
-    /// \returns True if successful (TLB hit), false otherwise.
-    template <TLB_entry_type ETYPE, typename T>
-    bool translate_vaddr_via_tlb(uint64_t vaddr, unsigned char **phptr) {
-        return derived().template do_translate_vaddr_via_tlb<ETYPE, T>(vaddr, phptr);
-    }
-
-    /// \brief Try to read a word from memory through the TLB.
-    /// \tparam ETYPE TLB entry type.
-    /// \tparam T Type of word to read.
-    /// \param vaddr Target virtual address.
-    /// \param pval Pointer to word receiving value.
-    /// \returns True if successful (TLB hit), false otherwise.
-    template <TLB_entry_type ETYPE, typename T>
-    bool read_memory_word_via_tlb(uint64_t vaddr, T *pval) {
-        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
-        return derived().template do_read_memory_word_via_tlb<ETYPE, T>(vaddr, pval);
-    }
-
-    /// \brief Try to write a word to memory through the TLB.
-    /// \tparam ETYPE TLB entry type.
-    /// \tparam T Type of word to write.
-    /// \param vaddr Target virtual address.
-    /// \param val Value to be written.
-    /// \returns True if successful (TLB hit), false otherwise.
-    template <TLB_entry_type ETYPE, typename T>
-    bool write_memory_word_via_tlb(uint64_t vaddr, T val) {
-        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
-        return derived().template do_write_memory_word_via_tlb<ETYPE, T>(vaddr, val);
-    }
-
-    /// \brief Replaces an entry in the TLB.
-    /// \tparam ETYPE TLB entry type to replace.
-    /// \param vaddr Target virtual address.
-    /// \param paddr Target physical address.
-    /// \param pma PMA entry for the physical address.
-    /// \returns Pointer to page start in host memory.
-    template <TLB_entry_type ETYPE>
-    unsigned char *replace_tlb_entry(uint64_t vaddr, uint64_t paddr, PMA_ENTRY_TYPE &pma) {
-        return derived().template do_replace_tlb_entry<ETYPE>(vaddr, paddr, pma);
-    }
-
-    /// \brief Invalidates all TLB entries of a type.
-    /// \tparam ETYPE TLB entry type to flush.
-    template <TLB_entry_type ETYPE>
-    void flush_tlb_type() {
-        return derived().template do_flush_tlb_type<ETYPE>();
-    }
-
-    /// \brief Invalidates all TLB entries of all types.
-    void flush_all_tlb() {
-        derived().template flush_tlb_type<TLB_CODE>();
-        derived().template flush_tlb_type<TLB_READ>();
-        derived().template flush_tlb_type<TLB_WRITE>();
-    }
-
-    /// \brief Invalidates TLB entries for a specific virtual address.
-    /// \param vaddr Target virtual address.
-    void flush_tlb_vaddr(uint64_t vaddr) {
-        return derived().do_flush_tlb_vaddr(vaddr);
-    }
-
-    /// \brief Returns true if soft yield HINT instruction is enabled at runtime
-    bool get_soft_yield() {
-        return derived().do_get_soft_yield();
-    }
-
     /// \brief Write a data buffer to memory padded with 0
     /// \param paddr Destination physical address.
     /// \param data Pointer to source data buffer.
@@ -737,11 +642,133 @@ public:
         return derived().do_write_memory_with_padding(paddr, data, data_length, write_length_log2_size);
     }
 
+    /// \brief Reads a word from memory.
+    /// \tparam T Type of word to read, potentially unaligned.
+    /// \tparam A Type to which \p paddr and \p haddr are known to be aligned.
+    /// \param faddr Implementation-defined fast address.
+    /// \param pval Pointer to word receiving value.
+    /// \warning T must not cross page boundary starting from \p faddr
+    /// \warning T may or may not cross a Merkle tree word boundary starting from \p faddr!
+    template <typename T, typename A = T>
+    void read_memory_word(fast_addr faddr, uint64_t pma_index, T *pval) {
+        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
+        return derived().template do_read_memory_word<T, A>(faddr, pma_index, pval);
+    }
+
+    /// \brief Writes a word to memory.
+    /// \tparam T Type of word to write.
+    /// \tparam A Type to which \p paddr and \p haddr are known to be aligned.
+    /// \param faddr Implementation-defined fast address.
+    /// \param val Value to be written.
+    /// \details \p haddr is ONLY valid when there is a host machine.
+    /// It should never be referenced outside of this context.
+    /// \warning T must not cross page boundary starting from \p faddr
+    /// \warning T may or may not cross a Merkle tree word boundary starting from \p faddr!
+    template <typename T, typename A = T>
+    void write_memory_word(fast_addr faddr, uint64_t pma_index, T val) {
+        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
+        return derived().template do_write_memory_word<T, A>(faddr, pma_index, val);
+    }
+
+    /// \brief Reads TLB's vaddr_page
+    /// \tparam USE TLB set
+    /// \param slot_index Slot index
+    /// \returns Value in slot.
+    template <TLB_set_use USE>
+    uint64_t read_tlb_vaddr_page(uint64_t slot_index) {
+        return derived().template do_read_tlb_vaddr_page<USE>(slot_index);
+    }
+
+    /// \brief Reads TLB's vp_offset
+    /// \tparam USE TLB set
+    /// \param slot_index Slot index
+    /// \returns Value in slot.
+    template <TLB_set_use USE>
+    fast_addr read_tlb_vp_offset(uint64_t slot_index) {
+        return derived().template do_read_tlb_vp_offset<USE>(slot_index);
+    }
+
+    /// \brief Reads TLB's pma_index
+    /// \tparam USE TLB set
+    /// \param slot_index Slot index
+    /// \returns Value in slot.
+    template <TLB_set_use USE>
+    uint64_t read_tlb_pma_index(uint64_t slot_index) {
+        return derived().template do_read_tlb_pma_index<USE>(slot_index);
+    }
+
+    /// \brief Writes to a TLB slot
+    /// \tparam USE TLB set
+    /// \param slot_index Slot index
+    /// \param vaddr_page Value to write
+    /// \param vp_offset Value to write
+    /// \param pma_index Value to write
+    /// \detail Writes to the TLB must be modify all fields atomically to prevent an inconsistent state.
+    /// This simplifies all state access implementations.
+    template <TLB_set_use USE>
+    void write_tlb(uint64_t slot_index, uint64_t vaddr_page, fast_addr vp_offset, uint64_t pma_index) {
+        return derived().template do_write_tlb<USE>(slot_index, vaddr_page, vp_offset, pma_index);
+    }
+
+    /// \brief Converts a target physical address to the implementation-defined fast address
+    /// \param paddr Target physical address to convert
+    /// \param pma_index Index of PMA where address falls
+    /// \returns Correspnding implementation-defined fast address
+    fast_addr get_faddr(uint64_t paddr, uint64_t pma_index) const {
+        return derived().do_get_faddr(paddr, pma_index);
+    }
+
+    /// \brief Marks a page as dirty
+    /// \param faddr Implementation-defined fast address.
+    /// \param pma_index Index of PMA where page falls
+    /// \details When there is a host machine, the Merkle tree only updates the hashes for pages that
+    /// have been modified. Pages can only be written to if they appear in the write TLB. Therefore,
+    /// the Merkle tree only considers the pages that are currently in the write TLB and those that
+    /// have been marked dirty. When a page leaves the write TLB, it is marked dirty.
+    /// If the state belongs to a host machine, then this call MUST be forwarded to machine::mark_dirty_page();
+    void mark_dirty_page(fast_addr faddr, uint64_t pma_index) {
+        return derived().do_mark_dirty_page(faddr, pma_index);
+    }
+
+    // ---
+    // These methods ONLY need to be implemented when state belongs to non-reproducible host machine
+    // ---
+
+    /// \brief Poll for external interrupts.
+    /// \param mcycle Current machine mcycle.
+    /// \param mcycle_max Maximum mcycle to wait for interrupts.
+    /// \returns A pair, the first value is the new machine mcycle advanced by the relative elapsed time while
+    /// polling, the second value is a boolean that is true when the poll is stopped due do an external interrupt
+    /// request.
+    /// \details When mcycle_max is greater than mcycle, this function will sleep until an external interrupt
+    /// is triggered or mcycle_max relative elapsed time is reached.
+    std::pair<uint64_t, bool> poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
+        return derived().do_poll_external_interrupts(mcycle, mcycle_max);
+    }
+
+    /// \brief Returns true if soft yield HINT instruction is enabled at runtime
+    bool get_soft_yield() {
+        return derived().do_get_soft_yield();
+    }
+
 #ifdef DUMP_COUNTERS
+    //??D we should probably remove this from the interface
     auto &get_statistics() {
         return derived().do_get_statistics();
     }
 #endif
+
+protected:
+    /// \brief Default implementation when state does not belong to non-reproducible host machine
+    bool do_get_soft_yield() { // NOLINT(readability-convert-member-functions-to-static)
+        return false;
+    }
+
+    /// \brief Default implementation when state does not belong to non-reproducible host machine
+    std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle,
+        uint64_t /* mcycle_max */) { // NOLINT(readability-convert-member-functions-to-static)
+        return {mcycle, false};
+    }
 };
 
 /// \brief SFINAE test implementation of the i_state_access interface

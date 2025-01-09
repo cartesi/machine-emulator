@@ -100,23 +100,23 @@ static inline void resetState(UarchState &a) {
     a.reset_state();
 }
 
-template <typename UarchState>
-static inline uint64 readIflagsY(UarchState &a) {
+template <typename State>
+static inline uint64 readIflagsY(State &a) {
     return a.read_iflags_Y();
 }
 
 template <typename UarchState>
-static inline void writeIflagsY(UarchState &a, uint64 val) {
+static inline void writeIflagsY(State &a, uint64 val) {
     a.write_iflags_Y(val);
 }
 
-template <typename UarchState>
-static inline void writeHtifFromhost(UarchState &a, uint64 val) {
+template <typename State>
+static inline void writeHtifFromhost(State &a, uint64 val) {
     a.write_htif_fromhost(val);
 }
 
-template <typename UarchState>
-static inline void writeMemoryWithPadding(UarchState &a, uint64 paddr, bytes data, uint64_t data_length,
+template <typename State>
+static inline void writeMemoryWithPadding(State &a, uint64 paddr, bytes data, uint64_t data_length,
     int32 write_length_log2_size) {
     a.write_memory_with_padding(paddr, data, data_length, write_length_log2_size);
 }
@@ -129,6 +129,15 @@ static inline void throwRuntimeError(UarchState & /*a*/, const char *message) {
 template <typename UarchState>
 static inline void putChar(UarchState & /*a*/, unsigned char c) {
     os_putchar(c);
+}
+
+template <typename UarchState>
+static inline void markDirtyPage(UarchState &a, uint64 paddr, uint64 pma_index) {
+    a.mark_dirty_page(paddr, pma_index);
+}
+
+static inline void writeTlbVpOffset(UarchState &a, uint64 use, uint64 vp_offset, uint64 pma_index) {
+    a.write_tlb_vp_offset(use, slot_index, vp_offset, pma_index);
 }
 
 // Conversions and arithmetic functions

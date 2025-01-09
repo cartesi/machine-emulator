@@ -59,17 +59,16 @@ namespace cartesi {
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
 static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t val) {
-    auto &pma = find_pma_entry<uint64_t>(a, paddr);
+    uint64_t pma_index = 0;
+    auto &pma = find_pma_entry<uint64_t>(a, paddr, pma_index);
     if (unlikely(!pma.get_istart_M() || !pma.get_istart_W())) {
         return false;
     }
-    const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-    unsigned char *hpage = a.get_host_memory(pma) + (paddr_page - pma.get_start());
-    const uint64_t hoffset = paddr - paddr_page;
+    const auto faddr = a.get_faddr(paddr, pma_index);
     // log writes to memory
-    a.write_memory_word(paddr, hpage, hoffset, val);
+    a.write_memory_word(faddr, pma_index, val);
     // mark page as dirty so we know to update the Merkle tree
-    pma.mark_dirty_page(paddr - pma.get_start());
+    a.mark_dirty_page(faddr, pma_index);
     return true;
 }
 
@@ -81,14 +80,13 @@ static inline bool write_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t va
 /// \returns True if succeeded, false otherwise.
 template <typename STATE_ACCESS>
 static inline bool read_ram_uint64(STATE_ACCESS &a, uint64_t paddr, uint64_t *pval) {
-    auto &pma = find_pma_entry<uint64_t>(a, paddr);
+    uint64_t pma_index = 0;
+    auto &pma = find_pma_entry<uint64_t>(a, paddr, pma_index);
     if (unlikely(!pma.get_istart_M() || !pma.get_istart_R())) {
         return false;
     }
-    const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-    unsigned char *hpage = a.get_host_memory(pma) + (paddr_page - pma.get_start());
-    const uint64_t hoffset = paddr - paddr_page;
-    a.read_memory_word(paddr, hpage, hoffset, pval);
+    const auto faddr = a.get_faddr(paddr, pma_index);
+    a.read_memory_word(faddr, pma_index, pval);
     return true;
 }
 

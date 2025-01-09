@@ -29,6 +29,7 @@
 #include "access-log.h"
 #include "i-hasher.h"
 #include "i-state-access.h"
+#include "machine-haddr.h"
 #include "machine-merkle-tree.h"
 #include "machine-state.h"
 #include "machine.h"
@@ -38,10 +39,23 @@
 
 namespace cartesi {
 
+class record_send_cmio_state_access;
+
+// Type trait that should return the pma_entry type for a state access class
+template <>
+struct i_state_access_pma_entry<record_send_cmio_state_access> {
+    using type = pma_entry;
+};
+// Type trait that should return the fast_addr type for a state access class
+template <>
+struct i_state_access_fast_addr<record_send_cmio_state_access> {
+    using type = machine_haddr;
+};
+
 /// \class record_send_cmio_state_access
 /// \details This records all state accesses that happen during the execution of
 /// a machine::send_cmio_response() function call
-class record_send_cmio_state_access : public i_state_access<record_send_cmio_state_access, pma_entry> {
+class record_send_cmio_state_access : public i_state_access<record_send_cmio_state_access> {
     using hasher_type = machine_merkle_tree::hasher_type;
     using hash_type = machine_merkle_tree::hash_type;
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
@@ -87,6 +101,8 @@ public:
     }
 
 private:
+    friend i_state_access<record_send_cmio_state_access>;
+
     /// \brief Logs a read access of a uint64_t word from the machine state.
     /// \param paligned Physical address in the machine state, aligned to a 64-bit word.
     /// \param text Textual description of the access.
@@ -191,9 +207,6 @@ private:
         dest = (dest64 != 0);
         update_after_write(paligned);
     }
-
-    // Declare interface as friend to it can forward calls to the "overridden" methods.
-    friend i_state_access<record_send_cmio_state_access, pma_entry>;
 
     void do_push_bracket(bracket_type &type, const char *text) {
         m_log->push_bracket(type, text);

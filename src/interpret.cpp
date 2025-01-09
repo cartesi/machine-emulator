@@ -21,8 +21,10 @@
 #include <utility>
 
 #ifdef MICROARCHITECTURE
+#ifdef OKUARCH
 #include "uarch-machine-state-access.h"
 #include "uarch-runtime.h"
+#endif
 #else
 #include "record-step-state-access.h"
 #include "replay-step-state-access.h"
@@ -31,9 +33,10 @@
 #endif // MICROARCHITECTURE
 
 #include "compiler-defines.h"
+#include "device-state-access.h"
 #include "i-state-access.h"
 #include "machine-statistics.h"
-#include "shadow-tlb.h"
+#include "tlb.h"
 
 /// \file
 /// \brief Interpreter implementation.
@@ -323,7 +326,7 @@ static NO_INLINE void set_prv(STATE_ACCESS &a, uint64_t new_prv) {
     INC_COUNTER(a.get_statistics(), prv_level[new_prv]);
     a.write_iprv(new_prv);
     // Invalidate all TLB entries
-    a.flush_all_tlb();
+    flush_all_tlb(a);
     INC_COUNTER(a.get_statistics(), tlb_flush_all);
     INC_COUNTER(a.get_statistics(), tlb_flush_set_prv);
     //??D new privileged 1.11 draft says invalidation should
@@ -806,6 +809,104 @@ static FORCE_INLINE int32_t insn_get_C_SWSP_imm(uint32_t insn) {
     return static_cast<int32_t>(((insn >> (9 - 2)) & 0x3c) | ((insn >> (7 - 6)) & 0xc0));
 }
 
+/// \brief Flushes out a TLB slot
+/// \tparam USE TLB set
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param slot_index Slot index
+template <TLB_set_use USE, typename STATE_ACCESS>
+static void flush_tlb_slot(STATE_ACCESS &a, uint64_t slot_index) {
+    // Make sure a valid page leaving the write TLB is marked as dirty
+    // We must do this BEFORE we modify the TLB entries themselves
+    // (Otherwise, we could stop uarch before it marks the page dirty but after
+    // the entry is no longer in the TLB, which would cause the Merkle tree to
+    // miss a dirty page.)
+    if constexpr (USE == TLB_WRITE) {
+        const auto old_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
+        if (old_vaddr_page != TLB_INVALID_PAGE) {
+            auto old_pma_index = a.template read_tlb_pma_index<TLB_WRITE>(slot_index);
+            const auto old_faddr_page = old_vaddr_page + a.template read_tlb_vp_offset<TLB_WRITE>(slot_index);
+            a.mark_dirty_page(old_faddr_page, old_pma_index);
+        }
+    }
+    // We do not leave garbage behind in empty slots
+    // (It would make state access classes trickier to implement)
+    const auto vaddr_page = TLB_INVALID_PAGE;
+    const auto vp_offset = typename STATE_ACCESS::fast_addr{};
+    const auto pma_index = TLB_INVALID_PMA_INDEX;
+    a.template write_tlb<USE>(slot_index, vaddr_page, vp_offset, pma_index);
+}
+
+/// \brief Flushes out an entire TLB set
+/// \tparam USE TLB set
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+template <TLB_set_use USE, typename STATE_ACCESS>
+static void flush_tlb_set(STATE_ACCESS &a) {
+    for (uint64_t slot_index = 0; slot_index < PMA_TLB_SIZE; ++slot_index) {
+        flush_tlb_slot<USE>(a, slot_index);
+    }
+}
+
+/// \brief Flushes out the entire TLB
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+template <typename STATE_ACCESS>
+static void flush_all_tlb(STATE_ACCESS &a) {
+    flush_tlb_set<TLB_CODE>(a);
+    flush_tlb_set<TLB_READ>(a);
+    flush_tlb_set<TLB_WRITE>(a);
+}
+
+/// \brief Flushes out a single virtual mapping in the TLB
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param vaddr Virtual address to remove form mapping
+template <typename STATE_ACCESS>
+static void flush_tlb_vaddr(STATE_ACCESS &a, uint64_t /* vaddr */) {
+    // We can't flush just one TLB entry for that specific virtual address,
+    // because megapages/gigapages may be in use while this TLB implementation ignores it,
+    // so we have to flush all addresses.
+    flush_tlb_set<TLB_CODE>(a);
+    flush_tlb_set<TLB_READ>(a);
+    flush_tlb_set<TLB_WRITE>(a);
+}
+
+/// \brief Replaces a virtual mapping in a TLB set
+/// \tparam USE TLB set
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param vaddr Virtual address of new mapping
+/// \param paddr Corresponding physical address
+/// \param paddr Index of PMA where paddr falls
+/// \param vp_offset Receives the new vp_offset that will be stored in the slot
+/// \returns The implementation-defined fast address corresponding to paddr
+template <TLB_set_use USE, typename STATE_ACCESS>
+static typename STATE_ACCESS::fast_addr replace_tlb_entry(STATE_ACCESS &a, uint64_t vaddr, uint64_t paddr,
+    uint64_t pma_index, typename STATE_ACCESS::fast_addr &vp_offset) {
+    const auto slot_index = tlb_slot_index(vaddr);
+    flush_tlb_slot<USE>(a, slot_index);
+    const auto vaddr_page = tlb_addr_page(vaddr);
+    const auto faddr = a.get_faddr(paddr, pma_index);
+    vp_offset = faddr - vaddr;
+    a.template write_tlb<USE>(slot_index, vaddr_page, vp_offset, pma_index);
+    return faddr;
+}
+
+/// \brief Replaces a virtual mapping in a TLB set
+/// \tparam USE TLB set
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param vaddr Virtual address of new mapping
+/// \param paddr Corresponding physical address
+/// \param paddr Index of PMA where paddr falls
+/// \returns The implementation-defined fast address corresponding to paddr
+template <TLB_set_use USE, typename STATE_ACCESS>
+static FORCE_INLINE auto replace_tlb_entry(STATE_ACCESS &a, uint64_t vaddr, uint64_t paddr, uint64_t pma_index) {
+    typename STATE_ACCESS::fast_addr vp_offset{0};
+    return replace_tlb_entry<USE>(a, vaddr, paddr, pma_index, vp_offset);
+}
+
 /// \brief Read an aligned word from virtual memory (slow path that goes through virtual address translation).
 /// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
@@ -838,12 +939,12 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS
             vaddr);
         return {false, pc};
     }
-    auto &pma = find_pma_entry<T>(a, paddr);
+    uint64_t pma_index = 0;
+    const auto &pma = find_pma_entry<T>(a, paddr, pma_index);
     if (likely(pma.get_istart_R())) {
         if (likely(pma.get_istart_M())) {
-            unsigned char *hpage = a.template replace_tlb_entry<TLB_READ>(vaddr, paddr, pma);
-            const uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
-            a.read_memory_word(paddr, hpage, hoffset, pval);
+            const auto faddr = replace_tlb_entry<TLB_READ>(a, vaddr, paddr, pma_index);
+            a.template read_memory_word(faddr, pma_index, pval);
             return {true, pc};
         }
         if (likely(pma.get_istart_IO())) {
@@ -876,7 +977,9 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS
 template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false>
 static FORCE_INLINE bool read_virtual_memory(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint64_t vaddr, T *pval) {
     // Try hitting the TLB
-    if (unlikely(!(a.template read_memory_word_via_tlb<TLB_READ>(vaddr, pval)))) {
+    const auto slot_index = tlb_slot_index(vaddr);
+    const auto slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_READ>(slot_index);
+    if (unlikely(!tlb_is_hit<T>(slot_vaddr_page, vaddr))) {
         // Outline the slow path into a function call to minimize host CPU code cache pressure
         INC_COUNTER(a.get_statistics(), tlb_rmiss);
         auto [status, new_pc] =
@@ -884,6 +987,10 @@ static FORCE_INLINE bool read_virtual_memory(STATE_ACCESS &a, uint64_t &pc, uint
         pc = new_pc;
         return status;
     }
+    const auto pma_index = a.template read_tlb_pma_index<TLB_READ>(slot_index);
+    const auto vp_offset = a.template read_tlb_vp_offset<TLB_READ>(slot_index);
+    const auto faddr = vaddr + vp_offset;
+    a.template read_memory_word<T>(faddr, pma_index, pval);
     INC_COUNTER(a.get_statistics(), tlb_rhit);
     return true;
 }
@@ -917,12 +1024,12 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(S
         pc = raise_exception(a, pc, MCAUSE_STORE_AMO_PAGE_FAULT, vaddr);
         return {execute_status::failure, pc};
     }
-    auto &pma = find_pma_entry<T>(a, paddr);
+    uint64_t pma_index = 0;
+    auto &pma = find_pma_entry<T>(a, paddr, pma_index);
     if (likely(pma.get_istart_W())) {
         if (likely(pma.get_istart_M())) {
-            unsigned char *hpage = a.template replace_tlb_entry<TLB_WRITE>(vaddr, paddr, pma);
-            const uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
-            a.write_memory_word(paddr, hpage, hoffset, static_cast<T>(val64));
+            const auto faddr = replace_tlb_entry<TLB_WRITE>(a, vaddr, paddr, pma_index);
+            a.write_memory_word(faddr, pma_index, static_cast<T>(val64));
             return {execute_status::success, pc};
         }
         if (likely(pma.get_istart_IO())) {
@@ -952,13 +1059,19 @@ template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status write_virtual_memory(STATE_ACCESS &a, uint64_t &pc, uint64_t mcycle, uint64_t vaddr,
     uint64_t val64) {
     // Try hitting the TLB
-    if (unlikely((!a.template write_memory_word_via_tlb<TLB_WRITE>(vaddr, static_cast<T>(val64))))) {
-        INC_COUNTER(a.get_statistics(), tlb_wmiss);
+    const uint64_t slot_index = tlb_slot_index(vaddr);
+    const uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
+    if (unlikely(!tlb_is_hit<T>(slot_vaddr_page, vaddr))) {
         // Outline the slow path into a function call to minimize host CPU code cache pressure
+        INC_COUNTER(a.get_statistics(), tlb_wmiss);
         auto [status, new_pc] = write_virtual_memory_slow<T>(a, pc, mcycle, vaddr, val64);
         pc = new_pc;
         return status;
     }
+    const auto pma_index = a.template read_tlb_pma_index<TLB_READ>(slot_index);
+    const auto vp_offset = a.template read_tlb_vp_offset<TLB_READ>(slot_index);
+    const auto faddr = vaddr + vp_offset;
+    a.template write_memory_word<T>(faddr, pma_index, static_cast<T>(val64));
     INC_COUNTER(a.get_statistics(), tlb_whit);
     return execute_status::success;
 }
@@ -1992,7 +2105,7 @@ static NO_INLINE execute_status write_csr_satp(STATE_ACCESS &a, uint64_t val) {
     // because software is required to execute SFENCE.VMA when recycling an ASID.
     const uint64_t mod = old_satp ^ stap;
     if (mod & (SATP_ASID_MASK | SATP_MODE_MASK)) {
-        a.flush_all_tlb();
+        flush_all_tlb(a);
         INC_COUNTER(a.get_statistics(), tlb_flush_all);
         INC_COUNTER(a.get_statistics(), tlb_flush_satp);
         return execute_status::success_and_flush_fetch;
@@ -2054,11 +2167,11 @@ static execute_status write_csr_mstatus(STATE_ACCESS &a, uint64_t val) {
 
     // Flush TLBs when needed
     if (flush_tlb_read) {
-        a.template flush_tlb_type<TLB_READ>();
+        flush_tlb_set<TLB_READ>(a);
         INC_COUNTER(a.get_statistics(), tlb_flush_read);
     }
     if (flush_tlb_write) {
-        a.template flush_tlb_type<TLB_WRITE>();
+        flush_tlb_set<TLB_WRITE>(a);
         INC_COUNTER(a.get_statistics(), tlb_flush_write);
     }
     if (flush_tlb_read || flush_tlb_write) {
@@ -3219,7 +3332,7 @@ static FORCE_INLINE execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t 
     const uint32_t rs1 = insn_get_rs1(insn);
     [[maybe_unused]] const uint32_t rs2 = insn_get_rs2(insn);
     if (rs1 == 0) {
-        a.flush_all_tlb();
+        flush_all_tlb(a);
 #ifdef DUMP_COUNTERS
         INC_COUNTER(a.get_statistics(), tlb_flush_all);
         if (rs2 == 0) {
@@ -3234,7 +3347,7 @@ static FORCE_INLINE execute_status execute_SFENCE_VMA(STATE_ACCESS &a, uint64_t 
 #endif
     } else {
         const uint64_t vaddr = a.read_x(rs1);
-        a.flush_tlb_vaddr(vaddr);
+        flush_tlb_vaddr(a, vaddr);
 #ifdef DUMP_COUNTERS
         INC_COUNTER(a.get_statistics(), tlb_flush_vaddr);
         if (rs2 == 0) {
@@ -5389,12 +5502,13 @@ enum class fetch_status : int {
 /// \param a Machine state accessor object.
 /// \param pc Virtual address for the current instruction being executed.
 /// \param vaddr Virtual address to be fetched.
-/// \param phptr Receives host pointer.
+/// \param vp_offset Receives vp_offset in the TLB slot
+/// \param pma_index Receives the index of PMA where vaddr falls
 /// \return Returns fetch_status::success if load succeeded, fetch_status::exception if it caused an exception.
 //          In that case, raise the exception.
 template <typename STATE_ACCESS>
 static FORCE_INLINE fetch_status fetch_translate_pc_slow(STATE_ACCESS &a, uint64_t &pc, uint64_t vaddr,
-    unsigned char **phptr) {
+    typename STATE_ACCESS::fast_addr &vp_offset, uint64_t &pma_index) {
     uint64_t paddr{};
     // Walk page table and obtain the physical address
     if (unlikely(!translate_virtual_address(a, &paddr, vaddr, PTE_XWR_X_SHIFT))) {
@@ -5402,16 +5516,14 @@ static FORCE_INLINE fetch_status fetch_translate_pc_slow(STATE_ACCESS &a, uint64
         return fetch_status::exception;
     }
     // Walk memory map to find the range that contains the physical address
-    auto &pma = find_pma_entry<uint16_t>(a, paddr);
+    const auto &pma = find_pma_entry<uint16_t>(a, paddr, pma_index);
     // We only execute directly from RAM (as in "random access memory")
     // If the range is not memory or not executable, this as a PMA violation
     if (unlikely(!pma.get_istart_M() || !pma.get_istart_X())) {
         pc = raise_exception(a, pc, MCAUSE_INSN_ACCESS_FAULT, vaddr);
         return fetch_status::exception;
     }
-    unsigned char *hpage = a.template replace_tlb_entry<TLB_CODE>(vaddr, paddr, pma);
-    const uint64_t hoffset = vaddr & PAGE_OFFSET_MASK;
-    *phptr = hpage + hoffset;
+    replace_tlb_entry<TLB_CODE>(a, vaddr, paddr, pma_index, vp_offset);
     return fetch_status::success;
 }
 
@@ -5420,18 +5532,23 @@ static FORCE_INLINE fetch_status fetch_translate_pc_slow(STATE_ACCESS &a, uint64
 /// \param a Machine state accessor object.
 /// \param pc Virtual address for the current instruction being executed.
 /// \param vaddr Virtual address to be fetched.
-/// \param phptr Receives the host pointer.
+/// \param vp_offset Receives vp_offset in the TLB slot
+/// \param pma_index Receives the index of PMA where vaddr falls
 /// \return Returns fetch_status::success if load succeeded, fetch_status::exception if it caused an exception.
 //          In that case, raise the exception.
 template <typename STATE_ACCESS>
 static FORCE_INLINE fetch_status fetch_translate_pc(STATE_ACCESS &a, uint64_t &pc, uint64_t vaddr,
-    unsigned char **phptr) {
+    typename STATE_ACCESS::fast_addr &vp_offset, uint64_t &pma_index) {
     // Try to perform the address translation via TLB first
-    if (unlikely(!(a.template translate_vaddr_via_tlb<TLB_CODE, uint16_t>(vaddr, phptr)))) {
+    const uint64_t slot_index = tlb_slot_index(vaddr);
+    const uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_CODE>(slot_index);
+    if (unlikely(!tlb_is_hit<uint16_t>(slot_vaddr_page, vaddr))) {
         INC_COUNTER(a.get_statistics(), tlb_cmiss);
         // Outline the slow path into a function call to minimize host CPU code cache pressure
-        return fetch_translate_pc_slow(a, pc, vaddr, phptr);
+        return fetch_translate_pc_slow(a, pc, vaddr, vp_offset, pma_index);
     }
+    vp_offset = a.template read_tlb_vp_offset<TLB_CODE>(slot_index);
+    pma_index = a.template read_tlb_pma_index<TLB_CODE>(slot_index);
     INC_COUNTER(a.get_statistics(), tlb_chit);
     return fetch_status::success;
 }
@@ -5441,54 +5558,56 @@ static FORCE_INLINE fetch_status fetch_translate_pc(STATE_ACCESS &a, uint64_t &p
 /// \param a Machine state accessor object.
 /// \param pc Virtual address for the current instruction being executed.
 /// \param insn Receives the instruction.
-/// \param fetch_vaddr_page Fetch virtual address translation page cache.
-/// \param fetch_vh_offset Fetch virtual address host pointer offset cache.
+/// \param last_vaddr_page Receives and updates vaddr_page for cache.
+/// \param last_vp_offset Receives and updates vp_offset for cache.
+/// \param last_pma_index Receives and updates pma_index for cache.
 /// \return Returns fetch_status::success if load succeeded, fetch_status::exception if it caused an exception.
 //          In that case, raise the exception.
 template <typename STATE_ACCESS>
-static FORCE_INLINE fetch_status fetch_insn(STATE_ACCESS &a, uint64_t &pc, uint32_t &insn, uint64_t &fetch_vaddr_page,
-    uint64_t &fetch_vh_offset) {
-    unsigned char *hptr = nullptr;
-    const uint64_t vaddr_page = pc & ~PAGE_OFFSET_MASK;
+static FORCE_INLINE fetch_status fetch_insn(STATE_ACCESS &a, uint64_t &pc, uint32_t &insn, uint64_t &last_vaddr_page,
+    typename STATE_ACCESS::fast_addr &last_vp_offset, uint64_t &last_pma_index) {
+    typename STATE_ACCESS::fast_addr faddr{0};
+    const uint64_t pc_vaddr_page = tlb_addr_page(pc);
     // If pc is in the same page as the last pc fetch,
     // we can just reuse last fetch translation, skipping TLB or slow address translation altogether.
-    if (likely(vaddr_page == fetch_vaddr_page)) {
-        hptr = cast_addr_to_ptr<unsigned char *>(pc + fetch_vh_offset);
+    if (likely(pc_vaddr_page == last_vaddr_page)) {
+        faddr = pc + last_vp_offset;
     } else {
         // Not in the same page as last the fetch, we need to perform address translation
-        if (unlikely(fetch_translate_pc(a, pc, pc, &hptr) == fetch_status::exception)) {
+        if (unlikely(fetch_translate_pc(a, pc, pc, last_vp_offset, last_pma_index) == fetch_status::exception)) {
             return fetch_status::exception;
         }
         // Update fetch address translation cache
-        fetch_vaddr_page = vaddr_page;
-        fetch_vh_offset = cast_ptr_to_addr<uint64_t>(hptr) - pc;
+        last_vaddr_page = pc_vaddr_page;
+        faddr = pc + last_vp_offset;
     }
     // The following code assumes pc is always 2-byte aligned, this is guaranteed by RISC-V spec.
     // If pc is pointing to the very last 2 bytes of a page, it's crossing a page boundary.
     if (unlikely(((~pc & PAGE_OFFSET_MASK) >> 1) == 0)) {
         // Here we are crossing page boundary, this is unlikely (1 in 2048 possible cases)
-        insn = aliased_aligned_read<uint16_t>(hptr);
+        uint16_t insn16 = 0;
+        a.template read_memory_word(faddr, last_pma_index, &insn16);
+        insn = insn16;
         // If not a compressed instruction, we must read 2 additional bytes from the next page.
         if (unlikely((insn & 3) == 3)) {
             // We have to perform a new address translation to read the next 2 bytes since we changed pages.
-            const uint64_t vaddr = pc + 2;
-            if (unlikely(fetch_translate_pc(a, pc, vaddr, &hptr) == fetch_status::exception)) {
+            const uint64_t pc2 = pc + 2;
+            if (unlikely(fetch_translate_pc(a, pc, pc2, last_vp_offset, last_pma_index) == fetch_status::exception)) {
                 return fetch_status::exception;
             }
-            // Update fetch translation cache
-            fetch_vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
-            fetch_vh_offset = cast_ptr_to_addr<uint64_t>(hptr) - vaddr;
-            // Produce the final 4-byte instruction
-            insn |= aliased_aligned_read<uint16_t>(hptr) << 16;
+            last_vaddr_page = tlb_addr_page(pc2);
+            faddr = pc2 + last_vp_offset;
+            a.template read_memory_word(faddr, last_pma_index, &insn16);
+            insn |= insn16 << 16;
         }
         return fetch_status::success;
     }
     // Here we are sure that reading 4 bytes won't cross a page boundary.
-    // However pc may not be 4 byte aligned, at best it can only be 2-byte aligned,
-    // therefore we must perform a misaligned 4 byte read on a 2 byte aligned pointer.
+    // However pc may not be 4-byte aligned, at worst it could be only 2-byte aligned,
+    // therefore we must perform a misaligned 4-byte read on a 2-byte aligned pointer.
     // In case pc holds a compressed instruction, insn will store 2 additional bytes,
     // but this is fine because later the instruction decoder will discard them.
-    insn = aliased_unaligned_read<uint32_t, uint16_t>(hptr);
+    a.template read_memory_word<uint32_t, uint16_t>(faddr, last_pma_index, &insn);
     return fetch_status::success;
 }
 
@@ -5517,8 +5636,9 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
     uint64_t pc = a.read_pc();
 
     // Initialize fetch address translation cache invalidated
-    uint64_t fetch_vaddr_page = PAGE_OFFSET_MASK;
-    uint64_t fetch_vh_offset = 0;
+    uint64_t fetch_vaddr_page = TLB_INVALID_PAGE;
+    uint64_t fetch_pma_index = TLB_INVALID_PMA_INDEX;
+    typename STATE_ACCESS::fast_addr fetch_vp_offset{};
 
     // The outer loop continues until there is an interruption that should be handled
     // externally, or mcycle reaches mcycle_end
@@ -5555,7 +5675,8 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
             uint32_t insn = 0;
 
             // Try to fetch the next instruction
-            if (likely(fetch_insn(a, pc, insn, fetch_vaddr_page, fetch_vh_offset) == fetch_status::success)) {
+            if (likely(fetch_insn(a, pc, insn, fetch_vaddr_page, fetch_vp_offset, fetch_pma_index) ==
+                    fetch_status::success)) {
                 // Try to execute it
                 const execute_status status = execute_insn(a, pc, mcycle, insn);
 
@@ -5567,7 +5688,7 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
                     // due to MRET/SRET instructions (execute_status::success_and_serve_interrupts)
                     // As a simplification (and optimization), the next line will also invalidate in more cases,
                     // but this it's fine.
-                    fetch_vaddr_page = PAGE_OFFSET_MASK;
+                    fetch_vaddr_page = TLB_INVALID_PAGE;
                     // All status above execute_status::success_and_serve_interrupts will require breaking the loop
                     if (unlikely(status >= execute_status::success_and_serve_interrupts)) {
                         // Increment the cycle counter mcycle
@@ -5643,14 +5764,16 @@ interpreter_break_reason interpret(STATE_ACCESS &a, uint64_t mcycle_end) {
     }
     if (status == execute_status::success_and_yield) {
         return interpreter_break_reason::yielded_softly;
-    } // Reached mcycle_end
+    }                                      // Reached mcycle_end
     assert(a.read_mcycle() == mcycle_end); // LCOV_EXCL_LINE
     return interpreter_break_reason::reached_target_mcycle;
 }
 
 #ifdef MICROARCHITECTURE
+#ifdef OKUARCH
 // Explicit instantiation for uarch_machine_state_access
 template interpreter_break_reason interpret(uarch_machine_state_access &a, uint64_t mcycle_end);
+#endif
 #else
 // Explicit instantiation for state_access
 template interpreter_break_reason interpret(state_access &a, uint64_t mcycle_end);

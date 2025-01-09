@@ -362,19 +362,20 @@ LIBCARTESI_OBJS:= \
 	base64.o \
 	interpret.o \
 	virtual-machine.o \
-	uarch-machine.o \
-	uarch-step.o \
-	uarch-reset-state.o \
 	sha3.o \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
-	uarch-interpret.o \
 	machine-c-api.o \
 	uarch-pristine-ram.o \
 	uarch-pristine-state-hash.o \
 	uarch-pristine-hash.o \
-	send-cmio-response.o \
 	replay-step-state-access-interop.o
+
+	#send-cmio-response.o \
+	#uarch-machine.o \
+    #uarch-interpret.o \
+	#uarch-step.o \
+	#uarch-reset-state.o \
 
 CARTESI_CLUA_OBJS:= \
 	clua.o \

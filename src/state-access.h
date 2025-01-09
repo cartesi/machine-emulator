@@ -30,6 +30,7 @@
 #include "device-state-access.h"
 #include "i-state-access.h"
 #include "interpret.h"
+#include "machine-haddr.h"
 #include "machine-state.h"
 #include "machine.h"
 #include "os.h"
@@ -42,10 +43,23 @@
 
 namespace cartesi {
 
+class state_access;
+
+// Type trait that should return the pma_entry type for a state access class
+template <>
+struct i_state_access_pma_entry<state_access> {
+    using type = pma_entry;
+};
+// Type trait that should return the fast_addr type for a state access class
+template <>
+struct i_state_access_fast_addr<state_access> {
+    using type = machine_haddr;
+};
+
 /// \class state_access
 /// \details The state_access class implements fast, direct
 /// access to the machine state. No logs are kept.
-class state_access : public i_state_access<state_access, pma_entry> {
+class state_access : public i_state_access<state_access> {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
     machine &m_m; ///< Associated machine
 
@@ -76,8 +90,7 @@ public:
     }
 
 private:
-    // Declare interface as friend to it can forward calls to the "overridden" methods.
-    friend i_state_access<state_access, pma_entry>;
+    friend i_state_access<state_access>;
 
     machine_state &do_get_naked_state() {
         return m_m.get_state();
@@ -420,6 +433,89 @@ private:
         return m_m.get_state().htif.iyield;
     }
 
+    bool do_read_memory(uint64_t paddr, unsigned char *data, uint64_t length) const {
+        //??(edubart): Treating exceptions here is not ideal, we should probably
+        // move read_memory() method implementation inside state access later
+        try {
+            m_m.read_memory(paddr, data, length);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
+        //??(edubart): Treating exceptions here is not ideal, we should probably
+        // move write_memory() method implementation inside state access later
+        try {
+            m_m.write_memory(paddr, data, length);
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    pma_entry &do_read_pma_entry(uint64_t index) {
+        assert(index < PMA_MAX);
+        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
+        return m_m.get_state().pmas[static_cast<int>(index)];
+    }
+
+    void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
+        int write_length_log2_size) {
+        if (data == nullptr) {
+            throw std::runtime_error("data is null");
+        }
+        const uint64_t write_length = static_cast<uint64_t>(1) << write_length_log2_size;
+        if (write_length < data_length) {
+            throw std::runtime_error("write_length is less than data_length");
+        }
+        m_m.write_memory(paddr, data, data_length);
+        if (write_length > data_length) {
+            m_m.fill_memory(paddr + data_length, 0, write_length - data_length);
+        }
+    }
+
+    template <typename T, typename A = T>
+    void do_read_memory_word(machine_haddr haddr, uint64_t /* pma_index */, T *pval) {
+        *pval = aliased_aligned_read<T, A>(haddr);
+    }
+
+    template <typename T, typename A = T>
+    void do_write_memory_word(machine_haddr haddr, uint64_t /* pma_index */, T val) {
+        aliased_aligned_write<T, A>(haddr, val);
+    }
+
+    template <TLB_set_use USE>
+    uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) {
+        return m_m.get_state().tlb.hot[USE][slot_index].vaddr_page;
+    }
+
+    template <TLB_set_use USE>
+    machine_haddr do_read_tlb_vp_offset(uint64_t slot_index) {
+        return m_m.get_state().tlb.hot[USE][slot_index].vh_offset;
+    }
+
+    template <TLB_set_use USE>
+    uint64_t do_read_tlb_pma_index(uint64_t slot_index) {
+        return m_m.get_state().tlb.cold[USE][slot_index].pma_index;
+    }
+
+    template <TLB_set_use USE>
+    void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, machine_haddr vh_offset, uint64_t pma_index) {
+        m_m.get_state().tlb.hot[USE][slot_index].vaddr_page = vaddr_page;
+        m_m.get_state().tlb.hot[USE][slot_index].vh_offset = vh_offset;
+        m_m.get_state().tlb.cold[USE][slot_index].pma_index = pma_index;
+    }
+
+    fast_addr do_get_faddr(uint64_t paddr, uint64_t pma_index) const {
+        return m_m.get_haddr(paddr, pma_index);
+    }
+
+    void do_mark_dirty_page(machine_haddr haddr, uint64_t pma_index) {
+        m_m.mark_dirty_page(haddr, pma_index);
+    }
+
     NO_INLINE std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
         const bool interrupt_raised = false;
         // Only poll external interrupts if we are in unreproducible mode
@@ -458,156 +554,8 @@ private:
         return {mcycle, interrupt_raised};
     }
 
-    template <typename T>
-    void do_read_memory_word(uint64_t /*paddr*/, const unsigned char *hpage, uint64_t hoffset, T *pval) const {
-        *pval = aliased_aligned_read<T>(hpage + hoffset);
-    }
-
-    template <typename T>
-    void do_write_memory_word(uint64_t /*paddr*/, unsigned char *hpage, uint64_t hoffset, T val) {
-        aliased_aligned_write(hpage + hoffset, val);
-    }
-
-    bool do_read_memory(uint64_t paddr, unsigned char *data, uint64_t length) const {
-        //??(edubart): Treating exceptions here is not ideal, we should probably
-        // move read_memory() method implementation inside state access later
-        try {
-            m_m.read_memory(paddr, data, length);
-            return true;
-        } catch (...) {
-            return false;
-        }
-    }
-
-    bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
-        //??(edubart): Treating exceptions here is not ideal, we should probably
-        // move write_memory() method implementation inside state access later
-        try {
-            m_m.write_memory(paddr, data, length);
-            return true;
-        } catch (...) {
-            return false;
-        }
-    }
-
-    static unsigned char *do_get_host_memory(pma_entry &pma) {
-        return pma.get_memory_noexcept().get_host_memory();
-    }
-
-    pma_entry &do_read_pma_entry(uint64_t index) {
-        assert(index < PMA_MAX);
-        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
-        return m_m.get_state().pmas[static_cast<int>(index)];
-    }
-
-    template <TLB_entry_type ETYPE, typename T>
-    bool do_translate_vaddr_via_tlb(uint64_t vaddr, unsigned char **phptr) {
-        const uint64_t eidx = tlb_get_entry_index(vaddr);
-        const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
-        if (unlikely(!tlb_is_hit<T>(tlbhe.vaddr_page, vaddr))) {
-            return false;
-        }
-        *phptr = cast_addr_to_ptr<unsigned char *>(tlbhe.vh_offset + vaddr);
-        return true;
-    }
-
-    template <TLB_entry_type ETYPE, typename T>
-    bool do_read_memory_word_via_tlb(uint64_t vaddr, T *pval) {
-        const uint64_t eidx = tlb_get_entry_index(vaddr);
-        const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
-        if (unlikely(!tlb_is_hit<T>(tlbhe.vaddr_page, vaddr))) {
-            return false;
-        }
-        const auto *h = cast_addr_to_ptr<const unsigned char *>(tlbhe.vh_offset + vaddr);
-        *pval = aliased_aligned_read<T>(h);
-        return true;
-    }
-
-    template <TLB_entry_type ETYPE, typename T>
-    bool do_write_memory_word_via_tlb(uint64_t vaddr, T val) {
-        const uint64_t eidx = tlb_get_entry_index(vaddr);
-        const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
-        if (unlikely(!tlb_is_hit<T>(tlbhe.vaddr_page, vaddr))) {
-            return false;
-        }
-        auto *h = cast_addr_to_ptr<unsigned char *>(tlbhe.vh_offset + vaddr);
-        aliased_aligned_write(h, val);
-        return true;
-    }
-
-    template <TLB_entry_type ETYPE>
-    unsigned char *do_replace_tlb_entry(uint64_t vaddr, uint64_t paddr, pma_entry &pma) {
-        const uint64_t eidx = tlb_get_entry_index(vaddr);
-        tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
-        tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[ETYPE][eidx];
-        // Mark page that was on TLB as dirty so we know to update the Merkle tree
-        if constexpr (ETYPE == TLB_WRITE) {
-            if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
-                pma_entry &pma = do_read_pma_entry(tlbce.pma_index);
-                pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
-            }
-        }
-        const uint64_t vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
-        const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        unsigned char *hpage = pma.get_memory_noexcept().get_host_memory() + (paddr_page - pma.get_start());
-        tlbhe.vaddr_page = vaddr_page;
-        tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - vaddr_page;
-        tlbce.paddr_page = paddr_page;
-        tlbce.pma_index = static_cast<uint64_t>(pma.get_index());
-        return hpage;
-    }
-
-    template <TLB_entry_type ETYPE>
-    void do_flush_tlb_entry(uint64_t eidx) {
-        tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
-        // Mark page that was on TLB as dirty so we know to update the Merkle tree
-        if constexpr (ETYPE == TLB_WRITE) {
-            if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
-                tlbhe.vaddr_page = TLB_INVALID_PAGE;
-                const tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[ETYPE][eidx];
-                pma_entry &pma = do_read_pma_entry(tlbce.pma_index);
-                pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
-            } else {
-                tlbhe.vaddr_page = TLB_INVALID_PAGE;
-            }
-        } else {
-            tlbhe.vaddr_page = TLB_INVALID_PAGE;
-        }
-    }
-
-    template <TLB_entry_type ETYPE>
-    void do_flush_tlb_type() {
-        for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
-            do_flush_tlb_entry<ETYPE>(i);
-        }
-    }
-
-    void do_flush_tlb_vaddr(uint64_t /*vaddr*/) {
-        // We can't flush just one TLB entry for that specific virtual address,
-        // because megapages/gigapages may be in use while this TLB implementation ignores it,
-        // so we have to flush all addresses.
-        do_flush_tlb_type<TLB_CODE>();
-        do_flush_tlb_type<TLB_READ>();
-        do_flush_tlb_type<TLB_WRITE>();
-    }
-
     bool do_get_soft_yield() {
         return m_m.get_state().soft_yield;
-    }
-
-    void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
-        int write_length_log2_size) {
-        if (data == nullptr) {
-            throw std::runtime_error("data is null");
-        }
-        const uint64_t write_length = static_cast<uint64_t>(1) << write_length_log2_size;
-        if (write_length < data_length) {
-            throw std::runtime_error("write_length is less than data_length");
-        }
-        m_m.write_memory(paddr, data, data_length);
-        if (write_length > data_length) {
-            m_m.fill_memory(paddr + data_length, 0, write_length - data_length);
-        }
     }
 
 #ifdef DUMP_COUNTERS

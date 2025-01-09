@@ -27,10 +27,11 @@ namespace cartesi {
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param paddr Target physical address of word.
+/// \param index Receives index where PMA entry was found.
 /// \returns PMA entry where word falls, or empty sentinel.
 template <typename T, typename STATE_ACCESS>
-auto &find_pma_entry(STATE_ACCESS &a, uint64_t paddr) {
-    uint64_t index = 0;
+auto &find_pma_entry(STATE_ACCESS &a, uint64_t paddr, uint64_t &index) {
+    index = 0;
     while (true) {
         auto &pma = a.read_pma_entry(index);
         const auto length = pma.get_length();
@@ -51,6 +52,18 @@ auto &find_pma_entry(STATE_ACCESS &a, uint64_t paddr) {
         }
         ++index;
     }
+}
+
+/// \brief Returns PMAs entry where a word falls.
+/// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
+/// \tparam STATE_ACCESS Class of machine state accessor object.
+/// \param a Machine state accessor object.
+/// \param paddr Target physical address of word.
+/// \returns PMA entry where word falls, or empty sentinel.
+template <typename T, typename STATE_ACCESS>
+FORCE_INLINE auto &find_pma_entry(STATE_ACCESS &a, uint64_t paddr) {
+    uint64_t index = 0;
+    return find_pma_entry<T>(a, paddr, index);
 }
 
 } // namespace cartesi

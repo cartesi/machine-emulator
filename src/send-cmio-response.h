@@ -38,11 +38,11 @@ class replay_state_access;
 extern template void send_cmio_response(state_access &a, uint16_t reason, const unsigned char *data,
     uint32_t dataLength);
 
-// Declaration of explicit instantiation in module uarch-reset-state.cpp
+// Declaration of explicit instantiation in module send_cmio_response.cpp
 extern template void send_cmio_response(record_state_access &a, uint16_t reason, const unsigned char *data,
     uint32_t dataLength);
 
-// Declaration of explicit instantiation in module uarch-reset-state.cpp
+// Declaration of explicit instantiation in module send_cmio_response.cpp
 extern template void send_cmio_response(replay_state_access &a, uint16_t reason, const unsigned char *data,
     uint32_t dataLength);
 

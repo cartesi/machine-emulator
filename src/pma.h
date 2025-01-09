@@ -342,6 +342,11 @@ public:
         return *std::get_if<pma_memory>(&m_data);
     }
 
+    /// \returns data specific to IO ranges (cannot throw exceptions).
+    const pma_memory &get_memory_noexcept() const {
+        return *std::get_if<pma_memory>(&m_data);
+    }
+
     /// \returns data specific to IO ranges
     const pma_device &get_device() const {
         return std::get<pma_device>(m_data);
@@ -350,6 +355,11 @@ public:
     /// \returns data specific to IO ranges
     pma_device &get_device() {
         return std::get<pma_device>(m_data);
+    }
+
+    /// \returns data specific to IO ranges (cannot throw exceptions).
+    const pma_device &get_device_noexcept() const {
+        return *std::get_if<pma_device>(&m_data);
     }
 
     /// \returns data specific to IO ranges (cannot throw exceptions).

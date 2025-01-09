@@ -105,7 +105,7 @@ struct machine_state {
     } plic;
 
     /// \brief TLB state
-    shadow_tlb_state tlb{};
+    tlb_state tlb{};
 
     /// \brief HTIF state
     struct {

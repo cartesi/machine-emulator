@@ -1263,7 +1263,7 @@ do_test("Dump of log produced by send_cmio_response should match", function(mach
     -- luacheck: push no max line length
     local expected_dump = "begin send cmio response\n"
         .. "  1: read iflags.Y@0x2f8(760): 0x1(1)\n"
-        .. '  2: write cmio rx buffer@0x60000000(1610612736): hash:"290decd9"(2^5 bytes) -> hash:"555b1f6d"(2^5 bytes)\n'
+        .. '  2: write cmio rx buffer@0x60000000(1610612736): hash:"66687aad"(2^5 bytes) -> hash:"e6fe5964"(2^5 bytes)\n'
         .. "  3: write htif.fromhost@0x330(816): 0x0(0) -> 0x70000000a(30064771082)\n"
         .. "  4: write iflags.Y@0x2f8(760): 0x1(1) -> 0x0(0)\n"
         .. "end send cmio response\n"

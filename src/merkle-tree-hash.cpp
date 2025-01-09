@@ -26,11 +26,11 @@
 
 #include "back-merkle-tree.h"
 #include "i-hasher.h"
-#include "keccak-256-hasher.h"
+#include "machine-hasher.h"
 #include "unique-c-ptr.h"
 
 using namespace cartesi;
-using hasher_type = keccak_256_hasher;
+using hasher_type = machine_hasher_type;
 using hash_type = hasher_type::hash_type;
 
 /// \brief Checks if string matches prefix and captures remaninder
@@ -175,7 +175,7 @@ the hash of the data in the range.
 The Merkle tree root hash is simply the node hash corresponding to the
 entire 2^log2_root_size range.
 
-The hash function used is Keccak-256.
+The hash function used is machine_hasher_type, defined in machine-hasher.h.
 
 Options:
 

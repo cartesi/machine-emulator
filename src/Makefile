@@ -157,6 +157,7 @@ WARNS=-Wall -Wextra -Wpedantic
 INCS+= \
 	-I../third-party/llvm-flang-uint128 \
 	-I../third-party/tiny_sha3 \
+	-I../third-party/SHA256 \
 	-I../third-party/nlohmann-json \
 	-I../third-party/downloads \
 	$(BOOST_INC)
@@ -211,6 +212,9 @@ endif
 
 # The SHA3 is third party library we always want to compile with O3
 SHA3_CFLAGS=-O3
+
+# The SHA256 is third party library we always want to compile with O3
+SHA256_CFLAGS=-O3
 
 # Optimization flags for the interpreter
 ifneq (,$(filter yes,$(relwithdebinfo) $(release)))
@@ -375,7 +379,8 @@ LIBCARTESI_OBJS:= \
 	uarch-pristine-state-hash.o \
 	uarch-pristine-hash.o \
 	send-cmio-response.o \
-	replay-step-state-access-interop.o
+	replay-step-state-access-interop.o \
+	sha256.o
 
 CARTESI_CLUA_OBJS:= \
 	clua.o \
@@ -394,7 +399,8 @@ LIBCARTESI_MERKLE_TREE_OBJS:= \
 	back-merkle-tree.o \
 	pristine-merkle-tree.o \
 	complete-merkle-tree.o \
-	full-merkle-tree.o
+	full-merkle-tree.o \
+	sha256.o
 
 MERKLE_TREE_HASH_OBJS:= \
 	merkle-tree-hash.o
@@ -553,6 +559,10 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 
 sha3.o: ../third-party/tiny_sha3/sha3.c
 	$(CC) $(CFLAGS) $(SHA3_CFLAGS) -c -o $@ $<
+
+sha256.o: ../third-party/SHA256/sha256.c
+	$(CC) $(CFLAGS) $(SHA256_CFLAGS) -c -o $@ $<
+
 
 uarch-pristine-ram.o: $(UARCH_PRISTINE_RAM_C)
 	$(CC) $(CFLAGS) -c -o $@ $<

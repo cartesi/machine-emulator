@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a "--jobs" option to "uarch-riscv-tests.lua" test
 - add-created-files.diff should now be applied with `-p1`
 - Improved send_cmio_response bounds checking
+- keccak hash algorithm replaced by sha-256
 
 ### Fixed
 - Fixed --skip-root-hash-store not skipping root hash computation when using the cli

@@ -37,52 +37,42 @@ static bool shadow_tlb_peek(const pma_entry &pma, const machine &m, uint64_t pag
         *page_data = nullptr;
         return false;
     }
-
     // Clear page
     memset(scratch, 0, PMA_PAGE_SIZE);
-
     // Copy relevant TLB entries to the page
-    for (uint64_t off = 0; off < PMA_PAGE_SIZE; off += sizeof(uint64_t)) {
+    const auto &tlb = m.get_state().tlb;
+    for (uint64_t offset = 0; offset < PMA_PAGE_SIZE; offset += sizeof(uint64_t)) {
         uint64_t val = 0;
-        const uint64_t tlboff = page_offset + off;
-        if (tlboff < offsetof(shadow_tlb_state, cold)) { // Hot entry
-            const uint64_t etype = tlboff / sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>);
-            const uint64_t etypeoff = tlboff % sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>);
-            const uint64_t eidx = etypeoff / sizeof(tlb_hot_entry);
-            const uint64_t fieldoff = etypeoff % sizeof(tlb_hot_entry);
-            const tlb_hot_entry &tlbhe = m.get_state().tlb.hot[etype][eidx];
-            switch (fieldoff) {
-                case offsetof(tlb_hot_entry, vaddr_page):
-                    val = tlbhe.vaddr_page;
+        if (offset < sizeof(shadow_tlb_state)) {
+            // Figure out in which set (code/read/write) the offset falls
+            const uint64_t set_index = offset / sizeof(shadow_tlb_set);
+            const uint64_t slot_offset = offset % sizeof(shadow_tlb_set);
+            // Figure out in which slot index the offset falls
+            const uint64_t slot_index = slot_offset / sizeof(shadow_tlb_slot);
+            const uint64_t field_offset = slot_offset % sizeof(shadow_tlb_slot);
+            switch (field_offset) {
+                case offsetof(shadow_tlb_slot, vaddr_page):
+                    val = tlb.hot[set_index][slot_index].vaddr_page;
                     break;
-                case offsetof(tlb_hot_entry, vh_offset):
-                default:
-                    // Here we skip host related fields, they are visible as 0 in the device
-                    val = 0;
+                case offsetof(shadow_tlb_slot, vp_offset): {
+                    auto vaddr_page = tlb.hot[set_index][slot_index].vaddr_page;
+                    auto vh_offset = tlb.hot[set_index][slot_index].vh_offset;
+                    auto haddr_page = vaddr_page + vh_offset;
+                    auto pma_index = tlb.cold[set_index][slot_index].pma_index;
+                    auto paddr_page = m.get_paddr(haddr_page, pma_index);
+                    val = paddr_page - vaddr_page;
                     break;
-            }
-        } else if (tlboff < sizeof(shadow_tlb_state)) { // Cold entry
-            const uint64_t coldoff = tlboff - offsetof(shadow_tlb_state, cold);
-            const uint64_t etype = coldoff / sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
-            const uint64_t etypeoff = coldoff % sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>);
-            const uint64_t eidx = etypeoff / sizeof(tlb_cold_entry);
-            const uint64_t fieldoff = etypeoff % sizeof(tlb_cold_entry);
-            const tlb_cold_entry &tlbce = m.get_state().tlb.cold[etype][eidx];
-            switch (fieldoff) {
-                case offsetof(tlb_cold_entry, paddr_page):
-                    val = tlbce.paddr_page;
-                    break;
-                case offsetof(tlb_cold_entry, pma_index):
-                    val = tlbce.pma_index;
+                }
+                case offsetof(shadow_tlb_slot, pma_index):
+                    val = tlb.cold[set_index][slot_index].pma_index;
                     break;
                 default:
                     val = 0;
                     break;
             }
         }
-        aliased_aligned_write<uint64_t>(scratch + off, val);
+        aliased_aligned_write<uint64_t>(scratch + offset, val);
     }
-
     *page_data = scratch;
     return true;
 }

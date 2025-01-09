@@ -27,6 +27,7 @@
 #include "machine-state.h"
 #include "pma-constants.h"
 #include "riscv-constants.h"
+#include "shadow-pmas.h"
 #include "shadow-state.h"
 #include "shadow-tlb.h"
 #include "strict-aliasing.h"
@@ -814,22 +815,27 @@ public:
             return "f";
         }
 
-        if (paddr >= PMA_SHADOW_PMAS_START && paddr < PMA_SHADOW_PMAS_START + (PMA_MAX * PMA_WORD_SIZE * 2)) {
-            auto word_index = (paddr - PMA_SHADOW_PMAS_START) >> 3;
-            if ((word_index & 1) == 0) {
+        if (paddr >= shadow_pmas_get_pma_abs_addr(0) && paddr < shadow_pmas_get_pma_abs_addr(PMA_MAX)) {
+            if ((paddr & 0b1111) == 0) {
                 return "pma.istart";
             }
-            return "pma.ilength";
+            if ((paddr & 0b1111) == 0b1000) {
+                return "pma.ilength";
+            }
         }
 
-        if (paddr >= PMA_SHADOW_TLB_START && paddr < PMA_SHADOW_TLB_START + PMA_SHADOW_TLB_LENGTH &&
-            paddr % sizeof(uint64_t) == 0) {
-            const uint64_t tlboff = paddr - PMA_SHADOW_TLB_START;
-            if (tlboff < offsetof(shadow_tlb_state, cold)) {
-                return "cold_tlb_entry_field";
+        if (paddr % sizeof(uint64_t) == 0) {
+            if (paddr >= shadow_tlb_get_slot_abs_addr<TLB_WRITE>(0) &&
+                paddr < shadow_tlb_get_slot_abs_addr<TLB_WRITE>(TLB_SET_SIZE)) {
+                return "write tlb";
             }
-            if (tlboff < sizeof(shadow_tlb_state)) {
-                return "hot_tlb_entry_field";
+            if (paddr >= shadow_tlb_get_slot_abs_addr<TLB_READ>(0) &&
+                paddr < shadow_tlb_get_slot_abs_addr<TLB_READ>(TLB_SET_SIZE)) {
+                return "read tlb";
+            }
+            if (paddr >= shadow_tlb_get_slot_abs_addr<TLB_READ>(0) &&
+                paddr < shadow_tlb_get_slot_abs_addr<TLB_READ>(TLB_SET_SIZE)) {
+                return "code tlb";
             }
         }
 

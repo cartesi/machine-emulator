@@ -865,17 +865,35 @@ static inline void executeSD(UarchState &a, uint32 insn, uint64 pc) {
 template <typename UarchState>
 static inline void executeECALL(UarchState &a, uint64 pc) {
     [[maybe_unused]] auto note = a.make_scoped_note("ecall");
+    // ECALL conventions
+    // a0--a7 are the same as x10--x17
+    // syscall is passed in a7
+    // arguments are passed in a0--a5
+    // return value is in a0 (and maybe also in a1)
     uint64 fn = readX(a, 17); // a7 contains the function number
     if (fn == UARCH_ECALL_FN_HALT) {
         return setHaltFlag(a);
     }
     if (fn == UARCH_ECALL_FN_PUTCHAR) {
-        uint64 character = readX(a, 16); // a6 contains the character to print
+        uint64 character = readX(a, 10); // a0 contains the character to print
         putChar(a, uint8(character));
-    } else {
-        throwRuntimeError(a, "unsupported ecall function");
+        return advancePc(a, pc);
     }
-    return advancePc(a, pc);
+    if (fn == UARCH_ECALL_FN_MARK_DIRTY_PAGE) {
+        uint64 paddr = readX(a, 10);     // a0 contains physical address in page to be marked dirty
+        uint64 pma_index = readX(a, 11); // a1 contains a index of PMA where page falls
+        markDirtyPage(a, paddr, pma_index);
+        return advancePc(a, pc);
+    }
+    if (fn == UARCH_ECALL_FN_WRITE_TLB_VP_OFFSET) {
+        uint64 use = readX(a, 10);        // a0 contains TLB set (code, read, write)
+        uint64 slot_index = readX(a, 11); // a1 contains slot_index to modify
+        uint64 vp_offset = readX(a, 12);  // a2 contains vp_offset to write
+        uint64 pma_index = readX(a, 13);  // a3 contains index of PMA where page falls
+        writeTlbVpOffset(a, use, slot_index, vp_offset, pma_index);
+        return advancePc(a, pc);
+    }
+    throwRuntimeError(a, "unsupported ecall function");
 }
 
 template <typename UarchState>

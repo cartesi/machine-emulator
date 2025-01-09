@@ -53,6 +53,16 @@ static inline uint64_t shadow_pmas_get_pma_abs_addr(uint64_t p) {
     return PMA_SHADOW_PMAS_START + shadow_pmas_get_pma_rel_addr(p);
 }
 
+/// \brief Obtains the absolute address of the istart field in a PMA entry in shadow memory.
+static inline uint64_t shadow_pmas_get_pma_istart_abs_addr(uint64_t p) {
+    return shadow_pmas_get_pma_abs_addr(p) + offsetof(shadow_pma_entry, istart);
+}
+
+/// \brief Obtains the absolute address of the ilength field in a PMA entry in shadow memory.
+static inline uint64_t shadow_pmas_get_pma_ilength_abs_addr(uint64_t p) {
+    return shadow_pmas_get_pma_abs_addr(p) + offsetof(shadow_pma_entry, ilength);
+}
+
 } // namespace cartesi
 
 #endif

@@ -65,14 +65,17 @@
 #include "shadow-uarch-state.h"
 #include "state-access.h"
 #include "strict-aliasing.h"
+#include "tlb.h"
 #include "translate-virtual-address.h"
-#include "uarch-interpret.h"
 #include "uarch-pristine-state-hash.h"
+#ifdef OKUARCH
+#include "uarch-interpret.h"
 #include "uarch-record-state-access.h"
 #include "uarch-replay-state-access.h"
 #include "uarch-reset-state.h"
 #include "uarch-state-access.h"
 #include "uarch-step.h"
+#endif
 #include "unique-c-ptr.h"
 #include "virtio-console.h"
 #include "virtio-device.h"
@@ -223,48 +226,70 @@ void machine::replace_memory_range(const memory_range_config &range) {
     throw std::invalid_argument{"attempt to replace inexistent memory range"};
 }
 
-template <TLB_entry_type ETYPE>
-static void load_tlb_entry(machine &m, uint64_t eidx, unsigned char *hmem) {
-    tlb_hot_entry &tlbhe = m.get_state().tlb.hot[ETYPE][eidx];
-    tlb_cold_entry &tlbce = m.get_state().tlb.cold[ETYPE][eidx];
-    auto vaddr_page = aliased_aligned_read<uint64_t>(hmem + tlb_get_vaddr_page_rel_addr<ETYPE>(eidx));
-    auto paddr_page = aliased_aligned_read<uint64_t>(hmem + tlb_get_paddr_page_rel_addr<ETYPE>(eidx));
-    auto pma_index = aliased_aligned_read<uint64_t>(hmem + tlb_get_pma_index_rel_addr<ETYPE>(eidx));
-    if (vaddr_page != TLB_INVALID_PAGE) {
-        if ((vaddr_page & ~PAGE_OFFSET_MASK) != vaddr_page) {
-            throw std::invalid_argument{"misaligned virtual page address in TLB entry"};
+void machine::init_tlb() {
+    for (auto use : {TLB_CODE, TLB_READ, TLB_WRITE}) {
+        auto &hot_set = m_s.tlb.hot[use];
+        auto &cold_set = m_s.tlb.cold[use];
+        for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
+            auto &hot_slot = hot_set[slot_index];
+            hot_slot.vaddr_page = TLB_INVALID_PAGE;
+            hot_slot.vh_offset = host_addr{};
+            auto &cold_slot = cold_set[slot_index];
+            cold_slot.pma_index = TLB_INVALID_PMA_INDEX;
         }
-        if ((paddr_page & ~PAGE_OFFSET_MASK) != paddr_page) {
-            throw std::invalid_argument{"misaligned physical page address in TLB entry"};
-        }
-        const pma_entry &pma = m.find_pma_entry<uint64_t>(paddr_page);
-        // Checks if the PMA still valid
-        if (pma.get_length() == 0 || !pma.get_istart_M() || pma_index >= m.get_state().pmas.size() ||
-            &pma != &m.get_state().pmas[pma_index]) {
-            throw std::invalid_argument{"invalid PMA for TLB entry"};
-        }
-        const unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
-        // Valid TLB entry
-        tlbhe.vaddr_page = vaddr_page;
-        tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - vaddr_page;
-        tlbce.paddr_page = paddr_page;
-        tlbce.pma_index = pma_index;
-    } else { // Empty or invalidated TLB entry
-        tlbhe.vaddr_page = vaddr_page;
-        tlbhe.vh_offset = 0;
-        tlbce.paddr_page = paddr_page;
-        tlbce.pma_index = pma_index;
     }
 }
 
-template <TLB_entry_type ETYPE>
-static void init_tlb_entry(machine &m, uint64_t eidx) {
-    tlb_hot_entry &tlbhe = m.get_state().tlb.hot[ETYPE][eidx];
-    tlb_cold_entry &tlbce = m.get_state().tlb.cold[ETYPE][eidx];
-    tlbhe.vaddr_page = TLB_INVALID_PAGE;
-    tlbhe.vh_offset = 0;
-    tlbce.paddr_page = TLB_INVALID_PAGE;
-    tlbce.pma_index = TLB_INVALID_PMA;
+void machine::init_tlb(const shadow_tlb_state &shadow_tlb) {
+    const char *err_prefix = "stored TLB is corrupted: ";
+    for (auto use : {TLB_CODE, TLB_READ, TLB_WRITE}) {
+        auto &hot_set = m_s.tlb.hot[use];
+        auto &cold_set = m_s.tlb.cold[use];
+        auto &shadow_set = shadow_tlb[use];
+        for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
+            // copy from shadow to live TLB
+            auto &shadow_slot = shadow_set[slot_index];
+            auto &cold_slot = cold_set[slot_index];
+            const auto pma_index = cold_slot.pma_index = shadow_slot.pma_index;
+            auto &hot_slot = hot_set[slot_index];
+            const auto vaddr_page = hot_slot.vaddr_page = shadow_slot.vaddr_page;
+            // check consistency of slot, if valid, and compute live host address offset
+            if (shadow_slot.vaddr_page != TLB_INVALID_PAGE) {
+                // virtual page address must be page-aligned
+                if (shadow_slot.vaddr_page & PAGE_OFFSET_MASK) {
+                    throw std::invalid_argument{err_prefix + "invalid vaddr_page in TLB slot"s};
+                }
+                // PMA index cannot be outside pmas array
+                if (pma_index >= m_s.pmas.size()) {
+                    throw std::invalid_argument{err_prefix + "invalid pma_index in active TLB slot"s};
+                }
+                // PMA at index must be a non-empty memory PMA
+                const auto &pma = m_s.pmas[pma_index];
+                if (pma.get_length() == 0 || !pma.get_istart_M()) {
+                    throw std::invalid_argument{err_prefix + "invalid pma_index in active TLB slot"s};
+                }
+                auto paddr_page = shadow_slot.vaddr_page + shadow_slot.vp_offset;
+                // translated physical page address must be page-aligned
+                if (paddr_page & PAGE_OFFSET_MASK) {
+                    throw std::invalid_argument{err_prefix + "invalid vp_offset in active TLB slot"s};
+                }
+                // translated physical page address must fall entirely into designated PMA
+                if (paddr_page < pma.get_start() || paddr_page - pma.get_start() > pma.get_length() - PMA_PAGE_SIZE) {
+                    throw std::invalid_argument{err_prefix + "invalid vp_offset in active TLB slot"s};
+                }
+                hot_slot.vh_offset = get_host_addr(paddr_page, pma_index) - vaddr_page;
+            } else {
+                if (shadow_slot.vp_offset != 0) {
+                    throw std::invalid_argument{err_prefix + "invalid vp_offset in empty TLB slot"s};
+                }
+                if (pma_index != TLB_INVALID_PMA_INDEX) {
+                    throw std::invalid_argument{err_prefix + "invalid pma_index in empty TLB slot"s};
+                }
+                // We never leave garbage behind, even in invalid slots
+                hot_slot.vh_offset = host_addr{};
+            }
+        }
+    }
 }
 
 machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c{c}, m_uarch{c.uarch}, m_r{r} {
@@ -511,24 +536,16 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
     // Last, add sentinel PMA
     m_merkle_pmas.push_back(&m_s.empty_pma);
 
-    // Initialize TLB device
-    // this must be done after all PMA entries are already registered, so we can lookup page addresses
+    // Initialize TLB device.
+    // This must be done after all PMA entries are already registered, so we can lookup page addresses
     if (!m_c.tlb.image_filename.empty()) {
-        // Create a temporary PMA entry just to load TLB contents from an image file
-        pma_entry tlb_image_pma = make_mmapd_memory_pma_entry("shadow TLB device"s, PMA_SHADOW_TLB_START,
-            PMA_SHADOW_TLB_LENGTH, m_c.tlb.image_filename, false);
-        unsigned char *hmem = tlb_image_pma.get_memory().get_host_memory();
-        for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
-            load_tlb_entry<TLB_CODE>(*this, i, hmem);
-            load_tlb_entry<TLB_READ>(*this, i, hmem);
-            load_tlb_entry<TLB_WRITE>(*this, i, hmem);
-        }
+        unsigned char *buf = os_map_file(m_c.tlb.image_filename.c_str(), PMA_SHADOW_TLB_LENGTH, false);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        const auto &shadow_tlb = *reinterpret_cast<const shadow_tlb_state *>(buf);
+        init_tlb(shadow_tlb);
+        os_unmap_file(buf, PMA_SHADOW_TLB_LENGTH);
     } else {
-        for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
-            init_tlb_entry<TLB_CODE>(*this, i);
-            init_tlb_entry<TLB_READ>(*this, i);
-            init_tlb_entry<TLB_WRITE>(*this, i);
-        }
+        init_tlb();
     }
 
     // Initialize TTY if console input is enabled
@@ -767,6 +784,33 @@ template <typename CONTAINER>
 pma_entry &machine::find_pma_entry(const CONTAINER &pmas, uint64_t paddr, uint64_t length) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
     return const_cast<pma_entry &>(std::as_const(*this).find_pma_entry(pmas, paddr, length));
+}
+
+uint64_t machine::get_paddr(host_addr haddr, uint64_t pma_index) const {
+    return static_cast<uint64_t>(haddr + get_hp_offset(pma_index));
+}
+
+host_addr machine::get_host_addr(uint64_t paddr, uint64_t pma_index) const {
+    return host_addr{paddr} - get_hp_offset(pma_index);
+}
+
+void machine::mark_dirty_page(host_addr haddr, uint64_t pma_index) {
+    auto paddr = get_paddr(haddr, pma_index);
+    auto &pma = m_s.pmas[static_cast<int>(pma_index)];
+    pma.mark_dirty_page(paddr - pma.get_start());
+}
+
+host_addr machine::get_hp_offset(uint64_t pma_index) const {
+    if (pma_index >= m_s.pmas.size()) {
+        throw std::domain_error{"PMA is out of range"};
+    }
+    const auto &pma = m_s.pmas[static_cast<int>(pma_index)];
+    if (!pma.get_istart_M()) {
+        throw std::domain_error{"PMA is not memory"};
+    }
+    auto haddr = cast_ptr_to_host_addr(pma.get_memory().get_host_memory());
+    auto paddr = pma.get_start();
+    return paddr - haddr;
 }
 
 template <typename CONTAINER>
@@ -1663,18 +1707,22 @@ uint64_t machine::get_reg_address(reg r) {
 }
 
 void machine::mark_write_tlb_dirty_pages() const {
-    for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
-        const tlb_hot_entry &tlbhe = m_s.tlb.hot[TLB_WRITE][i];
-        if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
-            const tlb_cold_entry &tlbce = m_s.tlb.cold[TLB_WRITE][i];
-            if (tlbce.pma_index >= m_s.pmas.size()) {
+    auto &hot_set = m_s.tlb.hot[TLB_WRITE];
+    auto &cold_set = m_s.tlb.cold[TLB_WRITE];
+    for (uint64_t slot_index = 0; slot_index < PMA_TLB_SIZE; ++slot_index) {
+        const auto &hot_slot = hot_set[slot_index];
+        if (hot_slot.vaddr_page != TLB_INVALID_PAGE) {
+            auto haddr_page = hot_slot.vaddr_page + hot_slot.vh_offset;
+            const auto &cold_slot = cold_set[slot_index];
+            if (cold_slot.pma_index >= m_s.pmas.size()) {
                 throw std::runtime_error{"could not mark dirty page for a TLB entry: TLB is corrupt"};
             }
-            pma_entry &pma = m_s.pmas[tlbce.pma_index];
-            if (!pma.contains(tlbce.paddr_page, PMA_PAGE_SIZE)) {
+            auto paddr_page = get_paddr(haddr_page, cold_slot.pma_index);
+            pma_entry &pma = m_s.pmas[cold_slot.pma_index];
+            if (!pma.contains(paddr_page, PMA_PAGE_SIZE)) {
                 throw std::runtime_error{"could not mark dirty page for a TLB entry: TLB is corrupt"};
             }
-            pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
+            pma.mark_dirty_page(paddr_page - pma.get_start());
         }
     }
 }
@@ -2137,11 +2185,14 @@ void machine::verify_send_cmio_response(uint16_t reason, const unsigned char *da
 }
 
 void machine::reset_uarch() {
+#if OKUARCH
     uarch_state_access a(m_uarch.get_state(), get_state());
     uarch_reset_state(a);
+#endif
 }
 
 access_log machine::log_reset_uarch(const access_log::type &log_type) {
+#if OKUARCH
     hash_type root_hash_before;
     get_root_hash(root_hash_before);
     // Call uarch_reset_state with a uarch_record_state_access object
@@ -2155,10 +2206,13 @@ access_log machine::log_reset_uarch(const access_log::type &log_type) {
     get_root_hash(root_hash_after);
     verify_reset_uarch(root_hash_before, *a.get_log(), root_hash_after);
     return std::move(*a.get_log());
+#endif
+    return access_log{log_type};
 }
 
 void machine::verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
     const hash_type &root_hash_after) {
+#if OKUARCH
     // There must be at least one access in log
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
@@ -2173,12 +2227,19 @@ void machine::verify_reset_uarch(const hash_type &root_hash_before, const access
     if (obtained_root_hash != root_hash_after) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
     }
+#endif
+    (void) root_hash_before;
+    (void) log;
+    (void) root_hash_after;
 }
 
 // Declaration of explicit instantiation in module uarch-step.cpp
+#if OKUARCH
 extern template UArchStepStatus uarch_step(uarch_record_state_access &a);
+#endif
 
 access_log machine::log_step_uarch(const access_log::type &log_type) {
+#if OKUARCH
     if (m_uarch.get_state().ram.get_istart_E()) {
         throw std::runtime_error("microarchitecture RAM is not present");
     }
@@ -2194,13 +2255,18 @@ access_log machine::log_step_uarch(const access_log::type &log_type) {
     get_root_hash(root_hash_after);
     verify_step_uarch(root_hash_before, *a.get_log(), root_hash_after);
     return std::move(*a.get_log());
+#endif
+    return access_log{log_type};
 }
 
 // Declaration of explicit instantiation in module uarch-step.cpp
+#if OKUARCH
 extern template UArchStepStatus uarch_step(uarch_replay_state_access &a);
+#endif
 
 void machine::verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
     const hash_type &root_hash_after) {
+#if OKUARCH
     // There must be at least one access in log
     if (log.get_accesses().empty()) {
         throw std::invalid_argument{"too few accesses in log"};
@@ -2215,6 +2281,10 @@ void machine::verify_step_uarch(const hash_type &root_hash_before, const access_
     if (obtained_root_hash != root_hash_after) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
     }
+#endif
+    (void) root_hash_before;
+    (void) log;
+    (void) root_hash_after;
 }
 
 machine_config machine::get_default_config() {
@@ -2223,6 +2293,7 @@ machine_config machine::get_default_config() {
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
+#if OKUARCH
     if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error("microarchitecture cannot be used with unreproducible machines");
     }
@@ -2231,6 +2302,9 @@ uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
     }
     uarch_state_access a(m_uarch.get_state(), get_state());
     return uarch_interpret(a, uarch_cycle_end);
+#endif
+    (void) uarch_cycle_end;
+    return uarch_interpreter_break_reason::uarch_halted;
 }
 
 interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::string &filename) {

@@ -22,6 +22,7 @@
 #include <cstdint>
 
 #include "compiler-defines.h"
+#include "pma-constants.h"
 #include "pma-driver.h"
 #include "riscv-constants.h"
 

@@ -28,6 +28,7 @@
 #include <boost/container/static_vector.hpp>
 
 #include "access-log.h"
+#include "host-addr.h"
 #include "i-device-state-access.h"
 #include "interpret.h"
 #include "machine-config.h"
@@ -124,6 +125,17 @@ private:
 
     template <typename CONTAINER>
     const pma_entry &find_pma_entry(const CONTAINER &pmas, uint64_t paddr, uint64_t length) const;
+
+    /// \brief Returns offset that converts between machine host addresses and target physical addresses
+    /// \param pma_index Index of the memory PMA for the desired offset
+    host_addr get_hp_offset(uint64_t pma_index) const;
+
+    /// \brief Initializes machine TLB from scratch
+    void init_tlb();
+
+    /// \brief Initializes machine TLB from shadow tlb
+    /// \param shadow_tlb Shadow TLB loaded from disk
+    void init_tlb(const shadow_tlb_state &shadow_tlb);
 
 public:
     /// \brief Type of hash
@@ -429,6 +441,25 @@ public:
     /// \param data Response data.
     /// \param length Length of response data.
     void send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length);
+
+    /// \brief Converts from machine host address to target physical address
+    /// \param haddr Machine host address to convert
+    /// \param pma_index Index of PMA where address falls
+    /// \returns Corresponding target physical address
+    /// \details This method also converts from vh_offset to vp_offset
+    uint64_t get_paddr(host_addr haddr, uint64_t pma_index) const;
+
+    /// \brief Converts from target physical address to machine host address
+    /// \param paddr Target physical address to convert
+    /// \param pma_index Index of PMA where address falls
+    /// \returns Corresponding machine host address
+    /// \details This method also converts from vp_offset to vh_offset
+    host_addr get_host_addr(uint64_t paddr, uint64_t pma_index) const;
+
+    /// \brief Marks a page as dirty
+    /// \param haddr Machine host address within page
+    /// \param pma_index Index of PMA where address falls
+    void mark_dirty_page(host_addr haddr, uint64_t pma_index);
 
     /// \brief Sends cmio response and returns an access log
     /// \param reason Reason for sending response.

@@ -27,13 +27,16 @@
 #include "pma.h"
 #include "riscv-constants.h"
 #include "strict-aliasing.h"
+#if OKUARCH
 #include "uarch-bridge.h"
 #include "uarch-pristine.h"
 #include "uarch-state.h"
+#endif
 
 namespace cartesi {
 
 class uarch_state_access : public i_uarch_state_access<uarch_state_access> {
+#ifdef OKUARCH
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     uarch_state &m_us;
     machine_state &m_s;
@@ -199,6 +202,7 @@ private:
         m_us.ram.fill_memory(m_us.ram.get_start() + uarch_pristine_ram_len, 0,
             m_us.ram.get_length() - uarch_pristine_ram_len);
     }
+#endif
 };
 
 } // namespace cartesi

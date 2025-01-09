@@ -19,123 +19,53 @@
 
 /// \file
 /// \brief TLB device.
-/// \details The Translation Lookaside Buffer is a small cache used to speed up translation between
-/// virtual target addresses and the corresponding memory address in the host.
+/// \details The Translation Lookaside Buffer is a small cache used to speed up translation between address spaces.
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 
-#include "pma-constants.h"
+#include "compiler-defines.h"
 #include "pma-driver.h"
-#include "riscv-constants.h"
+#include "tlb.h"
 
 namespace cartesi {
 
+/// \brief Shadow TLB slot
+struct PACKED shadow_tlb_slot {
+    uint64_t vaddr_page; ///< Tag is target virtual address of start of page
+    uint64_t vp_offset;  ///< Value is offset from target virtual address to target physical address within page
+    uint64_t pma_index;  ///< Index of PMA where physical page falls
+};
+
+/// \brief Shadow TLB set
+using shadow_tlb_set = std::array<shadow_tlb_slot, TLB_SET_SIZE>;
+
+/// \brief Shadow TLB memory layout
+using shadow_tlb_state = std::array<shadow_tlb_set, TLB_LAST_ + 1>; // one set for code, one for read and one for write
+
+static_assert(PMA_SHADOW_TLB_LENGTH >= sizeof(shadow_tlb_state), "TLB state must fit in TLB shadow");
+
 extern const pma_driver shadow_tlb_driver;
 
-/// \brief TLB entry type.
-enum TLB_entry_type : uint64_t { TLB_CODE, TLB_READ, TLB_WRITE };
-
-/// \brief TLB constants.
-enum TLB_constants : uint64_t { TLB_INVALID_PAGE = UINT64_C(-1), TLB_INVALID_PMA = PMA_MAX };
-
-/// \brief TLB hot entry.
-struct tlb_hot_entry final {
-    uint64_t vaddr_page; ///< Target virtual address of page start
-    uint64_t vh_offset;  ///< Offset that maps target virtual addresses directly to host addresses.
-};
-
-/// \brief TLB cold entry.
-struct tlb_cold_entry final {
-    uint64_t paddr_page; ///< Target physical address of page start
-    uint64_t pma_index;  ///< PMA entry index for corresponding range
-};
-
-/// \brief TLB state.
-struct shadow_tlb_state final {
-    // The TLB state is split in hot and cold regions.
-    // The hot region is accessed with very high frequency every hit check,
-    // while the cold region with low frequency only when replacing or flushing write TLB entries.
-    //
-    // Splitting into hold and cold regions increases host CPU cache usage when checking TLB hits,
-    // due to more data locality, therefore improving the TLB performance.
-    std::array<std::array<tlb_hot_entry, PMA_TLB_SIZE>, 3> hot;
-    std::array<std::array<tlb_cold_entry, PMA_TLB_SIZE>, 3> cold;
-};
-
-//??E Do we even want to support 128 bit systems someday?
-// Make sure uint64_t is large enough to hold host pointers, otherwise 'vh_offset' field will not work correctly.
-static_assert(sizeof(uint64_t) >= sizeof(uintptr_t), "TLB expects host pointer to be at maximum 64bit");
-
-// This TLB algorithm assumes the following conditions
-static_assert((sizeof(tlb_hot_entry) & (sizeof(tlb_hot_entry) - 1)) == 0 &&
-        (sizeof(tlb_cold_entry) & (sizeof(tlb_cold_entry) - 1)) == 0,
-    "TLB entry size must be a power of 2");
-static_assert(PMA_SHADOW_TLB_LENGTH % sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>) == 0 &&
-        PMA_SHADOW_TLB_LENGTH % sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>) == 0,
-    "code assumes PMA TLB length is divisible by TLB entry array size");
-static_assert(PMA_SHADOW_TLB_LENGTH == sizeof(shadow_tlb_state),
-    "code assumes PMA TLB length is equal to TLB state size");
-
-/// \brief Gets a TLB entry index.
-/// \param vaddr Target virtual address.
-static inline uint64_t tlb_get_entry_index(uint64_t vaddr) {
-    return (vaddr >> PMA_PAGE_SIZE_LOG2) & (PMA_TLB_SIZE - 1);
+template <TLB_set_use USE>
+constexpr uint64_t shadow_tlb_get_slot_abs_addr(uint64_t slot_index) {
+    return PMA_SHADOW_TLB_START + USE * sizeof(shadow_tlb_set) + slot_index * sizeof(shadow_tlb_slot);
 }
 
-/// \brief Checks for a TLB hit.
-/// \tparam T Type of access needed (uint8_t, uint16_t, uint32_t, uint64_t).
-/// \param vaddr_page Target virtual address of page start of a TLB entry
-/// \param vaddr Target virtual address.
-/// \returns True on hit, false otherwise.
-template <typename T>
-static inline bool tlb_is_hit(uint64_t vaddr_page, uint64_t vaddr) {
-    // Make sure misaligned accesses are always considered a miss
-    // Otherwise, we could report a hit for a word that goes past the end of the PMA range.
-    // Aligned accesses cannot do so because the PMA ranges
-    // are always page-aligned.
-    return (vaddr_page == (vaddr & ~(PAGE_OFFSET_MASK & ~(sizeof(T) - 1))));
+template <TLB_set_use USE>
+constexpr uint64_t shadow_tlb_get_vaddr_page_abs_addr(uint64_t slot_index) {
+    return shadow_tlb_get_slot_abs_addr<USE>(slot_index) + offsetof(shadow_tlb_slot, vaddr_page);
 }
 
-template <TLB_entry_type ETYPE>
-static inline uint64_t tlb_get_entry_hot_rel_addr(uint64_t eidx) {
-    return offsetof(shadow_tlb_state, hot) + (ETYPE * sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>)) +
-        (eidx * sizeof(tlb_hot_entry));
+template <TLB_set_use USE>
+constexpr uint64_t shadow_tlb_get_vp_offset_abs_addr(uint64_t slot_index) {
+    return shadow_tlb_get_slot_abs_addr<USE>(slot_index) + offsetof(shadow_tlb_slot, vp_offset);
 }
 
-template <TLB_entry_type ETYPE>
-static inline uint64_t tlb_get_entry_cold_rel_addr(uint64_t eidx) {
-    return offsetof(shadow_tlb_state, cold) + (ETYPE * sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>)) +
-        (eidx * sizeof(tlb_cold_entry));
-}
-
-template <TLB_entry_type ETYPE>
-static inline uint64_t tlb_get_entry_hot_abs_addr(uint64_t eidx) {
-    return PMA_SHADOW_TLB_START + tlb_get_entry_hot_rel_addr<ETYPE>(eidx);
-}
-
-template <TLB_entry_type ETYPE>
-static inline uint64_t tlb_get_entry_cold_abs_addr(uint64_t eidx) {
-    return PMA_SHADOW_TLB_START + tlb_get_entry_cold_rel_addr<ETYPE>(eidx);
-}
-
-template <TLB_entry_type ETYPE>
-static inline uint64_t tlb_get_vaddr_page_rel_addr(uint64_t eidx) {
-    return offsetof(shadow_tlb_state, hot) + (ETYPE * sizeof(std::array<tlb_hot_entry, PMA_TLB_SIZE>)) +
-        (eidx * sizeof(tlb_hot_entry)) + offsetof(tlb_hot_entry, vaddr_page);
-}
-
-template <TLB_entry_type ETYPE>
-static inline uint64_t tlb_get_paddr_page_rel_addr(uint64_t eidx) {
-    return offsetof(shadow_tlb_state, cold) + (ETYPE * sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>)) +
-        (eidx * sizeof(tlb_cold_entry)) + offsetof(tlb_cold_entry, paddr_page);
-}
-
-template <TLB_entry_type ETYPE>
-static inline uint64_t tlb_get_pma_index_rel_addr(uint64_t eidx) {
-    return offsetof(shadow_tlb_state, cold) + (ETYPE * sizeof(std::array<tlb_cold_entry, PMA_TLB_SIZE>)) +
-        (eidx * sizeof(tlb_cold_entry)) + offsetof(tlb_cold_entry, pma_index);
+template <TLB_set_use USE>
+constexpr uint64_t shadow_tlb_get_pma_index_abs_addr(uint64_t slot_index) {
+    return shadow_tlb_get_slot_abs_addr<USE>(slot_index) + offsetof(shadow_tlb_slot, pma_index);
 }
 
 } // namespace cartesi

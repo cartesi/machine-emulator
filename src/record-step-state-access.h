@@ -23,6 +23,7 @@
 #include "device-state-access.h"
 #include "i-state-access.h"
 #include "shadow-pmas.h"
+#include "shadow-tlb.h"
 #include "unique-c-ptr.h"
 #include <map>
 #include <optional>
@@ -30,13 +31,25 @@
 
 namespace cartesi {
 
+class record_step_state_access;
+
+// Type trait that should return the pma_entry type for a state access class
+template <>
+struct i_state_access_pma_entry<record_step_state_access> {
+    using type = pma_entry;
+};
+// Type trait that should return the fast_addr type for a state access class
+template <>
+struct i_state_access_fast_addr<record_step_state_access> {
+    using type = host_addr;
+};
+
 /// \class record_step_state_access
 /// \brief Records machine state access into a step log file
-class record_step_state_access : public i_state_access<record_step_state_access, pma_entry> {
-public:
+class record_step_state_access : public i_state_access<record_step_state_access> {
     constexpr static int TREE_LOG2_ROOT_SIZE = machine_merkle_tree::get_log2_root_size();
     constexpr static int TREE_LOG2_PAGE_SIZE = machine_merkle_tree::get_log2_page_size();
-    constexpr static uint64_t TREE_PAGE_SIZE = UINT64_C(1) << TREE_LOG2_PAGE_SIZE;
+    constexpr static uint64_t TREE_PAGE_SIZE = UINT64_C(1) << LOG2_PAGE_SIZE;
 
     using address_type = machine_merkle_tree::address_type;
     using page_data_type = std::array<uint8_t, TREE_PAGE_SIZE>;
@@ -44,6 +57,8 @@ public:
     using hash_type = machine_merkle_tree::hash_type;
     using sibling_hashes_type = std::vector<hash_type>;
     using page_indices_type = std::vector<address_type>;
+
+public:
 
     struct context {
         /// \brief Constructor of record step state access context
@@ -113,12 +128,14 @@ public:
     }
 
 private:
-    friend i_state_access<record_step_state_access, pma_entry>;
+    using pma_entry_type = pma_entry;
+    using fast_addr_type = host_addr;
+    friend i_state_access<record_step_state_access>;
 
     /// \brief Mark a page as touched and save its contents
     /// \param address address of the page
     void touch_page(address_type address) const {
-        auto page = address & ~(TREE_PAGE_SIZE - 1);
+        auto page = address & ~PAGE_OFFSET_MASK;
         if (m_context.touched_pages.find(page) != m_context.touched_pages.end()) {
             return; // already saved
         }
@@ -591,179 +608,114 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    NO_INLINE std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
-        (void) mcycle_max;
-        return {mcycle, false};
-    }
-
-    template <typename T>
-    void do_read_memory_word(uint64_t paddr, const unsigned char *hpage, uint64_t hoffset, T *pval) const {
-        (void) paddr;
-        touch_page(paddr);
-        *pval = cartesi::aliased_aligned_read<T>(hpage + hoffset);
-    }
-
-    template <typename T>
-    void do_write_memory_word(uint64_t paddr, unsigned char *hpage, uint64_t hoffset, T val) {
-        (void) paddr;
-        touch_page(paddr);
-        aliased_aligned_write(hpage + hoffset, val);
-    }
-
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     bool do_read_memory(uint64_t paddr, const unsigned char *data, uint64_t length) const {
         (void) paddr;
         (void) data;
         (void) length;
-        throw std::runtime_error("Unexpected call to do_read_memory");
+        throw std::runtime_error("unexpected call to record_step_state_access::read_memory");
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
-
         (void) paddr;
         (void) data;
         (void) length;
-        throw std::runtime_error("Unexpected call to do_write_memory");
-    }
-
-    static unsigned char *do_get_host_memory(pma_entry &pma) {
-        return pma.get_memory_noexcept().get_host_memory();
+        throw std::runtime_error("unexpected call to record_step_state_access::write_memory");
     }
 
     pma_entry &do_read_pma_entry(uint64_t index) {
         assert(index < PMA_MAX);
-        touch_page(shadow_pmas_get_pma_abs_addr(index));
-        return m_m.get_state().pmas[index];
+        // replay_step_state_access reconstructs a mock_pma_entry from the
+        // corresponding istart and ilength fields in the shadow pmas
+        // so we mark the page where they live here
+        touch_page(shadow_pmas_get_pma_istart_abs_addr(index));
+        touch_page(shadow_pmas_get_pma_ilength_abs_addr(index));
+        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
+        return m_m.get_state().pmas[static_cast<int>(index)];
     }
 
-    template <TLB_entry_type ETYPE, typename T>
-    bool do_translate_vaddr_via_tlb(uint64_t vaddr, unsigned char **phptr) {
-        const uint64_t eidx = tlb_get_entry_index(vaddr);
-        touch_page(tlb_get_entry_hot_abs_addr<ETYPE>(eidx));
-        touch_page(tlb_get_entry_cold_abs_addr<ETYPE>(eidx));
-        const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
-        if (unlikely(!tlb_is_hit<T>(tlbhe.vaddr_page, vaddr))) {
-            return false;
+    template <typename T, typename A>
+    void do_read_memory_word(host_addr haddr, uint64_t pma_index, T *pval) {
+        touch_page(m_m.get_paddr(haddr, pma_index));
+        *pval = aliased_aligned_read<T, A>(haddr);
+    }
+
+    template <typename T, typename A>
+    void do_write_memory_word(host_addr haddr, uint64_t pma_index, T val) {
+        touch_page(m_m.get_paddr(haddr, pma_index));
+        aliased_aligned_write<T, A>(haddr, val);
+    }
+
+    template <TLB_set_use USE>
+    uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) {
+        touch_page(shadow_tlb_get_vaddr_page_abs_addr<USE>(slot_index));
+        return m_m.get_state().tlb.hot[USE][slot_index].vaddr_page;
+    }
+
+    template <TLB_set_use USE>
+    host_addr do_read_tlb_vp_offset(uint64_t slot_index) {
+        // During initialization, replay_step_state_access translates all vp_offset to corresponding vh_offset
+        // At deinitialization, it translates them back
+        // To do that, it needs the corresponding paddr_page = vaddr_page + vp_offset, and page data itself
+        // It will only do the translation if the slot is valid and it has access to all required fields
+        // Obviously, the slot we are reading will be needed during replay, so we touch all the pages involved here.
+        touch_page(shadow_tlb_get_vaddr_page_abs_addr<USE>(slot_index));
+        touch_page(shadow_tlb_get_vp_offset_abs_addr<USE>(slot_index));
+        touch_page(shadow_tlb_get_pma_index_abs_addr<USE>(slot_index));
+        // writes to the TLB slot are atomic, so we know the values in a slot are ALWAYS internally consistent
+        const auto vaddr_page = m_m.get_state().tlb.hot[USE][slot_index].vaddr_page;
+        const auto vh_offset = m_m.get_state().tlb.hot[USE][slot_index].vh_offset;
+        if (vaddr_page != TLB_INVALID_PAGE) {
+            const auto pma_index = m_m.get_state().tlb.cold[USE][slot_index].pma_index;
+            const auto haddr_page = vaddr_page + vh_offset;
+            auto paddr_page = m_m.get_paddr(haddr_page, pma_index);
+            touch_page(paddr_page);
         }
-        *phptr = cast_addr_to_ptr<unsigned char *>(tlbhe.vh_offset + vaddr);
-        const tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[ETYPE][eidx];
-        touch_page(tlbce.paddr_page);
-        return true;
+        return vh_offset;
     }
 
-    template <TLB_entry_type ETYPE, typename T>
-    bool do_read_memory_word_via_tlb(uint64_t vaddr, T *pval) {
-        const uint64_t eidx = tlb_get_entry_index(vaddr);
-        const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
-        const tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[ETYPE][eidx];
-        touch_page(tlb_get_entry_hot_abs_addr<ETYPE>(eidx));
-        touch_page(tlb_get_entry_cold_abs_addr<ETYPE>(
-            eidx)); // save cold entry to allow reconstruction of paddr during playback
-        if (unlikely(!tlb_is_hit<T>(tlbhe.vaddr_page, vaddr))) {
-            return false;
-        }
-        const auto *h = cast_addr_to_ptr<const unsigned char *>(tlbhe.vh_offset + vaddr);
-        *pval = cartesi::aliased_aligned_read<T>(h);
-        touch_page(tlbce.paddr_page);
-
-        return true;
+    template <TLB_set_use USE>
+    uint64_t do_read_tlb_pma_index(uint64_t slot_index) {
+        touch_page(shadow_tlb_get_pma_index_abs_addr<USE>(slot_index));
+        return m_m.get_state().tlb.cold[USE][slot_index].pma_index;
     }
 
-    template <TLB_entry_type ETYPE, typename T>
-    bool do_write_memory_word_via_tlb(uint64_t vaddr, T val) {
-        const uint64_t eidx = tlb_get_entry_index(vaddr);
-        const tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
-        touch_page(tlb_get_entry_hot_abs_addr<ETYPE>(eidx));
-        touch_page(tlb_get_entry_cold_abs_addr<ETYPE>(eidx));
-        if (unlikely(!tlb_is_hit<T>(tlbhe.vaddr_page, vaddr))) {
-            return false;
-        }
-        touch_page(tlb_get_entry_cold_abs_addr<ETYPE>(
-            eidx)); // save cold entry to allow reconstruction of paddr during playback
-        const tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[ETYPE][eidx];
-        touch_page(tlbce.paddr_page);
-
-        auto *h = cast_addr_to_ptr<unsigned char *>(tlbhe.vh_offset + vaddr);
-        aliased_aligned_write(h, val);
-        return true;
-    }
-
-    template <TLB_entry_type ETYPE>
-    unsigned char *do_replace_tlb_entry(uint64_t vaddr, uint64_t paddr, pma_entry &pma) {
-        const uint64_t eidx = tlb_get_entry_index(vaddr);
-        touch_page(tlb_get_entry_hot_abs_addr<ETYPE>(eidx));
-        touch_page(tlb_get_entry_cold_abs_addr<ETYPE>(
-            eidx)); // save cold entry to allow reconstruction of paddr during playback
-        tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
-        tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[ETYPE][eidx];
-        // Mark page that was on TLB as dirty so we know to update the Merkle tree
-        if constexpr (ETYPE == TLB_WRITE) {
-            if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
-                pma_entry &pma = do_read_pma_entry(tlbce.pma_index);
-                pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
-            }
-        }
-        const uint64_t vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
-        const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        unsigned char *hpage = pma.get_memory_noexcept().get_host_memory() + (paddr_page - pma.get_start());
-        tlbhe.vaddr_page = vaddr_page;
-        tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - vaddr_page;
-        tlbce.paddr_page = paddr_page;
-        tlbce.pma_index = static_cast<uint64_t>(pma.get_index());
-        touch_page(tlbce.paddr_page);
-        return hpage;
-    }
-
-    template <TLB_entry_type ETYPE>
-    void do_flush_tlb_entry(uint64_t eidx) {
-        touch_page(tlb_get_entry_hot_abs_addr<ETYPE>(eidx));
-        touch_page(tlb_get_entry_cold_abs_addr<ETYPE>(
-            eidx)); // save cold entry to allow reconstruction of paddr during playback
-        tlb_hot_entry &tlbhe = m_m.get_state().tlb.hot[ETYPE][eidx];
-        // Mark page that was on TLB as dirty so we know to update the Merkle tree
-        if constexpr (ETYPE == TLB_WRITE) {
-            if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
-                tlbhe.vaddr_page = TLB_INVALID_PAGE;
-                const tlb_cold_entry &tlbce = m_m.get_state().tlb.cold[ETYPE][eidx];
-                pma_entry &pma = do_read_pma_entry(tlbce.pma_index);
-                pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
-            } else {
-                tlbhe.vaddr_page = TLB_INVALID_PAGE;
-            }
-        } else {
-            tlbhe.vaddr_page = TLB_INVALID_PAGE;
+    template <TLB_set_use USE>
+    void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) {
+        // During initialization, replay_step_state_access translates all vp_offset to corresponding vh_offset
+        // At deinitialization, it translates them back
+        // To do that, it needs the corresponding paddr_page = vaddr_page + vp_offset, and page data itself
+        // It will only do the translation if the slot is valid and it has access to all required fields
+        // Obviously, the slot we are modifying will be needed during replay, so we touch all the pages involved here.
+        touch_page(shadow_tlb_get_vaddr_page_abs_addr<USE>(slot_index));
+        touch_page(shadow_tlb_get_vp_offset_abs_addr<USE>(slot_index));
+        touch_page(shadow_tlb_get_pma_index_abs_addr<USE>(slot_index));
+        m_m.get_state().tlb.hot[USE][slot_index].vaddr_page = vaddr_page;
+        m_m.get_state().tlb.hot[USE][slot_index].vh_offset = vh_offset;
+        m_m.get_state().tlb.cold[USE][slot_index].pma_index = pma_index;
+        if (vaddr_page != TLB_INVALID_PAGE) {
+            const auto haddr_page = vaddr_page + vh_offset;
+            auto paddr_page = m_m.get_paddr(haddr_page, pma_index);
+            touch_page(paddr_page);
         }
     }
 
-    template <TLB_entry_type ETYPE>
-    void do_flush_tlb_type() {
-        for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
-            do_flush_tlb_entry<ETYPE>(i);
-        }
+    fast_addr do_get_faddr(uint64_t paddr, uint64_t pma_index) const {
+        // replay_step_state_access needs the corresponding page to perform a
+        // translation between paddr and its own haddr, so we touch the page here
+        touch_page(paddr);
+        return m_m.get_host_addr(paddr, pma_index);
     }
 
-    void do_flush_tlb_vaddr(uint64_t vaddr) {
-        (void) vaddr;
-        // We can't flush just one TLB entry for that specific virtual address,
-        // because megapages/gigapages may be in use while this TLB implementation ignores it,
-        // so we have to flush all addresses.
-        do_flush_tlb_type<TLB_CODE>();
-        do_flush_tlb_type<TLB_READ>();
-        do_flush_tlb_type<TLB_WRITE>();
-    }
-
-    bool do_get_soft_yield() {
-        return m_m.get_state().soft_yield;
+    void do_mark_dirty_page(host_addr haddr, uint64_t pma_index) {
+        // this is a noop in replay_step_state_access, so we do nothing else
+        m_m.mark_dirty_page(haddr, pma_index);
     }
 
     void do_putchar(uint8_t c) { // NOLINT(readability-convert-member-functions-to-static)
         os_putchar(c);
     }
 
-    int do_getchar() { // NOLINT(readability-convert-member-functions-to-static)
-        return -1;
-    }
 };
 
 } // namespace cartesi

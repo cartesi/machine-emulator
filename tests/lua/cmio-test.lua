@@ -19,7 +19,12 @@
 local cartesi = require("cartesi")
 local test_util = require("cartesi.tests.util")
 local test_data = require("cartesi.tests.data")
+local sha3 = require("third_party.plc.sha3")
 local jsonrpc
+
+local function keccak(a, b)
+    return sha3.keccak(a .. (b or ""))
+end
 
 local function adjust_images_path(path)
     return string.gsub(path or ".", "/*$", "") .. "/"
@@ -160,7 +165,7 @@ local function check_output(machine, expected)
     end
     assert(expected == output)
 
-    return cartesi.keccak(output)
+    return keccak(output)
 end
 
 local function check_report(machine, expected)
@@ -195,14 +200,14 @@ local function check_outputs_root_hash(root_hash, output_hashes)
             end
             local c2 = output_hashes[child + 1]
             if c2 then
-                parent_output_hashes[parent] = cartesi.keccak(c1, c2)
+                parent_output_hashes[parent] = keccak(c1, c2)
             else
-                parent_output_hashes[parent] = cartesi.keccak(c1, z)
+                parent_output_hashes[parent] = keccak(c1, z)
             end
             parent = parent + 1
             child = child + 2
         end
-        z = cartesi.keccak(z, z)
+        z = keccak(z, z)
         output_hashes = parent_output_hashes
     end
     assert(root_hash == output_hashes[1], "output root hash mismatch")

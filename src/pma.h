@@ -123,9 +123,6 @@ public:
     /// \brief Calloc'd range data (just a tag).
     struct callocd {};
 
-    /// \brief Mock'd range data (just a tag).
-    struct mockd {};
-
     /// \brief Constructor for calloc'd ranges.
     /// \param description Informative description of PMA entry for use in error messages
     /// \param length Length of range.
@@ -138,12 +135,6 @@ public:
     /// \param length Length of range.
     /// \param c Calloc'd range data (just a tag).
     pma_memory(const std::string &description, uint64_t length, const callocd &c);
-
-    /// \brief Constructor for mock ranges.
-    /// \param description Informative description of PMA entry for use in error messages
-    /// \param length Length of range.
-    /// \param m Mock'd range data (just a tag).
-    pma_memory(const std::string &description, uint64_t length, const mockd &m);
 
     /// \brief No copy constructor
     pma_memory(const pma_memory &other) = delete;
@@ -550,15 +541,6 @@ pma_entry make_callocd_memory_pma_entry(const std::string &description, uint64_t
 /// This function is typically used to map flash drives.
 pma_entry make_mmapd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length,
     const std::string &path, bool shared);
-
-/// \brief Creates a PMA entry for a new mock memory region (no allocation).
-/// \param description Informative description of PMA entry for use in error messages
-/// \param start Start of physical memory range in the target address
-/// space on which to map the memory region.
-/// \param length Length of physical memory range in the
-/// target address space on which to map the memory region.
-/// \returns Corresponding PMA entry
-pma_entry make_mockd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length);
 
 /// \brief Creates a PMA entry for a new memory-mapped IO device.
 /// \param description Informative description of PMA entry for use in error messages

@@ -19,10 +19,9 @@
 
 #include "uarch-runtime.h" // must be included first, because of assert
 
-#include "clint.h"
-#include "plic.h"
+#define MOCK_THROW_RUNTIME_ERROR(err) abort()
+#include "mock-pma-entry.h"
 #include "device-state-access.h"
-#include "htif.h"
 #include "i-state-access.h"
 #include "pma-constants.h"
 #include "riscv-constants.h"
@@ -50,143 +49,9 @@ static void raw_write_memory(uint64_t paddr, T val) {
     *p = val;
 }
 
-//??D can we merge this class with the mock_pma_entry in src/replay-step-state-access.h ?
-//??D maybe implement base class in pma.h and subclass here if there is some minor difference?
-class uarch_pma_entry final {
-public:
-    struct flags {
-        bool M{};
-        bool IO{};
-        bool E{};
-        bool R{};
-        bool W{};
-        bool X{};
-        bool IR{};
-        bool IW{};
-        PMA_ISTART_DID DID{PMA_ISTART_DID::memory};
-    };
-
-private:
-
-    uint64_t m_pma_index;
-    uint64_t m_start;
-    uint64_t m_length;
-    flags m_flags;
-    const pma_driver *m_driver{nullptr};
-
-    static constexpr flags split_flags(uint64_t istart) {
-        flags f{};
-        f.M = (((istart & PMA_ISTART_M_MASK) >> PMA_ISTART_M_SHIFT) != 0);
-        f.IO = (((istart & PMA_ISTART_IO_MASK) >> PMA_ISTART_IO_SHIFT) != 0);
-        f.E = (((istart & PMA_ISTART_E_MASK) >> PMA_ISTART_E_SHIFT) != 0);
-        f.R = (((istart & PMA_ISTART_R_MASK) >> PMA_ISTART_R_SHIFT) != 0);
-        f.W = (((istart & PMA_ISTART_W_MASK) >> PMA_ISTART_W_SHIFT) != 0);
-        f.X = (((istart & PMA_ISTART_X_MASK) >> PMA_ISTART_X_SHIFT) != 0);
-        f.IR = (((istart & PMA_ISTART_IR_MASK) >> PMA_ISTART_IR_SHIFT) != 0);
-        f.IW = (((istart & PMA_ISTART_IW_MASK) >> PMA_ISTART_IW_SHIFT) != 0);
-        f.DID = static_cast<PMA_ISTART_DID>((istart & PMA_ISTART_DID_MASK) >> PMA_ISTART_DID_SHIFT);
-        return f;
-    }
-
-public:
-
-    uarch_pma_entry(uint64_t pma_index, uint64_t istart, uint64_t ilength) :
-        m_pma_index{pma_index},
-        m_start{istart & PMA_ISTART_START_MASK},
-        m_length{ilength},
-        m_flags{split_flags(istart)},
-        m_driver{nullptr} {
-        if (m_flags.IO) {
-            switch (m_flags.DID) {
-                case PMA_ISTART_DID::shadow_state:
-                    m_driver = &shadow_state_driver;
-                    break;
-                case PMA_ISTART_DID::shadow_TLB:
-                    m_driver = &shadow_tlb_driver;
-                    break;
-                case PMA_ISTART_DID::CLINT:
-                    m_driver = &clint_driver;
-                    break;
-                case PMA_ISTART_DID::PLIC:
-                    m_driver = &plic_driver;
-                    break;
-                case PMA_ISTART_DID::HTIF:
-                    m_driver = &htif_driver;
-                    break;
-                default:
-                    // Other unsupported device in uarch (eg. VirtIO)
-                    abort();
-                    break;
-            }
-        }
-    }
-
-    uint64_t get_index() const {
-        return m_pma_index;
-    }
-
-    flags get_flags() const {
-        return m_flags;
-    }
-
-    uint64_t get_start() const {
-        return m_start;
-    }
-
-    uint64_t get_length() const {
-        return m_length;
-    }
-
-    bool get_istart_M() const {
-        return m_flags.M;
-    }
-
-    bool get_istart_IO() const {
-        return m_flags.IO;
-    }
-
-    bool get_istart_E() const {
-        return m_flags.E;
-    }
-
-    bool get_istart_R() const {
-        return m_flags.R;
-    }
-
-    bool get_istart_W() const {
-        return m_flags.W;
-    }
-
-    bool get_istart_X() const {
-        return m_flags.X;
-    }
-
-    bool get_istart_IR() const {
-        return m_flags.IR;
-    }
-
-    const pma_driver *get_driver() const {
-        return m_driver;
-    }
-
-    const auto &get_device_noexcept() const {
-        return *this;
-    }
-
-    static void *get_context() {
-        return nullptr;
-    }
-
-    void mark_dirty_page(uint64_t /*address_in_range*/) {
-        // Dummy implementation here.
-        // This runs in microarchitecture.
-        // The Host pages affected by writes will be marked dirty by uarch_bridge.
-    }
-};
-
 // Provides access to the state of the big emulator from microcode
-class uarch_machine_state_access : public i_state_access<uarch_machine_state_access, uarch_pma_entry> {
-    std::array<std::optional<uarch_pma_entry>, PMA_MAX> m_pmas;
+class uarch_machine_state_access : public i_state_access<uarch_machine_state_access, mock_pma_entry> {
+    std::array<std::optional<mock_pma_entry>, PMA_MAX> m_pmas;
 
 public:
     uarch_machine_state_access() = default;
@@ -197,7 +62,7 @@ public:
     ~uarch_machine_state_access() = default;
 
 private:
-    friend i_state_access<uarch_machine_state_access, uarch_pma_entry>;
+    friend i_state_access<uarch_machine_state_access, mock_pma_entry>;
 
     // NOLINTBEGIN(readability-convert-member-functions-to-static)
 
@@ -570,19 +435,21 @@ private:
         raw_write_memory(paddr, val);
     }
 
-    uarch_pma_entry &do_read_pma_entry(uint64_t index) {
+    mock_pma_entry &do_read_pma_entry(uint64_t index) {
         const uint64_t istart = read_pma_istart(index);
         const uint64_t ilength = read_pma_ilength(index);
         // NOLINTNEXTLINE(bugprone-narrowing-conversions)
         int i = static_cast<int>(index);
         if (!m_pmas[i]) {
-            m_pmas[i] = uarch_pma_entry{index, istart, ilength};
+            m_pmas[i] = make_mock_pma_entry(index, istart, ilength, [](const char * /*err*/) {
+                abort();
+            });
         }
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         return m_pmas[i].value();
     }
 
-    unsigned char *do_get_host_memory(uarch_pma_entry &/*pma*/) {
+    unsigned char *do_get_host_memory(mock_pma_entry &/*pma*/) {
         return nullptr;
     }
 
@@ -642,14 +509,14 @@ private:
     }
 
     template <TLB_entry_type ETYPE>
-    unsigned char *do_replace_tlb_entry(uint64_t vaddr, uint64_t paddr, uarch_pma_entry &pma) {
+    unsigned char *do_replace_tlb_entry(uint64_t vaddr, uint64_t paddr, mock_pma_entry &pma) {
         uint64_t eidx = tlb_get_entry_index(vaddr);
         volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
         volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
         // Mark page that was on TLB as dirty so we know to update the Merkle tree
         if constexpr (ETYPE == TLB_WRITE) {
             if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
-                uarch_pma_entry &pma = do_read_pma_entry(tlbce.pma_index);
+                mock_pma_entry &pma = do_read_pma_entry(tlbce.pma_index);
                 pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
             }
         }
@@ -678,7 +545,7 @@ private:
             if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
                 tlbhe.vaddr_page = TLB_INVALID_PAGE;
                 const volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
-                uarch_pma_entry &pma = do_read_pma_entry(tlbce.pma_index);
+                mock_pma_entry &pma = do_read_pma_entry(tlbce.pma_index);
                 pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
             } else {
                 tlbhe.vaddr_page = TLB_INVALID_PAGE;

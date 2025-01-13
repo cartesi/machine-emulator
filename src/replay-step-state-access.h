@@ -20,12 +20,10 @@
 #include <cstdlib>
 #include <optional>
 
-#include "clint.h"
 #include "compiler-defines.h"
 #include "device-state-access.h"
-#include "htif.h"
 #include "i-state-access.h"
-#include "plic.h"
+#include "mock-pma-entry.h"
 #include "pma-constants.h"
 #include "replay-step-state-access-interop.h"
 #include "riscv-constants.h"
@@ -41,136 +39,6 @@ namespace cartesi {
 
 // \file this code is designed to be compiled for a free-standing environment.
 // Environment-specific functions have the prefix "interop_" and are declared in "replay-step-state-access-interop.h"
-
-//??D can we merge this calss with uarch_pma_entry in uarch/uarch-machine-state-access.h ?
-//??D maybe implement base class in pma.h and subclass here if there is some minor difference?
-class mock_pma_entry final {
-public:
-    struct flags {
-        bool M;
-        bool IO;
-        bool E;
-        bool R;
-        bool W;
-        bool X;
-        bool IR;
-        bool IW;
-        PMA_ISTART_DID DID;
-    };
-
-private:
-    uint64_t m_pma_index;
-    uint64_t m_start;
-    uint64_t m_length;
-    flags m_flags;
-    const pma_driver *m_driver{nullptr};
-
-    static constexpr flags split_flags(uint64_t istart) {
-        flags f{};
-        f.M = ((istart & PMA_ISTART_M_MASK) >> PMA_ISTART_M_SHIFT) != 0;
-        f.IO = ((istart & PMA_ISTART_IO_MASK) >> PMA_ISTART_IO_SHIFT) != 0;
-        f.E = ((istart & PMA_ISTART_E_MASK) >> PMA_ISTART_E_SHIFT) != 0;
-        f.R = ((istart & PMA_ISTART_R_MASK) >> PMA_ISTART_R_SHIFT) != 0;
-        f.W = ((istart & PMA_ISTART_W_MASK) >> PMA_ISTART_W_SHIFT) != 0;
-        f.X = ((istart & PMA_ISTART_X_MASK) >> PMA_ISTART_X_SHIFT) != 0;
-        f.IR = ((istart & PMA_ISTART_IR_MASK) >> PMA_ISTART_IR_SHIFT) != 0;
-        f.IW = ((istart & PMA_ISTART_IW_MASK) >> PMA_ISTART_IW_SHIFT) != 0;
-        f.DID = static_cast<PMA_ISTART_DID>((istart & PMA_ISTART_DID_MASK) >> PMA_ISTART_DID_SHIFT);
-        return f;
-    }
-
-public:
-    mock_pma_entry(uint64_t pma_index, uint64_t istart, uint64_t ilength) :
-        m_pma_index{pma_index},
-        m_start{istart & PMA_ISTART_START_MASK},
-        m_length{ilength},
-        m_flags{split_flags(istart)} {
-        if (m_flags.IO) {
-            switch (m_flags.DID) {
-                case PMA_ISTART_DID::shadow_state:
-                    m_driver = &shadow_state_driver;
-                    break;
-                case PMA_ISTART_DID::shadow_TLB:
-                    m_driver = &shadow_tlb_driver;
-                    break;
-                case PMA_ISTART_DID::CLINT:
-                    m_driver = &clint_driver;
-                    break;
-                case PMA_ISTART_DID::PLIC:
-                    m_driver = &plic_driver;
-                    break;
-                case PMA_ISTART_DID::HTIF:
-                    m_driver = &htif_driver;
-                    break;
-                default:
-                    interop_throw_runtime_error("unsupported device in build_mock_pma_entry");
-                    break;
-            }
-        }
-    }
-
-    uint64_t get_index() const {
-        return m_pma_index;
-    }
-
-    flags get_flags() const {
-        return m_flags;
-    }
-
-    uint64_t get_start() const {
-        return m_start;
-    }
-
-    uint64_t get_length() const {
-        return m_length;
-    }
-
-    bool get_istart_M() const {
-        return m_flags.M;
-    }
-
-    bool get_istart_IO() const {
-        return m_flags.IO;
-    }
-
-    bool get_istart_E() const {
-        return m_flags.E;
-    }
-
-    bool get_istart_R() const {
-        return m_flags.R;
-    }
-
-    bool get_istart_W() const {
-        return m_flags.W;
-    }
-
-    bool get_istart_X() const {
-        return m_flags.X;
-    }
-
-    bool get_istart_IR() const {
-        return m_flags.IR;
-    }
-
-    const auto *get_driver() const {
-        return m_driver;
-    }
-
-    const auto &get_device_noexcept() const {
-        return *this;
-    }
-
-    static void *get_context() {
-        return nullptr;
-    }
-
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void mark_dirty_page(uint64_t address_in_range) {
-        (void) address_in_range;
-        // Dummy implementation.
-    }
-};
 
 // \brief checks if a buffer is large enough to hold a data block of N elements of size S starting at a given offset
 // \param max The maximum offset allowed
@@ -899,7 +767,8 @@ private:
         // NOLINTNEXTLINE(bugprone-narrowing-conversions)
         const int i = static_cast<int>(index);
         if (!m_pmas[i]) {
-            m_pmas[i] = mock_pma_entry(index, istart, ilength);
+            m_pmas[i] =
+                make_mock_pma_entry(index, istart, ilength, [](const char *err) { interop_throw_runtime_error(err); });
         }
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         return m_pmas[i].value();

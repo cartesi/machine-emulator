@@ -72,11 +72,6 @@ pma_memory::pma_memory(const std::string &description, uint64_t length, const ca
     }
 }
 
-pma_memory::pma_memory(const std::string & /*description*/, uint64_t length, const mockd & /*m*/) :
-    m_length{length},
-    m_host_memory{nullptr},
-    m_mmapped{false} {}
-
 pma_memory::pma_memory(const std::string &description, uint64_t length, const std::string &path, const callocd &c) :
     pma_memory{description, length, c} {
     // Try to load image file, if any
@@ -225,13 +220,6 @@ pma_entry make_callocd_memory_pma_entry(const std::string &description, uint64_t
     }
     return pma_entry{description, start, length, pma_memory{description, length, path, pma_memory::callocd{}},
         memory_peek};
-}
-
-pma_entry make_mockd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length) {
-    if (length == 0) {
-        throw std::invalid_argument{description + " length cannot be zero"s};
-    }
-    return pma_entry{description, start, length, pma_memory{description, length, pma_memory::mockd{}}, pma_peek_error};
 }
 
 pma_entry make_device_pma_entry(const std::string &description, uint64_t start, uint64_t length, pma_peek peek,

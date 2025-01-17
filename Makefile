@@ -206,7 +206,7 @@ doc:
 bundle-boost: $(DEPDIR)/downloads/boost
 $(DEPDIR)/downloads/boost:
 	mkdir -p $(DOWNLOADDIR)
-	wget -O $(DEPDIR)/downloads/boost_1_81_0.tar.gz https://boostorg.jfrog.io/artifactory/main/release/1.81.0/source/boost_1_81_0.tar.gz
+	wget -O $(DEPDIR)/downloads/boost_1_81_0.tar.gz https://archives.boost.io/release/1.81.0/source/boost_1_81_0.tar.gz
 	tar -C $(DEPDIR)/downloads -xzf $(DEPDIR)/downloads/boost_1_81_0.tar.gz boost_1_81_0/boost
 	mv $(DEPDIR)/downloads/boost_1_81_0/boost $(DEPDIR)/downloads/boost
 	rm -rf $(DEPDIR)/downloads/boost_1_81_0.tar.gz $(DEPDIR)/downloads/boost_1_81_0

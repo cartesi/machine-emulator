@@ -350,14 +350,14 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
         register_pma_entry(make_callocd_memory_pma_entry("RAM"s, PMA_RAM_START, m_c.ram.length).set_flags(m_ram_flags));
     } else {
         register_pma_entry(make_callocd_memory_pma_entry("RAM"s, PMA_RAM_START, m_c.ram.length, m_c.ram.image_filename)
-                               .set_flags(m_ram_flags));
+                .set_flags(m_ram_flags));
     }
 
     // Register DTB
     pma_entry &dtb = register_pma_entry((m_c.dtb.image_filename.empty() ?
             make_callocd_memory_pma_entry("DTB"s, PMA_DTB_START, PMA_DTB_LENGTH) :
             make_callocd_memory_pma_entry("DTB"s, PMA_DTB_START, PMA_DTB_LENGTH, m_c.dtb.image_filename))
-                                            .set_flags(m_dtb_flags));
+            .set_flags(m_dtb_flags));
 
     // Register all flash drives
     int i = 0; // NOLINT(misc-const-correctness)
@@ -731,7 +731,7 @@ static void store_device_pma(const machine &m, const pma_entry &pma, const std::
     auto name = machine_config::get_image_filename(dir, pma.get_start(), pma.get_length());
     auto fp = unique_fopen(name.c_str(), "wb");
     for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length();
-         page_start_in_range += PMA_PAGE_SIZE) {
+        page_start_in_range += PMA_PAGE_SIZE) {
         const unsigned char *page_data = nullptr;
         auto peek = pma.get_peek();
         if (!peek(pma, m, page_start_in_range, &page_data, scratch.get())) {
@@ -1699,7 +1699,7 @@ bool machine::verify_dirty_page_maps() const {
     for (const auto &pma : m_s.pmas) {
         auto peek = pma.get_peek();
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length();
-             page_start_in_range += PMA_PAGE_SIZE) {
+            page_start_in_range += PMA_PAGE_SIZE) {
             const uint64_t page_address = pma.get_start() + page_start_in_range;
             if (pma.get_istart_M()) {
                 const unsigned char *page_data = nullptr;

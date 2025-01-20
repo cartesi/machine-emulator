@@ -29,9 +29,9 @@ static void set_uarch_halt_flag() {
     // NOLINTNEXTLINE(hicpp-no-assembler)
     asm volatile("mv a7, %0\n"
                  "ecall\n"
-                 : // no output
-                 : "r"(cartesi::uarch_ecall_functions::UARCH_ECALL_FN_HALT)
-                 : "a7" // modified registers
+        : // no output
+        : "r"(cartesi::uarch_ecall_functions::UARCH_ECALL_FN_HALT)
+        : "a7" // modified registers
     );
 }
 

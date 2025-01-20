@@ -40,8 +40,9 @@
 #include "os.h"
 #include "pma-constants.h"
 #include "pma.h"
+#include "shadow-tlb.h"
 #include "uarch-interpret.h"
-#include "uarch-machine.h"
+#include "uarch-state.h"
 #include "virtio-device.h"
 
 namespace cartesi {
@@ -58,18 +59,11 @@ constexpr skip_merkle_tree_update_t skip_merkle_tree_update;
 /// \brief Cartesi Machine implementation
 class machine final {
 private:
-    //??D Ideally, we would hold a unique_ptr to the state. This
-    //    would allow us to remove the machine-state.h include and
-    //    therefore hide its contents from anyone who includes only
-    //    machine.h. Maybe the compiler can do a good job we we are
-    //    not constantly going through the extra indirection. We
-    //    should test this.
-
-    mutable machine_state m_s;              ///< Opaque machine state
+    mutable machine_state m_s;              ///< Big machine state
+    mutable uarch_state m_us;               ///< Microarchitecture state
     mutable machine_merkle_tree m_t;        ///< Merkle tree of state
     std::vector<pma_entry *> m_merkle_pmas; ///< PMAs considered by the Merkle tree: from big machine and uarch
     machine_config m_c;                     ///< Copy of initialization config
-    uarch_machine m_uarch;                  ///< Microarchitecture machine
     machine_runtime_config m_r;             ///< Copy of initialization runtime config
     machine_memory_range_descrs m_mrds;     ///< List of memory ranges returned by get_memory_ranges().
 
@@ -137,6 +131,10 @@ private:
     /// \param shadow_tlb Shadow TLB loaded from disk
     void init_tlb(const shadow_tlb_state &shadow_tlb);
 
+    /// \brief Initializes microarchitecture
+    /// \param config Microarchitecture configuration
+    void init_uarch(const uarch_config &config);
+
 public:
     /// \brief Type of hash
     using hash_type = machine_merkle_tree::hash_type;
@@ -146,12 +144,12 @@ public:
     /// \brief Constructor from machine configuration
     /// \param config Machine config to use instantiating machine
     /// \param runtime Runtime config to use with machine
-    explicit machine(const machine_config &config, const machine_runtime_config &runtime = {});
+    explicit machine(machine_config config, machine_runtime_config runtime = {});
 
     /// \brief Constructor from previously serialized directory
     /// \param directory Directory to load stored machine from
     /// \param runtime Runtime config to use with machine
-    explicit machine(const std::string &directory, const machine_runtime_config &runtime = {});
+    explicit machine(const std::string &directory, machine_runtime_config runtime = {});
 
     /// \brief Serialize entire state to directory
     /// \param directory Directory to store machine into
@@ -233,6 +231,16 @@ public:
     /// \brief Returns machine state for direct read-only access.
     const machine_state &get_state() const {
         return m_s;
+    }
+
+    /// \brief Returns uarch state for direct access.
+    uarch_state &get_uarch_state() {
+        return m_us;
+    }
+
+    /// \brief Returns uarch state for direct read-only access.
+    const uarch_state &get_uarch_state() const {
+        return m_us;
     }
 
     /// \brief Returns a list of descriptions for all PMA entries registered in the machine, sorted by start
@@ -337,27 +345,25 @@ public:
     static uint64_t get_reg_address(reg r);
 
     /// \brief Read the value of a word in the machine state.
-    /// \param address Word address (aligned to 64-bit boundary).
+    /// \param paddr Word address (aligned to 64-bit boundary).
     /// \returns The value of word at address.
-    /// \warning The current implementation of this function is very slow!
-    uint64_t read_word(uint64_t address) const;
+    /// \details The word can be anywhere in the entire address space.
+    uint64_t read_word(uint64_t paddr) const;
 
-    /// \brief Reads a chunk of data from the machine memory.
-    /// \param address Physical address to start reading.
-    /// \param data Receives chunk of memory.
-    /// \param length Size of chunk.
-    /// \details The entire chunk, from \p address to \p address + \p length must
-    /// be inside the same PMA region.
-    void read_memory(uint64_t address, unsigned char *data, uint64_t length) const;
+    /// \brief Reads a chunk of data, by its target physical address and length.
+    /// \param paddr Target physical address to start reading from.
+    /// \param data Buffer that receives data to read. Must be at least \p length bytes long.
+    /// \param length Number of bytes to read from \p paddr to \p data.
+    /// \details The data can be anywhere in the entire address space.
+    void read_memory(uint64_t paddr, unsigned char *data, uint64_t length) const;
 
-    /// \brief Writes a chunk of data to the machine memory.
-    /// \param address Physical address to start writing.
-    /// \param data Source for chunk of data.
-    /// \param length Size of chunk.
-    /// \details The entire chunk, from \p address to \p address + \p length must
-    /// be inside the same PMA region. Moreover, this PMA must be a memory PMA,
-    /// and not a device PMA.
-    void write_memory(uint64_t address, const unsigned char *data, uint64_t length);
+    /// \brief Writes a chunk of data to machine memory, by its target physical address and length.
+    /// \param paddr Target physical address to start writing to.
+    /// \param data Buffer that contains data to write. Must be at least \p length bytes long.
+    /// \param length Number of bytes to write starting from \p data to \p paddr.
+    /// \details Unlike read_memory(), the entire chunk of data, from \p paddr to \p paddr + \p length,
+    /// must reside entirely in the same memory range. Moreover, it cannot be mapped to a device.
+    void write_memory(uint64_t paddr, const unsigned char *data, uint64_t length);
 
     /// \brief Fills a memory range with a single byte.
     /// \param address Physical address to start filling.
@@ -428,7 +434,7 @@ public:
     /// \brief Changes the machine runtime config.
     /// \param range Configuration of the new memory range.
     /// \details Some runtime options cannot be changed.
-    void set_runtime_config(const machine_runtime_config &r);
+    void set_runtime_config(machine_runtime_config r);
 
     /// \brief Replaces a memory range.
     /// \param range Configuration of the new memory range.
@@ -460,6 +466,45 @@ public:
     /// \param haddr Machine host address within page
     /// \param pma_index Index of PMA where address falls
     void mark_dirty_page(host_addr haddr, uint64_t pma_index);
+
+    /// \brief Marks a page as dirty
+    /// \param paddr Target phyislcal address within page
+    /// \param pma_index Index of PMA where address falls
+    void mark_dirty_page(uint64_t paddr, uint64_t pma_index);
+
+    /// \brief Updates a TLB slot
+    /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
+    /// \param slot_index Index of slot to update
+    /// \param vaddr_page Virtual address of page to map
+    /// \param vh_offset Offset from target virtual addresses to host addresses within page
+    /// \param pma_index Index of PMA where address falls
+    void write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset,
+        uint64_t pma_index);
+
+    /// \brief Updates a TLB slot
+    /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
+    /// \param slot_index Index of slot to update
+    /// \param vaddr_page Virtual address of page to map
+    /// \param vp_offset Offset from target virtual addresses to target physical addresses within page
+    /// \param pma_index Index of PMA where address falls
+    void write_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
+        uint64_t pma_index);
+
+    /// \brief Check consistency of TLB slot
+    /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
+    /// \param slot_index Index of slot to update
+    /// \param vaddr_page Virtual address of page to map
+    /// \param vp_offset Offset from target virtual addresses to target physical addresses within page
+    /// \param pma_index Index of PMA where address falls
+    void check_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
+        uint64_t pma_index, const std::string &prefix = "") const;
+
+    /// \brief Reads a TLB register
+    /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
+    /// \param slot_index Index of slot to read
+    /// \param reg Register to read from slot
+    /// \returns Value of register
+    uint64_t read_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what reg) const;
 
     /// \brief Sends cmio response and returns an access log
     /// \param reason Reason for sending response.

@@ -35,6 +35,7 @@
 #include "machine.h"
 #include "meta.h"
 #include "pma.h"
+#include "scoped-note.h"
 #include "shadow-state.h"
 
 namespace cartesi {
@@ -184,8 +185,16 @@ private:
         update_after_write(paligned);
     }
 
-    void do_push_bracket(bracket_type &type, const char *text) {
-        m_log.push_bracket(type, text);
+    void do_push_begin_bracket(const char *text) {
+        m_log.push_begin_bracket(text);
+    }
+
+    void do_push_end_bracket(const char *text) {
+        m_log.push_end_bracket(text);
+    }
+
+    auto do_make_scoped_note(const char *text) {
+        return scoped_note<record_send_cmio_state_access>{*this, text};
     }
 
     void do_write_iflags_Y(uint64_t val) {
@@ -260,6 +269,11 @@ private:
         }
         // NOLINTEND(bugprone-unchecked-optional-access)
         m_log.push_access(a, "cmio rx buffer");
+    }
+
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    constexpr const char *do_get_name() const {
+        return "record_send_cmio_state_access";
     }
 };
 

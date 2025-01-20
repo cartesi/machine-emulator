@@ -32,11 +32,20 @@
 namespace cartesi {
 
 /// \brief Shadow TLB slot
+// Writes to TLB slots have to be atomic.
+// We can only do /aligned/ atomic writes.
+// Therefore, TLB slot cannot be misaligned.
 struct PACKED shadow_tlb_slot {
-    uint64_t vaddr_page; ///< Tag is target virtual address of start of page
-    uint64_t vp_offset;  ///< Value is offset from target virtual address to target physical address within page
-    uint64_t pma_index;  ///< Index of PMA where physical page falls
+    uint64_t vaddr_page;    ///< Tag is target virtual address of start of page
+    uint64_t vp_offset;     ///< Value is offset from target virtual address to target physical address within page
+    uint64_t pma_index;     ///< Index of PMA where physical page falls
+    uint64_t zero_padding_; ///< Padding to make sure the sizeof(shadow_tlb_slot) is a power of 2
 };
+
+constexpr uint64_t SHADOW_TLB_SLOT_SIZE = sizeof(shadow_tlb_slot);
+static_assert((SHADOW_TLB_SLOT_SIZE & (SHADOW_TLB_SLOT_SIZE - 1)) == 0, "shadow TLB slot size must be power of two");
+constexpr uint64_t SHADOW_TLB_SLOT_LOG2_SIZE = 5;
+static_assert((UINT64_C(1) << SHADOW_TLB_SLOT_LOG2_SIZE) == SHADOW_TLB_SLOT_SIZE, "shadow TLB slot log2 size is wrong");
 
 /// \brief Shadow TLB set
 using shadow_tlb_set = std::array<shadow_tlb_slot, TLB_SET_SIZE>;
@@ -48,24 +57,60 @@ static_assert(PMA_SHADOW_TLB_LENGTH >= sizeof(shadow_tlb_state), "TLB state must
 
 extern const pma_driver shadow_tlb_driver;
 
-template <TLB_set_use USE>
-constexpr uint64_t shadow_tlb_get_slot_abs_addr(uint64_t slot_index) {
-    return PMA_SHADOW_TLB_START + USE * sizeof(shadow_tlb_set) + slot_index * sizeof(shadow_tlb_slot);
+/// \brief List of field types
+enum class shadow_tlb_what : uint64_t {
+    vaddr_page = offsetof(shadow_tlb_slot, vaddr_page),
+    vp_offset = offsetof(shadow_tlb_slot, vp_offset),
+    pma_index = offsetof(shadow_tlb_slot, pma_index),
+    zero_padding_ = offsetof(shadow_tlb_slot, zero_padding_),
+    unknown_ = UINT64_C(1) << 63, // Outside of RISC-V address space
+};
+
+static constexpr uint64_t shadow_tlb_get_abs_addr(TLB_set_index set_index, uint64_t slot_index) {
+    return PMA_SHADOW_TLB_START + set_index * sizeof(shadow_tlb_set) + slot_index * sizeof(shadow_tlb_slot);
 }
 
-template <TLB_set_use USE>
-constexpr uint64_t shadow_tlb_get_vaddr_page_abs_addr(uint64_t slot_index) {
-    return shadow_tlb_get_slot_abs_addr<USE>(slot_index) + offsetof(shadow_tlb_slot, vaddr_page);
+static constexpr uint64_t shadow_tlb_get_abs_addr(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) {
+    return shadow_tlb_get_abs_addr(set_index, slot_index) + static_cast<uint64_t>(what);
 }
 
-template <TLB_set_use USE>
-constexpr uint64_t shadow_tlb_get_vp_offset_abs_addr(uint64_t slot_index) {
-    return shadow_tlb_get_slot_abs_addr<USE>(slot_index) + offsetof(shadow_tlb_slot, vp_offset);
+static constexpr shadow_tlb_what shadow_tlb_get_what(uint64_t paddr, TLB_set_index &set_index, uint64_t &slot_index) {
+    if (paddr < PMA_SHADOW_TLB_START || paddr - PMA_SHADOW_TLB_START >= sizeof(shadow_tlb_state) ||
+        (paddr & (sizeof(uint64_t) - 1)) != 0) {
+        return shadow_tlb_what::unknown_;
+    }
+    paddr -= PMA_SHADOW_TLB_START;
+    set_index = TLB_set_index{paddr / sizeof(shadow_tlb_set)};
+    slot_index = (paddr % sizeof(shadow_tlb_set)) / sizeof(shadow_tlb_slot);
+    return shadow_tlb_what{paddr % sizeof(shadow_tlb_slot)};
 }
 
-template <TLB_set_use USE>
-constexpr uint64_t shadow_tlb_get_pma_index_abs_addr(uint64_t slot_index) {
-    return shadow_tlb_get_slot_abs_addr<USE>(slot_index) + offsetof(shadow_tlb_slot, pma_index);
+static constexpr const char *shadow_tlb_get_what_name(shadow_tlb_what what) {
+    const auto offset = static_cast<uint64_t>(what);
+    using reg = shadow_tlb_what;
+    if (offset > static_cast<uint64_t>(reg::unknown_) || (offset & (sizeof(uint64_t) - 1)) != 0) {
+        return "tlb.unknown";
+    }
+    switch (what) {
+        case reg::vaddr_page:
+            return "tlb.slot.vaddr_page";
+        case reg::vp_offset:
+            return "tlb.slot.vp_offset";
+        case reg::pma_index:
+            return "tlb.slot.pma_index";
+        case reg::zero_padding_:
+            return "tlb.slot.zero_padding_";
+        case reg::unknown_:
+            return "tlb.unknown";
+    }
+}
+
+[[maybe_unused]] static void shadow_tlb_fill_slot(uint64_t vaddr_page, uint64_t vp_offset, uint64_t pma_index,
+    shadow_tlb_slot &slot) {
+    slot.vaddr_page = vaddr_page;
+    slot.vp_offset = vp_offset;
+    slot.pma_index = pma_index;
+    slot.zero_padding_ = 0;
 }
 
 } // namespace cartesi

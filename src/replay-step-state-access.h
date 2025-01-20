@@ -36,6 +36,10 @@
 #include "uarch-constants.h"
 #include "uarch-defines.h"
 
+#if DUMP_STATE_ACCESS
+#include "scoped-note.h"
+#endif
+
 namespace cartesi {
 
 // \file this code is designed to be compiled for a free-standing environment.
@@ -158,11 +162,16 @@ public:
             if (i > 0 && m_context.pages[i - 1].index >= m_context.pages[i].index) {
                 interop_throw_runtime_error("invalid log format: page index is not in increasing order");
             }
+            // In the current implementaiton, this check is unecessary
+            // But we may in the future change the data field to point to independently allocated pages
+            // This would break the code that uses binary search to find the page based on the address of its data
+            if (i > 0 && +m_context.pages[i - 1].data >= +m_context.pages[i].data) {
+                interop_throw_runtime_error("invalid log format: page data is not in increasing order");
+            }
             if (m_context.pages[i].hash != all_zeros) {
                 interop_throw_runtime_error("invalid log format: page scratch hash area is not zero");
             }
         }
-
         // compute  and check the machine root hash before the replay
         auto computed_root_hash_before = compute_root_hash();
         if (computed_root_hash_before != root_hash_before) {
@@ -192,6 +201,10 @@ public:
 
 private:
     friend i_state_access<replay_step_state_access>;
+
+    void do_putchar(uint8_t /*c*/) { // NOLINT(readability-convert-member-functions-to-static)
+        ;                            // do nothing
+    }
 
     /// \brief Try to find a page in the logged data by its physical address
     /// \param paddr The physical address of the page
@@ -237,12 +250,12 @@ private:
 
     // \brief Relocate all TLB vp_offset fields to vh_offset
     // \details This makes the translation point directly to logged page data
-    template <TLB_set_use USE>
+    template <TLB_set_index SET>
     void relocate_tlb_vp_offset_to_vh_offset() {
         for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
-            const auto vp_offset_field_addr = shadow_tlb_get_vp_offset_abs_addr<USE>(slot_index);
+            const auto vp_offset_field_addr = shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vp_offset);
             auto *vp_offset_log = try_find_page(vp_offset_field_addr & ~PAGE_OFFSET_MASK);
-            const auto vaddr_page_field_addr = shadow_tlb_get_vaddr_page_abs_addr<USE>(slot_index);
+            const auto vaddr_page_field_addr = shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page);
             auto *vaddr_page_log = try_find_page(vaddr_page_field_addr & ~PAGE_OFFSET_MASK);
             // If vp_offset was accessed during record, both it and vaddr_apge will appear in the log
             // (record_step_state_access makes sure of it)
@@ -274,12 +287,12 @@ private:
 
     // \brief Reverses changes to TLB so we have vp_offset fields again instead of vh_offset
     // \details This makes the translation point back to target physical addresses
-    template <TLB_set_use USE>
+    template <TLB_set_index SET>
     void relocate_tlb_vh_offset_to_vp_offset() {
         for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
-            const auto vp_offset_field_addr = shadow_tlb_get_vp_offset_abs_addr<USE>(slot_index);
+            const auto vp_offset_field_addr = shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vp_offset);
             auto *vp_offset_log = try_find_page(vp_offset_field_addr & ~PAGE_OFFSET_MASK);
-            const auto vaddr_page_field_addr = shadow_tlb_get_vaddr_page_abs_addr<USE>(slot_index);
+            const auto vaddr_page_field_addr = shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page);
             auto *vaddr_page_log = try_find_page(vaddr_page_field_addr & ~PAGE_OFFSET_MASK);
             // If vp_offset was accessed during record, both it and vaddr_apge will appear in the log
             // (record_step_state_access makes sure of it)
@@ -313,7 +326,7 @@ private:
     page_type *find_page(uint64_t paddr_page) const {
         auto *page_log = try_find_page(paddr_page);
         if (page_log == nullptr) {
-            interop_throw_runtime_error("find_page: page not found");
+            interop_throw_runtime_error("required page not found");
         }
         return page_log;
     }
@@ -321,7 +334,7 @@ private:
     page_type *find_page(host_addr haddr_page) const {
         auto *page_log = try_find_page(haddr_page);
         if (page_log == nullptr) {
-            interop_throw_runtime_error("find_page: page not found");
+            interop_throw_runtime_error("required page not found");
         }
         return page_log;
     }
@@ -340,46 +353,48 @@ private:
 
     // \brief Compute the current machine root hash
     hash_type compute_root_hash() {
+        //??D Here we should only do this for dirty pages, right?
+        //??D Initially, all pages are dirty, because we don't know their hashes
+        //??D But in the end, we should only update those pages that we touched
+        //??D May improve performance when we are running this on ZK
         for (uint64_t i = 0; i < m_context.page_count; i++) {
             interop_merkle_tree_hash(m_context.pages[i].data, PMA_PAGE_SIZE,
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
                 reinterpret_cast<interop_hash_type>(&m_context.pages[i].hash));
         }
-
         size_t next_page = 0;
         size_t next_sibling = 0;
         auto root_hash =
             compute_root_hash_impl(0, interop_log2_root_size - PMA_PAGE_SIZE_LOG2, next_page, next_sibling);
         if (next_page != m_context.page_count) {
-            interop_throw_runtime_error("compute_root_hash: next_page != m_context.page_count");
+            interop_throw_runtime_error("too many pages in log");
         }
         if (next_sibling != m_context.sibling_count) {
-            interop_throw_runtime_error("compute_root_hash: sibling hashes not totally consumed");
+            interop_throw_runtime_error("too many sibling hashes in log");
         }
         return root_hash;
     }
 
     // \brief Compute the root hash of a memory range recursively
     // \param page_index Index of the first page in the range
-    // \param page_count_log2_size Log2 of the size of number of pages in the range
+    // \param log2_page_count Log2 of the size of number of pages in the range
     // \param next_page Index of the next page to be visited
     // \param next_sibling Index of the next sibling hash to be visited
     // \return Resulting root hash of the range
-    hash_type compute_root_hash_impl(address_type page_index, int page_count_log2_size, size_t &next_page,
+    hash_type compute_root_hash_impl(address_type page_index, int log2_page_count, size_t &next_page,
         size_t &next_sibling) {
         // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast))
-        auto page_count = UINT64_C(1) << page_count_log2_size;
+        auto page_count = UINT64_C(1) << log2_page_count;
         if (next_page >= m_context.page_count || page_index + page_count <= m_context.pages[next_page].index) {
             if (next_sibling >= m_context.sibling_count) {
-                interop_throw_runtime_error(
-                    "compute_root_hash_impl: trying to access beyond sibling count while skipping range");
+                interop_throw_runtime_error("too few sibling hashes in log");
             }
             return m_context.sibling_hashes[next_sibling++];
         }
-        if (page_count_log2_size > 0) {
-            auto left = compute_root_hash_impl(page_index, page_count_log2_size - 1, next_page, next_sibling);
-            auto right = compute_root_hash_impl(page_index + (UINT64_C(1) << (page_count_log2_size - 1)),
-                page_count_log2_size - 1, next_page, next_sibling);
+        if (log2_page_count > 0) {
+            auto left = compute_root_hash_impl(page_index, log2_page_count - 1, next_page, next_sibling);
+            const auto halfway_page_index = page_index + (page_count >> 1);
+            auto right = compute_root_hash_impl(halfway_page_index, log2_page_count - 1, next_page, next_sibling);
             hash_type hash{};
             interop_concat_hash(reinterpret_cast<interop_hash_type>(&left), reinterpret_cast<interop_hash_type>(&right),
                 reinterpret_cast<interop_hash_type>(&hash));
@@ -389,434 +404,362 @@ private:
             return m_context.pages[next_page++].hash;
         }
         if (next_sibling >= m_context.sibling_count) {
-            interop_throw_runtime_error("compute_root_hash_impl: trying to access beyond sibling count");
+            interop_throw_runtime_error("too few sibling hashes in log");
         }
         return m_context.sibling_hashes[next_sibling++];
         // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast))
     }
 
+#ifdef DUMP_STATE_ACCESS
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_push_bracket(bracket_type type, const char *text) {
-        (void) type;
-        (void) text;
+    auto do_make_scoped_note([[maybe_unused]] const char *text) {
+        return scoped_note<replay_step_state_access>{*this, text};
     }
+#endif
 
-    int do_make_scoped_note(const char *text) { // NOLINT(readability-convert-member-functions-to-static)
-        (void) text;
-        return 0;
+    //??D we should probably optimize access to the shadow so it doesn't perform a translation every time
+    // We can do this by caching the vh_offset trasnslation of the processor shadow page. This is easy if
+    // static_assert(sizeof(shadow_state) <= PMA_PAGE_SIZE, "shadow state must fit in single page");
+    uint64_t check_read_reg(machine_reg reg) const {
+        const auto haddr = do_get_faddr(machine_reg_address(reg));
+        return aliased_aligned_read<uint64_t>(haddr);
     }
 
     //??D we should probably optimize access to the shadow so it doesn't perform a translation every time
     // We can do this by caching the vh_offset trasnslation of the processor shadow page. This is easy if
     // static_assert(sizeof(shadow_state) <= PMA_PAGE_SIZE, "shadow state must fit in single page");
-    uint64_t do_read_x(int reg) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::x0, reg));
-        return aliased_aligned_read<uint64_t>(haddr);
-    }
-
-    void do_write_x(int reg, uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::x0, reg));
+    void check_write_reg(machine_reg reg, uint64_t val) {
+        const auto haddr = do_get_faddr(machine_reg_address(reg));
         aliased_aligned_write<uint64_t>(haddr, val);
     }
 
-    uint64_t do_read_f(int reg) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::f0, reg));
-        return aliased_aligned_read<uint64_t>(haddr);
+    uint64_t do_read_x(int i) {
+        return check_read_reg(machine_reg_enum(machine_reg::x0, i));
     }
 
-    void do_write_f(int reg, uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::f0, reg));
-        aliased_aligned_write<uint64_t>(haddr, val);
+    void do_write_x(int i, uint64_t val) {
+        assert(i != 0);
+        check_write_reg(machine_reg_enum(machine_reg::x0, i), val);
+    }
+
+    uint64_t do_read_f(int i) {
+        return check_read_reg(machine_reg_enum(machine_reg::f0, i));
+    }
+
+    void do_write_f(int i, uint64_t val) {
+        check_write_reg(machine_reg_enum(machine_reg::f0, i), val);
     }
 
     uint64_t do_read_pc() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::pc));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::pc);
     }
 
     void do_write_pc(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::pc));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::pc, val);
     }
 
     uint64_t do_read_fcsr() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::fcsr));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::fcsr);
     }
 
     void do_write_fcsr(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::fcsr));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::fcsr, val);
     }
 
     uint64_t do_read_icycleinstret() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::icycleinstret));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::icycleinstret);
     }
 
     void do_write_icycleinstret(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::icycleinstret));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::icycleinstret, val);
     }
 
     uint64_t do_read_mvendorid() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mvendorid));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::mvendorid);
     }
 
     uint64_t do_read_marchid() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::marchid));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::marchid);
     }
 
     uint64_t do_read_mimpid() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mimpid));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::mimpid);
     }
 
     uint64_t do_read_mcycle() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mcycle));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::mcycle);
     }
 
     void do_write_mcycle(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mcycle));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::mcycle, val);
     }
 
     uint64_t do_read_mstatus() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mstatus));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::mstatus);
     }
 
     void do_write_mstatus(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mstatus));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::mstatus, val);
     }
 
     uint64_t do_read_mtvec() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mtvec));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::mtvec);
     }
 
     void do_write_mtvec(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mtvec));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::mtvec, val);
     }
 
     uint64_t do_read_mscratch() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mscratch));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::mscratch);
     }
 
     void do_write_mscratch(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mscratch));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::mscratch, val);
     }
 
     uint64_t do_read_mepc() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mepc));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::mepc);
     }
 
     void do_write_mepc(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mepc));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::mepc, val);
     }
 
     uint64_t do_read_mcause() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mcause));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::mcause);
     }
 
     void do_write_mcause(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mcause));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::mcause, val);
     }
 
     uint64_t do_read_mtval() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mtval));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::mtval);
     }
 
     void do_write_mtval(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mtval));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::mtval, val);
     }
 
     uint64_t do_read_misa() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::misa));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::misa);
     }
 
     void do_write_misa(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::misa));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::misa, val);
     }
 
     uint64_t do_read_mie() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mie));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::mie);
     }
 
     void do_write_mie(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mie));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::mie, val);
     }
 
     uint64_t do_read_mip() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mip));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::mip);
     }
 
     void do_write_mip(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mip));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::mip, val);
     }
 
     uint64_t do_read_medeleg() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::medeleg));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::medeleg);
     }
 
     void do_write_medeleg(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::medeleg));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::medeleg, val);
     }
 
     uint64_t do_read_mideleg() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mideleg));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::mideleg);
     }
 
     void do_write_mideleg(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mideleg));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::mideleg, val);
     }
 
     uint64_t do_read_mcounteren() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mcounteren));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::mcounteren);
     }
 
     void do_write_mcounteren(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::mcounteren));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::mcounteren, val);
     }
 
-    uint64_t do_read_senvcfg() const {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::senvcfg));
-        return aliased_aligned_read<uint64_t>(haddr);
+    uint64_t do_read_senvcfg() {
+        return check_read_reg(machine_reg::senvcfg);
     }
 
     void do_write_senvcfg(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::senvcfg));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::senvcfg, val);
     }
 
-    uint64_t do_read_menvcfg() const {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::menvcfg));
-        return aliased_aligned_read<uint64_t>(haddr);
+    uint64_t do_read_menvcfg() {
+        return check_read_reg(machine_reg::menvcfg);
     }
 
     void do_write_menvcfg(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::menvcfg));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::menvcfg, val);
     }
 
     uint64_t do_read_stvec() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::stvec));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::stvec);
     }
 
     void do_write_stvec(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::stvec));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::stvec, val);
     }
 
     uint64_t do_read_sscratch() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::sscratch));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::sscratch);
     }
 
     void do_write_sscratch(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::sscratch));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::sscratch, val);
     }
 
     uint64_t do_read_sepc() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::sepc));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::sepc);
     }
 
     void do_write_sepc(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::sepc));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::sepc, val);
     }
 
     uint64_t do_read_scause() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::scause));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::scause);
     }
 
     void do_write_scause(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::scause));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::scause, val);
     }
 
     uint64_t do_read_stval() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::stval));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::stval);
     }
 
     void do_write_stval(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::stval));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::stval, val);
     }
 
     uint64_t do_read_satp() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::satp));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::satp);
     }
 
     void do_write_satp(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::satp));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::satp, val);
     }
 
     uint64_t do_read_scounteren() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::scounteren));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::scounteren);
     }
 
     void do_write_scounteren(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::scounteren));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::scounteren, val);
     }
 
     uint64_t do_read_ilrsc() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::ilrsc));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::ilrsc);
     }
 
     void do_write_ilrsc(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::ilrsc));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::ilrsc, val);
     }
 
     uint64_t do_read_iprv() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::iprv));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::iprv);
     }
 
     void do_write_iprv(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::iprv));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::iprv, val);
     }
 
     uint64_t do_read_iflags_X() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::iflags_X));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::iflags_X);
     }
 
     void do_write_iflags_X(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::iflags_X));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::iflags_X, val);
     }
 
     uint64_t do_read_iflags_Y() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::iflags_Y));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::iflags_Y);
     }
 
     void do_write_iflags_Y(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::iflags_Y));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::iflags_Y, val);
     }
 
     uint64_t do_read_iflags_H() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::iflags_H));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::iflags_H);
     }
 
     void do_write_iflags_H(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::iflags_H));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::iflags_H, val);
     }
 
     uint64_t do_read_iunrep() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::iunrep));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::iunrep);
     }
 
     void do_write_iunrep(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::iunrep));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::iunrep, val);
     }
 
     uint64_t do_read_clint_mtimecmp() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::clint_mtimecmp));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::clint_mtimecmp);
     }
 
     void do_write_clint_mtimecmp(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::clint_mtimecmp));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::clint_mtimecmp, val);
     }
 
     uint64_t do_read_plic_girqpend() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::plic_girqpend));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::plic_girqpend);
     }
 
     void do_write_plic_girqpend(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::plic_girqpend));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::plic_girqpend, val);
     }
 
     uint64_t do_read_plic_girqsrvd() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::plic_girqsrvd));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::plic_girqsrvd);
     }
 
     void do_write_plic_girqsrvd(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::plic_girqsrvd));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::plic_girqsrvd, val);
     }
 
     uint64_t do_read_htif_fromhost() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::htif_fromhost));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::htif_fromhost);
     }
 
     void do_write_htif_fromhost(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::htif_fromhost));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::htif_fromhost, val);
     }
 
     uint64_t do_read_htif_tohost() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::htif_tohost));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::htif_tohost);
     }
 
     void do_write_htif_tohost(uint64_t val) {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::htif_tohost));
-        aliased_aligned_write<uint64_t>(haddr, val);
+        check_write_reg(machine_reg::htif_tohost, val);
     }
 
     uint64_t do_read_htif_ihalt() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::htif_ihalt));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::htif_ihalt);
     }
 
     uint64_t do_read_htif_iconsole() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::htif_iconsole));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::htif_iconsole);
     }
 
     uint64_t do_read_htif_iyield() {
-        const auto haddr = do_get_faddr(machine_reg_address(machine_reg::htif_iyield));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_reg(machine_reg::htif_iyield);
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
@@ -836,12 +779,12 @@ private:
     }
 
     uint64_t read_pma_istart(uint64_t index) {
-        const auto haddr = do_get_faddr(shadow_pmas_get_pma_istart_abs_addr(index));
+        const auto haddr = do_get_faddr(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::istart));
         return aliased_aligned_read<uint64_t>(haddr);
     }
 
     uint64_t read_pma_ilength(uint64_t index) {
-        const auto haddr = do_get_faddr(shadow_pmas_get_pma_ilength_abs_addr(index));
+        const auto haddr = do_get_faddr(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::ilength));
         return aliased_aligned_read<uint64_t>(haddr);
     }
 
@@ -871,32 +814,38 @@ private:
         aliased_aligned_write<T, A>(haddr, val);
     }
 
-    template <TLB_set_use USE>
+    template <typename TYPE>
+    auto check_read_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) {
+        const auto haddr = do_get_faddr(shadow_tlb_get_abs_addr(set_index, slot_index, what));
+        return aliased_aligned_read<TYPE>(haddr);
+    }
+
+    template <TLB_set_index SET>
     uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) {
-        const auto haddr = do_get_faddr(shadow_tlb_get_vaddr_page_abs_addr<USE>(slot_index));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::vaddr_page);
     }
 
-    template <TLB_set_use USE>
+    template <TLB_set_index SET>
     host_addr do_read_tlb_vp_offset(uint64_t slot_index) {
-        const auto haddr = do_get_faddr(shadow_tlb_get_vp_offset_abs_addr<USE>(slot_index));
-        return aliased_aligned_read<host_addr>(haddr);
+        return check_read_tlb<host_addr>(SET, slot_index, shadow_tlb_what::vp_offset);
     }
 
-    template <TLB_set_use USE>
+    template <TLB_set_index SET>
     uint64_t do_read_tlb_pma_index(uint64_t slot_index) {
-        const auto haddr = do_get_faddr(shadow_tlb_get_pma_index_abs_addr<USE>(slot_index));
-        return aliased_aligned_read<uint64_t>(haddr);
+        return check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::pma_index);
     }
 
-    template <TLB_set_use USE>
+    template <typename TYPE>
+    auto check_write_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what, TYPE val) {
+        const auto haddr = do_get_faddr(shadow_tlb_get_abs_addr(set_index, slot_index, what));
+        aliased_aligned_write<TYPE>(haddr, val);
+    }
+
+    template <TLB_set_index SET>
     void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) {
-        const auto haddr_vaddr_page = do_get_faddr(shadow_tlb_get_vaddr_page_abs_addr<USE>(slot_index));
-        aliased_aligned_write<uint64_t>(haddr_vaddr_page, vaddr_page);
-        const auto haddr_vp_offset = do_get_faddr(shadow_tlb_get_vp_offset_abs_addr<USE>(slot_index));
-        aliased_aligned_write<host_addr>(haddr_vp_offset, vh_offset);
-        const auto haddr_pma_index = do_get_faddr(shadow_tlb_get_pma_index_abs_addr<USE>(slot_index));
-        aliased_aligned_write<uint64_t>(haddr_pma_index, pma_index);
+        check_write_tlb(SET, slot_index, shadow_tlb_what::vaddr_page, vaddr_page);
+        check_write_tlb(SET, slot_index, shadow_tlb_what::vp_offset, vh_offset);
+        check_write_tlb(SET, slot_index, shadow_tlb_what::pma_index, pma_index);
     }
 
     void do_mark_dirty_page(host_addr /* haddr */, uint64_t /* pma_index */) {
@@ -904,11 +853,9 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
-        (void) mcycle_max;
-        return {mcycle, false};
+    constexpr const char *do_get_name() const { // NOLINT(readability-convert-member-functions-to-static)
+        return "replay_step_state_access";
     }
-
 };
 
 } // namespace cartesi

@@ -40,13 +40,6 @@ extern "C" {
 #endif
 
 /**
- * Output a character to a custom device like UART, used by the printf() function
- * This function is declared here only. You have to write your custom implementation somewhere
- * \param character Character to output
- */
-void _putchar(char character);
-
-/**
  * Tiny printf implementation
  * You have to implement _putchar if you use printf()
  * To avoid conflicts with the regular printf() API it is overridden by macro defines

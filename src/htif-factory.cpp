@@ -18,23 +18,14 @@
 
 #include "htif-factory.h"
 #include "htif.h"
-#include "machine-runtime-config.h"
-#include "machine.h"
 #include "pma-constants.h"
 #include "pma.h"
 
 namespace cartesi {
 
-/// \brief HTIF device peek callback. See ::pma_peek.
-static bool htif_peek(const pma_entry &pma, const machine & /*m*/, uint64_t page_offset,
-    const unsigned char **page_data, unsigned char * /*scratch*/) {
-    *page_data = nullptr;
-    return (page_offset % PMA_PAGE_SIZE) == 0 && page_offset < pma.get_length();
-}
-
 pma_entry make_htif_pma_entry(uint64_t start, uint64_t length) {
     const pma_entry::flags f{.R = true, .W = true, .X = false, .IR = false, .IW = false, .DID = PMA_ISTART_DID::HTIF};
-    return make_device_pma_entry("HTIF device", start, length, htif_peek, &htif_driver).set_flags(f);
+    return make_device_pma_entry("HTIF device", start, length, pma_peek_pristine, &htif_driver).set_flags(f);
 }
 
 } // namespace cartesi

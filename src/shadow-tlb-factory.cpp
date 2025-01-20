@@ -14,67 +14,38 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "shadow-tlb-factory.h"
-
-#include <array>
-#include <cstddef>
 #include <cstdint>
-#include <cstring>
 
 #include "machine.h"
 #include "pma-constants.h"
 #include "pma.h"
+#include "shadow-peek.h"
+#include "shadow-tlb-factory.h"
 #include "shadow-tlb.h"
-#include "strict-aliasing.h"
 
 namespace cartesi {
 
 /// \brief TLB device peek callback. See ::pma_peek.
-static bool shadow_tlb_peek(const pma_entry &pma, const machine &m, uint64_t page_offset,
-    const unsigned char **page_data, unsigned char *scratch) {
-    // Check for alignment and range
-    if (page_offset % PMA_PAGE_SIZE != 0 || page_offset >= pma.get_length()) {
-        *page_data = nullptr;
-        return false;
+static bool shadow_tlb_peek(const pma_entry &pma, const machine &m, uint64_t offset, uint64_t length,
+    const unsigned char **data, unsigned char *scratch) {
+    // If past useful range
+    if (offset >= sizeof(shadow_tlb_state)) {
+        *data = nullptr;
+        return length <= pma.get_length() && offset <= pma.get_length() - length;
     }
-    // Clear page
-    memset(scratch, 0, PMA_PAGE_SIZE);
-    // Copy relevant TLB entries to the page
-    const auto &tlb = m.get_state().tlb;
-    for (uint64_t offset = 0; offset < PMA_PAGE_SIZE; offset += sizeof(uint64_t)) {
-        uint64_t val = 0;
-        if (offset < sizeof(shadow_tlb_state)) {
-            // Figure out in which set (code/read/write) the offset falls
-            const uint64_t set_index = offset / sizeof(shadow_tlb_set);
-            const uint64_t slot_offset = offset % sizeof(shadow_tlb_set);
-            // Figure out in which slot index the offset falls
-            const uint64_t slot_index = slot_offset / sizeof(shadow_tlb_slot);
-            const uint64_t field_offset = slot_offset % sizeof(shadow_tlb_slot);
-            switch (field_offset) {
-                case offsetof(shadow_tlb_slot, vaddr_page):
-                    val = tlb.hot[set_index][slot_index].vaddr_page;
-                    break;
-                case offsetof(shadow_tlb_slot, vp_offset): {
-                    auto vaddr_page = tlb.hot[set_index][slot_index].vaddr_page;
-                    auto vh_offset = tlb.hot[set_index][slot_index].vh_offset;
-                    auto haddr_page = vaddr_page + vh_offset;
-                    auto pma_index = tlb.cold[set_index][slot_index].pma_index;
-                    auto paddr_page = m.get_paddr(haddr_page, pma_index);
-                    val = paddr_page - vaddr_page;
-                    break;
-                }
-                case offsetof(shadow_tlb_slot, pma_index):
-                    val = tlb.cold[set_index][slot_index].pma_index;
-                    break;
-                default:
-                    val = 0;
-                    break;
+    // Otherwise, copy and return register data
+    return shadow_peek(
+        [](const machine &m, uint64_t paddr) {
+            TLB_set_index set_index{};
+            uint64_t slot_index{};
+            auto reg = shadow_tlb_get_what(paddr, set_index, slot_index);
+            uint64_t val = 0;
+            if (reg != shadow_tlb_what::unknown_) {
+                val = m.read_shadow_tlb(set_index, slot_index, reg);
             }
-        }
-        aliased_aligned_write<uint64_t>(scratch + offset, val);
-    }
-    *page_data = scratch;
-    return true;
+            return val;
+        },
+        pma, m, offset, length, data, scratch);
 }
 
 pma_entry make_shadow_tlb_pma_entry(uint64_t start, uint64_t length) {
@@ -84,7 +55,7 @@ pma_entry make_shadow_tlb_pma_entry(uint64_t start, uint64_t length) {
         .IR = false,
         .IW = false,
         .DID = PMA_ISTART_DID::shadow_TLB};
-    return make_device_pma_entry("shadow TLB device", start, length, shadow_tlb_peek, &shadow_tlb_driver).set_flags(f);
+    return make_device_pma_entry("shadow TLB", start, length, shadow_tlb_peek, &shadow_tlb_driver).set_flags(f);
 }
 
 } // namespace cartesi

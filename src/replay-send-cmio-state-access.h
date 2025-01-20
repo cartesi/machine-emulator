@@ -362,6 +362,11 @@ private:
         m_context.root_hash = proof.bubble_up(m_context.hasher, written_hash);
         m_context.next_access++;
     }
+
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    constexpr const char *do_get_name() const {
+        return "replay_send_cmio_state_access";
+    }
 };
 
 } // namespace cartesi

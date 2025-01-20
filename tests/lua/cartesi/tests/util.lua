@@ -26,10 +26,10 @@ local function adjust_path(path)
 end
 
 local test_util = {
-    images_path = adjust_path(assert(os.getenv("CARTESI_IMAGES_PATH"))),
-    tests_path = adjust_path(assert(os.getenv("CARTESI_TESTS_PATH"))),
-    cmio_path = adjust_path(assert(os.getenv("CARTESI_CMIO_PATH"))),
-    tests_uarch_path = adjust_path(assert(os.getenv("CARTESI_TESTS_UARCH_PATH"))),
+    images_path = adjust_path(assert(os.getenv("CARTESI_IMAGES_PATH"), "must set CARTESI_IMAGES_PATH")),
+    tests_path = adjust_path(assert(os.getenv("CARTESI_TESTS_PATH"), "must set CARTESI_TESTS_PATH")),
+    cmio_path = adjust_path(assert(os.getenv("CARTESI_CMIO_PATH"), "must set CARTESI_CMIO_PATH")),
+    tests_uarch_path = adjust_path(assert(os.getenv("CARTESI_TESTS_UARCH_PATH"), "must set CARTESI_TESTS_UARCH_PATH")),
 }
 
 local zero_keccak_hash_table = {
@@ -60,9 +60,7 @@ test_util.uarch_programs.default = {
 }
 
 function test_util.create_test_uarch_program(instructions)
-    if not instructions then
-        instructions = test_util.uarch_programs.default
-    end
+    assert(instructions, "missing instructions")
     local file_path = os.tmpname()
     local f <close> = assert(io.open(file_path, "wb"))
     for _, insn in pairs(instructions) do

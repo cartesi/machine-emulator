@@ -31,6 +31,7 @@ namespace cartesi {
 /// \returns PMA entry where word falls, or empty sentinel.
 template <typename T, typename STATE_ACCESS>
 auto &find_pma_entry(STATE_ACCESS &a, uint64_t paddr, uint64_t &index) {
+    [[maybe_unused]] auto note = a.make_scoped_note("find_pma_entry");
     index = 0;
     while (true) {
         auto &pma = a.read_pma_entry(index);

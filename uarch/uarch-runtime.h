@@ -35,4 +35,14 @@
 
 extern "C" NO_RETURN void abort();
 
+namespace cartesi {
+
+void os_open_tty();
+void os_close_tty();
+bool os_poll_tty(uint64_t /*timeout_us*/);
+int os_getchar();
+void os_putchar(uint8_t ch);
+
+} // namespace cartesi
+
 #endif

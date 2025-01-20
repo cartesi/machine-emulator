@@ -94,8 +94,7 @@ public:
         m_pma_index{pma_index},
         m_start{istart & PMA_ISTART_START_MASK},
         m_length{ilength},
-        m_flags{split_flags(istart)},
-        m_driver{nullptr} {
+        m_flags{split_flags(istart)} {
         if (m_flags.IO) {
             switch (m_flags.DID) {
                 case PMA_ISTART_DID::shadow_state:
@@ -540,11 +539,11 @@ private:
         return {mcycle, false};
     }
 
-    uint64_t read_pma_istart(int i) {
+    uint64_t read_pma_istart(uint64_t i) {
         return raw_read_memory<uint64_t>(shadow_pmas_get_pma_abs_addr(i));
     }
 
-    uint64_t read_pma_ilength(int i) {
+    uint64_t read_pma_ilength(uint64_t i) {
         return raw_read_memory<uint64_t>(shadow_pmas_get_pma_abs_addr(i) + sizeof(uint64_t));
     }
 
@@ -573,13 +572,11 @@ private:
     uarch_pma_entry &do_read_pma_entry(uint64_t index) {
         const uint64_t istart = read_pma_istart(index);
         const uint64_t ilength = read_pma_ilength(index);
-        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
-        int i = static_cast<int>(index);
-        if (!m_pmas[i]) {
-            m_pmas[i] = uarch_pma_entry{index, istart, ilength};
+        if (!m_pmas[index]) {
+            m_pmas[index] = uarch_pma_entry{index, istart, ilength};
         }
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        return m_pmas[i].value();
+        return m_pmas[index].value();
     }
 
     unsigned char *do_get_host_memory(uarch_pma_entry &/*pma*/) {
@@ -661,7 +658,7 @@ private:
         // To do this we first invalidate TLB state before these fields are written to "lock",
         // and "unlock" by writing a valid vaddr_page.
         tlbhe.vaddr_page = TLB_INVALID_PAGE; // "lock", DO NOT OPTIMIZE OUT THIS LINE
-        tlbce.pma_index = static_cast<uint64_t>(pma.get_index());
+        tlbce.pma_index = pma.get_index();
         tlbce.paddr_page = paddr_page;
         // The write to vaddr_page MUST BE the last TLB entry write.
         tlbhe.vaddr_page = vaddr_page; // "unlock"

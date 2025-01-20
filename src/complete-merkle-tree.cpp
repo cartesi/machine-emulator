@@ -121,7 +121,7 @@ void complete_merkle_tree::bubble_up() {
         auto last_safe_entry = prev.size() / 2;
         // Do all entries for which we have two non-pristine children
         for (; first_entry < last_safe_entry; ++first_entry) {
-            get_concat_hash(h, prev[2 * first_entry], prev[2 * first_entry + 1], next[first_entry]);
+            get_concat_hash(h, prev[2 * first_entry], prev[(2 * first_entry) + 1], next[first_entry]);
         }
         // Maybe do last odd entry
         if (prev.size() > 2 * last_safe_entry) {

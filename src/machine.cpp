@@ -479,7 +479,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
                         throw std::invalid_argument("invalid virtio device configuration");
                     }
                     register_pma_entry(
-                        make_virtio_pma_entry(PMA_FIRST_VIRTIO_START + vdev->get_virtio_index() * PMA_VIRTIO_LENGTH,
+                        make_virtio_pma_entry(PMA_FIRST_VIRTIO_START + (vdev->get_virtio_index() * PMA_VIRTIO_LENGTH),
                             PMA_VIRTIO_LENGTH, pma_name, &virtio_driver, vdev.get()));
                     m_vdevs.push_back(std::move(vdev));
                 },

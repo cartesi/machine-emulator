@@ -270,7 +270,7 @@ public:
         m_peek{peek},
         m_data{std::move(memory)} {
         // allocate dirty page map and mark all pages as dirty
-        m_dirty_page_map.resize(length / (8 * PMA_PAGE_SIZE) + 1, 0xff);
+        m_dirty_page_map.resize((length / (8 * PMA_PAGE_SIZE)) + 1, 0xff);
     }
 
     /// \brief Constructor for device entry

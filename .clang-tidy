@@ -44,7 +44,6 @@ Checks: >-
   -readability-function-cognitive-complexity,
   -readability-identifier-length,
   -readability-magic-numbers,
-  -readability-math-missing-parentheses,
   -readability-use-std-min-max,
   -readability-enum-initial-value,
 WarningsAsErrors: >-

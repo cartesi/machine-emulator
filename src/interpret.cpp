@@ -5545,7 +5545,7 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
 #endif
 
         // Limit mcycle_tick_end up to the next RTC tick, while avoiding unsigned overflows
-        const uint64_t mcycle_tick_end = mcycle + std::min(mcycle_end - mcycle, RTC_FREQ_DIV - mcycle % RTC_FREQ_DIV);
+        const uint64_t mcycle_tick_end = mcycle + std::min(mcycle_end - mcycle, RTC_FREQ_DIV - (mcycle % RTC_FREQ_DIV));
 
         // The inner loop continues until there is an interrupt condition
         // or mcycle reaches mcycle_tick_end

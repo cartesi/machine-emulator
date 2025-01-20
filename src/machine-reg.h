@@ -189,11 +189,11 @@ enum class machine_reg : uint64_t {
 };
 
 constexpr uint64_t machine_reg_address(machine_reg reg, int i = 0) {
-    return static_cast<uint64_t>(reg) + i * sizeof(uint64_t);
+    return static_cast<uint64_t>(reg) + (i * sizeof(uint64_t));
 }
 
 constexpr machine_reg machine_reg_enum(machine_reg reg, int i) {
-    return static_cast<machine_reg>(static_cast<uint64_t>(reg) + i * sizeof(uint64_t));
+    return static_cast<machine_reg>(static_cast<uint64_t>(reg) + (i * sizeof(uint64_t)));
 }
 
 static_assert(machine_reg_address(machine_reg::uarch_first_) > machine_reg_address(machine_reg::last_));

@@ -57,20 +57,20 @@ static bool virtq_set_used_header(const virtq &vq, i_device_state_access *a, con
 
 static bool virtq_set_ring_used_elem(const virtq &vq, i_device_state_access *a, uint16_t ring_idx,
     const virtq_used_elem *pused_elem) {
-    const uint64_t addr = vq.used_addr + sizeof(virtq_header) + (ring_idx & (vq.num - 1)) * sizeof(virtq_used_elem);
+    const uint64_t addr = vq.used_addr + sizeof(virtq_header) + ((ring_idx & (vq.num - 1)) * sizeof(virtq_used_elem));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return a->write_memory(addr, reinterpret_cast<const unsigned char *>(pused_elem), sizeof(virtq_used_elem));
 }
 
 static bool virtq_get_ring_avail_elem_desc_idx(const virtq &vq, i_device_state_access *a, uint16_t ring_idx,
     uint16_t *pdesc_idx) {
-    const uint64_t addr = vq.avail_addr + sizeof(virtq_header) + (ring_idx & (vq.num - 1)) * sizeof(uint16_t);
+    const uint64_t addr = vq.avail_addr + sizeof(virtq_header) + ((ring_idx & (vq.num - 1)) * sizeof(uint16_t));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return a->read_memory(addr, reinterpret_cast<unsigned char *>(pdesc_idx), sizeof(uint16_t));
 }
 
 static bool virtq_get_desc(const virtq &vq, i_device_state_access *a, uint16_t desc_idx, virtq_desc *pdesc) {
-    const uint64_t addr = vq.desc_addr + (desc_idx & (vq.num - 1)) * sizeof(virtq_desc);
+    const uint64_t addr = vq.desc_addr + ((desc_idx & (vq.num - 1)) * sizeof(virtq_desc));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return a->read_memory(addr, reinterpret_cast<unsigned char *>(pdesc), sizeof(virtq_desc));
 }

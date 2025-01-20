@@ -242,6 +242,15 @@ local function get_cpu_reg_test_values()
     return reg_values
 end
 
+local function check_error_find(err, expected_err)
+    if not err then
+        error("expected error with '" .. expected_err .. "' (got no error)")
+    end
+    if not err:find(expected_err, 1, true) then
+        error("expected error with '" .. expected_err .. "' (got '" .. tostring(err) .. "')")
+    end
+end
+
 local machine_type = assert(arguments[1], "missing machine type")
 assert(machine_type == "local" or machine_type == "jsonrpc", "unknown machine type, should be 'local' or 'jsonrpc'")
 local to_shutdown -- luacheck: no unused
@@ -268,7 +277,7 @@ local function build_machine_config(config_options)
             processor = get_uarch_cpu_reg_test_values(),
             ram = {
                 length = 0x1000,
-                image_filename = test_util.create_test_uarch_program(),
+                image_filename = test_util.create_test_uarch_program(test_util.uarch_programs.default),
             },
         },
     }
@@ -551,7 +560,7 @@ do_test("should error if target mcycle is smaller than current mcycle", function
         machine:run(MAX_MCYCLE - 1)
     end)
     assert(success == false)
-    assert(err and err:match("mcycle is past"))
+    check_error_find(err, "mcycle is past")
     assert(machine:read_reg("mcycle") == MAX_MCYCLE)
 end)
 
@@ -562,7 +571,7 @@ do_test("should error if target uarch_cycle is smaller than current uarch_cycle"
         machine:run_uarch(MAX_UARCH_CYCLE - 1)
     end)
     assert(success == false)
-    assert(err and err:match("uarch_cycle is past"))
+    check_error_find(err, "uarch_cycle is past")
     assert(machine:read_reg("uarch_cycle") == MAX_UARCH_CYCLE)
 end)
 
@@ -638,9 +647,9 @@ do_test("written and read values should match", function(machine)
     assert(memory_read == "mydataol12345678")
 end)
 
-print("\n\n dump step log  to console")
+print("\n\n dump step log to console")
 do_test("dumped step log content should match", function(machine)
-    local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
+    local log = machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS | cartesi.ACCESS_LOG_TYPE_LARGE_DATA)
     local temp_file <close> = test_util.new_temp_file()
     util.dump_log(log, temp_file)
     local log_output = temp_file:read_all()
@@ -649,10 +658,10 @@ do_test("dumped step log content should match", function(machine)
         .. "  1: read uarch.cycle@0x400008(4194312): 0x0(0)\n"
         .. "  2: read uarch.halt_flag@0x400000(4194304): 0x0(0)\n"
         .. "  3: read uarch.pc@0x400010(4194320): 0x600000(6291456)\n"
-        .. "  4: read memory@0x600000(6291456): 0x10089307b00513(4513027209561363)\n"
+        .. "  4: read uarch.ram@0x600000(6291456): 0x10089307b00513(4513027209561363)\n"
         .. "  begin addi\n"
-        .. "    5: read uarch.x@0x400018(4194328): 0x0(0)\n"
-        .. "    6: write uarch.x@0x400068(4194408): 0x10050(65616) -> 0x7b(123)\n"
+        .. "    5: read uarch.x0@0x400018(4194328): 0x0(0)\n"
+        .. "    6: write uarch.x10@0x400068(4194408): 0x10050(65616) -> 0x7b(123)\n"
         .. "    7: write uarch.pc@0x400010(4194320): 0x600000(6291456) -> 0x600004(6291460)\n"
         .. "  end addi\n"
         .. "  8: write uarch.cycle@0x400008(4194312): 0x0(0) -> 0x1(1)\n"
@@ -686,7 +695,7 @@ do_test("Step log must contain conssitent data hashes", function(machine)
     -- ensure that verification fails with wrong read hash
     read_access.read_hash = wrong_hash
     local _, err = pcall(machine.verify_step_uarch, machine, initial_hash, log, final_hash)
-    assert(err:match("logged read data of uarch.uarch_cycle data does not hash to the logged read hash at 1st access"))
+    check_error_find(err, "siblings and read hash do not match root hash before 1st access to uarch.cycle")
     read_access.read_hash = read_hash -- restore correct value
 
     -- ensure that verification fails with wrong read hash
@@ -695,13 +704,13 @@ do_test("Step log must contain conssitent data hashes", function(machine)
     read_hash = write_access.read_hash
     write_access.read_hash = wrong_hash
     _, err = pcall(machine.verify_step_uarch, machine, initial_hash, log, final_hash)
-    assert(err:match("logged read data of uarch.cycle does not hash to the logged read hash at 8th access"))
+    check_error_find(err, "siblings and read hash do not match root hash before 8th access to uarch.cycle")
     write_access.read_hash = read_hash -- restore correct value
 
     -- ensure that verification fails with wrong written hash
     write_access.written_hash = wrong_hash
     _, err = pcall(machine.verify_step_uarch, machine, initial_hash, log, final_hash)
-    assert(err:match("logged written data of uarch.cycle does not hash to the logged written hash at 8th access"))
+    check_error_find(err, "written hash for uarch.cycle does not match expected hash in 8th access")
 end)
 
 do_test("step when uarch cycle is max", function(machine)
@@ -819,7 +828,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })(
 
 local test_reset_uarch_config = {
     processor = {
-        halt_flag = true,
+        halt_flag = 1,
         cycle = 1,
         pc = 0,
     },
@@ -901,10 +910,10 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         -- verifying incorrect initial hash
         local wrong_hash = string.rep("0", cartesi.HASH_SIZE)
         local _, err = pcall(machine.verify_reset_uarch, machine, wrong_hash, log, final_hash)
-        assert(err:match("Mismatch in root hash of 1st access"))
+        check_error_find(err, "siblings and read hash do not match root hash before 1st access to uarch.state")
         -- verifying incorrect final hash
         _, err = pcall(machine.verify_reset_uarch, machine, initial_hash, log, wrong_hash)
-        assert(err:match("mismatch in root hash after replay"))
+        check_error_find(err, "mismatch in root hash after replay")
     end
 )
 
@@ -922,10 +931,10 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
     "Dump of log produced by log_reset_uarch should match",
     function(machine)
         local log = machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
-        local expected_dump_pattern = "begin reset uarch state\n"
-            .. "  1: write uarch_state@0x400000%(4194304%): "
+        local expected_dump_pattern = "begin reset_uarch_state\n"
+            .. "  1: write uarch.state@0x400000%(4194304%): "
             .. 'hash:"[0-9a-f]+"%(2%^22 bytes%) %-> hash:"[0-9a-fA-F]+"%(2%^22 bytes%)\n'
-            .. "end reset uarch state\n"
+            .. "end reset_uarch_state\n"
 
         local tmpname = os.tmpname()
         local deleter = {}
@@ -959,7 +968,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         local final_hash = machine:get_root_hash()
         assert(#log.accesses == 1, "log should have 1 access")
         local access = log.accesses[1]
-        -- in debug mode, the log must include read and written data
+        -- when large data is requested, the log must include read and written data
         assert(access.read ~= nil, "read data should not be nil")
         assert(access.written ~= nil, "written data should not be nil")
         -- verify returned log
@@ -969,13 +978,13 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         -- tamper with read data to produce a hash mismatch
         access.read = "X" .. access.read:sub(2)
         local _, err = pcall(machine.verify_reset_uarch, machine, initial_hash, log, final_hash)
-        assert(err:match("hash of read data and read hash at 1st access does not match read hash"))
+        check_error_find(err, "read data for uarch.state does not match read hash in 1st access")
         -- restore correct read
         access.read = original_read
         --  change written data to produce a hash mismatch
         access.written = "X" .. access.written:sub(2)
         _, err = pcall(machine.verify_reset_uarch, machine, initial_hash, log, final_hash)
-        assert(err:match("written hash and written data mismatch at 1st access"))
+        check_error_find(err, "written data for uarch.state does not match written hash in 1st access")
     end
 )
 
@@ -988,41 +997,38 @@ do_test("Test unhappy paths of verify_reset_uarch", function(machine)
         local final_hash = machine:get_root_hash()
         callback(log)
         local _, err = pcall(machine.verify_reset_uarch, machine, initial_hash, log, final_hash)
-        assert(
-            err:match(expected_error),
-            'Error text "' .. err .. '"  does not match expected "' .. expected_error .. '"'
-        )
+        check_error_find(err, expected_error)
     end
-    assert_error("too few accesses in log", function(log)
+    assert_error("log is missing access 1st access to uarch.state", function(log)
         log.accesses = {}
     end)
-    assert_error("expected address of 1st access to be the start address of the uarch state", function(log)
+    assert_error("expected 1st access to write uarch.state at address 0x400000(4194304)", function(log)
         log.accesses[1].address = 0
     end)
 
-    assert_error("is out of bounds", function(log)
+    assert_error('field "value/accesses/0/log2_size" is out of bounds', function(log)
         log.accesses[1].log2_size = 64
     end)
 
-    assert_error("missing field", function(log)
+    assert_error('missing field "value/accesses/0/read_hash"', function(log)
         log.accesses[#log.accesses].read_hash = nil
     end)
-    assert_error("Mismatch in root hash of 1st access", function(log)
+    assert_error("siblings and read hash do not match root hash before 1st access to uarch.state", function(log)
         log.accesses[1].read_hash = bad_hash
     end)
     assert_error("access log was not fully consumed", function(log)
         log.accesses[#log.accesses + 1] = log.accesses[1]
     end)
-    assert_error("write 1st access has no written hash", function(log)
+    assert_error("missing written hash of uarch.state in 1st access", function(log)
         log.accesses[#log.accesses].written_hash = nil
     end)
-    assert_error("has wrong length", function(log)
+    assert_error('field "value/accesses/0/written" has wrong length', function(log)
         log.accesses[#log.accesses].written = "\0"
     end)
-    assert_error("written hash and written data mismatch at 1st access", function(log)
+    assert_error("written data for uarch.state does not match written hash in 1st access", function(log)
         log.accesses[#log.accesses].written = string.rep("\0", 2 ^ 22)
     end)
-    assert_error("Mismatch in root hash of 1st access", function(log)
+    assert_error("siblings and read hash do not match root hash before 1st access to uarch.state", function(log)
         log.accesses[1].sibling_hashes[1] = bad_hash
     end)
 end)
@@ -1036,54 +1042,45 @@ do_test("Test unhappy paths of verify_step_uarch", function(machine)
         local final_hash = machine:get_root_hash()
         callback(log)
         local _, err = pcall(machine.verify_step_uarch, machine, initial_hash, log, final_hash)
-        assert(
-            err:match(expected_error),
-            'Error text "' .. err .. '"  does not match expected "' .. expected_error .. '"'
-        )
+        check_error_find(err, expected_error)
     end
-    assert_error("too few accesses in log", function(log)
+    assert_error("log is missing access 1st access to uarch.cycle", function(log)
         log.accesses = {}
     end)
-    assert_error("expected 1st access to read uarch.uarch_cycle", function(log)
+    assert_error("expected 1st access to read uarch.cycle", function(log)
         log.accesses[1].address = 0
     end)
-    assert_error("expected 1st access to read 2%^5 bytes from uarch.uarch_cycle", function(log)
+    assert_error("expected 1st access to uarch.cycle to read 2^3 bytes", function(log)
         log.accesses[1].log2_size = 2
     end)
     assert_error("is out of bounds", function(log)
         log.accesses[1].log2_size = 65
     end)
-    assert_error("missing read uarch.uarch_cycle data at 1st access", function(log)
+    assert_error("missing read data for uarch.cycle in 1st access", function(log)
         log.accesses[1].read = nil
     end)
     assert_error("has wrong length", function(log)
         log.accesses[1].read = "\0"
     end)
-    assert_error(
-        "logged read data of uarch.uarch_cycle data does not hash to the logged read hash at 1st access",
-        function(log)
-            log.accesses[1].read_hash = bad_hash
-        end
-    )
+    assert_error("siblings and read hash do not match root hash before 1st access to uarch.cycle", function(log)
+        log.accesses[1].read_hash = bad_hash
+    end)
     assert_error("missing field", function(log)
         log.accesses[#log.accesses].read_hash = nil
     end)
     assert_error("access log was not fully consumed", function(log)
         log.accesses[#log.accesses + 1] = log.accesses[1]
     end)
-    assert_error("missing written uarch.cycle hash at 7th access", function(log)
+    assert_error("missing written hash of uarch.cycle in 7th access", function(log)
         log.accesses[#log.accesses].written_hash = nil
     end)
     assert_error("has wrong length", function(log)
         log.accesses[#log.accesses].written = "\0"
     end)
-    assert_error(
-        "logged written data of uarch.cycle does not hash to the logged written hash at 7th access",
-        function(log)
-            log.accesses[#log.accesses].written = string.rep("\0", cartesi.HASH_SIZE)
-        end
-    )
-    assert_error("Mismatch in root hash of 1st access", function(log)
+    assert_error("written data for uarch.cycle does not match written hash in 7th access", function(log)
+        log.accesses[#log.accesses].written = string.rep("\0", cartesi.HASH_SIZE)
+    end)
+    assert_error("siblings and read hash do not match root hash before 1st access to uarch.cycle", function(log)
         log.accesses[1].sibling_hashes[1] = bad_hash
     end)
 end)
@@ -1101,7 +1098,7 @@ test_util.make_do_test(build_machine, machine_type, {
 })("Detect illegal instruction", function(machine)
     local success, err = pcall(machine.run_uarch, machine)
     assert(success == false)
-    assert(err:match("illegal instruction"))
+    check_error_find(err, "illegal instruction")
 end)
 
 --[==[
@@ -1261,12 +1258,12 @@ do_test("Dump of log produced by send_cmio_response should match", function(mach
     local reason = 7
     local log = machine:log_send_cmio_response(reason, data, cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
     -- luacheck: push no max line length
-    local expected_dump = "begin send cmio response\n"
+    local expected_dump = "begin send_cmio_response\n"
         .. "  1: read iflags.Y@0x2f8(760): 0x1(1)\n"
         .. '  2: write cmio rx buffer@0x60000000(1610612736): hash:"290decd9"(2^5 bytes) -> hash:"555b1f6d"(2^5 bytes)\n'
         .. "  3: write htif.fromhost@0x330(816): 0x0(0) -> 0x70000000a(30064771082)\n"
         .. "  4: write iflags.Y@0x2f8(760): 0x1(1) -> 0x0(0)\n"
-        .. "end send cmio response\n"
+        .. "end send_cmio_response\n"
     -- luacheck: pop
     local temp_file <close> = test_util.new_temp_file()
     util.dump_log(log, temp_file)
@@ -1459,7 +1456,14 @@ test_util.make_do_test(build_machine, machine_type, {
     machine:write_reg("uarch_x" .. t1, leaf_address)
     machine:write_reg("uarch_x" .. t0, 0xaaaaaaaaaaaaaaaa)
     local log, dump = log_step()
-    assert(dump:match("7: write memory@0x%x+%(%d+%): 0x1111111111111111%(%d+%) %-> 0xaaaaaaaaaaaaaaaa%(%d+%)"))
+    assert(
+        dump:find(
+            "write uarch.ram@0x600020(6291488): 0x1111111111111111(1229782938247303441)"
+                .. " -> 0xaaaaaaaaaaaaaaaa(12297829382473034410)",
+            1,
+            true
+        )
+    )
     assert(log.accesses[7].read == leaf_data)
     leaf_data = machine:read_memory(leaf_address, leaf_size) -- read and check written data
     assert(leaf_data == make_leaf("\xaa", "\x22", "\x33", "\x44"))
@@ -1470,7 +1474,14 @@ test_util.make_do_test(build_machine, machine_type, {
     machine:write_reg("uarch_x" .. t1, machine:read_reg("uarch_x" .. t1) + word_size)
     machine:write_reg("uarch_x" .. t0, 0xbbbbbbbbbbbbbbbb)
     log, dump = log_step()
-    assert(dump:match("7: write memory@0x%x+%(%d+%): 0x2222222222222222%(%d+%) %-> 0xbbbbbbbbbbbbbbbb%(%d+%)"))
+    assert(
+        dump:find(
+            "write uarch.ram@0x600028(6291496): 0x2222222222222222(2459565876494606882)"
+                .. " -> 0xbbbbbbbbbbbbbbbb(13527612320720337851)",
+            1,
+            true
+        )
+    )
     assert(log.accesses[7].read == leaf_data)
     leaf_data = machine:read_memory(leaf_address, leaf_size)
     assert(leaf_data == make_leaf("\xaa", "\xbb", "\x33", "\x44"))
@@ -1481,7 +1492,14 @@ test_util.make_do_test(build_machine, machine_type, {
     machine:write_reg("uarch_x" .. t1, machine:read_reg("uarch_x" .. t1) + word_size)
     machine:write_reg("uarch_x" .. t0, 0xcccccccccccccccc)
     log, dump = log_step()
-    assert(dump:match("7: write memory@0x%x+%(%d+%): 0x3333333333333333%(%d+%) %-> 0xcccccccccccccccc%(%d+%)"))
+    assert(
+        dump:find(
+            "7: write uarch.ram@0x600030(6291504): 0x3333333333333333(3689348814741910323)"
+                .. " -> 0xcccccccccccccccc(14757395258967641292)",
+            1,
+            true
+        )
+    )
     assert(log.accesses[7].read == leaf_data)
     leaf_data = machine:read_memory(leaf_address, leaf_size)
     assert(leaf_data == make_leaf("\xaa", "\xbb", "\xcc", "\x44"))
@@ -1492,7 +1510,14 @@ test_util.make_do_test(build_machine, machine_type, {
     machine:write_reg("uarch_x" .. t1, machine:read_reg("uarch_x" .. t1) + word_size)
     machine:write_reg("uarch_x" .. t0, 0xdddddddddddddddd)
     log, dump = log_step()
-    assert(dump:match("7: write memory@0x%x+%(%d+%): 0x4444444444444444%(%d+%) %-> 0xdddddddddddddddd%(%d+%)"))
+    assert(
+        dump:find(
+            "7: write uarch.ram@0x600038(6291512): 0x4444444444444444(4919131752989213764)"
+                .. " -> 0xdddddddddddddddd(15987178197214944733)",
+            1,
+            true
+        )
+    )
     assert(log.accesses[7].read == leaf_data)
     leaf_data = machine:read_memory(leaf_address, leaf_size)
     assert(leaf_data == make_leaf("\xaa", "\xbb", "\xcc", "\xdd"))
@@ -1568,7 +1593,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
         machine:log_step(1, filename1)
     end)
     assert(not success)
-    assert(err:match("file already exists"))
+    check_error_find(err, "file already exists")
     -- delete file and confirm that machine is on same mcycle
     os.remove(filename1)
     assert(machine:read_reg("mcycle") == 0)
@@ -1588,11 +1613,11 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
     _, err = pcall(function()
         machine:verify_step(bad_hash, filename1, mcycle_count, root_hash_after)
     end)
-    assert(err:match("initial root hash mismatch"))
+    check_error_find(err, "initial root hash mismatch")
     _, err = pcall(function()
         machine:verify_step(root_hash_before, filename1, mcycle_count, bad_hash)
     end)
-    assert(err:match("final root hash mismatch"))
+    check_error_find(err, "final root hash mismatch")
     -- ensure that copy_step_log() works
     copy_step_log(filename1, filename2, function()
         -- copy original file without modifications
@@ -1605,7 +1630,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
     _, err = pcall(function()
         machine:verify_step(root_hash_before, filename2, mcycle_count, root_hash_after)
     end)
-    assert(err:match("initial root hash mismatch"))
+    check_error_find(err, "initial root hash mismatch")
     -- page indices not in ascending order should fail
     copy_step_log(filename1, filename2, function(log_data)
         log_data.pages[2].index = log_data.pages[1].index
@@ -1613,7 +1638,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
     _, err = pcall(function()
         machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
     end)
-    assert(err:match("invalid log format: page index is not in increasing order"))
+    check_error_find(err, "invalid log format: page index is not in increasing order")
     -- page scratch hash area not zeroed
     copy_step_log(filename1, filename2, function(log_data)
         log_data.pages[1].hash = string.rep("\1", 32)
@@ -1621,7 +1646,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
     _, err = pcall(function()
         machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
     end)
-    assert(err:match("invalid log format: page scratch hash area is not zero"))
+    check_error_find(err, "invalid log format: page scratch hash area is not zero")
     -- add one extra page
     copy_step_log(filename1, filename2, function(log_data)
         table.insert(log_data.pages, {
@@ -1633,7 +1658,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
     _, err = pcall(function()
         machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
     end)
-    assert(err:match("trying to access beyond sibling count while skipping range"))
+    check_error_find(err, "too many sibling hashes in log")
     -- remove one page
     copy_step_log(filename1, filename2, function(log_data)
         table.remove(log_data.pages)
@@ -1641,7 +1666,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
     _, err = pcall(function()
         machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
     end)
-    assert(err:match("initial root hash mismatch"))
+    check_error_find(err, "too many sibling hashes in log")
     -- override page count to zero
     copy_step_log(filename1, filename2, function(log_data)
         log_data.override_page_count = 0
@@ -1649,7 +1674,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
     _, err = pcall(function()
         machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
     end)
-    assert(err:match("page count is zero"))
+    check_error_find(err, "page count is zero")
     -- override page count to overflow
     copy_step_log(filename1, filename2, function(log_data)
         -- There is no UINT64_MAX in Lua, so we have to use the signed representation
@@ -1659,7 +1684,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
     _, err = pcall(function()
         machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
     end)
-    assert(err:match("page data past end of step log"))
+    check_error_find(err, "page data past end of step log")
     -- remove one sibling
     copy_step_log(filename1, filename2, function(log_data)
         table.remove(log_data.siblings)
@@ -1667,7 +1692,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
     _, err = pcall(function()
         machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
     end)
-    assert(err:match("trying to access beyond sibling count while skipping range"))
+    check_error_find(err, "too few sibling hashes in log")
     -- add an extra sibling
     copy_step_log(filename1, filename2, function(log_data)
         table.insert(log_data.siblings, bad_hash)
@@ -1675,7 +1700,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
     _, err = pcall(function()
         machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
     end)
-    assert(err:match("sibling hashes not totally consumed"))
+    check_error_find(err, "too many sibling hashes in log")
     -- modify one sibling hash
     copy_step_log(filename1, filename2, function(log_data)
         log_data.siblings[1] = bad_hash
@@ -1683,7 +1708,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
     _, err = pcall(function()
         machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
     end)
-    assert(err:match("initial root hash mismatch"))
+    check_error_find(err, "initial root hash mismatch")
     -- empty siblings
     copy_step_log(filename1, filename2, function(log_data)
         log_data.siblings = {}
@@ -1691,7 +1716,7 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
     _, err = pcall(function()
         machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
     end)
-    assert(err:match("compute_root_hash_impl: trying to access beyond sibling count while skipping range"))
+    check_error_find(err, "too few sibling hashes in log")
     -- override sibling count to overflow
     copy_step_log(filename1, filename2, function(log_data)
         log_data.override_sibling_count = 0xffffffff
@@ -1699,14 +1724,14 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
     _, err = pcall(function()
         machine:verify_step(root_hash_before, filename2, mcycle_count, bad_hash)
     end)
-    assert(err:match("sibling hashes past end of step log"))
+    check_error_find(err, "sibling hashes past end of step log")
     -- log_step should fail if uarch is not reset
     machine:run_uarch(1) -- advance 1 micro step 0< uarch is not reset
     os.remove(filename1)
     _, err = pcall(function()
         machine:log_step(1, filename1)
     end)
-    assert(err:match("microarchitecture is not reset"))
+    check_error_find(err, "microarchitecture is not reset")
     -- after uarch is reset, log_step should work
     machine:reset_uarch()
     status = machine:log_step(1, filename1)

@@ -41,7 +41,7 @@ struct uarch_state {
     uint64_t pc{};                               ///< Program counter.
     std::array<uint64_t, UARCH_X_REG_COUNT> x{}; ///< Register file.
     uint64_t cycle{};                            ///< Cycles counter
-    bool halt_flag{};
+    uint64_t halt_flag{};
     pma_entry shadow_state; ///< Shadow uarch state
     pma_entry ram;          ///< Memory range for micro RAM
     pma_entry empty_pma;    ///< Empty range fallback

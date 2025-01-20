@@ -132,6 +132,37 @@ enum class PMA_ISTART_DID {
     shadow_uarch = PMA_SHADOW_UARCH_STATE_DID_DEF, ///< DID for shadow uarch state device
 };
 
+static constexpr const char *pma_get_DID_name(PMA_ISTART_DID did) {
+    switch (did) {
+        case PMA_ISTART_DID::memory:
+            return "DID.memory";
+        case PMA_ISTART_DID::shadow_state:
+            return "DID.shadow_state";
+        case PMA_ISTART_DID::shadow_pmas:
+            return "DID.shadow_pmas";
+        case PMA_ISTART_DID::shadow_TLB:
+            return "DID.shadow_TLB";
+        case PMA_ISTART_DID::flash_drive:
+            return "DID.flash_drive";
+        case PMA_ISTART_DID::CLINT:
+            return "DID.CLINT";
+        case PMA_ISTART_DID::PLIC:
+            return "DID.PLIC";
+        case PMA_ISTART_DID::HTIF:
+            return "DID.HTIF";
+        case PMA_ISTART_DID::VIRTIO:
+            return "DID.VIRTIO";
+        case PMA_ISTART_DID::cmio_rx_buffer:
+            return "DID.cmio_rx_buffer";
+        case PMA_ISTART_DID::cmio_tx_buffer:
+            return "DID.cmio_tx_buffer";
+        case PMA_ISTART_DID::shadow_uarch:
+            return "DID.shadow_uarch";
+        default:
+            return "DID.unkown";
+    }
+}
+
 static_assert(PMA_CMIO_RX_BUFFER_START_DEF == CM_PMA_CMIO_RX_BUFFER_START);
 static_assert(PMA_CMIO_RX_BUFFER_LOG2_SIZE_DEF == CM_PMA_CMIO_RX_BUFFER_LOG2_SIZE);
 static_assert(PMA_CMIO_TX_BUFFER_START_DEF == CM_PMA_CMIO_TX_BUFFER_START);

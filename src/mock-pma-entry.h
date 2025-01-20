@@ -136,6 +136,10 @@ public:
         return m_flags.IR;
     }
 
+    PMA_ISTART_DID get_istart_DID() const {
+        return m_flags.DID;
+    }
+
     const auto *get_driver() const {
         return m_driver;
     }

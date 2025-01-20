@@ -390,7 +390,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(get_proof_null_machine_test) {
 BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_invalid_address_test, ordinary_machine_fixture) {
     const char *proof{};
     cm_error error_code = cm_get_proof(_machine, 1, 12, &proof);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_DOMAIN_ERROR);
 
     std::string result = cm_get_last_error_message();
     std::string origin("address not aligned to log2_size");
@@ -460,7 +460,7 @@ BOOST_AUTO_TEST_CASE_NOLINT(read_word_null_machine_test) {
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_invalid_address_test, ordinary_machine_fixture) {
     uint64_t word_value = 0;
     cm_error error_code = cm_read_word(_machine, 0xffffffff, &word_value);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_DOMAIN_ERROR);
 
     std::string result = cm_get_last_error_message();
     std::string origin("address not aligned");
@@ -538,7 +538,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_invalid_address_range_test, ordinary
     cm_error error_code = cm_write_memory(_machine, address, write_data.data(), write_data.size());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
-    std::string origin("address range not entirely in memory PMA");
+    std::string origin("attempted write to device memory range");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -631,7 +631,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_virtual_memory_invalid_address_range_test, 
     cm_error error_code = cm_write_virtual_memory(_machine, address, write_data.data(), write_data.size());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
-    std::string origin("address range not entirely in memory PMA");
+    std::string origin("attempted write to device memory range");
     BOOST_CHECK_EQUAL(origin, result);
 }
 

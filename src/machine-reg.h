@@ -177,15 +177,15 @@ enum class machine_reg : uint64_t {
     uarch_last_ = uarch_x31,
 
     // Views of registers
-    htif_tohost_dev,
-    htif_tohost_cmd,
-    htif_tohost_reason,
-    htif_tohost_data,
-    htif_fromhost_dev,
-    htif_fromhost_cmd,
-    htif_fromhost_reason,
-    htif_fromhost_data,
-    unknown_,
+    htif_tohost_dev = PMA_SHADOW_STATE_LENGTH + 1,
+    htif_tohost_cmd = PMA_SHADOW_STATE_LENGTH + 2,
+    htif_tohost_reason = PMA_SHADOW_STATE_LENGTH + 3,
+    htif_tohost_data = PMA_SHADOW_STATE_LENGTH + 4,
+    htif_fromhost_dev = PMA_SHADOW_STATE_LENGTH + 5,
+    htif_fromhost_cmd = PMA_SHADOW_STATE_LENGTH + 6,
+    htif_fromhost_reason = PMA_SHADOW_STATE_LENGTH + 7,
+    htif_fromhost_data = PMA_SHADOW_STATE_LENGTH + 8,
+    unknown_ = PMA_SHADOW_STATE_LENGTH + 0xfff,
 };
 
 constexpr uint64_t machine_reg_address(machine_reg reg, int i = 0) {

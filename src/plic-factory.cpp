@@ -14,27 +14,18 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "plic-factory.h"
-
 #include <cstdint>
 
+#include "plic-factory.h"
 #include "plic.h"
 #include "pma-constants.h"
 #include "pma.h"
 
 namespace cartesi {
 
-/// \brief PLIC device peek callback. See ::pma_peek.
-static bool plic_peek(const pma_entry &pma, const machine & /*m*/, uint64_t page_offset,
-    const unsigned char **page_data, unsigned char * /*context*/) {
-    // PLIC range can be represented as pristine because its state is already represented in shadow CSRs
-    *page_data = nullptr;
-    return (page_offset % PMA_PAGE_SIZE) == 0 && page_offset < pma.get_length();
-}
-
 pma_entry make_plic_pma_entry(uint64_t start, uint64_t length) {
     const pma_entry::flags f{.R = true, .W = true, .X = false, .IR = false, .IW = false, .DID = PMA_ISTART_DID::PLIC};
-    return make_device_pma_entry("PLIC device", start, length, plic_peek, &plic_driver).set_flags(f);
+    return make_device_pma_entry("PLIC device", start, length, pma_peek_pristine, &plic_driver).set_flags(f);
 }
 
 } // namespace cartesi

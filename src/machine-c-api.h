@@ -522,24 +522,24 @@ CM_API cm_error cm_read_reg(const cm_machine *m, cm_reg reg, uint64_t *val);
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_write_reg(cm_machine *m, cm_reg reg, uint64_t val);
 
-/// \brief Reads a chunk of data from a machine memory range, by its physical address.
+/// \brief Reads a chunk of data, by its target physical address and length.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param address Physical address to start reading.
-/// \param data Receives chunk of memory.
-/// \param length Size of chunk in bytes.
+/// \param paddr Target physical address to start reading from.
+/// \param data Buffer that receives data to read. Must be at least \p length bytes long.
+/// \param length Number of bytes to read from \p paddr to \p data.
 /// \returns 0 for success, non zero code for error.
-/// \details The entire chunk must be inside the same memory range.
-CM_API cm_error cm_read_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length);
+/// \details The data can be anywhere in the entire address space.
+CM_API cm_error cm_read_memory(const cm_machine *m, uint64_t paddr, uint8_t *data, uint64_t length);
 
-/// \brief Writes a chunk of data to a machine memory range, by its physical address.
+/// \brief Writes a chunk of data to machine memory, by its target physical address and length.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param address Physical address to start writing.
-/// \param data Source for chunk of data.
-/// \param length Size of chunk in bytes.
+/// \param paddr Target physical address to start writing to.
+/// \param data Buffer that contains data to write. Must be at least \p length bytes long.
+/// \param length Number of bytes to write starting from \p data to \p paddr.
 /// \returns 0 for success, non zero code for error.
-/// \details The entire chunk must be inside the same PMA region.
-/// Moreover, unlike cm_read_memory(), the memory range written to must not be mapped to a device.
-CM_API cm_error cm_write_memory(cm_machine *m, uint64_t address, const uint8_t *data, uint64_t length);
+/// \details Unlike read_memory(), the entire chunk of data, from \p paddr to \p paddr + \p length,
+/// must reside entirely in the same memory range. Moreover, it cannot be mapped to a device.
+CM_API cm_error cm_write_memory(cm_machine *m, uint64_t paddr, const uint8_t *data, uint64_t length);
 
 /// \brief Reads a chunk of data from a machine memory range, by its virtual memory.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).

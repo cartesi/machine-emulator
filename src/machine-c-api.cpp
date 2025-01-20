@@ -587,25 +587,6 @@ cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reaso
     return cm_result_failure();
 }
 
-cm_error cm_read_uarch_halt_flag(const cm_machine *m, bool *val) try {
-    const auto *cpp_m = convert_from_c(m);
-    *val = static_cast<bool>(cpp_m->read_reg(cartesi::machine::reg::uarch_halt_flag));
-    return cm_result_success();
-} catch (...) {
-    if (val != nullptr) {
-        *val = false;
-    }
-    return cm_result_failure();
-}
-
-cm_error cm_set_uarch_halt_flag(cm_machine *m) try {
-    auto *cpp_m = convert_from_c(m);
-    cpp_m->write_reg(cartesi::machine::reg::uarch_halt_flag, 1);
-    return cm_result_success();
-} catch (...) {
-    return cm_result_failure();
-}
-
 cm_error cm_reset_uarch(cm_machine *m) try {
     auto *cpp_m = convert_from_c(m);
     cpp_m->reset_uarch();
@@ -881,34 +862,6 @@ cm_error cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *p
 } catch (...) {
     if (paddr != nullptr) {
         *paddr = 0;
-    }
-    return cm_result_failure();
-}
-
-cm_error cm_read_mcycle(const cm_machine *m, uint64_t *val) try {
-    if (val == nullptr) {
-        throw std::invalid_argument("invalid val output");
-    }
-    const auto *cpp_m = convert_from_c(m);
-    *val = cpp_m->read_reg(cartesi::machine::reg::mcycle);
-    return cm_result_success();
-} catch (...) {
-    if (val != nullptr) {
-        *val = 0;
-    }
-    return cm_result_failure();
-}
-
-cm_error cm_read_uarch_cycle(const cm_machine *m, uint64_t *val) try {
-    if (val == nullptr) {
-        throw std::invalid_argument("invalid val output");
-    }
-    const auto *cpp_m = convert_from_c(m);
-    *val = cpp_m->read_reg(cartesi::machine::reg::uarch_cycle);
-    return cm_result_success();
-} catch (...) {
-    if (val != nullptr) {
-        *val = 0;
     }
     return cm_result_failure();
 }

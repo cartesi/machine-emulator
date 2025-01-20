@@ -538,7 +538,7 @@ static auto reg_to_name(machine::reg r) {
     return "";
 }
 
-interpreter_break_reason interpreter_break_reason_from_name(const std::string &name) {
+static interpreter_break_reason interpreter_break_reason_from_name(const std::string &name) {
     using ibr = interpreter_break_reason;
     const static std::unordered_map<std::string, ibr> g_ibr_name = {{"failed", ibr::failed}, {"halted", ibr::halted},
         {"yielded_manually", ibr::yielded_manually}, {"yielded_automatically", ibr::yielded_automatically},
@@ -550,7 +550,7 @@ interpreter_break_reason interpreter_break_reason_from_name(const std::string &n
     return got->second;
 }
 
-uarch_interpreter_break_reason uarch_interpreter_break_reason_from_name(const std::string &name) {
+static uarch_interpreter_break_reason uarch_interpreter_break_reason_from_name(const std::string &name) {
     using uibr = uarch_interpreter_break_reason;
     if (name == "reached_target_cycle") {
         return uibr::reached_target_cycle;

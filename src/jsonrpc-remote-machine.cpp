@@ -88,7 +88,7 @@ struct log_prefix {
 };
 
 /// \brief Stream-out operator for log prefix class
-std::ostream &operator<<(std::ostream &out, log_prefix prefix) {
+static std::ostream &operator<<(std::ostream &out, log_prefix prefix) {
     using namespace slog;
     char stime[std::size("yyyy-mm-dd hh-mm-ss")];
     const time_t t = time(nullptr);
@@ -492,7 +492,7 @@ inline constexpr bool is_optional_param_v = is_optional_param<T>::value;
 /// \tparam ARGS Parameter pack to test
 /// \returns Number of parameters wrapped in optional_param
 template <typename... ARGS>
-constexpr size_t count_mandatory_params() {
+constexpr static size_t count_mandatory_params() {
     return ((is_optional_param_v<ARGS> ? 0 : 1) + ... + 0);
 }
 
@@ -501,7 +501,7 @@ constexpr size_t count_mandatory_params() {
 /// \tparam I Parameter pack with indices of each parameter
 /// \returns Index of first parameter that is optional
 template <typename... ARGS, size_t... I>
-size_t first_optional_param(const std::tuple<ARGS...> & /*unused*/, std::index_sequence<I...> /*unused*/) {
+static size_t first_optional_param(const std::tuple<ARGS...> & /*unused*/, std::index_sequence<I...> /*unused*/) {
     if constexpr (sizeof...(ARGS) > 0) {
         return std::min({(is_optional_param_v<ARGS> ? I + 1 : sizeof...(ARGS) + 1)...});
     } else {
@@ -514,7 +514,7 @@ size_t first_optional_param(const std::tuple<ARGS...> & /*unused*/, std::index_s
 /// \tparam I Parameter pack with indices of each parameter
 /// \returns Index of first parameter that is optional
 template <typename... ARGS, size_t... I>
-size_t last_mandatory_param(const std::tuple<ARGS...> & /*unused*/, std::index_sequence<I...> /*unused*/) {
+static size_t last_mandatory_param(const std::tuple<ARGS...> & /*unused*/, std::index_sequence<I...> /*unused*/) {
     if constexpr (sizeof...(ARGS) > 0) {
         return std::max({(!is_optional_param_v<ARGS> ? I + 1 : 0)...});
     } else {
@@ -528,7 +528,7 @@ size_t last_mandatory_param(const std::tuple<ARGS...> & /*unused*/, std::index_s
 /// \returns True if it has a value
 /// \details This is the default overload
 template <typename T>
-bool has_arg(const T & /*t*/) {
+static bool has_arg(const T & /*t*/) {
     return true;
 }
 
@@ -538,7 +538,7 @@ bool has_arg(const T & /*t*/) {
 /// \returns True if it has a value
 /// \details This is the overload for optional parameters (i.e., wrapped in optional_param)
 template <typename T>
-bool has_arg(const cartesi::optional_param<T> &t) {
+static bool has_arg(const cartesi::optional_param<T> &t) {
     return t.has_value();
 }
 
@@ -548,7 +548,7 @@ bool has_arg(const cartesi::optional_param<T> &t) {
 /// \returns Index of first optional argument that is missing
 /// \details The function returns the index + 1, so that sizeof...(ARGS)+1 means no missing optional arguments
 template <typename... ARGS, size_t... I>
-size_t first_missing_optional_arg(const std::tuple<ARGS...> &tup, std::index_sequence<I...> /*unused*/) {
+static size_t first_missing_optional_arg(const std::tuple<ARGS...> &tup, std::index_sequence<I...> /*unused*/) {
     if constexpr (sizeof...(ARGS) > 0) {
         return std::min({(!has_arg(std::get<I>(tup)) ? I + 1 : sizeof...(ARGS) + 1)...});
     } else {
@@ -562,7 +562,7 @@ size_t first_missing_optional_arg(const std::tuple<ARGS...> &tup, std::index_seq
 /// \returns Index of last argument that is present
 /// \details The function returns the index + 1, so that 0 means no arguments are present
 template <typename... ARGS, size_t... I>
-size_t last_present_arg(const std::tuple<ARGS...> &tup, std::index_sequence<I...> /*unused*/) {
+static size_t last_present_arg(const std::tuple<ARGS...> &tup, std::index_sequence<I...> /*unused*/) {
     if constexpr (sizeof...(ARGS) > 0) {
         return std::max({(has_arg(std::get<I>(tup)) ? I + 1 : 0)...});
     } else {
@@ -577,7 +577,7 @@ size_t last_present_arg(const std::tuple<ARGS...> &tup, std::index_sequence<I...
 /// \param i Index sequence
 /// \returns Number of arguments provided
 template <typename... ARGS, size_t... I>
-size_t count_args(const std::tuple<ARGS...> &tup, const std::index_sequence<I...> &i) {
+static size_t count_args(const std::tuple<ARGS...> &tup, const std::index_sequence<I...> &i) {
     // check first optional parameter happens after last mandatory parameter
     auto fop = first_optional_param(tup, i);
     auto lmp = last_mandatory_param(tup, i);
@@ -598,7 +598,7 @@ size_t count_args(const std::tuple<ARGS...> &tup, const std::index_sequence<I...
 /// \param tup Tuple with all arguments
 /// \returns Number of arguments provided
 template <typename... ARGS>
-size_t count_args(const std::tuple<ARGS...> &tup) {
+static size_t count_args(const std::tuple<ARGS...> &tup) {
     return count_args(tup, std::make_index_sequence<sizeof...(ARGS)>{});
 }
 
@@ -608,7 +608,7 @@ size_t count_args(const std::tuple<ARGS...> &tup) {
 /// \param j JSONRPC request params
 /// \returns tuple with arguments
 template <typename... ARGS, size_t... I>
-std::tuple<ARGS...> parse_array_args(const json &j, std::index_sequence<I...> /*unused*/) {
+static std::tuple<ARGS...> parse_array_args(const json &j, std::index_sequence<I...> /*unused*/) {
     std::tuple<ARGS...> tp;
     (cartesi::ju_get_field(j, static_cast<uint64_t>(I), std::get<I>(tp)), ...);
     return tp;
@@ -619,7 +619,7 @@ std::tuple<ARGS...> parse_array_args(const json &j, std::index_sequence<I...> /*
 /// \param j JSONRPC request params
 /// \returns tuple with arguments
 template <typename... ARGS>
-std::tuple<ARGS...> parse_array_args(const json &j) {
+static std::tuple<ARGS...> parse_array_args(const json &j) {
     return parse_array_args<ARGS...>(j, std::make_index_sequence<sizeof...(ARGS)>{});
 }
 
@@ -630,7 +630,7 @@ std::tuple<ARGS...> parse_array_args(const json &j) {
 /// \param param_name Name of each parameter
 /// \returns tuple with arguments
 template <typename... ARGS, size_t... I>
-std::tuple<ARGS...> parse_object_args(const json &j, const char *(&param_name)[sizeof...(ARGS)],
+static std::tuple<ARGS...> parse_object_args(const json &j, const char *(&param_name)[sizeof...(ARGS)],
     std::index_sequence<I...> /*unused*/) {
     std::tuple<ARGS...> tp;
     (cartesi::ju_get_field(j, std::string(param_name[I]), std::get<I>(tp)), ...);
@@ -643,7 +643,7 @@ std::tuple<ARGS...> parse_object_args(const json &j, const char *(&param_name)[s
 /// \param param_name Name of each parameter
 /// \returns tuple with arguments
 template <typename... ARGS>
-std::tuple<ARGS...> parse_object_args(const json &j, const char *(&param_name)[sizeof...(ARGS)]) {
+static std::tuple<ARGS...> parse_object_args(const json &j, const char *(&param_name)[sizeof...(ARGS)]) {
     return parse_object_args<ARGS...>(j, param_name, std::make_index_sequence<sizeof...(ARGS)>{});
 }
 
@@ -653,7 +653,7 @@ std::tuple<ARGS...> parse_object_args(const json &j, const char *(&param_name)[s
 /// \param param_name Name of each parameter
 /// \returns tuple with arguments
 template <typename... ARGS>
-std::tuple<ARGS...> parse_args(const json &j, const char *(&param_name)[sizeof...(ARGS)]) {
+static std::tuple<ARGS...> parse_args(const json &j, const char *(&param_name)[sizeof...(ARGS)]) {
     constexpr auto mandatory_params = count_mandatory_params<ARGS...>();
     if (!j.contains("params")) {
         if constexpr (mandatory_params == 0) {
@@ -1406,7 +1406,7 @@ static json jsonrpc_machine_verify_send_cmio_response_handler(const json &j,
 /// \param j JSON response object
 /// \param session HTTP session
 /// \returns HTTP response message
-http::message_generator jsonrpc_http_reply(const http::request<http::string_body> &req, const json &j,
+static http::message_generator jsonrpc_http_reply(const http::request<http::string_body> &req, const json &j,
     const std::shared_ptr<http_session> &session) {
     std::string body = j.dump();
     SLOG(trace) << session->handler->local_endpoint << " response is " << body;
@@ -1424,7 +1424,7 @@ http::message_generator jsonrpc_http_reply(const http::request<http::string_body
 /// \param req HTTP request object
 /// \param session HTTP session
 /// \returns HTTP response message
-http::message_generator jsonrpc_http_empty_reply(const http::request<http::string_body> &req,
+static http::message_generator jsonrpc_http_empty_reply(const http::request<http::string_body> &req,
     const std::shared_ptr<http_session> &session) {
     SLOG(trace) << session->handler->local_endpoint << " response is empty";
     http::response<http::empty_body> res{http::status::ok, req.version()};

@@ -198,7 +198,7 @@ static void os_SIGWINCH_handler(int /*sig*/) {
 }
 #endif
 
-bool os_update_tty_size([[maybe_unused]] tty_state *s) {
+static bool os_update_tty_size([[maybe_unused]] tty_state *s) {
 #ifdef HAVE_TTY
 #if defined(HAVE_TERMIOS) && defined(HAVE_IOCTL)
     winsize ws{};

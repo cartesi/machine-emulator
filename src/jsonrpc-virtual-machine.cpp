@@ -70,7 +70,7 @@ namespace asio = boost::asio;   // from <boost/asio.hpp>
 using tcp = asio::ip::tcp;      // from <boost/asio/ip/tcp.hpp>
 
 template <typename... Ts, size_t... Is>
-std::string jsonrpc_post_data(const std::string &method, const std::tuple<Ts...> &params,
+static std::string jsonrpc_post_data(const std::string &method, const std::tuple<Ts...> &params,
     std::index_sequence<Is...> /*unused*/) {
     json array = json::array();
     ((array.push_back(json(std::get<Is>(params)))), ...);
@@ -79,7 +79,7 @@ std::string jsonrpc_post_data(const std::string &method, const std::tuple<Ts...>
 }
 
 template <typename... Ts>
-std::string jsonrpc_post_data(const std::string &method, const std::tuple<Ts...> &params) {
+static std::string jsonrpc_post_data(const std::string &method, const std::tuple<Ts...> &params) {
     return jsonrpc_post_data(method, params, std::make_index_sequence<sizeof...(Ts)>{});
 }
 
@@ -248,7 +248,7 @@ static std::string json_post(boost::asio::io_context &ioc, beast::tcp_stream &st
 }
 
 template <typename R, typename... Ts>
-void jsonrpc_request(std::unique_ptr<boost::asio::io_context> &ioc, std::unique_ptr<beast::tcp_stream> &stream,
+static void jsonrpc_request(std::unique_ptr<boost::asio::io_context> &ioc, std::unique_ptr<beast::tcp_stream> &stream,
     const std::string &remote_address, const std::string &method, const std::tuple<Ts...> &tp, R &result, int64_t ms,
     bool keep_alive = true) {
     if (!stream || !ioc) {

@@ -30,7 +30,6 @@ Checks: >-
   -misc-non-private-member-variables-in-classes,
   -misc-use-anonymous-namespace,
   -misc-include-cleaner,
-  -misc-use-internal-linkage,
   modernize*,
   -modernize-use-nodiscard,
   -modernize-use-trailing-return-type,

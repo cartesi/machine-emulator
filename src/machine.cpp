@@ -795,7 +795,7 @@ const pma_entry &machine::find_pma_entry(const CONTAINER &pmas, uint64_t paddr, 
 
 template <typename T>
 static inline T &deref(T &t) {
-    return t;
+    return t; // NOLINT(bugprone-return-const-ref-from-parameter)
 }
 
 template <typename T>

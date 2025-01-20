@@ -740,6 +740,18 @@ public:
         return derived().do_write_memory_with_padding(paddr, data, data_length, write_length_log2_size);
     }
 
+    /// \brief Writes a character to the console
+    /// \param c Character to output
+    void putchar(uint8_t c) {
+        return derived().do_putchar(c);
+    }
+
+    /// \brief Reads a character from the console
+    /// \returns Character read if any, -1 otherwise
+    int getchar() {
+        return derived().do_getchar();
+    }
+
 #ifdef DUMP_COUNTERS
     auto &get_statistics() {
         return derived().do_get_statistics();

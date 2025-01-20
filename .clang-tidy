@@ -3,7 +3,6 @@ Checks: >-
   -boost-use-ranges,
   bugprone*,
   -bugprone-easily-swappable-parameters,
-  -bugprone-crtp-constructor-accessibility,
   cert*,
   clang-analyzer*,
   -clang-analyzer-optin.cplusplus.VirtualCall,

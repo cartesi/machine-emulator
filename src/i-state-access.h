@@ -55,6 +55,8 @@ enum class bracket_type;
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
 template <typename DERIVED, typename PMA_ENTRY_TYPE>
 class i_state_access { // CRTP
+    i_state_access() = default;
+    friend DERIVED;
 
     /// \brief Returns object cast as the derived class
     DERIVED &derived() {

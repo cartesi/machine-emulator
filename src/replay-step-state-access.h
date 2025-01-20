@@ -893,6 +893,14 @@ private:
     bool do_get_soft_yield() { // NOLINT(readability-convert-member-functions-to-static)
         return false;
     }
+
+    void do_putchar(uint8_t /* c */) { // NOLINT(readability-convert-member-functions-to-static)
+        ;
+    }
+
+    int do_getchar() { // NOLINT(readability-convert-member-functions-to-static)
+        return -1;
+    }
 };
 
 } // namespace cartesi

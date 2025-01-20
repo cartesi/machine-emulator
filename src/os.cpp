@@ -391,9 +391,7 @@ void os_prepare_tty_select([[maybe_unused]] select_fd_sets *fds) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     FD_SET(STDIN_FILENO, readfds);
-    if (STDIN_FILENO > fds->maxfd) {
-        fds->maxfd = STDIN_FILENO;
-    }
+    fds->maxfd = std::max(STDIN_FILENO, fds->maxfd);
 #endif
 #endif
 }

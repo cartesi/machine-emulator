@@ -258,9 +258,7 @@ static int slirp_add_poll_cb(int fd, int events, void *opaque) {
     if ((events & SLIRP_POLL_PRI) != 0) {
         FD_SET(fd, fds->exceptfds);
     }
-    if (fd > *fds->pmaxfd) {
-        *fds->pmaxfd = fd;
-    }
+    *fds->pmaxfd = std::max(fd, *fds->pmaxfd);
     return fd;
 }
 

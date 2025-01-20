@@ -126,9 +126,7 @@ void virtio_net_carrier_tuntap::do_prepare_select(select_fd_sets *fds, uint64_t 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     FD_SET(m_tapfd, readfds);
-    if (m_tapfd > fds->maxfd) {
-        fds->maxfd = m_tapfd;
-    }
+    fds->maxfd = std::max(m_tapfd, fds->maxfd);
 }
 
 bool virtio_net_carrier_tuntap::do_poll_selected(int select_ret, select_fd_sets *fds) {

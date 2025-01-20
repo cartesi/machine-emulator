@@ -4,7 +4,6 @@ Checks: >-
   bugprone*,
   -bugprone-easily-swappable-parameters,
   -bugprone-crtp-constructor-accessibility,
-  -bugprone-return-const-ref-from-parameter,
   cert*,
   clang-analyzer*,
   -clang-analyzer-optin.cplusplus.VirtualCall,

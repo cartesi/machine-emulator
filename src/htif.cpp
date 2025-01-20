@@ -19,7 +19,6 @@
 #include "htif.h"
 #include "i-device-state-access.h"
 #include "interpret.h"
-#include "os.h"
 #include "pma-driver.h"
 
 namespace cartesi {
@@ -93,15 +92,14 @@ static execute_status htif_console(i_device_state_access *a, uint64_t cmd, uint6
     if (cmd < 64 && (((a->read_htif_iconsole() >> cmd) & 1) != 0)) {
         if (cmd == HTIF_CONSOLE_CMD_PUTCHAR) {
             const uint8_t ch = data & 0xff;
-            os_putchar(ch);
+            a->putchar(ch);
             a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_CONSOLE, cmd, 0, 0));
         } else if (cmd == HTIF_CONSOLE_CMD_GETCHAR) {
             // In blockchain, this command will never be enabled as there is no way to input the same character
             // to every participant in a dispute: where would c come from? So if the code reached here in the
             // blockchain, there must be some serious bug
             // In interactive mode, we just get the next character from the console and send it back in the ack
-            os_poll_tty(0);
-            const int c = os_getchar() + 1;
+            const int c = a->getchar() + 1;
             a->write_htif_fromhost(HTIF_BUILD(HTIF_DEV_CONSOLE, cmd, 0, static_cast<uint32_t>(c)));
         }
     }

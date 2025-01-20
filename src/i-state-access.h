@@ -638,7 +638,7 @@ public:
     /// \param pval Pointer to word receiving value.
     template <typename T>
     void read_memory_word(uint64_t paddr, const unsigned char *hpage, uint64_t hoffset, T *pval) {
-        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
+        static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
         return derived().template do_read_memory_word<T>(paddr, hpage, hoffset, pval);
     }
 
@@ -650,7 +650,7 @@ public:
     /// \param val Value to be written.
     template <typename T>
     void write_memory_word(uint64_t paddr, unsigned char *hpage, uint64_t hoffset, T val) {
-        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
+        static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
         return derived().template do_write_memory_word<T>(paddr, hpage, hoffset, val);
     }
 
@@ -677,7 +677,7 @@ public:
     /// \returns True if successful (TLB hit), false otherwise.
     template <TLB_entry_type ETYPE, typename T>
     bool read_memory_word_via_tlb(uint64_t vaddr, T *pval) {
-        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
+        static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
         return derived().template do_read_memory_word_via_tlb<ETYPE, T>(vaddr, pval);
     }
 
@@ -689,7 +689,7 @@ public:
     /// \returns True if successful (TLB hit), false otherwise.
     template <TLB_entry_type ETYPE, typename T>
     bool write_memory_word_via_tlb(uint64_t vaddr, T val) {
-        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
+        static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
         return derived().template do_write_memory_word_via_tlb<ETYPE, T>(vaddr, val);
     }
 

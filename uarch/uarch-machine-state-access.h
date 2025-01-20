@@ -20,17 +20,17 @@
 #include "uarch-runtime.h" // must be included first, because of assert
 
 #define MOCK_THROW_RUNTIME_ERROR(err) abort()
-#include "mock-pma-entry.h"
+#include "compiler-defines.h"
 #include "device-state-access.h"
 #include "i-state-access.h"
+#include "machine-reg.h"
+#include "mock-pma-entry.h"
 #include "pma-constants.h"
 #include "riscv-constants.h"
-#include "machine-reg.h"
 #include "shadow-pmas.h"
+#include "strict-aliasing.h"
 #include "uarch-constants.h"
 #include "uarch-defines.h"
-#include "strict-aliasing.h"
-#include "compiler-defines.h"
 #include <optional>
 
 namespace cartesi {
@@ -66,10 +66,9 @@ private:
 
     // NOLINTBEGIN(readability-convert-member-functions-to-static)
 
-    void do_push_bracket(bracket_type /*type*/, const char */*text*/) {
-    }
+    void do_push_bracket(bracket_type /*type*/, const char * /*text*/) {}
 
-    int do_make_scoped_note(const char */*text*/) {
+    int do_make_scoped_note(const char * /*text*/) {
         return 0;
     }
 
@@ -414,24 +413,24 @@ private:
     }
 
     template <typename T>
-    void do_read_memory_word(uint64_t paddr, const unsigned char */*hpage*/, uint64_t /*hoffset*/, T *pval) {
+    void do_read_memory_word(uint64_t paddr, const unsigned char * /*hpage*/, uint64_t /*hoffset*/, T *pval) {
         *pval = raw_read_memory<T>(paddr);
     }
 
-    bool do_read_memory(uint64_t /*paddr*/, unsigned char */*data*/, uint64_t /*length*/) {
+    bool do_read_memory(uint64_t /*paddr*/, unsigned char * /*data*/, uint64_t /*length*/) {
         // This is not implemented yet because it's not being used
         abort();
         return false;
     }
 
-    bool do_write_memory(uint64_t /*paddr*/, const unsigned char */*data*/, uint64_t /*length*/) {
+    bool do_write_memory(uint64_t /*paddr*/, const unsigned char * /*data*/, uint64_t /*length*/) {
         // This is not implemented yet because it's not being used
         abort();
         return false;
     }
 
     template <typename T>
-    void do_write_memory_word(uint64_t paddr, const unsigned char */*hpage*/, uint64_t /*hoffset*/, T val) {
+    void do_write_memory_word(uint64_t paddr, const unsigned char * /*hpage*/, uint64_t /*hoffset*/, T val) {
         raw_write_memory(paddr, val);
     }
 
@@ -441,20 +440,18 @@ private:
         // NOLINTNEXTLINE(bugprone-narrowing-conversions)
         int i = static_cast<int>(index);
         if (!m_pmas[i]) {
-            m_pmas[i] = make_mock_pma_entry(index, istart, ilength, [](const char * /*err*/) {
-                abort();
-            });
+            m_pmas[i] = make_mock_pma_entry(index, istart, ilength, [](const char * /*err*/) { abort(); });
         }
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         return m_pmas[index].value();
     }
 
-    unsigned char *do_get_host_memory(mock_pma_entry &/*pma*/) {
+    unsigned char *do_get_host_memory(mock_pma_entry & /*pma*/) {
         return nullptr;
     }
 
     template <TLB_entry_type ETYPE>
-    volatile tlb_hot_entry& do_get_tlb_hot_entry(uint64_t eidx) {
+    volatile tlb_hot_entry &do_get_tlb_hot_entry(uint64_t eidx) {
         // Volatile is used, so the compiler does not optimize out, or do of order writes.
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,performance-no-int-to-ptr)
         volatile tlb_hot_entry *tlbe = reinterpret_cast<tlb_hot_entry *>(tlb_get_entry_hot_abs_addr<ETYPE>(eidx));
@@ -462,7 +459,7 @@ private:
     }
 
     template <TLB_entry_type ETYPE>
-    volatile tlb_cold_entry& do_get_tlb_entry_cold(uint64_t eidx) {
+    volatile tlb_cold_entry &do_get_tlb_entry_cold(uint64_t eidx) {
         // Volatile is used, so the compiler does not optimize out, or do of order writes.
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,performance-no-int-to-ptr)
         volatile tlb_cold_entry *tlbe = reinterpret_cast<tlb_cold_entry *>(tlb_get_entry_cold_abs_addr<ETYPE>(eidx));
@@ -534,7 +531,7 @@ private:
         tlbhe.vaddr_page = vaddr_page; // "unlock"
         // Note that we can't write here the correct vh_offset value, because it depends in a host pointer,
         // however the uarch memory bridge will take care of updating it.
-        return cast_addr_to_ptr<unsigned char*>(paddr_page);
+        return cast_addr_to_ptr<unsigned char *>(paddr_page);
     }
 
     template <TLB_entry_type ETYPE>
@@ -571,6 +568,14 @@ private:
     bool do_get_soft_yield() {
         // Soft yield is meaningless in microarchitecture
         return false;
+    }
+
+    void do_putchar(uint8_t c) {
+        _putchar(c);
+    }
+
+    int do_getchar() {
+        return -1;
     }
 
     // NOLINTEND(readability-convert-member-functions-to-static)

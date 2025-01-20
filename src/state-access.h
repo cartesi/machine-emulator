@@ -598,6 +598,17 @@ private:
         }
     }
 
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    void do_putchar(uint8_t c) {
+        os_putchar(c);
+    }
+
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    int do_getchar() {
+        os_poll_tty(0);
+        return os_getchar();
+    }
+
 #ifdef DUMP_COUNTERS
     machine_statistics &do_get_statistics() {
         return m_m.get_state().stats;

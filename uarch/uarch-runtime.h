@@ -17,8 +17,8 @@
 #ifndef UARCH_RUNTIME_H
 #define UARCH_RUNTIME_H
 
-#include "uarch-printf.h"
 #include "compiler-defines.h"
+#include "uarch-printf.h"
 
 #include <inttypes.h>
 #include <stddef.h>

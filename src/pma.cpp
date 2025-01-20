@@ -204,28 +204,27 @@ void pma_entry::fill_memory(uint64_t paddr, unsigned char value, uint64_t size) 
     }
 }
 
-bool pma_peek_error(const pma_entry & /*pma*/, const machine & /*m*/, uint64_t /*page_address*/,
+bool pma_peek_error(const pma_entry & /*pma*/, const machine & /*m*/, uint64_t /*offset*/, uint64_t /*length*/,
     const unsigned char ** /*page_data*/, unsigned char * /*scratch*/) {
     return false;
 }
 
+bool pma_peek_pristine(const pma_entry &pma, const machine & /*m*/, uint64_t offset, uint64_t length,
+    const unsigned char **data, unsigned char * /*scratch*/) {
+    *data = nullptr;
+    return length <= pma.get_length() && offset <= pma.get_length() - length;
+}
+
 /// \brief Memory range peek callback. See pma_peek.
-static bool memory_peek(const pma_entry &pma, const machine & /*m*/, uint64_t page_address,
-    const unsigned char **page_data, unsigned char *scratch) {
-    // If page_address is not aligned, or if it is out of range, return error
-    if ((page_address & (PMA_PAGE_SIZE - 1)) != 0 || page_address > pma.get_length()) {
-        *page_data = nullptr;
+static bool memory_peek(const pma_entry &pma, const machine & /*m*/, uint64_t offset, uint64_t length,
+    const unsigned char **data, unsigned char * /*scratch*/) {
+    // If desired data does not fit in range, return error
+    if (length > pma.get_length() || offset > pma.get_length() - length) {
+        *data = nullptr;
         return false;
     }
-    // If page is only partially inside range, copy to scratch
-    if (page_address + PMA_PAGE_SIZE > pma.get_length()) {
-        memset(scratch, 0, PMA_PAGE_SIZE);
-        memcpy(scratch, pma.get_memory().get_host_memory() + page_address, pma.get_length() - page_address);
-        *page_data = scratch;
-        return true;
-        // Otherwise, return pointer directly into host memory
-    }
-    *page_data = pma.get_memory().get_host_memory() + page_address;
+    // Otherwise, return pointer directly into host memory
+    *data = pma.get_memory().get_host_memory() + offset;
     return true;
 }
 

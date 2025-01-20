@@ -53,6 +53,7 @@ CFLAGS := -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) $(WAR
 	-I. \
 	-I$(THIRD_PARTY_DIR)/llvm-flang-uint128 \
 	-I$(EMULATOR_SRC_DIR) \
+	$(UARCH_DEFS) \
 	$(TOOLCHAIN_INCS)
 
 CXXFLAGS := -std=c++20 -fno-rtti
@@ -60,6 +61,7 @@ CXXFLAGS := -std=c++20 -fno-rtti
 UARCH_SOURCES=\
 	uarch-printf.c \
 	uarch-run.cpp \
+	uarch-ecall.c \
 	uarch-runtime.cpp
 
 EMULATOR_SOURCES=\
@@ -79,6 +81,7 @@ COMPUTE_UARCH_CPP_SOURCES=\
 	$(EMULATOR_SRC_DIR)/pristine-merkle-tree.cpp \
 	$(EMULATOR_SRC_DIR)/complete-merkle-tree.cpp \
 	$(EMULATOR_SRC_DIR)/full-merkle-tree.cpp
+
 COMPUTE_UARCH_C_SOURCES=\
 	$(THIRD_PARTY_DIR)/tiny_sha3/sha3.c \
 	uarch-pristine-ram.c

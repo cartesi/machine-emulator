@@ -44,12 +44,12 @@ ifeq ($(TARGET_OS),Darwin)
 LIBCARTESI_SO=libcartesi-$(MACHINE_EMULATOR_SO_VERSION).dylib
 LIBCARTESI_SO_JSONRPC=libcartesi_jsonrpc-$(MACHINE_EMULATOR_SO_VERSION).dylib
 
-NUM_JOBS := $(shell sysctl -n hw.ncpu)
+NUM_JOBS ?= $(shell sysctl -n hw.ncpu)
 else
 LIBCARTESI_SO=libcartesi-$(MACHINE_EMULATOR_SO_VERSION).so
 LIBCARTESI_SO_JSONRPC=libcartesi_jsonrpc-$(MACHINE_EMULATOR_SO_VERSION).so
 
-NUM_JOBS := $(shell nproc)
+NUM_JOBS ?= $(shell nproc)
 endif
 
 ifeq ($(coverage),yes)

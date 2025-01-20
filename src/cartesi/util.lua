@@ -202,10 +202,11 @@ local function hexhash8(hash) return string.sub(hexhash(hash), 1, 8) end
 local function accessdatastring(data, data_hash, data_log2_size, address)
     local data_size = 1 << data_log2_size
     if data_log2_size == 3 then
+        if not data then return "???(no written data)" end
         if data_size < #data then
             -- access data is  smaller than the tree leaf size
             -- the logged data is the entire tree leaf, but we only need the data that was accessed
-            local leaf_aligned_address = address & ~((1 << cartesi.TREE_LOG2_WORD_SIZE) - 1)
+            local leaf_aligned_address = (address >> cartesi.TREE_LOG2_WORD_SIZE) << cartesi.TREE_LOG2_WORD_SIZE
             local word_offset = address - leaf_aligned_address
             data = data:sub(word_offset + 1, word_offset + data_size)
         end

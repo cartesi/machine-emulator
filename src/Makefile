@@ -171,17 +171,22 @@ DEFS+=-DJSON_HAS_FILESYSTEM=0
 DEFS+=-DBOOST_ASIO_DISABLE_THREADS -DBOOST_ASIO_DISABLE_EPOLL -DBOOST_ASIO_DISABLE_EVENTFD
 
 ifeq ($(dump),yes)
-#DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS
-#DEFS+=-DDUMP_EXCEPTIONS
-#DEFS+=-DDUMP_INTERRUPTS
-DEFS+=-DDUMP_HIST
-#DEFS+=-DDUMP_MMU_EXCEPTIONS
-#DEFS+=-DDUMP_INVALID_MEM_ACCESS
-#DEFS+=-DDUMP_INVALID_CSR
-#DEFS+=-DDUMP_INSN
-#DEFS+=-DDUMP_REGS
-#DEFS+=-DDUMP_COUNTERS
+#DUMP_DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS
+#DUMP_DEFS+=-DDUMP_EXCEPTIONS
+#DUMP_DEFS+=-DDUMP_INTERRUPTS
+#DUMP_DEFS+=-DDUMP_HIST
+#DUMP_DEFS+=-DDUMP_MMU_EXCEPTIONS
+#DUMP_DEFS+=-DDUMP_INVALID_MEM_ACCESS
+#DUMP_DEFS+=-DDUMP_INVALID_CSR
+#DUMP_DEFS+=-DDUMP_INSN
+DUMP_DEFS+=-DDUMP_STATE_ACCESS
+DUMP_DEFS+=-DDUMP_UARCH_STATE_ACCESS
+#DUMP_DEFS+=-DDUMP_REGS
+#DUMP_DEFS+=-DDUMP_COUNTERS
 endif
+DEFS += $(DUMP_DEFS)
+# Pass down UARCH_DEFS to sub-makefiles
+export UARCH_DEFS += $(DUMP_DEFS)
 
 # By default we compile in release with debug information,
 # so the emulator is packaged correctly by default.
@@ -277,7 +282,7 @@ CLANG_TIDY=clang-tidy
 CLANG_TIDY_TARGETS=$(patsubst %.cpp,%.clang-tidy,$(patsubst %.c,%.clang-tidy,$(LINTER_SOURCES)))
 
 CLANG_FORMAT=clang-format
-CLANG_FORMAT_UARCH_FILES:=$(wildcard ../uarch/*.cpp, ../uarch/*.h)
+CLANG_FORMAT_UARCH_FILES:=$(wildcard ../uarch/*.cpp) $(wildcard ../uarch/*.h)
 CLANG_FORMAT_UARCH_FILES:=$(filter-out %uarch-printf%,$(strip $(CLANG_FORMAT_UARCH_FILES)))
 CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.c) $(wildcard *.h) $(wildcard *.hpp) $(CLANG_FORMAT_UARCH_FILES)
 CLANG_FORMAT_IGNORE_FILES:=interpret-jump-table.h
@@ -376,13 +381,12 @@ LIBCARTESI_OBJS:= \
 	uarch-pristine-ram.o \
 	uarch-pristine-state-hash.o \
 	uarch-pristine-hash.o \
+    uarch-interpret.o \
+	uarch-step.o \
+	uarch-machine-bridge.o \
+	uarch-reset-state.o \
+	send-cmio-response.o \
 	replay-step-state-access-interop.o
-
-	#send-cmio-response.o \
-	#uarch-machine.o \
-    #uarch-interpret.o \
-	#uarch-step.o \
-	#uarch-reset-state.o \
 
 CARTESI_CLUA_OBJS:= \
 	clua.o \

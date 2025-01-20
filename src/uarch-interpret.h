@@ -19,9 +19,10 @@
 
 #include <cstdint>
 
-#include "uarch-state-access.h"
-
 namespace cartesi {
+
+// Forward declaration
+class uarch_state_access;
 
 enum class uarch_interpreter_break_reason : int { reached_target_cycle, uarch_halted };
 

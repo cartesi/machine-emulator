@@ -10,18 +10,18 @@ RUN apt-get update && \
         gcc-riscv64-unknown-elf=12.2.0-14+11+b1 && \
     rm -rf /var/lib/apt/lists/*
 
-# Install clang 18
+# Install clang 19
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
         wget software-properties-common gnupg && \
     wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc && \
-    add-apt-repository -y 'deb http://apt.llvm.org/bookworm/  llvm-toolchain-bookworm-18 main' && \
-    add-apt-repository -y 'deb http://apt.llvm.org/bookworm/  llvm-toolchain-bookworm-18 main' && \
+    add-apt-repository -y 'deb http://apt.llvm.org/bookworm/  llvm-toolchain-bookworm-19 main' && \
+    add-apt-repository -y 'deb http://apt.llvm.org/bookworm/  llvm-toolchain-bookworm-19 main' && \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-        clang-tidy-18 clang-format-18 && \
-    update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-18 120 && \
-    update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-18 120 && \
+        clang-tidy-19 clang-format-19 && \
+    update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-19 120 && \
+    update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-19 120 && \
     rm -rf /var/lib/apt/lists/*
 
 # Install lua packages

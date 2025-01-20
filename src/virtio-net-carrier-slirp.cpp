@@ -99,7 +99,7 @@ static ssize_t slirp_send_packet(const void *buf, size_t len, void *opaque) {
     }
     // Add packet to the send packet queue,
     // the packet will actually be sent only the next time the device calls read_packet()
-    slirp_packet packet{len};
+    slirp_packet packet{.len = len};
     memcpy(packet.buf.data(), buf, len);
     try {
         carrier->send_packets.emplace_back(packet);
@@ -289,7 +289,7 @@ void virtio_net_carrier_slirp::do_prepare_select(select_fd_sets *fds, uint64_t *
     auto *writefds = reinterpret_cast<fd_set *>(fds->writefds);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *exceptfds = reinterpret_cast<fd_set *>(fds->exceptfds);
-    slirp_select_fds slirp_fds{&fds->maxfd, readfds, writefds, exceptfds};
+    slirp_select_fds slirp_fds{.pmaxfd = &fds->maxfd, .readfds = readfds, .writefds = writefds, .exceptfds = exceptfds};
     const uint32_t initial_timeout_ms = *timeout_us / 1000;
     uint32_t timeout_ms = initial_timeout_ms;
 #pragma GCC diagnostic push
@@ -312,7 +312,7 @@ bool virtio_net_carrier_slirp::do_poll_selected(int select_ret, select_fd_sets *
     auto *writefds = reinterpret_cast<fd_set *>(fds->writefds);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *exceptfds = reinterpret_cast<fd_set *>(fds->exceptfds);
-    slirp_select_fds slirp_fds{nullptr, readfds, writefds, exceptfds};
+    slirp_select_fds slirp_fds{.pmaxfd = nullptr, .readfds = readfds, .writefds = writefds, .exceptfds = exceptfds};
     slirp_pollfds_poll(slirp, static_cast<int>(select_ret < 0), slirp_get_revents_cb, &slirp_fds);
     // Fire expired timers
     const int64_t now_ms = slirp_clock_get_ns(nullptr) / 1000000;
@@ -346,7 +346,7 @@ bool virtio_net_carrier_slirp::write_packet_to_host(i_device_state_access *a, vi
 #endif
         return true;
     }
-    slirp_packet packet{packet_len};
+    slirp_packet packet{.len = packet_len};
     if (!vq.read_desc_mem(a, desc_idx, VIRTIO_NET_ETHERNET_FRAME_OFFSET, packet.buf.data(), packet.len)) {
         // Failure while accessing guest memory, the driver or guest messed up, return false to reset the device.
         return false;

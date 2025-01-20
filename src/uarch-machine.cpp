@@ -33,14 +33,12 @@ namespace cartesi {
 
 using namespace std::string_literals;
 
-const pma_entry::flags ram_flags{
-    true,                  // R
-    true,                  // W
-    true,                  // X
-    true,                  // IR
-    true,                  // IW
-    PMA_ISTART_DID::memory // DID
-};
+const pma_entry::flags ram_flags{.R = true,
+    .W = true,
+    .X = true,
+    .IR = true,
+    .IW = true,
+    .DID = PMA_ISTART_DID::memory};
 
 uarch_machine::uarch_machine(uarch_config c) : m_c{c} {
     m_s.pc = c.processor.pc;

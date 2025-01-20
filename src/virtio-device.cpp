@@ -840,6 +840,6 @@ static execute_status virtio_write(void *context, i_device_state_access *a, uint
     return status;
 }
 
-const pma_driver virtio_driver = {"VirtIO", virtio_read, virtio_write};
+const pma_driver virtio_driver = {.name = "VirtIO", .read = virtio_read, .write = virtio_write};
 
 } // namespace cartesi

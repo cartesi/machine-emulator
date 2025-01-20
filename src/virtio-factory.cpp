@@ -27,14 +27,7 @@ namespace cartesi {
 
 pma_entry make_virtio_pma_entry(uint64_t start, uint64_t length, const std::string &description,
     const pma_driver *driver, void *context) {
-    const pma_entry::flags f{
-        true,                  // R
-        true,                  // W
-        false,                 // X
-        false,                 // IR
-        false,                 // IW
-        PMA_ISTART_DID::VIRTIO // DID
-    };
+    const pma_entry::flags f{.R = true, .W = true, .X = false, .IR = false, .IW = false, .DID = PMA_ISTART_DID::VIRTIO};
     // VirtIO devices are not verifiable yet,
     // therefore peek will always fail and cause an runtime error when updating the Merkle tree.
     return make_device_pma_entry(description, start, length, pma_peek_error, driver, context).set_flags(f);

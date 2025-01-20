@@ -295,7 +295,7 @@ public:
                 // would throw an exception for lack of memory on and end bracket
                 m_brackets.reserve(m_brackets.size() + 2);
             }
-            m_brackets.push_back(bracket_note{type, m_accesses.size(), text});
+            m_brackets.push_back(bracket_note{.type = type, .where = m_accesses.size(), .text = text});
         }
     }
 

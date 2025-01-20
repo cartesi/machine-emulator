@@ -86,53 +86,43 @@ namespace cartesi {
 
 using namespace std::string_literals;
 
-const pma_entry::flags machine::m_ram_flags{
-    true,                  // R
-    true,                  // W
-    true,                  // X
-    true,                  // IR
-    true,                  // IW
-    PMA_ISTART_DID::memory // DID
-};
+const pma_entry::flags machine::m_ram_flags{.R = true,
+    .W = true,
+    .X = true,
+    .IR = true,
+    .IW = true,
+    .DID = PMA_ISTART_DID::memory};
 
 // When we pass a RNG seed in a FDT stored in DTB,
 // Linux will wipe out its contents as a security measure,
 // therefore we need to make DTB writable, otherwise boot will hang.
-const pma_entry::flags machine::m_dtb_flags{
-    true,                  // R
-    true,                  // W
-    true,                  // X
-    true,                  // IR
-    true,                  // IW
-    PMA_ISTART_DID::memory // DID
-};
+const pma_entry::flags machine::m_dtb_flags{.R = true,
+    .W = true,
+    .X = true,
+    .IR = true,
+    .IW = true,
+    .DID = PMA_ISTART_DID::memory};
 
-const pma_entry::flags machine::m_flash_drive_flags{
-    true,                       // R
-    true,                       // W
-    false,                      // X
-    true,                       // IR
-    true,                       // IW
-    PMA_ISTART_DID::flash_drive // DID
-};
+const pma_entry::flags machine::m_flash_drive_flags{.R = true,
+    .W = true,
+    .X = false,
+    .IR = true,
+    .IW = true,
+    .DID = PMA_ISTART_DID::flash_drive};
 
-const pma_entry::flags machine::m_cmio_rx_buffer_flags{
-    true,                          // R
-    false,                         // W
-    false,                         // X
-    true,                          // IR
-    true,                          // IW
-    PMA_ISTART_DID::cmio_rx_buffer // DID
-};
+const pma_entry::flags machine::m_cmio_rx_buffer_flags{.R = true,
+    .W = false,
+    .X = false,
+    .IR = true,
+    .IW = true,
+    .DID = PMA_ISTART_DID::cmio_rx_buffer};
 
-const pma_entry::flags machine::m_cmio_tx_buffer_flags{
-    true,                          // R
-    true,                          // W
-    false,                         // X
-    true,                          // IR
-    true,                          // IW
-    PMA_ISTART_DID::cmio_tx_buffer // DID
-};
+const pma_entry::flags machine::m_cmio_tx_buffer_flags{.R = true,
+    .W = true,
+    .X = false,
+    .IR = true,
+    .IW = true,
+    .DID = PMA_ISTART_DID::cmio_tx_buffer};
 
 pma_entry machine::make_memory_range_pma_entry(const std::string &description, const memory_range_config &c) {
     if (c.image_filename.empty()) {
@@ -550,7 +540,9 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
     // Initialize memory range descriptions returned by get_memory_ranges method
     for (const auto *pma : m_merkle_pmas) {
         if (pma->get_length() != 0) {
-            m_mrds.push_back(machine_memory_range_descr{pma->get_start(), pma->get_length(), pma->get_description()});
+            m_mrds.push_back(machine_memory_range_descr{.start = pma->get_start(),
+                .length = pma->get_length(),
+                .description = pma->get_description()});
         }
     }
     // Sort it by increasing start address

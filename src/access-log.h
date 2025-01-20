@@ -54,12 +54,12 @@ static inline void set_word_access_data(uint64_t w, access_data &ad) {
     ad.insert(ad.end(), p, p + sizeof(w));
 }
 
-static inline void replace_word_access_data(uint64_t w, access_data &ad, int offset = 0) {
+static inline void replace_word_access_data(uint64_t w, access_data &ad, uint64_t offset = 0) {
     assert(ad.size() >= offset + sizeof(uint64_t));
     aliased_aligned_write<uint64_t>(ad.data() + offset, w);
 }
 
-static inline uint64_t get_word_access_data(const access_data &ad, int offset = 0) {
+static inline uint64_t get_word_access_data(const access_data &ad, uint64_t offset = 0) {
     assert(ad.size() >= offset + sizeof(uint64_t));
     return aliased_aligned_read<uint64_t>(ad.data() + offset);
 }
@@ -258,13 +258,14 @@ public:
     };
 
 private:
-    std::vector<access> m_accesses;       ///< List of all accesses
-    std::vector<bracket_note> m_brackets; ///< Begin/End annotations
-    std::vector<std::string> m_notes;     ///< Per-access annotations
-    type m_log_type;                      ///< Log type
+    std::vector<access> m_accesses;                          ///< List of all accesses
+    std::vector<bracket_note> m_brackets;                    ///< Begin/End annotations
+    std::vector<std::string> m_notes;                        ///< Per-access annotations
+    type m_log_type;                                         ///< Log type
+    std::vector<bracket_note>::size_type m_outstanding_ends; ///< Number of outstanding unmatched end brackets
 
 public:
-    explicit access_log(type log_type) : m_log_type(log_type) {
+    explicit access_log(type log_type) : m_log_type(log_type), m_outstanding_ends{0} {
         ;
     }
 
@@ -273,8 +274,16 @@ public:
         m_accesses(std::forward<ACCESSES>(accesses)),
         m_brackets(std::forward<BRACKETS>(brackets)),
         m_notes(std::forward<NOTES>(notes)),
-        m_log_type(log_type) {
-        ;
+        m_log_type(log_type),
+        m_outstanding_ends(0) {
+        for (const auto &b : m_brackets) {
+            if (b.type == bracket_type::begin) {
+                ++m_outstanding_ends;
+            }
+            if (b.type == bracket_type::end && m_outstanding_ends > 0) {
+                --m_outstanding_ends;
+            }
+        };
     }
 
     /// \brief Clear the log
@@ -282,28 +291,43 @@ public:
         m_accesses.clear();
         m_notes.clear();
         m_brackets.clear();
+        m_outstanding_ends = 0;
     }
 
     /// \brief Adds a bracket annotation to the log (if the log type includes annotations)
     /// \param type Bracket type
     /// \param text Annotation contents
-    void push_bracket(bracket_type type, const char *text) {
+    void push_begin_bracket(const char *text) {
         if (m_log_type.has_annotations()) {
-            if (type == bracket_type::begin) {
-                // make sure we have room for end bracket as well. that way,
-                // unless the user use unbalanced brackets, there is no way we
-                // would throw an exception for lack of memory on and end bracket
-                m_brackets.reserve(m_brackets.size() + 2);
+            // Increment number of outstanding end brackets we are expecting
+            ++m_outstanding_ends;
+            // Make sure we have room for the matching end bracket as well.
+            // That way, unless the user is messing with unbalanced brackets, there is no way we
+            // would throw an exception for lack of memory on the matching end bracket
+            m_brackets.push_back(bracket_note{bracket_type::begin, m_accesses.size(), text});
+            m_brackets.reserve(m_brackets.size() + m_outstanding_ends);
+        }
+    }
+
+    void push_end_bracket(const char *text) noexcept {
+        if (m_log_type.has_annotations()) {
+            // If we failed to push, it was because the system is completely screwed anyway *and* the
+            // user is using unbalanced brackets. Therefore, it's OK to quietly ignore the error.
+            try {
+                m_brackets.push_back(bracket_note{bracket_type::end, m_accesses.size(), text});
+            } catch (...) { // NOLINT(bugprone-empty-catch)
             }
-            m_brackets.push_back(bracket_note{.type = type, .where = m_accesses.size(), .text = text});
+            // Decrement number of outstanding end brackets we are expecting
+            if (m_outstanding_ends > 0) {
+                --m_outstanding_ends;
+            }
         }
     }
 
     /// \brief Adds a new access to the log
     /// \tparam A Type of access
     /// \param a Access object
-    /// \param text Annotation contents (added if the log
-    /// type includes annotations, ignored otherwise)
+    /// \param text Annotation contents (added if the log type includes annotations, ignored otherwise)
     template <typename A>
     void push_access(A &&a, const char *text) {
         m_accesses.push_back(std::forward<A>(a));

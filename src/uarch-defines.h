@@ -26,8 +26,10 @@
 #define UARCH_STATE_LOG2_SIZE_DEF 22
 
 // microarchitecture ecall function codes
-#define UARCH_ECALL_FN_HALT_DEF 1    // halt uarch
-#define UARCH_ECALL_FN_PUTCHAR_DEF 2 // putchar
+#define UARCH_ECALL_FN_HALT_DEF 1            // halt uarch
+#define UARCH_ECALL_FN_PUTCHAR_DEF 2         // putchar
+#define UARCH_ECALL_FN_MARK_DIRTY_PAGE_DEF 3 // mark_dirty_page
+#define UARCH_ECALL_FN_WRITE_TLB_DEF 4       // write_tlb
 
 // NOLINTEND(cppcoreguidelines-macro-usage,cppcoreguidelines-macro-to-enum,modernize-macro-to-enum)
 #endif /* end of include guard: UARCH_DEFINES_H */

@@ -20,7 +20,7 @@
 #include <cstdint>
 
 #include "bracket-note.h"
-#include "pma.h"
+#include "tlb.h"
 
 namespace cartesi {
 
@@ -39,11 +39,22 @@ class i_uarch_state_access { // CRTP
     }
 
 public:
-    /// \brief Adds an annotation bracket to the log
-    /// \param type Type of bracket
+    /// \brief Adds a begin bracket annotation to the log
     /// \param text String with the text for the annotation
-    void push_bracket(bracket_type type, const char *text) {
-        return derived().do_push_bracket(type, text);
+    void push_begin_bracket(const char *text) {
+#ifdef DUMP_UARCH_STATE_ACCESS
+        printf("----> begin %s (%s)\n", text, get_name());
+#endif
+        return derived().do_push_begin_bracket(text);
+    }
+
+    /// \brief Adds an end bracket annotation to the log
+    /// \param text String with the text for the annotation
+    void push_end_bracket(const char *text) {
+#ifdef DUMP_UARCH_STATE_ACCESS
+        printf("<---- end %s (%s)\n", text, get_name());
+#endif
+        return derived().do_push_end_bracket(text);
     }
 
     /// \brief Adds annotations to the state, bracketing a scope
@@ -53,54 +64,126 @@ public:
         return derived().do_make_scoped_note(text);
     }
 
-    auto read_x(int r) {
-        return derived().do_read_x(r);
+    auto read_x(int i) {
+#ifdef DUMP_UARCH_STATE_ACCESS
+        const auto val = derived().do_read_x(i);
+        printf("%s::read_x(%d) = %llu(0x%llx)\n", get_name(), i, val, val);
+        return val;
+#else
+        return derived().do_read_x(i);
+#endif
     }
 
-    auto write_x(int r, uint64_t v) {
-        return derived().do_write_x(r, v);
+    auto write_x(int i, uint64_t val) {
+        derived().do_write_x(i, val);
+#ifdef DUMP_UARCH_STATE_ACCESS
+        printf("%s::write_x(%d, %llu)\n", get_name(), i, val);
+#endif
     }
 
     auto read_pc() {
+#ifdef DUMP_UARCH_STATE_ACCESS
+        const auto val = derived().do_read_pc();
+        printf("%s::read_pc() = %llu(0x%llx)\n", get_name(), val, val);
+        return val;
+#else
         return derived().do_read_pc();
+#endif
     }
 
-    auto write_pc(uint64_t v) {
-        return derived().do_write_pc(v);
+    auto write_pc(uint64_t val) {
+        derived().do_write_pc(val);
+#ifdef DUMP_UARCH_STATE_ACCESS
+        printf("%s::write_pc(%llu(0x%llx))\n", get_name(), val, val);
+#endif
     }
 
     auto read_cycle() {
+#ifdef DUMP_UARCH_STATE_ACCESS
+        const auto val = derived().do_read_cycle();
+        printf("%s::read_cycle() = %llu(0x%llx)\n", get_name(), val, val);
+        return val;
+#else
         return derived().do_read_cycle();
+#endif
     }
 
     auto read_halt_flag() {
+#ifdef DUMP_UARCH_STATE_ACCESS
+        const auto val = derived().do_read_halt_flag();
+        printf("%s::read_halt_flag() = %llu(0x%llx)\n", get_name(), val, val);
+        return val;
+#else
         return derived().do_read_halt_flag();
+#endif
     }
 
-    auto set_halt_flag() {
-        return derived().do_set_halt_flag();
+    auto write_halt_flag(uint64_t val) {
+        derived().do_write_halt_flag(val);
+#ifdef DUMP_UARCH_STATE_ACCESS
+        printf("%s::write_halt_flag(%llu(0x%llx))\n", get_name(), val, val);
+#endif
     }
 
-    auto reset_halt_flag() {
-        return derived().do_reset_halt_flag();
-    }
-
-    auto write_cycle(uint64_t v) {
-        return derived().do_write_cycle(v);
+    auto write_cycle(uint64_t val) {
+        derived().do_write_cycle(val);
+#ifdef DUMP_UARCH_STATE_ACCESS
+        printf("%s::write_cycle(%llu(0x%llx))\n", get_name(), val, val);
+#endif
     }
 
     uint64_t read_word(uint64_t paddr) {
+#ifdef DUMP_UARCH_STATE_ACCESS
+        const auto val = derived().do_read_word(paddr);
+        printf("%s::read_word(phys_addr{0x%llx}) = %llu(0x%llx)\n", get_name(), paddr, val, val);
+        return val;
+#else
         return derived().do_read_word(paddr);
+#endif
     }
 
-    void write_word(uint64_t paddr, uint64_t data) {
-        return derived().do_write_word(paddr, data);
+    void write_word(uint64_t paddr, uint64_t val) {
+        derived().do_write_word(paddr, val);
+#ifdef DUMP_UARCH_STATE_ACCESS
+        printf("%s::write_word(phys_addr{0x%llx}, %llu(0x%llx))\n", get_name(), paddr, val, val);
+#endif
     }
 
     /// \brief Resets uarch to pristine state
     void reset_state() {
         return derived().do_reset_state();
     }
+
+    void putchar(uint8_t c) {
+        derived().do_putchar(c);
+    }
+
+    void mark_dirty_page(uint64_t paddr, uint64_t pma_index) {
+        return derived().do_mark_dirty_page(paddr, pma_index);
+    }
+
+    void write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
+        uint64_t pma_index) {
+        derived().do_write_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
+    }
+
+    constexpr const char *get_name() const {
+        return derived().do_get_name();
+    }
+
+private:
+    /// \brief For state access classes that do not need annotations
+    void do_push_begin_bracket(const char * /*text*/) {}
+
+    /// \brief For state access classes that do not need annotations
+    void do_push_end_bracket(const char * /*text*/) {}
+
+#ifndef DUMP_UARCH_STATE_ACCESS
+    /// \brief For state access classes that do not need annotations
+    int do_make_scoped_note(const char * /*text*/) {
+        return 0;
+    }
+#endif
 };
 
 } // namespace cartesi

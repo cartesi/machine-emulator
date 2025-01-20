@@ -17,17 +17,21 @@
 #ifndef RECORD_STEP_STATE_ACCESS_H
 #define RECORD_STEP_STATE_ACCESS_H
 
-#include "compiler-defines.h"
-#include "machine.h"
-
-#include "device-state-access.h"
-#include "i-state-access.h"
-#include "shadow-pmas.h"
-#include "shadow-tlb.h"
-#include "unique-c-ptr.h"
 #include <map>
 #include <optional>
 #include <vector>
+
+#include "compiler-defines.h"
+#include "device-state-access.h"
+#include "i-state-access.h"
+#include "machine.h"
+#include "shadow-pmas.h"
+#include "shadow-tlb.h"
+#include "unique-c-ptr.h"
+
+#if DUMP_STATE_ACCESS
+#include "scoped-note.h"
+#endif
 
 namespace cartesi {
 
@@ -184,427 +188,361 @@ private:
         }
     }
 
+    uint64_t log_read_reg(machine_reg reg) const {
+        touch_page(machine_reg_address(reg));
+        return m_m.read_reg(reg);
+    }
+
+    void log_write_reg(machine_reg reg, uint64_t val) {
+        touch_page(machine_reg_address(reg));
+        m_m.write_reg(reg, val);
+    }
+
+    uint64_t log_read_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) {
+        touch_page(shadow_tlb_get_abs_addr(set_index, slot_index, what));
+        return m_m.read_shadow_tlb(set_index, slot_index, what);
+    }
+
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_push_bracket(bracket_type type, const char *text) {
-        (void) type;
-        (void) text;
+    void do_push_begin_bracket(const char * /*text*/) {}
+
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    void do_push_end_bracket(const char * /*text*/) {}
+
+#ifdef DUMP_STATE_ACCESS
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    auto do_make_scoped_note([[maybe_unused]] const char *text) {
+        return scoped_note<record_step_state_access>{*this, text};
+    }
+#endif
+
+    uint64_t do_read_x(int i) const {
+        return log_read_reg(machine_reg_enum(machine_reg::x0, i));
     }
 
-    int do_make_scoped_note(const char *text) { // NOLINT(readability-convert-member-functions-to-static)
-        (void) text;
-        return 0;
+    void do_write_x(int i, uint64_t val) {
+        assert(i != 0);
+        log_write_reg(machine_reg_enum(machine_reg::x0, i), val);
     }
 
-    uint64_t do_read_x(int reg) const {
-        touch_page(machine_reg_address(machine_reg::x0, reg));
-        return m_m.get_state().x[reg];
+    uint64_t do_read_f(int i) const {
+        return log_read_reg(machine_reg_enum(machine_reg::f0, i));
     }
 
-    void do_write_x(int reg, uint64_t val) {
-        assert(reg != 0);
-        touch_page(machine_reg_address(machine_reg::x0, reg));
-        m_m.get_state().x[reg] = val;
-    }
-
-    uint64_t do_read_f(int reg) const {
-        touch_page(machine_reg_address(machine_reg::f0, reg));
-        return m_m.get_state().f[reg];
-    }
-
-    void do_write_f(int reg, uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::f0, reg));
-        m_m.get_state().f[reg] = val;
+    void do_write_f(int i, uint64_t val) {
+        log_write_reg(machine_reg_enum(machine_reg::f0, i), val);
     }
 
     uint64_t do_read_pc() const {
-        // get phys address of pc in dhadow
-        touch_page(machine_reg_address(machine_reg::pc));
-        return m_m.get_state().pc;
+        return log_read_reg(machine_reg::pc);
     }
 
     void do_write_pc(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::pc));
-        m_m.get_state().pc = val;
+        log_write_reg(machine_reg::pc, val);
     }
 
     uint64_t do_read_fcsr() const {
-        touch_page(machine_reg_address(machine_reg::fcsr));
-        return m_m.get_state().fcsr;
+        return log_read_reg(machine_reg::fcsr);
     }
 
     void do_write_fcsr(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::fcsr));
-        m_m.get_state().fcsr = val;
+        log_write_reg(machine_reg::fcsr, val);
     }
 
     uint64_t do_read_icycleinstret() const {
-        touch_page(machine_reg_address(machine_reg::icycleinstret));
-        return m_m.get_state().icycleinstret;
+        return log_read_reg(machine_reg::icycleinstret);
     }
 
     void do_write_icycleinstret(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::icycleinstret));
-        m_m.get_state().icycleinstret = val;
+        log_write_reg(machine_reg::icycleinstret, val);
     }
 
-    uint64_t do_read_mvendorid() const { // NOLINT(readability-convert-member-functions-to-static)
-        touch_page(machine_reg_address(machine_reg::mvendorid));
-        return MVENDORID_INIT;
+    uint64_t do_read_mvendorid() const {
+        return log_read_reg(machine_reg::mvendorid);
     }
 
-    uint64_t do_read_marchid() const { // NOLINT(readability-convert-member-functions-to-static)
-        touch_page(machine_reg_address(machine_reg::marchid));
-        return MARCHID_INIT;
+    uint64_t do_read_marchid() const {
+        return log_read_reg(machine_reg::marchid);
     }
 
-    uint64_t do_read_mimpid() const { // NOLINT(readability-convert-member-functions-to-static)
-        touch_page(machine_reg_address(machine_reg::mimpid));
-        return MIMPID_INIT;
+    uint64_t do_read_mimpid() const {
+        return log_read_reg(machine_reg::mimpid);
     }
 
     uint64_t do_read_mcycle() const {
-        touch_page(machine_reg_address(machine_reg::mcycle));
-        return m_m.get_state().mcycle;
+        return log_read_reg(machine_reg::mcycle);
     }
 
     void do_write_mcycle(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::mcycle));
-        m_m.get_state().mcycle = val;
+        log_write_reg(machine_reg::mcycle, val);
     }
 
     uint64_t do_read_mstatus() const {
-        touch_page(machine_reg_address(machine_reg::mstatus));
-        return m_m.get_state().mstatus;
+        return log_read_reg(machine_reg::mstatus);
     }
 
     void do_write_mstatus(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::mstatus));
-        m_m.get_state().mstatus = val;
+        log_write_reg(machine_reg::mstatus, val);
     }
 
     uint64_t do_read_menvcfg() const {
-        touch_page(machine_reg_address(machine_reg::menvcfg));
-        return m_m.get_state().menvcfg;
+        return log_read_reg(machine_reg::menvcfg);
     }
 
     void do_write_menvcfg(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::menvcfg));
-        m_m.get_state().menvcfg = val;
+        log_write_reg(machine_reg::menvcfg, val);
     }
 
     uint64_t do_read_mtvec() const {
-        touch_page(machine_reg_address(machine_reg::mtvec));
-        return m_m.get_state().mtvec;
+        return log_read_reg(machine_reg::mtvec);
     }
 
     void do_write_mtvec(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::mtvec));
-        m_m.get_state().mtvec = val;
+        log_write_reg(machine_reg::mtvec, val);
     }
 
     uint64_t do_read_mscratch() const {
-        touch_page(machine_reg_address(machine_reg::mscratch));
-        return m_m.get_state().mscratch;
+        return log_read_reg(machine_reg::mscratch);
     }
 
     void do_write_mscratch(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::mscratch));
-        m_m.get_state().mscratch = val;
+        log_write_reg(machine_reg::mscratch, val);
     }
 
     uint64_t do_read_mepc() const {
-        touch_page(machine_reg_address(machine_reg::mepc));
-        return m_m.get_state().mepc;
+        return log_read_reg(machine_reg::mepc);
     }
 
     void do_write_mepc(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::mepc));
-        m_m.get_state().mepc = val;
+        log_write_reg(machine_reg::mepc, val);
     }
 
     uint64_t do_read_mcause() const {
-        touch_page(machine_reg_address(machine_reg::mcause));
-        return m_m.get_state().mcause;
+        return log_read_reg(machine_reg::mcause);
     }
 
     void do_write_mcause(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::mcause));
-        m_m.get_state().mcause = val;
+        log_write_reg(machine_reg::mcause, val);
     }
 
     uint64_t do_read_mtval() const {
-        touch_page(machine_reg_address(machine_reg::mtval));
-        return m_m.get_state().mtval;
+        return log_read_reg(machine_reg::mtval);
     }
 
     void do_write_mtval(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::mtval));
-        m_m.get_state().mtval = val;
+        log_write_reg(machine_reg::mtval, val);
     }
 
     uint64_t do_read_misa() const {
-        touch_page(machine_reg_address(machine_reg::misa));
-        return m_m.get_state().misa;
+        return log_read_reg(machine_reg::misa);
     }
 
     void do_write_misa(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::misa));
-        m_m.get_state().misa = val;
+        log_write_reg(machine_reg::misa, val);
     }
 
     uint64_t do_read_mie() const {
-        touch_page(machine_reg_address(machine_reg::mie));
-        return m_m.get_state().mie;
+        return log_read_reg(machine_reg::mie);
     }
 
     void do_write_mie(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::mie));
-        m_m.get_state().mie = val;
+        log_write_reg(machine_reg::mie, val);
     }
 
     uint64_t do_read_mip() const {
-        touch_page(machine_reg_address(machine_reg::mip));
-        return m_m.get_state().mip;
+        return log_read_reg(machine_reg::mip);
     }
 
     void do_write_mip(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::mip));
-        m_m.get_state().mip = val;
+        log_write_reg(machine_reg::mip, val);
     }
 
     uint64_t do_read_medeleg() const {
-        touch_page(machine_reg_address(machine_reg::medeleg));
-        return m_m.get_state().medeleg;
+        return log_read_reg(machine_reg::medeleg);
     }
 
     void do_write_medeleg(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::medeleg));
-        m_m.get_state().medeleg = val;
+        log_write_reg(machine_reg::medeleg, val);
     }
 
     uint64_t do_read_mideleg() const {
-        touch_page(machine_reg_address(machine_reg::mideleg));
-        return m_m.get_state().mideleg;
+        return log_read_reg(machine_reg::mideleg);
     }
 
     void do_write_mideleg(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::mideleg));
-        m_m.get_state().mideleg = val;
+        log_write_reg(machine_reg::mideleg, val);
     }
 
     uint64_t do_read_mcounteren() const {
-        touch_page(machine_reg_address(machine_reg::mcounteren));
-        return m_m.get_state().mcounteren;
+        return log_read_reg(machine_reg::mcounteren);
     }
 
     void do_write_mcounteren(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::mcounteren));
-        m_m.get_state().mcounteren = val;
+        log_write_reg(machine_reg::mcounteren, val);
     }
 
     uint64_t do_read_senvcfg() const {
-        touch_page(machine_reg_address(machine_reg::senvcfg));
-        return m_m.get_state().senvcfg;
+        return log_read_reg(machine_reg::senvcfg);
     }
 
     void do_write_senvcfg(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::senvcfg));
-        m_m.get_state().senvcfg = val;
+        log_write_reg(machine_reg::senvcfg, val);
     }
 
     uint64_t do_read_stvec() const {
-        touch_page(machine_reg_address(machine_reg::stvec));
-        return m_m.get_state().stvec;
+        return log_read_reg(machine_reg::stvec);
     }
 
     void do_write_stvec(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::stvec));
-        m_m.get_state().stvec = val;
+        log_write_reg(machine_reg::stvec, val);
     }
 
     uint64_t do_read_sscratch() const {
-        touch_page(machine_reg_address(machine_reg::sscratch));
-        return m_m.get_state().sscratch;
+        return log_read_reg(machine_reg::sscratch);
     }
 
     void do_write_sscratch(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::sscratch));
-        m_m.get_state().sscratch = val;
+        log_write_reg(machine_reg::sscratch, val);
     }
 
     uint64_t do_read_sepc() const {
-        touch_page(machine_reg_address(machine_reg::sepc));
-        return m_m.get_state().sepc;
+        return log_read_reg(machine_reg::sepc);
     }
 
     void do_write_sepc(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::sepc));
-        m_m.get_state().sepc = val;
+        log_write_reg(machine_reg::sepc, val);
     }
 
     uint64_t do_read_scause() const {
-        touch_page(machine_reg_address(machine_reg::scause));
-        return m_m.get_state().scause;
+        return log_read_reg(machine_reg::scause);
     }
 
     void do_write_scause(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::scause));
-        m_m.get_state().scause = val;
+        log_write_reg(machine_reg::scause, val);
     }
 
     uint64_t do_read_stval() const {
-        touch_page(machine_reg_address(machine_reg::stval));
-        return m_m.get_state().stval;
+        return log_read_reg(machine_reg::stval);
     }
 
     void do_write_stval(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::stval));
-        m_m.get_state().stval = val;
+        log_write_reg(machine_reg::stval, val);
     }
 
     uint64_t do_read_satp() const {
-        touch_page(machine_reg_address(machine_reg::satp));
-        return m_m.get_state().satp;
+        return log_read_reg(machine_reg::satp);
     }
 
     void do_write_satp(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::satp));
-        m_m.get_state().satp = val;
+        log_write_reg(machine_reg::satp, val);
     }
 
     uint64_t do_read_scounteren() const {
-        touch_page(machine_reg_address(machine_reg::scounteren));
-        return m_m.get_state().scounteren;
+        return log_read_reg(machine_reg::scounteren);
     }
 
     void do_write_scounteren(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::scounteren));
-        m_m.get_state().scounteren = val;
+        log_write_reg(machine_reg::scounteren, val);
     }
 
     uint64_t do_read_ilrsc() const {
-        touch_page(machine_reg_address(machine_reg::ilrsc));
-        return m_m.get_state().ilrsc;
+        return log_read_reg(machine_reg::ilrsc);
     }
 
     void do_write_ilrsc(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::ilrsc));
-        m_m.get_state().ilrsc = val;
+        log_write_reg(machine_reg::ilrsc, val);
     }
 
     uint64_t do_read_iprv() const {
-        touch_page(machine_reg_address(machine_reg::iprv));
-        return m_m.get_state().iprv;
+        return log_read_reg(machine_reg::iprv);
     }
 
     void do_write_iprv(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::iprv));
-        m_m.get_state().iprv = val;
+        log_write_reg(machine_reg::iprv, val);
     }
 
     void do_write_iflags_X(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::iflags_X));
-        m_m.get_state().iflags.X = val;
+        log_write_reg(machine_reg::iflags_X, val);
     }
 
     uint64_t do_read_iflags_X() const {
-        touch_page(machine_reg_address(machine_reg::iflags_X));
-        return m_m.get_state().iflags.X;
+        return log_read_reg(machine_reg::iflags_X);
     }
 
     void do_write_iflags_Y(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::iflags_Y));
-        m_m.get_state().iflags.Y = val;
+        log_write_reg(machine_reg::iflags_Y, val);
     }
 
     uint64_t do_read_iflags_Y() const {
-        touch_page(machine_reg_address(machine_reg::iflags_Y));
-        return m_m.get_state().iflags.Y;
+        return log_read_reg(machine_reg::iflags_Y);
     }
 
     void do_write_iflags_H(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::iflags_H));
-        m_m.get_state().iflags.H = val;
+        log_write_reg(machine_reg::iflags_H, val);
     }
 
     uint64_t do_read_iflags_H() const {
-        touch_page(machine_reg_address(machine_reg::iflags_H));
-        return m_m.get_state().iflags.H;
+        return log_read_reg(machine_reg::iflags_H);
     }
 
     uint64_t do_read_iunrep() const {
-        touch_page(machine_reg_address(machine_reg::iunrep));
-        return m_m.get_state().iunrep;
+        return log_read_reg(machine_reg::iunrep);
     }
 
     void do_write_iunrep(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::iunrep));
-        m_m.get_state().iunrep = val;
+        log_write_reg(machine_reg::iunrep, val);
     }
 
     uint64_t do_read_clint_mtimecmp() const {
-        touch_page(machine_reg_address(machine_reg::clint_mtimecmp));
-        return m_m.get_state().clint.mtimecmp;
+        return log_read_reg(machine_reg::clint_mtimecmp);
     }
 
     void do_write_clint_mtimecmp(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::clint_mtimecmp));
-        m_m.get_state().clint.mtimecmp = val;
+        log_write_reg(machine_reg::clint_mtimecmp, val);
     }
 
     uint64_t do_read_plic_girqpend() const {
-        touch_page(machine_reg_address(machine_reg::plic_girqpend));
-        return m_m.get_state().plic.girqpend;
+        return log_read_reg(machine_reg::plic_girqpend);
     }
 
     void do_write_plic_girqpend(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::plic_girqpend));
-        m_m.get_state().plic.girqpend = val;
+        log_write_reg(machine_reg::plic_girqpend, val);
     }
 
     uint64_t do_read_plic_girqsrvd() const {
-        touch_page(machine_reg_address(machine_reg::plic_girqsrvd));
-        return m_m.get_state().plic.girqsrvd;
+        return log_read_reg(machine_reg::plic_girqsrvd);
     }
 
     void do_write_plic_girqsrvd(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::plic_girqsrvd));
-        m_m.get_state().plic.girqsrvd = val;
+        log_write_reg(machine_reg::plic_girqsrvd, val);
     }
 
     uint64_t do_read_htif_fromhost() const {
-        touch_page(machine_reg_address(machine_reg::htif_fromhost));
-        return m_m.get_state().htif.fromhost;
+        return log_read_reg(machine_reg::htif_fromhost);
     }
 
     void do_write_htif_fromhost(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::htif_fromhost));
-        m_m.get_state().htif.fromhost = val;
+        log_write_reg(machine_reg::htif_fromhost, val);
     }
 
     uint64_t do_read_htif_tohost() const {
-        touch_page(machine_reg_address(machine_reg::htif_tohost));
-        return m_m.get_state().htif.tohost;
+        return log_read_reg(machine_reg::htif_tohost);
     }
 
     void do_write_htif_tohost(uint64_t val) {
-        touch_page(machine_reg_address(machine_reg::htif_tohost));
-        m_m.get_state().htif.tohost = val;
+        log_write_reg(machine_reg::htif_tohost, val);
     }
 
     uint64_t do_read_htif_ihalt() const {
-        touch_page(machine_reg_address(machine_reg::htif_ihalt));
-        return m_m.get_state().htif.ihalt;
+        return log_read_reg(machine_reg::htif_ihalt);
     }
 
     uint64_t do_read_htif_iconsole() const {
-        touch_page(machine_reg_address(machine_reg::htif_iconsole));
-        return m_m.get_state().htif.iconsole;
+        return log_read_reg(machine_reg::htif_iconsole);
     }
 
     uint64_t do_read_htif_iyield() const {
-        touch_page(machine_reg_address(machine_reg::htif_iyield));
-        return m_m.get_state().htif.iyield;
+        return log_read_reg(machine_reg::htif_iyield);
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
@@ -628,8 +566,8 @@ private:
         // replay_step_state_access reconstructs a mock_pma_entry from the
         // corresponding istart and ilength fields in the shadow pmas
         // so we mark the page where they live here
-        touch_page(shadow_pmas_get_pma_istart_abs_addr(index));
-        touch_page(shadow_pmas_get_pma_ilength_abs_addr(index));
+        touch_page(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::istart));
+        touch_page(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::ilength));
         // NOLINTNEXTLINE(bugprone-narrowing-conversions)
         return m_m.get_state().pmas[static_cast<int>(index)];
     }
@@ -646,27 +584,32 @@ private:
         aliased_aligned_write<T, A>(haddr, val);
     }
 
-    template <TLB_set_use USE>
+    template <TLB_set_index SET>
     uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) {
-        touch_page(shadow_tlb_get_vaddr_page_abs_addr<USE>(slot_index));
-        return m_m.get_state().tlb.hot[USE][slot_index].vaddr_page;
+        return log_read_tlb(SET, slot_index, shadow_tlb_what::vaddr_page);
     }
 
-    template <TLB_set_use USE>
+    template <TLB_set_index SET>
+    uint64_t do_read_tlb_pma_index(uint64_t slot_index) {
+        return log_read_tlb(SET, slot_index, shadow_tlb_what::pma_index);
+    }
+
+    template <TLB_set_index SET>
     host_addr do_read_tlb_vp_offset(uint64_t slot_index) {
         // During initialization, replay_step_state_access translates all vp_offset to corresponding vh_offset
         // At deinitialization, it translates them back
         // To do that, it needs the corresponding paddr_page = vaddr_page + vp_offset, and page data itself
-        // It will only do the translation if the slot is valid and it has access to all required fields
-        // Obviously, the slot we are reading will be needed during replay, so we touch all the pages involved here.
-        touch_page(shadow_tlb_get_vaddr_page_abs_addr<USE>(slot_index));
-        touch_page(shadow_tlb_get_vp_offset_abs_addr<USE>(slot_index));
-        touch_page(shadow_tlb_get_pma_index_abs_addr<USE>(slot_index));
-        // writes to the TLB slot are atomic, so we know the values in a slot are ALWAYS internally consistent
-        const auto vaddr_page = m_m.get_state().tlb.hot[USE][slot_index].vaddr_page;
-        const auto vh_offset = m_m.get_state().tlb.hot[USE][slot_index].vh_offset;
+        // It will only do the translation if the slot is valid and the log has all required fields
+        // Obviously, the slot we are reading will be needed during replay
+        // vaddr_page, vp_offset, and pma_index are on the same page, so we only need touch one of them.
+        touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));
+        // We still need to touch the page data
+        // Writes to the TLB slot are atomic, so we know the values in a slot are ALWAYS internally consistent.
+        // This means we can safely use all other fields to find paddr_page.
+        const auto vaddr_page = m_m.get_state().tlb.hot[SET][slot_index].vaddr_page;
+        const auto vh_offset = m_m.get_state().tlb.hot[SET][slot_index].vh_offset;
         if (vaddr_page != TLB_INVALID_PAGE) {
-            const auto pma_index = m_m.get_state().tlb.cold[USE][slot_index].pma_index;
+            const auto pma_index = m_m.get_state().tlb.cold[SET][slot_index].pma_index;
             const auto haddr_page = vaddr_page + vh_offset;
             auto paddr_page = m_m.get_paddr(haddr_page, pma_index);
             touch_page(paddr_page);
@@ -674,30 +617,24 @@ private:
         return vh_offset;
     }
 
-    template <TLB_set_use USE>
-    uint64_t do_read_tlb_pma_index(uint64_t slot_index) {
-        touch_page(shadow_tlb_get_pma_index_abs_addr<USE>(slot_index));
-        return m_m.get_state().tlb.cold[USE][slot_index].pma_index;
-    }
-
-    template <TLB_set_use USE>
+    template <TLB_set_index SET>
     void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) {
         // During initialization, replay_step_state_access translates all vp_offset to corresponding vh_offset
         // At deinitialization, it translates them back
         // To do that, it needs the corresponding paddr_page = vaddr_page + vp_offset, and page data itself
-        // It will only do the translation if the slot is valid and it has access to all required fields
-        // Obviously, the slot we are modifying will be needed during replay, so we touch all the pages involved here.
-        touch_page(shadow_tlb_get_vaddr_page_abs_addr<USE>(slot_index));
-        touch_page(shadow_tlb_get_vp_offset_abs_addr<USE>(slot_index));
-        touch_page(shadow_tlb_get_pma_index_abs_addr<USE>(slot_index));
-        m_m.get_state().tlb.hot[USE][slot_index].vaddr_page = vaddr_page;
-        m_m.get_state().tlb.hot[USE][slot_index].vh_offset = vh_offset;
-        m_m.get_state().tlb.cold[USE][slot_index].pma_index = pma_index;
+        // It will only do the translation if the slot is valid and the log has all required fields
+        // Obviously, the slot we are writing will be needed during replay
+        // vaddr_page, vp_offset, and pma_index are on the same page, so we only need touch one of them.
+        touch_page(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));
+        // We still need to touch the page data
         if (vaddr_page != TLB_INVALID_PAGE) {
             const auto haddr_page = vaddr_page + vh_offset;
             auto paddr_page = m_m.get_paddr(haddr_page, pma_index);
             touch_page(paddr_page);
         }
+        m_m.get_state().tlb.hot[SET][slot_index].vaddr_page = vaddr_page;
+        m_m.get_state().tlb.hot[SET][slot_index].vh_offset = vh_offset;
+        m_m.get_state().tlb.cold[SET][slot_index].pma_index = pma_index;
     }
 
     fast_addr do_get_faddr(uint64_t paddr, uint64_t pma_index) const {
@@ -716,6 +653,10 @@ private:
         os_putchar(c);
     }
 
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    constexpr const char *do_get_name() const { // NOLINT(readability-convert-member-functions-to-static)
+        return "record_step_state_access";
+    }
 };
 
 } // namespace cartesi

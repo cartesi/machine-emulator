@@ -41,16 +41,21 @@ class machine;
 /// \brief Prototype for callback invoked when machine wants to peek into a range with no side-effects.
 /// \param pma Reference to corresponding PMA entry.
 /// \param m Reference to associated machine.
-/// \param page_offset Offset of page start within range. Must be aligned to PMA_PAGE_SIZE.
-/// \param page_data Receives pointer to start of page data, or nullptr if page is constant *and* pristine.
-/// \param scratch Pointer to memory buffer that must be able to hold PMA_PAGE_SIZE bytes.
+/// \param offset Offset within range to start reading.
+/// \param length Number of bytes to read.
+/// \param data Receives pointer to start of data, or nullptr if data is constant *and* pristine.
+/// \param scratch Pointer to memory buffer that must be able to hold \p length bytes.
 /// \returns True if operation succeeded, false otherwise.
-using pma_peek = bool (*)(const pma_entry &pma, const machine &m, uint64_t page_offset, const unsigned char **page_data,
-    unsigned char *scratch);
+using pma_peek = bool (*)(const pma_entry &pma, const machine &m, uint64_t offset, uint64_t length,
+    const unsigned char **data, unsigned char *scratch);
 
 /// \brief Default peek callback issues error on peeks.
-bool pma_peek_error(const pma_entry & /*pma*/, const machine & /*m*/, uint64_t /*page_offset*/,
-    const unsigned char ** /*page_data*/, unsigned char * /*scratch*/);
+bool pma_peek_error(const pma_entry & /*pma*/, const machine & /*m*/, uint64_t /*offset*/, uint64_t /*length*/,
+    const unsigned char ** /*data*/, unsigned char * /*scratch*/);
+
+/// \brief Default peek callback for pristine ranges.
+bool pma_peek_pristine(const pma_entry & /*pma*/, const machine & /*m*/, uint64_t offset, uint64_t length,
+    const unsigned char **data, unsigned char * /*scratch*/);
 
 /// \brief Data for IO ranges.
 class pma_device final {

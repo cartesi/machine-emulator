@@ -41,6 +41,10 @@
 #include "shadow-tlb.h"
 #include "strict-aliasing.h"
 
+#if DUMP_STATE_ACCESS
+#include "scoped-note.h"
+#endif
+
 namespace cartesi {
 
 class state_access;
@@ -85,29 +89,28 @@ private:
         return m_m.get_state();
     }
 
+#ifdef DUMP_STATE_ACCESS
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_push_bracket(bracket_type /*type*/, const char * /*text*/) {}
+    auto do_make_scoped_note([[maybe_unused]] const char *text) {
+        return scoped_note<state_access>{*this, text};
+    }
+#endif
 
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    int do_make_scoped_note(const char * /*text*/) {
-        return 0;
+    uint64_t do_read_x(int i) const {
+        return m_m.get_state().x[i];
     }
 
-    uint64_t do_read_x(int reg) const {
-        return m_m.get_state().x[reg];
+    void do_write_x(int i, uint64_t val) {
+        assert(i != 0);
+        m_m.get_state().x[i] = val;
     }
 
-    void do_write_x(int reg, uint64_t val) {
-        assert(reg != 0);
-        m_m.get_state().x[reg] = val;
+    uint64_t do_read_f(int i) const {
+        return m_m.get_state().f[i];
     }
 
-    uint64_t do_read_f(int reg) const {
-        return m_m.get_state().f[reg];
-    }
-
-    void do_write_f(int reg, uint64_t val) {
-        m_m.get_state().f[reg] = val;
+    void do_write_f(int i, uint64_t val) {
+        m_m.get_state().f[i] = val;
     }
 
     uint64_t do_read_pc() const {
@@ -475,26 +478,24 @@ private:
         aliased_aligned_write<T, A>(haddr, val);
     }
 
-    template <TLB_set_use USE>
+    template <TLB_set_index SET>
     uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) {
-        return m_m.get_state().tlb.hot[USE][slot_index].vaddr_page;
+        return m_m.get_state().tlb.hot[SET][slot_index].vaddr_page;
     }
 
-    template <TLB_set_use USE>
+    template <TLB_set_index SET>
     host_addr do_read_tlb_vp_offset(uint64_t slot_index) {
-        return m_m.get_state().tlb.hot[USE][slot_index].vh_offset;
+        return m_m.get_state().tlb.hot[SET][slot_index].vh_offset;
     }
 
-    template <TLB_set_use USE>
+    template <TLB_set_index SET>
     uint64_t do_read_tlb_pma_index(uint64_t slot_index) {
-        return m_m.get_state().tlb.cold[USE][slot_index].pma_index;
+        return m_m.get_state().tlb.cold[SET][slot_index].pma_index;
     }
 
-    template <TLB_set_use USE>
+    template <TLB_set_index SET>
     void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) {
-        m_m.get_state().tlb.hot[USE][slot_index].vaddr_page = vaddr_page;
-        m_m.get_state().tlb.hot[USE][slot_index].vh_offset = vh_offset;
-        m_m.get_state().tlb.cold[USE][slot_index].pma_index = pma_index;
+        m_m.write_tlb(SET, slot_index, vaddr_page, vh_offset, pma_index);
     }
 
     fast_addr do_get_faddr(uint64_t paddr, uint64_t pma_index) const {
@@ -556,6 +557,11 @@ private:
     int do_getchar() {
         os_poll_tty(0);
         return os_getchar();
+    }
+
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    constexpr const char *do_get_name() const {
+        return "state_access";
     }
 
 #ifdef DUMP_COUNTERS

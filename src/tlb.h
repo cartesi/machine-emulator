@@ -32,8 +32,8 @@
 
 namespace cartesi {
 
-/// \brief TLB set mode.
-enum TLB_set_use : uint64_t { TLB_CODE, TLB_READ, TLB_WRITE, TLB_LAST_ = TLB_WRITE };
+/// \brief Index of TLB set
+enum TLB_set_index : uint64_t { TLB_CODE, TLB_READ, TLB_WRITE, TLB_LAST_ = TLB_WRITE };
 
 /// \brief TLB constants.
 enum TLB_constants : uint64_t {

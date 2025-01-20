@@ -872,25 +872,27 @@ static inline void executeECALL(UarchState &a, uint64 pc) {
     // return value is in a0 (and maybe also in a1)
     uint64 fn = readX(a, 17); // a7 contains the function number
     if (fn == UARCH_ECALL_FN_HALT) {
-        return setHaltFlag(a);
+        return writeHaltFlag(a, 1);
     }
     if (fn == UARCH_ECALL_FN_PUTCHAR) {
-        uint64 character = readX(a, 10); // a0 contains the character to print
-        putChar(a, uint8(character));
+        uint64 c = readX(a, 10);   // a0 contains the character to print
+        putCharECALL(a, uint8(c)); // Can be a NOOP in Solidity
         return advancePc(a, pc);
     }
     if (fn == UARCH_ECALL_FN_MARK_DIRTY_PAGE) {
-        uint64 paddr = readX(a, 10);     // a0 contains physical address in page to be marked dirty
-        uint64 pma_index = readX(a, 11); // a1 contains a index of PMA where page falls
-        markDirtyPage(a, paddr, pma_index);
+        uint64 paddr = readX(a, 10);             // a0 contains physical address in page to be marked dirty
+        uint64 pma_index = readX(a, 11);         // a1 contains a index of PMA where page falls
+        markDirtyPageECALL(a, paddr, pma_index); // This MUST be be a NOOP in Solidity
         return advancePc(a, pc);
     }
-    if (fn == UARCH_ECALL_FN_WRITE_TLB_VP_OFFSET) {
-        uint64 use = readX(a, 10);        // a0 contains TLB set (code, read, write)
+    if (fn == UARCH_ECALL_FN_WRITE_TLB) {
+        uint64 set_index = readX(a, 10);  // a0 contains TLB set (code, read, write)
         uint64 slot_index = readX(a, 11); // a1 contains slot_index to modify
-        uint64 vp_offset = readX(a, 12);  // a2 contains vp_offset to write
-        uint64 pma_index = readX(a, 13);  // a3 contains index of PMA where page falls
-        writeTlbVpOffset(a, use, slot_index, vp_offset, pma_index);
+        uint64 vaddr_page = readX(a, 12); // a2 contains vaddr_page to write
+        uint64 vp_offset = readX(a, 13);  // a3 contains vp_offset to write
+        uint64 pma_index = readX(a, 14);  // a4 contains index of PMA where page falls
+        writeTlbECALL(a, set_index, slot_index, vaddr_page, vp_offset,
+            pma_index); // WARNING: This CANNOT be a NOOP in Solidity
         return advancePc(a, pc);
     }
     throwRuntimeError(a, "unsupported ecall function");
@@ -1097,7 +1099,7 @@ UArchStepStatus uarch_step(UarchState &a) {
         return UArchStepStatus::CycleOverflow;
     }
     // do not advance if machine is halted
-    if (readHaltFlag(a)) {
+    if (readHaltFlag(a) != 0) {
         return UArchStepStatus::UArchHalted;
     }
     // execute next instruction

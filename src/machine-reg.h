@@ -17,7 +17,6 @@
 #ifndef MACHINE_REG_H
 #define MACHINE_REG_H
 
-#include "pma-constants.h"
 #include "shadow-state.h"
 #include "shadow-uarch-state.h"
 
@@ -29,152 +28,155 @@ namespace cartesi {
 /// \brief List of machine registers
 enum class machine_reg : uint64_t {
     // Processor x registers
-    x0 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[0]),
-    x1 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[1]),
-    x2 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[2]),
-    x3 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[3]),
-    x4 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[4]),
-    x5 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[5]),
-    x6 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[6]),
-    x7 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[7]),
-    x8 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[8]),
-    x9 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[9]),
-    x10 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[10]),
-    x11 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[11]),
-    x12 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[12]),
-    x13 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[13]),
-    x14 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[14]),
-    x15 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[15]),
-    x16 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[16]),
-    x17 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[17]),
-    x18 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[18]),
-    x19 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[19]),
-    x20 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[20]),
-    x21 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[21]),
-    x22 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[22]),
-    x23 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[23]),
-    x24 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[24]),
-    x25 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[25]),
-    x26 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[26]),
-    x27 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[27]),
-    x28 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[28]),
-    x29 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[29]),
-    x30 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[30]),
-    x31 = PMA_SHADOW_STATE_START + offsetof(shadow_state, x[31]),
-    f0 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[0]),
-    f1 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[1]),
-    f2 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[2]),
-    f3 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[3]),
-    f4 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[4]),
-    f5 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[5]),
-    f6 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[6]),
-    f7 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[7]),
-    f8 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[8]),
-    f9 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[9]),
-    f10 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[10]),
-    f11 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[11]),
-    f12 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[12]),
-    f13 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[13]),
-    f14 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[14]),
-    f15 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[15]),
-    f16 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[16]),
-    f17 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[17]),
-    f18 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[18]),
-    f19 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[19]),
-    f20 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[20]),
-    f21 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[21]),
-    f22 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[22]),
-    f23 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[23]),
-    f24 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[24]),
-    f25 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[25]),
-    f26 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[26]),
-    f27 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[27]),
-    f28 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[28]),
-    f29 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[29]),
-    f30 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[30]),
-    f31 = PMA_SHADOW_STATE_START + offsetof(shadow_state, f[31]),
-    pc = PMA_SHADOW_STATE_START + offsetof(shadow_state, pc),
-    fcsr = PMA_SHADOW_STATE_START + offsetof(shadow_state, fcsr),
-    mvendorid = PMA_SHADOW_STATE_START + offsetof(shadow_state, mvendorid),
-    marchid = PMA_SHADOW_STATE_START + offsetof(shadow_state, marchid),
-    mimpid = PMA_SHADOW_STATE_START + offsetof(shadow_state, mimpid),
-    mcycle = PMA_SHADOW_STATE_START + offsetof(shadow_state, mcycle),
-    icycleinstret = PMA_SHADOW_STATE_START + offsetof(shadow_state, icycleinstret),
-    mstatus = PMA_SHADOW_STATE_START + offsetof(shadow_state, mstatus),
-    mtvec = PMA_SHADOW_STATE_START + offsetof(shadow_state, mtvec),
-    mscratch = PMA_SHADOW_STATE_START + offsetof(shadow_state, mscratch),
-    mepc = PMA_SHADOW_STATE_START + offsetof(shadow_state, mepc),
-    mcause = PMA_SHADOW_STATE_START + offsetof(shadow_state, mcause),
-    mtval = PMA_SHADOW_STATE_START + offsetof(shadow_state, mtval),
-    misa = PMA_SHADOW_STATE_START + offsetof(shadow_state, misa),
-    mie = PMA_SHADOW_STATE_START + offsetof(shadow_state, mie),
-    mip = PMA_SHADOW_STATE_START + offsetof(shadow_state, mip),
-    medeleg = PMA_SHADOW_STATE_START + offsetof(shadow_state, medeleg),
-    mideleg = PMA_SHADOW_STATE_START + offsetof(shadow_state, mideleg),
-    mcounteren = PMA_SHADOW_STATE_START + offsetof(shadow_state, mcounteren),
-    menvcfg = PMA_SHADOW_STATE_START + offsetof(shadow_state, menvcfg),
-    stvec = PMA_SHADOW_STATE_START + offsetof(shadow_state, stvec),
-    sscratch = PMA_SHADOW_STATE_START + offsetof(shadow_state, sscratch),
-    sepc = PMA_SHADOW_STATE_START + offsetof(shadow_state, sepc),
-    scause = PMA_SHADOW_STATE_START + offsetof(shadow_state, scause),
-    stval = PMA_SHADOW_STATE_START + offsetof(shadow_state, stval),
-    satp = PMA_SHADOW_STATE_START + offsetof(shadow_state, satp),
-    scounteren = PMA_SHADOW_STATE_START + offsetof(shadow_state, scounteren),
-    senvcfg = PMA_SHADOW_STATE_START + offsetof(shadow_state, senvcfg),
-    ilrsc = PMA_SHADOW_STATE_START + offsetof(shadow_state, ilrsc),
-    iprv = PMA_SHADOW_STATE_START + offsetof(shadow_state, iprv),
-    iflags_X = PMA_SHADOW_STATE_START + offsetof(shadow_state, iflags_X),
-    iflags_Y = PMA_SHADOW_STATE_START + offsetof(shadow_state, iflags_Y),
-    iflags_H = PMA_SHADOW_STATE_START + offsetof(shadow_state, iflags_H),
-    iunrep = PMA_SHADOW_STATE_START + offsetof(shadow_state, iunrep),
-    clint_mtimecmp = PMA_SHADOW_STATE_START + offsetof(shadow_state, clint_mtimecmp),
-    plic_girqpend = PMA_SHADOW_STATE_START + offsetof(shadow_state, plic_girqpend),
-    plic_girqsrvd = PMA_SHADOW_STATE_START + offsetof(shadow_state, plic_girqsrvd),
-    htif_tohost = PMA_SHADOW_STATE_START + offsetof(shadow_state, htif_tohost),
-    htif_fromhost = PMA_SHADOW_STATE_START + offsetof(shadow_state, htif_fromhost),
-    htif_ihalt = PMA_SHADOW_STATE_START + offsetof(shadow_state, htif_ihalt),
-    htif_iconsole = PMA_SHADOW_STATE_START + offsetof(shadow_state, htif_iconsole),
-    htif_iyield = PMA_SHADOW_STATE_START + offsetof(shadow_state, htif_iyield),
+    x0 = static_cast<uint64_t>(shadow_state_what::x0),
+    x1 = static_cast<uint64_t>(shadow_state_what::x1),
+    x2 = static_cast<uint64_t>(shadow_state_what::x2),
+    x3 = static_cast<uint64_t>(shadow_state_what::x3),
+    x4 = static_cast<uint64_t>(shadow_state_what::x4),
+    x5 = static_cast<uint64_t>(shadow_state_what::x5),
+    x6 = static_cast<uint64_t>(shadow_state_what::x6),
+    x7 = static_cast<uint64_t>(shadow_state_what::x7),
+    x8 = static_cast<uint64_t>(shadow_state_what::x8),
+    x9 = static_cast<uint64_t>(shadow_state_what::x9),
+    x10 = static_cast<uint64_t>(shadow_state_what::x10),
+    x11 = static_cast<uint64_t>(shadow_state_what::x11),
+    x12 = static_cast<uint64_t>(shadow_state_what::x12),
+    x13 = static_cast<uint64_t>(shadow_state_what::x13),
+    x14 = static_cast<uint64_t>(shadow_state_what::x14),
+    x15 = static_cast<uint64_t>(shadow_state_what::x15),
+    x16 = static_cast<uint64_t>(shadow_state_what::x16),
+    x17 = static_cast<uint64_t>(shadow_state_what::x17),
+    x18 = static_cast<uint64_t>(shadow_state_what::x18),
+    x19 = static_cast<uint64_t>(shadow_state_what::x19),
+    x20 = static_cast<uint64_t>(shadow_state_what::x20),
+    x21 = static_cast<uint64_t>(shadow_state_what::x21),
+    x22 = static_cast<uint64_t>(shadow_state_what::x22),
+    x23 = static_cast<uint64_t>(shadow_state_what::x23),
+    x24 = static_cast<uint64_t>(shadow_state_what::x24),
+    x25 = static_cast<uint64_t>(shadow_state_what::x25),
+    x26 = static_cast<uint64_t>(shadow_state_what::x26),
+    x27 = static_cast<uint64_t>(shadow_state_what::x27),
+    x28 = static_cast<uint64_t>(shadow_state_what::x28),
+    x29 = static_cast<uint64_t>(shadow_state_what::x29),
+    x30 = static_cast<uint64_t>(shadow_state_what::x30),
+    x31 = static_cast<uint64_t>(shadow_state_what::x31),
+    f0 = static_cast<uint64_t>(shadow_state_what::f0),
+    f1 = static_cast<uint64_t>(shadow_state_what::f1),
+    f2 = static_cast<uint64_t>(shadow_state_what::f2),
+    f3 = static_cast<uint64_t>(shadow_state_what::f3),
+    f4 = static_cast<uint64_t>(shadow_state_what::f4),
+    f5 = static_cast<uint64_t>(shadow_state_what::f5),
+    f6 = static_cast<uint64_t>(shadow_state_what::f6),
+    f7 = static_cast<uint64_t>(shadow_state_what::f7),
+    f8 = static_cast<uint64_t>(shadow_state_what::f8),
+    f9 = static_cast<uint64_t>(shadow_state_what::f9),
+    f10 = static_cast<uint64_t>(shadow_state_what::f10),
+    f11 = static_cast<uint64_t>(shadow_state_what::f11),
+    f12 = static_cast<uint64_t>(shadow_state_what::f12),
+    f13 = static_cast<uint64_t>(shadow_state_what::f13),
+    f14 = static_cast<uint64_t>(shadow_state_what::f14),
+    f15 = static_cast<uint64_t>(shadow_state_what::f15),
+    f16 = static_cast<uint64_t>(shadow_state_what::f16),
+    f17 = static_cast<uint64_t>(shadow_state_what::f17),
+    f18 = static_cast<uint64_t>(shadow_state_what::f18),
+    f19 = static_cast<uint64_t>(shadow_state_what::f19),
+    f20 = static_cast<uint64_t>(shadow_state_what::f20),
+    f21 = static_cast<uint64_t>(shadow_state_what::f21),
+    f22 = static_cast<uint64_t>(shadow_state_what::f22),
+    f23 = static_cast<uint64_t>(shadow_state_what::f23),
+    f24 = static_cast<uint64_t>(shadow_state_what::f24),
+    f25 = static_cast<uint64_t>(shadow_state_what::f25),
+    f26 = static_cast<uint64_t>(shadow_state_what::f26),
+    f27 = static_cast<uint64_t>(shadow_state_what::f27),
+    f28 = static_cast<uint64_t>(shadow_state_what::f28),
+    f29 = static_cast<uint64_t>(shadow_state_what::f29),
+    f30 = static_cast<uint64_t>(shadow_state_what::f30),
+    f31 = static_cast<uint64_t>(shadow_state_what::f31),
+    pc = static_cast<uint64_t>(shadow_state_what::pc),
+    fcsr = static_cast<uint64_t>(shadow_state_what::fcsr),
+    mvendorid = static_cast<uint64_t>(shadow_state_what::mvendorid),
+    marchid = static_cast<uint64_t>(shadow_state_what::marchid),
+    mimpid = static_cast<uint64_t>(shadow_state_what::mimpid),
+    mcycle = static_cast<uint64_t>(shadow_state_what::mcycle),
+    icycleinstret = static_cast<uint64_t>(shadow_state_what::icycleinstret),
+    mstatus = static_cast<uint64_t>(shadow_state_what::mstatus),
+    mtvec = static_cast<uint64_t>(shadow_state_what::mtvec),
+    mscratch = static_cast<uint64_t>(shadow_state_what::mscratch),
+    mepc = static_cast<uint64_t>(shadow_state_what::mepc),
+    mcause = static_cast<uint64_t>(shadow_state_what::mcause),
+    mtval = static_cast<uint64_t>(shadow_state_what::mtval),
+    misa = static_cast<uint64_t>(shadow_state_what::misa),
+    mie = static_cast<uint64_t>(shadow_state_what::mie),
+    mip = static_cast<uint64_t>(shadow_state_what::mip),
+    medeleg = static_cast<uint64_t>(shadow_state_what::medeleg),
+    mideleg = static_cast<uint64_t>(shadow_state_what::mideleg),
+    mcounteren = static_cast<uint64_t>(shadow_state_what::mcounteren),
+    menvcfg = static_cast<uint64_t>(shadow_state_what::menvcfg),
+    stvec = static_cast<uint64_t>(shadow_state_what::stvec),
+    sscratch = static_cast<uint64_t>(shadow_state_what::sscratch),
+    sepc = static_cast<uint64_t>(shadow_state_what::sepc),
+    scause = static_cast<uint64_t>(shadow_state_what::scause),
+    stval = static_cast<uint64_t>(shadow_state_what::stval),
+    satp = static_cast<uint64_t>(shadow_state_what::satp),
+    scounteren = static_cast<uint64_t>(shadow_state_what::scounteren),
+    senvcfg = static_cast<uint64_t>(shadow_state_what::senvcfg),
+    ilrsc = static_cast<uint64_t>(shadow_state_what::ilrsc),
+    iprv = static_cast<uint64_t>(shadow_state_what::iprv),
+    iflags_X = static_cast<uint64_t>(shadow_state_what::iflags_X),
+    iflags_Y = static_cast<uint64_t>(shadow_state_what::iflags_Y),
+    iflags_H = static_cast<uint64_t>(shadow_state_what::iflags_H),
+    iunrep = static_cast<uint64_t>(shadow_state_what::iunrep),
+    clint_mtimecmp = static_cast<uint64_t>(shadow_state_what::clint_mtimecmp),
+    plic_girqpend = static_cast<uint64_t>(shadow_state_what::plic_girqpend),
+    plic_girqsrvd = static_cast<uint64_t>(shadow_state_what::plic_girqsrvd),
+    htif_tohost = static_cast<uint64_t>(shadow_state_what::htif_tohost),
+    htif_fromhost = static_cast<uint64_t>(shadow_state_what::htif_fromhost),
+    htif_ihalt = static_cast<uint64_t>(shadow_state_what::htif_ihalt),
+    htif_iconsole = static_cast<uint64_t>(shadow_state_what::htif_iconsole),
+    htif_iyield = static_cast<uint64_t>(shadow_state_what::htif_iyield),
     first_ = x0,
     last_ = htif_iyield,
 
-    uarch_halt_flag = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, halt_flag),
-    uarch_cycle = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, cycle),
-    uarch_pc = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, pc),
-    uarch_x0 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[0]),
-    uarch_x1 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[1]),
-    uarch_x2 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[2]),
-    uarch_x3 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[3]),
-    uarch_x4 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[4]),
-    uarch_x5 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[5]),
-    uarch_x6 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[6]),
-    uarch_x7 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[7]),
-    uarch_x8 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[8]),
-    uarch_x9 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[9]),
-    uarch_x10 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[10]),
-    uarch_x11 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[11]),
-    uarch_x12 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[12]),
-    uarch_x13 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[13]),
-    uarch_x14 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[14]),
-    uarch_x15 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[15]),
-    uarch_x16 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[16]),
-    uarch_x17 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[17]),
-    uarch_x18 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[18]),
-    uarch_x19 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[19]),
-    uarch_x20 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[20]),
-    uarch_x21 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[21]),
-    uarch_x22 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[22]),
-    uarch_x23 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[23]),
-    uarch_x24 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[24]),
-    uarch_x25 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[25]),
-    uarch_x26 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[26]),
-    uarch_x27 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[27]),
-    uarch_x28 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[28]),
-    uarch_x29 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[29]),
-    uarch_x30 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[30]),
-    uarch_x31 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[31]),
+    uarch_halt_flag = static_cast<uint64_t>(shadow_uarch_state_what::uarch_halt_flag),
+    uarch_cycle = static_cast<uint64_t>(shadow_uarch_state_what::uarch_cycle),
+    uarch_pc = static_cast<uint64_t>(shadow_uarch_state_what::uarch_pc),
+    uarch_x0 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x0),
+    uarch_x1 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x1),
+    uarch_x2 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x2),
+    uarch_x3 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x3),
+    uarch_x4 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x4),
+    uarch_x5 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x5),
+    uarch_x6 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x6),
+    uarch_x7 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x7),
+    uarch_x8 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x8),
+    uarch_x9 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x9),
+    uarch_x10 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x10),
+    uarch_x11 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x11),
+    uarch_x12 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x12),
+    uarch_x13 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x13),
+    uarch_x14 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x14),
+    uarch_x15 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x15),
+    uarch_x16 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x16),
+    uarch_x17 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x17),
+    uarch_x18 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x18),
+    uarch_x19 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x19),
+    uarch_x20 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x20),
+    uarch_x21 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x21),
+    uarch_x22 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x22),
+    uarch_x23 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x23),
+    uarch_x24 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x24),
+    uarch_x25 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x25),
+    uarch_x26 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x26),
+    uarch_x27 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x27),
+    uarch_x28 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x28),
+    uarch_x29 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x29),
+    uarch_x30 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x30),
+    uarch_x31 = static_cast<uint64_t>(shadow_uarch_state_what::uarch_x31),
     uarch_first_ = uarch_halt_flag,
     uarch_last_ = uarch_x31,
+
+    // Something unkonwn
+    unknown_ = UINT64_C(1) << 63, // Outside of RISC-V address space
 
     // Views of registers
     htif_tohost_dev,
@@ -185,15 +187,58 @@ enum class machine_reg : uint64_t {
     htif_fromhost_cmd,
     htif_fromhost_reason,
     htif_fromhost_data,
-    unknown_,
+    view_first_ = htif_tohost_dev,
+    view_last_ = htif_fromhost_data,
+
 };
 
-constexpr uint64_t machine_reg_address(machine_reg reg, int i = 0) {
-    return static_cast<uint64_t>(reg) + (i * sizeof(uint64_t));
+static constexpr uint64_t machine_reg_address(machine_reg reg, int i = 0) {
+    return static_cast<uint64_t>(reg) + i * sizeof(uint64_t);
 }
 
-constexpr machine_reg machine_reg_enum(machine_reg reg, int i) {
-    return static_cast<machine_reg>(static_cast<uint64_t>(reg) + (i * sizeof(uint64_t)));
+static constexpr machine_reg machine_reg_enum(machine_reg reg, int i) {
+    return static_cast<machine_reg>(static_cast<uint64_t>(reg) + i * sizeof(uint64_t));
+}
+
+static constexpr machine_reg machine_reg_enum(shadow_state_what reg) {
+    return static_cast<machine_reg>(reg);
+}
+
+static constexpr machine_reg machine_reg_enum(shadow_uarch_state_what reg) {
+    return static_cast<machine_reg>(reg);
+}
+
+static constexpr const char *machine_reg_get_name(machine_reg reg) {
+    const auto ureg = static_cast<uint64_t>(reg);
+    if (ureg >= static_cast<uint64_t>(machine_reg::first_) && ureg <= static_cast<uint64_t>(machine_reg::last_)) {
+        return shadow_state_get_what_name(static_cast<shadow_state_what>(reg));
+    }
+    if (ureg >= static_cast<uint64_t>(machine_reg::uarch_first_) &&
+        ureg <= static_cast<uint64_t>(machine_reg::uarch_last_)) {
+        return shadow_uarch_state_get_what_name(static_cast<shadow_uarch_state_what>(reg));
+    }
+    switch (reg) {
+        case machine_reg::htif_tohost_dev:
+            return "htif.tohost_dev";
+        case machine_reg::htif_tohost_cmd:
+            return "htif.tohost_cmd";
+        case machine_reg::htif_tohost_reason:
+            return "htif.tohost_reason";
+        case machine_reg::htif_tohost_data:
+            return "htif.tohost_data";
+        case machine_reg::htif_fromhost_dev:
+            return "htif.fromhost_dev";
+        case machine_reg::htif_fromhost_cmd:
+            return "htif.fromhost_cmd";
+        case machine_reg::htif_fromhost_reason:
+            return "htif.fromhost_reason";
+        case machine_reg::htif_fromhost_data:
+            return "htif.fromhost_data";
+        case machine_reg::unknown_:
+            [[fallthrough]];
+        default:
+            return "unknown";
+    }
 }
 
 static_assert(machine_reg_address(machine_reg::uarch_first_) > machine_reg_address(machine_reg::last_));

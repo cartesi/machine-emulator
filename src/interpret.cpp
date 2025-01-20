@@ -21,10 +21,8 @@
 #include <utility>
 
 #ifdef MICROARCHITECTURE
-#ifdef OKUARCH
-#include "uarch-machine-state-access.h"
+#include "machine-uarch-bridge-state-access.h"
 #include "uarch-runtime.h"
-#endif
 #else
 #include "record-step-state-access.h"
 #include "replay-step-state-access.h"
@@ -360,7 +358,6 @@ static NO_INLINE uint64_t raise_exception(STATE_ACCESS a, uint64_t pc, uint64_t 
         // this is not performed in the instruction hot loop as an optimization.
         tval = static_cast<uint16_t>(tval);
     }
-
 #if defined(DUMP_EXCEPTIONS) || defined(DUMP_MMU_EXCEPTIONS) || defined(DUMP_INTERRUPTS) ||                            \
     defined(DUMP_ILLEGAL_INSN_EXCEPTIONS)
     {
@@ -831,14 +828,14 @@ static FORCE_INLINE int32_t insn_get_C_SWSP_imm(uint32_t insn) {
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param slot_index Slot index
-template <TLB_set_use USE, typename STATE_ACCESS>
+template <TLB_set_index SET, typename STATE_ACCESS>
 static void flush_tlb_slot(STATE_ACCESS &a, uint64_t slot_index) {
     // Make sure a valid page leaving the write TLB is marked as dirty
     // We must do this BEFORE we modify the TLB entries themselves
     // (Otherwise, we could stop uarch before it marks the page dirty but after
     // the entry is no longer in the TLB, which would cause the Merkle tree to
     // miss a dirty page.)
-    if constexpr (USE == TLB_WRITE) {
+    if constexpr (SET == TLB_WRITE) {
         const auto old_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
         if (old_vaddr_page != TLB_INVALID_PAGE) {
             auto old_pma_index = a.template read_tlb_pma_index<TLB_WRITE>(slot_index);
@@ -851,17 +848,17 @@ static void flush_tlb_slot(STATE_ACCESS &a, uint64_t slot_index) {
     const auto vaddr_page = TLB_INVALID_PAGE;
     const auto vp_offset = i_state_access_fast_addr_t<STATE_ACCESS>{};
     const auto pma_index = TLB_INVALID_PMA_INDEX;
-    a.template write_tlb<USE>(slot_index, vaddr_page, vp_offset, pma_index);
+    a.template write_tlb<SET>(slot_index, vaddr_page, vp_offset, pma_index);
 }
 
 /// \brief Flushes out an entire TLB set
 /// \tparam USE TLB set
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
-template <TLB_set_use USE, typename STATE_ACCESS>
+template <TLB_set_index SET, typename STATE_ACCESS>
 static void flush_tlb_set(STATE_ACCESS &a) {
     for (uint64_t slot_index = 0; slot_index < PMA_TLB_SIZE; ++slot_index) {
-        flush_tlb_slot<USE>(a, slot_index);
+        flush_tlb_slot<SET>(a, slot_index);
     }
 }
 
@@ -898,15 +895,16 @@ static void flush_tlb_vaddr(STATE_ACCESS &a, uint64_t /* vaddr */) {
 /// \param paddr Index of PMA where paddr falls
 /// \param vp_offset Receives the new vp_offset that will be stored in the slot
 /// \returns The implementation-defined fast address corresponding to paddr
-template <TLB_set_use USE, typename STATE_ACCESS>
+template <TLB_set_index SET, typename STATE_ACCESS>
 static i_state_access_fast_addr_t<STATE_ACCESS> replace_tlb_entry(STATE_ACCESS &a, uint64_t vaddr, uint64_t paddr,
     uint64_t pma_index, i_state_access_fast_addr_t<STATE_ACCESS> &vp_offset) {
+    [[maybe_unused]] auto note = a.make_scoped_note("replace_tlb_entry");
     const auto slot_index = tlb_slot_index(vaddr);
-    flush_tlb_slot<USE>(a, slot_index);
+    flush_tlb_slot<SET>(a, slot_index);
     const auto vaddr_page = tlb_addr_page(vaddr);
     const auto faddr = a.get_faddr(paddr, pma_index);
     vp_offset = faddr - vaddr;
-    a.template write_tlb<USE>(slot_index, vaddr_page, vp_offset, pma_index);
+    a.template write_tlb<SET>(slot_index, vaddr_page, vp_offset, pma_index);
     return faddr;
 }
 
@@ -918,10 +916,10 @@ static i_state_access_fast_addr_t<STATE_ACCESS> replace_tlb_entry(STATE_ACCESS &
 /// \param paddr Corresponding physical address
 /// \param paddr Index of PMA where paddr falls
 /// \returns The implementation-defined fast address corresponding to paddr
-template <TLB_set_use USE, typename STATE_ACCESS>
+template <TLB_set_index SET, typename STATE_ACCESS>
 static FORCE_INLINE auto replace_tlb_entry(STATE_ACCESS &a, uint64_t vaddr, uint64_t paddr, uint64_t pma_index) {
     i_state_access_fast_addr_t<STATE_ACCESS> vp_offset{0};
-    return replace_tlb_entry<USE>(a, vaddr, paddr, pma_index, vp_offset);
+    return replace_tlb_entry<SET>(a, vaddr, paddr, pma_index, vp_offset);
 }
 
 /// \brief Read an aligned word from virtual memory (slow path that goes through virtual address translation).
@@ -942,6 +940,7 @@ static FORCE_INLINE auto replace_tlb_entry(STATE_ACCESS &a, uint64_t vaddr, uint
 template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false>
 static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS a, uint64_t pc, uint64_t mcycle,
     uint64_t vaddr, T *pval) {
+    [[maybe_unused]] auto note = a.make_scoped_note("read_virtual_memory_slow");
     using U = std::make_unsigned_t<T>;
     // No support for misaligned accesses: They are handled by a trap in BBL
     if (unlikely(vaddr & (sizeof(T) - 1))) {
@@ -960,11 +959,13 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS
     const auto &pma = find_pma_entry<T>(a, paddr, pma_index);
     if (likely(pma.get_istart_R())) {
         if (likely(pma.get_istart_M())) {
+            [[maybe_unused]] auto note = a.make_scoped_note("read memory");
             const auto faddr = replace_tlb_entry<TLB_READ>(a, vaddr, paddr, pma_index);
             a.template read_memory_word(faddr, pma_index, pval);
             return {true, pc};
         }
         if (likely(pma.get_istart_IO())) {
+            [[maybe_unused]] auto note = a.make_scoped_note("read device");
             const uint64_t offset = paddr - pma.get_start();
             uint64_t val{};
             device_state_access da(a, mcycle);
@@ -993,6 +994,7 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS
 /// \returns True if succeeded, false otherwise.
 template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false>
 static FORCE_INLINE bool read_virtual_memory(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint64_t vaddr, T *pval) {
+    [[maybe_unused]] auto note = a.make_scoped_note("read_virtual_memory");
     // Try hitting the TLB
     const auto slot_index = tlb_slot_index(vaddr);
     const auto slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_READ>(slot_index);
@@ -1031,6 +1033,7 @@ static FORCE_INLINE bool read_virtual_memory(STATE_ACCESS a, uint64_t &pc, uint6
 template <typename T, typename STATE_ACCESS>
 static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(STATE_ACCESS a, uint64_t pc,
     uint64_t mcycle, uint64_t vaddr, uint64_t val64) {
+    [[maybe_unused]] auto note = a.make_scoped_note("write_virtual_memory_slow");
     using U = std::make_unsigned_t<T>;
     // No support for misaligned accesses: They are handled by a trap in BBL
     if (unlikely(vaddr & (sizeof(T) - 1))) {
@@ -1077,6 +1080,7 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(S
 template <typename T, typename STATE_ACCESS>
 static FORCE_INLINE execute_status write_virtual_memory(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint64_t vaddr,
     uint64_t val64) {
+    [[maybe_unused]] auto note = a.make_scoped_note("write_virtual_memory");
     // Try hitting the TLB
     const uint64_t slot_index = tlb_slot_index(vaddr);
     const uint64_t slot_vaddr_page = a.template read_tlb_vaddr_page<TLB_WRITE>(slot_index);
@@ -1087,8 +1091,8 @@ static FORCE_INLINE execute_status write_virtual_memory(STATE_ACCESS a, uint64_t
         pc = new_pc;
         return status;
     }
-    const auto pma_index = a.template read_tlb_pma_index<TLB_READ>(slot_index);
-    const auto vp_offset = a.template read_tlb_vp_offset<TLB_READ>(slot_index);
+    const auto pma_index = a.template read_tlb_pma_index<TLB_WRITE>(slot_index);
+    const auto vp_offset = a.template read_tlb_vp_offset<TLB_WRITE>(slot_index);
     const auto faddr = vaddr + vp_offset;
     a.template write_memory_word<T>(faddr, pma_index, static_cast<T>(val64));
     INC_COUNTER(a.get_statistics(), tlb_whit);
@@ -1098,6 +1102,7 @@ static FORCE_INLINE execute_status write_virtual_memory(STATE_ACCESS a, uint64_t
 template <typename STATE_ACCESS>
 static void dump_insn([[maybe_unused]] STATE_ACCESS a, [[maybe_unused]] uint64_t pc, [[maybe_unused]] uint32_t insn,
     [[maybe_unused]] const char *name) {
+    [[maybe_unused]] auto note = a.make_scoped_note("dump_insn");
 #ifdef DUMP_HIST
     a.get_naked_state().insn_hist[name]++;
 #endif
@@ -1105,13 +1110,8 @@ static void dump_insn([[maybe_unused]] STATE_ACCESS a, [[maybe_unused]] uint64_t
     dump_regs(a.get_naked_state());
 #endif
 #ifdef DUMP_INSN
-    uint64_t ppc = 0;
-    // If we are running in the microinterpreter, we may or may not be collecting a step access log.
-    // To prevent additional address translation end up in the log,
-    // the following check will always be false when MICROARCHITECTURE is defined.
-    if (std::is_same_v<STATE_ACCESS, state_access> &&
-        !translate_virtual_address<STATE_ACCESS, false>(a, &ppc, pc, PTE_XWR_X_SHIFT)) {
-        ppc = pc;
+    uint64_t ppc = pc;
+    if (!translate_virtual_address<STATE_ACCESS, false>(a, &ppc, pc, PTE_XWR_X_SHIFT)) {
         fprintf(stderr, "v    %08" PRIx64, ppc);
     } else {
         fprintf(stderr, "p    %08" PRIx64, ppc);
@@ -5389,6 +5389,7 @@ static FORCE_INLINE fetch_status fetch_translate_pc(STATE_ACCESS a, uint64_t &pc
 template <typename STATE_ACCESS>
 static FORCE_INLINE fetch_status fetch_insn(STATE_ACCESS a, uint64_t &pc, uint32_t &insn, uint64_t &last_vaddr_page,
     i_state_access_fast_addr_t<STATE_ACCESS> &last_vp_offset, uint64_t &last_pma_index) {
+    [[maybe_unused]] auto note = a.make_scoped_note("fetch_insn");
     i_state_access_fast_addr_t<STATE_ACCESS> faddr{0};
     const uint64_t pc_vaddr_page = tlb_addr_page(pc);
     // If pc is in the same page as the last pc fetch,
@@ -5397,12 +5398,16 @@ static FORCE_INLINE fetch_status fetch_insn(STATE_ACCESS a, uint64_t &pc, uint32
         faddr = pc + last_vp_offset;
     } else {
         // Not in the same page as last the fetch, we need to perform address translation
-        if (unlikely(fetch_translate_pc(a, pc, pc, last_vp_offset, last_pma_index) == fetch_status::exception)) {
+        i_state_access_fast_addr_t<STATE_ACCESS> pc_vp_offset{};
+        uint64_t pc_pma_index{};
+        if (unlikely(fetch_translate_pc(a, pc, pc, pc_vp_offset, pc_pma_index) == fetch_status::exception)) {
             return fetch_status::exception;
         }
         // Update fetch address translation cache
         last_vaddr_page = pc_vaddr_page;
-        faddr = pc + last_vp_offset;
+        last_vp_offset = pc_vp_offset;
+        last_pma_index = pc_pma_index;
+        faddr = pc + pc_vp_offset;
     }
     // The following code assumes pc is always 2-byte aligned, this is guaranteed by RISC-V spec.
     // If pc is pointing to the very last 2 bytes of a page, it's crossing a page boundary.
@@ -5415,10 +5420,14 @@ static FORCE_INLINE fetch_status fetch_insn(STATE_ACCESS a, uint64_t &pc, uint32
         if (unlikely(insn_is_uncompressed(insn))) {
             // We have to perform a new address translation to read the next 2 bytes since we changed pages.
             const uint64_t pc2 = pc + 2;
-            if (unlikely(fetch_translate_pc(a, pc, pc2, last_vp_offset, last_pma_index) == fetch_status::exception)) {
+            i_state_access_fast_addr_t<STATE_ACCESS> pc2_vp_offset{};
+            uint64_t pc2_pma_index{};
+            if (unlikely(fetch_translate_pc(a, pc, pc2, pc2_vp_offset, pc2_pma_index) == fetch_status::exception)) {
                 return fetch_status::exception;
             }
             last_vaddr_page = tlb_addr_page(pc2);
+            last_vp_offset = pc2_vp_offset;
+            last_pma_index = pc2_pma_index;
             faddr = pc2 + last_vp_offset;
             a.template read_memory_word(faddr, last_pma_index, &insn16);
             insn |= insn16 << 16;
@@ -6042,16 +6051,14 @@ interpreter_break_reason interpret(STATE_ACCESS a, uint64_t mcycle_end) {
     }
     if (status == execute_status::success_and_yield) {
         return interpreter_break_reason::yielded_softly;
-    }                                      // Reached mcycle_end
+    } // Reached mcycle_end
     assert(a.read_mcycle() == mcycle_end); // LCOV_EXCL_LINE
     return interpreter_break_reason::reached_target_mcycle;
 }
 
 #ifdef MICROARCHITECTURE
-#ifdef OKUARCH
-// Explicit instantiation for uarch_machine_state_access
-template interpreter_break_reason interpret(uarch_machine_state_access a, uint64_t mcycle_end);
-#endif
+// Explicit instantiation for machine_uarch_bridge_state_access
+template interpreter_break_reason interpret(machine_uarch_bridge_state_access a, uint64_t mcycle_end);
 #else
 // Explicit instantiation for state_access
 template interpreter_break_reason interpret(state_access a, uint64_t mcycle_end);

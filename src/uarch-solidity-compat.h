@@ -17,11 +17,13 @@
 #ifndef UARCH_INTERPRET_SOLIDITY_COMPAT_H
 #define UARCH_INTERPRET_SOLIDITY_COMPAT_H
 
-#include "os.h"
 #include <cassert>
 #include <cmath>
 #include <cstdint>
 #include <stdexcept>
+#ifdef DUMP_INSN
+#include <cinttypes>
+#endif
 
 /// \file
 /// \brief Solidity Compatibility Layer
@@ -66,13 +68,13 @@ static inline void writeCycle(UarchState &a, uint64 val) {
 }
 
 template <typename UarchState>
-static inline bool readHaltFlag(UarchState &a) {
+static inline uint64 readHaltFlag(UarchState &a) {
     return a.read_halt_flag();
 }
 
 template <typename UarchState>
-static inline void setHaltFlag(UarchState &a) {
-    return a.set_halt_flag();
+static inline void writeHaltFlag(UarchState &a, uint64 val) {
+    a.write_halt_flag(val);
 }
 
 template <typename UarchState>
@@ -105,7 +107,7 @@ static inline uint64 readIflagsY(State &a) {
     return a.read_iflags_Y();
 }
 
-template <typename UarchState>
+template <typename State>
 static inline void writeIflagsY(State &a, uint64 val) {
     a.write_iflags_Y(val);
 }
@@ -127,17 +129,19 @@ static inline void throwRuntimeError(UarchState & /*a*/, const char *message) {
 }
 
 template <typename UarchState>
-static inline void putChar(UarchState & /*a*/, unsigned char c) {
-    os_putchar(c);
+static inline void putCharECALL(UarchState &a, uint8 c) {
+    a.putchar(c);
 }
 
 template <typename UarchState>
-static inline void markDirtyPage(UarchState &a, uint64 paddr, uint64 pma_index) {
+static inline void markDirtyPageECALL(UarchState &a, uint64 paddr, uint64 pma_index) {
     a.mark_dirty_page(paddr, pma_index);
 }
 
-static inline void writeTlbVpOffset(UarchState &a, uint64 use, uint64 vp_offset, uint64 pma_index) {
-    a.write_tlb_vp_offset(use, slot_index, vp_offset, pma_index);
+template <typename UarchState>
+static inline void writeTlbECALL(UarchState &a, uint64 set_index, uint64 slot_index, uint64 vaddr_page,
+    uint64 vp_offset, uint64 pma_index) {
+    a.write_tlb(static_cast<TLB_set_index>(set_index), slot_index, vaddr_page, vp_offset, pma_index);
 }
 
 // Conversions and arithmetic functions

@@ -55,14 +55,12 @@ static bool shadow_uarch_state_peek(const pma_entry & /*pma*/, const machine &m,
 }
 
 pma_entry make_shadow_uarch_state_pma_entry(uint64_t start, uint64_t length) {
-    const pma_entry::flags f{
-        false,                       // R
-        false,                       // W
-        false,                       // X
-        false,                       // IR
-        false,                       // IW
-        PMA_ISTART_DID::shadow_uarch // DID
-    };
+    const pma_entry::flags f{.R = false,
+        .W = false,
+        .X = false,
+        .IR = false,
+        .IW = false,
+        .DID = PMA_ISTART_DID::shadow_uarch};
     return make_device_pma_entry("shadow uarch state device", start, length, shadow_uarch_state_peek,
         &shadow_uarch_state_driver)
         .set_flags(f);

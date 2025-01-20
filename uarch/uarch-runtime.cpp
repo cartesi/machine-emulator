@@ -86,19 +86,19 @@ extern "C" void _putchar(char c) {
     asm volatile("mv a7, %0\n"
                  "mv a6, %1\n"
                  "ecall\n"
-                 : // no output
-                 : "r"(cartesi::uarch_ecall_functions::UARCH_ECALL_FN_PUTCHAR),
-                 "r"(c)       // character to print
-                 : "a7", "a6" // modified registers
+        : // no output
+        : "r"(cartesi::uarch_ecall_functions::UARCH_ECALL_FN_PUTCHAR),
+        "r"(c)       // character to print
+        : "a7", "a6" // modified registers
     );
 }
 
 extern "C" NO_RETURN void abort() {
     // NOLINTNEXTLINE(hicpp-no-assembler)
     asm volatile("ebreak"
-                 : // no output
-                 : // no input
-                 : // no affected registers
+        : // no output
+        : // no input
+        : // no affected registers
     );
     // execution will never reach this point
     __builtin_trap();

@@ -102,7 +102,7 @@ private:
 
     /// \brief Returns the index of the right child of node at given index
     static constexpr int right_child_index(int index) {
-        return 2 * index + 1;
+        return (2 * index) + 1;
     }
 
     /// \brief Initialize all nodes for the pristine subtree with root

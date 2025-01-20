@@ -86,7 +86,7 @@ COMPUTE_UARCH_C_SOURCES=\
 UARCH_OBJS = $(patsubst %.c,%.uarch_c.o,$(patsubst %.cpp,%.uarch_cpp.o,$(UARCH_SOURCES)))
 EMULATOR_OBJS = $(patsubst %.c,%.emulator_c.o,$(patsubst %.cpp,%.emulator_cpp.o,$(EMULATOR_SOURCES)))
 
-LINTER_IGNORE_SOURCES=uarch-printf.c
+LINTER_IGNORE_SOURCES=uarch-printf.c uarch-pristine-hash.c uarch-pristine-ram.c
 LINTER_IGNORE_HEADERS=uarch-printf.h
 LINTER_SOURCES=$(filter-out $(LINTER_IGNORE_SOURCES),$(strip $(wildcard uarch-*.cpp) $(wildcard uarch-*.c)))
 LINTER_HEADERS=$(filter-out $(LINTER_IGNORE_HEADERS),$(strip $(wildcard uarch-*.h)))

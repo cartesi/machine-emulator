@@ -161,7 +161,7 @@ static NO_INLINE bool translate_virtual_address(STATE_ACCESS &a, uint64_t *ppadd
     uint64_t pte_addr = (satp & SATP_PPN_MASK) << LOG2_PAGE_SIZE;
     for (int i = 0; i < levels; i++) {
         // Mask out VPN[levels-i-1]
-        const int vaddr_shift = LOG2_PAGE_SIZE + LOG2_VPN_SIZE * (levels - 1 - i);
+        const int vaddr_shift = LOG2_PAGE_SIZE + (LOG2_VPN_SIZE * (levels - 1 - i));
         const uint64_t vpn = (vaddr >> vaddr_shift) & VPN_MASK;
         // Add offset to find physical address of page table entry
         pte_addr += vpn << LOG2_PTE_SIZE; //??D we can probably save this shift here

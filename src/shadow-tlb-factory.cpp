@@ -88,14 +88,12 @@ static bool shadow_tlb_peek(const pma_entry &pma, const machine &m, uint64_t pag
 }
 
 pma_entry make_shadow_tlb_pma_entry(uint64_t start, uint64_t length) {
-    const pma_entry::flags f{
-        false,                     // R
-        false,                     // W
-        false,                     // X
-        false,                     // IR
-        false,                     // IW
-        PMA_ISTART_DID::shadow_TLB // DID
-    };
+    const pma_entry::flags f{.R = false,
+        .W = false,
+        .X = false,
+        .IR = false,
+        .IW = false,
+        .DID = PMA_ISTART_DID::shadow_TLB};
     return make_device_pma_entry("shadow TLB device", start, length, shadow_tlb_peek, &shadow_tlb_driver).set_flags(f);
 }
 

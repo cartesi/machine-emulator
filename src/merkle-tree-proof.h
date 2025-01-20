@@ -192,7 +192,7 @@ public:
     template <typename HASHER_TYPE>
     hash_type bubble_up(HASHER_TYPE &h, const hash_type &new_target_hash) const {
         static_assert(is_an_i_hasher<HASHER_TYPE>::value, "not an i_hasher");
-        static_assert(std::is_same<typename remove_cvref<HASHER_TYPE>::type::hash_type, hash_type>::value,
+        static_assert(std::is_same_v<typename remove_cvref<HASHER_TYPE>::type::hash_type, hash_type>,
             "incompatible hash types");
         hash_type hash = new_target_hash;
         for (int log2_size = get_log2_target_size(); log2_size < get_log2_root_size(); ++log2_size) {
@@ -210,7 +210,7 @@ public:
     merkle_tree_proof<hash_type, address_type> slice(HASHER_TYPE &h, int new_log2_root_size,
         int new_log2_target_size) const {
         static_assert(is_an_i_hasher<HASHER_TYPE>::value, "not an i_hasher");
-        static_assert(std::is_same<typename remove_cvref<HASHER_TYPE>::type::hash_type, hash_type>::value,
+        static_assert(std::is_same_v<typename remove_cvref<HASHER_TYPE>::type::hash_type, hash_type>,
             "incompatible hash types");
         if (new_log2_root_size <= 0) {
             throw std::out_of_range{"log2_root_size is not positive"};

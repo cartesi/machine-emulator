@@ -145,7 +145,7 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
                 fdt.end_node();
             }
             for (uint32_t virtio_idx = 0; virtio_idx < c.virtio.size(); ++virtio_idx) { // virtio
-                const uint64_t virtio_paddr = PMA_FIRST_VIRTIO_START + virtio_idx * PMA_VIRTIO_LENGTH;
+                const uint64_t virtio_paddr = PMA_FIRST_VIRTIO_START + (virtio_idx * PMA_VIRTIO_LENGTH);
                 const uint32_t plic_irq_id = virtio_idx + 1;
                 fdt.begin_node_num("virtio", virtio_paddr);
                 fdt.prop_string("compatible", "virtio,mmio");

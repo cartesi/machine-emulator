@@ -538,7 +538,7 @@ static auto reg_to_name(machine::reg r) {
     return "";
 }
 
-interpreter_break_reason interpreter_break_reason_from_name(const std::string &name) {
+static interpreter_break_reason interpreter_break_reason_from_name(const std::string &name) {
     using ibr = interpreter_break_reason;
     const static std::unordered_map<std::string, ibr> g_ibr_name = {{"failed", ibr::failed}, {"halted", ibr::halted},
         {"yielded_manually", ibr::yielded_manually}, {"yielded_automatically", ibr::yielded_automatically},
@@ -550,7 +550,7 @@ interpreter_break_reason interpreter_break_reason_from_name(const std::string &n
     return got->second;
 }
 
-uarch_interpreter_break_reason uarch_interpreter_break_reason_from_name(const std::string &name) {
+static uarch_interpreter_break_reason uarch_interpreter_break_reason_from_name(const std::string &name) {
     using uibr = uarch_interpreter_break_reason;
     if (name == "reached_target_cycle") {
         return uibr::reached_target_cycle;
@@ -894,7 +894,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key,
     }
     const auto sibling_hashes_base = path + "sibling_hashes/";
     for (int log2_size = proof.get_log2_target_size(), i = 0; log2_size < proof.get_log2_root_size();
-         ++log2_size, ++i) {
+        ++log2_size, ++i) {
         machine_merkle_tree::proof_type::hash_type sibling_hash;
         ju_get_field(sh, i, sibling_hash, sibling_hashes_base);
         proof.set_sibling_hash(sibling_hash, log2_size);

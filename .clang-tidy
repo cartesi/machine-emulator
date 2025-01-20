@@ -1,5 +1,6 @@
 Checks: >-
   boost*,
+  -boost-use-ranges,
   bugprone*,
   -bugprone-easily-swappable-parameters,
   cert*,
@@ -30,6 +31,7 @@ Checks: >-
   -modernize-use-nodiscard,
   -modernize-use-trailing-return-type,
   -modernize-avoid-c-arrays,
+  -modernize-use-ranges,
   performance*,
   -performance-enum-size,
   portability*,

@@ -977,7 +977,7 @@ static void dump_insn([[maybe_unused]] STATE_ACCESS &a, [[maybe_unused]] uint64_
     // If we are running in the microinterpreter, we may or may not be collecting a step access log.
     // To prevent additional address translation end up in the log,
     // the following check will always be false when MICROARCHITECTURE is defined.
-    if (std::is_same<STATE_ACCESS, state_access>::value &&
+    if (std::is_same_v<STATE_ACCESS, state_access> &&
         !translate_virtual_address<STATE_ACCESS, false>(a, &ppc, pc, PTE_XWR_X_SHIFT)) {
         ppc = pc;
         fprintf(stderr, "v    %08" PRIx64, ppc);
@@ -5545,7 +5545,7 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS &a, uint64_t mcycle_
 #endif
 
         // Limit mcycle_tick_end up to the next RTC tick, while avoiding unsigned overflows
-        const uint64_t mcycle_tick_end = mcycle + std::min(mcycle_end - mcycle, RTC_FREQ_DIV - mcycle % RTC_FREQ_DIV);
+        const uint64_t mcycle_tick_end = mcycle + std::min(mcycle_end - mcycle, RTC_FREQ_DIV - (mcycle % RTC_FREQ_DIV));
 
         // The inner loop continues until there is an interrupt condition
         // or mcycle reaches mcycle_tick_end

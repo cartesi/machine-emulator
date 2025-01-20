@@ -209,7 +209,7 @@ int main(int argc, char *argv[]) try {
     }
 
     // Allocate buffer for leaf data
-    uint64_t leaf_size = UINT64_C(1) << log2_leaf_size; // NOLINT(misc-include-cleaner)
+    const uint64_t leaf_size = UINT64_C(1) << log2_leaf_size; // NOLINT(misc-include-cleaner)
     auto leaf_buf = unique_calloc<unsigned char>(leaf_size, std::nothrow_t{});
     if (!leaf_buf) {
         error("unable to allocate leaf buffer\n");
@@ -224,7 +224,7 @@ int main(int argc, char *argv[]) try {
 
     std::vector<hash_type> leaf_hashes;
 
-    uint64_t max_leaves = UINT64_C(1) << (log2_root_size - log2_leaf_size); // NOLINT(misc-include-cleaner)
+    const uint64_t max_leaves = UINT64_C(1) << (log2_root_size - log2_leaf_size); // NOLINT(misc-include-cleaner)
     uint64_t leaf_count = 0;
     // Loop reading leaves from file until done or error
     // As each leaf is loaded, we check that all four implementations
@@ -265,7 +265,7 @@ int main(int argc, char *argv[]) try {
         // Add new leaf to back tree
         back_tree.push_back(leaf_hash);
         // Build full tree from array of leaf hashes
-        full_merkle_tree tree_from_scratch(log2_root_size, log2_leaf_size, log2_word_size, leaf_hashes);
+        const full_merkle_tree tree_from_scratch(log2_root_size, log2_leaf_size, log2_word_size, leaf_hashes);
         // Compare the root hash for the back tree and the tree
         // from scratch
         if (back_tree.get_root_hash() != tree_from_scratch.get_root_hash()) {

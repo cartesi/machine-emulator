@@ -17,7 +17,7 @@
 /// \file
 /// \brief This file is be converted to Solidity by the machine-solidity-step.
 
-// NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)
+// NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,readability-use-std-min-max)
 
 #include "record-send-cmio-state-access.h"
 #include "replay-send-cmio-state-access.h"
@@ -72,4 +72,4 @@ template void send_cmio_response(replay_send_cmio_state_access &a, uint16_t reas
     uint32 length);
 
 } // namespace cartesi
-// NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)
+// NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,readability-use-std-min-max)

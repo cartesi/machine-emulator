@@ -220,6 +220,6 @@ void plic_reset_pending_irq(i_device_state_access *a, uint32_t irq_id) {
     }
 }
 
-const pma_driver plic_driver = {"PLIC", plic_read, plic_write};
+const pma_driver plic_driver = {.name = "PLIC", .read = plic_read, .write = plic_write};
 
 } // namespace cartesi

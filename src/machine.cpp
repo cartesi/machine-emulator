@@ -86,53 +86,43 @@ namespace cartesi {
 
 using namespace std::string_literals;
 
-const pma_entry::flags machine::m_ram_flags{
-    true,                  // R
-    true,                  // W
-    true,                  // X
-    true,                  // IR
-    true,                  // IW
-    PMA_ISTART_DID::memory // DID
-};
+const pma_entry::flags machine::m_ram_flags{.R = true,
+    .W = true,
+    .X = true,
+    .IR = true,
+    .IW = true,
+    .DID = PMA_ISTART_DID::memory};
 
 // When we pass a RNG seed in a FDT stored in DTB,
 // Linux will wipe out its contents as a security measure,
 // therefore we need to make DTB writable, otherwise boot will hang.
-const pma_entry::flags machine::m_dtb_flags{
-    true,                  // R
-    true,                  // W
-    true,                  // X
-    true,                  // IR
-    true,                  // IW
-    PMA_ISTART_DID::memory // DID
-};
+const pma_entry::flags machine::m_dtb_flags{.R = true,
+    .W = true,
+    .X = true,
+    .IR = true,
+    .IW = true,
+    .DID = PMA_ISTART_DID::memory};
 
-const pma_entry::flags machine::m_flash_drive_flags{
-    true,                       // R
-    true,                       // W
-    false,                      // X
-    true,                       // IR
-    true,                       // IW
-    PMA_ISTART_DID::flash_drive // DID
-};
+const pma_entry::flags machine::m_flash_drive_flags{.R = true,
+    .W = true,
+    .X = false,
+    .IR = true,
+    .IW = true,
+    .DID = PMA_ISTART_DID::flash_drive};
 
-const pma_entry::flags machine::m_cmio_rx_buffer_flags{
-    true,                          // R
-    false,                         // W
-    false,                         // X
-    true,                          // IR
-    true,                          // IW
-    PMA_ISTART_DID::cmio_rx_buffer // DID
-};
+const pma_entry::flags machine::m_cmio_rx_buffer_flags{.R = true,
+    .W = false,
+    .X = false,
+    .IR = true,
+    .IW = true,
+    .DID = PMA_ISTART_DID::cmio_rx_buffer};
 
-const pma_entry::flags machine::m_cmio_tx_buffer_flags{
-    true,                          // R
-    true,                          // W
-    false,                         // X
-    true,                          // IR
-    true,                          // IW
-    PMA_ISTART_DID::cmio_tx_buffer // DID
-};
+const pma_entry::flags machine::m_cmio_tx_buffer_flags{.R = true,
+    .W = true,
+    .X = false,
+    .IR = true,
+    .IW = true,
+    .DID = PMA_ISTART_DID::cmio_tx_buffer};
 
 pma_entry machine::make_memory_range_pma_entry(const std::string &description, const memory_range_config &c) {
     if (c.image_filename.empty()) {
@@ -350,14 +340,14 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
         register_pma_entry(make_callocd_memory_pma_entry("RAM"s, PMA_RAM_START, m_c.ram.length).set_flags(m_ram_flags));
     } else {
         register_pma_entry(make_callocd_memory_pma_entry("RAM"s, PMA_RAM_START, m_c.ram.length, m_c.ram.image_filename)
-                               .set_flags(m_ram_flags));
+                .set_flags(m_ram_flags));
     }
 
     // Register DTB
     pma_entry &dtb = register_pma_entry((m_c.dtb.image_filename.empty() ?
             make_callocd_memory_pma_entry("DTB"s, PMA_DTB_START, PMA_DTB_LENGTH) :
             make_callocd_memory_pma_entry("DTB"s, PMA_DTB_START, PMA_DTB_LENGTH, m_c.dtb.image_filename))
-                                            .set_flags(m_dtb_flags));
+            .set_flags(m_dtb_flags));
 
     // Register all flash drives
     int i = 0; // NOLINT(misc-const-correctness)
@@ -479,7 +469,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
                         throw std::invalid_argument("invalid virtio device configuration");
                     }
                     register_pma_entry(
-                        make_virtio_pma_entry(PMA_FIRST_VIRTIO_START + vdev->get_virtio_index() * PMA_VIRTIO_LENGTH,
+                        make_virtio_pma_entry(PMA_FIRST_VIRTIO_START + (vdev->get_virtio_index() * PMA_VIRTIO_LENGTH),
                             PMA_VIRTIO_LENGTH, pma_name, &virtio_driver, vdev.get()));
                     m_vdevs.push_back(std::move(vdev));
                 },
@@ -550,7 +540,9 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
     // Initialize memory range descriptions returned by get_memory_ranges method
     for (const auto *pma : m_merkle_pmas) {
         if (pma->get_length() != 0) {
-            m_mrds.push_back(machine_memory_range_descr{pma->get_start(), pma->get_length(), pma->get_description()});
+            m_mrds.push_back(machine_memory_range_descr{.start = pma->get_start(),
+                .length = pma->get_length(),
+                .description = pma->get_description()});
         }
     }
     // Sort it by increasing start address
@@ -731,7 +723,7 @@ static void store_device_pma(const machine &m, const pma_entry &pma, const std::
     auto name = machine_config::get_image_filename(dir, pma.get_start(), pma.get_length());
     auto fp = unique_fopen(name.c_str(), "wb");
     for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length();
-         page_start_in_range += PMA_PAGE_SIZE) {
+        page_start_in_range += PMA_PAGE_SIZE) {
         const unsigned char *page_data = nullptr;
         auto peek = pma.get_peek();
         if (!peek(pma, m, page_start_in_range, &page_data, scratch.get())) {
@@ -795,7 +787,7 @@ const pma_entry &machine::find_pma_entry(const CONTAINER &pmas, uint64_t paddr, 
 
 template <typename T>
 static inline T &deref(T &t) {
-    return t;
+    return t; // NOLINT(bugprone-return-const-ref-from-parameter)
 }
 
 template <typename T>
@@ -1699,7 +1691,7 @@ bool machine::verify_dirty_page_maps() const {
     for (const auto &pma : m_s.pmas) {
         auto peek = pma.get_peek();
         for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length();
-             page_start_in_range += PMA_PAGE_SIZE) {
+            page_start_in_range += PMA_PAGE_SIZE) {
             const uint64_t page_address = pma.get_start() + page_start_in_range;
             if (pma.get_istart_M()) {
                 const unsigned char *page_data = nullptr;

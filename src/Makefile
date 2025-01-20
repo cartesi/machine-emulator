@@ -474,6 +474,7 @@ cartesi/jsonrpc.so: $(LUACARTESI_JSONRPC_OBJS) libcartesi_jsonrpc.a libcartesi.a
 	$(CXX) -o $@ $^ $(LUACARTESI_JSONRPC_LIBS) $(LDFLAGS) $(SOLDFLAGS)
 
 lint: $(CLANG_TIDY_TARGETS)
+	@$(MAKE) --no-print-directory -C ../uarch lint
 
 format:
 	@$(CLANG_FORMAT) -i $(CLANG_FORMAT_FILES)

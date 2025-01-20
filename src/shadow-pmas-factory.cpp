@@ -27,14 +27,12 @@
 namespace cartesi {
 
 pma_entry make_shadow_pmas_pma_entry(uint64_t start, uint64_t length) {
-    const pma_entry::flags f{
-        true,                       // R
-        false,                      // W
-        false,                      // X
-        false,                      // IR
-        false,                      // IW
-        PMA_ISTART_DID::shadow_pmas // DID
-    };
+    const pma_entry::flags f{.R = true,
+        .W = false,
+        .X = false,
+        .IR = false,
+        .IW = false,
+        .DID = PMA_ISTART_DID::shadow_pmas};
     return make_callocd_memory_pma_entry("shadow PMAs", start, length).set_flags(f);
 }
 

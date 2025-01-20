@@ -66,7 +66,7 @@ public:
     template <typename L>
     complete_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, L &&leaves) :
         complete_merkle_tree{log2_root_size, log2_leaf_size, log2_word_size} {
-        static_assert(std::is_same<level_type, typename remove_cvref<L>::type>::value, "not a leaves vector");
+        static_assert(std::is_same_v<level_type, typename remove_cvref<L>::type>, "not a leaves vector");
         get_level(get_log2_leaf_size()) = std::forward<L>(leaves);
         bubble_up();
     }

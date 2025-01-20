@@ -587,25 +587,6 @@ cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reaso
     return cm_result_failure();
 }
 
-cm_error cm_read_uarch_halt_flag(const cm_machine *m, bool *val) try {
-    const auto *cpp_m = convert_from_c(m);
-    *val = static_cast<bool>(cpp_m->read_reg(cartesi::machine::reg::uarch_halt_flag));
-    return cm_result_success();
-} catch (...) {
-    if (val != nullptr) {
-        *val = false;
-    }
-    return cm_result_failure();
-}
-
-cm_error cm_set_uarch_halt_flag(cm_machine *m) try {
-    auto *cpp_m = convert_from_c(m);
-    cpp_m->write_reg(cartesi::machine::reg::uarch_halt_flag, 1);
-    return cm_result_success();
-} catch (...) {
-    return cm_result_failure();
-}
-
 cm_error cm_reset_uarch(cm_machine *m) try {
     auto *cpp_m = convert_from_c(m);
     cpp_m->reset_uarch();
@@ -619,8 +600,8 @@ cm_error cm_log_reset_uarch(cm_machine *m, int32_t log_type, const char **log) t
         throw std::invalid_argument("invalid access log output");
     }
     auto *cpp_m = convert_from_c(m);
-    cartesi::access_log::type cpp_log_type(log_type);
-    cartesi::access_log cpp_log = cpp_m->log_reset_uarch(cpp_log_type);
+    const cartesi::access_log::type cpp_log_type(log_type);
+    const cartesi::access_log cpp_log = cpp_m->log_reset_uarch(cpp_log_type);
     *log = cm_set_temp_string(cartesi::to_json(cpp_log).dump());
     return cm_result_success();
 } catch (...) {
@@ -667,8 +648,8 @@ cm_error cm_log_step_uarch(cm_machine *m, int32_t log_type, const char **log) tr
         throw std::invalid_argument("invalid access log output");
     }
     auto *cpp_m = convert_from_c(m);
-    cartesi::access_log::type cpp_log_type(log_type);
-    cartesi::access_log cpp_log = cpp_m->log_step_uarch(cpp_log_type);
+    const cartesi::access_log::type cpp_log_type(log_type);
+    const cartesi::access_log cpp_log = cpp_m->log_step_uarch(cpp_log_type);
     *log = cm_set_temp_string(cartesi::to_json(cpp_log).dump());
     return cm_result_success();
 } catch (...) {
@@ -885,34 +866,6 @@ cm_error cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *p
     return cm_result_failure();
 }
 
-cm_error cm_read_mcycle(const cm_machine *m, uint64_t *val) try {
-    if (val == nullptr) {
-        throw std::invalid_argument("invalid val output");
-    }
-    const auto *cpp_m = convert_from_c(m);
-    *val = cpp_m->read_reg(cartesi::machine::reg::mcycle);
-    return cm_result_success();
-} catch (...) {
-    if (val != nullptr) {
-        *val = 0;
-    }
-    return cm_result_failure();
-}
-
-cm_error cm_read_uarch_cycle(const cm_machine *m, uint64_t *val) try {
-    if (val == nullptr) {
-        throw std::invalid_argument("invalid val output");
-    }
-    const auto *cpp_m = convert_from_c(m);
-    *val = cpp_m->read_reg(cartesi::machine::reg::uarch_cycle);
-    return cm_result_success();
-} catch (...) {
-    if (val != nullptr) {
-        *val = 0;
-    }
-    return cm_result_failure();
-}
-
 cm_error cm_verify_dirty_page_maps(cm_machine *m, bool *result) try {
     if (result == nullptr) {
         throw std::invalid_argument("invalid result output");
@@ -1106,8 +1059,8 @@ cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t
         throw std::invalid_argument("invalid access log output");
     }
     auto *cpp_m = convert_from_c(m);
-    cartesi::access_log::type cpp_log_type(log_type);
-    cartesi::access_log cpp_log = cpp_m->log_send_cmio_response(reason, data, length, cpp_log_type);
+    const cartesi::access_log::type cpp_log_type(log_type);
+    const cartesi::access_log cpp_log = cpp_m->log_send_cmio_response(reason, data, length, cpp_log_type);
     *log = cm_set_temp_string(cartesi::to_json(cpp_log).dump());
     return cm_result_success();
 } catch (...) {

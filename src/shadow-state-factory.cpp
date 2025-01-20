@@ -102,14 +102,12 @@ static bool shadow_state_peek(const pma_entry & /*pma*/, const machine &m, uint6
 }
 
 pma_entry make_shadow_state_pma_entry(uint64_t start, uint64_t length) {
-    const pma_entry::flags f{
-        false,                       // R
-        false,                       // W
-        false,                       // X
-        false,                       // IR
-        false,                       // IW
-        PMA_ISTART_DID::shadow_state // DID
-    };
+    const pma_entry::flags f{.R = false,
+        .W = false,
+        .X = false,
+        .IR = false,
+        .IW = false,
+        .DID = PMA_ISTART_DID::shadow_state};
     return make_device_pma_entry("shadow state device", start, length, shadow_state_peek, &shadow_state_driver)
         .set_flags(f);
 }

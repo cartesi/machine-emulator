@@ -19,6 +19,6 @@
 
 namespace cartesi {
 
-const pma_driver shadow_state_driver = {"SHADOW STATE", device_read_error, device_write_error};
+const pma_driver shadow_state_driver = {.name = "SHADOW STATE", .read = device_read_error, .write = device_write_error};
 
 } // namespace cartesi

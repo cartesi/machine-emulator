@@ -151,6 +151,6 @@ static execute_status htif_write(void * /*context*/, i_device_state_access *a, u
     }
 }
 
-const pma_driver htif_driver{"HTIF", htif_read, htif_write};
+const pma_driver htif_driver{.name = "HTIF", .read = htif_read, .write = htif_write};
 
 } // namespace cartesi

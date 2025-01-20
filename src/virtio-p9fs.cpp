@@ -2255,7 +2255,7 @@ bool virtio_p9fs_device::op_attach(virtq_unserializer &&mmsg, uint16_t tag) {
         return false;
     }
     // Update new fid state
-    *newfidp = p9_fid_state{uid, m_root_path, -1};
+    *newfidp = p9_fid_state{.uid = uid, .path = m_root_path, .fd = -1};
     return true;
 }
 
@@ -2352,7 +2352,7 @@ bool virtio_p9fs_device::op_walk(virtq_unserializer &&mmsg, uint16_t tag) {
         return false;
     }
     // Update the new fid state
-    *newfidp = p9_fid_state{uid, path, -1};
+    *newfidp = p9_fid_state{.uid = uid, .path = path, .fd = -1};
     return true;
 }
 

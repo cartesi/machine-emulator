@@ -722,7 +722,7 @@ bool os_parallel_for(uint64_t n, const std::function<bool(uint64_t j, const para
 #ifdef HAVE_THREADS
     if (n > 1) {
         std::mutex mutex;
-        const parallel_for_mutex for_mutex = {[&] { mutex.lock(); }, [&] { mutex.unlock(); }};
+        const parallel_for_mutex for_mutex = {.lock = [&] { mutex.lock(); }, .unlock = [&] { mutex.unlock(); }};
         std::vector<std::future<bool>> futures;
         futures.reserve(n);
         for (uint64_t j = 0; j < n; ++j) {
@@ -738,7 +738,7 @@ bool os_parallel_for(uint64_t n, const std::function<bool(uint64_t j, const para
     }
 #endif
     // Run without extra threads when concurrency is 1 or as fallback
-    const parallel_for_mutex for_mutex{[] {}, [] {}};
+    const parallel_for_mutex for_mutex{.lock = [] {}, .unlock = [] {}};
     bool succeeded = true;
     for (uint64_t j = 0; j < n; ++j) {
         succeeded = succeeded && task(j, for_mutex);

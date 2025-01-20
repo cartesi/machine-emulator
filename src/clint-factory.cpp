@@ -32,14 +32,7 @@ static bool clint_peek(const pma_entry &pma, const machine & /*m*/, uint64_t pag
 }
 
 pma_entry make_clint_pma_entry(uint64_t start, uint64_t length) {
-    const pma_entry::flags f{
-        true,                 // R
-        true,                 // W
-        false,                // X
-        false,                // IR
-        false,                // IW
-        PMA_ISTART_DID::CLINT // DID
-    };
+    const pma_entry::flags f{.R = true, .W = true, .X = false, .IR = false, .IW = false, .DID = PMA_ISTART_DID::CLINT};
     return make_device_pma_entry("CLINT device", start, length, clint_peek, &clint_driver).set_flags(f);
 }
 

@@ -19,6 +19,8 @@
 
 namespace cartesi {
 
-const pma_driver shadow_uarch_state_driver = {"SHADOW UARCH", device_read_error, device_write_error};
+const pma_driver shadow_uarch_state_driver = {.name = "SHADOW UARCH",
+    .read = device_read_error,
+    .write = device_write_error};
 
 } // namespace cartesi

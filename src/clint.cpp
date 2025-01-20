@@ -107,6 +107,6 @@ static execute_status clint_write(void * /*context*/, i_device_state_access *a, 
     }
 }
 
-const pma_driver clint_driver = {"CLINT", clint_read, clint_write};
+const pma_driver clint_driver = {.name = "CLINT", .read = clint_read, .write = clint_write};
 
 } // namespace cartesi

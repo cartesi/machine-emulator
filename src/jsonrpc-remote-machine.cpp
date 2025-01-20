@@ -785,8 +785,8 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
         return jsonrpc_response_server_error(j, "fork failed ("s + err_msg + ")"s);
     }
     const cartesi::fork_result result{
-        new_server_address,
-        static_cast<uint32_t>(pid),
+        .address = new_server_address,
+        .pid = static_cast<uint32_t>(pid),
     };
     return jsonrpc_response_ok(j, result);
 }

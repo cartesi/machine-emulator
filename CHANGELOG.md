@@ -5,18 +5,76 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Added
-- Added the "log_step" method
-- Added the "verify_step" method
-- Added the "--log-step" option to "cartesi-machine.lua"
+## Added
+- Added `libluacartesi.a` and `libluacartesi_jsonrpc.a` static libraries when installing to allow packaging statically linked Lua programs
+- Added `--remote-spawn` command line option to spawn remote machines
+- Added `--remote-health-check` command line option to check availability of remote machines
+- Added `--store-json-config` command line option to store machine configs to JSON files
+- Added `--load-json-config` command line option to load machine configs from JSON files
+- Added `--server-fd` command line option to JSON-RPC remote machine
+- Added `--setpgid` command line option to JSON-RPC remote machine
+- Added `cartesi.tobase64`, `cartesi.frombase64`, `cartesi.tojson`, and `cartesi.fromjson` Lua functions
+- Added various new methods to JSON-RPC remote machine interface to allow more precise management of remote machine processes
+- Added timeout support to JSON-RPC remote machine requests
+- Added capability to retrieve PID of spawned remote machines
+- Added support for VirtIO devices in JSON configs
+- Added the `--log-step` command line option to log multiple machine cycles
+- Added the `cm_log_step` and `cm_verify_step` methods to log multiple machine cycles and verify with ZK VMs
+- Added the `cm_receive_cmio_request` method, the counterpart of `cm_send_cmio_response` method
 
-### Changed
-- Added a "--jobs" option to "uarch-riscv-tests.lua" test
-- add-created-files.diff should now be applied with `-p1`
-- Improved send_cmio_response bounds checking
+## Fixed
+- Fixed various linting errors with the latest Clang static analyzer
+- Fixed broken link when running `make bundle-boost`
+- Fixed many broken links in the README and markdown files
+- Fixed issues when using `--network` option in Alpine guests
+- Fixed issue when using `--assert-rolling-template`
+- Fixed `--skip-root-hash-store` not skipping root hash computation
+- Fixed kernel panic bug when feeding 100k stdin inputs into VirtIO console
+- Fixed bug when trying to advance multiple inputs through the `cartesi-machine` CLI
+- Fixed compile errors when targeting Windows, Alpine Linux, and WebAssembly
 
-### Fixed
-- Fixed --skip-root-hash-store not skipping root hash computation when using the cli
+## Changed
+- Optimized RISC-V instruction decoder to use token threading, computed goto, and big jump tables
+- Optimized RISC-V instruction fetcher to cache latest accessed pages
+- Refactored the code to use C++20 standard, which is now a minimum requirement
+- Refactored the public C API to be simpler and easier to use with other programming languages
+- Refactored the Lua API to make remote and local use the same API interface
+- Refactored and simplified many portions of the code, improving maintainability of the project
+- Changed default GCC compiler flags to better optimize the RISC-V interpreter
+- Changed flash drive start address configuration to be non-mandatory (it will be automatically chosen)
+- Changed sibling hashes ordering in JSON logs to match the expected ordering in Lua test suite
+- Changed rebind method of remote machines to support binding on port 0 and return the bound address
+- Changed to Debian RISC-V toolchain when compiling microarchitecture
+- Changed `--remote-fork` command line option to accept an address
+- Changed `add-generated-files.diff` to be applied with `patch -Np1` to make packaging easier
+- Changed default machine config to include bootargs
+- Changed machine configs and access logs to be represented as JSON strings in the C API
+- Renamed `--log-uarch-step` command line option to `--log-step-uarch`
+- Renamed `--log-uarch-reset` command line option to `--log-reset-uarch`
+- Renamed `--auto-uarch-reset` command line option to `--auto-reset-uarch`
+- Renamed various C API functions, structs, and enumerations
+- Revamped project README with more up-to-date explanations and simplified instructions
+- Changed help and configs to be printed to `stdout` instead of `stderr`
+- Changed the public C API to require less manual memory management
+- Improved documentation in the public C API header
+- Improved CI to use more parallel jobs when testing
+- Improved `send_cmio_response` bounds checking
+- Split `iflags` CSR into multiple CSRs
+
+## Removed
+- Removed publishing of Debian package artifacts in favor of official Linux package repositories
+- Removed use of `cartesi/toolchain` image
+- Removed automatic strip of binaries when performing `make install` (stripping should now be done when packaging)
+- Removed `no4lvl` from bootargs (Sv57 address translation is now disabled at interpreter level to fix NodeJS JIT issues)
+- Removed `rootfstype=ext2` from bootargs, allowing use of root filesystems in other formats, such as Ext4 and SquashFS
+- Removed all `*-defines.h` headers
+- Removed all specific read/write of machine registers from the public API
+- Removed various C API functions
+- Removed `dkjson` Lua library (not needed since we have our own JSON encoding functions now)
+- Removed GDB documentation from the repository (moved to the wiki)
+- Removed internal development documentation from the README (moved to the wiki)
+- Removed many dead code segments after the refactoring
+
 
 ## [0.18.1] - 2024-08-12
 ### Changed

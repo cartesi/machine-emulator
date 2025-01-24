@@ -283,7 +283,7 @@ jobs:
   test_arm64:
     name: Test (linux/arm64)
     needs: build
-    runs-on: ubuntu-latest-8-cores
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout machine emulator source code
         uses: actions/checkout@v4
@@ -305,9 +305,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
@@ -379,11 +376,11 @@ jobs:
 
       - name: Run test scripts
         run: |
-          docker run --platform linux/arm64 --rm -t -e "CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE=1" ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/run-lua-tests.sh
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/run-lua-tests.sh
 
       - name: Run jsonrpc lua test scripts
         run: |
-          docker run --platform linux/arm64 --rm -t -e "CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE=1" ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests
 
       - name: Create cmio templates
         run: |

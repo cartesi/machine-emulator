@@ -1389,13 +1389,17 @@
           "$ref": "#/components/schemas/VirtIOHostfwd"
         }
       },
+      "VirtIODeviceType": {
+        "title": "VirtIODeviceType",
+        "enum": ["console", "p9fs", "net-user", "net-tuntap"]
+      },
       "VirtIODeviceConfig": {
         "title": "VirtIODeviceConfig",
         "type": "object",
         "required": ["type"],
         "properties": {
           "type": {
-            "type": "string"
+            "$ref": "#/components/schemas/VirtIODeviceType"
           },
           "tag": {
             "type": "string"
@@ -1660,7 +1664,8 @@
           "virtio": {
             "$ref": "#/components/schemas/VirtIOConfigs"
           }
-        }
+        },
+        "required": ["ram"]
       },
       "InterpreterBreakReason": {
         "title": "InterpreterBreakReason",
@@ -1685,6 +1690,7 @@
       "Base64Hash": {
         "title": "Base64Hash",
         "type": "string",
+        "description": "32-byte hash encoded in base64",
         "contentEncoding": "base64",
         "minLength": 45,
         "maxLength": 45
@@ -1776,13 +1782,13 @@
             "$ref": "#/components/schemas/UnsignedInteger"
           },
           "read_hash": {
-            "$ref": "#/components/schemas/Base64String"
+            "$ref": "#/components/schemas/Base64Hash"
           },
           "read": {
             "$ref": "#/components/schemas/Base64String"
           },
           "written_hash": {
-            "$ref": "#/components/schemas/Base64String"
+            "$ref": "#/components/schemas/Base64Hash"
           },
           "written": {
             "$ref": "#/components/schemas/Base64String"
@@ -1932,13 +1938,24 @@
           "scounteren",
           "senvcfg",
           "ilrsc",
-          "iflags",
+          "iprv",
+          "iflags_X",
+          "iflags_Y",
+          "iflags_H",
           "iunrep",
           "clint_mtimecmp",
           "plic_girqpend",
           "plic_girqsrvd",
           "htif_tohost",
+          "htif_tohost_dev",
+          "htif_tohost_cmd",
+          "htif_tohost_reason",
+          "htif_tohost_data",
           "htif_fromhost",
+          "htif_fromhost_dev",
+          "htif_fromhost_cmd",
+          "htif_fromhost_reason",
+          "htif_fromhost_data",
           "htif_ihalt",
           "htif_iconsole",
           "htif_iyield",
@@ -1976,19 +1993,7 @@
           "uarch_x31",
           "uarch_pc",
           "uarch_cycle",
-          "uarch_halt_flag",
-          "iflags_prv",
-          "iflags_x",
-          "iflags_y",
-          "iflags_h",
-          "htif_tohost_dev",
-          "htif_tohost_cmd",
-          "htif_tohost_reason",
-          "htif_tohost_data",
-          "htif_fromhost_dev",
-          "htif_fromhost_cmd",
-          "htif_fromhost_reason",
-          "htif_fromhost_data"
+          "uarch_halt_flag"
         ]
       },
       "MemoryRangeDescription": {

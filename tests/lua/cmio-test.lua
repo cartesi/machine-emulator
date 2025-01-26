@@ -29,7 +29,7 @@ end
 local function adjust_images_path(path)
     return string.gsub(path or ".", "/*$", "") .. "/"
 end
-local MACHINES_DIR = adjust_images_path(test_util.cmio_path)
+local MACHINES_DIR = adjust_images_path(test_util.fixtures_path)
 
 local remote_address
 

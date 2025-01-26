@@ -28,7 +28,7 @@ end
 local test_util = {
     images_path = adjust_path(assert(os.getenv("CARTESI_IMAGES_PATH"))),
     tests_path = adjust_path(assert(os.getenv("CARTESI_TESTS_PATH"))),
-    cmio_path = adjust_path(assert(os.getenv("CARTESI_CMIO_PATH"))),
+    fixtures_path = adjust_path(assert(os.getenv("CARTESI_CMIO_PATH"))),
     tests_uarch_path = adjust_path(assert(os.getenv("CARTESI_TESTS_UARCH_PATH"))),
 }
 

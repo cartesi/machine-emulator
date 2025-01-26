@@ -742,3 +742,29 @@ jobs:
             uarch-logs/uarch-riscv-tests-json-logs-*.tar.gz
             tests-amd64/cartesi-machine-tests-*.deb
             tests-arm64/cartesi-machine-tests-*.deb
+
+  risc0:
+    name: RISC Zero
+    runs-on: ubuntu-latest-8-cores
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup variables
+        run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install rzup
+        run: cargo install --git https://github.com/risc0/risc0 rzup
+
+      - name: Install RISC Zero Toolchain
+        run: rzup install
+
+      - name: Build risc0 prover/verifier
+        run: make risc0

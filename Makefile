@@ -98,7 +98,7 @@ DEPDIR = third-party
 SRCDIR = $(abspath src)
 TESTSDIR = $(abspath tests)
 DOWNLOADDIR = $(DEPDIR)/downloads
-SUBCLEAN = $(addsuffix .clean,$(SRCDIR) uarch tests)
+SUBCLEAN = $(addsuffix .clean,$(SRCDIR) uarch tests risc0)
 
 # Docker image tag
 TAG ?= devel
@@ -246,6 +246,9 @@ source-default:
 
 uarch: $(SRCDIR)/machine-c-version.h
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C uarch
+
+risc0: $(SRCDIR)/machine-c-version.h
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C risc0
 
 $(SRCDIR)/machine-c-version.h:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) machine-c-version.h
@@ -397,6 +400,6 @@ $(ADD_GENERATED_FILES_DIFF): $(GENERATED_FILES)
 	git diff --default-prefix --staged --output=$(ADD_GENERATED_FILES_DIFF)
 	git reset -- $(GENERATED_FILES)
 
-.PHONY: help all submodules doc clean distclean src luacartesi hash uarch \
+.PHONY: help all submodules doc clean distclean src luacartesi hash uarch risc0 \
 	create-generated-files-patch $(SUBDIRS) $(SUBCLEAN)
 

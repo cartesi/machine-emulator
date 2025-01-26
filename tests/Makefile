@@ -33,11 +33,13 @@ CARTESI_IMAGES_PATH ?= $(abspath ./build/images)
 CARTESI_CMIO_PATH ?= $(abspath ./build/cmio)
 CARTESI_TESTS_PATH ?= $(abspath ./build/machine)
 CARTESI_TESTS_UARCH_PATH ?= $(abspath ./build/uarch)
+CARTESI_FIXTURES_PATH ?= $(abspath ./build/fixtures)
 
 export CARTESI_IMAGES_PATH
 export CARTESI_CMIO_PATH
 export CARTESI_TESTS_PATH
 export CARTESI_TESTS_UARCH_PATH
+export CARTESI_FIXTURES_PATH
 
 TARGET_OS ?= $(shell uname -s)
 ifeq ($(TARGET_OS),Darwin)
@@ -85,7 +87,7 @@ CARTESI_IMAGES = $(CARTESI_IMAGES_PATH)/linux.bin
 STYLUA=stylua
 STYLUA_FLAGS=--indent-type Spaces
 
-build-tests-all: misc build-tests-machine-with-toolchain build-tests-uarch-with-toolchain images $(CARTESI_CMIO_PATH)
+build-tests-all: misc build-tests-machine-with-toolchain build-tests-uarch-with-toolchain images $(CARTESI_CMIO_PATH) $(CARTESI_FIXTURES_PATH)
 
 build-tests-machine: machine riscv-tests
 
@@ -175,9 +177,15 @@ create-machines $(CARTESI_CMIO_PATH): | $(CARTESI_IMAGES)
 	@rm -rf $(CARTESI_CMIO_PATH)
 	$(LUA) ./lua/create-machines.lua
 
+create-fixtures:
+	$(LUA) ./lua/create-fixtures.lua
+
 clean-machines:
 	@rm -rf $(CARTESI_CMIO_PATH)
 
+clean-fixtures:
+	@rm -rf $(CARTESI_FIXTURES_PATH)
+	
 test-cmio: | $(CARTESI_CMIO_PATH)
 	@./scripts/test-cmio.sh ../src/jsonrpc-remote-cartesi-machine '$(LUA) ../src/cartesi-machine.lua'
 

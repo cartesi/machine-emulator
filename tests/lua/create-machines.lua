@@ -33,7 +33,7 @@ local function basedir(s)
     return string.match(s, "/.+[^/]+/") or "."
 end
 local IMAGES_DIR = adjust_images_path(test_util.images_path)
-local MACHINES_DIR = adjust_images_path(test_util.cmio_path)
+local MACHINES_DIR = adjust_images_path(test_util.fixtures_path)
 
 -- Print help and exit
 local function help()

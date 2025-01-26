@@ -25,6 +25,7 @@
 #include "device-state-access.h"
 #include "htif.h"
 #include "i-state-access.h"
+#include "machine-reg.h"
 #include "plic.h"
 #include "pma-constants.h"
 #include "replay-step-state-access-interop.h"

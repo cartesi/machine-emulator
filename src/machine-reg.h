@@ -100,6 +100,7 @@ enum class machine_reg : uint64_t {
     mimpid = PMA_SHADOW_STATE_START + offsetof(shadow_state, mimpid),
     mcycle = PMA_SHADOW_STATE_START + offsetof(shadow_state, mcycle),
     icycleinstret = PMA_SHADOW_STATE_START + offsetof(shadow_state, icycleinstret),
+    mtime = PMA_SHADOW_STATE_START + offsetof(shadow_state, mtime),
     mstatus = PMA_SHADOW_STATE_START + offsetof(shadow_state, mstatus),
     mtvec = PMA_SHADOW_STATE_START + offsetof(shadow_state, mtvec),
     mscratch = PMA_SHADOW_STATE_START + offsetof(shadow_state, mscratch),

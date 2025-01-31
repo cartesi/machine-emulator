@@ -121,6 +121,14 @@ private:
         m_m.get_state().icycleinstret = val;
     }
 
+    uint64_t do_read_mtime() const {
+        return m_m.get_state().mtime;
+    }
+
+    void do_write_mtime(uint64_t val) {
+        m_m.get_state().mtime = val;
+    }
+
     uint64_t do_read_mvendorid() const { // NOLINT(readability-convert-member-functions-to-static)
         return MVENDORID_INIT;
     }

@@ -62,6 +62,7 @@ static bool shadow_state_peek(const pma_entry & /*pma*/, const machine &m, uint6
     s->mimpid = m.read_reg(machine_reg::mimpid);
     s->mcycle = m.read_reg(machine_reg::mcycle);
     s->icycleinstret = m.read_reg(machine_reg::icycleinstret);
+    s->mtime = m.read_reg(machine_reg::mtime);
     s->mstatus = m.read_reg(machine_reg::mstatus);
     s->mtvec = m.read_reg(machine_reg::mtvec);
     s->mscratch = m.read_reg(machine_reg::mscratch);

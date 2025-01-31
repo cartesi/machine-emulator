@@ -144,6 +144,7 @@ static auto reg_from_name(const std::string &name) {
         {"mimpid", reg::mimpid},
         {"mcycle", reg::mcycle},
         {"icycleinstret", reg::icycleinstret},
+        {"mtime", reg::mtime},
         {"mstatus", reg::mstatus},
         {"mtvec", reg::mtvec},
         {"mscratch", reg::mscratch},
@@ -375,6 +376,8 @@ static auto reg_to_name(machine::reg r) {
             return "mcycle";
         case reg::icycleinstret:
             return "icycleinstret";
+        case reg::mtime:
+            return "mtime";
         case reg::mstatus:
             return "mstatus";
         case reg::mtvec:
@@ -1236,6 +1239,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, processor_config &v
     ju_get_opt_field(jconfig, "mimpid"s, value.mimpid, new_path);
     ju_get_opt_field(jconfig, "mcycle"s, value.mcycle, new_path);
     ju_get_opt_field(jconfig, "icycleinstret"s, value.icycleinstret, new_path);
+    ju_get_opt_field(jconfig, "mtime"s, value.mtime, new_path);
     ju_get_opt_field(jconfig, "mstatus"s, value.mstatus, new_path);
     ju_get_opt_field(jconfig, "mtvec"s, value.mtvec, new_path);
     ju_get_opt_field(jconfig, "mscratch"s, value.mscratch, new_path);
@@ -1797,14 +1801,15 @@ void to_json(nlohmann::json &j, const processor_config &config) {
         {"f25", config.f[25]}, {"f26", config.f[26]}, {"f27", config.f[27]}, {"f28", config.f[28]},
         {"f29", config.f[29]}, {"f30", config.f[30]}, {"f31", config.f[31]}, {"pc", config.pc}, {"fcsr", config.fcsr},
         {"mvendorid", config.mvendorid}, {"marchid", config.marchid}, {"mimpid", config.mimpid},
-        {"mcycle", config.mcycle}, {"icycleinstret", config.icycleinstret}, {"mstatus", config.mstatus},
-        {"mtvec", config.mtvec}, {"mscratch", config.mscratch}, {"mepc", config.mepc}, {"mcause", config.mcause},
-        {"mtval", config.mtval}, {"misa", config.misa}, {"mie", config.mie}, {"mip", config.mip},
-        {"medeleg", config.medeleg}, {"mideleg", config.mideleg}, {"mcounteren", config.mcounteren},
-        {"menvcfg", config.menvcfg}, {"stvec", config.stvec}, {"sscratch", config.sscratch}, {"sepc", config.sepc},
-        {"scause", config.scause}, {"stval", config.stval}, {"satp", config.satp}, {"scounteren", config.scounteren},
-        {"senvcfg", config.senvcfg}, {"ilrsc", config.ilrsc}, {"iprv", config.iprv}, {"iflags_X", config.iflags_X},
-        {"iflags_Y", config.iflags_Y}, {"iflags_H", config.iflags_H}, {"iunrep", config.iunrep}};
+        {"mcycle", config.mcycle}, {"icycleinstret", config.icycleinstret}, {"mtime", config.mtime},
+        {"mstatus", config.mstatus}, {"mtvec", config.mtvec}, {"mscratch", config.mscratch}, {"mepc", config.mepc},
+        {"mcause", config.mcause}, {"mtval", config.mtval}, {"misa", config.misa}, {"mie", config.mie},
+        {"mip", config.mip}, {"medeleg", config.medeleg}, {"mideleg", config.mideleg},
+        {"mcounteren", config.mcounteren}, {"menvcfg", config.menvcfg}, {"stvec", config.stvec},
+        {"sscratch", config.sscratch}, {"sepc", config.sepc}, {"scause", config.scause}, {"stval", config.stval},
+        {"satp", config.satp}, {"scounteren", config.scounteren}, {"senvcfg", config.senvcfg}, {"ilrsc", config.ilrsc},
+        {"iprv", config.iprv}, {"iflags_X", config.iflags_X}, {"iflags_Y", config.iflags_Y},
+        {"iflags_H", config.iflags_H}, {"iunrep", config.iunrep}};
 }
 
 void to_json(nlohmann::json &j, const flash_drive_configs &fs) {

@@ -204,6 +204,7 @@ typedef enum cm_reg {
     CM_REG_MIMPID,
     CM_REG_MCYCLE,
     CM_REG_ICYCLEINSTRET,
+    CM_REG_MTIME,
     CM_REG_MSTATUS,
     CM_REG_MTVEC,
     CM_REG_MSCRATCH,

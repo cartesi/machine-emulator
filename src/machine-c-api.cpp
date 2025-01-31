@@ -271,6 +271,8 @@ static cartesi::machine_reg convert_from_c(cm_reg r) {
             return reg::mcycle;
         case CM_REG_ICYCLEINSTRET:
             return reg::icycleinstret;
+        case CM_REG_MTIME:
+            return reg::mtime;
         case CM_REG_MSTATUS:
             return reg::mstatus;
         case CM_REG_MTVEC:

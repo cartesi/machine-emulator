@@ -50,6 +50,7 @@ struct processor_config final {
     uint64_t mimpid{MIMPID_INIT};               ///< Value of mimpid CSR
     uint64_t mcycle{MCYCLE_INIT};               ///< Value of mcycle CSR
     uint64_t icycleinstret{ICYCLEINSTRET_INIT}; ///< Value of icycleinstret CSR
+    uint64_t mtime{MTIME_INIT};                 ///< Value of mtime CSR
     uint64_t mstatus{MSTATUS_INIT};             ///< Value of mstatus CSR
     uint64_t mtvec{MTVEC_INIT};                 ///< Value of mtvec CSR
     uint64_t mscratch{MSCRATCH_INIT};           ///< Value of mscratch CSR

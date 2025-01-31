@@ -127,6 +127,7 @@ cm_reg clua_check_cm_proc_reg(lua_State *L, int idx) try {
         {"mimpid", CM_REG_MIMPID},
         {"mcycle", CM_REG_MCYCLE},
         {"icycleinstret", CM_REG_ICYCLEINSTRET},
+        {"mtime", CM_REG_MTIME},
         {"mstatus", CM_REG_MSTATUS},
         {"mtvec", CM_REG_MTVEC},
         {"mscratch", CM_REG_MSCRATCH},

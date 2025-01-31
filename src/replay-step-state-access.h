@@ -560,6 +560,14 @@ private:
         raw_write_memory(machine_reg_address(machine_reg::icycleinstret), val);
     }
 
+    uint64_t do_read_mtime() {
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mtime));
+    }
+
+    void do_write_mtime(uint64_t val) {
+        raw_write_memory(machine_reg_address(machine_reg::mtime), val);
+    }
+
     uint64_t do_read_mvendorid() {
         return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mvendorid));
     }

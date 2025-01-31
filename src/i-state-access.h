@@ -155,6 +155,18 @@ public:
         return derived().do_write_icycleinstret(val);
     }
 
+    /// \brief Reads CSR mtime.
+    /// \returns Register value.
+    uint64_t read_mtime() {
+        return derived().do_read_mtime();
+    }
+
+    /// \brief Writes CSR mtime.
+    /// \param val New register value.
+    void write_mtime(uint64_t val) {
+        return derived().do_write_mtime(val);
+    }
+
     /// \brief Reads CSR mvendorid.
     /// \returns Register value.
     uint64_t read_mvendorid() {

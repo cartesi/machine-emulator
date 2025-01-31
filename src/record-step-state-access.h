@@ -601,9 +601,8 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    NO_INLINE std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
-        (void) mcycle_max;
-        return {mcycle, false};
+    NO_INLINE std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t /*timeout_us*/) {
+        return {0, false};
     }
 
     template <typename T>

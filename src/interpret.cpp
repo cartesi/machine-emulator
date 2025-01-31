@@ -551,11 +551,17 @@ static inline uint64_t raise_interrupt_if_any(STATE_ACCESS a, uint64_t pc) {
 
 /// \brief At every tick, set interrupt as pending if the timer is expired
 /// \param a Machine state accessor object.
-/// \param mcycle Machine current cycle.
 template <typename STATE_ACCESS>
-static inline void set_rtc_interrupt(STATE_ACCESS a, uint64_t mcycle) {
-    const uint64_t timecmp_cycle = rtc_time_to_cycle(a.read_clint_mtimecmp());
-    if (timecmp_cycle <= mcycle && timecmp_cycle != 0) {
+static inline void rtc_advance_tick(STATE_ACCESS a) {
+    uint64_t mtime = a.read_mtime();
+    // Increment time taking care with overflow
+    if (likely(mtime < UINT64_MAX)) {
+        ++mtime;
+        a.write_mtime(mtime);
+    }
+    // Raise time interrupts if any
+    const uint64_t mtimecmp = a.read_clint_mtimecmp();
+    if (mtimecmp <= mtime && mtimecmp != 0) {
         const uint64_t mip = a.read_mip();
         a.write_mip(mip | MIP_MTIP_MASK);
     }
@@ -839,8 +845,8 @@ static FORCE_INLINE int32_t insn_get_C_SWSP_imm(uint32_t insn) {
 /// is outlined, and taking PC by reference would cause the compiler to store it in a stack variable
 /// instead of always storing it in register (this is an optimization).
 template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false>
-static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS a, uint64_t pc, uint64_t mcycle,
-    uint64_t vaddr, T *pval) {
+static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS a, uint64_t pc, uint64_t vaddr,
+    T *pval) {
     using U = std::make_unsigned_t<T>;
     // No support for misaligned accesses: They are handled by a trap in BBL
     if (unlikely(vaddr & (sizeof(T) - 1))) {
@@ -866,7 +872,7 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS
         if (likely(pma.get_istart_IO())) {
             const uint64_t offset = paddr - pma.get_start();
             uint64_t val{};
-            device_state_access da(a, mcycle);
+            device_state_access da(a);
             // If we do not know how to read, we treat this as a PMA violation
             const bool status = pma.get_device_noexcept().get_driver()->read(pma.get_device_noexcept().get_context(),
                 &da, offset, &val, log2_size<U>::value);
@@ -891,14 +897,13 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS
 /// \param pval Pointer to word receiving value.
 /// \returns True if succeeded, false otherwise.
 template <typename T, typename STATE_ACCESS, bool RAISE_STORE_EXCEPTIONS = false>
-static FORCE_INLINE bool read_virtual_memory(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint64_t vaddr, T *pval) {
+static FORCE_INLINE bool read_virtual_memory(STATE_ACCESS a, uint64_t &pc, uint64_t vaddr, T *pval) {
     // Try hitting the TLB
     if (unlikely(!(a.template read_memory_word_via_tlb<TLB_READ>(vaddr, pval)))) {
         // Outline the slow path into a function call to minimize host CPU code cache pressure
         INC_COUNTER(a.get_statistics(), tlb_rmiss);
         T val = 0; // Don't pass pval reference directly so the compiler can store it in a register
-        auto [status, new_pc] =
-            read_virtual_memory_slow<T, STATE_ACCESS, RAISE_STORE_EXCEPTIONS>(a, pc, mcycle, vaddr, &val);
+        auto [status, new_pc] = read_virtual_memory_slow<T, STATE_ACCESS, RAISE_STORE_EXCEPTIONS>(a, pc, vaddr, &val);
         *pval = val;
         pc = new_pc;
         return status;
@@ -923,7 +928,7 @@ static FORCE_INLINE bool read_virtual_memory(STATE_ACCESS a, uint64_t &pc, uint6
 /// instead of always storing it in register (this is an optimization).
 template <typename T, typename STATE_ACCESS>
 static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(STATE_ACCESS a, uint64_t pc,
-    uint64_t mcycle, uint64_t vaddr, uint64_t val64) {
+    uint64_t vaddr, uint64_t val64) {
     using U = std::make_unsigned_t<T>;
     // No support for misaligned accesses: They are handled by a trap in BBL
     if (unlikely(vaddr & (sizeof(T) - 1))) {
@@ -946,7 +951,7 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(S
         }
         if (likely(pma.get_istart_IO())) {
             const uint64_t offset = paddr - pma.get_start();
-            device_state_access da(a, mcycle);
+            device_state_access da(a);
             auto status = pma.get_device_noexcept().get_driver()->write(pma.get_device_noexcept().get_context(), &da,
                 offset, static_cast<U>(static_cast<T>(val64)), log2_size<U>::value);
             // If we do not know how to write, we treat this as a PMA violation
@@ -968,13 +973,12 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(S
 /// \param val64 Value to write.
 /// \returns True if succeeded, false if exception raised.
 template <typename T, typename STATE_ACCESS>
-static FORCE_INLINE execute_status write_virtual_memory(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint64_t vaddr,
-    uint64_t val64) {
+static FORCE_INLINE execute_status write_virtual_memory(STATE_ACCESS a, uint64_t &pc, uint64_t vaddr, uint64_t val64) {
     // Try hitting the TLB
     if (unlikely((!a.template write_memory_word_via_tlb<TLB_WRITE>(vaddr, static_cast<T>(val64))))) {
         INC_COUNTER(a.get_statistics(), tlb_wmiss);
         // Outline the slow path into a function call to minimize host CPU code cache pressure
-        auto [status, new_pc] = write_virtual_memory_slow<T>(a, pc, mcycle, vaddr, val64);
+        auto [status, new_pc] = write_virtual_memory_slow<T>(a, pc, vaddr, val64);
         pc = new_pc;
         return status;
     }
@@ -1078,10 +1082,10 @@ static FORCE_INLINE execute_status execute_jump(STATE_ACCESS /*a*/, uint64_t &pc
 /// \param pc Interpreter loop program counter (will be overwritten).
 /// \param insn Instruction.
 template <typename T, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_LR(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LR(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     T val = 0;
-    if (unlikely(!read_virtual_memory<T>(a, pc, mcycle, vaddr, &val))) {
+    if (unlikely(!read_virtual_memory<T>(a, pc, vaddr, &val))) {
         return advance_to_raised_exception(a, pc);
     }
     a.write_ilrsc(vaddr);
@@ -1099,12 +1103,12 @@ static FORCE_INLINE execute_status execute_LR(STATE_ACCESS a, uint64_t &pc, uint
 /// \param pc Interpreter loop program counter (will be overwritten).
 /// \param insn Instruction.
 template <typename T, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SC(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SC(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     uint64_t val = 0;
     const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     execute_status status = execute_status::success;
     if (a.read_ilrsc() == vaddr) {
-        status = write_virtual_memory<T>(a, pc, mcycle, vaddr, static_cast<T>(a.read_x(insn_get_rs2(insn))));
+        status = write_virtual_memory<T>(a, pc, vaddr, static_cast<T>(a.read_x(insn_get_rs2(insn))));
         if (unlikely(status == execute_status::failure)) {
             return advance_to_raised_exception(a, pc);
         }
@@ -1122,34 +1126,33 @@ static FORCE_INLINE execute_status execute_SC(STATE_ACCESS a, uint64_t &pc, uint
 
 /// \brief Implementation of the LR.W instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_LR_W(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LR_W(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     if (unlikely((insn & 0b00000001111100000000000000000000) != 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     dump_insn(a, pc, insn, "lr.w");
-    return execute_LR<int32_t>(a, pc, mcycle, insn);
+    return execute_LR<int32_t>(a, pc, insn);
 }
 
 /// \brief Implementation of the SC.W instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SC_W(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SC_W(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sc.w");
-    return execute_SC<int32_t>(a, pc, mcycle, insn);
+    return execute_SC<int32_t>(a, pc, insn);
 }
 
 template <typename T, typename STATE_ACCESS, typename F>
-static FORCE_INLINE execute_status execute_AMO(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn,
-    const F &f) {
+static FORCE_INLINE execute_status execute_AMO(STATE_ACCESS a, uint64_t &pc, uint32_t insn, const F &f) {
     const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     T valm = 0;
     // AMOs never raise load exceptions. Since any unreadable page is also unwritable,
     // attempting to perform an AMO on an unreadable page always raises a store page-fault exception.
-    if (unlikely((!read_virtual_memory<T, STATE_ACCESS, true>(a, pc, mcycle, vaddr, &valm)))) {
+    if (unlikely((!read_virtual_memory<T, STATE_ACCESS, true>(a, pc, vaddr, &valm)))) {
         return advance_to_raised_exception(a, pc);
     }
     T valr = static_cast<T>(a.read_x(insn_get_rs2(insn)));
     valr = f(valm, valr);
-    const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr, valr);
+    const execute_status status = write_virtual_memory<T>(a, pc, vaddr, valr);
     if (unlikely(status == execute_status::failure)) {
         return advance_to_raised_exception(a, pc);
     }
@@ -1163,16 +1166,16 @@ static FORCE_INLINE execute_status execute_AMO(STATE_ACCESS a, uint64_t &pc, uin
 
 /// \brief Implementation of the AMOSWAP.W instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOSWAP_W(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOSWAP_W(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoswap.w");
-    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t /*valm*/, int32_t valr) -> int32_t { return valr; });
+    return execute_AMO<int32_t>(a, pc, insn, [](int32_t /*valm*/, int32_t valr) -> int32_t { return valr; });
 }
 
 /// \brief Implementation of the AMOADD.W instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOADD_W(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOADD_W(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoadd.w");
-    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t valm, int32_t valr) -> int32_t {
+    return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t {
         int32_t val = 0;
         __builtin_add_overflow(valm, valr, &val);
         return val;
@@ -1180,30 +1183,30 @@ static FORCE_INLINE execute_status execute_AMOADD_W(STATE_ACCESS a, uint64_t &pc
 }
 
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOXOR_W(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOXOR_W(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoxor.w");
-    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm ^ valr; });
+    return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm ^ valr; });
 }
 
 /// \brief Implementation of the AMOAND.W instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOAND_W(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOAND_W(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoand.w");
-    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm & valr; });
+    return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm & valr; });
 }
 
 /// \brief Implementation of the AMOOR.W instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOOR_W(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOOR_W(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoor.w");
-    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm | valr; });
+    return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t { return valm | valr; });
 }
 
 /// \brief Implementation of the AMOMIN.W instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOMIN_W(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOMIN_W(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amomin.w");
-    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t valm, int32_t valr) -> int32_t {
+    return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t {
         if (valm < valr) {
             return valm;
         }
@@ -1213,9 +1216,9 @@ static FORCE_INLINE execute_status execute_AMOMIN_W(STATE_ACCESS a, uint64_t &pc
 
 /// \brief Implementation of the AMOMAX.W instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOMAX_W(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOMAX_W(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amomax.w");
-    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t valm, int32_t valr) -> int32_t {
+    return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t {
         if (valm > valr) {
             return valm;
         }
@@ -1225,9 +1228,9 @@ static FORCE_INLINE execute_status execute_AMOMAX_W(STATE_ACCESS a, uint64_t &pc
 
 /// \brief Implementation of the AMOMINU.W instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOMINU_W(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOMINU_W(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amominu.w");
-    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t valm, int32_t valr) -> int32_t {
+    return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t {
         if (static_cast<uint32_t>(valm) < static_cast<uint32_t>(valr)) {
             return valm;
         }
@@ -1237,9 +1240,9 @@ static FORCE_INLINE execute_status execute_AMOMINU_W(STATE_ACCESS a, uint64_t &p
 
 /// \brief Implementation of the AMOMAXU.W instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOMAXU_W(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOMAXU_W(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amomaxu.w");
-    return execute_AMO<int32_t>(a, pc, mcycle, insn, [](int32_t valm, int32_t valr) -> int32_t {
+    return execute_AMO<int32_t>(a, pc, insn, [](int32_t valm, int32_t valr) -> int32_t {
         if (static_cast<uint32_t>(valm) > static_cast<uint32_t>(valr)) {
             return valm;
         }
@@ -1249,33 +1252,33 @@ static FORCE_INLINE execute_status execute_AMOMAXU_W(STATE_ACCESS a, uint64_t &p
 
 /// \brief Implementation of the LR.D instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_LR_D(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LR_D(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     if (unlikely((insn & 0b00000001111100000000000000000000) != 0)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
     dump_insn(a, pc, insn, "lr.d");
-    return execute_LR<uint64_t>(a, pc, mcycle, insn);
+    return execute_LR<uint64_t>(a, pc, insn);
 }
 
 /// \brief Implementation of the SC.D instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SC_D(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SC_D(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sc.d");
-    return execute_SC<uint64_t>(a, pc, mcycle, insn);
+    return execute_SC<uint64_t>(a, pc, insn);
 }
 
 /// \brief Implementation of the AMOSWAP.D instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOSWAP_D(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOSWAP_D(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoswap.d");
-    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](int64_t /*valm*/, int64_t valr) -> int64_t { return valr; });
+    return execute_AMO<int64_t>(a, pc, insn, [](int64_t /*valm*/, int64_t valr) -> int64_t { return valr; });
 }
 
 /// \brief Implementation of the AMOADD.D instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOADD_D(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOADD_D(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoadd.d");
-    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](int64_t valm, int64_t valr) -> int64_t {
+    return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t {
         int64_t val = 0;
         __builtin_add_overflow(valm, valr, &val);
         return val;
@@ -1283,30 +1286,30 @@ static FORCE_INLINE execute_status execute_AMOADD_D(STATE_ACCESS a, uint64_t &pc
 }
 
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOXOR_D(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOXOR_D(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoxor.d");
-    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm ^ valr; });
+    return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm ^ valr; });
 }
 
 /// \brief Implementation of the AMOAND.D instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOAND_D(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOAND_D(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoand.d");
-    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm & valr; });
+    return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm & valr; });
 }
 
 /// \brief Implementation of the AMOOR.D instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOOR_D(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOOR_D(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amoor.d");
-    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm | valr; });
+    return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t { return valm | valr; });
 }
 
 /// \brief Implementation of the AMOMIN.D instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOMIN_D(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOMIN_D(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amomin.d");
-    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](int64_t valm, int64_t valr) -> int64_t {
+    return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t {
         if (valm < valr) {
             return valm;
         }
@@ -1316,9 +1319,9 @@ static FORCE_INLINE execute_status execute_AMOMIN_D(STATE_ACCESS a, uint64_t &pc
 
 /// \brief Implementation of the AMOMAX.D instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOMAX_D(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOMAX_D(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amomax.d");
-    return execute_AMO<int64_t>(a, pc, mcycle, insn, [](int64_t valm, int64_t valr) -> int64_t {
+    return execute_AMO<int64_t>(a, pc, insn, [](int64_t valm, int64_t valr) -> int64_t {
         if (valm > valr) {
             return valm;
         }
@@ -1328,9 +1331,9 @@ static FORCE_INLINE execute_status execute_AMOMAX_D(STATE_ACCESS a, uint64_t &pc
 
 /// \brief Implementation of the AMOMINU.D instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOMINU_D(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOMINU_D(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amominu.d");
-    return execute_AMO<uint64_t>(a, pc, mcycle, insn, [](uint64_t valm, uint64_t valr) -> uint64_t {
+    return execute_AMO<uint64_t>(a, pc, insn, [](uint64_t valm, uint64_t valr) -> uint64_t {
         if (valm < valr) {
             return valm;
         }
@@ -1340,9 +1343,9 @@ static FORCE_INLINE execute_status execute_AMOMINU_D(STATE_ACCESS a, uint64_t &p
 
 /// \brief Implementation of the AMOMAXU.D instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMOMAXU_D(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMOMAXU_D(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "amomaxu.d");
-    return execute_AMO<uint64_t>(a, pc, mcycle, insn, [](uint64_t valm, uint64_t valr) -> uint64_t {
+    return execute_AMO<uint64_t>(a, pc, insn, [](uint64_t valm, uint64_t valr) -> uint64_t {
         if (valm > valr) {
             return valm;
         }
@@ -1549,7 +1552,8 @@ static inline bool rdcounteren(STATE_ACCESS a, uint64_t mask) {
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_cycle(STATE_ACCESS a, uint64_t mcycle, bool *status) {
+static inline uint64_t read_csr_cycle(STATE_ACCESS a, bool *status) {
+    const uint64_t mcycle = a.read_mcycle();
     if (rdcounteren(a, MCOUNTEREN_CY_MASK)) {
         return read_csr_success(mcycle, status);
     }
@@ -1557,21 +1561,22 @@ static inline uint64_t read_csr_cycle(STATE_ACCESS a, uint64_t mcycle, bool *sta
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_instret(STATE_ACCESS a, uint64_t mcycle, bool *status) {
+static inline uint64_t read_csr_instret(STATE_ACCESS a, bool *status) {
     if (unlikely(!rdcounteren(a, MCOUNTEREN_IR_MASK))) {
         return read_csr_fail(status);
     }
+    const uint64_t mcycle = a.read_mcycle();
     const uint64_t icycleinstret = a.read_icycleinstret();
     const uint64_t minstret = mcycle - icycleinstret;
     return read_csr_success(minstret, status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_time(STATE_ACCESS a, uint64_t mcycle, bool *status) {
+static inline uint64_t read_csr_time(STATE_ACCESS a, bool *status) {
     if (unlikely(!rdcounteren(a, MCOUNTEREN_TM_MASK))) {
         return read_csr_fail(status);
     }
-    const uint64_t mtime = rtc_cycle_to_time(mcycle);
+    const uint64_t mtime = a.read_mtime();
     return read_csr_success(mtime, status);
 }
 
@@ -1707,12 +1712,14 @@ static inline uint64_t read_csr_mip(STATE_ACCESS a, bool *status) {
     return read_csr_success(a.read_mip(), status);
 }
 
-static inline uint64_t read_csr_mcycle(uint64_t mcycle, bool *status) {
-    return read_csr_success(mcycle, status);
+template <typename STATE_ACCESS>
+static inline uint64_t read_csr_mcycle(STATE_ACCESS a, bool *status) {
+    return read_csr_success(a.read_mcycle(), status);
 }
 
 template <typename STATE_ACCESS>
-static inline uint64_t read_csr_minstret(STATE_ACCESS a, uint64_t mcycle, bool *status) {
+static inline uint64_t read_csr_minstret(STATE_ACCESS a, bool *status) {
+    const uint64_t mcycle = a.read_mcycle();
     const uint64_t icycleinstret = a.read_icycleinstret();
     const uint64_t minstret = mcycle - icycleinstret;
     return read_csr_success(minstret, status);
@@ -1769,7 +1776,7 @@ static inline uint64_t read_csr_fcsr(STATE_ACCESS a, bool *status) {
 /// \returns Register value.
 /// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static NO_INLINE uint64_t read_csr(STATE_ACCESS a, uint64_t mcycle, CSR_address csraddr, bool *status) {
+static NO_INLINE uint64_t read_csr(STATE_ACCESS a, CSR_address csraddr, bool *status) {
     if (unlikely(csr_prv(csraddr) > a.read_iprv())) {
         return read_csr_fail(status);
     }
@@ -1783,11 +1790,11 @@ static NO_INLINE uint64_t read_csr(STATE_ACCESS a, uint64_t mcycle, CSR_address 
             return read_csr_fcsr(a, status);
 
         case CSR_address::ucycle:
-            return read_csr_cycle(a, mcycle, status);
+            return read_csr_cycle(a, status);
         case CSR_address::uinstret:
-            return read_csr_instret(a, mcycle, status);
+            return read_csr_instret(a, status);
         case CSR_address::utime:
-            return read_csr_time(a, mcycle, status);
+            return read_csr_time(a, status);
 
         case CSR_address::sstatus:
             return read_csr_sstatus(a, status);
@@ -1841,9 +1848,9 @@ static NO_INLINE uint64_t read_csr(STATE_ACCESS a, uint64_t mcycle, CSR_address 
             return read_csr_mip(a, status);
 
         case CSR_address::mcycle:
-            return read_csr_mcycle(mcycle, status);
+            return read_csr_mcycle(a, status);
         case CSR_address::minstret:
-            return read_csr_minstret(a, mcycle, status);
+            return read_csr_minstret(a, status);
 
         case CSR_address::mvendorid:
             return read_csr_mvendorid(a, status);
@@ -2172,9 +2179,10 @@ static execute_status write_csr_mcounteren(STATE_ACCESS a, uint64_t val) {
 }
 
 template <typename STATE_ACCESS>
-static execute_status write_csr_minstret(STATE_ACCESS a, uint64_t mcycle, uint64_t val) {
+static execute_status write_csr_minstret(STATE_ACCESS a, uint64_t val) {
     // Note that mcycle will only be incremented after the instruction is executed,
     // but we have to compute this in advance
+    const uint64_t mcycle = a.read_mcycle();
     const uint64_t icycleinstret = (mcycle + 1) - val;
     a.write_icycleinstret(icycleinstret);
     return execute_status::success;
@@ -2267,7 +2275,7 @@ static inline execute_status write_csr_fcsr(STATE_ACCESS a, uint64_t val) {
 /// \returns The status of the operation (true for success, false otherwise).
 /// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static NO_INLINE execute_status write_csr(STATE_ACCESS a, uint64_t mcycle, CSR_address csraddr, uint64_t val) {
+static NO_INLINE execute_status write_csr(STATE_ACCESS a, CSR_address csraddr, uint64_t val) {
 #if defined(DUMP_CSR)
     fprintf(stderr, "csr_write: csr=0x%03x val=0x", static_cast<int>(csraddr));
     print_uint64_t(val);
@@ -2342,7 +2350,7 @@ static NO_INLINE execute_status write_csr(STATE_ACCESS a, uint64_t mcycle, CSR_a
         case CSR_address::mcycle:
             return write_csr_mcycle(a, val);
         case CSR_address::minstret:
-            return write_csr_minstret(a, mcycle, val);
+            return write_csr_minstret(a, val);
 
         // Ignore writes
         case CSR_address::misa:
@@ -2421,8 +2429,7 @@ static NO_INLINE execute_status write_csr(STATE_ACCESS a, uint64_t mcycle, CSR_a
 }
 
 template <typename STATE_ACCESS, typename RS1VAL>
-static FORCE_INLINE execute_status execute_csr_RW(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn,
-    const RS1VAL &rs1val) {
+static FORCE_INLINE execute_status execute_csr_RW(STATE_ACCESS a, uint64_t &pc, uint32_t insn, const RS1VAL &rs1val) {
     auto csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
     // Try to read old CSR value
     bool status = true;
@@ -2430,7 +2437,7 @@ static FORCE_INLINE execute_status execute_csr_RW(STATE_ACCESS a, uint64_t &pc, 
     // If rd=r0, we do not read from the CSR to avoid side-effects
     const uint32_t rd = insn_get_rd(insn);
     if (rd != 0) {
-        csrval = read_csr(a, mcycle, csraddr, &status);
+        csrval = read_csr(a, csraddr, &status);
     }
     if (unlikely(!status)) {
         return raise_illegal_insn_exception(a, pc, insn);
@@ -2440,7 +2447,7 @@ static FORCE_INLINE execute_status execute_csr_RW(STATE_ACCESS a, uint64_t &pc, 
     //    will have to check if there was a change to the
     //    memory manager and report back from here so we
     //    break out of the inner loop
-    const execute_status wstatus = write_csr(a, mcycle, csraddr, rs1val(a, insn));
+    const execute_status wstatus = write_csr(a, csraddr, rs1val(a, insn));
     if (unlikely(wstatus == execute_status::failure)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
@@ -2454,27 +2461,26 @@ static FORCE_INLINE execute_status execute_csr_RW(STATE_ACCESS a, uint64_t &pc, 
 
 /// \brief Implementation of the CSRRW instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_CSRRW(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_CSRRW(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "csrrw");
-    return execute_csr_RW(a, pc, mcycle, insn,
+    return execute_csr_RW(a, pc, insn,
         [](STATE_ACCESS a, uint32_t insn) -> uint64_t { return a.read_x(insn_get_rs1(insn)); });
 }
 
 /// \brief Implementation of the CSRRWI instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_CSRRWI(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_CSRRWI(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "csrrwi");
-    return execute_csr_RW(a, pc, mcycle, insn,
+    return execute_csr_RW(a, pc, insn,
         [](STATE_ACCESS, uint32_t insn) -> uint64_t { return static_cast<uint64_t>(insn_get_rs1(insn)); });
 }
 
 template <typename STATE_ACCESS, typename F>
-static FORCE_INLINE execute_status execute_csr_SC(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn,
-    const F &f) {
+static FORCE_INLINE execute_status execute_csr_SC(STATE_ACCESS a, uint64_t &pc, uint32_t insn, const F &f) {
     auto csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
     // Try to read old CSR value
     bool status = false;
-    const uint64_t csrval = read_csr(a, mcycle, csraddr, &status);
+    const uint64_t csrval = read_csr(a, csraddr, &status);
     if (unlikely(!status)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
@@ -2488,7 +2494,7 @@ static FORCE_INLINE execute_status execute_csr_SC(STATE_ACCESS a, uint64_t &pc, 
         //    will have to check if there was a change to the
         //    memory manager and report back from here so we
         //    break out of the inner loop
-        wstatus = write_csr(a, mcycle, csraddr, f(csrval, rs1val));
+        wstatus = write_csr(a, csraddr, f(csrval, rs1val));
         if (unlikely(wstatus == execute_status::failure)) {
             return raise_illegal_insn_exception(a, pc, insn);
         }
@@ -2504,25 +2510,24 @@ static FORCE_INLINE execute_status execute_csr_SC(STATE_ACCESS a, uint64_t &pc, 
 
 /// \brief Implementation of the CSRRS instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_CSRRS(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_CSRRS(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "csrrs");
-    return execute_csr_SC(a, pc, mcycle, insn, [](uint64_t csr, uint64_t rs1) -> uint64_t { return csr | rs1; });
+    return execute_csr_SC(a, pc, insn, [](uint64_t csr, uint64_t rs1) -> uint64_t { return csr | rs1; });
 }
 
 /// \brief Implementation of the CSRRC instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_CSRRC(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_CSRRC(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "csrrc");
-    return execute_csr_SC(a, pc, mcycle, insn, [](uint64_t csr, uint64_t rs1) -> uint64_t { return csr & ~rs1; });
+    return execute_csr_SC(a, pc, insn, [](uint64_t csr, uint64_t rs1) -> uint64_t { return csr & ~rs1; });
 }
 
 template <typename STATE_ACCESS, typename F>
-static FORCE_INLINE execute_status execute_csr_SCI(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn,
-    const F &f) {
+static FORCE_INLINE execute_status execute_csr_SCI(STATE_ACCESS a, uint64_t &pc, uint32_t insn, const F &f) {
     auto csraddr = static_cast<CSR_address>(insn_I_get_uimm(insn));
     // Try to read old CSR value
     bool status = false;
-    const uint64_t csrval = read_csr(a, mcycle, csraddr, &status);
+    const uint64_t csrval = read_csr(a, csraddr, &status);
     if (unlikely(!status)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
@@ -2533,7 +2538,7 @@ static FORCE_INLINE execute_status execute_csr_SCI(STATE_ACCESS a, uint64_t &pc,
         //    will have to check if there was a change to the
         //    memory manager and report back from here so we
         //    break out of the inner loop
-        wstatus = write_csr(a, mcycle, csraddr, f(csrval, rs1));
+        wstatus = write_csr(a, csraddr, f(csrval, rs1));
         if (unlikely(wstatus == execute_status::failure)) {
             return raise_illegal_insn_exception(a, pc, insn);
         }
@@ -2549,16 +2554,16 @@ static FORCE_INLINE execute_status execute_csr_SCI(STATE_ACCESS a, uint64_t &pc,
 
 /// \brief Implementation of the CSRRSI instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_CSRRSI(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_CSRRSI(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "csrrsi");
-    return execute_csr_SCI(a, pc, mcycle, insn, [](uint64_t csr, uint32_t rs1) -> uint64_t { return csr | rs1; });
+    return execute_csr_SCI(a, pc, insn, [](uint64_t csr, uint32_t rs1) -> uint64_t { return csr | rs1; });
 }
 
 /// \brief Implementation of the CSRRCI instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_CSRRCI(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_CSRRCI(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "csrrci");
-    return execute_csr_SCI(a, pc, mcycle, insn, [](uint64_t csr, uint32_t rs1) -> uint64_t { return csr & ~rs1; });
+    return execute_csr_SCI(a, pc, insn, [](uint64_t csr, uint32_t rs1) -> uint64_t { return csr & ~rs1; });
 }
 
 /// \brief Implementation of the ECALL instruction.
@@ -2642,7 +2647,7 @@ static FORCE_INLINE execute_status execute_MRET(STATE_ACCESS a, uint64_t &pc, ui
 /// \brief Implementation of the WFI instruction.
 /// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_WFI(STATE_ACCESS a, uint64_t &pc, uint64_t &mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_WFI(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "wfi");
     // Check privileges and do nothing else
     auto prv = a.read_iprv();
@@ -2652,14 +2657,17 @@ static FORCE_INLINE execute_status execute_WFI(STATE_ACCESS a, uint64_t &pc, uin
         return raise_illegal_insn_exception(a, pc, insn);
     }
     // We wait for interrupts until the next timer interrupt.
-    const uint64_t mcycle_max = rtc_time_to_cycle(a.read_clint_mtimecmp());
+    const uint64_t mtime = a.read_mtime();
+    const uint64_t mtimecmp = a.read_clint_mtimecmp();
     execute_status status = execute_status::success;
-    if (mcycle_max > mcycle) {
+    if (likely(mtimecmp > mtime)) {
+        const uint64_t timeout_us = (mtimecmp - mtime) * RTC_US_PER_TICK;
         // Poll for external interrupts (e.g console or network),
-        // this may advance mcycle only when interactive mode is enabled
-        const auto [next_mcycle, interrupted] = a.poll_external_interrupts(mcycle, mcycle_max);
-        mcycle = next_mcycle;
-        if (interrupted) {
+        // this may advance time only when interactive mode is enabled
+        const auto [elapsed_us, interrupted] = a.poll_external_interrupts(timeout_us);
+        const uint64_t next_mtime = mtime + (elapsed_us / RTC_US_PER_TICK);
+        a.write_mtime(next_mtime);
+        if (interrupted || mtimecmp <= next_mtime) {
             status = execute_status::success_and_serve_interrupts;
         }
     }
@@ -3117,11 +3125,11 @@ static FORCE_INLINE execute_status execute_SRAIW(STATE_ACCESS a, uint64_t &pc, u
 }
 
 template <typename T, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_S(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_S(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     const int32_t imm = insn_S_get_imm(insn);
     const uint64_t val = a.read_x(insn_get_rs2(insn));
-    const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
+    const execute_status status = write_virtual_memory<T>(a, pc, vaddr + imm, val);
     if (unlikely(status != execute_status::success)) {
         if (status == execute_status::failure) {
             return advance_to_raised_exception(a, pc);
@@ -3133,38 +3141,38 @@ static FORCE_INLINE execute_status execute_S(STATE_ACCESS a, uint64_t &pc, uint6
 
 /// \brief Implementation of the SB instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SB(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SB(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sb");
-    return execute_S<uint8_t>(a, pc, mcycle, insn);
+    return execute_S<uint8_t>(a, pc, insn);
 }
 
 /// \brief Implementation of the SH instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SH(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SH(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sh");
-    return execute_S<uint16_t>(a, pc, mcycle, insn);
+    return execute_S<uint16_t>(a, pc, insn);
 }
 
 /// \brief Implementation of the SW instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SW(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SW(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sw");
-    return execute_S<uint32_t>(a, pc, mcycle, insn);
+    return execute_S<uint32_t>(a, pc, insn);
 }
 
 /// \brief Implementation of the SD instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_SD(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_SD(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sd");
-    return execute_S<uint64_t>(a, pc, mcycle, insn);
+    return execute_S<uint64_t>(a, pc, insn);
 }
 
 template <typename T, rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_L(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_L(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     const int32_t imm = insn_I_get_imm(insn);
     T val = 0;
-    if (unlikely(!read_virtual_memory<T>(a, pc, mcycle, vaddr + imm, &val))) {
+    if (unlikely(!read_virtual_memory<T>(a, pc, vaddr + imm, &val))) {
         return advance_to_raised_exception(a, pc);
     }
     const uint32_t rd = insn_get_rd(insn);
@@ -3183,51 +3191,51 @@ static FORCE_INLINE execute_status execute_L(STATE_ACCESS a, uint64_t &pc, uint6
 
 /// \brief Implementation of the LB instruction.
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_LB(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LB(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "lb");
-    return execute_L<int8_t, rd_kind>(a, pc, mcycle, insn);
+    return execute_L<int8_t, rd_kind>(a, pc, insn);
 }
 
 /// \brief Implementation of the LH instruction.
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_LH(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LH(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "lh");
-    return execute_L<int16_t, rd_kind>(a, pc, mcycle, insn);
+    return execute_L<int16_t, rd_kind>(a, pc, insn);
 }
 
 /// \brief Implementation of the LW instruction.
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_LW(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LW(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "lw");
-    return execute_L<int32_t, rd_kind>(a, pc, mcycle, insn);
+    return execute_L<int32_t, rd_kind>(a, pc, insn);
 }
 
 /// \brief Implementation of the LD instruction.
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_LD(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LD(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "ld");
-    return execute_L<int64_t, rd_kind>(a, pc, mcycle, insn);
+    return execute_L<int64_t, rd_kind>(a, pc, insn);
 }
 
 /// \brief Implementation of the LBU instruction.
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_LBU(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LBU(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "lbu");
-    return execute_L<uint8_t, rd_kind>(a, pc, mcycle, insn);
+    return execute_L<uint8_t, rd_kind>(a, pc, insn);
 }
 
 /// \brief Implementation of the LHU instruction.
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_LHU(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LHU(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "lhu");
-    return execute_L<uint16_t, rd_kind>(a, pc, mcycle, insn);
+    return execute_L<uint16_t, rd_kind>(a, pc, insn);
 }
 
 /// \brief Implementation of the LWU instruction.
 template <rd_kind rd_kind, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_LWU(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_LWU(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "lwu");
-    return execute_L<uint32_t, rd_kind>(a, pc, mcycle, insn);
+    return execute_L<uint32_t, rd_kind>(a, pc, insn);
 }
 
 template <typename STATE_ACCESS, typename F>
@@ -3419,60 +3427,60 @@ static FORCE_INLINE execute_status execute_SRLIW_SRAIW(STATE_ACCESS a, uint64_t 
 }
 
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMO_W(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMO_W(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     switch (static_cast<insn_AMO_funct7_sr2>(insn_get_funct7_sr2(insn))) {
         case insn_AMO_funct7_sr2::AMOADD:
-            return execute_AMOADD_W(a, pc, mcycle, insn);
+            return execute_AMOADD_W(a, pc, insn);
         case insn_AMO_funct7_sr2::AMOSWAP:
-            return execute_AMOSWAP_W(a, pc, mcycle, insn);
+            return execute_AMOSWAP_W(a, pc, insn);
         case insn_AMO_funct7_sr2::LR:
-            return execute_LR_W(a, pc, mcycle, insn);
+            return execute_LR_W(a, pc, insn);
         case insn_AMO_funct7_sr2::SC:
-            return execute_SC_W(a, pc, mcycle, insn);
+            return execute_SC_W(a, pc, insn);
         case insn_AMO_funct7_sr2::AMOXOR:
-            return execute_AMOXOR_W(a, pc, mcycle, insn);
+            return execute_AMOXOR_W(a, pc, insn);
         case insn_AMO_funct7_sr2::AMOOR:
-            return execute_AMOOR_W(a, pc, mcycle, insn);
+            return execute_AMOOR_W(a, pc, insn);
         case insn_AMO_funct7_sr2::AMOAND:
-            return execute_AMOAND_W(a, pc, mcycle, insn);
+            return execute_AMOAND_W(a, pc, insn);
         case insn_AMO_funct7_sr2::AMOMIN:
-            return execute_AMOMIN_W(a, pc, mcycle, insn);
+            return execute_AMOMIN_W(a, pc, insn);
         case insn_AMO_funct7_sr2::AMOMAX:
-            return execute_AMOMAX_W(a, pc, mcycle, insn);
+            return execute_AMOMAX_W(a, pc, insn);
         case insn_AMO_funct7_sr2::AMOMINU:
-            return execute_AMOMINU_W(a, pc, mcycle, insn);
+            return execute_AMOMINU_W(a, pc, insn);
         case insn_AMO_funct7_sr2::AMOMAXU:
-            return execute_AMOMAXU_W(a, pc, mcycle, insn);
+            return execute_AMOMAXU_W(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
     }
 }
 
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_AMO_D(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_AMO_D(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     switch (static_cast<insn_AMO_funct7_sr2>(insn_get_funct7_sr2(insn))) {
         case insn_AMO_funct7_sr2::AMOADD:
-            return execute_AMOADD_D(a, pc, mcycle, insn);
+            return execute_AMOADD_D(a, pc, insn);
         case insn_AMO_funct7_sr2::AMOSWAP:
-            return execute_AMOSWAP_D(a, pc, mcycle, insn);
+            return execute_AMOSWAP_D(a, pc, insn);
         case insn_AMO_funct7_sr2::LR:
-            return execute_LR_D(a, pc, mcycle, insn);
+            return execute_LR_D(a, pc, insn);
         case insn_AMO_funct7_sr2::SC:
-            return execute_SC_D(a, pc, mcycle, insn);
+            return execute_SC_D(a, pc, insn);
         case insn_AMO_funct7_sr2::AMOXOR:
-            return execute_AMOXOR_D(a, pc, mcycle, insn);
+            return execute_AMOXOR_D(a, pc, insn);
         case insn_AMO_funct7_sr2::AMOOR:
-            return execute_AMOOR_D(a, pc, mcycle, insn);
+            return execute_AMOOR_D(a, pc, insn);
         case insn_AMO_funct7_sr2::AMOAND:
-            return execute_AMOAND_D(a, pc, mcycle, insn);
+            return execute_AMOAND_D(a, pc, insn);
         case insn_AMO_funct7_sr2::AMOMIN:
-            return execute_AMOMIN_D(a, pc, mcycle, insn);
+            return execute_AMOMIN_D(a, pc, insn);
         case insn_AMO_funct7_sr2::AMOMAX:
-            return execute_AMOMAX_D(a, pc, mcycle, insn);
+            return execute_AMOMAX_D(a, pc, insn);
         case insn_AMO_funct7_sr2::AMOMINU:
-            return execute_AMOMINU_D(a, pc, mcycle, insn);
+            return execute_AMOMINU_D(a, pc, insn);
         case insn_AMO_funct7_sr2::AMOMAXU:
-            return execute_AMOMAXU_D(a, pc, mcycle, insn);
+            return execute_AMOMAXU_D(a, pc, insn);
         default:
             return raise_illegal_insn_exception(a, pc, insn);
     }
@@ -3621,7 +3629,7 @@ static FORCE_INLINE execute_status execute_SRLW_DIVUW_SRAW(STATE_ACCESS a, uint6
 }
 
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_privileged(STATE_ACCESS a, uint64_t &pc, uint64_t &mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_privileged(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     switch (static_cast<insn_privileged>(insn)) {
         case insn_privileged::ECALL:
             return execute_ECALL(a, pc, insn);
@@ -3632,7 +3640,7 @@ static FORCE_INLINE execute_status execute_privileged(STATE_ACCESS a, uint64_t &
         case insn_privileged::MRET:
             return execute_MRET(a, pc, insn);
         case insn_privileged::WFI:
-            return execute_WFI(a, pc, mcycle, insn);
+            return execute_WFI(a, pc, insn);
         default:
             return execute_SFENCE_VMA(a, pc, insn);
     }
@@ -3746,13 +3754,13 @@ static FORCE_INLINE execute_status execute_float_unary_op_rm(STATE_ACCESS a, uin
 }
 
 template <typename T, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_FS(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FS(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     const int32_t imm = insn_S_get_imm(insn);
     // A narrower n-bit transfer out of the floating-point
     // registers will transfer the lower n bits of the register ignoring the upper FLEN−n bits.
     T val = static_cast<T>(a.read_f(insn_get_rs2(insn)));
-    const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
+    const execute_status status = write_virtual_memory<T>(a, pc, vaddr + imm, val);
     if (unlikely(status != execute_status::success)) {
         if (status == execute_status::failure) {
             return advance_to_raised_exception(a, pc);
@@ -3763,32 +3771,32 @@ static FORCE_INLINE execute_status execute_FS(STATE_ACCESS a, uint64_t &pc, uint
 }
 
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_FSW(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FSW(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsw");
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    return execute_FS<uint32_t>(a, pc, mcycle, insn);
+    return execute_FS<uint32_t>(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_FSD(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FSD(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fsd");
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    return execute_FS<uint64_t>(a, pc, mcycle, insn);
+    return execute_FS<uint64_t>(a, pc, insn);
 }
 
 template <typename T, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_FL(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FL(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     // Loads the float value from virtual memory
     const uint64_t vaddr = a.read_x(insn_get_rs1(insn));
     const int32_t imm = insn_I_get_imm(insn);
     T val = 0;
-    if (unlikely(!read_virtual_memory(a, pc, mcycle, vaddr + imm, &val))) {
+    if (unlikely(!read_virtual_memory(a, pc, vaddr + imm, &val))) {
         return advance_to_raised_exception(a, pc);
     }
     // A narrower n-bit transfer, n < FLEN,
@@ -3799,23 +3807,23 @@ static FORCE_INLINE execute_status execute_FL(STATE_ACCESS a, uint64_t &pc, uint
 }
 
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_FLW(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FLW(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "flw");
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    return execute_FL<uint32_t>(a, pc, mcycle, insn);
+    return execute_FL<uint32_t>(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_FLD(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_FLD(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "fld");
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction exception.
     if (unlikely((a.read_mstatus() & MSTATUS_FS_MASK) == MSTATUS_FS_OFF)) {
         return raise_illegal_insn_exception(a, pc, insn);
     }
-    return execute_FL<uint64_t>(a, pc, mcycle, insn);
+    return execute_FL<uint64_t>(a, pc, insn);
 }
 
 template <typename STATE_ACCESS>
@@ -4701,11 +4709,10 @@ static FORCE_INLINE execute_status execute_FD(STATE_ACCESS a, uint64_t &pc, uint
 }
 
 template <typename T, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_L(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t rd, uint32_t rs1,
-    int32_t imm) {
+static FORCE_INLINE execute_status execute_C_L(STATE_ACCESS a, uint64_t &pc, uint32_t rd, uint32_t rs1, int32_t imm) {
     const uint64_t vaddr = a.read_x(rs1);
     T val = 0;
-    if (unlikely(!read_virtual_memory<T>(a, pc, mcycle, vaddr + imm, &val))) {
+    if (unlikely(!read_virtual_memory<T>(a, pc, vaddr + imm, &val))) {
         return advance_to_raised_exception(a, pc);
     }
     // This static branch is eliminated by the compiler
@@ -4718,11 +4725,10 @@ static FORCE_INLINE execute_status execute_C_L(STATE_ACCESS a, uint64_t &pc, uin
 }
 
 template <typename T, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_S(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t rs2,
-    uint32_t rs1, int32_t imm) {
+static FORCE_INLINE execute_status execute_C_S(STATE_ACCESS a, uint64_t &pc, uint32_t rs2, uint32_t rs1, int32_t imm) {
     const uint64_t vaddr = a.read_x(rs1);
     const uint64_t val = a.read_x(rs2);
-    const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
+    const execute_status status = write_virtual_memory<T>(a, pc, vaddr + imm, val);
     if (unlikely(status != execute_status::success)) {
         if (status == execute_status::failure) {
             return advance_to_raised_exception(a, pc);
@@ -4733,12 +4739,11 @@ static FORCE_INLINE execute_status execute_C_S(STATE_ACCESS a, uint64_t &pc, uin
 }
 
 template <typename T, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_FL(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t rd,
-    uint32_t rs1, int32_t imm) {
+static FORCE_INLINE execute_status execute_C_FL(STATE_ACCESS a, uint64_t &pc, uint32_t rd, uint32_t rs1, int32_t imm) {
     // Loads the float value from virtual memory
     const uint64_t vaddr = a.read_x(rs1);
     T val = 0;
-    if (unlikely(!read_virtual_memory(a, pc, mcycle, vaddr + imm, &val))) {
+    if (unlikely(!read_virtual_memory(a, pc, vaddr + imm, &val))) {
         return advance_to_raised_exception(a, pc);
     }
     // A narrower n-bit transfer, n < FLEN,
@@ -4748,13 +4753,12 @@ static FORCE_INLINE execute_status execute_C_FL(STATE_ACCESS a, uint64_t &pc, ui
 }
 
 template <typename T, typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_FS(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t rs2,
-    uint32_t rs1, int32_t imm) {
+static FORCE_INLINE execute_status execute_C_FS(STATE_ACCESS a, uint64_t &pc, uint32_t rs2, uint32_t rs1, int32_t imm) {
     const uint64_t vaddr = a.read_x(rs1);
     // A narrower n-bit transfer out of the floating-point
     // registers will transfer the lower n bits of the register ignoring the upper FLEN−n bits.
     T val = static_cast<T>(a.read_f(rs2));
-    const execute_status status = write_virtual_memory<T>(a, pc, mcycle, vaddr + imm, val);
+    const execute_status status = write_virtual_memory<T>(a, pc, vaddr + imm, val);
     if (unlikely(status != execute_status::success)) {
         if (status == execute_status::failure) {
             return advance_to_raised_exception(a, pc);
@@ -4781,7 +4785,7 @@ static FORCE_INLINE execute_status execute_C_ADDI4SPN(STATE_ACCESS a, uint64_t &
 
 /// \brief Implementation of the C.FLD instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_FLD(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_C_FLD(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, static_cast<uint16_t>(insn), "c.fld");
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction
     // exception.
@@ -4791,32 +4795,32 @@ static FORCE_INLINE execute_status execute_C_FLD(STATE_ACCESS a, uint64_t &pc, u
     const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
     const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     const int32_t imm = insn_get_CL_CS_imm(insn);
-    return execute_C_FL<uint64_t>(a, pc, mcycle, rd, rs1, imm);
+    return execute_C_FL<uint64_t>(a, pc, rd, rs1, imm);
 }
 
 /// \brief Implementation of the C.LW instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_LW(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_C_LW(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, static_cast<uint16_t>(insn), "c.lw");
     const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
     const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     const int32_t imm = insn_get_C_LW_C_SW_imm(insn);
-    return execute_C_L<int32_t>(a, pc, mcycle, rd, rs1, imm);
+    return execute_C_L<int32_t>(a, pc, rd, rs1, imm);
 }
 
 /// \brief Implementation of the C.LD instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_LD(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_C_LD(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, static_cast<uint16_t>(insn), "c.ld");
     const uint32_t rd = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
     const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     const int32_t imm = insn_get_CL_CS_imm(insn);
-    return execute_C_L<int64_t>(a, pc, mcycle, rd, rs1, imm);
+    return execute_C_L<int64_t>(a, pc, rd, rs1, imm);
 }
 
 /// \brief Implementation of the C.FSD instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_FSD(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_C_FSD(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, static_cast<uint16_t>(insn), "c.fsd");
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction
     // exception.
@@ -4826,27 +4830,27 @@ static FORCE_INLINE execute_status execute_C_FSD(STATE_ACCESS a, uint64_t &pc, u
     const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     const uint32_t rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
     const int32_t imm = insn_get_CL_CS_imm(insn);
-    return execute_C_FS<uint64_t>(a, pc, mcycle, rs2, rs1, imm);
+    return execute_C_FS<uint64_t>(a, pc, rs2, rs1, imm);
 }
 
 /// \brief Implementation of the C.SW instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_SW(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_C_SW(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, static_cast<uint16_t>(insn), "c.sw");
     const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     const uint32_t rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
     const int32_t imm = insn_get_C_LW_C_SW_imm(insn);
-    return execute_C_S<uint32_t>(a, pc, mcycle, rs2, rs1, imm);
+    return execute_C_S<uint32_t>(a, pc, rs2, rs1, imm);
 }
 
 /// \brief Implementation of the C.SD instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_SD(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_C_SD(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, static_cast<uint16_t>(insn), "c.sd");
     const uint32_t rs1 = insn_get_CL_CS_CA_CB_rs1(insn);
     const uint32_t rs2 = insn_get_CIW_CL_rd_CS_CA_rs2(insn);
     const int32_t imm = insn_get_CL_CS_imm(insn);
-    return execute_C_S<uint64_t>(a, pc, mcycle, rs2, rs1, imm);
+    return execute_C_S<uint64_t>(a, pc, rs2, rs1, imm);
 }
 
 /// \brief Implementation of the C.NOP instruction.
@@ -5081,7 +5085,7 @@ static FORCE_INLINE execute_status execute_C_SLLI(STATE_ACCESS a, uint64_t &pc, 
 
 /// \brief Implementation of the C.FLDSP instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_FLDSP(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_C_FLDSP(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, static_cast<uint16_t>(insn), "c.fldsp");
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction
     // exception.
@@ -5090,27 +5094,27 @@ static FORCE_INLINE execute_status execute_C_FLDSP(STATE_ACCESS a, uint64_t &pc,
     }
     const uint32_t rd = insn_get_rd(insn);
     const int32_t imm = insn_get_C_FLDSP_LDSP_imm(insn);
-    return execute_C_FL<uint64_t>(a, pc, mcycle, rd, 0x2, imm);
+    return execute_C_FL<uint64_t>(a, pc, rd, 0x2, imm);
 }
 
 /// \brief Implementation of the C.LWSP instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_LWSP(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_C_LWSP(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, static_cast<uint16_t>(insn), "c.lwsp");
     // rd cannot be zero (guaranteed by jump table)
     const uint32_t rd = insn_get_rd(insn);
     const int32_t imm = insn_get_C_LWSP_imm(insn);
-    return execute_C_L<int32_t>(a, pc, mcycle, rd, 0x2, imm);
+    return execute_C_L<int32_t>(a, pc, rd, 0x2, imm);
 }
 
 /// \brief Implementation of the C.LDSP instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_LDSP(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_C_LDSP(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, static_cast<uint16_t>(insn), "c.ldsp");
     // rd cannot be zero (guaranteed by jump table)
     const uint32_t rd = insn_get_rd(insn);
     const int32_t imm = insn_get_C_FLDSP_LDSP_imm(insn);
-    return execute_C_L<int64_t>(a, pc, mcycle, rd, 0x2, imm);
+    return execute_C_L<int64_t>(a, pc, rd, 0x2, imm);
 }
 
 /// \brief Implementation of the C.JR instruction.
@@ -5171,7 +5175,7 @@ static FORCE_INLINE execute_status execute_C_ADD(STATE_ACCESS a, uint64_t &pc, u
 
 /// \brief Implementation of the C.FSDSP instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_FSDSP(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_C_FSDSP(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, static_cast<uint16_t>(insn), "c.fsdsp");
     // If FS is OFF, attempts to read or write the float state will cause an illegal instruction
     // exception.
@@ -5180,25 +5184,25 @@ static FORCE_INLINE execute_status execute_C_FSDSP(STATE_ACCESS a, uint64_t &pc,
     }
     const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
     const int32_t imm = insn_get_C_FSDSP_SDSP_imm(insn);
-    return execute_C_FS<uint64_t>(a, pc, mcycle, rs2, 0x2, imm);
+    return execute_C_FS<uint64_t>(a, pc, rs2, 0x2, imm);
 }
 
 /// \brief Implementation of the C.SWSP instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_SWSP(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_C_SWSP(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, static_cast<uint16_t>(insn), "c.swsp");
     const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
     const int32_t imm = insn_get_C_SWSP_imm(insn);
-    return execute_C_S<uint32_t>(a, pc, mcycle, rs2, 0x2, imm);
+    return execute_C_S<uint32_t>(a, pc, rs2, 0x2, imm);
 }
 
 /// \brief Implementation of the C.SDSP instruction.
 template <typename STATE_ACCESS>
-static FORCE_INLINE execute_status execute_C_SDSP(STATE_ACCESS a, uint64_t &pc, uint64_t mcycle, uint32_t insn) {
+static FORCE_INLINE execute_status execute_C_SDSP(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, static_cast<uint16_t>(insn), "c.sdsp");
     const uint32_t rs2 = insn_get_CR_CSS_rs2(insn);
     const int32_t imm = insn_get_C_FSDSP_SDSP_imm(insn);
-    return execute_C_S<uint64_t>(a, pc, mcycle, rs2, 0x2, imm);
+    return execute_C_S<uint64_t>(a, pc, rs2, 0x2, imm);
 }
 
 /// \brief Instruction fetch status code
@@ -5360,15 +5364,15 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS a, uint64_t mcycle_e
     while (mcycle < mcycle_end) {
         INC_COUNTER(a.get_statistics(), outer_loop);
 
-        if (rtc_is_tick(mcycle)) {
+        if (rtc_is_tick(mcycle) && mcycle != 0) {
             // Set interrupt flag for RTC
-            set_rtc_interrupt(a, mcycle);
+            rtc_advance_tick(a);
 
             // Polling external interrupts only in WFI instructions is not enough
             // because Linux won't execute WFI instructions while under heavy load,
             // yet external interrupts still need to be triggered.
             // Therefore we poll for external interrupt once a while in the interpreter loop.
-            a.poll_external_interrupts(mcycle, mcycle);
+            a.poll_external_interrupts(0);
         }
 
         // Raise the highest priority pending interrupt, if any
@@ -5380,11 +5384,15 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS a, uint64_t mcycle_e
 #endif
 
         // Limit mcycle_tick_end up to the next RTC tick, while avoiding unsigned overflows
-        const uint64_t mcycle_tick_end = mcycle + std::min(mcycle_end - mcycle, RTC_FREQ_DIV - (mcycle % RTC_FREQ_DIV));
+        const volatile uint64_t mcycle_tick_end =
+            mcycle + std::min(mcycle_end - mcycle, RTC_FREQ_DIV - (mcycle % RTC_FREQ_DIV));
+        // NOTE: Volatile is used above to force the optimizer to store mcycle_tick_end in the stack,
+        // otherwise the optimizer would be allocate them in registers, degrading performance in the hot inner loop
 
         // The inner loop continues until there is an interrupt condition
         // or mcycle reaches mcycle_tick_end
-        while (mcycle < mcycle_tick_end) {
+        uint64_t mcycle_remaining = mcycle_tick_end - mcycle + 1;
+        while (--mcycle_remaining > 0) {
             INC_COUNTER(a.get_statistics(), inner_loop);
 
             uint32_t insn = 0;
@@ -5518,37 +5526,37 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS a, uint64_t mcycle_e
                         status = execute_REMUW<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(LD_rdN):
-                        status = execute_LD<rd_kind::xN>(a, pc, mcycle, insn);
+                        status = execute_LD<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(LW_rdN):
-                        status = execute_LW<rd_kind::xN>(a, pc, mcycle, insn);
+                        status = execute_LW<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(LWU_rdN):
-                        status = execute_LWU<rd_kind::xN>(a, pc, mcycle, insn);
+                        status = execute_LWU<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(LH_rdN):
-                        status = execute_LH<rd_kind::xN>(a, pc, mcycle, insn);
+                        status = execute_LH<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(LHU_rdN):
-                        status = execute_LHU<rd_kind::xN>(a, pc, mcycle, insn);
+                        status = execute_LHU<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(LB_rdN):
-                        status = execute_LB<rd_kind::xN>(a, pc, mcycle, insn);
+                        status = execute_LB<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(LBU_rdN):
-                        status = execute_LBU<rd_kind::xN>(a, pc, mcycle, insn);
+                        status = execute_LBU<rd_kind::xN>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(SD):
-                        status = execute_SD(a, pc, mcycle, insn);
+                        status = execute_SD(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(SW):
-                        status = execute_SW(a, pc, mcycle, insn);
+                        status = execute_SW(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(SH):
-                        status = execute_SH(a, pc, mcycle, insn);
+                        status = execute_SH(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(SB):
-                        status = execute_SB(a, pc, mcycle, insn);
+                        status = execute_SB(a, pc, insn);
                         INSN_BREAK();
                     // C extension
                     INSN_CASE(C_HINT):
@@ -5625,40 +5633,40 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS a, uint64_t mcycle_e
                         status = execute_C_SUBW(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(C_LD):
-                        status = execute_C_LD(a, pc, mcycle, insn);
+                        status = execute_C_LD(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(C_LW):
-                        status = execute_C_LW(a, pc, mcycle, insn);
+                        status = execute_C_LW(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(C_LDSP):
-                        status = execute_C_LDSP(a, pc, mcycle, insn);
+                        status = execute_C_LDSP(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(C_LWSP):
-                        status = execute_C_LWSP(a, pc, mcycle, insn);
+                        status = execute_C_LWSP(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(C_SD):
-                        status = execute_C_SD(a, pc, mcycle, insn);
+                        status = execute_C_SD(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(C_SW):
-                        status = execute_C_SW(a, pc, mcycle, insn);
+                        status = execute_C_SW(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(C_SDSP):
-                        status = execute_C_SDSP(a, pc, mcycle, insn);
+                        status = execute_C_SDSP(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(C_SWSP):
-                        status = execute_C_SWSP(a, pc, mcycle, insn);
+                        status = execute_C_SWSP(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(C_FLD):
-                        status = execute_C_FLD(a, pc, mcycle, insn);
+                        status = execute_C_FLD(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(C_FLDSP):
-                        status = execute_C_FLDSP(a, pc, mcycle, insn);
+                        status = execute_C_FLDSP(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(C_FSD):
-                        status = execute_C_FSD(a, pc, mcycle, insn);
+                        status = execute_C_FSD(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(C_FSDSP):
-                        status = execute_C_FSDSP(a, pc, mcycle, insn);
+                        status = execute_C_FSDSP(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(C_EBREAK):
                         status = execute_C_EBREAK(a, pc, insn);
@@ -5668,16 +5676,16 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS a, uint64_t mcycle_e
                         status = execute_FD(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(FLD):
-                        status = execute_FLD(a, pc, mcycle, insn);
+                        status = execute_FLD(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(FLW):
-                        status = execute_FLW(a, pc, mcycle, insn);
+                        status = execute_FLW(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(FSD):
-                        status = execute_FSD(a, pc, mcycle, insn);
+                        status = execute_FSD(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(FSW):
-                        status = execute_FSW(a, pc, mcycle, insn);
+                        status = execute_FSW(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(FMADD):
                         status = execute_FMADD(a, pc, insn);
@@ -5693,29 +5701,35 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS a, uint64_t mcycle_e
                         INSN_BREAK();
                     // A extension
                     INSN_CASE(AMO_D):
-                        status = execute_AMO_D(a, pc, mcycle, insn);
+                        status = execute_AMO_D(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(AMO_W):
-                        status = execute_AMO_W(a, pc, mcycle, insn);
+                        status = execute_AMO_W(a, pc, insn);
                         INSN_BREAK();
                     // Zicsr extension
                     INSN_CASE(CSRRW):
-                        status = execute_CSRRW(a, pc, mcycle, insn);
+                        a.write_mcycle(mcycle_tick_end - mcycle_remaining); // commit mcycle
+                        status = execute_CSRRW(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(CSRRS):
-                        status = execute_CSRRS(a, pc, mcycle, insn);
+                        a.write_mcycle(mcycle_tick_end - mcycle_remaining); // commit mcycle
+                        status = execute_CSRRS(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(CSRRC):
-                        status = execute_CSRRC(a, pc, mcycle, insn);
+                        a.write_mcycle(mcycle_tick_end - mcycle_remaining); // commit mcycle
+                        status = execute_CSRRC(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(CSRRWI):
-                        status = execute_CSRRWI(a, pc, mcycle, insn);
+                        a.write_mcycle(mcycle_tick_end - mcycle_remaining); // commit mcycle
+                        status = execute_CSRRWI(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(CSRRSI):
-                        status = execute_CSRRSI(a, pc, mcycle, insn);
+                        a.write_mcycle(mcycle_tick_end - mcycle_remaining); // commit mcycle
+                        status = execute_CSRRSI(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(CSRRCI):
-                        status = execute_CSRRCI(a, pc, mcycle, insn);
+                        a.write_mcycle(mcycle_tick_end - mcycle_remaining); // commit mcycle
+                        status = execute_CSRRCI(a, pc, insn);
                         INSN_BREAK();
                     // Special instructions that are less frequent
                     INSN_CASE(FENCE):
@@ -5725,7 +5739,7 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS a, uint64_t mcycle_e
                         status = execute_FENCE_I(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(PRIVILEGED):
-                        status = execute_privileged(a, pc, mcycle, insn);
+                        status = execute_privileged(a, pc, insn);
                         INSN_BREAK();
                     // Instructions with hints where rd=0
                     INSN_CASE(LUI_rd0):
@@ -5810,25 +5824,25 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS a, uint64_t mcycle_e
                         status = execute_REMUW<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(LD_rd0):
-                        status = execute_LD<rd_kind::x0>(a, pc, mcycle, insn);
+                        status = execute_LD<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(LW_rd0):
-                        status = execute_LW<rd_kind::x0>(a, pc, mcycle, insn);
+                        status = execute_LW<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(LWU_rd0):
-                        status = execute_LWU<rd_kind::x0>(a, pc, mcycle, insn);
+                        status = execute_LWU<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(LH_rd0):
-                        status = execute_LH<rd_kind::x0>(a, pc, mcycle, insn);
+                        status = execute_LH<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(LHU_rd0):
-                        status = execute_LHU<rd_kind::x0>(a, pc, mcycle, insn);
+                        status = execute_LHU<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(LB_rd0):
-                        status = execute_LB<rd_kind::x0>(a, pc, mcycle, insn);
+                        status = execute_LB<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     INSN_CASE(LBU_rd0):
-                        status = execute_LBU<rd_kind::x0>(a, pc, mcycle, insn);
+                        status = execute_LBU<rd_kind::x0>(a, pc, insn);
                         INSN_BREAK();
                     // Illegal instructions
                     INSN_CASE(ILLEGAL):
@@ -5859,35 +5873,35 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS a, uint64_t mcycle_e
                     fetch_vaddr_page = ~pc;
                     // All status above execute_status::success_and_serve_interrupts will require breaking the loop
                     if (unlikely(status >= execute_status::success_and_serve_interrupts)) {
-                        // Increment the cycle counter mcycle
-                        ++mcycle;
+                        // Decrement remaining cycles
+                        --mcycle_remaining;
 
                         if (likely(status == execute_status::success_and_serve_interrupts)) {
                             // We have to break the inner loop to check and serve any pending interrupt immediately
                             break;
                         } // execute_status::success_and_yield or execute_status::success_and_halt
                         // Commit machine state
+                        a.write_mcycle(mcycle_tick_end - mcycle_remaining);
                         a.write_pc(pc);
-                        a.write_mcycle(mcycle);
                         // Got an interruption that must be handled externally
                         return status;
                     }
                 }
             }
 
-            // Increment the cycle counter mcycle
-            ++mcycle;
-
 #ifndef NDEBUG
             // After a inner loop iteration, there can be no pending interrupts
             assert_no_brk(a);
 #endif
         }
+
+        // Update loop mcycle
+        mcycle = mcycle_tick_end - mcycle_remaining;
     }
 
     // Commit machine state
-    a.write_pc(pc);
     a.write_mcycle(mcycle);
+    a.write_pc(pc);
     return execute_status::success;
 }
 

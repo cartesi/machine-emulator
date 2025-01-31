@@ -543,8 +543,8 @@ private:
         return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::htif_iyield));
     }
 
-    std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t /*mcycle_max*/) {
-        return {mcycle, false};
+    std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t /*timeout_us*/) {
+        return {0, false};
     }
 
     uint64_t read_pma_istart(uint64_t i) {

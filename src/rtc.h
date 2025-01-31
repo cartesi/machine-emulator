@@ -28,24 +28,10 @@ namespace cartesi {
 
 /// \brief RTC constants
 enum RTC_constants : uint64_t {
-    RTC_FREQ_DIV = RTC_FREQ_DIV_DEF,              ///< Clock divisor is set stone in whitepaper
-    RTC_CLOCK_FREQ = RTC_CLOCK_FREQ_DEF,          ///< Clock frequency
-    RTC_CYCLES_PER_US = RTC_CLOCK_FREQ / 1000000, ///< Clock cycles per microsecond
+    RTC_FREQ_DIV = RTC_FREQ_DIV_DEF,                             ///< Clock divisor is set stone in whitepaper
+    RTC_CLOCK_FREQ = RTC_CLOCK_FREQ_DEF,                         ///< Clock frequency
+    RTC_US_PER_TICK = (1000000 * RTC_FREQ_DIV) / RTC_CLOCK_FREQ, /// < Microsecond per clock tick
 };
-
-/// \brief Converts from cycle count to time count
-/// \param cycle Cycle count
-/// \returns Time count
-static inline uint64_t rtc_cycle_to_time(uint64_t cycle) {
-    return cycle / RTC_FREQ_DIV;
-}
-
-/// \brief Converts from time count to cycle count
-/// \param time Time count
-/// \returns Cycle count
-static inline uint64_t rtc_time_to_cycle(uint64_t time) {
-    return time * RTC_FREQ_DIV;
-}
 
 /// \brief Returns whether the cycle is a RTC tick
 /// \param cycle Cycle count

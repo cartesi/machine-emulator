@@ -29,6 +29,7 @@
 #include "machine-c-api.h"
 #include "machine-c-version.h"
 #include "riscv-constants.h"
+#include "rtc.h"
 #include "uarch-constants.h"
 #include "uarch-pristine.h"
 
@@ -235,6 +236,10 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, MVENDORID_INIT, "MVENDORID", -1);
     clua_setintegerfield(L, MARCHID_INIT, "MARCHID", -1);
     clua_setintegerfield(L, MIMPID_INIT, "MIMPID", -1);
+    // RTC constants
+    clua_setintegerfield(L, RTC_FREQ_DIV, "RTC_FREQ_DIV", -1);
+    clua_setintegerfield(L, RTC_CLOCK_FREQ, "RTC_CLOCK_FREQ", -1);
+    clua_setintegerfield(L, RTC_US_PER_TICK, "RTC_US_PER_TICK", -1);
     // Build-related constants
     clua_setstringfield(L, BOOST_COMPILER, "COMPILER", -1);
     clua_setstringfield(L, BOOST_PLATFORM, "PLATFORM", -1);

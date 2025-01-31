@@ -36,7 +36,7 @@ local function do_test(description, f)
     print(" passed")
 end
 
-local RTC_FREQ_DIV = 8192
+local RTC_FREQ_DIV = 16384
 local EXPECTED_MCYCLE = RTC_FREQ_DIV * 2 + 20
 
 local function check_state(machine)

@@ -417,17 +417,16 @@ private:
         return m_m.get_state().htif.iyield;
     }
 
-    NO_INLINE std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
+    NO_INLINE std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t timeout_us) {
         bool interrupt_raised = false;
+        uint64_t elapsed_us = 0;
         // Only poll external interrupts if we are in unreproducible mode
         if (unlikely(do_read_iunrep())) {
-            // Convert the relative interval of cycles we can wait to the interval of host time we can wait
-            uint64_t timeout_us = (mcycle_max - mcycle) / RTC_CYCLES_PER_US;
             int64_t start_us = 0;
             if (timeout_us > 0) {
                 start_us = os_now_us();
             }
-            device_state_access da(*this, mcycle);
+            device_state_access da(*this);
             // Poll virtio for events (e.g console stdin, network sockets)
             // Timeout may be decremented in case a device has deadline timers (e.g network device)
             if (m_m.has_virtio_devices() && m_m.has_virtio_console()) { // VirtIO + VirtIO console
@@ -444,15 +443,13 @@ private:
             } else if (timeout_us > 0) { // No interrupts to check, just keep the CPU idle
                 os_sleep_us(timeout_us);
             }
-            // If timeout is greater than zero, we should also increment mcycle relative to the elapsed time
+            // If timeout is greater than zero, we should also increment relative to the real elapsed time
             if (timeout_us > 0) {
-                const int64_t end_us = os_now_us();
-                const uint64_t elapsed_us = static_cast<uint64_t>(std::max(end_us - start_us, INT64_C(0)));
-                const uint64_t next_mcycle = mcycle + (elapsed_us * RTC_CYCLES_PER_US);
-                mcycle = std::min(std::max(next_mcycle, mcycle), mcycle_max);
+                const int64_t end_us = std::max(os_now_us(), start_us);
+                elapsed_us = static_cast<uint64_t>(std::max(end_us - start_us, INT64_C(0)));
             }
         }
-        return {mcycle, interrupt_raised};
+        return {elapsed_us, interrupt_raised};
     }
 
     template <typename T>

@@ -17,6 +17,8 @@
 #ifndef HOST_ADDR_H
 #define HOST_ADDR_H
 
+#include "strict-aliasing.h"
+
 namespace cartesi {
 
 // This is simply an uint64_t as a separate type, not automatically convertible to uint64_t
@@ -91,6 +93,26 @@ static inline void *cast_host_addr_to_ptr(host_addr host_addr) {
     // according to the C spec this is required is to ensure the same presentation, before casting to PTR
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,bugprone-casting-through-void,performance-no-int-to-ptr)
     return reinterpret_cast<void *>(static_cast<uintptr_t>(host_addr));
+}
+
+/// \brief Writes a value to memory.
+/// \tparam T Type of value.
+/// \tparam A Type to which \p haddr is aligned.
+/// \param haddr Where to write. Must be aligned to sizeof(A).
+/// \param v Value to write.
+template <typename T, typename A = T>
+static inline void aliased_aligned_write(host_addr haddr, T v) {
+    aliased_aligned_write<T, A>(cast_host_addr_to_ptr(haddr), v);
+}
+
+/// \brief Reads a value from memory.
+/// \tparam T Type of value.
+/// \tparam A Type to which \p haddr is aligned.
+/// \param haddr Where to find value. Must be aligned to sizeof(A).
+/// \returns Value read.
+template <typename T, typename A = T>
+static inline T aliased_aligned_read(host_addr haddr) {
+    return aliased_aligned_read<T, A>(cast_host_addr_to_ptr(haddr));
 }
 
 } // namespace cartesi

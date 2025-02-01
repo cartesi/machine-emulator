@@ -17,76 +17,57 @@
 #ifndef UARCH_STRICT_ALIASING_H
 #define UARCH_STRICT_ALIASING_H
 
+/// \file
+/// \brief Enforcement of the strict aliasing rule
+
 #include "compiler-defines.h"
-#include <inttypes.h>
+#include "strict-aliasing.h"
 
-template <typename T, typename A = T>
-static inline void ua_aliased_aligned_write(uint64_t paddr, T val);
+namespace cartesi {
 
-template <typename T, typename A = T>
-static inline T ua_aliased_aligned_read(uint64_t paddr);
-
-#define UA_ALIASED_ALIGNED_WRITE(TYPE, INSN)                                                                           \
-    template <>                                                                                                        \
-    [[maybe_unused]] void ua_aliased_aligned_write<TYPE, TYPE>(uint64_t paddr, TYPE val) {                             \
-        /* NOLINTNEXTLINE(hicpp-no-assembler) */                                                                       \
-        asm volatile("mv a0, %0\n"                                                                                     \
-                     "mv a1, %1\n" INSN " a1, (a0)\n"                                                                  \
-                     : /* no output */                                                                                 \
-                     : "r"(paddr), "r"(val)                                                                            \
-                     : "a0", "a1" /* clobbered registers */                                                            \
-        );                                                                                                             \
-    }
-
-UA_ALIASED_ALIGNED_WRITE(uint64_t, "sd")
-UA_ALIASED_ALIGNED_WRITE(int64_t, "sd")
-UA_ALIASED_ALIGNED_WRITE(uint32_t, "sw")
-UA_ALIASED_ALIGNED_WRITE(int32_t, "sw")
-UA_ALIASED_ALIGNED_WRITE(uint16_t, "sh")
-UA_ALIASED_ALIGNED_WRITE(int16_t, "sh")
-UA_ALIASED_ALIGNED_WRITE(uint8_t, "sb")
-UA_ALIASED_ALIGNED_WRITE(int8_t, "sb")
-
-//??D see if this is the best we can do
-#define UA_ALIASED_ALIGNED_READ(TYPE, INSN)                                                                            \
-    template <>                                                                                                        \
-    [[maybe_unused]] TYPE ua_aliased_aligned_read<TYPE, TYPE>(uint64_t paddr) {                                        \
-        /* NOLINTNEXTLINE(hicpp-no-assembler) */                                                                       \
-        TYPE ret = 0;                                                                                                  \
-        asm volatile("mv a0, %1\n" INSN " a1, (a0)\n"                                                                  \
-                     "mv %0, a1\n"                                                                                     \
-                     : "=r"(ret)                                                                                       \
-                     : "r"(paddr), "r"(ret)                                                                            \
-                     : "a0", "a1" /* clobbered registers */                                                            \
-        );                                                                                                             \
-        return ret;                                                                                                    \
-    }
-
-UA_ALIASED_ALIGNED_READ(uint64_t, "ld")
-UA_ALIASED_ALIGNED_READ(int64_t, "ld")
-UA_ALIASED_ALIGNED_READ(uint32_t, "lwu")
-UA_ALIASED_ALIGNED_READ(int32_t, "lw")
-UA_ALIASED_ALIGNED_READ(uint16_t, "lhu")
-UA_ALIASED_ALIGNED_READ(int16_t, "lh")
-UA_ALIASED_ALIGNED_READ(uint8_t, "lbu")
-UA_ALIASED_ALIGNED_READ(int8_t, "lb")
-
-//??D see if this is the best we can do
-template <>
-[[maybe_unused]] uint32_t ua_aliased_aligned_read<uint32_t, uint16_t>(uint64_t paddr) {
-    // NOLINTNEXTLINE(hicpp-no-assembler)
-    uint32_t ret = 0;
-    asm volatile("mv a0, %1\n"
-                 "lhu a1, (a0)\n"
-                 "lhu a2, 2(a0)\n"
-                 "slli a2, a2, 16\n"
-                 "or a1, a2, a1\n"
-                 "mv %0, a1\n"
-                 : "=r"(ret)
-                 : "r"(paddr), "r"(ret)
-                 : "a0", "a1", "a2" // clobbered registers
-    );
-    return ret;
+/// \brief Casts a pointer to an unsigned integer.
+/// \details The pointer returned by this function
+/// must only be read/written using aliased_aligned_read/aliased_aligned_write,
+/// otherwise strict aliasing rules may be violated.
+/// \tparam T Unsigned integer type to cast to.
+/// \tparam PTR Pointer type to perform the cast.
+/// \param addr The address of the pointer represented by an unsigned integer.
+/// \returns A pointer.
+static inline void *cast_phys_addr_to_ptr(uint64_t paddr) {
+    // Enforcement on type arguments
+    static_assert(sizeof(void *) == sizeof(uintptr_t));
+    static_assert(sizeof(paddr) >= sizeof(uintptr_t));
+    // Note that bellow we cast the address to void* first,
+    // according to the C spec this is required is to ensure the same presentation, before casting to PTR
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,bugprone-casting-through-void,performance-no-int-to-ptr)
+    return reinterpret_cast<void *>(static_cast<uintptr_t>(paddr));
 }
+
+//??D I don't know why GCC warns about this overflow when there is none.
+//??D The code generated seems to be pretty good as well.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+/// \brief Writes a value to memory.
+/// \tparam T Type of value.
+/// \tparam A Type to which \p paddr is aligned.
+/// \param paddr Where to write. Must be aligned to sizeof(A).
+/// \param v Value to write.
+template <typename T, typename A = T>
+static inline void ua_aliased_aligned_write(uint64_t paddr, T v) {
+    aliased_aligned_write<T, A>(cast_phys_addr_to_ptr(paddr), v);
+}
+
+/// \brief Reads a value from memory.
+/// \tparam T Type of value.
+/// \tparam A Type to which \p paddr is aligned.
+/// \param paddr Where to find value. Must be aligned to sizeof(A).
+/// \returns Value read.
+template <typename T, typename A = T>
+static inline T ua_aliased_aligned_read(uint64_t paddr) {
+    return aliased_aligned_read<T, A>(cast_phys_addr_to_ptr(paddr));
+}
+#pragma GCC diagnostic pop
+
+} // namespace cartesi
 
 #endif

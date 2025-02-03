@@ -61,10 +61,6 @@ public:
     int getchar() {
         return derived().do_getchar();
     }
-
-    constexpr const char *get_name() const {
-        return derived().do_get_name();
-    }
 };
 
 /// \brief SFINAE test implementation of the i_state_access interface

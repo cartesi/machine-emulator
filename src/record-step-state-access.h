@@ -22,15 +22,12 @@
 #include <vector>
 
 #include "compiler-defines.h"
+#include "i-accept-scoped-note.h"
 #include "i-state-access.h"
 #include "machine.h"
 #include "shadow-pmas.h"
 #include "shadow-tlb.h"
 #include "unique-c-ptr.h"
-
-#if DUMP_STATE_ACCESS
-#include "scoped-note.h"
-#endif
 
 namespace cartesi {
 
@@ -49,7 +46,9 @@ struct i_state_access_fast_addr<record_step_state_access> {
 
 /// \class record_step_state_access
 /// \brief Records machine state access into a step log file
-class record_step_state_access : public i_state_access<record_step_state_access> {
+class record_step_state_access :
+    public i_state_access<record_step_state_access>,
+    public i_accept_scoped_note<record_step_state_access> {
     constexpr static int TREE_LOG2_ROOT_SIZE = machine_merkle_tree::get_log2_root_size();
     constexpr static int TREE_LOG2_PAGE_SIZE = machine_merkle_tree::get_log2_page_size();
     constexpr static uint64_t TREE_PAGE_SIZE = UINT64_C(1) << LOG2_PAGE_SIZE;
@@ -133,7 +132,6 @@ public:
 private:
     using pma_entry_type = pma_entry;
     using fast_addr_type = host_addr;
-    friend i_state_access<record_step_state_access>;
 
     /// \brief Mark a page as touched and save its contents
     /// \param address address of the page
@@ -202,18 +200,10 @@ private:
         return m_m.read_shadow_tlb(set_index, slot_index, what);
     }
 
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_push_begin_bracket(const char * /*text*/) {}
-
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_push_end_bracket(const char * /*text*/) {}
-
-#ifdef DUMP_STATE_ACCESS
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    auto do_make_scoped_note([[maybe_unused]] const char *text) {
-        return scoped_note<record_step_state_access>{*this, text};
-    }
-#endif
+    // -----
+    // i_state_access interface implementation
+    // -----
+    friend i_state_access<record_step_state_access>;
 
     uint64_t do_read_x(int i) const {
         return log_read_reg(machine_reg_enum(machine_reg::x0, i));
@@ -593,6 +583,7 @@ private:
         return log_read_tlb(SET, slot_index, shadow_tlb_what::pma_index);
     }
 
+    //??D This is still a bit too complicated for my taste
     template <TLB_set_index SET>
     host_addr do_read_tlb_vp_offset(uint64_t slot_index) {
         // During initialization, replay_step_state_access translates all vp_offset to corresponding vh_offset
@@ -616,6 +607,7 @@ private:
         return vh_offset;
     }
 
+    //??D This is still a bit too complicated for my taste
     template <TLB_set_index SET>
     void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) {
         // During initialization, replay_step_state_access translates all vp_offset to corresponding vh_offset

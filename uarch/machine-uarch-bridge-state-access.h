@@ -22,7 +22,7 @@
 #include <optional>
 
 #include "compiler-defines.h"
-#include "device-state-access.h"
+#include "i-accept-scoped-note.h"
 #include "i-state-access.h"
 #include "machine-reg.h"
 #include "mock-pma-entry.h"
@@ -33,10 +33,6 @@
 #include "uarch-defines.h"
 #include "uarch-ecall.h"
 #include "uarch-strict-aliasing.h"
-
-#if DUMP_UARCH_STATE_ACCESS
-#include "scoped-note.h"
-#endif
 
 namespace cartesi {
 
@@ -54,7 +50,9 @@ struct i_state_access_fast_addr<machine_uarch_bridge_state_access> {
 };
 
 // Provides access to the state of the big emulator from microcode
-class machine_uarch_bridge_state_access : public i_state_access<machine_uarch_bridge_state_access> {
+class machine_uarch_bridge_state_access :
+    public i_state_access<machine_uarch_bridge_state_access>,
+    public i_accept_scoped_note<machine_uarch_bridge_state_access> {
 
     //NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
     std::array<std::optional<mock_pma_entry>, PMA_MAX> &m_pmas;
@@ -68,15 +66,6 @@ public:
     ~machine_uarch_bridge_state_access() = default;
 
 private:
-    friend i_state_access<machine_uarch_bridge_state_access>;
-
-#ifdef DUMP_UARCH_STATE_ACCESS
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    auto do_make_scoped_note([[maybe_unused]] const char *text) {
-        return scoped_note<machine_uarch_bridge_state_access>{*this, text};
-    }
-#endif
-
     uint64_t bridge_read_reg(machine_reg reg) {
         return ua_aliased_aligned_read<uint64_t>(machine_reg_address(reg));
     }
@@ -84,6 +73,23 @@ private:
     void bridge_write_reg(machine_reg reg, uint64_t val) {
         ua_aliased_aligned_write<uint64_t>(machine_reg_address(reg), val);
     }
+
+    uint64_t bridge_read_pma_istart(int i) {
+        return ua_aliased_aligned_read<uint64_t>(shadow_pmas_get_pma_abs_addr(i, shadow_pmas_what::istart));
+    }
+
+    uint64_t bridge_read_pma_ilength(int i) {
+        return ua_aliased_aligned_read<uint64_t>(shadow_pmas_get_pma_abs_addr(i, shadow_pmas_what::ilength));
+    }
+
+    uint64_t bridge_read_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) {
+        return ua_aliased_aligned_read<uint64_t>(shadow_tlb_get_abs_addr(set_index, slot_index, what));
+    }
+
+    // -----
+    // i_state_access interface implementation
+    // -----
+    friend i_state_access<machine_uarch_bridge_state_access>;
 
     uint64_t do_read_x(int i) {
         return bridge_read_reg(machine_reg_enum(machine_reg::x0, i));
@@ -435,17 +441,9 @@ private:
         return false;
     }
 
-    uint64_t read_pma_istart(int i) {
-        return ua_aliased_aligned_read<uint64_t>(shadow_pmas_get_pma_abs_addr(i, shadow_pmas_what::istart));
-    }
-
-    uint64_t read_pma_ilength(int i) {
-        return ua_aliased_aligned_read<uint64_t>(shadow_pmas_get_pma_abs_addr(i, shadow_pmas_what::ilength));
-    }
-
     mock_pma_entry &do_read_pma_entry(uint64_t index) {
-        const uint64_t istart = read_pma_istart(index);
-        const uint64_t ilength = read_pma_ilength(index);
+        const uint64_t istart = bridge_read_pma_istart(index);
+        const uint64_t ilength = bridge_read_pma_ilength(index);
         // NOLINTNEXTLINE(bugprone-narrowing-conversions)
         int i = static_cast<int>(index);
         if (!m_pmas[i]) {
@@ -457,10 +455,6 @@ private:
 
     uint64_t do_get_faddr(uint64_t paddr, uint64_t /* pma_index */) const {
         return paddr;
-    }
-
-    uint64_t bridge_read_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) {
-        return ua_aliased_aligned_read<uint64_t>(shadow_tlb_get_abs_addr(set_index, slot_index, what));
     }
 
     template <TLB_set_index SET>

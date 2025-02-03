@@ -21,7 +21,6 @@
 #include <optional>
 
 #include "compiler-defines.h"
-#include "device-state-access.h"
 #include "host-addr.h"
 #include "i-state-access.h"
 #include "mock-pma-entry.h"

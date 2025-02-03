@@ -133,7 +133,7 @@ private:
     /// \param text Textual description of the access.
     /// \returns Value read.
     uint64_t check_read(uint64_t paligned, const char *text) {
-        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size<uint64_t>::value,
+        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size_v<uint64_t>,
             "Merkle tree word size must be at least as large as a machine word");
         if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
             throw std::invalid_argument{"address not aligned to word size"};
@@ -151,7 +151,7 @@ private:
                 << "(" << std::dec << paligned << ")";
             throw std::invalid_argument{err.str()};
         }
-        if (access.get_log2_size() != log2_size<uint64_t>::value) {
+        if (access.get_log2_size() != log2_size_v<uint64_t>) {
             throw std::invalid_argument{"expected " + access_to_report() + " to read 2^" +
                 std::to_string(machine_merkle_tree::get_log2_word_size()) + " bytes from " + text};
         }
@@ -189,7 +189,7 @@ private:
     /// \param word Word value to write.
     /// \param text Textual description of the access.
     void check_write(uint64_t paligned, uint64_t word, const char *text) {
-        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size<uint64_t>::value,
+        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size_v<uint64_t>,
             "Merkle tree word size must be at least as large as a machine word");
         if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
             throw std::invalid_argument{"paligned not aligned to word size"};
@@ -207,7 +207,7 @@ private:
                 << "(" << std::dec << paligned << ")";
             throw std::invalid_argument{err.str()};
         }
-        if (access.get_log2_size() != log2_size<uint64_t>::value) {
+        if (access.get_log2_size() != log2_size_v<uint64_t>) {
             throw std::invalid_argument{"expected " + access_to_report() + " to write 2^" +
                 std::to_string(machine_merkle_tree::get_log2_word_size()) + " bytes to " + text};
         }

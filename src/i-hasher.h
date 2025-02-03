@@ -67,8 +67,10 @@ public:
 };
 
 template <typename DERIVED>
-using is_an_i_hasher =
-    std::integral_constant<bool, is_template_base_of<i_hasher, typename remove_cvref<DERIVED>::type>::value>;
+using is_an_i_hasher = std::integral_constant<bool, is_template_base_of_v<i_hasher, std::remove_cvref_t<DERIVED>>>;
+
+template <typename DERIVED>
+constexpr bool is_an_i_hasher_v = is_an_i_hasher<DERIVED>::value;
 
 /// \brief Computes the hash of concatenated hashes
 /// \tparam H Hasher class
@@ -79,7 +81,7 @@ using is_an_i_hasher =
 template <typename H>
 inline static void get_concat_hash(H &h, const typename H::hash_type &left, const typename H::hash_type &right,
     typename H::hash_type &result) {
-    static_assert(is_an_i_hasher<H>::value, "not an i_hasher");
+    static_assert(is_an_i_hasher_v<H>, "not an i_hasher");
     h.begin();
     h.add_data(left.data(), static_cast<int>(left.size()));
     h.add_data(right.data(), static_cast<int>(right.size()));
@@ -95,7 +97,7 @@ inline static void get_concat_hash(H &h, const typename H::hash_type &left, cons
 template <typename H>
 inline static typename H::hash_type get_concat_hash(H &h, const typename H::hash_type &left,
     const typename H::hash_type &right) {
-    static_assert(is_an_i_hasher<H>::value, "not an i_hasher");
+    static_assert(is_an_i_hasher_v<H>, "not an i_hasher");
     h.begin();
     h.add_data(left.data(), left.size());
     h.add_data(right.data(), right.size());

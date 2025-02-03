@@ -6018,6 +6018,7 @@ template <typename STATE_ACCESS>
 interpreter_break_reason interpret(STATE_ACCESS a, uint64_t mcycle_end) {
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "code assumes little-endian byte ordering");
     static_assert(is_an_i_state_access_v<STATE_ACCESS>, "not an i_state_access");
+    static_assert(is_an_i_accept_scoped_note_v<STATE_ACCESS>, "not an i_accept_scoped_note");
 
     const uint64_t mcycle = a.read_mcycle();
 
@@ -6055,7 +6056,7 @@ interpreter_break_reason interpret(STATE_ACCESS a, uint64_t mcycle_end) {
     }
     if (status == execute_status::success_and_yield) {
         return interpreter_break_reason::yielded_softly;
-    } // Reached mcycle_end
+    }                                      // Reached mcycle_end
     assert(a.read_mcycle() == mcycle_end); // LCOV_EXCL_LINE
     return interpreter_break_reason::reached_target_mcycle;
 }

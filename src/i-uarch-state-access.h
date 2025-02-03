@@ -19,7 +19,6 @@
 
 #include <cstdint>
 
-#include "bracket-note.h"
 #include "tlb.h"
 
 namespace cartesi {
@@ -39,31 +38,6 @@ class i_uarch_state_access { // CRTP
     }
 
 public:
-    /// \brief Adds a begin bracket annotation to the log
-    /// \param text String with the text for the annotation
-    void push_begin_bracket(const char *text) {
-#ifdef DUMP_UARCH_STATE_ACCESS
-        printf("----> begin %s (%s)\n", text, get_name());
-#endif
-        return derived().do_push_begin_bracket(text);
-    }
-
-    /// \brief Adds an end bracket annotation to the log
-    /// \param text String with the text for the annotation
-    void push_end_bracket(const char *text) {
-#ifdef DUMP_UARCH_STATE_ACCESS
-        printf("<---- end %s (%s)\n", text, get_name());
-#endif
-        return derived().do_push_end_bracket(text);
-    }
-
-    /// \brief Adds annotations to the state, bracketing a scope
-    /// \param text String with the text for the annotation
-    /// \returns An object that, when constructed and destroyed issues an annonation.
-    auto make_scoped_note(const char *text) {
-        return derived().do_make_scoped_note(text);
-    }
-
     auto read_x(int i) {
 #ifdef DUMP_UARCH_STATE_ACCESS
         const auto val = derived().do_read_x(i);
@@ -170,20 +144,6 @@ public:
     constexpr const char *get_name() const {
         return derived().do_get_name();
     }
-
-private:
-    /// \brief For state access classes that do not need annotations
-    void do_push_begin_bracket(const char * /*text*/) {}
-
-    /// \brief For state access classes that do not need annotations
-    void do_push_end_bracket(const char * /*text*/) {}
-
-#ifndef DUMP_UARCH_STATE_ACCESS
-    /// \brief For state access classes that do not need annotations
-    int do_make_scoped_note(const char * /*text*/) {
-        return 0;
-    }
-#endif
 };
 
 } // namespace cartesi

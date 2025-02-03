@@ -42,14 +42,6 @@ struct is_template_base_of_helper {
 };
 } // namespace detail
 
-/// \class remove_cvref
-/// \brief Provides a member typedef type with reference and topmost cv-qualifiers removed.
-/// \note (This is directly available in C++20.)
-template <typename T>
-struct remove_cvref {
-    using type = std::remove_reference_t<std::remove_cv_t<T>>;
-};
-
 /// \class is_template_base_of
 /// \brief SFINAE test if class is derived from from a base template class.
 /// \tparam BASE Base template.
@@ -59,11 +51,17 @@ using is_template_base_of = std::integral_constant<bool,
     std::is_same_v<std::invoke_result_t<detail::is_template_base_of_helper<BASE, DERIVED>, const DERIVED &>,
         typename detail::is_template_base_of_helper<BASE, DERIVED>::yes>>;
 
+template <template <typename...> class BASE, typename DERIVED>
+constexpr bool is_template_base_of_v = is_template_base_of<BASE, DERIVED>::value;
+
 /// \class log2_size
 /// \brief Provides an int member value with the log<sub>2</sub> of size of \p T
 /// \param T Type from which the size is needed.
 template <typename T>
 struct log2_size {};
+
+template <typename T>
+constexpr int log2_size_v = log2_size<T>::value;
 
 /// \cond HIDDEN_SYMBOLS
 

@@ -410,7 +410,7 @@ private:
     }
 
     NO_INLINE std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
-        const bool interrupt_raised = false;
+        bool interrupt_raised = false;
         // Only poll external interrupts if we are in unreproducible mode
         if (unlikely(do_read_iunrep())) {
             // Convert the relative interval of cycles we can wait to the interval of host time we can wait
@@ -423,16 +423,16 @@ private:
             // Poll virtio for events (e.g console stdin, network sockets)
             // Timeout may be decremented in case a device has deadline timers (e.g network device)
             if (m_m.has_virtio_devices() && m_m.has_virtio_console()) { // VirtIO + VirtIO console
-                m_m.poll_virtio_devices(&timeout_us, &da);
+                interrupt_raised |= m_m.poll_virtio_devices(&timeout_us, &da);
                 // VirtIO console device will poll TTY
             } else if (m_m.has_virtio_devices()) { // VirtIO without a console
-                m_m.poll_virtio_devices(&timeout_us, &da);
+                interrupt_raised |= m_m.poll_virtio_devices(&timeout_us, &da);
                 if (m_m.has_htif_console()) { // VirtIO + HTIF console
                     // Poll tty without waiting more time, because the pool above should have waited enough time
-                    os_poll_tty(0);
+                    interrupt_raised |= os_poll_tty(0);
                 }
             } else if (m_m.has_htif_console()) { // Only HTIF console
-                os_poll_tty(timeout_us);
+                interrupt_raised |= os_poll_tty(timeout_us);
             } else if (timeout_us > 0) { // No interrupts to check, just keep the CPU idle
                 os_sleep_us(timeout_us);
             }

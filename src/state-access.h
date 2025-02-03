@@ -27,8 +27,8 @@
 #include <utility>
 
 #include "compiler-defines.h"
-#include "device-state-access.h"
 #include "host-addr.h"
+#include "i-interactive-state-access.h"
 #include "i-state-access.h"
 #include "interpret.h"
 #include "machine-state.h"
@@ -37,7 +37,6 @@
 #include "pma-constants.h"
 #include "pma.h"
 #include "riscv-constants.h"
-#include "rtc.h"
 #include "shadow-tlb.h"
 #include "strict-aliasing.h"
 
@@ -63,7 +62,7 @@ struct i_state_access_fast_addr<state_access> {
 /// \class state_access
 /// \details The state_access class implements fast, direct
 /// access to the machine state. No logs are kept.
-class state_access : public i_state_access<state_access> {
+class state_access : public i_state_access<state_access>, public i_interactive_state_access<state_access> {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
     machine &m_m; ///< Associated machine
 
@@ -84,6 +83,7 @@ public:
 
 private:
     friend i_state_access<state_access>;
+    friend i_interactive_state_access<state_access>;
 
     machine_state &do_get_naked_state() {
         return m_m.get_state();
@@ -506,57 +506,9 @@ private:
         m_m.mark_dirty_page(haddr, pma_index);
     }
 
-    NO_INLINE std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
-        bool interrupt_raised = false;
-        // Only poll external interrupts if we are in unreproducible mode
-        if (unlikely(do_read_iunrep())) {
-            // Convert the relative interval of cycles we can wait to the interval of host time we can wait
-            uint64_t timeout_us = (mcycle_max - mcycle) / RTC_CYCLES_PER_US;
-            int64_t start_us = 0;
-            if (timeout_us > 0) {
-                start_us = os_now_us();
-            }
-            device_state_access da(*this, mcycle);
-            // Poll virtio for events (e.g console stdin, network sockets)
-            // Timeout may be decremented in case a device has deadline timers (e.g network device)
-            if (m_m.has_virtio_devices() && m_m.has_virtio_console()) { // VirtIO + VirtIO console
-                interrupt_raised |= m_m.poll_virtio_devices(&timeout_us, &da);
-                // VirtIO console device will poll TTY
-            } else if (m_m.has_virtio_devices()) { // VirtIO without a console
-                interrupt_raised |= m_m.poll_virtio_devices(&timeout_us, &da);
-                if (m_m.has_htif_console()) { // VirtIO + HTIF console
-                    // Poll tty without waiting more time, because the pool above should have waited enough time
-                    interrupt_raised |= os_poll_tty(0);
-                }
-            } else if (m_m.has_htif_console()) { // Only HTIF console
-                interrupt_raised |= os_poll_tty(timeout_us);
-            } else if (timeout_us > 0) { // No interrupts to check, just keep the CPU idle
-                os_sleep_us(timeout_us);
-            }
-            // If timeout is greater than zero, we should also increment mcycle relative to the elapsed time
-            if (timeout_us > 0) {
-                const int64_t end_us = os_now_us();
-                const uint64_t elapsed_us = static_cast<uint64_t>(std::max(end_us - start_us, INT64_C(0)));
-                const uint64_t next_mcycle = mcycle + (elapsed_us * RTC_CYCLES_PER_US);
-                mcycle = std::min(std::max(next_mcycle, mcycle), mcycle_max);
-            }
-        }
-        return {mcycle, interrupt_raised};
-    }
-
-    bool do_get_soft_yield() {
-        return m_m.get_state().soft_yield;
-    }
-
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     void do_putchar(uint8_t c) {
         os_putchar(c);
-    }
-
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    int do_getchar() {
-        os_poll_tty(0);
-        return os_getchar();
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
@@ -569,6 +521,24 @@ private:
         return m_m.get_state().stats;
     }
 #endif
+
+    // -----
+    // i_intereactive_state_access interface implementation
+    // -----
+
+    NO_INLINE auto do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
+        return m_m.poll_external_interrupts(mcycle, mcycle_max);
+    }
+
+    bool do_get_soft_yield() {
+        return m_m.get_state().soft_yield;
+    }
+
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    int do_getchar() {
+        os_poll_tty(0);
+        return os_getchar();
+    }
 };
 
 } // namespace cartesi

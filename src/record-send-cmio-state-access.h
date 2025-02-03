@@ -84,7 +84,7 @@ private:
     /// \param paligned Physical address in the machine state, aligned to a 64-bit word.
     /// \param text Textual description of the access.
     void log_read(uint64_t paligned, const char *text) const {
-        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size<uint64_t>::value,
+        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size_v<uint64_t>,
             "Merkle tree word size must be at least as large as a machine word");
         if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
             throw std::invalid_argument{"paligned is not aligned to word size"};
@@ -103,7 +103,7 @@ private:
 
         a.set_type(access_type::read);
         a.set_address(paligned);
-        a.set_log2_size(log2_size<uint64_t>::value);
+        a.set_log2_size(log2_size_v<uint64_t>);
         // NOLINTBEGIN(bugprone-unchecked-optional-access)
         // we log the leaf data at pleaf_aligned that contains the word at paligned
         a.get_read().emplace();
@@ -120,7 +120,7 @@ private:
     /// \param val Value to write.
     /// \param text Textual description of the access.
     void log_before_write(uint64_t paligned, uint64_t val, const char *text) {
-        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size<uint64_t>::value,
+        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size_v<uint64_t>,
             "Merkle tree word size must be at least as large as a machine word");
         if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
             throw std::invalid_argument{"paligned is not aligned to word size"};
@@ -140,7 +140,7 @@ private:
 
         a.set_type(access_type::write);
         a.set_address(paligned);
-        a.set_log2_size(log2_size<uint64_t>::value);
+        a.set_log2_size(log2_size_v<uint64_t>);
         // NOLINTBEGIN(bugprone-unchecked-optional-access)
         // we log the entire leaf where the word is located
         a.get_read().emplace();

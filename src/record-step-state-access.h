@@ -22,7 +22,6 @@
 #include <vector>
 
 #include "compiler-defines.h"
-#include "device-state-access.h"
 #include "i-state-access.h"
 #include "machine.h"
 #include "shadow-pmas.h"

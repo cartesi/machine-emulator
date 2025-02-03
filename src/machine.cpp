@@ -37,10 +37,10 @@
 #include "access-log.h"
 #include "bracket-note.h"
 #include "clint-factory.h"
+#include "device-state-access.h"
 #include "dtb.h"
 #include "htif-factory.h"
 #include "htif.h"
-#include "i-device-state-access.h"
 #include "interpret.h"
 #include "is-pristine.h"
 #include "machine-config.h"
@@ -56,6 +56,7 @@
 #include "replay-send-cmio-state-access.h"
 #include "replay-step-state-access.h"
 #include "riscv-constants.h"
+#include "rtc.h"
 #include "send-cmio-response.h"
 #include "shadow-pmas-factory.h"
 #include "shadow-state-factory.h"
@@ -2493,6 +2494,46 @@ interpreter_break_reason machine::run(uint64_t mcycle_end) {
     }
     const state_access a(*this);
     return interpret(a, mcycle_end);
+}
+
+//??D How come this function seems to never signal we have an inteerrupt???
+std::pair<uint64_t, execute_status> machine::poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
+    const auto status = execute_status::success;
+    // Only poll external interrupts if we are in unreproducible mode
+    if (unlikely(m_s.iunrep)) {
+        // Convert the relative interval of cycles we can wait to the interval of host time we can wait
+        uint64_t timeout_us = (mcycle_max - mcycle) / RTC_CYCLES_PER_US;
+        int64_t start_us = 0;
+        if (timeout_us > 0) {
+            start_us = os_now_us();
+        }
+        state_access a(*this);
+        device_state_access da(a, mcycle);
+        // Poll virtio for events (e.g console stdin, network sockets)
+        // Timeout may be decremented in case a device has deadline timers (e.g network device)
+        if (has_virtio_devices() && has_virtio_console()) { // VirtIO + VirtIO console
+            poll_virtio_devices(&timeout_us, &da);
+            // VirtIO console device will poll TTY
+        } else if (has_virtio_devices()) { // VirtIO without a console
+            poll_virtio_devices(&timeout_us, &da);
+            if (has_htif_console()) { // VirtIO + HTIF console
+                // Poll tty without waiting more time, because the pool above should have waited enough time
+                os_poll_tty(0);
+            }
+        } else if (has_htif_console()) { // Only HTIF console
+            os_poll_tty(timeout_us);
+        } else if (timeout_us > 0) { // No interrupts to check, just keep the CPU idle
+            os_sleep_us(timeout_us);
+        }
+        // If timeout is greater than zero, we should also increment mcycle relative to the elapsed time
+        if (timeout_us > 0) {
+            const int64_t end_us = os_now_us();
+            const uint64_t elapsed_us = static_cast<uint64_t>(std::max(end_us - start_us, INT64_C(0)));
+            const uint64_t next_mcycle = mcycle + (elapsed_us * RTC_CYCLES_PER_US);
+            mcycle = std::min(std::max(next_mcycle, mcycle), mcycle_max);
+        }
+    }
+    return {mcycle, status};
 }
 
 } // namespace cartesi

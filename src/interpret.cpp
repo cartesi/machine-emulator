@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -32,6 +33,7 @@
 
 #include "compiler-defines.h"
 #include "device-state-access.h"
+#include "i-interactive-state-access.h"
 #include "i-state-access.h"
 #include "machine-statistics.h"
 #include "tlb.h"
@@ -971,7 +973,7 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS
             device_state_access da(a, mcycle);
             // If we do not know how to read, we treat this as a PMA violation
             const bool status = pma.get_device_noexcept().get_driver()->read(pma.get_device_noexcept().get_context(),
-                &da, offset, &val, log2_size<U>::value);
+                &da, offset, &val, log2_size_v<U>);
             if (likely(status)) {
                 *pval = static_cast<T>(val);
                 // device logs its own state accesses
@@ -1058,7 +1060,7 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(S
             const uint64_t offset = paddr - pma.get_start();
             device_state_access da(a, mcycle);
             auto status = pma.get_device_noexcept().get_driver()->write(pma.get_device_noexcept().get_context(), &da,
-                offset, static_cast<U>(static_cast<T>(val64)), log2_size<U>::value);
+                offset, static_cast<U>(static_cast<T>(val64)), log2_size_v<U>);
             // If we do not know how to write, we treat this as a PMA violation
             if (likely(status != execute_status::failure)) {
                 return {status, pc};
@@ -2757,6 +2759,7 @@ static FORCE_INLINE execute_status execute_MRET(STATE_ACCESS a, uint64_t &pc, ui
 template <typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_WFI(STATE_ACCESS a, uint64_t &pc, uint64_t &mcycle, uint32_t insn) {
     dump_insn(a, pc, insn, "wfi");
+    auto status = execute_status::success;
     // Check privileges and do nothing else
     auto prv = a.read_iprv();
     const uint64_t mstatus = a.read_mstatus();
@@ -2766,14 +2769,11 @@ static FORCE_INLINE execute_status execute_WFI(STATE_ACCESS a, uint64_t &pc, uin
     }
     // We wait for interrupts until the next timer interrupt.
     const uint64_t mcycle_max = rtc_time_to_cycle(a.read_clint_mtimecmp());
-    execute_status status = execute_status::success;
-    if (mcycle_max > mcycle) {
-        // Poll for external interrupts (e.g console or network),
-        // this may advance mcycle only when interactive mode is enabled
-        const auto [next_mcycle, interrupted] = a.poll_external_interrupts(mcycle, mcycle_max);
-        mcycle = next_mcycle;
-        if (interrupted) {
-            status = execute_status::success_and_serve_interrupts;
+    if constexpr (is_an_i_interactive_state_access_v<STATE_ACCESS>) {
+        if (mcycle_max > mcycle) {
+            // Poll for external interrupts (e.g console or network),
+            // this may advance mcycle only when interactive mode is enabled
+            std::tie(mcycle, status) = a.poll_external_interrupts(mcycle, mcycle_max);
         }
     }
     return advance_to_next_insn(a, pc, status);
@@ -3215,11 +3215,13 @@ static FORCE_INLINE execute_status execute_SRLIW(STATE_ACCESS a, uint64_t &pc, u
 template <rd_kind rd_kind, typename STATE_ACCESS>
 static FORCE_INLINE execute_status execute_SRAIW(STATE_ACCESS a, uint64_t &pc, uint32_t insn) {
     dump_insn(a, pc, insn, "sraiw");
+    // When rd=0 the instruction is a HINT, and we consider it as a soft yield when rs1 == 31
     if constexpr (rd_kind == rd_kind::x0) {
-        // When rd=0 the instruction is a HINT, and we consider it as a soft yield when rs1 == 31
-        if (unlikely(insn_get_rs1(insn) == 31 && a.get_soft_yield())) {
-            // Force the main interpreter loop to break
-            return advance_to_next_insn(a, pc, execute_status::success_and_yield);
+        if constexpr (is_an_i_interactive_state_access_v<STATE_ACCESS>) {
+            if (unlikely(insn_get_rd(insn) == 0 && insn_get_rs1(insn) == 31 && a.get_soft_yield())) {
+                // Force the main interpreter loop to break
+                return advance_to_next_insn(a, pc, execute_status::success_and_yield);
+            }
         }
         return advance_to_next_insn(a, pc);
     }
@@ -5485,8 +5487,10 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS a, uint64_t mcycle_e
             // Polling external interrupts only in WFI instructions is not enough
             // because Linux won't execute WFI instructions while under heavy load,
             // yet external interrupts still need to be triggered.
-            // Therefore we poll for external interrupt once a while in the interpreter loop.
-            a.poll_external_interrupts(mcycle, mcycle);
+            // Therefore we poll for external interrupt once in a while in the interpreter loop.
+            if constexpr (is_an_i_interactive_state_access_v<STATE_ACCESS>) {
+                a.poll_external_interrupts(mcycle, mcycle);
+            }
         }
 
         // Raise the highest priority pending interrupt, if any
@@ -6013,7 +6017,7 @@ static NO_INLINE execute_status interpret_loop(STATE_ACCESS a, uint64_t mcycle_e
 template <typename STATE_ACCESS>
 interpreter_break_reason interpret(STATE_ACCESS a, uint64_t mcycle_end) {
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "code assumes little-endian byte ordering");
-    static_assert(is_an_i_state_access<STATE_ACCESS>::value, "not an i_state_access");
+    static_assert(is_an_i_state_access_v<STATE_ACCESS>, "not an i_state_access");
 
     const uint64_t mcycle = a.read_mcycle();
 

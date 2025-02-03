@@ -112,7 +112,7 @@ private:
     }
 
     static std::pair<uint64_t, int> adjust_access(uint64_t paddr, int log2_size) {
-        static_assert(cartesi::log2_size<uint64_t>::value <= machine_merkle_tree::get_log2_word_size(),
+        static_assert(cartesi::log2_size_v<uint64_t> <= machine_merkle_tree::get_log2_word_size(),
             "Merkle tree word size must not be smaller than machine word size");
         if (((paddr >> log2_size) << log2_size) != paddr) {
             throw std::invalid_argument{"misaligned access"};
@@ -180,7 +180,7 @@ private:
     }
 
     uint64_t log_read_word_access(uint64_t paddr, const char *text) const {
-        const auto log2_size = cartesi::log2_size<uint64_t>::value;
+        const auto log2_size = log2_size_v<uint64_t>;
         access a;
         log_access_type(a, access_type::read);
         log_access_range(a, paddr, log2_size);
@@ -225,7 +225,7 @@ private:
 
     void log_write_reg_access(machine_reg reg, uint64_t val) {
         log_write_access(
-            machine_reg_address(reg), cartesi::log2_size<uint64_t>::value,
+            machine_reg_address(reg), log2_size_v<uint64_t>,
             [this, reg, val]() {
                 m_m.write_reg(reg, val);
                 if (!m_m.update_merkle_tree_page(machine_reg_address(reg))) {
@@ -283,7 +283,7 @@ private:
             throw std::runtime_error("misaligned write to uarch");
         }
         log_write_access(
-            paddr, cartesi::log2_size<uint64_t>::value,
+            paddr, log2_size_v<uint64_t>,
             [this, paddr, val]() {
                 m_m.write_word(paddr, val);
                 if (!m_m.update_merkle_tree_page(paddr)) {

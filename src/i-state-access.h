@@ -1070,7 +1070,7 @@ public:
     /// \warning T may or may not cross a Merkle tree word boundary starting from \p faddr!
     template <typename T, typename A = T>
     void read_memory_word(fast_addr faddr, uint64_t pma_index, T *pval) {
-        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
+        static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
 #ifdef DUMP_STATE_ACCESS
         derived().template do_read_memory_word<T, A>(faddr, pma_index, pval);
         const char *fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
@@ -1093,7 +1093,7 @@ public:
     /// \warning T may or may not cross a Merkle tree word boundary starting from \p faddr!
     template <typename T, typename A = T>
     void write_memory_word(fast_addr faddr, uint64_t pma_index, T val) {
-        static_assert(std::is_integral<T>::value && sizeof(T) <= sizeof(uint64_t), "unsupported type");
+        static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
         derived().template do_write_memory_word<T, A>(faddr, pma_index, val);
 #ifdef DUMP_STATE_ACCESS
         const char *fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
@@ -1186,33 +1186,6 @@ public:
         derived().do_putchar(c);
     }
 
-    // ---
-    // These methods ONLY need to be implemented when state belongs to non-reproducible host machines
-    // ---
-
-    /// \brief Poll for external interrupts.
-    /// \param mcycle Current machine mcycle.
-    /// \param mcycle_max Maximum mcycle to wait for interrupts.
-    /// \returns A pair, the first value is the new machine mcycle advanced by the relative elapsed time while
-    /// polling, the second value is a boolean that is true when the poll is stopped due do an external interrupt
-    /// request.
-    /// \details When mcycle_max is greater than mcycle, this function will sleep until an external interrupt
-    /// is triggered or mcycle_max relative elapsed time is reached.
-    std::pair<uint64_t, bool> poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
-        return derived().do_poll_external_interrupts(mcycle, mcycle_max);
-    }
-
-    /// \brief Returns true if soft yield HINT instruction is enabled at runtime
-    bool get_soft_yield() {
-        return derived().do_get_soft_yield();
-    }
-
-    /// \brief Reads a character from the console
-    /// \returns Character read if any, -1 otherwise
-    int getchar() {
-        return derived().do_getchar();
-    }
-
 #ifdef DUMP_COUNTERS
     //??D we should probably remove this from the interface
     auto &get_statistics() {
@@ -1225,22 +1198,6 @@ public:
     }
 
 protected:
-    /// \brief Default implementation when state does not belong to non-reproducible host machine
-    bool do_get_soft_yield() { // NOLINT(readability-convert-member-functions-to-static)
-        return false;
-    }
-
-    /// \brief Default implementation when state does not belong to non-reproducible host machine
-    std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle,
-        uint64_t /* mcycle_max */) { // NOLINT(readability-convert-member-functions-to-static)
-        return {mcycle, false};
-    }
-
-    /// \brief Default implementation when state does not belong to non-reproducible host machine
-    int do_getchar() { // NOLINT(readability-convert-member-functions-to-static)
-        return -1;
-    }
-
     /// \brief For state access classes that do not need annotations
     void do_push_begin_bracket(const char * /*text*/) {}
 
@@ -1258,7 +1215,10 @@ protected:
 /// \brief SFINAE test implementation of the i_state_access interface
 template <typename DERIVED>
 using is_an_i_state_access =
-    std::integral_constant<bool, is_template_base_of<i_state_access, typename remove_cvref<DERIVED>::type>::value>;
+    std::integral_constant<bool, is_template_base_of_v<i_state_access, std::remove_cvref_t<DERIVED>>>;
+
+template <typename DERIVED>
+constexpr bool is_an_i_state_access_v = is_an_i_state_access<DERIVED>::value;
 
 } // namespace cartesi
 

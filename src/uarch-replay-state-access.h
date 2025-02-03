@@ -126,7 +126,7 @@ private:
     }
 
     static std::pair<uint64_t, int> adjust_access(uint64_t paddr, int log2_size) {
-        static_assert(cartesi::log2_size<uint64_t>::value <= machine_merkle_tree::get_log2_word_size(),
+        static_assert(cartesi::log2_size_v<uint64_t> <= machine_merkle_tree::get_log2_word_size(),
             "Merkle tree word size must not be smaller than machine word size");
         const auto log2_word_size = machine_merkle_tree::get_log2_word_size();
         const auto log2_access_size = std::max(log2_size, log2_word_size);
@@ -249,7 +249,7 @@ private:
     }
 
     void check_write_word_access(uint64_t paddr, uint64_t val, const char *text) {
-        const auto log2_size = cartesi::log2_size<uint64_t>::value;
+        const auto log2_size = log2_size_v<uint64_t>;
         const auto &a = check_access(text);
         check_access_type(a, access_type::write, text);
         check_access_range(a, access_type::write, paddr, log2_size, text);
@@ -265,7 +265,7 @@ private:
     }
 
     uint64_t check_read_word_access(uint64_t paddr, const char *text) {
-        const auto log2_size = cartesi::log2_size<uint64_t>::value;
+        const auto log2_size = log2_size_v<uint64_t>;
         const auto &a = check_access(text);
         check_access_type(a, access_type::read, text);
         check_access_range(a, access_type::read, paddr, log2_size, text);

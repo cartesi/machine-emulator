@@ -15,11 +15,13 @@ THIRD_PARTY_DIR := ../third-party
 
 ifeq ($(UNAME),Darwin)
 HOST_CXX := clang++
+HOST_CC := clang
 else
 HOST_CXX := g++
+HOST_CC := gcc
 endif
-
 HOST_CFLAGS := -I$(THIRD_PARTY_DIR)/tiny_sha3 -I$(EMULATOR_SRC_DIR)
+HOST_CXXFLAGS := -std=c++20
 
 CC := $(TOOLCHAIN_PREFIX)gcc
 LD := $(TOOLCHAIN_PREFIX)ld
@@ -65,29 +67,28 @@ UARCH_SOURCES=\
 	uarch-runtime.cpp
 
 EMULATOR_SOURCES=\
-	interpret.cpp \
-	pma-driver.cpp \
-	htif.cpp \
-	shadow-tlb.cpp \
-	shadow-state.cpp \
-	shadow-uarch-state.cpp \
-	plic.cpp \
-	clint.cpp
+	$(EMULATOR_SRC_DIR)/interpret.cpp \
+	$(EMULATOR_SRC_DIR)/pma-driver.cpp \
+	$(EMULATOR_SRC_DIR)/htif.cpp \
+	$(EMULATOR_SRC_DIR)/shadow-tlb.cpp \
+	$(EMULATOR_SRC_DIR)/shadow-state.cpp \
+	$(EMULATOR_SRC_DIR)/shadow-uarch-state.cpp \
+	$(EMULATOR_SRC_DIR)/plic.cpp \
+	$(EMULATOR_SRC_DIR)/clint.cpp
 
-COMPUTE_UARCH_CPP_SOURCES=\
+COMPUTE_SOURCES=\
 	compute-uarch-pristine-hash.cpp \
 	$(EMULATOR_SRC_DIR)/machine-merkle-tree.cpp \
 	$(EMULATOR_SRC_DIR)/back-merkle-tree.cpp \
 	$(EMULATOR_SRC_DIR)/pristine-merkle-tree.cpp \
 	$(EMULATOR_SRC_DIR)/complete-merkle-tree.cpp \
-	$(EMULATOR_SRC_DIR)/full-merkle-tree.cpp
-
-COMPUTE_UARCH_C_SOURCES=\
+	$(EMULATOR_SRC_DIR)/full-merkle-tree.cpp \
 	$(THIRD_PARTY_DIR)/tiny_sha3/sha3.c \
 	uarch-pristine-ram.c
 
 UARCH_OBJS = $(patsubst %.c,%.uarch_c.o,$(patsubst %.cpp,%.uarch_cpp.o,$(UARCH_SOURCES)))
 EMULATOR_OBJS = $(patsubst %.c,%.emulator_c.o,$(patsubst %.cpp,%.emulator_cpp.o,$(EMULATOR_SOURCES)))
+COMPUTE_OBJS = $(patsubst %.c,%.compute_c.o,$(patsubst %.cpp,%.compute_cpp.o,$(COMPUTE_SOURCES)))
 
 LINTER_IGNORE_SOURCES=uarch-printf.c uarch-pristine-hash.c uarch-pristine-ram.c
 LINTER_IGNORE_HEADERS=uarch-printf.h
@@ -103,10 +104,10 @@ CLANG_TIDY_TARGETS=$(patsubst %.cpp,%.clang-tidy,$(patsubst %.c,%.clang-tidy,$(L
 
 all: uarch-ram.bin uarch-pristine-ram.c uarch-pristine-hash.c validate-instruction-set
 
-compute-uarch-pristine-hash: $(COMPUTE_UARCH_CPP_SOURCES) $(COMPUTE_UARCH_C_SOURCES)
-	$(HOST_CXX) $(HOST_CFLAGS) -o $@ -x c $(COMPUTE_UARCH_C_SOURCES) -x c++ $(COMPUTE_UARCH_CPP_SOURCES)
+compute-uarch-pristine-hash: $(COMPUTE_OBJS)
+	$(HOST_CXX) $(HOST_CFLAGS) $(HOST_CXXFLAGS) -o $@ $^
 
-uarch-pristine-hash.c:  compute-uarch-pristine-hash
+uarch-pristine-hash.c: compute-uarch-pristine-hash
 	./compute-uarch-pristine-hash > $@
 
 uarch-pristine-ram.c: uarch-ram.bin
@@ -134,16 +135,22 @@ uarch-ram.elf: $(EMULATOR_OBJS) $(UARCH_OBJS) uarch-ram-entry.o uarch-ram.ld
 	$(CXX) $(CFLAGS) $(CXXFLAGS) -Wl,-Tuarch-ram.ld  -o $@ $(EMULATOR_OBJS) $(UARCH_OBJS) uarch-ram-entry.o $(TOOLCHAIN_LIBS)
 
 uarch-ram-entry.o: uarch-ram-entry.S
-	$(CC) $(CFLAGS) -c -o $@ $(<F)
+	$(CC) $(CFLAGS) -c -o $@ $<
 
-%.emulator_cpp.o: $(EMULATOR_SRC_DIR)/%.cpp
-	$(CXX) $(CFLAGS) $(CXXFLAGS) -c -o $@ $(EMULATOR_SRC_DIR)/$(<F)
+%.compute_cpp.o: %.cpp
+	$(HOST_CXX) $(HOST_CFLAGS) $(HOST_CXXFLAGS) -c -o $@ $<
+
+%.compute_c.o: %.c
+	$(HOST_CC) $(HOST_CFLAGS) -c -o $@ $<
+
+%.emulator_cpp.o: %.cpp
+	$(CXX) $(CFLAGS) $(CXXFLAGS) -c -o $@ $<
 
 %.uarch_c.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ $(<F)
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 %.uarch_cpp.o: %.cpp
-	$(CXX) $(CFLAGS) $(CXXFLAGS) -c -o $@ $(<F)
+	$(CXX) $(CFLAGS) $(CXXFLAGS) -c -o $@ $<
 
 %.ld: %.ld.in
 	$(CC) -o $(@F).tmp -x c $(CFLAGS) -E $(^F)
@@ -162,4 +169,4 @@ clean-auto-generated:
 	@rm -f uarch-pristine-hash.c uarch-pristine-ram.c
 
 clean: clean-executables clean-auto-generated
-	@rm -f *.ld *.elf *.bin *.tmp link.ld *.o *.clang-tidy *.insn.txt *.objdump
+	@rm -f *.ld *.elf *.bin *.tmp link.ld $(UARCH_OBJS) $(EMULATOR_OBJS) $(COMPUTE_OBJS) *.clang-tidy *.insn.txt *.objdump

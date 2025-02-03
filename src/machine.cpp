@@ -1987,6 +1987,28 @@ machine::hash_type machine::get_merkle_tree_node_hash(uint64_t address, int log2
     return hash;
 }
 
+const char *machine::get_what_name(uint64_t paddr) {
+    if (paddr >= PMA_UARCH_RAM_START && paddr - PMA_UARCH_RAM_START < PMA_UARCH_RAM_LENGTH) {
+        return "uarch.ram";
+    }
+    // If in shadow, return refined name
+    if (paddr >= PMA_SHADOW_TLB_START && paddr - PMA_SHADOW_TLB_START < PMA_SHADOW_TLB_LENGTH) {
+        [[maybe_unused]] TLB_set_index set_index{};
+        [[maybe_unused]] uint64_t slot_index{};
+        return shadow_tlb_get_what_name(shadow_tlb_get_what(paddr, set_index, slot_index));
+    }
+    if (paddr >= PMA_SHADOW_STATE_START && paddr - PMA_SHADOW_STATE_START < PMA_SHADOW_STATE_LENGTH) {
+        return shadow_state_get_what_name(shadow_state_get_what(paddr));
+    }
+    if (paddr >= PMA_SHADOW_PMAS_START && paddr - PMA_SHADOW_PMAS_START < PMA_SHADOW_PMAS_LENGTH) {
+        return shadow_pmas_get_what_name(shadow_pmas_get_what(paddr));
+    }
+    if (paddr >= PMA_SHADOW_UARCH_STATE_START && paddr - PMA_SHADOW_UARCH_STATE_START < PMA_SHADOW_UARCH_STATE_LENGTH) {
+        return shadow_uarch_state_get_what_name(shadow_uarch_state_get_what(paddr));
+    }
+    return "memory";
+}
+
 machine::hash_type machine::get_merkle_tree_node_hash(uint64_t address, int log2_size) const {
     if (!update_merkle_tree()) {
         throw std::runtime_error{"error updating Merkle tree"};
@@ -2224,12 +2246,59 @@ uint64_t machine::translate_virtual_address(uint64_t vaddr) {
 uint64_t machine::read_word(uint64_t paddr) const {
     // Make sure address is aligned
     if ((paddr & (sizeof(uint64_t) - 1)) != 0) {
-        throw std::domain_error{"address not aligned"};
+        throw std::domain_error{"attempted misaligned read from word"};
     }
     // Use read_memory
     alignas(sizeof(uint64_t)) std::array<unsigned char, sizeof(uint64_t)> scratch{};
     read_memory(paddr, scratch.data(), scratch.size());
     return aliased_aligned_read<uint64_t>(scratch.data());
+}
+
+void machine::write_word(uint64_t paddr, uint64_t val) {
+    // Make sure address is aligned
+    if ((paddr & (sizeof(uint64_t) - 1)) != 0) {
+        throw std::domain_error{"attempted misaligned write to word"};
+    }
+    // If in shadow, forward to write_reg
+    if (paddr >= PMA_SHADOW_STATE_START && paddr - PMA_SHADOW_STATE_START < PMA_SHADOW_STATE_LENGTH) {
+        auto reg = shadow_state_get_what(paddr);
+        if (reg == shadow_state_what::unknown_) {
+            throw std::runtime_error("unhandled write to shadow state");
+        }
+        if (reg == shadow_state_what::x0) {
+            throw std::runtime_error("invalid shadow state write to x0");
+        }
+        write_reg(machine_reg_enum(reg), val);
+        return;
+    }
+    // If in uarch shadow, forward to write_reg
+    if (paddr >= PMA_SHADOW_UARCH_STATE_START && paddr - PMA_SHADOW_UARCH_STATE_START < PMA_SHADOW_UARCH_STATE_LENGTH) {
+        auto reg = shadow_uarch_state_get_what(paddr);
+        if (reg == shadow_uarch_state_what::unknown_) {
+            throw std::runtime_error("unhandled write to shadow uarch state");
+        }
+        if (reg == shadow_uarch_state_what::uarch_x0) {
+            throw std::runtime_error("invalid shadow state write to uarch.x0");
+        }
+        write_reg(machine_reg_enum(reg), val);
+        return;
+    }
+    // Otherwise, try the slow path
+    auto &pma = find_pma_entry(m_merkle_pmas, paddr, sizeof(uint64_t));
+    if (pma.get_istart_E() || !pma.get_istart_M()) {
+        std::ostringstream err;
+        err << "attempted memory write to " << pma.get_description() << " at address 0x" << std::hex << paddr << "("
+            << std::dec << paddr << ")";
+        throw std::runtime_error{err.str()};
+    }
+    if (!pma.get_istart_W()) {
+        std::ostringstream err;
+        err << "attempted memory write to (non-writeable) " << pma.get_description() << " at address 0x" << std::hex
+            << paddr << "(" << std::dec << paddr << ")";
+        throw std::runtime_error{err.str()};
+    }
+    const auto offset = paddr - pma.get_start();
+    aliased_aligned_write<uint64_t>(pma.get_memory().get_host_memory() + offset, val);
 }
 
 void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {
@@ -2293,7 +2362,7 @@ access_log machine::log_reset_uarch(const access_log::type &log_type) {
     hash_type root_hash_before;
     get_root_hash(root_hash_before);
     // Call uarch_reset_state with a uarch_record_state_access object
-    uarch_record_state_access a(m_us, *this, log_type);
+    uarch_record_state_access a(*this, log_type);
     {
         [[maybe_unused]] auto note = a.make_scoped_note("reset_uarch_state");
         uarch_reset_state(a);
@@ -2330,7 +2399,7 @@ access_log machine::log_step_uarch(const access_log::type &log_type) {
     hash_type root_hash_before;
     get_root_hash(root_hash_before);
     // Call interpret with a logged state access object
-    uarch_record_state_access a(m_us, *this, log_type);
+    uarch_record_state_access a(*this, log_type);
     {
         [[maybe_unused]] auto note = a.make_scoped_note("step");
         uarch_step(a);

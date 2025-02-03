@@ -413,10 +413,6 @@ private:
         return bridge_read_reg(machine_reg::htif_iyield);
     }
 
-    std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t /*mcycle_max*/) {
-        return {mcycle, false};
-    }
-
     template <typename T, typename A>
     void do_read_memory_word(uint64_t paddr, uint64_t /* pma_index */, T *pval) {
         *pval = ua_aliased_aligned_read<T, A>(paddr);

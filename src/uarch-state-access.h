@@ -28,7 +28,6 @@
 #include "os.h"
 #include "riscv-constants.h"
 #include "strict-aliasing.h"
-#include "uarch-machine-bridge.h"
 #include "uarch-pristine.h"
 
 #if DUMP_UARCH_STATE_ACCESS
@@ -40,15 +39,14 @@ namespace cartesi {
 class uarch_state_access : public i_uarch_state_access<uarch_state_access> {
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     machine &m_m;
-    uarch_machine_bridge m_b;
+    // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
     host_addr m_uram_ph_offset;
-    // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)1
 
 public:
     /// \brief Constructor from machine and uarch states.
     /// \param um Reference to uarch state.
     /// \param m Reference to machine state.
-    explicit uarch_state_access(machine &m) : m_m(m), m_b(m) {
+    explicit uarch_state_access(machine &m) : m_m(m) {
         const auto &uram = m_m.get_uarch_state().ram;
         const auto haddr = cast_ptr_to_host_addr(uram.get_memory_noexcept().get_host_memory());
         const auto paddr = uram.get_start();
@@ -114,27 +112,29 @@ private:
         if ((paddr & (sizeof(uint64_t) - 1)) != 0) {
             throw std::runtime_error("misaligned read from uarch");
         }
-        // If the word is in UARCH_RAM, read it
+        // If the word is in UARCH_RAM, read it directly
+        // ??D This is an optimization that makes 15% difference in run_uarch tests
         if (m_m.get_uarch_state().ram.contains(paddr, sizeof(uint64_t))) {
             auto haddr = m_uram_ph_offset + paddr;
             return aliased_aligned_read<uint64_t>(haddr);
         }
-        // Otherwise, forward to bridge
-        return m_b.read_word(paddr);
+        // Forward to machine
+        return m_m.read_word(paddr);
     }
 
     void do_write_word(uint64_t paddr, uint64_t val) {
         if ((paddr & (sizeof(uint64_t) - 1)) != 0) {
-            throw std::runtime_error("misaligned write to uarch");
+            throw std::runtime_error("misaligned read from uarch");
         }
-        // If the word is in UARCH_RAM, write it
+        // If the word is in UARCH_RAM, write it directly
+        // ??D This is an optimization that makes 15% difference in run_uarch tests
         if (m_m.get_uarch_state().ram.contains(paddr, sizeof(uint64_t))) {
             auto haddr = m_uram_ph_offset + paddr;
             aliased_aligned_write<uint64_t>(haddr, val);
             return;
         }
-        // Otherwise, forward to bridge
-        m_b.write_word(paddr, val);
+        // Forward to machine
+        m_m.write_word(paddr, val);
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
@@ -144,17 +144,18 @@ private:
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) {
-        // forward to bridge
-        m_b.mark_dirty_page(paddr, pma_index);
+        // Forward to machine
+        m_m.mark_dirty_page(paddr, pma_index);
     }
 
     void do_write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
         uint64_t pma_index) {
-        // forward to bridge
-        m_b.write_shadow_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
+        // Forward to machine
+        m_m.write_shadow_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
     }
 
     void do_reset_state() {
+        // Forward to machine
         m_m.reset_uarch();
     }
 

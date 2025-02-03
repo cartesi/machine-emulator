@@ -344,11 +344,18 @@ public:
     /// \returns The address of the register
     static uint64_t get_reg_address(reg r);
 
-    /// \brief Read the value of a word in the machine state.
+    /// \brief Read the value of a word from the machine state.
     /// \param paddr Word address (aligned to 64-bit boundary).
     /// \returns The value of word at address.
     /// \details The word can be anywhere in the entire address space.
     uint64_t read_word(uint64_t paddr) const;
+
+    /// \brief Writes the value of a word to the machine state.
+    /// \param paddr Word address (aligned to 64-bit boundary).
+    /// \details The word can be in a writeable area of the address space.
+    /// This includes the shadow state and the shadow uarch state.
+    /// (But does NOT include memory-mapped devices, the shadow tlb, shadow PMAs, or unnocupied memory regions.)
+    void write_word(uint64_t paddr, uint64_t val);
 
     /// \brief Reads a chunk of data, by its target physical address and length.
     /// \param paddr Target physical address to start reading from.
@@ -524,6 +531,11 @@ public:
     /// \param root_hash_after State hash after response was sent.
     static void verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after);
+
+    /// \brief Returns a description of what is at a given target physical address
+    /// \param paddr Target physical address of interest
+    /// \returns Description of what is at that address
+    static const char *get_what_name(uint64_t paddr);
 };
 
 } // namespace cartesi

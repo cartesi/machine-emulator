@@ -332,11 +332,11 @@ private:
     }
 
     uint64_t do_read_word(uint64_t paddr) {
-        return check_read_word_access(paddr, uarch_machine_bridge::get_what_name(paddr));
+        return check_read_word_access(paddr, machine::get_what_name(paddr));
     }
 
     void do_write_word(uint64_t paddr, uint64_t val) {
-        check_write_word_access(paddr, val, uarch_machine_bridge::get_what_name(paddr));
+        check_write_word_access(paddr, val, machine::get_what_name(paddr));
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

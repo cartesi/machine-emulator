@@ -29,8 +29,8 @@
 #include <vector>
 
 #include "access-log.h"
+#include "i-accept-scoped-note.h"
 #include "i-hasher.h"
-#include "i-state-access.h"
 #include "i-uarch-state-access.h"
 #include "machine-merkle-tree.h"
 #include "meta.h"
@@ -41,7 +41,9 @@
 
 namespace cartesi {
 
-class uarch_replay_state_access : public i_uarch_state_access<uarch_replay_state_access> {
+class uarch_replay_state_access :
+    public i_uarch_state_access<uarch_replay_state_access>,
+    public i_accept_scoped_note<uarch_replay_state_access> {
     using tree_type = machine_merkle_tree;
     using hash_type = tree_type::hash_type;
     using hasher_type = tree_type::hasher_type;
@@ -278,17 +280,31 @@ private:
         return val;
     }
 
+    auto get_write_tlb_slot_hash(uint64_t vaddr_page, uint64_t vp_offset, uint64_t pma_index) {
+        // Writes to TLB slots have to be atomic.
+        // We can only do atomic writes of entire Merkle tree nodes.
+        // Therefore, TLB slot must have a power-of-two size, or at least be aligned to it.
+        static_assert(SHADOW_TLB_SLOT_SIZE == sizeof(shadow_tlb_slot), "shadow TLB slot size is wrong");
+        static_assert((UINT64_C(1) << SHADOW_TLB_SLOT_LOG2_SIZE) == SHADOW_TLB_SLOT_SIZE,
+            "shadow TLB slot log2 size is wrong");
+        static_assert(SHADOW_TLB_SLOT_LOG2_SIZE >= machine_merkle_tree::get_log2_word_size(),
+            "shadow TLB slot must fill at least an entire Merkle tree word");
+        shadow_tlb_slot slot_data{};
+        shadow_tlb_fill_slot(vaddr_page, vp_offset, pma_index, slot_data);
+        hash_type slot_hash{};
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        get_merkle_tree_hash(m_hasher, reinterpret_cast<uint8_t *>(&slot_data), sizeof(slot_data),
+            machine_merkle_tree::get_word_size(), slot_hash);
+        return slot_hash;
+    }
+
+    // -----
+    // i_uarch_state_access interface implementation
+    // -----
     friend i_uarch_state_access<uarch_replay_state_access>;
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     void do_push_bracket(bracket_type /*type*/, const char * /*text*/) {}
-
-#ifdef DUMP_UARCH_STATE_ACCESS
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    auto do_make_scoped_note([[maybe_unused]] const char *text) {
-        return scoped_note<uarch_replay_state_access>{*this, text};
-    }
-#endif
 
     uint64_t do_read_x(int i) {
         const auto reg = machine_reg_enum(machine_reg::uarch_x0, i);
@@ -351,24 +367,6 @@ private:
 
     void do_reset_state() {
         check_write_access(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE, uarch_pristine_state_hash, "uarch.state");
-    }
-
-    auto get_write_tlb_slot_hash(uint64_t vaddr_page, uint64_t vp_offset, uint64_t pma_index) {
-        // Writes to TLB slots have to be atomic.
-        // We can only do atomic writes of entire Merkle tree nodes.
-        // Therefore, TLB slot must have a power-of-two size, or at least be aligned to it.
-        static_assert(SHADOW_TLB_SLOT_SIZE == sizeof(shadow_tlb_slot), "shadow TLB slot size is wrong");
-        static_assert((UINT64_C(1) << SHADOW_TLB_SLOT_LOG2_SIZE) == SHADOW_TLB_SLOT_SIZE,
-            "shadow TLB slot log2 size is wrong");
-        static_assert(SHADOW_TLB_SLOT_LOG2_SIZE >= machine_merkle_tree::get_log2_word_size(),
-            "shadow TLB slot must fill at least an entire Merkle tree word");
-        shadow_tlb_slot slot_data{};
-        shadow_tlb_fill_slot(vaddr_page, vp_offset, pma_index, slot_data);
-        hash_type slot_hash{};
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        get_merkle_tree_hash(m_hasher, reinterpret_cast<uint8_t *>(&slot_data), sizeof(slot_data),
-            machine_merkle_tree::get_word_size(), slot_hash);
-        return slot_hash;
     }
 
     void do_write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,

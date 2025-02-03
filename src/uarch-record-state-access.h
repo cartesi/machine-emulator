@@ -29,15 +29,14 @@
 
 #include "access-log.h"
 #include "host-addr.h"
+#include "i-accept-scoped-note.h"
 #include "i-hasher.h"
-#include "i-state-access.h"
 #include "i-uarch-state-access.h"
 #include "machine-merkle-tree.h"
 #include "machine.h"
 #include "meta.h"
 #include "pma.h"
 #include "riscv-constants.h"
-#include "scoped-note.h"
 #include "shadow-tlb.h"
 #include "shadow-uarch-state.h"
 #include "strict-aliasing.h"
@@ -51,7 +50,9 @@ namespace cartesi {
 using namespace std::string_literals;
 
 /// \details The uarch_record_state_access logs all access to the machine state.
-class uarch_record_state_access : public i_uarch_state_access<uarch_record_state_access> {
+class uarch_record_state_access :
+    public i_uarch_state_access<uarch_record_state_access>,
+    public i_accept_scoped_note<uarch_record_state_access> {
 
     using hasher_type = machine_merkle_tree::hasher_type;
     using hash_type = machine_merkle_tree::hash_type;
@@ -99,18 +100,6 @@ public:
     }
 
 private:
-    void do_push_begin_bracket(const char *text) {
-        m_log->push_begin_bracket(text);
-    }
-
-    void do_push_end_bracket(const char *text) {
-        m_log->push_end_bracket(text);
-    }
-
-    auto do_make_scoped_note(const char *text) {
-        return scoped_note<uarch_record_state_access>{*this, text};
-    }
-
     static std::pair<uint64_t, int> adjust_access(uint64_t paddr, int log2_size) {
         static_assert(cartesi::log2_size_v<uint64_t> <= machine_merkle_tree::get_log2_word_size(),
             "Merkle tree word size must not be smaller than machine word size");
@@ -235,7 +224,9 @@ private:
             machine_reg_get_name(reg));
     }
 
-    // Declare interface as friend to it can forward calls to the "overridden" methods.
+    // -----
+    // i_uarch_state_access interface implementation
+    // -----
     friend i_uarch_state_access<uarch_record_state_access>;
 
     uint64_t do_read_x(int i) const {
@@ -345,6 +336,23 @@ private:
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     constexpr const char *do_get_name() const {
         return "uarch_record_state_access";
+    }
+
+    // -----
+    // i_accept_scoped_note interface implementation
+    // -----
+    friend i_accept_scoped_note<uarch_record_state_access>;
+
+    void do_push_begin_bracket(const char *text) {
+        m_log->push_begin_bracket(text);
+    }
+
+    void do_push_end_bracket(const char *text) {
+        m_log->push_end_bracket(text);
+    }
+
+    auto do_make_scoped_note(const char *text) {
+        return scoped_note{*this, text};
     }
 };
 

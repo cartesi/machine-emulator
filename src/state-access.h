@@ -28,6 +28,7 @@
 
 #include "compiler-defines.h"
 #include "host-addr.h"
+#include "i-accept-scoped-note.h"
 #include "i-interactive-state-access.h"
 #include "i-state-access.h"
 #include "interpret.h"
@@ -39,10 +40,6 @@
 #include "riscv-constants.h"
 #include "shadow-tlb.h"
 #include "strict-aliasing.h"
-
-#if DUMP_STATE_ACCESS
-#include "scoped-note.h"
-#endif
 
 namespace cartesi {
 
@@ -62,7 +59,10 @@ struct i_state_access_fast_addr<state_access> {
 /// \class state_access
 /// \details The state_access class implements fast, direct
 /// access to the machine state. No logs are kept.
-class state_access : public i_state_access<state_access>, public i_interactive_state_access<state_access> {
+class state_access :
+    public i_state_access<state_access>,
+    public i_interactive_state_access<state_access>,
+    public i_accept_scoped_note<state_access> {
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
     machine &m_m; ///< Associated machine
 
@@ -82,19 +82,14 @@ public:
     }
 
 private:
-    friend i_state_access<state_access>;
-    friend i_interactive_state_access<state_access>;
-
     machine_state &do_get_naked_state() {
         return m_m.get_state();
     }
 
-#ifdef DUMP_STATE_ACCESS
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    auto do_make_scoped_note([[maybe_unused]] const char *text) {
-        return scoped_note<state_access>{*this, text};
-    }
-#endif
+    // -----
+    // i_state_access interface implementation
+    // -----
+    friend i_state_access<state_access>;
 
     uint64_t do_read_x(int i) const {
         return m_m.get_state().x[i];
@@ -525,6 +520,7 @@ private:
     // -----
     // i_intereactive_state_access interface implementation
     // -----
+    friend i_interactive_state_access<state_access>;
 
     NO_INLINE auto do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
         return m_m.poll_external_interrupts(mcycle, mcycle_max);

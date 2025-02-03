@@ -22,6 +22,7 @@
 
 #include "compiler-defines.h"
 #include "host-addr.h"
+#include "i-accept-scoped-note.h"
 #include "i-state-access.h"
 #include "mock-pma-entry.h"
 #include "pma-constants.h"
@@ -34,10 +35,6 @@
 #include "strict-aliasing.h"
 #include "uarch-constants.h"
 #include "uarch-defines.h"
-
-#if DUMP_STATE_ACCESS
-#include "scoped-note.h"
-#endif
 
 namespace cartesi {
 
@@ -77,7 +74,9 @@ static inline bool validate_and_advance_offset(uint64_t max, uint64_t current, u
 }
 
 // \brief Provides machine state from a step log file
-class replay_step_state_access : public i_state_access<replay_step_state_access> {
+class replay_step_state_access :
+    public i_state_access<replay_step_state_access>,
+    public i_accept_scoped_note<replay_step_state_access> {
 public:
     using address_type = uint64_t;
     using data_type = unsigned char[PMA_PAGE_SIZE];
@@ -199,12 +198,6 @@ public:
     }
 
 private:
-    friend i_state_access<replay_step_state_access>;
-
-    void do_putchar(uint8_t /*c*/) { // NOLINT(readability-convert-member-functions-to-static)
-        ;                            // do nothing
-    }
-
     /// \brief Try to find a page in the logged data by its physical address
     /// \param paddr The physical address of the page
     /// \return A pointer to the page_type structure if found, nullptr otherwise
@@ -409,13 +402,6 @@ private:
         // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast))
     }
 
-#ifdef DUMP_STATE_ACCESS
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    auto do_make_scoped_note([[maybe_unused]] const char *text) {
-        return scoped_note<replay_step_state_access>{*this, text};
-    }
-#endif
-
     //??D we should probably optimize access to the shadow so it doesn't perform a translation every time
     // We can do this by caching the vh_offset trasnslation of the processor shadow page. This is easy if
     // static_assert(sizeof(shadow_state) <= PMA_PAGE_SIZE, "shadow state must fit in single page");
@@ -431,6 +417,21 @@ private:
         const auto haddr = do_get_faddr(machine_reg_address(reg));
         aliased_aligned_write<uint64_t>(haddr, val);
     }
+
+    uint64_t read_pma_istart(uint64_t index) {
+        const auto haddr = do_get_faddr(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::istart));
+        return aliased_aligned_read<uint64_t>(haddr);
+    }
+
+    uint64_t read_pma_ilength(uint64_t index) {
+        const auto haddr = do_get_faddr(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::ilength));
+        return aliased_aligned_read<uint64_t>(haddr);
+    }
+
+    // -----
+    // i_state_access interface implementation
+    // -----
+    friend i_state_access<replay_step_state_access>;
 
     uint64_t do_read_x(int i) {
         return check_read_reg(machine_reg_enum(machine_reg::x0, i));
@@ -777,16 +778,6 @@ private:
         return false;
     }
 
-    uint64_t read_pma_istart(uint64_t index) {
-        const auto haddr = do_get_faddr(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::istart));
-        return aliased_aligned_read<uint64_t>(haddr);
-    }
-
-    uint64_t read_pma_ilength(uint64_t index) {
-        const auto haddr = do_get_faddr(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::ilength));
-        return aliased_aligned_read<uint64_t>(haddr);
-    }
-
     mock_pma_entry &do_read_pma_entry(uint64_t index) {
         assert(index < PMA_MAX);
         // record_step_state_access will have recorded the access to istart and
@@ -845,6 +836,10 @@ private:
         check_write_tlb(SET, slot_index, shadow_tlb_what::vaddr_page, vaddr_page);
         check_write_tlb(SET, slot_index, shadow_tlb_what::vp_offset, vh_offset);
         check_write_tlb(SET, slot_index, shadow_tlb_what::pma_index, pma_index);
+    }
+
+    void do_putchar(uint8_t /*c*/) { // NOLINT(readability-convert-member-functions-to-static)
+        ;                            // do nothing
     }
 
     void do_mark_dirty_page(host_addr /* haddr */, uint64_t /* pma_index */) {

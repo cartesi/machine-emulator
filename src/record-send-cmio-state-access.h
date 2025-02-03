@@ -28,6 +28,7 @@
 
 #include "access-log.h"
 #include "host-addr.h"
+#include "i-accept-scoped-note.h"
 #include "i-hasher.h"
 #include "i-state-access.h"
 #include "machine-merkle-tree.h"
@@ -35,7 +36,6 @@
 #include "machine.h"
 #include "meta.h"
 #include "pma.h"
-#include "scoped-note.h"
 #include "shadow-state.h"
 
 namespace cartesi {
@@ -56,7 +56,9 @@ struct i_state_access_fast_addr<record_send_cmio_state_access> {
 /// \class record_send_cmio_state_access
 /// \details This records all state accesses that happen during the execution of
 /// a machine::send_cmio_response() function call
-class record_send_cmio_state_access : public i_state_access<record_send_cmio_state_access> {
+class record_send_cmio_state_access :
+    public i_state_access<record_send_cmio_state_access>,
+    public i_accept_scoped_note<record_send_cmio_state_access> {
     using hasher_type = machine_merkle_tree::hasher_type;
     using hash_type = machine_merkle_tree::hash_type;
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
@@ -78,8 +80,6 @@ public:
     }
 
 private:
-    friend i_state_access<record_send_cmio_state_access>;
-
     /// \brief Logs a read access of a uint64_t word from the machine state.
     /// \param paligned Physical address in the machine state, aligned to a 64-bit word.
     /// \param text Textual description of the access.
@@ -185,17 +185,10 @@ private:
         update_after_write(paligned);
     }
 
-    void do_push_begin_bracket(const char *text) {
-        m_log.push_begin_bracket(text);
-    }
-
-    void do_push_end_bracket(const char *text) {
-        m_log.push_end_bracket(text);
-    }
-
-    auto do_make_scoped_note(const char *text) {
-        return scoped_note<record_send_cmio_state_access>{*this, text};
-    }
+    // -----
+    // i_state_access interface implementation
+    // -----
+    friend i_state_access<record_send_cmio_state_access>;
 
     void do_write_iflags_Y(uint64_t val) {
         log_before_write_write_and_update(machine_reg_address(machine_reg::iflags_Y), m_m.get_state().iflags.Y, val,
@@ -275,6 +268,23 @@ private:
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     constexpr const char *do_get_name() const {
         return "record_send_cmio_state_access";
+    }
+
+    // -----
+    // i_accept_scoped_note interface implementation
+    // -----
+    friend i_accept_scoped_note<record_send_cmio_state_access>;
+
+    void do_push_begin_bracket(const char *text) {
+        m_log.push_begin_bracket(text);
+    }
+
+    void do_push_end_bracket(const char *text) {
+        m_log.push_end_bracket(text);
+    }
+
+    auto do_make_scoped_note(const char *text) {
+        return scoped_note{*this, text};
     }
 };
 

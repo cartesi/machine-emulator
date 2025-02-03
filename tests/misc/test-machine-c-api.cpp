@@ -464,7 +464,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_invalid_address_test, ordinary_machine_
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_DOMAIN_ERROR);
 
     std::string result = cm_get_last_error_message();
-    std::string origin("address not aligned");
+    std::string origin("attempted misaligned read from word");
     BOOST_CHECK_EQUAL(origin, result);
 }
 

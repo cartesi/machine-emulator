@@ -95,31 +95,6 @@ public:
         return derived().do_get_naked_state();
     }
 
-    /// \brief Adds a begin bracket annotation to the log
-    /// \param text String with the text for the annotation
-    void push_begin_bracket(const char *text) {
-#ifdef DUMP_STATE_ACCESS
-        fprintf(stderr, "----> begin %s (%s)\n", text, get_name());
-#endif
-        return derived().do_push_begin_bracket(text);
-    }
-
-    /// \brief Adds an end bracket annotation to the log
-    /// \param text String with the text for the annotation
-    void push_end_bracket(const char *text) {
-#ifdef DUMP_STATE_ACCESS
-        fprintf(stderr, "<---- end %s (%s)\n", text, get_name());
-#endif
-        return derived().do_push_end_bracket(text);
-    }
-
-    /// \brief Adds annotations to the state, bracketing a scope
-    /// \param text String with the text for the annotation
-    /// \returns An object that, when constructed and destroyed issues an annonation.
-    auto make_scoped_note(const char *text) {
-        return derived().do_make_scoped_note(text);
-    }
-
     /// \brief Reads from general-purpose register.
     /// \param i Register index.
     /// \returns Register value.
@@ -1196,20 +1171,6 @@ public:
     constexpr const char *get_name() const {
         return derived().do_get_name();
     }
-
-protected:
-    /// \brief For state access classes that do not need annotations
-    void do_push_begin_bracket(const char * /*text*/) {}
-
-    /// \brief For state access classes that do not need annotations
-    void do_push_end_bracket(const char * /*text*/) {}
-
-#ifndef DUMP_STATE_ACCESS
-    /// \brief For state access classes that do not need annotations
-    int do_make_scoped_note(const char * /*text*/) {
-        return 0;
-    }
-#endif
 };
 
 /// \brief SFINAE test implementation of the i_state_access interface

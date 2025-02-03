@@ -21,8 +21,8 @@
 #include <cstdint>
 #include <stdexcept>
 
-#include "bracket-note.h"
 #include "host-addr.h"
+#include "i-accept-scoped-note.h"
 #include "i-uarch-state-access.h"
 #include "machine.h"
 #include "os.h"
@@ -30,13 +30,11 @@
 #include "strict-aliasing.h"
 #include "uarch-pristine.h"
 
-#if DUMP_UARCH_STATE_ACCESS
-#include "scoped-note.h"
-#endif
-
 namespace cartesi {
 
-class uarch_state_access : public i_uarch_state_access<uarch_state_access> {
+class uarch_state_access :
+    public i_uarch_state_access<uarch_state_access>,
+    public i_accept_scoped_note<uarch_state_access> {
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     machine &m_m;
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
@@ -66,14 +64,10 @@ public:
     ~uarch_state_access() = default;
 
 private:
+    // -----
+    // i_uarch_state_access interface implementation
+    // -----
     friend i_uarch_state_access<uarch_state_access>;
-
-#ifdef DUMP_UARCH_STATE_ACCESS
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    auto do_make_scoped_note([[maybe_unused]] const char *text) {
-        return scoped_note<uarch_state_access>{*this, text};
-    }
-#endif
 
     uint64_t do_read_x(int i) const {
         return m_m.get_uarch_state().x[i];

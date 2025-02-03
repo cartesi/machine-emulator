@@ -42,7 +42,6 @@
 #include "shadow-uarch-state.h"
 #include "strict-aliasing.h"
 #include "uarch-constants.h"
-#include "uarch-machine-bridge.h"
 #include "uarch-pristine-state-hash.h"
 #include "uarch-pristine.h"
 #include "uarch-state.h"
@@ -58,9 +57,7 @@ class uarch_record_state_access : public i_uarch_state_access<uarch_record_state
     using hash_type = machine_merkle_tree::hash_type;
 
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
-    uarch_state &m_us;
     machine &m_m; ///< Macro machine
-    uarch_machine_bridge m_b;
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
     std::shared_ptr<access_log> m_log; ///< Pointer to access log
 
@@ -74,10 +71,8 @@ public:
     /// \brief Constructor from machine and uarch states.
     /// \param um Reference to uarch state.
     /// \param m Reference to machine state.
-    explicit uarch_record_state_access(uarch_state &us, machine &m, access_log::type log_type) :
-        m_us(us),
+    explicit uarch_record_state_access(machine &m, access_log::type log_type) :
         m_m(m),
-        m_b(m),
         m_log(std::make_shared<access_log>(log_type)) {
         ;
     }
@@ -280,7 +275,7 @@ private:
         if ((paddr & (sizeof(uint64_t) - 1)) != 0) {
             throw std::runtime_error("misaligned read from uarch");
         }
-        return log_read_word_access(paddr, uarch_machine_bridge::get_what_name(paddr));
+        return log_read_word_access(paddr, machine::get_what_name(paddr));
     }
 
     void do_write_word(uint64_t paddr, uint64_t val) {
@@ -290,12 +285,12 @@ private:
         log_write_access(
             paddr, cartesi::log2_size<uint64_t>::value,
             [this, paddr, val]() {
-                m_b.write_word(paddr, val);
+                m_m.write_word(paddr, val);
                 if (!m_m.update_merkle_tree_page(paddr)) {
                     throw std::invalid_argument{"error updating Merkle tree"};
                 };
             },
-            uarch_machine_bridge::get_what_name(paddr));
+            machine::get_what_name(paddr));
     }
 
     void do_write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
@@ -304,7 +299,7 @@ private:
         log_write_access(
             slot_paddr, SHADOW_TLB_SLOT_LOG2_SIZE,
             [this, set_index, slot_index, vaddr_page, vp_offset, pma_index]() {
-                m_b.write_shadow_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
+                m_m.write_shadow_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
                 // Entire slot is in a single page
                 if (!m_m.update_merkle_tree_page(shadow_tlb_get_abs_addr(set_index, slot_index))) {
                     throw std::invalid_argument{"error updating Merkle tree"};
@@ -343,8 +338,8 @@ private:
     }
 
     void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) {
-        // forward to bridge, and no need to log
-        m_b.mark_dirty_page(paddr, pma_index);
+        // Forward to machine and no need to log
+        m_m.mark_dirty_page(paddr, pma_index);
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

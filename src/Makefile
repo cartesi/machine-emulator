@@ -383,7 +383,6 @@ LIBCARTESI_OBJS:= \
 	uarch-pristine-hash.o \
     uarch-interpret.o \
 	uarch-step.o \
-	uarch-machine-bridge.o \
 	uarch-reset-state.o \
 	send-cmio-response.o \
 	replay-step-state-access-interop.o

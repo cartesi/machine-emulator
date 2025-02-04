@@ -23,6 +23,7 @@
 #include "compiler-defines.h"
 #include "host-addr.h"
 #include "i-accept-scoped-note.h"
+#include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
 #include "mock-pma-entry.h"
 #include "pma-constants.h"
@@ -76,7 +77,8 @@ static inline bool validate_and_advance_offset(uint64_t max, uint64_t current, u
 // \brief Provides machine state from a step log file
 class replay_step_state_access :
     public i_state_access<replay_step_state_access>,
-    public i_accept_scoped_note<replay_step_state_access> {
+    public i_accept_scoped_note<replay_step_state_access>,
+    public i_prefer_shadow_state<replay_step_state_access> {
 public:
     using address_type = uint64_t;
     using data_type = unsigned char[PMA_PAGE_SIZE];
@@ -331,18 +333,6 @@ private:
         return page_log;
     }
 
-    /// \brief Convert physical address to host address
-    /// \param paddr The physical address
-    /// \return Host address
-    host_addr do_get_faddr(uint64_t paddr, uint64_t /* pma_index */ = 0) const {
-        // This assumes the corresponding page has been touched
-        // (replay_step_state_access makes sure of it for any address we try to convert)
-        const auto paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        auto *page_log = find_page(paddr_page);
-        const auto offset = paddr & PAGE_OFFSET_MASK;
-        return cast_ptr_to_host_addr(page_log->data) + offset;
-    }
-
     // \brief Compute the current machine root hash
     hash_type compute_root_hash() {
         //??D Here we should only do this for dirty pages, right?
@@ -429,337 +419,33 @@ private:
     }
 
     // -----
+    // i_prefer_shadow_state interface implementation
+    // -----
+    friend i_prefer_shadow_state<replay_step_state_access>;
+
+    uint64_t do_read_shadow_state(shadow_state_what what) {
+        return check_read_reg(machine_reg_enum(what));
+    }
+
+    void do_write_shadow_state(shadow_state_what what, uint64_t val) {
+        check_write_reg(machine_reg_enum(what), val);
+    }
+
+    // -----
     // i_state_access interface implementation
     // -----
     friend i_state_access<replay_step_state_access>;
 
-    uint64_t do_read_x(int i) {
-        return check_read_reg(machine_reg_enum(machine_reg::x0, i));
-    }
-
-    void do_write_x(int i, uint64_t val) {
-        assert(i != 0);
-        check_write_reg(machine_reg_enum(machine_reg::x0, i), val);
-    }
-
-    uint64_t do_read_f(int i) {
-        return check_read_reg(machine_reg_enum(machine_reg::f0, i));
-    }
-
-    void do_write_f(int i, uint64_t val) {
-        check_write_reg(machine_reg_enum(machine_reg::f0, i), val);
-    }
-
-    uint64_t do_read_pc() {
-        return check_read_reg(machine_reg::pc);
-    }
-
-    void do_write_pc(uint64_t val) {
-        check_write_reg(machine_reg::pc, val);
-    }
-
-    uint64_t do_read_fcsr() {
-        return check_read_reg(machine_reg::fcsr);
-    }
-
-    void do_write_fcsr(uint64_t val) {
-        check_write_reg(machine_reg::fcsr, val);
-    }
-
-    uint64_t do_read_icycleinstret() {
-        return check_read_reg(machine_reg::icycleinstret);
-    }
-
-    void do_write_icycleinstret(uint64_t val) {
-        check_write_reg(machine_reg::icycleinstret, val);
-    }
-
-    uint64_t do_read_mvendorid() {
-        return check_read_reg(machine_reg::mvendorid);
-    }
-
-    uint64_t do_read_marchid() {
-        return check_read_reg(machine_reg::marchid);
-    }
-
-    uint64_t do_read_mimpid() {
-        return check_read_reg(machine_reg::mimpid);
-    }
-
-    uint64_t do_read_mcycle() {
-        return check_read_reg(machine_reg::mcycle);
-    }
-
-    void do_write_mcycle(uint64_t val) {
-        check_write_reg(machine_reg::mcycle, val);
-    }
-
-    uint64_t do_read_mstatus() {
-        return check_read_reg(machine_reg::mstatus);
-    }
-
-    void do_write_mstatus(uint64_t val) {
-        check_write_reg(machine_reg::mstatus, val);
-    }
-
-    uint64_t do_read_mtvec() {
-        return check_read_reg(machine_reg::mtvec);
-    }
-
-    void do_write_mtvec(uint64_t val) {
-        check_write_reg(machine_reg::mtvec, val);
-    }
-
-    uint64_t do_read_mscratch() {
-        return check_read_reg(machine_reg::mscratch);
-    }
-
-    void do_write_mscratch(uint64_t val) {
-        check_write_reg(machine_reg::mscratch, val);
-    }
-
-    uint64_t do_read_mepc() {
-        return check_read_reg(machine_reg::mepc);
-    }
-
-    void do_write_mepc(uint64_t val) {
-        check_write_reg(machine_reg::mepc, val);
-    }
-
-    uint64_t do_read_mcause() {
-        return check_read_reg(machine_reg::mcause);
-    }
-
-    void do_write_mcause(uint64_t val) {
-        check_write_reg(machine_reg::mcause, val);
-    }
-
-    uint64_t do_read_mtval() {
-        return check_read_reg(machine_reg::mtval);
-    }
-
-    void do_write_mtval(uint64_t val) {
-        check_write_reg(machine_reg::mtval, val);
-    }
-
-    uint64_t do_read_misa() {
-        return check_read_reg(machine_reg::misa);
-    }
-
-    void do_write_misa(uint64_t val) {
-        check_write_reg(machine_reg::misa, val);
-    }
-
-    uint64_t do_read_mie() {
-        return check_read_reg(machine_reg::mie);
-    }
-
-    void do_write_mie(uint64_t val) {
-        check_write_reg(machine_reg::mie, val);
-    }
-
-    uint64_t do_read_mip() {
-        return check_read_reg(machine_reg::mip);
-    }
-
-    void do_write_mip(uint64_t val) {
-        check_write_reg(machine_reg::mip, val);
-    }
-
-    uint64_t do_read_medeleg() {
-        return check_read_reg(machine_reg::medeleg);
-    }
-
-    void do_write_medeleg(uint64_t val) {
-        check_write_reg(machine_reg::medeleg, val);
-    }
-
-    uint64_t do_read_mideleg() {
-        return check_read_reg(machine_reg::mideleg);
-    }
-
-    void do_write_mideleg(uint64_t val) {
-        check_write_reg(machine_reg::mideleg, val);
-    }
-
-    uint64_t do_read_mcounteren() {
-        return check_read_reg(machine_reg::mcounteren);
-    }
-
-    void do_write_mcounteren(uint64_t val) {
-        check_write_reg(machine_reg::mcounteren, val);
-    }
-
-    uint64_t do_read_senvcfg() {
-        return check_read_reg(machine_reg::senvcfg);
-    }
-
-    void do_write_senvcfg(uint64_t val) {
-        check_write_reg(machine_reg::senvcfg, val);
-    }
-
-    uint64_t do_read_menvcfg() {
-        return check_read_reg(machine_reg::menvcfg);
-    }
-
-    void do_write_menvcfg(uint64_t val) {
-        check_write_reg(machine_reg::menvcfg, val);
-    }
-
-    uint64_t do_read_stvec() {
-        return check_read_reg(machine_reg::stvec);
-    }
-
-    void do_write_stvec(uint64_t val) {
-        check_write_reg(machine_reg::stvec, val);
-    }
-
-    uint64_t do_read_sscratch() {
-        return check_read_reg(machine_reg::sscratch);
-    }
-
-    void do_write_sscratch(uint64_t val) {
-        check_write_reg(machine_reg::sscratch, val);
-    }
-
-    uint64_t do_read_sepc() {
-        return check_read_reg(machine_reg::sepc);
-    }
-
-    void do_write_sepc(uint64_t val) {
-        check_write_reg(machine_reg::sepc, val);
-    }
-
-    uint64_t do_read_scause() {
-        return check_read_reg(machine_reg::scause);
-    }
-
-    void do_write_scause(uint64_t val) {
-        check_write_reg(machine_reg::scause, val);
-    }
-
-    uint64_t do_read_stval() {
-        return check_read_reg(machine_reg::stval);
-    }
-
-    void do_write_stval(uint64_t val) {
-        check_write_reg(machine_reg::stval, val);
-    }
-
-    uint64_t do_read_satp() {
-        return check_read_reg(machine_reg::satp);
-    }
-
-    void do_write_satp(uint64_t val) {
-        check_write_reg(machine_reg::satp, val);
-    }
-
-    uint64_t do_read_scounteren() {
-        return check_read_reg(machine_reg::scounteren);
-    }
-
-    void do_write_scounteren(uint64_t val) {
-        check_write_reg(machine_reg::scounteren, val);
-    }
-
-    uint64_t do_read_ilrsc() {
-        return check_read_reg(machine_reg::ilrsc);
-    }
-
-    void do_write_ilrsc(uint64_t val) {
-        check_write_reg(machine_reg::ilrsc, val);
-    }
-
-    uint64_t do_read_iprv() {
-        return check_read_reg(machine_reg::iprv);
-    }
-
-    void do_write_iprv(uint64_t val) {
-        check_write_reg(machine_reg::iprv, val);
-    }
-
-    uint64_t do_read_iflags_X() {
-        return check_read_reg(machine_reg::iflags_X);
-    }
-
-    void do_write_iflags_X(uint64_t val) {
-        check_write_reg(machine_reg::iflags_X, val);
-    }
-
-    uint64_t do_read_iflags_Y() {
-        return check_read_reg(machine_reg::iflags_Y);
-    }
-
-    void do_write_iflags_Y(uint64_t val) {
-        check_write_reg(machine_reg::iflags_Y, val);
-    }
-
-    uint64_t do_read_iflags_H() {
-        return check_read_reg(machine_reg::iflags_H);
-    }
-
-    void do_write_iflags_H(uint64_t val) {
-        check_write_reg(machine_reg::iflags_H, val);
-    }
-
-    uint64_t do_read_iunrep() {
-        return check_read_reg(machine_reg::iunrep);
-    }
-
-    void do_write_iunrep(uint64_t val) {
-        check_write_reg(machine_reg::iunrep, val);
-    }
-
-    uint64_t do_read_clint_mtimecmp() {
-        return check_read_reg(machine_reg::clint_mtimecmp);
-    }
-
-    void do_write_clint_mtimecmp(uint64_t val) {
-        check_write_reg(machine_reg::clint_mtimecmp, val);
-    }
-
-    uint64_t do_read_plic_girqpend() {
-        return check_read_reg(machine_reg::plic_girqpend);
-    }
-
-    void do_write_plic_girqpend(uint64_t val) {
-        check_write_reg(machine_reg::plic_girqpend, val);
-    }
-
-    uint64_t do_read_plic_girqsrvd() {
-        return check_read_reg(machine_reg::plic_girqsrvd);
-    }
-
-    void do_write_plic_girqsrvd(uint64_t val) {
-        check_write_reg(machine_reg::plic_girqsrvd, val);
-    }
-
-    uint64_t do_read_htif_fromhost() {
-        return check_read_reg(machine_reg::htif_fromhost);
-    }
-
-    void do_write_htif_fromhost(uint64_t val) {
-        check_write_reg(machine_reg::htif_fromhost, val);
-    }
-
-    uint64_t do_read_htif_tohost() {
-        return check_read_reg(machine_reg::htif_tohost);
-    }
-
-    void do_write_htif_tohost(uint64_t val) {
-        check_write_reg(machine_reg::htif_tohost, val);
-    }
-
-    uint64_t do_read_htif_ihalt() {
-        return check_read_reg(machine_reg::htif_ihalt);
-    }
-
-    uint64_t do_read_htif_iconsole() {
-        return check_read_reg(machine_reg::htif_iconsole);
-    }
-
-    uint64_t do_read_htif_iyield() {
-        return check_read_reg(machine_reg::htif_iyield);
+    /// \brief Convert physical address to host address
+    /// \param paddr The physical address
+    /// \return Host address
+    host_addr do_get_faddr(uint64_t paddr, uint64_t /* pma_index */ = 0) const {
+        // This assumes the corresponding page has been touched
+        // (replay_step_state_access makes sure of it for any address we try to convert)
+        const auto paddr_page = paddr & ~PAGE_OFFSET_MASK;
+        auto *page_log = find_page(paddr_page);
+        const auto offset = paddr & PAGE_OFFSET_MASK;
+        return cast_ptr_to_host_addr(page_log->data) + offset;
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

@@ -31,6 +31,7 @@
 #include "host-addr.h"
 #include "i-accept-scoped-note.h"
 #include "i-hasher.h"
+#include "i-prefer-shadow-uarch-state.h"
 #include "i-uarch-state-access.h"
 #include "machine-merkle-tree.h"
 #include "machine.h"
@@ -52,7 +53,8 @@ using namespace std::string_literals;
 /// \details The uarch_record_state_access logs all access to the machine state.
 class uarch_record_state_access :
     public i_uarch_state_access<uarch_record_state_access>,
-    public i_accept_scoped_note<uarch_record_state_access> {
+    public i_accept_scoped_note<uarch_record_state_access>,
+    public i_prefer_shadow_uarch_state<uarch_record_state_access> {
 
     using hasher_type = machine_merkle_tree::hasher_type;
     using hash_type = machine_merkle_tree::hash_type;
@@ -225,54 +227,28 @@ private:
     }
 
     // -----
+    // i_prefer_shadow_uarch_state interface implementation
+    // -----
+    friend i_prefer_shadow_uarch_state<uarch_record_state_access>;
+
+    uint64_t do_read_shadow_uarch_state(shadow_uarch_state_what what) const {
+        return log_read_reg_access(machine_reg_enum(what));
+    }
+
+    void do_write_shadow_uarch_state(shadow_uarch_state_what what, uint64_t val) {
+        log_write_reg_access(machine_reg_enum(what), val);
+    }
+
+    // -----
     // i_uarch_state_access interface implementation
     // -----
     friend i_uarch_state_access<uarch_record_state_access>;
 
-    uint64_t do_read_x(int i) const {
-        return log_read_reg_access(machine_reg_enum(machine_reg::uarch_x0, i));
-    }
-
-    void do_write_x(int i, uint64_t val) {
-        assert(i != 0);
-        log_write_reg_access(machine_reg_enum(machine_reg::uarch_x0, i), val);
-    }
-
-    uint64_t do_read_pc() const {
-        return log_read_reg_access(machine_reg::uarch_pc);
-    }
-
-    void do_write_pc(uint64_t val) {
-        log_write_reg_access(machine_reg::uarch_pc, val);
-    }
-
-    uint64_t do_read_cycle() const {
-        return log_read_reg_access(machine_reg::uarch_cycle);
-    }
-
-    void do_write_cycle(uint64_t val) {
-        log_write_reg_access(machine_reg::uarch_cycle, val);
-    }
-
-    uint64_t do_read_halt_flag() const {
-        return log_read_reg_access(machine_reg::uarch_halt_flag);
-    }
-
-    void do_write_halt_flag(uint64_t val) {
-        log_write_reg_access(machine_reg::uarch_halt_flag, val);
-    }
-
     uint64_t do_read_word(uint64_t paddr) const {
-        if ((paddr & (sizeof(uint64_t) - 1)) != 0) {
-            throw std::runtime_error("misaligned read from uarch");
-        }
         return log_read_word_access(paddr, machine::get_what_name(paddr));
     }
 
     void do_write_word(uint64_t paddr, uint64_t val) {
-        if ((paddr & (sizeof(uint64_t) - 1)) != 0) {
-            throw std::runtime_error("misaligned write to uarch");
-        }
         log_write_access(
             paddr, log2_size_v<uint64_t>,
             [this, paddr, val]() {
@@ -307,7 +283,7 @@ private:
             "shadow TLB slot must fill at least an entire Merkle tree word");
     }
 
-    void do_reset_state() {
+    void do_reset_uarch() {
         //??D I'd like to add an static_assert or some other guard mechanism to
         // guarantee that uarch.ram and uarch.shadow are alone in the entire
         // span of their common Merkle tree parent node

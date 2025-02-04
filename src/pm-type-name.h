@@ -28,6 +28,7 @@ struct pm_type_name {
 template <typename T>
 constexpr const char *pm_type_name_v = pm_type_name<T>::value;
 
+// NOLINTBEGIN(cppcoreguidelines-macro-usage)
 #define PM_TYPE_NAME(type)                                                                                             \
     template <>                                                                                                        \
     struct pm_type_name<type> {                                                                                        \
@@ -42,6 +43,7 @@ PM_TYPE_NAME(uint32_t);
 PM_TYPE_NAME(int32_t);
 PM_TYPE_NAME(uint64_t);
 PM_TYPE_NAME(int64_t);
+// NOLINTEND(cppcoreguidelines-macro-usage)
 
 } // namespace cartesi
 

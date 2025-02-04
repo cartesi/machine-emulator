@@ -31,6 +31,7 @@
 #include "access-log.h"
 #include "i-accept-scoped-note.h"
 #include "i-hasher.h"
+#include "i-prefer-shadow-uarch-state.h"
 #include "i-uarch-state-access.h"
 #include "machine-merkle-tree.h"
 #include "meta.h"
@@ -43,7 +44,8 @@ namespace cartesi {
 
 class uarch_replay_state_access :
     public i_uarch_state_access<uarch_replay_state_access>,
-    public i_accept_scoped_note<uarch_replay_state_access> {
+    public i_accept_scoped_note<uarch_replay_state_access>,
+    public i_prefer_shadow_uarch_state<uarch_replay_state_access> {
     using tree_type = machine_merkle_tree;
     using hash_type = tree_type::hash_type;
     using hasher_type = tree_type::hasher_type;
@@ -266,6 +268,10 @@ private:
         m_next_access++;
     }
 
+    void check_write_reg_access(machine_reg reg, uint64_t val) {
+        check_write_word_access(machine_reg_address(reg), val, machine_reg_get_name(reg));
+    }
+
     uint64_t check_read_word_access(uint64_t paddr, const char *text) {
         const auto log2_size = log2_size_v<uint64_t>;
         const auto &a = check_access(text);
@@ -278,6 +284,10 @@ private:
         const auto val = get_word_access_data(read_data, val_offset);
         m_next_access++;
         return val;
+    }
+
+    uint64_t check_read_reg_access(machine_reg reg) {
+        return check_read_word_access(machine_reg_address(reg), machine_reg_get_name(reg));
     }
 
     auto get_write_tlb_slot_hash(uint64_t vaddr_page, uint64_t vp_offset, uint64_t pma_index) {
@@ -299,53 +309,22 @@ private:
     }
 
     // -----
+    // i_prefer_shadow_uarch_state interface implementation
+    // -----
+    friend i_prefer_shadow_uarch_state<uarch_replay_state_access>;
+
+    uint64_t do_read_shadow_uarch_state(shadow_uarch_state_what what) {
+        return check_read_reg_access(machine_reg_enum(what));
+    }
+
+    void do_write_shadow_uarch_state(shadow_uarch_state_what what, uint64_t val) {
+        check_write_reg_access(machine_reg_enum(what), val);
+    }
+
+    // -----
     // i_uarch_state_access interface implementation
     // -----
     friend i_uarch_state_access<uarch_replay_state_access>;
-
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_push_bracket(bracket_type /*type*/, const char * /*text*/) {}
-
-    uint64_t do_read_x(int i) {
-        const auto reg = machine_reg_enum(machine_reg::uarch_x0, i);
-        return check_read_word_access(machine_reg_address(reg), machine_reg_get_name(reg));
-    }
-
-    void do_write_x(int i, uint64_t val) {
-        assert(i != 0);
-        const auto reg = machine_reg_enum(machine_reg::uarch_x0, i);
-        check_write_word_access(machine_reg_address(reg), val, machine_reg_get_name(reg));
-    }
-
-    uint64_t do_read_pc() {
-        const auto reg = machine_reg::uarch_pc;
-        return check_read_word_access(machine_reg_address(reg), machine_reg_get_name(reg));
-    }
-
-    void do_write_pc(uint64_t val) {
-        const auto reg = machine_reg::uarch_pc;
-        check_write_word_access(machine_reg_address(reg), val, machine_reg_get_name(reg));
-    }
-
-    uint64_t do_read_cycle() {
-        const auto reg = machine_reg::uarch_cycle;
-        return check_read_word_access(machine_reg_address(reg), machine_reg_get_name(reg));
-    }
-
-    void do_write_cycle(uint64_t val) {
-        const auto reg = machine_reg::uarch_cycle;
-        check_write_word_access(machine_reg_address(reg), val, machine_reg_get_name(reg));
-    }
-
-    uint64_t do_read_halt_flag() {
-        const auto reg = machine_reg::uarch_halt_flag;
-        return check_read_word_access(machine_reg_address(reg), machine_reg_get_name(reg));
-    }
-
-    void do_write_halt_flag(uint64_t val) {
-        const auto reg = machine_reg::uarch_halt_flag;
-        check_write_word_access(machine_reg_address(reg), val, machine_reg_get_name(reg));
-    }
 
     uint64_t do_read_word(uint64_t paddr) {
         return check_read_word_access(paddr, machine::get_what_name(paddr));
@@ -365,7 +344,7 @@ private:
         ; // do nothing
     }
 
-    void do_reset_state() {
+    void do_reset_uarch() {
         check_write_access(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE, uarch_pristine_state_hash, "uarch.state");
     }
 

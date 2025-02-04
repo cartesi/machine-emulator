@@ -85,6 +85,10 @@ static constexpr shadow_uarch_state_what shadow_uarch_state_get_what(uint64_t pa
     return static_cast<shadow_uarch_state_what>(paddr);
 }
 
+static constexpr shadow_uarch_state_what shadow_uarch_state_get_what(shadow_uarch_state_what what, int i) {
+    return static_cast<shadow_uarch_state_what>(static_cast<uint64_t>(what) + i * sizeof(uint64_t));
+}
+
 static constexpr const char *shadow_uarch_state_get_what_name(shadow_uarch_state_what what) {
     const auto paddr = static_cast<uint64_t>(what);
     if (paddr < PMA_SHADOW_UARCH_STATE_START || paddr - PMA_SHADOW_UARCH_STATE_START >= sizeof(shadow_uarch_state) ||

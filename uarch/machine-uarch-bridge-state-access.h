@@ -23,6 +23,7 @@
 
 #include "compiler-defines.h"
 #include "i-accept-scoped-note.h"
+#include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
 #include "machine-reg.h"
 #include "mock-pma-entry.h"
@@ -52,7 +53,8 @@ struct i_state_access_fast_addr<machine_uarch_bridge_state_access> {
 // Provides access to the state of the big emulator from microcode
 class machine_uarch_bridge_state_access :
     public i_state_access<machine_uarch_bridge_state_access>,
-    public i_accept_scoped_note<machine_uarch_bridge_state_access> {
+    public i_accept_scoped_note<machine_uarch_bridge_state_access>,
+    public i_prefer_shadow_state<machine_uarch_bridge_state_access> {
 
     //NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
     std::array<std::optional<mock_pma_entry>, PMA_MAX> &m_pmas;
@@ -87,337 +89,22 @@ private:
     }
 
     // -----
+    // i_prefer_shadow_state interface implementation
+    // -----
+    friend i_prefer_shadow_state<machine_uarch_bridge_state_access>;
+
+    uint64_t do_read_shadow_state(shadow_state_what what) {
+        return bridge_read_reg(machine_reg_enum(what));
+    }
+
+    void do_write_shadow_state(shadow_state_what what, uint64_t val) {
+        bridge_write_reg(machine_reg_enum(what), val);
+    }
+
+    // -----
     // i_state_access interface implementation
     // -----
     friend i_state_access<machine_uarch_bridge_state_access>;
-
-    uint64_t do_read_x(int i) {
-        return bridge_read_reg(machine_reg_enum(machine_reg::x0, i));
-    }
-
-    void do_write_x(int i, uint64_t val) {
-        bridge_write_reg(machine_reg_enum(machine_reg::x0, i), val);
-    }
-
-    uint64_t do_read_f(int i) {
-        return bridge_read_reg(machine_reg_enum(machine_reg::f0, i));
-    }
-
-    void do_write_f(int i, uint64_t val) {
-        bridge_write_reg(machine_reg_enum(machine_reg::f0, i), val);
-    }
-
-    uint64_t do_read_pc() {
-        return bridge_read_reg(machine_reg::pc);
-    }
-
-    void do_write_pc(uint64_t val) {
-        bridge_write_reg(machine_reg::pc, val);
-    }
-
-    uint64_t do_read_fcsr() {
-        return bridge_read_reg(machine_reg::fcsr);
-    }
-
-    void do_write_fcsr(uint64_t val) {
-        bridge_write_reg(machine_reg::fcsr, val);
-    }
-
-    uint64_t do_read_icycleinstret() {
-        return bridge_read_reg(machine_reg::icycleinstret);
-    }
-
-    void do_write_icycleinstret(uint64_t val) {
-        bridge_write_reg(machine_reg::icycleinstret, val);
-    }
-
-    uint64_t do_read_mvendorid() {
-        return bridge_read_reg(machine_reg::mvendorid);
-    }
-
-    uint64_t do_read_marchid() {
-        return bridge_read_reg(machine_reg::marchid);
-    }
-
-    uint64_t do_read_mimpid() {
-        return bridge_read_reg(machine_reg::mimpid);
-    }
-
-    uint64_t do_read_mcycle() {
-        return bridge_read_reg(machine_reg::mcycle);
-    }
-
-    void do_write_mcycle(uint64_t val) {
-        bridge_write_reg(machine_reg::mcycle, val);
-    }
-
-    uint64_t do_read_mstatus() {
-        return bridge_read_reg(machine_reg::mstatus);
-    }
-
-    void do_write_mstatus(uint64_t val) {
-        bridge_write_reg(machine_reg::mstatus, val);
-    }
-
-    uint64_t do_read_mtvec() {
-        return bridge_read_reg(machine_reg::mtvec);
-    }
-
-    void do_write_mtvec(uint64_t val) {
-        bridge_write_reg(machine_reg::mtvec, val);
-    }
-
-    uint64_t do_read_mscratch() {
-        return bridge_read_reg(machine_reg::mscratch);
-    }
-
-    void do_write_mscratch(uint64_t val) {
-        bridge_write_reg(machine_reg::mscratch, val);
-    }
-
-    uint64_t do_read_mepc() {
-        return bridge_read_reg(machine_reg::mepc);
-    }
-
-    void do_write_mepc(uint64_t val) {
-        bridge_write_reg(machine_reg::mepc, val);
-    }
-
-    uint64_t do_read_mcause() {
-        return bridge_read_reg(machine_reg::mcause);
-    }
-
-    void do_write_mcause(uint64_t val) {
-        bridge_write_reg(machine_reg::mcause, val);
-    }
-
-    uint64_t do_read_mtval() {
-        return bridge_read_reg(machine_reg::mtval);
-    }
-
-    void do_write_mtval(uint64_t val) {
-        bridge_write_reg(machine_reg::mtval, val);
-    }
-
-    uint64_t do_read_misa() {
-        return bridge_read_reg(machine_reg::misa);
-    }
-
-    void do_write_misa(uint64_t val) {
-        bridge_write_reg(machine_reg::misa, val);
-    }
-
-    uint64_t do_read_mie() {
-        return bridge_read_reg(machine_reg::mie);
-    }
-
-    void do_write_mie(uint64_t val) {
-        bridge_write_reg(machine_reg::mie, val);
-    }
-
-    uint64_t do_read_mip() {
-        return bridge_read_reg(machine_reg::mip);
-    }
-
-    void do_write_mip(uint64_t val) {
-        bridge_write_reg(machine_reg::mip, val);
-    }
-
-    uint64_t do_read_medeleg() {
-        return bridge_read_reg(machine_reg::medeleg);
-    }
-
-    void do_write_medeleg(uint64_t val) {
-        bridge_write_reg(machine_reg::medeleg, val);
-    }
-
-    uint64_t do_read_mideleg() {
-        return bridge_read_reg(machine_reg::mideleg);
-    }
-
-    void do_write_mideleg(uint64_t val) {
-        bridge_write_reg(machine_reg::mideleg, val);
-    }
-
-    uint64_t do_read_mcounteren() {
-        return bridge_read_reg(machine_reg::mcounteren);
-    }
-
-    void do_write_mcounteren(uint64_t val) {
-        bridge_write_reg(machine_reg::mcounteren, val);
-    }
-
-    uint64_t do_read_senvcfg() {
-        return bridge_read_reg(machine_reg::senvcfg);
-    }
-
-    void do_write_senvcfg(uint64_t val) {
-        bridge_write_reg(machine_reg::senvcfg, val);
-    }
-
-    uint64_t do_read_menvcfg() {
-        return bridge_read_reg(machine_reg::menvcfg);
-    }
-
-    void do_write_menvcfg(uint64_t val) {
-        bridge_write_reg(machine_reg::menvcfg, val);
-    }
-
-    uint64_t do_read_stvec() {
-        return bridge_read_reg(machine_reg::stvec);
-    }
-
-    void do_write_stvec(uint64_t val) {
-        bridge_write_reg(machine_reg::stvec, val);
-    }
-
-    uint64_t do_read_sscratch() {
-        return bridge_read_reg(machine_reg::sscratch);
-    }
-
-    void do_write_sscratch(uint64_t val) {
-        bridge_write_reg(machine_reg::sscratch, val);
-    }
-
-    uint64_t do_read_sepc() {
-        return bridge_read_reg(machine_reg::sepc);
-    }
-
-    void do_write_sepc(uint64_t val) {
-        bridge_write_reg(machine_reg::sepc, val);
-    }
-
-    uint64_t do_read_scause() {
-        return bridge_read_reg(machine_reg::scause);
-    }
-
-    void do_write_scause(uint64_t val) {
-        bridge_write_reg(machine_reg::scause, val);
-    }
-
-    uint64_t do_read_stval() {
-        return bridge_read_reg(machine_reg::stval);
-    }
-
-    void do_write_stval(uint64_t val) {
-        bridge_write_reg(machine_reg::stval, val);
-    }
-
-    uint64_t do_read_satp() {
-        return bridge_read_reg(machine_reg::satp);
-    }
-
-    void do_write_satp(uint64_t val) {
-        bridge_write_reg(machine_reg::satp, val);
-    }
-
-    uint64_t do_read_scounteren() {
-        return bridge_read_reg(machine_reg::scounteren);
-    }
-
-    void do_write_scounteren(uint64_t val) {
-        bridge_write_reg(machine_reg::scounteren, val);
-    }
-
-    uint64_t do_read_ilrsc() {
-        return bridge_read_reg(machine_reg::ilrsc);
-    }
-
-    void do_write_ilrsc(uint64_t val) {
-        bridge_write_reg(machine_reg::ilrsc, val);
-    }
-
-    uint64_t do_read_iprv() {
-        return bridge_read_reg(machine_reg::iprv);
-    }
-
-    void do_write_iprv(uint64_t val) {
-        bridge_write_reg(machine_reg::iprv, val);
-    }
-
-    uint64_t do_read_iflags_X() {
-        return bridge_read_reg(machine_reg::iflags_X);
-    }
-
-    void do_write_iflags_X(uint64_t val) {
-        bridge_write_reg(machine_reg::iflags_X, val);
-    }
-
-    uint64_t do_read_iflags_Y() {
-        return bridge_read_reg(machine_reg::iflags_Y);
-    }
-
-    void do_write_iflags_Y(uint64_t val) {
-        bridge_write_reg(machine_reg::iflags_Y, val);
-    }
-
-    uint64_t do_read_iflags_H() {
-        return bridge_read_reg(machine_reg::iflags_H);
-    }
-
-    void do_write_iflags_H(uint64_t val) {
-        bridge_write_reg(machine_reg::iflags_H, val);
-    }
-
-    uint64_t do_read_iunrep() {
-        return bridge_read_reg(machine_reg::iunrep);
-    }
-
-    void do_write_iunrep(uint64_t val) {
-        bridge_write_reg(machine_reg::iunrep, val);
-    }
-
-    uint64_t do_read_clint_mtimecmp() {
-        return bridge_read_reg(machine_reg::clint_mtimecmp);
-    }
-
-    void do_write_clint_mtimecmp(uint64_t val) {
-        bridge_write_reg(machine_reg::clint_mtimecmp, val);
-    }
-
-    uint64_t do_read_plic_girqpend() {
-        return bridge_read_reg(machine_reg::plic_girqpend);
-    }
-
-    void do_write_plic_girqpend(uint64_t val) {
-        bridge_write_reg(machine_reg::plic_girqpend, val);
-    }
-
-    uint64_t do_read_plic_girqsrvd() {
-        return bridge_read_reg(machine_reg::plic_girqsrvd);
-    }
-
-    void do_write_plic_girqsrvd(uint64_t val) {
-        bridge_write_reg(machine_reg::plic_girqsrvd, val);
-    }
-
-    uint64_t do_read_htif_fromhost() {
-        return bridge_read_reg(machine_reg::htif_fromhost);
-    }
-
-    void do_write_htif_fromhost(uint64_t val) {
-        bridge_write_reg(machine_reg::htif_fromhost, val);
-    }
-
-    uint64_t do_read_htif_tohost() {
-        return bridge_read_reg(machine_reg::htif_tohost);
-    }
-
-    void do_write_htif_tohost(uint64_t val) {
-        bridge_write_reg(machine_reg::htif_tohost, val);
-    }
-
-    uint64_t do_read_htif_ihalt() {
-        return bridge_read_reg(machine_reg::htif_ihalt);
-    }
-
-    uint64_t do_read_htif_iconsole() {
-        return bridge_read_reg(machine_reg::htif_iconsole);
-    }
-
-    uint64_t do_read_htif_iyield() {
-        return bridge_read_reg(machine_reg::htif_iyield);
-    }
 
     template <typename T, typename A>
     void do_read_memory_word(uint64_t paddr, uint64_t /* pma_index */, T *pval) {

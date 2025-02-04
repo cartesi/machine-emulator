@@ -59,47 +59,47 @@ static inline void writeWord(UarchState &a, uint64 paddr, uint64 val) {
 
 template <typename UarchState>
 static inline uint64 readCycle(UarchState &a) {
-    return a.read_cycle();
+    return a.read_uarch_cycle();
 }
 
 template <typename UarchState>
 static inline void writeCycle(UarchState &a, uint64 val) {
-    a.write_cycle(val);
+    a.write_uarch_cycle(val);
 }
 
 template <typename UarchState>
 static inline uint64 readHaltFlag(UarchState &a) {
-    return a.read_halt_flag();
+    return a.read_uarch_halt_flag();
 }
 
 template <typename UarchState>
 static inline void writeHaltFlag(UarchState &a, uint64 val) {
-    a.write_halt_flag(val);
+    a.write_uarch_halt_flag(val);
 }
 
 template <typename UarchState>
 static inline uint64 readPc(UarchState &a) {
-    return a.read_pc();
+    return a.read_uarch_pc();
 }
 
 template <typename UarchState>
 static inline void writePc(UarchState &a, uint64 val) {
-    a.write_pc(val);
+    a.write_uarch_pc(val);
 }
 
 template <typename UarchState>
 static inline uint64 readX(UarchState &a, uint8 reg) {
-    return a.read_x(reg);
+    return a.read_uarch_x(reg);
 }
 
 template <typename UarchState>
 static inline void writeX(UarchState &a, uint8 reg, uint64 val) {
-    a.write_x(reg, val);
+    a.write_uarch_x(reg, val);
 }
 
 template <typename UarchState>
 static inline void resetState(UarchState &a) {
-    a.reset_state();
+    a.reset_uarch();
 }
 
 template <typename State>

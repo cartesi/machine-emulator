@@ -69,36 +69,36 @@ private:
     // -----
     friend i_uarch_state_access<uarch_state_access>;
 
-    uint64_t do_read_x(int i) const {
+    uint64_t do_read_uarch_x(int i) const {
         return m_m.get_uarch_state().x[i];
     }
 
-    void do_write_x(int i, uint64_t val) {
+    void do_write_uarch_x(int i, uint64_t val) {
         assert(i != 0);
         m_m.get_uarch_state().x[i] = val;
     }
 
-    uint64_t do_read_pc() const {
+    uint64_t do_read_uarch_pc() const {
         return m_m.get_uarch_state().pc;
     }
 
-    void do_write_pc(uint64_t val) {
+    void do_write_uarch_pc(uint64_t val) {
         m_m.get_uarch_state().pc = val;
     }
 
-    uint64_t do_read_cycle() const {
+    uint64_t do_read_uarch_cycle() const {
         return m_m.get_uarch_state().cycle;
     }
 
-    void do_write_cycle(uint64_t val) {
+    void do_write_uarch_cycle(uint64_t val) {
         m_m.get_uarch_state().cycle = val;
     }
 
-    uint64_t do_read_halt_flag() const {
+    uint64_t do_read_uarch_halt_flag() const {
         return m_m.get_uarch_state().halt_flag;
     }
 
-    void do_write_halt_flag(uint64_t v) {
+    void do_write_uarch_halt_flag(uint64_t v) {
         m_m.get_uarch_state().halt_flag = v;
     }
 
@@ -148,7 +148,7 @@ private:
         m_m.write_shadow_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
     }
 
-    void do_reset_state() {
+    void do_reset_uarch() {
         // Forward to machine
         m_m.reset_uarch();
     }

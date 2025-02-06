@@ -17,6 +17,7 @@
 #ifndef I_UARCH_STATE_ACCESS_H
 #define I_UARCH_STATE_ACCESS_H
 
+#include <cinttypes>
 #include <cstdint>
 
 #include "dump-uarch-state-access.h"
@@ -29,7 +30,7 @@
     uint64_t read_##REG() {                                                                                            \
         if constexpr (!is_an_i_prefer_shadow_uarch_state_v<DERIVED>) {                                                 \
             const auto val = derived().do_read_##REG();                                                                \
-            DUSA_PRINTF("%s::read_" #REG "() = %llu(0x%llx)\n", get_name(), val, val);                                 \
+            DUSA_PRINTF("%s::read_" #REG "() = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), val, val);                   \
             return val;                                                                                                \
         } else {                                                                                                       \
             return derived().read_shadow_uarch_state(shadow_uarch_state_what::REG);                                    \
@@ -40,7 +41,7 @@
     void write_##REG(uint64_t val) {                                                                                   \
         if constexpr (!is_an_i_prefer_shadow_uarch_state_v<DERIVED>) {                                                 \
             derived().do_write_##REG(val);                                                                             \
-            DUSA_PRINTF("%s::write_" #REG "(%llu(0x%llx))\n", get_name(), val, val);                                   \
+            DUSA_PRINTF("%s::write_" #REG "(%" PRIu64 "(0x%" PRIx64 "))\n", get_name(), val, val);                     \
         } else {                                                                                                       \
             derived().write_shadow_uarch_state(shadow_uarch_state_what::REG, val);                                     \
         }                                                                                                              \
@@ -67,7 +68,7 @@ public:
     uint64_t read_uarch_x(int i) {
         if constexpr (!is_an_i_prefer_shadow_uarch_state_v<DERIVED>) {
             const auto val = derived().do_read_uarch_x(i);
-            DUSA_PRINTF("%s::read_uarch_x(%d) = %llu(0x%llx)\n", get_name(), i, val, val);
+            DUSA_PRINTF("%s::read_uarch_x(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), i, val, val);
             return val;
         } else {
             return derived().read_shadow_uarch_state(shadow_uarch_state_get_what(shadow_uarch_state_what::uarch_x0, i));
@@ -77,7 +78,7 @@ public:
     void write_uarch_x(int i, uint64_t val) {
         if constexpr (!is_an_i_prefer_shadow_uarch_state_v<DERIVED>) {
             derived().do_write_uarch_x(i, val);
-            DUSA_PRINTF("%s::write_uarch_x(%d, %llu)\n", get_name(), i, val);
+            DUSA_PRINTF("%s::write_uarch_x(%d, %" PRIu64 ")\n", get_name(), i, val);
         } else {
             derived().write_shadow_uarch_state(shadow_uarch_state_get_what(shadow_uarch_state_what::uarch_x0, i), val);
         }
@@ -95,13 +96,15 @@ public:
 
     uint64_t read_word(uint64_t paddr) {
         const auto val = derived().do_read_word(paddr);
-        DUSA_PRINTF("%s::read_word(phys_addr{0x%llx}) = %llu(0x%llx)\n", get_name(), paddr, val, val);
+        DUSA_PRINTF("%s::read_word(phys_addr{0x%" PRIx64 "}) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), paddr, val,
+            val);
         return val;
     }
 
     void write_word(uint64_t paddr, uint64_t val) {
         derived().do_write_word(paddr, val);
-        DUSA_PRINTF("%s::write_word(phys_addr{0x%llx}, %llu(0x%llx))\n", get_name(), paddr, val, val);
+        DUSA_PRINTF("%s::write_word(phys_addr{0x%" PRIx64 "}, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), paddr, val,
+            val);
     }
 
     /// \brief Resets uarch to pristine state

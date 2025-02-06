@@ -253,7 +253,7 @@ public:
     /// \param mcycle_max Maximum mcycle after wait.
     /// \returns A pair {new_mcycle, status}, where new_mcycle gives new value for mcycle after wait,
     /// and status will be execute_status::success_and_serve_interrupts if wait was stopped by an
-    /// external interrupt resquest.
+    /// external interrupt request.
     /// \details When mcycle_max is greater than mcycle, this function will sleep until an external interrupt
     /// is triggered or until the amount of time estimated for mcycle to reach mcycle_max has elapsed.
     std::pair<uint64_t, execute_status> poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max);

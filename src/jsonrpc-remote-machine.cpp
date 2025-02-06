@@ -49,6 +49,7 @@
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 #include <boost/asio/signal_set.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>

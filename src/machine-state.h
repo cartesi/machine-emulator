@@ -23,10 +23,6 @@
 #include <array>
 #include <cstdint>
 
-#ifdef DUMP_HIST
-#include <unordered_map>
-#endif
-
 #include <boost/container/static_vector.hpp>
 
 #include "pma-constants.h"
@@ -124,16 +120,6 @@ struct machine_state {
     boost::container::static_vector<pma_entry, PMA_MAX> pmas;
 
     pma_entry empty_pma; ///< fallback to PMA for empty range
-
-    // Entries below this mark are not needed in the blockchain
-
-#ifdef DUMP_COUNTERS
-    machine_statistics stats;
-#endif
-
-#ifdef DUMP_HIST
-    std::unordered_map<std::string, uint64_t> insn_hist;
-#endif
 };
 
 } // namespace cartesi

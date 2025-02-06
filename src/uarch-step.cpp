@@ -179,7 +179,7 @@ static inline void branch(UarchState &a, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeLUI(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("lui");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "lui");
     uint8 rd = operandRd(insn);
     int32 imm = operandImm20(insn);
     if (rd != 0) {
@@ -190,7 +190,7 @@ static inline void executeLUI(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeAUIPC(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("auipc");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "auipc");
     int32 imm = operandImm20(insn);
     uint8 rd = operandRd(insn);
     if (rd != 0) {
@@ -201,7 +201,7 @@ static inline void executeAUIPC(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeJAL(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("jal");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "jal");
     int32 imm = operandJimm20(insn);
     uint8 rd = operandRd(insn);
     if (rd != 0) {
@@ -212,7 +212,7 @@ static inline void executeJAL(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeJALR(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("jalr");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "jalr");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -225,7 +225,7 @@ static inline void executeJALR(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeBEQ(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("beq");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "beq");
     int32 imm = operandSbimm12(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -239,7 +239,7 @@ static inline void executeBEQ(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeBNE(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("bne");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "bne");
     int32 imm = operandSbimm12(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -253,7 +253,7 @@ static inline void executeBNE(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeBLT(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("blt");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "blt");
     int32 imm = operandSbimm12(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -267,7 +267,7 @@ static inline void executeBLT(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeBGE(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("bge");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "bge");
     int32 imm = operandSbimm12(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -281,7 +281,7 @@ static inline void executeBGE(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeBLTU(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("bltu");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "bltu");
     int32 imm = operandSbimm12(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -295,7 +295,7 @@ static inline void executeBLTU(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeBGEU(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("bgeu");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "bgeu");
     int32 imm = operandSbimm12(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -309,7 +309,7 @@ static inline void executeBGEU(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeLB(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("lb");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "lb");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -323,7 +323,7 @@ static inline void executeLB(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeLHU(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("lhu");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "lhu");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -337,7 +337,7 @@ static inline void executeLHU(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeLH(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("lh");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "lh");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -351,7 +351,7 @@ static inline void executeLH(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeLW(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("lw");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "lw");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -365,7 +365,7 @@ static inline void executeLW(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeLBU(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("lbu");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "lbu");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -379,7 +379,7 @@ static inline void executeLBU(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSB(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("sb");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sb");
     int32 imm = operandSimm12(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -391,7 +391,7 @@ static inline void executeSB(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSH(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("sh");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sh");
     int32 imm = operandSimm12(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -403,7 +403,7 @@ static inline void executeSH(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSW(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("sw");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sw");
     int32 imm = operandSimm12(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -415,7 +415,7 @@ static inline void executeSW(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeADDI(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("addi");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "addi");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -429,7 +429,7 @@ static inline void executeADDI(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeADDIW(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("addiw");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "addiw");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -443,7 +443,7 @@ static inline void executeADDIW(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSLTI(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("slti");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "slti");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -460,7 +460,7 @@ static inline void executeSLTI(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSLTIU(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("sltiu");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sltiu");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -477,7 +477,7 @@ static inline void executeSLTIU(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeXORI(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("xori");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "xori");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -490,7 +490,7 @@ static inline void executeXORI(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeORI(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("ori");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "ori");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -503,7 +503,7 @@ static inline void executeORI(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeANDI(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("andi");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "andi");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -516,7 +516,7 @@ static inline void executeANDI(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSLLI(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("slli");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "slli");
     int32 imm = operandShamt6(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -529,7 +529,7 @@ static inline void executeSLLI(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSLLIW(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("slliw");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "slliw");
     int32 imm = operandShamt5(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -542,7 +542,7 @@ static inline void executeSLLIW(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSRLI(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("srli");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "srli");
     int32 imm = operandShamt6(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -555,7 +555,7 @@ static inline void executeSRLI(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSRLW(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("srlw");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "srlw");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -570,7 +570,7 @@ static inline void executeSRLW(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSRLIW(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("srliw");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "srliw");
     int32 imm = operandShamt5(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -584,7 +584,7 @@ static inline void executeSRLIW(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSRAI(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("srai");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "srai");
     int32 imm = operandShamt6(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -597,7 +597,7 @@ static inline void executeSRAI(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSRAIW(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("sraiw");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sraiw");
     int32 imm = operandShamt5(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -610,7 +610,7 @@ static inline void executeSRAIW(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeADD(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("add");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "add");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -624,7 +624,7 @@ static inline void executeADD(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeADDW(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("addw");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "addw");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -639,7 +639,7 @@ static inline void executeADDW(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSUB(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("sub");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sub");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -653,7 +653,7 @@ static inline void executeSUB(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSUBW(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("subw");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "subw");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -668,7 +668,7 @@ static inline void executeSUBW(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSLL(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("sll");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sll");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -682,7 +682,7 @@ static inline void executeSLL(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSLLW(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("sllw");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sllw");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -697,7 +697,7 @@ static inline void executeSLLW(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSLT(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("slt");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "slt");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -715,7 +715,7 @@ static inline void executeSLT(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSLTU(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("sltu");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sltu");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -733,7 +733,7 @@ static inline void executeSLTU(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeXOR(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("xor");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "xor");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -747,7 +747,7 @@ static inline void executeXOR(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSRL(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("srl");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "srl");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -761,7 +761,7 @@ static inline void executeSRL(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSRA(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("sra");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sra");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -775,7 +775,7 @@ static inline void executeSRA(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSRAW(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("sraw");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sraw");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -790,7 +790,7 @@ static inline void executeSRAW(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeOR(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("or");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "or");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -804,7 +804,7 @@ static inline void executeOR(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeAND(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("and");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "and");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -817,14 +817,14 @@ static inline void executeAND(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeFENCE(UarchState &a, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("fence");
+static inline void executeFENCE(UarchState &a, uint32 insn, uint64 pc) {
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "fence");
     return advancePc(a, pc);
 }
 
 template <typename UarchState>
 static inline void executeLWU(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("lwu");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "lwu");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -838,7 +838,7 @@ static inline void executeLWU(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeLD(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("ld");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "ld");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -852,7 +852,7 @@ static inline void executeLD(UarchState &a, uint32 insn, uint64 pc) {
 
 template <typename UarchState>
 static inline void executeSD(UarchState &a, uint32 insn, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("sd");
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sd");
     int32 imm = operandSimm12(insn);
     uint8 rs1 = operandRs1(insn);
     uint8 rs2 = operandRs2(insn);
@@ -863,8 +863,8 @@ static inline void executeSD(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeECALL(UarchState &a, uint64 pc) {
-    [[maybe_unused]] auto note = a.make_scoped_note("ecall");
+static inline void executeECALL(UarchState &a, uint32 insn, uint64 pc) {
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "ecall");
     // ECALL conventions
     // a0--a7 are the same as x10--x17
     // syscall is passed in a7
@@ -899,8 +899,8 @@ static inline void executeECALL(UarchState &a, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeEBREAK(UarchState &a) {
-    [[maybe_unused]] auto note = a.make_scoped_note("ebreak");
+static inline void executeEBREAK(UarchState &a, uint32 insn, uint64 pc) {
+    [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "ebreak");
     throwRuntimeError(a, "uarch aborted");
 }
 
@@ -1079,13 +1079,13 @@ static inline void executeInsn(UarchState &a, uint32 insn, uint64 pc) {
         return executeSLTI(a, insn, pc);
     }
     if (insnMatchOpcodeFunct3(insn, 0xf, 0x0)) {
-        return executeFENCE(a, pc);
+        return executeFENCE(a, insn, pc);
     }
     if (insn == uint32(0x73)) {
-        return executeECALL(a, pc);
+        return executeECALL(a, insn, pc);
     }
     if (insn == uint32(0x100073)) {
-        return executeEBREAK(a);
+        return executeEBREAK(a, insn, pc);
     }
     throwRuntimeError(a, "illegal instruction");
 }

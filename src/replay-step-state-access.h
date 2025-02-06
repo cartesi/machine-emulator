@@ -162,7 +162,7 @@ public:
             if (i > 0 && m_context.pages[i - 1].index >= m_context.pages[i].index) {
                 interop_throw_runtime_error("invalid log format: page index is not in increasing order");
             }
-            // In the current implementaiton, this check is unecessary
+            // In the current implementation, this check is unnecessary
             // But we may in the future change the data field to point to independently allocated pages
             // This would break the code that uses binary search to find the page based on the address of its data
             if (i > 0 && +m_context.pages[i - 1].data >= +m_context.pages[i].data) {

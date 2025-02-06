@@ -205,7 +205,7 @@ static constexpr const char *shadow_state_get_what_name(shadow_state_what what) 
     const auto paddr = static_cast<uint64_t>(what);
     if (paddr < PMA_SHADOW_STATE_START || paddr - PMA_SHADOW_STATE_START >= sizeof(shadow_state) ||
         (paddr & (sizeof(uint64_t) - 1)) != 0) {
-        return "state.unknown";
+        return "state.unknown_";
     }
     using reg = shadow_state_what;
     switch (what) {
@@ -422,10 +422,9 @@ static constexpr const char *shadow_state_get_what_name(shadow_state_what what) 
         case reg::htif_iyield:
             return "htif.iyield";
         case reg::unknown_:
-            [[fallthrough]];
-        default:
-            return "state.unknown";
+            return "state.unknown_";
     }
+    return "state.unknown_";
 }
 
 /// \brief Global instance of the processor shadow device driver.

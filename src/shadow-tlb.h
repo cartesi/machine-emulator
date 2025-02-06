@@ -89,7 +89,7 @@ static constexpr const char *shadow_tlb_get_what_name(shadow_tlb_what what) {
     const auto offset = static_cast<uint64_t>(what);
     using reg = shadow_tlb_what;
     if (offset > static_cast<uint64_t>(reg::unknown_) || (offset & (sizeof(uint64_t) - 1)) != 0) {
-        return "tlb.unknown";
+        return "tlb.unknown_";
     }
     switch (what) {
         case reg::vaddr_page:
@@ -101,8 +101,9 @@ static constexpr const char *shadow_tlb_get_what_name(shadow_tlb_what what) {
         case reg::zero_padding_:
             return "tlb.slot.zero_padding_";
         case reg::unknown_:
-            return "tlb.unknown";
+            return "tlb.unknown_";
     }
+    return "tlb.unknown_";
 }
 
 [[maybe_unused]] static void shadow_tlb_fill_slot(uint64_t vaddr_page, uint64_t vp_offset, uint64_t pma_index,

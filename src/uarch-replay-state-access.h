@@ -127,6 +127,7 @@ private:
             case access_type::write:
                 return "write";
         }
+        return "unknown_";
     }
 
     static std::pair<uint64_t, int> adjust_access(uint64_t paddr, int log2_size) {

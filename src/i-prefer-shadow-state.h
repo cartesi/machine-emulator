@@ -21,6 +21,7 @@
 /// \file
 /// \brief Interface for state access that prefers to go through shadow state
 
+#include <cinttypes>
 #include <cstdint>
 #include <type_traits>
 
@@ -52,14 +53,16 @@ public:
     uint64_t read_shadow_state(shadow_state_what what) {
         const auto val = derived().do_read_shadow_state(what);
         [[maybe_unused]] const auto *const what_name = shadow_state_get_what_name(what);
-        DSA_PRINTF("%s::read_shadow_state(%s) = %llu(0x%llx)\n", derived().get_name(), what_name, val, val);
+        DSA_PRINTF("%s::read_shadow_state(%s) = %" PRIu64 "(0x%" PRIx64 ")\n", derived().get_name(), what_name, val,
+            val);
         return val;
     }
 
     void write_shadow_state(shadow_state_what what, uint64_t val) {
         derived().do_write_shadow_state(what, val);
         [[maybe_unused]] const auto *const what_name = shadow_state_get_what_name(what);
-        DSA_PRINTF("%s::write_shadow_state(%s, %llu(0x%llx))\n", derived().get_name(), what_name, val, val);
+        DSA_PRINTF("%s::write_shadow_state(%s, %" PRIu64 "(0x%" PRIx64 "))\n", derived().get_name(), what_name, val,
+            val);
     }
 };
 

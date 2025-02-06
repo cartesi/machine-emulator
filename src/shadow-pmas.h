@@ -32,17 +32,17 @@ namespace cartesi {
 
 /// \brief Shadow memory layout
 
-struct PACKED shadow_pma_entry {
+struct PACKED shadow_pmas_entry {
     uint64_t istart;
     uint64_t ilength;
 };
 
-using shadow_pmas_state = std::array<shadow_pma_entry, PMA_MAX>;
+using shadow_pmas_state = std::array<shadow_pmas_entry, PMA_MAX>;
 
 /// \brief List of field types
 enum class shadow_pmas_what : uint64_t {
-    istart = offsetof(shadow_pma_entry, istart),
-    ilength = offsetof(shadow_pma_entry, ilength),
+    istart = offsetof(shadow_pmas_entry, istart),
+    ilength = offsetof(shadow_pmas_entry, ilength),
     unknown_ = UINT64_C(1) << 63, // Outside of RISC-V address space
 };
 
@@ -50,7 +50,7 @@ enum class shadow_pmas_what : uint64_t {
 /// \param p Index of desired shadow PMA entry
 /// \returns The address.
 static constexpr uint64_t shadow_pmas_get_pma_abs_addr(uint64_t p) {
-    return PMA_SHADOW_PMAS_START + p * sizeof(shadow_pma_entry);
+    return PMA_SHADOW_PMAS_START + p * sizeof(shadow_pmas_entry);
 }
 
 /// \brief Obtains the absolute address of a PMA entry in shadow memory.
@@ -69,18 +69,17 @@ static constexpr shadow_pmas_what shadow_pmas_get_what(uint64_t paddr) {
     //??D First condition ensures offset = (paddr-PMA_SHADOW_PMAS_START) >= 0
     //??D Second ensures offset < sizeof(shadow_pmas_state)
     //??D Third ensures offset is aligned to sizeof(uint64_t)
-    //??D shadow_pma_entry only contains uint64_t fields
-    //??D shadow_pmas_state_what contains one entry with the offset of each field in shadow_pma_entry
+    //??D shadow_pmas_entry only contains uint64_t fields
+    //??D shadow_pmas_state_what contains one entry with the offset of each field in shadow_pmas_entry
     //??D I don't see how the cast can produce something outside the enum...
     // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
-    return shadow_pmas_what{(paddr - PMA_SHADOW_PMAS_START) % sizeof(shadow_pma_entry)};
+    return shadow_pmas_what{(paddr - PMA_SHADOW_PMAS_START) % sizeof(shadow_pmas_entry)};
 }
 
 static constexpr const char *shadow_pmas_get_what_name(shadow_pmas_what what) {
     const auto paddr = static_cast<uint64_t>(what);
-    if (paddr < PMA_SHADOW_PMAS_START || paddr - PMA_SHADOW_PMAS_START >= sizeof(shadow_pmas_state) ||
-        (paddr & (sizeof(uint64_t) - 1)) != 0) {
-        return "pma.unknown";
+    if (paddr >= sizeof(shadow_pmas_entry) || (paddr & (sizeof(uint64_t) - 1)) != 0) {
+        return "pma.unknown_";
     }
     using reg = shadow_pmas_what;
     switch (what) {
@@ -89,8 +88,9 @@ static constexpr const char *shadow_pmas_get_what_name(shadow_pmas_what what) {
         case reg::ilength:
             return "pma.ilength";
         case reg::unknown_:
-            return "pma.unknown";
+            return "pma.unknown_";
     }
+    return "pmas.unknown_";
 }
 
 } // namespace cartesi

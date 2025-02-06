@@ -23,10 +23,26 @@
 #include <cstdint>
 #include <type_traits>
 
+#ifdef DUMP_SCOPED_NOTE
+#include "dump.h"
+#endif
+
 #include "meta.h"
 #include "scoped-note.h"
 
 namespace cartesi {
+
+#ifdef DUMP_SCOPED_NOTE
+template <typename... ARGS>
+static inline auto DSN_PRINTF(ARGS... args) {
+    return D_PRINTF(args...);
+}
+#else
+template <typename... ARGS>
+static inline auto DSN_PRINTF(ARGS... /*args*/) {
+    return 0;
+}
+#endif
 
 /// \class i_accept_scoped_note
 /// \brief Interface that lets a state access accept scoped notes.
@@ -48,19 +64,15 @@ public:
     /// \brief Adds a begin bracket annotation to the log
     /// \param text String with the text for the annotation
     void push_begin_bracket(const char *text) {
-#ifdef DUMP_SCOPED_NOTE
-        fprintf(stderr, "----> begin %s (%s)\n", text, derived().get_name());
-#endif
-        return derived().do_push_begin_bracket(text);
+        derived().do_push_begin_bracket(text);
+        DSN_PRINTF("----> begin %s (%s)\n", text, derived().get_name());
     }
 
     /// \brief Adds an end bracket annotation to the log
     /// \param text String with the text for the annotation
     void push_end_bracket(const char *text) {
-#ifdef DUMP_SCOPED_NOTE
-        fprintf(stderr, "<---- end %s (%s)\n", text, derived().get_name());
-#endif
-        return derived().do_push_end_bracket(text);
+        derived().do_push_end_bracket(text);
+        DSN_PRINTF("<---- end %s (%s)\n", text, derived().get_name());
     }
 
     /// \brief Adds annotations to the state, bracketing a scope

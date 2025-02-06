@@ -159,7 +159,7 @@ static constexpr const char *pma_get_DID_name(PMA_ISTART_DID did) {
         case PMA_ISTART_DID::shadow_uarch:
             return "DID.shadow_uarch";
         default:
-            return "DID.unkown";
+            return "DID.unknown";
     }
 }
 

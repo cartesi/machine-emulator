@@ -29,6 +29,7 @@
 #include "compiler-defines.h"
 #include "host-addr.h"
 #include "i-accept-scoped-note.h"
+#include "i-counters.h"
 #include "i-interactive-state-access.h"
 #include "i-state-access.h"
 #include "interpret.h"
@@ -62,7 +63,9 @@ struct i_state_access_fast_addr<state_access> {
 class state_access :
     public i_state_access<state_access>,
     public i_interactive_state_access<state_access>,
-    public i_accept_scoped_note<state_access> {
+    public i_accept_scoped_note<state_access>,
+    public i_counters<state_access> {
+
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
     machine &m_m; ///< Associated machine
 
@@ -73,19 +76,7 @@ public:
         ;
     }
 
-    const machine &get_naked_machine() const {
-        return m_m;
-    }
-
-    machine &get_naked_machine() {
-        return m_m;
-    }
-
 private:
-    machine_state &do_get_naked_state() {
-        return m_m.get_state();
-    }
-
     // -----
     // i_state_access interface implementation
     // -----
@@ -511,12 +502,6 @@ private:
         return "state_access";
     }
 
-#ifdef DUMP_COUNTERS
-    machine_statistics &do_get_statistics() {
-        return m_m.get_state().stats;
-    }
-#endif
-
     // -----
     // i_intereactive_state_access interface implementation
     // -----
@@ -534,6 +519,23 @@ private:
     int do_getchar() {
         os_poll_tty(0);
         return os_getchar();
+    }
+
+    // -----
+    // i_counters interface implementation
+    // -----
+    friend i_counters<state_access>;
+
+    void do_increment_counter(const char *name, const char *domain) {
+        m_m.increment_counter(name, domain);
+    }
+
+    uint64_t do_read_counter(const char *name, const char *domain) {
+        return m_m.read_counter(name, domain);
+    }
+
+    void do_write_counter(uint64_t val, const char *name, const char *domain) {
+        m_m.write_counter(val, name, domain);
     }
 };
 

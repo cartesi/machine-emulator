@@ -25,7 +25,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "dump-state-access.h"
+#include "dump.h"
 #include "i-prefer-shadow-state.h"
 #include "meta.h"
 #include "pm-type-name.h"
@@ -56,7 +56,7 @@ using i_state_access_fast_addr_t = typename i_state_access_fast_addr<STATE_ACCES
             DSA_PRINTF("%s::read_" #REG "() = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), val, val);                    \
             return val;                                                                                                \
         } else {                                                                                                       \
-            return derived().read_shadow_state(shadow_state_what::REG);                                                \
+            return prefer_read_shadow_state(shadow_state_what::REG);                                                   \
         }                                                                                                              \
     }
 
@@ -66,7 +66,7 @@ using i_state_access_fast_addr_t = typename i_state_access_fast_addr<STATE_ACCES
             derived().do_write_##REG(val);                                                                             \
             DSA_PRINTF("%s::write_" #REG "(%" PRIu64 "(0x%" PRIx64 "))\n", get_name(), val, val);                      \
         } else {                                                                                                       \
-            derived().write_shadow_state(shadow_state_what::REG, val);                                                 \
+            prefer_write_shadow_state(shadow_state_what::REG, val);                                                    \
         }                                                                                                              \
     }
 // NOLINTEND(cppcoreguidelines-macro-usage)
@@ -107,14 +107,29 @@ class i_state_access { // CRTP
         return *static_cast<const DERIVED *>(this);
     }
 
+    uint64_t prefer_read_shadow_state(shadow_state_what what) {
+        const auto val = derived().read_shadow_state(what);
+        [[maybe_unused]] const auto *const what_name = shadow_state_get_what_name(what);
+        DSA_PRINTF("%s::read_shadow_state(%s) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), what_name, val, val);
+        return val;
+    }
+
+    void prefer_write_shadow_state(shadow_state_what what, uint64_t val) {
+        derived().write_shadow_state(what, val);
+        [[maybe_unused]] const auto *const what_name = shadow_state_get_what_name(what);
+        DSA_PRINTF("%s::write_shadow_state(%s, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), what_name, val, val);
+    }
+
 public:
     using pma_entry = i_state_access_pma_entry_t<DERIVED>;
     using fast_addr = i_state_access_fast_addr_t<DERIVED>;
 
-    //??D We should probably remove this from the interface
-    /// \brief Returns machine state for direct access.
-    auto &get_naked_state() {
-        return derived().do_get_naked_state();
+    /// \brief Works as printf if we are dumping state accesses, otherwise does nothing
+    template <size_t N, typename... ARGS>
+    static void DSA_PRINTF([[maybe_unused]] const char (&fmt)[N], [[maybe_unused]] ARGS... args) {
+#ifdef DUMP_STATE_ACCESS
+        D_PRINTF(fmt, args...);
+#endif
     }
 
     /// \brief Reads from general-purpose register.
@@ -126,7 +141,7 @@ public:
             DSA_PRINTF("%s::read_x(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), i, val, val);
             return val;
         } else {
-            return derived().read_shadow_state(shadow_state_get_what(shadow_state_what::x0, i));
+            return prefer_read_shadow_state(shadow_state_get_what(shadow_state_what::x0, i));
         }
     }
 
@@ -140,7 +155,7 @@ public:
             derived().do_write_x(i, val);
             DSA_PRINTF("%s::write_x(%d, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), i, val, val);
         } else {
-            derived().write_shadow_state(shadow_state_get_what(shadow_state_what::x0, i), val);
+            prefer_write_shadow_state(shadow_state_get_what(shadow_state_what::x0, i), val);
         }
     }
 
@@ -153,7 +168,7 @@ public:
             DSA_PRINTF("%s::read_f(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), i, val, val);
             return val;
         } else {
-            return derived().read_shadow_state(shadow_state_get_what(shadow_state_what::f0, i));
+            return prefer_read_shadow_state(shadow_state_get_what(shadow_state_what::f0, i));
         }
     }
 
@@ -165,7 +180,7 @@ public:
             derived().do_write_f(i, val);
             DSA_PRINTF("%s::write_f(%d, %" PRIu64 "(%" PRIx64 "))\n", get_name(), i, val, val);
         } else {
-            derived().write_shadow_state(shadow_state_get_what(shadow_state_what::f0, i), val);
+            prefer_write_shadow_state(shadow_state_get_what(shadow_state_what::f0, i), val);
         }
     }
 
@@ -416,13 +431,6 @@ public:
     void putchar(uint8_t c) {
         derived().do_putchar(c);
     }
-
-#ifdef DUMP_COUNTERS
-    //??D we should probably remove this from the interface
-    auto &get_statistics() {
-        return derived().do_get_statistics();
-    }
-#endif
 
     constexpr const char *get_name() const {
         return derived().do_get_name();

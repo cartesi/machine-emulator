@@ -26,6 +26,7 @@
 #include <vector>
 
 #include <boost/container/static_vector.hpp>
+#include <unordered_map>
 
 #include "access-log.h"
 #include "host-addr.h"
@@ -74,6 +75,8 @@ private:
     static const pma_entry::flags m_flash_drive_flags;    ///< PMA flags used for flash drives
     static const pma_entry::flags m_cmio_rx_buffer_flags; ///< PMA flags used for cmio rx buffer
     static const pma_entry::flags m_cmio_tx_buffer_flags; ///< PMA flags used for cmio tx buffer
+
+    std::unordered_map<std::string, uint64_t> m_counters;
 
     /// \brief Allocates a new PMA entry.
     /// \param pma PMA entry to add to machine.
@@ -134,6 +137,18 @@ private:
     /// \brief Initializes microarchitecture
     /// \param config Microarchitecture configuration
     void init_uarch(const uarch_config &config);
+
+    /// \brief Dumps statistics
+    void dump_stats();
+
+    /// \brief Dumps instruction histogram
+    void dump_insn_hist();
+
+    /// \brief Returns key to counter
+    /// \param name Counter name.
+    /// \param domain Counter domain. Can be nullptr. Otherwise, should end with a dot '.'
+    /// \details The counter is key is the concatenation of \p domain with \p name.
+    static std::string get_counter_key(const char *name, const char *domain = nullptr);
 
 public:
     /// \brief Type of hash
@@ -546,6 +561,30 @@ public:
     /// \param paddr Target physical address of interest
     /// \returns Description of what is at that address
     static const char *get_what_name(uint64_t paddr);
+
+    /// \brief Increments a counter
+    /// \param name Counter name.
+    /// \param domain Counter domain. Can be nullptr. Otherwise, should end with a dot '.'
+    /// \details The counter is identified by the concatenation of \p domain with \p name.
+    void increment_counter(const char *name, const char *domain = nullptr);
+
+    /// \brief Writes value to counter
+    /// \param val Value to write.
+    /// \param name Counter name.
+    /// \param domain Counter domain. Can be nullptr. Otherwise, should end with a dot '.'
+    /// \details The counter is identified by the concatenation of \p domain with \p name.
+    void write_counter(uint64_t val, const char *name, const char *domain = nullptr);
+
+    /// \brief Returns value in counter
+    /// \param name Counter name.
+    /// \param domain Counter domain. Can be nullptr. Otherwise, should end with a dot '.'
+    /// \details The counter is identified by the concatenation of \p domain with \p name.
+    uint64_t read_counter(const char *name, const char *domain = nullptr);
+
+    /// \brief Returns all counters
+    const auto &get_counters() {
+        return m_counters;
+    }
 };
 
 } // namespace cartesi

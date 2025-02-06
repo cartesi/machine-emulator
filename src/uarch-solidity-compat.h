@@ -21,7 +21,9 @@
 #include <cmath>
 #include <cstdint>
 #include <stdexcept>
-#ifdef DUMP_INSN
+
+#ifdef DUMP_UARCH_INSN
+#include "dump.h"
 #include <cinttypes>
 #endif
 
@@ -226,13 +228,14 @@ void require([[maybe_unused]] T1 condition, [[maybe_unused]] T2 message) {
 }
 
 template <typename UarchState>
-static void dumpInsn([[maybe_unused]] UarchState &a, [[maybe_unused]] uint64 pc, [[maybe_unused]] uint32 insn,
+static auto dumpInsn([[maybe_unused]] UarchState &a, [[maybe_unused]] uint64 pc, [[maybe_unused]] uint32 insn,
     [[maybe_unused]] const char *name) {
-#ifdef DUMP_INSN
-    fprintf(stderr, "%08" PRIx64, pc);
-    fprintf(stderr, ":   %08" PRIx32 "   ", insn);
-    fprintf(stderr, "%s\n", name);
+#ifdef DUMP_UARCH_INSN
+    D_PRINTF("ua %08" PRIx64, pc);
+    D_PRINTF(":   %08" PRIx32 "   ", insn);
+    D_PRINTF("%s\n", name);
 #endif
+    return a.make_scoped_note(name);
 }
 
 } // namespace cartesi

@@ -955,57 +955,70 @@ void machine::store(const std::string &dir) const {
     store_pmas(c, dir);
 }
 
+void machine::dump_insn_hist() {
+#ifdef DUMP_INSN_HIST
+    D_PRINTF("\nInstruction Histogram:\n", "");
+    for (const auto &[key, val] : m_counters) {
+        if (key.starts_with("insn.")) {
+            D_PRINTF("%s: %" PRIu64 "\n", key.c_str(), val);
+        }
+    }
+#endif
+}
+
+void machine::dump_stats() {
+#if DUMP_STATS
+    const auto hr = [](uint64_t a, uint64_t b) {
+        // NOLINTNEXTLINE(bugprone-narrowing-conversions,cppcoreguidelines-narrowing-conversions)
+        return static_cast<double>(b) / (a + b);
+    };
+
+    D_PRINTF("\nMachine Counters:\n", "");
+    D_PRINTF("inner loops: %" PRIu64 "\n", m_counters["stats.inner_loop"]);
+    D_PRINTF("outers loops: %" PRIu64 "\n", m_counters["stats.outer_loop"]);
+    D_PRINTF("supervisor ints: %" PRIu64 "\n", m_counters["stats.sv_int"]);
+    D_PRINTF("supervisor ex: %" PRIu64 "\n", m_counters["stats.sv_ex"]);
+    D_PRINTF("machine ints: %" PRIu64 "\n", m_counters["stats.m_int"]);
+    D_PRINTF("machine ex: %" PRIu64 "\n", m_counters["stats.m_ex"]);
+    D_PRINTF("atomic mem ops: %" PRIu64 "\n", m_counters["stats.atomic_mop"]);
+    D_PRINTF("fence: %" PRIu64 "\n", m_counters["stats.fence"]);
+    D_PRINTF("fence.i: %" PRIu64 "\n", m_counters["stats.fence_i"]);
+    D_PRINTF("fence.vma: %" PRIu64 "\n", m_counters["stats.fence_vma"]);
+    D_PRINTF("max asid: %" PRIu64 "\n", m_counters["stats.max_asid"]);
+    D_PRINTF("User mode: %" PRIu64 "\n", m_counters["stats.prv.U"]);
+    D_PRINTF("Supervisor mode: %" PRIu64 "\n", m_counters["stats.prv.S"]);
+    D_PRINTF("Machine mode: %" PRIu64 "\n", m_counters["stats.prv.M"]);
+    D_PRINTF("tlb code hit ratio: %.4f\n", hr(m_counters["stats.tlb.cmiss"], m_counters["stats.tlb.chit"]));
+    D_PRINTF("tlb read hit ratio: %.4f\n", hr(m_counters["stats.tlb.rmiss"], m_counters["stats.tlb.rhit"]));
+    D_PRINTF("tlb write hit ratio: %.4f\n", hr(m_counters["stats.tlb.wmiss"], m_counters["stats.tlb.whit"]));
+    D_PRINTF("tlb.chit: %" PRIu64 "\n", m_counters["stats.tlb.chit"]);
+    D_PRINTF("tlb.cmiss: %" PRIu64 "\n", m_counters["stats.tlb.cmiss"]);
+    D_PRINTF("tlb.rhit: %" PRIu64 "\n", m_counters["stats.tlb.rhit"]);
+    D_PRINTF("tlb.rmiss: %" PRIu64 "\n", m_counters["stats.tlb.rmiss"]);
+    D_PRINTF("tlb.whit: %" PRIu64 "\n", m_counters["stats.tlb.whit"]);
+    D_PRINTF("tlb.wmiss: %" PRIu64 "\n", m_counters["stats.tlb.wmiss"]);
+    D_PRINTF("tlb.flush_all: %" PRIu64 "\n", m_counters["stats.tlb.flush_all"]);
+    D_PRINTF("tlb.flush_read: %" PRIu64 "\n", m_counters["stats.tlb.flush_read"]);
+    D_PRINTF("tlb.flush_write: %" PRIu64 "\n", m_counters["stats.tlb.flush_write"]);
+    D_PRINTF("tlb.flush_vaddr: %" PRIu64 "\n", m_counters["stats.tlb.flush_vaddr"]);
+    D_PRINTF("tlb.flush_satp: %" PRIu64 "\n", m_counters["stats.tlb.flush_satp"]);
+    D_PRINTF("tlb.flush_mstatus: %" PRIu64 "\n", m_counters["stats.tlb.flush_mstatus"]);
+    D_PRINTF("tlb.flush_set_prv: %" PRIu64 "\n", m_counters["stats.tlb.flush_set_prv"]);
+    D_PRINTF("tlb.flush_fence_vma_all: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_all"]);
+    D_PRINTF("tlb.flush_fence_vma_asid: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_asid"]);
+    D_PRINTF("tlb.flush_fence_vma_vaddr: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_vaddr"]);
+    D_PRINTF("tlb.flush_fence_vma_asid_vaddr: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_asid_vaddr"]);
+#undef TLB_HIT_RATIO
+#endif
+}
+
 machine::~machine() {
     // Cleanup TTY if console input was enabled
     if (m_c.htif.console_getchar || has_virtio_console()) {
         os_close_tty();
     }
-#ifdef DUMP_HIST
-    std::ignore = fprintf(stderr, "\nInstruction Histogram:\n");
-    for (auto v : m_s.insn_hist) {
-        std::ignore = fprintf(stderr, "%12" PRIu64 "  %s\n", v.second, v.first.c_str());
-    }
-#endif
-#if DUMP_COUNTERS
-#define TLB_HIT_RATIO(s, a, b) (((double) (s).stats.b) / ((s).stats.a + (s).stats.b))
-    std::ignore = fprintf(stderr, "\nMachine Counters:\n");
-    std::ignore = fprintf(stderr, "inner loops: %" PRIu64 "\n", m_s.stats.inner_loop);
-    std::ignore = fprintf(stderr, "outers loops: %" PRIu64 "\n", m_s.stats.outer_loop);
-    std::ignore = fprintf(stderr, "supervisor ints: %" PRIu64 "\n", m_s.stats.sv_int);
-    std::ignore = fprintf(stderr, "supervisor ex: %" PRIu64 "\n", m_s.stats.sv_ex);
-    std::ignore = fprintf(stderr, "machine ints: %" PRIu64 "\n", m_s.stats.m_int);
-    std::ignore = fprintf(stderr, "machine ex: %" PRIu64 "\n", m_s.stats.m_ex);
-    std::ignore = fprintf(stderr, "atomic mem ops: %" PRIu64 "\n", m_s.stats.atomic_mop);
-    std::ignore = fprintf(stderr, "fence: %" PRIu64 "\n", m_s.stats.fence);
-    std::ignore = fprintf(stderr, "fence.i: %" PRIu64 "\n", m_s.stats.fence_i);
-    std::ignore = fprintf(stderr, "fence.vma: %" PRIu64 "\n", m_s.stats.fence_vma);
-    std::ignore = fprintf(stderr, "max asid: %" PRIu64 "\n", m_s.stats.max_asid);
-    std::ignore = fprintf(stderr, "User mode: %" PRIu64 "\n", m_s.stats.prv_level[PRV_U]);
-    std::ignore = fprintf(stderr, "Supervisor mode: %" PRIu64 "\n", m_s.stats.prv_level[PRV_S]);
-    std::ignore = fprintf(stderr, "Machine mode: %" PRIu64 "\n", m_s.stats.prv_level[PRV_M]);
-
-    std::ignore = fprintf(stderr, "tlb code hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_cmiss, tlb_chit));
-    std::ignore = fprintf(stderr, "tlb read hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_rmiss, tlb_rhit));
-    std::ignore = fprintf(stderr, "tlb write hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_wmiss, tlb_whit));
-    std::ignore = fprintf(stderr, "tlb_chit: %" PRIu64 "\n", m_s.stats.tlb_chit);
-    std::ignore = fprintf(stderr, "tlb_cmiss: %" PRIu64 "\n", m_s.stats.tlb_cmiss);
-    std::ignore = fprintf(stderr, "tlb_rhit: %" PRIu64 "\n", m_s.stats.tlb_rhit);
-    std::ignore = fprintf(stderr, "tlb_rmiss: %" PRIu64 "\n", m_s.stats.tlb_rmiss);
-    std::ignore = fprintf(stderr, "tlb_whit: %" PRIu64 "\n", m_s.stats.tlb_whit);
-    std::ignore = fprintf(stderr, "tlb_wmiss: %" PRIu64 "\n", m_s.stats.tlb_wmiss);
-    std::ignore = fprintf(stderr, "tlb_flush_all: %" PRIu64 "\n", m_s.stats.tlb_flush_all);
-    std::ignore = fprintf(stderr, "tlb_flush_read: %" PRIu64 "\n", m_s.stats.tlb_flush_read);
-    std::ignore = fprintf(stderr, "tlb_flush_write: %" PRIu64 "\n", m_s.stats.tlb_flush_write);
-    std::ignore = fprintf(stderr, "tlb_flush_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_vaddr);
-    std::ignore = fprintf(stderr, "tlb_flush_satp: %" PRIu64 "\n", m_s.stats.tlb_flush_satp);
-    std::ignore = fprintf(stderr, "tlb_flush_mstatus: %" PRIu64 "\n", m_s.stats.tlb_flush_mstatus);
-    std::ignore = fprintf(stderr, "tlb_flush_set_prv: %" PRIu64 "\n", m_s.stats.tlb_flush_set_prv);
-    std::ignore = fprintf(stderr, "tlb_flush_fence_vma_all: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_all);
-    std::ignore = fprintf(stderr, "tlb_flush_fence_vma_asid: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_asid);
-    std::ignore = fprintf(stderr, "tlb_flush_fence_vma_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_vaddr);
-    std::ignore =
-        fprintf(stderr, "tlb_flush_fence_vma_asid_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_asid_vaddr);
-#endif
+    dump_insn_hist();
+    dump_stats();
 }
 
 uint64_t machine::read_reg(reg r) const {
@@ -2534,6 +2547,29 @@ std::pair<uint64_t, execute_status> machine::poll_external_interrupts(uint64_t m
         }
     }
     return {mcycle, status};
+}
+
+std::string machine::get_counter_key(const char *name, const char *domain) {
+    if (name == nullptr) {
+        throw std::invalid_argument{"invalid name argument"};
+    }
+    std::string key{(domain != nullptr) ? domain : name};
+    if (domain != nullptr) {
+        key.append(name);
+    }
+    return key;
+}
+
+void machine::increment_counter(const char *name, const char *domain) {
+    ++m_counters[get_counter_key(name, domain)];
+}
+
+uint64_t machine::read_counter(const char *name, const char *domain) {
+    return m_counters[get_counter_key(name, domain)];
+}
+
+void machine::write_counter(uint64_t val, const char *name, const char *domain) {
+    m_counters[get_counter_key(name, domain)] = val;
 }
 
 } // namespace cartesi

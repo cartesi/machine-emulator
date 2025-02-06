@@ -14,19 +14,21 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef DUMP__H
-#define DUMP__H
+#include <tuple>
+
+#ifndef DUMP_H
+#define DUMP_H
 
 #ifdef MICROARCHITECTURE
-template <typename... ARGS>
-static inline auto D_PRINTF(ARGS... args) {
-    return printf(args...);
+template <size_t N, typename... ARGS>
+static inline void D_PRINTF(const char (&fmt)[N], ARGS... args) {
+    std::ignore = printf(fmt, args...);
 }
 #else
 #include <cstdio>
-template <typename... ARGS>
-static inline auto D_PRINTF(ARGS... args) {
-    return fprintf(stderr, args...);
+template <size_t N, typename... ARGS>
+static inline auto D_PRINTF(const char (&fmt)[N], ARGS... args) {
+    std::ignore = fprintf(stderr, fmt, args...);
 }
 #endif
 

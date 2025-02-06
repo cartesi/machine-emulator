@@ -20,6 +20,7 @@
 /// \file
 /// \brief State access interface
 
+#include <cinttypes>
 #include <cstdint>
 #include <type_traits>
 #include <utility>
@@ -52,7 +53,7 @@ using i_state_access_fast_addr_t = typename i_state_access_fast_addr<STATE_ACCES
     uint64_t read_##REG() {                                                                                            \
         if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {                                                       \
             const auto val = derived().do_read_##REG();                                                                \
-            DSA_PRINTF("%s::read_" #REG "() = %llu(0x%llx)\n", get_name(), val, val);                                  \
+            DSA_PRINTF("%s::read_" #REG "() = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), val, val);                    \
             return val;                                                                                                \
         } else {                                                                                                       \
             return derived().read_shadow_state(shadow_state_what::REG);                                                \
@@ -63,7 +64,7 @@ using i_state_access_fast_addr_t = typename i_state_access_fast_addr<STATE_ACCES
     void write_##REG(uint64_t val) {                                                                                   \
         if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {                                                       \
             derived().do_write_##REG(val);                                                                             \
-            DSA_PRINTF("%s::write_" #REG "(%llu(0x%llx))\n", get_name(), val, val);                                    \
+            DSA_PRINTF("%s::write_" #REG "(%" PRIu64 "(0x%" PRIx64 "))\n", get_name(), val, val);                      \
         } else {                                                                                                       \
             derived().write_shadow_state(shadow_state_what::REG, val);                                                 \
         }                                                                                                              \
@@ -122,7 +123,7 @@ public:
     uint64_t read_x(int i) {
         if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {
             const auto val = derived().do_read_x(i);
-            DSA_PRINTF("%s::read_x(%d) = %llu(0x%llx)\n", get_name(), i, val, val);
+            DSA_PRINTF("%s::read_x(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), i, val, val);
             return val;
         } else {
             return derived().read_shadow_state(shadow_state_get_what(shadow_state_what::x0, i));
@@ -137,7 +138,7 @@ public:
     void write_x(int i, uint64_t val) {
         if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {
             derived().do_write_x(i, val);
-            DSA_PRINTF("%s::write_x(%d, %llu(0x%llx))\n", get_name(), i, val, val);
+            DSA_PRINTF("%s::write_x(%d, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), i, val, val);
         } else {
             derived().write_shadow_state(shadow_state_get_what(shadow_state_what::x0, i), val);
         }
@@ -149,7 +150,7 @@ public:
     uint64_t read_f(int i) {
         if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {
             const auto val = derived().do_read_f(i);
-            DSA_PRINTF("%s::read_f(%d) = %llu(0x%llx)\n", get_name(), i, val, val);
+            DSA_PRINTF("%s::read_f(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), i, val, val);
             return val;
         } else {
             return derived().read_shadow_state(shadow_state_get_what(shadow_state_what::f0, i));
@@ -162,7 +163,7 @@ public:
     void write_f(int i, uint64_t val) {
         if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {
             derived().do_write_f(i, val);
-            DSA_PRINTF("%s::write_f(%d, %llu(%llx))\n", get_name(), i, val, val);
+            DSA_PRINTF("%s::write_f(%d, %" PRIu64 "(%" PRIx64 "))\n", get_name(), i, val, val);
         } else {
             derived().write_shadow_state(shadow_state_get_what(shadow_state_what::f0, i), val);
         }
@@ -260,7 +261,7 @@ public:
     /// \param index Index of PMA
     pma_entry &read_pma_entry(uint64_t index) {
         auto &pma = derived().do_read_pma_entry(index);
-        DSA_PRINTF("%s::read_pma_entry(%llu) = {%s, 0x%llx, 0x%llx}\n", get_name(), index,
+        DSA_PRINTF("%s::read_pma_entry(%" PRIu64 ") = {%s, 0x%" PRIx64 ", 0x%" PRIx64 "}\n", get_name(), index,
             pma_get_DID_name(pma.get_istart_DID()), pma.get_start(), pma.get_length());
         return pma;
     }
@@ -272,8 +273,8 @@ public:
     fast_addr get_faddr(uint64_t paddr, uint64_t pma_index) const {
         const auto val = derived().do_get_faddr(paddr, pma_index);
         [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
-        DSA_PRINTF("%s::get_faddr(%llu(0x%llx)) = %s{%llu(0x%llx)}\n", get_name(), paddr, paddr, fast_addr_name, val,
-            val);
+        DSA_PRINTF("%s::get_faddr(%" PRIu64 "(0x%" PRIx64 ")) = %s{%" PRIu64 "(0x%" PRIx64 ")}\n", get_name(), paddr,
+            paddr, fast_addr_name, val, val);
         return val;
     }
 
@@ -321,9 +322,9 @@ public:
         static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
         derived().template do_read_memory_word<T, A>(faddr, pma_index, pval);
         [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
-        DSA_PRINTF("%s::read_memory_word<%s,%s>(%s{0x%llx}, %llu) = %llu(0x%llx)\n", get_name(), pm_type_name_v<T>,
-            pm_type_name_v<A>, fast_addr_name, faddr, pma_index, static_cast<uint64_t>(*pval),
-            static_cast<uint64_t>(*pval));
+        DSA_PRINTF("%s::read_memory_word<%s,%s>(%s{0x%" PRIx64 "}, %" PRIu64 ") = %" PRIu64 "(0x%" PRIx64 ")\n",
+            get_name(), pm_type_name_v<T>, pm_type_name_v<A>, fast_addr_name, faddr, pma_index,
+            static_cast<uint64_t>(*pval), static_cast<uint64_t>(*pval));
     }
 
     /// \brief Writes a word to memory.
@@ -340,9 +341,9 @@ public:
         static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
         derived().template do_write_memory_word<T, A>(faddr, pma_index, val);
         [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
-        DSA_PRINTF("%s::write_memory_word<%s,%s>(%s{0x%llx}, %llu, %llu(0x%llx))\n", get_name(), pm_type_name_v<T>,
-            pm_type_name_v<A>, fast_addr_name, faddr, pma_index, static_cast<uint64_t>(val),
-            static_cast<uint64_t>(val));
+        DSA_PRINTF("%s::write_memory_word<%s,%s>(%s{0x%" PRIx64 "}, %" PRIu64 ", %" PRIu64 "(0x%" PRIx64 "))\n",
+            get_name(), pm_type_name_v<T>, pm_type_name_v<A>, fast_addr_name, faddr, pma_index,
+            static_cast<uint64_t>(val), static_cast<uint64_t>(val));
     }
 
     /// \brief Reads TLB's vaddr_page
@@ -352,7 +353,8 @@ public:
     template <TLB_set_index SET>
     uint64_t read_tlb_vaddr_page(uint64_t slot_index) {
         const auto val = derived().template do_read_tlb_vaddr_page<SET>(slot_index);
-        DSA_PRINTF("%s::read_tlb_vaddr_page<%llu>(%llu) = 0x%llx\n", get_name(), SET, slot_index, val);
+        DSA_PRINTF("%s::read_tlb_vaddr_page<%" PRIu64 ">(%" PRIu64 ") = 0x%" PRIx64 "\n", get_name(), SET, slot_index,
+            val);
         return val;
     }
 
@@ -364,8 +366,8 @@ public:
     fast_addr read_tlb_vp_offset(uint64_t slot_index) {
         [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
         const auto val = derived().template do_read_tlb_vp_offset<SET>(slot_index);
-        DSA_PRINTF("%s::read_tlb_vp_offset<%llu>(%llu) = %s{0x%llx}\n", get_name(), SET, slot_index, fast_addr_name,
-            val);
+        DSA_PRINTF("%s::read_tlb_vp_offset<%" PRIu64 ">(%" PRIu64 ") = %s{0x%" PRIx64 "}\n", get_name(), SET,
+            slot_index, fast_addr_name, val);
         return val;
     }
 
@@ -376,7 +378,8 @@ public:
     template <TLB_set_index SET>
     uint64_t read_tlb_pma_index(uint64_t slot_index) {
         const auto val = derived().template do_read_tlb_pma_index<SET>(slot_index);
-        DSA_PRINTF("%s::read_tlb_pma_index<%llu>(%llu) = %llu(0x%llx)\n", get_name(), SET, slot_index, val, val);
+        DSA_PRINTF("%s::read_tlb_pma_index<%" PRIu64 ">(%" PRIu64 ") = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), SET,
+            slot_index, val, val);
         return val;
     }
 
@@ -392,8 +395,8 @@ public:
     void write_tlb(uint64_t slot_index, uint64_t vaddr_page, fast_addr vp_offset, uint64_t pma_index) {
         derived().template do_write_tlb<SET>(slot_index, vaddr_page, vp_offset, pma_index);
         [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
-        DSA_PRINTF("%s::write_tlb<%llu>(%llu, 0x%llx, %s{0x%llx}, %llu)\n", get_name(), SET, slot_index, vaddr_page,
-            fast_addr_name, vp_offset, pma_index);
+        DSA_PRINTF("%s::write_tlb<%" PRIu64 ">(%" PRIu64 ", 0x%" PRIx64 ", %s{0x%" PRIx64 "}, %" PRIu64 ")\n",
+            get_name(), SET, slot_index, vaddr_page, fast_addr_name, vp_offset, pma_index);
     }
 
     /// \brief Marks a page as dirty

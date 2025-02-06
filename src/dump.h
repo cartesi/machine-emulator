@@ -14,20 +14,19 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef DUMP_UARCH_STATE_ACCESS_H
-#define DUMP_UARCH_STATE_ACCESS_H
+#ifndef DUMP__H
+#define DUMP__H
 
-#include "dump.h"
-
-#ifdef DUMP_UARCH_STATE_ACCESS
+#ifdef MICROARCHITECTURE
 template <typename... ARGS>
-static inline auto DUSA_PRINTF(ARGS... args) {
-    return D_PRINTF(args...);
+static inline auto D_PRINTF(ARGS... args) {
+    return printf(args...);
 }
 #else
+#include <cstdio>
 template <typename... ARGS>
-static inline auto DUSA_PRINTF(ARGS... /*args*/) {
-    return 0;
+static inline auto D_PRINTF(ARGS... args) {
+    return fprintf(stderr, args...);
 }
 #endif
 

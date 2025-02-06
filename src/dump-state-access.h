@@ -17,10 +17,12 @@
 #ifndef DUMP_STATE_ACCESS_H
 #define DUMP_STATE_ACCESS_H
 
+#include "dump.h"
+
 #ifdef DUMP_STATE_ACCESS
 template <typename... ARGS>
 static inline auto DSA_PRINTF(ARGS... args) {
-    return fprintf(stderr, args...);
+    return D_PRINTF(args...);
 }
 #else
 template <typename... ARGS>

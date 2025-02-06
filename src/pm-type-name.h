@@ -22,7 +22,7 @@ namespace cartesi {
 //?DD Poor man's rtti that works in microarchitecture
 template <typename T>
 struct pm_type_name {
-    static constexpr const char *value = "unknown type";
+    static constexpr const char *value = "unknown";
 };
 
 template <typename T>

@@ -93,7 +93,7 @@ static constexpr const char *shadow_uarch_state_get_what_name(shadow_uarch_state
     const auto paddr = static_cast<uint64_t>(what);
     if (paddr < PMA_SHADOW_UARCH_STATE_START || paddr - PMA_SHADOW_UARCH_STATE_START >= sizeof(shadow_uarch_state) ||
         (paddr & (sizeof(uint64_t) - 1)) != 0) {
-        return "uarch.unknown";
+        return "uarch.unknown_";
     }
     using reg = shadow_uarch_state_what;
     switch (what) {
@@ -170,6 +170,7 @@ static constexpr const char *shadow_uarch_state_get_what_name(shadow_uarch_state
         case reg::unknown_:
             return "uarch.unknown_";
     }
+    return "uarch.unknown_";
 }
 
 /// \brief Global instance of  theprocessor shadow uarch state device driver.

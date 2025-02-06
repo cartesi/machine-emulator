@@ -175,7 +175,7 @@ enum class machine_reg : uint64_t {
     uarch_first_ = uarch_halt_flag,
     uarch_last_ = uarch_x31,
 
-    // Something unkonwn
+    // Something unknown
     unknown_ = UINT64_C(1) << 63, // Outside of RISC-V address space
 
     // Views of registers

@@ -6056,7 +6056,7 @@ interpreter_break_reason interpret(STATE_ACCESS a, uint64_t mcycle_end) {
     }
     if (status == execute_status::success_and_yield) {
         return interpreter_break_reason::yielded_softly;
-    } // Reached mcycle_end
+    }                                      // Reached mcycle_end
     assert(a.read_mcycle() == mcycle_end); // LCOV_EXCL_LINE
     return interpreter_break_reason::reached_target_mcycle;
 }

@@ -23,26 +23,13 @@
 #include <cstdint>
 #include <type_traits>
 
-#ifdef DUMP_SCOPED_NOTE
 #include "dump.h"
-#endif
-
+#include "i-state-access.h"
+#include "i-uarch-state-access.h"
 #include "meta.h"
 #include "scoped-note.h"
 
 namespace cartesi {
-
-#ifdef DUMP_SCOPED_NOTE
-template <typename... ARGS>
-static inline auto DSN_PRINTF(ARGS... args) {
-    return D_PRINTF(args...);
-}
-#else
-template <typename... ARGS>
-static inline auto DSN_PRINTF(ARGS... /*args*/) {
-    return 0;
-}
-#endif
 
 /// \class i_accept_scoped_note
 /// \brief Interface that lets a state access accept scoped notes.
@@ -61,6 +48,20 @@ class i_accept_scoped_note { // CRTP
     }
 
 public:
+    /// \brief Works as printf if we are dumping scoped notes, otherwise does nothing
+    template <size_t N, typename... ARGS>
+    static void DSN_PRINTF([[maybe_unused]] const char (&fmt)[N], [[maybe_unused]] ARGS... args) {
+#ifdef DUMP_SCOPED_NOTE
+        if constexpr (is_an_i_state_access_v<DERIVED>) {
+            DERIVED::DSA_PRINTF(fmt, args...);
+        } else if (is_an_i_uarch_state_access_v<DERIVED>) {
+            DERIVED::DUSA_PRINTF(fmt, args...);
+        } else {
+            D_PRINTF(fmt, args...);
+        }
+#endif
+    }
+
     /// \brief Adds a begin bracket annotation to the log
     /// \param text String with the text for the annotation
     void push_begin_bracket(const char *text) {

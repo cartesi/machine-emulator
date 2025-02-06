@@ -20,7 +20,7 @@
 #include <cinttypes>
 #include <cstdint>
 
-#include "dump-uarch-state-access.h"
+#include "dump.h"
 #include "i-prefer-shadow-uarch-state.h"
 #include "meta.h"
 #include "tlb.h"
@@ -33,7 +33,7 @@
             DUSA_PRINTF("%s::read_" #REG "() = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), val, val);                   \
             return val;                                                                                                \
         } else {                                                                                                       \
-            return derived().read_shadow_uarch_state(shadow_uarch_state_what::REG);                                    \
+            return prefer_read_shadow_uarch_state(shadow_uarch_state_what::REG);                                       \
         }                                                                                                              \
     }
 
@@ -43,7 +43,7 @@
             derived().do_write_##REG(val);                                                                             \
             DUSA_PRINTF("%s::write_" #REG "(%" PRIu64 "(0x%" PRIx64 "))\n", get_name(), val, val);                     \
         } else {                                                                                                       \
-            derived().write_shadow_uarch_state(shadow_uarch_state_what::REG, val);                                     \
+            prefer_write_shadow_uarch_state(shadow_uarch_state_what::REG, val);                                        \
         }                                                                                                              \
     }
 // NOLINTEND(cppcoreguidelines-macro-usage)
@@ -64,14 +64,35 @@ class i_uarch_state_access { // CRTP
         return *static_cast<const DERIVED *>(this);
     }
 
+    uint64_t prefer_read_shadow_uarch_state(shadow_uarch_state_what what) {
+        const auto val = derived().read_shadow_uarch_state(what);
+        [[maybe_unused]] const auto *const what_name = shadow_uarch_state_get_what_name(what);
+        DUSA_PRINTF("%s::read_shadow_uarch_state(%s) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), what_name, val, val);
+        return val;
+    }
+
+    void prefer_write_shadow_uarch_state(shadow_uarch_state_what what, uint64_t val) {
+        derived().write_shadow_uarch_state(what, val);
+        [[maybe_unused]] const auto *const what_name = shadow_uarch_state_get_what_name(what);
+        DUSA_PRINTF("%s::write_shadow_uarch_state(%s, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), what_name, val, val);
+    }
+
 public:
+    /// \brief Works as printf if we are dumping uarch state accesses, otherwise does nothing
+    template <size_t N, typename... ARGS>
+    static void DUSA_PRINTF([[maybe_unused]] const char (&fmt)[N], [[maybe_unused]] ARGS... args) {
+#ifdef DUMP_UARCH_STATE_ACCESS
+        D_PRINTF(fmt, args...);
+#endif
+    }
+
     uint64_t read_uarch_x(int i) {
         if constexpr (!is_an_i_prefer_shadow_uarch_state_v<DERIVED>) {
             const auto val = derived().do_read_uarch_x(i);
             DUSA_PRINTF("%s::read_uarch_x(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), i, val, val);
             return val;
         } else {
-            return derived().read_shadow_uarch_state(shadow_uarch_state_get_what(shadow_uarch_state_what::uarch_x0, i));
+            return prefer_read_shadow_uarch_state(shadow_uarch_state_get_what(shadow_uarch_state_what::uarch_x0, i));
         }
     }
 
@@ -80,7 +101,7 @@ public:
             derived().do_write_uarch_x(i, val);
             DUSA_PRINTF("%s::write_uarch_x(%d, %" PRIu64 ")\n", get_name(), i, val);
         } else {
-            derived().write_shadow_uarch_state(shadow_uarch_state_get_what(shadow_uarch_state_what::uarch_x0, i), val);
+            prefer_write_shadow_uarch_state(shadow_uarch_state_get_what(shadow_uarch_state_what::uarch_x0, i), val);
         }
     }
 

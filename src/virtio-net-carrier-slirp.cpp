@@ -209,8 +209,8 @@ virtio_net_carrier_slirp::virtio_net_carrier_slirp(const cartesi::virtio_net_use
 
     // Setup host forward ports
     for (const auto &hostfwd : config.hostfwd) {
-        struct in_addr host_addr{};
-        struct in_addr guest_addr{};
+        struct in_addr host_addr {};
+        struct in_addr guest_addr {};
         host_addr.s_addr = htonl(hostfwd.host_ip);
         guest_addr.s_addr = htonl(hostfwd.guest_ip);
         if (slirp_add_hostfwd(slirp, static_cast<int>(hostfwd.is_udp), host_addr, hostfwd.host_port, guest_addr,

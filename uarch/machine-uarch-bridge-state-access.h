@@ -56,11 +56,11 @@ class machine_uarch_bridge_state_access :
     public i_accept_scoped_note<machine_uarch_bridge_state_access>,
     public i_prefer_shadow_state<machine_uarch_bridge_state_access> {
 
-    //NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
     std::array<std::optional<mock_pma_entry>, PMA_MAX> &m_pmas;
 
 public:
-    machine_uarch_bridge_state_access(std::array<std::optional<mock_pma_entry>, PMA_MAX> &pmas): m_pmas(pmas) {}
+    machine_uarch_bridge_state_access(std::array<std::optional<mock_pma_entry>, PMA_MAX> &pmas) : m_pmas(pmas) {}
     machine_uarch_bridge_state_access(const machine_uarch_bridge_state_access &other) = default;
     machine_uarch_bridge_state_access(machine_uarch_bridge_state_access &&other) = default;
     machine_uarch_bridge_state_access &operator=(const machine_uarch_bridge_state_access &other) = delete;

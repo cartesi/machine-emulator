@@ -63,7 +63,6 @@ class record_step_state_access :
     using page_indices_type = std::vector<address_type>;
 
 public:
-
     struct context {
         /// \brief Constructor of record step state access context
         /// \param filename where to save the log

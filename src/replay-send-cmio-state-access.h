@@ -62,7 +62,6 @@ class replay_send_cmio_state_access : public i_state_access<replay_send_cmio_sta
     using proof_type = tree_type::proof_type;
 
 public:
-
     struct context {
         /// \brief Constructor replay_send_cmio_state_access context
         /// \param log Access log to be replayed

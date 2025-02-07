@@ -18,14 +18,14 @@
 
 #include "compiler-defines.h"
 #include "interpret.h"
-#include "mock-pma-entry.h"
 #include "machine-uarch-bridge-state-access.h"
+#include "mock-pma-entry.h"
 #include "uarch-constants.h"
 #include "uarch-ecall.h"
 
 #include <array>
-#include <optional>
 #include <cstdint>
+#include <optional>
 
 using namespace cartesi;
 

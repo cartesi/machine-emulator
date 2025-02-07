@@ -93,7 +93,7 @@ static std::ostream &operator<<(std::ostream &out, log_prefix prefix) {
     using namespace slog;
     char stime[std::size("yyyy-mm-dd hh-mm-ss")];
     const time_t t = time(nullptr);
-    struct tm ttime{};
+    struct tm ttime {};
     if (strftime(std::data(stime), std::size(stime), "%Y-%m-%d %H-%M-%S", localtime_r(&t, &ttime)) != 0) {
         out << stime << " ";
     }
@@ -111,7 +111,7 @@ using json = nlohmann::json;
 /// \brief Installs a signal handler
 template <typename HANDLER>
 static void install_signal_handler(int signum, HANDLER handler) {
-    struct sigaction act{};
+    struct sigaction act {};
     if (sigemptyset(&act.sa_mask) < 0) {
         throw std::system_error{errno, std::generic_category(), "sigemptyset failed"};
     }
@@ -1734,7 +1734,7 @@ int main(int argc, char *argv[]) try {
         }
         SLOG(info) << "attempting to inherit fd " << server_fd << " from parent";
         // check socket is listening and is of right domain and type
-        struct sockaddr_in fd_addr{};
+        struct sockaddr_in fd_addr {};
         socklen_t len = sizeof(fd_addr);
         memset(&fd_addr, 0, len);
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)

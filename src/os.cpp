@@ -255,7 +255,7 @@ void os_open_tty() {
 #endif
         return;
     }
-    struct termios tty{};
+    struct termios tty {};
     if (tcgetattr(ttyfd, &tty) < 0) { // Failed to retrieve old mode
 #ifdef DEBUG_OS
         std::ignore = fprintf(stderr, "os_open_tty(): failed retrieve old mode\n");
@@ -322,7 +322,7 @@ void os_open_tty() {
 
 #ifdef HAVE_SIGACTION
     // Install console resize signal handler
-    struct sigaction sigact{};
+    struct sigaction sigact {};
     sigact.sa_flags = SA_RESTART;
     sigact.sa_handler = os_SIGWINCH_handler;
     if (sigemptyset(&sigact.sa_mask) != 0 || sigaction(SIGWINCH, &sigact, nullptr) != 0) {
@@ -567,7 +567,7 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
     }
 
     // Try to get file size
-    struct stat statbuf{};
+    struct stat statbuf {};
     if (fstat(backing_file, &statbuf) < 0) {
         close(backing_file);
         throw std::system_error{errno, std::generic_category(),
@@ -605,7 +605,7 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
     }
 
     // Try to get file size
-    struct __stat64 statbuf{};
+    struct __stat64 statbuf {};
     if (_fstat64(backing_file, &statbuf) < 0) {
         _close(backing_file);
         throw std::system_error{errno, std::generic_category(),
@@ -773,7 +773,7 @@ bool os_select_fds(const os_select_before_callback &before_cb, const os_select_a
 
 void os_disable_sigpipe() {
 #ifdef HAVE_SIGACTION
-    struct sigaction sigact{};
+    struct sigaction sigact {};
     sigact.sa_handler = SIG_IGN;
     sigact.sa_flags = SA_RESTART;
     if (sigemptyset(&sigact.sa_mask) != 0 || sigaction(SIGPIPE, &sigact, nullptr) != 0) {
@@ -814,7 +814,7 @@ int64_t os_get_file_length(const char *filename, const char *text) {
 }
 
 bool os_file_exists(const char *filename) {
-    struct stat buffer{};
+    struct stat buffer {};
     return (stat(filename, &buffer) == 0);
 }
 

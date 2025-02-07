@@ -61,7 +61,7 @@ CFLAGS := -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) $(WAR
 CXXFLAGS := -std=c++20 -fno-rtti
 
 UARCH_SOURCES=\
-	uarch-printf.c \
+	third-party/printf/printf.c \
 	uarch-run.cpp \
 	uarch-ecall.c \
 	uarch-runtime.cpp
@@ -90,10 +90,8 @@ UARCH_OBJS = $(patsubst %.c,%.uarch_c.o,$(patsubst %.cpp,%.uarch_cpp.o,$(UARCH_S
 EMULATOR_OBJS = $(patsubst %.c,%.emulator_c.o,$(patsubst %.cpp,%.emulator_cpp.o,$(EMULATOR_SOURCES)))
 COMPUTE_OBJS = $(patsubst %.c,%.compute_c.o,$(patsubst %.cpp,%.compute_cpp.o,$(COMPUTE_SOURCES)))
 
-LINTER_IGNORE_SOURCES=uarch-printf.c uarch-pristine-hash.c uarch-pristine-ram.c
-LINTER_IGNORE_HEADERS=uarch-printf.h
-LINTER_SOURCES=$(filter-out $(LINTER_IGNORE_SOURCES),$(strip $(wildcard uarch-*.cpp) $(wildcard uarch-*.c)))
-LINTER_HEADERS=$(filter-out $(LINTER_IGNORE_HEADERS),$(strip $(wildcard uarch-*.h)))
+LINTER_SOURCES=$($(strip $(wildcard uarch-*.cpp) $(wildcard uarch-*.c)))
+LINTER_HEADERS=$($(strip $(wildcard uarch-*.h)))
 EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)
 CLANG_TIDY_HEADER_FILTER=$(CURDIR)/($(subst $(SPACE),|,$(LINTER_HEADERS)))

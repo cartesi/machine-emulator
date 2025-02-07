@@ -259,7 +259,7 @@ void os_open_tty() {
 #endif
         return;
     }
-    struct termios tty{};
+    struct termios tty {};
     if (tcgetattr(ttyfd, &tty) < 0) { // Failed to retrieve old mode
 #ifdef DEBUG_OS
         std::ignore = fprintf(stderr, "os_open_tty(): failed retrieve old mode\n");
@@ -326,7 +326,7 @@ void os_open_tty() {
 
 #ifdef HAVE_SIGACTION
     // Install console resize signal handler
-    struct sigaction sigact{};
+    struct sigaction sigact {};
     sigact.sa_flags = SA_RESTART;
     sigact.sa_handler = os_SIGWINCH_handler;
     if (sigemptyset(&sigact.sa_mask) != 0 || sigaction(SIGWINCH, &sigact, nullptr) != 0) {
@@ -571,7 +571,7 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
     }
 
     // Try to get file size
-    struct stat statbuf{};
+    struct stat statbuf {};
     if (fstat(backing_file, &statbuf) < 0) {
         close(backing_file);
         throw std::system_error{errno, std::generic_category(),
@@ -609,7 +609,7 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
     }
 
     // Try to get file size
-    struct __stat64 statbuf{};
+    struct __stat64 statbuf {};
     if (_fstat64(backing_file, &statbuf) < 0) {
         _close(backing_file);
         throw std::system_error{errno, std::generic_category(),
@@ -781,7 +781,7 @@ bool os_select_fds(const os_select_before_callback &before_cb, const os_select_a
 
 void os_disable_sigpipe() {
 #ifdef HAVE_SIGACTION
-    struct sigaction sigact{};
+    struct sigaction sigact {};
     sigact.sa_handler = SIG_IGN;
     sigact.sa_flags = SA_RESTART;
     if (sigemptyset(&sigact.sa_mask) != 0 || sigaction(SIGPIPE, &sigact, nullptr) != 0) {
@@ -822,9 +822,9 @@ static void sig_alrm(int /*unused*/) {
 int os_double_fork_or_throw([[maybe_unused]] bool emancipate) {
 #ifdef HAVE_FORK
     int fd[2] = {-1, -1};
-    struct sigaction chld_act{};
+    struct sigaction chld_act {};
     bool restore_sigchld = false;
-    struct sigaction alrm_act{};
+    struct sigaction alrm_act {};
     bool restore_sigalrm = false;
     sigset_t omask{};
     bool restore_sigprocmask = false;
@@ -833,7 +833,7 @@ int os_double_fork_or_throw([[maybe_unused]] bool emancipate) {
             throw std::system_error{errno, std::generic_category(), "pipe failed"};
         }
         // make sure we can wait on our child
-        struct sigaction act{};
+        struct sigaction act {};
         sigemptyset(&act.sa_mask);
         act.sa_handler = SIG_DFL;
         act.sa_flags = 0;
@@ -896,13 +896,13 @@ int os_double_fork_or_throw([[maybe_unused]] bool emancipate) {
         } else if (ipid > 0) {         // still parent (fork succeeded)
             waitpid(ipid, nullptr, 0); // wait on dead intermediate child so it doesn't become a zombie
             // set alarm so we can't hang while waiting to read final child pid from pipe
-            struct itimerval timer{};
+            struct itimerval timer {};
             memset(&timer, 0, sizeof(timer));
             timer.it_interval.tv_sec = 0;
             timer.it_interval.tv_usec = 0;
             timer.it_value.tv_sec = 10;
             timer.it_value.tv_usec = 0;
-            struct itimerval oitimer{};
+            struct itimerval oitimer {};
             memset(&oitimer, 0, sizeof(oitimer));
             if (setitimer(ITIMER_REAL, &timer, &oitimer) < 0) {
                 throw std::system_error{errno, std::generic_category(), "setitimer failed"};
@@ -994,7 +994,7 @@ int64_t os_get_file_length(const char *filename, const char *text) {
 }
 
 bool os_file_exists(const char *filename) {
-    struct stat buffer{};
+    struct stat buffer {};
     return (stat(filename, &buffer) == 0);
 }
 

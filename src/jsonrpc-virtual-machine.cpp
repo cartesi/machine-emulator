@@ -454,10 +454,10 @@ jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, for
         restore_grand_child = true; // make sure grand-child is killed if we fail
         m_address = endpoint_to_string(a.local_endpoint());
         a.close();
-        struct itimerval ovalue{};
+        struct itimerval ovalue {};
         bool restore_itimer = false;
         try {
-            struct itimerval value{};
+            struct itimerval value {};
             memset(&value, 0, sizeof(value));
             value.it_interval.tv_sec = 0;
             value.it_interval.tv_usec = 0;

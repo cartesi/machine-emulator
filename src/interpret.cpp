@@ -150,9 +150,6 @@ static const std::array<const char *, F_REG_COUNT> f_reg_name{"ft0", "ft1", "ft2
     "fs0", "fs1", "fa0", "fa1", "fa2", "fa3", "fa4", "fa5", "fa6", "fa7", "fs2", "fs3", "fs4", "fs5", "fs6", "fs7",
     "fs8", "fs9", "fs10", "fs11", "ft8", "ft9", "ft10", "ft11"};
 
-static void print_uint64_t(uint64_t a) {
-    D_PRINTF("%016" PRIx64, a);
-}
 #endif
 
 #if defined(DUMP_EXCEPTIONS) || defined(DUMP_MMU_EXCEPTIONS) || defined(DUMP_INTERRUPTS) ||                            \
@@ -182,76 +179,74 @@ static const char *sbi_ecall_name(uint64_t a7) {
     }
 }
 
-template <typename STATE>
-static void dump_exception_or_interrupt(uint64_t cause, STATE &s) {
-    uint64_t a7 = s.x[17];
+static void dump_exception_or_interrupt(uint64_t cause, uint64_t a7) {
     if ((cause & MCAUSE_INTERRUPT_FLAG) != 0) {
         switch (cause & ~MCAUSE_INTERRUPT_FLAG) {
             case 0:
-                D_PRINTF("reserved software interrupt");
+                D_PRINTF("reserved software interrupt", "");
                 break;
             case 1:
-                D_PRINTF("supervisor software interrupt");
+                D_PRINTF("supervisor software interrupt", "");
                 break;
             case 2:
-                D_PRINTF("reserved software interrupt");
+                D_PRINTF("reserved software interrupt", "");
                 break;
             case 3:
-                D_PRINTF("machine software interrupt");
+                D_PRINTF("machine software interrupt", "");
                 break;
             case 4:
-                D_PRINTF("reserved timer interrupt");
+                D_PRINTF("reserved timer interrupt", "");
                 break;
             case 5:
-                D_PRINTF("supervisor timer interrupt");
+                D_PRINTF("supervisor timer interrupt", "");
                 break;
             case 6:
-                D_PRINTF("reserved timer interrupt");
+                D_PRINTF("reserved timer interrupt", "");
                 break;
             case 7:
-                D_PRINTF("machine timer interrupt");
+                D_PRINTF("machine timer interrupt", "");
                 break;
             case 8:
-                D_PRINTF("reserved external interrupt");
+                D_PRINTF("reserved external interrupt", "");
                 break;
             case 9:
-                D_PRINTF("supervisor external interrupt");
+                D_PRINTF("supervisor external interrupt", "");
                 break;
             case 10:
-                D_PRINTF("reserved external interrupt");
+                D_PRINTF("reserved external interrupt", "");
                 break;
             case 11:
-                D_PRINTF("machine external interrupt");
+                D_PRINTF("machine external interrupt", "");
                 break;
             default:
-                D_PRINTF("unknown interrupt");
+                D_PRINTF("unknown interrupt", "");
                 break;
         }
     } else {
         switch (cause) {
             case 0:
-                D_PRINTF("instruction address misaligned");
+                D_PRINTF("instruction address misaligned", "");
                 break;
             case 1:
-                D_PRINTF("instruction access fault");
+                D_PRINTF("instruction access fault", "");
                 break;
             case 2:
-                D_PRINTF("illegal instruction");
+                D_PRINTF("illegal instruction", "");
                 break;
             case 3:
-                D_PRINTF("breakpoint");
+                D_PRINTF("breakpoint", "");
                 break;
             case 4:
-                D_PRINTF("load address misaligned");
+                D_PRINTF("load address misaligned", "");
                 break;
             case 5:
-                D_PRINTF("load access fault");
+                D_PRINTF("load access fault", "");
                 break;
             case 6:
-                D_PRINTF("store/amo address misaligned");
+                D_PRINTF("store/amo address misaligned", "");
                 break;
             case 7:
-                D_PRINTF("store/amo access fault");
+                D_PRINTF("store/amo access fault", "");
                 break;
             case 8:
                 D_PRINTF("ecall %d from u-mode", static_cast<int>(a7));
@@ -266,61 +261,86 @@ static void dump_exception_or_interrupt(uint64_t cause, STATE &s) {
                 D_PRINTF("ecall %s(%d) from m-mode", sbi_ecall_name(a7), static_cast<int>(a7));
                 break;
             case 12:
-                D_PRINTF("instruction page fault");
+                D_PRINTF("instruction page fault", "");
                 break;
             case 13:
-                D_PRINTF("load page fault");
+                D_PRINTF("load page fault", "");
                 break;
             case 15:
-                D_PRINTF("store/amo page fault");
+                D_PRINTF("store/amo page fault", "");
                 break;
             default:
-                D_PRINTF("reserved");
+                D_PRINTF("reserved", "");
                 break;
         }
     }
 }
 #endif
 
+/// \brief Returns the name for a given privilege level
+/// \param prv Privilege level
+constexpr const char *prv_get_name(uint64_t prv) {
+    switch (prv) {
+        case PRV_U:
+            return "prv.U";
+        case PRV_S:
+            return "prv.S";
+        case PRV_HS:
+            return "prv.HS";
+        case PRV_M:
+            return "prv.M";
+        default:
+            return "prv.unknown";
+    }
+}
+
 #ifdef DUMP_REGS
-template <typename STATE>
-static void dump_regs(const STATE &s) {
-    const std::array<char, 5> prv_str{"USHM"};
-    int cols = 256 / XLEN;
-    D_PRINTF("pc = ");
-    print_uint64_t(s.pc);
-    D_PRINTF(" ");
+template <typename STATE_ACCESS>
+static void dump_regs(STATE_ACCESS &a) {
+    [[maybe_unused]] auto note = a.make_scoped_note("dump_regs");
+#define PRIxREG "0x%016" PRIx64
+#define PRIuREG "%" PRIu64
+    const int cols = 256 / XLEN;
+    // First, read all needed registers from state access
+    // otherwise, DUMP_STATE_ACCESS output would get mixed in with DUMP_REGS
+    const auto pc = a.read_pc();
+    const auto iprv = a.read_iprv();
+    const auto mstatus = a.read_mstatus();
+    //??D We would need to receive mcycle as an argument in order to have the
+    //??D up-to-date value for it. As it turns out, this would require many, many
+    //??D changes...
+    // const auto mcycle = a.read_mcycle();
+    // const auto icycleinstret = a.read_icycleinstret();
+    const auto mideleg = a.read_mideleg();
+    const auto mie = a.read_mie();
+    const auto mip = a.read_mip();
+    std::array<uint64_t, X_REG_COUNT> x{};
     for (int i = 1; i < X_REG_COUNT; i++) {
-        D_PRINTF("%-3s= ", reg_name[i]);
-        print_uint64_t(s.x[i]);
-        if ((i & (cols - 1)) == (cols - 1)) {
-            D_PRINTF("\n");
-        } else {
-            D_PRINTF(" ");
-        }
+        x[i] = a.read_x(i);
+    }
+    std::array<uint64_t, X_REG_COUNT> f{};
+    for (int i = 0; i < F_REG_COUNT; i++) {
+        f[i] = a.read_f(i);
+    }
+    // Now print them
+    D_PRINTF("pc  = " PRIxREG " ", pc);
+    for (int i = 1; i < X_REG_COUNT; i++) {
+        const char sep = ((i & (cols - 1)) == (cols - 1)) ? '\n' : ' ';
+        D_PRINTF("%-4s= " PRIxREG "%c", reg_name[i], x[i], sep);
     }
     for (int i = 0; i < F_REG_COUNT; i++) {
-        D_PRINTF("%-3s= ", f_reg_name[i]);
-        print_uint64_t(s.f[i]);
-        if ((i & (cols - 1)) == (cols - 1)) {
-            D_PRINTF("\n");
-        } else {
-            D_PRINTF(" ");
-        }
+        const char sep = ((i & (cols - 1)) == (cols - 1)) ? '\n' : ' ';
+        D_PRINTF("%-4s= " PRIxREG "%c", f_reg_name[i], f[i], sep);
     }
-    D_PRINTF("prv=%c", prv_str[s.iprv]);
-    D_PRINTF(" mstatus=");
-    print_uint64_t(s.mstatus);
-    D_PRINTF(" cycles=%" PRId64, s.mcycle);
-    D_PRINTF(" insns=%" PRId64, s.mcycle - s.icycleinstret);
-    D_PRINTF("\n");
-    D_PRINTF("mideleg=");
-    print_uint64_t(s.mideleg);
-    D_PRINTF(" mie=");
-    print_uint64_t(s.mie);
-    D_PRINTF(" mip=");
-    print_uint64_t(s.mip);
-    D_PRINTF("\n");
+    D_PRINTF("prv=%s", prv_get_name(iprv));
+    D_PRINTF(" mstatus=" PRIxREG "\n", mstatus);
+    // D_PRINTF(" cycles=" PRIuREG, mcycle);
+    // D_PRINTF(" insns=" PRIuREG "\n", mcycle - icycleinstret);
+    D_PRINTF("mideleg=" PRIxREG, mideleg);
+    D_PRINTF(" mie=" PRIxREG, mie);
+    D_PRINTF(" mip=" PRIxREG "\n", mip);
+#undef PRIxREG
+#undef PRIuREG
 }
 #endif
 
@@ -346,31 +366,14 @@ static inline uint32_t csr_prv(CSR_address csr) {
     return (to_underlying(csr) >> 8) & 3;
 }
 
-/// \brief Returns the statistic name for a change to a given privilege level
-/// \param prv Privilege level
-constexpr const char *prv_stat(uint64_t prv) {
-    switch (prv) {
-        case PRV_U:
-            return "prv.U";
-        case PRV_S:
-            return "prv.S";
-        case PRV_HS:
-            return "prv.HS";
-        case PRV_M:
-            return "prv.M";
-        default:
-            return "prv.unknown";
-    }
-}
-
 /// \brief Changes privilege level.
 /// \param a Machine state accessor object.
 /// \param previous_prv Previous privilege level.
 /// \param new_prv New privilege level.
 /// \details This function is outlined to minimize host CPU code cache pressure.
 template <typename STATE_ACCESS>
-static FORCE_INLINE void set_prv(STATE_ACCESS a, uint64_t new_prv) {
-    DUMP_STATS_INCR(a, prv_stat(new_prv));
+static FORCE_INLINE void set_prv(STATE_ACCESS &a, uint64_t new_prv) {
+    DUMP_STATS_INCR(a, prv_get_name(new_prv));
     a.write_iprv(new_prv);
     // Invalidate all TLB entries
     flush_all_tlb(a);
@@ -399,13 +402,13 @@ static NO_INLINE uint64_t raise_exception(STATE_ACCESS a, uint64_t pc, uint64_t 
 #if defined(DUMP_EXCEPTIONS) || defined(DUMP_MMU_EXCEPTIONS) || defined(DUMP_INTERRUPTS) ||                            \
     defined(DUMP_ILLEGAL_INSN_EXCEPTIONS)
     {
-        int flag;
-        flag = 0;
+        int flag = 0;
 #ifdef DUMP_MMU_EXCEPTIONS
         if (cause == MCAUSE_INSN_ACCESS_FAULT || cause == MCAUSE_LOAD_ACCESS_FAULT ||
             cause == MCAUSE_STORE_AMO_ACCESS_FAULT || cause == MCAUSE_FETCH_PAGE_FAULT ||
-            cause == MCAUSE_LOAD_PAGE_FAULT || cause == MCAUSE_STORE_AMO_PAGE_FAULT)
+            cause == MCAUSE_LOAD_PAGE_FAULT || cause == MCAUSE_STORE_AMO_PAGE_FAULT) {
             flag = 1;
+        }
 #endif
 #ifdef DUMP_INTERRUPTS
         flag |= (cause & MCAUSE_INTERRUPT_FLAG) != 0;
@@ -414,19 +417,19 @@ static NO_INLINE uint64_t raise_exception(STATE_ACCESS a, uint64_t pc, uint64_t 
         flag |= (cause & MCAUSE_INTERRUPT_FLAG) == 0;
 #endif
 #ifdef DUMP_ILLEGAL_INSN_EXCEPTIONS
-        if (cause == MCAUSE_ILLEGAL_INSN)
+        if (cause == MCAUSE_ILLEGAL_INSN) {
             flag = 1;
+        }
 #endif
         if (flag) {
-            D_PRINTF("raise_exception: cause=0x");
-            print_uint64_t(cause);
-            D_PRINTF(" tval=0x");
-            print_uint64_t(tval);
-            D_PRINTF(" (");
-            dump_exception_or_interrupt(cause, a.get_naked_state());
-            D_PRINTF(")\n");
+            [[maybe_unused]] auto dnote = a.make_scoped_note("dump_exception");
+            const auto a7 = a.read_x(17);
+            D_PRINTF("raise_exception: cause=0x%016" PRIx64, cause);
+            D_PRINTF(" tval=0x%016" PRIx64 " (", tval);
+            dump_exception_or_interrupt(cause, a7);
+            D_PRINTF(")\n", "");
 #ifdef DUMP_REGS
-            dump_regs(a.get_naked_state());
+            dump_regs(a);
 #endif
         }
     }
@@ -1144,7 +1147,7 @@ static auto dump_insn([[maybe_unused]] STATE_ACCESS a, [[maybe_unused]] uint64_t
     [[maybe_unused]] const char *name) {
     DUMP_INSN_HIST_INCR(a, name);
 #ifdef DUMP_REGS
-    dump_regs(a.get_naked_state());
+    dump_regs(a);
 #endif
 #ifdef DUMP_INSN
     [[maybe_unused]] auto note = a.make_scoped_note("dump_insn");
@@ -1154,8 +1157,7 @@ static auto dump_insn([[maybe_unused]] STATE_ACCESS a, [[maybe_unused]] uint64_t
     } else {
         D_PRINTF("p    %08" PRIx64, ppc);
     }
-    D_PRINTF(":   %08" PRIx32 "   ", insn);
-    D_PRINTF("%s\n", name);
+    D_PRINTF(":   %08" PRIx32 "   %s\n", insn, name);
 #endif
     return a.make_scoped_note(name);
 }

@@ -198,7 +198,7 @@ static constexpr shadow_state_what shadow_state_get_what(uint64_t paddr) {
 }
 
 static constexpr shadow_state_what shadow_state_get_what(shadow_state_what what, int i) {
-    return static_cast<shadow_state_what>(static_cast<uint64_t>(what) + i * sizeof(uint64_t));
+    return static_cast<shadow_state_what>(static_cast<uint64_t>(what) + (i * sizeof(uint64_t)));
 }
 
 static constexpr const char *shadow_state_get_what_name(shadow_state_what what) {

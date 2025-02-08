@@ -50,7 +50,7 @@ enum class shadow_pmas_what : uint64_t {
 /// \param p Index of desired shadow PMA entry
 /// \returns The address.
 static constexpr uint64_t shadow_pmas_get_pma_abs_addr(uint64_t p) {
-    return PMA_SHADOW_PMAS_START + p * sizeof(shadow_pmas_entry);
+    return PMA_SHADOW_PMAS_START + (p * sizeof(shadow_pmas_entry));
 }
 
 /// \brief Obtains the absolute address of a PMA entry in shadow memory.

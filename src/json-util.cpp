@@ -894,7 +894,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key,
     }
     const auto sibling_hashes_base = path + "sibling_hashes/";
     for (int log2_size = proof.get_log2_target_size(), i = 0; log2_size < proof.get_log2_root_size();
-         ++log2_size, ++i) {
+        ++log2_size, ++i) {
         machine_merkle_tree::proof_type::hash_type sibling_hash;
         ju_get_field(sh, i, sibling_hash, sibling_hashes_base);
         proof.set_sibling_hash(sibling_hash, log2_size);

@@ -59,7 +59,7 @@ class uarch_record_state_access :
     using hash_type = machine_merkle_tree::hash_type;
 
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
-    machine &m_m; ///< Macro machine
+    machine &m_m;      ///< Macro machine
     access_log &m_log; ///< Access log
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 
@@ -73,9 +73,7 @@ public:
     /// \brief Constructor from machine and uarch states.
     /// \param m Reference to machine state.
     /// \param log Reference to log.
-    explicit uarch_record_state_access(machine &m, access_log &log) :
-        m_m(m),
-        m_log(log) {
+    explicit uarch_record_state_access(machine &m, access_log &log) : m_m(m), m_log(log) {
         ;
     }
 
@@ -308,6 +306,11 @@ private:
     auto do_make_scoped_note(const char *text) {
         return scoped_note{*this, text};
     }
+
+    // -----
+    // i_prefer_shadow_uarch_state interface implementation
+    // -----
+    friend i_prefer_shadow_uarch_state<uarch_record_state_access>;
 };
 
 } // namespace cartesi

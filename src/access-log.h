@@ -304,7 +304,7 @@ public:
             // Make sure we have room for the matching end bracket as well.
             // That way, unless the user is messing with unbalanced brackets, there is no way we
             // would throw an exception for lack of memory on the matching end bracket
-            m_brackets.push_back(bracket_note{bracket_type::begin, m_accesses.size(), text});
+            m_brackets.push_back(bracket_note{.type = bracket_type::begin, .where = m_accesses.size(), .text = text});
             m_brackets.reserve(m_brackets.size() + m_outstanding_ends);
         }
     }
@@ -314,7 +314,7 @@ public:
             // If we failed to push, it was because the system is completely screwed anyway *and* the
             // user is using unbalanced brackets. Therefore, it's OK to quietly ignore the error.
             try {
-                m_brackets.push_back(bracket_note{bracket_type::end, m_accesses.size(), text});
+                m_brackets.push_back(bracket_note{.type = bracket_type::end, .where = m_accesses.size(), .text = text});
             } catch (...) { // NOLINT(bugprone-empty-catch)
             }
             // Decrement number of outstanding end brackets we are expecting

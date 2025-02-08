@@ -361,6 +361,16 @@ private:
         return "uarch_replay_state_access";
 >>>>>>> 1e5dc22 (refactor: clean up uarch state access mechanism)
     }
+
+    // -----
+    // i_prefer_shadow_uarch_state interface implementation
+    // -----
+    friend i_prefer_shadow_uarch_state<uarch_replay_state_access>;
+
+    // -----
+    // i_accept_scoped_note interface implementation
+    // -----
+    friend i_accept_scoped_note<uarch_replay_state_access>;
 };
 
 } // namespace cartesi

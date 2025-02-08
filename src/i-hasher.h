@@ -35,9 +35,6 @@ namespace cartesi {
 /// \tparam HASH_SIZE Size of hash.
 template <typename DERIVED, typename HASH_SIZE>
 class i_hasher { // CRTP
-    i_hasher() = default;
-    friend DERIVED;
-
     /// \brief Returns object cast as the derived class
     DERIVED &derived() {
         return *static_cast<DERIVED *>(this);

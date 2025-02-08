@@ -157,6 +157,11 @@ private:
     constexpr const char *do_get_name() const {
         return "uarch_state_access";
     }
+
+    // -----
+    // i_accept_scoped_note interface implementation
+    // -----
+    friend i_accept_scoped_note<uarch_state_access>;
 };
 
 } // namespace cartesi

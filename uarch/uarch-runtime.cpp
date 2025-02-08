@@ -82,9 +82,9 @@ extern "C" void *memset(void *ptr, int value, size_t num) {
 extern "C" NO_RETURN void abort() {
     // NOLINTNEXTLINE(hicpp-no-assembler)
     asm volatile("ebreak"
-                 : // no output
-                 : // no input
-                 : // no affected registers
+        : // no output
+        : // no input
+        : // no affected registers
     );
     // execution will never reach this point
     __builtin_trap();

@@ -68,7 +68,7 @@ static hash_type calculate_proof_root_hash(const cartesi::machine_merkle_tree::p
     hash_type hash;
     memcpy(hash.data(), proof.get_target_hash().data(), sizeof(cm_hash));
     for (int log2_size = static_cast<int>(proof.get_log2_target_size());
-         log2_size < static_cast<int>(proof.get_log2_root_size()); ++log2_size) {
+        log2_size < static_cast<int>(proof.get_log2_root_size()); ++log2_size) {
         cartesi::keccak_256_hasher h;
         auto bit = (proof.get_target_address() & (UINT64_C(1) << log2_size));
         hash_type first;

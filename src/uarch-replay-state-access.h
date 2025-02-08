@@ -360,6 +360,16 @@ private:
     constexpr const char *do_get_name() const {
         return "uarch_replay_state_access";
     }
+
+    // -----
+    // i_prefer_shadow_uarch_state interface implementation
+    // -----
+    friend i_prefer_shadow_uarch_state<uarch_replay_state_access>;
+
+    // -----
+    // i_accept_scoped_note interface implementation
+    // -----
+    friend i_accept_scoped_note<uarch_replay_state_access>;
 };
 
 } // namespace cartesi

@@ -2376,7 +2376,8 @@ access_log machine::log_reset_uarch(const access_log::type &log_type) {
     hash_type root_hash_before;
     get_root_hash(root_hash_before);
     // Call uarch_reset_state with a uarch_record_state_access object
-    uarch_record_state_access a(*this, log_type);
+    access_log log(log_type);
+    uarch_record_state_access a(*this, log);
     {
         [[maybe_unused]] auto note = a.make_scoped_note("reset_uarch_state");
         uarch_reset_state(a);
@@ -2385,8 +2386,8 @@ access_log machine::log_reset_uarch(const access_log::type &log_type) {
     hash_type root_hash_after;
     update_merkle_tree();
     get_root_hash(root_hash_after);
-    verify_reset_uarch(root_hash_before, *a.get_log(), root_hash_after);
-    return std::move(*a.get_log());
+    verify_reset_uarch(root_hash_before, log, root_hash_after);
+    return log;
 }
 
 void machine::verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
@@ -2412,8 +2413,9 @@ access_log machine::log_step_uarch(const access_log::type &log_type) {
     }
     hash_type root_hash_before;
     get_root_hash(root_hash_before);
+    access_log log(log_type);
     // Call interpret with a logged state access object
-    uarch_record_state_access a(*this, log_type);
+    uarch_record_state_access a(*this, log);
     {
         [[maybe_unused]] auto note = a.make_scoped_note("step");
         uarch_step(a);
@@ -2421,8 +2423,8 @@ access_log machine::log_step_uarch(const access_log::type &log_type) {
     // Verify access log before returning
     hash_type root_hash_after;
     get_root_hash(root_hash_after);
-    verify_step_uarch(root_hash_before, *a.get_log(), root_hash_after);
-    return std::move(*a.get_log());
+    verify_step_uarch(root_hash_before, log, root_hash_after);
+    return log;
 }
 
 // Declaration of explicit instantiation in module uarch-step.cpp

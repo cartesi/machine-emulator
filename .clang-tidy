@@ -3,6 +3,7 @@ Checks: >-
   -boost-use-ranges,
   bugprone*,
   -bugprone-easily-swappable-parameters,
+  -bugprone-crtp-constructor-accessibility,
   cert*,
   -cert-int09-c,
   clang-analyzer*,

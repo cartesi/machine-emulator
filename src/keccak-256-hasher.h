@@ -39,8 +39,9 @@ struct keccak_instance final {
 
 class keccak_256_hasher final : public i_hasher<keccak_256_hasher, std::integral_constant<int, 32>> {
     sha3_ctx_t m_ctx{};
+    using base = i_hasher<keccak_256_hasher, std::integral_constant<int, 32>>;
 
-    friend i_hasher<keccak_256_hasher, std::integral_constant<int, 32>>;
+    friend base;
 
     void do_begin() {
         sha3_init(&m_ctx, 32, 0x01);

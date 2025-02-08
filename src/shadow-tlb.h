@@ -67,7 +67,7 @@ enum class shadow_tlb_what : uint64_t {
 };
 
 static constexpr uint64_t shadow_tlb_get_abs_addr(TLB_set_index set_index, uint64_t slot_index) {
-    return PMA_SHADOW_TLB_START + set_index * sizeof(shadow_tlb_set) + slot_index * sizeof(shadow_tlb_slot);
+    return PMA_SHADOW_TLB_START + (set_index * sizeof(shadow_tlb_set)) + (slot_index * sizeof(shadow_tlb_slot));
 }
 
 static constexpr uint64_t shadow_tlb_get_abs_addr(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) {

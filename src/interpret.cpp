@@ -279,7 +279,7 @@ static void dump_exception_or_interrupt(uint64_t cause, uint64_t a7) {
 
 /// \brief Returns the name for a given privilege level
 /// \param prv Privilege level
-constexpr const char *prv_get_name(uint64_t prv) {
+static constexpr const char *prv_get_name(uint64_t prv) {
     switch (prv) {
         case PRV_U:
             return "prv.U";
@@ -1004,7 +1004,7 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(STATE_ACCESS
         if (likely(pma.get_istart_M())) {
             [[maybe_unused]] auto note = a.make_scoped_note("read memory");
             const auto faddr = replace_tlb_entry<TLB_READ>(a, vaddr, paddr, pma_index);
-            a.template read_memory_word(faddr, pma_index, pval);
+            a.template read_memory_word<T>(faddr, pma_index, pval);
             return {true, pc};
         }
         if (likely(pma.get_istart_IO())) {
@@ -5453,7 +5453,7 @@ static FORCE_INLINE fetch_status fetch_insn(STATE_ACCESS a, uint64_t &pc, uint32
     if (unlikely(((~pc & PAGE_OFFSET_MASK) >> 1) == 0)) {
         // Here we are crossing page boundary, this is unlikely (1 in 2048 possible cases)
         uint16_t insn16 = 0;
-        a.template read_memory_word(faddr, last_pma_index, &insn16);
+        a.template read_memory_word<uint16_t>(faddr, last_pma_index, &insn16);
         insn = insn16;
         // If not a compressed instruction, we must read 2 additional bytes from the next page.
         if (unlikely(insn_is_uncompressed(insn))) {
@@ -5468,7 +5468,7 @@ static FORCE_INLINE fetch_status fetch_insn(STATE_ACCESS a, uint64_t &pc, uint32
             last_vp_offset = pc2_vp_offset;
             last_pma_index = pc2_pma_index;
             faddr = pc2 + last_vp_offset;
-            a.template read_memory_word(faddr, last_pma_index, &insn16);
+            a.template read_memory_word<uint16_t>(faddr, last_pma_index, &insn16);
             insn |= insn16 << 16;
         }
         return fetch_status::success;

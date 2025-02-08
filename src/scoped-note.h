@@ -23,7 +23,7 @@ namespace cartesi {
 template <typename STATE_ACCESS>
 class scoped_note {
 
-    STATE_ACCESS &m_a;
+    STATE_ACCESS m_a;
     const char *const m_text; ///< String with the text for the annotation
 
 public:
@@ -31,7 +31,7 @@ public:
     /// \param a State access receiving annotations
     /// \param text Pointer to annotation text (must be valid until destruction)
     /// \details A note is added at the moment of construction and destruction
-    scoped_note(STATE_ACCESS &a, const char *text) : m_a{a}, m_text(text) {
+    scoped_note(STATE_ACCESS a, const char *text) : m_a{a}, m_text(text) {
         m_a.push_begin_bracket(m_text);
     }
 

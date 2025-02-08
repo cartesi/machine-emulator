@@ -22,7 +22,6 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
-#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -61,8 +60,8 @@ class uarch_record_state_access :
 
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     machine &m_m; ///< Macro machine
+    access_log &m_log; ///< Access log
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
-    std::shared_ptr<access_log> m_log; ///< Pointer to access log
 
     static auto get_hash(hasher_type &hasher, const access_data &data) {
         hash_type hash{};
@@ -72,33 +71,12 @@ class uarch_record_state_access :
 
 public:
     /// \brief Constructor from machine and uarch states.
-    /// \param um Reference to uarch state.
     /// \param m Reference to machine state.
-    explicit uarch_record_state_access(machine &m, access_log::type log_type) :
+    /// \param log Reference to log.
+    explicit uarch_record_state_access(machine &m, access_log &log) :
         m_m(m),
-        m_log(std::make_shared<access_log>(log_type)) {
+        m_log(log) {
         ;
-    }
-
-    /// \brief No copy constructor
-    uarch_record_state_access(const uarch_record_state_access &) = delete;
-    /// \brief No copy assignment
-    uarch_record_state_access &operator=(const uarch_record_state_access &) = delete;
-    /// \brief No move constructor
-    uarch_record_state_access(uarch_record_state_access &&) = delete;
-    /// \brief No move assignment
-    uarch_record_state_access &operator=(uarch_record_state_access &&) = delete;
-    /// \brief Default destructor
-    ~uarch_record_state_access() = default;
-
-    /// \brief Returns const pointer to access log.
-    std::shared_ptr<const access_log> get_log() const {
-        return m_log;
-    }
-
-    /// \brief Returns pointer to access log.
-    std::shared_ptr<access_log> get_log() {
-        return m_log;
     }
 
 private:
@@ -115,7 +93,7 @@ private:
     }
 
     void log_access(access &&a, const char *text) const {
-        m_log->push_access(std::move(a), text);
+        m_log.push_access(std::move(a), text);
     }
 
     static void log_access_type(access &a, access_type type) {
@@ -150,7 +128,7 @@ private:
     }
 
     void log_read_data_if_requested(access &a, uint64_t paddr, int log2_size) const {
-        if (m_log->get_log_type().has_large_data()) {
+        if (m_log.get_log_type().has_large_data()) {
             std::ignore = log_read_data(a, paddr, log2_size);
         }
     }
@@ -165,7 +143,7 @@ private:
     }
 
     void log_written_data_if_requested(access &a, uint64_t paddr, int log2_size) const {
-        if (m_log->get_log_type().has_large_data()) {
+        if (m_log.get_log_type().has_large_data()) {
             log_written_data(a, paddr, log2_size);
         }
     }
@@ -320,11 +298,11 @@ private:
     friend i_accept_scoped_note<uarch_record_state_access>;
 
     void do_push_begin_bracket(const char *text) {
-        m_log->push_begin_bracket(text);
+        m_log.push_begin_bracket(text);
     }
 
     void do_push_end_bracket(const char *text) {
-        m_log->push_end_bracket(text);
+        m_log.push_end_bracket(text);
     }
 
     auto do_make_scoped_note(const char *text) {

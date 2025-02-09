@@ -17,12 +17,13 @@
 /// \file
 /// \brief Device Tree Blob
 
+#include "dtb.h"
+
 #include <cstdint>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 
-#include "dtb.h"
 #include "fdt-builder.h"
 #include "machine-c-version.h"
 #include "machine-config.h"

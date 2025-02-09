@@ -14,6 +14,9 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "os.h"
+#include "os-features.h"
+
 #include <array>
 #include <cerrno>
 #include <chrono>
@@ -27,11 +30,6 @@
 #include <system_error>
 #include <tuple>
 #include <vector>
-
-#include "compiler-defines.h"
-#include "os-features.h"
-#include "os.h"
-#include "unique-c-ptr.h"
 
 #include <sys/time.h>
 
@@ -107,6 +105,9 @@
 #define plat_mkdir mkdir
 
 #endif // _WIN32
+
+#include "compiler-defines.h"
+#include "unique-c-ptr.h"
 
 // Enable these defines to debug
 // #define DEBUG_OS

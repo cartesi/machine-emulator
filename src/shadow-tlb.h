@@ -32,13 +32,19 @@
 namespace cartesi {
 
 /// \brief Shadow TLB slot
-// Writes to TLB slots have to be atomic.
-// We can only do /aligned/ atomic writes.
-// Therefore, TLB slot cannot be misaligned.
+/// \details
+/// Given a target virtual address vaddr within a page matching vaddr_page in TLB slot, the corresponding
+/// target physical address paddr = vaddr + vp_offset.
+/// The pma_index helps translate between target physical addresses and host addresses when needed.
+/// Writes to TLB slots have to be atomic.
+/// We can only do /aligned/ atomic writes.
+/// Therefore, TLB slot cannot be misaligned.
+/// To complete the power-of-two size, we include a zero_padding_ entry.
 struct PACKED shadow_tlb_slot {
-    uint64_t vaddr_page;    ///< Tag is target virtual address of start of page
-    uint64_t vp_offset;     ///< Value is offset from target virtual address to target physical address within page
+    uint64_t vaddr_page;    ///< Target virtual address of start of page
+    uint64_t vp_offset;     ///< Offset from target virtual address to target physical address within page
     uint64_t pma_index;     ///< Index of PMA where physical page falls
+                            /// and host addresses
     uint64_t zero_padding_; ///< Padding to make sure the sizeof(shadow_tlb_slot) is a power of 2
 };
 

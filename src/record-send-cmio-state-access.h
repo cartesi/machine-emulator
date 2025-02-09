@@ -28,7 +28,7 @@
 
 #include "access-log.h"
 #include "host-addr.h"
-#include "i-accept-scoped-note.h"
+#include "i-accept-scoped-notes.h"
 #include "i-hasher.h"
 #include "i-state-access.h"
 #include "machine-merkle-tree.h"
@@ -58,7 +58,7 @@ struct i_state_access_fast_addr<record_send_cmio_state_access> {
 /// a machine::send_cmio_response() function call
 class record_send_cmio_state_access :
     public i_state_access<record_send_cmio_state_access>,
-    public i_accept_scoped_note<record_send_cmio_state_access> {
+    public i_accept_scoped_notes<record_send_cmio_state_access> {
     using hasher_type = machine_merkle_tree::hasher_type;
     using hash_type = machine_merkle_tree::hash_type;
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
@@ -271,9 +271,9 @@ private:
     }
 
     // -----
-    // i_accept_scoped_note interface implementation
+    // i_accept_scoped_notes interface implementation
     // -----
-    friend i_accept_scoped_note<record_send_cmio_state_access>;
+    friend i_accept_scoped_notes<record_send_cmio_state_access>;
 
     void do_push_begin_bracket(const char *text) {
         m_log.push_begin_bracket(text);

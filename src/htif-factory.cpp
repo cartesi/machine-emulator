@@ -14,9 +14,10 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "htif-factory.h"
+
 #include <cstdint>
 
-#include "htif-factory.h"
 #include "htif.h"
 #include "pma-constants.h"
 #include "pma.h"

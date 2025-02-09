@@ -14,31 +14,6 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <algorithm>
-#include <array>
-#include <cstdint>
-#include <tuple>
-#include <type_traits>
-#include <utility>
-
-#ifdef MICROARCHITECTURE
-#include "machine-uarch-bridge-state-access.h"
-#include "uarch-runtime.h"
-#else
-#include "record-step-state-access.h"
-#include "replay-step-state-access.h"
-#include "state-access.h"
-#include <cassert>
-#endif // MICROARCHITECTURE
-
-#include "compiler-defines.h"
-#include "device-state-access.h"
-#include "dump.h"
-#include "i-counters.h"
-#include "i-interactive-state-access.h"
-#include "i-state-access.h"
-#include "tlb.h"
-
 /// \file
 /// \brief Interpreter implementation.
 /// \details \{
@@ -106,13 +81,37 @@
 ///   https://gcc.gnu.org/onlinedocs/gcc-7.3.0/gcc/Arrays-and-pointers-implementation.html#Arrays-and-pointers-implementation
 /// \}
 
-#include "find-pma-entry.h"
 #include "interpret.h"
+
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+
+#ifdef MICROARCHITECTURE
+#include "machine-uarch-bridge-state-access.h"
+#include "uarch-runtime.h"
+#else
+#include "record-step-state-access.h"
+#include "replay-step-state-access.h"
+#include "state-access.h"
+#include <cassert>
+#endif // MICROARCHITECTURE
+
+#include "compiler-defines.h"
+#include "device-state-access.h"
+#include "dump.h"
+#include "find-pma-entry.h"
+#include "i-accept-counters.h"
+#include "i-interactive-state-access.h"
+#include "i-state-access.h"
 #include "meta.h"
 #include "riscv-constants.h"
 #include "rtc.h"
 #include "soft-float.h"
-#include "strict-aliasing.h"
+#include "tlb.h"
 #include "translate-virtual-address.h"
 #include "uint128.h"
 
@@ -900,7 +899,7 @@ static void flush_tlb_slot(STATE_ACCESS a, uint64_t slot_index) {
 /// \param a Machine state accessor object.
 template <TLB_set_index SET, typename STATE_ACCESS>
 static void flush_tlb_set(STATE_ACCESS a) {
-    for (uint64_t slot_index = 0; slot_index < PMA_TLB_SIZE; ++slot_index) {
+    for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
         flush_tlb_slot<SET>(a, slot_index);
     }
 }
@@ -6055,7 +6054,7 @@ template <typename STATE_ACCESS>
 interpreter_break_reason interpret(STATE_ACCESS a, uint64_t mcycle_end) {
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "code assumes little-endian byte ordering");
     static_assert(is_an_i_state_access_v<STATE_ACCESS>, "not an i_state_access");
-    static_assert(is_an_i_accept_scoped_note_v<STATE_ACCESS>, "not an i_accept_scoped_note");
+    static_assert(is_an_i_accept_scoped_note_v<STATE_ACCESS>, "not an i_accept_scoped_notes");
 
     const uint64_t mcycle = a.read_mcycle();
 

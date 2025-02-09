@@ -14,9 +14,10 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "htif.h"
+
 #include <cstdint>
 
-#include "htif.h"
 #include "i-device-state-access.h"
 #include "interpret.h"
 #include "pma-driver.h"

@@ -22,7 +22,7 @@
 #include <optional>
 
 #include "compiler-defines.h"
-#include "i-accept-scoped-note.h"
+#include "i-accept-scoped-notes.h"
 #include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
 #include "machine-reg.h"
@@ -53,7 +53,7 @@ struct i_state_access_fast_addr<machine_uarch_bridge_state_access> {
 // Provides access to the state of the big emulator from microcode
 class machine_uarch_bridge_state_access :
     public i_state_access<machine_uarch_bridge_state_access>,
-    public i_accept_scoped_note<machine_uarch_bridge_state_access>,
+    public i_accept_scoped_notes<machine_uarch_bridge_state_access>,
     public i_prefer_shadow_state<machine_uarch_bridge_state_access> {
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)

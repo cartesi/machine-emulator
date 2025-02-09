@@ -21,8 +21,8 @@
 
 namespace cartesi {
 
-// This is simply an uint64_t as a separate type, not automatically convertible to uint64_t
-// It prevents any attempt of passing a host_addr where one is not expected
+// This is simply an uint64_t as a separate type, not automatically convertible to uint64_t.
+// It prevents any attempt of passing a host_addr where one is not expected.
 enum class host_addr : uint64_t {};
 
 // Comparison operaator

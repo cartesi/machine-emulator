@@ -14,11 +14,11 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef I_COUNTERS_H
-#define I_COUNTERS_H
+#ifndef I_ACCEPT_COUNTERS_H
+#define I_ACCEPT_COUNTERS_H
 
 /// \file
-/// \brief Interface for state access that prefers to go thrhough shadow state
+/// \brief Accept counters interface
 
 #include <cstdint>
 #include <type_traits>
@@ -27,12 +27,11 @@
 
 namespace cartesi {
 
-/// \class i_counters
-/// \brief Interface for multiplexed access to shadow state.
+/// \class i_accept_counters
+/// \brief Interface for state access classes (and others) that accept counters.
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
-/// \detail This is for state access methods that do not need individualized access to machine registers
 template <typename DERIVED>
-class i_counters { // CRTP
+class i_accept_counters { // CRTP
 
     /// \brief Returns object cast as the derived class
     DERIVED &derived() {
@@ -58,12 +57,13 @@ public:
     }
 };
 
-/// \brief SFINAE test implementation of the i_state_access interface
+/// \brief SFINAE test implementation of the i_accept_counters interface
 template <typename DERIVED>
-using is_an_i_counters = std::integral_constant<bool, is_template_base_of_v<i_counters, std::remove_cvref_t<DERIVED>>>;
+using is_an_i_accept_counters =
+    std::integral_constant<bool, is_template_base_of_v<i_accept_counters, std::remove_cvref_t<DERIVED>>>;
 
 template <typename DERIVED>
-constexpr bool is_an_i_counters_v = is_an_i_counters<DERIVED>::value;
+constexpr bool is_an_i_accept_counters_v = is_an_i_accept_counters<DERIVED>::value;
 
 } // namespace cartesi
 

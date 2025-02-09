@@ -18,7 +18,7 @@
 #define I_INTERACTIVE_STATE_ACCESS_H
 
 /// \file
-/// \brief State access interface
+/// \brief Interactive state access interface
 
 #include <cstdint>
 #include <type_traits>
@@ -63,7 +63,7 @@ public:
     }
 };
 
-/// \brief SFINAE test implementation of the i_state_access interface
+/// \brief SFINAE test implementation of the i_interactive_state_access interface
 template <typename DERIVED>
 using is_an_i_interactive_state_access =
     std::integral_constant<bool, is_template_base_of_v<i_interactive_state_access, std::remove_cvref_t<DERIVED>>>;

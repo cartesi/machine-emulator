@@ -60,13 +60,16 @@
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
 #include <string>
 #include <system_error>
 
+#include <arpa/inet.h>
 #include <slirp/libslirp.h>
+#include <sys/select.h>
 
 #include "i-device-state-access.h"
 #include "machine-config.h"
@@ -78,6 +81,7 @@ using namespace std::string_literals;
 
 namespace cartesi {
 
+//??D why ssize_t?
 static ssize_t slirp_send_packet(const void *buf, size_t len, void *opaque) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *carrier = reinterpret_cast<virtio_net_carrier_slirp *>(opaque);

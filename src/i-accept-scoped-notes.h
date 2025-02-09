@@ -14,11 +14,11 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef I_ACCEPT_SCOPED_NOTE_H
-#define I_ACCEPT_SCOPED_NOTE_H
+#ifndef I_ACCEPT_SCOPED_NOTES_H
+#define I_ACCEPT_SCOPED_NOTES_H
 
 /// \file
-/// \brief State access interface
+/// \brief Accept scoped notes interface
 
 #include <cstdint>
 #include <type_traits>
@@ -31,11 +31,11 @@
 
 namespace cartesi {
 
-/// \class i_accept_scoped_note
-/// \brief Interface that lets a state access accept scoped notes.
+/// \class i_accept_scoped_notes
+/// \brief Interface that lets a state access class accept scoped notes.
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
 template <typename DERIVED>
-class i_accept_scoped_note { // CRTP
+class i_accept_scoped_notes { // CRTP
 
     /// \brief Returns object cast as the derived class
     DERIVED &derived() {
@@ -103,13 +103,13 @@ protected:
     }
 };
 
-/// \brief SFINAE test implementation of the i_state_access interface
+/// \brief SFINAE test implementation of the i_accept_scoped_notes interface
 template <typename DERIVED>
-using is_an_i_accept_scoped_note =
-    std::integral_constant<bool, is_template_base_of_v<i_accept_scoped_note, std::remove_cvref_t<DERIVED>>>;
+using is_an_i_accept_scoped_notes =
+    std::integral_constant<bool, is_template_base_of_v<i_accept_scoped_notes, std::remove_cvref_t<DERIVED>>>;
 
 template <typename DERIVED>
-constexpr bool is_an_i_accept_scoped_note_v = is_an_i_accept_scoped_note<DERIVED>::value;
+constexpr bool is_an_i_accept_scoped_note_v = is_an_i_accept_scoped_notes<DERIVED>::value;
 
 } // namespace cartesi
 

@@ -33,7 +33,7 @@ namespace cartesi {
 /// \class i_prefer_shadow_uarch_state
 /// \brief Interface for multiplexed access to shadow uarch state.
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
-/// \detail This is for state access methods that do not need individualized access to uarch registers
+/// \detail This is for state access methods that do not need individualized access to uarch registers.
 template <typename DERIVED>
 class i_prefer_shadow_uarch_state { // CRTP
 
@@ -57,7 +57,7 @@ public:
     }
 };
 
-/// \brief SFINAE test implementation of the i_state_access interface
+/// \brief SFINAE test implementation of the i_prefer_shadow_uarch_state interface
 template <typename DERIVED>
 using is_an_i_prefer_shadow_uarch_state =
     std::integral_constant<bool, is_template_base_of_v<i_prefer_shadow_uarch_state, std::remove_cvref_t<DERIVED>>>;

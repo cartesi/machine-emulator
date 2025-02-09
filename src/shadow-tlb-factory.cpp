@@ -14,14 +14,16 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "shadow-tlb-factory.h"
+
 #include <cstdint>
 
 #include "machine.h"
 #include "pma-constants.h"
 #include "pma.h"
 #include "shadow-peek.h"
-#include "shadow-tlb-factory.h"
 #include "shadow-tlb.h"
+#include "tlb.h"
 
 namespace cartesi {
 

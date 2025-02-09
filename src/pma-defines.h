@@ -50,7 +50,6 @@
 #define PMA_PAGE_SIZE_LOG2_DEF 12 ///< log<sub>2</sub> of physical memory page size.
 #define PMA_WORD_SIZE_DEF 8       ///< Physical memory word size.
 #define PMA_MAX_DEF 32            ///< Maximum number of PMAs
-#define PMA_TLB_SIZE_DEF 256      ///< Number for entries per TLB type
 #define PMA_PLIC_MAX_IRQ_DEF 31   ///< Maximum PLIC interrupt
 
 #define PMA_MEMORY_DID_DEF 0              ///< Device ID for memory

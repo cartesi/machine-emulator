@@ -22,19 +22,16 @@
 namespace cartesi {
 
 /// \file
-/// \brief Virtual interface for state access
+/// \brief Virtual interface for device state access
 
-/// \brief Virtual interface for state access
+/// \brief Virtual interface for device state access
 /// \details \{
 /// Memory mapped devices must be able to modify the state.
-/// However, the prototype for the read/write callbacks
-/// cannot change depending on the different classes implementing the
-/// i_state_access interface (which is not virtual).
+/// However, the prototype for the read/write callbacks cannot change depending on the different classes
+/// implementing the i_state_access interface (which is not virtual).
 ///
-/// Since device access to state is not time critical, the
-/// i_device_state_access interface uses virtual methods.  A
-/// template class device_state_access implements this
-/// virtual interface on top of any class that implements the
+/// Since device access to state is not time critical, the i_device_state_access interface uses virtual methods.
+/// A template class device_state_access implements this virtual interface on top of any class that implements
 /// i_state_access.
 /// \}
 class i_device_state_access {

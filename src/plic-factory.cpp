@@ -14,9 +14,10 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "plic-factory.h"
+
 #include <cstdint>
 
-#include "plic-factory.h"
 #include "plic.h"
 #include "pma-constants.h"
 #include "pma.h"

@@ -28,8 +28,8 @@
 
 #include "compiler-defines.h"
 #include "host-addr.h"
-#include "i-accept-scoped-note.h"
-#include "i-counters.h"
+#include "i-accept-counters.h"
+#include "i-accept-scoped-notes.h"
 #include "i-interactive-state-access.h"
 #include "i-state-access.h"
 #include "interpret.h"
@@ -63,8 +63,8 @@ struct i_state_access_fast_addr<state_access> {
 class state_access :
     public i_state_access<state_access>,
     public i_interactive_state_access<state_access>,
-    public i_accept_scoped_note<state_access>,
-    public i_counters<state_access> {
+    public i_accept_scoped_notes<state_access>,
+    public i_accept_counters<state_access> {
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
     machine &m_m; ///< Associated machine
@@ -522,9 +522,9 @@ private:
     }
 
     // -----
-    // i_counters interface implementation
+    // i_accept_counters interface implementation
     // -----
-    friend i_counters<state_access>;
+    friend i_accept_counters<state_access>;
 
     void do_increment_counter(const char *name, const char *domain) {
         m_m.increment_counter(name, domain);

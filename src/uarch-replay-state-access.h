@@ -29,7 +29,7 @@
 #include <vector>
 
 #include "access-log.h"
-#include "i-accept-scoped-note.h"
+#include "i-accept-scoped-notes.h"
 #include "i-hasher.h"
 #include "i-prefer-shadow-uarch-state.h"
 #include "i-uarch-state-access.h"
@@ -44,7 +44,7 @@ namespace cartesi {
 
 class uarch_replay_state_access :
     public i_uarch_state_access<uarch_replay_state_access>,
-    public i_accept_scoped_note<uarch_replay_state_access>,
+    public i_accept_scoped_notes<uarch_replay_state_access>,
     public i_prefer_shadow_uarch_state<uarch_replay_state_access> {
     using tree_type = machine_merkle_tree;
     using hash_type = tree_type::hash_type;
@@ -368,9 +368,9 @@ private:
     friend i_prefer_shadow_uarch_state<uarch_replay_state_access>;
 
     // -----
-    // i_accept_scoped_note interface implementation
+    // i_accept_scoped_notes interface implementation
     // -----
-    friend i_accept_scoped_note<uarch_replay_state_access>;
+    friend i_accept_scoped_notes<uarch_replay_state_access>;
 };
 
 } // namespace cartesi

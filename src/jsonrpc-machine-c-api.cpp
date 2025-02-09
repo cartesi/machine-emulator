@@ -14,30 +14,23 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "jsonrpc-machine-c-api.h"
+
 #include <cassert>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <exception>
-#include <memory>
 #include <stdexcept>
 #include <string>
 
-#include "access-log.h"
 #include "i-virtual-machine.h"
 #include "json-util.h"
-#include "jsonrpc-machine-c-api.h"
+#include "jsonrpc-fork-result.h"
 #include "jsonrpc-virtual-machine.h"
 #include "machine-c-api-internal.h"
 #include "machine-c-api.h"
-#include "machine-config.h"
-#include "machine-runtime-config.h"
-#include "machine.h"
-#include "os-features.h"
-#include "os.h"
-#include "semantic-version.h"
 
 using namespace std::string_literals;
 

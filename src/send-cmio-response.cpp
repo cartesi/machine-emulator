@@ -19,14 +19,13 @@
 
 // NOLINTBEGIN(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto,readability-use-std-min-max)
 
-#include "record-send-cmio-state-access.h"
-#include "replay-send-cmio-state-access.h"
-#include "state-access.h"
-
 #include "send-cmio-response.h"
 
 #include "machine-merkle-tree.h"
 #include "pma-constants.h"
+#include "record-send-cmio-state-access.h"
+#include "replay-send-cmio-state-access.h"
+#include "state-access.h"
 #include "uarch-solidity-compat.h"
 
 namespace cartesi {

@@ -327,11 +327,12 @@ public:
 
     /// \brief Reads a word from memory.
     /// \tparam T Type of word to read, potentially unaligned.
-    /// \tparam A Type to which \p paddr and \p haddr are known to be aligned.
+    /// \tparam A Type to which \p paddr and \p faddr are known to be aligned.
     /// \param faddr Implementation-defined fast address.
+    /// \param pma_index Index of PMA where word falls.
     /// \param pval Pointer to word receiving value.
-    /// \warning T must not cross page boundary starting from \p faddr
-    /// \warning T may or may not cross a Merkle tree word boundary starting from \p faddr!
+    /// \warning T must not cross page boundary starting from \p faddr.
+    /// \warning T (when A is smaller) may or may not cross a Merkle tree word boundary starting from \p faddr!
     template <typename T, typename A = T>
     void read_memory_word(fast_addr faddr, uint64_t pma_index, T *pval) {
         static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
@@ -344,13 +345,11 @@ public:
 
     /// \brief Writes a word to memory.
     /// \tparam T Type of word to write.
-    /// \tparam A Type to which \p paddr and \p haddr are known to be aligned.
+    /// \tparam A Type to which \p paddr and \p faddr are known to be aligned.
     /// \param faddr Implementation-defined fast address.
     /// \param val Value to be written.
-    /// \details \p haddr is ONLY valid when there is a host machine.
-    /// It should never be referenced outside of this context.
-    /// \warning T must not cross page boundary starting from \p faddr
-    /// \warning T may or may not cross a Merkle tree word boundary starting from \p faddr!
+    /// \warning T must not cross page boundary starting from \p faddr.
+    /// \warning T (when A is smaller) may or may not cross a Merkle tree word boundary starting from \p faddr!
     template <typename T, typename A = T>
     void write_memory_word(fast_addr faddr, uint64_t pma_index, T val) {
         static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");

@@ -43,15 +43,19 @@ enum TLB_constants : uint64_t {
 };
 
 /// \brief TLB hot slot.
+/// \details
+/// Given a target virtual address vaddr within a page matching vaddr_page in TLB slot, the corresponding host address
+/// haddr = vaddr + vh_offset.
 struct tlb_hot_slot final {
-    uint64_t vaddr_page; ///< Tag is the target virtual address of page start
-    host_addr vh_offset; ///< Value is the offset from target virtual address in the same page to
-                         ///< translated host address (vh_offset = haddr - vaddr)
+    uint64_t vaddr_page; ///< Target virtual address of start of page
+    host_addr vh_offset; ///< Offset from target virtual address in the same page to host address
 };
 
 using tlb_hot_set = std::array<tlb_hot_slot, TLB_SET_SIZE>;
 
 /// \brief TLB cold slot.
+/// \details
+/// The pma_index helps translate between target physical addresses and host addresses when needed.
 struct tlb_cold_slot final {
     uint64_t pma_index; ///< Index of PMA where physical address falls
 };

@@ -15,6 +15,11 @@
 //
 
 #include "replay-step-state-access-interop.h"
+
+#include <cstddef>
+#include <type_traits>
+
+#include "i-hasher.h"
 #include "machine-merkle-tree.h"
 
 using namespace cartesi;

@@ -15,6 +15,7 @@
 //
 
 #include "shadow-uarch-state.h"
+
 #include "pma-driver.h"
 
 namespace cartesi {

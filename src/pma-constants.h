@@ -73,11 +73,6 @@ enum PMA_constants : uint64_t {
     PMA_MAX = EXPAND_UINT64_C(PMA_MAX_DEF)                        ///< Maximum number of PMAs
 };
 
-/// \brief PMA TLB constants.
-enum PMA_tlb_constants : uint64_t {
-    PMA_TLB_SIZE = EXPAND_UINT64_C(PMA_TLB_SIZE_DEF), ///< Number for entries per TLB type
-};
-
 /// \brief PMA PLIC constants.
 enum PMA_plic_constants : uint64_t {
     PMA_PLIC_MAX_IRQ = EXPAND_UINT64_C(PMA_PLIC_MAX_IRQ_DEF), ///< Maximum PLIC interrupt

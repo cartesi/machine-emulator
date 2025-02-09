@@ -22,6 +22,11 @@
 
 #include <boost/config.hpp>
 
+extern "C" {
+#include <lauxlib.h>
+#include <lua.h>
+}
+
 #include "base64.h"
 #include "clua-i-virtual-machine.h"
 #include "clua.h"

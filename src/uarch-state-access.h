@@ -22,7 +22,7 @@
 #include <stdexcept>
 
 #include "host-addr.h"
-#include "i-accept-scoped-note.h"
+#include "i-accept-scoped-notes.h"
 #include "i-uarch-state-access.h"
 #include "machine.h"
 #include "os.h"
@@ -34,7 +34,7 @@ namespace cartesi {
 
 class uarch_state_access :
     public i_uarch_state_access<uarch_state_access>,
-    public i_accept_scoped_note<uarch_state_access> {
+    public i_accept_scoped_notes<uarch_state_access> {
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     machine &m_m;
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
@@ -159,9 +159,9 @@ private:
     }
 
     // -----
-    // i_accept_scoped_note interface implementation
+    // i_accept_scoped_notes interface implementation
     // -----
-    friend i_accept_scoped_note<uarch_state_access>;
+    friend i_accept_scoped_notes<uarch_state_access>;
 };
 
 } // namespace cartesi

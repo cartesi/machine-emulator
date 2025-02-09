@@ -14,13 +14,15 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "shadow-uarch-state-factory.h"
+
 #include <cstdint>
 
+#include "machine-reg.h"
 #include "machine.h"
 #include "pma-constants.h"
 #include "pma.h"
 #include "shadow-peek.h"
-#include "shadow-uarch-state-factory.h"
 #include "shadow-uarch-state.h"
 
 namespace cartesi {

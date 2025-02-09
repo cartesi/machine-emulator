@@ -14,6 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "json-util.h"
+
 #include <algorithm>
 #include <climits>
 #include <cstddef>
@@ -28,12 +30,13 @@
 #include <variant>
 #include <vector>
 
+#include <json.hpp>
+
 #include "access-log.h"
 #include "base64.h"
 #include "bracket-note.h"
 #include "interpret.h"
-#include "json-util.h"
-#include "json.hpp"
+#include "jsonrpc-fork-result.h"
 #include "machine-config.h"
 #include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"

@@ -14,7 +14,6 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <array>
 #include <cassert>
 #include <cstdarg>
 #include <cstdint>
@@ -24,6 +23,7 @@
 #include <exception>
 #include <iostream>
 #include <new>
+#include <tuple>
 #include <vector>
 
 #include <back-merkle-tree.h>

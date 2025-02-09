@@ -28,7 +28,7 @@
 
 #include "access-log.h"
 #include "host-addr.h"
-#include "i-accept-scoped-note.h"
+#include "i-accept-scoped-notes.h"
 #include "i-hasher.h"
 #include "i-prefer-shadow-uarch-state.h"
 #include "i-uarch-state-access.h"
@@ -52,7 +52,7 @@ using namespace std::string_literals;
 /// \details The uarch_record_state_access logs all access to the machine state.
 class uarch_record_state_access :
     public i_uarch_state_access<uarch_record_state_access>,
-    public i_accept_scoped_note<uarch_record_state_access>,
+    public i_accept_scoped_notes<uarch_record_state_access>,
     public i_prefer_shadow_uarch_state<uarch_record_state_access> {
 
     using hasher_type = machine_merkle_tree::hasher_type;
@@ -291,9 +291,9 @@ private:
     }
 
     // -----
-    // i_accept_scoped_note interface implementation
+    // i_accept_scoped_notes interface implementation
     // -----
-    friend i_accept_scoped_note<uarch_record_state_access>;
+    friend i_accept_scoped_notes<uarch_record_state_access>;
 
     void do_push_begin_bracket(const char *text) {
         m_log.push_begin_bracket(text);

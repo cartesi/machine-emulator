@@ -22,7 +22,7 @@
 #include <vector>
 
 #include "compiler-defines.h"
-#include "i-accept-scoped-note.h"
+#include "i-accept-scoped-notes.h"
 #include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
 #include "machine.h"
@@ -49,7 +49,7 @@ struct i_state_access_fast_addr<record_step_state_access> {
 /// \brief Records machine state access into a step log file
 class record_step_state_access :
     public i_state_access<record_step_state_access>,
-    public i_accept_scoped_note<record_step_state_access>,
+    public i_accept_scoped_notes<record_step_state_access>,
     public i_prefer_shadow_state<record_step_state_access> {
     constexpr static int TREE_LOG2_ROOT_SIZE = machine_merkle_tree::get_log2_root_size();
     constexpr static int TREE_LOG2_PAGE_SIZE = machine_merkle_tree::get_log2_page_size();

@@ -13,11 +13,10 @@
 // You should have received a copy of the GNU Lesser General Public License along
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
-
-#include <tuple>
-
 #ifndef DUMP_H
 #define DUMP_H
+
+#include <tuple>
 
 #ifdef MICROARCHITECTURE
 template <size_t N, typename... ARGS>
@@ -32,4 +31,4 @@ static inline auto D_PRINTF(const char (&fmt)[N], ARGS... args) {
 }
 #endif
 
-#endif
+#endif // DUMP_H

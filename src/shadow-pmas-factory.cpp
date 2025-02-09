@@ -17,12 +17,9 @@
 #include "shadow-pmas-factory.h"
 
 #include <cstdint>
-#include <cstring>
 
-#include "machine.h"
 #include "pma-constants.h"
 #include "pma.h"
-#include "shadow-pmas.h"
 
 namespace cartesi {
 

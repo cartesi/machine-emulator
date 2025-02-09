@@ -41,10 +41,9 @@
 #include <utility>
 #include <vector>
 
-#include <fcntl.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #pragma GCC diagnostic push
@@ -63,6 +62,7 @@
 #include "interpret.h"
 #include "json-util.h"
 #include "jsonrpc-discover.h"
+#include "jsonrpc-fork-result.h"
 #include "jsonrpc-version.h"
 #include "machine-config.h"
 #include "machine-merkle-tree.h"

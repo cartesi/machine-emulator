@@ -15,13 +15,14 @@
 //
 
 #include "complete-merkle-tree.h"
-#include "i-hasher.h"
 
 #include <algorithm>
 #include <cassert>
 #include <limits>
 #include <stdexcept>
 #include <utility>
+
+#include "i-hasher.h"
 
 /// \file
 /// \brief Complete Merkle tree implementation.

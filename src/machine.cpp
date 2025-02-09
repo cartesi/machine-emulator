@@ -17,14 +17,15 @@
 #include "machine.h"
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
-#include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -35,16 +36,20 @@
 #include <boost/container/static_vector.hpp>
 
 #include "access-log.h"
-#include "bracket-note.h"
 #include "clint-factory.h"
+#include "compiler-defines.h"
 #include "device-state-access.h"
 #include "dtb.h"
+#include "host-addr.h"
 #include "htif-factory.h"
 #include "htif.h"
+#include "i-device-state-access.h"
+#include "i-hasher.h"
 #include "interpret.h"
 #include "is-pristine.h"
 #include "machine-config.h"
 #include "machine-memory-range-descr.h"
+#include "machine-reg.h"
 #include "machine-runtime-config.h"
 #include "os.h"
 #include "plic-factory.h"
@@ -59,6 +64,7 @@
 #include "rtc.h"
 #include "send-cmio-response.h"
 #include "shadow-pmas-factory.h"
+#include "shadow-pmas.h"
 #include "shadow-state-factory.h"
 #include "shadow-state.h"
 #include "shadow-tlb-factory.h"
@@ -1792,7 +1798,7 @@ uint64_t machine::get_reg_address(reg r) {
 void machine::mark_write_tlb_dirty_pages() const {
     auto &hot_set = m_s.tlb.hot[TLB_WRITE];
     auto &cold_set = m_s.tlb.cold[TLB_WRITE];
-    for (uint64_t slot_index = 0; slot_index < PMA_TLB_SIZE; ++slot_index) {
+    for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
         const auto &hot_slot = hot_set[slot_index];
         if (hot_slot.vaddr_page != TLB_INVALID_PAGE) {
             auto haddr_page = hot_slot.vaddr_page + hot_slot.vh_offset;
@@ -2279,9 +2285,6 @@ void machine::write_word(uint64_t paddr, uint64_t val) {
         if (reg == shadow_state_what::unknown_) {
             throw std::runtime_error("unhandled write to shadow state");
         }
-        if (reg == shadow_state_what::x0) {
-            throw std::runtime_error("invalid shadow state write to x0");
-        }
         write_reg(machine_reg_enum(reg), val);
         return;
     }
@@ -2290,9 +2293,6 @@ void machine::write_word(uint64_t paddr, uint64_t val) {
         auto reg = shadow_uarch_state_get_what(paddr);
         if (reg == shadow_uarch_state_what::unknown_) {
             throw std::runtime_error("unhandled write to shadow uarch state");
-        }
-        if (reg == shadow_uarch_state_what::uarch_x0) {
-            throw std::runtime_error("invalid shadow state write to uarch.x0");
         }
         write_reg(machine_reg_enum(reg), val);
         return;

@@ -14,10 +14,14 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "clua.h"
+
 #include <cstddef>
 #include <cstdint>
 
-#include "clua.h"
+extern "C" {
+#include <lua.h>
+}
 
 namespace cartesi {
 

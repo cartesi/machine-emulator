@@ -22,7 +22,7 @@
 
 #include "compiler-defines.h"
 #include "host-addr.h"
-#include "i-accept-scoped-note.h"
+#include "i-accept-scoped-notes.h"
 #include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
 #include "mock-pma-entry.h"
@@ -77,7 +77,7 @@ static inline bool validate_and_advance_offset(uint64_t max, uint64_t current, u
 // \brief Provides machine state from a step log file
 class replay_step_state_access :
     public i_state_access<replay_step_state_access>,
-    public i_accept_scoped_note<replay_step_state_access>,
+    public i_accept_scoped_notes<replay_step_state_access>,
     public i_prefer_shadow_state<replay_step_state_access> {
 public:
     using address_type = uint64_t;

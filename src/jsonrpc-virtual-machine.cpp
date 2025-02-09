@@ -16,21 +16,22 @@
 
 #include "jsonrpc-virtual-machine.h"
 
+#include <cassert>
 #include <cerrno>
+#include <chrono>
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
-#include <iostream>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <system_error>
 #include <tuple>
 #include <utility>
-
-#include "os-features.h"
 
 #ifdef HAVE_FORK
 #include <sys/time.h>
@@ -47,16 +48,20 @@
 #include <boost/beast/version.hpp>
 #pragma GCC diagnostic pop
 
+#include <json.hpp>
+
 #include "access-log.h"
 #include "base64.h"
+#include "i-virtual-machine.h"
 #include "interpret.h"
 #include "json-util.h"
-#include "json.hpp"
+#include "jsonrpc-fork-result.h"
 #include "jsonrpc-version.h"
 #include "machine-config.h"
 #include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
+#include "os-features.h"
 #include "os.h"
 #include "semantic-version.h"
 #include "uarch-interpret.h"

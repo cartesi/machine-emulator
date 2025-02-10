@@ -338,7 +338,7 @@ CM_API cm_error cm_get_reg_address(const cm_machine *m, cm_reg reg, uint64_t *va
 /// \brief Creates a new local machine object.
 /// \param new_m Receives the pointer to the new machine object. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
-/// \detail A newly created object is empty (does not hold a machine instance).
+/// \details A newly created object is empty (does not hold a machine instance).
 /// Use cm_create() or cm_load() to instantiate a machine into the object.
 /// Use cm_create_new() or cm_load_new() as single-call shortcuts.
 /// Use cm_delete() to delete the object.
@@ -454,7 +454,7 @@ CM_API cm_error cm_get_runtime_config(const cm_machine *m, const char **runtime_
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param start Range start physical address.
 /// \param length Range length in bytes.
-/// \param shared[ni] If true, changes to the range from inside the machine will be
+/// \param shared If true, changes to the range from inside the machine will be
 /// written to the associated image file in the host.
 /// \param image_filename Image file name to load into the range. If NULL, entire
 /// range is cleared with zeros.
@@ -547,7 +547,7 @@ CM_API cm_error cm_write_memory(cm_machine *m, uint64_t address, const uint8_t *
 /// \param data Receives chunk of memory.
 /// \param length Size of chunk in bytes.
 /// \returns 0 for success, non zero code for error.
-/// \detail The translation is based on the current mapping, as defined in CM_REG_SATP.
+/// \details The translation is based on the current mapping, as defined in CM_REG_SATP.
 CM_API cm_error cm_read_virtual_memory(cm_machine *m, uint64_t address, uint8_t *data, uint64_t length);
 
 /// \brief Writes a chunk of data to a machine memory range, by its virtual address.
@@ -556,7 +556,7 @@ CM_API cm_error cm_read_virtual_memory(cm_machine *m, uint64_t address, uint8_t 
 /// \param data Source for chunk of data.
 /// \param length Size of chunk in bytes.
 /// \returns 0 for success, non zero code for error.
-/// \detail The translation is based on the current mapping, as defined in CM_REG_SATP.
+/// \details The translation is based on the current mapping, as defined in CM_REG_SATP.
 CM_API cm_error cm_write_virtual_memory(cm_machine *m, uint64_t address, const uint8_t *data, uint64_t length);
 
 /// \brief Translates a virtual memory address to its corresponding physical memory address.
@@ -564,7 +564,7 @@ CM_API cm_error cm_write_virtual_memory(cm_machine *m, uint64_t address, const u
 /// \param vaddr Virtual address to translate.
 /// \param paddr Receives the physical memory address.
 /// \returns 0 for success, non zero code for error.
-/// \detail The translation is based on the current mapping, as defined in CM_REG_SATP.
+/// \details The translation is based on the current mapping, as defined in CM_REG_SATP.
 CM_API cm_error cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint64_t *paddr);
 
 // ------------------------------------
@@ -623,8 +623,8 @@ CM_API cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint
 
 /// \brief Runs the machine for the given mcycle count and generates a log of accessed pages and proof data.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param mcycle_count Number of mcycles to run
-/// \param log_filename Name of the log file to be generated
+/// \param mcycle_count Number of mcycles to run.
+/// \param log_filename Name of the log file to be generated.
 /// \param break_reason Receives reason for returning (can be NULL). Set to CM_BREAK_REASON_FAILED on failure.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_log_step(cm_machine *m, uint64_t mcycle_count, const char *log_filename,
@@ -663,13 +663,13 @@ CM_API cm_error cm_log_send_cmio_response(cm_machine *m, uint16_t reason, const 
 // ------------------------------------
 
 /// \brief Checks the validity of a step log file.
-/// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param root_hash_before State hash before step
-/// \param log_filename Path to the step log file to be verified
-/// \param mcycle_count Number of mcycles in the step
-/// \param root_hash_after State hash after step
+/// \param m Pointer to a machine object. Can be NULL (for local machines).
+/// \param root_hash_before State hash before step.
+/// \param log_filename Path to the step log file to be verified.
+/// \param mcycle_count Number of mcycles in the step.
+/// \param root_hash_after State hash after step.
 /// \param break_reason Receives reason for returning (can be NULL). Set to CM_BREAK_REASON_FAILED on failure.
-/// \returns 0 for success, non zero code for error
+/// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_verify_step(const cm_machine *m, const cm_hash *root_hash_before, const char *log_filename,
     uint64_t mcycle_count, const cm_hash *root_hash_after, cm_break_reason *break_reason);
 

@@ -197,7 +197,7 @@ echo '
 curl -vv -H "Content-Type: application/json" -d "{\"status\":\"accept\"}" http://127.0.0.1:5004/finish;
 exit 2' > /home/dapp/s.sh;
 chmod +x /home/dapp/s.sh;
-rollup-init bash /home/dapp/s.sh
+rollup-init sh /home/dapp/s.sh
 ]]
 )
 
@@ -208,7 +208,7 @@ echo 'curl -vv -H "Content-Type: application/json" -d "{\"status\":\"accept\"}" 
 killall rollup-http-server;
 sleep 86400' > /home/dapp/s.sh;
 chmod +x /home/dapp/s.sh;
-rollup-init bash /home/dapp/s.sh
+rollup-init sh /home/dapp/s.sh
 ]]
 )
 

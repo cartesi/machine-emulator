@@ -55,9 +55,9 @@ Copyright: Various authors, see below
 Source: https://github.com/cartesi/linux/
 License: GPL-2.0-only
 
-Files: /usr/share/cartesi-machine/tests/data/images/rootfs-tools-v0.15.0.ext2
+Files: /usr/share/cartesi-machine/tests/data/images/rootfs-tools-v0.17.0-test2.ext2
 Copyright: Various authors, see below
-Source: https://github.com/cartesi/machine-emulator-tools/
+Source: https://github.com/cartesi/machine-guest-tools/
 License: Various, see below
 
 License: Apache-2.0

@@ -40,6 +40,7 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include <boost/asio/connect.hpp>
+#include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
@@ -95,7 +96,7 @@ static asio::ip::tcp::endpoint parse_endpoint(const std::string &address) {
         if (port <= 0 || port >= 65536) {
             throw std::runtime_error("invalid port number"s);
         }
-        return {asio::ip::address::from_string(host), static_cast<uint16_t>(port)};
+        return {asio::ip::make_address(host), static_cast<uint16_t>(port)};
     } catch (std::exception &e) {
         throw std::runtime_error("failed to parse endpoint from address \""s + address + "\": "s + e.what());
     }

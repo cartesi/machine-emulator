@@ -700,7 +700,7 @@ void os_unmap_file(unsigned char *host_memory, [[maybe_unused]] uint64_t length)
 }
 
 int64_t os_now_us() {
-    std::chrono::time_point<std::chrono::high_resolution_clock> start{};
+    static std::chrono::time_point<std::chrono::high_resolution_clock> start{};
     static bool started = false;
     if (!started) {
         started = true;

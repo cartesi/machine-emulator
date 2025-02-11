@@ -66,10 +66,10 @@ public:
         return do_read_mip();
     }
 
-    /// \brief Reads CSR mcycle.
+    /// \brief Reads CSR mtime.
     /// \returns Register value.
-    uint64_t read_mcycle() {
-        return do_read_mcycle();
+    uint64_t read_mtime() {
+        return do_read_mtime();
     }
 
     /// \brief Sets the iflags_H flag.
@@ -197,7 +197,7 @@ private:
     virtual void do_set_mip(uint64_t mask) = 0;
     virtual void do_reset_mip(uint64_t mask) = 0;
     virtual uint64_t do_read_mip() = 0;
-    virtual uint64_t do_read_mcycle() = 0;
+    virtual uint64_t do_read_mtime() = 0;
     virtual void do_write_iflags_H(uint64_t val) = 0;
     virtual void do_write_iflags_Y(uint64_t val) = 0;
     virtual void do_write_iflags_X(uint64_t val) = 0;

@@ -46,7 +46,7 @@ static bool clint_read_msip(i_device_state_access *a, uint64_t *val, int log2_si
 
 static bool clint_read_mtime(i_device_state_access *a, uint64_t *val, int log2_size) {
     if (log2_size == 3) {
-        *val = rtc_cycle_to_time(a->read_mcycle());
+        *val = a->read_mtime();
         return true;
     }
     return false;

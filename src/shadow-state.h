@@ -41,6 +41,7 @@ struct PACKED shadow_state {
     uint64_t mimpid;
     uint64_t mcycle;
     uint64_t icycleinstret;
+    uint64_t mtime;
     uint64_t mstatus;
     uint64_t mtvec;
     uint64_t mscratch;

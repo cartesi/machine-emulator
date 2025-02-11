@@ -250,6 +250,9 @@ public:
             case reg::icycleinstret:
                 s.icycleinstret = data;
                 return;
+            case reg::mtime:
+                s.mtime = data;
+                return;
             case reg::mstatus:
                 s.mstatus = data;
                 return;
@@ -504,6 +507,8 @@ public:
                 return s.mcycle;
             case reg::icycleinstret:
                 return s.icycleinstret;
+            case reg::mtime:
+                return s.mtime;
             case reg::mstatus:
                 return s.mstatus;
             case reg::mtvec:
@@ -733,6 +738,8 @@ public:
                 return "mcycle";
             case reg::icycleinstret:
                 return "icycleinstret";
+            case reg::mtime:
+                return "mtime";
             case reg::mstatus:
                 return "mstatus";
             case reg::mtvec:

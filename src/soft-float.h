@@ -123,33 +123,24 @@ template <typename UINT>
 static bool sqrtrem_u(UINT *pr, UINT ah, UINT al) {
     using ULONG = typename make_long_uint<UINT>::type;
     constexpr int UINT_SIZE = sizeof(UINT) * 8;
-    int l = 0;
-    // 2^l >= a
-    if (ah != 0) {
-        l = 2 * UINT_SIZE - clz(ah - 1);
-    } else {
-        // This branch will actually never be taken,
-        // because at this moment sqrtrem_u() is only called by sqrt() which makes sure that ah > 0
-        // LCOV_EXCL_START
-        if (al == 0) {
-            *pr = 0;
-            return false;
-        }
-        l = UINT_SIZE - clz(al - 1);
-        // LCOV_EXCL_STOP
-    }
     const ULONG a = (static_cast<ULONG>(ah) << UINT_SIZE) | al;
-    ULONG u = static_cast<ULONG>(1) << ((l + 1) / 2);
-    ULONG s = 0;
-    // NOLINTBEGIN(cppcoreguidelines-avoid-do-while)
-    do {
-        s = u;
-        // here we divide by two by shifting 1 bit to the right as an optimization
-        u = ((a / s) + s) >> 1;
-    } while (u < s);
-    // NOLINTEND(cppcoreguidelines-avoid-do-while)
-    *pr = static_cast<UINT>(s);
-    return (a - s * s) != 0;
+
+    // Perform "digit‐by‐digit" square root extraction in base 2.
+    // See https://en.wikipedia.org/wiki/Methods_of_computing_square_roots#Binary_numeral_system_(base_2)
+    ULONG res = 0;
+    ULONG rem = a; // Will eventually hold a - res^2
+    for (ULONG bit = static_cast<ULONG>(1) << ((2 * UINT_SIZE) - 2); bit != 0; bit >>= 2) {
+        const ULONG tmp = res + bit;
+        if (rem >= tmp) {
+            rem -= tmp;
+            res = (res >> 1) + bit;
+        } else {
+            res >>= 1;
+        }
+    }
+
+    *pr = static_cast<UINT>(res);
+    return (rem != 0);
 }
 
 /// \class i_sfloat

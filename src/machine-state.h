@@ -87,6 +87,7 @@ struct machine_state {
     // Cartesi-specific state
     uint64_t ilrsc{};         ///< For LR/SC instructions (Cartesi-specific).
     uint64_t icycleinstret{}; ///< CSR icycleinstret (Cartesi-specific).
+    uint64_t mtime{};         ///< Clock time base (Cartesi-specific).
     struct {
         uint64_t X{}; ///< CPU has yielded with automatic reset (Cartesi-specific).
         uint64_t Y{}; ///< CPU has yielded with manual reset (Cartesi-specific).

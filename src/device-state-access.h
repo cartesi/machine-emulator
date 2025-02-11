@@ -36,7 +36,7 @@ namespace cartesi {
 template <typename STATE_ACCESS>
 class device_state_access : public i_device_state_access {
 public:
-    explicit device_state_access(STATE_ACCESS a, uint64_t mcycle) : m_a(a), m_mcycle(mcycle) {
+    explicit device_state_access(STATE_ACCESS a) : m_a(a) {
         static_assert(is_an_i_state_access<STATE_ACCESS>::value, "not an i_state_access");
     }
 
@@ -53,7 +53,6 @@ public:
 
 private:
     STATE_ACCESS m_a;
-    uint64_t m_mcycle;
 
     void do_set_mip(uint64_t mask) override {
         uint64_t mip = m_a.read_mip();
@@ -71,8 +70,8 @@ private:
         return m_a.read_mip();
     }
 
-    uint64_t do_read_mcycle() override {
-        return m_mcycle;
+    uint64_t do_read_mtime() override {
+        return m_a.read_mtime();
     }
 
     void do_write_iflags_H(uint64_t val) override {

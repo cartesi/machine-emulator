@@ -1217,6 +1217,9 @@
           "icycleinstret": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
+          "mtime": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
           "mstatus": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
@@ -1916,6 +1919,7 @@
           "mimpid",
           "mcycle",
           "icycleinstret",
+          "mtime",
           "mstatus",
           "mtvec",
           "mscratch",

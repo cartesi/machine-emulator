@@ -560,6 +560,14 @@ private:
         raw_write_memory(machine_reg_address(machine_reg::icycleinstret), val);
     }
 
+    uint64_t do_read_mtime() {
+        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mtime));
+    }
+
+    void do_write_mtime(uint64_t val) {
+        raw_write_memory(machine_reg_address(machine_reg::mtime), val);
+    }
+
     uint64_t do_read_mvendorid() {
         return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mvendorid));
     }
@@ -849,9 +857,8 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
-        (void) mcycle_max;
-        return {mcycle, false};
+    std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t /*timeout_us*/) {
+        return {0, false};
     }
 
     uint64_t read_pma_istart(uint64_t i) {

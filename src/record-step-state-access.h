@@ -230,6 +230,16 @@ private:
         m_m.get_state().icycleinstret = val;
     }
 
+    uint64_t do_read_mtime() const {
+        touch_page(machine_reg_address(machine_reg::mtime));
+        return m_m.get_state().mtime;
+    }
+
+    void do_write_mtime(uint64_t val) {
+        touch_page(machine_reg_address(machine_reg::mtime));
+        m_m.get_state().mtime = val;
+    }
+
     uint64_t do_read_mvendorid() const { // NOLINT(readability-convert-member-functions-to-static)
         touch_page(machine_reg_address(machine_reg::mvendorid));
         return MVENDORID_INIT;
@@ -591,9 +601,8 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    NO_INLINE std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
-        (void) mcycle_max;
-        return {mcycle, false};
+    NO_INLINE std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t /*timeout_us*/) {
+        return {0, false};
     }
 
     template <typename T>

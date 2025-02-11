@@ -310,6 +310,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
     write_reg(reg::fcsr, m_c.processor.fcsr);
     write_reg(reg::mcycle, m_c.processor.mcycle);
     write_reg(reg::icycleinstret, m_c.processor.icycleinstret);
+    write_reg(reg::mtime, m_c.processor.mtime);
     write_reg(reg::mstatus, m_c.processor.mstatus);
     write_reg(reg::mtvec, m_c.processor.mtvec);
     write_reg(reg::mscratch, m_c.processor.mscratch);
@@ -656,6 +657,7 @@ machine_config machine::get_serialization_config() const {
     c.processor.mimpid = read_reg(reg::mimpid);
     c.processor.mcycle = read_reg(reg::mcycle);
     c.processor.icycleinstret = read_reg(reg::icycleinstret);
+    c.processor.mtime = read_reg(reg::mtime);
     c.processor.mstatus = read_reg(reg::mstatus);
     c.processor.mtvec = read_reg(reg::mtvec);
     c.processor.mscratch = read_reg(reg::mscratch);
@@ -1039,6 +1041,8 @@ uint64_t machine::read_reg(reg r) const {
             return m_s.mcycle;
         case reg::icycleinstret:
             return m_s.icycleinstret;
+        case reg::mtime:
+            return m_s.mtime;
         case reg::mstatus:
             return m_s.mstatus;
         case reg::mtvec:
@@ -1411,6 +1415,9 @@ void machine::write_reg(reg w, uint64_t value) {
             break;
         case reg::icycleinstret:
             m_s.icycleinstret = value;
+            break;
+        case reg::mtime:
+            m_s.mtime = value;
             break;
         case reg::mstatus:
             m_s.mstatus = value;

@@ -155,6 +155,18 @@ public:
         return derived().do_write_icycleinstret(val);
     }
 
+    /// \brief Reads CSR mtime.
+    /// \returns Register value.
+    uint64_t read_mtime() {
+        return derived().do_read_mtime();
+    }
+
+    /// \brief Writes CSR mtime.
+    /// \param val New register value.
+    void write_mtime(uint64_t val) {
+        return derived().do_write_mtime(val);
+    }
+
     /// \brief Reads CSR mvendorid.
     /// \returns Register value.
     uint64_t read_mvendorid() {
@@ -592,15 +604,14 @@ public:
     }
 
     /// \brief Poll for external interrupts.
-    /// \param mcycle Current machine mcycle.
-    /// \param mcycle_max Maximum mcycle to wait for interrupts.
-    /// \returns A pair, the first value is the new machine mcycle advanced by the relative elapsed time while
-    /// polling, the second value is a boolean that is true when the poll is stopped due do an external interrupt
+    /// \param timeout_us Maximum time in microseconds to poll.
+    /// \returns A pair, the first value is the elapsed time in microseconds relative to elapsed time while polling,
+    /// the second value is a boolean that is true when the poll is stopped due do an external interrupt
     /// request.
-    /// \details When mcycle_max is greater than mcycle, this function will sleep until an external interrupt
-    /// is triggered or mcycle_max relative elapsed time is reached.
-    std::pair<uint64_t, bool> poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
-        return derived().do_poll_external_interrupts(mcycle, mcycle_max);
+    /// \details When timeout_us is greater than 0, this function will sleep until an external interrupt
+    /// is triggered or relative elapsed time is reached.
+    std::pair<uint64_t, bool> poll_external_interrupts(uint64_t timeout_us) {
+        return derived().do_poll_external_interrupts(timeout_us);
     }
 
     /// \brief Reads PMA entry at a given index.

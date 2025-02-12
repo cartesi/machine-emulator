@@ -73,7 +73,7 @@ public:
     /// \brief Constructor from machine and uarch states.
     /// \param m Reference to machine state.
     /// \param log Reference to log.
-    explicit uarch_record_state_access(machine &m, access_log &log) : m_m(m), m_log(log) {
+    uarch_record_state_access(machine &m, access_log &log) : m_m(m), m_log(log) {
         ;
     }
 
@@ -165,7 +165,7 @@ private:
     }
 
     template <typename WRITE_UPDATE_F>
-    void log_write_access(uint64_t paddr, int log2_size, WRITE_UPDATE_F write_and_update, const char *text) {
+    void log_write_access(uint64_t paddr, int log2_size, WRITE_UPDATE_F write_and_update, const char *text) const {
         access a;
         log_access_type(a, access_type::write);
         log_access_range(a, paddr, log2_size);
@@ -190,7 +190,7 @@ private:
         log_access(std::move(a), text);
     }
 
-    void log_write_reg_access(machine_reg reg, uint64_t val) {
+    void log_write_reg_access(machine_reg reg, uint64_t val) const {
         log_write_access(
             machine_reg_address(reg), log2_size_v<uint64_t>,
             [this, reg, val]() {
@@ -211,7 +211,7 @@ private:
         return log_read_reg_access(machine_reg_enum(what));
     }
 
-    void do_write_shadow_uarch_state(shadow_uarch_state_what what, uint64_t val) {
+    void do_write_shadow_uarch_state(shadow_uarch_state_what what, uint64_t val) const {
         log_write_reg_access(machine_reg_enum(what), val);
     }
 
@@ -224,7 +224,7 @@ private:
         return log_read_word_access(paddr, machine::get_what_name(paddr));
     }
 
-    void do_write_word(uint64_t paddr, uint64_t val) {
+    void do_write_word(uint64_t paddr, uint64_t val) const {
         log_write_access(
             paddr, log2_size_v<uint64_t>,
             [this, paddr, val]() {
@@ -237,7 +237,7 @@ private:
     }
 
     void do_write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
-        uint64_t pma_index) {
+        uint64_t pma_index) const {
         const auto slot_paddr = shadow_tlb_get_abs_addr(set_index, slot_index);
         log_write_access(
             slot_paddr, SHADOW_TLB_SLOT_LOG2_SIZE,
@@ -259,7 +259,7 @@ private:
             "shadow TLB slot must fill at least an entire Merkle tree word");
     }
 
-    void do_reset_uarch() {
+    void do_reset_uarch() const {
         //??D I'd like to add an static_assert or some other guard mechanism to
         // guarantee that uarch.ram and uarch.shadow are alone in the entire
         // span of their common Merkle tree parent node
@@ -276,11 +276,11 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_putchar(uint8_t c) {
+    void do_putchar(uint8_t c) const {
         os_putchar(c);
     }
 
-    void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) {
+    void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {
         // Forward to machine and no need to log
         m_m.mark_dirty_page(paddr, pma_index);
     }
@@ -295,15 +295,15 @@ private:
     // -----
     friend i_accept_scoped_notes<uarch_record_state_access>;
 
-    void do_push_begin_bracket(const char *text) {
+    void do_push_begin_bracket(const char *text) const {
         m_log.push_begin_bracket(text);
     }
 
-    void do_push_end_bracket(const char *text) {
+    void do_push_end_bracket(const char *text) const {
         m_log.push_end_bracket(text);
     }
 
-    auto do_make_scoped_note(const char *text) {
+    auto do_make_scoped_note(const char *text) const {
         return scoped_note{*this, text};
     }
 

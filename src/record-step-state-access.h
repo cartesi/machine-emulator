@@ -191,12 +191,12 @@ private:
         return m_m.read_reg(reg);
     }
 
-    void log_write_reg(machine_reg reg, uint64_t val) {
+    void log_write_reg(machine_reg reg, uint64_t val) const {
         touch_page(machine_reg_address(reg));
         m_m.write_reg(reg, val);
     }
 
-    uint64_t log_read_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) {
+    uint64_t log_read_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) const {
         touch_page(shadow_tlb_get_abs_addr(set_index, slot_index, what));
         return m_m.read_shadow_tlb(set_index, slot_index, what);
     }
@@ -206,11 +206,11 @@ private:
     // -----
     friend i_prefer_shadow_state<record_step_state_access>;
 
-    uint64_t do_read_shadow_state(shadow_state_what what) {
+    uint64_t do_read_shadow_state(shadow_state_what what) const {
         return log_read_reg(machine_reg_enum(what));
     }
 
-    void do_write_shadow_state(shadow_state_what what, uint64_t val) {
+    void do_write_shadow_state(shadow_state_what what, uint64_t val) const {
         log_write_reg(machine_reg_enum(what), val);
     }
 
@@ -228,14 +228,14 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
+    bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) const {
         (void) paddr;
         (void) data;
         (void) length;
         throw std::runtime_error("unexpected call to record_step_state_access::write_memory");
     }
 
-    pma_entry &do_read_pma_entry(uint64_t index) {
+    pma_entry &do_read_pma_entry(uint64_t index) const {
         assert(index < PMA_MAX);
         // replay_step_state_access reconstructs a mock_pma_entry from the
         // corresponding istart and ilength fields in the shadow pmas
@@ -247,30 +247,30 @@ private:
     }
 
     template <typename T, typename A>
-    void do_read_memory_word(host_addr haddr, uint64_t pma_index, T *pval) {
+    void do_read_memory_word(host_addr haddr, uint64_t pma_index, T *pval) const {
         touch_page(m_m.get_paddr(haddr, pma_index));
         *pval = aliased_aligned_read<T, A>(haddr);
     }
 
     template <typename T, typename A>
-    void do_write_memory_word(host_addr haddr, uint64_t pma_index, T val) {
+    void do_write_memory_word(host_addr haddr, uint64_t pma_index, T val) const {
         touch_page(m_m.get_paddr(haddr, pma_index));
         aliased_aligned_write<T, A>(haddr, val);
     }
 
     template <TLB_set_index SET>
-    uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) {
+    uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) const {
         return log_read_tlb(SET, slot_index, shadow_tlb_what::vaddr_page);
     }
 
     template <TLB_set_index SET>
-    uint64_t do_read_tlb_pma_index(uint64_t slot_index) {
+    uint64_t do_read_tlb_pma_index(uint64_t slot_index) const {
         return log_read_tlb(SET, slot_index, shadow_tlb_what::pma_index);
     }
 
     //??D This is still a bit too complicated for my taste
     template <TLB_set_index SET>
-    host_addr do_read_tlb_vp_offset(uint64_t slot_index) {
+    host_addr do_read_tlb_vp_offset(uint64_t slot_index) const {
         // During initialization, replay_step_state_access translates all vp_offset to corresponding vh_offset
         // At deinitialization, it translates them back
         // To do that, it needs the corresponding paddr_page = vaddr_page + vp_offset, and page data itself
@@ -294,7 +294,7 @@ private:
 
     //??D This is still a bit too complicated for my taste
     template <TLB_set_index SET>
-    void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) {
+    void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) const {
         // During initialization, replay_step_state_access translates all vp_offset to corresponding vh_offset
         // At deinitialization, it translates them back
         // To do that, it needs the corresponding paddr_page = vaddr_page + vp_offset, and page data itself
@@ -320,12 +320,12 @@ private:
         return m_m.get_host_addr(paddr, pma_index);
     }
 
-    void do_mark_dirty_page(host_addr haddr, uint64_t pma_index) {
+    void do_mark_dirty_page(host_addr haddr, uint64_t pma_index) const {
         // this is a noop in replay_step_state_access, so we do nothing else
         m_m.mark_dirty_page(haddr, pma_index);
     }
 
-    void do_putchar(uint8_t c) { // NOLINT(readability-convert-member-functions-to-static)
+    void do_putchar(uint8_t c) const { // NOLINT(readability-convert-member-functions-to-static)
         os_putchar(c);
     }
 

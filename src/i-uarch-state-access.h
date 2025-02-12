@@ -27,7 +27,7 @@
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
 #define DEFINE_USA_READ(REG)                                                                                           \
-    uint64_t read_##REG() {                                                                                            \
+    uint64_t read_##REG() const {                                                                                      \
         if constexpr (!is_an_i_prefer_shadow_uarch_state_v<DERIVED>) {                                                 \
             const auto val = derived().do_read_##REG();                                                                \
             DUSA_PRINTF("%s::read_" #REG "() = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), val, val);                   \
@@ -38,7 +38,7 @@
     }
 
 #define DEFINE_USA_WRITE(REG)                                                                                          \
-    void write_##REG(uint64_t val) {                                                                                   \
+    void write_##REG(uint64_t val) const {                                                                             \
         if constexpr (!is_an_i_prefer_shadow_uarch_state_v<DERIVED>) {                                                 \
             derived().do_write_##REG(val);                                                                             \
             DUSA_PRINTF("%s::write_" #REG "(%" PRIu64 "(0x%" PRIx64 "))\n", get_name(), val, val);                     \
@@ -64,14 +64,14 @@ class i_uarch_state_access { // CRTP
         return *static_cast<const DERIVED *>(this);
     }
 
-    uint64_t prefer_read_shadow_uarch_state(shadow_uarch_state_what what) {
+    uint64_t prefer_read_shadow_uarch_state(shadow_uarch_state_what what) const {
         const auto val = derived().read_shadow_uarch_state(what);
         [[maybe_unused]] const auto *const what_name = shadow_uarch_state_get_what_name(what);
         DUSA_PRINTF("%s::read_shadow_uarch_state(%s) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), what_name, val, val);
         return val;
     }
 
-    void prefer_write_shadow_uarch_state(shadow_uarch_state_what what, uint64_t val) {
+    void prefer_write_shadow_uarch_state(shadow_uarch_state_what what, uint64_t val) const {
         derived().write_shadow_uarch_state(what, val);
         [[maybe_unused]] const auto *const what_name = shadow_uarch_state_get_what_name(what);
         DUSA_PRINTF("%s::write_shadow_uarch_state(%s, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), what_name, val, val);
@@ -86,7 +86,7 @@ public:
 #endif
     }
 
-    uint64_t read_uarch_x(int i) {
+    uint64_t read_uarch_x(int i) const {
         if constexpr (!is_an_i_prefer_shadow_uarch_state_v<DERIVED>) {
             const auto val = derived().do_read_uarch_x(i);
             DUSA_PRINTF("%s::read_uarch_x(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), i, val, val);
@@ -96,7 +96,7 @@ public:
         }
     }
 
-    void write_uarch_x(int i, uint64_t val) {
+    void write_uarch_x(int i, uint64_t val) const {
         if constexpr (!is_an_i_prefer_shadow_uarch_state_v<DERIVED>) {
             derived().do_write_uarch_x(i, val);
             DUSA_PRINTF("%s::write_uarch_x(%d, %" PRIu64 ")\n", get_name(), i, val);
@@ -115,34 +115,34 @@ public:
     DEFINE_USA_WRITE(uarch_pc)
     // NOLINTEND(cppcoreguidelines-macro-usage)
 
-    uint64_t read_word(uint64_t paddr) {
+    uint64_t read_word(uint64_t paddr) const {
         const auto val = derived().do_read_word(paddr);
         DUSA_PRINTF("%s::read_word(phys_addr{0x%" PRIx64 "}) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), paddr, val,
             val);
         return val;
     }
 
-    void write_word(uint64_t paddr, uint64_t val) {
+    void write_word(uint64_t paddr, uint64_t val) const {
         derived().do_write_word(paddr, val);
         DUSA_PRINTF("%s::write_word(phys_addr{0x%" PRIx64 "}, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), paddr, val,
             val);
     }
 
     /// \brief Resets uarch to pristine state
-    void reset_uarch() {
+    void reset_uarch() const {
         return derived().do_reset_uarch();
     }
 
-    void putchar(uint8_t c) {
+    void putchar(uint8_t c) const {
         derived().do_putchar(c);
     }
 
-    void mark_dirty_page(uint64_t paddr, uint64_t pma_index) {
+    void mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {
         return derived().do_mark_dirty_page(paddr, pma_index);
     }
 
     void write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
-        uint64_t pma_index) {
+        uint64_t pma_index) const {
         derived().do_write_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
     }
 

@@ -50,7 +50,7 @@ using i_state_access_fast_addr_t = typename i_state_access_fast_addr<STATE_ACCES
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
 #define DEFINE_SA_READ(REG)                                                                                            \
-    uint64_t read_##REG() {                                                                                            \
+    uint64_t read_##REG() const {                                                                                      \
         if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {                                                       \
             const auto val = derived().do_read_##REG();                                                                \
             DSA_PRINTF("%s::read_" #REG "() = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), val, val);                    \
@@ -61,7 +61,7 @@ using i_state_access_fast_addr_t = typename i_state_access_fast_addr<STATE_ACCES
     }
 
 #define DEFINE_SA_WRITE(REG)                                                                                           \
-    void write_##REG(uint64_t val) {                                                                                   \
+    void write_##REG(uint64_t val) const {                                                                             \
         if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {                                                       \
             derived().do_write_##REG(val);                                                                             \
             DSA_PRINTF("%s::write_" #REG "(%" PRIu64 "(0x%" PRIx64 "))\n", get_name(), val, val);                      \
@@ -107,14 +107,14 @@ class i_state_access { // CRTP
         return *static_cast<const DERIVED *>(this);
     }
 
-    uint64_t prefer_read_shadow_state(shadow_state_what what) {
+    uint64_t prefer_read_shadow_state(shadow_state_what what) const {
         const auto val = derived().read_shadow_state(what);
         [[maybe_unused]] const auto *const what_name = shadow_state_get_what_name(what);
         DSA_PRINTF("%s::read_shadow_state(%s) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), what_name, val, val);
         return val;
     }
 
-    void prefer_write_shadow_state(shadow_state_what what, uint64_t val) {
+    void prefer_write_shadow_state(shadow_state_what what, uint64_t val) const {
         derived().write_shadow_state(what, val);
         [[maybe_unused]] const auto *const what_name = shadow_state_get_what_name(what);
         DSA_PRINTF("%s::write_shadow_state(%s, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), what_name, val, val);
@@ -135,7 +135,7 @@ public:
     /// \brief Reads from general-purpose register.
     /// \param i Register index.
     /// \returns Register value.
-    uint64_t read_x(int i) {
+    uint64_t read_x(int i) const {
         if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {
             const auto val = derived().do_read_x(i);
             DSA_PRINTF("%s::read_x(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), i, val, val);
@@ -150,7 +150,7 @@ public:
     /// \param val New register value.
     /// \details Writes to register zero *break* the machine.
     /// There is an assertion to catch this, but NDEBUG will let the value pass through.
-    void write_x(int i, uint64_t val) {
+    void write_x(int i, uint64_t val) const {
         if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {
             derived().do_write_x(i, val);
             DSA_PRINTF("%s::write_x(%d, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), i, val, val);
@@ -162,7 +162,7 @@ public:
     /// \brief Reads from floating-point register.
     /// \param i Register index.
     /// \returns Register value.
-    uint64_t read_f(int i) {
+    uint64_t read_f(int i) const {
         if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {
             const auto val = derived().do_read_f(i);
             DSA_PRINTF("%s::read_f(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), i, val, val);
@@ -175,7 +175,7 @@ public:
     /// \brief Writes register to floating-point register.
     /// \param i Register index.
     /// \param val New register value.
-    void write_f(int i, uint64_t val) {
+    void write_f(int i, uint64_t val) const {
         if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {
             derived().do_write_f(i, val);
             DSA_PRINTF("%s::write_f(%d, %" PRIu64 "(%" PRIx64 "))\n", get_name(), i, val, val);
@@ -274,7 +274,7 @@ public:
 
     /// \brief Reads PMA entry at a given index.
     /// \param index Index of PMA
-    pma_entry &read_pma_entry(uint64_t index) {
+    pma_entry &read_pma_entry(uint64_t index) const {
         auto &pma = derived().do_read_pma_entry(index);
         DSA_PRINTF("%s::read_pma_entry(%" PRIu64 ") = {%s, 0x%" PRIx64 ", 0x%" PRIx64 "}\n", get_name(), index,
             pma_get_DID_name(pma.get_istart_DID()), pma.get_start(), pma.get_length());
@@ -300,7 +300,7 @@ public:
     /// \returns True if PMA was found and memory fully read, false otherwise.
     /// \details The entire chunk of data must fit inside the same memory
     /// PMA range, otherwise it fails. The search for the PMA range is implicit, and not logged.
-    bool read_memory(uint64_t paddr, unsigned char *data, uint64_t length) {
+    bool read_memory(uint64_t paddr, unsigned char *data, uint64_t length) const {
         return derived().do_read_memory(paddr, data, length);
     }
 
@@ -311,7 +311,7 @@ public:
     /// \returns True if PMA was found and memory fully written, false otherwise.
     /// \details The entire chunk of data must fit inside the same memory
     /// PMA range, otherwise it fails. The search for the PMA range is implicit, and not logged.
-    bool write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
+    bool write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) const {
         return derived().do_write_memory(paddr, data, length);
     }
 
@@ -321,7 +321,7 @@ public:
     /// \param data_length Length of data buffer.
     /// \param write_length_log2_size Log2 size of the total write length.
     void write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
-        int write_length_log2_size) {
+        int write_length_log2_size) const {
         derived().do_write_memory_with_padding(paddr, data, data_length, write_length_log2_size);
     }
 
@@ -334,7 +334,7 @@ public:
     /// \warning T must not cross page boundary starting from \p faddr.
     /// \warning T (when A is smaller) may or may not cross a Merkle tree word boundary starting from \p faddr!
     template <typename T, typename A = T>
-    void read_memory_word(fast_addr faddr, uint64_t pma_index, T *pval) {
+    void read_memory_word(fast_addr faddr, uint64_t pma_index, T *pval) const {
         static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
         derived().template do_read_memory_word<T, A>(faddr, pma_index, pval);
         [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
@@ -351,7 +351,7 @@ public:
     /// \warning T must not cross page boundary starting from \p faddr.
     /// \warning T (when A is smaller) may or may not cross a Merkle tree word boundary starting from \p faddr!
     template <typename T, typename A = T>
-    void write_memory_word(fast_addr faddr, uint64_t pma_index, T val) {
+    void write_memory_word(fast_addr faddr, uint64_t pma_index, T val) const {
         static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
         derived().template do_write_memory_word<T, A>(faddr, pma_index, val);
         [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
@@ -365,7 +365,7 @@ public:
     /// \param slot_index Slot index
     /// \returns Value in slot.
     template <TLB_set_index SET>
-    uint64_t read_tlb_vaddr_page(uint64_t slot_index) {
+    uint64_t read_tlb_vaddr_page(uint64_t slot_index) const {
         const auto val = derived().template do_read_tlb_vaddr_page<SET>(slot_index);
         DSA_PRINTF("%s::read_tlb_vaddr_page<%" PRIu64 ">(%" PRIu64 ") = 0x%" PRIx64 "\n", get_name(), SET, slot_index,
             val);
@@ -377,7 +377,7 @@ public:
     /// \param slot_index Slot index
     /// \returns Value in slot.
     template <TLB_set_index SET>
-    fast_addr read_tlb_vp_offset(uint64_t slot_index) {
+    fast_addr read_tlb_vp_offset(uint64_t slot_index) const {
         [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
         const auto val = derived().template do_read_tlb_vp_offset<SET>(slot_index);
         DSA_PRINTF("%s::read_tlb_vp_offset<%" PRIu64 ">(%" PRIu64 ") = %s{0x%" PRIx64 "}\n", get_name(), SET,
@@ -390,7 +390,7 @@ public:
     /// \param slot_index Slot index
     /// \returns Value in slot.
     template <TLB_set_index SET>
-    uint64_t read_tlb_pma_index(uint64_t slot_index) {
+    uint64_t read_tlb_pma_index(uint64_t slot_index) const {
         const auto val = derived().template do_read_tlb_pma_index<SET>(slot_index);
         DSA_PRINTF("%s::read_tlb_pma_index<%" PRIu64 ">(%" PRIu64 ") = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), SET,
             slot_index, val, val);
@@ -406,7 +406,7 @@ public:
     /// \detail Writes to the TLB must be modify all fields atomically to prevent an inconsistent state.
     /// This simplifies all state access implementations.
     template <TLB_set_index SET>
-    void write_tlb(uint64_t slot_index, uint64_t vaddr_page, fast_addr vp_offset, uint64_t pma_index) {
+    void write_tlb(uint64_t slot_index, uint64_t vaddr_page, fast_addr vp_offset, uint64_t pma_index) const {
         derived().template do_write_tlb<SET>(slot_index, vaddr_page, vp_offset, pma_index);
         [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
         DSA_PRINTF("%s::write_tlb<%" PRIu64 ">(%" PRIu64 ", 0x%" PRIx64 ", %s{0x%" PRIx64 "}, %" PRIu64 ")\n",
@@ -421,13 +421,13 @@ public:
     /// the Merkle tree only considers the pages that are currently in the write TLB and those that
     /// have been marked dirty. When a page leaves the write TLB, it is marked dirty.
     /// If the state belongs to a host machine, then this call MUST be forwarded to machine::mark_dirty_page();
-    void mark_dirty_page(fast_addr faddr, uint64_t pma_index) {
+    void mark_dirty_page(fast_addr faddr, uint64_t pma_index) const {
         derived().do_mark_dirty_page(faddr, pma_index);
     }
 
     /// \brief Writes a character to the console
     /// \param c Character to output
-    void putchar(uint8_t c) {
+    void putchar(uint8_t c) const {
         derived().do_putchar(c);
     }
 

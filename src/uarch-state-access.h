@@ -52,17 +52,6 @@ public:
         m_uram_ph_offset = haddr - paddr;
     }
 
-    /// \brief No copy constructor
-    uarch_state_access(const uarch_state_access &) = delete;
-    /// \brief No copy assignment
-    uarch_state_access &operator=(const uarch_state_access &) = delete;
-    /// \brief No move constructor
-    uarch_state_access(uarch_state_access &&) = delete;
-    /// \brief No move assignment
-    uarch_state_access &operator=(uarch_state_access &&) = delete;
-    /// \brief Default destructor
-    ~uarch_state_access() = default;
-
 private:
     // -----
     // i_uarch_state_access interface implementation
@@ -73,7 +62,7 @@ private:
         return m_m.get_uarch_state().x[i];
     }
 
-    void do_write_uarch_x(int i, uint64_t val) {
+    void do_write_uarch_x(int i, uint64_t val) const {
         assert(i != 0);
         m_m.get_uarch_state().x[i] = val;
     }
@@ -82,7 +71,7 @@ private:
         return m_m.get_uarch_state().pc;
     }
 
-    void do_write_uarch_pc(uint64_t val) {
+    void do_write_uarch_pc(uint64_t val) const {
         m_m.get_uarch_state().pc = val;
     }
 
@@ -90,7 +79,7 @@ private:
         return m_m.get_uarch_state().cycle;
     }
 
-    void do_write_uarch_cycle(uint64_t val) {
+    void do_write_uarch_cycle(uint64_t val) const {
         m_m.get_uarch_state().cycle = val;
     }
 
@@ -98,11 +87,11 @@ private:
         return m_m.get_uarch_state().halt_flag;
     }
 
-    void do_write_uarch_halt_flag(uint64_t v) {
+    void do_write_uarch_halt_flag(uint64_t v) const {
         m_m.get_uarch_state().halt_flag = v;
     }
 
-    uint64_t do_read_word(uint64_t paddr) {
+    uint64_t do_read_word(uint64_t paddr) const {
         if ((paddr & (sizeof(uint64_t) - 1)) != 0) {
             throw std::runtime_error("misaligned read from uarch");
         }
@@ -116,7 +105,7 @@ private:
         return m_m.read_word(paddr);
     }
 
-    void do_write_word(uint64_t paddr, uint64_t val) {
+    void do_write_word(uint64_t paddr, uint64_t val) const {
         if ((paddr & (sizeof(uint64_t) - 1)) != 0) {
             throw std::runtime_error("misaligned read from uarch");
         }
@@ -132,23 +121,23 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_putchar(uint8_t c) {
+    void do_putchar(uint8_t c) const {
         os_putchar(c);
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) {
+    void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {
         // Forward to machine
         m_m.mark_dirty_page(paddr, pma_index);
     }
 
     void do_write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
-        uint64_t pma_index) {
+        uint64_t pma_index) const {
         // Forward to machine
         m_m.write_shadow_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
     }
 
-    void do_reset_uarch() {
+    void do_reset_uarch() const {
         // Forward to machine
         m_m.reset_uarch();
     }

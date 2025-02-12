@@ -131,7 +131,7 @@ private:
     /// \param log2_size Log2 of access size.
     /// \param text Textual description of the access.
     /// \returns Value read.
-    uint64_t check_read(uint64_t paligned, const char *text) {
+    uint64_t check_read(uint64_t paligned, const char *text) const {
         static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size_v<uint64_t>,
             "Merkle tree word size must be at least as large as a machine word");
         if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
@@ -187,7 +187,7 @@ private:
     /// aligned to a 64-bit word.
     /// \param word Word value to write.
     /// \param text Textual description of the access.
-    void check_write(uint64_t paligned, uint64_t word, const char *text) {
+    void check_write(uint64_t paligned, uint64_t word, const char *text) const {
         static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size_v<uint64_t>,
             "Merkle tree word size must be at least as large as a machine word");
         if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
@@ -273,22 +273,20 @@ private:
         m_context.next_access++;
     }
 
-    void do_push_bracket(bracket_type & /*type*/, const char * /*text*/) {}
-
-    void do_write_iflags_Y(uint64_t val) {
+    void do_write_iflags_Y(uint64_t val) const {
         check_write(machine_reg_address(machine_reg::iflags_Y), val, "iflags.Y");
     }
 
-    uint64_t do_read_iflags_Y() {
+    uint64_t do_read_iflags_Y() const {
         return check_read(machine_reg_address(machine_reg::iflags_Y), "iflags.Y");
     }
 
-    void do_write_htif_fromhost(uint64_t val) {
+    void do_write_htif_fromhost(uint64_t val) const {
         check_write(machine_reg_address(machine_reg::htif_fromhost), val, "htif.fromhost");
     }
 
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
-        int write_length_log2_size) {
+        int write_length_log2_size) const {
         hasher_type hasher{};
         if (data == nullptr) {
             throw std::invalid_argument("data is null");

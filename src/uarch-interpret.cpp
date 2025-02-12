@@ -24,9 +24,9 @@
 namespace cartesi {
 
 // Declaration of explicit instantiation in module uarch-step.cpp
-extern template UArchStepStatus uarch_step(uarch_state_access &a);
+extern template UArchStepStatus uarch_step(const uarch_state_access a);
 
-uarch_interpreter_break_reason uarch_interpret(uarch_state_access &a, uint64_t cycle_end) {
+uarch_interpreter_break_reason uarch_interpret(const uarch_state_access a, uint64_t cycle_end) {
     uint64_t cycle = a.read_uarch_cycle();
     if (cycle_end < cycle) {
         throw std::invalid_argument{"uarch_cycle is past"};

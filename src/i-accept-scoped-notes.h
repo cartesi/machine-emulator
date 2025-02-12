@@ -64,14 +64,14 @@ public:
 
     /// \brief Adds a begin bracket annotation to the log
     /// \param text String with the text for the annotation
-    void push_begin_bracket(const char *text) {
+    void push_begin_bracket(const char *text) const {
         derived().do_push_begin_bracket(text);
         DSN_PRINTF("----> begin %s (%s)\n", text, derived().get_name());
     }
 
     /// \brief Adds an end bracket annotation to the log
     /// \param text String with the text for the annotation
-    void push_end_bracket(const char *text) {
+    void push_end_bracket(const char *text) const {
         derived().do_push_end_bracket(text);
         DSN_PRINTF("<---- end %s (%s)\n", text, derived().get_name());
     }
@@ -79,14 +79,14 @@ public:
     /// \brief Adds annotations to the state, bracketing a scope
     /// \param text String with the text for the annotation
     /// \returns An object that, when constructed and destroyed issues an annonation.
-    auto make_scoped_note(const char *text) {
+    auto make_scoped_note(const char *text) const {
         return derived().do_make_scoped_note(text);
     }
 
 protected:
     // Default implementation for classes that do not use scoped notes
     // (It still will dump the scoped notes when requested)
-    auto do_make_scoped_note([[maybe_unused]] const char *text) {
+    auto do_make_scoped_note([[maybe_unused]] const char *text) const {
 #ifdef DUMP_SCOPED_NOTE
         return scoped_note{*this, text};
 #else
@@ -94,11 +94,11 @@ protected:
 #endif
     }
 
-    void do_push_begin_bracket(const char * /*text*/) {
+    void do_push_begin_bracket(const char * /*text*/) const {
         ;
     }
 
-    void do_push_end_bracket(const char * /*text*/) {
+    void do_push_end_bracket(const char * /*text*/) const {
         ;
     }
 };

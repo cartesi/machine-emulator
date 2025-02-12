@@ -47,18 +47,18 @@ public:
     /// \brief Wait for external interrupts requests.
     /// \param mcycle Current value of mcycle.
     /// \param mcycle_max Maximum mcycle after wait.
-    auto poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
+    auto poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) const {
         return derived().do_poll_external_interrupts(mcycle, mcycle_max);
     }
 
     /// \brief Returns true if soft yield HINT instruction is enabled at runtime
-    bool get_soft_yield() {
+    bool get_soft_yield() const {
         return derived().do_get_soft_yield();
     }
 
     /// \brief Reads a character from the console
     /// \returns Character read if any, -1 otherwise
-    int getchar() {
+    int getchar() const {
         return derived().do_getchar();
     }
 };

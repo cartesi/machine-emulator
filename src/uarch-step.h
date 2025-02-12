@@ -31,7 +31,7 @@ enum class UArchStepStatus : int {
 /// \returns Returns a status code indicating whether and how the microarchitecure was advanced
 /// \details The microarchitecture will not advance if it is at a fixed point
 template <typename STATE_ACCESS>
-UArchStepStatus uarch_step(STATE_ACCESS &a);
+UArchStepStatus uarch_step(STATE_ACCESS a);
 
 } // namespace cartesi
 

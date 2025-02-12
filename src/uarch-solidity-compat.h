@@ -50,57 +50,57 @@ using bytes = const unsigned char *;
 // Wrapperfunctions used to access data from the uarch state accessor
 
 template <typename UarchState>
-static inline uint64 readWord(UarchState &a, uint64 paddr) {
+static inline uint64 readWord(const UarchState a, uint64 paddr) {
     return a.read_word(paddr);
 }
 
 template <typename UarchState>
-static inline void writeWord(UarchState &a, uint64 paddr, uint64 val) {
+static inline void writeWord(const UarchState a, uint64 paddr, uint64 val) {
     a.write_word(paddr, val);
 }
 
 template <typename UarchState>
-static inline uint64 readCycle(UarchState &a) {
+static inline uint64 readCycle(const UarchState a) {
     return a.read_uarch_cycle();
 }
 
 template <typename UarchState>
-static inline void writeCycle(UarchState &a, uint64 val) {
+static inline void writeCycle(const UarchState a, uint64 val) {
     a.write_uarch_cycle(val);
 }
 
 template <typename UarchState>
-static inline uint64 readHaltFlag(UarchState &a) {
+static inline uint64 readHaltFlag(const UarchState a) {
     return a.read_uarch_halt_flag();
 }
 
 template <typename UarchState>
-static inline void writeHaltFlag(UarchState &a, uint64 val) {
+static inline void writeHaltFlag(const UarchState a, uint64 val) {
     a.write_uarch_halt_flag(val);
 }
 
 template <typename UarchState>
-static inline uint64 readPc(UarchState &a) {
+static inline uint64 readPc(const UarchState a) {
     return a.read_uarch_pc();
 }
 
 template <typename UarchState>
-static inline void writePc(UarchState &a, uint64 val) {
+static inline void writePc(const UarchState a, uint64 val) {
     a.write_uarch_pc(val);
 }
 
 template <typename UarchState>
-static inline uint64 readX(UarchState &a, uint8 reg) {
+static inline uint64 readX(const UarchState a, uint8 reg) {
     return a.read_uarch_x(reg);
 }
 
 template <typename UarchState>
-static inline void writeX(UarchState &a, uint8 reg, uint64 val) {
+static inline void writeX(const UarchState a, uint8 reg, uint64 val) {
     a.write_uarch_x(reg, val);
 }
 
 template <typename UarchState>
-static inline void resetState(UarchState &a) {
+static inline void resetState(const UarchState a) {
     a.reset_uarch();
 }
 
@@ -131,17 +131,17 @@ static inline void throwRuntimeError(UarchState & /*a*/, const char *message) {
 }
 
 template <typename UarchState>
-static inline void putCharECALL(UarchState &a, uint8 c) {
+static inline void putCharECALL(const UarchState a, uint8 c) {
     a.putchar(c);
 }
 
 template <typename UarchState>
-static inline void markDirtyPageECALL(UarchState &a, uint64 paddr, uint64 pma_index) {
+static inline void markDirtyPageECALL(const UarchState a, uint64 paddr, uint64 pma_index) {
     a.mark_dirty_page(paddr, pma_index);
 }
 
 template <typename UarchState>
-static inline void writeTlbECALL(UarchState &a, uint64 set_index, uint64 slot_index, uint64 vaddr_page,
+static inline void writeTlbECALL(const UarchState a, uint64 set_index, uint64 slot_index, uint64 vaddr_page,
     uint64 vp_offset, uint64 pma_index) {
     a.write_tlb(static_cast<TLB_set_index>(set_index), slot_index, vaddr_page, vp_offset, pma_index);
 }
@@ -228,7 +228,7 @@ void require([[maybe_unused]] T1 condition, [[maybe_unused]] T2 message) {
 }
 
 template <typename UarchState>
-static auto dumpInsn([[maybe_unused]] UarchState &a, [[maybe_unused]] uint64 pc, [[maybe_unused]] uint32 insn,
+static auto dumpInsn([[maybe_unused]] const UarchState a, [[maybe_unused]] uint64 pc, [[maybe_unused]] uint32 insn,
     [[maybe_unused]] const char *name) {
 #ifdef DUMP_UARCH_INSN
     D_PRINTF("ua %08" PRIx64, pc);

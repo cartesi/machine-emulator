@@ -33,13 +33,13 @@ namespace cartesi {
 // Memory read/write access
 
 template <typename UarchState>
-static inline uint64 readUint64(UarchState &a, uint64 paddr) {
+static inline uint64 readUint64(const UarchState a, uint64 paddr) {
     require((paddr & 7) == 0, "misaligned readUint64 address");
     return readWord(a, paddr);
 }
 
 template <typename UarchState>
-static inline uint32 readUint32(UarchState &a, uint64 paddr) {
+static inline uint32 readUint32(const UarchState a, uint64 paddr) {
     require((paddr & 3) == 0, "misaligned readUint32 address");
     uint64 palign = paddr & ~uint64(7);
     uint32 bitoffset = uint32ShiftLeft(uint32(paddr) & uint32(7), 3);
@@ -48,7 +48,7 @@ static inline uint32 readUint32(UarchState &a, uint64 paddr) {
 }
 
 template <typename UarchState>
-static inline uint16 readUint16(UarchState &a, uint64 paddr) {
+static inline uint16 readUint16(const UarchState a, uint64 paddr) {
     require((paddr & 1) == 0, "misaligned readUint16 address");
     uint64 palign = paddr & ~uint64(7);
     uint32 bitoffset = uint32ShiftLeft(uint32(paddr) & uint32(7), 3);
@@ -57,7 +57,7 @@ static inline uint16 readUint16(UarchState &a, uint64 paddr) {
 }
 
 template <typename UarchState>
-static inline uint8 readUint8(UarchState &a, uint64 paddr) {
+static inline uint8 readUint8(const UarchState a, uint64 paddr) {
     uint64 palign = paddr & ~uint64(7);
     uint32 bitoffset = uint32ShiftLeft(uint32(paddr) & uint32(7), 3);
     uint64 val64 = readUint64(a, palign);
@@ -65,7 +65,7 @@ static inline uint8 readUint8(UarchState &a, uint64 paddr) {
 }
 
 template <typename UarchState>
-static inline void writeUint64(UarchState &a, uint64 paddr, uint64 val) {
+static inline void writeUint64(const UarchState a, uint64 paddr, uint64 val) {
     require((paddr & 7) == 0, "misaligned writeUint64 address");
     writeWord(a, paddr, val);
 }
@@ -84,7 +84,7 @@ static inline uint64 copyBits(uint32 from, uint32 count, uint64 to, uint32 offse
 }
 
 template <typename UarchState>
-static inline void writeUint32(UarchState &a, uint64 paddr, uint32 val) {
+static inline void writeUint32(const UarchState a, uint64 paddr, uint32 val) {
     require((paddr & 3) == 0, "misaligned writeUint32 address");
     uint64 palign = paddr & ~uint64(7);
 
@@ -95,7 +95,7 @@ static inline void writeUint32(UarchState &a, uint64 paddr, uint32 val) {
 }
 
 template <typename UarchState>
-static inline void writeUint16(UarchState &a, uint64 paddr, uint16 val) {
+static inline void writeUint16(const UarchState a, uint64 paddr, uint16 val) {
     require((paddr & 1) == 0, "misaligned writeUint16 address");
     uint64 palign = paddr & ~uint64(7);
     uint32 bitoffset = uint32ShiftLeft(uint32(paddr) & uint32(7), 3);
@@ -105,7 +105,7 @@ static inline void writeUint16(UarchState &a, uint64 paddr, uint16 val) {
 }
 
 template <typename UarchState>
-static inline void writeUint8(UarchState &a, uint64 paddr, uint8 val) {
+static inline void writeUint8(const UarchState a, uint64 paddr, uint8 val) {
     uint64 palign = paddr & ~uint64(7);
     uint32 bitoffset = uint32ShiftLeft(uint32(paddr) & uint32(7), 3);
     uint64 oldval64 = readUint64(a, palign);
@@ -167,18 +167,18 @@ static inline int32 operandSimm12(uint32 insn) {
 // Execute instruction
 
 template <typename UarchState>
-static inline void advancePc(UarchState &a, uint64 pc) {
+static inline void advancePc(const UarchState a, uint64 pc) {
     uint64 newPc = uint64AddUint64(pc, 4);
     return writePc(a, newPc);
 }
 
 template <typename UarchState>
-static inline void branch(UarchState &a, uint64 pc) {
+static inline void branch(const UarchState a, uint64 pc) {
     return writePc(a, pc);
 }
 
 template <typename UarchState>
-static inline void executeLUI(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeLUI(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "lui");
     uint8 rd = operandRd(insn);
     int32 imm = operandImm20(insn);
@@ -189,7 +189,7 @@ static inline void executeLUI(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeAUIPC(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeAUIPC(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "auipc");
     int32 imm = operandImm20(insn);
     uint8 rd = operandRd(insn);
@@ -200,7 +200,7 @@ static inline void executeAUIPC(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeJAL(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeJAL(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "jal");
     int32 imm = operandJimm20(insn);
     uint8 rd = operandRd(insn);
@@ -211,7 +211,7 @@ static inline void executeJAL(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeJALR(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeJALR(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "jalr");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
@@ -224,7 +224,7 @@ static inline void executeJALR(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeBEQ(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeBEQ(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "beq");
     int32 imm = operandSbimm12(insn);
     uint8 rs1 = operandRs1(insn);
@@ -238,7 +238,7 @@ static inline void executeBEQ(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeBNE(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeBNE(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "bne");
     int32 imm = operandSbimm12(insn);
     uint8 rs1 = operandRs1(insn);
@@ -252,7 +252,7 @@ static inline void executeBNE(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeBLT(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeBLT(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "blt");
     int32 imm = operandSbimm12(insn);
     uint8 rs1 = operandRs1(insn);
@@ -266,7 +266,7 @@ static inline void executeBLT(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeBGE(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeBGE(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "bge");
     int32 imm = operandSbimm12(insn);
     uint8 rs1 = operandRs1(insn);
@@ -280,7 +280,7 @@ static inline void executeBGE(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeBLTU(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeBLTU(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "bltu");
     int32 imm = operandSbimm12(insn);
     uint8 rs1 = operandRs1(insn);
@@ -294,7 +294,7 @@ static inline void executeBLTU(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeBGEU(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeBGEU(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "bgeu");
     int32 imm = operandSbimm12(insn);
     uint8 rs1 = operandRs1(insn);
@@ -308,7 +308,7 @@ static inline void executeBGEU(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeLB(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeLB(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "lb");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
@@ -322,7 +322,7 @@ static inline void executeLB(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeLHU(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeLHU(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "lhu");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
@@ -336,7 +336,7 @@ static inline void executeLHU(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeLH(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeLH(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "lh");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
@@ -350,7 +350,7 @@ static inline void executeLH(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeLW(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeLW(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "lw");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
@@ -364,7 +364,7 @@ static inline void executeLW(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeLBU(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeLBU(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "lbu");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
@@ -378,7 +378,7 @@ static inline void executeLBU(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSB(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSB(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sb");
     int32 imm = operandSimm12(insn);
     uint8 rs1 = operandRs1(insn);
@@ -390,7 +390,7 @@ static inline void executeSB(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSH(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSH(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sh");
     int32 imm = operandSimm12(insn);
     uint8 rs1 = operandRs1(insn);
@@ -402,7 +402,7 @@ static inline void executeSH(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSW(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSW(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sw");
     int32 imm = operandSimm12(insn);
     uint8 rs1 = operandRs1(insn);
@@ -414,7 +414,7 @@ static inline void executeSW(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeADDI(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeADDI(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "addi");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
@@ -428,7 +428,7 @@ static inline void executeADDI(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeADDIW(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeADDIW(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "addiw");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
@@ -442,7 +442,7 @@ static inline void executeADDIW(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSLTI(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSLTI(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "slti");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
@@ -459,7 +459,7 @@ static inline void executeSLTI(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSLTIU(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSLTIU(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sltiu");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
@@ -476,7 +476,7 @@ static inline void executeSLTIU(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeXORI(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeXORI(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "xori");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
@@ -489,7 +489,7 @@ static inline void executeXORI(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeORI(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeORI(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "ori");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
@@ -502,7 +502,7 @@ static inline void executeORI(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeANDI(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeANDI(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "andi");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
@@ -515,7 +515,7 @@ static inline void executeANDI(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSLLI(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSLLI(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "slli");
     int32 imm = operandShamt6(insn);
     uint8 rd = operandRd(insn);
@@ -528,7 +528,7 @@ static inline void executeSLLI(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSLLIW(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSLLIW(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "slliw");
     int32 imm = operandShamt5(insn);
     uint8 rd = operandRd(insn);
@@ -541,7 +541,7 @@ static inline void executeSLLIW(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSRLI(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSRLI(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "srli");
     int32 imm = operandShamt6(insn);
     uint8 rd = operandRd(insn);
@@ -554,7 +554,7 @@ static inline void executeSRLI(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSRLW(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSRLW(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "srlw");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -569,7 +569,7 @@ static inline void executeSRLW(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSRLIW(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSRLIW(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "srliw");
     int32 imm = operandShamt5(insn);
     uint8 rd = operandRd(insn);
@@ -583,7 +583,7 @@ static inline void executeSRLIW(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSRAI(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSRAI(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "srai");
     int32 imm = operandShamt6(insn);
     uint8 rd = operandRd(insn);
@@ -596,7 +596,7 @@ static inline void executeSRAI(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSRAIW(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSRAIW(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sraiw");
     int32 imm = operandShamt5(insn);
     uint8 rd = operandRd(insn);
@@ -609,7 +609,7 @@ static inline void executeSRAIW(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeADD(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeADD(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "add");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -623,7 +623,7 @@ static inline void executeADD(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeADDW(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeADDW(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "addw");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -638,7 +638,7 @@ static inline void executeADDW(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSUB(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSUB(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sub");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -652,7 +652,7 @@ static inline void executeSUB(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSUBW(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSUBW(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "subw");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -667,7 +667,7 @@ static inline void executeSUBW(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSLL(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSLL(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sll");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -681,7 +681,7 @@ static inline void executeSLL(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSLLW(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSLLW(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sllw");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -696,7 +696,7 @@ static inline void executeSLLW(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSLT(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSLT(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "slt");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -714,7 +714,7 @@ static inline void executeSLT(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSLTU(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSLTU(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sltu");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -732,7 +732,7 @@ static inline void executeSLTU(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeXOR(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeXOR(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "xor");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -746,7 +746,7 @@ static inline void executeXOR(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSRL(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSRL(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "srl");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -760,7 +760,7 @@ static inline void executeSRL(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSRA(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSRA(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sra");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -774,7 +774,7 @@ static inline void executeSRA(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSRAW(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSRAW(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sraw");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -789,7 +789,7 @@ static inline void executeSRAW(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeOR(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeOR(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "or");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -803,7 +803,7 @@ static inline void executeOR(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeAND(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeAND(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "and");
     uint8 rd = operandRd(insn);
     uint8 rs1 = operandRs1(insn);
@@ -817,13 +817,13 @@ static inline void executeAND(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeFENCE(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeFENCE(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "fence");
     return advancePc(a, pc);
 }
 
 template <typename UarchState>
-static inline void executeLWU(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeLWU(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "lwu");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
@@ -837,7 +837,7 @@ static inline void executeLWU(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeLD(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeLD(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "ld");
     int32 imm = operandImm12(insn);
     uint8 rd = operandRd(insn);
@@ -851,7 +851,7 @@ static inline void executeLD(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeSD(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeSD(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "sd");
     int32 imm = operandSimm12(insn);
     uint8 rs1 = operandRs1(insn);
@@ -863,7 +863,7 @@ static inline void executeSD(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeECALL(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeECALL(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "ecall");
     // ECALL conventions
     // a0--a7 are the same as x10--x17
@@ -899,7 +899,7 @@ static inline void executeECALL(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-static inline void executeEBREAK(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeEBREAK(const UarchState a, uint32 insn, uint64 pc) {
     [[maybe_unused]] auto note = dumpInsn(a, pc, insn, "ebreak");
     throwRuntimeError(a, "uarch aborted");
 }
@@ -930,7 +930,7 @@ static inline bool insnMatchOpcodeFunct3Funct7Sr1(uint32 insn, uint32 opcode, ui
 
 // Decode and execute one instruction
 template <typename UarchState>
-static inline void executeInsn(UarchState &a, uint32 insn, uint64 pc) {
+static inline void executeInsn(const UarchState a, uint32 insn, uint64 pc) {
     if (insnMatchOpcodeFunct3(insn, 0x13, 0x0)) {
         return executeADDI(a, insn, pc);
     }
@@ -1091,7 +1091,7 @@ static inline void executeInsn(UarchState &a, uint32 insn, uint64 pc) {
 }
 
 template <typename UarchState>
-UArchStepStatus uarch_step(UarchState &a) {
+UArchStepStatus uarch_step(const UarchState a) {
     // This must be the first read in order to match the first log access in machine::verify_step_uarch
     uint64 cycle = readCycle(a);
     // do not advance if cycle will overflow
@@ -1112,13 +1112,13 @@ UArchStepStatus uarch_step(UarchState &a) {
 }
 
 // Explicit instantiation for uarch_state_access
-template UArchStepStatus uarch_step(uarch_state_access &a);
+template UArchStepStatus uarch_step(const uarch_state_access a);
 
 // Explicit instantiation for uarch_record_state_access
-template UArchStepStatus uarch_step(uarch_record_state_access &a);
+template UArchStepStatus uarch_step(const uarch_record_state_access a);
 
 // Explicit instantiation for uarch_replay_state_access
-template UArchStepStatus uarch_step(uarch_replay_state_access &a);
+template UArchStepStatus uarch_step(const uarch_replay_state_access a);
 
 } // namespace cartesi
 // NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)

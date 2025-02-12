@@ -68,23 +68,23 @@ public:
     ~machine_uarch_bridge_state_access() = default;
 
 private:
-    uint64_t bridge_read_reg(machine_reg reg) {
+    static uint64_t bridge_read_reg(machine_reg reg) {
         return ua_aliased_aligned_read<uint64_t>(machine_reg_address(reg));
     }
 
-    void bridge_write_reg(machine_reg reg, uint64_t val) {
+    static void bridge_write_reg(machine_reg reg, uint64_t val) {
         ua_aliased_aligned_write<uint64_t>(machine_reg_address(reg), val);
     }
 
-    uint64_t bridge_read_pma_istart(int i) {
+    static uint64_t bridge_read_pma_istart(int i) {
         return ua_aliased_aligned_read<uint64_t>(shadow_pmas_get_pma_abs_addr(i, shadow_pmas_what::istart));
     }
 
-    uint64_t bridge_read_pma_ilength(int i) {
+    static uint64_t bridge_read_pma_ilength(int i) {
         return ua_aliased_aligned_read<uint64_t>(shadow_pmas_get_pma_abs_addr(i, shadow_pmas_what::ilength));
     }
 
-    uint64_t bridge_read_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) {
+    static uint64_t bridge_read_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) {
         return ua_aliased_aligned_read<uint64_t>(shadow_tlb_get_abs_addr(set_index, slot_index, what));
     }
 
@@ -93,11 +93,11 @@ private:
     // -----
     friend i_prefer_shadow_state<machine_uarch_bridge_state_access>;
 
-    uint64_t do_read_shadow_state(shadow_state_what what) {
+    uint64_t do_read_shadow_state(shadow_state_what what) const {
         return bridge_read_reg(machine_reg_enum(what));
     }
 
-    void do_write_shadow_state(shadow_state_what what, uint64_t val) {
+    void do_write_shadow_state(shadow_state_what what, uint64_t val) const {
         bridge_write_reg(machine_reg_enum(what), val);
     }
 
@@ -107,28 +107,28 @@ private:
     friend i_state_access<machine_uarch_bridge_state_access>;
 
     template <typename T, typename A>
-    void do_read_memory_word(uint64_t paddr, uint64_t /* pma_index */, T *pval) {
+    void do_read_memory_word(uint64_t paddr, uint64_t /* pma_index */, T *pval) const {
         *pval = ua_aliased_aligned_read<T, A>(paddr);
     }
 
     template <typename T, typename A>
-    void do_write_memory_word(uint64_t paddr, uint64_t /* pma_index */, T val) {
+    void do_write_memory_word(uint64_t paddr, uint64_t /* pma_index */, T val) const {
         ua_aliased_aligned_write<T, A>(paddr, val);
     }
 
-    bool do_read_memory(uint64_t /*paddr*/, unsigned char * /*data*/, uint64_t /*length*/) {
+    bool do_read_memory(uint64_t /*paddr*/, unsigned char * /*data*/, uint64_t /*length*/) const {
         // This is not implemented yet because it's not being used
         abort();
         return false;
     }
 
-    bool do_write_memory(uint64_t /*paddr*/, const unsigned char * /*data*/, uint64_t /*length*/) {
+    bool do_write_memory(uint64_t /*paddr*/, const unsigned char * /*data*/, uint64_t /*length*/) const {
         // This is not implemented yet because it's not being used
         abort();
         return false;
     }
 
-    mock_pma_entry &do_read_pma_entry(uint64_t index) {
+    mock_pma_entry &do_read_pma_entry(uint64_t index) const {
         const uint64_t istart = bridge_read_pma_istart(index);
         const uint64_t ilength = bridge_read_pma_ilength(index);
         // NOLINTNEXTLINE(bugprone-narrowing-conversions)
@@ -145,30 +145,30 @@ private:
     }
 
     template <TLB_set_index SET>
-    uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) {
+    uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) const {
         return bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::vaddr_page);
     }
 
     template <TLB_set_index SET>
-    uint64_t do_read_tlb_vp_offset(uint64_t slot_index) {
+    uint64_t do_read_tlb_vp_offset(uint64_t slot_index) const {
         return bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::vp_offset);
     }
 
     template <TLB_set_index SET>
-    uint64_t do_read_tlb_pma_index(uint64_t slot_index) {
+    uint64_t do_read_tlb_pma_index(uint64_t slot_index) const {
         return bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::pma_index);
     }
 
     template <TLB_set_index SET>
-    void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset, uint64_t pma_index) {
+    void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset, uint64_t pma_index) const {
         ua_write_tlb_ECALL(SET, slot_index, vaddr_page, vp_offset, pma_index);
     }
 
-    void do_putchar(uint8_t c) {
+    void do_putchar(uint8_t c) const {
         ua_putchar_ECALL(c);
     }
 
-    void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) {
+    void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {
         ua_mark_dirty_page_ECALL(paddr, pma_index);
     }
 

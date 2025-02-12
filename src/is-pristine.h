@@ -28,7 +28,7 @@ namespace cartesi {
 /// \param length Memory length
 /// \details It's instead to be used in situations where length is equal or less than a page size.
 // NOLINTNEXTLINE(clang-diagnostic-unknown-attributes)
-static inline bool FORCE_OPTIMIZE_O3 is_pristine(const unsigned char *data, size_t length) {
+static inline bool is_pristine(const unsigned char *data, size_t length) {
     // This tight for loop has no branches, and is optimized to SIMD instructions in x86_64,
     // making it very fast to check if a given page is pristine.
     unsigned char bits = 0;

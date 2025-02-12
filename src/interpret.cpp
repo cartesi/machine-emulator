@@ -305,11 +305,8 @@ static void dump_regs(STATE_ACCESS &a) {
     const auto pc = a.read_pc();
     const auto iprv = a.read_iprv();
     const auto mstatus = a.read_mstatus();
-    //??D We would need to receive mcycle as an argument in order to have the
-    //??D up-to-date value for it. As it turns out, this would require many, many
-    //??D changes...
-    // const auto mcycle = a.read_mcycle();
-    // const auto icycleinstret = a.read_icycleinstret();
+    const auto mcycle = a.read_mcycle();
+    const auto icycleinstret = a.read_icycleinstret();
     const auto mideleg = a.read_mideleg();
     const auto mie = a.read_mie();
     const auto mip = a.read_mip();
@@ -333,8 +330,8 @@ static void dump_regs(STATE_ACCESS &a) {
     }
     D_PRINTF("prv=%s", prv_get_name(iprv));
     D_PRINTF(" mstatus=" PRIxREG "\n", mstatus);
-    // D_PRINTF(" cycles=" PRIuREG, mcycle);
-    // D_PRINTF(" insns=" PRIuREG "\n", mcycle - icycleinstret);
+    D_PRINTF(" cycles=" PRIuREG, mcycle);
+    D_PRINTF(" insns=" PRIuREG "\n", mcycle - icycleinstret);
     D_PRINTF("mideleg=" PRIxREG, mideleg);
     D_PRINTF(" mie=" PRIxREG, mie);
     D_PRINTF(" mip=" PRIxREG "\n", mip);
@@ -6028,6 +6025,12 @@ static NO_INLINE execute_status interpret_loop(const STATE_ACCESS a, uint64_t mc
 
                 // NOLINTEND
                 // clang-format on
+
+#ifdef DUMP_REGS
+                // Commit machine state
+                a.write_pc(pc);
+                a.write_mcycle(mcycle + 1);
+#endif
 
                 // When execute status is above success, we have to deal with special loop conditions,
                 // this is very unlikely to happen most of the time

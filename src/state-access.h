@@ -86,7 +86,7 @@ private:
         return m_m.get_state().x[i];
     }
 
-    void do_write_x(int i, uint64_t val) {
+    void do_write_x(int i, uint64_t val) const {
         assert(i != 0);
         m_m.get_state().x[i] = val;
     }
@@ -95,7 +95,7 @@ private:
         return m_m.get_state().f[i];
     }
 
-    void do_write_f(int i, uint64_t val) {
+    void do_write_f(int i, uint64_t val) const {
         m_m.get_state().f[i] = val;
     }
 
@@ -103,7 +103,7 @@ private:
         return m_m.get_state().pc;
     }
 
-    void do_write_pc(uint64_t val) {
+    void do_write_pc(uint64_t val) const {
         m_m.get_state().pc = val;
     }
 
@@ -111,7 +111,7 @@ private:
         return m_m.get_state().fcsr;
     }
 
-    void do_write_fcsr(uint64_t val) {
+    void do_write_fcsr(uint64_t val) const {
         m_m.get_state().fcsr = val;
     }
 
@@ -119,7 +119,7 @@ private:
         return m_m.get_state().icycleinstret;
     }
 
-    void do_write_icycleinstret(uint64_t val) {
+    void do_write_icycleinstret(uint64_t val) const {
         m_m.get_state().icycleinstret = val;
     }
 
@@ -139,7 +139,7 @@ private:
         return m_m.get_state().mcycle;
     }
 
-    void do_write_mcycle(uint64_t val) {
+    void do_write_mcycle(uint64_t val) const {
         m_m.get_state().mcycle = val;
     }
 
@@ -147,7 +147,7 @@ private:
         return m_m.get_state().mstatus;
     }
 
-    void do_write_mstatus(uint64_t val) {
+    void do_write_mstatus(uint64_t val) const {
         m_m.get_state().mstatus = val;
     }
 
@@ -155,7 +155,7 @@ private:
         return m_m.get_state().menvcfg;
     }
 
-    void do_write_menvcfg(uint64_t val) {
+    void do_write_menvcfg(uint64_t val) const {
         m_m.get_state().menvcfg = val;
     }
 
@@ -163,7 +163,7 @@ private:
         return m_m.get_state().mtvec;
     }
 
-    void do_write_mtvec(uint64_t val) {
+    void do_write_mtvec(uint64_t val) const {
         m_m.get_state().mtvec = val;
     }
 
@@ -171,7 +171,7 @@ private:
         return m_m.get_state().mscratch;
     }
 
-    void do_write_mscratch(uint64_t val) {
+    void do_write_mscratch(uint64_t val) const {
         m_m.get_state().mscratch = val;
     }
 
@@ -179,7 +179,7 @@ private:
         return m_m.get_state().mepc;
     }
 
-    void do_write_mepc(uint64_t val) {
+    void do_write_mepc(uint64_t val) const {
         m_m.get_state().mepc = val;
     }
 
@@ -187,7 +187,7 @@ private:
         return m_m.get_state().mcause;
     }
 
-    void do_write_mcause(uint64_t val) {
+    void do_write_mcause(uint64_t val) const {
         m_m.get_state().mcause = val;
     }
 
@@ -195,7 +195,7 @@ private:
         return m_m.get_state().mtval;
     }
 
-    void do_write_mtval(uint64_t val) {
+    void do_write_mtval(uint64_t val) const {
         m_m.get_state().mtval = val;
     }
 
@@ -203,7 +203,7 @@ private:
         return m_m.get_state().misa;
     }
 
-    void do_write_misa(uint64_t val) {
+    void do_write_misa(uint64_t val) const {
         m_m.get_state().misa = val;
     }
 
@@ -211,7 +211,7 @@ private:
         return m_m.get_state().mie;
     }
 
-    void do_write_mie(uint64_t val) {
+    void do_write_mie(uint64_t val) const {
         m_m.get_state().mie = val;
     }
 
@@ -219,7 +219,7 @@ private:
         return m_m.get_state().mip;
     }
 
-    void do_write_mip(uint64_t val) {
+    void do_write_mip(uint64_t val) const {
         m_m.get_state().mip = val;
     }
 
@@ -227,7 +227,7 @@ private:
         return m_m.get_state().medeleg;
     }
 
-    void do_write_medeleg(uint64_t val) {
+    void do_write_medeleg(uint64_t val) const {
         m_m.get_state().medeleg = val;
     }
 
@@ -235,7 +235,7 @@ private:
         return m_m.get_state().mideleg;
     }
 
-    void do_write_mideleg(uint64_t val) {
+    void do_write_mideleg(uint64_t val) const {
         m_m.get_state().mideleg = val;
     }
 
@@ -243,7 +243,7 @@ private:
         return m_m.get_state().mcounteren;
     }
 
-    void do_write_mcounteren(uint64_t val) {
+    void do_write_mcounteren(uint64_t val) const {
         m_m.get_state().mcounteren = val;
     }
 
@@ -251,7 +251,7 @@ private:
         return m_m.get_state().senvcfg;
     }
 
-    void do_write_senvcfg(uint64_t val) {
+    void do_write_senvcfg(uint64_t val) const {
         m_m.get_state().senvcfg = val;
     }
 
@@ -259,7 +259,7 @@ private:
         return m_m.get_state().stvec;
     }
 
-    void do_write_stvec(uint64_t val) {
+    void do_write_stvec(uint64_t val) const {
         m_m.get_state().stvec = val;
     }
 
@@ -267,7 +267,7 @@ private:
         return m_m.get_state().sscratch;
     }
 
-    void do_write_sscratch(uint64_t val) {
+    void do_write_sscratch(uint64_t val) const {
         m_m.get_state().sscratch = val;
     }
 
@@ -275,7 +275,7 @@ private:
         return m_m.get_state().sepc;
     }
 
-    void do_write_sepc(uint64_t val) {
+    void do_write_sepc(uint64_t val) const {
         m_m.get_state().sepc = val;
     }
 
@@ -283,7 +283,7 @@ private:
         return m_m.get_state().scause;
     }
 
-    void do_write_scause(uint64_t val) {
+    void do_write_scause(uint64_t val) const {
         m_m.get_state().scause = val;
     }
 
@@ -291,7 +291,7 @@ private:
         return m_m.get_state().stval;
     }
 
-    void do_write_stval(uint64_t val) {
+    void do_write_stval(uint64_t val) const {
         m_m.get_state().stval = val;
     }
 
@@ -299,7 +299,7 @@ private:
         return m_m.get_state().satp;
     }
 
-    void do_write_satp(uint64_t val) {
+    void do_write_satp(uint64_t val) const {
         m_m.get_state().satp = val;
     }
 
@@ -307,7 +307,7 @@ private:
         return m_m.get_state().scounteren;
     }
 
-    void do_write_scounteren(uint64_t val) {
+    void do_write_scounteren(uint64_t val) const {
         m_m.get_state().scounteren = val;
     }
 
@@ -315,7 +315,7 @@ private:
         return m_m.get_state().ilrsc;
     }
 
-    void do_write_ilrsc(uint64_t val) {
+    void do_write_ilrsc(uint64_t val) const {
         m_m.get_state().ilrsc = val;
     }
 
@@ -323,7 +323,7 @@ private:
         return m_m.get_state().iprv;
     }
 
-    void do_write_iprv(uint64_t val) {
+    void do_write_iprv(uint64_t val) const {
         m_m.get_state().iprv = val;
     }
 
@@ -331,7 +331,7 @@ private:
         return m_m.get_state().iflags.X;
     }
 
-    void do_write_iflags_X(uint64_t val) {
+    void do_write_iflags_X(uint64_t val) const {
         m_m.get_state().iflags.X = val;
     }
 
@@ -339,7 +339,7 @@ private:
         return m_m.get_state().iflags.Y;
     }
 
-    void do_write_iflags_Y(uint64_t val) {
+    void do_write_iflags_Y(uint64_t val) const {
         m_m.get_state().iflags.Y = val;
     }
 
@@ -347,7 +347,7 @@ private:
         return m_m.get_state().iflags.H;
     }
 
-    void do_write_iflags_H(uint64_t val) {
+    void do_write_iflags_H(uint64_t val) const {
         m_m.get_state().iflags.H = val;
     }
 
@@ -355,7 +355,7 @@ private:
         return m_m.get_state().iunrep;
     }
 
-    void do_write_iunrep(uint64_t val) {
+    void do_write_iunrep(uint64_t val) const {
         m_m.get_state().iunrep = val;
     }
 
@@ -363,7 +363,7 @@ private:
         return m_m.get_state().clint.mtimecmp;
     }
 
-    void do_write_clint_mtimecmp(uint64_t val) {
+    void do_write_clint_mtimecmp(uint64_t val) const {
         m_m.get_state().clint.mtimecmp = val;
     }
 
@@ -371,7 +371,7 @@ private:
         return m_m.get_state().plic.girqpend;
     }
 
-    void do_write_plic_girqpend(uint64_t val) {
+    void do_write_plic_girqpend(uint64_t val) const {
         m_m.get_state().plic.girqpend = val;
     }
 
@@ -379,7 +379,7 @@ private:
         return m_m.get_state().plic.girqsrvd;
     }
 
-    void do_write_plic_girqsrvd(uint64_t val) {
+    void do_write_plic_girqsrvd(uint64_t val) const {
         m_m.get_state().plic.girqsrvd = val;
     }
 
@@ -387,7 +387,7 @@ private:
         return m_m.get_state().htif.fromhost;
     }
 
-    void do_write_htif_fromhost(uint64_t val) {
+    void do_write_htif_fromhost(uint64_t val) const {
         m_m.get_state().htif.fromhost = val;
     }
 
@@ -395,7 +395,7 @@ private:
         return m_m.get_state().htif.tohost;
     }
 
-    void do_write_htif_tohost(uint64_t val) {
+    void do_write_htif_tohost(uint64_t val) const {
         m_m.get_state().htif.tohost = val;
     }
 
@@ -422,7 +422,7 @@ private:
         }
     }
 
-    bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
+    bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) const {
         //??(edubart): Treating exceptions here is not ideal, we should probably
         // move write_memory() method implementation inside state access later
         try {
@@ -433,14 +433,14 @@ private:
         }
     }
 
-    pma_entry &do_read_pma_entry(uint64_t index) {
+    pma_entry &do_read_pma_entry(uint64_t index) const {
         assert(index < PMA_MAX);
         // NOLINTNEXTLINE(bugprone-narrowing-conversions)
         return m_m.get_state().pmas[static_cast<int>(index)];
     }
 
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
-        int write_length_log2_size) {
+        int write_length_log2_size) const {
         if (data == nullptr) {
             throw std::runtime_error("data is null");
         }
@@ -455,32 +455,32 @@ private:
     }
 
     template <typename T, typename A = T>
-    void do_read_memory_word(host_addr haddr, uint64_t /* pma_index */, T *pval) {
+    void do_read_memory_word(host_addr haddr, uint64_t /* pma_index */, T *pval) const {
         *pval = aliased_aligned_read<T, A>(haddr);
     }
 
     template <typename T, typename A = T>
-    void do_write_memory_word(host_addr haddr, uint64_t /* pma_index */, T val) {
+    void do_write_memory_word(host_addr haddr, uint64_t /* pma_index */, T val) const {
         aliased_aligned_write<T, A>(haddr, val);
     }
 
     template <TLB_set_index SET>
-    uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) {
+    uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) const {
         return m_m.get_state().tlb.hot[SET][slot_index].vaddr_page;
     }
 
     template <TLB_set_index SET>
-    host_addr do_read_tlb_vp_offset(uint64_t slot_index) {
+    host_addr do_read_tlb_vp_offset(uint64_t slot_index) const {
         return m_m.get_state().tlb.hot[SET][slot_index].vh_offset;
     }
 
     template <TLB_set_index SET>
-    uint64_t do_read_tlb_pma_index(uint64_t slot_index) {
+    uint64_t do_read_tlb_pma_index(uint64_t slot_index) const {
         return m_m.get_state().tlb.cold[SET][slot_index].pma_index;
     }
 
     template <TLB_set_index SET>
-    void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) {
+    void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) const {
         m_m.write_tlb(SET, slot_index, vaddr_page, vh_offset, pma_index);
     }
 
@@ -488,12 +488,12 @@ private:
         return m_m.get_host_addr(paddr, pma_index);
     }
 
-    void do_mark_dirty_page(host_addr haddr, uint64_t pma_index) {
+    void do_mark_dirty_page(host_addr haddr, uint64_t pma_index) const {
         m_m.mark_dirty_page(haddr, pma_index);
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_putchar(uint8_t c) {
+    void do_putchar(uint8_t c) const {
         os_putchar(c);
     }
 
@@ -507,16 +507,16 @@ private:
     // -----
     friend i_interactive_state_access<state_access>;
 
-    NO_INLINE auto do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
+    NO_INLINE auto do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) const {
         return m_m.poll_external_interrupts(mcycle, mcycle_max);
     }
 
-    bool do_get_soft_yield() {
+    bool do_get_soft_yield() const {
         return m_m.get_state().soft_yield;
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    int do_getchar() {
+    int do_getchar() const {
         os_poll_tty(0);
         return os_getchar();
     }
@@ -526,15 +526,15 @@ private:
     // -----
     friend i_accept_counters<state_access>;
 
-    void do_increment_counter(const char *name, const char *domain) {
+    void do_increment_counter(const char *name, const char *domain) const {
         m_m.increment_counter(name, domain);
     }
 
-    uint64_t do_read_counter(const char *name, const char *domain) {
+    uint64_t do_read_counter(const char *name, const char *domain) const {
         return m_m.read_counter(name, domain);
     }
 
-    void do_write_counter(uint64_t val, const char *name, const char *domain) {
+    void do_write_counter(uint64_t val, const char *name, const char *domain) const {
         m_m.write_counter(val, name, domain);
     }
 };

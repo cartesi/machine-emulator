@@ -2326,7 +2326,7 @@ access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char 
     get_root_hash(root_hash_before);
     access_log log(log_type);
     // Call send_cmio_response  with the recording state accessor
-    record_send_cmio_state_access a(*this, log);
+    const record_send_cmio_state_access a(*this, log);
     {
         [[maybe_unused]] auto note = a.make_scoped_note("send_cmio_response");
         cartesi::send_cmio_response(a, reason, data, length);
@@ -2393,7 +2393,8 @@ access_log machine::log_reset_uarch(const access_log::type &log_type) {
 void machine::verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
     const hash_type &root_hash_after) {
     // Verify all intermediate state transitions
-    uarch_replay_state_access a(log, root_hash_before);
+    uarch_replay_state_access::context context{log, root_hash_before};
+    uarch_replay_state_access a(context);
     uarch_reset_state(a);
     a.finish();
     // Make sure the access log ends at the same root hash as the state
@@ -2415,7 +2416,7 @@ access_log machine::log_step_uarch(const access_log::type &log_type) {
     get_root_hash(root_hash_before);
     access_log log(log_type);
     // Call interpret with a logged state access object
-    uarch_record_state_access a(*this, log);
+    const uarch_record_state_access a(*this, log);
     {
         [[maybe_unused]] auto note = a.make_scoped_note("step");
         uarch_step(a);
@@ -2433,7 +2434,8 @@ extern template UArchStepStatus uarch_step(uarch_replay_state_access &a);
 void machine::verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
     const hash_type &root_hash_after) {
     // Verify all intermediate state transitions
-    uarch_replay_state_access a(log, root_hash_before);
+    uarch_replay_state_access::context context{log, root_hash_before};
+    uarch_replay_state_access a(context);
     uarch_step(a);
     a.finish();
     // Make sure the access log ends at the same root hash as the state
@@ -2456,7 +2458,7 @@ uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
     if (m_us.ram.get_istart_E()) {
         throw std::runtime_error("microarchitecture RAM is not present");
     }
-    uarch_state_access a(*this);
+    const uarch_state_access a(*this);
     return uarch_interpret(a, uarch_cycle_end);
 }
 

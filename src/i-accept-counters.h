@@ -44,15 +44,15 @@ class i_accept_counters { // CRTP
     }
 
 public:
-    void increment_counter(const char *name, const char *domain = nullptr) {
+    void increment_counter(const char *name, const char *domain = nullptr) const {
         derived().do_increment_counter(name, domain);
     }
 
-    uint64_t read_counter(const char *name, const char *domain = nullptr) {
+    uint64_t read_counter(const char *name, const char *domain = nullptr) const {
         return derived().do_read_counter(name, domain);
     }
 
-    void write_counter(uint64_t val, const char *name, const char *domain = nullptr) {
+    void write_counter(uint64_t val, const char *name, const char *domain = nullptr) const {
         derived().do_write_counter(val, name, domain);
     }
 };

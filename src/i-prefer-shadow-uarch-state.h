@@ -48,11 +48,11 @@ class i_prefer_shadow_uarch_state { // CRTP
     }
 
 public:
-    uint64_t read_shadow_uarch_state(shadow_uarch_state_what what) {
+    uint64_t read_shadow_uarch_state(shadow_uarch_state_what what) const {
         return derived().do_read_shadow_uarch_state(what);
     }
 
-    void write_shadow_uarch_state(shadow_uarch_state_what what, uint64_t val) {
+    void write_shadow_uarch_state(shadow_uarch_state_what what, uint64_t val) const {
         derived().do_write_shadow_uarch_state(what, val);
     }
 };

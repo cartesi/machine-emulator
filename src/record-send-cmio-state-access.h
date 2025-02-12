@@ -119,7 +119,7 @@ private:
     /// \param paligned Physical address of the word in the machine state (Must be aligned to a 64-bit word).
     /// \param val Value to write.
     /// \param text Textual description of the access.
-    void log_before_write(uint64_t paligned, uint64_t val, const char *text) {
+    void log_before_write(uint64_t paligned, uint64_t val, const char *text) const {
         static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size_v<uint64_t>,
             "Merkle tree word size must be at least as large as a machine word");
         if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
@@ -160,7 +160,7 @@ private:
 
     /// \brief Updates the Merkle tree after the modification of a word in the machine state.
     /// \param paligned Physical address in the machine state, aligned to a 64-bit word.
-    void update_after_write(uint64_t paligned) {
+    void update_after_write(uint64_t paligned) const {
         assert((paligned & (sizeof(uint64_t) - 1)) == 0);
         [[maybe_unused]] const bool updated = m_m.update_merkle_tree_page(paligned);
         assert(updated);
@@ -171,14 +171,14 @@ private:
     /// \param dest Reference to value before writing.
     /// \param val Value to write to \p dest.
     /// \param text Textual description of the access.
-    void log_before_write_write_and_update(uint64_t paligned, uint64_t &dest, uint64_t val, const char *text) {
+    void log_before_write_write_and_update(uint64_t paligned, uint64_t &dest, uint64_t val, const char *text) const {
         assert((paligned & (sizeof(uint64_t) - 1)) == 0);
         log_before_write(paligned, val, text);
         dest = val;
         update_after_write(paligned);
     }
 
-    void log_before_write_word_write_and_update(uint64_t paligned, bool &dest, bool val, const char *text) {
+    void log_before_write_word_write_and_update(uint64_t paligned, bool &dest, bool val, const char *text) const {
         auto dest64 = static_cast<uint64_t>(dest);
         log_before_write_write_and_update(paligned, dest64, static_cast<uint64_t>(val), text);
         dest = (dest64 != 0);
@@ -190,7 +190,7 @@ private:
     // -----
     friend i_state_access<record_send_cmio_state_access>;
 
-    void do_write_iflags_Y(uint64_t val) {
+    void do_write_iflags_Y(uint64_t val) const {
         log_before_write_write_and_update(machine_reg_address(machine_reg::iflags_Y), m_m.get_state().iflags.Y, val,
             "iflags.Y");
     }
@@ -200,13 +200,13 @@ private:
         return m_m.get_state().iflags.Y;
     }
 
-    void do_write_htif_fromhost(uint64_t val) {
+    void do_write_htif_fromhost(uint64_t val) const {
         log_before_write_write_and_update(machine_reg_address(machine_reg::htif_fromhost),
             m_m.get_state().htif.fromhost, val, "htif.fromhost");
     }
 
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
-        int write_length_log2_size) {
+        int write_length_log2_size) const {
         if ((paddr & (machine_merkle_tree::get_word_size() - 1)) != 0) {
             throw std::invalid_argument("paddr is not aligned to tree leaf size");
         }
@@ -274,15 +274,15 @@ private:
     // -----
     friend i_accept_scoped_notes<record_send_cmio_state_access>;
 
-    void do_push_begin_bracket(const char *text) {
+    void do_push_begin_bracket(const char *text) const {
         m_log.push_begin_bracket(text);
     }
 
-    void do_push_end_bracket(const char *text) {
+    void do_push_end_bracket(const char *text) const {
         m_log.push_end_bracket(text);
     }
 
-    auto do_make_scoped_note(const char *text) {
+    auto do_make_scoped_note(const char *text) const {
         return scoped_note{*this, text};
     }
 };

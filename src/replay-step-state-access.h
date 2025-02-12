@@ -403,17 +403,17 @@ private:
     //??D we should probably optimize access to the shadow so it doesn't perform a translation every time
     // We can do this by caching the vh_offset trasnslation of the processor shadow page. This is easy if
     // static_assert(sizeof(shadow_state) <= PMA_PAGE_SIZE, "shadow state must fit in single page");
-    void check_write_reg(machine_reg reg, uint64_t val) {
+    void check_write_reg(machine_reg reg, uint64_t val) const {
         const auto haddr = do_get_faddr(machine_reg_address(reg));
         aliased_aligned_write<uint64_t>(haddr, val);
     }
 
-    uint64_t read_pma_istart(uint64_t index) {
+    uint64_t read_pma_istart(uint64_t index) const {
         const auto haddr = do_get_faddr(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::istart));
         return aliased_aligned_read<uint64_t>(haddr);
     }
 
-    uint64_t read_pma_ilength(uint64_t index) {
+    uint64_t read_pma_ilength(uint64_t index) const {
         const auto haddr = do_get_faddr(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::ilength));
         return aliased_aligned_read<uint64_t>(haddr);
     }
@@ -423,11 +423,11 @@ private:
     // -----
     friend i_prefer_shadow_state<replay_step_state_access>;
 
-    uint64_t do_read_shadow_state(shadow_state_what what) {
+    uint64_t do_read_shadow_state(shadow_state_what what) const {
         return check_read_reg(machine_reg_enum(what));
     }
 
-    void do_write_shadow_state(shadow_state_what what, uint64_t val) {
+    void do_write_shadow_state(shadow_state_what what, uint64_t val) const {
         check_write_reg(machine_reg_enum(what), val);
     }
 
@@ -449,7 +449,7 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    bool do_read_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
+    bool do_read_memory(uint64_t paddr, const unsigned char *data, uint64_t length) const {
         (void) paddr;
         (void) data;
         (void) length;
@@ -457,14 +457,14 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
+    bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) const {
         (void) paddr;
         (void) data;
         (void) length;
         return false;
     }
 
-    mock_pma_entry &do_read_pma_entry(uint64_t index) {
+    mock_pma_entry &do_read_pma_entry(uint64_t index) const {
         assert(index < PMA_MAX);
         // record_step_state_access will have recorded the access to istart and
         // ilength in its implementation of read_pma_entry.
@@ -481,54 +481,54 @@ private:
     }
 
     template <typename T, typename A>
-    void do_read_memory_word(host_addr haddr, uint64_t /* pma_index */, T *pval) {
+    void do_read_memory_word(host_addr haddr, uint64_t /* pma_index */, T *pval) const {
         *pval = aliased_aligned_read<T, A>(haddr);
     }
 
     template <typename T, typename A>
-    void do_write_memory_word(host_addr haddr, uint64_t /* pma_index */, T val) {
+    void do_write_memory_word(host_addr haddr, uint64_t /* pma_index */, T val) const {
         aliased_aligned_write<T, A>(haddr, val);
     }
 
     template <typename TYPE>
-    auto check_read_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) {
+    auto check_read_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) const {
         const auto haddr = do_get_faddr(shadow_tlb_get_abs_addr(set_index, slot_index, what));
         return aliased_aligned_read<TYPE>(haddr);
     }
 
     template <TLB_set_index SET>
-    uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) {
+    uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) const {
         return check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::vaddr_page);
     }
 
     template <TLB_set_index SET>
-    host_addr do_read_tlb_vp_offset(uint64_t slot_index) {
+    host_addr do_read_tlb_vp_offset(uint64_t slot_index) const {
         return check_read_tlb<host_addr>(SET, slot_index, shadow_tlb_what::vp_offset);
     }
 
     template <TLB_set_index SET>
-    uint64_t do_read_tlb_pma_index(uint64_t slot_index) {
+    uint64_t do_read_tlb_pma_index(uint64_t slot_index) const {
         return check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::pma_index);
     }
 
     template <typename TYPE>
-    auto check_write_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what, TYPE val) {
+    auto check_write_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what, TYPE val) const {
         const auto haddr = do_get_faddr(shadow_tlb_get_abs_addr(set_index, slot_index, what));
         aliased_aligned_write<TYPE>(haddr, val);
     }
 
     template <TLB_set_index SET>
-    void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) {
+    void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) const {
         check_write_tlb(SET, slot_index, shadow_tlb_what::vaddr_page, vaddr_page);
         check_write_tlb(SET, slot_index, shadow_tlb_what::vp_offset, vh_offset);
         check_write_tlb(SET, slot_index, shadow_tlb_what::pma_index, pma_index);
     }
 
-    void do_putchar(uint8_t /*c*/) { // NOLINT(readability-convert-member-functions-to-static)
-        ;                            // do nothing
+    void do_putchar(uint8_t /*c*/) const { // NOLINT(readability-convert-member-functions-to-static)
+        ;                                  // do nothing
     }
 
-    void do_mark_dirty_page(host_addr /* haddr */, uint64_t /* pma_index */) {
+    void do_mark_dirty_page(host_addr /* haddr */, uint64_t /* pma_index */) const {
         // this is a noop since we have no host machine
     }
 

@@ -70,7 +70,7 @@ int main(int argc, char *argv[]) try {
     }
 
     // Allocate scratch page buffer
-    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
+    auto scratch = make_unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
     if (!scratch) {
         throw std::runtime_error("Could not allocate scratch memory");
     }

@@ -231,7 +231,7 @@ int main(int argc, char *argv[]) {
     // Read from stdin if no input name was given
     auto input_file = unique_file_ptr{stdin};
     if (input_name != nullptr) {
-        input_file = unique_fopen(input_name, "ro", std::nothrow_t{});
+        input_file = make_unique_fopen(input_name, "ro", std::nothrow_t{});
         if (!input_file) {
             error("unable to open input file '%s'\n", input_name);
             return 1;
@@ -240,7 +240,7 @@ int main(int argc, char *argv[]) {
 
     // Allocate buffer for leaf data
     const uint64_t leaf_size = UINT64_C(1) << log2_leaf_size;
-    auto leaf_buf = unique_calloc<unsigned char>(leaf_size, std::nothrow_t{});
+    auto leaf_buf = make_unique_calloc<unsigned char>(leaf_size, std::nothrow_t{});
     if (!leaf_buf) {
         error("unable to allocate leaf buffer\n");
         return 1;

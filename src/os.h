@@ -94,10 +94,10 @@ void os_silence_putchar(bool yes);
 int os_mkdir(const char *path, int mode);
 
 /// \brief Maps a file to memory
-unsigned char *os_map_file(const char *path, uint64_t length, bool shared);
+void *os_map_file(const char *path, uint64_t length, bool shared);
 
 /// \brief Unmaps a file from memory
-void os_unmap_file(unsigned char *host_memory, uint64_t length);
+void os_unmap_file(void *host_memory, uint64_t length);
 
 /// \brief Get time elapsed since its first call with microsecond precision
 int64_t os_now_us();

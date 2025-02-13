@@ -69,7 +69,6 @@ enum PMA_ranges : uint64_t {
 enum PMA_constants : uint64_t {
     PMA_PAGE_SIZE_LOG2 = EXPAND_UINT64_C(PMA_PAGE_SIZE_LOG2_DEF), ///< log<sub>2</sub> of physical memory page size.
     PMA_PAGE_SIZE = (UINT64_C(1) << PMA_PAGE_SIZE_LOG2_DEF),      ///< Physical memory page size.
-    PMA_WORD_SIZE = EXPAND_UINT64_C(PMA_WORD_SIZE_DEF),           ///< Physical memory word size.
     PMA_MAX = EXPAND_UINT64_C(PMA_MAX_DEF)                        ///< Maximum number of PMAs
 };
 

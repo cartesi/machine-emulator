@@ -28,6 +28,7 @@
 
 #include "pma-constants.h"
 #include "pma-driver.h"
+#include "unique-c-ptr.h"
 
 namespace cartesi {
 
@@ -85,10 +86,7 @@ public:
 
     /// \brief Returns context to pass to callbacks.
     void *get_context() const {
-        // Discard qualifier on purpose because the context
-        // is none of our business.
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-        return const_cast<void *>(m_context);
+        return m_context;
     }
 
     /// \brief Returns pointer to driver with callbacks
@@ -105,12 +103,16 @@ public:
 /// \brief Data for memory ranges.
 class pma_memory final {
 
-    uint64_t m_length;            ///< Length of memory range (copy of PMA length field).
-    unsigned char *m_host_memory; ///< Start of associated memory region in host.
-    bool m_mmapped;               ///< True if memory was mapped from a file.
+    using callocd_ptr = unique_calloc_ptr<unsigned char>;
+    using mmapd_ptr = unique_mmap_ptr<unsigned char>;
 
-    /// \brief Close file and/or release memory.
-    void release();
+    std::variant<std::monostate, ///< Before initialization
+        callocd_ptr,             ///< Automatic pointer for calloced memory
+        mmapd_ptr                ///< Automatic pointer for mmapped memory
+        >
+        m_ptr;
+
+    unsigned char *m_host_memory; ///< Start of associated memory region in host.
 
 public:
     /// \brief Mmap'd range data (shared or not).
@@ -148,13 +150,13 @@ public:
     pma_memory &operator=(const pma_memory &other) = delete;
 
     /// \brief Move constructor
-    pma_memory(pma_memory &&other) noexcept;
+    pma_memory(pma_memory &&other) noexcept = default;
 
     /// \brief Move assignment
-    pma_memory &operator=(pma_memory &&other) noexcept;
+    pma_memory &operator=(pma_memory &&other) noexcept = default;
 
-    /// \brief Destructor
-    ~pma_memory();
+    /// \brief Default destructor
+    ~pma_memory() = default;
 
     /// \brief Returns start of associated memory region in host
     unsigned char *get_host_memory() {
@@ -165,15 +167,7 @@ public:
     const unsigned char *get_host_memory() const {
         return m_host_memory;
     }
-
-    /// \brief Returns copy of PMA length field (needed for munmap).
-    uint64_t get_length() const {
-        return m_length;
-    }
 };
-
-/// \brief Data for empty memory ranges (nothing, really)
-struct pma_empty final {};
 
 /// \brief Physical Memory Attribute entry.
 /// \details The target's physical memory layout is described by an
@@ -184,7 +178,7 @@ public:
     struct flags {
         // bool M = std::holds_alternative<pma_memory>(data);
         // bool IO = std::holds_alternative<pma_device>(data);
-        // bool E = std::holds_alternative<pma_empty>(data);
+        // bool E = std::holds_alternative<std::monostate>(data);
         bool R;
         bool W;
         bool X;
@@ -204,9 +198,9 @@ private:
 
     std::vector<uint8_t> m_dirty_page_map; ///< Map of dirty pages.
 
-    std::variant<pma_empty, ///< Data specific to E ranges
-        pma_device,         ///< Data specific to IO ranges
-        pma_memory          ///< Data specific to M ranges
+    std::variant<std::monostate, ///< No data (E ranges)
+        pma_device,              ///< Data specific to IO ranges
+        pma_memory               ///< Data specific to M ranges
         >
         m_data;
 
@@ -233,20 +227,13 @@ public:
         m_index{PMA_MAX},
         m_flags{},
         m_peek{pma_peek_error},
-        m_data{pma_empty{}} {
+        m_data{std::monostate{}} {
         ;
     }
 
     /// \brief Default constructor creates an empty entry spanning an empty range
     /// \param description Informative description of PMA entry for use in error messages
-    explicit pma_entry(std::string description = {}) :
-        m_description{std::move(description)},
-        m_start{0},
-        m_length{0},
-        m_index{PMA_MAX},
-        m_flags{},
-        m_peek{pma_peek_error},
-        m_data{pma_empty{}} {
+    explicit pma_entry(std::string description = "empty") : pma_entry{std::move(description), 0, 0} {
         ;
     }
 
@@ -322,16 +309,6 @@ public:
         return m_peek;
     }
 
-    /// \returns data specific to E ranges
-    const pma_empty &get_empty() const {
-        return std::get<pma_empty>(m_data);
-    }
-
-    /// \returns data specific to E ranges
-    pma_empty &get_empty() {
-        return std::get<pma_empty>(m_data);
-    }
-
     /// \returns data specific to M ranges
     const pma_memory &get_memory() const {
         return std::get<pma_memory>(m_data);
@@ -342,12 +319,12 @@ public:
         return std::get<pma_memory>(m_data);
     }
 
-    /// \returns data specific to IO ranges (cannot throw exceptions).
+    /// \returns data specific to memory ranges (cannot throw exceptions, but will crash if not a memory range).
     pma_memory &get_memory_noexcept() {
         return *std::get_if<pma_memory>(&m_data);
     }
 
-    /// \returns data specific to IO ranges (cannot throw exceptions).
+    /// \returns data specific to memory ranges (cannot throw exceptions, but will crash if not a memory range).
     const pma_memory &get_memory_noexcept() const {
         return *std::get_if<pma_memory>(&m_data);
     }
@@ -362,12 +339,12 @@ public:
         return std::get<pma_device>(m_data);
     }
 
-    /// \returns data specific to IO ranges (cannot throw exceptions).
+    /// \returns data specific to IO ranges (cannot throw exceptions, but will crash if not an IO range).
     const pma_device &get_device_noexcept() const {
         return *std::get_if<pma_device>(&m_data);
     }
 
-    /// \returns data specific to IO ranges (cannot throw exceptions).
+    /// \returns data specific to IO ranges (cannot throw exceptions, but will crash if not an IO range).
     pma_device &get_device_noexcept() {
         return *std::get_if<pma_device>(&m_data);
     }
@@ -399,7 +376,7 @@ public:
 
     /// \brief Tells if PMA is an empty range
     bool get_istart_E() const {
-        return std::holds_alternative<pma_empty>(m_data);
+        return std::holds_alternative<std::monostate>(m_data);
     }
 
     /// \brief Tells if PMA range is readable
@@ -433,15 +410,16 @@ public:
     }
 
     /// \brief Mark a given page as dirty
-    /// \param address_in_range Any address within page in range
-    void mark_dirty_page(uint64_t address_in_range) {
+    /// \param offset_in_range Any offset in range within desired page
+    void mark_dirty_page(uint64_t offset_in_range) {
         if (!m_dirty_page_map.empty()) {
-            auto page_number = address_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
-            auto map_index = page_number >> 3;
+            auto page_index = offset_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
+            auto map_index = page_index >> 3;
             assert(map_index < m_dirty_page_map.size());
-            m_dirty_page_map[map_index] |= (1 << (page_number & 7));
+            m_dirty_page_map[map_index] |= (1 << (page_index & 7));
         }
     }
+
     /// \brief Mark all pages in rage as dirty
     /// \param address Start address
     /// \param size Size of range
@@ -466,25 +444,25 @@ public:
     }
 
     /// \brief Mark a given page as clean
-    /// \param address_in_range Any address within page in range
-    void mark_clean_page(uint64_t address_in_range) {
+    /// \param offset_in_range Any offset in range within desired page
+    void mark_clean_page(uint64_t offset_in_range) {
         if (!m_dirty_page_map.empty()) {
-            auto page_number = address_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
-            auto map_index = page_number >> 3;
+            auto page_index = offset_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
+            auto map_index = page_index >> 3;
             assert(map_index < m_dirty_page_map.size());
-            m_dirty_page_map[map_index] &= ~(1 << (page_number & 7));
+            m_dirty_page_map[map_index] &= ~(1 << (page_index & 7));
         }
     }
 
     /// \brief Checks if a given page is marked dirty
-    /// \param address_in_range Any address within page in range
+    /// \param offset_in_range Any offset in range within desired page
     /// \returns true if dirty, false if clean
-    bool is_page_marked_dirty(uint64_t address_in_range) const {
+    bool is_page_marked_dirty(uint64_t offset_in_range) const {
         if (!m_dirty_page_map.empty()) {
-            auto page_number = address_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
-            auto map_index = page_number >> 3;
+            auto page_index = offset_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
+            auto map_index = page_index >> 3;
             assert(map_index < m_dirty_page_map.size());
-            return (m_dirty_page_map[map_index] & (1 << (page_number & 7))) != 0;
+            return (m_dirty_page_map[map_index] & (1 << (page_index & 7))) != 0;
         }
         return true;
     }
@@ -511,7 +489,7 @@ public:
         return address >= get_start() && get_length() >= length && address - get_start() <= get_length() - length;
     }
 
-    /// \brief  Writes data to pma memory
+    /// \brief Writes data to pma memory
     /// \param paddr Destination address within pma range
     /// \param data Source data
     /// \param size Data size

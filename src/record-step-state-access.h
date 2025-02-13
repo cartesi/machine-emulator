@@ -103,7 +103,7 @@ public:
         // We store the page index, instead of the page address.
         // Scratch area is used by the replay to store page hashes, which change during replay
         // This is to work around the lack of dynamic memory allocation when replaying the log in microarchitectures
-        auto fp = unique_fopen(m_context.filename.c_str(), "wb");
+        auto fp = make_unique_fopen(m_context.filename.c_str(), "wb");
         if (fwrite(&page_count, sizeof(page_count), 1, fp.get()) != 1) {
             throw std::runtime_error("Could not write page count to log file");
         }

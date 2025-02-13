@@ -122,7 +122,7 @@ public:
         if (!validate_and_advance_offset(log_size, 0, sizeof(m_context.page_count), 1, &first_page_offset)) {
             interop_throw_runtime_error("page count past end of step log");
         }
-        memcpy(&m_context.page_count, log_image, sizeof(m_context.page_count));
+        m_context.page_count = aliased_aligned_read<uint64_t, uint8_t>(log_image);
         if (m_context.page_count == 0) {
             interop_throw_runtime_error("page count is zero");
         }
@@ -140,7 +140,7 @@ public:
                 &first_sibling_offset)) {
             interop_throw_runtime_error("sibling count past end of step log");
         }
-        memcpy(&m_context.sibling_count, log_image + sibling_count_offset, sizeof(m_context.sibling_count));
+        m_context.sibling_count = aliased_aligned_read<uint64_t, uint8_t>(log_image + sibling_count_offset);
 
         // set sibling hashes
         if (!validate_and_advance_offset(log_size, first_sibling_offset, sizeof(hash_type), m_context.sibling_count,

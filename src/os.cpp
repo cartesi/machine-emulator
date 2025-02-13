@@ -553,7 +553,7 @@ int os_mkdir(const char *path, [[maybe_unused]] int mode) {
 #endif // HAVE_MKDIR
 }
 
-unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
+void *os_map_file(const char *path, uint64_t length, bool shared) {
     if ((path == nullptr) || *path == '\0') {
         throw std::runtime_error{"image file path must be specified"s};
     }
@@ -585,8 +585,7 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
 
     // Try to map image file to host memory
     const int mflag = shared ? MAP_SHARED : MAP_PRIVATE;
-    auto *host_memory =
-        static_cast<unsigned char *>(mmap(nullptr, length, PROT_READ | PROT_WRITE, mflag, backing_file, 0));
+    void *host_memory = mmap(nullptr, length, PROT_READ | PROT_WRITE, mflag, backing_file, 0);
     if (host_memory == MAP_FAILED) { // NOLINT(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr)
         close(backing_file);
         throw std::system_error{errno, std::generic_category(), "could not map image file '"s + path + "' to memory"s};
@@ -632,7 +631,7 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
     }
 
     DWORD dwDesiredAccess = shared ? FILE_MAP_WRITE : FILE_MAP_COPY;
-    auto *host_memory = static_cast<unsigned char *>(MapViewOfFile(hFileMappingObject, dwDesiredAccess, 0, 0, length));
+    void *host_memory = MapViewOfFile(hFileMappingObject, dwDesiredAccess, 0, 0, length);
     if (!host_memory) {
         _close(backing_file);
         throw std::system_error{errno, std::generic_category(), "could not map image file '"s + path + "' to memory"s};
@@ -683,7 +682,7 @@ unsigned char *os_map_file(const char *path, uint64_t length, bool shared) {
 #endif // HAVE_MMAP
 }
 
-void os_unmap_file(unsigned char *host_memory, [[maybe_unused]] uint64_t length) {
+void os_unmap_file(void *host_memory, [[maybe_unused]] uint64_t length) {
 #ifdef HAVE_MMAP
     munmap(host_memory, length);
 
@@ -801,7 +800,7 @@ void os_sleep_us(uint64_t timeout_us) {
 }
 
 int64_t os_get_file_length(const char *filename, const char *text) {
-    auto fp = unique_fopen(filename, "rb");
+    auto fp = make_unique_fopen(filename, "rb");
     if (fseek(fp.get(), 0, SEEK_END) != 0) {
         throw std::system_error{errno, std::generic_category(),
             "unable to obtain length of file '"s + filename + "' "s + text};

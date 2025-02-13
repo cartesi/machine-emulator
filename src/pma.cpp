@@ -37,48 +37,18 @@ namespace cartesi {
 
 using namespace std::string_literals;
 
-void pma_memory::release() {
-    if (m_mmapped) {
-        os_unmap_file(m_host_memory, m_length);
-        m_mmapped = false;
-    } else {
-        std::free(m_host_memory); // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
-    }
-    m_host_memory = nullptr;
-    m_length = 0;
-}
-
-pma_memory::~pma_memory() {
-    release();
-}
-
-pma_memory::pma_memory(pma_memory &&other) noexcept :
-    m_length{other.m_length},
-    m_host_memory{other.m_host_memory},
-    m_mmapped{other.m_mmapped} {
-    // set other to safe state
-    other.m_host_memory = nullptr;
-    other.m_mmapped = false;
-    other.m_length = 0;
-}
-
-pma_memory::pma_memory(const std::string &description, uint64_t length, const callocd & /*c*/) :
-    m_length{length},
-    m_host_memory{nullptr},
-    m_mmapped{false} {
-    // use calloc to improve performance
-    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc,hicpp-no-malloc,cppcoreguidelines-prefer-member-initializer)
-    m_host_memory = static_cast<unsigned char *>(std::calloc(1, length));
-    if (m_host_memory == nullptr) {
-        throw std::runtime_error{"error allocating memory for "s + description};
-    }
+pma_memory::pma_memory(const std::string &description, uint64_t length, const callocd & /*c*/) try :
+    m_ptr{make_unique_calloc<unsigned char>(length)},
+    m_host_memory{std::get<callocd_ptr>(m_ptr).get()} {
+} catch (std::exception &e) {
+    throw std::runtime_error{e.what() + " when initializing "s + description};
 }
 
 pma_memory::pma_memory(const std::string &description, uint64_t length, const std::string &path, const callocd &c) :
     pma_memory{description, length, c} {
     // Try to load image file, if any
     if (!path.empty()) {
-        auto fp = unique_fopen(path.c_str(), "rb", std::nothrow_t{});
+        auto fp = make_unique_fopen(path.c_str(), "rb", std::nothrow_t{});
         if (!fp) {
             throw std::system_error{errno, std::generic_category(),
                 "error opening image file '"s + path + "' when initializing "s + description};
@@ -88,47 +58,28 @@ pma_memory::pma_memory(const std::string &description, uint64_t length, const st
             throw std::system_error{errno, std::generic_category(),
                 "error obtaining length of image file '"s + path + "' when initializing "s + description};
         }
-        auto file_length = ftell(fp.get());
+        const auto file_length = static_cast<uint64_t>(ftello(fp.get()));
         if (fseek(fp.get(), 0, SEEK_SET) != 0) {
             throw std::system_error{errno, std::generic_category(),
                 "error obtaining length of image file '"s + path + "' when initializing "s + description};
         }
         // Check against PMA range size
-        if (static_cast<uint64_t>(file_length) > length) {
+        if (file_length > length) {
             throw std::runtime_error{"image file '"s + path + "' of "s + description + " is too large for range"s};
         }
         // Read to host memory
-        std::ignore = fread(m_host_memory, 1, length, fp.get());
-        if (ferror(fp.get()) != 0) {
-            throw std::system_error{errno, std::generic_category(),
-                "error reading from image file '"s + path + "' when initializing "s + description};
+        const auto read_length = static_cast<uint64_t>(fread(m_host_memory, 1, length, fp.get()));
+        if (read_length != file_length) {
+            throw std::runtime_error{"error reading from image file '"s + path + "' when initializing "s + description};
         }
     }
 }
 
-pma_memory::pma_memory(const std::string &description, uint64_t length, const std::string &path, const mmapd &m) :
-    m_length{length},
-    m_host_memory{nullptr},
-    m_mmapped{false} {
-    try {
-        m_host_memory = os_map_file(path.c_str(), length, m.shared);
-        m_mmapped = true;
-    } catch (std::exception &e) {
-        throw std::runtime_error{e.what() + " when initializing "s + description};
-    }
-}
-
-pma_memory &pma_memory::operator=(pma_memory &&other) noexcept {
-    release();
-    // copy from other
-    m_host_memory = other.m_host_memory;
-    m_mmapped = other.m_mmapped;
-    m_length = other.m_length;
-    // set other to safe state
-    other.m_host_memory = nullptr;
-    other.m_mmapped = false;
-    other.m_length = 0;
-    return *this;
+pma_memory::pma_memory(const std::string &description, uint64_t length, const std::string &path, const mmapd &m) try :
+    m_ptr{make_unique_mmap<unsigned char>(path.c_str(), length, m.shared)},
+    m_host_memory{std::get<mmapd_ptr>(m_ptr).get()} {
+} catch (std::exception &e) {
+    throw std::runtime_error{e.what() + " when initializing "s + description};
 }
 
 uint64_t pma_entry::get_istart() const {

@@ -326,7 +326,7 @@ private:
         const auto &written_hash = access.get_written_hash().value();
         // compute hash of data argument padded with zeroes
         hash_type computed_data_hash{};
-        auto scratch = unique_calloc<unsigned char>(write_length, std::nothrow_t{});
+        auto scratch = make_unique_calloc<unsigned char>(write_length, std::nothrow_t{});
         if (!scratch) {
             throw std::runtime_error("Could not allocate scratch memory");
         }

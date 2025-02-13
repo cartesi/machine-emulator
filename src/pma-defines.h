@@ -48,7 +48,6 @@
 #define PMA_RAM_START_DEF 0x80000000 ///< RAM start address
 
 #define PMA_PAGE_SIZE_LOG2_DEF 12 ///< log<sub>2</sub> of physical memory page size.
-#define PMA_WORD_SIZE_DEF 8       ///< Physical memory word size.
 #define PMA_MAX_DEF 32            ///< Maximum number of PMAs
 #define PMA_PLIC_MAX_IRQ_DEF 31   ///< Maximum PLIC interrupt
 

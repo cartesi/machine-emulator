@@ -51,7 +51,6 @@
 #include "machine-memory-range-descr.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
-#include "os.h"
 #include "plic-factory.h"
 #include "pma-constants.h"
 #include "pma-defines.h"
@@ -384,7 +383,7 @@ machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}
         }
         // Auto detect flash drive image length
         if (f.length == UINT64_C(-1)) {
-            auto fp = unique_fopen(f.image_filename.c_str(), "rb");
+            auto fp = make_unique_fopen(f.image_filename.c_str(), "rb");
             if (fseek(fp.get(), 0, SEEK_END) != 0) {
                 throw std::system_error{errno, std::generic_category(),
                     "unable to obtain length of image file '"s + f.image_filename + "' when initializing "s +
@@ -524,11 +523,8 @@ machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}
     // Initialize TLB device.
     // This must be done after all PMA entries are already registered, so we can lookup page addresses
     if (!m_c.tlb.image_filename.empty()) {
-        unsigned char *buf = os_map_file(m_c.tlb.image_filename.c_str(), PMA_SHADOW_TLB_LENGTH, false);
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        const auto &shadow_tlb = *reinterpret_cast<const shadow_tlb_state *>(buf);
-        init_tlb(shadow_tlb);
-        os_unmap_file(buf, PMA_SHADOW_TLB_LENGTH);
+        auto shadow_tlb = make_unique_mmap<shadow_tlb_state>(m_c.tlb.image_filename.c_str(), 1, false /* not shared */);
+        init_tlb(*shadow_tlb);
     } else {
         init_tlb();
     }
@@ -573,7 +569,7 @@ machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}
 
 static void load_hash(const std::string &dir, machine::hash_type &h) {
     auto name = dir + "/hash";
-    auto fp = unique_fopen(name.c_str(), "rb");
+    auto fp = make_unique_fopen(name.c_str(), "rb");
     if (fread(h.data(), 1, h.size(), fp.get()) != h.size()) {
         throw std::runtime_error{"error reading from '" + name + "'"};
     }
@@ -737,9 +733,9 @@ static void store_device_pma(const machine &m, const pma_entry &pma, const std::
     if (!pma.get_istart_IO()) {
         throw std::runtime_error{"attempt to save non-device PMA"};
     }
-    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE); // will throw if it fails
+    auto scratch = make_unique_calloc<unsigned char>(PMA_PAGE_SIZE); // will throw if it fails
     auto name = machine_config::get_image_filename(dir, pma.get_start(), pma.get_length());
-    auto fp = unique_fopen(name.c_str(), "wb");
+    auto fp = make_unique_fopen(name.c_str(), "wb");
     for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length();
         page_start_in_range += PMA_PAGE_SIZE) {
         const unsigned char *page_data = nullptr;
@@ -762,7 +758,7 @@ static void store_memory_pma(const pma_entry &pma, const std::string &dir) {
         throw std::runtime_error{"attempt to save non-memory PMA"};
     }
     auto name = machine_config::get_image_filename(dir, pma.get_start(), pma.get_length());
-    auto fp = unique_fopen(name.c_str(), "wb");
+    auto fp = make_unique_fopen(name.c_str(), "wb");
     const pma_memory &mem = pma.get_memory();
     if (fwrite(mem.get_host_memory(), 1, pma.get_length(), fp.get()) != pma.get_length()) {
         throw std::runtime_error{"error writing to '" + name + "'"};
@@ -938,7 +934,7 @@ void machine::store_pmas(const machine_config &c, const std::string &dir) const 
 
 static void store_hash(const machine::hash_type &h, const std::string &dir) {
     auto name = dir + "/hash";
-    auto fp = unique_fopen(name.c_str(), "wb");
+    auto fp = make_unique_fopen(name.c_str(), "wb");
     if (fwrite(h.data(), 1, h.size(), fp.get()) != h.size()) {
         throw std::runtime_error{"error writing to '" + name + "'"};
     }
@@ -1820,7 +1816,7 @@ bool machine::verify_dirty_page_maps() const {
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
         "PMA and machine_merkle_tree page sizes must match");
     machine_merkle_tree::hasher_type h;
-    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
+    auto scratch = make_unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
     if (!scratch) {
         return false;
     }
@@ -1885,7 +1881,7 @@ bool machine::update_merkle_tree() const {
         // runtime config or as the hardware supports.
         const uint64_t n = get_task_concurrency(m_r.concurrency.update_merkle_tree);
         const bool succeeded = os_parallel_for(n, [&](int j, const parallel_for_mutex &mutex) -> bool {
-            auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
+            auto scratch = make_unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
             if (!scratch) {
                 return false;
             }
@@ -1949,7 +1945,7 @@ bool machine::update_merkle_tree_page(uint64_t address) {
     pma_entry &pma = find_pma_entry(m_merkle_pmas, address, sizeof(uint64_t));
     const uint64_t page_start_in_range = address - pma.get_start();
     machine_merkle_tree::hasher_type h;
-    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
+    auto scratch = make_unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
     if (!scratch) {
         return false;
     }
@@ -1999,7 +1995,7 @@ machine::hash_type machine::get_merkle_tree_node_hash(uint64_t address, int log2
         throw std::domain_error{"address not aligned to log2_size"};
     }
     const auto size = UINT64_C(1) << log2_size;
-    auto scratch = unique_calloc<unsigned char>(size);
+    auto scratch = make_unique_calloc<unsigned char>(size);
     read_memory(address, scratch.get(), size);
     machine_merkle_tree::hasher_type h;
     machine_merkle_tree::hash_type hash;
@@ -2064,7 +2060,7 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
     if (log2_size < machine_merkle_tree::get_log2_page_size()) {
         const uint64_t length = UINT64_C(1) << log2_size;
         const pma_entry &pma = find_pma_entry(m_merkle_pmas, address, length);
-        auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
+        auto scratch = make_unique_calloc<unsigned char>(PMA_PAGE_SIZE);
         const unsigned char *page_data = nullptr;
         // If the PMA range is empty, we know the desired range is
         // entirely outside of any non-pristine PMA.
@@ -2491,16 +2487,15 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
 interpreter_break_reason machine::verify_step(const hash_type &root_hash_before, const std::string &filename,
     uint64_t mcycle_count, const hash_type &root_hash_after) {
     auto data_length = os_get_file_length(filename.c_str(), "step log file");
-    auto *data = os_map_file(filename.c_str(), data_length, false /* not shared */);
+    auto data = make_unique_mmap<unsigned char>(filename.c_str(), data_length, false /* not shared */);
     replay_step_state_access::context context;
-    replay_step_state_access a(context, data, data_length, root_hash_before);
+    replay_step_state_access a(context, data.get(), data_length, root_hash_before);
     uint64_t mcycle_end{};
     if (__builtin_add_overflow(a.read_mcycle(), mcycle_count, &mcycle_end)) {
         mcycle_end = UINT64_MAX;
     }
     auto break_reason = interpret(a, mcycle_end);
     a.finish(root_hash_after);
-    os_unmap_file(data, data_length);
     return break_reason;
 }
 

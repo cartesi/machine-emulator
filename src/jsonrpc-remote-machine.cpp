@@ -1138,7 +1138,7 @@ static json jsonrpc_machine_read_memory_handler(const json &j, const std::shared
     auto args = parse_args<uint64_t, uint64_t>(j, param_name);
     auto address = std::get<0>(args);
     auto length = std::get<1>(args);
-    auto data = cartesi::unique_calloc<unsigned char>(length);
+    auto data = cartesi::make_unique_calloc<unsigned char>(length);
     session->handler->machine->read_memory(address, data.get(), length);
     return jsonrpc_response_ok(j, cartesi::encode_base64(data.get(), length));
 }
@@ -1172,7 +1172,7 @@ static json jsonrpc_machine_read_virtual_memory_handler(const json &j, const std
     auto args = parse_args<uint64_t, uint64_t>(j, param_name);
     auto address = std::get<0>(args);
     auto length = std::get<1>(args);
-    auto data = cartesi::unique_calloc<unsigned char>(length);
+    auto data = cartesi::make_unique_calloc<unsigned char>(length);
     session->handler->machine->read_virtual_memory(address, data.get(), length);
     return jsonrpc_response_ok(j, cartesi::encode_base64(data.get(), length));
 }

@@ -14,9 +14,10 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef UNIQUE_C_PTR
-#define UNIQUE_C_PTR
+#ifndef UNIQUE_C_PTR_H
+#define UNIQUE_C_PTR_H
 
+#include "os.h"
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -29,11 +30,14 @@
 namespace cartesi {
 
 namespace detail {
+
+//??D Cannot use lambda expression to create the deleters because lambda expressions are not copy-assignable
+//??D and we need them to be so we can put pointers using these deleters into containers
+
 struct free_deleter {
     template <typename T>
-    void operator()(T *p) const {
-        // NOLINTNEXTLINE(cppcoreguidelines-no-malloc,hicpp-no-malloc,cppcoreguidelines-pro-type-const-cast)
-        std::free(const_cast<std::remove_const_t<T> *>(p));
+    void operator()(T *ptr) const {
+        std::free(ptr); // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)
     }
 };
 
@@ -42,6 +46,16 @@ struct fclose_deleter {
         std::ignore = std::fclose(p);
     }
 };
+
+struct mmap_deleter {
+    size_t m_size;
+    explicit mmap_deleter(size_t size) : m_size(size) {};
+    template <typename T>
+    void operator()(T *ptr) const {
+        os_unmap_file(ptr, m_size);
+    }
+};
+
 } // namespace detail
 
 template <typename T>
@@ -50,22 +64,25 @@ using unique_calloc_ptr = std::unique_ptr<T, detail::free_deleter>;
 using unique_file_ptr = std::unique_ptr<FILE, detail::fclose_deleter>;
 
 template <typename T>
-static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb) {
+using unique_mmap_ptr = std::unique_ptr<T, detail::mmap_deleter>;
+
+template <typename T>
+static inline auto make_unique_calloc(size_t nmemb) {
     // NOLINTNEXTLINE(cppcoreguidelines-no-malloc,hicpp-no-malloc)
     T *ptr = static_cast<T *>(calloc(nmemb, sizeof(T)));
-    if (!ptr) {
+    if (ptr == nullptr) {
         throw std::bad_alloc{}; // LCOV_EXCL_LINE
     }
     return unique_calloc_ptr<T>(ptr);
 }
 
 template <typename T>
-static inline unique_calloc_ptr<T> unique_calloc(size_t nmemb, const std::nothrow_t & /*tag*/) {
+static inline auto make_unique_calloc(size_t nmemb, const std::nothrow_t & /*tag*/) {
     // NOLINTNEXTLINE(cppcoreguidelines-no-malloc,hicpp-no-malloc)
     return unique_calloc_ptr<T>(static_cast<T *>(calloc(nmemb, sizeof(T))));
 }
 
-static inline unique_file_ptr unique_fopen(const char *pathname, const char *mode) {
+static inline auto make_unique_fopen(const char *pathname, const char *mode) {
     FILE *fp = fopen(pathname, mode);
     if (fp == nullptr) {
         throw std::system_error(errno, std::generic_category(),
@@ -74,8 +91,15 @@ static inline unique_file_ptr unique_fopen(const char *pathname, const char *mod
     return unique_file_ptr{fp};
 }
 
-static inline unique_file_ptr unique_fopen(const char *pathname, const char *mode, const std::nothrow_t & /*tag*/) {
+static inline auto make_unique_fopen(const char *pathname, const char *mode, const std::nothrow_t & /*tag*/) {
     return unique_file_ptr{fopen(pathname, mode)};
+}
+
+template <typename T>
+static inline auto make_unique_mmap(const char *pathname, size_t nmemb, bool shared) {
+    const size_t size = nmemb * sizeof(T);
+    T *ptr = static_cast<T *>(os_map_file(pathname, size, shared)); // os_map_file throws on error
+    return unique_mmap_ptr<T>(ptr, detail::mmap_deleter{size});
 }
 
 } // namespace cartesi

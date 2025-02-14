@@ -28,6 +28,7 @@
 
 #include "pma-constants.h"
 #include "pma-driver.h"
+#include "unique-c-ptr.h"
 
 namespace cartesi {
 
@@ -41,16 +42,21 @@ class machine;
 /// \brief Prototype for callback invoked when machine wants to peek into a range with no side-effects.
 /// \param pma Reference to corresponding PMA entry.
 /// \param m Reference to associated machine.
-/// \param page_offset Offset of page start within range. Must be aligned to PMA_PAGE_SIZE.
-/// \param page_data Receives pointer to start of page data, or nullptr if page is constant *and* pristine.
-/// \param scratch Pointer to memory buffer that must be able to hold PMA_PAGE_SIZE bytes.
+/// \param offset Offset within range to start reading.
+/// \param length Number of bytes to read.
+/// \param data Receives pointer to start of data, or nullptr if data is constant *and* pristine.
+/// \param scratch Pointer to memory buffer that must be able to hold \p length bytes.
 /// \returns True if operation succeeded, false otherwise.
-using pma_peek = bool (*)(const pma_entry &pma, const machine &m, uint64_t page_offset, const unsigned char **page_data,
-    unsigned char *scratch);
+using pma_peek = bool (*)(const pma_entry &pma, const machine &m, uint64_t offset, uint64_t length,
+    const unsigned char **data, unsigned char *scratch);
 
 /// \brief Default peek callback issues error on peeks.
-bool pma_peek_error(const pma_entry & /*pma*/, const machine & /*m*/, uint64_t /*page_offset*/,
-    const unsigned char ** /*page_data*/, unsigned char * /*scratch*/);
+bool pma_peek_error(const pma_entry & /*pma*/, const machine & /*m*/, uint64_t /*offset*/, uint64_t /*length*/,
+    const unsigned char ** /*data*/, unsigned char * /*scratch*/);
+
+/// \brief Default peek callback for pristine ranges.
+bool pma_peek_pristine(const pma_entry & /*pma*/, const machine & /*m*/, uint64_t offset, uint64_t length,
+    const unsigned char **data, unsigned char * /*scratch*/);
 
 /// \brief Data for IO ranges.
 class pma_device final {
@@ -80,10 +86,7 @@ public:
 
     /// \brief Returns context to pass to callbacks.
     void *get_context() const {
-        // Discard qualifier on purpose because the context
-        // is none of our business.
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-        return const_cast<void *>(m_context);
+        return m_context;
     }
 
     /// \brief Returns pointer to driver with callbacks
@@ -100,12 +103,16 @@ public:
 /// \brief Data for memory ranges.
 class pma_memory final {
 
-    uint64_t m_length;            ///< Length of memory range (copy of PMA length field).
-    unsigned char *m_host_memory; ///< Start of associated memory region in host.
-    bool m_mmapped;               ///< True if memory was mapped from a file.
+    using callocd_ptr = unique_calloc_ptr<unsigned char>;
+    using mmapd_ptr = unique_mmap_ptr<unsigned char>;
 
-    /// \brief Close file and/or release memory.
-    void release();
+    std::variant<std::monostate, ///< Before initialization
+        callocd_ptr,             ///< Automatic pointer for calloced memory
+        mmapd_ptr                ///< Automatic pointer for mmapped memory
+        >
+        m_ptr;
+
+    unsigned char *m_host_memory; ///< Start of associated memory region in host.
 
 public:
     /// \brief Mmap'd range data (shared or not).
@@ -123,9 +130,6 @@ public:
     /// \brief Calloc'd range data (just a tag).
     struct callocd {};
 
-    /// \brief Mock'd range data (just a tag).
-    struct mockd {};
-
     /// \brief Constructor for calloc'd ranges.
     /// \param description Informative description of PMA entry for use in error messages
     /// \param length Length of range.
@@ -139,12 +143,6 @@ public:
     /// \param c Calloc'd range data (just a tag).
     pma_memory(const std::string &description, uint64_t length, const callocd &c);
 
-    /// \brief Constructor for mock ranges.
-    /// \param description Informative description of PMA entry for use in error messages
-    /// \param length Length of range.
-    /// \param m Mock'd range data (just a tag).
-    pma_memory(const std::string &description, uint64_t length, const mockd &m);
-
     /// \brief No copy constructor
     pma_memory(const pma_memory &other) = delete;
 
@@ -152,13 +150,13 @@ public:
     pma_memory &operator=(const pma_memory &other) = delete;
 
     /// \brief Move constructor
-    pma_memory(pma_memory &&other) noexcept;
+    pma_memory(pma_memory &&other) noexcept = default;
 
     /// \brief Move assignment
-    pma_memory &operator=(pma_memory &&other) noexcept;
+    pma_memory &operator=(pma_memory &&other) noexcept = default;
 
-    /// \brief Destructor
-    ~pma_memory();
+    /// \brief Default destructor
+    ~pma_memory() = default;
 
     /// \brief Returns start of associated memory region in host
     unsigned char *get_host_memory() {
@@ -169,15 +167,7 @@ public:
     const unsigned char *get_host_memory() const {
         return m_host_memory;
     }
-
-    /// \brief Returns copy of PMA length field (needed for munmap).
-    uint64_t get_length() const {
-        return m_length;
-    }
 };
-
-/// \brief Data for empty memory ranges (nothing, really)
-struct pma_empty final {};
 
 /// \brief Physical Memory Attribute entry.
 /// \details The target's physical memory layout is described by an
@@ -188,7 +178,7 @@ public:
     struct flags {
         // bool M = std::holds_alternative<pma_memory>(data);
         // bool IO = std::holds_alternative<pma_device>(data);
-        // bool E = std::holds_alternative<pma_empty>(data);
+        // bool E = std::holds_alternative<std::monostate>(data);
         bool R;
         bool W;
         bool X;
@@ -208,9 +198,9 @@ private:
 
     std::vector<uint8_t> m_dirty_page_map; ///< Map of dirty pages.
 
-    std::variant<pma_empty, ///< Data specific to E ranges
-        pma_device,         ///< Data specific to IO ranges
-        pma_memory          ///< Data specific to M ranges
+    std::variant<std::monostate, ///< No data (E ranges)
+        pma_device,              ///< Data specific to IO ranges
+        pma_memory               ///< Data specific to M ranges
         >
         m_data;
 
@@ -237,20 +227,13 @@ public:
         m_index{PMA_MAX},
         m_flags{},
         m_peek{pma_peek_error},
-        m_data{pma_empty{}} {
+        m_data{std::monostate{}} {
         ;
     }
 
     /// \brief Default constructor creates an empty entry spanning an empty range
     /// \param description Informative description of PMA entry for use in error messages
-    explicit pma_entry(std::string description = {}) :
-        m_description{std::move(description)},
-        m_start{0},
-        m_length{0},
-        m_index{PMA_MAX},
-        m_flags{},
-        m_peek{pma_peek_error},
-        m_data{pma_empty{}} {
+    explicit pma_entry(std::string description = "empty") : pma_entry{std::move(description), 0, 0} {
         ;
     }
 
@@ -326,16 +309,6 @@ public:
         return m_peek;
     }
 
-    /// \returns data specific to E ranges
-    const pma_empty &get_empty() const {
-        return std::get<pma_empty>(m_data);
-    }
-
-    /// \returns data specific to E ranges
-    pma_empty &get_empty() {
-        return std::get<pma_empty>(m_data);
-    }
-
     /// \returns data specific to M ranges
     const pma_memory &get_memory() const {
         return std::get<pma_memory>(m_data);
@@ -346,8 +319,13 @@ public:
         return std::get<pma_memory>(m_data);
     }
 
-    /// \returns data specific to IO ranges (cannot throw exceptions).
+    /// \returns data specific to memory ranges (cannot throw exceptions, but will crash if not a memory range).
     pma_memory &get_memory_noexcept() {
+        return *std::get_if<pma_memory>(&m_data);
+    }
+
+    /// \returns data specific to memory ranges (cannot throw exceptions, but will crash if not a memory range).
+    const pma_memory &get_memory_noexcept() const {
         return *std::get_if<pma_memory>(&m_data);
     }
 
@@ -361,7 +339,12 @@ public:
         return std::get<pma_device>(m_data);
     }
 
-    /// \returns data specific to IO ranges (cannot throw exceptions).
+    /// \returns data specific to IO ranges (cannot throw exceptions, but will crash if not an IO range).
+    const pma_device &get_device_noexcept() const {
+        return *std::get_if<pma_device>(&m_data);
+    }
+
+    /// \returns data specific to IO ranges (cannot throw exceptions, but will crash if not an IO range).
     pma_device &get_device_noexcept() {
         return *std::get_if<pma_device>(&m_data);
     }
@@ -393,7 +376,7 @@ public:
 
     /// \brief Tells if PMA is an empty range
     bool get_istart_E() const {
-        return std::holds_alternative<pma_empty>(m_data);
+        return std::holds_alternative<std::monostate>(m_data);
     }
 
     /// \brief Tells if PMA range is readable
@@ -427,15 +410,16 @@ public:
     }
 
     /// \brief Mark a given page as dirty
-    /// \param address_in_range Any address within page in range
-    void mark_dirty_page(uint64_t address_in_range) {
+    /// \param offset_in_range Any offset in range within desired page
+    void mark_dirty_page(uint64_t offset_in_range) {
         if (!m_dirty_page_map.empty()) {
-            auto page_number = address_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
-            auto map_index = page_number >> 3;
+            auto page_index = offset_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
+            auto map_index = page_index >> 3;
             assert(map_index < m_dirty_page_map.size());
-            m_dirty_page_map[map_index] |= (1 << (page_number & 7));
+            m_dirty_page_map[map_index] |= (1 << (page_index & 7));
         }
     }
+
     /// \brief Mark all pages in rage as dirty
     /// \param address Start address
     /// \param size Size of range
@@ -460,25 +444,25 @@ public:
     }
 
     /// \brief Mark a given page as clean
-    /// \param address_in_range Any address within page in range
-    void mark_clean_page(uint64_t address_in_range) {
+    /// \param offset_in_range Any offset in range within desired page
+    void mark_clean_page(uint64_t offset_in_range) {
         if (!m_dirty_page_map.empty()) {
-            auto page_number = address_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
-            auto map_index = page_number >> 3;
+            auto page_index = offset_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
+            auto map_index = page_index >> 3;
             assert(map_index < m_dirty_page_map.size());
-            m_dirty_page_map[map_index] &= ~(1 << (page_number & 7));
+            m_dirty_page_map[map_index] &= ~(1 << (page_index & 7));
         }
     }
 
     /// \brief Checks if a given page is marked dirty
-    /// \param address_in_range Any address within page in range
+    /// \param offset_in_range Any offset in range within desired page
     /// \returns true if dirty, false if clean
-    bool is_page_marked_dirty(uint64_t address_in_range) const {
+    bool is_page_marked_dirty(uint64_t offset_in_range) const {
         if (!m_dirty_page_map.empty()) {
-            auto page_number = address_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
-            auto map_index = page_number >> 3;
+            auto page_index = offset_in_range >> PMA_constants::PMA_PAGE_SIZE_LOG2;
+            auto map_index = page_index >> 3;
             assert(map_index < m_dirty_page_map.size());
-            return (m_dirty_page_map[map_index] & (1 << (page_number & 7))) != 0;
+            return (m_dirty_page_map[map_index] & (1 << (page_index & 7))) != 0;
         }
         return true;
     }
@@ -505,7 +489,7 @@ public:
         return address >= get_start() && get_length() >= length && address - get_start() <= get_length() - length;
     }
 
-    /// \brief  Writes data to pma memory
+    /// \brief Writes data to pma memory
     /// \param paddr Destination address within pma range
     /// \param data Source data
     /// \param size Data size
@@ -550,15 +534,6 @@ pma_entry make_callocd_memory_pma_entry(const std::string &description, uint64_t
 /// This function is typically used to map flash drives.
 pma_entry make_mmapd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length,
     const std::string &path, bool shared);
-
-/// \brief Creates a PMA entry for a new mock memory region (no allocation).
-/// \param description Informative description of PMA entry for use in error messages
-/// \param start Start of physical memory range in the target address
-/// space on which to map the memory region.
-/// \param length Length of physical memory range in the
-/// target address space on which to map the memory region.
-/// \returns Corresponding PMA entry
-pma_entry make_mockd_memory_pma_entry(const std::string &description, uint64_t start, uint64_t length);
 
 /// \brief Creates a PMA entry for a new memory-mapped IO device.
 /// \param description Informative description of PMA entry for use in error messages

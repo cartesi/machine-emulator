@@ -15,8 +15,6 @@
 //
 
 #include "machine-merkle-tree.h"
-#include "i-hasher.h"
-#include "pristine-merkle-tree.h"
 
 #include <algorithm>
 #include <cassert>
@@ -25,6 +23,9 @@
 #include <iomanip>
 #include <iostream>
 #include <tuple>
+
+#include "i-hasher.h"
+#include "pristine-merkle-tree.h"
 
 /// \file
 /// \brief Merkle tree implementation.

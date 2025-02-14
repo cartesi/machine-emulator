@@ -14,12 +14,13 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "full-merkle-tree.h"
+
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
 #include <vector>
 
-#include "full-merkle-tree.h"
 #include "i-hasher.h"
 #include "pristine-merkle-tree.h"
 

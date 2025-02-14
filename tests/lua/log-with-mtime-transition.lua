@@ -12,8 +12,12 @@ local config = {
 }
 local machine <close> = cartesi.machine(config)
 
+io.stderr:write("getting root hash\n")
 local old_hash = machine:get_root_hash()
+io.stderr:write("getting uarch step log\n")
 local access_log = machine:log_step_uarch()
+io.stderr:write("getting new root hash\n")
 local new_hash = machine:get_root_hash()
+io.stderr:write("verifying step log\n")
 cartesi.machine:verify_step_uarch(old_hash, access_log, new_hash, {})
 print("ok")

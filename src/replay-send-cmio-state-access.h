@@ -34,21 +34,34 @@
 #include "i-state-access.h"
 #include "machine-merkle-tree.h"
 #include "meta.h"
-#include "pma.h"
+#include "mock-pma-entry.h"
 #include "riscv-constants.h"
 #include "shadow-state.h"
 #include "unique-c-ptr.h"
 
 namespace cartesi {
 
+class replay_send_cmio_state_access;
+
+// Type trait that should return the pma_entry type for a state access class
+template <>
+struct i_state_access_pma_entry<replay_send_cmio_state_access> {
+    using type = mock_pma_entry;
+};
+// Type trait that should return the fast_addr type for a state access class
+template <>
+struct i_state_access_fast_addr<replay_send_cmio_state_access> {
+    using type = uint64_t;
+};
+
 /// \brief Allows replaying a machine::send_cmio_response() from an access log.
-class replay_send_cmio_state_access : public i_state_access<replay_send_cmio_state_access, pma_entry> {
-public:
+class replay_send_cmio_state_access : public i_state_access<replay_send_cmio_state_access> {
     using tree_type = machine_merkle_tree;
     using hash_type = tree_type::hash_type;
     using hasher_type = tree_type::hasher_type;
     using proof_type = tree_type::proof_type;
 
+public:
     struct context {
         /// \brief Constructor replay_send_cmio_state_access context
         /// \param log Access log to be replayed
@@ -91,7 +104,7 @@ public:
     }
 
 private:
-    friend i_state_access<replay_send_cmio_state_access, pma_entry>;
+    friend i_state_access<replay_send_cmio_state_access>;
 
     std::string access_to_report() const {
         auto index = m_context.next_access + 1;
@@ -118,8 +131,8 @@ private:
     /// \param log2_size Log2 of access size.
     /// \param text Textual description of the access.
     /// \returns Value read.
-    uint64_t check_read(uint64_t paligned, const char *text) {
-        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size<uint64_t>::value,
+    uint64_t check_read(uint64_t paligned, const char *text) const {
+        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size_v<uint64_t>,
             "Merkle tree word size must be at least as large as a machine word");
         if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
             throw std::invalid_argument{"address not aligned to word size"};
@@ -137,7 +150,7 @@ private:
                 << "(" << std::dec << paligned << ")";
             throw std::invalid_argument{err.str()};
         }
-        if (access.get_log2_size() != log2_size<uint64_t>::value) {
+        if (access.get_log2_size() != log2_size_v<uint64_t>) {
             throw std::invalid_argument{"expected " + access_to_report() + " to read 2^" +
                 std::to_string(machine_merkle_tree::get_log2_word_size()) + " bytes from " + text};
         }
@@ -174,8 +187,8 @@ private:
     /// aligned to a 64-bit word.
     /// \param word Word value to write.
     /// \param text Textual description of the access.
-    void check_write(uint64_t paligned, uint64_t word, const char *text) {
-        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size<uint64_t>::value,
+    void check_write(uint64_t paligned, uint64_t word, const char *text) const {
+        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size_v<uint64_t>,
             "Merkle tree word size must be at least as large as a machine word");
         if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
             throw std::invalid_argument{"paligned not aligned to word size"};
@@ -193,7 +206,7 @@ private:
                 << "(" << std::dec << paligned << ")";
             throw std::invalid_argument{err.str()};
         }
-        if (access.get_log2_size() != log2_size<uint64_t>::value) {
+        if (access.get_log2_size() != log2_size_v<uint64_t>) {
             throw std::invalid_argument{"expected " + access_to_report() + " to write 2^" +
                 std::to_string(machine_merkle_tree::get_log2_word_size()) + " bytes to " + text};
         }
@@ -260,22 +273,20 @@ private:
         m_context.next_access++;
     }
 
-    void do_push_bracket(bracket_type & /*type*/, const char * /*text*/) {}
-
-    void do_write_iflags_Y(uint64_t val) {
+    void do_write_iflags_Y(uint64_t val) const {
         check_write(machine_reg_address(machine_reg::iflags_Y), val, "iflags.Y");
     }
 
-    uint64_t do_read_iflags_Y() {
+    uint64_t do_read_iflags_Y() const {
         return check_read(machine_reg_address(machine_reg::iflags_Y), "iflags.Y");
     }
 
-    void do_write_htif_fromhost(uint64_t val) {
+    void do_write_htif_fromhost(uint64_t val) const {
         check_write(machine_reg_address(machine_reg::htif_fromhost), val, "htif.fromhost");
     }
 
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
-        int write_length_log2_size) {
+        int write_length_log2_size) const {
         hasher_type hasher{};
         if (data == nullptr) {
             throw std::invalid_argument("data is null");
@@ -315,7 +326,7 @@ private:
         const auto &written_hash = access.get_written_hash().value();
         // compute hash of data argument padded with zeroes
         hash_type computed_data_hash{};
-        auto scratch = unique_calloc<unsigned char>(write_length, std::nothrow_t{});
+        auto scratch = make_unique_calloc<unsigned char>(write_length, std::nothrow_t{});
         if (!scratch) {
             throw std::runtime_error("Could not allocate scratch memory");
         }
@@ -347,6 +358,11 @@ private:
         // Update root hash to reflect the data written by this access
         m_context.root_hash = proof.bubble_up(m_context.hasher, written_hash);
         m_context.next_access++;
+    }
+
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    constexpr const char *do_get_name() const {
+        return "replay_send_cmio_state_access";
     }
 };
 

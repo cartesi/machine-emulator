@@ -14,6 +14,13 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include <cstdint>
+
+extern "C" {
+#include <lauxlib.h>
+#include <lua.h>
+}
+
 #include "clua-i-virtual-machine.h"
 #include "clua.h"
 #include "jsonrpc-machine-c-api.h"

@@ -96,6 +96,9 @@ TESTSDIR = $(abspath tests)
 DOWNLOADDIR = $(DEPDIR)/downloads
 SUBCLEAN = $(addsuffix .clean,$(SRCDIR) uarch tests)
 
+# Pass down received UARCH_DEFS to sub-makefiles
+export UARCH_DEFS
+
 # Docker image tag
 TAG ?= devel
 DEBIAN_IMG ?= cartesi/machine-emulator:$(TAG).deb
@@ -306,11 +309,12 @@ toolchain-env: check-toolchain
 		cartesi/machine-emulator:toolchain /bin/bash
 
 toolchain-exec: check-toolchain
-	@docker run --hostname toolchain --rm \
+	docker run --hostname toolchain --rm \
 		-e USER=$$(id -u -n) \
 		-e GROUP=$$(id -g -n) \
 		-e UID=$$(id -u) \
 		-e GID=$$(id -g) \
+		-e UARCH_DEFS="$(UARCH_DEFS)" \
 		-v `pwd`:/opt/cartesi/machine-emulator \
 		-w /opt/cartesi/machine-emulator \
 		cartesi/machine-emulator:toolchain /bin/bash -c "$(CONTAINER_COMMAND)"

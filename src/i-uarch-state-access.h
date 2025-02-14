@@ -17,10 +17,36 @@
 #ifndef I_UARCH_STATE_ACCESS_H
 #define I_UARCH_STATE_ACCESS_H
 
+#include <cinttypes>
 #include <cstdint>
 
-#include "bracket-note.h"
-#include "pma.h"
+#include "dump.h"
+#include "i-prefer-shadow-uarch-state.h"
+#include "meta.h"
+#include "tlb.h"
+
+// NOLINTBEGIN(cppcoreguidelines-macro-usage)
+#define DEFINE_USA_READ(REG)                                                                                           \
+    uint64_t read_##REG() const {                                                                                      \
+        if constexpr (!is_an_i_prefer_shadow_uarch_state_v<DERIVED>) {                                                 \
+            const auto val = derived().do_read_##REG();                                                                \
+            DUSA_PRINTF("%s::read_" #REG "() = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), val, val);                   \
+            return val;                                                                                                \
+        } else {                                                                                                       \
+            return prefer_read_shadow_uarch_state(shadow_uarch_state_what::REG);                                       \
+        }                                                                                                              \
+    }
+
+#define DEFINE_USA_WRITE(REG)                                                                                          \
+    void write_##REG(uint64_t val) const {                                                                             \
+        if constexpr (!is_an_i_prefer_shadow_uarch_state_v<DERIVED>) {                                                 \
+            derived().do_write_##REG(val);                                                                             \
+            DUSA_PRINTF("%s::write_" #REG "(%" PRIu64 "(0x%" PRIx64 "))\n", get_name(), val, val);                     \
+        } else {                                                                                                       \
+            prefer_write_shadow_uarch_state(shadow_uarch_state_what::REG, val);                                        \
+        }                                                                                                              \
+    }
+// NOLINTEND(cppcoreguidelines-macro-usage)
 
 namespace cartesi {
 
@@ -38,70 +64,100 @@ class i_uarch_state_access { // CRTP
         return *static_cast<const DERIVED *>(this);
     }
 
+    uint64_t prefer_read_shadow_uarch_state(shadow_uarch_state_what what) const {
+        const auto val = derived().read_shadow_uarch_state(what);
+        [[maybe_unused]] const auto *const what_name = shadow_uarch_state_get_what_name(what);
+        DUSA_PRINTF("%s::read_shadow_uarch_state(%s) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), what_name, val, val);
+        return val;
+    }
+
+    void prefer_write_shadow_uarch_state(shadow_uarch_state_what what, uint64_t val) const {
+        derived().write_shadow_uarch_state(what, val);
+        [[maybe_unused]] const auto *const what_name = shadow_uarch_state_get_what_name(what);
+        DUSA_PRINTF("%s::write_shadow_uarch_state(%s, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), what_name, val, val);
+    }
+
 public:
-    /// \brief Adds an annotation bracket to the log
-    /// \param type Type of bracket
-    /// \param text String with the text for the annotation
-    void push_bracket(bracket_type type, const char *text) {
-        return derived().do_push_bracket(type, text);
+    /// \brief Works as printf if we are dumping uarch state accesses, otherwise does nothing
+    template <size_t N, typename... ARGS>
+    static void DUSA_PRINTF([[maybe_unused]] const char (&fmt)[N], [[maybe_unused]] ARGS... args) {
+#ifdef DUMP_UARCH_STATE_ACCESS
+        D_PRINTF(fmt, args...);
+#endif
     }
 
-    /// \brief Adds annotations to the state, bracketing a scope
-    /// \param text String with the text for the annotation
-    /// \returns An object that, when constructed and destroyed issues an annonation.
-    auto make_scoped_note(const char *text) {
-        return derived().do_make_scoped_note(text);
+    uint64_t read_uarch_x(int i) const {
+        if constexpr (!is_an_i_prefer_shadow_uarch_state_v<DERIVED>) {
+            const auto val = derived().do_read_uarch_x(i);
+            DUSA_PRINTF("%s::read_uarch_x(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), i, val, val);
+            return val;
+        } else {
+            return prefer_read_shadow_uarch_state(shadow_uarch_state_get_what(shadow_uarch_state_what::uarch_x0, i));
+        }
     }
 
-    auto read_x(int r) {
-        return derived().do_read_x(r);
+    void write_uarch_x(int i, uint64_t val) const {
+        if constexpr (!is_an_i_prefer_shadow_uarch_state_v<DERIVED>) {
+            derived().do_write_uarch_x(i, val);
+            DUSA_PRINTF("%s::write_uarch_x(%d, %" PRIu64 ")\n", get_name(), i, val);
+        } else {
+            prefer_write_shadow_uarch_state(shadow_uarch_state_get_what(shadow_uarch_state_what::uarch_x0, i), val);
+        }
     }
 
-    auto write_x(int r, uint64_t v) {
-        return derived().do_write_x(r, v);
+    // Define read and write methods for each register in the shadow uarch state
+    // NOLINTBEGIN(cppcoreguidelines-macro-usage)
+    DEFINE_USA_READ(uarch_halt_flag)
+    DEFINE_USA_WRITE(uarch_halt_flag)
+    DEFINE_USA_READ(uarch_cycle)
+    DEFINE_USA_WRITE(uarch_cycle)
+    DEFINE_USA_READ(uarch_pc)
+    DEFINE_USA_WRITE(uarch_pc)
+    // NOLINTEND(cppcoreguidelines-macro-usage)
+
+    uint64_t read_word(uint64_t paddr) const {
+        const auto val = derived().do_read_word(paddr);
+        DUSA_PRINTF("%s::read_word(phys_addr{0x%" PRIx64 "}) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), paddr, val,
+            val);
+        return val;
     }
 
-    auto read_pc() {
-        return derived().do_read_pc();
-    }
-
-    auto write_pc(uint64_t v) {
-        return derived().do_write_pc(v);
-    }
-
-    auto read_cycle() {
-        return derived().do_read_cycle();
-    }
-
-    auto read_halt_flag() {
-        return derived().do_read_halt_flag();
-    }
-
-    auto set_halt_flag() {
-        return derived().do_set_halt_flag();
-    }
-
-    auto reset_halt_flag() {
-        return derived().do_reset_halt_flag();
-    }
-
-    auto write_cycle(uint64_t v) {
-        return derived().do_write_cycle(v);
-    }
-
-    uint64_t read_word(uint64_t paddr) {
-        return derived().do_read_word(paddr);
-    }
-
-    void write_word(uint64_t paddr, uint64_t data) {
-        return derived().do_write_word(paddr, data);
+    void write_word(uint64_t paddr, uint64_t val) const {
+        derived().do_write_word(paddr, val);
+        DUSA_PRINTF("%s::write_word(phys_addr{0x%" PRIx64 "}, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), paddr, val,
+            val);
     }
 
     /// \brief Resets uarch to pristine state
-    void reset_state() {
-        return derived().do_reset_state();
+    void reset_uarch() const {
+        return derived().do_reset_uarch();
+    }
+
+    void putchar(uint8_t c) const {
+        derived().do_putchar(c);
+    }
+
+    void mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {
+        return derived().do_mark_dirty_page(paddr, pma_index);
+    }
+
+    void write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
+        uint64_t pma_index) const {
+        derived().do_write_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
+    }
+
+    constexpr const char *get_name() const {
+        return derived().do_get_name();
     }
 };
+
+/// \brief SFINAE test implementation of the i_uarch_state_access interface
+template <typename DERIVED>
+using is_an_i_uarch_state_access =
+    std::integral_constant<bool, is_template_base_of_v<i_uarch_state_access, std::remove_cvref_t<DERIVED>>>;
+
+template <typename DERIVED>
+constexpr bool is_an_i_uarch_state_access_v = is_an_i_uarch_state_access<DERIVED>::value;
 
 } // namespace cartesi
 

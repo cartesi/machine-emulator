@@ -23,21 +23,19 @@
 #include <cstdint>
 
 #include "i-device-state-access.h"
+#include "i-interactive-state-access.h"
 #include "i-state-access.h"
 
 namespace cartesi {
 
-/// \details The device_state_access class implements a
-/// virtual interface to the state on top of the static
-/// interface provided by any class implementing the
-/// i_state_access interface.
-/// \tparam STATE_ACCESS Class implementing the
-/// i_state_access interface.
+/// \details The device_state_access class implements a virtual interface to the state on top of the static
+/// interface provided by any class implementing the i_state_access interface.
+/// \tparam STATE_ACCESS Class implementing the i_state_access interface.
 template <typename STATE_ACCESS>
 class device_state_access : public i_device_state_access {
 public:
     explicit device_state_access(STATE_ACCESS a, uint64_t mcycle) : m_a(a), m_mcycle(mcycle) {
-        static_assert(is_an_i_state_access<STATE_ACCESS>::value, "not an i_state_access");
+        static_assert(is_an_i_state_access_v<STATE_ACCESS>, "not an i_state_access");
     }
 
     /// \brief No copy constructor
@@ -145,6 +143,17 @@ private:
 
     bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) override {
         return m_a.write_memory(paddr, data, length);
+    }
+
+    void do_putchar(uint8_t c) override {
+        return m_a.putchar(c);
+    }
+
+    int do_getchar() override {
+        if constexpr (is_an_i_interactive_state_access_v<STATE_ACCESS>) {
+            return m_a.getchar();
+        }
+        return -1;
     }
 };
 

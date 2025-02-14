@@ -14,14 +14,14 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "base64.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-
-#include "base64.h"
 
 namespace cartesi {
 

@@ -21,184 +21,136 @@
 #include <cstdint>
 #include <stdexcept>
 
-#include "bracket-note.h"
+#include "host-addr.h"
+#include "i-accept-scoped-notes.h"
 #include "i-uarch-state-access.h"
-#include "machine-state.h"
-#include "pma.h"
+#include "machine.h"
+#include "os.h"
 #include "riscv-constants.h"
 #include "strict-aliasing.h"
-#include "uarch-bridge.h"
 #include "uarch-pristine.h"
-#include "uarch-state.h"
 
 namespace cartesi {
 
-class uarch_state_access : public i_uarch_state_access<uarch_state_access> {
+class uarch_state_access :
+    public i_uarch_state_access<uarch_state_access>,
+    public i_accept_scoped_notes<uarch_state_access> {
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
-    uarch_state &m_us;
-    machine_state &m_s;
-    // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)1
-
-    /// \brief Obtain Memory PMA entry that covers a given physical memory region
-    /// \param paddr Start of physical memory region.
-    /// \param length Length of physical memory region.
-    /// \returns Corresponding entry if found, or a sentinel entry
-    /// for an empty range.
-    pma_entry &find_memory_pma_entry(uint64_t paddr, uint64_t length) {
-        // First, search microarchitecture private PMA entries
-        if (m_us.ram.contains(paddr, length)) {
-            return m_us.ram;
-        }
-        int i = 0;
-        // Search machine memory PMA entries (not devices or anything else)
-        while (true) {
-            auto &pma = m_s.pmas[i];
-            // The pmas array always contain a sentinel. It is an entry with
-            // zero length. If we hit it, return it
-            if (pma.get_length() == 0) {
-                return pma;
-            }
-            if (pma.get_istart_M() && pma.contains(paddr, length)) {
-                return pma;
-            }
-            i++;
-        }
-    }
+    machine &m_m;
+    // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
+    host_addr m_uram_ph_offset;
 
 public:
     /// \brief Constructor from machine and uarch states.
     /// \param um Reference to uarch state.
     /// \param m Reference to machine state.
-    explicit uarch_state_access(uarch_state &us, machine_state &s) : m_us(us), m_s(s) {
-        ;
+    explicit uarch_state_access(machine &m) : m_m(m) {
+        const auto &uram = m_m.get_uarch_state().ram;
+        const auto haddr = cast_ptr_to_host_addr(uram.get_memory_noexcept().get_host_memory());
+        const auto paddr = uram.get_start();
+        // initialize translation cache from paddr in uarch RAM to host address
+        m_uram_ph_offset = haddr - paddr;
     }
-
-    /// \brief No copy constructor
-    uarch_state_access(const uarch_state_access &) = delete;
-    /// \brief No copy assignment
-    uarch_state_access &operator=(const uarch_state_access &) = delete;
-    /// \brief No move constructor
-    uarch_state_access(uarch_state_access &&) = delete;
-    /// \brief No move assignment
-    uarch_state_access &operator=(uarch_state_access &&) = delete;
-    /// \brief Default destructor
-    ~uarch_state_access() = default;
 
 private:
+    // -----
+    // i_uarch_state_access interface implementation
+    // -----
     friend i_uarch_state_access<uarch_state_access>;
 
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_push_bracket(bracket_type /*type*/, const char * /*text*/) {}
-
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    int do_make_scoped_note(const char * /*text*/) {
-        return 0;
+    uint64_t do_read_uarch_x(int i) const {
+        return m_m.get_uarch_state().x[i];
     }
 
-    uint64_t do_read_x(int reg) const {
-        return m_us.x[reg];
+    void do_write_uarch_x(int i, uint64_t val) const {
+        assert(i != 0);
+        m_m.get_uarch_state().x[i] = val;
     }
 
-    void do_write_x(int reg, uint64_t val) {
-        assert(reg != 0);
-        m_us.x[reg] = val;
+    uint64_t do_read_uarch_pc() const {
+        return m_m.get_uarch_state().pc;
     }
 
-    uint64_t do_read_pc() const {
-        return m_us.pc;
+    void do_write_uarch_pc(uint64_t val) const {
+        m_m.get_uarch_state().pc = val;
     }
 
-    void do_write_pc(uint64_t val) {
-        m_us.pc = val;
+    uint64_t do_read_uarch_cycle() const {
+        return m_m.get_uarch_state().cycle;
     }
 
-    uint64_t do_read_cycle() const {
-        return m_us.cycle;
+    void do_write_uarch_cycle(uint64_t val) const {
+        m_m.get_uarch_state().cycle = val;
     }
 
-    void do_write_cycle(uint64_t val) {
-        m_us.cycle = val;
+    uint64_t do_read_uarch_halt_flag() const {
+        return m_m.get_uarch_state().halt_flag;
     }
 
-    bool do_read_halt_flag() const {
-        return m_us.halt_flag;
+    void do_write_uarch_halt_flag(uint64_t v) const {
+        m_m.get_uarch_state().halt_flag = v;
     }
 
-    void do_set_halt_flag() {
-        m_us.halt_flag = true;
-    }
-
-    void do_reset_halt_flag() {
-        m_us.halt_flag = false;
-    }
-
-    uint64_t do_read_word(uint64_t paddr) {
-        // Find a memory range that contains the specified address
-        auto &pma = find_memory_pma_entry(paddr, sizeof(uint64_t));
-        if (pma.get_istart_E()) {
-            // This word doesn't fall within any memory PMA range.
-            // Check if uarch is trying to access a machine state register
-            return read_register(paddr);
+    uint64_t do_read_word(uint64_t paddr) const {
+        if ((paddr & (sizeof(uint64_t) - 1)) != 0) {
+            throw std::runtime_error("misaligned read from uarch");
         }
-        if (!pma.get_istart_R()) {
-            throw std::runtime_error("pma is not readable");
+        // If the word is in UARCH_RAM, read it directly
+        // ??D This is an optimization that makes 15% difference in run_uarch tests
+        if (m_m.get_uarch_state().ram.contains(paddr, sizeof(uint64_t))) {
+            auto haddr = m_uram_ph_offset + paddr;
+            return aliased_aligned_read<uint64_t>(haddr);
         }
-        // Found a writable memory range. Access host memory accordingly.
-        const uint64_t hoffset = paddr - pma.get_start();
-        unsigned char *hmem = pma.get_memory().get_host_memory() + hoffset;
-        return aliased_aligned_read<uint64_t>(hmem);
+        // Forward to machine
+        return m_m.read_word(paddr);
     }
 
-    /// \brief Reads a uint64 machine state register mapped to a memory address
-    /// \param paddr Address of the state register
-    /// \param data Pointer receiving register value
-    uint64_t read_register(uint64_t paddr) {
-        return uarch_bridge::read_register(paddr, m_s);
-    }
-
-    /// \brief Fallback to error on all other word sizes
-    void do_write_word(uint64_t paddr, uint64_t data) {
-        // Find a memory range that contains the specified address
-        auto &pma = find_memory_pma_entry(paddr, sizeof(uint64_t));
-        if (pma.get_istart_E()) {
-            // This word doesn't fall within any memory PMA range.
-            // Check if uarch is trying to access a machine state register
-            write_register(paddr, data);
+    void do_write_word(uint64_t paddr, uint64_t val) const {
+        if ((paddr & (sizeof(uint64_t) - 1)) != 0) {
+            throw std::runtime_error("misaligned read from uarch");
+        }
+        // If the word is in UARCH_RAM, write it directly
+        // ??D This is an optimization that makes 15% difference in run_uarch tests
+        if (m_m.get_uarch_state().ram.contains(paddr, sizeof(uint64_t))) {
+            auto haddr = m_uram_ph_offset + paddr;
+            aliased_aligned_write<uint64_t>(haddr, val);
             return;
         }
-        if (!pma.get_istart_W()) {
-            throw std::runtime_error("pma is not writable");
-        }
-        // Found a writable memory range. Access host memory accordingly.
-        const uint64_t hoffset = paddr - pma.get_start();
-        unsigned char *hmem = pma.get_memory().get_host_memory() + hoffset;
-        aliased_aligned_write(hmem, data);
-        const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-        pma.mark_dirty_page(paddr_page - pma.get_start());
+        // Forward to machine
+        m_m.write_word(paddr, val);
     }
 
-    /// \brief Writes a uint64 machine state register mapped to a memory address
-    /// \param paddr Address of the state register
-    /// \param data New register value
-    void write_register(uint64_t paddr, uint64_t data) {
-        uarch_bridge::write_register(paddr, m_s, data);
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    void do_putchar(uint8_t c) const {
+        os_putchar(c);
     }
 
-    void do_reset_state() {
-        m_us.halt_flag = false;
-        m_us.pc = UARCH_PC_INIT;
-        m_us.cycle = UARCH_CYCLE_INIT;
-        for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
-            m_us.x[i] = UARCH_X_INIT;
-        }
-        // Load embedded pristine RAM image
-        if (uarch_pristine_ram_len > m_us.ram.get_length()) {
-            throw std::runtime_error("embedded uarch ram image does not fit in uarch ram pma");
-        }
-        m_us.ram.write_memory(m_us.ram.get_start(), uarch_pristine_ram, uarch_pristine_ram_len);
-        m_us.ram.fill_memory(m_us.ram.get_start() + uarch_pristine_ram_len, 0,
-            m_us.ram.get_length() - uarch_pristine_ram_len);
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {
+        // Forward to machine
+        m_m.mark_dirty_page(paddr, pma_index);
     }
+
+    void do_write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
+        uint64_t pma_index) const {
+        // Forward to machine
+        m_m.write_shadow_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
+    }
+
+    void do_reset_uarch() const {
+        // Forward to machine
+        m_m.reset_uarch();
+    }
+
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    constexpr const char *do_get_name() const {
+        return "uarch_state_access";
+    }
+
+    // -----
+    // i_accept_scoped_notes interface implementation
+    // -----
+    friend i_accept_scoped_notes<uarch_state_access>;
 };
 
 } // namespace cartesi

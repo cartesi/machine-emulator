@@ -69,13 +69,7 @@ enum PMA_ranges : uint64_t {
 enum PMA_constants : uint64_t {
     PMA_PAGE_SIZE_LOG2 = EXPAND_UINT64_C(PMA_PAGE_SIZE_LOG2_DEF), ///< log<sub>2</sub> of physical memory page size.
     PMA_PAGE_SIZE = (UINT64_C(1) << PMA_PAGE_SIZE_LOG2_DEF),      ///< Physical memory page size.
-    PMA_WORD_SIZE = EXPAND_UINT64_C(PMA_WORD_SIZE_DEF),           ///< Physical memory word size.
     PMA_MAX = EXPAND_UINT64_C(PMA_MAX_DEF)                        ///< Maximum number of PMAs
-};
-
-/// \brief PMA TLB constants.
-enum PMA_tlb_constants : uint64_t {
-    PMA_TLB_SIZE = EXPAND_UINT64_C(PMA_TLB_SIZE_DEF), ///< Number for entries per TLB type
 };
 
 /// \brief PMA PLIC constants.
@@ -131,6 +125,37 @@ enum class PMA_ISTART_DID {
     cmio_tx_buffer = PMA_CMIO_TX_BUFFER_DID_DEF,   ///< DID for cmio transmit buffer
     shadow_uarch = PMA_SHADOW_UARCH_STATE_DID_DEF, ///< DID for shadow uarch state device
 };
+
+static constexpr const char *pma_get_DID_name(PMA_ISTART_DID did) {
+    switch (did) {
+        case PMA_ISTART_DID::memory:
+            return "DID.memory";
+        case PMA_ISTART_DID::shadow_state:
+            return "DID.shadow_state";
+        case PMA_ISTART_DID::shadow_pmas:
+            return "DID.shadow_pmas";
+        case PMA_ISTART_DID::shadow_TLB:
+            return "DID.shadow_TLB";
+        case PMA_ISTART_DID::flash_drive:
+            return "DID.flash_drive";
+        case PMA_ISTART_DID::CLINT:
+            return "DID.CLINT";
+        case PMA_ISTART_DID::PLIC:
+            return "DID.PLIC";
+        case PMA_ISTART_DID::HTIF:
+            return "DID.HTIF";
+        case PMA_ISTART_DID::VIRTIO:
+            return "DID.VIRTIO";
+        case PMA_ISTART_DID::cmio_rx_buffer:
+            return "DID.cmio_rx_buffer";
+        case PMA_ISTART_DID::cmio_tx_buffer:
+            return "DID.cmio_tx_buffer";
+        case PMA_ISTART_DID::shadow_uarch:
+            return "DID.shadow_uarch";
+        default:
+            return "DID.unknown";
+    }
+}
 
 static_assert(PMA_CMIO_RX_BUFFER_START_DEF == CM_PMA_CMIO_RX_BUFFER_START);
 static_assert(PMA_CMIO_RX_BUFFER_LOG2_SIZE_DEF == CM_PMA_CMIO_RX_BUFFER_LOG2_SIZE);

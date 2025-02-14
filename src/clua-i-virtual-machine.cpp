@@ -14,6 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "clua-i-virtual-machine.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
@@ -25,8 +27,14 @@
 #include <string_view>
 #include <unordered_map>
 
+#include <json.hpp>
+
+extern "C" {
+#include <lauxlib.h>
+#include <lua.h>
+}
+
 #include "base64.h"
-#include "clua-i-virtual-machine.h"
 #include "clua.h"
 #include "machine-c-api.h"
 

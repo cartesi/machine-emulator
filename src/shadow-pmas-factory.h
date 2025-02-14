@@ -30,7 +30,7 @@ namespace cartesi {
 pma_entry make_shadow_pmas_pma_entry(uint64_t start, uint64_t length);
 
 template <typename PMAS>
-void populate_shadow_pmas_state(const PMAS &pmas, shadow_pmas_state *shadow) {
+void shadow_pmas_init(const PMAS &pmas, shadow_pmas_state *shadow) {
     static_assert(sizeof(shadow_pmas_state) == PMA_MAX * 2 * sizeof(uint64_t), "inconsistent shadow PMAs length");
     static_assert(PMA_SHADOW_PMAS_LENGTH >= sizeof(shadow_pmas_state), "shadow PMAs not long enough");
     if (pmas.size() > PMA_MAX) {

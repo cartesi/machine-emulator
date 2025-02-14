@@ -149,22 +149,22 @@ pma_entry machine::make_flash_drive_pma_entry(const std::string &description, co
     return make_memory_range_pma_entry(description, c).set_flags(m_flash_drive_flags);
 }
 
-pma_entry machine::make_cmio_rx_buffer_pma_entry(const cmio_config &c) {
+pma_entry machine::make_cmio_rx_buffer_pma_entry(const cmio_buffer_config &c) {
     const auto description = "cmio rx buffer memory range"s;
-    if (!c.rx_buffer.image_filename.empty()) {
+    if (!c.image_filename.empty()) {
         return make_mmapd_memory_pma_entry(description, PMA_CMIO_RX_BUFFER_START, PMA_CMIO_RX_BUFFER_LENGTH,
-            c.rx_buffer.image_filename, c.rx_buffer.shared)
+            c.image_filename, c.shared)
             .set_flags(m_cmio_rx_buffer_flags);
     }
     return make_callocd_memory_pma_entry(description, PMA_CMIO_RX_BUFFER_START, PMA_CMIO_RX_BUFFER_LENGTH)
         .set_flags(m_cmio_rx_buffer_flags);
 }
 
-pma_entry machine::make_cmio_tx_buffer_pma_entry(const cmio_config &c) {
+pma_entry machine::make_cmio_tx_buffer_pma_entry(const cmio_buffer_config &c) {
     const auto description = "cmio tx buffer memory range"s;
-    if (!c.tx_buffer.image_filename.empty()) {
+    if (!c.image_filename.empty()) {
         return make_mmapd_memory_pma_entry(description, PMA_CMIO_TX_BUFFER_START, PMA_CMIO_TX_BUFFER_LENGTH,
-            c.tx_buffer.image_filename, c.tx_buffer.shared)
+            c.image_filename, c.shared)
             .set_flags(m_cmio_tx_buffer_flags);
     }
     return make_callocd_memory_pma_entry(description, PMA_CMIO_TX_BUFFER_START, PMA_CMIO_TX_BUFFER_LENGTH)
@@ -235,44 +235,24 @@ void machine::replace_memory_range(const memory_range_config &range) {
     throw std::invalid_argument{"attempt to replace inexistent memory range"};
 }
 
-void machine::init_tlb() {
-    for (auto set_index : {TLB_CODE, TLB_READ, TLB_WRITE}) {
-        for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
-            write_tlb(set_index, slot_index, TLB_INVALID_PAGE, host_addr{}, TLB_INVALID_PMA_INDEX);
-        }
-    }
-}
-
-void machine::init_tlb(const shadow_tlb_state &shadow_tlb) {
-    for (auto set_index : {TLB_CODE, TLB_READ, TLB_WRITE}) {
-        for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
-            const auto vaddr_page = shadow_tlb[set_index][slot_index].vaddr_page;
-            const auto vp_offset = shadow_tlb[set_index][slot_index].vp_offset;
-            const auto pma_index = shadow_tlb[set_index][slot_index].pma_index;
-            check_shadow_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index, "stored TLB is corrupt: "s);
-            write_shadow_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
-        }
-    }
-}
-
-void machine::init_uarch(const uarch_config &config) {
+void machine::init_uarch(const uarch_config &c) {
     using reg = machine_reg;
-    write_reg(reg::uarch_pc, config.processor.pc);
-    write_reg(reg::uarch_cycle, config.processor.cycle);
-    write_reg(reg::uarch_halt_flag, config.processor.halt_flag);
+    write_reg(reg::uarch_pc, c.processor.pc);
+    write_reg(reg::uarch_cycle, c.processor.cycle);
+    write_reg(reg::uarch_halt_flag, c.processor.halt_flag);
     // General purpose registers
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
-        write_reg(machine_reg_enum(reg::uarch_x0, i), config.processor.x[i]);
+        write_reg(machine_reg_enum(reg::uarch_x0, i), c.processor.x[i]);
     }
     // Register shadow state
     m_us.shadow_state = make_shadow_uarch_state_pma_entry(PMA_SHADOW_UARCH_STATE_START, PMA_SHADOW_UARCH_STATE_LENGTH);
     // Register RAM
     constexpr auto ram_description = "uarch RAM";
-    if (!config.ram.image_filename.empty()) {
+    if (!c.ram.image_filename.empty()) {
         // Load RAM image from file
-        m_us.ram = make_callocd_memory_pma_entry(ram_description, PMA_UARCH_RAM_START, UARCH_RAM_LENGTH,
-            config.ram.image_filename)
-                       .set_flags(m_ram_flags);
+        m_us.ram =
+            make_callocd_memory_pma_entry(ram_description, PMA_UARCH_RAM_START, UARCH_RAM_LENGTH, c.ram.image_filename)
+                .set_flags(m_ram_flags);
     } else {
         // Load embedded pristine RAM image
         m_us.ram = make_callocd_memory_pma_entry(ram_description, PMA_UARCH_RAM_START, PMA_UARCH_RAM_LENGTH)
@@ -284,98 +264,85 @@ void machine::init_uarch(const uarch_config &config) {
     }
 }
 
-// ??D It is best to leave the std::move() on r because it may one day be necessary!
-// NOLINTNEXTLINE(hicpp-move-const-arg,performance-move-const-arg)
-machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}, m_r{std::move(r)} {
+void machine::init_processor(processor_config &p, const machine_runtime_config &r) {
 
-    init_uarch(m_c.uarch);
-
-    if (m_c.processor.marchid == UINT64_C(-1)) {
-        m_c.processor.marchid = MARCHID_INIT;
+    if (p.marchid == UINT64_C(-1)) {
+        p.marchid = MARCHID_INIT;
     }
 
-    if (m_c.processor.marchid != MARCHID_INIT && !m_r.skip_version_check) {
+    if (p.marchid != MARCHID_INIT && !r.skip_version_check) {
         throw std::invalid_argument{"marchid mismatch, emulator version is incompatible"};
     }
 
-    if (m_c.processor.mvendorid == UINT64_C(-1)) {
-        m_c.processor.mvendorid = MVENDORID_INIT;
+    if (p.mvendorid == UINT64_C(-1)) {
+        p.mvendorid = MVENDORID_INIT;
     }
 
-    if (m_c.processor.mvendorid != MVENDORID_INIT && !m_r.skip_version_check) {
+    if (p.mvendorid != MVENDORID_INIT && !r.skip_version_check) {
         throw std::invalid_argument{"mvendorid mismatch, emulator version is incompatible"};
     }
 
-    if (m_c.processor.mimpid == UINT64_C(-1)) {
-        m_c.processor.mimpid = MIMPID_INIT;
+    if (p.mimpid == UINT64_C(-1)) {
+        p.mimpid = MIMPID_INIT;
     }
 
-    if (m_c.processor.mimpid != MIMPID_INIT && !m_r.skip_version_check) {
+    if (p.mimpid != MIMPID_INIT && !r.skip_version_check) {
         throw std::invalid_argument{"mimpid mismatch, emulator version is incompatible"};
     }
 
-    m_s.soft_yield = m_r.soft_yield;
-
     // General purpose registers
     for (int i = 1; i < X_REG_COUNT; i++) {
-        write_reg(machine_reg_enum(reg::x0, i), m_c.processor.x[i]);
+        write_reg(machine_reg_enum(reg::x0, i), p.x[i]);
     }
 
     // Floating-point registers
     for (int i = 0; i < F_REG_COUNT; i++) {
-        write_reg(machine_reg_enum(reg::f0, i), m_c.processor.f[i]);
+        write_reg(machine_reg_enum(reg::f0, i), p.f[i]);
     }
 
     // Named registers
-    write_reg(reg::pc, m_c.processor.pc);
-    write_reg(reg::fcsr, m_c.processor.fcsr);
-    write_reg(reg::mcycle, m_c.processor.mcycle);
-    write_reg(reg::icycleinstret, m_c.processor.icycleinstret);
-    write_reg(reg::mstatus, m_c.processor.mstatus);
-    write_reg(reg::mtvec, m_c.processor.mtvec);
-    write_reg(reg::mscratch, m_c.processor.mscratch);
-    write_reg(reg::mepc, m_c.processor.mepc);
-    write_reg(reg::mcause, m_c.processor.mcause);
-    write_reg(reg::mtval, m_c.processor.mtval);
-    write_reg(reg::misa, m_c.processor.misa);
-    write_reg(reg::mie, m_c.processor.mie);
-    write_reg(reg::mip, m_c.processor.mip);
-    write_reg(reg::medeleg, m_c.processor.medeleg);
-    write_reg(reg::mideleg, m_c.processor.mideleg);
-    write_reg(reg::mcounteren, m_c.processor.mcounteren);
-    write_reg(reg::menvcfg, m_c.processor.menvcfg);
-    write_reg(reg::stvec, m_c.processor.stvec);
-    write_reg(reg::sscratch, m_c.processor.sscratch);
-    write_reg(reg::sepc, m_c.processor.sepc);
-    write_reg(reg::scause, m_c.processor.scause);
-    write_reg(reg::stval, m_c.processor.stval);
-    write_reg(reg::satp, m_c.processor.satp);
-    write_reg(reg::scounteren, m_c.processor.scounteren);
-    write_reg(reg::senvcfg, m_c.processor.senvcfg);
-    write_reg(reg::ilrsc, m_c.processor.ilrsc);
-    write_reg(reg::iprv, m_c.processor.iprv);
-    write_reg(reg::iflags_X, m_c.processor.iflags_X);
-    write_reg(reg::iflags_Y, m_c.processor.iflags_Y);
-    write_reg(reg::iflags_H, m_c.processor.iflags_H);
-    write_reg(reg::iunrep, m_c.processor.iunrep);
+    write_reg(reg::pc, p.pc);
+    write_reg(reg::fcsr, p.fcsr);
+    write_reg(reg::mcycle, p.mcycle);
+    write_reg(reg::icycleinstret, p.icycleinstret);
+    write_reg(reg::mstatus, p.mstatus);
+    write_reg(reg::mtvec, p.mtvec);
+    write_reg(reg::mscratch, p.mscratch);
+    write_reg(reg::mepc, p.mepc);
+    write_reg(reg::mcause, p.mcause);
+    write_reg(reg::mtval, p.mtval);
+    write_reg(reg::misa, p.misa);
+    write_reg(reg::mie, p.mie);
+    write_reg(reg::mip, p.mip);
+    write_reg(reg::medeleg, p.medeleg);
+    write_reg(reg::mideleg, p.mideleg);
+    write_reg(reg::mcounteren, p.mcounteren);
+    write_reg(reg::menvcfg, p.menvcfg);
+    write_reg(reg::stvec, p.stvec);
+    write_reg(reg::sscratch, p.sscratch);
+    write_reg(reg::sepc, p.sepc);
+    write_reg(reg::scause, p.scause);
+    write_reg(reg::stval, p.stval);
+    write_reg(reg::satp, p.satp);
+    write_reg(reg::scounteren, p.scounteren);
+    write_reg(reg::senvcfg, p.senvcfg);
+    write_reg(reg::ilrsc, p.ilrsc);
+    write_reg(reg::iprv, p.iprv);
+    write_reg(reg::iflags_X, p.iflags_X);
+    write_reg(reg::iflags_Y, p.iflags_Y);
+    write_reg(reg::iflags_H, p.iflags_H);
+    write_reg(reg::iunrep, p.iunrep);
+}
 
-    // Register RAM
-    if (m_c.ram.image_filename.empty()) {
-        register_pma_entry(make_callocd_memory_pma_entry("RAM"s, PMA_RAM_START, m_c.ram.length).set_flags(m_ram_flags));
-    } else {
-        register_pma_entry(make_callocd_memory_pma_entry("RAM"s, PMA_RAM_START, m_c.ram.length, m_c.ram.image_filename)
-                .set_flags(m_ram_flags));
-    }
+void machine::init_ram_pma(const ram_config &ram) {
+    register_pma_entry(
+        make_callocd_memory_pma_entry("RAM"s, PMA_RAM_START, ram.length, ram.image_filename).set_flags(m_ram_flags));
+}
 
-    // Register DTB
-    pma_entry &dtb = register_pma_entry((m_c.dtb.image_filename.empty() ?
-            make_callocd_memory_pma_entry("DTB"s, PMA_DTB_START, PMA_DTB_LENGTH) :
-            make_callocd_memory_pma_entry("DTB"s, PMA_DTB_START, PMA_DTB_LENGTH, m_c.dtb.image_filename))
-            .set_flags(m_dtb_flags));
-
+void machine::init_flash_drive_pmas(flash_drive_configs &flash_drive) {
     // Register all flash drives
     int i = 0; // NOLINT(misc-const-correctness)
-    for (auto &f : m_c.flash_drive) {
+    for (auto &f : flash_drive) {
         const std::string flash_description = "flash drive "s + std::to_string(i);
         // Auto detect flash drive start address
         if (f.start == UINT64_C(-1)) {
@@ -400,61 +367,16 @@ machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}
         register_pma_entry(make_flash_drive_pma_entry(flash_description, f));
         i++;
     }
+}
 
-    // Register cmio memory ranges
-    register_pma_entry(make_cmio_tx_buffer_pma_entry(m_c.cmio));
-    register_pma_entry(make_cmio_rx_buffer_pma_entry(m_c.cmio));
-
-    // Register HTIF device
-    register_pma_entry(make_htif_pma_entry(PMA_HTIF_START, PMA_HTIF_LENGTH));
-
-    // Copy HTIF state to from config to machine
-    write_reg(reg::htif_tohost, m_c.htif.tohost);
-    write_reg(reg::htif_fromhost, m_c.htif.fromhost);
-    // Only command in halt device is command 0 and it is always available
-    const uint64_t htif_ihalt = static_cast<uint64_t>(true) << HTIF_HALT_CMD_HALT;
-    write_reg(reg::htif_ihalt, htif_ihalt);
-    const uint64_t htif_iconsole = static_cast<uint64_t>(m_c.htif.console_getchar) << HTIF_CONSOLE_CMD_GETCHAR |
-        static_cast<uint64_t>(true) << HTIF_CONSOLE_CMD_PUTCHAR;
-    write_reg(reg::htif_iconsole, htif_iconsole);
-    const uint64_t htif_iyield = static_cast<uint64_t>(m_c.htif.yield_manual) << HTIF_YIELD_CMD_MANUAL |
-        static_cast<uint64_t>(m_c.htif.yield_automatic) << HTIF_YIELD_CMD_AUTOMATIC;
-    write_reg(reg::htif_iyield, htif_iyield);
-
-    // Register CLINT device
-    register_pma_entry(make_clint_pma_entry(PMA_CLINT_START, PMA_CLINT_LENGTH));
-    // Copy CLINT state to from config to machine
-    write_reg(reg::clint_mtimecmp, m_c.clint.mtimecmp);
-
-    // Register PLIC device
-    register_pma_entry(make_plic_pma_entry(PMA_PLIC_START, PMA_PLIC_LENGTH));
-    // Copy PLIC state from config to machine
-    write_reg(reg::plic_girqpend, m_c.plic.girqpend);
-    write_reg(reg::plic_girqsrvd, m_c.plic.girqsrvd);
-
-    // Register TLB device
-    register_pma_entry(make_shadow_tlb_pma_entry(PMA_SHADOW_TLB_START, PMA_SHADOW_TLB_LENGTH));
-
-    // Register state shadow device
-    register_pma_entry(make_shadow_state_pma_entry(PMA_SHADOW_STATE_START, PMA_SHADOW_STATE_LENGTH));
-
-    // Register memory range that holds shadow PMA state, keep pointer to populate later
-    shadow_pmas_state *shadow_pmas = nullptr;
-    {
-        auto shadow_pmas_pma_entry = make_shadow_pmas_pma_entry(PMA_SHADOW_PMAS_START, PMA_SHADOW_PMAS_LENGTH);
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        shadow_pmas = reinterpret_cast<shadow_pmas_state *>(shadow_pmas_pma_entry.get_memory().get_host_memory());
-        register_pma_entry(std::move(shadow_pmas_pma_entry));
-    }
-
+void machine::init_virtio_pmas(const virtio_configs &v, uint64_t iunrep) {
     // Initialize VirtIO devices
-    if (!m_c.virtio.empty()) {
+    if (!v.empty()) {
         // VirtIO devices are disallowed in unreproducible mode
-        if (m_c.processor.iunrep == 0) {
+        if (iunrep == 0) {
             throw std::invalid_argument{"virtio devices are only supported in unreproducible machines"};
         }
-
-        for (const auto &vdev_config_entry : m_c.virtio) {
+        for (const auto &vdev_config_entry : v) {
             std::visit(
                 [&](const auto &vdev_config) {
                     using T = std::decay_t<decltype(vdev_config)>;
@@ -500,60 +422,53 @@ machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}
                 vdev_config_entry);
         }
     }
+}
 
-    // Initialize DTB
-    if (m_c.dtb.image_filename.empty()) {
-        // Write the FDT (flattened device tree) into DTB
-        dtb_init(m_c, dtb.get_memory().get_host_memory(), PMA_DTB_LENGTH);
-    }
-
-    // Last, add empty sentinels until we reach capacity (need at least one sentinel)
-    register_pma_entry(make_empty_pma_entry("sentinel"s, 0, 0));
-    // NOLINTNEXTLINE(readability-static-accessed-through-instance)
-    if (m_s.pmas.capacity() != PMA_MAX) {
-        throw std::logic_error{"PMAs array must be able to hold PMA_MAX entries"};
-    }
-    while (m_s.pmas.size() < PMA_MAX) {
-        register_pma_entry(make_empty_pma_entry("sentinel"s, 0, 0));
-    }
-
-    // Populate shadow PMAs
-    populate_shadow_pmas_state(m_s.pmas, shadow_pmas);
-
-    // Initialize TLB device.
-    // This must be done after all PMA entries are already registered, so we can lookup page addresses
-    if (!m_c.tlb.image_filename.empty()) {
-        auto shadow_tlb = make_unique_mmap<shadow_tlb_state>(m_c.tlb.image_filename.c_str(), 1, false /* not shared */);
-        init_tlb(*shadow_tlb);
-    } else {
-        init_tlb();
-    }
-
+void machine::init_htif_pma(const htif_config &h, const htif_runtime_config &r, uint64_t iunrep) {
+    // Register HTIF device
+    register_pma_entry(make_htif_pma_entry(PMA_HTIF_START, PMA_HTIF_LENGTH));
+    // Copy HTIF state to from config to machine
+    write_reg(reg::htif_tohost, h.tohost);
+    write_reg(reg::htif_fromhost, h.fromhost);
+    // Only command in halt device is command 0 and it is always available
+    const uint64_t htif_ihalt = static_cast<uint64_t>(true) << HTIF_HALT_CMD_HALT;
+    write_reg(reg::htif_ihalt, htif_ihalt);
+    const uint64_t htif_iconsole = static_cast<uint64_t>(h.console_getchar) << HTIF_CONSOLE_CMD_GETCHAR |
+        static_cast<uint64_t>(true) << HTIF_CONSOLE_CMD_PUTCHAR;
+    write_reg(reg::htif_iconsole, htif_iconsole);
+    const uint64_t htif_iyield = static_cast<uint64_t>(h.yield_manual) << HTIF_YIELD_CMD_MANUAL |
+        static_cast<uint64_t>(h.yield_automatic) << HTIF_YIELD_CMD_AUTOMATIC;
+    write_reg(reg::htif_iyield, htif_iyield);
     // Initialize TTY if console input is enabled
-    if (m_c.htif.console_getchar || has_virtio_console()) {
-        if (m_c.processor.iunrep == 0) {
+    if (h.console_getchar || has_virtio_console()) {
+        if (iunrep == 0) {
             throw std::invalid_argument{"TTY stdin is only supported in unreproducible machines"};
         }
         os_open_tty();
     }
-    os_silence_putchar(m_r.htif.no_console_putchar);
+    os_silence_putchar(r.no_console_putchar);
+}
 
-    // Disable SIGPIPE handler, because this signal can be raised and terminate the emulator process
-    // when calling write() on closed file descriptors.
-    // This can happen with the stdout console file descriptors or network file descriptors.
-    os_disable_sigpipe();
+void machine::init_cmio_pmas(const cmio_config &c) {
+    // Register cmio memory ranges
+    register_pma_entry(make_cmio_tx_buffer_pma_entry(c.tx_buffer));
+    register_pma_entry(make_cmio_rx_buffer_pma_entry(c.rx_buffer));
+}
 
+void machine::init_merkle_pmas() {
     // Include machine PMAs in set considered by the Merkle tree.
     for (auto &pma : m_s.pmas) {
-        if (!pma.get_istart_E()) {
+        if (pma.get_length() != 0) {
             m_merkle_pmas.push_back(&pma);
         }
     }
     m_merkle_pmas.push_back(&m_us.shadow_state);
     m_merkle_pmas.push_back(&m_us.ram);
-    // Last, add sentinel PMA
-    m_merkle_pmas.push_back(&m_s.empty_pma);
+    // Sort it by increasing start address
+    std::ranges::sort(m_merkle_pmas, [](const auto *a, const auto *b) { return a->get_start() < b->get_start(); });
+}
 
+void machine::init_memory_range_descrs() {
     // Initialize memory range descriptions returned by get_memory_ranges method
     for (const auto *pma : m_merkle_pmas) {
         if (pma->get_length() != 0) {
@@ -562,9 +477,108 @@ machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}
                 .description = pma->get_description()});
         }
     }
-    // Sort it by increasing start address
-    std::sort(m_mrds.begin(), m_mrds.end(),
-        [](const machine_memory_range_descr &a, const machine_memory_range_descr &b) { return a.start < b.start; });
+}
+
+void machine::init_clint_pma(const clint_config &c) {
+    // Register CLINT device
+    register_pma_entry(make_clint_pma_entry(PMA_CLINT_START, PMA_CLINT_LENGTH));
+    // Copy CLINT state to from config to machine
+    write_reg(reg::clint_mtimecmp, c.mtimecmp);
+}
+
+void machine::init_plic_pma(const plic_config &p) {
+    // Register PLIC device
+    register_pma_entry(make_plic_pma_entry(PMA_PLIC_START, PMA_PLIC_LENGTH));
+    // Copy PLIC state from config to machine
+    write_reg(reg::plic_girqpend, p.girqpend);
+    write_reg(reg::plic_girqsrvd, p.girqsrvd);
+}
+
+void machine::init_sentinel_pmas() {
+    // Last, add empty sentinels until we reach capacity (need at least one sentinel)
+    register_pma_entry(make_empty_pma_entry("sentinel"s, 0, 0));
+    // NOLINTNEXTLINE(readability-static-accessed-through-instance)
+    if (m_s.pmas.capacity() != PMA_MAX) {
+        throw std::logic_error{"PMAs array must be able to hold at least PMA_MAX entries"};
+    }
+    while (m_s.pmas.size() < PMA_MAX) {
+        register_pma_entry(make_empty_pma_entry("sentinel"s, 0, 0));
+    }
+}
+
+void machine::init_shadow_pmas_contents(pma_entry &shadow_pmas) const {
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
+    shadow_pmas_init(m_s.pmas,
+        reinterpret_cast<shadow_pmas_state *>(shadow_pmas.get_memory_noexcept().get_host_memory()));
+    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
+}
+
+void machine::init_tlb_contents(const std::string &image_filename) {
+    if (!image_filename.empty()) {
+        auto shadow_tlb_ptr = make_unique_mmap<shadow_tlb_state>(image_filename.c_str(), 1, false /* not shared */);
+        auto &shadow_tlb = *shadow_tlb_ptr;
+        for (auto set_index : {TLB_CODE, TLB_READ, TLB_WRITE}) {
+            for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
+                const auto vaddr_page = shadow_tlb[set_index][slot_index].vaddr_page;
+                const auto vp_offset = shadow_tlb[set_index][slot_index].vp_offset;
+                const auto pma_index = shadow_tlb[set_index][slot_index].pma_index;
+                check_shadow_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index, "stored TLB is corrupt: "s);
+                write_shadow_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
+            }
+        }
+    } else {
+        for (auto set_index : {TLB_CODE, TLB_READ, TLB_WRITE}) {
+            for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
+                write_tlb(set_index, slot_index, TLB_INVALID_PAGE, host_addr{}, TLB_INVALID_PMA_INDEX);
+            }
+        }
+    }
+}
+
+void machine::init_dtb_contents(const machine_config &c, pma_entry &dtb) {
+    if (c.dtb.image_filename.empty()) {
+        dtb_init(c, dtb.get_memory().get_host_memory(), PMA_DTB_LENGTH);
+    }
+}
+
+// ??D It is best to leave the std::move() on r because it may one day be necessary!
+// NOLINTNEXTLINE(hicpp-move-const-arg,performance-move-const-arg)
+machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}, m_r{std::move(r)} {
+    init_uarch(m_c.uarch);
+    init_processor(m_c.processor, m_r);
+    m_s.soft_yield = m_r.soft_yield;
+    init_ram_pma(m_c.ram);
+    // Will populate when initialization of PMAs is done
+    pma_entry &dtb =
+        register_pma_entry(make_callocd_memory_pma_entry("DTB"s, PMA_DTB_START, PMA_DTB_LENGTH, m_c.dtb.image_filename)
+                .set_flags(m_dtb_flags));
+    init_flash_drive_pmas(m_c.flash_drive);
+    init_cmio_pmas(m_c.cmio);
+    init_htif_pma(m_c.htif, m_r.htif, m_c.processor.iunrep);
+    init_clint_pma(m_c.clint);
+    init_plic_pma(m_c.plic);
+    // Will populate when initialization of PMAs is done
+    register_pma_entry(make_shadow_tlb_pma_entry(PMA_SHADOW_TLB_START, PMA_SHADOW_TLB_LENGTH));
+    register_pma_entry(make_shadow_state_pma_entry(PMA_SHADOW_STATE_START, PMA_SHADOW_STATE_LENGTH));
+    // Will populate when initialization of PMAs is done
+    pma_entry &shpmas = register_pma_entry(make_shadow_pmas_pma_entry(PMA_SHADOW_PMAS_START, PMA_SHADOW_PMAS_LENGTH));
+    init_virtio_pmas(m_c.virtio, m_c.processor.iunrep);
+    init_sentinel_pmas();
+    // Populate shadow PMAs contents.
+    // This must be done after all PMA entries are already registered, so we encode them into the shadow
+    init_shadow_pmas_contents(shpmas);
+    // Initialize TLB contents.
+    // This must be done after all PMA entries are already registered, so we can lookup page addresses
+    init_tlb_contents(m_c.tlb.image_filename);
+    // Initialize DTB contents.
+    // This must be done after all PMA entries are already registered, so we can lookup flash drive parameters
+    init_dtb_contents(m_c, dtb);
+    init_merkle_pmas();
+    init_memory_range_descrs();
+    // Disable SIGPIPE handler, because this signal can be raised and terminate the emulator process
+    // when calling write() on closed file descriptors.
+    // This can happen with the stdout console file descriptors or network file descriptors.
+    os_disable_sigpipe();
 }
 
 static void load_hash(const std::string &dir, machine::hash_type &h) {
@@ -765,21 +779,6 @@ static void store_memory_pma(const pma_entry &pma, const std::string &dir) {
     }
 }
 
-pma_entry &machine::find_pma_entry(uint64_t paddr, uint64_t length) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
-    return const_cast<pma_entry &>(std::as_const(*this).find_pma_entry(paddr, length));
-}
-
-const pma_entry &machine::find_pma_entry(uint64_t paddr, uint64_t length) const {
-    return find_pma_entry(m_s.pmas, paddr, length);
-}
-
-template <typename CONTAINER>
-pma_entry &machine::find_pma_entry(const CONTAINER &pmas, uint64_t paddr, uint64_t length) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
-    return const_cast<pma_entry &>(std::as_const(*this).find_pma_entry(pmas, paddr, length));
-}
-
 uint64_t machine::get_paddr(host_addr haddr, uint64_t pma_index) const {
     return static_cast<uint64_t>(haddr + get_hp_offset(pma_index));
 }
@@ -884,33 +883,17 @@ host_addr machine::get_hp_offset(uint64_t pma_index) const {
     return paddr - haddr;
 }
 
-template <typename CONTAINER>
-const pma_entry &machine::find_pma_entry(const CONTAINER &pmas, uint64_t paddr, uint64_t length) const {
-    for (const auto &p : pmas) {
-        const auto &pma = deref(p);
-        // Stop at first empty PMA
-        if (pma.get_length() == 0) {
-            return pma;
-        }
+//??D now that m_merkle_pmas is sorted by start, maybe change this to a binary search?
+const pma_entry &machine::find_pma_entry(uint64_t paddr, uint64_t length) const {
+    const static auto sentinel = make_empty_pma_entry("sentinel", 0, 0);
+    for (const auto *pma : m_merkle_pmas) {
         // Check if data is in range
-        if (paddr >= pma.get_start() && pma.get_length() >= length &&
-            paddr - pma.get_start() <= pma.get_length() - length) {
-            return pma;
+        if (paddr >= pma->get_start() && pma->get_length() >= length &&
+            paddr - pma->get_start() <= pma->get_length() - length) {
+            return *pma;
         }
     }
-
-    // Last PMA is always the empty range
-    return deref(pmas.back());
-}
-
-template <typename T>
-static inline T &deref(T &t) {
-    return t; // NOLINT(bugprone-return-const-ref-from-parameter)
-}
-
-template <typename T>
-static inline T &deref(T *t) {
-    return *t;
+    return sentinel;
 }
 
 void machine::store_pmas(const machine_config &c, const std::string &dir) const {
@@ -1942,7 +1925,7 @@ bool machine::update_merkle_tree_page(uint64_t address) {
         "PMA and machine_merkle_tree page sizes must match");
     // Align address to beginning of page
     address &= ~(PMA_PAGE_SIZE - 1);
-    pma_entry &pma = find_pma_entry(m_merkle_pmas, address, sizeof(uint64_t));
+    auto &pma = find_pma_entry<uint8_t>(address);
     const uint64_t page_start_in_range = address - pma.get_start();
     machine_merkle_tree::hasher_type h;
     auto scratch = make_unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
@@ -1967,10 +1950,6 @@ bool machine::update_merkle_tree_page(uint64_t address) {
     }
     pma.mark_clean_page(page_start_in_range);
     return m_t.end_update(h);
-}
-
-const boost::container::static_vector<pma_entry, PMA_MAX> &machine::get_pmas() const {
-    return m_s.pmas;
 }
 
 void machine::get_root_hash(hash_type &hash) const {
@@ -2059,7 +2038,7 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
     // or entirely outside it.
     if (log2_size < machine_merkle_tree::get_log2_page_size()) {
         const uint64_t length = UINT64_C(1) << log2_size;
-        const pma_entry &pma = find_pma_entry(m_merkle_pmas, address, length);
+        const auto &pma = find_pma_entry(address, length);
         auto scratch = make_unique_calloc<unsigned char>(PMA_PAGE_SIZE);
         const unsigned char *page_data = nullptr;
         // If the PMA range is empty, we know the desired range is
@@ -2107,7 +2086,7 @@ void machine::read_memory(uint64_t paddr, unsigned char *data, uint64_t length) 
     // That first peek reads at most up to the next page boundary.
     // So the inner loop iterations never cross page boundaries.
     for (;;) {
-        const pma_entry &pma = find_pma_entry(m_merkle_pmas, paddr, peek_length);
+        const auto &pma = find_pma_entry(paddr, peek_length);
         const auto peek = pma.get_peek();
         const auto pma_start = pma.get_start();
         const auto pma_empty = pma.get_istart_E();
@@ -2161,7 +2140,7 @@ void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t l
     if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
-    pma_entry &pma = find_pma_entry(m_merkle_pmas, paddr, length);
+    auto &pma = find_pma_entry(paddr, length);
     if (pma.get_istart_IO()) {
         throw std::invalid_argument{"attempted write to device memory range"};
     }
@@ -2178,7 +2157,7 @@ void machine::fill_memory(uint64_t address, uint8_t data, uint64_t length) {
     if (length == 0) {
         return;
     }
-    pma_entry &pma = find_pma_entry(m_merkle_pmas, address, length);
+    auto &pma = find_pma_entry(address, length);
     if (!pma.get_istart_M() || pma.get_istart_E()) {
         throw std::invalid_argument{"address range not entirely in memory PMA"};
     }
@@ -2294,7 +2273,7 @@ void machine::write_word(uint64_t paddr, uint64_t val) {
         return;
     }
     // Otherwise, try the slow path
-    auto &pma = find_pma_entry(m_merkle_pmas, paddr, sizeof(uint64_t));
+    auto &pma = find_pma_entry(paddr, sizeof(uint64_t));
     if (pma.get_istart_E() || !pma.get_istart_M()) {
         std::ostringstream err;
         err << "attempted memory write to " << pma.get_description() << " at address 0x" << std::hex << paddr << "("

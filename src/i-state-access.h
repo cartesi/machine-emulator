@@ -20,18 +20,56 @@
 /// \file
 /// \brief State access interface
 
+#include <cinttypes>
 #include <cstdint>
 #include <type_traits>
 #include <utility>
 
-#include "compiler-defines.h"
+#include "dump.h"
+#include "i-prefer-shadow-state.h"
 #include "meta.h"
-#include "shadow-tlb.h"
+#include "pm-type-name.h"
+#include "tlb.h"
 
 namespace cartesi {
 
 // Forward declarations
 enum class bracket_type;
+
+// Type trait that should return the pma_entry type for a state access class
+template <typename STATE_ACCESS>
+struct i_state_access_pma_entry {};
+template <typename STATE_ACCESS>
+using i_state_access_pma_entry_t = typename i_state_access_pma_entry<STATE_ACCESS>::type;
+
+// Type trait that should return the fast_addr type for a state access class
+template <typename STATE_ACCESS>
+struct i_state_access_fast_addr {};
+template <typename STATE_ACCESS>
+using i_state_access_fast_addr_t = typename i_state_access_fast_addr<STATE_ACCESS>::type;
+
+// NOLINTBEGIN(cppcoreguidelines-macro-usage)
+#define DEFINE_SA_READ(REG)                                                                                            \
+    uint64_t read_##REG() const {                                                                                      \
+        if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {                                                       \
+            const auto val = derived().do_read_##REG();                                                                \
+            DSA_PRINTF("%s::read_" #REG "() = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), val, val);                    \
+            return val;                                                                                                \
+        } else {                                                                                                       \
+            return prefer_read_shadow_state(shadow_state_what::REG);                                                   \
+        }                                                                                                              \
+    }
+
+#define DEFINE_SA_WRITE(REG)                                                                                           \
+    void write_##REG(uint64_t val) const {                                                                             \
+        if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {                                                       \
+            derived().do_write_##REG(val);                                                                             \
+            DSA_PRINTF("%s::write_" #REG "(%" PRIu64 "(0x%" PRIx64 "))\n", get_name(), val, val);                      \
+        } else {                                                                                                       \
+            prefer_write_shadow_state(shadow_state_what::REG, val);                                                    \
+        }                                                                                                              \
+    }
+// NOLINTEND(cppcoreguidelines-macro-usage)
 
 /// \class i_state_access
 /// \brief Interface for machine state access.
@@ -40,8 +78,8 @@ enum class bracket_type;
 /// The "run" function does not need a log, and must be as fast as possible.
 /// Both functions share the exact same implementation of what it means to advance the machine state by one cycle.
 /// In this common implementation, all state accesses go through a class that implements the i_state_access interface.
-/// When looging is needed, a logged_state_access class is used.
-/// When no logging is needed, a state_access class is used.
+/// When logging is needed, a record state access class is used.
+/// When no logging is needed, a direct state access class is used.
 ///
 /// In a typical design, i_state_access would be pure virtual.
 /// For speed, we avoid virtual methods and instead use templates.
@@ -54,7 +92,7 @@ enum class bracket_type;
 /// Methods are provided to read and write each state component.
 /// \}
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
-template <typename DERIVED, typename PMA_ENTRY_TYPE>
+template <typename DERIVED>
 class i_state_access { // CRTP
     i_state_access() = default;
     friend DERIVED;
@@ -69,544 +107,190 @@ class i_state_access { // CRTP
         return *static_cast<const DERIVED *>(this);
     }
 
+    uint64_t prefer_read_shadow_state(shadow_state_what what) const {
+        const auto val = derived().read_shadow_state(what);
+        [[maybe_unused]] const auto *const what_name = shadow_state_get_what_name(what);
+        DSA_PRINTF("%s::read_shadow_state(%s) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), what_name, val, val);
+        return val;
+    }
+
+    void prefer_write_shadow_state(shadow_state_what what, uint64_t val) const {
+        derived().write_shadow_state(what, val);
+        [[maybe_unused]] const auto *const what_name = shadow_state_get_what_name(what);
+        DSA_PRINTF("%s::write_shadow_state(%s, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), what_name, val, val);
+    }
+
 public:
-    /// \brief Returns machine state for direct access.
-    auto &get_naked_state() {
-        return derived().do_get_naked_state();
-    }
+    using pma_entry = i_state_access_pma_entry_t<DERIVED>;
+    using fast_addr = i_state_access_fast_addr_t<DERIVED>;
 
-    /// \brief Adds an annotation bracket to the log
-    /// \param type Type of bracket
-    /// \param text String with the text for the annotation
-    void push_bracket(bracket_type type, const char *text) {
-        return derived().do_push_bracket(type, text);
-    }
-
-    /// \brief Adds annotations to the state, bracketing a scope
-    /// \param text String with the text for the annotation
-    /// \returns An object that, when constructed and destroyed issues an annonation.
-    auto make_scoped_note(const char *text) {
-        return derived().do_make_scoped_note(text);
+    /// \brief Works as printf if we are dumping state accesses, otherwise does nothing
+    template <size_t N, typename... ARGS>
+    static void DSA_PRINTF([[maybe_unused]] const char (&fmt)[N], [[maybe_unused]] ARGS... args) {
+#ifdef DUMP_STATE_ACCESS
+        D_PRINTF(fmt, args...);
+#endif
     }
 
     /// \brief Reads from general-purpose register.
-    /// \param reg Register index.
+    /// \param i Register index.
     /// \returns Register value.
-    uint64_t read_x(int reg) {
-        return derived().do_read_x(reg);
+    uint64_t read_x(int i) const {
+        if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {
+            const auto val = derived().do_read_x(i);
+            DSA_PRINTF("%s::read_x(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), i, val, val);
+            return val;
+        } else {
+            return prefer_read_shadow_state(shadow_state_get_what(shadow_state_what::x0, i));
+        }
     }
 
     /// \brief Writes register to general-purpose register.
-    /// \param reg Register index.
+    /// \param i Register index.
     /// \param val New register value.
-    /// \details Writes to register zero *break* the machine. There is an assertion to catch this, but NDEBUG will let
-    /// the value pass through.
-    void write_x(int reg, uint64_t val) {
-        return derived().do_write_x(reg, val);
+    /// \details Writes to register zero *break* the machine.
+    /// There is an assertion to catch this, but NDEBUG will let the value pass through.
+    void write_x(int i, uint64_t val) const {
+        if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {
+            derived().do_write_x(i, val);
+            DSA_PRINTF("%s::write_x(%d, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), i, val, val);
+        } else {
+            prefer_write_shadow_state(shadow_state_get_what(shadow_state_what::x0, i), val);
+        }
     }
 
     /// \brief Reads from floating-point register.
-    /// \param reg Register index.
+    /// \param i Register index.
     /// \returns Register value.
-    uint64_t read_f(int reg) {
-        return derived().do_read_f(reg);
+    uint64_t read_f(int i) const {
+        if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {
+            const auto val = derived().do_read_f(i);
+            DSA_PRINTF("%s::read_f(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), i, val, val);
+            return val;
+        } else {
+            return prefer_read_shadow_state(shadow_state_get_what(shadow_state_what::f0, i));
+        }
     }
 
     /// \brief Writes register to floating-point register.
-    /// \param reg Register index.
+    /// \param i Register index.
     /// \param val New register value.
-    void write_f(int reg, uint64_t val) {
-        return derived().do_write_f(reg, val);
-    }
-
-    /// \brief Reads the program counter.
-    /// \returns Register value.
-    uint64_t read_pc() {
-        return derived().do_read_pc();
-    }
-
-    /// \brief Writes the program counter.
-    /// \param val New register value.
-    void write_pc(uint64_t val) {
-        return derived().do_write_pc(val);
-    }
-
-    /// \brief Writes CSR fcsr.
-    /// \param val New register value.
-    void write_fcsr(uint64_t val) {
-        return derived().do_write_fcsr(val);
-    }
-
-    /// \brief Reads CSR fcsr.
-    /// \returns Register value.
-    uint64_t read_fcsr() {
-        return derived().do_read_fcsr();
-    }
-
-    /// \brief Reads CSR icycleinstret.
-    /// \returns Register value.
-    uint64_t read_icycleinstret() {
-        return derived().do_read_icycleinstret();
-    }
-
-    /// \brief Writes CSR icycleinstret.
-    /// \param val New register value.
-    void write_icycleinstret(uint64_t val) {
-        return derived().do_write_icycleinstret(val);
-    }
-
-    /// \brief Reads CSR mvendorid.
-    /// \returns Register value.
-    uint64_t read_mvendorid() {
-        return derived().do_read_mvendorid();
-    }
-
-    /// \brief Reads CSR marchid.
-    /// \returns Register value.
-    uint64_t read_marchid() {
-        return derived().do_read_marchid();
-    }
-
-    /// \brief Reads CSR mimpid.
-    /// \returns Register value.
-    uint64_t read_mimpid() {
-        return derived().do_read_mimpid();
-    }
-
-    /// \brief Reads CSR mcycle.
-    /// \returns Register value.
-    uint64_t read_mcycle() {
-        return derived().do_read_mcycle();
-    }
-
-    /// \brief Writes CSR mcycle.
-    /// \param val New register value.
-    void write_mcycle(uint64_t val) {
-        return derived().do_write_mcycle(val);
-    }
-
-    /// \brief Reads CSR mstatus.
-    /// \returns Register value.
-    uint64_t read_mstatus() {
-        return derived().do_read_mstatus();
-    }
-
-    /// \brief Writes CSR mstatus.
-    /// \param val New register value.
-    void write_mstatus(uint64_t val) {
-        return derived().do_write_mstatus(val);
-    }
-
-    /// \brief Reads CSR menvcfg.
-    /// \returns Register value.
-    uint64_t read_menvcfg() {
-        return derived().do_read_menvcfg();
-    }
-
-    /// \brief Writes CSR menvcfg.
-    /// \param val New register value.
-    void write_menvcfg(uint64_t val) {
-        return derived().do_write_menvcfg(val);
-    }
-
-    /// \brief Reads CSR mtvec.
-    /// \returns Register value.
-    uint64_t read_mtvec() {
-        return derived().do_read_mtvec();
-    }
-
-    /// \brief Writes CSR mtvec.
-    /// \param val New register value.
-    void write_mtvec(uint64_t val) {
-        return derived().do_write_mtvec(val);
-    }
-
-    /// \brief Reads CSR mscratch.
-    /// \returns Register value.
-    uint64_t read_mscratch() {
-        return derived().do_read_mscratch();
-    }
-
-    /// \brief Writes CSR mscratch.
-    /// \param val New register value.
-    void write_mscratch(uint64_t val) {
-        return derived().do_write_mscratch(val);
-    }
-
-    /// \brief Reads CSR mepc.
-    /// \returns Register value.
-    uint64_t read_mepc() {
-        return derived().do_read_mepc();
-    }
-
-    /// \brief Writes CSR mepc.
-    /// \param val New register value.
-    void write_mepc(uint64_t val) {
-        return derived().do_write_mepc(val);
-    }
-
-    /// \brief Reads CSR mcause.
-    /// \returns Register value.
-    uint64_t read_mcause() {
-        return derived().do_read_mcause();
-    }
-
-    /// \brief Writes CSR mcause.
-    /// \param val New register value.
-    void write_mcause(uint64_t val) {
-        return derived().do_write_mcause(val);
-    }
-
-    /// \brief Reads CSR mtval.
-    /// \returns Register value.
-    uint64_t read_mtval() {
-        return derived().do_read_mtval();
-    }
-
-    /// \brief Writes CSR mtval.
-    /// \param val New register value.
-    void write_mtval(uint64_t val) {
-        return derived().do_write_mtval(val);
-    }
-
-    /// \brief Reads CSR misa.
-    /// \returns Register value.
-    uint64_t read_misa() {
-        return derived().do_read_misa();
-    }
-
-    /// \brief Writes CSR misa.
-    /// \param val New register value.
-    void write_misa(uint64_t val) {
-        return derived().do_write_misa(val);
-    }
-
-    /// \brief Reads CSR mie.
-    /// \returns Register value.
-    uint64_t read_mie() {
-        return derived().do_read_mie();
-    }
-
-    /// \brief Writes CSR mie.
-    /// \param val New register value.
-    void write_mie(uint64_t val) {
-        return derived().do_write_mie(val);
-    }
-
-    /// \brief Reads CSR mip.
-    /// \returns Register value.
-    uint64_t read_mip() {
-        return derived().do_read_mip();
-    }
-
-    /// \brief Writes CSR mip.
-    /// \param val New register value.
-    void write_mip(uint64_t val) {
-        return derived().do_write_mip(val);
-    }
-
-    /// \brief Reads CSR medeleg.
-    /// \returns Register value.
-    uint64_t read_medeleg() {
-        return derived().do_read_medeleg();
-    }
-
-    /// \brief Writes CSR medeleg.
-    /// \param val New register value.
-    void write_medeleg(uint64_t val) {
-        return derived().do_write_medeleg(val);
-    }
-
-    /// \brief Reads CSR mideleg.
-    /// \returns Register value.
-    uint64_t read_mideleg() {
-        return derived().do_read_mideleg();
-    }
-
-    /// \brief Writes CSR mideleg.
-    /// \param val New register value.
-    void write_mideleg(uint64_t val) {
-        return derived().do_write_mideleg(val);
-    }
-
-    /// \brief Reads CSR iprv.
-    /// \returns Register value.
-    uint64_t read_iprv() {
-        return derived().do_read_iprv();
-    }
-
-    /// \brief Writes CSR iprv.
-    /// \param val New register value.
-    void write_iprv(uint64_t val) {
-        return derived().do_write_iprv(val);
-    }
-
-    /// \brief Reads CSR iflags_X.
-    /// \returns Register value.
-    uint64_t read_iflags_X() {
-        return derived().do_read_iflags_X();
-    }
-
-    /// \brief Writes CSR iflags_X.
-    /// \param val New register value.
-    void write_iflags_X(uint64_t val) {
-        return derived().do_write_iflags_X(val);
-    }
-
-    /// \brief Reads CSR iflags_Y.
-    /// \returns Register value.
-    uint64_t read_iflags_Y() {
-        return derived().do_read_iflags_Y();
-    }
-
-    /// \brief Writes CSR iflags_Y.
-    /// \param val New register value.
-    void write_iflags_Y(uint64_t val) {
-        return derived().do_write_iflags_Y(val);
-    }
-
-    /// \brief Reads CSR iflags_H.
-    /// \returns Register value.
-    uint64_t read_iflags_H() {
-        return derived().do_read_iflags_H();
-    }
-
-    /// \brief Writes CSR iflags_H.
-    /// \param val New register value.
-    void write_iflags_H(uint64_t val) {
-        return derived().do_write_iflags_H(val);
-    }
-
-    /// \brief Reads CSR mcounteren.
-    /// \returns Register value.
-    uint64_t read_mcounteren() {
-        return derived().do_read_mcounteren();
-    }
-
-    /// \brief Writes CSR mcounteren.
-    /// \param val New register value.
-    void write_mcounteren(uint64_t val) {
-        return derived().do_write_mcounteren(val);
-    }
-
-    /// \brief Reads CSR senvcfg.
-    /// \returns Register value.
-    uint64_t read_senvcfg() {
-        return derived().do_read_senvcfg();
-    }
-
-    /// \brief Writes CSR senvcfg.
-    /// \param val New register value.
-    void write_senvcfg(uint64_t val) {
-        return derived().do_write_senvcfg(val);
-    }
-
-    /// \brief Reads CSR stvec.
-    /// \returns Register value.
-    uint64_t read_stvec() {
-        return derived().do_read_stvec();
-    }
-
-    /// \brief Writes CSR stvec.
-    /// \param val New register value.
-    void write_stvec(uint64_t val) {
-        return derived().do_write_stvec(val);
-    }
-
-    /// \brief Reads CSR sscratch.
-    /// \returns Register value.
-    uint64_t read_sscratch() {
-        return derived().do_read_sscratch();
-    }
-
-    /// \brief Writes CSR sscratch.
-    /// \param val New register value.
-    void write_sscratch(uint64_t val) {
-        return derived().do_write_sscratch(val);
-    }
-
-    /// \brief Reads CSR sepc.
-    /// \returns Register value.
-    uint64_t read_sepc() {
-        return derived().do_read_sepc();
-    }
-
-    /// \brief Writes CSR sepc.
-    /// \param val New register value.
-    void write_sepc(uint64_t val) {
-        return derived().do_write_sepc(val);
-    }
-
-    /// \brief Reads CSR scause.
-    /// \returns Register value.
-    uint64_t read_scause() {
-        return derived().do_read_scause();
-    }
-
-    /// \brief Writes CSR scause.
-    /// \param val New register value.
-    void write_scause(uint64_t val) {
-        return derived().do_write_scause(val);
-    }
-
-    /// \brief Reads CSR stval.
-    /// \returns Register value.
-    uint64_t read_stval() {
-        return derived().do_read_stval();
-    }
-
-    /// \brief Writes CSR stval.
-    /// \param val New register value.
-    void write_stval(uint64_t val) {
-        return derived().do_write_stval(val);
-    }
-
-    /// \brief Reads CSR satp.
-    /// \returns Register value.
-    uint64_t read_satp() {
-        return derived().do_read_satp();
-    }
-
-    /// \brief Writes CSR satp.
-    /// \param val New register value.
-    void write_satp(uint64_t val) {
-        return derived().do_write_satp(val);
-    }
-
-    /// \brief Reads CSR scounteren.
-    /// \returns Register value.
-    uint64_t read_scounteren() {
-        return derived().do_read_scounteren();
-    }
-
-    /// \brief Writes CSR scounteren.
-    /// \param val New register value.
-    void write_scounteren(uint64_t val) {
-        return derived().do_write_scounteren(val);
-    }
-
-    /// \brief Reads CSR ilrsc.
-    /// \returns Register value.
-    /// \details This is Cartesi-specific.
-    uint64_t read_ilrsc() {
-        return derived().do_read_ilrsc();
-    }
-
-    /// \brief Writes CSR ilrsc.
-    /// \param val New register value.
-    /// \details This is Cartesi-specific.
-    void write_ilrsc(uint64_t val) {
-        return derived().do_write_ilrsc(val);
-    }
-
-    /// \brief Reads CSR iunrep.
-    /// \returns Register value.
-    /// \details This is Cartesi-specific.
-    uint64_t read_iunrep() {
-        return derived().do_read_iunrep();
-    }
-
-    /// \brief Writes CSR iunrep.
-    /// \param val New register value.
-    /// \details This is Cartesi-specific.
-    void write_iunrep(uint64_t val) {
-        return derived().do_write_iunrep(val);
-    }
-
-    /// \brief Reads CLINT's mtimecmp.
-    /// \returns Register value.
-    uint64_t read_clint_mtimecmp() {
-        return derived().do_read_clint_mtimecmp();
-    }
-
-    /// \brief Writes CLINT's mtimecmp.
-    /// \param val New register value.
-    void write_clint_mtimecmp(uint64_t val) {
-        return derived().do_write_clint_mtimecmp(val);
-    }
-
-    /// \brief Reads PLIC's girqpend.
-    /// \returns Register value.
-    uint64_t read_plic_girqpend() {
-        return derived().do_read_plic_girqpend();
-    }
-
-    /// \brief Writes PLIC's girqpend.
-    /// \param val New register value.
-    void write_plic_girqpend(uint64_t val) {
-        return derived().do_write_plic_girqpend(val);
-    }
-
-    /// \brief Reads PLIC's girqsrvd.
-    /// \returns Register value.
-    uint64_t read_plic_girqsrvd() {
-        return derived().do_read_plic_girqsrvd();
-    }
-
-    /// \brief Writes PLIC's girqsrvd.
-    /// \param val New register value.
-    void write_plic_girqsrvd(uint64_t val) {
-        return derived().do_write_plic_girqsrvd(val);
-    }
-
-    /// \brief Reads HTIF's fromhost.
-    /// \returns Register value.
-    uint64_t read_htif_fromhost() {
-        return derived().do_read_htif_fromhost();
-    }
-
-    /// \brief Writes HTIF's fromhost.
-    /// \param val New register value.
-    void write_htif_fromhost(uint64_t val) {
-        return derived().do_write_htif_fromhost(val);
-    }
-
-    /// \brief Reads HTIF's tohost.
-    /// \returns Register value.
-    uint64_t read_htif_tohost() {
-        return derived().do_read_htif_tohost();
-    }
-
-    /// \brief Writes HTIF's tohost.
-    /// \param val New register value.
-    void write_htif_tohost(uint64_t val) {
-        return derived().do_write_htif_tohost(val);
-    }
-
-    /// \brief Reads HTIF's ihalt.
-    /// \returns Register value.
-    uint64_t read_htif_ihalt() {
-        return derived().do_read_htif_ihalt();
-    }
-
-    /// \brief Reads HTIF's iconsole.
-    /// \returns Register value.
-    uint64_t read_htif_iconsole() {
-        return derived().do_read_htif_iconsole();
-    }
-
-    /// \brief Reads HTIF's iyield.
-    /// \returns Register value.
-    uint64_t read_htif_iyield() {
-        return derived().do_read_htif_iyield();
-    }
-
-    /// \brief Poll for external interrupts.
-    /// \param mcycle Current machine mcycle.
-    /// \param mcycle_max Maximum mcycle to wait for interrupts.
-    /// \returns A pair, the first value is the new machine mcycle advanced by the relative elapsed time while
-    /// polling, the second value is a boolean that is true when the poll is stopped due do an external interrupt
-    /// request.
-    /// \details When mcycle_max is greater than mcycle, this function will sleep until an external interrupt
-    /// is triggered or mcycle_max relative elapsed time is reached.
-    std::pair<uint64_t, bool> poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
-        return derived().do_poll_external_interrupts(mcycle, mcycle_max);
-    }
+    void write_f(int i, uint64_t val) const {
+        if constexpr (!is_an_i_prefer_shadow_state_v<DERIVED>) {
+            derived().do_write_f(i, val);
+            DSA_PRINTF("%s::write_f(%d, %" PRIu64 "(%" PRIx64 "))\n", get_name(), i, val, val);
+        } else {
+            prefer_write_shadow_state(shadow_state_get_what(shadow_state_what::f0, i), val);
+        }
+    }
+
+    // Define read and write methods for each register in the shadow state
+    // NOLINTBEGIN(cppcoreguidelines-macro-usage)
+    DEFINE_SA_READ(pc)
+    DEFINE_SA_WRITE(pc)
+    DEFINE_SA_READ(fcsr)
+    DEFINE_SA_WRITE(fcsr)
+    DEFINE_SA_READ(mvendorid)
+    DEFINE_SA_WRITE(mvendorid)
+    DEFINE_SA_READ(marchid)
+    DEFINE_SA_WRITE(marchid)
+    DEFINE_SA_READ(mimpid)
+    DEFINE_SA_WRITE(mimpid)
+    DEFINE_SA_READ(mcycle)
+    DEFINE_SA_WRITE(mcycle)
+    DEFINE_SA_READ(icycleinstret)
+    DEFINE_SA_WRITE(icycleinstret)
+    DEFINE_SA_READ(mstatus)
+    DEFINE_SA_WRITE(mstatus)
+    DEFINE_SA_READ(mtvec)
+    DEFINE_SA_WRITE(mtvec)
+    DEFINE_SA_READ(mscratch)
+    DEFINE_SA_WRITE(mscratch)
+    DEFINE_SA_READ(mepc)
+    DEFINE_SA_WRITE(mepc)
+    DEFINE_SA_READ(mcause)
+    DEFINE_SA_WRITE(mcause)
+    DEFINE_SA_READ(mtval)
+    DEFINE_SA_WRITE(mtval)
+    DEFINE_SA_READ(misa)
+    DEFINE_SA_WRITE(misa)
+    DEFINE_SA_READ(mie)
+    DEFINE_SA_WRITE(mie)
+    DEFINE_SA_READ(mip)
+    DEFINE_SA_WRITE(mip)
+    DEFINE_SA_READ(medeleg)
+    DEFINE_SA_WRITE(medeleg)
+    DEFINE_SA_READ(mideleg)
+    DEFINE_SA_WRITE(mideleg)
+    DEFINE_SA_READ(mcounteren)
+    DEFINE_SA_WRITE(mcounteren)
+    DEFINE_SA_READ(menvcfg)
+    DEFINE_SA_WRITE(menvcfg)
+    DEFINE_SA_READ(stvec)
+    DEFINE_SA_WRITE(stvec)
+    DEFINE_SA_READ(sscratch)
+    DEFINE_SA_WRITE(sscratch)
+    DEFINE_SA_READ(sepc)
+    DEFINE_SA_WRITE(sepc)
+    DEFINE_SA_READ(scause)
+    DEFINE_SA_WRITE(scause)
+    DEFINE_SA_READ(stval)
+    DEFINE_SA_WRITE(stval)
+    DEFINE_SA_READ(satp)
+    DEFINE_SA_WRITE(satp)
+    DEFINE_SA_READ(scounteren)
+    DEFINE_SA_WRITE(scounteren)
+    DEFINE_SA_READ(senvcfg)
+    DEFINE_SA_WRITE(senvcfg)
+    DEFINE_SA_READ(ilrsc)
+    DEFINE_SA_WRITE(ilrsc)
+    DEFINE_SA_READ(iprv)
+    DEFINE_SA_WRITE(iprv)
+    DEFINE_SA_READ(iflags_X)
+    DEFINE_SA_WRITE(iflags_X)
+    DEFINE_SA_READ(iflags_Y)
+    DEFINE_SA_WRITE(iflags_Y)
+    DEFINE_SA_READ(iflags_H)
+    DEFINE_SA_WRITE(iflags_H)
+    DEFINE_SA_READ(iunrep)
+    DEFINE_SA_WRITE(iunrep)
+    DEFINE_SA_READ(clint_mtimecmp)
+    DEFINE_SA_WRITE(clint_mtimecmp)
+    DEFINE_SA_READ(plic_girqpend)
+    DEFINE_SA_WRITE(plic_girqpend)
+    DEFINE_SA_READ(plic_girqsrvd)
+    DEFINE_SA_WRITE(plic_girqsrvd)
+    DEFINE_SA_READ(htif_tohost)
+    DEFINE_SA_WRITE(htif_tohost)
+    DEFINE_SA_READ(htif_fromhost)
+    DEFINE_SA_WRITE(htif_fromhost)
+    DEFINE_SA_READ(htif_ihalt)
+    DEFINE_SA_WRITE(htif_ihalt)
+    DEFINE_SA_READ(htif_iconsole)
+    DEFINE_SA_WRITE(htif_iconsole)
+    DEFINE_SA_READ(htif_iyield)
+    DEFINE_SA_WRITE(htif_iyield)
+    // NOLINTEND(cppcoreguidelines-macro-usage)
 
     /// \brief Reads PMA entry at a given index.
     /// \param index Index of PMA
-    PMA_ENTRY_TYPE &read_pma_entry(uint64_t index) {
-        return derived().do_read_pma_entry(index);
+    pma_entry &read_pma_entry(uint64_t index) const {
+        auto &pma = derived().do_read_pma_entry(index);
+        DSA_PRINTF("%s::read_pma_entry(%" PRIu64 ") = {%s, 0x%" PRIx64 ", 0x%" PRIx64 "}\n", get_name(), index,
+            pma_get_DID_name(pma.get_istart_DID()), pma.get_start(), pma.get_length());
+        return pma;
+    }
+
+    /// \brief Converts a target physical address to the implementation-defined fast address
+    /// \param paddr Target physical address to convert
+    /// \param pma_index Index of PMA where address falls
+    /// \returns Corresponding implementation-defined fast address
+    fast_addr get_faddr(uint64_t paddr, uint64_t pma_index) const {
+        const auto val = derived().do_get_faddr(paddr, pma_index);
+        [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
+        DSA_PRINTF("%s::get_faddr(%" PRIu64 "(0x%" PRIx64 ")) = %s{%" PRIu64 "(0x%" PRIx64 ")}\n", get_name(), paddr,
+            paddr, fast_addr_name, val, val);
+        return val;
     }
 
     /// \brief Reads a chunk of data from a memory PMA range.
@@ -616,7 +300,7 @@ public:
     /// \returns True if PMA was found and memory fully read, false otherwise.
     /// \details The entire chunk of data must fit inside the same memory
     /// PMA range, otherwise it fails. The search for the PMA range is implicit, and not logged.
-    bool read_memory(uint64_t paddr, unsigned char *data, uint64_t length) {
+    bool read_memory(uint64_t paddr, unsigned char *data, uint64_t length) const {
         return derived().do_read_memory(paddr, data, length);
     }
 
@@ -627,107 +311,8 @@ public:
     /// \returns True if PMA was found and memory fully written, false otherwise.
     /// \details The entire chunk of data must fit inside the same memory
     /// PMA range, otherwise it fails. The search for the PMA range is implicit, and not logged.
-    bool write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
+    bool write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) const {
         return derived().do_write_memory(paddr, data, length);
-    }
-
-    /// \brief Reads a word from memory.
-    /// \tparam T Type of word to read.
-    /// \param paddr Target physical address.
-    /// \param hpage Pointer to page start in host memory.
-    /// \param hoffset Offset in page (must be aligned to sizeof(T)).
-    /// \param pval Pointer to word receiving value.
-    template <typename T>
-    void read_memory_word(uint64_t paddr, const unsigned char *hpage, uint64_t hoffset, T *pval) {
-        static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
-        return derived().template do_read_memory_word<T>(paddr, hpage, hoffset, pval);
-    }
-
-    /// \brief Writes a word to memory.
-    /// \tparam T Type of word to write.
-    /// \param paddr Target physical address.
-    /// \param hpage Pointer to page start in host memory.
-    /// \param hoffset Offset in page (must be aligned to sizeof(T)).
-    /// \param val Value to be written.
-    template <typename T>
-    void write_memory_word(uint64_t paddr, unsigned char *hpage, uint64_t hoffset, T val) {
-        static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
-        return derived().template do_write_memory_word<T>(paddr, hpage, hoffset, val);
-    }
-
-    auto get_host_memory(PMA_ENTRY_TYPE &pma) {
-        return derived().do_get_host_memory(pma);
-    }
-
-    /// \brief Try to translate a virtual address to a host pointer through the TLB.
-    /// \tparam ETYPE TLB entry type.
-    /// \tparam T Type of word that would be read with the pointer.
-    /// \param vaddr Target virtual address.
-    /// \param phptr Pointer to host pointer receiving value.
-    /// \returns True if successful (TLB hit), false otherwise.
-    template <TLB_entry_type ETYPE, typename T>
-    bool translate_vaddr_via_tlb(uint64_t vaddr, unsigned char **phptr) {
-        return derived().template do_translate_vaddr_via_tlb<ETYPE, T>(vaddr, phptr);
-    }
-
-    /// \brief Try to read a word from memory through the TLB.
-    /// \tparam ETYPE TLB entry type.
-    /// \tparam T Type of word to read.
-    /// \param vaddr Target virtual address.
-    /// \param pval Pointer to word receiving value.
-    /// \returns True if successful (TLB hit), false otherwise.
-    template <TLB_entry_type ETYPE, typename T>
-    bool read_memory_word_via_tlb(uint64_t vaddr, T *pval) {
-        static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
-        return derived().template do_read_memory_word_via_tlb<ETYPE, T>(vaddr, pval);
-    }
-
-    /// \brief Try to write a word to memory through the TLB.
-    /// \tparam ETYPE TLB entry type.
-    /// \tparam T Type of word to write.
-    /// \param vaddr Target virtual address.
-    /// \param val Value to be written.
-    /// \returns True if successful (TLB hit), false otherwise.
-    template <TLB_entry_type ETYPE, typename T>
-    bool write_memory_word_via_tlb(uint64_t vaddr, T val) {
-        static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
-        return derived().template do_write_memory_word_via_tlb<ETYPE, T>(vaddr, val);
-    }
-
-    /// \brief Replaces an entry in the TLB.
-    /// \tparam ETYPE TLB entry type to replace.
-    /// \param vaddr Target virtual address.
-    /// \param paddr Target physical address.
-    /// \param pma PMA entry for the physical address.
-    /// \returns Pointer to page start in host memory.
-    template <TLB_entry_type ETYPE>
-    unsigned char *replace_tlb_entry(uint64_t vaddr, uint64_t paddr, PMA_ENTRY_TYPE &pma) {
-        return derived().template do_replace_tlb_entry<ETYPE>(vaddr, paddr, pma);
-    }
-
-    /// \brief Invalidates all TLB entries of a type.
-    /// \tparam ETYPE TLB entry type to flush.
-    template <TLB_entry_type ETYPE>
-    void flush_tlb_type() {
-        return derived().template do_flush_tlb_type<ETYPE>();
-    }
-
-    /// \brief Invalidates all TLB entries of all types.
-    NO_INLINE void flush_all_tlb() {
-        derived().template flush_tlb_type<TLB_CODE>();
-        derived().template flush_tlb_type<TLB_READ>();
-        derived().template flush_tlb_type<TLB_WRITE>();
-    }
-
-    /// \brief Invalidates TLB entries for a specific virtual address.
-    /// \param vaddr Target virtual address.
-    NO_INLINE void flush_tlb_vaddr(uint64_t vaddr) {
-        return derived().do_flush_tlb_vaddr(vaddr);
-    }
-
-    /// \brief Returns true if soft yield HINT instruction is enabled at runtime
-    bool get_soft_yield() {
-        return derived().do_get_soft_yield();
     }
 
     /// \brief Write a data buffer to memory padded with 0
@@ -736,21 +321,128 @@ public:
     /// \param data_length Length of data buffer.
     /// \param write_length_log2_size Log2 size of the total write length.
     void write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
-        int write_length_log2_size) {
-        return derived().do_write_memory_with_padding(paddr, data, data_length, write_length_log2_size);
+        int write_length_log2_size) const {
+        derived().do_write_memory_with_padding(paddr, data, data_length, write_length_log2_size);
     }
 
-#ifdef DUMP_COUNTERS
-    auto &get_statistics() {
-        return derived().do_get_statistics();
+    /// \brief Reads a word from memory.
+    /// \tparam T Type of word to read, potentially unaligned.
+    /// \tparam A Type to which \p paddr and \p faddr are known to be aligned.
+    /// \param faddr Implementation-defined fast address.
+    /// \param pma_index Index of PMA where word falls.
+    /// \param pval Pointer to word receiving value.
+    /// \warning T must not cross page boundary starting from \p faddr.
+    /// \warning T (when A is smaller) may or may not cross a Merkle tree word boundary starting from \p faddr!
+    template <typename T, typename A = T>
+    void read_memory_word(fast_addr faddr, uint64_t pma_index, T *pval) const {
+        static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
+        derived().template do_read_memory_word<T, A>(faddr, pma_index, pval);
+        [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
+        DSA_PRINTF("%s::read_memory_word<%s,%s>(%s{0x%" PRIx64 "}, %" PRIu64 ") = %" PRIu64 "(0x%" PRIx64 ")\n",
+            get_name(), pm_type_name_v<T>, pm_type_name_v<A>, fast_addr_name, faddr, pma_index,
+            static_cast<uint64_t>(*pval), static_cast<uint64_t>(*pval));
     }
-#endif
+
+    /// \brief Writes a word to memory.
+    /// \tparam T Type of word to write.
+    /// \tparam A Type to which \p paddr and \p faddr are known to be aligned.
+    /// \param faddr Implementation-defined fast address.
+    /// \param val Value to be written.
+    /// \warning T must not cross page boundary starting from \p faddr.
+    /// \warning T (when A is smaller) may or may not cross a Merkle tree word boundary starting from \p faddr!
+    template <typename T, typename A = T>
+    void write_memory_word(fast_addr faddr, uint64_t pma_index, T val) const {
+        static_assert(std::is_integral_v<T> && sizeof(T) <= sizeof(uint64_t), "unsupported type");
+        derived().template do_write_memory_word<T, A>(faddr, pma_index, val);
+        [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
+        DSA_PRINTF("%s::write_memory_word<%s,%s>(%s{0x%" PRIx64 "}, %" PRIu64 ", %" PRIu64 "(0x%" PRIx64 "))\n",
+            get_name(), pm_type_name_v<T>, pm_type_name_v<A>, fast_addr_name, faddr, pma_index,
+            static_cast<uint64_t>(val), static_cast<uint64_t>(val));
+    }
+
+    /// \brief Reads TLB's vaddr_page
+    /// \tparam USE TLB set
+    /// \param slot_index Slot index
+    /// \returns Value in slot.
+    template <TLB_set_index SET>
+    uint64_t read_tlb_vaddr_page(uint64_t slot_index) const {
+        const auto val = derived().template do_read_tlb_vaddr_page<SET>(slot_index);
+        DSA_PRINTF("%s::read_tlb_vaddr_page<%" PRIu64 ">(%" PRIu64 ") = 0x%" PRIx64 "\n", get_name(), SET, slot_index,
+            val);
+        return val;
+    }
+
+    /// \brief Reads TLB's vp_offset
+    /// \tparam USE TLB set
+    /// \param slot_index Slot index
+    /// \returns Value in slot.
+    template <TLB_set_index SET>
+    fast_addr read_tlb_vp_offset(uint64_t slot_index) const {
+        [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
+        const auto val = derived().template do_read_tlb_vp_offset<SET>(slot_index);
+        DSA_PRINTF("%s::read_tlb_vp_offset<%" PRIu64 ">(%" PRIu64 ") = %s{0x%" PRIx64 "}\n", get_name(), SET,
+            slot_index, fast_addr_name, val);
+        return val;
+    }
+
+    /// \brief Reads TLB's pma_index
+    /// \tparam USE TLB set
+    /// \param slot_index Slot index
+    /// \returns Value in slot.
+    template <TLB_set_index SET>
+    uint64_t read_tlb_pma_index(uint64_t slot_index) const {
+        const auto val = derived().template do_read_tlb_pma_index<SET>(slot_index);
+        DSA_PRINTF("%s::read_tlb_pma_index<%" PRIu64 ">(%" PRIu64 ") = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), SET,
+            slot_index, val, val);
+        return val;
+    }
+
+    /// \brief Writes to a TLB slot
+    /// \tparam USE TLB set
+    /// \param slot_index Slot index
+    /// \param vaddr_page Value to write
+    /// \param vp_offset Value to write
+    /// \param pma_index Value to write
+    /// \detail Writes to the TLB must be modify all fields atomically to prevent an inconsistent state.
+    /// This simplifies all state access implementations.
+    template <TLB_set_index SET>
+    void write_tlb(uint64_t slot_index, uint64_t vaddr_page, fast_addr vp_offset, uint64_t pma_index) const {
+        derived().template do_write_tlb<SET>(slot_index, vaddr_page, vp_offset, pma_index);
+        [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
+        DSA_PRINTF("%s::write_tlb<%" PRIu64 ">(%" PRIu64 ", 0x%" PRIx64 ", %s{0x%" PRIx64 "}, %" PRIu64 ")\n",
+            get_name(), SET, slot_index, vaddr_page, fast_addr_name, vp_offset, pma_index);
+    }
+
+    /// \brief Marks a page as dirty
+    /// \param faddr Implementation-defined fast address.
+    /// \param pma_index Index of PMA where page falls
+    /// \details When there is a host machine, the Merkle tree only updates the hashes for pages that
+    /// have been modified. Pages can only be written to if they appear in the write TLB. Therefore,
+    /// the Merkle tree only considers the pages that are currently in the write TLB and those that
+    /// have been marked dirty. When a page leaves the write TLB, it is marked dirty.
+    /// If the state belongs to a host machine, then this call MUST be forwarded to machine::mark_dirty_page();
+    void mark_dirty_page(fast_addr faddr, uint64_t pma_index) const {
+        derived().do_mark_dirty_page(faddr, pma_index);
+    }
+
+    /// \brief Writes a character to the console
+    /// \param c Character to output
+    void putchar(uint8_t c) const {
+        derived().do_putchar(c);
+    }
+
+    constexpr const char *get_name() const {
+        return derived().do_get_name();
+    }
 };
 
 /// \brief SFINAE test implementation of the i_state_access interface
 template <typename DERIVED>
 using is_an_i_state_access =
-    std::integral_constant<bool, is_template_base_of<i_state_access, typename remove_cvref<DERIVED>::type>::value>;
+    std::integral_constant<bool, is_template_base_of_v<i_state_access, std::remove_cvref_t<DERIVED>>>;
+
+template <typename DERIVED>
+constexpr bool is_an_i_state_access_v = is_an_i_state_access<DERIVED>::value;
 
 } // namespace cartesi
 

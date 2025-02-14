@@ -15,6 +15,7 @@
 //
 
 #include "shadow-state.h"
+
 #include "pma-driver.h"
 
 namespace cartesi {

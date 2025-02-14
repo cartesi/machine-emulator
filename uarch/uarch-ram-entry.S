@@ -20,9 +20,9 @@
 .section .text.init;
 .align 3;
 .global _start;
-_start:    
+_start:
     // Initialize stack
-    li sp, PMA_UARCH_RAM_START_DEF  
+    li sp, PMA_UARCH_RAM_START_DEF
     li t0, PMA_UARCH_RAM_LENGTH_DEF
     add sp, sp, t0 // stack pointer at the end of RAM
     call interpret_next_mcycle_with_uarch

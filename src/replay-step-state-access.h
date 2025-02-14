@@ -20,12 +20,12 @@
 #include <cstdlib>
 #include <optional>
 
-#include "clint.h"
 #include "compiler-defines.h"
-#include "device-state-access.h"
-#include "htif.h"
+#include "host-addr.h"
+#include "i-accept-scoped-notes.h"
+#include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
-#include "plic.h"
+#include "mock-pma-entry.h"
 #include "pma-constants.h"
 #include "replay-step-state-access-interop.h"
 #include "riscv-constants.h"
@@ -42,134 +42,17 @@ namespace cartesi {
 // \file this code is designed to be compiled for a free-standing environment.
 // Environment-specific functions have the prefix "interop_" and are declared in "replay-step-state-access-interop.h"
 
-//??D can we merge this calss with uarch_pma_entry in uarch/uarch-machine-state-access.h ?
-//??D maybe implement base class in pma.h and subclass here if there is some minor difference?
-class mock_pma_entry final {
-public:
-    struct flags {
-        bool M;
-        bool IO;
-        bool E;
-        bool R;
-        bool W;
-        bool X;
-        bool IR;
-        bool IW;
-        PMA_ISTART_DID DID;
-    };
+class replay_step_state_access;
 
-private:
-    uint64_t m_pma_index;
-    uint64_t m_start;
-    uint64_t m_length;
-    flags m_flags;
-    const pma_driver *m_driver{nullptr};
-
-    static constexpr flags split_flags(uint64_t istart) {
-        flags f{};
-        f.M = ((istart & PMA_ISTART_M_MASK) >> PMA_ISTART_M_SHIFT) != 0;
-        f.IO = ((istart & PMA_ISTART_IO_MASK) >> PMA_ISTART_IO_SHIFT) != 0;
-        f.E = ((istart & PMA_ISTART_E_MASK) >> PMA_ISTART_E_SHIFT) != 0;
-        f.R = ((istart & PMA_ISTART_R_MASK) >> PMA_ISTART_R_SHIFT) != 0;
-        f.W = ((istart & PMA_ISTART_W_MASK) >> PMA_ISTART_W_SHIFT) != 0;
-        f.X = ((istart & PMA_ISTART_X_MASK) >> PMA_ISTART_X_SHIFT) != 0;
-        f.IR = ((istart & PMA_ISTART_IR_MASK) >> PMA_ISTART_IR_SHIFT) != 0;
-        f.IW = ((istart & PMA_ISTART_IW_MASK) >> PMA_ISTART_IW_SHIFT) != 0;
-        f.DID = static_cast<PMA_ISTART_DID>((istart & PMA_ISTART_DID_MASK) >> PMA_ISTART_DID_SHIFT);
-        return f;
-    }
-
-public:
-    mock_pma_entry(uint64_t pma_index, uint64_t istart, uint64_t ilength) :
-        m_pma_index{pma_index},
-        m_start{istart & PMA_ISTART_START_MASK},
-        m_length{ilength},
-        m_flags{split_flags(istart)} {
-        if (m_flags.IO) {
-            switch (m_flags.DID) {
-                case PMA_ISTART_DID::shadow_state:
-                    m_driver = &shadow_state_driver;
-                    break;
-                case PMA_ISTART_DID::shadow_TLB:
-                    m_driver = &shadow_tlb_driver;
-                    break;
-                case PMA_ISTART_DID::CLINT:
-                    m_driver = &clint_driver;
-                    break;
-                case PMA_ISTART_DID::PLIC:
-                    m_driver = &plic_driver;
-                    break;
-                case PMA_ISTART_DID::HTIF:
-                    m_driver = &htif_driver;
-                    break;
-                default:
-                    interop_throw_runtime_error("unsupported device in build_mock_pma_entry");
-                    break;
-            }
-        }
-    }
-
-    uint64_t get_index() const {
-        return m_pma_index;
-    }
-
-    flags get_flags() const {
-        return m_flags;
-    }
-
-    uint64_t get_start() const {
-        return m_start;
-    }
-
-    uint64_t get_length() const {
-        return m_length;
-    }
-
-    bool get_istart_M() const {
-        return m_flags.M;
-    }
-
-    bool get_istart_IO() const {
-        return m_flags.IO;
-    }
-
-    bool get_istart_E() const {
-        return m_flags.E;
-    }
-
-    bool get_istart_R() const {
-        return m_flags.R;
-    }
-
-    bool get_istart_W() const {
-        return m_flags.W;
-    }
-
-    bool get_istart_X() const {
-        return m_flags.X;
-    }
-
-    bool get_istart_IR() const {
-        return m_flags.IR;
-    }
-
-    const auto *get_driver() const {
-        return m_driver;
-    }
-
-    const auto &get_device_noexcept() const {
-        return *this;
-    }
-
-    static void *get_context() {
-        return nullptr;
-    }
-
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void mark_dirty_page(uint64_t address_in_range) {
-        (void) address_in_range;
-        // Dummy implementation.
-    }
+// Type trait that should return the pma_entry type for a state access class
+template <>
+struct i_state_access_pma_entry<replay_step_state_access> {
+    using type = mock_pma_entry;
+};
+// Type trait that should return the fast_addr type for a state access class
+template <>
+struct i_state_access_fast_addr<replay_step_state_access> {
+    using type = host_addr;
 };
 
 // \brief checks if a buffer is large enough to hold a data block of N elements of size S starting at a given offset
@@ -191,13 +74,11 @@ static inline bool validate_and_advance_offset(uint64_t max, uint64_t current, u
     return *next <= max;
 }
 
-static_assert(sizeof(shadow_tlb_state::hot[0]) == PMA_PAGE_SIZE, "size of hot tlb cache must be PM_PAGE_SIZE bytes");
-static_assert(sizeof(shadow_tlb_state::cold[0]) == PMA_PAGE_SIZE, "size of cold tlb cache must be PM_PAGE_SIZE bytes");
-static_assert(sizeof(shadow_tlb_state::hot) + sizeof(shadow_tlb_state::cold) == sizeof(shadow_tlb_state),
-    "size of shadow tlb state");
-
 // \brief Provides machine state from a step log file
-class replay_step_state_access : public i_state_access<replay_step_state_access, mock_pma_entry> {
+class replay_step_state_access :
+    public i_state_access<replay_step_state_access>,
+    public i_accept_scoped_notes<replay_step_state_access>,
+    public i_prefer_shadow_state<replay_step_state_access> {
 public:
     using address_type = uint64_t;
     using data_type = unsigned char[PMA_PAGE_SIZE];
@@ -233,20 +114,15 @@ public:
         m_context(context) {
         // relevant offsets in the log data
         uint64_t first_page_offset{};
-        uint64_t first_siblng_offset{};
+        uint64_t first_sibling_offset{};
         uint64_t sibling_count_offset{};
         uint64_t end_offset{}; // end of the log data
-
-        // ensure that log_step + size does not overflow
-        if (__builtin_add_overflow(cast_ptr_to_addr<uint64_t>(log_image), log_size, &end_offset)) {
-            interop_throw_runtime_error("step log size overflow");
-        }
 
         // set page count
         if (!validate_and_advance_offset(log_size, 0, sizeof(m_context.page_count), 1, &first_page_offset)) {
             interop_throw_runtime_error("page count past end of step log");
         }
-        memcpy(&m_context.page_count, log_image, sizeof(m_context.page_count));
+        m_context.page_count = aliased_aligned_read<uint64_t, uint8_t>(log_image);
         if (m_context.page_count == 0) {
             interop_throw_runtime_error("page count is zero");
         }
@@ -261,18 +137,18 @@ public:
 
         // set sibling count and hashes
         if (!validate_and_advance_offset(log_size, sibling_count_offset, sizeof(m_context.sibling_count), 1,
-                &first_siblng_offset)) {
+                &first_sibling_offset)) {
             interop_throw_runtime_error("sibling count past end of step log");
         }
-        memcpy(&m_context.sibling_count, log_image + sibling_count_offset, sizeof(m_context.sibling_count));
+        m_context.sibling_count = aliased_aligned_read<uint64_t, uint8_t>(log_image + sibling_count_offset);
 
         // set sibling hashes
-        if (!validate_and_advance_offset(log_size, first_siblng_offset, sizeof(hash_type), m_context.sibling_count,
+        if (!validate_and_advance_offset(log_size, first_sibling_offset, sizeof(hash_type), m_context.sibling_count,
                 &end_offset)) {
             interop_throw_runtime_error("sibling hashes past end of step log");
         }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        m_context.sibling_hashes = reinterpret_cast<hash_type *>(log_image + first_siblng_offset);
+        m_context.sibling_hashes = reinterpret_cast<hash_type *>(log_image + first_sibling_offset);
 
         // ensure that we read exactly the expected log size
         if (end_offset != log_size) {
@@ -286,20 +162,25 @@ public:
             if (i > 0 && m_context.pages[i - 1].index >= m_context.pages[i].index) {
                 interop_throw_runtime_error("invalid log format: page index is not in increasing order");
             }
+            // In the current implementation, this check is unnecessary
+            // But we may in the future change the data field to point to independently allocated pages
+            // This would break the code that uses binary search to find the page based on the address of its data
+            if (i > 0 && +m_context.pages[i - 1].data >= +m_context.pages[i].data) {
+                interop_throw_runtime_error("invalid log format: page data is not in increasing order");
+            }
             if (m_context.pages[i].hash != all_zeros) {
                 interop_throw_runtime_error("invalid log format: page scratch hash area is not zero");
             }
         }
-
         // compute  and check the machine root hash before the replay
         auto computed_root_hash_before = compute_root_hash();
         if (computed_root_hash_before != root_hash_before) {
             interop_throw_runtime_error("initial root hash mismatch");
         }
         // relocate all tlb vh offsets into the logged page data
-        relocate_all_tlb_vh_offset<TLB_CODE>();
-        relocate_all_tlb_vh_offset<TLB_READ>();
-        relocate_all_tlb_vh_offset<TLB_WRITE>();
+        relocate_tlb_vp_offset_to_vh_offset<TLB_CODE>();
+        relocate_tlb_vp_offset_to_vh_offset<TLB_READ>();
+        relocate_tlb_vp_offset_to_vh_offset<TLB_WRITE>();
     }
 
     // \brief Finish the replay and check the final machine root hash
@@ -308,9 +189,9 @@ public:
     void finish(const hash_type &root_hash_after) {
         // reset all tlb vh offsets to zero
         // this is to mimic peek behavior of tlb pma device
-        reset_all_tlb_vh_offset<TLB_CODE>();
-        reset_all_tlb_vh_offset<TLB_READ>();
-        reset_all_tlb_vh_offset<TLB_WRITE>();
+        relocate_tlb_vh_offset_to_vp_offset<TLB_CODE>();
+        relocate_tlb_vh_offset_to_vp_offset<TLB_READ>();
+        relocate_tlb_vh_offset_to_vp_offset<TLB_WRITE>();
         // compute and check machine root hash after the replay
         auto computed_final_root_hash = compute_root_hash();
         if (computed_final_root_hash != root_hash_after) {
@@ -319,64 +200,11 @@ public:
     }
 
 private:
-    friend i_state_access<replay_step_state_access, mock_pma_entry>;
-
-    // \brief Relocate all TLB virtual to host offsets
-    // \details Points the vh_offset relative to the logged page data
-    template <TLB_entry_type ETYPE>
-    void relocate_all_tlb_vh_offset() {
-        // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast))
-        for (size_t i = 0; i < PMA_TLB_SIZE; ++i) {
-            const auto he_address = tlb_get_entry_hot_abs_addr<ETYPE>(i);
-            const auto he_page = he_address & ~(PMA_PAGE_SIZE - 1);
-            const auto he_offset = he_address - he_page;
-            auto *he_log = try_find_page(he_page);
-            // if the page containing the tlb hot entries is present in the log
-            if (he_log) {
-                volatile tlb_hot_entry *tlbhe = reinterpret_cast<tlb_hot_entry *>(he_log->data + he_offset);
-                if (tlbhe->vh_offset != 0) {
-                    interop_throw_runtime_error("expected vh_offset to be zero");
-                }
-                // find the logged cold entry page
-                const auto ce_addr = tlb_get_entry_cold_abs_addr<ETYPE>(i);
-                const auto ce_page = ce_addr & ~(PMA_PAGE_SIZE - 1);
-                const auto ce_offset = ce_addr - ce_page;
-                auto *ce_log = find_page(ce_page);
-                volatile tlb_cold_entry *tlbce = reinterpret_cast<tlb_cold_entry *>(ce_log->data + ce_offset);
-                // find the logged page pointed by the cold entry
-                auto *log = try_find_page(tlbce->paddr_page);
-                if (log) {
-                    // point vh_offset to the logged page data
-                    tlbhe->vh_offset = cast_ptr_to_addr<uint64_t>(log->data) - tlbhe->vaddr_page;
-                }
-            }
-        }
-        // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast))
-    }
-
-    // \brief Reset all TLB virtual to host offsets
-    // \details Points the vh_offset to zero, replicating the behavior of the tlb pma device
-    template <TLB_entry_type ETYPE>
-    void reset_all_tlb_vh_offset() {
-        // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast))
-        for (size_t i = 0; i < PMA_TLB_SIZE; ++i) {
-            const auto addr = tlb_get_entry_hot_abs_addr<ETYPE>(i);
-            const auto page = addr & ~(PMA_PAGE_SIZE - 1);
-            const auto offset = addr - page;
-            auto *p = try_find_page(page);
-            if (p) {
-                volatile tlb_hot_entry *tlbhe = reinterpret_cast<tlb_hot_entry *>(p->data + offset);
-                tlbhe->vh_offset = 0;
-            }
-        }
-        // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast))
-    }
-
-    /// \brief Try to find a page in the logged data
-    /// \param address The physical address of the page
+    /// \brief Try to find a page in the logged data by its physical address
+    /// \param paddr The physical address of the page
     /// \return A pointer to the page_type structure if found, nullptr otherwise
-    page_type *try_find_page(uint64_t address) const {
-        const auto page_index = address >> PMA_PAGE_SIZE_LOG2;
+    page_type *try_find_page(uint64_t paddr_page) const {
+        const auto page_index = paddr_page >> PMA_PAGE_SIZE_LOG2;
         uint64_t min{0};
         uint64_t max{m_context.page_count};
         while (min < max) {
@@ -393,107 +221,162 @@ private:
         return nullptr;
     }
 
-    /// \brief Find a page in the logged data
-    /// \param address The physical address of the page
-    /// \return A pointer to the page_type structure
-    page_type *find_page(uint64_t address) const {
-        auto *page = try_find_page(address);
-        if (page == nullptr) {
-            interop_throw_runtime_error("find_page: page not found");
+    /// \brief Try to find a page in the logged data by the host address of its data
+    /// \param haddr Host address of page data
+    /// \return A pointer to the page_type structure if found, nullptr otherwise
+    page_type *try_find_page(host_addr haddr_page) const {
+        uint64_t min{0};
+        uint64_t max{m_context.page_count};
+        while (min < max) {
+            auto mid = (min + max) >> 1;
+            auto mid_page_data = cast_ptr_to_host_addr(m_context.pages[mid].data);
+            if (mid_page_data == haddr_page) {
+                return &m_context.pages[mid];
+            }
+            if (mid_page_data < haddr_page) {
+                min = mid + 1;
+            } else {
+                max = mid;
+            }
         }
-        return page;
+        return nullptr;
     }
 
-    /// \brief Find a page in the logged data
-    /// \param address The physical address of the page
-    /// \return A pointer to the page_type structure
-    page_type *find_page(uint64_t address) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
-        return static_cast<const replay_step_state_access *>(this)->find_page(address);
-    }
-
-    /// \brief Get the raw memory pointer for a given physical address
-    /// \param paddr The physical address
-    /// \param size The size of the memory region
-    /// \return A pointer to the raw memory
-    void *get_raw_memory_pointer(uint64_t paddr, size_t size) const {
-        auto page = paddr & ~(PMA_PAGE_SIZE - 1);
-        const auto offset = paddr - page;
-        auto end_page = (paddr + size - 1) & ~(PMA_PAGE_SIZE - 1);
-        if (end_page != page) {
-            interop_throw_runtime_error("get_raw_memory_pointer: paddr crosses page boundary");
+    // \brief Relocate all TLB vp_offset fields to vh_offset
+    // \details This makes the translation point directly to logged page data
+    template <TLB_set_index SET>
+    void relocate_tlb_vp_offset_to_vh_offset() {
+        for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
+            const auto vp_offset_field_addr = shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vp_offset);
+            auto *vp_offset_log = try_find_page(vp_offset_field_addr & ~PAGE_OFFSET_MASK);
+            const auto vaddr_page_field_addr = shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page);
+            auto *vaddr_page_log = try_find_page(vaddr_page_field_addr & ~PAGE_OFFSET_MASK);
+            // If vp_offset was accessed during record, both it and vaddr_apge will appear in the log
+            // (record_step_state_access makes sure of it)
+            // Otherwise, we do not need to translate
+            if (vp_offset_log == nullptr || vaddr_page_log == nullptr) {
+                continue;
+            }
+            const auto vaddr_page_field_haddr =
+                cast_ptr_to_host_addr(vaddr_page_log->data) + (vaddr_page_field_addr & PAGE_OFFSET_MASK);
+            const auto vaddr_page = aliased_aligned_read<uint64_t>(vaddr_page_field_haddr);
+            // If, moreover, the slot was valid, the corresponding page will also appear in the log
+            // (record_step_state_access makes sure of it)
+            // Otherwise, we do not need to translate
+            if (vaddr_page != TLB_INVALID_PAGE) {
+                const auto vp_offset_field_haddr =
+                    cast_ptr_to_host_addr(vp_offset_log->data) + (vp_offset_field_addr & PAGE_OFFSET_MASK);
+                const auto vp_offset = aliased_aligned_read<uint64_t>(vp_offset_field_haddr);
+                const auto paddr_page = vaddr_page + vp_offset;
+                auto *page_log = try_find_page(paddr_page);
+                if (page_log == nullptr) {
+                    continue;
+                }
+                const auto haddr_page = cast_ptr_to_host_addr(page_log->data);
+                const auto vh_offset = haddr_page - vaddr_page;
+                aliased_aligned_write<host_addr>(vp_offset_field_haddr, vh_offset);
+            }
         }
-        auto *data = find_page(page);
-        auto *p = data->data + offset;
-        return p;
     }
 
-    /// \brief Read a value from raw memory
-    /// \tparam T The type of the value to read
-    /// \param paddr The physical address
-    /// \return The value read
-    template <typename T>
-    T raw_read_memory(uint64_t paddr) const {
-        auto size = sizeof(T);
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        volatile T *ptr = reinterpret_cast<T *>(get_raw_memory_pointer(paddr, size));
-        return *ptr;
+    // \brief Reverses changes to TLB so we have vp_offset fields again instead of vh_offset
+    // \details This makes the translation point back to target physical addresses
+    template <TLB_set_index SET>
+    void relocate_tlb_vh_offset_to_vp_offset() {
+        for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
+            const auto vp_offset_field_addr = shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vp_offset);
+            auto *vp_offset_log = try_find_page(vp_offset_field_addr & ~PAGE_OFFSET_MASK);
+            const auto vaddr_page_field_addr = shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page);
+            auto *vaddr_page_log = try_find_page(vaddr_page_field_addr & ~PAGE_OFFSET_MASK);
+            // If vp_offset was accessed during record, both it and vaddr_apge will appear in the log
+            // (record_step_state_access makes sure of it)
+            // Otherwise, we do not need to translate
+            if (vp_offset_log == nullptr || vaddr_page_log == nullptr) {
+                continue;
+            }
+            const auto vaddr_page_field_haddr =
+                cast_ptr_to_host_addr(vaddr_page_log->data) + (vaddr_page_field_addr & PAGE_OFFSET_MASK);
+            const auto vaddr_page = aliased_aligned_read<uint64_t>(vaddr_page_field_haddr);
+            // If, moreover, the slot was valid, the corresponding page will also appear in the log
+            // (record_step_state_access makes sure of it)
+            // Otherwise, we do not need to translate
+            // We also don't need to translate back if it is no longer valid
+            if (vaddr_page != TLB_INVALID_PAGE) {
+                const auto vp_offset_field_haddr =
+                    cast_ptr_to_host_addr(vp_offset_log->data) + (vp_offset_field_addr & PAGE_OFFSET_MASK);
+                const auto vh_offset = aliased_aligned_read<host_addr>(vp_offset_field_haddr);
+                const auto haddr_page = vaddr_page + vh_offset;
+                auto *page_log = try_find_page(haddr_page);
+                if (page_log == nullptr) {
+                    continue;
+                }
+                const auto paddr_page = page_log->index << PMA_PAGE_SIZE_LOG2;
+                const auto vp_offset = paddr_page - vaddr_page;
+                aliased_aligned_write<uint64_t>(vp_offset_field_haddr, vp_offset);
+            }
+        }
     }
 
-    /// \brief Write a value to raw memory
-    /// \tparam T The type of the value to write
-    /// \param paddr The physical address
-    /// \param val The value to write
-    template <typename T>
-    void raw_write_memory(uint64_t paddr, T val) {
-        auto size = sizeof(T);
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        volatile T *ptr = reinterpret_cast<T *>(get_raw_memory_pointer(paddr, size));
-        *ptr = val;
+    page_type *find_page(uint64_t paddr_page) const {
+        auto *page_log = try_find_page(paddr_page);
+        if (page_log == nullptr) {
+            interop_throw_runtime_error("required page not found");
+        }
+        return page_log;
+    }
+
+    page_type *find_page(host_addr haddr_page) const {
+        auto *page_log = try_find_page(haddr_page);
+        if (page_log == nullptr) {
+            interop_throw_runtime_error("required page not found");
+        }
+        return page_log;
     }
 
     // \brief Compute the current machine root hash
     hash_type compute_root_hash() {
+        //??D Here we should only do this for dirty pages, right?
+        //??D Initially, all pages are dirty, because we don't know their hashes
+        //??D But in the end, we should only update those pages that we touched
+        //??D May improve performance when we are running this on ZK
         for (uint64_t i = 0; i < m_context.page_count; i++) {
             interop_merkle_tree_hash(m_context.pages[i].data, PMA_PAGE_SIZE,
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
                 reinterpret_cast<interop_hash_type>(&m_context.pages[i].hash));
         }
-
         size_t next_page = 0;
         size_t next_sibling = 0;
         auto root_hash =
             compute_root_hash_impl(0, interop_log2_root_size - PMA_PAGE_SIZE_LOG2, next_page, next_sibling);
         if (next_page != m_context.page_count) {
-            interop_throw_runtime_error("compute_root_hash: next_page != m_context.page_count");
+            interop_throw_runtime_error("too many pages in log");
         }
         if (next_sibling != m_context.sibling_count) {
-            interop_throw_runtime_error("compute_root_hash: sibling hashes not totally consumed");
+            interop_throw_runtime_error("too many sibling hashes in log");
         }
         return root_hash;
     }
 
     // \brief Compute the root hash of a memory range recursively
     // \param page_index Index of the first page in the range
-    // \param page_count_log2_size Log2 of the size of number of pages in the range
+    // \param log2_page_count Log2 of the size of number of pages in the range
     // \param next_page Index of the next page to be visited
     // \param next_sibling Index of the next sibling hash to be visited
     // \return Resulting root hash of the range
-    hash_type compute_root_hash_impl(address_type page_index, int page_count_log2_size, size_t &next_page,
+    hash_type compute_root_hash_impl(address_type page_index, int log2_page_count, size_t &next_page,
         size_t &next_sibling) {
         // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast))
-        auto page_count = UINT64_C(1) << page_count_log2_size;
+        auto page_count = UINT64_C(1) << log2_page_count;
         if (next_page >= m_context.page_count || page_index + page_count <= m_context.pages[next_page].index) {
             if (next_sibling >= m_context.sibling_count) {
-                interop_throw_runtime_error(
-                    "compute_root_hash_impl: trying to access beyond sibling count while skipping range");
+                interop_throw_runtime_error("too few sibling hashes in log");
             }
             return m_context.sibling_hashes[next_sibling++];
         }
-        if (page_count_log2_size > 0) {
-            auto left = compute_root_hash_impl(page_index, page_count_log2_size - 1, next_page, next_sibling);
-            auto right = compute_root_hash_impl(page_index + (UINT64_C(1) << (page_count_log2_size - 1)),
-                page_count_log2_size - 1, next_page, next_sibling);
+        if (log2_page_count > 0) {
+            auto left = compute_root_hash_impl(page_index, log2_page_count - 1, next_page, next_sibling);
+            const auto halfway_page_index = page_index + (page_count >> 1);
+            auto right = compute_root_hash_impl(halfway_page_index, log2_page_count - 1, next_page, next_sibling);
             hash_type hash{};
             interop_concat_hash(reinterpret_cast<interop_hash_type>(&left), reinterpret_cast<interop_hash_type>(&right),
                 reinterpret_cast<interop_hash_type>(&hash));
@@ -503,374 +386,70 @@ private:
             return m_context.pages[next_page++].hash;
         }
         if (next_sibling >= m_context.sibling_count) {
-            interop_throw_runtime_error("compute_root_hash_impl: trying to access beyond sibling count");
+            interop_throw_runtime_error("too few sibling hashes in log");
         }
         return m_context.sibling_hashes[next_sibling++];
         // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast))
     }
 
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    void do_push_bracket(bracket_type type, const char *text) {
-        (void) type;
-        (void) text;
+    //??D we should probably optimize access to the shadow so it doesn't perform a translation every time
+    // We can do this by caching the vh_offset trasnslation of the processor shadow page. This is easy if
+    // static_assert(sizeof(shadow_state) <= PMA_PAGE_SIZE, "shadow state must fit in single page");
+    uint64_t check_read_reg(machine_reg reg) const {
+        const auto haddr = do_get_faddr(machine_reg_address(reg));
+        return aliased_aligned_read<uint64_t>(haddr);
     }
 
-    int do_make_scoped_note(const char *text) { // NOLINT(readability-convert-member-functions-to-static)
-        (void) text;
-        return 0;
+    //??D we should probably optimize access to the shadow so it doesn't perform a translation every time
+    // We can do this by caching the vh_offset trasnslation of the processor shadow page. This is easy if
+    // static_assert(sizeof(shadow_state) <= PMA_PAGE_SIZE, "shadow state must fit in single page");
+    void check_write_reg(machine_reg reg, uint64_t val) const {
+        const auto haddr = do_get_faddr(machine_reg_address(reg));
+        aliased_aligned_write<uint64_t>(haddr, val);
     }
 
-    uint64_t do_read_x(int reg) {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::x0, reg));
+    uint64_t read_pma_istart(uint64_t index) const {
+        const auto haddr = do_get_faddr(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::istart));
+        return aliased_aligned_read<uint64_t>(haddr);
     }
 
-    void do_write_x(int reg, uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::x0, reg), val);
+    uint64_t read_pma_ilength(uint64_t index) const {
+        const auto haddr = do_get_faddr(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::ilength));
+        return aliased_aligned_read<uint64_t>(haddr);
     }
 
-    uint64_t do_read_f(int reg) {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::f0, reg));
-    }
-
-    void do_write_f(int reg, uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::f0, reg), val);
-    }
-
-    uint64_t do_read_pc() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::pc));
-    }
-
-    void do_write_pc(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::pc), val);
-    }
-
-    uint64_t do_read_fcsr() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::fcsr));
-    }
-
-    void do_write_fcsr(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::fcsr), val);
-    }
-
-    uint64_t do_read_icycleinstret() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::icycleinstret));
-    }
-
-    void do_write_icycleinstret(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::icycleinstret), val);
-    }
-
-    uint64_t do_read_mvendorid() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mvendorid));
-    }
-
-    uint64_t do_read_marchid() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::marchid));
-    }
-
-    uint64_t do_read_mimpid() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mimpid));
-    }
-
-    uint64_t do_read_mcycle() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mcycle));
-    }
-
-    void do_write_mcycle(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::mcycle), val);
-    }
-
-    uint64_t do_read_mstatus() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mstatus));
-    }
-
-    void do_write_mstatus(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::mstatus), val);
-    }
-
-    uint64_t do_read_mtvec() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mtvec));
-    }
-
-    void do_write_mtvec(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::mtvec), val);
-    }
-
-    uint64_t do_read_mscratch() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mscratch));
-    }
-
-    void do_write_mscratch(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::mscratch), val);
-    }
-
-    uint64_t do_read_mepc() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mepc));
-    }
-
-    void do_write_mepc(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::mepc), val);
-    }
-
-    uint64_t do_read_mcause() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mcause));
-    }
-
-    void do_write_mcause(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::mcause), val);
-    }
-
-    uint64_t do_read_mtval() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mtval));
-    }
-
-    void do_write_mtval(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::mtval), val);
-    }
-
-    uint64_t do_read_misa() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::misa));
-    }
-
-    void do_write_misa(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::misa), val);
-    }
-
-    uint64_t do_read_mie() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mie));
-    }
-
-    void do_write_mie(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::mie), val);
-    }
-
-    uint64_t do_read_mip() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mip));
-    }
-
-    void do_write_mip(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::mip), val);
-    }
-
-    uint64_t do_read_medeleg() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::medeleg));
-    }
-
-    void do_write_medeleg(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::medeleg), val);
-    }
-
-    uint64_t do_read_mideleg() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mideleg));
-    }
-
-    void do_write_mideleg(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::mideleg), val);
-    }
-
-    uint64_t do_read_mcounteren() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::mcounteren));
-    }
-
-    void do_write_mcounteren(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::mcounteren), val);
-    }
-
-    uint64_t do_read_senvcfg() const {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::senvcfg));
-    }
-
-    void do_write_senvcfg(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::senvcfg), val);
-    }
-
-    uint64_t do_read_menvcfg() const {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::menvcfg));
-    }
-
-    void do_write_menvcfg(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::menvcfg), val);
-    }
-
-    uint64_t do_read_stvec() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::stvec));
-    }
-
-    void do_write_stvec(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::stvec), val);
-    }
-
-    uint64_t do_read_sscratch() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::sscratch));
-    }
-
-    void do_write_sscratch(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::sscratch), val);
-    }
-
-    uint64_t do_read_sepc() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::sepc));
-    }
-
-    void do_write_sepc(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::sepc), val);
-    }
-
-    uint64_t do_read_scause() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::scause));
-    }
-
-    void do_write_scause(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::scause), val);
-    }
-
-    uint64_t do_read_stval() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::stval));
-    }
-
-    void do_write_stval(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::stval), val);
-    }
-
-    uint64_t do_read_satp() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::satp));
-    }
-
-    void do_write_satp(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::satp), val);
-    }
-
-    uint64_t do_read_scounteren() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::scounteren));
-    }
-
-    void do_write_scounteren(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::scounteren), val);
-    }
-
-    uint64_t do_read_ilrsc() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::ilrsc));
-    }
-
-    void do_write_ilrsc(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::ilrsc), val);
-    }
-
-    uint64_t do_read_iprv() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::iprv));
-    }
-
-    void do_write_iprv(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::iprv), val);
-    }
-
-    uint64_t do_read_iflags_X() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::iflags_X));
-    }
-
-    void do_write_iflags_X(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::iflags_X), val);
-    }
-
-    uint64_t do_read_iflags_Y() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::iflags_Y));
-    }
-
-    void do_write_iflags_Y(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::iflags_Y), val);
-    }
-
-    uint64_t do_read_iflags_H() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::iflags_H));
-    }
-
-    void do_write_iflags_H(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::iflags_H), val);
-    }
-
-    uint64_t do_read_iunrep() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::iunrep));
-    }
-
-    void do_write_iunrep(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::iunrep), val);
-    }
+    // -----
+    // i_prefer_shadow_state interface implementation
+    // -----
+    friend i_prefer_shadow_state<replay_step_state_access>;
 
-    uint64_t do_read_clint_mtimecmp() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::clint_mtimecmp));
+    uint64_t do_read_shadow_state(shadow_state_what what) const {
+        return check_read_reg(machine_reg_enum(what));
     }
 
-    void do_write_clint_mtimecmp(uint64_t val) {
-        raw_write_memory<uint64_t>(machine_reg_address(machine_reg::clint_mtimecmp), val);
+    void do_write_shadow_state(shadow_state_what what, uint64_t val) const {
+        check_write_reg(machine_reg_enum(what), val);
     }
 
-    uint64_t do_read_plic_girqpend() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::plic_girqpend));
-    }
-
-    void do_write_plic_girqpend(uint64_t val) {
-        raw_write_memory<uint64_t>(machine_reg_address(machine_reg::plic_girqpend), val);
-    }
-
-    uint64_t do_read_plic_girqsrvd() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::plic_girqsrvd));
-    }
-
-    void do_write_plic_girqsrvd(uint64_t val) {
-        raw_write_memory<uint64_t>(machine_reg_address(machine_reg::plic_girqsrvd), val);
-    }
-
-    uint64_t do_read_htif_fromhost() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::htif_fromhost));
-    }
-
-    void do_write_htif_fromhost(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::htif_fromhost), val);
-    }
-
-    uint64_t do_read_htif_tohost() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::htif_tohost));
-    }
-
-    void do_write_htif_tohost(uint64_t val) {
-        raw_write_memory(machine_reg_address(machine_reg::htif_tohost), val);
-    }
-
-    uint64_t do_read_htif_ihalt() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::htif_ihalt));
-    }
-
-    uint64_t do_read_htif_iconsole() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::htif_iconsole));
-    }
+    // -----
+    // i_state_access interface implementation
+    // -----
+    friend i_state_access<replay_step_state_access>;
 
-    uint64_t do_read_htif_iyield() {
-        return raw_read_memory<uint64_t>(machine_reg_address(machine_reg::htif_iyield));
+    /// \brief Convert physical address to host address
+    /// \param paddr The physical address
+    /// \return Host address
+    host_addr do_get_faddr(uint64_t paddr, uint64_t /* pma_index */ = 0) const {
+        // This assumes the corresponding page has been touched
+        // (replay_step_state_access makes sure of it for any address we try to convert)
+        const auto paddr_page = paddr & ~PAGE_OFFSET_MASK;
+        auto *page_log = find_page(paddr_page);
+        const auto offset = paddr & PAGE_OFFSET_MASK;
+        return cast_ptr_to_host_addr(page_log->data) + offset;
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    std::pair<uint64_t, bool> do_poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
-        (void) mcycle_max;
-        return {mcycle, false};
-    }
-
-    uint64_t read_pma_istart(uint64_t i) {
-        return raw_read_memory<uint64_t>(shadow_pmas_get_pma_abs_addr(i));
-    }
-
-    uint64_t read_pma_ilength(uint64_t i) {
-        return raw_read_memory<uint64_t>(shadow_pmas_get_pma_abs_addr(i) + sizeof(uint64_t));
-    }
-
-    template <typename T>
-    void do_read_memory_word(uint64_t paddr, const unsigned char *hpage, uint64_t hoffset, T *pval) {
-        (void) hpage;
-        (void) hoffset;
-        *pval = raw_read_memory<T>(paddr);
-    }
-
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    bool do_read_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
+    bool do_read_memory(uint64_t paddr, const unsigned char *data, uint64_t length) const {
         (void) paddr;
         (void) data;
         (void) length;
@@ -878,149 +457,84 @@ private:
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-    bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
+    bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) const {
         (void) paddr;
         (void) data;
         (void) length;
         return false;
     }
 
-    template <typename T>
-    void do_write_memory_word(uint64_t paddr, const unsigned char *hpage, uint64_t hoffset, T val) {
-        (void) hpage;
-        (void) hoffset;
-        raw_write_memory(paddr, val);
-    }
-
-    mock_pma_entry &do_read_pma_entry(uint64_t index) {
+    mock_pma_entry &do_read_pma_entry(uint64_t index) const {
         assert(index < PMA_MAX);
+        // record_step_state_access will have recorded the access to istart and
+        // ilength in its implementation of read_pma_entry.
         const uint64_t istart = read_pma_istart(index);
         const uint64_t ilength = read_pma_ilength(index);
-        if (!m_context.pmas[index]) {
-            m_context.pmas[index] = mock_pma_entry(index, istart, ilength);
+        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
+        const int i = static_cast<int>(index);
+        if (!m_context.pmas[i]) {
+            m_context.pmas[i] =
+                make_mock_pma_entry(index, istart, ilength, [](const char *err) { interop_throw_runtime_error(err); });
         }
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         return m_context.pmas[index].value();
     }
 
-    unsigned char *do_get_host_memory(mock_pma_entry &pma) { // NOLINT(readability-convert-member-functions-to-static)
-        (void) pma;
-        return nullptr;
+    template <typename T, typename A>
+    void do_read_memory_word(host_addr haddr, uint64_t /* pma_index */, T *pval) const {
+        *pval = aliased_aligned_read<T, A>(haddr);
     }
 
-    template <TLB_entry_type ETYPE>
-    volatile tlb_hot_entry &do_get_tlb_hot_entry(uint64_t eidx) {
-        auto addr = tlb_get_entry_hot_abs_addr<ETYPE>(eidx);
-        auto size = sizeof(tlb_hot_entry);
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        volatile tlb_hot_entry *tlbe = reinterpret_cast<tlb_hot_entry *>(get_raw_memory_pointer(addr, size));
-        return *tlbe;
+    template <typename T, typename A>
+    void do_write_memory_word(host_addr haddr, uint64_t /* pma_index */, T val) const {
+        aliased_aligned_write<T, A>(haddr, val);
     }
 
-    template <TLB_entry_type ETYPE>
-    volatile tlb_cold_entry &do_get_tlb_entry_cold(uint64_t eidx) {
-        auto addr = tlb_get_entry_cold_abs_addr<ETYPE>(eidx);
-        auto size = sizeof(tlb_cold_entry);
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        volatile tlb_cold_entry *tlbe = reinterpret_cast<tlb_cold_entry *>(get_raw_memory_pointer(addr, size));
-        return *tlbe;
+    template <typename TYPE>
+    auto check_read_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) const {
+        const auto haddr = do_get_faddr(shadow_tlb_get_abs_addr(set_index, slot_index, what));
+        return aliased_aligned_read<TYPE>(haddr);
     }
 
-    template <TLB_entry_type ETYPE, typename T>
-    bool do_translate_vaddr_via_tlb(uint64_t vaddr, unsigned char **phptr) {
-        const uint64_t eidx = tlb_get_entry_index(vaddr);
-        const volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
-        if (tlb_is_hit<T>(tlbhe.vaddr_page, vaddr)) {
-            *phptr = cast_addr_to_ptr<unsigned char *>(tlbhe.vh_offset + vaddr);
-            return true;
-        }
-        return false;
+    template <TLB_set_index SET>
+    uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) const {
+        return check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::vaddr_page);
     }
 
-    template <TLB_entry_type ETYPE, typename T>
-    bool do_read_memory_word_via_tlb(uint64_t vaddr, T *pval) {
-        const uint64_t eidx = tlb_get_entry_index(vaddr);
-        const volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
-        if (tlb_is_hit<T>(tlbhe.vaddr_page, vaddr)) {
-            const uint64_t poffset = vaddr & PAGE_OFFSET_MASK;
-            const volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
-            *pval = raw_read_memory<T>(tlbce.paddr_page + poffset);
-            return true;
-        }
-        return false;
+    template <TLB_set_index SET>
+    host_addr do_read_tlb_vp_offset(uint64_t slot_index) const {
+        return check_read_tlb<host_addr>(SET, slot_index, shadow_tlb_what::vp_offset);
     }
 
-    template <TLB_entry_type ETYPE, typename T>
-    bool do_write_memory_word_via_tlb(uint64_t vaddr, T val) {
-        const uint64_t eidx = tlb_get_entry_index(vaddr);
-        const volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
-        if (tlb_is_hit<T>(tlbhe.vaddr_page, vaddr)) {
-            const uint64_t poffset = vaddr & PAGE_OFFSET_MASK;
-            const volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
-            raw_write_memory(tlbce.paddr_page + poffset, val);
-            return true;
-        }
-        return false;
+    template <TLB_set_index SET>
+    uint64_t do_read_tlb_pma_index(uint64_t slot_index) const {
+        return check_read_tlb<uint64_t>(SET, slot_index, shadow_tlb_what::pma_index);
     }
 
-    template <TLB_entry_type ETYPE>
-    unsigned char *do_replace_tlb_entry(uint64_t vaddr, uint64_t paddr, mock_pma_entry &pma) {
-        const uint64_t eidx = tlb_get_entry_index(vaddr);
-        volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
-        volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
-        if constexpr (ETYPE == TLB_WRITE) {
-            if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
-                mock_pma_entry &pma = do_read_pma_entry(tlbce.pma_index);
-                pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
-            }
-        }
-        const uint64_t vaddr_page = vaddr & ~PAGE_OFFSET_MASK;
-        const uint64_t paddr_page = paddr & ~PAGE_OFFSET_MASK;
-
-        auto *page_type = find_page(paddr_page);
-        auto *hpage = page_type->data;
-
-        tlbhe.vaddr_page = vaddr_page;
-        tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - vaddr_page;
-        tlbce.paddr_page = paddr_page;
-        tlbce.pma_index = pma.get_index();
-        return hpage;
+    template <typename TYPE>
+    auto check_write_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what, TYPE val) const {
+        const auto haddr = do_get_faddr(shadow_tlb_get_abs_addr(set_index, slot_index, what));
+        aliased_aligned_write<TYPE>(haddr, val);
     }
 
-    template <TLB_entry_type ETYPE>
-    void do_flush_tlb_entry(uint64_t eidx) {
-        volatile tlb_hot_entry &tlbhe = do_get_tlb_hot_entry<ETYPE>(eidx);
-        // Mark page that was on TLB as dirty so we know to update the Merkle tree
-        if constexpr (ETYPE == TLB_WRITE) {
-            if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
-                tlbhe.vaddr_page = TLB_INVALID_PAGE;
-                const volatile tlb_cold_entry &tlbce = do_get_tlb_entry_cold<ETYPE>(eidx);
-                mock_pma_entry &pma = do_read_pma_entry(tlbce.pma_index);
-                pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
-            } else {
-                tlbhe.vaddr_page = TLB_INVALID_PAGE;
-            }
-        } else {
-            tlbhe.vaddr_page = TLB_INVALID_PAGE;
-        }
+    template <TLB_set_index SET>
+    void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) const {
+        check_write_tlb(SET, slot_index, shadow_tlb_what::vaddr_page, vaddr_page);
+        check_write_tlb(SET, slot_index, shadow_tlb_what::vp_offset, vh_offset);
+        check_write_tlb(SET, slot_index, shadow_tlb_what::pma_index, pma_index);
     }
 
-    template <TLB_entry_type ETYPE>
-    void do_flush_tlb_type() {
-        for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
-            do_flush_tlb_entry<ETYPE>(i);
-        }
+    void do_putchar(uint8_t /*c*/) const { // NOLINT(readability-convert-member-functions-to-static)
+        ;                                  // do nothing
     }
 
-    void do_flush_tlb_vaddr(uint64_t vaddr) {
-        (void) vaddr;
-        do_flush_tlb_type<TLB_CODE>();
-        do_flush_tlb_type<TLB_READ>();
-        do_flush_tlb_type<TLB_WRITE>();
+    void do_mark_dirty_page(host_addr /* haddr */, uint64_t /* pma_index */) const {
+        // this is a noop since we have no host machine
     }
 
-    bool do_get_soft_yield() { // NOLINT(readability-convert-member-functions-to-static)
-        return false;
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+    constexpr const char *do_get_name() const { // NOLINT(readability-convert-member-functions-to-static)
+        return "replay_step_state_access";
     }
 };
 

@@ -14,9 +14,10 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
+#include "clint.h"
+
 #include <cstdint>
 
-#include "clint.h"
 #include "i-device-state-access.h"
 #include "interpret.h"
 #include "pma-constants.h"

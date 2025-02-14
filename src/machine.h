@@ -23,11 +23,14 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/container/static_vector.hpp>
+#include <unordered_map>
 
 #include "access-log.h"
+#include "host-addr.h"
 #include "i-device-state-access.h"
 #include "interpret.h"
 #include "machine-config.h"
@@ -39,8 +42,9 @@
 #include "os.h"
 #include "pma-constants.h"
 #include "pma.h"
+#include "shadow-tlb.h"
 #include "uarch-interpret.h"
-#include "uarch-machine.h"
+#include "uarch-state.h"
 #include "virtio-device.h"
 
 namespace cartesi {
@@ -57,18 +61,11 @@ constexpr skip_merkle_tree_update_t skip_merkle_tree_update;
 /// \brief Cartesi Machine implementation
 class machine final {
 private:
-    //??D Ideally, we would hold a unique_ptr to the state. This
-    //    would allow us to remove the machine-state.h include and
-    //    therefore hide its contents from anyone who includes only
-    //    machine.h. Maybe the compiler can do a good job we we are
-    //    not constantly going through the extra indirection. We
-    //    should test this.
-
-    mutable machine_state m_s;              ///< Opaque machine state
+    mutable machine_state m_s;              ///< Big machine state
+    mutable uarch_state m_us;               ///< Microarchitecture state
     mutable machine_merkle_tree m_t;        ///< Merkle tree of state
     std::vector<pma_entry *> m_merkle_pmas; ///< PMAs considered by the Merkle tree: from big machine and uarch
     machine_config m_c;                     ///< Copy of initialization config
-    uarch_machine m_uarch;                  ///< Microarchitecture machine
     machine_runtime_config m_r;             ///< Copy of initialization runtime config
     machine_memory_range_descrs m_mrds;     ///< List of memory ranges returned by get_memory_ranges().
 
@@ -79,6 +76,8 @@ private:
     static const pma_entry::flags m_flash_drive_flags;    ///< PMA flags used for flash drives
     static const pma_entry::flags m_cmio_rx_buffer_flags; ///< PMA flags used for cmio rx buffer
     static const pma_entry::flags m_cmio_tx_buffer_flags; ///< PMA flags used for cmio tx buffer
+
+    std::unordered_map<std::string, uint64_t> m_counters;
 
     /// \brief Allocates a new PMA entry.
     /// \param pma PMA entry to add to machine.
@@ -98,32 +97,101 @@ private:
     static pma_entry make_flash_drive_pma_entry(const std::string &description, const memory_range_config &c);
 
     /// \brief Creates a new cmio rx buffer PMA entry.
-    // \param c Optional cmio configuration
+    // \param c cmio buffer configuration for rx buffer.
     /// \returns New PMA entry with rx buffer flags already set.
-    static pma_entry make_cmio_rx_buffer_pma_entry(const cmio_config &cmio_config);
+    static pma_entry make_cmio_rx_buffer_pma_entry(const cmio_buffer_config &c);
 
     /// \brief Creates a new cmio tx buffer PMA entry.
-    // \param c Optional cmio configuration
+    // \param c cmio buffer configuration for tx buffer.
     /// \returns New PMA entry with tx buffer flags already set.
-    static pma_entry make_cmio_tx_buffer_pma_entry(const cmio_config &cmio_config);
+    static pma_entry make_cmio_tx_buffer_pma_entry(const cmio_buffer_config &c);
 
     /// \brief Saves PMAs into files for serialization
     /// \param config Machine config to be stored
     /// \param directory Directory where PMAs will be stored
     void store_pmas(const machine_config &config, const std::string &directory) const;
 
-    /// \brief Obtain PMA entry that covers a given physical memory region
-    /// \param pmas Container of pmas to be searched.
-    /// \param s Pointer to machine state.
-    /// \param paddr Start of physical memory region.
-    /// \param length Length of physical memory region.
-    /// \returns Corresponding entry if found, or a sentinel entry
-    /// for an empty range.
-    template <typename CONTAINER>
-    pma_entry &find_pma_entry(const CONTAINER &pmas, uint64_t paddr, uint64_t length);
+    /// \brief Returns offset that converts between machine host addresses and target physical addresses
+    /// \param pma_index Index of the memory PMA for the desired offset
+    host_addr get_hp_offset(uint64_t pma_index) const;
 
-    template <typename CONTAINER>
-    const pma_entry &find_pma_entry(const CONTAINER &pmas, uint64_t paddr, uint64_t length) const;
+    /// \brief Initializes microarchitecture
+    /// \param c Microarchitecture configuration
+    void init_uarch(const uarch_config &c);
+
+    /// \brief Initializes registers
+    /// \param p Processor configuration
+    /// \param r Machine runtime configuration
+    void init_processor(processor_config &p, const machine_runtime_config &r);
+
+    /// \brief Initializes RAM PMA
+    /// \param ram RAM configuration
+    void init_ram_pma(const ram_config &ram);
+
+    /// \brief Initializes flash drive PMAs
+    /// \param flash_drive Flash drive configurations
+    void init_flash_drive_pmas(flash_drive_configs &flash_drive);
+
+    /// \brief Initializes VirtIO device PMAs
+    /// \param v VirtIO configurations
+    /// \param iunrep Initial value of iunrep CSR
+    void init_virtio_pmas(const virtio_configs &v, uint64_t iunrep);
+
+    /// \brief Initializes HTIF device PMA
+    /// \param h HTIF configuration
+    /// \param r HTIF runtime configuration
+    /// \param iunrep Initial value of iunrep CSR
+    void init_htif_pma(const htif_config &h, const htif_runtime_config &r, uint64_t iunrep);
+
+    /// \brief Initializes CLINT device PMA
+    /// \param c CLINT configuration
+    void init_clint_pma(const clint_config &c);
+
+    /// \brief Initializes PLIC device PMA
+    /// \param p PLIC configuration
+    void init_plic_pma(const plic_config &p);
+
+    /// \brief Initializes CMIO PMAs
+    /// \param c CMIO configuration
+    void init_cmio_pmas(const cmio_config &c);
+
+    /// \brief Initializes the PMAs used to compute the Merkle tree
+    /// \detail This can only be called after all PMAs have been added
+    void init_merkle_pmas();
+
+    /// \brief Initializes the PMAs descriptions returned by get_memory_ranges()
+    /// \detail This can only be called after the Merkle tree PMAs have been initialized
+    void init_memory_range_descrs();
+
+    /// \brief Fill up PMA list with sentinel empty PMAs
+    void init_sentinel_pmas();
+
+    /// \brief Initializes contents of the shadow PMAs memory
+    /// \param shadow_pmas PMA entry for the shadow PMAs
+    /// \detail This can only be called after all PMAs have been added
+    void init_shadow_pmas_contents(pma_entry &shadow_pmas) const;
+
+    /// \brief Initializes contents of machine TLB, from image in disk or with default values
+    /// \param image_filename File containing image, or empty for default values
+    /// \detail This can only be called after all PMAs have been added
+    void init_tlb_contents(const std::string &image_filename);
+
+    /// \brief Initializes contents of machine DTB, if image was not available
+    /// \param c Machine configuration
+    /// \param dtb PMA entry for the shadow PMAs
+    static void init_dtb_contents(const machine_config &c, pma_entry &dtb);
+
+    /// \brief Dumps statistics
+    void dump_stats();
+
+    /// \brief Dumps instruction histogram
+    void dump_insn_hist();
+
+    /// \brief Returns key to counter
+    /// \param name Counter name.
+    /// \param domain Counter domain. Can be nullptr. Otherwise, should end with a dot '.'
+    /// \details The counter is key is the concatenation of \p domain with \p name.
+    static std::string get_counter_key(const char *name, const char *domain = nullptr);
 
 public:
     /// \brief Type of hash
@@ -134,12 +202,12 @@ public:
     /// \brief Constructor from machine configuration
     /// \param config Machine config to use instantiating machine
     /// \param runtime Runtime config to use with machine
-    explicit machine(const machine_config &config, const machine_runtime_config &runtime = {});
+    explicit machine(machine_config config, machine_runtime_config runtime = {});
 
     /// \brief Constructor from previously serialized directory
     /// \param directory Directory to load stored machine from
     /// \param runtime Runtime config to use with machine
-    explicit machine(const std::string &directory, const machine_runtime_config &runtime = {});
+    explicit machine(const std::string &directory, machine_runtime_config runtime = {});
 
     /// \brief Serialize entire state to directory
     /// \param directory Directory to store machine into
@@ -160,7 +228,8 @@ public:
     /// \param mcycle_end Maximum value of mcycle before function returns.
     /// \returns The reason the machine was interrupted.
     /// \details Several conditions can cause the function to break before mcycle reaches mcycle_end. The most
-    ///  frequent scenario is when the program executes a WFI instruction. Another example is when the machine halts.
+    ///  frequent scenario is when the program executes a WFI instruction. Another example is when the machine
+    ///  halts.
     interpreter_break_reason run(uint64_t mcycle_end);
 
     /// \brief Runs the machine for the given mcycle count and generates a log of accessed pages and proof data.
@@ -223,17 +292,38 @@ public:
         return m_s;
     }
 
+    /// \brief Returns uarch state for direct access.
+    uarch_state &get_uarch_state() {
+        return m_us;
+    }
+
+    /// \brief Returns uarch state for direct read-only access.
+    const uarch_state &get_uarch_state() const {
+        return m_us;
+    }
+
     /// \brief Returns a list of descriptions for all PMA entries registered in the machine, sorted by start
     machine_memory_range_descrs get_memory_ranges() const {
         return m_mrds;
     }
+
+    /// \brief Wait for external interrupts requests.
+    /// \param mcycle Current value of mcycle.
+    /// \param mcycle_max Maximum mcycle after wait.
+    /// \returns A pair {new_mcycle, status}, where new_mcycle gives new value for mcycle after wait,
+    /// and status will be execute_status::success_and_serve_interrupts if wait was stopped by an
+    /// external interrupt request.
+    /// \details When mcycle_max is greater than mcycle, this function will sleep until an external interrupt
+    /// is triggered or until the amount of time estimated for mcycle to reach mcycle_max has elapsed.
+    std::pair<uint64_t, execute_status> poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max);
 
     /// \brief Destructor.
     ~machine();
 
     /// \brief Fill file descriptors to be polled by select() for all VirtIO devices.
     /// \param fds Pointer to sets of read, write and except file descriptors to be updated.
-    /// \param timeout_us Maximum amount of time to wait in microseconds, this may be updated (always to lower values).
+    /// \param timeout_us Maximum amount of time to wait in microseconds, this may be updated (always to lower
+    /// values).
     void prepare_virtio_devices_select(select_fd_sets *fds, uint64_t *timeout_us);
 
     /// \brief Poll file descriptors that were marked as ready by select() for all VirtIO devices.
@@ -245,7 +335,8 @@ public:
 
     /// \brief Poll file descriptors through select() for all VirtIO devices.
     /// \details Basically call prepare_virtio_devices_select(), select() and poll_selected_virtio_devices().
-    /// \param timeout_us Maximum amount of time to wait in microseconds, this may be updated (always to lower values).
+    /// \param timeout_us Maximum amount of time to wait in microseconds, this may be updated (always to lower
+    /// values).
     /// \returns True if an interrupt was requested, false otherwise.
     bool poll_virtio_devices(uint64_t *timeout_us, i_device_state_access *da);
 
@@ -285,7 +376,8 @@ public:
     /// Must be between 3 (for a word) and 64 (for the entire address space), inclusive.
     /// \param proof Receives the proof.
     /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
-    /// This overload is used to optimize proof generation when the caller knows that the tree is already up to date.
+    /// This overload is used to optimize proof generation when the caller knows that the tree is already up to
+    /// date.
     machine_merkle_tree::proof_type get_proof(uint64_t address, int log2_size,
         skip_merkle_tree_update_t /*unused*/) const;
 
@@ -324,28 +416,33 @@ public:
     /// \returns The address of the register
     static uint64_t get_reg_address(reg r);
 
-    /// \brief Read the value of a word in the machine state.
-    /// \param address Word address (aligned to 64-bit boundary).
+    /// \brief Read the value of a word from the machine state.
+    /// \param paddr Word address (aligned to 64-bit boundary).
     /// \returns The value of word at address.
-    /// \warning The current implementation of this function is very slow!
-    uint64_t read_word(uint64_t address) const;
+    /// \details The word can be anywhere in the entire address space.
+    uint64_t read_word(uint64_t paddr) const;
 
-    /// \brief Reads a chunk of data from the machine memory.
-    /// \param address Physical address to start reading.
-    /// \param data Receives chunk of memory.
-    /// \param length Size of chunk.
-    /// \details The entire chunk, from \p address to \p address + \p length must
-    /// be inside the same PMA region.
-    void read_memory(uint64_t address, unsigned char *data, uint64_t length) const;
+    /// \brief Writes the value of a word to the machine state.
+    /// \param paddr Word address (aligned to 64-bit boundary).
+    /// \details The word can be in a writeable area of the address space.
+    /// This includes the shadow state and the shadow uarch state.
+    /// (But does NOT include memory-mapped devices, the shadow tlb, shadow PMAs, or unnocupied memory regions.)
+    void write_word(uint64_t paddr, uint64_t val);
 
-    /// \brief Writes a chunk of data to the machine memory.
-    /// \param address Physical address to start writing.
-    /// \param data Source for chunk of data.
-    /// \param length Size of chunk.
-    /// \details The entire chunk, from \p address to \p address + \p length must
-    /// be inside the same PMA region. Moreover, this PMA must be a memory PMA,
-    /// and not a device PMA.
-    void write_memory(uint64_t address, const unsigned char *data, uint64_t length);
+    /// \brief Reads a chunk of data, by its target physical address and length.
+    /// \param paddr Target physical address to start reading from.
+    /// \param data Buffer that receives data to read. Must be at least \p length bytes long.
+    /// \param length Number of bytes to read from \p paddr to \p data.
+    /// \details The data can be anywhere in the entire address space.
+    void read_memory(uint64_t paddr, unsigned char *data, uint64_t length) const;
+
+    /// \brief Writes a chunk of data to machine memory, by its target physical address and length.
+    /// \param paddr Target physical address to start writing to.
+    /// \param data Buffer that contains data to write. Must be at least \p length bytes long.
+    /// \param length Number of bytes to write starting from \p data to \p paddr.
+    /// \details Unlike read_memory(), the entire chunk of data, from \p paddr to \p paddr + \p length,
+    /// must reside entirely in the same memory range. Moreover, it cannot be mapped to a device.
+    void write_memory(uint64_t paddr, const unsigned char *data, uint64_t length);
 
     /// \brief Fills a memory range with a single byte.
     /// \param address Physical address to start filling.
@@ -370,10 +467,6 @@ public:
     /// \returns The corresponding physical address.
     uint64_t translate_virtual_address(uint64_t vaddr);
 
-    /// \brief Get read-only access to container with all PMA entries.
-    /// \returns The container.
-    const boost::container::static_vector<pma_entry, PMA_MAX> &get_pmas() const;
-
     /// \brief Obtain PMA entry from the machine state that covers a given physical memory region
     /// \brief Microarchitecture PMAs are not considered.
     /// \param s Pointer to machine state.
@@ -381,18 +474,25 @@ public:
     /// \param length Length of physical memory region.
     /// \returns Corresponding entry if found, or a sentinel entry
     /// for an empty range.
-    pma_entry &find_pma_entry(uint64_t paddr, uint64_t length);
-
     const pma_entry &find_pma_entry(uint64_t paddr, uint64_t length) const;
+
+    pma_entry &find_pma_entry(uint64_t paddr, uint64_t length) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+        return const_cast<pma_entry &>(std::as_const(*this).find_pma_entry(paddr, length));
+    }
 
     /// \brief Obtain PMA entry covering a physical memory word
     /// \tparam T Type of word.
     /// \param s Pointer to machine state.
     /// \param paddr Target physical address.
-    /// \returns Corresponding entry if found, or a sentinel entry
-    /// for an empty range.
+    /// \returns Corresponding entry if found, or a sentinel entry for an empty range.
     template <typename T>
     const pma_entry &find_pma_entry(uint64_t paddr) const {
+        return find_pma_entry(paddr, sizeof(T));
+    }
+
+    template <typename T>
+    pma_entry &find_pma_entry(uint64_t paddr) {
         return find_pma_entry(paddr, sizeof(T));
     }
 
@@ -416,7 +516,7 @@ public:
     /// \brief Changes the machine runtime config.
     /// \param range Configuration of the new memory range.
     /// \details Some runtime options cannot be changed.
-    void set_runtime_config(const machine_runtime_config &r);
+    void set_runtime_config(machine_runtime_config r);
 
     /// \brief Replaces a memory range.
     /// \param range Configuration of the new memory range.
@@ -429,6 +529,64 @@ public:
     /// \param data Response data.
     /// \param length Length of response data.
     void send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length);
+
+    /// \brief Converts from machine host address to target physical address
+    /// \param haddr Machine host address to convert
+    /// \param pma_index Index of PMA where address falls
+    /// \returns Corresponding target physical address
+    /// \details This method also converts from vh_offset to vp_offset
+    uint64_t get_paddr(host_addr haddr, uint64_t pma_index) const;
+
+    /// \brief Converts from target physical address to machine host address
+    /// \param paddr Target physical address to convert
+    /// \param pma_index Index of PMA where address falls
+    /// \returns Corresponding machine host address
+    /// \details This method also converts from vp_offset to vh_offset
+    host_addr get_host_addr(uint64_t paddr, uint64_t pma_index) const;
+
+    /// \brief Marks a page as dirty
+    /// \param haddr Machine host address within page
+    /// \param pma_index Index of PMA where address falls
+    void mark_dirty_page(host_addr haddr, uint64_t pma_index);
+
+    /// \brief Marks a page as dirty
+    /// \param paddr Target phyislcal address within page
+    /// \param pma_index Index of PMA where address falls
+    void mark_dirty_page(uint64_t paddr, uint64_t pma_index);
+
+    /// \brief Updates a TLB slot
+    /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
+    /// \param slot_index Index of slot to update
+    /// \param vaddr_page Virtual address of page to map
+    /// \param vh_offset Offset from target virtual addresses to host addresses within page
+    /// \param pma_index Index of PMA where address falls
+    void write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset,
+        uint64_t pma_index);
+
+    /// \brief Updates a TLB slot
+    /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
+    /// \param slot_index Index of slot to update
+    /// \param vaddr_page Virtual address of page to map
+    /// \param vp_offset Offset from target virtual addresses to target physical addresses within page
+    /// \param pma_index Index of PMA where address falls
+    void write_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
+        uint64_t pma_index);
+
+    /// \brief Check consistency of TLB slot
+    /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
+    /// \param slot_index Index of slot to update
+    /// \param vaddr_page Virtual address of page to map
+    /// \param vp_offset Offset from target virtual addresses to target physical addresses within page
+    /// \param pma_index Index of PMA where address falls
+    void check_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
+        uint64_t pma_index, const std::string &prefix = "") const;
+
+    /// \brief Reads a TLB register
+    /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
+    /// \param slot_index Index of slot to read
+    /// \param reg Register to read from slot
+    /// \returns Value of register
+    uint64_t read_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what reg) const;
 
     /// \brief Sends cmio response and returns an access log
     /// \param reason Reason for sending response.
@@ -448,6 +606,35 @@ public:
     /// \param root_hash_after State hash after response was sent.
     static void verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after);
+
+    /// \brief Returns a description of what is at a given target physical address
+    /// \param paddr Target physical address of interest
+    /// \returns Description of what is at that address
+    static const char *get_what_name(uint64_t paddr);
+
+    /// \brief Increments a counter
+    /// \param name Counter name.
+    /// \param domain Counter domain. Can be nullptr. Otherwise, should end with a dot '.'
+    /// \details The counter is identified by the concatenation of \p domain with \p name.
+    void increment_counter(const char *name, const char *domain = nullptr);
+
+    /// \brief Writes value to counter
+    /// \param val Value to write.
+    /// \param name Counter name.
+    /// \param domain Counter domain. Can be nullptr. Otherwise, should end with a dot '.'
+    /// \details The counter is identified by the concatenation of \p domain with \p name.
+    void write_counter(uint64_t val, const char *name, const char *domain = nullptr);
+
+    /// \brief Returns value in counter
+    /// \param name Counter name.
+    /// \param domain Counter domain. Can be nullptr. Otherwise, should end with a dot '.'
+    /// \details The counter is identified by the concatenation of \p domain with \p name.
+    uint64_t read_counter(const char *name, const char *domain = nullptr);
+
+    /// \brief Returns all counters
+    const auto &get_counters() {
+        return m_counters;
+    }
 };
 
 } // namespace cartesi

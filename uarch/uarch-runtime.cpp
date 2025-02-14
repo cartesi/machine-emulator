@@ -21,8 +21,6 @@
 #include <cstddef>
 #include <cstdint>
 
-using namespace cartesi;
-
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 extern "C" void __cxa_pure_virtual() {
     abort();
@@ -81,18 +79,6 @@ extern "C" void *memset(void *ptr, int value, size_t num) {
     return ptr;
 }
 
-extern "C" void _putchar(char c) {
-    // NOLINTNEXTLINE(hicpp-no-assembler)
-    asm volatile("mv a7, %0\n"
-                 "mv a6, %1\n"
-                 "ecall\n"
-        : // no output
-        : "r"(cartesi::uarch_ecall_functions::UARCH_ECALL_FN_PUTCHAR),
-        "r"(c)       // character to print
-        : "a7", "a6" // modified registers
-    );
-}
-
 extern "C" NO_RETURN void abort() {
     // NOLINTNEXTLINE(hicpp-no-assembler)
     asm volatile("ebreak"
@@ -103,23 +89,3 @@ extern "C" NO_RETURN void abort() {
     // execution will never reach this point
     __builtin_trap();
 }
-
-namespace cartesi {
-
-void os_open_tty() {}
-
-void os_close_tty() {}
-
-bool os_poll_tty(uint64_t /*timeout_us*/) {
-    return false;
-}
-
-int os_getchar() {
-    return -1;
-}
-
-void os_putchar(uint8_t ch) {
-    _putchar(ch);
-}
-
-} // namespace cartesi

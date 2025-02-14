@@ -41,14 +41,14 @@
 #include <utility>
 #include <vector>
 
-#include <fcntl.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
 #include <boost/asio/signal_set.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
@@ -62,6 +62,7 @@
 #include "interpret.h"
 #include "json-util.h"
 #include "jsonrpc-discover.h"
+#include "jsonrpc-fork-result.h"
 #include "jsonrpc-version.h"
 #include "machine-config.h"
 #include "machine-merkle-tree.h"
@@ -1137,7 +1138,7 @@ static json jsonrpc_machine_read_memory_handler(const json &j, const std::shared
     auto args = parse_args<uint64_t, uint64_t>(j, param_name);
     auto address = std::get<0>(args);
     auto length = std::get<1>(args);
-    auto data = cartesi::unique_calloc<unsigned char>(length);
+    auto data = cartesi::make_unique_calloc<unsigned char>(length);
     session->handler->machine->read_memory(address, data.get(), length);
     return jsonrpc_response_ok(j, cartesi::encode_base64(data.get(), length));
 }
@@ -1171,7 +1172,7 @@ static json jsonrpc_machine_read_virtual_memory_handler(const json &j, const std
     auto args = parse_args<uint64_t, uint64_t>(j, param_name);
     auto address = std::get<0>(args);
     auto length = std::get<1>(args);
-    auto data = cartesi::unique_calloc<unsigned char>(length);
+    auto data = cartesi::make_unique_calloc<unsigned char>(length);
     session->handler->machine->read_virtual_memory(address, data.get(), length);
     return jsonrpc_response_ok(j, cartesi::encode_base64(data.get(), length));
 }

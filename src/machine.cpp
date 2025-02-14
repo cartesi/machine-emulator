@@ -17,14 +17,15 @@
 #include "machine.h"
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
-#include <cinttypes>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -35,18 +36,21 @@
 #include <boost/container/static_vector.hpp>
 
 #include "access-log.h"
-#include "bracket-note.h"
 #include "clint-factory.h"
+#include "compiler-defines.h"
+#include "device-state-access.h"
 #include "dtb.h"
+#include "host-addr.h"
 #include "htif-factory.h"
 #include "htif.h"
 #include "i-device-state-access.h"
+#include "i-hasher.h"
 #include "interpret.h"
 #include "is-pristine.h"
 #include "machine-config.h"
 #include "machine-memory-range-descr.h"
+#include "machine-reg.h"
 #include "machine-runtime-config.h"
-#include "os.h"
 #include "plic-factory.h"
 #include "pma-constants.h"
 #include "pma-defines.h"
@@ -56,18 +60,25 @@
 #include "replay-send-cmio-state-access.h"
 #include "replay-step-state-access.h"
 #include "riscv-constants.h"
+#include "rtc.h"
 #include "send-cmio-response.h"
 #include "shadow-pmas-factory.h"
+#include "shadow-pmas.h"
 #include "shadow-state-factory.h"
 #include "shadow-state.h"
 #include "shadow-tlb-factory.h"
 #include "shadow-tlb.h"
+#include "shadow-uarch-state-factory.h"
 #include "shadow-uarch-state.h"
 #include "state-access.h"
 #include "strict-aliasing.h"
+#include "tlb.h"
 #include "translate-virtual-address.h"
+#include "uarch-config.h"
+#include "uarch-constants.h"
 #include "uarch-interpret.h"
 #include "uarch-pristine-state-hash.h"
+#include "uarch-pristine.h"
 #include "uarch-record-state-access.h"
 #include "uarch-replay-state-access.h"
 #include "uarch-reset-state.h"
@@ -138,22 +149,22 @@ pma_entry machine::make_flash_drive_pma_entry(const std::string &description, co
     return make_memory_range_pma_entry(description, c).set_flags(m_flash_drive_flags);
 }
 
-pma_entry machine::make_cmio_rx_buffer_pma_entry(const cmio_config &c) {
+pma_entry machine::make_cmio_rx_buffer_pma_entry(const cmio_buffer_config &c) {
     const auto description = "cmio rx buffer memory range"s;
-    if (!c.rx_buffer.image_filename.empty()) {
+    if (!c.image_filename.empty()) {
         return make_mmapd_memory_pma_entry(description, PMA_CMIO_RX_BUFFER_START, PMA_CMIO_RX_BUFFER_LENGTH,
-            c.rx_buffer.image_filename, c.rx_buffer.shared)
+            c.image_filename, c.shared)
             .set_flags(m_cmio_rx_buffer_flags);
     }
     return make_callocd_memory_pma_entry(description, PMA_CMIO_RX_BUFFER_START, PMA_CMIO_RX_BUFFER_LENGTH)
         .set_flags(m_cmio_rx_buffer_flags);
 }
 
-pma_entry machine::make_cmio_tx_buffer_pma_entry(const cmio_config &c) {
+pma_entry machine::make_cmio_tx_buffer_pma_entry(const cmio_buffer_config &c) {
     const auto description = "cmio tx buffer memory range"s;
-    if (!c.tx_buffer.image_filename.empty()) {
+    if (!c.image_filename.empty()) {
         return make_mmapd_memory_pma_entry(description, PMA_CMIO_TX_BUFFER_START, PMA_CMIO_TX_BUFFER_LENGTH,
-            c.tx_buffer.image_filename, c.tx_buffer.shared)
+            c.image_filename, c.shared)
             .set_flags(m_cmio_tx_buffer_flags);
     }
     return make_callocd_memory_pma_entry(description, PMA_CMIO_TX_BUFFER_START, PMA_CMIO_TX_BUFFER_LENGTH)
@@ -199,6 +210,7 @@ pma_entry &machine::register_pma_entry(pma_entry &&pma) {
 
 static bool DID_is_protected(PMA_ISTART_DID DID) {
     switch (DID) {
+        case PMA_ISTART_DID::memory:
         case PMA_ISTART_DID::flash_drive:
         case PMA_ISTART_DID::cmio_rx_buffer:
         case PMA_ISTART_DID::cmio_tx_buffer:
@@ -212,7 +224,7 @@ void machine::replace_memory_range(const memory_range_config &range) {
     for (auto &pma : m_s.pmas) {
         if (pma.get_start() == range.start && pma.get_length() == range.length) {
             const auto curr = pma.get_istart_DID();
-            if (DID_is_protected(curr)) {
+            if (pma.get_length() == 0 || DID_is_protected(curr)) {
                 throw std::invalid_argument{"attempt to replace a protected range "s + pma.get_description()};
             }
             // replace range preserving original flags
@@ -223,138 +235,114 @@ void machine::replace_memory_range(const memory_range_config &range) {
     throw std::invalid_argument{"attempt to replace inexistent memory range"};
 }
 
-template <TLB_entry_type ETYPE>
-static void load_tlb_entry(machine &m, uint64_t eidx, unsigned char *hmem) {
-    tlb_hot_entry &tlbhe = m.get_state().tlb.hot[ETYPE][eidx];
-    tlb_cold_entry &tlbce = m.get_state().tlb.cold[ETYPE][eidx];
-    auto vaddr_page = aliased_aligned_read<uint64_t>(hmem + tlb_get_vaddr_page_rel_addr<ETYPE>(eidx));
-    auto paddr_page = aliased_aligned_read<uint64_t>(hmem + tlb_get_paddr_page_rel_addr<ETYPE>(eidx));
-    auto pma_index = aliased_aligned_read<uint64_t>(hmem + tlb_get_pma_index_rel_addr<ETYPE>(eidx));
-    if (vaddr_page != TLB_INVALID_PAGE) {
-        if ((vaddr_page & ~PAGE_OFFSET_MASK) != vaddr_page) {
-            throw std::invalid_argument{"misaligned virtual page address in TLB entry"};
+void machine::init_uarch(const uarch_config &c) {
+    using reg = machine_reg;
+    write_reg(reg::uarch_pc, c.processor.pc);
+    write_reg(reg::uarch_cycle, c.processor.cycle);
+    write_reg(reg::uarch_halt_flag, c.processor.halt_flag);
+    // General purpose registers
+    for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
+        write_reg(machine_reg_enum(reg::uarch_x0, i), c.processor.x[i]);
+    }
+    // Register shadow state
+    m_us.shadow_state = make_shadow_uarch_state_pma_entry(PMA_SHADOW_UARCH_STATE_START, PMA_SHADOW_UARCH_STATE_LENGTH);
+    // Register RAM
+    constexpr auto ram_description = "uarch RAM";
+    if (!c.ram.image_filename.empty()) {
+        // Load RAM image from file
+        m_us.ram =
+            make_callocd_memory_pma_entry(ram_description, PMA_UARCH_RAM_START, UARCH_RAM_LENGTH, c.ram.image_filename)
+                .set_flags(m_ram_flags);
+    } else {
+        // Load embedded pristine RAM image
+        m_us.ram = make_callocd_memory_pma_entry(ram_description, PMA_UARCH_RAM_START, PMA_UARCH_RAM_LENGTH)
+                       .set_flags(m_ram_flags);
+        if (uarch_pristine_ram_len > m_us.ram.get_length()) {
+            throw std::runtime_error("embedded uarch RAM image does not fit in uarch ram PMA");
         }
-        if ((paddr_page & ~PAGE_OFFSET_MASK) != paddr_page) {
-            throw std::invalid_argument{"misaligned physical page address in TLB entry"};
-        }
-        const pma_entry &pma = m.find_pma_entry<uint64_t>(paddr_page);
-        // Checks if the PMA still valid
-        if (pma.get_length() == 0 || !pma.get_istart_M() || pma_index >= m.get_state().pmas.size() ||
-            &pma != &m.get_state().pmas[pma_index]) {
-            throw std::invalid_argument{"invalid PMA for TLB entry"};
-        }
-        const unsigned char *hpage = pma.get_memory().get_host_memory() + (paddr_page - pma.get_start());
-        // Valid TLB entry
-        tlbhe.vaddr_page = vaddr_page;
-        tlbhe.vh_offset = cast_ptr_to_addr<uint64_t>(hpage) - vaddr_page;
-        tlbce.paddr_page = paddr_page;
-        tlbce.pma_index = pma_index;
-    } else { // Empty or invalidated TLB entry
-        tlbhe.vaddr_page = vaddr_page;
-        tlbhe.vh_offset = 0;
-        tlbce.paddr_page = paddr_page;
-        tlbce.pma_index = pma_index;
+        memcpy(m_us.ram.get_memory().get_host_memory(), uarch_pristine_ram, uarch_pristine_ram_len);
     }
 }
 
-template <TLB_entry_type ETYPE>
-static void init_tlb_entry(machine &m, uint64_t eidx) {
-    tlb_hot_entry &tlbhe = m.get_state().tlb.hot[ETYPE][eidx];
-    tlb_cold_entry &tlbce = m.get_state().tlb.cold[ETYPE][eidx];
-    tlbhe.vaddr_page = TLB_INVALID_PAGE;
-    tlbhe.vh_offset = 0;
-    tlbce.paddr_page = TLB_INVALID_PAGE;
-    tlbce.pma_index = TLB_INVALID_PMA;
-}
+void machine::init_processor(processor_config &p, const machine_runtime_config &r) {
 
-machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c{c}, m_uarch{c.uarch}, m_r{r} {
-
-    if (m_c.processor.marchid == UINT64_C(-1)) {
-        m_c.processor.marchid = MARCHID_INIT;
+    if (p.marchid == UINT64_C(-1)) {
+        p.marchid = MARCHID_INIT;
     }
 
-    if (m_c.processor.marchid != MARCHID_INIT && !r.skip_version_check) {
+    if (p.marchid != MARCHID_INIT && !r.skip_version_check) {
         throw std::invalid_argument{"marchid mismatch, emulator version is incompatible"};
     }
 
-    if (m_c.processor.mvendorid == UINT64_C(-1)) {
-        m_c.processor.mvendorid = MVENDORID_INIT;
+    if (p.mvendorid == UINT64_C(-1)) {
+        p.mvendorid = MVENDORID_INIT;
     }
 
-    if (m_c.processor.mvendorid != MVENDORID_INIT && !r.skip_version_check) {
+    if (p.mvendorid != MVENDORID_INIT && !r.skip_version_check) {
         throw std::invalid_argument{"mvendorid mismatch, emulator version is incompatible"};
     }
 
-    if (m_c.processor.mimpid == UINT64_C(-1)) {
-        m_c.processor.mimpid = MIMPID_INIT;
+    if (p.mimpid == UINT64_C(-1)) {
+        p.mimpid = MIMPID_INIT;
     }
 
-    if (m_c.processor.mimpid != MIMPID_INIT && !r.skip_version_check) {
+    if (p.mimpid != MIMPID_INIT && !r.skip_version_check) {
         throw std::invalid_argument{"mimpid mismatch, emulator version is incompatible"};
     }
 
-    m_s.soft_yield = r.soft_yield;
-
     // General purpose registers
     for (int i = 1; i < X_REG_COUNT; i++) {
-        write_reg(machine_reg_enum(reg::x0, i), m_c.processor.x[i]);
+        write_reg(machine_reg_enum(reg::x0, i), p.x[i]);
     }
 
     // Floating-point registers
     for (int i = 0; i < F_REG_COUNT; i++) {
-        write_reg(machine_reg_enum(reg::f0, i), m_c.processor.f[i]);
+        write_reg(machine_reg_enum(reg::f0, i), p.f[i]);
     }
 
     // Named registers
-    write_reg(reg::pc, m_c.processor.pc);
-    write_reg(reg::fcsr, m_c.processor.fcsr);
-    write_reg(reg::mcycle, m_c.processor.mcycle);
-    write_reg(reg::icycleinstret, m_c.processor.icycleinstret);
-    write_reg(reg::mstatus, m_c.processor.mstatus);
-    write_reg(reg::mtvec, m_c.processor.mtvec);
-    write_reg(reg::mscratch, m_c.processor.mscratch);
-    write_reg(reg::mepc, m_c.processor.mepc);
-    write_reg(reg::mcause, m_c.processor.mcause);
-    write_reg(reg::mtval, m_c.processor.mtval);
-    write_reg(reg::misa, m_c.processor.misa);
-    write_reg(reg::mie, m_c.processor.mie);
-    write_reg(reg::mip, m_c.processor.mip);
-    write_reg(reg::medeleg, m_c.processor.medeleg);
-    write_reg(reg::mideleg, m_c.processor.mideleg);
-    write_reg(reg::mcounteren, m_c.processor.mcounteren);
-    write_reg(reg::menvcfg, m_c.processor.menvcfg);
-    write_reg(reg::stvec, m_c.processor.stvec);
-    write_reg(reg::sscratch, m_c.processor.sscratch);
-    write_reg(reg::sepc, m_c.processor.sepc);
-    write_reg(reg::scause, m_c.processor.scause);
-    write_reg(reg::stval, m_c.processor.stval);
-    write_reg(reg::satp, m_c.processor.satp);
-    write_reg(reg::scounteren, m_c.processor.scounteren);
-    write_reg(reg::senvcfg, m_c.processor.senvcfg);
-    write_reg(reg::ilrsc, m_c.processor.ilrsc);
-    write_reg(reg::iprv, m_c.processor.iprv);
-    write_reg(reg::iflags_X, m_c.processor.iflags_X);
-    write_reg(reg::iflags_Y, m_c.processor.iflags_Y);
-    write_reg(reg::iflags_H, m_c.processor.iflags_H);
-    write_reg(reg::iunrep, m_c.processor.iunrep);
+    write_reg(reg::pc, p.pc);
+    write_reg(reg::fcsr, p.fcsr);
+    write_reg(reg::mcycle, p.mcycle);
+    write_reg(reg::icycleinstret, p.icycleinstret);
+    write_reg(reg::mstatus, p.mstatus);
+    write_reg(reg::mtvec, p.mtvec);
+    write_reg(reg::mscratch, p.mscratch);
+    write_reg(reg::mepc, p.mepc);
+    write_reg(reg::mcause, p.mcause);
+    write_reg(reg::mtval, p.mtval);
+    write_reg(reg::misa, p.misa);
+    write_reg(reg::mie, p.mie);
+    write_reg(reg::mip, p.mip);
+    write_reg(reg::medeleg, p.medeleg);
+    write_reg(reg::mideleg, p.mideleg);
+    write_reg(reg::mcounteren, p.mcounteren);
+    write_reg(reg::menvcfg, p.menvcfg);
+    write_reg(reg::stvec, p.stvec);
+    write_reg(reg::sscratch, p.sscratch);
+    write_reg(reg::sepc, p.sepc);
+    write_reg(reg::scause, p.scause);
+    write_reg(reg::stval, p.stval);
+    write_reg(reg::satp, p.satp);
+    write_reg(reg::scounteren, p.scounteren);
+    write_reg(reg::senvcfg, p.senvcfg);
+    write_reg(reg::ilrsc, p.ilrsc);
+    write_reg(reg::iprv, p.iprv);
+    write_reg(reg::iflags_X, p.iflags_X);
+    write_reg(reg::iflags_Y, p.iflags_Y);
+    write_reg(reg::iflags_H, p.iflags_H);
+    write_reg(reg::iunrep, p.iunrep);
+}
 
-    // Register RAM
-    if (m_c.ram.image_filename.empty()) {
-        register_pma_entry(make_callocd_memory_pma_entry("RAM"s, PMA_RAM_START, m_c.ram.length).set_flags(m_ram_flags));
-    } else {
-        register_pma_entry(make_callocd_memory_pma_entry("RAM"s, PMA_RAM_START, m_c.ram.length, m_c.ram.image_filename)
-                .set_flags(m_ram_flags));
-    }
+void machine::init_ram_pma(const ram_config &ram) {
+    register_pma_entry(
+        make_callocd_memory_pma_entry("RAM"s, PMA_RAM_START, ram.length, ram.image_filename).set_flags(m_ram_flags));
+}
 
-    // Register DTB
-    pma_entry &dtb = register_pma_entry((m_c.dtb.image_filename.empty() ?
-            make_callocd_memory_pma_entry("DTB"s, PMA_DTB_START, PMA_DTB_LENGTH) :
-            make_callocd_memory_pma_entry("DTB"s, PMA_DTB_START, PMA_DTB_LENGTH, m_c.dtb.image_filename))
-            .set_flags(m_dtb_flags));
-
+void machine::init_flash_drive_pmas(flash_drive_configs &flash_drive) {
     // Register all flash drives
     int i = 0; // NOLINT(misc-const-correctness)
-    for (auto &f : m_c.flash_drive) {
+    for (auto &f : flash_drive) {
         const std::string flash_description = "flash drive "s + std::to_string(i);
         // Auto detect flash drive start address
         if (f.start == UINT64_C(-1)) {
@@ -362,7 +350,7 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
         }
         // Auto detect flash drive image length
         if (f.length == UINT64_C(-1)) {
-            auto fp = unique_fopen(f.image_filename.c_str(), "rb");
+            auto fp = make_unique_fopen(f.image_filename.c_str(), "rb");
             if (fseek(fp.get(), 0, SEEK_END) != 0) {
                 throw std::system_error{errno, std::generic_category(),
                     "unable to obtain length of image file '"s + f.image_filename + "' when initializing "s +
@@ -379,61 +367,16 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
         register_pma_entry(make_flash_drive_pma_entry(flash_description, f));
         i++;
     }
+}
 
-    // Register cmio memory ranges
-    register_pma_entry(make_cmio_tx_buffer_pma_entry(m_c.cmio));
-    register_pma_entry(make_cmio_rx_buffer_pma_entry(m_c.cmio));
-
-    // Register HTIF device
-    register_pma_entry(make_htif_pma_entry(PMA_HTIF_START, PMA_HTIF_LENGTH));
-
-    // Copy HTIF state to from config to machine
-    write_reg(reg::htif_tohost, m_c.htif.tohost);
-    write_reg(reg::htif_fromhost, m_c.htif.fromhost);
-    // Only command in halt device is command 0 and it is always available
-    const uint64_t htif_ihalt = static_cast<uint64_t>(true) << HTIF_HALT_CMD_HALT;
-    write_reg(reg::htif_ihalt, htif_ihalt);
-    const uint64_t htif_iconsole = static_cast<uint64_t>(m_c.htif.console_getchar) << HTIF_CONSOLE_CMD_GETCHAR |
-        static_cast<uint64_t>(true) << HTIF_CONSOLE_CMD_PUTCHAR;
-    write_reg(reg::htif_iconsole, htif_iconsole);
-    const uint64_t htif_iyield = static_cast<uint64_t>(m_c.htif.yield_manual) << HTIF_YIELD_CMD_MANUAL |
-        static_cast<uint64_t>(m_c.htif.yield_automatic) << HTIF_YIELD_CMD_AUTOMATIC;
-    write_reg(reg::htif_iyield, htif_iyield);
-
-    // Register CLINT device
-    register_pma_entry(make_clint_pma_entry(PMA_CLINT_START, PMA_CLINT_LENGTH));
-    // Copy CLINT state to from config to machine
-    write_reg(reg::clint_mtimecmp, m_c.clint.mtimecmp);
-
-    // Register PLIC device
-    register_pma_entry(make_plic_pma_entry(PMA_PLIC_START, PMA_PLIC_LENGTH));
-    // Copy PLIC state from config to machine
-    write_reg(reg::plic_girqpend, m_c.plic.girqpend);
-    write_reg(reg::plic_girqsrvd, m_c.plic.girqsrvd);
-
-    // Register TLB device
-    register_pma_entry(make_shadow_tlb_pma_entry(PMA_SHADOW_TLB_START, PMA_SHADOW_TLB_LENGTH));
-
-    // Register state shadow device
-    register_pma_entry(make_shadow_state_pma_entry(PMA_SHADOW_STATE_START, PMA_SHADOW_STATE_LENGTH));
-
-    // Register memory range that holds shadow PMA state, keep pointer to populate later
-    shadow_pmas_state *shadow_pmas = nullptr;
-    {
-        auto shadow_pmas_pma_entry = make_shadow_pmas_pma_entry(PMA_SHADOW_PMAS_START, PMA_SHADOW_PMAS_LENGTH);
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        shadow_pmas = reinterpret_cast<shadow_pmas_state *>(shadow_pmas_pma_entry.get_memory().get_host_memory());
-        register_pma_entry(std::move(shadow_pmas_pma_entry));
-    }
-
+void machine::init_virtio_pmas(const virtio_configs &v, uint64_t iunrep) {
     // Initialize VirtIO devices
-    if (!m_c.virtio.empty()) {
+    if (!v.empty()) {
         // VirtIO devices are disallowed in unreproducible mode
-        if (m_c.processor.iunrep == 0) {
+        if (iunrep == 0) {
             throw std::invalid_argument{"virtio devices are only supported in unreproducible machines"};
         }
-
-        for (const auto &vdev_config_entry : m_c.virtio) {
+        for (const auto &vdev_config_entry : v) {
             std::visit(
                 [&](const auto &vdev_config) {
                     using T = std::decay_t<decltype(vdev_config)>;
@@ -479,67 +422,53 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
                 vdev_config_entry);
         }
     }
+}
 
-    // Initialize DTB
-    if (m_c.dtb.image_filename.empty()) {
-        // Write the FDT (flattened device tree) into DTB
-        dtb_init(m_c, dtb.get_memory().get_host_memory(), PMA_DTB_LENGTH);
-    }
-
-    // Include machine PMAs in set considered by the Merkle tree.
-    for (auto &pma : m_s.pmas) {
-        m_merkle_pmas.push_back(&pma);
-    }
-
-    // Last, add empty sentinels until we reach capacity (need at least one sentinel)
-    register_pma_entry(make_empty_pma_entry("sentinel"s, 0, 0));
-
-    // NOLINTNEXTLINE(readability-static-accessed-through-instance)
-    if (m_s.pmas.capacity() != PMA_MAX) {
-        throw std::logic_error{"PMAs array must be able to hold PMA_MAX entries"};
-    }
-    while (m_s.pmas.size() < PMA_MAX) {
-        register_pma_entry(make_empty_pma_entry("sentinel"s, 0, 0));
-    }
-
-    // Populate shadow PMAs
-    populate_shadow_pmas_state(m_s.pmas, shadow_pmas);
-
-    // Include uarch PMAs in set considered by Merkle tree
-    m_merkle_pmas.push_back(&m_uarch.get_state().shadow_state);
-    m_merkle_pmas.push_back(&m_uarch.get_state().ram);
-    // Last, add sentinel PMA
-    m_merkle_pmas.push_back(&m_s.empty_pma);
-
-    // Initialize TLB device
-    // this must be done after all PMA entries are already registered, so we can lookup page addresses
-    if (!m_c.tlb.image_filename.empty()) {
-        // Create a temporary PMA entry just to load TLB contents from an image file
-        pma_entry tlb_image_pma = make_mmapd_memory_pma_entry("shadow TLB device"s, PMA_SHADOW_TLB_START,
-            PMA_SHADOW_TLB_LENGTH, m_c.tlb.image_filename, false);
-        unsigned char *hmem = tlb_image_pma.get_memory().get_host_memory();
-        for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
-            load_tlb_entry<TLB_CODE>(*this, i, hmem);
-            load_tlb_entry<TLB_READ>(*this, i, hmem);
-            load_tlb_entry<TLB_WRITE>(*this, i, hmem);
-        }
-    } else {
-        for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
-            init_tlb_entry<TLB_CODE>(*this, i);
-            init_tlb_entry<TLB_READ>(*this, i);
-            init_tlb_entry<TLB_WRITE>(*this, i);
-        }
-    }
-
+void machine::init_htif_pma(const htif_config &h, const htif_runtime_config &r, uint64_t iunrep) {
+    // Register HTIF device
+    register_pma_entry(make_htif_pma_entry(PMA_HTIF_START, PMA_HTIF_LENGTH));
+    // Copy HTIF state to from config to machine
+    write_reg(reg::htif_tohost, h.tohost);
+    write_reg(reg::htif_fromhost, h.fromhost);
+    // Only command in halt device is command 0 and it is always available
+    const uint64_t htif_ihalt = static_cast<uint64_t>(true) << HTIF_HALT_CMD_HALT;
+    write_reg(reg::htif_ihalt, htif_ihalt);
+    const uint64_t htif_iconsole = static_cast<uint64_t>(h.console_getchar) << HTIF_CONSOLE_CMD_GETCHAR |
+        static_cast<uint64_t>(true) << HTIF_CONSOLE_CMD_PUTCHAR;
+    write_reg(reg::htif_iconsole, htif_iconsole);
+    const uint64_t htif_iyield = static_cast<uint64_t>(h.yield_manual) << HTIF_YIELD_CMD_MANUAL |
+        static_cast<uint64_t>(h.yield_automatic) << HTIF_YIELD_CMD_AUTOMATIC;
+    write_reg(reg::htif_iyield, htif_iyield);
     // Initialize TTY if console input is enabled
-    if (m_c.htif.console_getchar || has_virtio_console()) {
-        if (m_c.processor.iunrep == 0) {
+    if (h.console_getchar || has_virtio_console()) {
+        if (iunrep == 0) {
             throw std::invalid_argument{"TTY stdin is only supported in unreproducible machines"};
         }
         os_open_tty();
     }
-    os_silence_putchar(m_r.htif.no_console_putchar);
+    os_silence_putchar(r.no_console_putchar);
+}
 
+void machine::init_cmio_pmas(const cmio_config &c) {
+    // Register cmio memory ranges
+    register_pma_entry(make_cmio_tx_buffer_pma_entry(c.tx_buffer));
+    register_pma_entry(make_cmio_rx_buffer_pma_entry(c.rx_buffer));
+}
+
+void machine::init_merkle_pmas() {
+    // Include machine PMAs in set considered by the Merkle tree.
+    for (auto &pma : m_s.pmas) {
+        if (pma.get_length() != 0) {
+            m_merkle_pmas.push_back(&pma);
+        }
+    }
+    m_merkle_pmas.push_back(&m_us.shadow_state);
+    m_merkle_pmas.push_back(&m_us.ram);
+    // Sort it by increasing start address
+    std::ranges::sort(m_merkle_pmas, [](const auto *a, const auto *b) { return a->get_start() < b->get_start(); });
+}
+
+void machine::init_memory_range_descrs() {
     // Initialize memory range descriptions returned by get_memory_ranges method
     for (const auto *pma : m_merkle_pmas) {
         if (pma->get_length() != 0) {
@@ -548,10 +477,104 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
                 .description = pma->get_description()});
         }
     }
-    // Sort it by increasing start address
-    std::sort(m_mrds.begin(), m_mrds.end(),
-        [](const machine_memory_range_descr &a, const machine_memory_range_descr &b) { return a.start < b.start; });
+}
 
+void machine::init_clint_pma(const clint_config &c) {
+    // Register CLINT device
+    register_pma_entry(make_clint_pma_entry(PMA_CLINT_START, PMA_CLINT_LENGTH));
+    // Copy CLINT state to from config to machine
+    write_reg(reg::clint_mtimecmp, c.mtimecmp);
+}
+
+void machine::init_plic_pma(const plic_config &p) {
+    // Register PLIC device
+    register_pma_entry(make_plic_pma_entry(PMA_PLIC_START, PMA_PLIC_LENGTH));
+    // Copy PLIC state from config to machine
+    write_reg(reg::plic_girqpend, p.girqpend);
+    write_reg(reg::plic_girqsrvd, p.girqsrvd);
+}
+
+void machine::init_sentinel_pmas() {
+    // Last, add empty sentinels until we reach capacity (need at least one sentinel)
+    register_pma_entry(make_empty_pma_entry("sentinel"s, 0, 0));
+    // NOLINTNEXTLINE(readability-static-accessed-through-instance)
+    if (m_s.pmas.capacity() != PMA_MAX) {
+        throw std::logic_error{"PMAs array must be able to hold at least PMA_MAX entries"};
+    }
+    while (m_s.pmas.size() < PMA_MAX) {
+        register_pma_entry(make_empty_pma_entry("sentinel"s, 0, 0));
+    }
+}
+
+void machine::init_shadow_pmas_contents(pma_entry &shadow_pmas) const {
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
+    shadow_pmas_init(m_s.pmas,
+        reinterpret_cast<shadow_pmas_state *>(shadow_pmas.get_memory_noexcept().get_host_memory()));
+    // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
+}
+
+void machine::init_tlb_contents(const std::string &image_filename) {
+    if (!image_filename.empty()) {
+        auto shadow_tlb_ptr = make_unique_mmap<shadow_tlb_state>(image_filename.c_str(), 1, false /* not shared */);
+        auto &shadow_tlb = *shadow_tlb_ptr;
+        for (auto set_index : {TLB_CODE, TLB_READ, TLB_WRITE}) {
+            for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
+                const auto vaddr_page = shadow_tlb[set_index][slot_index].vaddr_page;
+                const auto vp_offset = shadow_tlb[set_index][slot_index].vp_offset;
+                const auto pma_index = shadow_tlb[set_index][slot_index].pma_index;
+                check_shadow_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index, "stored TLB is corrupt: "s);
+                write_shadow_tlb(set_index, slot_index, vaddr_page, vp_offset, pma_index);
+            }
+        }
+    } else {
+        for (auto set_index : {TLB_CODE, TLB_READ, TLB_WRITE}) {
+            for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
+                write_tlb(set_index, slot_index, TLB_INVALID_PAGE, host_addr{}, TLB_INVALID_PMA_INDEX);
+            }
+        }
+    }
+}
+
+void machine::init_dtb_contents(const machine_config &c, pma_entry &dtb) {
+    if (c.dtb.image_filename.empty()) {
+        dtb_init(c, dtb.get_memory().get_host_memory(), PMA_DTB_LENGTH);
+    }
+}
+
+// ??D It is best to leave the std::move() on r because it may one day be necessary!
+// NOLINTNEXTLINE(hicpp-move-const-arg,performance-move-const-arg)
+machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}, m_r{std::move(r)} {
+    init_uarch(m_c.uarch);
+    init_processor(m_c.processor, m_r);
+    m_s.soft_yield = m_r.soft_yield;
+    init_ram_pma(m_c.ram);
+    // Will populate when initialization of PMAs is done
+    pma_entry &dtb =
+        register_pma_entry(make_callocd_memory_pma_entry("DTB"s, PMA_DTB_START, PMA_DTB_LENGTH, m_c.dtb.image_filename)
+                .set_flags(m_dtb_flags));
+    init_flash_drive_pmas(m_c.flash_drive);
+    init_cmio_pmas(m_c.cmio);
+    init_htif_pma(m_c.htif, m_r.htif, m_c.processor.iunrep);
+    init_clint_pma(m_c.clint);
+    init_plic_pma(m_c.plic);
+    // Will populate when initialization of PMAs is done
+    register_pma_entry(make_shadow_tlb_pma_entry(PMA_SHADOW_TLB_START, PMA_SHADOW_TLB_LENGTH));
+    register_pma_entry(make_shadow_state_pma_entry(PMA_SHADOW_STATE_START, PMA_SHADOW_STATE_LENGTH));
+    // Will populate when initialization of PMAs is done
+    pma_entry &shpmas = register_pma_entry(make_shadow_pmas_pma_entry(PMA_SHADOW_PMAS_START, PMA_SHADOW_PMAS_LENGTH));
+    init_virtio_pmas(m_c.virtio, m_c.processor.iunrep);
+    init_sentinel_pmas();
+    // Populate shadow PMAs contents.
+    // This must be done after all PMA entries are already registered, so we encode them into the shadow
+    init_shadow_pmas_contents(shpmas);
+    // Initialize TLB contents.
+    // This must be done after all PMA entries are already registered, so we can lookup page addresses
+    init_tlb_contents(m_c.tlb.image_filename);
+    // Initialize DTB contents.
+    // This must be done after all PMA entries are already registered, so we can lookup flash drive parameters
+    init_dtb_contents(m_c, dtb);
+    init_merkle_pmas();
+    init_memory_range_descrs();
     // Disable SIGPIPE handler, because this signal can be raised and terminate the emulator process
     // when calling write() on closed file descriptors.
     // This can happen with the stdout console file descriptors or network file descriptors.
@@ -560,14 +583,16 @@ machine::machine(const machine_config &c, const machine_runtime_config &r) : m_c
 
 static void load_hash(const std::string &dir, machine::hash_type &h) {
     auto name = dir + "/hash";
-    auto fp = unique_fopen(name.c_str(), "rb");
+    auto fp = make_unique_fopen(name.c_str(), "rb");
     if (fread(h.data(), 1, h.size(), fp.get()) != h.size()) {
         throw std::runtime_error{"error reading from '" + name + "'"};
     }
 }
 
-machine::machine(const std::string &dir, const machine_runtime_config &r) : machine{machine_config::load(dir), r} {
-    if (r.skip_root_hash_check) {
+// ??D It is best to leave the std::move() on r because it may one day be necessary!
+// NOLINTNEXTLINE(hicpp-move-const-arg,performance-move-const-arg)
+machine::machine(const std::string &dir, machine_runtime_config r) : machine{machine_config::load(dir), std::move(r)} {
+    if (m_r.skip_root_hash_check) {
         return;
     }
     hash_type hstored;
@@ -630,10 +655,10 @@ const machine_runtime_config &machine::get_runtime_config() const {
 }
 
 /// \brief Changes the machine runtime config.
-void machine::set_runtime_config(const machine_runtime_config &r) {
-    m_r = r;
+void machine::set_runtime_config(machine_runtime_config r) {
+    m_r = std::move(r); // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
     m_s.soft_yield = m_r.soft_yield;
-    os_silence_putchar(r.htif.no_console_putchar);
+    os_silence_putchar(m_r.htif.no_console_putchar);
 }
 
 machine_config machine::get_serialization_config() const {
@@ -710,7 +735,7 @@ machine_config machine::get_serialization_config() const {
     c.cmio.rx_buffer.image_filename.clear();
     c.cmio.tx_buffer.image_filename.clear();
     c.uarch.processor.cycle = read_reg(reg::uarch_cycle);
-    c.uarch.processor.halt_flag = (read_reg(reg::uarch_halt_flag) != 0);
+    c.uarch.processor.halt_flag = read_reg(reg::uarch_halt_flag);
     c.uarch.processor.pc = read_reg(reg::uarch_pc);
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
         c.uarch.processor.x[i] = read_reg(machine_reg_enum(reg::uarch_x0, i));
@@ -722,14 +747,14 @@ static void store_device_pma(const machine &m, const pma_entry &pma, const std::
     if (!pma.get_istart_IO()) {
         throw std::runtime_error{"attempt to save non-device PMA"};
     }
-    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE); // will throw if it fails
+    auto scratch = make_unique_calloc<unsigned char>(PMA_PAGE_SIZE); // will throw if it fails
     auto name = machine_config::get_image_filename(dir, pma.get_start(), pma.get_length());
-    auto fp = unique_fopen(name.c_str(), "wb");
+    auto fp = make_unique_fopen(name.c_str(), "wb");
     for (uint64_t page_start_in_range = 0; page_start_in_range < pma.get_length();
         page_start_in_range += PMA_PAGE_SIZE) {
         const unsigned char *page_data = nullptr;
         auto peek = pma.get_peek();
-        if (!peek(pma, m, page_start_in_range, &page_data, scratch.get())) {
+        if (!peek(pma, m, page_start_in_range, PMA_PAGE_SIZE, &page_data, scratch.get())) {
             throw std::runtime_error{"peek failed"};
         }
         if (page_data == nullptr) {
@@ -747,55 +772,128 @@ static void store_memory_pma(const pma_entry &pma, const std::string &dir) {
         throw std::runtime_error{"attempt to save non-memory PMA"};
     }
     auto name = machine_config::get_image_filename(dir, pma.get_start(), pma.get_length());
-    auto fp = unique_fopen(name.c_str(), "wb");
+    auto fp = make_unique_fopen(name.c_str(), "wb");
     const pma_memory &mem = pma.get_memory();
     if (fwrite(mem.get_host_memory(), 1, pma.get_length(), fp.get()) != pma.get_length()) {
         throw std::runtime_error{"error writing to '" + name + "'"};
     }
 }
 
-pma_entry &machine::find_pma_entry(uint64_t paddr, uint64_t length) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
-    return const_cast<pma_entry &>(std::as_const(*this).find_pma_entry(paddr, length));
+uint64_t machine::get_paddr(host_addr haddr, uint64_t pma_index) const {
+    return static_cast<uint64_t>(haddr + get_hp_offset(pma_index));
 }
 
-const pma_entry &machine::find_pma_entry(uint64_t paddr, uint64_t length) const {
-    return find_pma_entry(m_s.pmas, paddr, length);
+host_addr machine::get_host_addr(uint64_t paddr, uint64_t pma_index) const {
+    return host_addr{paddr} - get_hp_offset(pma_index);
 }
 
-template <typename CONTAINER>
-pma_entry &machine::find_pma_entry(const CONTAINER &pmas, uint64_t paddr, uint64_t length) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): remove const to reuse code
-    return const_cast<pma_entry &>(std::as_const(*this).find_pma_entry(pmas, paddr, length));
+void machine::mark_dirty_page(uint64_t paddr, uint64_t pma_index) {
+    auto &pma = m_s.pmas[static_cast<int>(pma_index)];
+    pma.mark_dirty_page(paddr - pma.get_start());
 }
 
-template <typename CONTAINER>
-const pma_entry &machine::find_pma_entry(const CONTAINER &pmas, uint64_t paddr, uint64_t length) const {
-    for (const auto &p : pmas) {
-        const auto &pma = deref(p);
-        // Stop at first empty PMA
-        if (pma.get_length() == 0) {
-            return pma;
+void machine::mark_dirty_page(host_addr haddr, uint64_t pma_index) {
+    auto paddr = get_paddr(haddr, pma_index);
+    mark_dirty_page(paddr, pma_index);
+}
+
+uint64_t machine::read_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what reg) const {
+    switch (reg) {
+        case shadow_tlb_what::vaddr_page:
+            return m_s.tlb.hot[set_index][slot_index].vaddr_page;
+        case shadow_tlb_what::vp_offset: {
+            const auto vaddr_page = m_s.tlb.hot[set_index][slot_index].vaddr_page;
+            if (vaddr_page != TLB_INVALID_PAGE) {
+                const auto vh_offset = m_s.tlb.hot[set_index][slot_index].vh_offset;
+                const auto haddr_page = vaddr_page + vh_offset;
+                const auto pma_index = m_s.tlb.cold[set_index][slot_index].pma_index;
+                return get_paddr(haddr_page, pma_index) - vaddr_page;
+            }
+            return 0;
         }
+        case shadow_tlb_what::pma_index:
+            return m_s.tlb.cold[set_index][slot_index].pma_index;
+        case shadow_tlb_what::zero_padding_:
+            return 0;
+        default:
+            throw std::domain_error{"unknown shadow TLB register"};
+    }
+}
+
+void machine::check_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
+    uint64_t pma_index, const std::string &prefix) const {
+    if (set_index > TLB_LAST_) {
+        throw std::domain_error{prefix + "TLB set index is out of range"s};
+    }
+    if (slot_index >= TLB_SET_SIZE) {
+        throw std::domain_error{prefix + "TLB slot index is out of range"s};
+    }
+    if (vaddr_page != TLB_INVALID_PAGE) {
+        if (pma_index >= m_s.pmas.size()) {
+            throw std::domain_error{prefix + "pma_index is out of range"s};
+        }
+        const auto &pma = m_s.pmas[pma_index];
+        if (pma.get_length() == 0 || !pma.get_istart_M()) {
+            throw std::invalid_argument{prefix + "pma_index does not point to memory range"s};
+        }
+        if ((vaddr_page & PAGE_OFFSET_MASK) != 0) {
+            throw std::invalid_argument{prefix + "vaddr_page is not aligned"s};
+        }
+        const auto paddr_page = vaddr_page + vp_offset;
+        if ((paddr_page & PAGE_OFFSET_MASK) != 0) {
+            throw std::invalid_argument{prefix + "vp_offset is not aligned"s};
+        }
+        const auto pma_end = pma.get_start() + (pma.get_length() - PMA_PAGE_SIZE);
+        if (paddr_page < pma.get_start() || paddr_page > pma_end) {
+            throw std::invalid_argument{prefix + "vp_offset is inconsistent with pma_index"s};
+        }
+    } else if (pma_index != TLB_INVALID_PMA_INDEX || vp_offset != 0) {
+        throw std::domain_error{prefix + "inconsistent empty TLB slot"};
+    }
+}
+
+void machine::write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset,
+    uint64_t pma_index) {
+    m_s.tlb.hot[set_index][slot_index].vaddr_page = vaddr_page;
+    m_s.tlb.hot[set_index][slot_index].vh_offset = vh_offset;
+    m_s.tlb.cold[set_index][slot_index].pma_index = pma_index;
+}
+
+void machine::write_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
+    uint64_t pma_index) {
+    if (vaddr_page != TLB_INVALID_PAGE) {
+        auto paddr_page = vaddr_page + vp_offset;
+        const auto vh_offset = get_host_addr(paddr_page, pma_index) - vaddr_page;
+        write_tlb(set_index, slot_index, vaddr_page, vh_offset, pma_index);
+    } else {
+        write_tlb(set_index, slot_index, TLB_INVALID_PAGE, host_addr{0}, TLB_INVALID_PMA_INDEX);
+    }
+}
+
+host_addr machine::get_hp_offset(uint64_t pma_index) const {
+    if (pma_index >= m_s.pmas.size()) {
+        throw std::domain_error{"PMA index is out of range (" + std::to_string(pma_index) + ")"};
+    }
+    const auto &pma = m_s.pmas[static_cast<int>(pma_index)];
+    if (!pma.get_istart_M()) {
+        throw std::domain_error{"PMA is not memory (" + pma.get_description() + ")"};
+    }
+    auto haddr = cast_ptr_to_host_addr(pma.get_memory().get_host_memory());
+    auto paddr = pma.get_start();
+    return paddr - haddr;
+}
+
+//??D now that m_merkle_pmas is sorted by start, maybe change this to a binary search?
+const pma_entry &machine::find_pma_entry(uint64_t paddr, uint64_t length) const {
+    const static auto sentinel = make_empty_pma_entry("sentinel", 0, 0);
+    for (const auto *pma : m_merkle_pmas) {
         // Check if data is in range
-        if (paddr >= pma.get_start() && pma.get_length() >= length &&
-            paddr - pma.get_start() <= pma.get_length() - length) {
-            return pma;
+        if (paddr >= pma->get_start() && pma->get_length() >= length &&
+            paddr - pma->get_start() <= pma->get_length() - length) {
+            return *pma;
         }
     }
-
-    // Last PMA is always the empty range
-    return deref(pmas.back());
-}
-
-template <typename T>
-static inline T &deref(T &t) {
-    return t; // NOLINT(bugprone-return-const-ref-from-parameter)
-}
-
-template <typename T>
-static inline T &deref(T *t) {
-    return *t;
+    return sentinel;
 }
 
 void machine::store_pmas(const machine_config &c, const std::string &dir) const {
@@ -812,14 +910,14 @@ void machine::store_pmas(const machine_config &c, const std::string &dir) const 
     }
     store_memory_pma(find_pma_entry<uint64_t>(PMA_CMIO_RX_BUFFER_START), dir);
     store_memory_pma(find_pma_entry<uint64_t>(PMA_CMIO_TX_BUFFER_START), dir);
-    if (!m_uarch.get_state().ram.get_istart_E()) {
-        store_memory_pma(m_uarch.get_state().ram, dir);
+    if (!m_us.ram.get_istart_E()) {
+        store_memory_pma(m_us.ram, dir);
     }
 }
 
 static void store_hash(const machine::hash_type &h, const std::string &dir) {
     auto name = dir + "/hash";
-    auto fp = unique_fopen(name.c_str(), "wb");
+    auto fp = make_unique_fopen(name.c_str(), "wb");
     if (fwrite(h.data(), 1, h.size(), fp.get()) != h.size()) {
         throw std::runtime_error{"error writing to '" + name + "'"};
     }
@@ -842,60 +940,74 @@ void machine::store(const std::string &dir) const {
     store_pmas(c, dir);
 }
 
+void machine::dump_insn_hist() {
+#ifdef DUMP_INSN_HIST
+    D_PRINTF("\nInstruction Histogram:\n", "");
+    for (const auto &[key, val] : m_counters) {
+        if (key.starts_with("insn.")) {
+            D_PRINTF("%s: %" PRIu64 "\n", key.c_str(), val);
+        }
+    }
+#endif
+}
+
+void machine::dump_stats() {
+#if DUMP_STATS
+    const auto hr = [](uint64_t a, uint64_t b) {
+        // NOLINTNEXTLINE(bugprone-narrowing-conversions,cppcoreguidelines-narrowing-conversions)
+        return static_cast<double>(b) / (a + b);
+    };
+
+    D_PRINTF("\nMachine Counters:\n", "");
+    D_PRINTF("inner loops: %" PRIu64 "\n", m_counters["stats.inner_loop"]);
+    D_PRINTF("outers loops: %" PRIu64 "\n", m_counters["stats.outer_loop"]);
+    D_PRINTF("supervisor ints: %" PRIu64 "\n", m_counters["stats.sv_int"]);
+    D_PRINTF("supervisor ex: %" PRIu64 "\n", m_counters["stats.sv_ex"]);
+    D_PRINTF("machine ints: %" PRIu64 "\n", m_counters["stats.m_int"]);
+    D_PRINTF("machine ex: %" PRIu64 "\n", m_counters["stats.m_ex"]);
+    D_PRINTF("atomic mem ops: %" PRIu64 "\n", m_counters["stats.atomic_mop"]);
+    D_PRINTF("fence: %" PRIu64 "\n", m_counters["stats.fence"]);
+    D_PRINTF("fence.i: %" PRIu64 "\n", m_counters["stats.fence_i"]);
+    D_PRINTF("fence.vma: %" PRIu64 "\n", m_counters["stats.fence_vma"]);
+    D_PRINTF("max asid: %" PRIu64 "\n", m_counters["stats.max_asid"]);
+    D_PRINTF("User mode: %" PRIu64 "\n", m_counters["stats.prv.U"]);
+    D_PRINTF("Supervisor mode: %" PRIu64 "\n", m_counters["stats.prv.S"]);
+    D_PRINTF("Machine mode: %" PRIu64 "\n", m_counters["stats.prv.M"]);
+    D_PRINTF("tlb code hit ratio: %.4f\n", hr(m_counters["stats.tlb.cmiss"], m_counters["stats.tlb.chit"]));
+    D_PRINTF("tlb read hit ratio: %.4f\n", hr(m_counters["stats.tlb.rmiss"], m_counters["stats.tlb.rhit"]));
+    D_PRINTF("tlb write hit ratio: %.4f\n", hr(m_counters["stats.tlb.wmiss"], m_counters["stats.tlb.whit"]));
+    D_PRINTF("tlb.chit: %" PRIu64 "\n", m_counters["stats.tlb.chit"]);
+    D_PRINTF("tlb.cmiss: %" PRIu64 "\n", m_counters["stats.tlb.cmiss"]);
+    D_PRINTF("tlb.rhit: %" PRIu64 "\n", m_counters["stats.tlb.rhit"]);
+    D_PRINTF("tlb.rmiss: %" PRIu64 "\n", m_counters["stats.tlb.rmiss"]);
+    D_PRINTF("tlb.whit: %" PRIu64 "\n", m_counters["stats.tlb.whit"]);
+    D_PRINTF("tlb.wmiss: %" PRIu64 "\n", m_counters["stats.tlb.wmiss"]);
+    D_PRINTF("tlb.flush_all: %" PRIu64 "\n", m_counters["stats.tlb.flush_all"]);
+    D_PRINTF("tlb.flush_read: %" PRIu64 "\n", m_counters["stats.tlb.flush_read"]);
+    D_PRINTF("tlb.flush_write: %" PRIu64 "\n", m_counters["stats.tlb.flush_write"]);
+    D_PRINTF("tlb.flush_vaddr: %" PRIu64 "\n", m_counters["stats.tlb.flush_vaddr"]);
+    D_PRINTF("tlb.flush_satp: %" PRIu64 "\n", m_counters["stats.tlb.flush_satp"]);
+    D_PRINTF("tlb.flush_mstatus: %" PRIu64 "\n", m_counters["stats.tlb.flush_mstatus"]);
+    D_PRINTF("tlb.flush_set_prv: %" PRIu64 "\n", m_counters["stats.tlb.flush_set_prv"]);
+    D_PRINTF("tlb.flush_fence_vma_all: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_all"]);
+    D_PRINTF("tlb.flush_fence_vma_asid: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_asid"]);
+    D_PRINTF("tlb.flush_fence_vma_vaddr: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_vaddr"]);
+    D_PRINTF("tlb.flush_fence_vma_asid_vaddr: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_asid_vaddr"]);
+#undef TLB_HIT_RATIO
+#endif
+}
+
 machine::~machine() {
     // Cleanup TTY if console input was enabled
     if (m_c.htif.console_getchar || has_virtio_console()) {
         os_close_tty();
     }
-#ifdef DUMP_HIST
-    std::ignore = fprintf(stderr, "\nInstruction Histogram:\n");
-    for (auto v : m_s.insn_hist) {
-        std::ignore = fprintf(stderr, "%12" PRIu64 "  %s\n", v.second, v.first.c_str());
-    }
-#endif
-#if DUMP_COUNTERS
-#define TLB_HIT_RATIO(s, a, b) (((double) (s).stats.b) / ((s).stats.a + (s).stats.b))
-    std::ignore = fprintf(stderr, "\nMachine Counters:\n");
-    std::ignore = fprintf(stderr, "inner loops: %" PRIu64 "\n", m_s.stats.inner_loop);
-    std::ignore = fprintf(stderr, "outers loops: %" PRIu64 "\n", m_s.stats.outer_loop);
-    std::ignore = fprintf(stderr, "supervisor ints: %" PRIu64 "\n", m_s.stats.sv_int);
-    std::ignore = fprintf(stderr, "supervisor ex: %" PRIu64 "\n", m_s.stats.sv_ex);
-    std::ignore = fprintf(stderr, "machine ints: %" PRIu64 "\n", m_s.stats.m_int);
-    std::ignore = fprintf(stderr, "machine ex: %" PRIu64 "\n", m_s.stats.m_ex);
-    std::ignore = fprintf(stderr, "atomic mem ops: %" PRIu64 "\n", m_s.stats.atomic_mop);
-    std::ignore = fprintf(stderr, "fence: %" PRIu64 "\n", m_s.stats.fence);
-    std::ignore = fprintf(stderr, "fence.i: %" PRIu64 "\n", m_s.stats.fence_i);
-    std::ignore = fprintf(stderr, "fence.vma: %" PRIu64 "\n", m_s.stats.fence_vma);
-    std::ignore = fprintf(stderr, "max asid: %" PRIu64 "\n", m_s.stats.max_asid);
-    std::ignore = fprintf(stderr, "User mode: %" PRIu64 "\n", m_s.stats.prv_level[PRV_U]);
-    std::ignore = fprintf(stderr, "Supervisor mode: %" PRIu64 "\n", m_s.stats.prv_level[PRV_S]);
-    std::ignore = fprintf(stderr, "Machine mode: %" PRIu64 "\n", m_s.stats.prv_level[PRV_M]);
-
-    std::ignore = fprintf(stderr, "tlb code hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_cmiss, tlb_chit));
-    std::ignore = fprintf(stderr, "tlb read hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_rmiss, tlb_rhit));
-    std::ignore = fprintf(stderr, "tlb write hit ratio: %.4f\n", TLB_HIT_RATIO(m_s, tlb_wmiss, tlb_whit));
-    std::ignore = fprintf(stderr, "tlb_chit: %" PRIu64 "\n", m_s.stats.tlb_chit);
-    std::ignore = fprintf(stderr, "tlb_cmiss: %" PRIu64 "\n", m_s.stats.tlb_cmiss);
-    std::ignore = fprintf(stderr, "tlb_rhit: %" PRIu64 "\n", m_s.stats.tlb_rhit);
-    std::ignore = fprintf(stderr, "tlb_rmiss: %" PRIu64 "\n", m_s.stats.tlb_rmiss);
-    std::ignore = fprintf(stderr, "tlb_whit: %" PRIu64 "\n", m_s.stats.tlb_whit);
-    std::ignore = fprintf(stderr, "tlb_wmiss: %" PRIu64 "\n", m_s.stats.tlb_wmiss);
-    std::ignore = fprintf(stderr, "tlb_flush_all: %" PRIu64 "\n", m_s.stats.tlb_flush_all);
-    std::ignore = fprintf(stderr, "tlb_flush_read: %" PRIu64 "\n", m_s.stats.tlb_flush_read);
-    std::ignore = fprintf(stderr, "tlb_flush_write: %" PRIu64 "\n", m_s.stats.tlb_flush_write);
-    std::ignore = fprintf(stderr, "tlb_flush_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_vaddr);
-    std::ignore = fprintf(stderr, "tlb_flush_satp: %" PRIu64 "\n", m_s.stats.tlb_flush_satp);
-    std::ignore = fprintf(stderr, "tlb_flush_mstatus: %" PRIu64 "\n", m_s.stats.tlb_flush_mstatus);
-    std::ignore = fprintf(stderr, "tlb_flush_set_prv: %" PRIu64 "\n", m_s.stats.tlb_flush_set_prv);
-    std::ignore = fprintf(stderr, "tlb_flush_fence_vma_all: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_all);
-    std::ignore = fprintf(stderr, "tlb_flush_fence_vma_asid: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_asid);
-    std::ignore = fprintf(stderr, "tlb_flush_fence_vma_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_vaddr);
-    std::ignore =
-        fprintf(stderr, "tlb_flush_fence_vma_asid_vaddr: %" PRIu64 "\n", m_s.stats.tlb_flush_fence_vma_asid_vaddr);
-#endif
+    dump_insn_hist();
+    dump_stats();
 }
 
 uint64_t machine::read_reg(reg r) const {
+    using reg = machine_reg;
     switch (r) {
         case reg::x0:
             return m_s.x[0];
@@ -1110,75 +1222,75 @@ uint64_t machine::read_reg(reg r) const {
         case reg::htif_iyield:
             return m_s.htif.iyield;
         case reg::uarch_x0:
-            return m_uarch.get_state().x[0];
+            return m_us.x[0];
         case reg::uarch_x1:
-            return m_uarch.get_state().x[1];
+            return m_us.x[1];
         case reg::uarch_x2:
-            return m_uarch.get_state().x[2];
+            return m_us.x[2];
         case reg::uarch_x3:
-            return m_uarch.get_state().x[3];
+            return m_us.x[3];
         case reg::uarch_x4:
-            return m_uarch.get_state().x[4];
+            return m_us.x[4];
         case reg::uarch_x5:
-            return m_uarch.get_state().x[5];
+            return m_us.x[5];
         case reg::uarch_x6:
-            return m_uarch.get_state().x[6];
+            return m_us.x[6];
         case reg::uarch_x7:
-            return m_uarch.get_state().x[7];
+            return m_us.x[7];
         case reg::uarch_x8:
-            return m_uarch.get_state().x[8];
+            return m_us.x[8];
         case reg::uarch_x9:
-            return m_uarch.get_state().x[9];
+            return m_us.x[9];
         case reg::uarch_x10:
-            return m_uarch.get_state().x[10];
+            return m_us.x[10];
         case reg::uarch_x11:
-            return m_uarch.get_state().x[11];
+            return m_us.x[11];
         case reg::uarch_x12:
-            return m_uarch.get_state().x[12];
+            return m_us.x[12];
         case reg::uarch_x13:
-            return m_uarch.get_state().x[13];
+            return m_us.x[13];
         case reg::uarch_x14:
-            return m_uarch.get_state().x[14];
+            return m_us.x[14];
         case reg::uarch_x15:
-            return m_uarch.get_state().x[15];
+            return m_us.x[15];
         case reg::uarch_x16:
-            return m_uarch.get_state().x[16];
+            return m_us.x[16];
         case reg::uarch_x17:
-            return m_uarch.get_state().x[17];
+            return m_us.x[17];
         case reg::uarch_x18:
-            return m_uarch.get_state().x[18];
+            return m_us.x[18];
         case reg::uarch_x19:
-            return m_uarch.get_state().x[19];
+            return m_us.x[19];
         case reg::uarch_x20:
-            return m_uarch.get_state().x[20];
+            return m_us.x[20];
         case reg::uarch_x21:
-            return m_uarch.get_state().x[21];
+            return m_us.x[21];
         case reg::uarch_x22:
-            return m_uarch.get_state().x[22];
+            return m_us.x[22];
         case reg::uarch_x23:
-            return m_uarch.get_state().x[23];
+            return m_us.x[23];
         case reg::uarch_x24:
-            return m_uarch.get_state().x[24];
+            return m_us.x[24];
         case reg::uarch_x25:
-            return m_uarch.get_state().x[25];
+            return m_us.x[25];
         case reg::uarch_x26:
-            return m_uarch.get_state().x[26];
+            return m_us.x[26];
         case reg::uarch_x27:
-            return m_uarch.get_state().x[27];
+            return m_us.x[27];
         case reg::uarch_x28:
-            return m_uarch.get_state().x[28];
+            return m_us.x[28];
         case reg::uarch_x29:
-            return m_uarch.get_state().x[29];
+            return m_us.x[29];
         case reg::uarch_x30:
-            return m_uarch.get_state().x[30];
+            return m_us.x[30];
         case reg::uarch_x31:
-            return m_uarch.get_state().x[31];
+            return m_us.x[31];
         case reg::uarch_pc:
-            return m_uarch.get_state().pc;
+            return m_us.pc;
         case reg::uarch_cycle:
-            return m_uarch.get_state().cycle;
+            return m_us.cycle;
         case reg::uarch_halt_flag:
-            return static_cast<uint64_t>(m_uarch.get_state().halt_flag);
+            return m_us.halt_flag;
         case reg::htif_tohost_dev:
             return HTIF_DEV_FIELD(m_s.htif.tohost);
         case reg::htif_tohost_cmd:
@@ -1520,106 +1632,106 @@ void machine::write_reg(reg w, uint64_t value) {
         case reg::uarch_x0:
             throw std::invalid_argument{"register is read-only"};
         case reg::uarch_x1:
-            m_uarch.get_state().x[1] = value;
+            m_us.x[1] = value;
             break;
         case reg::uarch_x2:
-            m_uarch.get_state().x[2] = value;
+            m_us.x[2] = value;
             break;
         case reg::uarch_x3:
-            m_uarch.get_state().x[3] = value;
+            m_us.x[3] = value;
             break;
         case reg::uarch_x4:
-            m_uarch.get_state().x[4] = value;
+            m_us.x[4] = value;
             break;
         case reg::uarch_x5:
-            m_uarch.get_state().x[5] = value;
+            m_us.x[5] = value;
             break;
         case reg::uarch_x6:
-            m_uarch.get_state().x[6] = value;
+            m_us.x[6] = value;
             break;
         case reg::uarch_x7:
-            m_uarch.get_state().x[7] = value;
+            m_us.x[7] = value;
             break;
         case reg::uarch_x8:
-            m_uarch.get_state().x[8] = value;
+            m_us.x[8] = value;
             break;
         case reg::uarch_x9:
-            m_uarch.get_state().x[9] = value;
+            m_us.x[9] = value;
             break;
         case reg::uarch_x10:
-            m_uarch.get_state().x[10] = value;
+            m_us.x[10] = value;
             break;
         case reg::uarch_x11:
-            m_uarch.get_state().x[11] = value;
+            m_us.x[11] = value;
             break;
         case reg::uarch_x12:
-            m_uarch.get_state().x[12] = value;
+            m_us.x[12] = value;
             break;
         case reg::uarch_x13:
-            m_uarch.get_state().x[13] = value;
+            m_us.x[13] = value;
             break;
         case reg::uarch_x14:
-            m_uarch.get_state().x[14] = value;
+            m_us.x[14] = value;
             break;
         case reg::uarch_x15:
-            m_uarch.get_state().x[15] = value;
+            m_us.x[15] = value;
             break;
         case reg::uarch_x16:
-            m_uarch.get_state().x[16] = value;
+            m_us.x[16] = value;
             break;
         case reg::uarch_x17:
-            m_uarch.get_state().x[17] = value;
+            m_us.x[17] = value;
             break;
         case reg::uarch_x18:
-            m_uarch.get_state().x[18] = value;
+            m_us.x[18] = value;
             break;
         case reg::uarch_x19:
-            m_uarch.get_state().x[19] = value;
+            m_us.x[19] = value;
             break;
         case reg::uarch_x20:
-            m_uarch.get_state().x[20] = value;
+            m_us.x[20] = value;
             break;
         case reg::uarch_x21:
-            m_uarch.get_state().x[21] = value;
+            m_us.x[21] = value;
             break;
         case reg::uarch_x22:
-            m_uarch.get_state().x[22] = value;
+            m_us.x[22] = value;
             break;
         case reg::uarch_x23:
-            m_uarch.get_state().x[23] = value;
+            m_us.x[23] = value;
             break;
         case reg::uarch_x24:
-            m_uarch.get_state().x[24] = value;
+            m_us.x[24] = value;
             break;
         case reg::uarch_x25:
-            m_uarch.get_state().x[25] = value;
+            m_us.x[25] = value;
             break;
         case reg::uarch_x26:
-            m_uarch.get_state().x[26] = value;
+            m_us.x[26] = value;
             break;
         case reg::uarch_x27:
-            m_uarch.get_state().x[27] = value;
+            m_us.x[27] = value;
             break;
         case reg::uarch_x28:
-            m_uarch.get_state().x[28] = value;
+            m_us.x[28] = value;
             break;
         case reg::uarch_x29:
-            m_uarch.get_state().x[29] = value;
+            m_us.x[29] = value;
             break;
         case reg::uarch_x30:
-            m_uarch.get_state().x[30] = value;
+            m_us.x[30] = value;
             break;
         case reg::uarch_x31:
-            m_uarch.get_state().x[31] = value;
+            m_us.x[31] = value;
             break;
         case reg::uarch_pc:
-            m_uarch.get_state().pc = value;
+            m_us.pc = value;
             break;
         case reg::uarch_cycle:
-            m_uarch.get_state().cycle = value;
+            m_us.cycle = value;
             break;
         case reg::uarch_halt_flag:
-            m_uarch.get_state().halt_flag = static_cast<bool>(value);
+            m_us.halt_flag = value;
             break;
         case reg::htif_tohost_dev:
             m_s.htif.tohost = HTIF_REPLACE_DEV(m_s.htif.tohost, value);
@@ -1663,18 +1775,22 @@ uint64_t machine::get_reg_address(reg r) {
 }
 
 void machine::mark_write_tlb_dirty_pages() const {
-    for (uint64_t i = 0; i < PMA_TLB_SIZE; ++i) {
-        const tlb_hot_entry &tlbhe = m_s.tlb.hot[TLB_WRITE][i];
-        if (tlbhe.vaddr_page != TLB_INVALID_PAGE) {
-            const tlb_cold_entry &tlbce = m_s.tlb.cold[TLB_WRITE][i];
-            if (tlbce.pma_index >= m_s.pmas.size()) {
+    auto &hot_set = m_s.tlb.hot[TLB_WRITE];
+    auto &cold_set = m_s.tlb.cold[TLB_WRITE];
+    for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
+        const auto &hot_slot = hot_set[slot_index];
+        if (hot_slot.vaddr_page != TLB_INVALID_PAGE) {
+            auto haddr_page = hot_slot.vaddr_page + hot_slot.vh_offset;
+            const auto &cold_slot = cold_set[slot_index];
+            if (cold_slot.pma_index >= m_s.pmas.size()) {
                 throw std::runtime_error{"could not mark dirty page for a TLB entry: TLB is corrupt"};
             }
-            pma_entry &pma = m_s.pmas[tlbce.pma_index];
-            if (!pma.contains(tlbce.paddr_page, PMA_PAGE_SIZE)) {
+            auto paddr_page = get_paddr(haddr_page, cold_slot.pma_index);
+            pma_entry &pma = m_s.pmas[cold_slot.pma_index];
+            if (!pma.contains(paddr_page, PMA_PAGE_SIZE)) {
                 throw std::runtime_error{"could not mark dirty page for a TLB entry: TLB is corrupt"};
             }
-            pma.mark_dirty_page(tlbce.paddr_page - pma.get_start());
+            pma.mark_dirty_page(paddr_page - pma.get_start());
         }
     }
 }
@@ -1683,7 +1799,7 @@ bool machine::verify_dirty_page_maps() const {
     static_assert(PMA_PAGE_SIZE == machine_merkle_tree::get_page_size(),
         "PMA and machine_merkle_tree page sizes must match");
     machine_merkle_tree::hasher_type h;
-    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
+    auto scratch = make_unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
     if (!scratch) {
         return false;
     }
@@ -1698,7 +1814,7 @@ bool machine::verify_dirty_page_maps() const {
             const uint64_t page_address = pma.get_start() + page_start_in_range;
             if (pma.get_istart_M()) {
                 const unsigned char *page_data = nullptr;
-                peek(pma, *this, page_start_in_range, &page_data, scratch.get());
+                peek(pma, *this, page_start_in_range, PMA_PAGE_SIZE, &page_data, scratch.get());
                 hash_type stored;
                 hash_type real;
                 m_t.get_page_node_hash(page_address, stored);
@@ -1748,7 +1864,7 @@ bool machine::update_merkle_tree() const {
         // runtime config or as the hardware supports.
         const uint64_t n = get_task_concurrency(m_r.concurrency.update_merkle_tree);
         const bool succeeded = os_parallel_for(n, [&](int j, const parallel_for_mutex &mutex) -> bool {
-            auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
+            auto scratch = make_unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
             if (!scratch) {
                 return false;
             }
@@ -1764,7 +1880,7 @@ bool machine::update_merkle_tree() const {
                 }
                 // If the peek failed, or if it returned a page for update but
                 // we failed updating it, the entire process failed
-                if (!peek(*pma, *this, page_start_in_range, &page_data, scratch.get())) {
+                if (!peek(*pma, *this, page_start_in_range, PMA_PAGE_SIZE, &page_data, scratch.get())) {
                     return false;
                 }
                 if (page_data != nullptr) {
@@ -1809,17 +1925,17 @@ bool machine::update_merkle_tree_page(uint64_t address) {
         "PMA and machine_merkle_tree page sizes must match");
     // Align address to beginning of page
     address &= ~(PMA_PAGE_SIZE - 1);
-    pma_entry &pma = find_pma_entry(m_merkle_pmas, address, sizeof(uint64_t));
+    auto &pma = find_pma_entry<uint8_t>(address);
     const uint64_t page_start_in_range = address - pma.get_start();
     machine_merkle_tree::hasher_type h;
-    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
+    auto scratch = make_unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
     if (!scratch) {
         return false;
     }
     m_t.begin_update();
     const unsigned char *page_data = nullptr;
     auto peek = pma.get_peek();
-    if (!peek(pma, *this, page_start_in_range, &page_data, scratch.get())) {
+    if (!peek(pma, *this, page_start_in_range, PMA_PAGE_SIZE, &page_data, scratch.get())) {
         m_t.end_update(h);
         return false;
     }
@@ -1836,10 +1952,6 @@ bool machine::update_merkle_tree_page(uint64_t address) {
     return m_t.end_update(h);
 }
 
-const boost::container::static_vector<pma_entry, PMA_MAX> &machine::get_pmas() const {
-    return m_s.pmas;
-}
-
 void machine::get_root_hash(hash_type &hash) const {
     if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error("cannot compute root hash of unreproducible machines");
@@ -1852,7 +1964,44 @@ void machine::get_root_hash(hash_type &hash) const {
 
 machine::hash_type machine::get_merkle_tree_node_hash(uint64_t address, int log2_size,
     skip_merkle_tree_update_t /* unused */) const {
-    return m_t.get_node_hash(address, log2_size);
+    if (log2_size < 0 || log2_size >= machine_merkle_tree::get_log2_root_size()) {
+        throw std::domain_error{"log2_size is out of bounds"};
+    }
+    if (log2_size >= machine_merkle_tree::get_log2_page_size()) {
+        return m_t.get_node_hash(address, log2_size);
+    }
+    if ((address >> log2_size) << log2_size != address) {
+        throw std::domain_error{"address not aligned to log2_size"};
+    }
+    const auto size = UINT64_C(1) << log2_size;
+    auto scratch = make_unique_calloc<unsigned char>(size);
+    read_memory(address, scratch.get(), size);
+    machine_merkle_tree::hasher_type h;
+    machine_merkle_tree::hash_type hash;
+    get_merkle_tree_hash(h, scratch.get(), size, machine_merkle_tree::get_word_size(), hash);
+    return hash;
+}
+
+const char *machine::get_what_name(uint64_t paddr) {
+    if (paddr >= PMA_UARCH_RAM_START && paddr - PMA_UARCH_RAM_START < PMA_UARCH_RAM_LENGTH) {
+        return "uarch.ram";
+    }
+    // If in shadow, return refined name
+    if (paddr >= PMA_SHADOW_TLB_START && paddr - PMA_SHADOW_TLB_START < PMA_SHADOW_TLB_LENGTH) {
+        [[maybe_unused]] TLB_set_index set_index{};
+        [[maybe_unused]] uint64_t slot_index{};
+        return shadow_tlb_get_what_name(shadow_tlb_get_what(paddr, set_index, slot_index));
+    }
+    if (paddr >= PMA_SHADOW_STATE_START && paddr - PMA_SHADOW_STATE_START < PMA_SHADOW_STATE_LENGTH) {
+        return shadow_state_get_what_name(shadow_state_get_what(paddr));
+    }
+    if (paddr >= PMA_SHADOW_PMAS_START && paddr - PMA_SHADOW_PMAS_START < PMA_SHADOW_PMAS_LENGTH) {
+        return shadow_pmas_get_what_name(shadow_pmas_get_what(paddr));
+    }
+    if (paddr >= PMA_SHADOW_UARCH_STATE_START && paddr - PMA_SHADOW_UARCH_STATE_START < PMA_SHADOW_UARCH_STATE_LENGTH) {
+        return shadow_uarch_state_get_what_name(shadow_uarch_state_get_what(paddr));
+    }
+    return "memory";
 }
 
 machine::hash_type machine::get_merkle_tree_node_hash(uint64_t address, int log2_size) const {
@@ -1877,7 +2026,7 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
     }
     // Check target address alignment
     if ((address & ((~UINT64_C(0)) >> (64 - log2_size))) != 0) {
-        throw std::invalid_argument{"address not aligned to log2_size"};
+        throw std::domain_error{"address not aligned to log2_size"};
     }
     // If proof concerns range smaller than a page, we may need to rebuild part
     // of the proof from the contents of a page inside some PMA range.
@@ -1889,8 +2038,8 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
     // or entirely outside it.
     if (log2_size < machine_merkle_tree::get_log2_page_size()) {
         const uint64_t length = UINT64_C(1) << log2_size;
-        const pma_entry &pma = find_pma_entry(m_merkle_pmas, address, length);
-        auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
+        const auto &pma = find_pma_entry(address, length);
+        auto scratch = make_unique_calloc<unsigned char>(PMA_PAGE_SIZE);
         const unsigned char *page_data = nullptr;
         // If the PMA range is empty, we know the desired range is
         // entirely outside of any non-pristine PMA.
@@ -1899,7 +2048,7 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
         if (!pma.get_istart_E()) {
             const uint64_t page_start_in_range = (address - pma.get_start()) & (~(PMA_PAGE_SIZE - 1));
             auto peek = pma.get_peek();
-            if (!peek(pma, *this, page_start_in_range, &page_data, scratch.get())) {
+            if (!peek(pma, *this, page_start_in_range, PMA_PAGE_SIZE, &page_data, scratch.get())) {
                 throw std::runtime_error{"PMA peek failed"};
             }
         }
@@ -1917,77 +2066,98 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
     return get_proof(address, log2_size, skip_merkle_tree_update);
 }
 
-void machine::read_memory(uint64_t address, unsigned char *data, uint64_t length) const {
+void machine::read_memory(uint64_t paddr, unsigned char *data, uint64_t length) const {
     if (length == 0) {
         return;
     }
     if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
-    const pma_entry &pma = find_pma_entry(m_merkle_pmas, address, length);
-    if (pma.get_istart_M()) {
-        memcpy(data, pma.get_memory().get_host_memory() + (address - pma.get_start()), length);
-        return;
-    }
-    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
-    // relative request address inside pma
-    uint64_t shift = address - pma.get_start();
-    // relative page address inside pma
-    constexpr const auto log2_page_size = PMA_constants::PMA_PAGE_SIZE_LOG2;
-    uint64_t page_address = (shift >> log2_page_size) << log2_page_size;
-    // relative request address inside page
-    shift -= page_address;
-
-    const unsigned char *page_data = nullptr;
-    auto peek = pma.get_peek();
-
-    while (length != 0) {
-        const uint64_t bytes_to_write = std::min(length, PMA_PAGE_SIZE - shift);
-        // avoid copying to the intermediate buffer when getting the whole page
-        if (bytes_to_write == PMA_PAGE_SIZE) {
-            if (!peek(pma, *this, page_address, &page_data, data)) {
+    // Compute the distance between the initial paddr and the first page boundary
+    const uint64_t align_paddr = (paddr & PAGE_OFFSET_MASK) != 0 ? (paddr | PAGE_OFFSET_MASK) + 1 : paddr;
+    uint64_t align_length = align_paddr - paddr;
+    const uint64_t page_size = PMA_PAGE_SIZE;
+    align_length = (align_length == 0) ? page_size : align_length;
+    // First peek goes at most to the next page boundary, or up to length
+    uint64_t peek_length = std::min(align_length, length);
+    // The outer loop finds the PMA for all peeks performed by the inner loop
+    // The inner loop peeks at most min(page_size, length) from the PMA per iteration
+    // All peeks but the absolute first peek start at a page boundary.
+    // That first peek reads at most up to the next page boundary.
+    // So the inner loop iterations never cross page boundaries.
+    for (;;) {
+        const auto &pma = find_pma_entry(paddr, peek_length);
+        const auto peek = pma.get_peek();
+        const auto pma_start = pma.get_start();
+        const auto pma_empty = pma.get_istart_E();
+        const auto pma_length = pma.get_length();
+        // If the PMA is empty, the inner loop will break after a single iteration.
+        // But it is safe to return pristine data for that one iteration, without even peeking.
+        // This is because the inner iteration never reads past a page boundary, and the next
+        // non-empty PMA starts at the earliest on the next page boundary after paddr.
+        for (;;) {
+            const unsigned char *peek_data = nullptr;
+            // If non-empty PMA, peek, otherwise leave peek_data as nullptr (i.e. pristine)
+            if (!pma_empty && !peek(pma, *this, paddr - pma_start, peek_length, &peek_data, data)) {
                 throw std::runtime_error{"peek failed"};
             }
-            if (page_data == nullptr) {
-                memset(data, 0, bytes_to_write);
+            // If the chunk is pristine, copy zero data to buffer
+            if (peek_data == nullptr) {
+                memset(data, 0, peek_length);
+                // If peek returned pointer to internal buffer, copy to data buffer
+            } else if (peek_data != data) {
+                memcpy(data, peek_data, peek_length);
             }
-        } else {
-            if (!peek(pma, *this, page_address, &page_data, scratch.get())) {
-                throw std::runtime_error{"peek failed"};
+            // Otherwise, peek copied data straight into the data buffer
+            // If we read everything we wanted to read, we are done
+            length -= peek_length;
+            if (length == 0) {
+                return;
             }
-            if (page_data == nullptr) {
-                memset(data, 0, bytes_to_write);
-            } else {
-                memcpy(data, page_data + shift, bytes_to_write);
+            paddr += peek_length;
+            data += peek_length;
+            peek_length = std::min(page_size, length);
+            // If the PMA was empty, break to check if next read is in another PMA
+            if (pma_empty) {
+                break;
+            }
+            // If the next read does not fit in current PMA, break to get the next one
+            // There can be no overflow in the condition.
+            // Since the PMA is non-empty, (paddr-pma_start) >= 0.
+            // Moreover, pma_length >= page_size.
+            // Since, peek_length <= page_size, we get (pma_length-peek_length) >= 0.
+            if (paddr - pma_start >= pma_length - peek_length) {
+                break;
             }
         }
-
-        page_address += PMA_PAGE_SIZE;
-        length -= bytes_to_write;
-        data += bytes_to_write;
-        shift = 0;
     }
 }
 
-void machine::write_memory(uint64_t address, const unsigned char *data, uint64_t length) {
+void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
     if (length == 0) {
         return;
     }
     if (data == nullptr) {
         throw std::invalid_argument{"invalid data buffer"};
     }
-    pma_entry &pma = find_pma_entry(m_merkle_pmas, address, length);
-    if (!pma.get_istart_M() || pma.get_istart_E()) {
-        throw std::invalid_argument{"address range not entirely in memory PMA"};
+    auto &pma = find_pma_entry(paddr, length);
+    if (pma.get_istart_IO()) {
+        throw std::invalid_argument{"attempted write to device memory range"};
     }
-    pma.write_memory(address, data, length);
+    if (!pma.get_istart_M() || pma.get_istart_E()) {
+        throw std::invalid_argument{"address range not entirely in single memory range"};
+    }
+    if (DID_is_protected(pma.get_istart_DID())) {
+        throw std::invalid_argument{"attempt to write to protected memory range"};
+    }
+    pma.write_memory(paddr, data, length);
 }
 
 void machine::fill_memory(uint64_t address, uint8_t data, uint64_t length) {
     if (length == 0) {
         return;
     }
-    pma_entry &pma = find_pma_entry(m_merkle_pmas, address, length);
+    auto &pma = find_pma_entry(address, length);
     if (!pma.get_istart_M() || pma.get_istart_E()) {
         throw std::invalid_argument{"address range not entirely in memory PMA"};
     }
@@ -2068,29 +2238,56 @@ uint64_t machine::translate_virtual_address(uint64_t vaddr) {
     return paddr;
 }
 
-uint64_t machine::read_word(uint64_t word_address) const {
+uint64_t machine::read_word(uint64_t paddr) const {
     // Make sure address is aligned
-    if ((word_address & (PMA_WORD_SIZE - 1)) != 0) {
-        throw std::invalid_argument{"address not aligned"};
+    if ((paddr & (sizeof(uint64_t) - 1)) != 0) {
+        throw std::domain_error{"attempted misaligned read from word"};
     }
-    const pma_entry &pma = find_pma_entry<uint64_t>(word_address);
-    // ??D We should split peek into peek_word and peek_page
-    // for performance. On the other hand, this function
-    // will almost never be used, so one wonders if it is worth it...
-    auto scratch = unique_calloc<unsigned char>(PMA_PAGE_SIZE);
-    const unsigned char *page_data = nullptr;
-    const uint64_t page_start_in_range = (word_address - pma.get_start()) & (~(PMA_PAGE_SIZE - 1));
-    auto peek = pma.get_peek();
-    if (!peek(pma, *this, page_start_in_range, &page_data, scratch.get())) {
-        throw std::invalid_argument{"peek failed"};
+    // Use read_memory
+    alignas(sizeof(uint64_t)) std::array<unsigned char, sizeof(uint64_t)> scratch{};
+    read_memory(paddr, scratch.data(), scratch.size());
+    return aliased_aligned_read<uint64_t>(scratch.data());
+}
+
+void machine::write_word(uint64_t paddr, uint64_t val) {
+    // Make sure address is aligned
+    if ((paddr & (sizeof(uint64_t) - 1)) != 0) {
+        throw std::domain_error{"attempted misaligned write to word"};
     }
-    // If peek returns a page, read from it
-    if (page_data != nullptr) {
-        const uint64_t word_start_in_range = (word_address - pma.get_start()) & (PMA_PAGE_SIZE - 1);
-        return aliased_aligned_read<uint64_t>(page_data + word_start_in_range);
-        // Otherwise, page is always pristine
+    // If in shadow, forward to write_reg
+    if (paddr >= PMA_SHADOW_STATE_START && paddr - PMA_SHADOW_STATE_START < PMA_SHADOW_STATE_LENGTH) {
+        auto reg = shadow_state_get_what(paddr);
+        if (reg == shadow_state_what::unknown_) {
+            throw std::runtime_error("unhandled write to shadow state");
+        }
+        write_reg(machine_reg_enum(reg), val);
+        return;
     }
-    return 0;
+    // If in uarch shadow, forward to write_reg
+    if (paddr >= PMA_SHADOW_UARCH_STATE_START && paddr - PMA_SHADOW_UARCH_STATE_START < PMA_SHADOW_UARCH_STATE_LENGTH) {
+        auto reg = shadow_uarch_state_get_what(paddr);
+        if (reg == shadow_uarch_state_what::unknown_) {
+            throw std::runtime_error("unhandled write to shadow uarch state");
+        }
+        write_reg(machine_reg_enum(reg), val);
+        return;
+    }
+    // Otherwise, try the slow path
+    auto &pma = find_pma_entry(paddr, sizeof(uint64_t));
+    if (pma.get_istart_E() || !pma.get_istart_M()) {
+        std::ostringstream err;
+        err << "attempted memory write to " << pma.get_description() << " at address 0x" << std::hex << paddr << "("
+            << std::dec << paddr << ")";
+        throw std::runtime_error{err.str()};
+    }
+    if (!pma.get_istart_W()) {
+        std::ostringstream err;
+        err << "attempted memory write to (non-writeable) " << pma.get_description() << " at address 0x" << std::hex
+            << paddr << "(" << std::dec << paddr << ")";
+        throw std::runtime_error{err.str()};
+    }
+    const auto offset = paddr - pma.get_start();
+    aliased_aligned_write<uint64_t>(pma.get_memory().get_host_memory() + offset, val);
 }
 
 void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {
@@ -2104,10 +2301,11 @@ access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char 
     get_root_hash(root_hash_before);
     access_log log(log_type);
     // Call send_cmio_response  with the recording state accessor
-    record_send_cmio_state_access a(*this, log);
-    a.push_bracket(bracket_type::begin, "send cmio response");
-    cartesi::send_cmio_response(a, reason, data, length);
-    a.push_bracket(bracket_type::end, "send cmio response");
+    const record_send_cmio_state_access a(*this, log);
+    {
+        [[maybe_unused]] auto note = a.make_scoped_note("send_cmio_response");
+        cartesi::send_cmio_response(a, reason, data, length);
+    }
     // Verify access log before returning
     hash_type root_hash_after;
     update_merkle_tree();
@@ -2118,16 +2316,11 @@ access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char 
 
 void machine::verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
     const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) {
-    // There must be at least one access in log
-    if (log.get_accesses().empty()) {
-        throw std::invalid_argument{"too few accesses in log"};
-    }
     replay_send_cmio_state_access::context context(log, root_hash_before);
     // Verify all intermediate state transitions
     replay_send_cmio_state_access a(context);
     cartesi::send_cmio_response(a, reason, data, length);
     a.finish();
-
     // Make sure the access log ends at the same root hash as the state
     hash_type obtained_root_hash;
     a.get_root_hash(obtained_root_hash);
@@ -2137,34 +2330,46 @@ void machine::verify_send_cmio_response(uint16_t reason, const unsigned char *da
 }
 
 void machine::reset_uarch() {
-    uarch_state_access a(m_uarch.get_state(), get_state());
-    uarch_reset_state(a);
+    using reg = machine_reg;
+    write_reg(reg::uarch_halt_flag, UARCH_HALT_FLAG_INIT);
+    write_reg(reg::uarch_pc, UARCH_PC_INIT);
+    write_reg(reg::uarch_cycle, UARCH_CYCLE_INIT);
+    // General purpose registers
+    for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
+        write_reg(machine_reg_enum(reg::uarch_x0, i), UARCH_X_INIT);
+    }
+    // Load embedded pristine RAM image
+    if (uarch_pristine_ram_len > m_us.ram.get_length()) {
+        throw std::runtime_error("embedded uarch ram image does not fit in uarch ram pma");
+    }
+    // Reset RAM to initial state
+    m_us.ram.fill_memory(m_us.ram.get_start(), 0, m_us.ram.get_length());
+    m_us.ram.write_memory(m_us.ram.get_start(), uarch_pristine_ram, uarch_pristine_ram_len);
 }
 
 access_log machine::log_reset_uarch(const access_log::type &log_type) {
     hash_type root_hash_before;
     get_root_hash(root_hash_before);
     // Call uarch_reset_state with a uarch_record_state_access object
-    uarch_record_state_access a(m_uarch.get_state(), *this, log_type);
-    a.push_bracket(bracket_type::begin, "reset uarch state");
-    uarch_reset_state(a);
-    a.push_bracket(bracket_type::end, "reset uarch state");
+    access_log log(log_type);
+    uarch_record_state_access a(*this, log);
+    {
+        [[maybe_unused]] auto note = a.make_scoped_note("reset_uarch_state");
+        uarch_reset_state(a);
+    }
     // Verify access log before returning
     hash_type root_hash_after;
     update_merkle_tree();
     get_root_hash(root_hash_after);
-    verify_reset_uarch(root_hash_before, *a.get_log(), root_hash_after);
-    return std::move(*a.get_log());
+    verify_reset_uarch(root_hash_before, log, root_hash_after);
+    return log;
 }
 
 void machine::verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
     const hash_type &root_hash_after) {
-    // There must be at least one access in log
-    if (log.get_accesses().empty()) {
-        throw std::invalid_argument{"too few accesses in log"};
-    }
     // Verify all intermediate state transitions
-    uarch_replay_state_access a(log, root_hash_before);
+    uarch_replay_state_access::context context{log, root_hash_before};
+    uarch_replay_state_access a(context);
     uarch_reset_state(a);
     a.finish();
     // Make sure the access log ends at the same root hash as the state
@@ -2179,21 +2384,23 @@ void machine::verify_reset_uarch(const hash_type &root_hash_before, const access
 extern template UArchStepStatus uarch_step(uarch_record_state_access &a);
 
 access_log machine::log_step_uarch(const access_log::type &log_type) {
-    if (m_uarch.get_state().ram.get_istart_E()) {
+    if (m_us.ram.get_istart_E()) {
         throw std::runtime_error("microarchitecture RAM is not present");
     }
     hash_type root_hash_before;
     get_root_hash(root_hash_before);
+    access_log log(log_type);
     // Call interpret with a logged state access object
-    uarch_record_state_access a(m_uarch.get_state(), *this, log_type);
-    a.push_bracket(bracket_type::begin, "step");
-    uarch_step(a);
-    a.push_bracket(bracket_type::end, "step");
+    const uarch_record_state_access a(*this, log);
+    {
+        [[maybe_unused]] auto note = a.make_scoped_note("step");
+        uarch_step(a);
+    }
     // Verify access log before returning
     hash_type root_hash_after;
     get_root_hash(root_hash_after);
-    verify_step_uarch(root_hash_before, *a.get_log(), root_hash_after);
-    return std::move(*a.get_log());
+    verify_step_uarch(root_hash_before, log, root_hash_after);
+    return log;
 }
 
 // Declaration of explicit instantiation in module uarch-step.cpp
@@ -2201,12 +2408,9 @@ extern template UArchStepStatus uarch_step(uarch_replay_state_access &a);
 
 void machine::verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
     const hash_type &root_hash_after) {
-    // There must be at least one access in log
-    if (log.get_accesses().empty()) {
-        throw std::invalid_argument{"too few accesses in log"};
-    }
     // Verify all intermediate state transitions
-    uarch_replay_state_access a(log, root_hash_before);
+    uarch_replay_state_access::context context{log, root_hash_before};
+    uarch_replay_state_access a(context);
     uarch_step(a);
     a.finish();
     // Make sure the access log ends at the same root hash as the state
@@ -2226,10 +2430,10 @@ uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
     if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error("microarchitecture cannot be used with unreproducible machines");
     }
-    if (m_uarch.get_state().ram.get_istart_E()) {
+    if (m_us.ram.get_istart_E()) {
         throw std::runtime_error("microarchitecture RAM is not present");
     }
-    uarch_state_access a(m_uarch.get_state(), get_state());
+    const uarch_state_access a(*this);
     return uarch_interpret(a, uarch_cycle_end);
 }
 
@@ -2262,25 +2466,88 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
 interpreter_break_reason machine::verify_step(const hash_type &root_hash_before, const std::string &filename,
     uint64_t mcycle_count, const hash_type &root_hash_after) {
     auto data_length = os_get_file_length(filename.c_str(), "step log file");
-    auto *data = os_map_file(filename.c_str(), data_length, false /* not shared */);
+    auto data = make_unique_mmap<unsigned char>(filename.c_str(), data_length, false /* not shared */);
     replay_step_state_access::context context;
-    replay_step_state_access a(context, data, data_length, root_hash_before);
+    replay_step_state_access a(context, data.get(), data_length, root_hash_before);
     uint64_t mcycle_end{};
     if (__builtin_add_overflow(a.read_mcycle(), mcycle_count, &mcycle_end)) {
         mcycle_end = UINT64_MAX;
     }
     auto break_reason = interpret(a, mcycle_end);
     a.finish(root_hash_after);
-    os_unmap_file(data, data_length);
     return break_reason;
 }
 
 interpreter_break_reason machine::run(uint64_t mcycle_end) {
-    if (mcycle_end < read_reg(reg::mcycle)) {
+    const auto mcycle = read_reg(reg::mcycle);
+    if (mcycle_end < mcycle) {
         throw std::invalid_argument{"mcycle is past"};
     }
     const state_access a(*this);
     return interpret(a, mcycle_end);
+}
+
+//??D How come this function seems to never signal we have an inteerrupt???
+std::pair<uint64_t, execute_status> machine::poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
+    const auto status = execute_status::success;
+    // Only poll external interrupts if we are in unreproducible mode
+    if (unlikely(m_s.iunrep)) {
+        // Convert the relative interval of cycles we can wait to the interval of host time we can wait
+        uint64_t timeout_us = (mcycle_max - mcycle) / RTC_CYCLES_PER_US;
+        int64_t start_us = 0;
+        if (timeout_us > 0) {
+            start_us = os_now_us();
+        }
+        const state_access a(*this);
+        device_state_access da(a, mcycle);
+        // Poll virtio for events (e.g console stdin, network sockets)
+        // Timeout may be decremented in case a device has deadline timers (e.g network device)
+        if (has_virtio_devices() && has_virtio_console()) { // VirtIO + VirtIO console
+            poll_virtio_devices(&timeout_us, &da);
+            // VirtIO console device will poll TTY
+        } else if (has_virtio_devices()) { // VirtIO without a console
+            poll_virtio_devices(&timeout_us, &da);
+            if (has_htif_console()) { // VirtIO + HTIF console
+                // Poll tty without waiting more time, because the pool above should have waited enough time
+                os_poll_tty(0);
+            }
+        } else if (has_htif_console()) { // Only HTIF console
+            os_poll_tty(timeout_us);
+        } else if (timeout_us > 0) { // No interrupts to check, just keep the CPU idle
+            os_sleep_us(timeout_us);
+        }
+        // If timeout is greater than zero, we should also increment mcycle relative to the elapsed time
+        if (timeout_us > 0) {
+            const int64_t end_us = os_now_us();
+            const uint64_t elapsed_us = static_cast<uint64_t>(std::max(end_us - start_us, INT64_C(0)));
+            const uint64_t next_mcycle = mcycle + (elapsed_us * RTC_CYCLES_PER_US);
+            mcycle = std::min(std::max(next_mcycle, mcycle), mcycle_max);
+        }
+    }
+    return {mcycle, status};
+}
+
+std::string machine::get_counter_key(const char *name, const char *domain) {
+    if (name == nullptr) {
+        throw std::invalid_argument{"invalid name argument"};
+    }
+    std::string key{(domain != nullptr) ? domain : name};
+    if (domain != nullptr) {
+        key.append(name);
+    }
+    return key;
+}
+
+void machine::increment_counter(const char *name, const char *domain) {
+    ++m_counters[get_counter_key(name, domain)];
+}
+
+uint64_t machine::read_counter(const char *name, const char *domain) {
+    return m_counters[get_counter_key(name, domain)];
+}
+
+void machine::write_counter(uint64_t val, const char *name, const char *domain) {
+    m_counters[get_counter_key(name, domain)] = val;
 }
 
 } // namespace cartesi

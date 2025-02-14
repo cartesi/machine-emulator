@@ -22,19 +22,16 @@
 namespace cartesi {
 
 /// \file
-/// \brief Virtual interface for state access
+/// \brief Virtual interface for device state access
 
-/// \brief Virtual interface for state access
+/// \brief Virtual interface for device state access
 /// \details \{
 /// Memory mapped devices must be able to modify the state.
-/// However, the prototype for the read/write callbacks
-/// cannot change depending on the different classes implementing the
-/// i_state_access interface (which is not virtual).
+/// However, the prototype for the read/write callbacks cannot change depending on the different classes
+/// implementing the i_state_access interface (which is not virtual).
 ///
-/// Since device access to state is not time critical, the
-/// i_device_state_access interface uses virtual methods.  A
-/// template class device_state_access implements this
-/// virtual interface on top of any class that implements the
+/// Since device access to state is not time critical, the i_device_state_access interface uses virtual methods.
+/// A template class device_state_access implements this virtual interface on top of any class that implements
 /// i_state_access.
 /// \}
 class i_device_state_access {
@@ -193,6 +190,18 @@ public:
         return do_write_memory(paddr, data, length);
     }
 
+    /// \brief Writes a character to the console
+    /// \param c Character to output
+    void putchar(uint8_t c) {
+        do_putchar(c);
+    }
+
+    /// \brief Reads a character from the console
+    /// \returns Character read if any, -1 otherwise
+    int getchar() {
+        return do_getchar();
+    }
+
 private:
     virtual void do_set_mip(uint64_t mask) = 0;
     virtual void do_reset_mip(uint64_t mask) = 0;
@@ -216,6 +225,8 @@ private:
     virtual uint64_t do_read_htif_iyield() = 0;
     virtual bool do_read_memory(uint64_t paddr, unsigned char *data, uint64_t length) = 0;
     virtual bool do_write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) = 0;
+    virtual void do_putchar(uint8_t c) = 0;
+    virtual int do_getchar() = 0;
 };
 
 } // namespace cartesi

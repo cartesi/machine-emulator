@@ -17,13 +17,14 @@
 /// \file
 /// \brief Back Merkle tree implementation.
 
+#include "back-merkle-tree.h"
+
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
 
-#include "back-merkle-tree.h"
 #include "i-hasher.h"
 
 namespace cartesi {

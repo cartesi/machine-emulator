@@ -27,8 +27,9 @@
 #include <string>
 #include <system_error>
 
+#include <json.hpp>
+
 #include "json-util.h"
-#include "json.hpp"
 #include "pma-constants.h"
 
 static constexpr uint32_t archive_version = 5;

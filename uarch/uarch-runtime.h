@@ -17,14 +17,11 @@
 #ifndef UARCH_RUNTIME_H
 #define UARCH_RUNTIME_H
 
-#include "uarch-printf.h"
 #include "compiler-defines.h"
+#include "third-party/printf/printf.h"
 
 #include <inttypes.h>
 #include <stddef.h>
-
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define fprintf(a, ...) printf(__VA_ARGS__)
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define assert(a)                                                                                                      \

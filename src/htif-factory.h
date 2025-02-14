@@ -19,7 +19,6 @@
 
 #include <cstdint>
 
-#include "machine-runtime-config.h"
 #include "pma.h"
 
 namespace cartesi {

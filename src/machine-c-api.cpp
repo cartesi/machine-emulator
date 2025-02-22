@@ -32,25 +32,40 @@
 #include <variant>
 
 #include "access-log.h"
-#include "htif.h"
+#include "address-range-description.h"
+#include "htif-constants.h"
 #include "i-virtual-machine.h"
 #include "interpret.h"
 #include "json-util.h"
 #include "machine-c-api-internal.h"
 #include "machine-config.h"
-#include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
 #include "machine.h"
 #include "os-features.h"
-#include "pma-constants.h"
+#include "pma-defines.h"
 #include "virtual-machine.h"
 
 static std::string &get_last_err_msg_storage() {
     static THREAD_LOCAL std::string last_err_msg;
     return last_err_msg;
 }
+
+static_assert(PMA_CMIO_RX_BUFFER_START_DEF == CM_PMA_CMIO_RX_BUFFER_START);
+static_assert(PMA_CMIO_RX_BUFFER_LOG2_SIZE_DEF == CM_PMA_CMIO_RX_BUFFER_LOG2_SIZE);
+static_assert(PMA_CMIO_TX_BUFFER_START_DEF == CM_PMA_CMIO_TX_BUFFER_START);
+static_assert(PMA_CMIO_TX_BUFFER_LOG2_SIZE_DEF == CM_PMA_CMIO_TX_BUFFER_LOG2_SIZE);
+static_assert(PMA_RAM_START_DEF == CM_PMA_RAM_START);
+
+static_assert(HTIF_YIELD_AUTOMATIC_REASON_PROGRESS_DEF == CM_CMIO_YIELD_AUTOMATIC_REASON_PROGRESS);
+static_assert(HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT_DEF == CM_CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT);
+static_assert(HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT_DEF == CM_CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT);
+static_assert(HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED_DEF == CM_CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED);
+static_assert(HTIF_YIELD_MANUAL_REASON_RX_REJECTED_DEF == CM_CMIO_YIELD_MANUAL_REASON_RX_REJECTED);
+static_assert(HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION_DEF == CM_CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION);
+static_assert(HTIF_YIELD_REASON_ADVANCE_STATE_DEF == CM_CMIO_YIELD_REASON_ADVANCE_STATE);
+static_assert(HTIF_YIELD_REASON_INSPECT_STATE_DEF == CM_CMIO_YIELD_REASON_INSPECT_STATE);
 
 const char *cm_get_last_error_message() {
     return get_last_err_msg_storage().c_str();
@@ -975,12 +990,12 @@ cm_error cm_destroy(cm_machine *m) try {
     return cm_result_failure();
 }
 
-cm_error cm_get_memory_ranges(const cm_machine *m, const char **ranges) try {
+cm_error cm_get_address_ranges(const cm_machine *m, const char **ranges) try {
     if (ranges == nullptr) {
         throw std::invalid_argument("invalid memory range output");
     }
     const auto *cpp_m = convert_from_c(m);
-    const cartesi::machine_memory_range_descrs cpp_ranges = cpp_m->get_memory_ranges();
+    const cartesi::address_range_descriptions cpp_ranges = cpp_m->get_address_ranges();
     *ranges = cm_set_temp_string(cartesi::to_json(cpp_ranges).dump());
     return cm_result_success();
 } catch (...) {

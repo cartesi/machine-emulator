@@ -21,9 +21,9 @@
 #include <string>
 
 #include "access-log.h"
+#include "address-range-description.h"
 #include "interpret.h"
 #include "machine-config.h"
-#include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"
 #include "machine.h"
 #include "uarch-interpret.h"
@@ -200,8 +200,8 @@ public:
     }
 
     /// \brief Returns a list of descriptions for all PMA entries registered in the machine, sorted by start
-    virtual machine_memory_range_descrs get_memory_ranges() const {
-        return do_get_memory_ranges();
+    virtual address_range_descriptions get_address_ranges() const {
+        return do_get_address_ranges();
     }
 
     /// \brief Sends cmio response.
@@ -283,7 +283,7 @@ private:
     virtual void do_reset_uarch() = 0;
     virtual access_log do_log_reset_uarch(const access_log::type &log_type) = 0;
     virtual uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) = 0;
-    virtual machine_memory_range_descrs do_get_memory_ranges() const = 0;
+    virtual address_range_descriptions do_get_address_ranges() const = 0;
     virtual void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) = 0;
     virtual access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const access_log::type &log_type) = 0;

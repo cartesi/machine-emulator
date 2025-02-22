@@ -21,10 +21,10 @@
 #include <string>
 
 #include "access-log.h"
+#include "address-range-description.h"
 #include "i-virtual-machine.h"
 #include "interpret.h"
 #include "machine-config.h"
-#include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
 #include "machine.h"
@@ -72,7 +72,7 @@ private:
     void do_reset_uarch() override;
     access_log do_log_reset_uarch(const access_log::type &log_type) override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
-    machine_memory_range_descrs do_get_memory_ranges() const override;
+    address_range_descriptions do_get_address_ranges() const override;
     void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) override;
     access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const access_log::type &log_type) override;

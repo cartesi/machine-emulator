@@ -19,7 +19,7 @@
 #include "compiler-defines.h"
 #include "interpret.h"
 #include "machine-uarch-bridge-state-access.h"
-#include "mock-pma-entry.h"
+#include "mock-address-range.h"
 #include "uarch-constants.h"
 #include "uarch-ecall.h"
 
@@ -31,7 +31,7 @@ using namespace cartesi;
 
 // Let the state accessor be on static memory storage to speed up uarch initialization
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-std::array<std::optional<mock_pma_entry>, PMA_MAX> pmas;
+mock_address_ranges ars;
 
 namespace cartesi {
 
@@ -43,7 +43,7 @@ extern template interpreter_break_reason interpret(machine_uarch_bridge_state_ac
 /// \brief  Advances one mcycle by executing the "big machine interpreter" compiled to the microarchitecture
 /// \return This function never returns
 extern "C" NO_RETURN void interpret_next_mcycle_with_uarch() {
-    machine_uarch_bridge_state_access a(pmas);
+    machine_uarch_bridge_state_access a(ars);
     const uint64_t mcycle_end = a.read_mcycle() + 1;
     interpret(a, mcycle_end);
     // Finished executing a whole mcycle: halt the microarchitecture

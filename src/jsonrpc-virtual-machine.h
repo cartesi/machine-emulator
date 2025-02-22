@@ -22,11 +22,11 @@
 #include <string>
 
 #include "access-log.h"
+#include "address-range-description.h"
 #include "i-virtual-machine.h"
 #include "interpret.h"
 #include "jsonrpc-fork-result.h"
 #include "machine-config.h"
-#include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
 #include "semantic-version.h"
@@ -131,7 +131,7 @@ private:
     uint64_t do_read_word(uint64_t address) const override;
     bool do_verify_merkle_tree() const override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
-    machine_memory_range_descrs do_get_memory_ranges() const override;
+    address_range_descriptions do_get_address_ranges() const override;
     void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) override;
     access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const access_log::type &log_type) override;

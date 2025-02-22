@@ -60,6 +60,7 @@
 #include <json.hpp>
 
 #include "access-log.h"
+#include "address-range-description.h"
 #include "base64.h"
 #include "i-virtual-machine.h"
 #include "interpret.h"
@@ -67,7 +68,6 @@
 #include "jsonrpc-fork-result.h"
 #include "jsonrpc-version.h"
 #include "machine-config.h"
-#include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
 #include "os-features.h"
@@ -795,9 +795,9 @@ uarch_interpreter_break_reason jsonrpc_virtual_machine::do_run_uarch(uint64_t ua
     return result;
 }
 
-machine_memory_range_descrs jsonrpc_virtual_machine::do_get_memory_ranges() const {
-    machine_memory_range_descrs result;
-    request("machine.get_memory_ranges", std::tie(), result);
+address_range_descriptions jsonrpc_virtual_machine::do_get_address_ranges() const {
+    address_range_descriptions result;
+    request("machine.get_address_ranges", std::tie(), result);
     return result;
 }
 

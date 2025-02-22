@@ -92,10 +92,10 @@ static hash_type calculate_emulator_hash(cm_machine *machine) {
     std::string page;
     page.resize(detail::MERKLE_PAGE_SIZE);
     const char *ranges_jsonstr{};
-    if (cm_get_memory_ranges(machine, &ranges_jsonstr) != 0) {
+    if (cm_get_address_ranges(machine, &ranges_jsonstr) != 0) {
         throw std::runtime_error{cm_get_last_error_message()};
     }
-    const auto mrds = cartesi::from_json<cartesi::machine_memory_range_descrs>(ranges_jsonstr);
+    const auto mrds = cartesi::from_json<cartesi::address_range_descriptions>(ranges_jsonstr);
     uint64_t last = 0;
     for (auto m : mrds) {
         tree.pad_back((m.start - last) >> detail::MERKLE_PAGE_LOG2_SIZE);

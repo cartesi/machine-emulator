@@ -20,10 +20,10 @@
 #include <string>
 
 #include "access-log.h"
+#include "address-range-description.h"
 #include "i-virtual-machine.h"
 #include "interpret.h"
 #include "machine-config.h"
-#include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
 #include "machine.h"
@@ -163,8 +163,8 @@ uarch_interpreter_break_reason virtual_machine::do_run_uarch(uint64_t uarch_cycl
     return get_machine()->run_uarch(uarch_cycle_end);
 }
 
-machine_memory_range_descrs virtual_machine::do_get_memory_ranges() const {
-    return get_machine()->get_memory_ranges();
+address_range_descriptions virtual_machine::do_get_address_ranges() const {
+    return get_machine()->get_address_ranges();
 }
 
 void virtual_machine::do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {

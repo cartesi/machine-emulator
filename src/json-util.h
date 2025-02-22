@@ -28,11 +28,11 @@
 #include <json.hpp>
 
 #include "access-log.h"
+#include "address-range-description.h"
 #include "bracket-note.h"
 #include "interpret.h"
 #include "jsonrpc-fork-result.h"
 #include "machine-config.h"
-#include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
 #include "machine.h"
@@ -474,24 +474,24 @@ template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_config &value,
     const std::string &path = "params/");
 
-/// \brief Attempts to load a machine_memory_range_descr object from a field in a JSON object
+/// \brief Attempts to load a address_range_description object from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
 /// \param key Key to load value from
 /// \param value Object to store value
 /// \param path Path to j
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_memory_range_descr &value,
+void ju_get_opt_field(const nlohmann::json &j, const K &key, address_range_description &value,
     const std::string &path = "params/");
 
-/// \brief Attempts to load a machine_memory_range_descrs object from a field in a JSON object
+/// \brief Attempts to load a address_range_descriptions object from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
 /// \param key Key to load value from
 /// \param value Object to store value
 /// \param path Path to j
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_memory_range_descrs &value,
+void ju_get_opt_field(const nlohmann::json &j, const K &key, address_range_descriptions &value,
     const std::string &path = "params/");
 
 /// \brief Attempts to load a fork_result object from a field in a JSON object
@@ -625,8 +625,8 @@ void to_json(nlohmann::json &j, const concurrency_runtime_config &config);
 void to_json(nlohmann::json &j, const htif_runtime_config &config);
 void to_json(nlohmann::json &j, const machine_runtime_config &runtime);
 void to_json(nlohmann::json &j, const machine::reg &reg);
-void to_json(nlohmann::json &j, const machine_memory_range_descr &mrd);
-void to_json(nlohmann::json &j, const machine_memory_range_descrs &mrds);
+void to_json(nlohmann::json &j, const address_range_description &mrd);
+void to_json(nlohmann::json &j, const address_range_descriptions &mrds);
 void to_json(nlohmann::json &j, const fork_result &fork_result);
 void to_json(nlohmann::json &j, const semantic_version &version);
 
@@ -787,14 +787,14 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &k
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, machine_config &value,
     const std::string &base = "params/");
-extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, machine_memory_range_descr &value,
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, address_range_description &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, address_range_description &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, address_range_descriptions &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key,
-    machine_memory_range_descr &value, const std::string &base = "params/");
-extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, machine_memory_range_descrs &value,
-    const std::string &base = "params/");
-extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key,
-    machine_memory_range_descrs &value, const std::string &base = "params/");
+    address_range_descriptions &value, const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, fork_result &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, fork_result &value,

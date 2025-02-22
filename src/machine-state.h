@@ -14,21 +14,19 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef STATE_H
-#define STATE_H
+#ifndef MACHINE_STATE_H
+#define MACHINE_STATE_H
 
 /// \file
 /// \brief Cartesi machine state structure definition.
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
-#include <boost/container/static_vector.hpp>
-
-#include "pma-constants.h"
-#include "pma.h"
+#include "address-range.h"
 #include "riscv-constants.h"
-#include "shadow-tlb.h"
+#include "tlb.h"
 
 namespace cartesi {
 
@@ -116,10 +114,7 @@ struct machine_state {
     /// Soft yield
     bool soft_yield{};
 
-    /// Map of physical memory ranges
-    boost::container::static_vector<pma_entry, PMA_MAX> pmas;
-
-    pma_entry empty_pma; ///< fallback to PMA for empty range
+    std::vector<uint64_t> pmas; ///< Indices of address ranges that interpret can find
 };
 
 } // namespace cartesi

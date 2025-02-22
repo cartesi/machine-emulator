@@ -22,8 +22,6 @@
 
 #include <cstdint>
 
-#include "pma.h"
-
 namespace cartesi {
 
 /// \brief Creates a PMA entry for the TLB device

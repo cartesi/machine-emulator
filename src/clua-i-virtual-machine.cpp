@@ -682,12 +682,12 @@ static int machine_obj_index_reset_uarch(lua_State *L) {
     return 0;
 }
 
-/// \brief This is the machine:get_memory_ranges() method implementation.
+/// \brief This is the machine:get_address_ranges() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_get_memory_ranges(lua_State *L) {
+static int machine_obj_index_get_address_ranges(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const char *ranges = nullptr;
-    if (cm_get_memory_ranges(m.get(), &ranges) != 0) {
+    if (cm_get_address_ranges(m.get(), &ranges) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     clua_push_json_table(L, ranges);
@@ -1049,7 +1049,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"destroy", machine_obj_index_destroy},
     {"get_default_config", machine_obj_index_get_default_config},
     {"get_initial_config", machine_obj_index_get_initial_config},
-    {"get_memory_ranges", machine_obj_index_get_memory_ranges},
+    {"get_address_ranges", machine_obj_index_get_address_ranges},
     {"get_proof", machine_obj_index_get_proof},
     {"get_reg_address", machine_obj_index_get_reg_address},
     {"get_root_hash", machine_obj_index_get_root_hash},

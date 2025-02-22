@@ -27,7 +27,6 @@
 
 #include "host-addr.h"
 #include "pma-constants.h"
-#include "pma-driver.h"
 #include "riscv-constants.h"
 
 namespace cartesi {

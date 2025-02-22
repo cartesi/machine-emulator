@@ -213,9 +213,11 @@ rollup-init sh /home/dapp/s.sh
 )
 
 -- Should not work with shared buffers
-create_machine("shared-rx-buffer-machine", "rollup accept", function(config)
+local ret, err = pcall(create_machine, "shared-rx-buffer-machine", "rollup accept", function(config)
     config.cmio.rx_buffer.shared = true
 end)
-create_machine("shared-tx-buffer-machine", "rollup accept", function(config)
+assert(not ret, "should have failed")
+ret, err = pcall(create_machine, "shared-tx-buffer-machine", "rollup accept", function(config)
     config.cmio.tx_buffer.shared = true
 end)
+assert(not ret, "should have failed")

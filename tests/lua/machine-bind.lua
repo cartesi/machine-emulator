@@ -25,7 +25,7 @@ local remote_address
 local test_path = "./"
 local concurrency_update_merkle_tree = util.parse_number(os.getenv("CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE")) or 0
 
--- local lua_cmd = arg[-1] .. " -e "
+local lua_cmd = arg[-1] .. " -e "
 
 -- There is no UINT64_MAX in Lua, so we have to use the signed representation
 local MAX_MCYCLE = -1
@@ -642,9 +642,12 @@ end)
 print("\n\n check memory reading/writing")
 do_test("written and read values should match", function(machine)
     -- Check mem write and mem read
-    machine:write_memory(0x800000FF, "mydataol12345678", 0x10)
-    local memory_read = machine:read_memory(0x800000FF, 0x10)
-    assert(memory_read == "mydataol12345678")
+    local written = "mydataol12345678"
+    machine:write_memory(0x800000FF, written)
+    local read = machine:read_memory(0x800000FF, written:len())
+    if read ~= written then
+        error(string.format("expected %q (got %q)", written, read))
+    end
 end)
 
 print("\n\n dump step log to console")
@@ -1101,7 +1104,6 @@ test_util.make_do_test(build_machine, machine_type, {
     check_error_find(err, "illegal instruction")
 end)
 
---[==[
 do_test("uarch ecall putchar should print char to console", function()
     local lua_code = [[ "
                                  local cartesi = require 'cartesi'
@@ -1110,9 +1112,9 @@ do_test("uarch ecall putchar should print char to console", function()
                                  local initial_reg_values = {}
                                  local program = {
                                     (cartesi.UARCH_ECALL_FN_PUTCHAR << 20) | 0x00893, -- li	a7,putchar
-                                    0x05800813, -- li	a6,'X''
+                                    0x05800513, -- li a0,'X'
                                     0x00000073, -- ecall
-                                }
+                                 }
                                  local uarch_ram_path = test_util.create_test_uarch_program(program)
                                  local machine = cartesi.machine {
                                  processor = initial_reg_values,
@@ -1134,7 +1136,6 @@ do_test("uarch ecall putchar should print char to console", function()
     print("--------------------------")
     assert(output == expected_output, "Output does not match expected output:\n" .. expected_output)
 end)
---]==]
 
 print("\n\ntesting send cmio response ")
 
@@ -1169,6 +1170,14 @@ local function assert_access(accesses, index, expected_key_and_values)
     for k, v in pairs(expected_key_and_values) do
         local a = accesses[index]
         assert(a[k] == v, "access." .. tostring(index) .. " should be " .. tostring(v) .. " but is " .. tostring(a[k]))
+    end
+end
+
+local function dump_pmas(machine)
+    for _, v in ipairs(machine:get_address_ranges()) do
+        local filename = string.format("%016x--%016x.bin", v.start, v.length)
+        local file <close> = assert(io.open(filename, "w"))
+        assert(file:write(machine:read_memory(v.start, v.length)))
     end
 end
 
@@ -1213,6 +1222,7 @@ local function test_send_cmio_input_with_different_arguments()
                     | (large_data and cartesi.ACCESS_LOG_TYPE_LARGE_DATA or 0)
                 assert_before_cmio_response_sent(machine)
                 local root_hash_before = machine:get_root_hash()
+                dump_pmas(machine)
                 local log = machine:log_send_cmio_response(reason, data, log_type)
                 assert_after_cmio_response_sent(machine)
                 local root_hash_after = machine:get_root_hash()

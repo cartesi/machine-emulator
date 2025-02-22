@@ -26,10 +26,11 @@
 #include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
 #include "machine-reg.h"
-#include "mock-pma-entry.h"
+#include "mock-address-range.h"
 #include "pma-constants.h"
 #include "riscv-constants.h"
 #include "shadow-pmas.h"
+#include "shadow-tlb.h"
 #include "uarch-constants.h"
 #include "uarch-defines.h"
 #include "uarch-ecall.h"
@@ -39,11 +40,6 @@ namespace cartesi {
 
 class machine_uarch_bridge_state_access;
 
-// Type trait that should return the pma_entry type for a state access class
-template <>
-struct i_state_access_pma_entry<machine_uarch_bridge_state_access> {
-    using type = mock_pma_entry;
-};
 // Type trait that should return the fast_addr type for a state access class
 template <>
 struct i_state_access_fast_addr<machine_uarch_bridge_state_access> {
@@ -57,10 +53,10 @@ class machine_uarch_bridge_state_access :
     public i_prefer_shadow_state<machine_uarch_bridge_state_access> {
 
     // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
-    std::array<std::optional<mock_pma_entry>, PMA_MAX> &m_pmas;
+    mock_address_ranges &m_ars;
 
 public:
-    machine_uarch_bridge_state_access(std::array<std::optional<mock_pma_entry>, PMA_MAX> &pmas) : m_pmas(pmas) {}
+    machine_uarch_bridge_state_access(std::array<mock_address_range, PMA_MAX> &ars) : m_ars(ars) {}
     machine_uarch_bridge_state_access(const machine_uarch_bridge_state_access &other) = default;
     machine_uarch_bridge_state_access(machine_uarch_bridge_state_access &&other) = default;
     machine_uarch_bridge_state_access &operator=(const machine_uarch_bridge_state_access &other) = delete;
@@ -118,26 +114,32 @@ private:
 
     bool do_read_memory(uint64_t /*paddr*/, unsigned char * /*data*/, uint64_t /*length*/) const {
         // This is not implemented yet because it's not being used
+        assert(false && "read_memory() unexpectedly called");
         abort();
         return false;
     }
 
     bool do_write_memory(uint64_t /*paddr*/, const unsigned char * /*data*/, uint64_t /*length*/) const {
         // This is not implemented yet because it's not being used
+        assert(false && "write_memory() unexpectedly called");
         abort();
         return false;
     }
 
-    mock_pma_entry &do_read_pma_entry(uint64_t index) const {
+    address_range &do_read_pma(uint64_t index) const {
+        constexpr const auto throw_abort = [](const char * /*err*/) {
+            assert(false && "read_address_range() failed");
+            abort();
+        };
         const uint64_t istart = bridge_read_pma_istart(index);
         const uint64_t ilength = bridge_read_pma_ilength(index);
         // NOLINTNEXTLINE(bugprone-narrowing-conversions)
         int i = static_cast<int>(index);
-        if (!m_pmas[i]) {
-            m_pmas[i] = make_mock_pma_entry(index, istart, ilength, [](const char * /*err*/) { abort(); });
+        if (std::holds_alternative<std::monostate>(m_ars[i])) {
+            m_ars[i] = make_mock_address_range(istart, ilength, throw_abort);
         }
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        return m_pmas[i].value();
+        return get_mock_address_range(m_ars[i], throw_abort);
     }
 
     uint64_t do_get_faddr(uint64_t paddr, uint64_t /* pma_index */) const {

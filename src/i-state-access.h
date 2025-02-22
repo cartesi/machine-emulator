@@ -36,12 +36,6 @@ namespace cartesi {
 // Forward declarations
 enum class bracket_type;
 
-// Type trait that should return the pma_entry type for a state access class
-template <typename STATE_ACCESS>
-struct i_state_access_pma_entry {};
-template <typename STATE_ACCESS>
-using i_state_access_pma_entry_t = typename i_state_access_pma_entry<STATE_ACCESS>::type;
-
 // Type trait that should return the fast_addr type for a state access class
 template <typename STATE_ACCESS>
 struct i_state_access_fast_addr {};
@@ -121,7 +115,6 @@ class i_state_access { // CRTP
     }
 
 public:
-    using pma_entry = i_state_access_pma_entry_t<DERIVED>;
     using fast_addr = i_state_access_fast_addr_t<DERIVED>;
 
     /// \brief Works as printf if we are dumping state accesses, otherwise does nothing
@@ -274,11 +267,11 @@ public:
 
     /// \brief Reads PMA entry at a given index.
     /// \param index Index of PMA
-    pma_entry &read_pma_entry(uint64_t index) const {
-        auto &pma = derived().do_read_pma_entry(index);
-        DSA_PRINTF("%s::read_pma_entry(%" PRIu64 ") = {%s, 0x%" PRIx64 ", 0x%" PRIx64 "}\n", get_name(), index,
-            pma_get_DID_name(pma.get_istart_DID()), pma.get_start(), pma.get_length());
-        return pma;
+    address_range &read_pma(uint64_t index) const {
+        auto &ar = derived().do_read_pma(index);
+        DSA_PRINTF("%s::read_address_range(%" PRIu64 ") = {%s, 0x%" PRIx64 ", 0x%" PRIx64 "}\n", get_name(), index,
+            pma_get_DID_name(ar.get_driver_id()), ar.get_start(), ar.get_length());
+        return ar;
     }
 
     /// \brief Converts a target physical address to the implementation-defined fast address

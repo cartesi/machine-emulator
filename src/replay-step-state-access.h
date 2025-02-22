@@ -17,6 +17,7 @@
 #ifndef REPLAY_STEP_STATE_ACCESS_H
 #define REPLAY_STEP_STATE_ACCESS_H
 
+#include <cassert>
 #include <cstdlib>
 #include <optional>
 
@@ -25,11 +26,11 @@
 #include "i-accept-scoped-notes.h"
 #include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
-#include "mock-pma-entry.h"
+#include "mock-address-range.h"
 #include "pma-constants.h"
 #include "replay-step-state-access-interop.h"
 #include "riscv-constants.h"
-#include "shadow-pmas.h"
+#include "shadow-pmas-address-range.h"
 #include "shadow-state.h"
 #include "shadow-tlb.h"
 #include "shadow-uarch-state.h"
@@ -44,11 +45,6 @@ namespace cartesi {
 
 class replay_step_state_access;
 
-// Type trait that should return the pma_entry type for a state access class
-template <>
-struct i_state_access_pma_entry<replay_step_state_access> {
-    using type = mock_pma_entry;
-};
 // Type trait that should return the fast_addr type for a state access class
 template <>
 struct i_state_access_fast_addr<replay_step_state_access> {
@@ -92,11 +88,11 @@ public:
     };
 
     struct context {
-        uint64_t page_count{0};                                    ///< Number of pages in the step log
-        page_type *pages{nullptr};                                 ///< Array of page data
-        uint64_t sibling_count{0};                                 ///< Number of sibling hashes in the step log
-        hash_type *sibling_hashes{nullptr};                        ///< Array of sibling hashes
-        std::array<std::optional<mock_pma_entry>, PMA_MAX> pmas{}; ///< Array of PMA entries
+        uint64_t page_count{0};             ///< Number of pages in the step log
+        page_type *pages{nullptr};          ///< Array of page data
+        uint64_t sibling_count{0};          ///< Number of sibling hashes in the step log
+        hash_type *sibling_hashes{nullptr}; ///< Array of sibling hashes
+        mock_address_ranges ars{};          ///< Array of address ranges
     };
 
 private:
@@ -464,7 +460,7 @@ private:
         return false;
     }
 
-    mock_pma_entry &do_read_pma_entry(uint64_t index) const {
+    address_range &do_read_pma(uint64_t index) const {
         assert(index < PMA_MAX);
         // record_step_state_access will have recorded the access to istart and
         // ilength in its implementation of read_pma_entry.
@@ -472,12 +468,12 @@ private:
         const uint64_t ilength = read_pma_ilength(index);
         // NOLINTNEXTLINE(bugprone-narrowing-conversions)
         const int i = static_cast<int>(index);
-        if (!m_context.pmas[i]) {
-            m_context.pmas[i] =
-                make_mock_pma_entry(index, istart, ilength, [](const char *err) { interop_throw_runtime_error(err); });
+        const auto abrt = [](const char *err) { interop_throw_runtime_error(err); };
+        if (std::holds_alternative<std::monostate>(m_context.ars[i])) {
+            m_context.ars[i] = make_mock_address_range(istart, ilength, abrt);
         }
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        return m_context.pmas[index].value();
+        return get_mock_address_range(m_context.ars[index], abrt);
     }
 
     template <typename T, typename A>

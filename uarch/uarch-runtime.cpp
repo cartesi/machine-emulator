@@ -26,6 +26,10 @@ extern "C" void __cxa_pure_virtual() {
     abort();
 }
 
+extern "C" int atexit(void (*)(void)) {
+    return 0;
+}
+
 // NOLINTNEXTLINE(cert-dcl54-cpp,misc-new-delete-overloads,hicpp-new-delete-operators)
 void operator delete(void * /*ptr*/) {}
 

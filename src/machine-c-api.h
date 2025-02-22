@@ -472,12 +472,12 @@ CM_API cm_error cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t 
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_get_initial_config(const cm_machine *m, const char **config);
 
-/// \brief Returns a list with all memory ranges in the machine.
+/// \brief Returns a list with all address ranges in the machine.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param ranges Receives the memory ranges as a JSON object in a string,
+/// \param ranges Receives the address ranges as a JSON object in a string,
 /// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_get_memory_ranges(const cm_machine *m, const char **ranges);
+CM_API cm_error cm_get_address_ranges(const cm_machine *m, const char **ranges);
 
 /// \brief Obtains the root hash of the Merkle tree.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).

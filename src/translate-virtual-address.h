@@ -60,8 +60,8 @@ namespace cartesi {
 template <typename STATE_ACCESS>
 static inline bool write_ram_uint64(STATE_ACCESS a, uint64_t paddr, uint64_t val) {
     uint64_t pma_index = 0;
-    auto &pma = find_pma_entry<uint64_t>(a, paddr, pma_index);
-    if (unlikely(!pma.get_istart_M() || !pma.get_istart_W())) {
+    auto &ar = find_pma<uint64_t>(a, paddr, pma_index);
+    if (unlikely(!ar.is_memory() || !ar.is_writeable())) {
         return false;
     }
     const auto faddr = a.get_faddr(paddr, pma_index);
@@ -81,8 +81,8 @@ static inline bool write_ram_uint64(STATE_ACCESS a, uint64_t paddr, uint64_t val
 template <typename STATE_ACCESS>
 static inline bool read_ram_uint64(STATE_ACCESS a, uint64_t paddr, uint64_t *pval) {
     uint64_t pma_index = 0;
-    auto &pma = find_pma_entry<uint64_t>(a, paddr, pma_index);
-    if (unlikely(!pma.get_istart_M() || !pma.get_istart_R())) {
+    auto &ar = find_pma<uint64_t>(a, paddr, pma_index);
+    if (unlikely(!ar.is_memory() || !ar.is_readable())) {
         return false;
     }
     const auto faddr = a.get_faddr(paddr, pma_index);

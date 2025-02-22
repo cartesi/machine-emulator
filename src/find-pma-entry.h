@@ -14,15 +14,17 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef FIND_PMA_ENTRY_H
-#define FIND_PMA_ENTRY_H
+#ifndef FIND_ADDRESS_RANGE_H
+#define FIND_ADDRESS_RANGE_H
 
-#include "compiler-defines.h"
 #include <cstdint>
+
+#include "address-range.h"
+#include "compiler-defines.h"
 
 namespace cartesi {
 
-/// \brief Returns PMAs entry where a word falls.
+/// \brief Returns address range associated to the PMA entry where a word falls.
 /// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
@@ -30,41 +32,34 @@ namespace cartesi {
 /// \param index Receives index where PMA entry was found.
 /// \returns PMA entry where word falls, or empty sentinel.
 template <typename T, typename STATE_ACCESS>
-auto &find_pma_entry(STATE_ACCESS &a, uint64_t paddr, uint64_t &index) {
-    [[maybe_unused]] auto note = a.make_scoped_note("find_pma_entry");
+address_range &find_pma(const STATE_ACCESS a, uint64_t paddr, uint64_t &index) {
+    [[maybe_unused]] auto note = a.make_scoped_note("find_pma");
     index = 0;
     while (true) {
-        auto &pma = a.read_pma_entry(index);
-        const auto length = pma.get_length();
+        auto &ar = a.read_pma(index);
         // The pmas array always contain a sentinel.
         // It is an entry with zero length.
         // If we hit it, return it
-        if (unlikely(length == 0)) {
-            return pma;
+        if (unlikely(ar.get_length() == 0)) {
+            return ar;
         }
-        // Otherwise, if we found an entry where the access fits, return it
-        // Note the "strange" order of arithmetic operations.
-        // This is to ensure there is no overflow.
-        // Since we know paddr >= start, there is no chance of overflow in the first subtraction.
-        // Since length is at least 4096 (an entire page), there is no chance of overflow in the second subtraction.
-        const auto start = pma.get_start();
-        if (paddr >= start && paddr - start <= length - sizeof(T)) {
-            return pma;
+        if (ar.contains_absolute(paddr, sizeof(T))) {
+            return ar;
         }
         ++index;
     }
 }
 
-/// \brief Returns PMAs entry where a word falls.
+/// \brief Returns address range associated to the PMA entry where a word falls.
 /// \tparam T uint8_t, uint16_t, uint32_t, or uint64_t.
 /// \tparam STATE_ACCESS Class of machine state accessor object.
 /// \param a Machine state accessor object.
 /// \param paddr Target physical address of word.
 /// \returns PMA entry where word falls, or empty sentinel.
 template <typename T, typename STATE_ACCESS>
-FORCE_INLINE auto &find_pma_entry(STATE_ACCESS &a, uint64_t paddr) {
+FORCE_INLINE auto &find_pma(const STATE_ACCESS a, uint64_t paddr) {
     uint64_t index = 0;
-    return find_pma_entry<T>(a, paddr, index);
+    return find_pma<T>(a, paddr, index);
 }
 
 } // namespace cartesi

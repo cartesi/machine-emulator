@@ -26,26 +26,25 @@
 #include <utility>
 #include <vector>
 
-#include <boost/container/static_vector.hpp>
 #include <unordered_map>
 
 #include "access-log.h"
+#include "address-range-description.h"
+#include "address-range.h"
 #include "host-addr.h"
 #include "i-device-state-access.h"
 #include "interpret.h"
 #include "machine-config.h"
-#include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
 #include "machine-state.h"
 #include "os.h"
 #include "pma-constants.h"
-#include "pma.h"
 #include "shadow-tlb.h"
 #include "uarch-interpret.h"
 #include "uarch-state.h"
-#include "virtio-device.h"
+#include "virtio-address-range.h"
 
 namespace cartesi {
 
@@ -61,55 +60,74 @@ constexpr skip_merkle_tree_update_t skip_merkle_tree_update;
 /// \brief Cartesi Machine implementation
 class machine final {
 private:
-    mutable machine_state m_s;              ///< Big machine state
-    mutable uarch_state m_us;               ///< Microarchitecture state
-    mutable machine_merkle_tree m_t;        ///< Merkle tree of state
-    std::vector<pma_entry *> m_merkle_pmas; ///< PMAs considered by the Merkle tree: from big machine and uarch
-    machine_config m_c;                     ///< Copy of initialization config
-    machine_runtime_config m_r;             ///< Copy of initialization runtime config
-    machine_memory_range_descrs m_mrds;     ///< List of memory ranges returned by get_memory_ranges().
+    mutable machine_state m_s;                                 ///< Big machine state
+    mutable uarch_state m_us;                                  ///< Microarchitecture state
+    mutable std::vector<std::unique_ptr<address_range>> m_ars; ///< All address ranges
+    mutable machine_merkle_tree m_t;                           ///< Merkle tree of state
+    machine_config m_c;                                        ///< Copy of initialization config
+    machine_runtime_config m_r;                                ///< Copy of initialization runtime config
+    std::vector<uint64_t> m_merkle_ars;                   ///< Indices of address ranges that the Mekrle tree can find
+    std::vector<virtio_address_range *> m_virtio_ars;     ///< VirtIO address ranges
+    address_range_descriptions m_ards;                    ///< Address range descriptions listed by get_address_ranges()
+    std::unordered_map<std::string, uint64_t> m_counters; ///< Counters used for statistics collection
 
-    boost::container::static_vector<std::unique_ptr<virtio_device>, VIRTIO_MAX> m_vdevs; ///< Array of VirtIO devices
+    ///< Where to register an address range
+    struct register_where {
+        bool merkle;    //< Register with Merkle tree, so it appears in the root hash
+        bool interpret; //< Register so interpret can see (and it also appears as a PMA entries in memory)
+    };
 
-    static const pma_entry::flags m_dtb_flags;            ///< PMA flags used for DTB
-    static const pma_entry::flags m_ram_flags;            ///< PMA flags used for RAM
-    static const pma_entry::flags m_flash_drive_flags;    ///< PMA flags used for flash drives
-    static const pma_entry::flags m_cmio_rx_buffer_flags; ///< PMA flags used for cmio rx buffer
-    static const pma_entry::flags m_cmio_tx_buffer_flags; ///< PMA flags used for cmio tx buffer
+    /// \brief Checks if address range can be registered.
+    /// \param ar Address range object to register.
+    /// \param where Where to register the address range.
+    void check_address_range(const address_range &ar, register_where where);
 
-    std::unordered_map<std::string, uint64_t> m_counters;
+    /// \brief Registers a new address range.
+    /// \tparam AR An address range or derived type.
+    /// \param ar The address range object to register (as an r-value).
+    /// \param where Where to register the address range.
+    /// \returns Reference to address range object after it is moved inside the machine.
+    /// \details The r-value address range is moved to the heap, and the pointer holding it is added to a container.
+    /// Once the address range is moved to the heap, its address will remain valid until it is replaced by
+    /// a call to replace_memory_range(), or until the machine is destroyed.
+    /// This means pointers to address ranges remain valid even after subsequent calls to register_address_range(),
+    /// but may be invalidated by calls to replace_address_range().
+    /// For a stronger guarantee, when an address range is replaced, the pointer to the new address range
+    /// overwrites the pointer to the old address range at the same index in the container.
+    /// This means the an index into the container that owns all address ranges will always refers to same address range
+    /// after subsequent calls to register_address_range() and  calls to replace_address_range() as well.
+    /// \details Besides the container that stores the address ranges, the machine maintains subsets of address ranges.
+    /// The "merkle" address range container lists the indices of the address ranges taht will be considered by
+    /// the Merkle tree during the computation of the state hash.
+    /// The "interpret" address range container lists the indices of the address ranges that will be visible from within
+    /// the interpreter.
+    /// When registering an address range with the machine, one must specify \p where else to register it.
+    /// The "virtio" address range container holds pointers to every virtio address range that has been registered.
+    template <typename AR>
+    AR &register_address_range(AR &&ar, register_where where)
+        requires std::is_rvalue_reference_v<AR &&> && std::derived_from<AR, address_range>
+    {
+        check_address_range(ar, where);                     // Check if we can register it
+        auto ptr = make_moved_unique(std::forward<AR>(ar)); // Move object to heap, now owned by ptr
+        AR &ar_ref = *ptr;                                  // Get reference to object, already in heap, to return later
+        const auto index = m_ars.size();                    // Get index new address range will occupy
+        m_ars.push_back(std::move(ptr));                    // Move ptr to list of address ranges
+        if (where.interpret) {                              // Register with interpreter
+            m_s.pmas.push_back(index);
+        }
+        if (where.merkle) { // Register with Merkle tree
+            m_merkle_ars.push_back(index);
+        }
+        if constexpr (std::is_convertible_v<AR *, virtio_address_range *>) { // Register with VirtIO
+            m_virtio_ars.push_back(&ar_ref);
+        }
+        return ar_ref; // Return reference to object in heap
+    }
 
-    /// \brief Allocates a new PMA entry.
-    /// \param pma PMA entry to add to machine.
-    /// \returns Reference to corresponding entry in machine state.
-    pma_entry &register_pma_entry(pma_entry &&pma);
-
-    /// \brief Creates a new PMA entry reflecting a memory range configuration.
-    /// \param description Informative description of PMA entry for use in error messages
-    /// \param c Memory range configuration.
-    /// \returns New PMA entry (with default flags).
-    static pma_entry make_memory_range_pma_entry(const std::string &description, const memory_range_config &c);
-
-    /// \brief Creates a new flash drive PMA entry.
-    /// \param description Informative description of PMA entry for use in error messages
-    /// \param c Memory range configuration.
-    /// \returns New PMA entry with flash drive flags already set.
-    static pma_entry make_flash_drive_pma_entry(const std::string &description, const memory_range_config &c);
-
-    /// \brief Creates a new cmio rx buffer PMA entry.
-    // \param c cmio buffer configuration for rx buffer.
-    /// \returns New PMA entry with rx buffer flags already set.
-    static pma_entry make_cmio_rx_buffer_pma_entry(const cmio_buffer_config &c);
-
-    /// \brief Creates a new cmio tx buffer PMA entry.
-    // \param c cmio buffer configuration for tx buffer.
-    /// \returns New PMA entry with tx buffer flags already set.
-    static pma_entry make_cmio_tx_buffer_pma_entry(const cmio_buffer_config &c);
-
-    /// \brief Saves PMAs into files for serialization
+    /// \brief Saves address ranges into files for serialization
     /// \param config Machine config to be stored
-    /// \param directory Directory where PMAs will be stored
-    void store_pmas(const machine_config &config, const std::string &directory) const;
+    /// \param directory Directory where address ranges will be stored
+    void store_address_ranges(const machine_config &config, const std::string &directory) const;
 
     /// \brief Returns offset that converts between machine host addresses and target physical addresses
     /// \param pma_index Index of the memory PMA for the desired offset
@@ -124,62 +142,70 @@ private:
     /// \param r Machine runtime configuration
     void init_processor(processor_config &p, const machine_runtime_config &r);
 
-    /// \brief Initializes RAM PMA
+    /// \brief Initializes RAM address range
     /// \param ram RAM configuration
-    void init_ram_pma(const ram_config &ram);
+    void init_ram_ar(const ram_config &ram);
 
     /// \brief Initializes flash drive PMAs
     /// \param flash_drive Flash drive configurations
-    void init_flash_drive_pmas(flash_drive_configs &flash_drive);
+    void init_flash_drive_ars(flash_drive_configs &flash_drive);
 
     /// \brief Initializes VirtIO device PMAs
-    /// \param v VirtIO configurations
+    /// \param cs VirtIO configurations
     /// \param iunrep Initial value of iunrep CSR
-    void init_virtio_pmas(const virtio_configs &v, uint64_t iunrep);
+    void init_virtio_ars(const virtio_configs &cs, uint64_t iunrep);
 
-    /// \brief Initializes HTIF device PMA
+    /// \brief Initializes HTIF device address range
+    /// \param h HTIF configuration
+    void init_htif_ar(const htif_config &h);
+
+    /// \brief Initializes TTY if needed
     /// \param h HTIF configuration
     /// \param r HTIF runtime configuration
     /// \param iunrep Initial value of iunrep CSR
-    void init_htif_pma(const htif_config &h, const htif_runtime_config &r, uint64_t iunrep);
+    void init_tty(const htif_config &h, const htif_runtime_config &r, uint64_t iunrep) const;
 
-    /// \brief Initializes CLINT device PMA
+    /// \brief Initializes CLINT device address range
     /// \param c CLINT configuration
-    void init_clint_pma(const clint_config &c);
+    void init_clint_ar(const clint_config &c);
 
-    /// \brief Initializes PLIC device PMA
+    /// \brief Initializes PLIC device address range
     /// \param p PLIC configuration
-    void init_plic_pma(const plic_config &p);
+    void init_plic_ar(const plic_config &p);
 
-    /// \brief Initializes CMIO PMAs
+    /// \brief Initializes CMIO address ranges
     /// \param c CMIO configuration
-    void init_cmio_pmas(const cmio_config &c);
+    void init_cmio_ars(const cmio_config &c);
 
-    /// \brief Initializes the PMAs used to compute the Merkle tree
-    /// \detail This can only be called after all PMAs have been added
-    void init_merkle_pmas();
+    /// \brief Initializes the address ranges involced in the Merkle tree
+    /// \detail This can only be called after all address ranges have been registerd
+    void init_merkle_ars();
 
-    /// \brief Initializes the PMAs descriptions returned by get_memory_ranges()
-    /// \detail This can only be called after the Merkle tree PMAs have been initialized
-    void init_memory_range_descrs();
+    /// \brief Initializes the address range descriptions returned by get_address_ranges()
+    /// \detail This can only be called after all address ranges have been registered
+    void init_ars_descriptions();
 
-    /// \brief Fill up PMA list with sentinel empty PMAs
-    void init_sentinel_pmas();
+    /// \brief Fill up address range list with sentinels
+    void init_sentinel_ars();
 
     /// \brief Initializes contents of the shadow PMAs memory
     /// \param shadow_pmas PMA entry for the shadow PMAs
     /// \detail This can only be called after all PMAs have been added
-    void init_shadow_pmas_contents(pma_entry &shadow_pmas) const;
+    void init_shadow_pmas_contents(memory_address_range &shadow_pmas) const;
 
     /// \brief Initializes contents of machine TLB, from image in disk or with default values
     /// \param image_filename File containing image, or empty for default values
     /// \detail This can only be called after all PMAs have been added
     void init_tlb_contents(const std::string &image_filename);
 
+    /// \brief Initializes DTB address range
+    /// \param c DTB configuration
+    address_range &init_dtb_ar(const dtb_config &c);
+
     /// \brief Initializes contents of machine DTB, if image was not available
     /// \param c Machine configuration
     /// \param dtb PMA entry for the shadow PMAs
-    static void init_dtb_contents(const machine_config &c, pma_entry &dtb);
+    static void init_dtb_contents(const machine_config &c, address_range &dtb);
 
     /// \brief Dumps statistics
     void dump_stats();
@@ -303,8 +329,8 @@ public:
     }
 
     /// \brief Returns a list of descriptions for all PMA entries registered in the machine, sorted by start
-    machine_memory_range_descrs get_memory_ranges() const {
-        return m_mrds;
+    address_range_descriptions get_address_ranges() const {
+        return m_ards;
     }
 
     /// \brief Wait for external interrupts requests.
@@ -439,16 +465,18 @@ public:
     /// \brief Writes a chunk of data to machine memory, by its target physical address and length.
     /// \param paddr Target physical address to start writing to.
     /// \param data Buffer that contains data to write. Must be at least \p length bytes long.
-    /// \param length Number of bytes to write starting from \p data to \p paddr.
+    /// \param length Number of bytes to write from \p data to \p paddr.
     /// \details Unlike read_memory(), the entire chunk of data, from \p paddr to \p paddr + \p length,
-    /// must reside entirely in the same memory range. Moreover, it cannot be mapped to a device.
+    /// must reside entirely in the same address range. Moreover, it cannot be mapped to a device.
     void write_memory(uint64_t paddr, const unsigned char *data, uint64_t length);
 
     /// \brief Fills a memory range with a single byte.
-    /// \param address Physical address to start filling.
-    /// \param data Byte to fill memory with.
-    /// \param length Size of memory range to fill.
-    void fill_memory(uint64_t address, uint8_t data, uint64_t length);
+    /// \param paddr Target physical address to start filling.
+    /// \param val Byte to fill memory with.
+    /// \param length Number of bytes to write starting at \p paddr.
+    /// \details Unlike read_memory(), the entire chunk of data, from \p paddr to \p paddr + \p length,
+    /// must reside entirely in the same address range. Moreover, it cannot be mapped to a device.
+    void fill_memory(uint64_t paddr, uint8_t val, uint64_t length);
 
     /// \brief Reads a chunk of data from the machine virtual memory.
     /// \param vaddr_start Virtual address to start reading.
@@ -467,33 +495,51 @@ public:
     /// \returns The corresponding physical address.
     uint64_t translate_virtual_address(uint64_t vaddr);
 
-    /// \brief Obtain PMA entry from the machine state that covers a given physical memory region
-    /// \brief Microarchitecture PMAs are not considered.
-    /// \param s Pointer to machine state.
-    /// \param paddr Start of physical memory region.
-    /// \param length Length of physical memory region.
-    /// \returns Corresponding entry if found, or a sentinel entry
-    /// for an empty range.
-    const pma_entry &find_pma_entry(uint64_t paddr, uint64_t length) const;
+    /// \brief Returns the address range associated to the PMA at a given index
+    /// \param index Index of desired address range
+    /// \returns Desired address range, or an empty sentinel if index is out of bounds
+    const address_range &read_pma(uint64_t index) const noexcept {
+        if (index >= m_s.pmas.size()) {
+            static constexpr address_range sentinel{"sentinel"};
+            return sentinel;
+        }
+        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
+        return *m_ars[static_cast<int>(m_s.pmas[static_cast<int>(index)])];
+    }
 
-    pma_entry &find_pma_entry(uint64_t paddr, uint64_t length) {
+    /// \brief Returns the address range associated to the PMA at a given index
+    /// \param index Index of desired address range
+    /// \returns Desired address range, or an empty sentinel if index is out of bounds
+    address_range &read_pma(uint64_t index) noexcept {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-        return const_cast<pma_entry &>(std::as_const(*this).find_pma_entry(paddr, length));
+        return const_cast<address_range &>(std::as_const(*this).read_pma(index));
     }
 
-    /// \brief Obtain PMA entry covering a physical memory word
+    /// \brief Obtain address range from the machine state that covers a given physical memory region
+    /// \param paddr Target physical address of start of region.
+    /// \param length Length of region, in bytes.
+    /// \returns Corresponding address range if found, or an empty sentinel otherwise.
+    /// \warning Microarchitecture address ranges are not considered in the search.
+    const address_range &find_address_range(uint64_t paddr, uint64_t length) const noexcept;
+
+    address_range &find_address_range(uint64_t paddr, uint64_t length) noexcept {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+        return const_cast<address_range &>(std::as_const(*this).find_address_range(paddr, length));
+    }
+
+    /// \brief Obtain address range from the machine state that covers a given word in physical memory
     /// \tparam T Type of word.
-    /// \param s Pointer to machine state.
-    /// \param paddr Target physical address.
-    /// \returns Corresponding entry if found, or a sentinel entry for an empty range.
+    /// \param paddr Target physical address of word.
+    /// \returns Corresponding address range if found, or an empty sentinel otherwise.
+    /// \warning Microarchitecture address ranges are not considered in the search.
     template <typename T>
-    const pma_entry &find_pma_entry(uint64_t paddr) const {
-        return find_pma_entry(paddr, sizeof(T));
+    const address_range &find_address_range(uint64_t paddr) const {
+        return find_address_range(paddr, sizeof(T));
     }
 
     template <typename T>
-    pma_entry &find_pma_entry(uint64_t paddr) {
-        return find_pma_entry(paddr, sizeof(T));
+    address_range &find_address_range(uint64_t paddr) {
+        return find_address_range(paddr, sizeof(T));
     }
 
     /// \brief Go over the write TLB and mark as dirty all pages currently there.
@@ -519,10 +565,9 @@ public:
     void set_runtime_config(machine_runtime_config r);
 
     /// \brief Replaces a memory range.
-    /// \param range Configuration of the new memory range.
-    /// \details The machine must contain an existing memory range
-    /// matching the start and length specified in range.
-    void replace_memory_range(const memory_range_config &range);
+    /// \param config Configuration of the new memory range.
+    /// \details The machine must contain an existing memory range matching the start and length specified in range.
+    void replace_memory_range(const memory_range_config &config);
 
     /// \brief Sends cmio response
     /// \param reason Reason for sending response.

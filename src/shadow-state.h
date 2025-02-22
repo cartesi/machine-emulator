@@ -17,17 +17,16 @@
 #ifndef SHADOW_STATE_H
 #define SHADOW_STATE_H
 
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 
+#include "address-range.h"
 #include "compiler-defines.h"
 #include "pma-constants.h"
-#include "pma-driver.h"
 #include "riscv-constants.h"
 
 /// \file
-/// \brief Shadow device.
+/// \brief Shadow state definitions.
 
 namespace cartesi {
 
@@ -194,6 +193,7 @@ static constexpr shadow_state_what shadow_state_get_what(uint64_t paddr) {
         (paddr & (sizeof(uint64_t) - 1)) != 0) {
         return shadow_state_what::unknown_;
     }
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
     return static_cast<shadow_state_what>(paddr);
 }
 
@@ -426,9 +426,6 @@ static constexpr const char *shadow_state_get_what_name(shadow_state_what what) 
     }
     return "state.unknown_";
 }
-
-/// \brief Global instance of the processor shadow device driver.
-extern const pma_driver shadow_state_driver;
 
 } // namespace cartesi
 

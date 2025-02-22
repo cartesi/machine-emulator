@@ -197,7 +197,7 @@ do_test("proof check should pass", function(machine)
 
     -- Find ram memory range
     local ram
-    for _, v in ipairs(machine:get_memory_ranges()) do
+    for _, v in ipairs(machine:get_address_ranges()) do
         if v.description == "RAM" then
             ram = v
         end
@@ -350,26 +350,28 @@ test_util.make_do_test(build_machine, machine_type, {
         },
     },
 })("should replace flash drive and read something", function(machine)
-    local rootfs_length = machine:get_initial_config().flash_drive[1].length
+    local rootfs = machine:get_initial_config().flash_drive[1]
     -- Create temp flash file
     local input_path = test_path .. "input.raw"
-    local command = "echo 'test data 1234567890' > "
+    local replaced_data = 'test data 1234567890'
+    local command = string.format("echo '%s' > ", replaced_data)
         .. input_path
         .. " && truncate -s "
-        .. tostring(rootfs_length)
+        .. tostring(rootfs.length)
         .. " "
         .. input_path
     local p = assert(io.popen(command))
     p:close()
 
-    local flash_address_start = 0x80000000000000
+    machine:read_memory(rootfs.start, 20)
 
-    machine:read_memory(flash_address_start, 20)
+    machine:replace_memory_range(rootfs.start, rootfs.length, true, input_path)
 
-    machine:replace_memory_range(flash_address_start, rootfs_length, true, input_path)
+    local read_data = machine:read_memory(rootfs.start, 20)
 
-    local flash_data = machine:read_memory(flash_address_start, 20)
-    assert(flash_data == "test data 1234567890", "data read from replaced flash failed")
+    if (read_data ~= replaced_data) then
+        error(string.format("expected to read %q from replaced drive (got %q)", replaced_data, read_data))
+    end
     os.remove(input_path)
 end)
 

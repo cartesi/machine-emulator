@@ -16,7 +16,6 @@
 
 #include "jsonrpc-machine-c-api.h"
 
-#include <cassert>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>

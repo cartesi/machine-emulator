@@ -23,12 +23,22 @@
 #include <inttypes.h>
 #include <stddef.h>
 
+#ifndef NDEBUG
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define assert(a)                                                                                                      \
-    if (!(a)) {                                                                                                        \
-        printf("Assertion failed\n");                                                                                  \
-        abort();                                                                                                       \
-    }
+    do {                                                                                                               \
+        if (!(a)) {                                                                                                    \
+            printf("Assertion failed: %s, %s:%d, %s\n", #a, __FILE__, __LINE__, __func__);                             \
+            abort();                                                                                                   \
+        }                                                                                                              \
+    } while (0)
+#else
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define assert(a)
+#endif
+
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define fprintf(f, ...) printf(__VA_ARGS__)
 
 extern "C" NO_RETURN void abort();
 

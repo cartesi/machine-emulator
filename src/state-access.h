@@ -37,7 +37,6 @@
 #include "machine.h"
 #include "os.h"
 #include "pma-constants.h"
-#include "pma.h"
 #include "riscv-constants.h"
 #include "shadow-tlb.h"
 #include "strict-aliasing.h"
@@ -46,11 +45,6 @@ namespace cartesi {
 
 class state_access;
 
-// Type trait that should return the pma_entry type for a state access class
-template <>
-struct i_state_access_pma_entry<state_access> {
-    using type = pma_entry;
-};
 // Type trait that should return the fast_addr type for a state access class
 template <>
 struct i_state_access_fast_addr<state_access> {
@@ -433,10 +427,8 @@ private:
         }
     }
 
-    pma_entry &do_read_pma_entry(uint64_t index) const {
-        assert(index < PMA_MAX);
-        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
-        return m_m.get_state().pmas[static_cast<int>(index)];
+    address_range &do_read_pma(uint64_t index) const {
+        return m_m.read_pma(index);
     }
 
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,

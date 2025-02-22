@@ -17,6 +17,7 @@
 #ifndef RECORD_STEP_STATE_ACCESS_H
 #define RECORD_STEP_STATE_ACCESS_H
 
+#include <cassert>
 #include <map>
 #include <optional>
 #include <vector>
@@ -26,7 +27,7 @@
 #include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
 #include "machine.h"
-#include "shadow-pmas.h"
+#include "shadow-pmas-address-range.h"
 #include "shadow-tlb.h"
 #include "unique-c-ptr.h"
 
@@ -34,11 +35,6 @@ namespace cartesi {
 
 class record_step_state_access;
 
-// Type trait that should return the pma_entry type for a state access class
-template <>
-struct i_state_access_pma_entry<record_step_state_access> {
-    using type = pma_entry;
-};
 // Type trait that should return the fast_addr type for a state access class
 template <>
 struct i_state_access_fast_addr<record_step_state_access> {
@@ -131,7 +127,6 @@ public:
     }
 
 private:
-    using pma_entry_type = pma_entry;
     using fast_addr_type = host_addr;
 
     /// \brief Mark a page as touched and save its contents
@@ -235,15 +230,14 @@ private:
         throw std::runtime_error("unexpected call to record_step_state_access::write_memory");
     }
 
-    pma_entry &do_read_pma_entry(uint64_t index) const {
+    address_range &do_read_pma(uint64_t index) const {
         assert(index < PMA_MAX);
-        // replay_step_state_access reconstructs a mock_pma_entry from the
+        // replay_step_state_access reconstructs a mock_address_range from the
         // corresponding istart and ilength fields in the shadow pmas
         // so we mark the page where they live here
         touch_page(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::istart));
         touch_page(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::ilength));
-        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
-        return m_m.get_state().pmas[static_cast<int>(index)];
+        return m_m.read_pma(index);
     }
 
     template <typename T, typename A>

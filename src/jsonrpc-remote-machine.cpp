@@ -1334,16 +1334,16 @@ static json jsonrpc_machine_verify_dirty_page_maps_handler(const json &j,
     return jsonrpc_response_ok(j, session->handler->machine->verify_dirty_page_maps());
 }
 
-/// \brief JSONRPC handler for the machine.get_memory_ranges method
+/// \brief JSONRPC handler for the machine.get_address_ranges method
 /// \param j JSON request object
 /// \param session HTTP session
 /// \returns JSON response object
-static json jsonrpc_machine_get_memory_ranges_handler(const json &j, const std::shared_ptr<http_session> &session) {
+static json jsonrpc_machine_get_address_ranges_handler(const json &j, const std::shared_ptr<http_session> &session) {
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    return jsonrpc_response_ok(j, session->handler->machine->get_memory_ranges());
+    return jsonrpc_response_ok(j, session->handler->machine->get_address_ranges());
 }
 
 /// \brief JSONRPC handler for the machine.send_cmio_response method
@@ -1483,7 +1483,7 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.set_runtime_config", jsonrpc_machine_set_runtime_config_handler},
         {"machine.verify_merkle_tree", jsonrpc_machine_verify_merkle_tree_handler},
         {"machine.verify_dirty_page_maps", jsonrpc_machine_verify_dirty_page_maps_handler},
-        {"machine.get_memory_ranges", jsonrpc_machine_get_memory_ranges_handler},
+        {"machine.get_address_ranges", jsonrpc_machine_get_address_ranges_handler},
         {"machine.send_cmio_response", jsonrpc_machine_send_cmio_response_handler},
         {"machine.log_send_cmio_response", jsonrpc_machine_log_send_cmio_response_handler},
         {"machine.verify_send_cmio_response", jsonrpc_machine_verify_send_cmio_response_handler},

@@ -18,17 +18,11 @@
 
 #include <tuple>
 
-#ifdef MICROARCHITECTURE
-template <size_t N, typename... ARGS>
-static inline void D_PRINTF(const char (&fmt)[N], ARGS... args) {
-    std::ignore = printf(fmt, args...);
-}
-#else
-#include <cstdio>
+#include "assert-printf.h"
+
 template <size_t N, typename... ARGS>
 static inline auto D_PRINTF(const char (&fmt)[N], ARGS... args) {
     std::ignore = fprintf(stderr, fmt, args...);
 }
-#endif
 
 #endif // DUMP_H

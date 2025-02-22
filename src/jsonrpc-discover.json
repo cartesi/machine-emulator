@@ -712,14 +712,14 @@
       }
     },
     {
-      "name": "machine.get_memory_ranges",
-      "summary": "Returns a list with descriptions for all of the machine's memory ranges",
+      "name": "machine.get_address_ranges",
+      "summary": "Returns a list with descriptions for all of the machine's address ranges",
       "params": [],
       "result": {
         "name": "ranges",
-        "description": "Array of memory range descriptions",
+        "description": "Array of address range descriptions",
         "schema": {
-          "$ref": "#/components/schemas/MemoryRangeDescriptionArray"
+          "$ref": "#/components/schemas/AddressRangeDescriptionArray"
         }
       }
     },
@@ -1996,8 +1996,8 @@
           "uarch_halt_flag"
         ]
       },
-      "MemoryRangeDescription": {
-        "title": "MemoryRangeDescription",
+      "AddressRangeDescription": {
+        "title": "AddressRangeDescription",
         "type": "object",
         "properties": {
           "start": {
@@ -2011,11 +2011,11 @@
           }
         }
       },
-      "MemoryRangeDescriptionArray": {
-        "title": "MemoryRangeDescriptionArray",
+      "AddressRangeDescriptionArray": {
+        "title": "AddressRangeDescriptionArray",
         "type": "array",
         "items": {
-          "$ref": "#/components/schemas/MemoryRangeDescription"
+          "$ref": "#/components/schemas/AddressRangeDescription"
         }
       }
     }

@@ -85,6 +85,12 @@ struct log2_size<uint64_t> {
     static constexpr int value = 3;
 };
 
+// helper type for visitor
+template <class... Ts>
+struct overloads : Ts... {
+    using Ts::operator()...;
+};
+
 /// \endcond
 
 } // namespace cartesi

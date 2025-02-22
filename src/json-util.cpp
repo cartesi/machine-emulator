@@ -33,12 +33,12 @@
 #include <json.hpp>
 
 #include "access-log.h"
+#include "address-range-description.h"
 #include "base64.h"
 #include "bracket-note.h"
 #include "interpret.h"
 #include "jsonrpc-fork-result.h"
 #include "machine-config.h"
-#include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
 #include "machine.h"
@@ -1639,7 +1639,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_memory_range_descr &value,
+void ju_get_opt_field(const nlohmann::json &j, const K &key, address_range_description &value,
     const std::string &path) {
     if (!contains(j, key)) {
         return;
@@ -1651,23 +1651,23 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_memory_rang
     ju_get_opt_field(jconfig, "description"s, value.description, new_path);
 }
 
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
-    machine_memory_range_descr &value, const std::string &path);
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, address_range_description &value,
+    const std::string &path);
 
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
-    machine_memory_range_descr &value, const std::string &path);
+    address_range_description &value, const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_memory_range_descrs &value,
+void ju_get_opt_field(const nlohmann::json &j, const K &key, address_range_descriptions &value,
     const std::string &path) {
     ju_get_opt_vector_like_field(j, key, value, path);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
-    machine_memory_range_descrs &value, const std::string &path);
+    address_range_descriptions &value, const std::string &path);
 
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
-    machine_memory_range_descrs &value, const std::string &path);
+    address_range_descriptions &value, const std::string &path);
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, fork_result &value, const std::string &path) {
@@ -1997,11 +1997,11 @@ void to_json(nlohmann::json &j, const machine_runtime_config &runtime) {
     };
 }
 
-void to_json(nlohmann::json &j, const machine_memory_range_descr &mrd) {
+void to_json(nlohmann::json &j, const address_range_description &mrd) {
     j = nlohmann::json{{"length", mrd.length}, {"start", mrd.start}, {"description", mrd.description}};
 }
 
-void to_json(nlohmann::json &j, const machine_memory_range_descrs &mrds) {
+void to_json(nlohmann::json &j, const address_range_descriptions &mrds) {
     j = nlohmann::json::array();
     std::transform(mrds.cbegin(), mrds.cend(), std::back_inserter(j),
         [](const auto &a) -> nlohmann::json { return a; });

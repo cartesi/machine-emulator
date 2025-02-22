@@ -95,7 +95,7 @@ CLANG_FORMAT=clang-format
 CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.h)
 
 INCS=-I../../src -I../../third-party/tiny_sha3 -I../../third-party/nlohmann-json -I../../third-party/downloads
-WARNS=-Wall -Wpedantic
+WARNS=-Wall -Wpedantic $(BOOST_INC)
 
 CXXFLAGS+=-O2 -g -std=gnu++20 -fvisibility=hidden $(INCS) $(UBFLAGS) $(WARNS)
 
@@ -109,11 +109,17 @@ all: $(BUILDDIR)/test-merkle-tree-hash $(BUILDDIR)/test-machine-c-api
 	$(info libcartesi.a and/or libcartesi_merkle_tree.a were not found! Build them first.)
 	@exit 1
 
-$(BUILDDIR)/test-merkle-tree-hash: test-merkle-tree-hash.cpp ../../src/libcartesi.a ../../src/libcartesi_merkle_tree.a
+$(BUILDDIR)/test-merkle-tree-hash: test-merkle-tree-hash.o ../../src/libcartesi.a ../../src/libcartesi_merkle_tree.a
 	$(CXX) -o $@ $^ $(CXXFLAGS)
 
-$(BUILDDIR)/test-machine-c-api: test-machine-c-api.cpp ../../src/libcartesi.a ../../src/libcartesi_merkle_tree.a
-	$(CXX) -o $@ $^ $(CXXFLAGS) $(BOOST_INC) $(LIBCARTESI_LIBS)
+$(BUILDDIR)/test-machine-c-api: test-machine-c-api.o ../../src/libcartesi.a ../../src/libcartesi_merkle_tree.a
+	$(CXX) -o $@ $^ $(CXXFLAGS) $(LIBCARTESI_LIBS)
+
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 %.clang-tidy: %.cpp
 	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- $(CXXFLAGS) $(BOOST_INC) 2>/dev/null

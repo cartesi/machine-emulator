@@ -58,7 +58,9 @@ CFLAGS := -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) $(WAR
 	$(UARCH_DEFS) \
 	$(TOOLCHAIN_INCS)
 
-CXXFLAGS := -std=c++20 -fno-rtti
+CXXFLAGS := -std=c++20 -fno-rtti \
+	-fno-threadsafe-statics \
+	-fno-use-cxa-atexit
 
 UARCH_SOURCES=\
 	third-party/printf/printf.c \
@@ -68,13 +70,9 @@ UARCH_SOURCES=\
 
 EMULATOR_SOURCES=\
 	$(EMULATOR_SRC_DIR)/interpret.cpp \
-	$(EMULATOR_SRC_DIR)/pma-driver.cpp \
-	$(EMULATOR_SRC_DIR)/htif.cpp \
-	$(EMULATOR_SRC_DIR)/shadow-tlb.cpp \
-	$(EMULATOR_SRC_DIR)/shadow-state.cpp \
-	$(EMULATOR_SRC_DIR)/shadow-uarch-state.cpp \
-	$(EMULATOR_SRC_DIR)/plic.cpp \
-	$(EMULATOR_SRC_DIR)/clint.cpp
+	$(EMULATOR_SRC_DIR)/htif-address-range.cpp \
+	$(EMULATOR_SRC_DIR)/plic-address-range.cpp \
+	$(EMULATOR_SRC_DIR)/clint-address-range.cpp
 
 COMPUTE_SOURCES=\
 	compute-uarch-pristine-hash.cpp \
@@ -167,4 +165,4 @@ clean-auto-generated:
 	@rm -f uarch-pristine-hash.c uarch-pristine-ram.c
 
 clean: clean-executables clean-auto-generated
-	@rm -f *.ld *.elf *.bin *.tmp link.ld $(UARCH_OBJS) $(EMULATOR_OBJS) $(COMPUTE_OBJS) *.clang-tidy *.insn.txt *.objdump
+	@rm -f *.ld *.elf *.bin *.tmp link.ld $(UARCH_OBJS) $(EMULATOR_OBJS) $(COMPUTE_OBJS) uarch-ram-entry.o *.clang-tidy *.insn.txt *.objdump

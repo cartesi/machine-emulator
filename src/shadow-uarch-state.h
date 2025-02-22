@@ -17,12 +17,10 @@
 #ifndef SHADOW_UARCH_STATE_H
 #define SHADOW_UARCH_STATE_H
 
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 
 #include "compiler-defines.h"
-#include "pma-driver.h"
 #include "riscv-constants.h"
 
 /// \file
@@ -82,6 +80,7 @@ static constexpr shadow_uarch_state_what shadow_uarch_state_get_what(uint64_t pa
         (paddr & (sizeof(uint64_t) - 1)) != 0) {
         return shadow_uarch_state_what::unknown_;
     }
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
     return static_cast<shadow_uarch_state_what>(paddr);
 }
 
@@ -172,9 +171,6 @@ static constexpr const char *shadow_uarch_state_get_what_name(shadow_uarch_state
     }
     return "uarch.unknown_";
 }
-
-/// \brief Global instance of  theprocessor shadow uarch state device driver.
-extern const pma_driver shadow_uarch_state_driver;
 
 } // namespace cartesi
 

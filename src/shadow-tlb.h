@@ -26,7 +26,6 @@
 #include <cstdint>
 
 #include "compiler-defines.h"
-#include "pma-driver.h"
 #include "tlb.h"
 
 namespace cartesi {
@@ -60,8 +59,6 @@ using shadow_tlb_set = std::array<shadow_tlb_slot, TLB_SET_SIZE>;
 using shadow_tlb_state = std::array<shadow_tlb_set, TLB_LAST_ + 1>; // one set for code, one for read and one for write
 
 static_assert(PMA_SHADOW_TLB_LENGTH >= sizeof(shadow_tlb_state), "TLB state must fit in TLB shadow");
-
-extern const pma_driver shadow_tlb_driver;
 
 /// \brief List of field types
 enum class shadow_tlb_what : uint64_t {

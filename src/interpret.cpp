@@ -995,22 +995,21 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(const STATE_
         return {false, pc};
     }
     uint64_t pma_index = 0;
-    const auto &pma = find_pma_entry<T>(a, paddr, pma_index);
-    if (likely(pma.get_istart_R())) {
-        if (likely(pma.get_istart_M())) {
+    const auto &ar = find_pma<T>(a, paddr, pma_index);
+    if (likely(ar.is_readable())) {
+        if (likely(ar.is_memory())) {
             [[maybe_unused]] auto note = a.make_scoped_note("read memory");
             const auto faddr = replace_tlb_entry<TLB_READ>(a, vaddr, paddr, pma_index);
             a.template read_memory_word<T>(faddr, pma_index, pval);
             return {true, pc};
         }
-        if (likely(pma.get_istart_IO())) {
+        if (likely(ar.is_device())) {
             [[maybe_unused]] auto note = a.make_scoped_note("read device");
-            const uint64_t offset = paddr - pma.get_start();
+            const uint64_t offset = paddr - ar.get_start();
             uint64_t val{};
             device_state_access da(a, mcycle);
             // If we do not know how to read, we treat this as a PMA violation
-            const bool status = pma.get_device_noexcept().get_driver()->read(pma.get_device_noexcept().get_context(),
-                &da, offset, &val, log2_size_v<U>);
+            const bool status = ar.read_device(&da, offset, log2_size_v<U>, &val);
             if (likely(status)) {
                 *pval = static_cast<T>(val);
                 // device logs its own state accesses
@@ -1087,18 +1086,17 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(c
         return {execute_status::failure, pc};
     }
     uint64_t pma_index = 0;
-    auto &pma = find_pma_entry<T>(a, paddr, pma_index);
-    if (likely(pma.get_istart_W())) {
-        if (likely(pma.get_istart_M())) {
+    auto &ar = find_pma<T>(a, paddr, pma_index);
+    if (likely(ar.is_writeable())) {
+        if (likely(ar.is_memory())) {
             const auto faddr = replace_tlb_entry<TLB_WRITE>(a, vaddr, paddr, pma_index);
             a.write_memory_word(faddr, pma_index, static_cast<T>(val64));
             return {execute_status::success, pc};
         }
-        if (likely(pma.get_istart_IO())) {
-            const uint64_t offset = paddr - pma.get_start();
+        if (likely(ar.is_device())) {
+            const uint64_t offset = paddr - ar.get_start();
             device_state_access da(a, mcycle);
-            auto status = pma.get_device_noexcept().get_driver()->write(pma.get_device_noexcept().get_context(), &da,
-                offset, static_cast<U>(static_cast<T>(val64)), log2_size_v<U>);
+            auto status = ar.write_device(&da, offset, log2_size_v<U>, static_cast<U>(static_cast<T>(val64)));
             // If we do not know how to write, we treat this as a PMA violation
             if (likely(status != execute_status::failure)) {
                 return {status, pc};
@@ -5396,10 +5394,10 @@ static FORCE_INLINE fetch_status fetch_translate_pc_slow(const STATE_ACCESS a, u
         return fetch_status::exception;
     }
     // Walk memory map to find the range that contains the physical address
-    const auto &pma = find_pma_entry<uint16_t>(a, paddr, pma_index);
+    const auto &ar = find_pma<uint16_t>(a, paddr, pma_index);
     // We only execute directly from RAM (as in "random access memory")
     // If the range is not memory or not executable, this as a PMA violation
-    if (unlikely(!pma.get_istart_M() || !pma.get_istart_X())) {
+    if (unlikely(!ar.is_memory() || !ar.is_executable())) {
         pc = raise_exception(a, pc, MCAUSE_INSN_ACCESS_FAULT, vaddr);
         return fetch_status::exception;
     }

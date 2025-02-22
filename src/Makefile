@@ -133,8 +133,8 @@ ifeq ($(slirp),yes)
 # Workaround for building with macports lua-luarocks installation
 machine.o: INCS+=$(SLIRP_INC)
 machine.clang-tidy: INCS+=$(SLIRP_INC)
-virtio-net-carrier-slirp.o: INCS+=$(SLIRP_INC)
-virtio-net-carrier-slirp.clang-tidy: INCS+=$(SLIRP_INC)
+virtio-net-user-address-range.o: INCS+=$(SLIRP_INC)
+virtio-net-user-address-range.clang-tidy: INCS+=$(SLIRP_INC)
 #INCS+=$(SLIRP_INC)
 LIBCARTESI_COMMON_LIBS+=$(SLIRP_LIB)
 else
@@ -345,48 +345,39 @@ c-api: $(LIBCARTESI) $(LIBCARTESI_MERKLE_TREE) $(LIBCARTESI_JSONRPC)
 .PHONY: all generate use clean lint format format-lua check-format check-format-lua luacartesi hash c-api compile_flags.txt
 
 LIBCARTESI_OBJS:= \
-	pma-driver.o \
-	clint.o \
-	clint-factory.o \
-	plic.o \
-	plic-factory.o \
-	virtio-factory.o \
-	virtio-device.o \
-	virtio-console.o \
-	virtio-p9fs.o \
-	virtio-net.o \
-	virtio-net-carrier-tuntap.o \
-	virtio-net-carrier-slirp.o \
-	dtb.o \
-	os.o \
-	htif.o \
-	htif-factory.o \
-	shadow-state.o \
-	shadow-state-factory.o \
-	shadow-pmas-factory.o \
-	shadow-tlb.o \
-	shadow-tlb-factory.o \
-	shadow-uarch-state.o \
-	shadow-uarch-state-factory.o \
-	pma.o \
-	machine.o \
-	machine-config.o \
-	json-util.o \
 	base64.o \
+	clint-address-range.o \
+	dtb.o \
+	htif-address-range.o \
 	interpret.o \
-	virtual-machine.o \
-	sha3.o \
-	machine-merkle-tree.o \
-	pristine-merkle-tree.o \
+	json-util.o \
 	machine-c-api.o \
+	machine-config.o \
+	machine-merkle-tree.o \
+	machine.o \
+	memory-address-range.o \
+	os.o \
+	plic-address-range.o \
+	pristine-merkle-tree.o \
+	replay-step-state-access-interop.o \
+	send-cmio-response.o \
+	sha3.o \
+	shadow-state-address-range.o \
+	shadow-tlb-address-range.o \
+	shadow-uarch-state-address-range.o \
+	uarch-pristine-hash.o \
 	uarch-pristine-ram.o \
 	uarch-pristine-state-hash.o \
-	uarch-pristine-hash.o \
-    uarch-interpret.o \
-	uarch-step.o \
 	uarch-reset-state.o \
-	send-cmio-response.o \
-	replay-step-state-access-interop.o
+	uarch-step.o \
+	virtual-machine.o \
+	uarch-interpret.o \
+	virtio-address-range.o \
+	virtio-console-address-range.o \
+	virtio-p9fs-address-range.o \
+	virtio-net-address-range.o \
+	virtio-net-tuntap-address-range.o \
+	virtio-net-user-address-range.o
 
 CARTESI_CLUA_OBJS:= \
 	clua.o \

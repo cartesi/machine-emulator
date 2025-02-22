@@ -20,7 +20,6 @@
 /// \file
 /// \brief State access implementation that replays recorded state accesses
 
-#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <ios>
@@ -34,7 +33,6 @@
 #include "i-state-access.h"
 #include "machine-merkle-tree.h"
 #include "meta.h"
-#include "mock-pma-entry.h"
 #include "riscv-constants.h"
 #include "shadow-state.h"
 #include "unique-c-ptr.h"
@@ -43,11 +41,6 @@ namespace cartesi {
 
 class replay_send_cmio_state_access;
 
-// Type trait that should return the pma_entry type for a state access class
-template <>
-struct i_state_access_pma_entry<replay_send_cmio_state_access> {
-    using type = mock_pma_entry;
-};
 // Type trait that should return the fast_addr type for a state access class
 template <>
 struct i_state_access_fast_addr<replay_send_cmio_state_access> {

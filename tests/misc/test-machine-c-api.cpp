@@ -146,16 +146,13 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_machine_test, incomplete_mach
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, incomplete_machine_fixture) {
-    _machine_config["flash_drive"] =
-        nlohmann::json{nlohmann::json{nlohmann::json{"start", 0x80000000000000}, nlohmann::json{"length", 0x3c00000},
-                           nlohmann::json{"shared", true}},
-            nlohmann::json{nlohmann::json{"start", 0x7ffffffffff000}, nlohmann::json{"length", 0x2000},
-                nlohmann::json{"shared", true}}};
+    _machine_config["flash_drive"] = nlohmann::json{{{"start", 0x80000000000000}, {"length", 0x3c00000}},
+        {{"start", 0x7ffffffffff000}, {"length", 0x2000}}};
     cm_error error_code = cm_create_new(_machine_config.dump().c_str(), nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    std::string origin("range of flash drive 1 overlaps with range of existing flash drive 0");
+    std::string origin("address range of flash drive 1 overlaps with address range of existing flash drive 0");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -163,7 +160,7 @@ class machine_flash_simple_fixture : public incomplete_machine_fixture {
 public:
     machine_flash_simple_fixture() {
         _machine_config["flash_drive"] = {
-            {{"start", 0x80000000000000}, {"length", 0x3c00000}, {"shared", true}, {"image_filename", ""}}};
+            {{"start", 0x80000000000000}, {"length", 0x3c00000}, {"shared", false}, {"image_filename", ""}}};
     }
 
     machine_flash_simple_fixture(const machine_flash_simple_fixture &other) = delete;
@@ -179,7 +176,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_alignment_test, mach
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    std::string origin("start of flash drive 0 (36028797018963967) must be aligned to page boundary of 4096 bytes");
+    std::string origin("start of flash drive 0 (0x7fffffffffffff) must be aligned to page boundary of 4096 bytes");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -191,7 +188,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_not_addressable_test, machin
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    std::string origin("range of flash drive 0 must use at most 56 bits to be addressable");
+    std::string origin("address range of flash drive 0 must use at most 56 bits to be addressable");
     BOOST_CHECK_EQUAL(origin, result);
 }
 

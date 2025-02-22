@@ -19,7 +19,6 @@
 
 /// \file
 /// \brief State access implementation that record and logs all accesses
-#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
@@ -35,7 +34,6 @@
 #include "machine-merkle-tree.h"
 #include "machine.h"
 #include "meta.h"
-#include "pma.h"
 #include "riscv-constants.h"
 #include "shadow-tlb.h"
 #include "shadow-uarch-state.h"

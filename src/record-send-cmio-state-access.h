@@ -35,18 +35,12 @@
 #include "machine-state.h"
 #include "machine.h"
 #include "meta.h"
-#include "pma.h"
 #include "shadow-state.h"
 
 namespace cartesi {
 
 class record_send_cmio_state_access;
 
-// Type trait that should return the pma_entry type for a state access class
-template <>
-struct i_state_access_pma_entry<record_send_cmio_state_access> {
-    using type = pma_entry;
-};
 // Type trait that should return the fast_addr type for a state access class
 template <>
 struct i_state_access_fast_addr<record_send_cmio_state_access> {
@@ -218,9 +212,9 @@ private:
             throw std::invalid_argument("write_length is less than data_length");
         }
         // We need to compute the hash of the existing data before writing
-        // Find the target pma entry
-        auto &pma = m_m.find_pma_entry(paddr, write_length);
-        if (pma.get_istart_E()) {
+        // Find the target address range
+        auto &ar = m_m.find_address_range(paddr, write_length);
+        if (!ar.is_memory()) {
             throw std::invalid_argument("address range not entirely in memory PMA");
         }
         access a{};
@@ -236,7 +230,7 @@ private:
         a.set_read_hash(proof.get_target_hash());
         if (m_log.get_log_type().has_large_data()) {
             access_data &data = a.get_read().emplace(write_length);
-            memcpy(data.data(), pma.get_memory().get_host_memory(), write_length);
+            memcpy(data.data(), ar.get_host_memory(), write_length);
         }
 
         // We just store the sibling hashes in the access because this is the only missing piece of data needed to
@@ -245,20 +239,22 @@ private:
 
         // write data to memory
         m_m.write_memory(paddr, data, data_length);
+
         if (write_length > data_length) {
             m_m.fill_memory(paddr + data_length, 0, write_length - data_length);
         }
         // we have to update the merkle tree after every write
         m_m.update_merkle_tree();
+
         // log hash and written data
         // NOLINTBEGIN(bugprone-unchecked-optional-access)
         a.get_written_hash().emplace();
         hasher_type hasher{};
-        get_merkle_tree_hash(hasher, pma.get_memory().get_host_memory(), write_length,
-            machine_merkle_tree::get_word_size(), a.get_written_hash().value());
+        get_merkle_tree_hash(hasher, ar.get_host_memory(), write_length, machine_merkle_tree::get_word_size(),
+            a.get_written_hash().value());
         if (m_log.get_log_type().has_large_data()) {
             access_data &data = a.get_written().emplace(write_length);
-            memcpy(data.data(), pma.get_memory().get_host_memory(), write_length);
+            memcpy(data.data(), ar.get_host_memory(), write_length);
         }
         // NOLINTEND(bugprone-unchecked-optional-access)
         m_log.push_access(a, "cmio rx buffer");

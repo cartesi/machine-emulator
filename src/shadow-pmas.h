@@ -18,12 +18,10 @@
 #define SHADOW_PMAS_H
 
 #include <array>
-#include <cassert>
 #include <cstdint>
 
 #include "compiler-defines.h"
 #include "pma-constants.h"
-#include "pma-driver.h"
 
 /// \file
 /// \brief Shadow device.

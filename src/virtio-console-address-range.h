@@ -58,23 +58,23 @@ public:
     virtio_console_address_range(virtio_console_address_range &&other) = default;
     ~virtio_console_address_range() override = default;
 
-    void on_device_reset() override;
-    void on_device_ok(i_device_state_access *a) override;
-    bool on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
-        uint32_t read_avail_len, uint32_t write_avail_len) override;
-
     bool write_next_chars_to_host(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
         uint32_t read_avail_len);
     bool write_next_chars_to_guest(i_device_state_access *a);
     bool notify_console_size_to_guest(i_device_state_access *a);
 
-    void prepare_select(select_fd_sets *fds, uint64_t *timeout_us) override;
-    bool poll_selected(int select_ret, select_fd_sets *fds, i_device_state_access *da) override;
-
     virtio_console_config_space *get_config() {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         return reinterpret_cast<virtio_console_config_space *>(config_space.data());
     }
+
+private:
+    void do_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) override;
+    bool do_poll_selected(int select_ret, select_fd_sets *fds, i_device_state_access *da) override;
+    void do_on_device_reset() override;
+    void do_on_device_ok(i_device_state_access *a) override;
+    bool do_on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
+        uint32_t read_avail_len, uint32_t write_avail_len) override;
 };
 
 static inline auto make_virtio_console_address_range(uint64_t start, uint64_t length, uint32_t virtio_idx) {

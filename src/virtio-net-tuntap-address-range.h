@@ -43,15 +43,13 @@ public:
     virtio_net_tuntap_address_range(virtio_net_tuntap_address_range &&other) = default;
     ~virtio_net_tuntap_address_range() override;
 
-protected:
-    void net_reset() override;
-
-    void net_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) override;
-    bool net_poll_selected(int select_ret, select_fd_sets *fds) override;
-
-    bool net_write_packet_to_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx, uint32_t read_avail_len,
+private:
+    void do_net_reset() override;
+    void do_net_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) override;
+    bool do_net_poll_selected(int select_ret, select_fd_sets *fds) override;
+    bool do_net_write_packet_to_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx, uint32_t read_avail_len,
         uint32_t *pread_len) override;
-    bool net_read_packet_from_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx, uint32_t write_avail_len,
+    bool do_net_read_packet_from_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx, uint32_t write_avail_len,
         uint32_t *pwritten_len) override;
 };
 

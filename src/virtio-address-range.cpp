@@ -506,9 +506,10 @@ void virtio_address_range::on_device_queue_notify(i_device_state_access *a, uint
     }
 }
 
-void virtio_address_range::prepare_select(select_fd_sets * /*fds*/, uint64_t * /*timeout_us*/) {}
+void virtio_address_range::do_prepare_select(select_fd_sets * /*fds*/, uint64_t * /*timeout_us*/) {}
 
-bool virtio_address_range::poll_selected(int /*select_ret*/, select_fd_sets * /*fds*/, i_device_state_access * /*da*/) {
+bool virtio_address_range::do_poll_selected(int /*select_ret*/, select_fd_sets * /*fds*/,
+    i_device_state_access * /*da*/) {
     return false;
 };
 

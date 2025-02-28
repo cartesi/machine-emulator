@@ -1087,7 +1087,7 @@ virtio_p9fs_address_range::~virtio_p9fs_address_range() {
     m_fids.clear();
 }
 
-void virtio_p9fs_address_range::on_device_reset() {
+void virtio_p9fs_address_range::do_on_device_reset() {
     m_msize = P9_MAX_MSIZE;
     // Close all file descriptors
     for (auto &it : m_fids) {
@@ -1097,11 +1097,11 @@ void virtio_p9fs_address_range::on_device_reset() {
     m_fids.clear();
 }
 
-void virtio_p9fs_address_range::on_device_ok(i_device_state_access * /*a*/) {
+void virtio_p9fs_address_range::do_on_device_ok(i_device_state_access * /*a*/) {
     // Nothing to do.
 }
 
-bool virtio_p9fs_address_range::on_device_queue_available(i_device_state_access *a, uint32_t queue_idx,
+bool virtio_p9fs_address_range::do_on_device_queue_available(i_device_state_access *a, uint32_t queue_idx,
     uint16_t desc_idx, uint32_t /*read_avail_len*/, uint32_t /*write_avail_len*/) {
     // We are only interested in queue 0 notifications
     if (queue_idx != 0) {

@@ -66,6 +66,7 @@ public:
     address_range &operator=(const address_range &other) = default;
     address_range(address_range &&other) = default;
     address_range &operator=(address_range &&other) = default;
+    // NOLINTNEXTLINE(hicpp-use-equals-default,modernize-use-equals-default)
     constexpr virtual ~address_range() {}; // = default; // doesn't work due to bug in gcc
 
     template <typename ABRT, size_t N, typename... ARGS>

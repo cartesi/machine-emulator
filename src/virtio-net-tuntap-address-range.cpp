@@ -119,25 +119,25 @@ virtio_net_tuntap_address_range::~virtio_net_tuntap_address_range() {
     }
 }
 
-void virtio_net_tuntap_address_range::net_reset() {
+void virtio_net_tuntap_address_range::do_net_reset() {
     // Nothing to do.
 }
 
-void virtio_net_tuntap_address_range::net_prepare_select(select_fd_sets *fds, uint64_t * /*timeout_us*/) {
+void virtio_net_tuntap_address_range::do_net_prepare_select(select_fd_sets *fds, uint64_t * /*timeout_us*/) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     FD_SET(m_tapfd, readfds);
     fds->maxfd = std::max(m_tapfd, fds->maxfd);
 }
 
-bool virtio_net_tuntap_address_range::net_poll_selected(int select_ret, select_fd_sets *fds) {
+bool virtio_net_tuntap_address_range::do_net_poll_selected(int select_ret, select_fd_sets *fds) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     return select_ret > 0 && FD_ISSET(m_tapfd, readfds);
 }
 
-bool virtio_net_tuntap_address_range::net_write_packet_to_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx,
-    uint32_t read_avail_len, uint32_t *pread_len) {
+bool virtio_net_tuntap_address_range::do_net_write_packet_to_host(i_device_state_access *a, virtq &vq,
+    uint16_t desc_idx, uint32_t read_avail_len, uint32_t *pread_len) {
     // Determinate packet size
     const uint32_t packet_len = read_avail_len - VIRTIO_NET_ETHERNET_FRAME_OFFSET;
     if (packet_len > VIRTIO_NET_ETHERNET_MAX_LENGTH) {
@@ -182,8 +182,8 @@ bool virtio_net_tuntap_address_range::net_write_packet_to_host(i_device_state_ac
     return true;
 }
 
-bool virtio_net_tuntap_address_range::net_read_packet_from_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx,
-    uint32_t write_avail_len, uint32_t *pwritten_len) {
+bool virtio_net_tuntap_address_range::do_net_read_packet_from_host(i_device_state_access *a, virtq &vq,
+    uint16_t desc_idx, uint32_t write_avail_len, uint32_t *pwritten_len) {
     // Write network to queue buffer in chunks
     std::array<uint8_t, VIRTIO_NET_ETHERNET_MAX_LENGTH> packet_buf{};
     // Set errno to zero because read() will not set it when it returns zero (end of file)

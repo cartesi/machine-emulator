@@ -29,16 +29,16 @@ virtio_console_address_range::virtio_console_address_range(uint64_t start, uint6
     virtio_address_range("VirtIO Console", start, length, virtio_idx, VIRTIO_DEVICE_CONSOLE, VIRTIO_CONSOLE_F_SIZE,
         sizeof(virtio_console_config_space)) {}
 
-void virtio_console_address_range::on_device_reset() {
+void virtio_console_address_range::do_on_device_reset() {
     m_stdin_ready = false;
 }
 
-void virtio_console_address_range::on_device_ok(i_device_state_access *a) {
+void virtio_console_address_range::do_on_device_ok(i_device_state_access *a) {
     // Upon initialization, we need to notify the initial console size
     notify_console_size_to_guest(a);
 }
 
-bool virtio_console_address_range::on_device_queue_available(i_device_state_access *a, uint32_t queue_idx,
+bool virtio_console_address_range::do_on_device_queue_available(i_device_state_access *a, uint32_t queue_idx,
     uint16_t desc_idx, uint32_t read_avail_len, uint32_t /*write_avail_len*/) {
     if (queue_idx == VIRTIO_CONSOLE_RECEIVEQ) { // Guest has a new slot available in the write queue
         // Do nothing, host stdin characters will be written to the guest in the next poll
@@ -131,7 +131,7 @@ bool virtio_console_address_range::notify_console_size_to_guest(i_device_state_a
     return true;
 }
 
-void virtio_console_address_range::prepare_select(select_fd_sets *fds, uint64_t *timeout_us) {
+void virtio_console_address_range::do_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) {
     // Ignore if driver is not initialized
     if (!driver_ok) {
         return;
@@ -154,7 +154,7 @@ void virtio_console_address_range::prepare_select(select_fd_sets *fds, uint64_t 
     os_prepare_tty_select(fds);
 }
 
-bool virtio_console_address_range::poll_selected(int select_ret, select_fd_sets *fds, i_device_state_access *da) {
+bool virtio_console_address_range::do_poll_selected(int select_ret, select_fd_sets *fds, i_device_state_access *da) {
     // Ignore if driver is not initialized or stdin is not ready
 
     if (!driver_ok || !m_stdin_ready) {

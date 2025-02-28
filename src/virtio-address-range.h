@@ -335,10 +335,14 @@ public:
         uint16_t used_flags = 0);
 
     /// \brief Called when driver request a device reset, this function must clean-up all device internal state.
-    virtual void on_device_reset() = 0;
+    void on_device_reset() {
+        do_on_device_reset();
+    }
 
     /// \brief Called when driver finish initializing the device.
-    virtual void on_device_ok(i_device_state_access *a) = 0;
+    void on_device_ok(i_device_state_access *a) {
+        do_on_device_ok(a);
+    }
 
     /// \brief Process driver notification for pending available queue's descriptors.
     /// \params queue_idx Index for the queue that is has an available descriptor to be processed.
@@ -349,20 +353,26 @@ public:
     /// \param desc_idx Queue's available descriptor index.
     /// \param read_avail_len Total readable length in the descriptor buffer.
     /// \param write_avail_len Total writable length in the descriptor buffer.
-    virtual bool on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
-        uint32_t read_avail_len, uint32_t write_avail_len) = 0;
+    bool on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
+        uint32_t read_avail_len, uint32_t write_avail_len) {
+        return do_on_device_queue_available(a, queue_idx, desc_idx, read_avail_len, write_avail_len);
+    }
 
     /// \brief Fill file descriptors to be polled by select().
     /// \param fds Pointer to sets of read, write and except file descriptors to be updated.
     /// \param timeout_us Maximum amount of time to wait, this may be updated (always to lower values).
-    virtual void prepare_select(select_fd_sets *fds, uint64_t *timeout_us);
+    void prepare_select(select_fd_sets *fds, uint64_t *timeout_us) {
+        do_prepare_select(fds, timeout_us);
+    }
 
     /// \brief Poll file descriptors that were marked as ready by select().
     /// \param select_ret Return value from the most recent select() call.
     /// \param fds Pointer to sets of read, write and except file descriptors to be checked.
     /// \returns True if an interrupt was requested, false otherwise.
     /// \details This function process pending events and trigger interrupt requests (if any).
-    virtual bool poll_selected(int select_ret, select_fd_sets *fds, i_device_state_access *da);
+    bool poll_selected(int select_ret, select_fd_sets *fds, i_device_state_access *da) {
+        return do_poll_selected(select_ret, fds, da);
+    }
 
     /// \brief Poll pending events without waiting (non-blocking).
     /// \details Basically call prepare_select(), select() and poll_selected() with timeout set to 0.
@@ -421,10 +431,24 @@ public:
     }
 
 private:
+    // Address range interface
     bool do_read_device(i_device_state_access *a, uint64_t offset, int log2_size,
         uint64_t *pval) const noexcept override;
+
     execute_status do_write_device(i_device_state_access *a, uint64_t offset, int log2_size,
         uint64_t val) noexcept override;
+
+    // VirtIO address range interface
+    virtual void do_on_device_reset() = 0;
+
+    virtual void do_on_device_ok(i_device_state_access *a) = 0;
+
+    virtual bool do_on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
+        uint32_t read_avail_len, uint32_t write_avail_len) = 0;
+
+    virtual void do_prepare_select(select_fd_sets *fds, uint64_t *timeout_us);
+
+    virtual bool do_poll_selected(int select_ret, select_fd_sets *fds, i_device_state_access *da);
 };
 
 } // namespace cartesi

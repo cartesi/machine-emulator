@@ -412,11 +412,6 @@ public:
     virtio_p9fs_address_range(virtio_p9fs_address_range &&other) = default;
     ~virtio_p9fs_address_range() override;
 
-    void on_device_reset() override;
-    void on_device_ok(i_device_state_access *a) override;
-    bool on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
-        uint32_t read_avail_len, uint32_t write_avail_len) override;
-
     bool op_statfs(virtq_unserializer &&msg, uint16_t tag);
     bool op_lopen(virtq_unserializer &&msg, uint16_t tag);
     bool op_lcreate(virtq_unserializer &&msg, uint16_t tag);
@@ -457,6 +452,12 @@ public:
     uint32_t get_iounit() const {
         return std::min<uint32_t>(m_msize - P9_IOUNIT_HEADER_SIZE, P9_IOUNIT_MAX);
     }
+
+private:
+    void do_on_device_reset() override;
+    void do_on_device_ok(i_device_state_access *a) override;
+    bool do_on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
+        uint32_t read_avail_len, uint32_t write_avail_len) override;
 };
 
 static inline auto make_virtio_p9fs_address_range(uint64_t start, uint64_t length, uint32_t virtio_idx,

@@ -65,27 +65,24 @@ public:
     virtio_net_address_range(virtio_net_address_range &&other) = default;
     ~virtio_net_address_range() override = default;
 
-    void on_device_reset() override;
-    void on_device_ok(i_device_state_access *a) override;
-    bool on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
-        uint32_t read_avail_len, uint32_t write_avail_len) override;
-
-    void prepare_select(select_fd_sets *fds, uint64_t *timeout_us) override;
-    bool poll_selected(int select_ret, select_fd_sets *fds, i_device_state_access *da) override;
-
     bool write_next_packet_to_host(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
         uint32_t read_avail_len);
     bool read_next_packet_from_host(i_device_state_access *a);
 
-protected:
     /// \brief Reset carrier internal state, discarding all network state.
-    virtual void net_reset() = 0;
+    void net_reset() {
+        do_net_reset();
+    }
 
     /// \brief Fill file descriptors to be polled by select().
-    virtual void net_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) = 0;
+    void net_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) {
+        do_net_prepare_select(fds, timeout_us);
+    }
 
     /// \brief Poll file descriptors that were marked as ready by select().
-    virtual bool net_poll_selected(int select_ret, select_fd_sets *fds) = 0;
+    bool net_poll_selected(int select_ret, select_fd_sets *fds) {
+        return do_net_poll_selected(select_ret, fds);
+    }
 
     /// \brief Called for carrying outgoing packets from the guest to the host.
     /// \param vq Queue reference.
@@ -95,8 +92,10 @@ protected:
     /// \returns True on success, false otherwise.
     /// \details This function will return true even if when the write queue is full,
     /// pread_len will be set to 0 in this case and the packet dropped.
-    virtual bool net_write_packet_to_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx,
-        uint32_t read_avail_len, uint32_t *pread_len) = 0;
+    bool net_write_packet_to_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx, uint32_t read_avail_len,
+        uint32_t *pread_len) {
+        return do_net_write_packet_to_host(a, vq, desc_idx, read_avail_len, pread_len);
+    }
 
     /// \brief Called for carrying incoming packets from the host to the guest.
     /// \param vq Queue reference.
@@ -106,7 +105,25 @@ protected:
     /// \returns True on success, false otherwise.
     /// \details This function will true even if when there are no more packets to write,
     /// pwritten_len will be set to 0 in this case.
-    virtual bool net_read_packet_from_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx,
+    bool net_read_packet_from_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx, uint32_t write_avail_len,
+        uint32_t *pwritten_len) {
+        return do_net_read_packet_from_host(a, vq, desc_idx, write_avail_len, pwritten_len);
+    }
+
+private:
+    void do_on_device_reset() override;
+    void do_on_device_ok(i_device_state_access *a) override;
+    bool do_on_device_queue_available(i_device_state_access *a, uint32_t queue_idx, uint16_t desc_idx,
+        uint32_t read_avail_len, uint32_t write_avail_len) override;
+    void do_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) override;
+    bool do_poll_selected(int select_ret, select_fd_sets *fds, i_device_state_access *da) override;
+
+    virtual void do_net_reset() = 0;
+    virtual void do_net_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) = 0;
+    virtual bool do_net_poll_selected(int select_ret, select_fd_sets *fds) = 0;
+    virtual bool do_net_write_packet_to_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx,
+        uint32_t read_avail_len, uint32_t *pread_len) = 0;
+    virtual bool do_net_read_packet_from_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx,
         uint32_t write_avail_len, uint32_t *pwritten_len) = 0;
 };
 

@@ -240,7 +240,7 @@ virtio_net_user_address_range::~virtio_net_user_address_range() {
     timers.clear();
 }
 
-void virtio_net_user_address_range::net_reset() {
+void virtio_net_user_address_range::do_net_reset() {
     // Nothing to do, we don't want to reset slirp to not lose network state.
 }
 
@@ -283,7 +283,7 @@ static int slirp_get_revents_cb(int fd, void *opaque) {
     return event;
 }
 
-void virtio_net_user_address_range::net_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) {
+void virtio_net_user_address_range::do_net_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) {
     // Did device reset and slirp failed to reinitialize?
     if (slirp == nullptr) {
         return;
@@ -306,7 +306,7 @@ void virtio_net_user_address_range::net_prepare_select(select_fd_sets *fds, uint
     }
 }
 
-bool virtio_net_user_address_range::net_poll_selected(int select_ret, select_fd_sets *fds) {
+bool virtio_net_user_address_range::do_net_poll_selected(int select_ret, select_fd_sets *fds) {
     // Did device reset and slirp failed to reinitialize?
     if (slirp == nullptr) {
         return false;
@@ -333,7 +333,7 @@ bool virtio_net_user_address_range::net_poll_selected(int select_ret, select_fd_
     return !send_packets.empty();
 }
 
-bool virtio_net_user_address_range::net_write_packet_to_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx,
+bool virtio_net_user_address_range::do_net_write_packet_to_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx,
     uint32_t read_avail_len, uint32_t *pread_len) {
     // Did device reset and slirp failed to reinitialize?
     if (slirp == nullptr) {
@@ -362,7 +362,7 @@ bool virtio_net_user_address_range::net_write_packet_to_host(i_device_state_acce
     return true;
 }
 
-bool virtio_net_user_address_range::net_read_packet_from_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx,
+bool virtio_net_user_address_range::do_net_read_packet_from_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx,
     uint32_t write_avail_len, uint32_t *pwritten_len) {
     // If no packet was send by slirp, we can just ignore.
     if (send_packets.empty()) {

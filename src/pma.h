@@ -17,8 +17,10 @@
 #ifndef PMA_H
 #define PMA_H
 
+#include <array>
 #include <cstdint>
 
+#include "compiler-defines.h"
 #include "pma-constants.h"
 
 namespace cartesi {
@@ -32,8 +34,6 @@ static constexpr const char *pma_get_DID_name(PMA_ISTART_DID did) {
             return "DID.memory";
         case PMA_ISTART_DID::shadow_state:
             return "DID.shadow_state";
-        case PMA_ISTART_DID::shadow_pmas:
-            return "DID.shadow_pmas";
         case PMA_ISTART_DID::shadow_TLB:
             return "DID.shadow_TLB";
         case PMA_ISTART_DID::flash_drive:
@@ -73,7 +73,7 @@ struct pma_flags {
     bool operator==(const pma_flags &) const = default;
 };
 
-static constexpr pma_flags unpack_pma_istart(uint64_t istart, uint64_t &start) {
+static constexpr pma_flags pma_unpack_istart(uint64_t istart, uint64_t &start) {
     start = istart & PMA_ISTART_START_MASK;
     return pma_flags{.M = ((istart & PMA_ISTART_M_MASK) >> PMA_ISTART_M_SHIFT) != 0,
         .IO = ((istart & PMA_ISTART_IO_MASK) >> PMA_ISTART_IO_SHIFT) != 0,
@@ -86,7 +86,7 @@ static constexpr pma_flags unpack_pma_istart(uint64_t istart, uint64_t &start) {
         .DID = static_cast<PMA_ISTART_DID>((istart & PMA_ISTART_DID_MASK) >> PMA_ISTART_DID_SHIFT)};
 }
 
-static constexpr uint64_t pack_pma_istart(const pma_flags &flags, uint64_t start) {
+static constexpr uint64_t pma_pack_istart(const pma_flags &flags, uint64_t start) {
     uint64_t istart = start;
     istart |= (static_cast<uint64_t>(flags.M) << PMA_ISTART_M_SHIFT);
     istart |= (static_cast<uint64_t>(flags.IO) << PMA_ISTART_IO_SHIFT);
@@ -98,6 +98,67 @@ static constexpr uint64_t pack_pma_istart(const pma_flags &flags, uint64_t start
     istart |= (static_cast<uint64_t>(flags.IW) << PMA_ISTART_IW_SHIFT);
     istart |= (static_cast<uint64_t>(flags.DID) << PMA_ISTART_DID_SHIFT);
     return istart;
+}
+
+/// \brief Shadow memory layout
+struct PACKED pma_entry {
+    uint64_t istart;
+    uint64_t ilength;
+};
+
+using pmas_state = std::array<pma_entry, PMA_MAX>;
+
+/// \brief List of field types
+enum class pma_what : uint64_t {
+    istart = offsetof(pma_entry, istart),
+    ilength = offsetof(pma_entry, ilength),
+    unknown_ = UINT64_C(1) << 63, // Outside of RISC-V address space
+};
+
+/// \brief Obtains the absolute address of a PMA entry.
+/// \param p Index of desired PMA entry
+/// \returns The address.
+static constexpr uint64_t pma_get_abs_addr(uint64_t p) {
+    return PMA_PMAS_START + (p * sizeof(pma_entry));
+}
+
+/// \brief Obtains the absolute address of a PMA entry.
+/// \param p Index of desired PMA entry
+/// \param what Desired field
+/// \returns The address.
+static constexpr uint64_t pma_get_abs_addr(uint64_t p, pma_what what) {
+    return pma_get_abs_addr(p) + static_cast<uint64_t>(what);
+}
+
+static constexpr pma_what pma_get_what(uint64_t paddr) {
+    if (paddr < PMA_PMAS_START || paddr - PMA_PMAS_START >= sizeof(pmas_state) ||
+        (paddr & (sizeof(uint64_t) - 1)) != 0) {
+        return pma_what::unknown_;
+    }
+    //??D First condition ensures offset = (paddr-PMA_PMAS_START) >= 0
+    //??D Second ensures offset < sizeof(pmas_state)
+    //??D Third ensures offset is aligned to sizeof(uint64_t)
+    //??D pma_entry only contains uint64_t fields
+    //??D pmas_state_what contains one entry with the offset of each field in pma_entry
+    //??D I don't see how the cast can produce something outside the enum...
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+    return pma_what{(paddr - PMA_PMAS_START) % sizeof(pma_entry)};
+}
+
+static constexpr const char *pma_get_what_name(pma_what what) {
+    const auto paddr = static_cast<uint64_t>(what);
+    if (paddr >= sizeof(pma_entry) || (paddr & (sizeof(uint64_t) - 1)) != 0) {
+        return "pma.unknown_";
+    }
+    switch (what) {
+        case pma_what::istart:
+            return "pma.istart";
+        case pma_what::ilength:
+            return "pma.ilength";
+        case pma_what::unknown_:
+            return "pma.unknown_";
+    }
+    return "pmas.unknown_";
 }
 
 } // namespace cartesi

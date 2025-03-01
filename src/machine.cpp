@@ -54,7 +54,8 @@
 #include "machine-runtime-config.h"
 #include "memory-address-range.h"
 #include "plic-address-range.h"
-#include "pma-constants.h"
+#include "pma.h"
+#include "pmas-address-range.h"
 #include "record-send-cmio-state-access.h"
 #include "record-step-state-access.h"
 #include "replay-send-cmio-state-access.h"
@@ -62,7 +63,6 @@
 #include "riscv-constants.h"
 #include "rtc.h"
 #include "send-cmio-response.h"
-#include "shadow-pmas-address-range.h"
 #include "shadow-state-address-range.h"
 #include "shadow-tlb-address-range.h"
 #include "shadow-uarch-state-address-range.h"
@@ -504,14 +504,13 @@ void machine::init_sentinel_ars() {
     }
 }
 
-void machine::init_shadow_pmas_contents(memory_address_range &shadow_pmas) const {
-    static_assert(sizeof(shadow_pmas_state) == PMA_MAX * 2 * sizeof(uint64_t), "inconsistent shadow PMAs length");
-    static_assert(PMA_SHADOW_PMAS_LENGTH >= sizeof(shadow_pmas_state), "shadow PMAs not long enough");
+void machine::init_pmas_contents(memory_address_range &pmas) const {
+    static_assert(sizeof(pmas_state) == PMA_MAX * 2 * sizeof(uint64_t), "inconsistent PMAs state length");
+    static_assert(PMA_PMAS_LENGTH >= sizeof(pmas_state), "PMAs address range too short");
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    auto &dest = *reinterpret_cast<shadow_pmas_state *>(shadow_pmas.get_host_memory());
-    std::ranges::transform(m_s.pmas, dest.begin(), [this](auto i) {
-        return shadow_pmas_entry{.istart = m_ars[i]->get_istart(), .ilength = m_ars[i]->get_ilength()};
-    });
+    auto &dest = *reinterpret_cast<pmas_state *>(pmas.get_host_memory());
+    std::ranges::transform(m_s.pmas, dest.begin(),
+        [this](auto i) { return pma_entry{.istart = m_ars[i]->get_istart(), .ilength = m_ars[i]->get_ilength()}; });
 }
 
 void machine::init_tlb_contents(const std::string &image_filename) {
@@ -583,13 +582,13 @@ machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}
         make_shadow_state_address_range(PMA_SHADOW_STATE_START, PMA_SHADOW_STATE_LENGTH, throw_invalid_argument),
         register_where{.merkle = true, .interpret = false});
     // Will populate when initialization of PMAs is done
-    auto &shpmas = register_address_range(make_shadow_pmas_address_range(PMA_SHADOW_PMAS_START, PMA_SHADOW_PMAS_LENGTH),
+    auto &shpmas = register_address_range(make_pmas_address_range(PMA_PMAS_START, PMA_PMAS_LENGTH),
         register_where{.merkle = true, .interpret = true});
     init_virtio_ars(m_c.virtio, m_c.processor.iunrep);
     init_sentinel_ars();
     // Populate shadow PMAs contents.
     // This must be done after all PMA entries are already registered, so we encode them into the shadow
-    init_shadow_pmas_contents(shpmas);
+    init_pmas_contents(shpmas);
     // Initialize TLB contents.
     // This must be done after all PMA entries are already registered, so we can lookup page addresses
     init_tlb_contents(m_c.tlb.image_filename);
@@ -2016,8 +2015,8 @@ const char *machine::get_what_name(uint64_t paddr) {
     if (paddr >= PMA_SHADOW_STATE_START && paddr - PMA_SHADOW_STATE_START < PMA_SHADOW_STATE_LENGTH) {
         return shadow_state_get_what_name(shadow_state_get_what(paddr));
     }
-    if (paddr >= PMA_SHADOW_PMAS_START && paddr - PMA_SHADOW_PMAS_START < PMA_SHADOW_PMAS_LENGTH) {
-        return shadow_pmas_get_what_name(shadow_pmas_get_what(paddr));
+    if (paddr >= PMA_PMAS_START && paddr - PMA_PMAS_START < PMA_PMAS_LENGTH) {
+        return pma_get_what_name(pma_get_what(paddr));
     }
     if (paddr >= PMA_SHADOW_UARCH_STATE_START && paddr - PMA_SHADOW_UARCH_STATE_START < PMA_SHADOW_UARCH_STATE_LENGTH) {
         return shadow_uarch_state_get_what_name(shadow_uarch_state_get_what(paddr));

@@ -14,23 +14,22 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef SHADOW_PMAS_ADDRESS_RANGE_H
-#define SHADOW_PMAS_ADDRESS_RANGE_H
+#ifndef PMAS_ADDRESS_RANGE_H
+#define PMAS_ADDRESS_RANGE_H
 
 #include <cstdint>
 #include <stdexcept>
 
 #include "memory-address-range.h"
-#include "pma-constants.h"
-#include "shadow-pmas.h"
+#include "pma.h"
 
 /// \file
 /// \brief Shadow device.
 
 namespace cartesi {
 
-static inline auto make_shadow_pmas_address_range(uint64_t start, uint64_t length) {
-    static constexpr pma_flags shadow_pmas_flags{
+static inline auto make_pmas_address_range(uint64_t start, uint64_t length) {
+    static constexpr pma_flags m_flags{
         .M = true,
         .IO = false,
         .E = false,
@@ -39,9 +38,9 @@ static inline auto make_shadow_pmas_address_range(uint64_t start, uint64_t lengt
         .X = false,
         .IR = false,
         .IW = false,
-        .DID = PMA_ISTART_DID::shadow_pmas,
+        .DID = PMA_ISTART_DID::memory,
     };
-    return make_callocd_memory_address_range("shadow PMAs", start, length, shadow_pmas_flags);
+    return make_callocd_memory_address_range("PMAs", start, length, m_flags);
 }
 
 } // namespace cartesi

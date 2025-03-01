@@ -233,7 +233,7 @@ public:
     /// \brief Returns packed address range istart field as per whitepaper
     /// \returns Packed address range istart
     uint64_t get_istart() const noexcept {
-        return pack_pma_istart(m_flags, m_start);
+        return pma_pack_istart(m_flags, m_start);
     }
 
     /// \brief Returns encoded addres range ilength field as per whitepaper

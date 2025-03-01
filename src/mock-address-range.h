@@ -51,7 +51,7 @@ static inline mock_address_range check_mock_flags(AR &&ar, const pma_flags &flag
 template <typename ABRT>
 static inline mock_address_range make_mock_address_range(uint64_t istart, uint64_t ilength, ABRT abrt) {
     uint64_t start{};
-    auto flags = unpack_pma_istart(istart, start);
+    auto flags = pma_unpack_istart(istart, start);
     if (flags.M) {
         return make_address_range(pma_get_DID_name(flags.DID), start, ilength, flags, abrt);
     }

@@ -27,8 +27,8 @@ namespace cartesi {
 enum PMA_ranges : uint64_t {
     PMA_SHADOW_STATE_START = EXPAND_UINT64_C(PMA_SHADOW_STATE_START_DEF),   ///< Start of processor shadow range
     PMA_SHADOW_STATE_LENGTH = EXPAND_UINT64_C(PMA_SHADOW_STATE_LENGTH_DEF), ///< Length of processor shadow range
-    PMA_SHADOW_PMAS_START = EXPAND_UINT64_C(PMA_SHADOW_PMAS_START_DEF),     ///< Start of pma board shadow range
-    PMA_SHADOW_PMAS_LENGTH = EXPAND_UINT64_C(PMA_SHADOW_PMAS_LENGTH_DEF),   ///< Length of pma board shadow range
+    PMA_PMAS_START = EXPAND_UINT64_C(PMA_PMAS_START_DEF),                   ///< Start of pma board shadow range
+    PMA_PMAS_LENGTH = EXPAND_UINT64_C(PMA_PMAS_LENGTH_DEF),                 ///< Length of pma board shadow range
     PMA_DTB_START = EXPAND_UINT64_C(PMA_DTB_START_DEF),                     ///< Start of DTB range
     PMA_DTB_LENGTH = EXPAND_UINT64_C(PMA_DTB_LENGTH_DEF),                   ///< Length of DTB range
     PMA_SHADOW_TLB_START = EXPAND_UINT64_C(PMA_SHADOW_TLB_START_DEF),       ///< Start of TLB shadow range
@@ -110,7 +110,6 @@ enum PMA_ISTART_masks : uint64_t {
 enum class PMA_ISTART_DID {
     memory = PMA_MEMORY_DID_DEF,                         ///< DID for memory
     shadow_state = PMA_SHADOW_STATE_DID_DEF,             ///< DID for shadow device
-    shadow_pmas = PMA_SHADOW_PMAS_DID_DEF,               ///< DID for shadow pma array device
     shadow_TLB = PMA_SHADOW_TLB_DID_DEF,                 ///< DID for shadow TLB device
     flash_drive = PMA_FLASH_DRIVE_DID_DEF,               ///< DID for drive device
     CLINT = PMA_CLINT_DID_DEF,                           ///< DID for CLINT device

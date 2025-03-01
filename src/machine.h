@@ -189,9 +189,9 @@ private:
     void init_sentinel_ars();
 
     /// \brief Initializes contents of the shadow PMAs memory
-    /// \param shadow_pmas PMA entry for the shadow PMAs
+    /// \param pmas PMA entry for the shadow PMAs
     /// \detail This can only be called after all PMAs have been added
-    void init_shadow_pmas_contents(memory_address_range &shadow_pmas) const;
+    void init_pmas_contents(memory_address_range &pmas) const;
 
     /// \brief Initializes contents of machine TLB, from image in disk or with default values
     /// \param image_filename File containing image, or empty for default values

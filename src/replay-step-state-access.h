@@ -27,10 +27,9 @@
 #include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
 #include "mock-address-range.h"
-#include "pma-constants.h"
+#include "pma.h"
 #include "replay-step-state-access-interop.h"
 #include "riscv-constants.h"
-#include "shadow-pmas-address-range.h"
 #include "shadow-state.h"
 #include "shadow-tlb.h"
 #include "shadow-uarch-state.h"
@@ -405,12 +404,12 @@ private:
     }
 
     uint64_t read_pma_istart(uint64_t index) const {
-        const auto haddr = do_get_faddr(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::istart));
+        const auto haddr = do_get_faddr(pma_get_abs_addr(index, pma_what::istart));
         return aliased_aligned_read<uint64_t>(haddr);
     }
 
     uint64_t read_pma_ilength(uint64_t index) const {
-        const auto haddr = do_get_faddr(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::ilength));
+        const auto haddr = do_get_faddr(pma_get_abs_addr(index, pma_what::ilength));
         return aliased_aligned_read<uint64_t>(haddr);
     }
 

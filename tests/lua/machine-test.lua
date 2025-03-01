@@ -353,7 +353,7 @@ test_util.make_do_test(build_machine, machine_type, {
     local rootfs = machine:get_initial_config().flash_drive[1]
     -- Create temp flash file
     local input_path = test_path .. "input.raw"
-    local replaced_data = 'test data 1234567890'
+    local replaced_data = "test data 1234567890"
     local command = string.format("echo '%s' > ", replaced_data)
         .. input_path
         .. " && truncate -s "
@@ -369,7 +369,7 @@ test_util.make_do_test(build_machine, machine_type, {
 
     local read_data = machine:read_memory(rootfs.start, 20)
 
-    if (read_data ~= replaced_data) then
+    if read_data ~= replaced_data then
         error(string.format("expected to read %q from replaced drive (got %q)", replaced_data, read_data))
     end
     os.remove(input_path)

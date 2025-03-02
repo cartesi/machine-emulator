@@ -1,6 +1,6 @@
 #ifndef HTIF_UTIL_H
 #define HTIF_UTIL_H
-#include <pma-defines.h>
+#include <address-range-defines.h>
 #include <htif-defines.h>
 
 /* from: https://www.cartesi.io/en/docs/machine/target/architecture/
@@ -36,7 +36,7 @@
 // Issue a HTIF call with `ireg` as the input, place the output in `oreg`.
 // NOTE: `base` will be used as scratch register
 #define htif_call(base, ireg, oreg) \
-    li base, PMA_HTIF_START_DEF; \
+    li base, AR_HTIF_START_DEF; \
     sd zero, O_FROMHOST (base); \
     sd ireg, O_TOHOST   (base); \
     ld oreg, O_FROMHOST (base)

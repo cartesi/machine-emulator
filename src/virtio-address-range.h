@@ -257,7 +257,7 @@ class virtio_address_range : public pristine_address_range {
     uint32_t config_generation = 0;   ///< Configuration generation counter
     uint32_t config_space_size = 0;   ///< Configuration size
 
-    static constexpr pma_flags m_virtio_flags{
+    static constexpr pmas_flags m_virtio_flags{
         .M = false,
         .IO = true,
         .E = false,

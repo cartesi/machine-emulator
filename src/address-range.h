@@ -26,7 +26,7 @@
 #include "assert-printf.h"
 #include "i-device-state-access.h"
 #include "interpret.h"
-#include "pma.h"
+#include "pmas.h"
 
 namespace cartesi {
 
@@ -44,7 +44,7 @@ class address_range {
     uint64_t m_start;                   ///< Target physical address where range starts.
     uint64_t m_length;                  ///< Length of range, in bytes.
     uint64_t m_length_bit_ceil;         ///< Smallest power of 2 that is not smaller than length, in bytes.
-    pma_flags m_flags;                  ///< Physical memory attribute flags for range.
+    pmas_flags m_flags;                 ///< Physical memory attribute flags for range.
 
 public:
     /// \brief Noexcept constexpr constructor for empty ranges with description
@@ -84,7 +84,7 @@ public:
     /// \param length Length of range, in bytes
     /// \param f Phyical memory attribute flags for range
     template <typename ABRT>
-    address_range(const char *description, uint64_t start, uint64_t length, const pma_flags &flags, ABRT abrt) :
+    address_range(const char *description, uint64_t start, uint64_t length, const pmas_flags &flags, ABRT abrt) :
         m_description{},
         m_start{start},
         m_length{length},
@@ -98,12 +98,12 @@ public:
             m_description[i] = description[i];
         }
         // All address ranges must be page-aligned
-        if ((m_length & ~PMA_ISTART_START_MASK) != 0) {
+        if ((m_length & ~AR_ISTART_START_MASK) != 0) {
             ABRTF(abrt, "length must be multiple of page size when initializing %s", m_description);
         }
-        if ((m_start & ~PMA_ISTART_START_MASK) != 0) {
+        if ((m_start & ~AR_ISTART_START_MASK) != 0) {
             ABRTF(abrt, "start of %s (0x%" PRIx64 ") must be aligned to page boundary of %d bytes", m_description,
-                start, PMA_PAGE_SIZE);
+                start, AR_PAGE_SIZE);
         }
         // It must be possible to round length up to the next power of two
         if (m_length_bit_ceil == 0) {
@@ -148,7 +148,7 @@ public:
 
     /// \brief Returns PMA flags used during construction
     /// \returns Flags
-    const pma_flags &get_flags() const noexcept {
+    const pmas_flags &get_flags() const noexcept {
         return m_flags;
     }
 
@@ -233,7 +233,7 @@ public:
     /// \brief Returns packed address range istart field as per whitepaper
     /// \returns Packed address range istart
     uint64_t get_istart() const noexcept {
-        return pma_pack_istart(m_flags, m_start);
+        return pmas_pack_istart(m_flags, m_start);
     }
 
     /// \brief Returns encoded addres range ilength field as per whitepaper
@@ -306,9 +306,9 @@ public:
     /// \param offset Start of range of interest, relative to start of this range
     /// \param length Length of range of interest, in bytes
     void mark_dirty_pages(uint64_t offset, uint64_t length) noexcept {
-        auto offset_aligned = offset &= ~(PMA_PAGE_SIZE - 1);
+        auto offset_aligned = offset &= ~(AR_PAGE_SIZE - 1);
         const auto length_aligned = length + (offset - offset_aligned);
-        for (; offset_aligned < length_aligned; offset_aligned += PMA_PAGE_SIZE) {
+        for (; offset_aligned < length_aligned; offset_aligned += AR_PAGE_SIZE) {
             mark_dirty_page(offset_aligned);
         }
     }
@@ -383,7 +383,7 @@ constexpr static auto make_empty_address_range(const char (&description)[N]) {
 }
 
 template <typename ABRT>
-static inline auto make_address_range(const char *description, uint64_t start, uint64_t length, pma_flags f,
+static inline auto make_address_range(const char *description, uint64_t start, uint64_t length, pmas_flags f,
     ABRT abrt) {
     return address_range{description, start, length, f, abrt};
 }

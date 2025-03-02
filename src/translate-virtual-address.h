@@ -46,7 +46,7 @@
 #include <cstdint>
 
 #include "compiler-defines.h"
-#include "find-pma-entry.h"
+#include "find-pmas-entry.h"
 #include "riscv-constants.h"
 
 namespace cartesi {

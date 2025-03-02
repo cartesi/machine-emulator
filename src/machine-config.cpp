@@ -29,7 +29,7 @@
 #include <json.hpp>
 
 #include "json-util.h"
-#include "pma-constants.h"
+#include "pmas-constants.h"
 
 static constexpr uint32_t archive_version = 5;
 
@@ -50,17 +50,17 @@ std::string machine_config::get_config_filename(const std::string &dir) {
 }
 
 static void adjust_image_filenames(machine_config &c, const std::string &dir) {
-    c.dtb.image_filename = machine_config::get_image_filename(dir, PMA_DTB_START, PMA_DTB_LENGTH);
-    c.ram.image_filename = machine_config::get_image_filename(dir, PMA_RAM_START, c.ram.length);
-    c.tlb.image_filename = machine_config::get_image_filename(dir, PMA_SHADOW_TLB_START, PMA_SHADOW_TLB_LENGTH);
+    c.dtb.image_filename = machine_config::get_image_filename(dir, AR_DTB_START, AR_DTB_LENGTH);
+    c.ram.image_filename = machine_config::get_image_filename(dir, AR_RAM_START, c.ram.length);
+    c.tlb.image_filename = machine_config::get_image_filename(dir, AR_SHADOW_TLB_START, AR_SHADOW_TLB_LENGTH);
     for (auto &f : c.flash_drive) {
         f.image_filename = machine_config::get_image_filename(dir, f);
     }
-    c.uarch.ram.image_filename = machine_config::get_image_filename(dir, PMA_UARCH_RAM_START, PMA_UARCH_RAM_LENGTH);
+    c.uarch.ram.image_filename = machine_config::get_image_filename(dir, AR_UARCH_RAM_START, AR_UARCH_RAM_LENGTH);
     c.cmio.rx_buffer.image_filename =
-        machine_config::get_image_filename(dir, PMA_CMIO_RX_BUFFER_START, PMA_CMIO_RX_BUFFER_LENGTH);
+        machine_config::get_image_filename(dir, AR_CMIO_RX_BUFFER_START, AR_CMIO_RX_BUFFER_LENGTH);
     c.cmio.tx_buffer.image_filename =
-        machine_config::get_image_filename(dir, PMA_CMIO_TX_BUFFER_START, PMA_CMIO_TX_BUFFER_LENGTH);
+        machine_config::get_image_filename(dir, AR_CMIO_TX_BUFFER_START, AR_CMIO_TX_BUFFER_LENGTH);
 }
 
 machine_config machine_config::load(const std::string &dir) {

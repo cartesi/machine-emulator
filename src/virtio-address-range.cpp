@@ -827,7 +827,7 @@ bool virtio_address_range::do_read_device(i_device_state_access *a, uint64_t off
     return status;
 }
 
-/// \brief VirtIO device read callback. See ::pma_write.
+/// \brief VirtIO device read callback. See ::pmas_write.
 execute_status virtio_address_range::do_write_device(i_device_state_access *a, uint64_t offset, int log2_size,
     uint64_t val) noexcept {
 #ifdef DEBUG_VIRTIO_MMIO

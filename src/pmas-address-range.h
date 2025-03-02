@@ -21,7 +21,7 @@
 #include <stdexcept>
 
 #include "memory-address-range.h"
-#include "pma.h"
+#include "pmas.h"
 
 /// \file
 /// \brief Shadow device.
@@ -29,7 +29,7 @@
 namespace cartesi {
 
 static inline auto make_pmas_address_range(uint64_t start, uint64_t length) {
-    static constexpr pma_flags m_flags{
+    static constexpr pmas_flags m_flags{
         .M = true,
         .IO = false,
         .E = false,

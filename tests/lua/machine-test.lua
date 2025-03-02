@@ -155,7 +155,7 @@ do_test("machine halt and yield flags and config matches", function(machine)
     local initial_config = machine:get_initial_config()
     -- test_util.print_table(initial_config)
     assert(initial_config["processor"]["marchid"] == cartesi.MARCHID, "marchid value does not match")
-    assert(initial_config["processor"]["pc"] == cartesi.PMA_RAM_START, "pc value does not match")
+    assert(initial_config["processor"]["pc"] == cartesi.AR_RAM_START, "pc value does not match")
     assert(initial_config["ram"]["length"] == 1048576, "ram length value does not match")
     -- Check machine is not halted
     assert(machine:read_reg("iflags_H") == 0, "machine shouldn't be halted")
@@ -291,7 +291,7 @@ end
 
 print("\n\nwrite something to ram memory and check if hash and proof matches")
 do_test("proof  and root hash should match", function(machine)
-    local ram_address_start = cartesi.PMA_RAM_START
+    local ram_address_start = cartesi.AR_RAM_START
 
     -- Find proof for first KB of ram
     local initial_ram_proof = machine:get_proof(ram_address_start, 10)

@@ -41,14 +41,14 @@ local function test(config)
     local machine <close> = cartesi.machine(config)
 
     -- fill input with `pattern`
-    local rx_length = 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE
-    machine:write_memory(cartesi.PMA_CMIO_RX_BUFFER_START, string.rep(pattern, rx_length / 8), rx_length)
+    local rx_length = 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE
+    machine:write_memory(cartesi.AR_CMIO_RX_BUFFER_START, string.rep(pattern, rx_length / 8), rx_length)
 
     machine:run(math.maxinteger)
 
     -- check that buffers got filled in with `pattern`
-    local tx_length = 1 << cartesi.PMA_CMIO_TX_BUFFER_LOG2_SIZE
-    assert(string.rep(pattern, tx_length / 8) == machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, tx_length))
+    local tx_length = 1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE
+    assert(string.rep(pattern, tx_length / 8) == machine:read_memory(cartesi.AR_CMIO_TX_BUFFER_START, tx_length))
 
     assert(machine:read_reg("iflags_H") ~= 0)
 

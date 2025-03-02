@@ -60,7 +60,7 @@ public:
     /// \param flags Range flags
     /// \param image_filename Path to backing file.
     /// \param m Mmap'd range data (shared or not).
-    memory_address_range(const std::string &description, uint64_t start, uint64_t length, const pma_flags &flags,
+    memory_address_range(const std::string &description, uint64_t start, uint64_t length, const pmas_flags &flags,
         const std::string &image_filename, const mmapd &m);
 
     /// \brief Calloc'd range data (just a tag).
@@ -73,7 +73,7 @@ public:
     /// \param flags Range flags
     /// \param image_filename Path to backing file.
     /// \param c Calloc'd range data (just a tag).
-    memory_address_range(const std::string &description, uint64_t start, uint64_t length, const pma_flags &flags,
+    memory_address_range(const std::string &description, uint64_t start, uint64_t length, const pmas_flags &flags,
         const std::string &image_filename, const callocd & /*c*/);
 
     memory_address_range(const memory_address_range &) = delete;
@@ -93,14 +93,14 @@ private:
     }
 
     void do_mark_dirty_page(uint64_t offset) noexcept override {
-        auto page_index = offset >> PMA_constants::PMA_PAGE_SIZE_LOG2;
+        auto page_index = offset >> AR_constants::AR_PAGE_SIZE_LOG2;
         auto map_index = page_index >> 3;
         assert(map_index < m_dirty_page_map.size());
         m_dirty_page_map[map_index] |= (1 << (page_index & 7));
     }
 
     void do_mark_clean_page(uint64_t offset) noexcept override {
-        auto page_index = offset >> PMA_constants::PMA_PAGE_SIZE_LOG2;
+        auto page_index = offset >> AR_constants::AR_PAGE_SIZE_LOG2;
         auto map_index = page_index >> 3;
         assert(map_index < m_dirty_page_map.size());
         m_dirty_page_map[map_index] &= ~(1 << (page_index & 7));
@@ -111,7 +111,7 @@ private:
     }
 
     bool do_is_page_marked_dirty(uint64_t offset) const noexcept override {
-        auto page_index = offset >> PMA_constants::PMA_PAGE_SIZE_LOG2;
+        auto page_index = offset >> AR_constants::AR_PAGE_SIZE_LOG2;
         auto map_index = page_index >> 3;
         assert(map_index < m_dirty_page_map.size());
         return (m_dirty_page_map[map_index] & (1 << (page_index & 7))) != 0;
@@ -129,12 +129,12 @@ private:
 };
 
 static inline auto make_callocd_memory_address_range(const std::string &description, uint64_t start, uint64_t length,
-    pma_flags flags, const std::string &image_filename = {}) {
+    pmas_flags flags, const std::string &image_filename = {}) {
     return memory_address_range{description, start, length, flags, image_filename, memory_address_range::callocd{}};
 }
 
 static inline auto make_mmapd_memory_address_range(const std::string &description, uint64_t start, uint64_t length,
-    pma_flags flags, const std::string &image_filename, bool shared) {
+    pmas_flags flags, const std::string &image_filename, bool shared) {
     return memory_address_range{description, start, length, flags, image_filename, memory_address_range::mmapd{shared}};
 }
 

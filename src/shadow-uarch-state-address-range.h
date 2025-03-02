@@ -30,7 +30,7 @@ namespace cartesi {
 
 class shadow_uarch_state_address_range final : public address_range {
 
-    static constexpr pma_flags m_shadow_uarch_state_flags{
+    static constexpr pmas_flags m_shadow_uarch_state_flags{
         .M = false,
         .IO = true,
         .E = false,

@@ -15,6 +15,7 @@
 //
 
 #include "jsonrpc-virtual-machine.h"
+#include "os-features.h"
 
 #include <cassert>
 #include <cerrno>
@@ -70,7 +71,6 @@
 #include "machine-config.h"
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
-#include "os-features.h"
 #include "os.h"
 #include "scope-exit.h"
 #include "semantic-version.h"

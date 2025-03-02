@@ -21,7 +21,7 @@
 
 #include "i-device-state-access.h"
 #include "interpret.h"
-#include "pma-constants.h"
+#include "pmas-constants.h"
 #include "riscv-constants.h"
 
 // Enable these defines to debug PLIC
@@ -86,7 +86,7 @@ static execute_status plic_write_claim_complete(i_device_state_access *a, uint32
 #ifdef DEBUG_PLIC
     std::ignore = fprintf(stderr, "plic: claim complete irq_id=%d\n", val);
 #endif
-    if (val >= 1 && val <= PMA_PLIC_MAX_IRQ_DEF) {
+    if (val >= 1 && val <= PLIC_MAX_IRQ) {
         // On completing, we need to clear its corresponding girqsrvd mask
         const uint32_t girqpend = a->read_plic_girqpend();
         uint32_t girqsrvd = a->read_plic_girqsrvd();
@@ -112,7 +112,7 @@ bool plic_address_range::do_read_device(i_device_state_access *a, uint64_t offse
 #endif
 
     // Our PLIC only supports aligned 32-bit reads
-    if (((offset & 3) != 0) || log2_size != 2 || offset > PMA_PLIC_LENGTH) {
+    if (((offset & 3) != 0) || log2_size != 2 || offset > AR_PLIC_LENGTH) {
         return false;
     }
 
@@ -169,7 +169,7 @@ bool plic_address_range::do_read_device(i_device_state_access *a, uint64_t offse
     }
 }
 
-/// \brief PLIC device read callback. See ::pma_write.
+/// \brief PLIC device read callback. See ::pmas_write.
 execute_status plic_address_range::do_write_device(i_device_state_access *a, uint64_t offset, int log2_size,
     uint64_t val) noexcept {
 #ifdef DEBUG_PLIC_MMIO
@@ -178,7 +178,7 @@ execute_status plic_address_range::do_write_device(i_device_state_access *a, uin
 #endif
 
     // Our PLIC only supports aligned 32-bit reads
-    if (((offset & 3) != 0) || log2_size != 2 || offset > PMA_PLIC_LENGTH) {
+    if (((offset & 3) != 0) || log2_size != 2 || offset > AR_PLIC_LENGTH) {
         return execute_status::failure;
     }
 

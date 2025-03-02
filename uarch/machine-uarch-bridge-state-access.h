@@ -27,9 +27,8 @@
 #include "i-state-access.h"
 #include "machine-reg.h"
 #include "mock-address-range.h"
-#include "pma-constants.h"
+#include "pmas.h"
 #include "riscv-constants.h"
-#include "shadow-pmas.h"
 #include "shadow-tlb.h"
 #include "uarch-constants.h"
 #include "uarch-defines.h"
@@ -73,11 +72,11 @@ private:
     }
 
     static uint64_t bridge_read_pma_istart(int i) {
-        return ua_aliased_aligned_read<uint64_t>(shadow_pmas_get_pma_abs_addr(i, shadow_pmas_what::istart));
+        return ua_aliased_aligned_read<uint64_t>(pmas_get_abs_addr(i, pmas_what::istart));
     }
 
     static uint64_t bridge_read_pma_ilength(int i) {
-        return ua_aliased_aligned_read<uint64_t>(shadow_pmas_get_pma_abs_addr(i, shadow_pmas_what::ilength));
+        return ua_aliased_aligned_read<uint64_t>(pmas_get_abs_addr(i, pmas_what::ilength));
     }
 
     static uint64_t bridge_read_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) {

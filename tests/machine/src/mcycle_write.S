@@ -15,7 +15,7 @@
  */
 
 
-#include <pma-defines.h>
+#include <address-range-defines.h>
 
 #define exit_imm(imm) \
     li gp, imm; \
@@ -52,6 +52,6 @@ exit:
     srli gp, gp, 15;
     ori gp, gp, 1;
 1:
-    li t0, PMA_HTIF_START_DEF
+    li t0, AR_HTIF_START_DEF
     sd gp, 0(t0);
     j 1b; // Should not be necessary

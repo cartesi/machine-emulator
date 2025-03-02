@@ -25,7 +25,7 @@
 #include "clint-address-range.h"
 #include "htif-address-range.h"
 #include "plic-address-range.h"
-#include "pma.h"
+#include "pmas.h"
 #include "shadow-state-address-range.h"
 #include "shadow-tlb-address-range.h"
 
@@ -37,7 +37,7 @@ using mock_address_range = std::variant<std::monostate, address_range, clint_add
 using mock_address_ranges = std::array<mock_address_range, PMA_MAX>;
 
 template <typename AR, typename ABRT>
-static inline mock_address_range check_mock_flags(AR &&ar, const pma_flags &flags, ABRT abrt)
+static inline mock_address_range check_mock_flags(AR &&ar, const pmas_flags &flags, ABRT abrt)
     requires std::is_rvalue_reference_v<AR &&> && std::derived_from<AR, address_range>
 {
     if (ar.get_flags() != flags) {
@@ -51,9 +51,9 @@ static inline mock_address_range check_mock_flags(AR &&ar, const pma_flags &flag
 template <typename ABRT>
 static inline mock_address_range make_mock_address_range(uint64_t istart, uint64_t ilength, ABRT abrt) {
     uint64_t start{};
-    auto flags = pma_unpack_istart(istart, start);
+    auto flags = pmas_unpack_istart(istart, start);
     if (flags.M) {
-        return make_address_range(pma_get_DID_name(flags.DID), start, ilength, flags, abrt);
+        return make_address_range(pmas_get_DID_name(flags.DID), start, ilength, flags, abrt);
     }
     if (flags.E) {
         return make_address_range("empty", start, ilength, flags, abrt);

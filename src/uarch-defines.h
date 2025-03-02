@@ -17,10 +17,10 @@
 #ifndef UARCH_DEFINES_H
 #define UARCH_DEFINES_H
 
-#include "pma-defines.h"
+#include "address-range-defines.h"
 // NOLINTBEGIN(cppcoreguidelines-macro-usage,cppcoreguidelines-macro-to-enum,modernize-macro-to-enum)
 /// \brief Start address of the entire uarch memory range: shadow and ram
-#define UARCH_STATE_START_ADDRESS_DEF PMA_SHADOW_UARCH_STATE_START_DEF
+#define UARCH_STATE_START_ADDRESS_DEF AR_SHADOW_UARCH_STATE_START_DEF
 
 /// \brief Log2 size of the entire uarch memory range: shadow and ram
 #define UARCH_STATE_LOG2_SIZE_DEF 22

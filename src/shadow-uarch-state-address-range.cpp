@@ -20,13 +20,13 @@
 
 #include "machine-reg.h"
 #include "machine.h"
-#include "pma-constants.h"
+#include "pmas-constants.h"
 #include "shadow-peek.h"
 #include "shadow-uarch-state.h"
 
 namespace cartesi {
 
-/// \brief Shadow uarch state device peek callback. See ::pma_peek.
+/// \brief Shadow uarch state device peek callback. See ::pmas_peek.
 bool shadow_uarch_state_address_range::do_peek(const machine &m, uint64_t offset, uint64_t length,
     const unsigned char **data, unsigned char *scratch) const noexcept {
     // If past useful range

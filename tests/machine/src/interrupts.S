@@ -17,7 +17,7 @@
 
 // This test case tests software interrupts and interrupt delegation
 
-#include <pma-defines.h>
+#include <address-range-defines.h>
 
 // Uses HTIF to exit the emulator with exit code in an immediate
 #define exit_imm(imm) \
@@ -33,7 +33,7 @@
 #define MCAUSE_SSIP         ((1<<MCAUSE_INT_BIT) | SSI_CODE)
 #define MCAUSE_MTIP         ((1<<MCAUSE_INT_BIT) | MTI_CODE)
 
-#define MTIMECMP_ADDR       (PMA_CLINT_START_DEF + 0x4000)
+#define MTIMECMP_ADDR       (AR_CLINT_START_DEF + 0x4000)
 
 #define MSTATUS_MPP_MASK 0x1800
 #define MSTATUS_SPP_MASK 0x100
@@ -178,6 +178,6 @@ exit:
     srli gp, gp, 15;
     ori gp, gp, 1;
 1:
-    li t0, PMA_HTIF_START_DEF
+    li t0, AR_HTIF_START_DEF
     sd gp, 0(t0);
     j 1b; // Should not be necessary

@@ -40,7 +40,7 @@
 #include "machine-runtime-config.h"
 #include "machine-state.h"
 #include "os.h"
-#include "pma-constants.h"
+#include "pmas-constants.h"
 #include "shadow-tlb.h"
 #include "uarch-interpret.h"
 #include "uarch-state.h"

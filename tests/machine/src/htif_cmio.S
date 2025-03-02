@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <pmas-defines.h>
 #include "htif_util.h"
 
 // This test will fetch the cmio buffers from the PMA entries; check that
@@ -38,7 +39,7 @@
 
 #define PMA_START_DID_CONST(did) ((did) << 8)
 #define PMA_START_DID_MASK    0x0000000000000f00
-#define PMA_START_START_MASK  0xfffffffffffff000
+#define AR_START_START_MASK  0xfffffffffffff000
 
 .global _start
 .align 2;
@@ -61,7 +62,7 @@ _start:
  * a0: a pma_did_const(x)
  * ret: pointer to pma entry */
 find_pma_by_did:
-    li t0, PMA_SHADOW_PMAS_START_DEF;
+    li t0, AR_PMAS_START_DEF;
     li t2, PMA_START_DID_MASK;
     /* is the pma array empty? */
     ld t1, O_LENGTH (t0);
@@ -86,7 +87,7 @@ found:
 fill_pma_with_a2:
     ld a1, O_LENGTH(a0);
     ld a0, O_START (a0);
-    li t0, PMA_START_START_MASK;
+    li t0, AR_START_START_MASK;
     and a0, a0, t0;
     j memset64; // tail call
 
@@ -108,7 +109,7 @@ l2: jr ra;
 check_pma_with_a2:
     ld a1, O_LENGTH(a0);
     ld a0, O_START (a0);
-    li t0, PMA_START_START_MASK;
+    li t0, AR_START_START_MASK;
     and a0, a0, t0;
     j memcheck64;
 

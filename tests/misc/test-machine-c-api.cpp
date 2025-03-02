@@ -989,7 +989,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_uarch_x_basic_test, ordinary_machine_f
 
     uint64_t uarch_x2_addr{};
     BOOST_CHECK_EQUAL(cm_get_reg_address(_machine, CM_REG_UARCH_X2, &uarch_x2_addr), CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(static_cast<uint64_t>(cartesi::PMA_SHADOW_UARCH_STATE_START + 40), uarch_x2_addr);
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(cartesi::AR_SHADOW_UARCH_STATE_START + 40), uarch_x2_addr);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(read_reg_null_machine_test) {
@@ -1459,11 +1459,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_reset_uarch, ordinary_machine_fixture) {
 
     // change the uarch ram in order to confirm if reset will restore it to the initial value
     std::array<uint8_t, 8> random_bytes{1, 2, 3, 4, 5, 6, 7, 8};
-    error_code = cm_write_memory(_machine, cartesi::PMA_UARCH_RAM_START, random_bytes.data(), random_bytes.size());
+    error_code = cm_write_memory(_machine, cartesi::AR_UARCH_RAM_START, random_bytes.data(), random_bytes.size());
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
     // grab the modified ram bytes
-    std::vector<unsigned char> modified_uarch_ram(cartesi::PMA_UARCH_RAM_LENGTH);
+    std::vector<unsigned char> modified_uarch_ram(cartesi::AR_UARCH_RAM_LENGTH);
     error_code = cm_read_memory(_machine, cartesi::UARCH_RAM_START_ADDRESS, modified_uarch_ram.data(),
         modified_uarch_ram.size());
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);

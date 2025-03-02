@@ -17,7 +17,7 @@
 
 // This programs exercise load/writes in the shadow.
 
-#include <pma-defines.h>
+#include <address-range-defines.h>
 
 // Uses HTIF to exit the emulator with exit code in an immediate
 #define exit_imm(imm) \
@@ -32,9 +32,9 @@
 
 #define MCAUSE_STORE_AMO_ACCESS_FAULT 0x7
 #define MCAUSE_LOAD_ACCESS_FAULT 0x5
-#define SHADOWS_PMA_LAST_ENTRY_ISTART (31*16)
-#define SHADOWS_PMA_LAST_ENTRY_ILENGTH (31*16+8)
-#define SHADOWS_PMA_TOTAL_SIZE (32*16)
+#define PMAS_LAST_ENTRY_ISTART (31*16)
+#define PMAS_LAST_ENTRY_ILENGTH (31*16+8)
+#define PMAS_TOTAL_SIZE (32*16)
 #define EMPTY_PMA_ISTART (4)
 #define EMPTY_PMA_ILENGTH (0)
 
@@ -48,11 +48,11 @@ _start:
     csrw mtvec, t0;
 
     // We are allowed to read the shadow PMAs
-    li t0, PMA_SHADOW_PMAS_START_DEF;
-    ld t1, SHADOWS_PMA_LAST_ENTRY_ISTART(t0);
+    li t0, AR_PMAS_START_DEF;
+    ld t1, PMAS_LAST_ENTRY_ISTART(t0);
     li t2, EMPTY_PMA_ISTART
     bne t1, t2, fail;
-    ld t1, SHADOWS_PMA_LAST_ENTRY_ILENGTH(t0);
+    ld t1, PMAS_LAST_ENTRY_ILENGTH(t0);
     li t2, EMPTY_PMA_ILENGTH
     bne t1, t2, fail;
 
@@ -62,31 +62,31 @@ _start:
 
     // Attempt to load a value from the shadow state
     expect_trap(MCAUSE_LOAD_ACCESS_FAULT,
-        li t0, PMA_SHADOW_STATE_START_DEF;
+        li t0, AR_SHADOW_STATE_START_DEF;
         ld t1, 8(t0);
     )
 
     // Attempt to load a value from the shadow TLB
     expect_trap(MCAUSE_LOAD_ACCESS_FAULT,
-        li t0, PMA_SHADOW_TLB_START_DEF;
+        li t0, AR_SHADOW_TLB_START_DEF;
         ld t1, 0(t0);
     )
 
     // Attempt to store a value in the shadow PMAs
     expect_trap(MCAUSE_STORE_AMO_ACCESS_FAULT,
-        li t0, PMA_SHADOW_PMAS_START_DEF;
+        li t0, AR_PMAS_START_DEF;
         sd x0, 0(t0);
     )
 
     // Attempt to store a value in the shadow state
     expect_trap(MCAUSE_STORE_AMO_ACCESS_FAULT,
-        li t0, PMA_SHADOW_STATE_START_DEF;
+        li t0, AR_SHADOW_STATE_START_DEF;
         sd x0, 8(t0);
     )
 
     // Attempt to store a value in the shadow TLB
     expect_trap(MCAUSE_STORE_AMO_ACCESS_FAULT,
-        li t0, PMA_SHADOW_TLB_START_DEF;
+        li t0, AR_SHADOW_TLB_START_DEF;
         sd x0, 0(t0);
     )
 
@@ -110,6 +110,6 @@ exit:
     srli gp, gp, 15;
     ori gp, gp, 1;
 1:
-    li t0, PMA_HTIF_START_DEF
+    li t0, AR_HTIF_START_DEF
     sd gp, 0(t0);
     j 1b;

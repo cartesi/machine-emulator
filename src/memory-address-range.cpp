@@ -28,14 +28,14 @@ public:
 };
 
 memory_address_range::memory_address_range(const std::string &description, uint64_t start, uint64_t length,
-    const pma_flags &flags, const std::string &image_filename, const mmapd &m) try :
+    const pmas_flags &flags, const std::string &image_filename, const mmapd &m) try :
     address_range(description.c_str(), start, length, flags, [](const char *err) { throw base_error{err}; }),
     m_ptr{make_unique_mmap<unsigned char>(image_filename.c_str(), length, m.shared)},
     m_host_memory{std::get<mmapd_ptr>(m_ptr).get()} {
     if (!is_memory()) {
         throw std::invalid_argument{"memory range must be flagged memory when initializing "s + description};
     }
-    m_dirty_page_map.resize((get_length() / (8 * PMA_PAGE_SIZE)) + 1, 0xff);
+    m_dirty_page_map.resize((get_length() / (8 * AR_PAGE_SIZE)) + 1, 0xff);
 } catch (base_error &b) {
     throw; // already contains the description
 } catch (std::exception &e) {
@@ -45,14 +45,14 @@ memory_address_range::memory_address_range(const std::string &description, uint6
 }
 
 memory_address_range::memory_address_range(const std::string &description, uint64_t start, uint64_t length,
-    const pma_flags &flags, const std::string &image_filename, const callocd & /*c*/) try :
+    const pmas_flags &flags, const std::string &image_filename, const callocd & /*c*/) try :
     address_range(description.c_str(), start, length, flags, [](const char *err) { throw base_error{err}; }),
     m_ptr{make_unique_calloc<unsigned char>(length)},
     m_host_memory{std::get<callocd_ptr>(m_ptr).get()} {
     if (!is_memory()) {
         throw std::invalid_argument{"memory range must be flagged memory when initializing "s + description};
     }
-    m_dirty_page_map.resize((length / (8 * PMA_PAGE_SIZE)) + 1, 0xff);
+    m_dirty_page_map.resize((length / (8 * AR_PAGE_SIZE)) + 1, 0xff);
     // Try to load image file, if any
     if (!image_filename.empty()) {
         auto fp = make_unique_fopen(image_filename.c_str(), "rb", std::nothrow_t{});

@@ -14,7 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include <pma-defines.h>
+#include <address-range-defines.h>
 #include <uarch-defines.h>
 
 .section .text.init;
@@ -22,8 +22,8 @@
 .global _start;
 _start:
     // Initialize stack
-    li sp, PMA_UARCH_RAM_START_DEF
-    li t0, PMA_UARCH_RAM_LENGTH_DEF
+    li sp, AR_UARCH_RAM_START_DEF
+    li t0, AR_UARCH_RAM_LENGTH_DEF
     add sp, sp, t0 // stack pointer at the end of RAM
     call interpret_next_mcycle_with_uarch
 

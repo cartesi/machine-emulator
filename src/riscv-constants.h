@@ -19,8 +19,9 @@
 
 #include <cstdint>
 
+#include "address-range-constants.h"
 #include "machine-c-version.h"
-#include "pma-constants.h"
+#include "pmas-constants.h"
 
 /// \file
 /// \brief RISC-V constants
@@ -424,7 +425,7 @@ enum COUNTEREN_rw_masks : uint64_t {
 enum CARTESI_init : uint64_t {
     // The machines starts executing instructions from RAM start by default,
     // and expects a working firmware to be available there.
-    PC_INIT = PMA_RAM_START,                       ///< Initial value for pc
+    PC_INIT = AR_RAM_START,                        ///< Initial value for pc
     FCSR_INIT = UINT64_C(0),                       ///< Initial value for fcsr
     MVENDORID_INIT = UINT64_C(0x6361727465736920), ///< Initial value for mvendorid
     MARCHID_INIT = CM_MARCHID,                     ///< Initial value for marchid
@@ -440,38 +441,38 @@ enum CARTESI_init : uint64_t {
     MTVAL_INIT = UINT64_C(0),                                                          ///< Initial value for mtval
     MISA_INIT = (MISA_MXL_VALUE << MISA_MXL_SHIFT) | MISA_EXT_S_MASK | MISA_EXT_U_MASK | MISA_EXT_I_MASK |
         MISA_EXT_M_MASK | MISA_EXT_A_MASK | MISA_EXT_F_MASK | MISA_EXT_D_MASK |
-        MISA_EXT_C_MASK,                 ///< Initial value for misa
-    MIE_INIT = UINT64_C(0),              ///< Initial value for mie
-    MIP_INIT = UINT64_C(0),              ///< Initial value for mip
-    MEDELEG_INIT = UINT64_C(0),          ///< Initial value for medeleg
-    MIDELEG_INIT = UINT64_C(0),          ///< Initial value for mideleg
-    MCOUNTEREN_INIT = UINT64_C(0),       ///< Initial value for mcounteren
-    STVEC_INIT = UINT64_C(0),            ///< Initial value for stvec
-    SSCRATCH_INIT = UINT64_C(0),         ///< Initial value for sscratch
-    SEPC_INIT = UINT64_C(0),             ///< Initial value for sepc
-    SCAUSE_INIT = UINT64_C(0),           ///< Initial value for scause
-    STVAL_INIT = UINT64_C(0),            ///< Initial value for stval
-    SATP_INIT = UINT64_C(0),             ///< Initial value for satp
-    SCOUNTEREN_INIT = UINT64_C(0),       ///< Initial value for scounteren
-    ILRSC_INIT = UINT64_C(-1),           ///< Initial value for ilrsc
-    IPRV_INIT = PRV_M,                   ///< Initial value for iprv
-    IFLAGS_X_INIT = UINT64_C(0),         ///< Initial value for iflags_X
-    IFLAGS_Y_INIT = UINT64_C(0),         ///< Initial value for iflags_Y
-    IFLAGS_H_INIT = UINT64_C(0),         ///< Initial value for iflags_H
-    IUNREP_INIT = UINT64_C(0),           ///< Initial value for iunrep
-    MTIMECMP_INIT = UINT64_C(0),         ///< Initial value for mtimecmp
-    GIRQPEND_INIT = UINT64_C(0),         ///< Initial value for girqpend
-    GIRQSRVD_INIT = UINT64_C(0),         ///< Initial value for girqsrvd
-    FROMHOST_INIT = UINT64_C(0),         ///< Initial value for fromhost
-    TOHOST_INIT = UINT64_C(0),           ///< Initial value for tohost
-    MENVCFG_INIT = UINT64_C(0),          ///< Initial value for menvcfg
-    SENVCFG_INIT = UINT64_C(0),          ///< Initial value for senvcfg
-    UARCH_HALT_FLAG_INIT = UINT64_C(0),  ///< Initial value for microarchitecture halt flag
-    UARCH_X_INIT = UINT64_C(0),          ///< Initial value for microarchitecture general purpose register x
-    UARCH_PC_INIT = PMA_UARCH_RAM_START, ///< Initial value for microarchitecture pc
-    UARCH_CYCLE_INIT = UINT64_C(0),      ///< Initial value for microarchitecture cycle
-    MHARTID_INIT = UINT64_C(0),          ///< Initial mhartid
-    FDTADDR_INIT = PMA_DTB_START,        ///< Initial FDT address
+        MISA_EXT_C_MASK,                ///< Initial value for misa
+    MIE_INIT = UINT64_C(0),             ///< Initial value for mie
+    MIP_INIT = UINT64_C(0),             ///< Initial value for mip
+    MEDELEG_INIT = UINT64_C(0),         ///< Initial value for medeleg
+    MIDELEG_INIT = UINT64_C(0),         ///< Initial value for mideleg
+    MCOUNTEREN_INIT = UINT64_C(0),      ///< Initial value for mcounteren
+    STVEC_INIT = UINT64_C(0),           ///< Initial value for stvec
+    SSCRATCH_INIT = UINT64_C(0),        ///< Initial value for sscratch
+    SEPC_INIT = UINT64_C(0),            ///< Initial value for sepc
+    SCAUSE_INIT = UINT64_C(0),          ///< Initial value for scause
+    STVAL_INIT = UINT64_C(0),           ///< Initial value for stval
+    SATP_INIT = UINT64_C(0),            ///< Initial value for satp
+    SCOUNTEREN_INIT = UINT64_C(0),      ///< Initial value for scounteren
+    ILRSC_INIT = UINT64_C(-1),          ///< Initial value for ilrsc
+    IPRV_INIT = PRV_M,                  ///< Initial value for iprv
+    IFLAGS_X_INIT = UINT64_C(0),        ///< Initial value for iflags_X
+    IFLAGS_Y_INIT = UINT64_C(0),        ///< Initial value for iflags_Y
+    IFLAGS_H_INIT = UINT64_C(0),        ///< Initial value for iflags_H
+    IUNREP_INIT = UINT64_C(0),          ///< Initial value for iunrep
+    MTIMECMP_INIT = UINT64_C(0),        ///< Initial value for mtimecmp
+    GIRQPEND_INIT = UINT64_C(0),        ///< Initial value for girqpend
+    GIRQSRVD_INIT = UINT64_C(0),        ///< Initial value for girqsrvd
+    FROMHOST_INIT = UINT64_C(0),        ///< Initial value for fromhost
+    TOHOST_INIT = UINT64_C(0),          ///< Initial value for tohost
+    MENVCFG_INIT = UINT64_C(0),         ///< Initial value for menvcfg
+    SENVCFG_INIT = UINT64_C(0),         ///< Initial value for senvcfg
+    UARCH_HALT_FLAG_INIT = UINT64_C(0), ///< Initial value for microarchitecture halt flag
+    UARCH_X_INIT = UINT64_C(0),         ///< Initial value for microarchitecture general purpose register x
+    UARCH_PC_INIT = AR_UARCH_RAM_START, ///< Initial value for microarchitecture pc
+    UARCH_CYCLE_INIT = UINT64_C(0),     ///< Initial value for microarchitecture cycle
+    MHARTID_INIT = UINT64_C(0),         ///< Initial mhartid
+    FDTADDR_INIT = AR_DTB_START,        ///< Initial FDT address
 
     // Registers
     REG_X0 = UINT64_C(0), //< zero - hardwired zero

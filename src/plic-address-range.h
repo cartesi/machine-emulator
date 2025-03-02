@@ -38,7 +38,7 @@ void plic_reset_pending_irq(i_device_state_access *a, uint32_t irq_id);
 
 class plic_address_range final : public pristine_address_range {
 
-    static constexpr pma_flags m_plic_flags{
+    static constexpr pmas_flags m_plic_flags{
         .M = false,
         .IO = true,
         .E = false,

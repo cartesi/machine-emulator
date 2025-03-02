@@ -27,7 +27,7 @@
 #include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
 #include "machine.h"
-#include "pma.h"
+#include "pmas.h"
 #include "shadow-tlb.h"
 #include "unique-c-ptr.h"
 
@@ -235,8 +235,8 @@ private:
         // replay_step_state_access reconstructs a mock_address_range from the
         // corresponding istart and ilength fields in the shadow pmas
         // so we mark the page where they live here
-        touch_page(pma_get_abs_addr(index, pma_what::istart));
-        touch_page(pma_get_abs_addr(index, pma_what::ilength));
+        touch_page(pmas_get_abs_addr(index, pmas_what::istart));
+        touch_page(pmas_get_abs_addr(index, pmas_what::ilength));
         return m_m.read_pma(index);
     }
 

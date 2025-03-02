@@ -37,46 +37,46 @@ struct PACKED shadow_uarch_state {
 };
 
 enum class shadow_uarch_state_what : uint64_t {
-    uarch_halt_flag = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, halt_flag),
-    uarch_cycle = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, cycle),
-    uarch_pc = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, pc),
-    uarch_x0 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[0]),
-    uarch_x1 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[1]),
-    uarch_x2 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[2]),
-    uarch_x3 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[3]),
-    uarch_x4 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[4]),
-    uarch_x5 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[5]),
-    uarch_x6 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[6]),
-    uarch_x7 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[7]),
-    uarch_x8 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[8]),
-    uarch_x9 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[9]),
-    uarch_x10 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[10]),
-    uarch_x11 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[11]),
-    uarch_x12 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[12]),
-    uarch_x13 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[13]),
-    uarch_x14 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[14]),
-    uarch_x15 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[15]),
-    uarch_x16 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[16]),
-    uarch_x17 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[17]),
-    uarch_x18 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[18]),
-    uarch_x19 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[19]),
-    uarch_x20 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[20]),
-    uarch_x21 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[21]),
-    uarch_x22 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[22]),
-    uarch_x23 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[23]),
-    uarch_x24 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[24]),
-    uarch_x25 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[25]),
-    uarch_x26 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[26]),
-    uarch_x27 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[27]),
-    uarch_x28 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[28]),
-    uarch_x29 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[29]),
-    uarch_x30 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[30]),
-    uarch_x31 = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[31]),
+    uarch_halt_flag = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, halt_flag),
+    uarch_cycle = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, cycle),
+    uarch_pc = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, pc),
+    uarch_x0 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[0]),
+    uarch_x1 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[1]),
+    uarch_x2 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[2]),
+    uarch_x3 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[3]),
+    uarch_x4 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[4]),
+    uarch_x5 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[5]),
+    uarch_x6 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[6]),
+    uarch_x7 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[7]),
+    uarch_x8 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[8]),
+    uarch_x9 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[9]),
+    uarch_x10 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[10]),
+    uarch_x11 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[11]),
+    uarch_x12 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[12]),
+    uarch_x13 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[13]),
+    uarch_x14 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[14]),
+    uarch_x15 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[15]),
+    uarch_x16 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[16]),
+    uarch_x17 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[17]),
+    uarch_x18 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[18]),
+    uarch_x19 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[19]),
+    uarch_x20 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[20]),
+    uarch_x21 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[21]),
+    uarch_x22 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[22]),
+    uarch_x23 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[23]),
+    uarch_x24 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[24]),
+    uarch_x25 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[25]),
+    uarch_x26 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[26]),
+    uarch_x27 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[27]),
+    uarch_x28 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[28]),
+    uarch_x29 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[29]),
+    uarch_x30 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[30]),
+    uarch_x31 = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, x[31]),
     unknown_ = UINT64_C(1) << 63, // Outside of RISC-V address space
 };
 
 static constexpr shadow_uarch_state_what shadow_uarch_state_get_what(uint64_t paddr) {
-    if (paddr < PMA_SHADOW_UARCH_STATE_START || paddr - PMA_SHADOW_UARCH_STATE_START >= sizeof(shadow_uarch_state) ||
+    if (paddr < AR_SHADOW_UARCH_STATE_START || paddr - AR_SHADOW_UARCH_STATE_START >= sizeof(shadow_uarch_state) ||
         (paddr & (sizeof(uint64_t) - 1)) != 0) {
         return shadow_uarch_state_what::unknown_;
     }
@@ -90,7 +90,7 @@ static constexpr shadow_uarch_state_what shadow_uarch_state_get_what(shadow_uarc
 
 static constexpr const char *shadow_uarch_state_get_what_name(shadow_uarch_state_what what) {
     const auto paddr = static_cast<uint64_t>(what);
-    if (paddr < PMA_SHADOW_UARCH_STATE_START || paddr - PMA_SHADOW_UARCH_STATE_START >= sizeof(shadow_uarch_state) ||
+    if (paddr < AR_SHADOW_UARCH_STATE_START || paddr - AR_SHADOW_UARCH_STATE_START >= sizeof(shadow_uarch_state) ||
         (paddr & (sizeof(uint64_t) - 1)) != 0) {
         return "uarch.unknown_";
     }

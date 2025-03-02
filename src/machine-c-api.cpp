@@ -44,7 +44,7 @@
 #include "machine-runtime-config.h"
 #include "machine.h"
 #include "os-features.h"
-#include "pma-defines.h"
+#include "pmas-defines.h"
 #include "virtual-machine.h"
 
 static std::string &get_last_err_msg_storage() {
@@ -52,11 +52,11 @@ static std::string &get_last_err_msg_storage() {
     return last_err_msg;
 }
 
-static_assert(PMA_CMIO_RX_BUFFER_START_DEF == CM_PMA_CMIO_RX_BUFFER_START);
-static_assert(PMA_CMIO_RX_BUFFER_LOG2_SIZE_DEF == CM_PMA_CMIO_RX_BUFFER_LOG2_SIZE);
-static_assert(PMA_CMIO_TX_BUFFER_START_DEF == CM_PMA_CMIO_TX_BUFFER_START);
-static_assert(PMA_CMIO_TX_BUFFER_LOG2_SIZE_DEF == CM_PMA_CMIO_TX_BUFFER_LOG2_SIZE);
-static_assert(PMA_RAM_START_DEF == CM_PMA_RAM_START);
+static_assert(AR_CMIO_RX_BUFFER_START_DEF == CM_AR_CMIO_RX_BUFFER_START);
+static_assert(AR_CMIO_RX_BUFFER_LOG2_SIZE_DEF == CM_AR_CMIO_RX_BUFFER_LOG2_SIZE);
+static_assert(AR_CMIO_TX_BUFFER_START_DEF == CM_AR_CMIO_TX_BUFFER_START);
+static_assert(AR_CMIO_TX_BUFFER_LOG2_SIZE_DEF == CM_AR_CMIO_TX_BUFFER_LOG2_SIZE);
+static_assert(AR_RAM_START_DEF == CM_AR_RAM_START);
 
 static_assert(HTIF_YIELD_AUTOMATIC_REASON_PROGRESS_DEF == CM_CMIO_YIELD_AUTOMATIC_REASON_PROGRESS);
 static_assert(HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT_DEF == CM_CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT);
@@ -1038,7 +1038,7 @@ cm_error cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16_t *re
             if (data_length > *length) {
                 throw std::invalid_argument{"data buffer length is too small"};
             }
-            cpp_m->read_memory(cartesi::PMA_CMIO_TX_BUFFER_START, data, data_length);
+            cpp_m->read_memory(cartesi::AR_CMIO_TX_BUFFER_START, data, data_length);
         }
     }
     if (cmd != nullptr) {

@@ -28,7 +28,7 @@ namespace cartesi {
 
 class clint_address_range final : public pristine_address_range {
 
-    static constexpr pma_flags m_clint_flags{
+    static constexpr pmas_flags m_clint_flags{
         .M = false,
         .IO = true,
         .E = false,

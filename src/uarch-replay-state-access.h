@@ -344,7 +344,8 @@ private:
     }
 
     void do_reset_uarch() const {
-        check_write_access(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE, uarch_pristine_state_hash, "uarch.state");
+        check_write_access(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE, get_uarch_pristine_state_hash(),
+            "uarch.state");
     }
 
     void do_write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
@@ -357,7 +358,6 @@ private:
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     constexpr const char *do_get_name() const {
         return "uarch_replay_state_access";
->>>>>>> 1e5dc22 (refactor: clean up uarch state access mechanism)
     }
 
     // -----

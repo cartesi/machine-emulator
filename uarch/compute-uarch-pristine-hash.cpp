@@ -35,8 +35,8 @@ using hash_type = tree_type::hash_type;
 using hashertype = tree_type::hasher_type;
 using proof_type = tree_type::proof_type;
 
-static_assert(PMA_PAGE_SIZE == tree_type::get_page_size(), "PMA and machine_merkle_tree page sizes must match");
-static_assert(sizeof(shadow_uarch_state) <= PMA_PAGE_SIZE, "shadow_uarch_state must fit in one page");
+static_assert(AR_PAGE_SIZE == tree_type::get_page_size(), "PMA and machine_merkle_tree page sizes must match");
+static_assert(sizeof(shadow_uarch_state) <= AR_PAGE_SIZE, "shadow_uarch_state must fit in one page");
 
 /// \brief Prints help message
 static void help(const char *name) {
@@ -70,7 +70,7 @@ int main(int argc, char *argv[]) try {
     }
 
     // Allocate scratch page buffer
-    auto scratch = make_unique_calloc<unsigned char>(PMA_PAGE_SIZE, std::nothrow_t{});
+    auto scratch = make_unique_calloc<unsigned char>(AR_PAGE_SIZE, std::nothrow_t{});
     if (!scratch) {
         throw std::runtime_error("Could not allocate scratch memory");
     }
@@ -78,7 +78,7 @@ int main(int argc, char *argv[]) try {
     // Build pristine shadow uarch state
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *shadow = reinterpret_cast<shadow_uarch_state *>(scratch.get());
-    memset(scratch.get(), 0, PMA_PAGE_SIZE);
+    memset(scratch.get(), 0, AR_PAGE_SIZE);
     shadow->halt_flag = UARCH_HALT_FLAG_INIT;
     shadow->pc = UARCH_PC_INIT;
     shadow->cycle = UARCH_CYCLE_INIT;
@@ -94,10 +94,10 @@ int main(int argc, char *argv[]) try {
         throw std::runtime_error("Could not update uarch shadow tree node hash");
     }
     // Add all pages of uarch ram to merkle tree
-    for (uint32_t p = 0; p < uarch_pristine_ram_len; p += PMA_PAGE_SIZE) {
+    for (uint32_t p = 0; p < uarch_pristine_ram_len; p += AR_PAGE_SIZE) {
         const auto *page_data = uarch_pristine_ram + p;
-        if (p + PMA_PAGE_SIZE > uarch_pristine_ram_len) {
-            memset(scratch.get(), 0, PMA_PAGE_SIZE);
+        if (p + AR_PAGE_SIZE > uarch_pristine_ram_len) {
+            memset(scratch.get(), 0, AR_PAGE_SIZE);
             memcpy(scratch.get(), uarch_pristine_ram + p, uarch_pristine_ram_len - p);
             page_data = scratch.get();
         }

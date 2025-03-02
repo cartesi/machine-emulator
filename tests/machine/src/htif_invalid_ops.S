@@ -43,7 +43,7 @@ _start:
     csrw mtvec, t0;
 
     // Unknown HTIF devices are silently ignored
-    li t0, PMA_HTIF_START_DEF;
+    li t0, AR_HTIF_START_DEF;
     li t1, htif_const(0xff, 0, 0);
     sd zero, O_FROMHOST(t0);
     sd t1, O_TOHOST(t0);
@@ -51,7 +51,7 @@ _start:
     bnez t2, fail;
 
     // HTIF halt with invalid commands is silently ignored
-    li t0, PMA_HTIF_START_DEF;
+    li t0, AR_HTIF_START_DEF;
     li t1, htif_const(HTIF_DEV_HALT_DEF, 0xff, 3);
     sd zero, O_FROMHOST(t0);
     sd t1, O_TOHOST(t0);
@@ -59,7 +59,7 @@ _start:
     bnez t2, fail;
 
     // HTIF halt with exit least-signed bit unset is silently ignored
-    li t0, PMA_HTIF_START_DEF;
+    li t0, AR_HTIF_START_DEF;
     li t1, htif_const(HTIF_DEV_HALT_DEF, HTIF_HALT_CMD_HALT_DEF, 2);
     sd zero, O_FROMHOST(t0);
     sd t1, O_TOHOST(t0);
@@ -72,39 +72,39 @@ _start:
 
     // Attempt to load a non 8-bytes value from HTIF
     expect_trap(MCAUSE_LOAD_ACCESS_FAULT,
-        li t0, PMA_HTIF_START_DEF;
+        li t0, AR_HTIF_START_DEF;
         lw t1, O_TOHOST(t0);
     )
 
     // Attempt to load from a misaligned HTIF offset
     expect_trap(MCAUSE_LOAD_ACCESS_FAULT,
-        li t0, PMA_HTIF_START_DEF;
+        li t0, AR_HTIF_START_DEF;
         lb t1, 1(t0);
     )
 
     // Attempt to load from an invalid HTIF offset
     expect_trap(MCAUSE_LOAD_ACCESS_FAULT,
-        li t0, PMA_HTIF_START_DEF;
+        li t0, AR_HTIF_START_DEF;
         ld t1, (O_IYIELD+8)(t0);
     )
 
     // Attempt to store a non 8-bytes value in HTIF
     expect_trap(MCAUSE_STORE_AMO_ACCESS_FAULT,
-        li t0, PMA_HTIF_START_DEF;
+        li t0, AR_HTIF_START_DEF;
         li t1, 3;
         sw t1, O_TOHOST(t0);
     )
 
     // Attempt to store in a misaligned HTIF offset
     expect_trap(MCAUSE_STORE_AMO_ACCESS_FAULT,
-        li t0, PMA_HTIF_START_DEF;
+        li t0, AR_HTIF_START_DEF;
         li t1, 3;
         sb t1, 1(t0);
     )
 
     // Attempt to store in an invalid HTIF offset
     expect_trap(MCAUSE_STORE_AMO_ACCESS_FAULT,
-        li t0, PMA_HTIF_START_DEF;
+        li t0, AR_HTIF_START_DEF;
         li t1, 3;
         sd t1, (O_IYIELD+8)(t0);
     )
@@ -129,6 +129,6 @@ exit:
     srli gp, gp, 15;
     ori gp, gp, 1;
 1:
-    li t0, PMA_HTIF_START_DEF
+    li t0, AR_HTIF_START_DEF
     sd gp, 0(t0);
     j 1b;

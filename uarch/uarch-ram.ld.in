@@ -1,17 +1,17 @@
 OUTPUT_ARCH( "riscv" )
 ENTRY(_start)
 
-#include "pma-defines.h"
+#include "address-range-defines.h"
 
 SECTIONS
 {
-  . = PMA_UARCH_RAM_START_DEF;
+  . = AR_UARCH_RAM_START_DEF;
   .text.init : { *(.text.init) }
   .text : { *(.text) }
-  .rodata : { *(.rodata) }  
+  .rodata : { *(.rodata) }
   .sdata : { *(.sdata) }
-  .bss : { *(.bss) }  
-  .tdata : { *(.tdata) }  
-     
+  .bss : { *(.bss) }
+  .tdata : { *(.tdata) }
+
   _end = .;
 }

@@ -36,7 +36,7 @@
 #include "machine-state.h"
 #include "machine.h"
 #include "os.h"
-#include "pma-constants.h"
+#include "pmas-constants.h"
 #include "riscv-constants.h"
 #include "shadow-tlb.h"
 #include "strict-aliasing.h"

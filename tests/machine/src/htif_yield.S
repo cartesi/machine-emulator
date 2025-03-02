@@ -28,7 +28,7 @@
 
 // Check HTIF fromhost address for yield command ack
 #define check_htif_ack(dev, cmd, data) \
-    li t0, PMA_HTIF_START_DEF; \
+    li t0, AR_HTIF_START_DEF; \
     ld t3, O_IYIELD (t0); \
     srli t3, t3, cmd; \
     andi t3, t3, 1; \
@@ -46,7 +46,7 @@
     and t0, t0, t2; \
     or t1, t1, t0; \
     and t1, t1, t3; /* if cmd is disabled, expect 0 ack */ \
-    li t0, PMA_HTIF_START_DEF; \
+    li t0, AR_HTIF_START_DEF; \
     ld t2, O_FROMHOST (t0); \
     bne t1, t2, ack_failed;
 
@@ -122,7 +122,7 @@ exit:
     srli gp, gp, 15;
     ori gp, gp, 1;
 1:
-    li t0, PMA_HTIF_START_DEF;
+    li t0, AR_HTIF_START_DEF;
     sd x0, O_FROMHOST (t0);
     sd gp, O_TOHOST   (t0);
     j 1b; // unreachable

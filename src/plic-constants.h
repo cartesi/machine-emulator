@@ -27,6 +27,7 @@ namespace cartesi {
 enum PLIC_constants : uint64_t {
     PLIC_ENABLED_IRQ_MASK = UINT64_C(0xfffffffe), // Interrupt mask for all enabled interrupt sources (1-31)
     PLIC_LOWEST_IRQ_PRIORITY = 1,
+    PLIC_MAX_IRQ = 31 ///< Maximum PLIC interrupt
 };
 
 /// \brief Mapping between CSRs and their relative addresses in PLIC memory

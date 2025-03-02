@@ -27,7 +27,7 @@
 #include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
 #include "mock-address-range.h"
-#include "pma.h"
+#include "pmas.h"
 #include "replay-step-state-access-interop.h"
 #include "riscv-constants.h"
 #include "shadow-state.h"
@@ -76,7 +76,7 @@ class replay_step_state_access :
     public i_prefer_shadow_state<replay_step_state_access> {
 public:
     using address_type = uint64_t;
-    using data_type = unsigned char[PMA_PAGE_SIZE];
+    using data_type = unsigned char[AR_PAGE_SIZE];
     using hash_type = std::array<unsigned char, interop_machine_hash_byte_size>;
     static_assert(sizeof(hash_type) == interop_machine_hash_byte_size);
 
@@ -199,7 +199,7 @@ private:
     /// \param paddr The physical address of the page
     /// \return A pointer to the page_type structure if found, nullptr otherwise
     page_type *try_find_page(uint64_t paddr_page) const {
-        const auto page_index = paddr_page >> PMA_PAGE_SIZE_LOG2;
+        const auto page_index = paddr_page >> AR_PAGE_SIZE_LOG2;
         uint64_t min{0};
         uint64_t max{m_context.page_count};
         while (min < max) {
@@ -305,7 +305,7 @@ private:
                 if (page_log == nullptr) {
                     continue;
                 }
-                const auto paddr_page = page_log->index << PMA_PAGE_SIZE_LOG2;
+                const auto paddr_page = page_log->index << AR_PAGE_SIZE_LOG2;
                 const auto vp_offset = paddr_page - vaddr_page;
                 aliased_aligned_write<uint64_t>(vp_offset_field_haddr, vp_offset);
             }
@@ -335,14 +335,13 @@ private:
         //??D But in the end, we should only update those pages that we touched
         //??D May improve performance when we are running this on ZK
         for (uint64_t i = 0; i < m_context.page_count; i++) {
-            interop_merkle_tree_hash(m_context.pages[i].data, PMA_PAGE_SIZE,
+            interop_merkle_tree_hash(m_context.pages[i].data, AR_PAGE_SIZE,
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
                 reinterpret_cast<interop_hash_type>(&m_context.pages[i].hash));
         }
         size_t next_page = 0;
         size_t next_sibling = 0;
-        auto root_hash =
-            compute_root_hash_impl(0, interop_log2_root_size - PMA_PAGE_SIZE_LOG2, next_page, next_sibling);
+        auto root_hash = compute_root_hash_impl(0, interop_log2_root_size - AR_PAGE_SIZE_LOG2, next_page, next_sibling);
         if (next_page != m_context.page_count) {
             interop_throw_runtime_error("too many pages in log");
         }
@@ -389,7 +388,7 @@ private:
 
     //??D we should probably optimize access to the shadow so it doesn't perform a translation every time
     // We can do this by caching the vh_offset trasnslation of the processor shadow page. This is easy if
-    // static_assert(sizeof(shadow_state) <= PMA_PAGE_SIZE, "shadow state must fit in single page");
+    // static_assert(sizeof(shadow_state) <= AR_PAGE_SIZE, "shadow state must fit in single page");
     uint64_t check_read_reg(machine_reg reg) const {
         const auto haddr = do_get_faddr(machine_reg_address(reg));
         return aliased_aligned_read<uint64_t>(haddr);
@@ -397,19 +396,19 @@ private:
 
     //??D we should probably optimize access to the shadow so it doesn't perform a translation every time
     // We can do this by caching the vh_offset trasnslation of the processor shadow page. This is easy if
-    // static_assert(sizeof(shadow_state) <= PMA_PAGE_SIZE, "shadow state must fit in single page");
+    // static_assert(sizeof(shadow_state) <= AR_PAGE_SIZE, "shadow state must fit in single page");
     void check_write_reg(machine_reg reg, uint64_t val) const {
         const auto haddr = do_get_faddr(machine_reg_address(reg));
         aliased_aligned_write<uint64_t>(haddr, val);
     }
 
-    uint64_t read_pma_istart(uint64_t index) const {
-        const auto haddr = do_get_faddr(pma_get_abs_addr(index, pma_what::istart));
+    uint64_t read_pmas_istart(uint64_t index) const {
+        const auto haddr = do_get_faddr(pmas_get_abs_addr(index, pmas_what::istart));
         return aliased_aligned_read<uint64_t>(haddr);
     }
 
-    uint64_t read_pma_ilength(uint64_t index) const {
-        const auto haddr = do_get_faddr(pma_get_abs_addr(index, pma_what::ilength));
+    uint64_t read_pmas_ilength(uint64_t index) const {
+        const auto haddr = do_get_faddr(pmas_get_abs_addr(index, pmas_what::ilength));
         return aliased_aligned_read<uint64_t>(haddr);
     }
 
@@ -462,9 +461,9 @@ private:
     address_range &do_read_pma(uint64_t index) const {
         assert(index < PMA_MAX);
         // record_step_state_access will have recorded the access to istart and
-        // ilength in its implementation of read_pma_entry.
-        const uint64_t istart = read_pma_istart(index);
-        const uint64_t ilength = read_pma_ilength(index);
+        // ilength in its implementation of read_pmas_entry.
+        const uint64_t istart = read_pmas_istart(index);
+        const uint64_t ilength = read_pmas_ilength(index);
         // NOLINTNEXTLINE(bugprone-narrowing-conversions)
         const int i = static_cast<int>(index);
         const auto abrt = [](const char *err) { interop_throw_runtime_error(err); };

@@ -20,7 +20,7 @@
 #include <cstdint>
 
 #include "i-device-state-access.h"
-#include "pma-constants.h"
+#include "pmas-constants.h"
 #include "pristine-address-range.h"
 
 /// \file
@@ -30,7 +30,7 @@ namespace cartesi {
 
 class htif_address_range final : public pristine_address_range {
 
-    static constexpr pma_flags m_htif_flags{
+    static constexpr pmas_flags m_htif_flags{
         .M = false,
         .IO = true,
         .E = false,

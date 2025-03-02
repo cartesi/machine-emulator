@@ -22,7 +22,7 @@
 #include "send-cmio-response.h"
 
 #include "machine-merkle-tree.h"
-#include "pma-constants.h"
+#include "pmas-constants.h"
 #include "record-send-cmio-state-access.h"
 #include "replay-send-cmio-state-access.h"
 #include "state-access.h"
@@ -45,10 +45,10 @@ void send_cmio_response(STATE_ACCESS a, uint16 reason, bytes data, uint32 dataLe
         if (uint32ShiftLeft(1, writeLengthLog2Size) < dataLength) {
             writeLengthLog2Size += 1;
         }
-        if (writeLengthLog2Size > PMA_CMIO_RX_BUFFER_LOG2_SIZE) {
+        if (writeLengthLog2Size > AR_CMIO_RX_BUFFER_LOG2_SIZE) {
             throwRuntimeError(a, "CMIO response data is too large");
         }
-        writeMemoryWithPadding(a, PMA_CMIO_RX_BUFFER_START, data, dataLength, writeLengthLog2Size);
+        writeMemoryWithPadding(a, AR_CMIO_RX_BUFFER_START, data, dataLength, writeLengthLog2Size);
     }
     // Write data length and reason to fromhost
     const uint64 mask16 = uint64ShiftLeft(1, 16) - 1;

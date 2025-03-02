@@ -220,11 +220,11 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION, "CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION", -1);
     clua_setintegerfield(L, CM_CMIO_YIELD_REASON_ADVANCE_STATE, "CMIO_YIELD_REASON_ADVANCE_STATE", -1);
     clua_setintegerfield(L, CM_CMIO_YIELD_REASON_INSPECT_STATE, "CMIO_YIELD_REASON_INSPECT_STATE", -1);
-    clua_setintegerfield(L, CM_PMA_CMIO_RX_BUFFER_START, "PMA_CMIO_RX_BUFFER_START", -1);
-    clua_setintegerfield(L, CM_PMA_CMIO_RX_BUFFER_LOG2_SIZE, "PMA_CMIO_RX_BUFFER_LOG2_SIZE", -1);
-    clua_setintegerfield(L, CM_PMA_CMIO_TX_BUFFER_START, "PMA_CMIO_TX_BUFFER_START", -1);
-    clua_setintegerfield(L, CM_PMA_CMIO_TX_BUFFER_LOG2_SIZE, "PMA_CMIO_TX_BUFFER_LOG2_SIZE", -1);
-    clua_setintegerfield(L, CM_PMA_RAM_START, "PMA_RAM_START", -1);
+    clua_setintegerfield(L, CM_AR_CMIO_RX_BUFFER_START, "AR_CMIO_RX_BUFFER_START", -1);
+    clua_setintegerfield(L, CM_AR_CMIO_RX_BUFFER_LOG2_SIZE, "AR_CMIO_RX_BUFFER_LOG2_SIZE", -1);
+    clua_setintegerfield(L, CM_AR_CMIO_TX_BUFFER_START, "AR_CMIO_TX_BUFFER_START", -1);
+    clua_setintegerfield(L, CM_AR_CMIO_TX_BUFFER_LOG2_SIZE, "AR_CMIO_TX_BUFFER_LOG2_SIZE", -1);
+    clua_setintegerfield(L, CM_AR_RAM_START, "AR_RAM_START", -1);
     // Set other constants used by internal tests
     clua_setintegerfield(L, UARCH_STATE_START_ADDRESS, "UARCH_STATE_START_ADDRESS", -1);
     clua_setintegerfield(L, UARCH_STATE_LOG2_SIZE, "UARCH_STATE_LOG2_SIZE", -1);

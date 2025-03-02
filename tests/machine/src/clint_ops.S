@@ -17,7 +17,7 @@
 
 // This programs exercise load/writes in the CLINT device.
 
-#include <pma-defines.h>
+#include <address-range-defines.h>
 
 // Uses HTIF to exit the emulator with exit code in an immediate
 #define exit_imm(imm) \
@@ -49,12 +49,12 @@ _start:
     csrw mtvec, t0;
 
     // Load CLINT.MTIME, it should equal to zero at the very start
-    li t0, PMA_CLINT_START_DEF + O_MTIME;
+    li t0, AR_CLINT_START_DEF + O_MTIME;
     ld t1, 0(t0);
     bnez t1, fail;
 
     // Store and load CLINT.MSIP
-    li t0, PMA_CLINT_START_DEF + O_MSIP;
+    li t0, AR_CLINT_START_DEF + O_MSIP;
     li t1, 0xffffffffff;
     sw t1, 0(t0);
     lw t2, 0(t0); // note that this won't raise an interrupts, because mip should be 0
@@ -65,7 +65,7 @@ _start:
     bne t2, t3, fail; // make sure mie.MSIP is set
 
     // Store and load CLINT.MTIMECMP
-    li t0, PMA_CLINT_START_DEF + O_MTIMECMP;
+    li t0, AR_CLINT_START_DEF + O_MTIMECMP;
     li t1, 0xffffffffffffffff;
     sd t1, 0(t0);
     ld t2, 0(t0);
@@ -77,49 +77,49 @@ _start:
 
     // Attempt to load a non 4-bytes value from CLINT.MSIP
     expect_trap(MCAUSE_LOAD_ACCESS_FAULT,
-        li t0, PMA_CLINT_START_DEF + O_MSIP;
+        li t0, AR_CLINT_START_DEF + O_MSIP;
         ld t1, 0(t0);
     )
 
     // Attempt to load a non 8-bytes value from CLINT.MTIMECMP
     expect_trap(MCAUSE_LOAD_ACCESS_FAULT,
-        li t0, PMA_CLINT_START_DEF + O_MTIMECMP;
+        li t0, AR_CLINT_START_DEF + O_MTIMECMP;
         lw t1, 0(t0);
     )
 
     // Attempt to load a non 8-bytes value from CLINT.MTIME
     expect_trap(MCAUSE_LOAD_ACCESS_FAULT,
-        li t0, PMA_CLINT_START_DEF + O_MTIME;
+        li t0, AR_CLINT_START_DEF + O_MTIME;
         lw t1, 0(t0);
     )
 
     // Attempt to load from an invalid CLINT offset
     expect_trap(MCAUSE_LOAD_ACCESS_FAULT,
-        li t0, PMA_CLINT_START_DEF + 1;
+        li t0, AR_CLINT_START_DEF + 1;
         lb t1, 0(t0);
     )
 
     // Attempt to store a non 4-bytes value in CLINT.MSIP
     expect_trap(MCAUSE_STORE_AMO_ACCESS_FAULT,
-        li t0, PMA_CLINT_START_DEF + O_MSIP;
+        li t0, AR_CLINT_START_DEF + O_MSIP;
         sd zero, 0(t0);
     )
 
     // Attempt to store a non 8-bytes value in CLINT.MTIMECMP
     expect_trap(MCAUSE_STORE_AMO_ACCESS_FAULT,
-        li t0, PMA_CLINT_START_DEF + O_MTIMECMP;
+        li t0, AR_CLINT_START_DEF + O_MTIMECMP;
         sw zero, 0(t0);
     )
 
     // Attempt to write to CLINT.MTIME
     expect_trap(MCAUSE_STORE_AMO_ACCESS_FAULT,
-        li t0, PMA_CLINT_START_DEF + O_MTIME;
+        li t0, AR_CLINT_START_DEF + O_MTIME;
         sd zero, 0(t0);
     )
 
     // Attempt to store in an invalid CLINT offset
     expect_trap(MCAUSE_STORE_AMO_ACCESS_FAULT,
-        li t0, PMA_CLINT_START_DEF + 1;
+        li t0, AR_CLINT_START_DEF + 1;
         sb zero, 0(t0);
     )
 
@@ -143,6 +143,6 @@ exit:
     srli gp, gp, 15;
     ori gp, gp, 1;
 1:
-    li t0, PMA_HTIF_START_DEF
+    li t0, AR_HTIF_START_DEF
     sd gp, 0(t0);
     j 1b;

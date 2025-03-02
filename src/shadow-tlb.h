@@ -58,7 +58,7 @@ using shadow_tlb_set = std::array<shadow_tlb_slot, TLB_SET_SIZE>;
 /// \brief Shadow TLB memory layout
 using shadow_tlb_state = std::array<shadow_tlb_set, TLB_LAST_ + 1>; // one set for code, one for read and one for write
 
-static_assert(PMA_SHADOW_TLB_LENGTH >= sizeof(shadow_tlb_state), "TLB state must fit in TLB shadow");
+static_assert(AR_SHADOW_TLB_LENGTH >= sizeof(shadow_tlb_state), "TLB state must fit in TLB shadow");
 
 /// \brief List of field types
 enum class shadow_tlb_what : uint64_t {
@@ -70,7 +70,7 @@ enum class shadow_tlb_what : uint64_t {
 };
 
 static constexpr uint64_t shadow_tlb_get_abs_addr(TLB_set_index set_index, uint64_t slot_index) {
-    return PMA_SHADOW_TLB_START + (set_index * sizeof(shadow_tlb_set)) + (slot_index * sizeof(shadow_tlb_slot));
+    return AR_SHADOW_TLB_START + (set_index * sizeof(shadow_tlb_set)) + (slot_index * sizeof(shadow_tlb_slot));
 }
 
 static constexpr uint64_t shadow_tlb_get_abs_addr(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what what) {
@@ -78,11 +78,11 @@ static constexpr uint64_t shadow_tlb_get_abs_addr(TLB_set_index set_index, uint6
 }
 
 static constexpr shadow_tlb_what shadow_tlb_get_what(uint64_t paddr, TLB_set_index &set_index, uint64_t &slot_index) {
-    if (paddr < PMA_SHADOW_TLB_START || paddr - PMA_SHADOW_TLB_START >= sizeof(shadow_tlb_state) ||
+    if (paddr < AR_SHADOW_TLB_START || paddr - AR_SHADOW_TLB_START >= sizeof(shadow_tlb_state) ||
         (paddr & (sizeof(uint64_t) - 1)) != 0) {
         return shadow_tlb_what::unknown_;
     }
-    paddr -= PMA_SHADOW_TLB_START;
+    paddr -= AR_SHADOW_TLB_START;
     set_index = TLB_set_index{paddr / sizeof(shadow_tlb_set)};
     slot_index = (paddr % sizeof(shadow_tlb_set)) / sizeof(shadow_tlb_slot);
     return shadow_tlb_what{paddr % sizeof(shadow_tlb_slot)};

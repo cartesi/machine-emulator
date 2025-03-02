@@ -30,7 +30,7 @@ namespace cartesi {
 
 class shadow_tlb_address_range final : public address_range {
 
-    static constexpr pma_flags m_shadow_tlb_flags{
+    static constexpr pmas_flags m_shadow_tlb_flags{
         .M = false,
         .IO = true,
         .E = false,

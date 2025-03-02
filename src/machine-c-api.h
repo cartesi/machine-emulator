@@ -51,13 +51,13 @@ typedef enum cm_constant {
 } cm_constant;
 
 /// \brief Physical memory addresses (only the most useful are exposed in the API).
-typedef enum cm_pma_constant {
-    CM_PMA_CMIO_RX_BUFFER_START = 0x60000000,
-    CM_PMA_CMIO_RX_BUFFER_LOG2_SIZE = 21,
-    CM_PMA_CMIO_TX_BUFFER_START = 0x60800000,
-    CM_PMA_CMIO_TX_BUFFER_LOG2_SIZE = 21,
-    CM_PMA_RAM_START = 0x80000000,
-} cm_pma_constant;
+typedef enum cm_pmas_constant {
+    CM_AR_CMIO_RX_BUFFER_START = 0x60000000,
+    CM_AR_CMIO_RX_BUFFER_LOG2_SIZE = 21,
+    CM_AR_CMIO_TX_BUFFER_START = 0x60800000,
+    CM_AR_CMIO_TX_BUFFER_LOG2_SIZE = 21,
+    CM_AR_RAM_START = 0x80000000,
+} cm_pmas_constant;
 
 /// \brief Error codes returned from the C API.
 typedef enum cm_error {

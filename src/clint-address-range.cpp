@@ -20,7 +20,7 @@
 
 #include "i-device-state-access.h"
 #include "interpret.h"
-#include "pma-constants.h"
+#include "pmas-constants.h"
 #include "riscv-constants.h"
 #include "rtc.h"
 
@@ -43,7 +43,7 @@ static constexpr auto clint_mtime_rel_addr = static_cast<uint64_t>(clint_csr::mt
 constexpr auto clint_mtimecmp_rel_addr = static_cast<uint64_t>(clint_csr::mtimecmp);
 
 static constexpr uint64_t base(uint64_t v) {
-    return v - (v % PMA_PAGE_SIZE);
+    return v - (v % AR_PAGE_SIZE);
 }
 
 static bool clint_read_msip(i_device_state_access *a, uint64_t *val, int log2_size) {

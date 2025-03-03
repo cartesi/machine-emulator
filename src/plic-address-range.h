@@ -19,6 +19,7 @@
 
 #include <cstdint>
 
+#include "address-range-constants.h"
 #include "i-device-state-access.h"
 #include "plic-constants.h"
 #include "pristine-address-range.h"
@@ -41,7 +42,6 @@ class plic_address_range final : public pristine_address_range {
     static constexpr pmas_flags m_plic_flags{
         .M = false,
         .IO = true,
-        .E = false,
         .R = true,
         .W = true,
         .X = false,
@@ -52,8 +52,8 @@ class plic_address_range final : public pristine_address_range {
 
 public:
     template <typename ABRT>
-    plic_address_range(uint64_t start, uint64_t length, ABRT abrt) :
-        pristine_address_range("PLIC device", start, length, m_plic_flags, abrt) {
+    explicit plic_address_range(ABRT abrt) :
+        pristine_address_range("PLIC device", AR_PLIC_START, AR_PLIC_LENGTH, m_plic_flags, abrt) {
         ;
     }
 
@@ -71,8 +71,8 @@ private:
 };
 
 template <typename ABRT>
-static inline plic_address_range make_plic_address_range(uint64_t start, uint64_t length, ABRT abrt) {
-    return plic_address_range{start, length, abrt};
+static inline plic_address_range make_plic_address_range(ABRT abrt) {
+    return plic_address_range{abrt};
 }
 
 } // namespace cartesi

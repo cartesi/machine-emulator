@@ -55,7 +55,6 @@
 #include "machine-runtime-config.h"
 #include "memory-address-range.h"
 #include "plic-address-range.h"
-#include "pmas-address-range.h"
 #include "pmas.h"
 #include "record-send-cmio-state-access.h"
 #include "record-step-state-access.h"
@@ -190,7 +189,6 @@ void machine::init_uarch(const uarch_config &c) {
     static constexpr pmas_flags uram_flags{
         .M = true,
         .IO = false,
-        .E = false,
         .R = true,
         .W = true,
         .X = true,
@@ -287,7 +285,6 @@ void machine::init_ram_ar(const ram_config &ram) {
     static constexpr pmas_flags ram_flags{
         .M = true,
         .IO = false,
-        .E = false,
         .R = true,
         .W = true,
         .X = true,
@@ -308,7 +305,6 @@ void machine::init_flash_drive_ars(flash_drive_configs &flash_drive) {
     static const pmas_flags flash_flags{
         .M = true,
         .IO = false,
-        .E = false,
         .R = true,
         .W = true,
         .X = false,
@@ -412,7 +408,7 @@ void machine::init_virtio_ars(const virtio_configs &cs, uint64_t iunrep) {
 
 void machine::init_htif_ar(const htif_config &h) {
     // Register HTIF device
-    register_address_range(make_htif_address_range(AR_HTIF_START, AR_HTIF_LENGTH, throw_invalid_argument),
+    register_address_range(make_htif_address_range(throw_invalid_argument),
         register_where{.merkle = false, .interpret = true});
     // Copy HTIF state to from config to machine
     write_reg(reg::htif_tohost, h.tohost);
@@ -432,7 +428,6 @@ void machine::init_cmio_ars(const cmio_config &c) {
     static const pmas_flags tx_flags{
         .M = true,
         .IO = false,
-        .E = false,
         .R = true,
         .W = true,
         .X = false,
@@ -443,7 +438,6 @@ void machine::init_cmio_ars(const cmio_config &c) {
     static const pmas_flags rx_flags{
         .M = true,
         .IO = false,
-        .E = false,
         .R = true,
         .W = false,
         .X = false,
@@ -468,8 +462,8 @@ void machine::init_merkle_ars() {
 
 void machine::init_ars_descriptions() {
     // Initialize memory range descriptions returned by get_address_ranges method
-    auto src = m_ars | std::views::filter([](auto &ar) { return ar->get_length() != 0; }) |
-        std::views::transform([](auto &ar) {
+    auto src =
+        m_ars | std::views::filter([](auto &ar) { return !ar->is_empty(); }) | std::views::transform([](auto &ar) {
             return address_range_description{.start = ar->get_start(),
                 .length = ar->get_length(),
                 .description = ar->get_description()};
@@ -480,7 +474,7 @@ void machine::init_ars_descriptions() {
 
 void machine::init_clint_ar(const clint_config &c) {
     // Register CLINT device
-    register_address_range(make_clint_address_range(AR_CLINT_START, AR_CLINT_LENGTH, throw_invalid_argument),
+    register_address_range(make_clint_address_range(throw_invalid_argument),
         register_where{.merkle = false, .interpret = true});
     // Copy CLINT state to from config to machine
     write_reg(reg::clint_mtimecmp, c.mtimecmp);
@@ -488,21 +482,11 @@ void machine::init_clint_ar(const clint_config &c) {
 
 void machine::init_plic_ar(const plic_config &p) {
     // Register PLIC device
-    register_address_range(make_plic_address_range(AR_PLIC_START, AR_PLIC_LENGTH, throw_invalid_argument),
+    register_address_range(make_plic_address_range(throw_invalid_argument),
         register_where{.merkle = false, .interpret = true});
     // Copy PLIC state from config to machine
     write_reg(reg::plic_girqpend, p.girqpend);
     write_reg(reg::plic_girqsrvd, p.girqsrvd);
-}
-
-void machine::init_sentinel_ars() {
-    // Last, add empty sentinels until we reach capacity (need at least one sentinel)
-    // ??D I will remove these sentinels from the list
-    register_address_range(make_empty_address_range("sentinel"), register_where{.merkle = false, .interpret = true});
-    while (m_s.pmas.size() < PMA_MAX) {
-        register_address_range(make_empty_address_range("sentinel"),
-            register_where{.merkle = false, .interpret = true});
-    }
 }
 
 void machine::init_pmas_contents(memory_address_range &pmas) const {
@@ -536,13 +520,12 @@ void machine::init_tlb_contents(const std::string &image_filename) {
     }
 }
 
-address_range &machine::init_dtb_ar(const dtb_config &c) {
+static inline auto make_dtb_address_range(const std::string &image_filename) {
     // When we pass a RNG seed in a FDT stored in DTB, Linux will wipe out its contents as a security measure,
-    // therefore we need to make DTB writable, otherwise boot will hang.
+    // theref, ore we need to make DTB writable, otherwise boot will hang.
     static constexpr pmas_flags dtb_flags{
         .M = true,
         .IO = false,
-        .E = false,
         .R = true,
         .W = true,
         .X = true,
@@ -550,15 +533,28 @@ address_range &machine::init_dtb_ar(const dtb_config &c) {
         .IW = true,
         .DID = PMA_ISTART_DID::memory,
     };
-    return register_address_range(make_memory_address_range("DTB"s, AR_DTB_START, AR_DTB_LENGTH, dtb_flags,
-                                      c.image_filename, false /* not shared */),
-        register_where{.merkle = true, .interpret = true});
+    return make_memory_address_range("DTB"s, AR_DTB_START, AR_DTB_LENGTH, dtb_flags, image_filename,
+        false /* not shared */);
 }
 
 void machine::init_dtb_contents(const machine_config &c, address_range &dtb) {
     if (c.dtb.image_filename.empty()) {
         dtb_init(c, dtb.get_host_memory(), AR_DTB_LENGTH);
     }
+}
+
+static inline auto make_pmas_address_range() {
+    static constexpr pmas_flags m_pmas_flags{
+        .M = true,
+        .IO = false,
+        .R = true,
+        .W = false,
+        .X = false,
+        .IR = true,
+        .IW = false,
+        .DID = PMA_ISTART_DID::memory,
+    };
+    return make_callocd_memory_address_range("PMAs", AR_PMAS_START, AR_PMAS_LENGTH, m_pmas_flags);
 }
 
 // ??D It is best to leave the std::move() on r because it may one day be necessary!
@@ -569,27 +565,24 @@ machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}
     m_s.soft_yield = m_r.soft_yield;
     init_ram_ar(m_c.ram);
     // Will populate when initialization of PMAs is done
-    auto &dtb = init_dtb_ar(m_c.dtb);
+    auto &dtb = register_address_range(make_dtb_address_range(m_c.dtb.image_filename),
+        register_where{.merkle = true, .interpret = true});
     init_flash_drive_ars(m_c.flash_drive);
     init_cmio_ars(m_c.cmio);
     init_htif_ar(m_c.htif);
     init_clint_ar(m_c.clint);
     init_plic_ar(m_c.plic);
     // Will populate when initialization of PMAs is done
-    register_address_range(
-        make_shadow_tlb_address_range(AR_SHADOW_TLB_START, AR_SHADOW_TLB_LENGTH, throw_invalid_argument),
+    register_address_range(make_shadow_tlb_address_range(throw_invalid_argument),
         register_where{.merkle = true, .interpret = false});
-    register_address_range(
-        make_shadow_state_address_range(AR_SHADOW_STATE_START, AR_SHADOW_STATE_LENGTH, throw_invalid_argument),
+    register_address_range(make_shadow_state_address_range(throw_invalid_argument),
         register_where{.merkle = true, .interpret = false});
     // Will populate when initialization of PMAs is done
-    auto &shpmas = register_address_range(make_pmas_address_range(AR_PMAS_START, AR_PMAS_LENGTH),
-        register_where{.merkle = true, .interpret = true});
+    auto &pmas = register_address_range(make_pmas_address_range(), register_where{.merkle = true, .interpret = true});
     init_virtio_ars(m_c.virtio, m_c.processor.iunrep);
-    init_sentinel_ars();
-    // Populate shadow PMAs contents.
+    // Populate PMAs contents.
     // This must be done after all PMA entries are already registered, so we encode them into the shadow
-    init_pmas_contents(shpmas);
+    init_pmas_contents(pmas);
     // Initialize TLB contents.
     // This must be done after all PMA entries are already registered, so we can lookup page addresses
     init_tlb_contents(m_c.tlb.image_filename);
@@ -778,36 +771,30 @@ machine_config machine::get_serialization_config() const {
     return c;
 }
 
-static void store_device_address_range(const machine &m, const address_range &ar, const std::string &dir) {
-    if (!ar.is_device()) {
-        throw std::runtime_error{"attempt to save non-device address range "s + ar.get_description()};
-    }
-    auto scratch = make_unique_calloc<unsigned char>(AR_PAGE_SIZE); // will throw if it fails
-    auto name = machine_config::get_image_filename(dir, ar.get_start(), ar.get_length());
+void machine::store_address_range(const address_range &ar, const std::string &directory) const {
+    auto name = machine_config::get_image_filename(directory, ar.get_start(), ar.get_length());
     auto fp = make_unique_fopen(name.c_str(), "wb"); // will throw if it fails
-    for (uint64_t offset = 0; offset < ar.get_length(); offset += AR_PAGE_SIZE) {
-        const unsigned char *page_data = nullptr;
-        if (!ar.peek(m, offset, AR_PAGE_SIZE, &page_data, scratch.get())) {
-            throw std::runtime_error{"peek failed"};
+    // If we have do not have a pointer to the address range memory, use peek
+    if (ar.get_host_memory() == nullptr) {
+        auto scratch = make_unique_calloc<unsigned char>(AR_PAGE_SIZE); // will throw if it fails
+        for (uint64_t offset = 0; offset < ar.get_length(); offset += AR_PAGE_SIZE) {
+            const unsigned char *page_data = nullptr;
+            if (!ar.peek(*this, offset, AR_PAGE_SIZE, &page_data, scratch.get())) {
+                throw std::runtime_error{"peek failed"};
+            }
+            if (page_data == nullptr) {
+                memset(scratch.get(), 0, AR_PAGE_SIZE);
+                page_data = scratch.get();
+            }
+            if (fwrite(page_data, 1, AR_PAGE_SIZE, fp.get()) != AR_PAGE_SIZE) {
+                throw std::system_error{errno, std::generic_category(), "error writing to '" + name + "'"};
+            }
         }
-        if (page_data == nullptr) {
-            memset(scratch.get(), 0, AR_PAGE_SIZE);
-            page_data = scratch.get();
+        // Otherwise, use memory directly
+    } else {
+        if (fwrite(ar.get_host_memory(), 1, ar.get_length(), fp.get()) != ar.get_length()) {
+            throw std::runtime_error{"error writing to '" + name + "'"};
         }
-        if (fwrite(page_data, 1, AR_PAGE_SIZE, fp.get()) != AR_PAGE_SIZE) {
-            throw std::system_error{errno, std::generic_category(), "error writing to '" + name + "'"};
-        }
-    }
-}
-
-static void store_memory_address_range(const address_range &ar, const std::string &dir) {
-    if (!ar.is_memory()) {
-        throw std::runtime_error{"attempt to save non-memory address-range "s + ar.get_description()};
-    }
-    auto name = machine_config::get_image_filename(dir, ar.get_start(), ar.get_length());
-    auto fp = make_unique_fopen(name.c_str(), "wb");
-    if (fwrite(ar.get_host_memory(), 1, ar.get_length(), fp.get()) != ar.get_length()) {
-        throw std::runtime_error{"error writing to '" + name + "'"};
     }
 }
 
@@ -865,7 +852,7 @@ void machine::check_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uin
             throw std::domain_error{prefix + "pma_index is out of range"s};
         }
         const auto &ar = read_pma(pma_index);
-        if (ar.get_length() == 0 || !ar.is_memory()) {
+        if (!ar.is_memory()) {
             throw std::invalid_argument{prefix + "pma_index does not point to memory range"s};
         }
         if ((vaddr_page & PAGE_OFFSET_MASK) != 0) {
@@ -912,7 +899,6 @@ host_addr machine::get_hp_offset(uint64_t pma_index) const {
     return paddr - haddr;
 }
 
-//??D now that m_merkle_ars is sorted by start, maybe change this to a binary search?
 const address_range &machine::find_address_range(uint64_t paddr, uint64_t length) const noexcept {
     static constexpr auto sentinel = make_empty_address_range("sentinel");
     for (const auto &ar : m_ars) {
@@ -927,16 +913,16 @@ void machine::store_address_ranges(const machine_config &c, const std::string &d
     if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error{"cannot store PMAs of unreproducible machines"};
     }
-    store_memory_address_range(find_address_range<uint64_t>(AR_DTB_START), dir);
-    store_memory_address_range(find_address_range<uint64_t>(AR_RAM_START), dir);
-    store_device_address_range(*this, find_address_range<uint64_t>(AR_SHADOW_TLB_START), dir);
+    store_address_range(find_address_range<uint64_t>(AR_DTB_START), dir);
+    store_address_range(find_address_range<uint64_t>(AR_RAM_START), dir);
+    store_address_range(find_address_range<uint64_t>(AR_SHADOW_TLB_START), dir);
     // Could iterate over PMAs checking for those with a drive DID but this is easier
     for (const auto &f : c.flash_drive) {
-        store_memory_address_range(find_address_range<uint64_t>(f.start), dir);
+        store_address_range(find_address_range<uint64_t>(f.start), dir);
     }
-    store_memory_address_range(find_address_range<uint64_t>(AR_CMIO_RX_BUFFER_START), dir);
-    store_memory_address_range(find_address_range<uint64_t>(AR_CMIO_TX_BUFFER_START), dir);
-    store_memory_address_range(find_address_range<uint64_t>(AR_UARCH_RAM_START), dir);
+    store_address_range(find_address_range<uint64_t>(AR_CMIO_RX_BUFFER_START), dir);
+    store_address_range(find_address_range<uint64_t>(AR_CMIO_TX_BUFFER_START), dir);
+    store_address_range(find_address_range<uint64_t>(AR_UARCH_RAM_START), dir);
 }
 
 static void store_hash(const machine::hash_type &h, const std::string &dir) {
@@ -1808,7 +1794,7 @@ void machine::mark_write_tlb_dirty_pages() const {
             const auto &cold_slot = cold_set[slot_index];
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
             auto &ar = const_cast<address_range &>(read_pma(cold_slot.pma_index));
-            if (ar.get_length() == 0 || !ar.is_memory()) {
+            if (!ar.is_memory()) {
                 throw std::runtime_error{"could not mark dirty page for a TLB entry: TLB is corrupt"};
             }
             auto paddr_page = get_paddr(haddr_page, cold_slot.pma_index);
@@ -2049,32 +2035,28 @@ machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_si
     if ((address & ((~UINT64_C(0)) >> (64 - log2_size))) != 0) {
         throw std::domain_error{"address not aligned to log2_size"};
     }
-    // If proof concerns range smaller than a page, we may need to rebuild part
-    // of the proof from the contents of a page inside some PMA range.
-    // PMA range starts and lengths are multiple of the page size, which is a
-    // power of 2.
-    // The size of the desired range is smaller than the page size, but its
-    // size is a power of 2, and it is aligned to its size.
-    // Therefore, it is is either entirely inside a PMA range,
-    // or entirely outside it.
+    // If proof concerns range smaller than a page, we may need to rebuild part of the proof from
+    // the contents of a page inside some PMA range.
+    // PMA range starts and lengths are multiple of the page size, which is a power of 2.
+    // The size of the desired range is smaller than the page size, but its size is a power of 2,
+    // and it is aligned to its size.
+    // Therefore, it is is either entirely inside a PMA range, or entirely outside it.
     if (log2_size < machine_merkle_tree::get_log2_page_size()) {
         const uint64_t length = UINT64_C(1) << log2_size;
         const auto &ar = find_address_range(address, length);
         auto scratch = make_unique_calloc<unsigned char>(AR_PAGE_SIZE);
         const unsigned char *page_data = nullptr;
-        // If the PMA range is empty, we know the desired range is
-        // entirely outside of any non-pristine PMA.
-        // Therefore, the entire page where it lies is also pristine
+        // If the PMA range is empty, we know the desired range is entirely outside of any non-pristine PMA.
+        // Therefore, the entire page where it lies is also pristine.
         // Otherwise, the entire desired range is inside it.
-        if (ar.get_length() != 0) {
+        if (!ar.is_empty()) {
             const uint64_t page_start_in_range = (address - ar.get_start()) & (~(AR_PAGE_SIZE - 1));
             if (!ar.peek(*this, page_start_in_range, AR_PAGE_SIZE, &page_data, scratch.get())) {
                 throw std::runtime_error{"PMA peek failed"};
             }
         }
         return m_t.get_proof(address, log2_size, page_data);
-        // If proof concerns range bigger than a page, we already have its hash
-        // stored in the tree itself
+        // If proof concerns range bigger than a page, we already have its hash stored in the tree itself
     }
     return m_t.get_proof(address, log2_size, nullptr);
 }
@@ -2160,8 +2142,10 @@ void machine::read_memory(uint64_t paddr, unsigned char *data, uint64_t length) 
             data += from_ar;
         }
     }
-    // Finish up with pristine padding after last address range
-    memset(data, 0, length);
+    if (length != 0) {
+        // Finish up with pristine padding after last address range
+        memset(data, 0, length);
+    }
 }
 
 void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
@@ -2175,7 +2159,7 @@ void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t l
     if (ar.is_device()) {
         throw std::invalid_argument{"attempted write to device memory range"};
     }
-    if (ar.get_length() == 0 || !ar.is_memory()) {
+    if (!ar.is_memory()) {
         throw std::invalid_argument{"address range to write is not entirely in single memory range"};
     }
     if (is_protected(ar.get_driver_id())) {
@@ -2201,7 +2185,7 @@ void machine::fill_memory(uint64_t paddr, uint8_t val, uint64_t length) {
     if (ar.is_device()) {
         throw std::invalid_argument{"attempted fill to device memory range"};
     }
-    if (ar.get_length() == 0 || !ar.is_memory()) {
+    if (!ar.is_memory()) {
         throw std::invalid_argument{"address range to fill is not entirely in memory PMA"};
     }
     if (is_protected(ar.get_driver_id())) {
@@ -2328,7 +2312,7 @@ void machine::write_word(uint64_t paddr, uint64_t val) {
     }
     // Otherwise, try the slow path
     auto &ar = find_address_range(paddr, sizeof(uint64_t));
-    if (ar.get_length() == 0 || !ar.is_memory() || ar.get_host_memory() == nullptr) {
+    if (!ar.is_memory() || ar.get_host_memory() == nullptr) {
         std::ostringstream err;
         err << "attempted memory write to " << ar.get_description() << " at address 0x" << std::hex << paddr << "("
             << std::dec << paddr << ")";

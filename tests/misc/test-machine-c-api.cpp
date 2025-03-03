@@ -535,7 +535,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_invalid_address_range_test, ordinary
     cm_error error_code = cm_write_memory(_machine, address, write_data.data(), write_data.size());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
-    std::string origin("attempted write to device memory range");
+    std::string origin("address range to write is not entirely in single memory range");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -628,7 +628,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_virtual_memory_invalid_address_range_test, 
     cm_error error_code = cm_write_virtual_memory(_machine, address, write_data.data(), write_data.size());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
-    std::string origin("attempted write to device memory range");
+    std::string origin("address range to write is not entirely in single memory range");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -825,7 +825,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_flash_config_test, ordi
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    std::string origin("attempt to replace a protected range sentinel");
+    std::string origin("attempt to replace inexistent memory range");
     BOOST_CHECK_EQUAL(origin, result);
 }
 

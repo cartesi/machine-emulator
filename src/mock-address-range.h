@@ -37,11 +37,12 @@ using mock_address_range = std::variant<std::monostate, address_range, clint_add
 using mock_address_ranges = std::array<mock_address_range, PMA_MAX>;
 
 template <typename AR, typename ABRT>
-static inline mock_address_range check_mock_flags(AR &&ar, const pmas_flags &flags, ABRT abrt)
+static inline mock_address_range check_mock_address_range(AR &&ar, uint64_t start, uint64_t length,
+    const pmas_flags &flags, ABRT abrt)
     requires std::is_rvalue_reference_v<AR &&> && std::derived_from<AR, address_range>
 {
-    if (ar.get_flags() != flags) {
-        abrt("incompatible flags in mock address range");
+    if (ar.get_flags() != flags || start != ar.get_start() || length != ar.get_length()) {
+        abrt("incompatible mock address range");
         __builtin_trap();
         return std::monostate{};
     }
@@ -53,22 +54,23 @@ static inline mock_address_range make_mock_address_range(uint64_t istart, uint64
     uint64_t start{};
     auto flags = pmas_unpack_istart(istart, start);
     if (flags.M) {
-        return make_address_range(pmas_get_DID_name(flags.DID), start, ilength, flags, abrt);
+        return check_mock_address_range(make_address_range(pmas_get_DID_name(flags.DID), start, ilength, flags, abrt),
+            start, ilength, flags, abrt);
     }
-    if (flags.E) {
-        return make_address_range("empty", start, ilength, flags, abrt);
+    if (ilength == 0) {
+        return check_mock_address_range(make_empty_address_range("empty"), start, ilength, flags, abrt);
     }
     switch (flags.DID) {
         case PMA_ISTART_DID::shadow_state:
-            return check_mock_flags(make_shadow_state_address_range(start, ilength, abrt), flags, abrt);
+            return check_mock_address_range(make_shadow_state_address_range(abrt), start, ilength, flags, abrt);
         case PMA_ISTART_DID::shadow_TLB:
-            return check_mock_flags(make_shadow_tlb_address_range(start, ilength, abrt), flags, abrt);
+            return check_mock_address_range(make_shadow_tlb_address_range(abrt), start, ilength, flags, abrt);
         case PMA_ISTART_DID::CLINT:
-            return check_mock_flags(make_clint_address_range(start, ilength, abrt), flags, abrt);
+            return check_mock_address_range(make_clint_address_range(abrt), start, ilength, flags, abrt);
         case PMA_ISTART_DID::PLIC:
-            return check_mock_flags(make_plic_address_range(start, ilength, abrt), flags, abrt);
+            return check_mock_address_range(make_plic_address_range(abrt), start, ilength, flags, abrt);
         case PMA_ISTART_DID::HTIF:
-            return check_mock_flags(make_htif_address_range(start, ilength, abrt), flags, abrt);
+            return check_mock_address_range(make_htif_address_range(abrt), start, ilength, flags, abrt);
         default:
             abrt("unhandled mock address range");
             __builtin_trap();

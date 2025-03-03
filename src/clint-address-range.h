@@ -19,6 +19,7 @@
 
 #include <cstdint>
 
+#include "address-range-constants.h"
 #include "pristine-address-range.h"
 
 /// \file
@@ -31,7 +32,6 @@ class clint_address_range final : public pristine_address_range {
     static constexpr pmas_flags m_clint_flags{
         .M = false,
         .IO = true,
-        .E = false,
         .R = true,
         .W = true,
         .X = false,
@@ -42,8 +42,8 @@ class clint_address_range final : public pristine_address_range {
 
 public:
     template <typename ABRT>
-    clint_address_range(uint64_t start, uint64_t length, ABRT abrt) :
-        pristine_address_range("CLINT device", start, length, m_clint_flags, abrt) {
+    explicit clint_address_range(ABRT abrt) :
+        pristine_address_range("CLINT device", AR_CLINT_START, AR_CLINT_LENGTH, m_clint_flags, abrt) {
         ;
     }
 
@@ -61,8 +61,8 @@ private:
 };
 
 template <typename ABRT>
-static inline clint_address_range make_clint_address_range(uint64_t start, uint64_t length, ABRT abrt) {
-    return clint_address_range{start, length, abrt};
+static inline clint_address_range make_clint_address_range(ABRT abrt) {
+    return clint_address_range{abrt};
 }
 
 } // namespace cartesi

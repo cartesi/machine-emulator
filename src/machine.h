@@ -129,6 +129,11 @@ private:
     /// \param directory Directory where address ranges will be stored
     void store_address_ranges(const machine_config &config, const std::string &directory) const;
 
+    /// \brief Saves an address ranges into serialization directory
+    /// \param ar Address range to store
+    /// \param directory Directory where address range will be stored
+    void store_address_range(const address_range &ar, const std::string &directory) const;
+
     /// \brief Returns offset that converts between machine host addresses and target physical addresses
     /// \param pma_index Index of the memory PMA for the desired offset
     host_addr get_hp_offset(uint64_t pma_index) const;
@@ -185,9 +190,6 @@ private:
     /// \detail This can only be called after all address ranges have been registered
     void init_ars_descriptions();
 
-    /// \brief Fill up address range list with sentinels
-    void init_sentinel_ars();
-
     /// \brief Initializes contents of the shadow PMAs memory
     /// \param pmas PMA entry for the shadow PMAs
     /// \detail This can only be called after all PMAs have been added
@@ -197,10 +199,6 @@ private:
     /// \param image_filename File containing image, or empty for default values
     /// \detail This can only be called after all PMAs have been added
     void init_tlb_contents(const std::string &image_filename);
-
-    /// \brief Initializes DTB address range
-    /// \param c DTB configuration
-    address_range &init_dtb_ar(const dtb_config &c);
 
     /// \brief Initializes contents of machine DTB, if image was not available
     /// \param c Machine configuration
@@ -500,7 +498,7 @@ public:
     /// \returns Desired address range, or an empty sentinel if index is out of bounds
     const address_range &read_pma(uint64_t index) const noexcept {
         if (index >= m_s.pmas.size()) {
-            static constexpr address_range sentinel{"sentinel"};
+            static constexpr auto sentinel = make_empty_address_range("sentinel");
             return sentinel;
         }
         // NOLINTNEXTLINE(bugprone-narrowing-conversions)

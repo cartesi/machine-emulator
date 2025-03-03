@@ -32,28 +32,26 @@ enum PMA_constants : uint64_t {
 enum PMA_ISTART_shifts {
     PMA_ISTART_M_SHIFT = 0,
     PMA_ISTART_IO_SHIFT = 1,
-    PMA_ISTART_E_SHIFT = 2,
-    PMA_ISTART_R_SHIFT = 3,
-    PMA_ISTART_W_SHIFT = 4,
-    PMA_ISTART_X_SHIFT = 5,
-    PMA_ISTART_IR_SHIFT = 6,
-    PMA_ISTART_IW_SHIFT = 7,
-    PMA_ISTART_DID_SHIFT = 8,
-    AR_ISTART_START_SHIFT = 12
+    PMA_ISTART_R_SHIFT = 2,
+    PMA_ISTART_W_SHIFT = 3,
+    PMA_ISTART_X_SHIFT = 4,
+    PMA_ISTART_IR_SHIFT = 5,
+    PMA_ISTART_IW_SHIFT = 6,
+    PMA_ISTART_DID_SHIFT = 7,
+    PMA_ISTART_START_SHIFT = 12
 };
 
 /// \brief PMA istart masks
 enum PMA_ISTART_masks : uint64_t {
-    PMA_ISTART_M_MASK = UINT64_C(1) << PMA_ISTART_M_SHIFT,       ///< Memory range
-    PMA_ISTART_IO_MASK = UINT64_C(1) << PMA_ISTART_IO_SHIFT,     ///< Device range
-    PMA_ISTART_E_MASK = UINT64_C(1) << PMA_ISTART_E_SHIFT,       ///< Empty range
-    PMA_ISTART_R_MASK = UINT64_C(1) << PMA_ISTART_R_SHIFT,       ///< Readable
-    PMA_ISTART_W_MASK = UINT64_C(1) << PMA_ISTART_W_SHIFT,       ///< Writable
-    PMA_ISTART_X_MASK = UINT64_C(1) << PMA_ISTART_X_SHIFT,       ///< Executable
-    PMA_ISTART_IR_MASK = UINT64_C(1) << PMA_ISTART_IR_SHIFT,     ///< Idempotent reads
-    PMA_ISTART_IW_MASK = UINT64_C(1) << PMA_ISTART_IW_SHIFT,     ///< Idempotent writes
-    PMA_ISTART_DID_MASK = UINT64_C(15) << PMA_ISTART_DID_SHIFT,  ///< Device id
-    AR_ISTART_START_MASK = UINT64_C(-1) << AR_ISTART_START_SHIFT ///< Start of range
+    PMA_ISTART_M_MASK = UINT64_C(1) << PMA_ISTART_M_SHIFT,         ///< Memory range
+    PMA_ISTART_IO_MASK = UINT64_C(1) << PMA_ISTART_IO_SHIFT,       ///< Device range
+    PMA_ISTART_R_MASK = UINT64_C(1) << PMA_ISTART_R_SHIFT,         ///< Readable
+    PMA_ISTART_W_MASK = UINT64_C(1) << PMA_ISTART_W_SHIFT,         ///< Writable
+    PMA_ISTART_X_MASK = UINT64_C(1) << PMA_ISTART_X_SHIFT,         ///< Executable
+    PMA_ISTART_IR_MASK = UINT64_C(1) << PMA_ISTART_IR_SHIFT,       ///< Idempotent reads
+    PMA_ISTART_IW_MASK = UINT64_C(1) << PMA_ISTART_IW_SHIFT,       ///< Idempotent writes
+    PMA_ISTART_DID_MASK = UINT64_C(31) << PMA_ISTART_DID_SHIFT,    ///< Driver ID
+    PMA_ISTART_START_MASK = UINT64_C(-1) << PMA_ISTART_START_SHIFT ///< Start of range
 };
 
 /// \brief PMA device ids

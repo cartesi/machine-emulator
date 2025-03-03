@@ -19,6 +19,7 @@
 
 #include <cstdint>
 
+#include "address-range-constants.h"
 #include "i-device-state-access.h"
 #include "pmas-constants.h"
 #include "pristine-address-range.h"
@@ -33,7 +34,6 @@ class htif_address_range final : public pristine_address_range {
     static constexpr pmas_flags m_htif_flags{
         .M = false,
         .IO = true,
-        .E = false,
         .R = true,
         .W = true,
         .X = false,
@@ -44,8 +44,8 @@ class htif_address_range final : public pristine_address_range {
 
 public:
     template <typename ABRT>
-    htif_address_range(uint64_t start, uint64_t length, ABRT abrt) :
-        pristine_address_range("HTIF device", start, length, m_htif_flags, abrt) {
+    explicit htif_address_range(ABRT abrt) :
+        pristine_address_range("HTIF device", AR_HTIF_START, AR_HTIF_LENGTH, m_htif_flags, abrt) {
         ;
     }
 
@@ -63,8 +63,8 @@ private:
 };
 
 template <typename ABRT>
-static inline htif_address_range make_htif_address_range(uint64_t start, uint64_t length, ABRT abrt) {
-    return htif_address_range{start, length, abrt};
+static inline htif_address_range make_htif_address_range(ABRT abrt) {
+    return htif_address_range{abrt};
 }
 
 } // namespace cartesi

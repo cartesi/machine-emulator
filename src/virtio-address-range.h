@@ -260,7 +260,6 @@ class virtio_address_range : public pristine_address_range {
     static constexpr pmas_flags m_virtio_flags{
         .M = false,
         .IO = true,
-        .E = false,
         .R = true,
         .W = true,
         .X = false,

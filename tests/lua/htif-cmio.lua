@@ -33,7 +33,7 @@ local function stderr(...)
     io.stderr:write(string.format(...))
 end
 
-local final_mcycle = 1835101
+local final_mcycle = 1835100
 local exit_payload = 0
 
 local function test(config)
@@ -48,7 +48,9 @@ local function test(config)
 
     -- check that buffers got filled in with `pattern`
     local tx_length = 1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE
-    assert(string.rep(pattern, tx_length / 8) == machine:read_memory(cartesi.AR_CMIO_TX_BUFFER_START, tx_length))
+    local expected = string.rep(pattern, tx_length / 8)
+    local got = machine:read_memory(cartesi.AR_CMIO_TX_BUFFER_START, tx_length)
+    assert(expected == got, string.format("expected %q..., (got %q...)", expected:sub(1, 10), got:sub(1, 10)))
 
     assert(machine:read_reg("iflags_H") ~= 0)
 

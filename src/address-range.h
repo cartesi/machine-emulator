@@ -56,7 +56,6 @@ public:
         m_length{0},
         m_length_bit_ceil{0},
         m_flags{} {
-        m_flags.E = true;
         for (unsigned i = 0; i < std::min<unsigned>(N, m_description.size() - 1); ++i) {
             m_description[i] = description[i];
         }
@@ -70,7 +69,8 @@ public:
     constexpr virtual ~address_range() {}; // = default; // doesn't work due to bug in gcc
 
     template <typename ABRT, size_t N, typename... ARGS>
-    [[noreturn]] static void ABRTF(ABRT abrt, const char (&fmt)[N], ARGS... args) {
+    [[noreturn]]
+    static void ABRTF(ABRT abrt, const char (&fmt)[N], ARGS... args) {
         char buf[256]{};
         std::ignore = snprintf(buf, std::size(buf), fmt, args...);
         abrt(buf);
@@ -98,35 +98,28 @@ public:
             m_description[i] = description[i];
         }
         // All address ranges must be page-aligned
-        if ((m_length & ~AR_ISTART_START_MASK) != 0) {
-            ABRTF(abrt, "length must be multiple of page size when initializing %s", m_description);
+        if ((m_length & ~PMA_ISTART_START_MASK) != 0) {
+            ABRTF(abrt, "length must be multiple of page size when initializing %s", description);
         }
-        if ((m_start & ~AR_ISTART_START_MASK) != 0) {
-            ABRTF(abrt, "start of %s (0x%" PRIx64 ") must be aligned to page boundary of %d bytes", m_description,
-                start, AR_PAGE_SIZE);
+        if ((m_start & ~PMA_ISTART_START_MASK) != 0) {
+            ABRTF(abrt, "start of %s (0x%" PRIx64 ") must be aligned to page boundary of %" PRId64 " bytes",
+                description, start, AR_PAGE_SIZE);
         }
         // It must be possible to round length up to the next power of two
         if (m_length_bit_ceil == 0) {
-            ABRTF(abrt, "range too long when initializing %s", m_description);
+            ABRTF(abrt, "address range too long when initializing %s", description);
         }
         // Empty range must really be empty
         if (m_length == 0) {
             if (m_start != 0) {
-                ABRTF(abrt, "range with length 0 must start at 0 when initializing %s", m_description);
-            }
-            if (!m_flags.E) {
-                ABRTF(abrt, "range with length 0 must be flagged empty when initializing %s", m_description);
+                ABRTF(abrt, "range with length 0 must start at 0 when initializing %s", description);
             }
             if (m_flags.M) {
-                ABRTF(abrt, "memory range cannot be empty when initializing %s", m_description);
+                ABRTF(abrt, "memory address range cannot have length 0 when initializing %s", description);
             }
             if (m_flags.IO) {
-                ABRTF(abrt, "device range cannot be empty when initializing %s", m_description);
+                ABRTF(abrt, "device address range cannot have length 0 when initializing %s", description);
             }
-        }
-        // Non-empty range must either be memory or device
-        if (static_cast<int>(m_flags.M) + static_cast<int>(m_flags.IO) + static_cast<int>(m_flags.E) != 1) {
-            ABRTF(abrt, "range must be one of empty, memory, or device when initializing %s", m_description);
         }
     }
 
@@ -178,36 +171,39 @@ public:
 
     /// \brief Test if address range is occupied by memory
     /// \returns True if and only if range is occupied by memory
+    /// \details In this case, get_host_memory() is guaranteed not to return nullptr.
     bool is_memory() const noexcept {
         return m_flags.M;
     }
 
     /// \brief Test if address range is occupied by a device
     /// \returns True if and only if range is occupied by a device
+    /// \details In this case, read_device() and write_device() are operational.
     bool is_device() const noexcept {
         return m_flags.IO;
     }
 
     /// \brief Test if address range is empty
     /// \returns True if and only if range is empty
+    /// \details Empty ranges should be used only for sentinels.
     bool is_empty() const noexcept {
-        return m_flags.E;
+        return m_length == 0;
     }
 
     /// \brief Tests if range is readable
-    /// \returns True if and only if range is readable
+    /// \returns True if and only if range is readable from within the machine.
     bool is_readable() const noexcept {
         return m_flags.R;
     }
 
     /// \brief Tests if range is writeable
-    /// \returns True if and only if range is writeable
+    /// \returns True if and only if range is writeable from within the machine.
     bool is_writeable() const noexcept {
         return m_flags.W;
     }
 
     /// \brief Tests if range is executable
-    /// \returns True if and only if range is executable
+    /// \returns True if and only if range is executable from within the machine.
     bool is_executable() const noexcept {
         return m_flags.X;
     }

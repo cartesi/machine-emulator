@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "address-range-constants.h"
 #include "address-range.h"
 #include "shadow-state.h"
 
@@ -32,8 +33,7 @@ class shadow_state_address_range final : public address_range {
 
     static constexpr pmas_flags m_shadow_state_flags{
         .M = false,
-        .IO = true,
-        .E = false,
+        .IO = false,
         .R = false,
         .W = false,
         .X = false,
@@ -44,8 +44,8 @@ class shadow_state_address_range final : public address_range {
 
 public:
     template <typename ABRT>
-    shadow_state_address_range(uint64_t start, uint64_t length, ABRT abrt) :
-        address_range("shadow state", start, length, m_shadow_state_flags, abrt) {
+    explicit shadow_state_address_range(ABRT abrt) :
+        address_range("shadow state", AR_SHADOW_STATE_START, AR_SHADOW_STATE_LENGTH, m_shadow_state_flags, abrt) {
         ;
     }
 
@@ -63,8 +63,8 @@ private:
 };
 
 template <typename ABRT>
-static inline shadow_state_address_range make_shadow_state_address_range(uint64_t start, uint64_t length, ABRT abrt) {
-    return shadow_state_address_range{start, length, abrt};
+static inline shadow_state_address_range make_shadow_state_address_range(ABRT abrt) {
+    return shadow_state_address_range{abrt};
 }
 
 } // namespace cartesi

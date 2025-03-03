@@ -26,19 +26,19 @@
  * last entry has length == 0
  *
  * with the following memory layout:
- * +------+--------+--------+------+----+----+---+---+---+---+----+---+
- * |      |        | 63-12  | 11-8 | 7  | 6  | 5 | 4 | 3 | 2 | 1  | 0 |
- * | 0x00 | start  | start  | DID  | IW | IR | X | W | R | E | IO | M |
- * +------+--------+--------+------+----+----+---+---+---+---+----+---+
- * |      |        | 63-11  |                11-0                     |
- * | 0x08 | length | length |             reserved [=0]               |
- * +------+--------+--------+-----------------------------------------+
+ * +------+--------+--------+------+----+----+---+---+---+----+---+
+ * |      |        | 63-12  | 11-7 | 6  | 5  | 4 | 3 | 2 | 1  | 0 |
+ * | 0x00 | start  | start  | DID  | IW | IR | X | W | R | IO | M |
+ * +------+--------+--------+------+----+----+---+---+---+----+---+
+ * |      |        | 63-11  |                11-0                 |
+ * | 0x08 | length | length |             reserved [=0]           |
+ * +------+--------+--------+-------------------------------------+
  */
 #define O_START  0x00
 #define O_LENGTH 0x08
 
-#define PMA_START_DID_CONST(did) ((did) << 8)
-#define PMA_START_DID_MASK    0x0000000000000f00
+#define PMA_START_DID_CONST(did) ((did) << 7)
+#define PMA_START_DID_MASK    0x0000000000000f80
 #define AR_START_START_MASK  0xfffffffffffff000
 
 .global _start

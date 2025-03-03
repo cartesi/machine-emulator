@@ -32,6 +32,8 @@ namespace cartesi {
 
 static constexpr const char *pmas_get_DID_name(PMA_ISTART_DID did) {
     switch (did) {
+        case PMA_ISTART_DID::empty:
+            return "DID.empty";
         case PMA_ISTART_DID::memory:
             return "DID.memory";
         case PMA_ISTART_DID::shadow_state:
@@ -54,16 +56,14 @@ static constexpr const char *pmas_get_DID_name(PMA_ISTART_DID did) {
             return "DID.cmio_tx_buffer";
         case PMA_ISTART_DID::shadow_uarch_state:
             return "DID.shadow_uarch";
-        default:
-            return "DID.unknown";
     }
+    return "DID.unknown";
 }
 
 ///< Unpacked attribute flags
 struct pmas_flags {
     bool M;             ///< is memory
     bool IO;            ///< is device
-    bool E;             ///< is empty
     bool R;             ///< is readable
     bool W;             ///< is writeable
     bool X;             ///< is executable
@@ -76,10 +76,9 @@ struct pmas_flags {
 };
 
 static constexpr pmas_flags pmas_unpack_istart(uint64_t istart, uint64_t &start) {
-    start = istart & AR_ISTART_START_MASK;
+    start = istart & PMA_ISTART_START_MASK;
     return pmas_flags{.M = ((istart & PMA_ISTART_M_MASK) >> PMA_ISTART_M_SHIFT) != 0,
         .IO = ((istart & PMA_ISTART_IO_MASK) >> PMA_ISTART_IO_SHIFT) != 0,
-        .E = ((istart & PMA_ISTART_E_MASK) >> PMA_ISTART_E_SHIFT) != 0,
         .R = ((istart & PMA_ISTART_R_MASK) >> PMA_ISTART_R_SHIFT) != 0,
         .W = ((istart & PMA_ISTART_W_MASK) >> PMA_ISTART_W_SHIFT) != 0,
         .X = ((istart & PMA_ISTART_X_MASK) >> PMA_ISTART_X_SHIFT) != 0,
@@ -92,7 +91,6 @@ static constexpr uint64_t pmas_pack_istart(const pmas_flags &flags, uint64_t sta
     uint64_t istart = start;
     istart |= (static_cast<uint64_t>(flags.M) << PMA_ISTART_M_SHIFT);
     istart |= (static_cast<uint64_t>(flags.IO) << PMA_ISTART_IO_SHIFT);
-    istart |= (static_cast<uint64_t>(flags.E) << PMA_ISTART_E_SHIFT);
     istart |= (static_cast<uint64_t>(flags.R) << PMA_ISTART_R_SHIFT);
     istart |= (static_cast<uint64_t>(flags.W) << PMA_ISTART_W_SHIFT);
     istart |= (static_cast<uint64_t>(flags.X) << PMA_ISTART_X_SHIFT);

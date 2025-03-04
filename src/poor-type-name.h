@@ -14,35 +14,35 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef PM_TYPE_NAME_H
-#define PM_TYPE_NAME_H
+#ifndef POOR_TYPE_NAME_H
+#define POOR_TYPE_NAME_H
 
 namespace cartesi {
 
 //?DD Poor man's rtti that works in microarchitecture
 template <typename T>
-struct pm_type_name {
+struct poor_type_name {
     static constexpr const char *value = "unknown";
 };
 
 template <typename T>
-constexpr const char *pm_type_name_v = pm_type_name<T>::value;
+constexpr const char *poor_type_name_v = poor_type_name<T>::value;
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
-#define PM_TYPE_NAME(type)                                                                                             \
+#define POOR_TYPE_NAME(type)                                                                                           \
     template <>                                                                                                        \
-    struct pm_type_name<type> {                                                                                        \
+    struct poor_type_name<type> {                                                                                      \
         static constexpr const char *value = #type;                                                                    \
     }
 
-PM_TYPE_NAME(uint8_t);
-PM_TYPE_NAME(int8_t);
-PM_TYPE_NAME(uint16_t);
-PM_TYPE_NAME(int16_t);
-PM_TYPE_NAME(uint32_t);
-PM_TYPE_NAME(int32_t);
-PM_TYPE_NAME(uint64_t);
-PM_TYPE_NAME(int64_t);
+POOR_TYPE_NAME(uint8_t);
+POOR_TYPE_NAME(int8_t);
+POOR_TYPE_NAME(uint16_t);
+POOR_TYPE_NAME(int16_t);
+POOR_TYPE_NAME(uint32_t);
+POOR_TYPE_NAME(int32_t);
+POOR_TYPE_NAME(uint64_t);
+POOR_TYPE_NAME(int64_t);
 // NOLINTEND(cppcoreguidelines-macro-usage)
 
 } // namespace cartesi

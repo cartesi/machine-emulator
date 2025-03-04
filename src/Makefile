@@ -370,7 +370,7 @@ LIBCARTESI_OBJS:= \
 	uarch-pristine-state-hash.o \
 	uarch-reset-state.o \
 	uarch-step.o \
-	virtual-machine.o \
+	local-machine.o \
 	uarch-interpret.o \
 	virtio-address-range.o \
 	virtio-console-address-range.o \
@@ -381,7 +381,7 @@ LIBCARTESI_OBJS:= \
 
 CARTESI_CLUA_OBJS:= \
 	clua.o \
-	clua-i-virtual-machine.o \
+	clua-i-machine.o \
 	uarch-pristine-ram.o \
 	uarch-pristine-state-hash.o \
 	uarch-pristine-hash.o
@@ -402,7 +402,7 @@ MERKLE_TREE_HASH_OBJS:= \
 	merkle-tree-hash.o
 
 LIBCARTESI_JSONRPC_OBJS:= \
-	jsonrpc-virtual-machine.o \
+	jsonrpc-machine.o \
 	os.o \
 	jsonrpc-machine-c-api.o \
 	uarch-pristine-ram.o \

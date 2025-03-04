@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef JSONRPC_VIRTUAL_MACHINE_H
-#define JSONRPC_VIRTUAL_MACHINE_H
+#ifndef JSONRPC_MACHINE_H
+#define JSONRPC_MACHINE_H
 
 #include <cstdint>
 #include <memory>
@@ -23,7 +23,7 @@
 
 #include "access-log.h"
 #include "address-range-description.h"
-#include "i-virtual-machine.h"
+#include "i-machine.h"
 #include "interpret.h"
 #include "jsonrpc-fork-result.h"
 #include "machine-config.h"
@@ -41,25 +41,25 @@
 
 namespace cartesi {
 
-/// \class jsonrpc_virtual_machine
-/// \brief JSONRPC implementation of the i_virtual_machine interface
-class jsonrpc_virtual_machine final : public i_virtual_machine {
+/// \class jsonrpc_machine
+/// \brief JSONRPC implementation of the i_machine interface
+class jsonrpc_machine final : public i_machine {
 public:
     enum class cleanup_call { nothing, destroy, shutdown };
 
     /// \brief Constructor that connects to existing server
-    explicit jsonrpc_virtual_machine(std::string address);
+    explicit jsonrpc_machine(std::string address);
 
     /// \brief Constructor that spawns a new server
-    jsonrpc_virtual_machine(const std::string &address, fork_result &spawned);
+    jsonrpc_machine(const std::string &address, fork_result &spawned);
 
     // no copies or assignments
-    jsonrpc_virtual_machine(const jsonrpc_virtual_machine &other) = delete;
-    jsonrpc_virtual_machine(jsonrpc_virtual_machine &&other) noexcept = delete;
-    jsonrpc_virtual_machine &operator=(const jsonrpc_virtual_machine &other) = delete;
-    jsonrpc_virtual_machine &operator=(jsonrpc_virtual_machine &&other) noexcept = delete;
+    jsonrpc_machine(const jsonrpc_machine &other) = delete;
+    jsonrpc_machine(jsonrpc_machine &&other) noexcept = delete;
+    jsonrpc_machine &operator=(const jsonrpc_machine &other) = delete;
+    jsonrpc_machine &operator=(jsonrpc_machine &&other) noexcept = delete;
 
-    ~jsonrpc_virtual_machine() override;
+    ~jsonrpc_machine() override;
 
     /// \brief Asks remote server to shutdown
     void shutdown_server();
@@ -96,7 +96,7 @@ public:
 
 private:
     machine_config do_get_initial_config() const override;
-    i_virtual_machine *do_clone_empty() const override;
+    i_machine *do_clone_empty() const override;
     bool do_is_empty() const override;
     void do_create(const machine_config &config, const machine_runtime_config &runtime) override;
     void do_load(const std::string &directory, const machine_runtime_config &runtime) override;
@@ -137,7 +137,7 @@ private:
         const hash_type &root_hash_after) const override;
     void do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const override;
-    bool do_is_jsonrpc_virtual_machine() const override;
+    bool do_is_jsonrpc_machine() const override;
 
     void check_server_version() const;
     template <typename R, typename... Ts>
@@ -152,4 +152,4 @@ private:
 
 } // namespace cartesi
 
-#endif // JSONRPC_VIRTUAL_MACHINE_H
+#endif // JSONRPC_MACHINE_H

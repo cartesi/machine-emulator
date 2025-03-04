@@ -28,7 +28,7 @@
 #include "dump.h"
 #include "i-prefer-shadow-state.h"
 #include "meta.h"
-#include "pm-type-name.h"
+#include "poor-type-name.h"
 #include "tlb.h"
 
 namespace cartesi {
@@ -332,7 +332,7 @@ public:
         derived().template do_read_memory_word<T, A>(faddr, pma_index, pval);
         [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
         DSA_PRINTF("%s::read_memory_word<%s,%s>(%s{0x%" PRIx64 "}, %" PRIu64 ") = %" PRIu64 "(0x%" PRIx64 ")\n",
-            get_name(), pm_type_name_v<T>, pm_type_name_v<A>, fast_addr_name, faddr, pma_index,
+            get_name(), poor_type_name_v<T>, poor_type_name_v<A>, fast_addr_name, faddr, pma_index,
             static_cast<uint64_t>(*pval), static_cast<uint64_t>(*pval));
     }
 
@@ -349,7 +349,7 @@ public:
         derived().template do_write_memory_word<T, A>(faddr, pma_index, val);
         [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
         DSA_PRINTF("%s::write_memory_word<%s,%s>(%s{0x%" PRIx64 "}, %" PRIu64 ", %" PRIu64 "(0x%" PRIx64 "))\n",
-            get_name(), pm_type_name_v<T>, pm_type_name_v<A>, fast_addr_name, faddr, pma_index,
+            get_name(), poor_type_name_v<T>, poor_type_name_v<A>, fast_addr_name, faddr, pma_index,
             static_cast<uint64_t>(val), static_cast<uint64_t>(val));
     }
 

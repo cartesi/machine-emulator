@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef FIND_ADDRESS_RANGE_H
-#define FIND_ADDRESS_RANGE_H
+#ifndef FIND_PMA_H
+#define FIND_PMA_H
 
 #include <cstdint>
 

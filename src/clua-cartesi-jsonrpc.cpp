@@ -21,7 +21,7 @@ extern "C" {
 #include <lua.h>
 }
 
-#include "clua-i-virtual-machine.h"
+#include "clua-i-machine.h"
 #include "clua.h"
 #include "jsonrpc-machine-c-api.h"
 #include "machine-c-api.h"
@@ -214,7 +214,7 @@ CM_API int luaopen_cartesi_jsonrpc(lua_State *L) {
     clua_init(L);    // cluactx
     lua_newtable(L); // cluactx jsonrpc
     // Initialize and export jsonrpc machine bind
-    clua_i_virtual_machine_export(L, -2);                                                         // cluactx jsonrpc
+    clua_i_machine_export(L, -2);                                                                 // cluactx jsonrpc
     clua_setmethods<clua_managed_cm_ptr<cm_machine>>(L, jsonrpc_machine_obj_index.data(), 0, -2); // cluactx jsonrpc
     // Set module functions
     lua_pushvalue(L, -2);            // cluactx jsonrpc cluactx

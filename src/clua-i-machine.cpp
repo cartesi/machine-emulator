@@ -14,7 +14,7 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "clua-i-virtual-machine.h"
+#include "clua-i-machine.h"
 
 #include <algorithm>
 #include <cassert>
@@ -1120,7 +1120,7 @@ static const auto machine_meta = cartesi::clua_make_luaL_Reg_array({
     {"__call", machine_meta_call},
 });
 
-int clua_i_virtual_machine_init(lua_State *L, int ctxidx) {
+int clua_i_machine_init(lua_State *L, int ctxidx) {
     clua_createnewtype<clua_managed_cm_ptr<unsigned char>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<std::string>>(L, ctxidx);
     clua_createnewtype<clua_managed_cm_ptr<nlohmann::json>>(L, ctxidx);
@@ -1132,8 +1132,8 @@ int clua_i_virtual_machine_init(lua_State *L, int ctxidx) {
     return 0;
 }
 
-int clua_i_virtual_machine_export(lua_State *L, int ctxidx) {
-    clua_i_virtual_machine_init(L, ctxidx);
+int clua_i_machine_export(lua_State *L, int ctxidx) {
+    clua_i_machine_init(L, ctxidx);
     return 0;
 }
 

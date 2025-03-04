@@ -24,60 +24,60 @@
 #include <stdexcept>
 #include <string>
 
-#include "i-virtual-machine.h"
+#include "i-machine.h"
 #include "json-util.h"
 #include "jsonrpc-fork-result.h"
-#include "jsonrpc-virtual-machine.h"
+#include "jsonrpc-machine.h"
 #include "machine-c-api-internal.h"
 #include "machine-c-api.h"
 
 using namespace std::string_literals;
 
-static cartesi::jsonrpc_virtual_machine::cleanup_call convert_from_c(cm_jsonrpc_cleanup_call call) {
+static cartesi::jsonrpc_machine::cleanup_call convert_from_c(cm_jsonrpc_cleanup_call call) {
     switch (call) {
         case CM_JSONRPC_DESTROY:
-            return cartesi::jsonrpc_virtual_machine::cleanup_call::destroy;
+            return cartesi::jsonrpc_machine::cleanup_call::destroy;
         case CM_JSONRPC_SHUTDOWN:
-            return cartesi::jsonrpc_virtual_machine::cleanup_call::shutdown;
+            return cartesi::jsonrpc_machine::cleanup_call::shutdown;
         case CM_JSONRPC_NOTHING:
-            return cartesi::jsonrpc_virtual_machine::cleanup_call::nothing;
+            return cartesi::jsonrpc_machine::cleanup_call::nothing;
         default:
             throw std::invalid_argument("invalid cleanup call");
     }
 }
 
-static cm_jsonrpc_cleanup_call convert_to_c(cartesi::jsonrpc_virtual_machine::cleanup_call call) {
+static cm_jsonrpc_cleanup_call convert_to_c(cartesi::jsonrpc_machine::cleanup_call call) {
     switch (call) {
-        case cartesi::jsonrpc_virtual_machine::cleanup_call::destroy:
+        case cartesi::jsonrpc_machine::cleanup_call::destroy:
             return CM_JSONRPC_DESTROY;
-        case cartesi::jsonrpc_virtual_machine::cleanup_call::shutdown:
+        case cartesi::jsonrpc_machine::cleanup_call::shutdown:
             return CM_JSONRPC_SHUTDOWN;
-        case cartesi::jsonrpc_virtual_machine::cleanup_call::nothing:
+        case cartesi::jsonrpc_machine::cleanup_call::nothing:
             return CM_JSONRPC_NOTHING;
         default:
             throw std::invalid_argument("invalid cleanup call");
     }
 }
 
-static cartesi::jsonrpc_virtual_machine *convert_from_c(cm_machine *m) {
+static cartesi::jsonrpc_machine *convert_from_c(cm_machine *m) {
     if (m == nullptr) {
         throw std::invalid_argument("invalid machine");
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    auto *cpp_m = reinterpret_cast<cartesi::i_virtual_machine *>(m);
-    if (!cpp_m->is_jsonrpc_virtual_machine()) {
+    auto *cpp_m = reinterpret_cast<cartesi::i_machine *>(m);
+    if (!cpp_m->is_jsonrpc_machine()) {
         throw std::invalid_argument("not a JSONRPC remote machine");
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    return reinterpret_cast<cartesi::jsonrpc_virtual_machine *>(m);
+    return reinterpret_cast<cartesi::jsonrpc_machine *>(m);
 }
 
-static const cartesi::jsonrpc_virtual_machine *convert_from_c(const cm_machine *m) {
+static const cartesi::jsonrpc_machine *convert_from_c(const cm_machine *m) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
     return convert_from_c(const_cast<cm_machine *>(m));
 }
 
-static cm_machine *convert_to_c(cartesi::i_virtual_machine *cpp_m) {
+static cm_machine *convert_to_c(cartesi::i_machine *cpp_m) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return reinterpret_cast<cm_machine *>(cpp_m);
 }
@@ -90,7 +90,7 @@ cm_error cm_jsonrpc_connect_server(const char *address, int64_t connect_timeout_
     if (new_m == nullptr) {
         throw std::invalid_argument("invalid new machine output");
     }
-    *new_m = convert_to_c(new jsonrpc_virtual_machine(address, connect_timeout_ms));
+    *new_m = convert_to_c(new jsonrpc_machine(address, connect_timeout_ms));
     return cm_result_success();
 } catch (...) {
     if (new_m != nullptr) {
@@ -109,7 +109,7 @@ cm_error cm_jsonrpc_spawn_server(const char *address, int64_t spawn_timeout_ms, 
         throw std::invalid_argument("invalid new machine output");
     }
     fork_result spawned;
-    *new_m = convert_to_c(new jsonrpc_virtual_machine(address, spawn_timeout_ms, spawned));
+    *new_m = convert_to_c(new jsonrpc_machine(address, spawn_timeout_ms, spawned));
     if (bound_address != nullptr) {
         *bound_address = cm_set_temp_string(spawned.address);
     }
@@ -144,7 +144,7 @@ cm_error cm_jsonrpc_fork_server(const cm_machine *m, cm_machine **forked_m, cons
     if (pid != nullptr) {
         *pid = forked.pid;
     }
-    auto *cpp_forked_m = new jsonrpc_virtual_machine(forked.address);
+    auto *cpp_forked_m = new jsonrpc_machine(forked.address);
     cpp_forked_m->set_cleanup_call(cpp_m->get_cleanup_call());
     cpp_forked_m->set_timeout(cpp_m->get_timeout());
     *forked_m = convert_to_c(cpp_forked_m);

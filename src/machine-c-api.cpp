@@ -34,9 +34,10 @@
 #include "access-log.h"
 #include "address-range-description.h"
 #include "htif-constants.h"
-#include "i-virtual-machine.h"
+#include "i-machine.h"
 #include "interpret.h"
 #include "json-util.h"
+#include "local-machine.h"
 #include "machine-c-api-internal.h"
 #include "machine-config.h"
 #include "machine-merkle-tree.h"
@@ -45,7 +46,6 @@
 #include "machine.h"
 #include "os-features.h"
 #include "pmas-defines.h"
-#include "virtual-machine.h"
 
 static std::string &get_last_err_msg_storage() {
     static THREAD_LOCAL std::string last_err_msg;
@@ -452,23 +452,23 @@ static cartesi::machine_reg convert_from_c(cm_reg r) {
     throw std::domain_error{"unknown register"};
 }
 
-static cartesi::i_virtual_machine *convert_from_c(cm_machine *m) {
+static cartesi::i_machine *convert_from_c(cm_machine *m) {
     if (m == nullptr) {
         throw std::invalid_argument("invalid machine");
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    return reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    return reinterpret_cast<cartesi::i_machine *>(m);
 }
 
-static const cartesi::i_virtual_machine *convert_from_c(const cm_machine *m) {
+static const cartesi::i_machine *convert_from_c(const cm_machine *m) {
     if (m == nullptr) {
         throw std::invalid_argument("invalid machine");
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    return reinterpret_cast<const cartesi::i_virtual_machine *>(m);
+    return reinterpret_cast<const cartesi::i_machine *>(m);
 }
 
-static cm_machine *convert_to_c(cartesi::i_virtual_machine *cpp_m) {
+static cm_machine *convert_to_c(cartesi::i_machine *cpp_m) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return reinterpret_cast<cm_machine *>(cpp_m);
 }
@@ -490,7 +490,7 @@ cm_error cm_new(cm_machine **new_m) try {
     if (new_m == nullptr) {
         throw std::invalid_argument("invalid new machine output");
     }
-    *new_m = convert_to_c(new cartesi::virtual_machine());
+    *new_m = convert_to_c(new cartesi::local_machine());
     return cm_result_success();
 } catch (...) {
     if (new_m != nullptr) {

@@ -103,7 +103,7 @@
 #include "compiler-defines.h"
 #include "device-state-access.h"
 #include "dump.h"
-#include "find-pmas-entry.h"
+#include "find-pma.h"
 #include "i-accept-counters.h"
 #include "i-interactive-state-access.h"
 #include "i-state-access.h"

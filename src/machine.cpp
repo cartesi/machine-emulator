@@ -118,9 +118,6 @@ void machine::check_address_range(const address_range &ar, register_where where)
     if (!where.interpret && !where.merkle) {
         throw std::runtime_error{"address range "s + ar.get_description() + " must be registered somwhere"s};
     }
-    if (where.interpret && m_s.pmas.size() >= PMA_MAX) {
-        throw std::runtime_error{"too many address ranges when adding "s + ar.get_description()};
-    }
     const auto start = ar.get_start();
     const auto length = ar.get_length();
     // Checks if new range is machine addressable space (safe unsigned overflows)
@@ -491,6 +488,9 @@ void machine::init_plic_ar(const plic_config &p) {
 void machine::init_pmas_contents(memory_address_range &pmas) const {
     static_assert(sizeof(pmas_state) == PMA_MAX * 2 * sizeof(uint64_t), "inconsistent PMAs state length");
     static_assert(AR_PMAS_LENGTH >= sizeof(pmas_state), "PMAs address range too short");
+    if (m_s.pmas.size() >= PMA_MAX - 1) { // Leave room for a sentinel empty address range after all others
+        throw std::runtime_error{"too many address ranges"};
+    }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto &dest = *reinterpret_cast<pmas_state *>(pmas.get_host_memory());
     std::ranges::transform(m_s.pmas, dest.begin(),

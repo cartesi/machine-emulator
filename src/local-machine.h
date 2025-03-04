@@ -14,15 +14,15 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef VIRTUAL_MACHINE_H
-#define VIRTUAL_MACHINE_H
+#ifndef LOCAL_MACHINE_H
+#define LOCAL_MACHINE_H
 
 #include <cstdint>
 #include <string>
 
 #include "access-log.h"
 #include "address-range-description.h"
-#include "i-virtual-machine.h"
+#include "i-machine.h"
 #include "interpret.h"
 #include "machine-config.h"
 #include "machine-merkle-tree.h"
@@ -32,19 +32,19 @@
 
 namespace cartesi {
 
-/// \class virtual_machine
-/// \brief i_virtual_machine implementation pointing to a local machine instance
-class virtual_machine : public i_virtual_machine {
+/// \class local_machine
+/// \brief i_machine implementation pointing to a local machine instance
+class local_machine : public i_machine {
 public:
-    virtual_machine() = default;
-    virtual_machine(const virtual_machine &other) = delete;
-    virtual_machine(virtual_machine &&other) noexcept = delete;
-    virtual_machine &operator=(const virtual_machine &other) = delete;
-    virtual_machine &operator=(virtual_machine &&other) noexcept = delete;
-    ~virtual_machine() override;
+    local_machine() = default;
+    local_machine(const local_machine &other) = delete;
+    local_machine(local_machine &&other) noexcept = delete;
+    local_machine &operator=(const local_machine &other) = delete;
+    local_machine &operator=(local_machine &&other) noexcept = delete;
+    ~local_machine() override;
 
 private:
-    i_virtual_machine *do_clone_empty() const override;
+    i_machine *do_clone_empty() const override;
     bool do_is_empty() const override;
     void do_create(const machine_config &config, const machine_runtime_config &runtime) override;
     void do_load(const std::string &directory, const machine_runtime_config &runtime) override;
@@ -95,4 +95,4 @@ private:
 
 } // namespace cartesi
 
-#endif // VIRTUAL_MACHINE_H
+#endif // LOCAL_MACHINE_H

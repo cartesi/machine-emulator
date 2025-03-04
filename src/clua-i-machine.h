@@ -14,15 +14,15 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef CLUA_I_VIRTUAL_MACHINE_H
-#define CLUA_I_VIRTUAL_MACHINE_H
+#ifndef CLUA_I_MACHINE_H
+#define CLUA_I_MACHINE_H
 
 #include <memory>
 #include <string>
 #include <utility>
 
 #include "clua.h"
-#include "i-virtual-machine.h"
+#include "i-machine.h"
 #include "json-util.h"
 #include "machine-c-api.h"
 
@@ -34,12 +34,12 @@ namespace cartesi {
 /// \brief Initialize Cartesi machine Lua interface
 /// \param L Lua state
 /// \param ctxidx Index of Clua context
-int clua_i_virtual_machine_init(lua_State *L, int ctxidx);
+int clua_i_machine_init(lua_State *L, int ctxidx);
 
 /// \brief Exports symbols to table on top of Lua stack
 /// \param L Lua state
 /// \param ctxidx Index of Clua context
-int clua_i_virtual_machine_export(lua_State *L, int ctxidx);
+int clua_i_machine_export(lua_State *L, int ctxidx);
 
 /// \brief Deleter for C data buffer
 void clua_delete(unsigned char *ptr);

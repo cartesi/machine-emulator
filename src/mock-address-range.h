@@ -80,7 +80,7 @@ static inline mock_address_range make_mock_address_range(uint64_t istart, uint64
 
 template <typename ABRT>
 address_range &get_mock_address_range(mock_address_range &mock, ABRT abrt) {
-    //??D I'm hoping the compiler optimizes this to what amounts to an if and a cast
+    //??D I'm hoping the compiler optimizes this to what amounts to a cast
     static_assert(std::is_same_v<std::variant_alternative_t<0, mock_address_range>, std::monostate>);
     switch (mock.index()) {
         case 1:

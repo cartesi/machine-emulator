@@ -28,7 +28,7 @@ extern "C" {
 }
 
 #include "base64.h"
-#include "clua-i-virtual-machine.h"
+#include "clua-i-machine.h"
 #include "clua.h"
 #include "keccak-256-hasher.h"
 #include "machine-c-api.h"
@@ -181,7 +181,7 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_init(L);    // cluactx
     lua_newtable(L); // cluactx cartesi
     // Initialize and export machine bind
-    clua_i_virtual_machine_export(L, -2); // cluactx cartesi
+    clua_i_machine_export(L, -2); // cluactx cartesi
     // Set module functions
     lua_pushvalue(L, -2);                                                    // cluactx cartesi cluactx
     luaL_setfuncs(L, cartesi_mod.data(), 1);                                 // cluactx cartesi

@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef I_VIRTUAL_MACHINE_H
-#define I_VIRTUAL_MACHINE_H
+#ifndef I_MACHINE_H
+#define I_MACHINE_H
 
 #include <cstdint>
 #include <string>
@@ -30,7 +30,7 @@
 
 namespace cartesi {
 
-/// \class i_virtual_machine
+/// \class i_machine
 /// \brief Interface representing the public API of the Cartesi machine.
 /// \details \{
 /// Allows clients to reference this interface in order to transparently
@@ -42,24 +42,24 @@ namespace cartesi {
 /// Classes implementing this interface are required to provide
 /// implementations for the pure virtual methods.
 /// \}
-class i_virtual_machine {
+class i_machine {
 public:
     using hash_type = machine_merkle_tree::hash_type;
     using reg = machine_reg;
 
     /// \brief Constructor
-    i_virtual_machine() = default;
+    i_machine() = default;
 
     /// \brief Destructor.
-    virtual ~i_virtual_machine() = default;
+    virtual ~i_machine() = default;
 
-    i_virtual_machine(const i_virtual_machine &other) = delete;
-    i_virtual_machine(i_virtual_machine &&other) noexcept = delete;
-    i_virtual_machine &operator=(const i_virtual_machine &other) = delete;
-    i_virtual_machine &operator=(i_virtual_machine &&other) noexcept = delete;
+    i_machine(const i_machine &other) = delete;
+    i_machine(i_machine &&other) noexcept = delete;
+    i_machine &operator=(const i_machine &other) = delete;
+    i_machine &operator=(i_machine &&other) noexcept = delete;
 
     /// \brief Clone an object of same underlying type but without a machine instance
-    i_virtual_machine *clone_empty() const {
+    i_machine *clone_empty() const {
         return do_clone_empty();
     }
 
@@ -249,13 +249,13 @@ public:
         do_verify_send_cmio_response(reason, data, length, root_hash_before, log, root_hash_after);
     }
 
-    /// \brief Checks if implementation is jsorpc-virtual-machine
-    bool is_jsonrpc_virtual_machine() const {
-        return do_is_jsonrpc_virtual_machine();
+    /// \brief Checks if implementation is jsorpc-machine
+    bool is_jsonrpc_machine() const {
+        return do_is_jsonrpc_machine();
     }
 
 private:
-    virtual i_virtual_machine *do_clone_empty() const = 0;
+    virtual i_machine *do_clone_empty() const = 0;
     virtual bool do_is_empty() const = 0;
     virtual void do_create(const machine_config &config, const machine_runtime_config &runtime) = 0;
     virtual void do_load(const std::string &directory, const machine_runtime_config &runtime) = 0;
@@ -297,11 +297,11 @@ private:
         const hash_type &root_hash_after) const = 0;
     virtual void do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
         const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const = 0;
-    virtual bool do_is_jsonrpc_virtual_machine() const {
+    virtual bool do_is_jsonrpc_machine() const {
         return false;
     }
 };
 
 } // namespace cartesi
 
-#endif // I_VIRTUAL_MACHINE_H
+#endif // I_MACHINE_H

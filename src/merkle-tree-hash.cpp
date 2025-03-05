@@ -103,7 +103,7 @@ static std::optional<hash_type> read_hash(FILE *f) {
 /// \param fmt Format string
 /// \param ... Arguments, if any
 // NOLINTNEXTLINE(cert-dcl50-cpp): this vararg is safe because the compiler can check the format
-__attribute__((format(printf, 1, 2))) static void error(const char *fmt, ...) {
+__attribute__((__format__(__printf__, 1, 2))) static void error(const char *fmt, ...) {
     va_list ap{};
     va_start(ap, fmt);
     std::ignore = vfprintf(stderr, fmt, ap);

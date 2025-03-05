@@ -952,10 +952,10 @@ void machine::store(const std::string &dir) const {
 
 void machine::dump_insn_hist() {
 #ifdef DUMP_INSN_HIST
-    D_PRINTF("\nInstruction Histogram:\n", "");
+    d_printf("\nInstruction Histogram:\n");
     for (const auto &[key, val] : m_counters) {
         if (key.starts_with("insn.")) {
-            D_PRINTF("%s: %" PRIu64 "\n", key.c_str(), val);
+            d_printf("%s: %" PRIu64 "\n", key.c_str(), val);
         }
     }
 #endif
@@ -968,41 +968,41 @@ void machine::dump_stats() {
         return static_cast<double>(b) / (a + b);
     };
 
-    D_PRINTF("\nMachine Counters:\n", "");
-    D_PRINTF("inner loops: %" PRIu64 "\n", m_counters["stats.inner_loop"]);
-    D_PRINTF("outers loops: %" PRIu64 "\n", m_counters["stats.outer_loop"]);
-    D_PRINTF("supervisor ints: %" PRIu64 "\n", m_counters["stats.sv_int"]);
-    D_PRINTF("supervisor ex: %" PRIu64 "\n", m_counters["stats.sv_ex"]);
-    D_PRINTF("machine ints: %" PRIu64 "\n", m_counters["stats.m_int"]);
-    D_PRINTF("machine ex: %" PRIu64 "\n", m_counters["stats.m_ex"]);
-    D_PRINTF("atomic mem ops: %" PRIu64 "\n", m_counters["stats.atomic_mop"]);
-    D_PRINTF("fence: %" PRIu64 "\n", m_counters["stats.fence"]);
-    D_PRINTF("fence.i: %" PRIu64 "\n", m_counters["stats.fence_i"]);
-    D_PRINTF("fence.vma: %" PRIu64 "\n", m_counters["stats.fence_vma"]);
-    D_PRINTF("max asid: %" PRIu64 "\n", m_counters["stats.max_asid"]);
-    D_PRINTF("User mode: %" PRIu64 "\n", m_counters["stats.prv.U"]);
-    D_PRINTF("Supervisor mode: %" PRIu64 "\n", m_counters["stats.prv.S"]);
-    D_PRINTF("Machine mode: %" PRIu64 "\n", m_counters["stats.prv.M"]);
-    D_PRINTF("tlb code hit ratio: %.4f\n", hr(m_counters["stats.tlb.cmiss"], m_counters["stats.tlb.chit"]));
-    D_PRINTF("tlb read hit ratio: %.4f\n", hr(m_counters["stats.tlb.rmiss"], m_counters["stats.tlb.rhit"]));
-    D_PRINTF("tlb write hit ratio: %.4f\n", hr(m_counters["stats.tlb.wmiss"], m_counters["stats.tlb.whit"]));
-    D_PRINTF("tlb.chit: %" PRIu64 "\n", m_counters["stats.tlb.chit"]);
-    D_PRINTF("tlb.cmiss: %" PRIu64 "\n", m_counters["stats.tlb.cmiss"]);
-    D_PRINTF("tlb.rhit: %" PRIu64 "\n", m_counters["stats.tlb.rhit"]);
-    D_PRINTF("tlb.rmiss: %" PRIu64 "\n", m_counters["stats.tlb.rmiss"]);
-    D_PRINTF("tlb.whit: %" PRIu64 "\n", m_counters["stats.tlb.whit"]);
-    D_PRINTF("tlb.wmiss: %" PRIu64 "\n", m_counters["stats.tlb.wmiss"]);
-    D_PRINTF("tlb.flush_all: %" PRIu64 "\n", m_counters["stats.tlb.flush_all"]);
-    D_PRINTF("tlb.flush_read: %" PRIu64 "\n", m_counters["stats.tlb.flush_read"]);
-    D_PRINTF("tlb.flush_write: %" PRIu64 "\n", m_counters["stats.tlb.flush_write"]);
-    D_PRINTF("tlb.flush_vaddr: %" PRIu64 "\n", m_counters["stats.tlb.flush_vaddr"]);
-    D_PRINTF("tlb.flush_satp: %" PRIu64 "\n", m_counters["stats.tlb.flush_satp"]);
-    D_PRINTF("tlb.flush_mstatus: %" PRIu64 "\n", m_counters["stats.tlb.flush_mstatus"]);
-    D_PRINTF("tlb.flush_set_prv: %" PRIu64 "\n", m_counters["stats.tlb.flush_set_prv"]);
-    D_PRINTF("tlb.flush_fence_vma_all: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_all"]);
-    D_PRINTF("tlb.flush_fence_vma_asid: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_asid"]);
-    D_PRINTF("tlb.flush_fence_vma_vaddr: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_vaddr"]);
-    D_PRINTF("tlb.flush_fence_vma_asid_vaddr: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_asid_vaddr"]);
+    d_printf("\nMachine Counters:\n");
+    d_printf("inner loops: %" PRIu64 "\n", m_counters["stats.inner_loop"]);
+    d_printf("outers loops: %" PRIu64 "\n", m_counters["stats.outer_loop"]);
+    d_printf("supervisor ints: %" PRIu64 "\n", m_counters["stats.sv_int"]);
+    d_printf("supervisor ex: %" PRIu64 "\n", m_counters["stats.sv_ex"]);
+    d_printf("machine ints: %" PRIu64 "\n", m_counters["stats.m_int"]);
+    d_printf("machine ex: %" PRIu64 "\n", m_counters["stats.m_ex"]);
+    d_printf("atomic mem ops: %" PRIu64 "\n", m_counters["stats.atomic_mop"]);
+    d_printf("fence: %" PRIu64 "\n", m_counters["stats.fence"]);
+    d_printf("fence.i: %" PRIu64 "\n", m_counters["stats.fence_i"]);
+    d_printf("fence.vma: %" PRIu64 "\n", m_counters["stats.fence_vma"]);
+    d_printf("max asid: %" PRIu64 "\n", m_counters["stats.max_asid"]);
+    d_printf("User mode: %" PRIu64 "\n", m_counters["stats.prv.U"]);
+    d_printf("Supervisor mode: %" PRIu64 "\n", m_counters["stats.prv.S"]);
+    d_printf("Machine mode: %" PRIu64 "\n", m_counters["stats.prv.M"]);
+    d_printf("tlb code hit ratio: %.4f\n", hr(m_counters["stats.tlb.cmiss"], m_counters["stats.tlb.chit"]));
+    d_printf("tlb read hit ratio: %.4f\n", hr(m_counters["stats.tlb.rmiss"], m_counters["stats.tlb.rhit"]));
+    d_printf("tlb write hit ratio: %.4f\n", hr(m_counters["stats.tlb.wmiss"], m_counters["stats.tlb.whit"]));
+    d_printf("tlb.chit: %" PRIu64 "\n", m_counters["stats.tlb.chit"]);
+    d_printf("tlb.cmiss: %" PRIu64 "\n", m_counters["stats.tlb.cmiss"]);
+    d_printf("tlb.rhit: %" PRIu64 "\n", m_counters["stats.tlb.rhit"]);
+    d_printf("tlb.rmiss: %" PRIu64 "\n", m_counters["stats.tlb.rmiss"]);
+    d_printf("tlb.whit: %" PRIu64 "\n", m_counters["stats.tlb.whit"]);
+    d_printf("tlb.wmiss: %" PRIu64 "\n", m_counters["stats.tlb.wmiss"]);
+    d_printf("tlb.flush_all: %" PRIu64 "\n", m_counters["stats.tlb.flush_all"]);
+    d_printf("tlb.flush_read: %" PRIu64 "\n", m_counters["stats.tlb.flush_read"]);
+    d_printf("tlb.flush_write: %" PRIu64 "\n", m_counters["stats.tlb.flush_write"]);
+    d_printf("tlb.flush_vaddr: %" PRIu64 "\n", m_counters["stats.tlb.flush_vaddr"]);
+    d_printf("tlb.flush_satp: %" PRIu64 "\n", m_counters["stats.tlb.flush_satp"]);
+    d_printf("tlb.flush_mstatus: %" PRIu64 "\n", m_counters["stats.tlb.flush_mstatus"]);
+    d_printf("tlb.flush_set_prv: %" PRIu64 "\n", m_counters["stats.tlb.flush_set_prv"]);
+    d_printf("tlb.flush_fence_vma_all: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_all"]);
+    d_printf("tlb.flush_fence_vma_asid: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_asid"]);
+    d_printf("tlb.flush_fence_vma_vaddr: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_vaddr"]);
+    d_printf("tlb.flush_fence_vma_asid_vaddr: %" PRIu64 "\n", m_counters["stats.tlb.flush_fence_vma_asid_vaddr"]);
 #undef TLB_HIT_RATIO
 #endif
 }

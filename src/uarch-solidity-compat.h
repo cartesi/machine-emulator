@@ -23,7 +23,7 @@
 #include <stdexcept>
 
 #ifdef DUMP_UARCH_INSN
-#include "dump.h"
+#include "assert-printf.h"
 #include <cinttypes>
 #endif
 
@@ -231,9 +231,9 @@ template <typename UarchState>
 static auto dumpInsn([[maybe_unused]] const UarchState a, [[maybe_unused]] uint64 pc, [[maybe_unused]] uint32 insn,
     [[maybe_unused]] const char *name) {
 #ifdef DUMP_UARCH_INSN
-    D_PRINTF("ua %08" PRIx64, pc);
-    D_PRINTF(":   %08" PRIx32 "   ", insn);
-    D_PRINTF("%s\n", name);
+    d_printf("ua %08" PRIx64, pc);
+    d_printf(":   %08" PRIx32 "   ", insn);
+    d_printf("%s\n", name);
 #endif
     return a.make_scoped_note(name);
 }

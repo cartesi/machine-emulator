@@ -18,9 +18,10 @@
 #define I_UARCH_STATE_ACCESS_H
 
 #include <cinttypes>
+#include <cstdarg>
 #include <cstdint>
 
-#include "dump.h"
+#include "assert-printf.h"
 #include "i-prefer-shadow-uarch-state.h"
 #include "meta.h"
 #include "tlb.h"
@@ -30,7 +31,7 @@
     uint64_t read_##REG() const {                                                                                      \
         if constexpr (!is_an_i_prefer_shadow_uarch_state_v<DERIVED>) {                                                 \
             const auto val = derived().do_read_##REG();                                                                \
-            DUSA_PRINTF("%s::read_" #REG "() = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), val, val);                   \
+            dusa_printf("%s::read_" #REG "() = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), val, val);                   \
             return val;                                                                                                \
         } else {                                                                                                       \
             return prefer_read_shadow_uarch_state(shadow_uarch_state_what::REG);                                       \
@@ -41,7 +42,7 @@
     void write_##REG(uint64_t val) const {                                                                             \
         if constexpr (!is_an_i_prefer_shadow_uarch_state_v<DERIVED>) {                                                 \
             derived().do_write_##REG(val);                                                                             \
-            DUSA_PRINTF("%s::write_" #REG "(%" PRIu64 "(0x%" PRIx64 "))\n", get_name(), val, val);                     \
+            dusa_printf("%s::write_" #REG "(%" PRIu64 "(0x%" PRIx64 "))\n", get_name(), val, val);                     \
         } else {                                                                                                       \
             prefer_write_shadow_uarch_state(shadow_uarch_state_what::REG, val);                                        \
         }                                                                                                              \
@@ -67,29 +68,40 @@ class i_uarch_state_access { // CRTP
     uint64_t prefer_read_shadow_uarch_state(shadow_uarch_state_what what) const {
         const auto val = derived().read_shadow_uarch_state(what);
         [[maybe_unused]] const auto *const what_name = shadow_uarch_state_get_what_name(what);
-        DUSA_PRINTF("%s::read_shadow_uarch_state(%s) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), what_name, val, val);
+        dusa_printf("%s::read_shadow_uarch_state(%s) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), what_name, val, val);
         return val;
     }
 
     void prefer_write_shadow_uarch_state(shadow_uarch_state_what what, uint64_t val) const {
         derived().write_shadow_uarch_state(what, val);
         [[maybe_unused]] const auto *const what_name = shadow_uarch_state_get_what_name(what);
-        DUSA_PRINTF("%s::write_shadow_uarch_state(%s, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), what_name, val, val);
+        dusa_printf("%s::write_shadow_uarch_state(%s, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), what_name, val, val);
     }
 
 public:
-    /// \brief Works as printf if we are dumping uarch state accesses, otherwise does nothing
-    template <size_t N, typename... ARGS>
-    static void DUSA_PRINTF([[maybe_unused]] const char (&fmt)[N], [[maybe_unused]] ARGS... args) {
+    /// \brief Works as vprintf if we are dumping uarch state accesses, otherwise does nothing
+    static void dusa_vprintf([[maybe_unused]] const char *fmt, [[maybe_unused]] va_list ap) {
 #ifdef DUMP_UARCH_STATE_ACCESS
-        D_PRINTF(fmt, args...);
+        d_vprintf(fmt, ap);
+#endif
+    }
+
+    /// \brief Works as printf if we are dumping uarch state accesses, otherwise does nothing
+    // Better to use C-style variadic function that checks for format!
+    // NOLINTNEXTLINE(cert-dcl50-cpp)
+    __attribute__((__format__(__printf__, 1, 2))) static void dusa_printf([[maybe_unused]] const char *fmt, ...) {
+#ifdef DUMP_UARCH_STATE_ACCESS
+        va_list ap;
+        va_start(ap, fmt);
+        dusa_vprintf(fmt, ap);
+        va_end(ap);
 #endif
     }
 
     uint64_t read_uarch_x(int i) const {
         if constexpr (!is_an_i_prefer_shadow_uarch_state_v<DERIVED>) {
             const auto val = derived().do_read_uarch_x(i);
-            DUSA_PRINTF("%s::read_uarch_x(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), i, val, val);
+            dusa_printf("%s::read_uarch_x(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), i, val, val);
             return val;
         } else {
             return prefer_read_shadow_uarch_state(shadow_uarch_state_get_what(shadow_uarch_state_what::uarch_x0, i));
@@ -99,7 +111,7 @@ public:
     void write_uarch_x(int i, uint64_t val) const {
         if constexpr (!is_an_i_prefer_shadow_uarch_state_v<DERIVED>) {
             derived().do_write_uarch_x(i, val);
-            DUSA_PRINTF("%s::write_uarch_x(%d, %" PRIu64 ")\n", get_name(), i, val);
+            dusa_printf("%s::write_uarch_x(%d, %" PRIu64 ")\n", get_name(), i, val);
         } else {
             prefer_write_shadow_uarch_state(shadow_uarch_state_get_what(shadow_uarch_state_what::uarch_x0, i), val);
         }
@@ -117,14 +129,14 @@ public:
 
     uint64_t read_word(uint64_t paddr) const {
         const auto val = derived().do_read_word(paddr);
-        DUSA_PRINTF("%s::read_word(phys_addr{0x%" PRIx64 "}) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), paddr, val,
+        dusa_printf("%s::read_word(phys_addr{0x%" PRIx64 "}) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), paddr, val,
             val);
         return val;
     }
 
     void write_word(uint64_t paddr, uint64_t val) const {
         derived().do_write_word(paddr, val);
-        DUSA_PRINTF("%s::write_word(phys_addr{0x%" PRIx64 "}, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), paddr, val,
+        dusa_printf("%s::write_word(phys_addr{0x%" PRIx64 "}, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), paddr, val,
             val);
     }
 

@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef PRINTF_ASSERT_H
-#define PRINTF_ASSERT_H
+#ifndef ASSERT_PRINTF_H
+#define ASSERT_PRINTF_H
 
 /// \file
 /// \brief Microarchitecture-dependent includes for printf and assert
@@ -26,5 +26,21 @@
 #include <cassert>
 #include <cstdio>
 #endif
+
+#include <cstdarg>
+#include <tuple>
+
+static inline void d_vprintf(const char *fmt, va_list ap) {
+    std::ignore = vfprintf(stderr, fmt, ap);
+}
+
+// Better to use C-style variadic function that checks for format!
+// NOLINTNEXTLINE(cert-dcl50-cpp)
+__attribute__((__format__(__printf__, 1, 2))) static inline void d_printf(const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    d_vprintf(fmt, ap);
+    va_end(ap);
+}
 
 #endif

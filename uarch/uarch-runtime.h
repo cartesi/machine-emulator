@@ -40,6 +40,9 @@
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define fprintf(f, ...) printf(__VA_ARGS__)
 
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define vfprintf(f, fmt, ap) vprintf(fmt, ap)
+
 extern "C" NO_RETURN void abort();
 
 namespace cartesi {

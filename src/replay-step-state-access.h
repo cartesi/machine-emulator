@@ -20,6 +20,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <optional>
+#include <ranges>
 
 #include "compiler-defines.h"
 #include "host-addr.h"
@@ -121,7 +122,6 @@ public:
         if (m_context.page_count == 0) {
             interop_throw_runtime_error("page count is zero");
         }
-
         // set page data
         if (!validate_and_advance_offset(log_size, first_page_offset, sizeof(page_type), m_context.page_count,
                 &sibling_count_offset)) {
@@ -200,18 +200,11 @@ private:
     /// \return A pointer to the page_type structure if found, nullptr otherwise
     page_type *try_find_page(uint64_t paddr_page) const {
         const auto page_index = paddr_page >> AR_PAGE_SIZE_LOG2;
-        uint64_t min{0};
-        uint64_t max{m_context.page_count};
-        while (min < max) {
-            auto mid = (min + max) >> 1;
-            if (m_context.pages[mid].index == page_index) {
-                return &m_context.pages[mid];
-            }
-            if (m_context.pages[mid].index < page_index) {
-                min = mid + 1;
-            } else {
-                max = mid;
-            }
+        auto pages = std::ranges::views::counted(m_context.pages, static_cast<int64_t>(m_context.page_count));
+        auto it = std::ranges::lower_bound(pages, page_index, std::ranges::less{},
+            [](const auto &page) { return page.index; });
+        if (it != pages.end() && it->index == page_index) {
+            return &(*it);
         }
         return nullptr;
     }
@@ -220,19 +213,11 @@ private:
     /// \param haddr Host address of page data
     /// \return A pointer to the page_type structure if found, nullptr otherwise
     page_type *try_find_page(host_addr haddr_page) const {
-        uint64_t min{0};
-        uint64_t max{m_context.page_count};
-        while (min < max) {
-            auto mid = (min + max) >> 1;
-            auto mid_page_data = cast_ptr_to_host_addr(m_context.pages[mid].data);
-            if (mid_page_data == haddr_page) {
-                return &m_context.pages[mid];
-            }
-            if (mid_page_data < haddr_page) {
-                min = mid + 1;
-            } else {
-                max = mid;
-            }
+        auto pages = std::ranges::views::counted(m_context.pages, static_cast<int64_t>(m_context.page_count));
+        auto it = std::ranges::lower_bound(pages, haddr_page, std::ranges::less{},
+            [](const auto &page) { return cast_ptr_to_host_addr(page.data); });
+        if (it != pages.end() && cast_ptr_to_host_addr(it->data) == haddr_page) {
+            return &(*it);
         }
         return nullptr;
     }

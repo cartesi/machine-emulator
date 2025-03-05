@@ -84,8 +84,8 @@ SLIRP_INC=-I$(BREW_PREFIX)/libslirp/include
 # Macports installation
 else ifneq (,$(PORT_PREFIX))
 INSTALL_PREFIX=/opt/local
-BOOST_LIB_DIR=-L$(INSTALL_PREFIX)/libexec/boost/1.81/lib
-BOOST_INC=-I$(INSTALL_PREFIX)/libexec/boost/1.81/include
+BOOST_LIB_DIR=-L$(INSTALL_PREFIX)/libexec/boost/1.87/lib
+BOOST_INC=-I$(INSTALL_PREFIX)/libexec/boost/1.87/include
 SLIRP_LIB=-L$(INSTALL_PREFIX)/lib -lslirp
 SLIRP_INC=-I$(INSTALL_PREFIX)/include
 

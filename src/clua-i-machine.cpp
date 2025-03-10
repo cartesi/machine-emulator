@@ -820,13 +820,10 @@ static int machine_obj_index_translate_virtual_address(lua_State *L) {
 /// \brief Replaces a memory range.
 /// \param L Lua state.
 static int machine_obj_index_replace_memory_range(lua_State *L) {
-    lua_settop(L, 5);
+    lua_settop(L, 2);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    const uint64_t start = luaL_checkinteger(L, 2);
-    const uint64_t length = luaL_checkinteger(L, 3);
-    const bool shared = lua_toboolean(L, 4) != 0;
-    const char *image_filename = luaL_optstring(L, 5, nullptr);
-    if (cm_replace_memory_range(m.get(), start, length, shared, image_filename) != 0) {
+    const char *range_config = clua_check_json_string(L, 2);
+    if (cm_replace_memory_range(m.get(), range_config) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     return 0;

@@ -1307,8 +1307,8 @@
           "length": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
-          "image_filename": {
-            "type": "string"
+          "backing_store": {
+            "$ref": "#/components/schemas/BackingStoreConfig"
           }
         },
         "required": ["length"]
@@ -1326,8 +1326,8 @@
           "entrypoint": {
             "type": "string"
           },
-          "image_filename": {
-            "type": "string"
+          "backing_store": {
+            "$ref": "#/components/schemas/BackingStoreConfig"
           }
         }
       },
@@ -1341,23 +1341,35 @@
           "length": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
-          "image_filename": {
+          "backing_store": {
+            "$ref": "#/components/schemas/BackingStoreConfig"
+          }
+        }
+      },
+      "BackingStoreConfig": {
+        "title": "BackingStoreConfig",
+        "type": "object",
+        "properties": {
+          "data_filename": {
+            "type": "string"
+          },
+          "dht_filename": {
             "type": "string"
           },
           "shared": {
+            "type": "boolean"
+          },
+          "truncate": {
             "type": "boolean"
           }
         }
       },
-      "CmioBufferConfig": {
-        "title": "CmioBufferConfig",
+      "CMIOBufferConfig": {
+        "title": "CMIOBufferConfig",
         "type": "object",
         "properties": {
-          "image_filename": {
-            "type": "string"
-          },
-          "shared": {
-            "type": "boolean"
+          "backing_store": {
+            "$ref": "#/components/schemas/BackingStoreConfig"
           }
         }
       },
@@ -1426,8 +1438,8 @@
         "title": "TLBConfig",
         "type": "object",
         "properties": {
-          "image_filename": {
-            "type": "string"
+          "backing_store": {
+            "$ref": "#/components/schemas/BackingStoreConfig"
           }
         }
       },
@@ -1580,7 +1592,7 @@
             "$ref": "#/components/schemas/UnsignedInteger"
           },
           "halt_flag": {
-            "type": "boolean"
+            "$ref": "#/components/schemas/UnsignedInteger"
           }
         }
       },
@@ -1591,8 +1603,8 @@
           "length": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
-          "image_filename": {
-            "type": "string"
+          "backing_store": {
+            "$ref": "#/components/schemas/BackingStoreConfig"
           }
         }
       },
@@ -1608,15 +1620,45 @@
           }
         }
       },
-      "CmioConfig": {
-        "title": "CmioConfig",
+      "CMIOConfig": {
+        "title": "CMIOConfig",
         "type": "object",
         "properties": {
           "rx_buffer": {
-            "$ref": "#/components/schemas/CmioBufferConfig"
+            "$ref": "#/components/schemas/CMIOBufferConfig"
           },
           "tx_buffer": {
-            "$ref": "#/components/schemas/CmioBufferConfig"
+            "$ref": "#/components/schemas/CMIOBufferConfig"
+          }
+        }
+      },
+      "PMAsConfig": {
+        "title": "PMAsConfig",
+        "type": "object",
+        "properties": {
+          "backing_store": {
+            "$ref": "#/components/schemas/BackingStoreConfig"
+          }
+        }
+      },
+      "HashTreeConfig": {
+        "title": "HashTreeConfig",
+        "type": "object",
+        "properties": {
+          "hasher": {
+            "type": "string"
+          },
+          "shared": {
+            "type": "boolean"
+          },
+          "sht_filename": {
+            "type": "string"
+          },
+          "phtc_filename": {
+            "type": "string"
+          },
+          "phtc_size": {
+            "$ref": "#/components/schemas/UnsignedInteger"
           }
         }
       },
@@ -1655,14 +1697,20 @@
           "htif": {
             "$ref": "#/components/schemas/HTIFConfig"
           },
+          "virtio": {
+            "$ref": "#/components/schemas/VirtIOConfigs"
+          },
+          "cmio": {
+            "$ref": "#/components/schemas/CMIOConfig"
+          },
+          "pmas": {
+            "$ref": "#/components/schemas/PMAsConfig"
+          },
           "uarch": {
             "$ref": "#/components/schemas/UarchConfig"
           },
-          "cmio": {
-            "$ref": "#/components/schemas/CmioConfig"
-          },
-          "virtio": {
-            "$ref": "#/components/schemas/VirtIOConfigs"
+          "hash_tree": {
+            "$ref": "#/components/schemas/HashTreeConfig"
           }
         },
         "required": ["ram"]

@@ -273,13 +273,16 @@ local function build_machine_config(config_options)
         ram = { length = 1 << 20 },
         htif = config_options.htif or nil,
         cmio = config_options.cmio or nil,
-        uarch = config_options.uarch or {
-            processor = get_uarch_cpu_reg_test_values(),
-            ram = {
-                length = 0x1000,
-                image_filename = test_util.create_test_uarch_program(test_util.uarch_programs.default),
+        uarch = config_options.uarch
+            or {
+                processor = get_uarch_cpu_reg_test_values(),
+                ram = {
+                    length = 0x1000,
+                    backing_store = {
+                        data_filename = test_util.create_test_uarch_program(test_util.uarch_programs.default),
+                    },
+                },
             },
-        },
     }
     local runtime = {
         concurrency = {
@@ -298,8 +301,8 @@ local function build_machine(type, config_options)
     else
         new_machine = assert(cartesi.machine(config, runtime))
     end
-    if config.uarch.ram and config.uarch.ram.image_filename then
-        os.remove(config.uarch.ram.image_filename)
+    if config.uarch.ram and config.uarch.ram.backing_store and config.uarch.ram.backing_store.data_filename then
+        os.remove(config.uarch.ram.backing_store.data_filename)
     end
     return new_machine
 end
@@ -371,61 +374,136 @@ do_test("should return address value for uarch x registers", function(machine)
     end
 end)
 
-local function test_config_memory_range(range, name)
-    assert(type(range.length) == "number", "invalid " .. name .. ".length")
-    assert(type(range.start) == "number", "invalid " .. name .. ".start")
-    assert(range.shared == nil or type(range.shared) == "boolean", "invalid " .. name .. ".shared")
-    assert(
-        range.image_filename == nil or type(range.image_filename) == "string",
-        "invalid " .. name .. ".image_filename"
-    )
+local function getfield(t, i, i_prev)
+    if not t then
+        return nil
+    end
+    for f in (i .. "."):gmatch("([^%.]*)%.") do
+        if type(t) ~= "table" then
+            error(string.format("type of %s is %s (expected table)", i_prev, type(t)))
+        end
+        t = t[f]
+        i_prev = i_prev .. "." .. f
+        if not t then
+            return nil
+        end
+    end
+    return t
 end
 
-local function test_cmio_buffer_config(buffer_config, name)
-    assert(buffer_config.shared == nil or type(buffer_config.shared) == "boolean", "invalid " .. name .. ".shared")
-    assert(
-        buffer_config.image_filename == nil or type(buffer_config.image_filename) == "string",
-        "invalid " .. name .. ".image_filename"
-    )
+local function assertfield(t, i, expected, i_prev, needed)
+    i_prev = i_prev or "config"
+    local what = type(getfield(t, i, i_prev))
+    if what ~= expected and what ~= "nil" or needed and what == "nil" then
+        error(string.format("type of %s.%s is %s (expected %s)", i_prev, i, what, expected))
+    end
+end
+
+local function test_backing_store_config(config, name, i_prev)
+    assertfield(config, name .. ".shared", "boolean", i_prev)
+    assertfield(config, name .. ".truncate", "boolean", i_prev)
+    assertfield(config, name .. ".data_filename", "string", i_prev)
+    assertfield(config, name .. ".dht_filename", "string", i_prev)
+end
+
+local function test_flash_drive_config(config, i_prev)
+    assertfield(config, "length", "number", i_prev, "needed")
+    assertfield(config, "start", "number", i_prev, "needed")
+    test_backing_store_config(config, "backing_store", i_prev)
 end
 
 local function test_config(config)
     assert(type(config) == "table", "config not a table")
-    for _, field in ipairs({ "processor", "htif", "clint", "plic", "flash_drive", "ram", "dtb" }) do
-        assert(config[field] and type(config[field]) == "table", "invalid field " .. field)
+    local config_fields = {
+        "processor",
+        "ram",
+        "dtb",
+        "flash_drive",
+        "tlb",
+        "clint",
+        "plic",
+        "htif",
+        "virtio",
+        "cmio",
+        "pmas",
+        "uarch",
+        "hash_tree",
+    }
+    for _, field in ipairs(config_fields) do
+        assertfield(config, field, "table")
     end
-    for i = 1, 31 do
-        assert(type(config.processor["x" .. i]) == "number", "x" .. i .. " is not a number")
+    for i = 0, 31 do
+        assertfield(config, "processor.x" .. i, "number")
     end
-    local htif = config.htif
-    for _, field in ipairs({ "console_getchar", "yield_manual", "yield_automatic" }) do
-        assert(htif[field] == nil or type(htif[field]) == "boolean", "invalid htif." .. field)
+    for i = 0, 31 do
+        assertfield(config, "processor.f" .. i, "number")
     end
-    assert(type(htif.tohost) == "number", "invalid htif.tohost")
-    assert(type(htif.fromhost) == "number", "invalid htif.fromhost")
-    local clint = config.clint
-    assert(type(clint.mtimecmp) == "number", "invalid clint.mtimecmp")
-    local plic = config.plic
-    assert(type(plic.girqpend) == "number", "invalid plic.girqpend")
-    assert(type(plic.girqsrvd) == "number", "invalid plic.girqsrvd")
-    local ram = config.ram
-    assert(type(ram.length) == "number", "invalid ram.length")
-    assert(ram.image_filename == nil or type(ram.image_filename) == "string", "invalid ram.image_filename")
-    local dtb = config.dtb
-    assert(dtb.image_filename == nil or type(dtb.image_filename) == "string", "invalid dtb.image_filename")
-    assert(dtb.bootargs == nil or type(dtb.bootargs) == "string", "invalid dtb.bootargs")
-    assert(dtb.init == nil or type(dtb.init) == "string", "invalid dtb.init")
-    assert(dtb.entrypoint == nil or type(dtb.entrypoint) == "string", "invalid dtb.entrypoint")
-    local tlb = config.tlb
-    assert(tlb.image_filename == nil or type(tlb.image_filename) == "string", "invalid tlb.image_filename")
-    for i, f in ipairs(config.flash_drive) do
-        test_config_memory_range(f, "drive" .. (i - 1))
+    local csrs = {
+        "pc",
+        "fcsr",
+        "mvendorid",
+        "marchid",
+        "mimpid",
+        "mcycle",
+        "icycleinstret",
+        "mstatus",
+        "mtvec",
+        "mscratch",
+        "mepc",
+        "mcause",
+        "mtval",
+        "misa",
+        "mie",
+        "mip",
+        "medeleg",
+        "mideleg",
+        "mcounteren",
+        "menvcfg",
+        "stvec",
+        "sscratch",
+        "sepc",
+        "scause",
+        "stval",
+        "satp",
+        "scounteren",
+        "senvcfg",
+        "ilrsc",
+        "iprv",
+        "iflags_X",
+        "iflags_Y",
+        "iflags_H",
+        "iunrep",
+    }
+    for _, csr in ipairs(csrs) do
+        assertfield(config, "processor." .. csr, "number")
     end
-    local cmio = config.cmio
-    if config.cmio then
-        test_cmio_buffer_config(cmio.rx_buffer, "cmio.rx_buffer")
-        test_cmio_buffer_config(cmio.tx_buffer, "cmio.tx_buffer")
+    assertfield(config, "htif.console_getchar", "boolean")
+    assertfield(config, "htif.yield_manual", "boolean")
+    assertfield(config, "htif.yield_automatic", "boolean")
+    assertfield(config, "htif.tohost", "number")
+    assertfield(config, "htif.fromhost", "number")
+    assertfield(config, "clint.mtimecmp", "number")
+    assertfield(config, "plic.girqpend", "number")
+    assertfield(config, "plic.girqsrvd", "number")
+    assertfield(config, "ram.length", "number")
+    test_backing_store_config(config, "ram.backing_store")
+    assertfield(config, "dtb.bootargs", "string")
+    assertfield(config, "dtb.init", "string")
+    assertfield(config, "dtb.entrypoint", "string")
+    test_backing_store_config(config, "dtb.backing_store")
+    test_backing_store_config(config, "tlb.backing_store")
+    test_backing_store_config(config, "pmas.backing_store")
+    for i, f in ipairs(config.flash_drive or {}) do
+        test_flash_drive_config(f, "config.flash_drive[" .. i .. "]")
     end
+    test_backing_store_config(config, "cmio.rx_buffer.backing_store")
+    test_backing_store_config(config, "cmio.tx_buffer.backing_store")
+    test_backing_store_config(config, "uarch.ram.backing_store")
+    assertfield(config, "hash_tree.shared", "boolean")
+    assertfield(config, "hash_tree.truncate", "boolean")
+    assertfield(config, "hash_tree.sht_filename", "string")
+    assertfield(config, "hash_tree.phtc_filename", "string")
+    assertfield(config, "hash_tree.phtc_size", "number")
 end
 
 print("\n\ntesting get_default_config function binding")
@@ -739,7 +817,7 @@ local uarch_proof_step_program = {
 
 test_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { image_filename = test_util.create_test_uarch_program(uarch_proof_step_program) },
+        ram = { backing_store = { data_filename = test_util.create_test_uarch_program(uarch_proof_step_program) } },
     },
 })("merkle tree must be consistent when stepping alternating with and without proofs", function(machine)
     local t0 = 5
@@ -772,7 +850,7 @@ end)
 
 test_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { image_filename = test_util.create_test_uarch_program(uarch_proof_step_program) },
+        ram = { backing_store = { data_filename = test_util.create_test_uarch_program(uarch_proof_step_program) } },
     },
 })("It should load the uarch ram image from a file", function(machine)
     local expected_ram_image = ""
@@ -1009,11 +1087,11 @@ do_test("Test unhappy paths of verify_reset_uarch", function(machine)
         log.accesses[1].address = 0
     end)
 
-    assert_error('field "value/accesses/0/log2_size" is out of bounds', function(log)
+    assert_error('"log/accesses/0/log2_size" is out of bounds', function(log)
         log.accesses[1].log2_size = 64
     end)
 
-    assert_error('missing field "value/accesses/0/read_hash"', function(log)
+    assert_error('missing field "log/accesses/0/read_hash"', function(log)
         log.accesses[#log.accesses].read_hash = nil
     end)
     assert_error("siblings and read hash do not match root hash before 1st access to uarch.state", function(log)
@@ -1025,7 +1103,7 @@ do_test("Test unhappy paths of verify_reset_uarch", function(machine)
     assert_error("missing written hash of uarch.state in 1st access", function(log)
         log.accesses[#log.accesses].written_hash = nil
     end)
-    assert_error('field "value/accesses/0/written" has wrong length', function(log)
+    assert_error('"log/accesses/0/written" has wrong length', function(log)
         log.accesses[#log.accesses].written = "\0"
     end)
     assert_error("written data for uarch.state does not match written hash in 1st access", function(log)
@@ -1096,7 +1174,7 @@ local uarch_illegal_insn_program = {
 
 test_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { image_filename = test_util.create_test_uarch_program(uarch_illegal_insn_program) },
+        ram = { backing_store = { data_filename = test_util.create_test_uarch_program(uarch_illegal_insn_program) } },
     },
 })("Detect illegal instruction", function(machine)
     local success, err = pcall(machine.run_uarch, machine)
@@ -1117,11 +1195,11 @@ do_test("uarch ecall putchar should print char to console", function()
                                  }
                                  local uarch_ram_path = test_util.create_test_uarch_program(program)
                                  local machine = cartesi.machine {
-                                 processor = initial_reg_values,
-                                 ram = {length = 1 << 20},
-                                 uarch = {
-                                    ram = { image_filename = uarch_ram_path }
-                                 }
+                                     processor = initial_reg_values,
+                                     ram = {length = 1 << 20},
+                                     uarch = {
+                                        ram = { backing_store = { data_filename = uarch_ram_path } }
+                                     }
                                  }
                                  os.remove(uarch_ram_path)
                                  machine:run_uarch(3) -- run 3 instructions
@@ -1378,8 +1456,8 @@ local function test_cmio_buffers_backed_by_files()
 
     test_util.make_do_test(build_machine, machine_type, {
         cmio = {
-            rx_buffer = { image_filename = rx_filename, shared = false },
-            tx_buffer = { image_filename = tx_filename, shared = false },
+            rx_buffer = { backing_store = { data_filename = rx_filename, shared = false } },
+            tx_buffer = { backing_store = { data_filename = tx_filename, shared = false } },
         },
     })("cmio buffers initialized from backing files", function(machine)
         local rx_data = machine:read_memory(cartesi.AR_CMIO_RX_BUFFER_START, 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE)
@@ -1393,8 +1471,8 @@ local function test_cmio_buffers_backed_by_files()
     -- the shared=false from last test should prevent saving the new data to files
     test_util.make_do_test(build_machine, machine_type, {
         cmio = {
-            rx_buffer = { image_filename = rx_filename, shared = true },
-            tx_buffer = { image_filename = tx_filename, shared = true },
+            rx_buffer = { backing_store = { data_filename = rx_filename, shared = true } },
+            tx_buffer = { backing_store = { data_filename = tx_filename, shared = true } },
         },
     })("cmio buffers initialized from backing files should not change", function(machine)
         local rx_data = machine:read_memory(cartesi.AR_CMIO_RX_BUFFER_START, 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE)
@@ -1408,8 +1486,8 @@ local function test_cmio_buffers_backed_by_files()
     -- the shared=true from last test should save memory changes to files
     test_util.make_do_test(build_machine, machine_type, {
         cmio = {
-            rx_buffer = { image_filename = rx_filename, shared = false },
-            tx_buffer = { image_filename = tx_filename, shared = false },
+            rx_buffer = { backing_store = { data_filename = rx_filename, shared = false } },
+            tx_buffer = { backing_store = { data_filename = tx_filename, shared = false } },
         },
     })("cmio buffer files should be modified by last write_memory", function(machine)
         local rx_data = machine:read_memory(cartesi.AR_CMIO_RX_BUFFER_START, 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE)
@@ -1425,7 +1503,9 @@ local uarch_store_double_in_t0_to_t1 = {
 }
 test_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { image_filename = test_util.create_test_uarch_program(uarch_store_double_in_t0_to_t1) },
+        ram = {
+            backing_store = { data_filename = test_util.create_test_uarch_program(uarch_store_double_in_t0_to_t1) },
+        },
     },
 })("Log of word access unaligned to merkle tree leaf ", function(machine)
     local leaf_size = 1 << cartesi.TREE_LOG2_WORD_SIZE

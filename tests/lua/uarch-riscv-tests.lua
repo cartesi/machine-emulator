@@ -242,16 +242,20 @@ local function fatal(fmt, ...)
 end
 
 local function build_machine(test_name)
-    local uarch_ram = {}
+    local data_filename
     if test_name then
-        uarch_ram.image_filename = test_path .. "/" .. test_name
+        data_filename = test_path .. "/" .. test_name
     end
     local config = {
         ram = {
             length = 0x20000,
         },
         uarch = {
-            ram = uarch_ram,
+            ram = {
+                backing_store = {
+                    data_filename = data_filename,
+                },
+            },
         },
     }
     local runtime = {}

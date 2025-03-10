@@ -43,7 +43,6 @@
 #include "machine-runtime-config.h"
 #include "machine.h"
 #include "semantic-version.h"
-#include "uarch-config.h"
 #include "uarch-interpret.h"
 
 namespace cartesi {
@@ -586,12 +585,12 @@ static std::string bracket_type_name(bracket_type bt) {
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, std::string &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
     if (!jk.is_string()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a string");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
     }
     value = jk.template get<std::string>();
 }
@@ -603,12 +602,12 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, bool &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
     if (!jk.is_boolean()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a Boolean");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a Boolean");
     }
     value = jk.template get<bool>();
 }
@@ -621,18 +620,18 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, uint64_t &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
     if (!jk.is_number_integer() && !jk.is_number_unsigned() && !jk.is_number_float()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not an unsigned integer");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not an unsigned integer");
     }
     if (jk.is_number_float()) {
         auto f = jk.template get<nlohmann::json::number_float_t>();
         if (f < 0 || std::fmod(f, static_cast<nlohmann::json::number_float_t>(1.0)) != 0 ||
             f > static_cast<nlohmann::json::number_float_t>(UINT64_MAX)) {
-            throw std::invalid_argument("field \""s + path + to_string(key) + "\" not an unsigned integer");
+            throw std::invalid_argument("\""s + path + to_string(key) + "\" not an unsigned integer");
         }
         value = static_cast<uint64_t>(f);
         return;
@@ -654,26 +653,26 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, uint32_t &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     uint64_t value64 = 0;
     ju_get_field(j, key, value64, path);
     if (value64 > UINT32_MAX) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" out of range");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" out of range");
     }
     value = static_cast<uint32_t>(value64);
 }
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, uint16_t &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     uint64_t value64 = 0;
     ju_get_field(j, key, value64, path);
     if (value64 > UINT16_MAX) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" out of range");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" out of range");
     }
     value = static_cast<uint16_t>(value64);
 }
@@ -692,12 +691,12 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, semantic_version &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
     if (!jk.is_object()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a semantic version");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a semantic version");
     }
     const auto new_path = path + to_string(key) + "/";
     ju_get_field(jk, "major"s, value.major, new_path);
@@ -715,12 +714,12 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, machine::reg &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
     if (!jk.is_string()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a string");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
     }
     value = reg_from_name(jk.template get<std::string>());
 }
@@ -733,12 +732,12 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, interpreter_break_reason &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
     if (!jk.is_string()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a string");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
     }
     value = interpreter_break_reason_from_name(jk.template get<std::string>());
 }
@@ -752,12 +751,12 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_interpreter_break_reason &value,
     const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
     if (!jk.is_string()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a string");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
     }
     value = uarch_interpreter_break_reason_from_name(jk.template get<std::string>());
 }
@@ -771,7 +770,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, concurrency_runtime_config &value,
     const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     ju_get_opt_field(j[key], "update_merkle_tree"s, value.update_merkle_tree, path + to_string(key) + "/");
@@ -785,7 +784,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, htif_runtime_config &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     ju_get_opt_field(j[key], "no_console_putchar"s, value.no_console_putchar, path + to_string(key) + "/");
@@ -799,7 +798,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_runtime_config &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     ju_get_opt_field(j[key], "concurrency"s, value.concurrency, path + to_string(key) + "/");
@@ -819,16 +818,16 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_merkle_tree::proof_type::hash_type &value,
     const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
     if (!jk.is_string()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a string");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
     }
     std::string bin = decode_base64(jk.template get<std::string>());
     if (bin.size() != value.size()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a base64-encoded 256-bit hash");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a base64-encoded 256-bit hash");
     }
     std::copy(bin.begin(), bin.end(), value.data());
 }
@@ -837,17 +836,17 @@ template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key,
     std::optional<machine_merkle_tree::proof_type::hash_type> &optional, const std::string &path) {
     optional = {};
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
     if (!jk.is_string()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a string");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
     }
     std::string bin = decode_base64(jk.template get<std::string>());
     optional.emplace();
     if (bin.size() != optional.value().size()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a base64-encoded 256-bit hash");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a base64-encoded 256-bit hash");
     }
     std::copy(bin.begin(), bin.end(), optional.value().data());
 }
@@ -862,7 +861,7 @@ template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key,
     not_default_constructible<machine_merkle_tree::proof_type> &value, const std::string &path) {
     value = {};
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
@@ -870,12 +869,12 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key,
     uint64_t log2_root_size = 0;
     ju_get_field(jk, "log2_root_size"s, log2_root_size, new_path);
     if (log2_root_size > INT_MAX) {
-        throw std::domain_error("field \""s + new_path + "log2_root_size\" is out of bounds");
+        throw std::domain_error("\""s + new_path + "log2_root_size\" is out of bounds");
     }
     uint64_t log2_target_size = 0;
     ju_get_field(jk, "log2_target_size"s, log2_target_size, new_path);
     if (log2_root_size > INT_MAX) {
-        throw std::domain_error("field \""s + new_path + "log2_target_size\" is out of bounds");
+        throw std::domain_error("\""s + new_path + "log2_target_size\" is out of bounds");
     }
     value.emplace(static_cast<int>(log2_root_size), static_cast<int>(log2_target_size));
     auto &proof = value.value();
@@ -888,12 +887,12 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key,
     machine_merkle_tree::proof_type::hash_type root_hash;
     ju_get_field(jk, "root_hash"s, root_hash, new_path);
     proof.set_root_hash(root_hash);
-    if (!contains(jk, "sibling_hashes")) {
-        throw std::invalid_argument("missing field \""s + new_path + "sibling_hashes\""s);
+    if (!contains(jk, "sibling_hashes", new_path)) {
+        throw std::invalid_argument("missing \""s + new_path + "sibling_hashes\""s);
     }
     const auto &sh = jk["sibling_hashes"];
     if (!sh.is_array()) {
-        throw std::invalid_argument("field \""s + new_path + "sibling_hashes\" not an array"s);
+        throw std::invalid_argument("\""s + new_path + "sibling_hashes\" not an array"s);
     }
     const auto sibling_hashes_base = path + "sibling_hashes/";
     for (int log2_size = proof.get_log2_target_size(), i = 0; log2_size < proof.get_log2_root_size();
@@ -912,12 +911,12 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, access_type &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
     if (!jk.is_string()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a string");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
     }
     const auto &v = jk.template get<std::string>();
     if (v == "read") {
@@ -928,7 +927,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access_type &value,
         value = access_type::write;
         return;
     }
-    throw std::invalid_argument("field \""s + path + to_string(key) + "\" not an access type");
+    throw std::invalid_argument("\""s + path + to_string(key) + "\" not an access type");
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, access_type &value,
@@ -940,12 +939,12 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, access_data &data, const std::string &path) {
     data.clear();
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
     if (!jk.is_string()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a string");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
     }
     const auto &bin = decode_base64(jk.template get<std::string>());
     std::copy(bin.begin(), bin.end(), std::back_inserter(data));
@@ -955,12 +954,12 @@ template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, std::optional<access_data> &optional,
     const std::string &path) {
     optional = {};
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
     if (!jk.is_string()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a string");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
     }
     const auto &bin = decode_base64(jk.template get<std::string>());
     optional.emplace();
@@ -975,12 +974,12 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
     if (!jk.is_object()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not an object");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not an object");
     }
     const auto new_path = path + to_string(key) + "/";
     access_type type = access_type::read;
@@ -989,7 +988,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, con
     uint64_t log2_size = 0;
     ju_get_field(jk, "log2_size"s, log2_size, new_path);
     if (log2_size >= 64) {
-        throw std::domain_error("field \""s + new_path + "log2_size\" is out of bounds");
+        throw std::domain_error("\""s + new_path + "log2_size\" is out of bounds");
     }
     access.set_log2_size(static_cast<int>(log2_size));
     // Minimum logged data size is merkle tree word size
@@ -1012,7 +1011,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, con
     ju_get_opt_field(jk, "read"s, read, new_path);
     if (read.has_value()) {
         if (read.value().size() != (UINT64_C(1) << data_log2_size)) {
-            throw std::invalid_argument("field \""s + new_path + "written\" has wrong length");
+            throw std::invalid_argument("\""s + new_path + "written\" has wrong length");
         }
         access.set_read(std::move(read.value()));
     }
@@ -1021,19 +1020,19 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, con
         ju_get_opt_field(jk, "written"s, written, new_path);
         if (written.has_value()) {
             if (written.value().size() != (UINT64_C(1) << data_log2_size)) {
-                throw std::invalid_argument("field \""s + new_path + "written\" has wrong length");
+                throw std::invalid_argument("\""s + new_path + "written\" has wrong length");
             }
             access.set_written(std::move(written.value()));
         }
     }
-    if (contains(jk, "sibling_hashes")) {
+    if (contains(jk, "sibling_hashes", new_path)) {
         access.get_sibling_hashes().emplace();
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         auto &sibling_hashes = access.get_sibling_hashes().value();
         ju_get_vector_like_field(jk, "sibling_hashes"s, sibling_hashes, new_path);
         auto expected_depth = static_cast<size_t>(machine_merkle_tree::get_log2_root_size() - data_log2_size);
         if (sibling_hashes.size() != expected_depth) {
-            throw std::invalid_argument("field \""s + new_path + "sibling_hashes\" has wrong length");
+            throw std::invalid_argument("\""s + new_path + "sibling_hashes\" has wrong length");
         }
     }
 }
@@ -1046,12 +1045,12 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, bracket_type &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
     if (!jk.is_string()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a string");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
     }
     const auto &v = jk.template get<std::string>();
     if (v == "begin") {
@@ -1062,7 +1061,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, bracket_type &value
         value = bracket_type::end;
         return;
     }
-    throw std::invalid_argument("field \""s + path + to_string(key) + "\" not a bracket type");
+    throw std::invalid_argument("\""s + path + to_string(key) + "\" not a bracket type");
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, bracket_type &value,
@@ -1073,12 +1072,12 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, bracket_note &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
     if (!jk.is_object()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not an object");
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not an object");
     }
     const auto new_path = path + to_string(key) + "/";
     ju_get_field(jk, "type"s, value.type, new_path);
@@ -1096,7 +1095,7 @@ template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constructible<access_log::type> &optional,
     const std::string &path) {
     optional = {};
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
@@ -1118,7 +1117,7 @@ template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constructible<access_log> &optional,
     const std::string &path) {
     optional = {};
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jk = j[key];
@@ -1132,8 +1131,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constru
     ju_get_vector_like_field(jk, "accesses"s, accesses, new_path);
     for (unsigned i = 0; i < accesses.size(); ++i) {
         if (!accesses[i].get_sibling_hashes().has_value()) {
-            throw std::invalid_argument(
-                "field \""s + new_path + "accesses/" + to_string(i) + "\" missing sibling hashes");
+            throw std::invalid_argument("\""s + new_path + "accesses/" + to_string(i) + "\" missing sibling hashes");
         }
     }
     std::vector<bracket_note> brackets;
@@ -1147,8 +1145,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constru
         ju_get_vector_like_field(jk, "brackets"s, brackets, new_path);
         for (unsigned i = 0; i < brackets.size(); ++i) {
             if (brackets[i].where > accesses.size()) {
-                throw std::invalid_argument(
-                    "field \""s + new_path + "brackets/" + to_string(i) + "/where\" is out of range");
+                throw std::invalid_argument("\""s + new_path + "brackets/" + to_string(i) + "/where\" is out of range");
             }
         }
     }
@@ -1163,7 +1160,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, processor_config &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jconfig = j[key];
@@ -1276,7 +1273,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, dtb_config &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jconfig = j[key];
@@ -1284,7 +1281,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, dtb_config &value, 
     ju_get_opt_field(jconfig, "bootargs"s, value.bootargs, new_path);
     ju_get_opt_field(jconfig, "init"s, value.init, new_path);
     ju_get_opt_field(jconfig, "entrypoint"s, value.entrypoint, new_path);
-    ju_get_opt_field(jconfig, "image_filename"s, value.image_filename, new_path);
+    ju_get_opt_field(jconfig, "backing_store"s, value.backing_store, new_path);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, dtb_config &value,
@@ -1295,13 +1292,13 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, ram_config &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jconfig = j[key];
     const auto new_path = path + to_string(key) + "/";
     ju_get_field(jconfig, "length"s, value.length, new_path);
-    ju_get_opt_field(jconfig, "image_filename"s, value.image_filename, new_path);
+    ju_get_opt_field(jconfig, "backing_store"s, value.backing_store, new_path);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, ram_config &value,
@@ -1312,15 +1309,15 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, memory_range_config &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jconfig = j[key];
     const auto new_path = path + to_string(key) + "/";
     ju_get_opt_field(jconfig, "start"s, value.start, new_path);
     ju_get_opt_field(jconfig, "length"s, value.length, new_path);
-    ju_get_opt_field(jconfig, "shared"s, value.shared, new_path);
-    ju_get_opt_field(jconfig, "image_filename"s, value.image_filename, new_path);
+    ju_get_opt_field(jconfig, "read_only"s, value.read_only, new_path);
+    ju_get_opt_field(jconfig, "backing_store"s, value.backing_store, new_path);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, memory_range_config &value,
@@ -1330,30 +1327,70 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, cmio_buffer_config &value, const std::string &path) {
-    if (!contains(j, key)) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, hash_tree_config &value, const std::string &path) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jconfig = j[key];
     const auto new_path = path + to_string(key) + "/";
     ju_get_opt_field(jconfig, "shared"s, value.shared, new_path);
-    ju_get_opt_field(jconfig, "image_filename"s, value.image_filename, new_path);
+    ju_get_opt_field(jconfig, "truncate"s, value.truncate, new_path);
+    ju_get_opt_field(jconfig, "hasher"s, value.hasher, new_path);
+    ju_get_opt_field(jconfig, "sht_filename"s, value.sht_filename, new_path);
+    ju_get_opt_field(jconfig, "phtc_filename"s, value.phtc_filename, new_path);
+    ju_get_opt_field(jconfig, "phtc_size"s, value.phtc_size, new_path);
 }
 
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, cmio_buffer_config &value,
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, hash_tree_config &value,
     const std::string &path);
 
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, cmio_buffer_config &value,
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, hash_tree_config &value,
     const std::string &path);
 
 template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, backing_store_config &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    ju_get_opt_field(jconfig, "shared"s, value.shared, new_path);
+    ju_get_opt_field(jconfig, "truncate"s, value.truncate, new_path);
+    ju_get_opt_field(jconfig, "data_filename"s, value.data_filename, new_path);
+    ju_get_opt_field(jconfig, "dht_filename"s, value.dht_filename, new_path);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, backing_store_config &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    backing_store_config &value, const std::string &path);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, backing_store_config_only &value,
+    const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    ju_get_opt_field(jconfig, "backing_store"s, value.backing_store, new_path);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, backing_store_config_only &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    backing_store_config_only &value, const std::string &path);
+
+template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, flash_drive_configs &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jflash_drive = j[key];
     if (!jflash_drive.is_array()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not an array"s);
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not an array"s);
     }
     const auto new_path = path + to_string(key) + "/";
     value.resize(0);
@@ -1371,7 +1408,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, virtio_device_config &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jconfig = j[key];
@@ -1390,7 +1427,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, virtio_device_confi
         if (jconfig.contains("hostfwd")) {
             const auto &jhostfwds = jconfig["hostfwd"];
             if (!jhostfwds.is_array()) {
-                throw std::invalid_argument("field \""s + new_path + "hostfwd\" not an array"s);
+                throw std::invalid_argument("\""s + new_path + "hostfwd\" not an array"s);
             }
             for (const auto &el : jhostfwds.items()) {
                 const auto &jhostfwd = el.value();
@@ -1422,17 +1459,17 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, virtio_configs &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jvirtio = j[key];
     if (!jvirtio.is_array()) {
-        throw std::invalid_argument("field \""s + path + to_string(key) + "\" not an array"s);
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not an array"s);
     }
     const auto new_path = path + to_string(key) + "/";
     value.resize(0);
     for (uint64_t i = 0; i < jvirtio.size(); ++i) {
-        value.push_back({});
+        value.emplace_back();
         ju_get_opt_field(jvirtio, i, value.back(), new_path);
     }
 }
@@ -1444,24 +1481,8 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, tlb_config &value, const std::string &path) {
-    if (!contains(j, key)) {
-        return;
-    }
-    const auto &jconfig = j[key];
-    const auto new_path = path + to_string(key) + "/";
-    ju_get_opt_field(jconfig, "image_filename"s, value.image_filename, new_path);
-}
-
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, tlb_config &value,
-    const std::string &path);
-
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, tlb_config &value,
-    const std::string &path);
-
-template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, clint_config &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jconfig = j[key];
@@ -1477,7 +1498,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, plic_config &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jconfig = j[key];
@@ -1494,7 +1515,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, htif_config &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jconfig = j[key];
@@ -1514,7 +1535,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, cmio_config &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jconfig = j[key];
@@ -1531,7 +1552,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_processor_config &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jconfig = j[key];
@@ -1580,24 +1601,8 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     uarch_processor_config &value, const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_ram_config &value, const std::string &path) {
-    if (!contains(j, key)) {
-        return;
-    }
-    const auto &jconfig = j[key];
-    const auto new_path = path + to_string(key) + "/";
-    ju_get_opt_field(jconfig, "image_filename"s, value.image_filename, new_path);
-}
-
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, uarch_ram_config &value,
-    const std::string &path);
-
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, uarch_ram_config &value,
-    const std::string &path);
-
-template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_config &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &juarch = j[key];
@@ -1614,7 +1619,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_config &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &config = j[key];
@@ -1623,13 +1628,15 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_config &val
     ju_get_opt_field(config, "ram"s, value.ram, new_path);
     ju_get_opt_field(config, "dtb"s, value.dtb, new_path);
     ju_get_opt_field(config, "flash_drive"s, value.flash_drive, new_path);
-    ju_get_opt_field(config, "virtio"s, value.virtio, new_path);
     ju_get_opt_field(config, "tlb"s, value.tlb, new_path);
     ju_get_opt_field(config, "clint"s, value.clint, new_path);
     ju_get_opt_field(config, "plic"s, value.plic, new_path);
     ju_get_opt_field(config, "htif"s, value.htif, new_path);
-    ju_get_opt_field(config, "uarch"s, value.uarch, new_path);
+    ju_get_opt_field(config, "virtio"s, value.virtio, new_path);
     ju_get_opt_field(config, "cmio"s, value.cmio, new_path);
+    ju_get_opt_field(config, "pmas"s, value.pmas, new_path);
+    ju_get_opt_field(config, "uarch"s, value.uarch, new_path);
+    ju_get_opt_field(config, "hash_tree"s, value.hash_tree, new_path);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, machine_config &value,
@@ -1641,7 +1648,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, address_range_description &value,
     const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jconfig = j[key];
@@ -1671,7 +1678,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, fork_result &value, const std::string &path) {
-    if (!contains(j, key)) {
+    if (!contains(j, key, path)) {
         return;
     }
     const auto &jconfig = j[key];
@@ -1774,13 +1781,24 @@ void to_json(nlohmann::json &j, const access_log &log) {
     }
 }
 
-void to_json(nlohmann::json &j, const memory_range_config &config) {
-    j = nlohmann::json{{"start", config.start}, {"length", config.length}, {"shared", config.shared},
-        {"image_filename", config.image_filename}};
+void to_json(nlohmann::json &j, const backing_store_config &config) {
+    j = nlohmann::json{{"shared", config.shared}, {"truncate", config.truncate},
+        {"data_filename", config.data_filename}, {"dht_filename", config.dht_filename}};
 }
 
-void to_json(nlohmann::json &j, const cmio_buffer_config &config) {
-    j = nlohmann::json{{"shared", config.shared}, {"image_filename", config.image_filename}};
+void to_json(nlohmann::json &j, const backing_store_config_only &config) {
+    j = nlohmann::json{{"backing_store", config.backing_store}};
+}
+
+void to_json(nlohmann::json &j, const memory_range_config &config) {
+    j = nlohmann::json{{"start", config.start}, {"length", config.length}, {"read_only", config.read_only},
+        {"backing_store", config.backing_store}};
+}
+
+void to_json(nlohmann::json &j, const hash_tree_config &config) {
+    j = nlohmann::json{{"hasher", config.hasher}, {"shared", config.shared}, {"truncate", config.truncate},
+        {"sht_filename", config.sht_filename}, {"phtc_filename", config.phtc_filename},
+        {"phtc_size", config.phtc_size}};
 }
 
 void to_json(nlohmann::json &j, const processor_config &config) {
@@ -1856,7 +1874,7 @@ void to_json(nlohmann::json &j, const virtio_configs &vs) {
 void to_json(nlohmann::json &j, const ram_config &config) {
     j = nlohmann::json{
         {"length", config.length},
-        {"image_filename", config.image_filename},
+        {"backing_store", config.backing_store},
     };
 }
 
@@ -1865,13 +1883,7 @@ void to_json(nlohmann::json &j, const dtb_config &config) {
         {"bootargs", config.bootargs},
         {"init", config.init},
         {"entrypoint", config.entrypoint},
-        {"image_filename", config.image_filename},
-    };
-}
-
-void to_json(nlohmann::json &j, const tlb_config &config) {
-    j = nlohmann::json{
-        {"image_filename", config.image_filename},
+        {"backing_store", config.backing_store},
     };
 }
 
@@ -1945,12 +1957,6 @@ void to_json(nlohmann::json &j, const uarch_processor_config &config) {
     };
 }
 
-void to_json(nlohmann::json &j, const uarch_ram_config &config) {
-    j = nlohmann::json{
-        {"image_filename", config.image_filename},
-    };
-}
-
 void to_json(nlohmann::json &j, const uarch_config &config) {
     j = nlohmann::json{
         {"processor", config.processor},
@@ -1964,13 +1970,15 @@ void to_json(nlohmann::json &j, const machine_config &config) {
         {"ram", config.ram},
         {"dtb", config.dtb},
         {"flash_drive", config.flash_drive},
-        {"virtio", config.virtio},
         {"tlb", config.tlb},
         {"clint", config.clint},
         {"plic", config.plic},
         {"htif", config.htif},
-        {"uarch", config.uarch},
+        {"virtio", config.virtio},
         {"cmio", config.cmio},
+        {"pmas", config.pmas},
+        {"uarch", config.uarch},
+        {"hash_tree", config.hash_tree},
     };
 }
 

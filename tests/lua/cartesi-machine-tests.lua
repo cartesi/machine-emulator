@@ -536,7 +536,8 @@ local options = {
             end
             uarch = uarch or {}
             uarch.ram = uarch.ram or {}
-            uarch.ram.image_filename = o
+            uarch.ram.backing_store = uarch.ram.backing_store or {}
+            uarch.ram.backing_store.data_filename = o
             return true
         end,
     },
@@ -603,7 +604,9 @@ local function build_machine(ram_image)
     local config = {
         ram = {
             length = 32 << 20,
-            image_filename = test_path .. "/" .. ram_image,
+            backing_store = {
+                data_filename = test_path .. "/" .. ram_image,
+            },
         },
         flash_drive = { {
             start = 0x80000000000000,
@@ -645,7 +648,7 @@ local function print_machine(test_name, expected_cycles)
  --uarch-ram-image=%s\
  --max-mcycle=%d ",
             test_path .. "/" .. test_name,
-            uarch.ram.image_filename,
+            uarch.ram.backing_store.data_filename,
             2 * expected_cycles
         ))
     end

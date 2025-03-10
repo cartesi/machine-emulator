@@ -87,10 +87,6 @@ where options are:
   --ram-length=<number>
     set RAM length.
 
-  --dtb-image=<filename>
-    name of file containing DTB image
-    (default: auto generated flattened device tree).
-
   --no-bootargs
     clear default bootargs.
 
@@ -106,19 +102,16 @@ where options are:
 
     <key>:<value> is one of
         label:<label>
-        filename:<filename>
         start:<number>
         length:<number>
+        data_filename:<filename>
+        dht_filename:<filename>
         shared
         mount:<string>
         user:<string>
 
         label (mandatory)
         identifies the flash drive. init attempts to mount it as /mnt/<label>.
-
-        filename (optional)
-        gives the name of the file containing the image for the flash drive.
-        when omitted or set to the empty, the drive starts filled with 0.
 
         start (optional)
         sets the starting physical memory offset for flash drive in bytes.
@@ -130,8 +123,18 @@ where options are:
         if omitted, the length is computed from the image in filename.
         if length and filename are set, the image file size must match length.
 
+        data_filename (optional)
+        gives the name of the file containing the data for the flash drive.
+        when omitted or set to the empty, the drive starts filled with 0.
+
+        dht_filename (optional)
+        gives the name of the file containing the dense hash tree for the flash drive.
+        (this is the part of the hash tree that subintends the entire address
+        range for the drive, down to one hash per page.)
+        when omitted or set to the empty, the hash tree will be built from scratch.
+
         shared (optional)
-        target modifications to flash drive modify image file as well.
+        target modifications to flash drive modify the memory and hash tree files.
         by default, image files are not modified and changes are lost.
 
         mount (optional)
@@ -148,32 +151,71 @@ where options are:
         filesystem being mounted.
         in case mount is false, the default ownership is set to the root user.
 
-    (an option "--flash-drive=label:root,filename:rootfs.ext2" is implicit)
+    (an option "--flash-drive=label:root,data_filename:rootfs.ext2" is implicit)
 
   --replace-flash-drive=<key>:<value>[,<key>:<value>[,...]...]
   --replace-memory-range=<key>:<value>[,<key>:<value>[,...]...]
-    replaces an existing flash drive or cmio memory range right after
-    machine instantiation.
+    replaces an existing memory range right after machine instantiation.
     (typically used in conjunction with the --load=<directory> option.)
 
     <key>:<value> is one of
-        filename:<filename>
         start:<number>
         length:<number>
+        data_filename:<filename>
+        dht_filename:<filename>
         shared
 
     semantics are the same as for the --flash-drive option with the following
     difference: start and length are mandatory, and must match those of a
-    previously existing flash drive or cmio memory memory range.
+    previously existing memory range (e.g., flash drive, cmio buffer, etc).
 
+  --ram=<key>:<value>[,<key>:<value>[,...]...]
+  --dtb=<key>:<value>[,<key>:<value>[,...]...]
+  --tlb=<key>:<value>[,<key>:<value>[,...]...]
   --cmio-rx-buffer=<key>:<value>[,<key>:<value>[,...]...]
   --cmio-tx-buffer=<key>:<value>[,<key>:<value>[,...]...]
+  --pmas=<key>:<value>[,<key>:<value>[,...]...]
+  --uarch-ram=<key>:<value>[,<key>:<value>[,...]...]
+    configures file storage for other memory ranges in the machine
 
     <key>:<value> is one of
-        filename:<filename>
+        data_filename:<filename>
+        dht_filename:<filename>
         shared
 
     semantics are the same as for the --flash-drive option.
+
+  --hash-tree=<key>:<value>[,<key>:<value>[,...]...]
+    configures the global hash tree the the machine
+
+    <key>:<value> is one of
+        hasher:<string>
+        sht_filename:<filename>
+        phtc_filename:<filename>
+        phtc_size:<number>
+        shared
+
+        hasher (default: "keccak")
+		hashing algorithm used for the tree
+
+        sht_filename (optional)
+        gives the name of the file containing the sparse hash-tree for the machine.
+		(this is the part of the hash tree from the root down to leaves that subindend
+        entire memory ranges, such as flash-drives or the ram.)
+        when omitted or set to the empty, the hash tree will be built from scratch.
+
+        phtc_filename (optional)
+        gives the name of the file containing the page hash-tree cache for the machine.
+        (this is a cache with the dense hash-trees for a subset of the pages in the
+        machine, all the way down to 256-bit words.)
+        when omitted or set to the empty, the page hash-tree cache will start empty.
+
+        phtc_size (default: 2048)
+        give the maximum number of pages in the cache.
+
+        shared (optional)
+        target modifications to machine state modify the sparse hash tree file.
+        by default, the files is not modified and changes are lost.
 
   --cmio-advance-state=<key>:<value>[,<key>:<value>[,...]...]
     advances the state of the machine through a number of inputs.
@@ -568,7 +610,8 @@ local remote_destroy = true
 local perform_rollbacks = true
 local default_config = cartesi.machine:get_default_config()
 local images_path = adjust_images_path(os.getenv("CARTESI_IMAGES_PATH"))
-local flash_image_filename = { root = images_path .. "rootfs.ext2" }
+local flash_data_filename = { root = images_path .. "rootfs.ext2" }
+local flash_dht_filename = {}
 local flash_label_order = { "root" }
 local flash_shared = {}
 local flash_mount = {}
@@ -583,18 +626,37 @@ local has_virtio_console = false
 local has_network = false
 local has_sync_init_date = false
 local memory_range_replace = {}
-local ram_image_filename = images_path .. "linux.bin"
-local ram_length = 128 << 20 -- 128MB
-local dtb_image_filename = nil
-local bootargs = default_config.dtb.bootargs
+local ram = {
+    length = 128 << 20, -- 128MB
+    backing_store = { data_filename = images_path .. "linux.bin" },
+}
 local init_splash = true
 local append_bootargs = ""
 local append_init = ""
 local append_entrypoint = ""
-local uarch
-local cmio
+local dtb = {
+    init = "",
+    entrypoint = "",
+    bootargs = default_config.dtb.bootargs,
+}
+local tlb = {}
+local cmio = {
+    rx_buffer = {},
+    tx_buffer = {},
+}
 local cmio_advance
 local cmio_inspect
+local uarch = {
+    ram = {
+        backing_store = {
+            data_filename = "",
+        },
+    },
+}
+local pmas = {}
+local hash_tree = {
+    hasher = default_config.hash_tree.hasher,
+}
 local concurrency_update_merkle_tree = 0
 local skip_root_hash_check = false
 local skip_root_hash_store = false
@@ -630,34 +692,50 @@ local log_step_filename
 
 local function parse_memory_range(opts, what, all)
     local f = util.parse_options(opts, {
-        filename = true,
+        data_filename = true,
+        dht_filename = true,
         shared = true,
         length = true,
         start = true,
     })
-    f.image_filename = f.filename
-    f.filename = nil
-    if f.image_filename == true then f.image_filename = "" end
-    assert(not f.shared or f.shared == true, "invalid " .. what .. " shared value in " .. all)
+    if f.data_filename == true then f.backing_filename = "" end
+    if f.dense_hashdense_tree_filename == true then f.dht_filename = "" end
+    if f.shared == nil or f.shared == "false" then f.shared = false end
+    if f.shared == "true" then f.shared = true end
+    assert(type(f.shared) == "boolean", "invalid " .. what .. " shared value in " .. all)
+    f.backing_store = {
+        data_filename = f.data_filename,
+        dht_filename = f.dht_filename,
+        shared = f.shared,
+    }
+    f.data_filename = nil
+    f.dht_filename = nil
+    f.shared = nil
     f.start = assert(util.parse_number(f.start), "invalid " .. what .. " start in " .. all)
     f.length = assert(util.parse_number(f.length), "invalid " .. what .. " length in " .. all)
     return f
 end
 
-local function parse_cmio_buffer(opts, what, all)
+local function parse_backing_store(opts, what, all, def)
     local f = util.parse_options(opts, {
-        filename = true,
+        data_filename = true,
+        dht_filename = true,
         shared = true,
     })
-    f.image_filename = f.filename
-    f.filename = nil
-    if f.image_filename == true then f.image_filename = "" end
-    assert(not f.shared or f.shared == true, "invalid " .. what .. " shared value in " .. all)
+    if f.data_filename == true then f.data_filename = "" end
+    if f.dht_filename == true then f.dht_filename = "" end
+    if f.shared == nil or f.shared == "false" then f.shared = false end
+    if f.shared == "true" then f.shared = true end
+    assert(type(f.shared) == "boolean", "invalid " .. what .. " shared value in " .. all)
+    if def then
+        for i, v in pairs(def) do
+            if f[i] == nil then f[i] = v end
+        end
+    end
     return f
 end
 
-local function handle_sync_init_date(all)
-    if not all then return false end
+local function handle_sync_init_date()
     if has_sync_init_date then return true end
     unreproducible = true
     has_sync_init_date = true
@@ -668,14 +746,12 @@ local function handle_sync_init_date(all)
 end
 
 local function handle_virtio_9p(tag, host_directory)
-    if not tag or not host_directory then return false end
     unreproducible = true
     table.insert(virtio, { type = "p9fs", tag = tag, host_directory = host_directory })
     return true
 end
 
 local function handle_volume_option(host_directory, guest_directory)
-    if not host_directory or not guest_directory then return false end
     unreproducible = true
     local tag = "vfs" .. virtio_volume_count
     virtio_volume_count = virtio_volume_count + 1
@@ -683,37 +759,32 @@ local function handle_volume_option(host_directory, guest_directory)
     append_init = append_init .. "busybox mkdir -p " .. guest_directory .. " && "
     append_init = append_init .. "busybox mount -t 9p " .. tag .. " " .. guest_directory .. "\n"
     -- sync guest date with host date, otherwise file system updates will have wrong dates
-    handle_sync_init_date(true)
+    handle_sync_init_date()
     return true
 end
 
-local function handle_htif_console_getchar(all)
-    if not all then return false end
+local function handle_htif_console_getchar()
     htif_console_getchar = true
     unreproducible = true
     return true
 end
 
 local function handle_user(user)
-    if not user then return false end
     append_init = append_init .. "USER=" .. user .. "\n"
     return true
 end
 
 local function handle_env(name, value)
-    if not name or not value then return false end
     append_init = append_init .. "export " .. name .. "=" .. value .. "\n"
     return true
 end
 
 local function handle_workdir(value)
-    if not value then return false end
     append_init = append_init .. "WORKDIR=" .. value .. "\n"
     return true
 end
 
 local function handle_hostname(name)
-    if not name then return false end
     append_init = append_init .. "busybox hostname " .. name .. "\n"
     return true
 end
@@ -792,25 +863,23 @@ busybox ip route add default via 10.0.2.2 dev eth0
 [ -w /etc ] && echo 'nameserver 10.0.2.3' > /etc/resolv.conf
 ]]
     -- sync guest date with host date, otherwise SSL connections may fail to validate certificates
-    handle_sync_init_date(true)
+    handle_sync_init_date()
     return true
 end
 
-local function handle_virtio_console(all)
-    if not all then return false end
+local function handle_virtio_console()
     if has_virtio_console then return true end
     unreproducible = true
     has_virtio_console = true
     -- Switch from HTIF Console (hvc0) to VirtIO console (hvc1)
-    bootargs = bootargs:gsub("console=hvc0", "console=hvc1")
+    dtb.bootargs = dtb.bootargs:gsub("console=hvc0", "console=hvc1")
     table.insert(virtio, 1, { type = "console" })
     return true
 end
 
-local function handle_interactive(all)
-    if not all then return false end
-    handle_virtio_console(true)
-    handle_sync_init_date(true)
+local function handle_interactive()
+    handle_virtio_console()
+    handle_sync_init_date()
     -- Expose current terminal features to the virtual terminal
     local term, lang = os.getenv("TERM"), os.getenv("LANG")
     if term then append_init = append_init .. "export TERM=" .. term .. "\n" end
@@ -828,24 +897,21 @@ end
 local options = {
     {
         "^%-h$",
-        function(all)
-            if not all then return false end
+        function()
             help()
             return true
         end,
     },
     {
         "^%-%-help$",
-        function(all)
-            if not all then return false end
+        function()
             help()
             return true
         end,
     },
     {
         "^%-%-version$",
-        function(all)
-            if not all then return false end
+        function()
             print(string.format("cartesi-machine %s", cartesi.VERSION))
             if cartesi.GIT_COMMIT then print(string.format("git commit: %s", cartesi.GIT_COMMIT)) end
             if cartesi.BUILD_TIME then print(string.format("build time: %s", cartesi.BUILD_TIME)) end
@@ -858,8 +924,7 @@ local options = {
     },
     {
         "^%-%-version%-json$",
-        function(all)
-            if not all then return false end
+        function()
             print("{")
             print(string.format('  "version": "%s",', cartesi.VERSION))
             print(string.format('  "version_major": %d,', cartesi.VERSION_MAJOR))
@@ -888,72 +953,120 @@ local options = {
         end,
     },
     {
-        "^%-%-dtb%-image%=(.*)$",
-        function(o)
-            if not o or #o < 1 then return false end
-            dtb_image_filename = o
+        "^%-%-dtb%-image%=(.+)$",
+        function(opts)
+            dtb.backing_store = dtb.backing_store or {}
+            dtb.backing_store.data_filename = opts
             return true
         end,
     },
     {
         "^%-%-no%-bootargs$",
-        function(all)
-            if not all then return false end
-            bootargs = ""
+        function()
+            dtb.bootargs = ""
             return true
         end,
     },
     {
-        "^%-%-append%-bootargs%=(.*)$",
-        function(o)
-            if not o then return false end
-            if #o == 0 then return true end
+        "^%-%-append%-bootargs%=(.+)$",
+        function(opts)
             if #append_bootargs == 0 then
-                append_bootargs = o
+                append_bootargs = opts
             else
-                append_bootargs = append_bootargs .. " " .. o
+                append_bootargs = append_bootargs .. " " .. opts
             end
+            return true
+        end,
+    },
+    {
+        "^(%-%-dtb%=(.+))$",
+        function(all, opts)
+            dtb.backing_store = parse_backing_store(opts, "dtb", all, dtb.backing_store)
             return true
         end,
     },
     {
         "^%-%-ram%-length%=(.+)$",
         function(n)
-            if not n then return false end
-            ram_length = assert(util.parse_number(n), "invalid RAM length " .. n)
+            ram.length = assert(util.parse_number(n), "invalid RAM length " .. n)
             return true
         end,
     },
     {
-        "^%-%-ram%-image%=(.*)$",
-        function(o)
-            if not o or #o < 1 then return false end
-            ram_image_filename = o
+        "^%-%-ram%-image%=(.+)$",
+        function(opts)
+            ram.backing_store.data_filename = opts
             return true
         end,
     },
     {
         "^%-%-no%-ram%-image$",
-        function(all)
-            if not all then return false end
-            ram_image_filename = ""
+        function()
+            ram.backing_store.data_filename = ""
             return true
         end,
     },
     {
-        "^%-%-uarch%-ram%-image%=(.*)$",
-        function(o)
-            if not o or #o < 1 then return false end
-            uarch = uarch or {}
-            uarch.ram = uarch.ram or {}
-            uarch.ram.image_filename = o
+        "^(%-%-ram%=(.+))$",
+        function(all, opts)
+            ram.backing_store = parse_backing_store(opts, "ram", all, ram.backing_store)
+            return true
+        end,
+    },
+    {
+        "^(%-%-tlb%=(.+))$",
+        function(all, opts)
+            tlb.backing_store = parse_backing_store(opts, "tlb", all, tlb.backing_store)
+            return true
+        end,
+    },
+    {
+        "^(%-%-pmas%=(.+))$",
+        function(all, opts)
+            pmas.backing_store = parse_backing_store(opts, "pmas", all, pmas.backing_store)
+            return true
+        end,
+    },
+    {
+        "^%-%-uarch%-ram%-image%=(.+)$",
+        function(opts)
+            uarch.ram.backing_store.data_filename = opts
+            return true
+        end,
+    },
+    {
+        "^(%-%-uarch%-ram%=(.+))$",
+        function(all, opts)
+            uarch.ram.backing_store = parse_backing_store(opts, "uarch-ram", all, uarch.ram.backing_store)
+            return true
+        end,
+    },
+    {
+        "^(%-%-hash%-tree%=(.+))$",
+        function(all, opts)
+            local h = util.parse_options(opts, {
+                hasher = true,
+                sht_filename = true,
+                phtc_filename = true,
+                phtc_size = true,
+                shared = true,
+            })
+            if h.sht_filename == true then h.sht_filename = "" end
+            if h.phtc_filename == true then h.phtc_filename = "" end
+            if h.hasher == true then h.hasher = "keccak" end
+            if h.shared == nil or h.shared == "false" then h.shared = false end
+            if h.shared == "true" then h.shared = true end
+            h.phtc_size = assert(util.parse_number(h.phtc_size), "invalid page hash cache size in " .. all)
+            assert(type(h.shared) == "boolean", "invalid hash tree shared value in " .. all)
+            for i, v in pairs(h) do
+                hash_tree[i] = v
+            end
             return true
         end,
     },
     {
         "^%-%-unreproducible$",
-        function(all)
-            if not all then return false end
+        function()
             unreproducible = true
             return true
         end,
@@ -1029,10 +1142,10 @@ local options = {
     {
         "^(%-%-flash%-drive%=(.+))$",
         function(all, opts)
-            if not opts then return false end
             local f = util.parse_options(opts, {
                 label = true,
-                filename = true,
+                data_filename = true,
+                dht_filename = true,
                 shared = true,
                 mount = true,
                 user = true,
@@ -1040,13 +1153,12 @@ local options = {
                 start = true,
             })
             assert(f.label, "missing flash drive label in " .. all)
-            f.image_filename = f.filename
-            f.filename = nil
-            if f.image_filename == true then f.image_filename = "" end
+            if f.data_filename == true then f.data_filename = "" end
+            if f.dht_filename == true then f.dht_filename = "" end
             assert(not f.shared or f.shared == true, "invalid flash drive shared value in " .. all)
             if f.mount == nil then
                 -- mount only if there is a file backing
-                if f.image_filename and f.image_filename ~= "" then
+                if f.data_filename and f.data_filename ~= "" then
                     f.mount = "/mnt/" .. f.label
                 else
                     f.mount = false
@@ -1059,11 +1171,12 @@ local options = {
             if f.start then f.start = assert(util.parse_number(f.start), "invalid flash drive start in " .. all) end
             if f.length then f.length = assert(util.parse_number(f.length), "invalid flash drive length in " .. all) end
             local d = f.label
-            if not flash_image_filename[d] then
+            if not flash_data_filename[d] then
                 flash_label_order[#flash_label_order + 1] = d
-                flash_image_filename[d] = ""
+                flash_data_filename[d] = ""
             end
-            flash_image_filename[d] = f.image_filename or flash_image_filename[d]
+            flash_data_filename[d] = f.data_filename or flash_data_filename[d]
+            flash_dht_filename[d] = f.dht_filename or flash_dht_filename[d]
             flash_start[d] = f.start or flash_start[d]
             flash_length[d] = f.length or flash_length[d]
             flash_shared[d] = f.shared or flash_shared[d]
@@ -1075,7 +1188,6 @@ local options = {
     {
         "^(%-%-replace%-flash%-drive%=(.+))$",
         function(all, opts)
-            if not opts then return false end
             memory_range_replace[#memory_range_replace + 1] = parse_memory_range(opts, "flash drive", all)
             return true
         end,
@@ -1083,15 +1195,13 @@ local options = {
     {
         "^(%-%-replace%-memory%-range%=(.+))$",
         function(all, opts)
-            if not opts then return false end
-            memory_range_replace[#memory_range_replace + 1] = parse_memory_range(opts, "flash drive", all)
+            memory_range_replace[#memory_range_replace + 1] = parse_memory_range(opts, "memory range", all)
             return true
         end,
     },
     {
         "^(%-%-cmio%-advance%-state%=(.+))$",
         function(all, opts)
-            if not opts then return false end
             local r = util.parse_options(opts, {
                 input = true,
                 input_index_begin = true,
@@ -1116,9 +1226,8 @@ local options = {
         end,
     },
     {
-        "^(%-%-cmio%-inspect%-state%=(.+))$",
-        function(_, opts)
-            if not opts then return false end
+        "^%-%-cmio%-inspect%-state%=(.+)$",
+        function(opts)
             local r = util.parse_options(opts, {
                 query = true,
                 report = true,
@@ -1144,7 +1253,6 @@ local options = {
     {
         "^(%-%-concurrency%=(.+))$",
         function(all, opts)
-            if not opts then return false end
             local c = util.parse_options(opts, {
                 update_merkle_tree = true,
             })
@@ -1189,7 +1297,6 @@ local options = {
     {
         "^(%-%-initial%-proof%=(.+))$",
         function(all, opts)
-            if not opts then return false end
             local p = util.parse_options(opts, {
                 address = true,
                 log2_size = true,
@@ -1224,13 +1331,13 @@ local options = {
         "^%-%-no%-root%-flash%-drive$",
         function(all)
             if not all then return false end
-            assert(flash_image_filename.root and flash_label_order[1] == "root", "no root flash drive to remove")
-            flash_image_filename.root = nil
+            assert(flash_data_filename.root and flash_label_order[1] == "root", "no root flash drive to remove")
+            flash_data_filename.root = nil
             flash_start.root = nil
             flash_length.root = nil
             flash_shared.root = nil
             table.remove(flash_label_order, 1)
-            bootargs = bootargs:gsub(" root=$", "")
+            dtb.bootargs = dtb.bootargs:gsub(" root=$", "")
             return true
         end,
     },
@@ -1309,41 +1416,41 @@ local options = {
     },
     {
         "^%-%-load%=(.*)$",
-        function(o)
-            if not o or #o < 1 then return false end
-            load_dir = o
+        function(opts)
+            if not opts or #opts < 1 then return false end
+            load_dir = opts
             return true
         end,
     },
     {
         "^%-%-store%=(.*)$",
-        function(o)
-            if not o or #o < 1 then return false end
-            store_dir = o
+        function(opts)
+            if not opts or #opts < 1 then return false end
+            store_dir = opts
             return true
         end,
     },
     {
         "^%-%-remote%-spawn$",
-        function(o)
-            if not o then return false end
+        function(opts)
+            if not opts then return false end
             remote_spawn = true
             return true
         end,
     },
     {
         "^%-%-remote%-address%=(.*)$",
-        function(o)
-            if not o or #o < 1 then return false end
-            remote_address = o
+        function(opts)
+            if not opts or #opts < 1 then return false end
+            remote_address = opts
             return true
         end,
     },
     {
         "^%-%-remote%-fork(%=?)(.*)$",
-        function(o, v)
-            if not o then return false end
-            if o == "=" then
+        function(opts, v)
+            if not opts then return false end
+            if opts == "=" then
                 if not v or #v < 1 then return false end
                 remote_fork = v
             elseif #v ~= 0 then
@@ -1356,40 +1463,40 @@ local options = {
     },
     {
         "^%-%-remote%-health%-check$",
-        function(o)
-            if not o then return false end
+        function(opts)
+            if not opts then return false end
             remote_health_check = true
             return true
         end,
     },
     {
         "^%-%-remote%-shutdown$",
-        function(o)
-            if not o then return false end
+        function(opts)
+            if not opts then return false end
             remote_shutdown = true
             return true
         end,
     },
     {
         "^%-%-no%-remote%-create$",
-        function(o)
-            if not o then return false end
+        function(opts)
+            if not opts then return false end
             remote_create = false
             return true
         end,
     },
     {
         "^%-%-no%-remote%-destroy$",
-        function(o)
-            if not o then return false end
+        function(opts)
+            if not opts then return false end
             remote_destroy = false
             return true
         end,
     },
     {
         "^%-%-no%-rollback$",
-        function(o)
-            if not o then return false end
+        function(opts)
+            if not opts then return false end
             perform_rollbacks = false
             return true
         end,
@@ -1429,9 +1536,9 @@ local options = {
     },
     {
         "^%-%-store%-config(%=?)(%g*)$",
-        function(o, v)
-            if not o then return false end
-            if o == "=" then
+        function(opts, v)
+            if not opts then return false end
+            if opts == "=" then
                 if not v or #v < 1 then return false end
                 store_config = v
             elseif #v ~= 0 then
@@ -1444,9 +1551,9 @@ local options = {
     },
     {
         "^%-%-store%-json%-config(%=?)(%g*)$",
-        function(o, v)
-            if not o then return false end
-            if o == "=" then
+        function(opts, v)
+            if not opts then return false end
+            if opts == "=" then
                 if not v or #v < 1 then return false end
                 store_json_config = v
             elseif #v ~= 0 then
@@ -1459,17 +1566,17 @@ local options = {
     },
     {
         "^%-%-load%-config%=(%g*)$",
-        function(o)
-            if not o or #o < 1 then return false end
-            load_config = o
+        function(opts)
+            if not opts or #opts < 1 then return false end
+            load_config = opts
             return true
         end,
     },
     {
         "^%-%-load%-json%-config%=(%g*)$",
-        function(o)
-            if not o or #o < 1 then return false end
-            load_json_config = o
+        function(opts)
+            if not opts or #opts < 1 then return false end
+            load_json_config = opts
             return true
         end,
     },
@@ -1477,8 +1584,8 @@ local options = {
         "^(%-%-cmio%-rx%-buffer%=(.+))$",
         function(all, opts)
             if not opts then return false end
-            cmio = cmio or {}
-            cmio.rx_buffer = parse_cmio_buffer(opts, "cmio rx buffer", all)
+            cmio.rx_buffer.backing_store =
+                parse_backing_store(opts, "cmio rx buffer", all, cmio.rx_buffer.backing_store)
             return true
         end,
     },
@@ -1486,8 +1593,8 @@ local options = {
         "^(%-%-cmio%-tx%-buffer%=(.+))$",
         function(all, opts)
             if not opts then return false end
-            cmio = cmio or {}
-            cmio.tx_buffer = parse_cmio_buffer(opts, "tx buffer", all)
+            cmio.tx_buffer.backing_store =
+                parse_backing_store(opts, "cmio tx buffer", all, cmio.tx_buffer.backing_store)
             return true
         end,
     },
@@ -1500,51 +1607,48 @@ local options = {
         end,
     },
     {
-        "^%-u%=(.*)$",
+        "^%-u%=(.+)$",
         handle_user,
     },
     {
-        "^%-%-user%=(.*)$",
+        "^%-%-user%=(.+)$",
         handle_user,
     },
     {
-        "^%-e%=([%w_]+)%=(.*)$",
+        "^%-e%=([%w_]+)%=(.+)$",
         handle_env,
     },
     {
-        "^%-%-env%=([%w_]+)%=(.*)$",
+        "^%-%-env%=([%w_]+)%=(.+)$",
         handle_env,
     },
     {
-        "^%-w%=(.*)$",
+        "^%-w%=(.+)$",
         handle_workdir,
     },
     {
-        "^%-%-workdir%=(.*)$",
+        "^%-%-workdir%=(.+)$",
         handle_workdir,
     },
     {
-        "^%-h%=(.*)$",
+        "^%-h%=(.+)$",
         handle_hostname,
     },
     {
-        "^%-%-hostname%=(.*)$",
+        "^%-%-hostname%=(.+)$",
         handle_hostname,
     },
     {
-        "^%-%-append%-init%=(.*)$",
-        function(o)
-            if not o then return false end
-            if #o == 0 then return true end
-            append_init = append_init .. o .. "\n"
+        "^%-%-append%-init%=(.+)$",
+        function(opts)
+            append_init = append_init .. opts .. "\n"
             return true
         end,
     },
     {
-        "^%-%-append%-init%-file%=(.*)$",
-        function(o)
-            if not o or #o < 1 then return false end
-            local f <close> = assert(io.open(o, "rb"))
+        "^%-%-append%-init%-file%=(.+)$",
+        function(opts)
+            local f <close> = assert(io.open(opts, "rb"))
             local contents = assert(f:read("*a"))
             if not contents:find("\n$") then contents = contents .. "\n" end
             append_init = append_init .. contents
@@ -1552,19 +1656,16 @@ local options = {
         end,
     },
     {
-        "^%-%-append%-entrypoint%=(.*)$",
-        function(o)
-            if not o then return false end
-            if #o == 0 then return true end
-            append_entrypoint = append_entrypoint .. o .. "\n"
+        "^%-%-append%-entrypoint%=(.+)$",
+        function(opts)
+            append_entrypoint = append_entrypoint .. opts .. "\n"
             return true
         end,
     },
     {
-        "^%-%-append%-entrypoint%-file%=(.*)$",
-        function(o)
-            if not o or #o < 1 then return false end
-            local f <close> = assert(io.open(o, "rb"))
+        "^%-%-append%-entrypoint%-file%=(.+)$",
+        function(opts)
+            local f <close> = assert(io.open(opts, "rb"))
             local contents = assert(f:read("*a"))
             if not contents:find("\n$") then contents = contents .. "\n" end
             append_entrypoint = append_entrypoint .. contents
@@ -1573,11 +1674,11 @@ local options = {
     },
     {
         "^%-%-gdb(%=?)(.*)$",
-        function(o, address)
-            if o == "=" and #o > 0 then
+        function(eq, address)
+            if eq == "=" and address ~= "" then
                 gdb_address = address
                 return true
-            elseif o == "" then
+            elseif eq == "" and address == "" then
                 gdb_address = "127.0.0.1:1234"
                 return true
             end
@@ -1587,7 +1688,6 @@ local options = {
     {
         ".*",
         function(all)
-            if not all then return false end
             local not_option = all:sub(1, 1) ~= "-"
             if not_option or all == "--" then
                 cmdline_opts_finished = true
@@ -1599,11 +1699,15 @@ local options = {
     },
 }
 
+local function tryoption(handler, ...)
+    if select(1, ...) ~= nil then return handler(...) end
+end
+
 -- Process command line options
 for _, a in ipairs(arg) do
     if not cmdline_opts_finished then
         for _, option in ipairs(options) do
-            if option[2](a:match(option[1])) then break end
+            if tryoption(option[2], a:match(option[1])) then break end
         end
     else
         exec_arguments[#exec_arguments + 1] = a
@@ -1700,25 +1804,20 @@ else
         processor = {
             iunrep = unreproducible and 1 or 0,
         },
-        dtb = {
-            image_filename = dtb_image_filename,
-            bootargs = bootargs,
-            init = "",
-            entrypoint = "",
-        },
-        ram = {
-            image_filename = ram_image_filename,
-            length = ram_length,
-        },
+        ram = ram,
+        dtb = dtb,
+        flash_drive = {},
+        tlb = tlb,
         htif = {
             console_getchar = htif_console_getchar,
             yield_automatic = htif_yield_automatic,
             yield_manual = htif_yield_manual,
         },
-        cmio = cmio,
-        uarch = uarch,
-        flash_drive = {},
         virtio = virtio,
+        cmio = cmio,
+        pmas = pmas,
+        uarch = uarch,
+        hash_tree = hash_tree,
     }
 
     -- show splash on init
@@ -1742,8 +1841,11 @@ echo "
     for _, label in ipairs(flash_label_order) do
         local devname = "pmem" .. #config.flash_drive
         config.flash_drive[#config.flash_drive + 1] = {
-            image_filename = flash_image_filename[label],
-            shared = flash_shared[label],
+            backing_store = {
+                data_filename = flash_data_filename[label],
+                dht_filename = flash_dht_filename[label],
+                shared = flash_shared[label],
+            },
             start = flash_start[label],
             length = flash_length[label] or -1,
         }

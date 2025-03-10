@@ -125,18 +125,18 @@ local function create_default_config(images_dir, command)
     return {
         ram = {
             length = 0x4000000,
-            image_filename = images_dir .. "linux.bin",
+            backing_store = {
+                data_filename = images_dir .. "linux.bin",
+            },
         },
         dtb = {
             entrypoint = command,
         },
-        cmio = {
-            rx_buffer = { shared = false },
-            tx_buffer = { shared = false },
-        },
         flash_drive = {
             {
-                image_filename = images_dir .. "rootfs.ext2",
+                backing_store = {
+                    data_filename = images_dir .. "rootfs.ext2",
+                },
             },
         },
     }
@@ -214,10 +214,10 @@ rollup-init bash /home/dapp/s.sh
 
 -- Should not work with shared buffers
 local ret = pcall(create_machine, "shared-rx-buffer-machine", "rollup accept", function(config)
-    config.cmio.rx_buffer.shared = true
+    config.cmio = { rx_buffer = { backing_store = { shared = true } } }
 end)
 assert(not ret, "should have failed")
 ret = pcall(create_machine, "shared-tx-buffer-machine", "rollup accept", function(config)
-    config.cmio.tx_buffer.shared = true
+    config.cmio = { tx_buffer = { backing_store = { shared = true } } }
 end)
 assert(not ret, "should have failed")

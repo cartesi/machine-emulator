@@ -377,10 +377,14 @@ CM_API void cm_delete(cm_machine *m);
 /// {
 ///     "ram": {
 ///         "length": 134217728,
-///         "image_filename": "linux.bin"
+///         "backing_store": {
+///             "data_filename": "linux.bin"
+///         }
 ///     },
 ///     "flash_drive": [{
-///         "image_filename": "rootfs.ext2"
+///         "backing_store": {
+///             "data_filename": "rootfs.ext2"
+///         }
 ///     }],
 ///     "dtb": {
 ///         "entrypoint": "echo Hello world!"
@@ -452,17 +456,25 @@ CM_API cm_error cm_get_runtime_config(const cm_machine *m, const char **runtime_
 
 /// \brief Replaces a memory range.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param start Range start physical address.
-/// \param length Range length in bytes.
-/// \param shared[ni] If true, changes to the range from inside the machine will be
-/// written to the associated image file in the host.
-/// \param image_filename Image file name to load into the range. If NULL, entire
-/// range is cleared with zeros.
+/// \param range_config Memory range configuration as a JSON object in a string.
+/// Must have the same start, length, and read-only settings as an existing memory range.
+/// For example:
+/// ```json
+/// {
+///     "start": 0x80000000000000,
+///     "length": 0x100000,
+///     "read_only": false,
+///     "backing_store": {
+///         "data_filename": "linux.bin"
+///         "dht_filename": "linux.dht"
+///         "shared": false
+///     }
+/// }
+/// ```
 /// \returns 0 for success, non zero code for error.
 /// \details The machine must have been initialized with an existing memory range that
 /// has the same start and length specified in the new range.
-CM_API cm_error cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,
-    const char *image_filename);
+CM_API cm_error cm_replace_memory_range(cm_machine *m, const char *range_config);
 
 /// \brief Returns a JSON object with the machine config used to initialize the machine.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).

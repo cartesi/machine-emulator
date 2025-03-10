@@ -83,7 +83,8 @@ local options = {
             end
             uarch = uarch or {}
             uarch.ram = uarch.ram or {}
-            uarch.ram.image_filename = o
+            uarch.ram.backing_store = {}
+            uarch.ram.backing_store.data_filename = o
             return true
         end,
     },
@@ -119,7 +120,9 @@ end
 -- Config yields 5 times with progress
 local config = {
     ram = {
-        image_filename = test_path .. "/htif_yield.bin",
+        backing_store = {
+            data_filename = test_path .. "/htif_yield.bin",
+        },
         length = 0x4000000,
     },
 }

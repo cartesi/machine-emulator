@@ -24,7 +24,9 @@ local config_base = {
         iunrep = 1,
     },
     ram = {
-        image_filename = test_util.tests_path .. "htif_console.bin",
+        backing_store = {
+            data_filename = test_util.tests_path .. "htif_console.bin",
+        },
         length = 0x4000000,
     },
 }

@@ -69,7 +69,6 @@
 #include "strict-aliasing.h"
 #include "tlb.h"
 #include "translate-virtual-address.h"
-#include "uarch-config.h"
 #include "uarch-constants.h"
 #include "uarch-interpret.h"
 #include "uarch-pristine-state-hash.h"
@@ -99,19 +98,20 @@ static const auto throw_invalid_argument = [](const char *err) { throw std::inva
 /// \param start Target physical address where range starts.
 /// \param length Length of range, in bytes.
 /// \param f Flags for address range.
-/// \param image_filename Path to backing file.
-/// \param shared If true, changes to memory range reflect in backing file.
+/// \param backing_store Backing store configuration for range.
 /// \returns New address range with flags already set.
-/// \details If \p image_filename is non-empty, return a memory-mapped range, otherwise use calloc.
+/// \details If \p backing_store.data_filename is non-empty and file is large enough to back entire address range,
+/// return a memory-mapped range, otherwise use calloc.
 static inline auto make_memory_address_range(const std::string &d, uint64_t start, uint64_t length, pmas_flags flags,
-    const std::string &image_filename, bool shared) {
-    if (image_filename.empty() && shared) {
-        throw std::invalid_argument{"shared address range requires non-empty image filename when initializing " + d};
+    const backing_store_config &backing_store) {
+    if (backing_store.data_filename.empty() && backing_store.shared) {
+        throw std::invalid_argument{"shared address range requires non-empty memory filename when initializing " + d};
     }
-    if (image_filename.empty() || length > static_cast<uint64_t>(os_get_file_length(image_filename.c_str()))) {
-        return make_callocd_memory_address_range(d, start, length, flags, image_filename);
+    if (backing_store.data_filename.empty() ||
+        length > static_cast<uint64_t>(os_get_file_length(backing_store.data_filename.c_str()))) {
+        return make_callocd_memory_address_range(d, start, length, flags, backing_store.data_filename);
     }
-    return make_mmapd_memory_address_range(d, start, length, flags, image_filename, shared);
+    return make_mmapd_memory_address_range(d, start, length, flags, backing_store.data_filename, backing_store.shared);
 }
 
 void machine::check_address_range(const address_range &ar, register_where where) {
@@ -151,6 +151,7 @@ static bool is_protected(PMA_ISTART_DID DID) {
 
 void machine::replace_memory_range(const memory_range_config &config) {
     for (auto &existing : m_ars) {
+        //??D Need to add check for new read-only property here
         if (existing->get_start() == config.start && existing->get_length() == config.length) {
             if (!existing->is_memory() || is_protected(existing->get_driver_id())) {
                 throw std::invalid_argument{"attempt to replace a protected range "s + existing->get_description()};
@@ -158,7 +159,7 @@ void machine::replace_memory_range(const memory_range_config &config) {
             // Replace range, preserving original flags.
             // This will automatically start with all pages dirty.
             existing = make_moved_unique(make_memory_address_range(existing->get_description(), existing->get_start(),
-                existing->get_length(), existing->get_flags(), config.image_filename, config.shared));
+                existing->get_length(), existing->get_flags(), config.backing_store));
             return;
         }
     }
@@ -193,16 +194,15 @@ void machine::init_uarch(const uarch_config &c) {
         .DID = PMA_ISTART_DID::memory,
     };
     constexpr auto ram_description = "uarch RAM";
-    if (c.ram.image_filename.empty()) {
+    if (c.ram.backing_store.data_filename.empty()) {
         m_us.ram = &register_address_range(
             make_callocd_memory_address_range(ram_description, AR_UARCH_RAM_START, UARCH_RAM_LENGTH, uram_flags),
             register_where{.merkle = true, .interpret = false});
         memcpy(m_us.ram->get_host_memory(), uarch_pristine_ram, uarch_pristine_ram_len);
     } else {
-        m_us.ram =
-            &register_address_range(make_memory_address_range(ram_description, AR_UARCH_RAM_START, UARCH_RAM_LENGTH,
-                                        uram_flags, c.ram.image_filename, false /* not shared */),
-                register_where{.merkle = true, .interpret = false});
+        m_us.ram = &register_address_range(make_memory_address_range(ram_description, AR_UARCH_RAM_START,
+                                               UARCH_RAM_LENGTH, uram_flags, c.ram.backing_store),
+            register_where{.merkle = true, .interpret = false});
     }
 }
 
@@ -291,12 +291,14 @@ void machine::init_ram_ar(const ram_config &ram) {
     if (ram.length == 0) {
         throw std::invalid_argument("RAM length cannot be zero");
     }
-    register_address_range(
-        make_callocd_memory_address_range("RAM"s, AR_RAM_START, ram.length, ram_flags, ram.image_filename),
+    register_address_range(make_memory_address_range("RAM"s, AR_RAM_START, ram.length, ram_flags, ram.backing_store),
         register_where{.merkle = true, .interpret = true});
 }
 
 void machine::init_flash_drive_ars(flash_drive_configs &flash_drive) {
+    if (flash_drive.size() > FLASH_DRIVE_MAX) {
+        throw std::invalid_argument{"too many flash drives"};
+    }
     // Flags for flash drives
     static const pmas_flags flash_flags{
         .M = true,
@@ -317,39 +319,49 @@ void machine::init_flash_drive_ars(flash_drive_configs &flash_drive) {
             f.start = AR_DRIVE_START + AR_DRIVE_OFFSET * i;
         }
         // Auto detect flash drive image length
+        const auto &image_filename = f.backing_store.data_filename;
         if (f.length == UINT64_C(-1)) {
-            auto fp = make_unique_fopen(f.image_filename.c_str(), "rb");
+            if (image_filename.empty()) {
+                throw std::system_error{errno, std::generic_category(),
+                    "unable to auto-detect length of "s.append(flash_description).append(" with empty image file")};
+            }
+            auto fp = make_unique_fopen(image_filename.c_str(), "rb");
             if (fseek(fp.get(), 0, SEEK_END) != 0) {
                 throw std::system_error{errno, std::generic_category(),
-                    "unable to obtain length of image file '"s + f.image_filename + "' when initializing "s +
-                        flash_description};
+                    "unable to obtain length of image file '"s.append(image_filename)
+                        .append("' when initializing ")
+                        .append(flash_description)};
             }
             const auto length = ftell(fp.get());
             if (length < 0) {
                 throw std::system_error{errno, std::generic_category(),
-                    "unable to obtain length of image file '"s + f.image_filename + "' when initializing "s +
-                        flash_description};
+                    "unable to obtain length of image file '"s.append(image_filename)
+                        .append("' when initializing ")
+                        .append(flash_description)};
             }
             f.length = length;
         }
         register_address_range(
-            make_memory_address_range(flash_description, f.start, f.length, flash_flags, f.image_filename, f.shared),
+            make_memory_address_range(flash_description, f.start, f.length, flash_flags, f.backing_store),
             register_where{.merkle = true, .interpret = true});
         i++;
     }
 }
 
-void machine::init_virtio_ars(const virtio_configs &cs, uint64_t iunrep) {
+void machine::init_virtio_ars(const virtio_configs &virtio, uint64_t iunrep) {
     // Initialize VirtIO devices
-    if (cs.empty()) {
+    if (virtio.empty()) {
         return;
+    }
+    if (virtio.size() > VIRTIO_DEVICE_MAX) {
+        throw std::invalid_argument{"too many VirtIO devices"};
     }
     // VirtIO devices are disallowed in unreproducible mode
     if (iunrep == 0) {
         throw std::invalid_argument{"virtio devices are only supported in unreproducible machines"};
     }
     uint32_t virtio_idx = 0;
-    for (const auto &c : cs) {
+    for (const auto &c : virtio) {
         const auto where = register_where{.merkle = false, .interpret = true};
         const auto visitor = overloads{
             [this, virtio_idx, where](const virtio_console_config &) {
@@ -385,6 +397,9 @@ void machine::init_virtio_ars(const virtio_configs &cs, uint64_t iunrep) {
             },
             [this, virtio_idx, where](const virtio_net_user_config &c) {
 #ifdef HAVE_SLIRP
+                if (c.hostfwd.size() > VIRTIO_HOSTFWD_MAX) {
+                    throw std::invalid_argument("too many virtio network user host-forwarding ports");
+                }
                 const auto start = AR_FIRST_VIRTIO_START + (virtio_idx * AR_VIRTIO_LENGTH);
                 register_address_range(make_virtio_net_user_address_range(start, AR_VIRTIO_LENGTH, virtio_idx, c),
                     where);
@@ -442,10 +457,10 @@ void machine::init_cmio_ars(const cmio_config &c) {
         .DID = PMA_ISTART_DID::cmio_rx_buffer,
     };
     register_address_range(make_memory_address_range("CMIO tx buffer memory range"s, AR_CMIO_TX_BUFFER_START,
-                               AR_CMIO_TX_BUFFER_LENGTH, tx_flags, c.tx_buffer.image_filename, c.tx_buffer.shared),
+                               AR_CMIO_TX_BUFFER_LENGTH, tx_flags, c.tx_buffer.backing_store),
         register_where{.merkle = true, .interpret = true});
     register_address_range(make_memory_address_range("CMIO rx buffer memory range"s, AR_CMIO_RX_BUFFER_START,
-                               AR_CMIO_RX_BUFFER_LENGTH, rx_flags, c.rx_buffer.image_filename, c.rx_buffer.shared),
+                               AR_CMIO_RX_BUFFER_LENGTH, rx_flags, c.rx_buffer.backing_store),
         register_where{.merkle = true, .interpret = true});
 }
 
@@ -485,20 +500,23 @@ void machine::init_plic_ar(const plic_config &p) {
     write_reg(reg::plic_girqsrvd, p.girqsrvd);
 }
 
-void machine::init_pmas_contents(memory_address_range &pmas) const {
+void machine::init_pmas_contents(const pmas_config &config, memory_address_range &pmas) const {
     static_assert(sizeof(pmas_state) == PMA_MAX * 2 * sizeof(uint64_t), "inconsistent PMAs state length");
     static_assert(AR_PMAS_LENGTH >= sizeof(pmas_state), "PMAs address range too short");
-    if (m_s.pmas.size() >= PMA_MAX - 1) { // Leave room for a sentinel empty address range after all others
-        throw std::runtime_error{"too many address ranges"};
+    if (config.backing_store.data_filename.empty()) {
+        if (m_s.pmas.size() >= PMA_MAX - 1) { // Leave room for a sentinel empty address range after all others
+            throw std::runtime_error{"too many address ranges"};
+        }
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        auto &dest = *reinterpret_cast<pmas_state *>(pmas.get_host_memory());
+        std::ranges::transform(m_s.pmas, dest.begin(), [this](auto i) {
+            return pmas_entry{.istart = m_ars[i]->get_istart(), .ilength = m_ars[i]->get_ilength()};
+        });
     }
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    auto &dest = *reinterpret_cast<pmas_state *>(pmas.get_host_memory());
-    std::ranges::transform(m_s.pmas, dest.begin(),
-        [this](auto i) { return pmas_entry{.istart = m_ars[i]->get_istart(), .ilength = m_ars[i]->get_ilength()}; });
 }
 
-void machine::init_tlb_contents(const std::string &image_filename) {
-    if (!image_filename.empty()) {
+void machine::init_tlb_contents(const tlb_config &config) {
+    if (const auto &image_filename = config.backing_store.data_filename; !image_filename.empty()) {
         auto shadow_tlb_ptr = make_unique_mmap<shadow_tlb_state>(image_filename.c_str(), 1, false /* not shared */);
         auto &shadow_tlb = *shadow_tlb_ptr;
         for (auto set_index : {TLB_CODE, TLB_READ, TLB_WRITE}) {
@@ -519,7 +537,7 @@ void machine::init_tlb_contents(const std::string &image_filename) {
     }
 }
 
-static inline auto make_dtb_address_range(const std::string &image_filename) {
+static inline auto make_dtb_address_range(const dtb_config &config) {
     // When we pass a RNG seed in a FDT stored in DTB, Linux will wipe out its contents as a security measure,
     // theref, ore we need to make DTB writable, otherwise boot will hang.
     static constexpr pmas_flags dtb_flags{
@@ -532,17 +550,16 @@ static inline auto make_dtb_address_range(const std::string &image_filename) {
         .IW = true,
         .DID = PMA_ISTART_DID::memory,
     };
-    return make_memory_address_range("DTB"s, AR_DTB_START, AR_DTB_LENGTH, dtb_flags, image_filename,
-        false /* not shared */);
+    return make_memory_address_range("DTB"s, AR_DTB_START, AR_DTB_LENGTH, dtb_flags, config.backing_store);
 }
 
-void machine::init_dtb_contents(const machine_config &c, address_range &dtb) {
-    if (c.dtb.image_filename.empty()) {
-        dtb_init(c, dtb.get_host_memory(), AR_DTB_LENGTH);
+void machine::init_dtb_contents(const machine_config &config, memory_address_range &dtb) {
+    if (config.dtb.backing_store.data_filename.empty()) {
+        dtb_init(config, dtb.get_host_memory(), dtb.get_length());
     }
 }
 
-static inline auto make_pmas_address_range() {
+static inline auto make_pmas_address_range(const pmas_config &config) {
     static constexpr pmas_flags m_pmas_flags{
         .M = true,
         .IO = false,
@@ -553,7 +570,7 @@ static inline auto make_pmas_address_range() {
         .IW = false,
         .DID = PMA_ISTART_DID::memory,
     };
-    return make_callocd_memory_address_range("PMAs", AR_PMAS_START, AR_PMAS_LENGTH, m_pmas_flags);
+    return make_memory_address_range("PMAs", AR_PMAS_START, AR_PMAS_LENGTH, m_pmas_flags, config.backing_store);
 }
 
 // ??D It is best to leave the std::move() on r because it may one day be necessary!
@@ -564,8 +581,8 @@ machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}
     m_s.soft_yield = m_r.soft_yield;
     init_ram_ar(m_c.ram);
     // Will populate when initialization of PMAs is done
-    auto &dtb = register_address_range(make_dtb_address_range(m_c.dtb.image_filename),
-        register_where{.merkle = true, .interpret = true});
+    auto &dtb =
+        register_address_range(make_dtb_address_range(m_c.dtb), register_where{.merkle = true, .interpret = true});
     init_flash_drive_ars(m_c.flash_drive);
     init_cmio_ars(m_c.cmio);
     init_htif_ar(m_c.htif);
@@ -577,14 +594,15 @@ machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}
     register_address_range(make_shadow_state_address_range(throw_invalid_argument),
         register_where{.merkle = true, .interpret = false});
     // Will populate when initialization of PMAs is done
-    auto &pmas = register_address_range(make_pmas_address_range(), register_where{.merkle = true, .interpret = true});
+    auto &pmas =
+        register_address_range(make_pmas_address_range(m_c.pmas), register_where{.merkle = true, .interpret = true});
     init_virtio_ars(m_c.virtio, m_c.processor.iunrep);
     // Populate PMAs contents.
     // This must be done after all PMA entries are already registered, so we encode them into the shadow
-    init_pmas_contents(pmas);
+    init_pmas_contents(m_c.pmas, pmas);
     // Initialize TLB contents.
     // This must be done after all PMA entries are already registered, so we can lookup page addresses
-    init_tlb_contents(m_c.tlb.image_filename);
+    init_tlb_contents(m_c.tlb);
     // Initialize DTB contents.
     // This must be done after all PMA entries are already registered, so we can lookup flash drive parameters
     init_dtb_contents(m_c, dtb);
@@ -688,6 +706,11 @@ void machine::set_runtime_config(machine_runtime_config r) {
     os_silence_putchar(m_r.htif.no_console_putchar);
 }
 
+static void clear_backing_store_filenames(backing_store_config &config) {
+    config.data_filename.clear();
+    config.dht_filename.clear();
+}
+
 machine_config machine::get_serialization_config() const {
     if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error{"cannot serialize configuration of unreproducible machines"};
@@ -750,51 +773,28 @@ machine_config machine::get_serialization_config() const {
     // Ensure we don't mess with DTB by writing the original bootargs
     // over the potentially modified memory region we serialize
     c.dtb.bootargs.clear();
-    // Remove image filenames from serialization
-    // (they will be ignored by save and load for security reasons)
-    c.dtb.image_filename.clear();
-    c.ram.image_filename.clear();
-    c.uarch.ram.image_filename.clear();
-    c.tlb.image_filename.clear();
-    for (auto &f : c.flash_drive) {
-        f.image_filename.clear();
-    }
-    c.cmio.rx_buffer.image_filename.clear();
-    c.cmio.tx_buffer.image_filename.clear();
+    // Copy current uarch state to config
     c.uarch.processor.cycle = read_reg(reg::uarch_cycle);
     c.uarch.processor.halt_flag = read_reg(reg::uarch_halt_flag);
     c.uarch.processor.pc = read_reg(reg::uarch_pc);
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
         c.uarch.processor.x[i] = read_reg(machine_reg_enum(reg::uarch_x0, i));
     }
-    return c;
-}
-
-void machine::store_address_range(const address_range &ar, const std::string &directory) const {
-    auto name = machine_config::get_image_filename(directory, ar.get_start(), ar.get_length());
-    auto fp = make_unique_fopen(name.c_str(), "wb"); // will throw if it fails
-    // If we have do not have a pointer to the address range memory, use peek
-    if (ar.get_host_memory() == nullptr) {
-        auto scratch = make_unique_calloc<unsigned char>(AR_PAGE_SIZE); // will throw if it fails
-        for (uint64_t offset = 0; offset < ar.get_length(); offset += AR_PAGE_SIZE) {
-            const unsigned char *page_data = nullptr;
-            if (!ar.peek(*this, offset, AR_PAGE_SIZE, &page_data, scratch.get())) {
-                throw std::runtime_error{"peek failed"};
-            }
-            if (page_data == nullptr) {
-                memset(scratch.get(), 0, AR_PAGE_SIZE);
-                page_data = scratch.get();
-            }
-            if (fwrite(page_data, 1, AR_PAGE_SIZE, fp.get()) != AR_PAGE_SIZE) {
-                throw std::system_error{errno, std::generic_category(), "error writing to '" + name + "'"};
-            }
-        }
-        // Otherwise, use memory directly
-    } else {
-        if (fwrite(ar.get_host_memory(), 1, ar.get_length(), fp.get()) != ar.get_length()) {
-            throw std::runtime_error{"error writing to '" + name + "'"};
-        }
+    // Remove backing filenames from serialization
+    // (they will be ignored by save and load for security reasons)
+    clear_backing_store_filenames(c.ram.backing_store);
+    clear_backing_store_filenames(c.dtb.backing_store);
+    for (auto &f : c.flash_drive) {
+        clear_backing_store_filenames(f.backing_store);
     }
+    clear_backing_store_filenames(c.tlb.backing_store);
+    clear_backing_store_filenames(c.cmio.rx_buffer.backing_store);
+    clear_backing_store_filenames(c.cmio.tx_buffer.backing_store);
+    clear_backing_store_filenames(c.pmas.backing_store);
+    clear_backing_store_filenames(c.uarch.ram.backing_store);
+    c.hash_tree.sht_filename.clear();
+    c.hash_tree.phtc_filename.clear();
+    return c;
 }
 
 uint64_t machine::get_paddr(host_addr haddr, uint64_t pma_index) const {
@@ -908,20 +908,49 @@ const address_range &machine::find_address_range(uint64_t paddr, uint64_t length
     return sentinel;
 }
 
-void machine::store_address_ranges(const machine_config &c, const std::string &dir) const {
-    if (read_reg(reg::iunrep) != 0) {
-        throw std::runtime_error{"cannot store PMAs of unreproducible machines"};
+void machine::store_address_range(const address_range &ar, const std::string &directory) const {
+    auto name = machine_config::get_data_filename(directory, ar.get_start(), ar.get_length());
+    auto fp = make_unique_fopen(name.c_str(), "wb"); // will throw if it fails
+    // If we have do not have a pointer to the address range memory, use peek
+    // At the moment, this is the case only for the shadow TLB.
+    if (!ar.is_memory() || ar.get_host_memory() == nullptr) {
+        auto scratch = make_unique_calloc<unsigned char>(AR_PAGE_SIZE); // will throw if it fails
+        for (uint64_t offset = 0; offset < ar.get_length(); offset += AR_PAGE_SIZE) {
+            const unsigned char *page_data = nullptr;
+            if (!ar.peek(*this, offset, AR_PAGE_SIZE, &page_data, scratch.get())) {
+                throw std::runtime_error{"peek failed"};
+            }
+            if (page_data == nullptr) {
+                memset(scratch.get(), 0, AR_PAGE_SIZE);
+                page_data = scratch.get();
+            }
+            if (fwrite(page_data, 1, AR_PAGE_SIZE, fp.get()) != AR_PAGE_SIZE) {
+                throw std::system_error{errno, std::generic_category(), "error writing to '" + name + "'"};
+            }
+        }
+        // Otherwise, use memory directly
+    } else {
+        if (fwrite(ar.get_host_memory(), 1, ar.get_length(), fp.get()) != ar.get_length()) {
+            throw std::runtime_error{"error writing to '" + name + "'"};
+        }
     }
-    store_address_range(find_address_range<uint64_t>(AR_DTB_START), dir);
-    store_address_range(find_address_range<uint64_t>(AR_RAM_START), dir);
-    store_address_range(find_address_range<uint64_t>(AR_SHADOW_TLB_START), dir);
+}
+
+void machine::store_address_ranges(const machine_config &c, const std::string &directory) const {
+    if (read_reg(reg::iunrep) != 0) {
+        throw std::runtime_error{"cannot store address ranges of unreproducible machines"};
+    }
+    store_address_range(find_address_range<uint64_t>(AR_DTB_START), directory);
+    store_address_range(find_address_range<uint64_t>(AR_RAM_START), directory);
+    store_address_range(find_address_range<uint64_t>(AR_SHADOW_TLB_START), directory);
     // Could iterate over PMAs checking for those with a drive DID but this is easier
     for (const auto &f : c.flash_drive) {
-        store_address_range(find_address_range<uint64_t>(f.start), dir);
+        store_address_range(find_address_range<uint64_t>(f.start), directory);
     }
-    store_address_range(find_address_range<uint64_t>(AR_CMIO_RX_BUFFER_START), dir);
-    store_address_range(find_address_range<uint64_t>(AR_CMIO_TX_BUFFER_START), dir);
-    store_address_range(find_address_range<uint64_t>(AR_UARCH_RAM_START), dir);
+    store_address_range(find_address_range<uint64_t>(AR_CMIO_RX_BUFFER_START), directory);
+    store_address_range(find_address_range<uint64_t>(AR_CMIO_TX_BUFFER_START), directory);
+    store_address_range(find_address_range<uint64_t>(AR_UARCH_RAM_START), directory);
+    store_address_range(find_address_range<uint64_t>(AR_PMAS_START), directory);
 }
 
 static void store_hash(const machine::hash_type &h, const std::string &dir) {

@@ -529,10 +529,10 @@ cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config
     if (config == nullptr) {
         throw std::invalid_argument("invalid machine configuration");
     }
-    const auto c = cartesi::from_json<cartesi::machine_config>(config);
+    const auto c = cartesi::from_json<cartesi::machine_config>(config, "config");
     cartesi::machine_runtime_config r;
     if (runtime_config != nullptr) {
-        r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
+        r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config, "runtime_config");
     }
     cpp_m->create(c, r);
     return cm_result_success();
@@ -547,7 +547,7 @@ cm_error cm_load(cm_machine *m, const char *dir, const char *runtime_config) try
     }
     cartesi::machine_runtime_config r;
     if (runtime_config != nullptr) {
-        r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
+        r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config, "runtime_config");
     }
     cpp_m->load(dir, r);
     return cm_result_success();
@@ -709,7 +709,7 @@ cm_error cm_verify_step_uarch(const cm_machine *m, const cm_hash *root_hash_befo
         throw std::invalid_argument("invalid access log");
     }
     const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log).value();
+        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log, "log").value();
     const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
     const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
     if (m != nullptr) {
@@ -729,7 +729,7 @@ cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_hash_bef
         throw std::invalid_argument("invalid access log");
     }
     const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log).value();
+        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log, "log").value();
     const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
     const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
     if (m != nullptr) {
@@ -933,7 +933,7 @@ cm_error cm_set_runtime_config(cm_machine *m, const char *runtime_config) try {
     if (runtime_config == nullptr) {
         throw std::invalid_argument("invalid machine runtime configuration");
     }
-    auto r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
+    auto r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config, "runtime_config");
     auto *cpp_m = convert_from_c(m);
     cpp_m->set_runtime_config(r);
     return cm_result_success();
@@ -961,14 +961,12 @@ cm_error cm_get_default_config(const cm_machine *m, const char **config) try {
     return cm_result_failure();
 }
 
-cm_error cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,
-    const char *image_filename) try {
+cm_error cm_replace_memory_range(cm_machine *m, const char *range_config) try {
     auto *cpp_m = convert_from_c(m);
-    cartesi::memory_range_config cpp_range;
-    cpp_range.start = start;
-    cpp_range.length = length;
-    cpp_range.shared = shared;
-    cpp_range.image_filename = (image_filename != nullptr) ? image_filename : "";
+    if (range_config == nullptr) {
+        throw std::invalid_argument("invalid memory range configuration");
+    }
+    const auto cpp_range = cartesi::from_json<cartesi::memory_range_config>(range_config, "range_config");
     cpp_m->replace_memory_range(cpp_range);
     return cm_result_success();
 } catch (...) {
@@ -1095,7 +1093,7 @@ cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reason, cons
         throw std::invalid_argument("invalid access log");
     }
     const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log).value();
+        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log, "log").value();
     const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
     const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
     if (m != nullptr) {

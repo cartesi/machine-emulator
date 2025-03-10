@@ -129,7 +129,7 @@ private:
     /// \param directory Directory where address ranges will be stored
     void store_address_ranges(const machine_config &config, const std::string &directory) const;
 
-    /// \brief Saves an address ranges into serialization directory
+    /// \brief Saves an address range into serialization directory
     /// \param ar Address range to store
     /// \param directory Directory where address range will be stored
     void store_address_range(const address_range &ar, const std::string &directory) const;
@@ -156,9 +156,9 @@ private:
     void init_flash_drive_ars(flash_drive_configs &flash_drive);
 
     /// \brief Initializes VirtIO device PMAs
-    /// \param cs VirtIO configurations
+    /// \param virtio VirtIO configurations
     /// \param iunrep Initial value of iunrep CSR
-    void init_virtio_ars(const virtio_configs &cs, uint64_t iunrep);
+    void init_virtio_ars(const virtio_configs &virtio, uint64_t iunrep);
 
     /// \brief Initializes HTIF device address range
     /// \param h HTIF configuration
@@ -193,17 +193,17 @@ private:
     /// \brief Initializes contents of the shadow PMAs memory
     /// \param pmas PMA entry for the shadow PMAs
     /// \detail This can only be called after all PMAs have been added
-    void init_pmas_contents(memory_address_range &pmas) const;
+    void init_pmas_contents(const pmas_config &config, memory_address_range &pmas) const;
 
     /// \brief Initializes contents of machine TLB, from image in disk or with default values
-    /// \param image_filename File containing image, or empty for default values
+    /// \param config TLB config
     /// \detail This can only be called after all PMAs have been added
-    void init_tlb_contents(const std::string &image_filename);
+    void init_tlb_contents(const tlb_config &config);
 
     /// \brief Initializes contents of machine DTB, if image was not available
-    /// \param c Machine configuration
+    /// \param config Machine configuration
     /// \param dtb PMA entry for the shadow PMAs
-    static void init_dtb_contents(const machine_config &c, address_range &dtb);
+    static void init_dtb_contents(const machine_config &config, memory_address_range &dtb);
 
     /// \brief Dumps statistics
     void dump_stats();

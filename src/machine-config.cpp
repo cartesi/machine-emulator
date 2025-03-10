@@ -35,32 +35,55 @@ static constexpr uint32_t archive_version = 5;
 
 namespace cartesi {
 
-std::string machine_config::get_image_filename(const std::string &dir, uint64_t start, uint64_t length) {
+std::string machine_config::get_data_filename(const std::string &dir, uint64_t start, uint64_t length) {
     std::ostringstream sout;
     sout << dir << "/" << std::hex << std::setw(16) << std::setfill('0') << start << "-" << length << ".bin";
     return sout.str();
 }
 
-std::string machine_config::get_image_filename(const std::string &dir, const memory_range_config &c) {
-    return get_image_filename(dir, c.start, c.length);
+std::string machine_config::get_dht_filename(const std::string &dir, uint64_t start, uint64_t length) {
+    std::ostringstream sout;
+    // dense hash tree
+    sout << dir << "/" << std::hex << std::setw(16) << std::setfill('0') << start << "-" << length << ".dht";
+    return sout.str();
+}
+
+std::string machine_config::get_sht_filename(const std::string &dir) {
+    // sparse hash tree
+    return dir + "/global.sht";
+}
+
+std::string machine_config::get_phtc_filename(const std::string &dir) {
+    // sparse hash tree
+    return dir + "/global.phc";
 }
 
 std::string machine_config::get_config_filename(const std::string &dir) {
     return dir + "/config.json";
 }
 
-static void adjust_image_filenames(machine_config &c, const std::string &dir) {
-    c.dtb.image_filename = machine_config::get_image_filename(dir, AR_DTB_START, AR_DTB_LENGTH);
-    c.ram.image_filename = machine_config::get_image_filename(dir, AR_RAM_START, c.ram.length);
-    c.tlb.image_filename = machine_config::get_image_filename(dir, AR_SHADOW_TLB_START, AR_SHADOW_TLB_LENGTH);
+static void adjust_backing_store(uint64_t start, uint64_t length, const std::string &dir, backing_store_config &c) {
+    c.data_filename = machine_config::get_data_filename(dir, start, length);
+    c.dht_filename = machine_config::get_dht_filename(dir, start, length);
+}
+
+static void adjust_hash_tree(const std::string &dir, hash_tree_config &c) {
+    c.sht_filename = machine_config::get_sht_filename(dir);
+    c.phtc_filename = machine_config::get_phtc_filename(dir);
+}
+
+static void adjust_backing_store(machine_config &c, const std::string &dir) {
+    adjust_backing_store(AR_RAM_START, c.ram.length, dir, c.ram.backing_store);
+    adjust_backing_store(AR_DTB_START, AR_DTB_LENGTH, dir, c.dtb.backing_store);
     for (auto &f : c.flash_drive) {
-        f.image_filename = machine_config::get_image_filename(dir, f);
+        adjust_backing_store(f.start, f.length, dir, f.backing_store);
     }
-    c.uarch.ram.image_filename = machine_config::get_image_filename(dir, AR_UARCH_RAM_START, AR_UARCH_RAM_LENGTH);
-    c.cmio.rx_buffer.image_filename =
-        machine_config::get_image_filename(dir, AR_CMIO_RX_BUFFER_START, AR_CMIO_RX_BUFFER_LENGTH);
-    c.cmio.tx_buffer.image_filename =
-        machine_config::get_image_filename(dir, AR_CMIO_TX_BUFFER_START, AR_CMIO_TX_BUFFER_LENGTH);
+    adjust_backing_store(AR_SHADOW_TLB_START, AR_SHADOW_TLB_LENGTH, dir, c.tlb.backing_store);
+    adjust_backing_store(AR_CMIO_RX_BUFFER_START, AR_CMIO_RX_BUFFER_LENGTH, dir, c.cmio.rx_buffer.backing_store);
+    adjust_backing_store(AR_CMIO_TX_BUFFER_START, AR_CMIO_TX_BUFFER_LENGTH, dir, c.cmio.tx_buffer.backing_store);
+    adjust_backing_store(AR_PMAS_START, AR_PMAS_LENGTH, dir, c.pmas.backing_store);
+    adjust_backing_store(AR_UARCH_RAM_START, AR_UARCH_RAM_LENGTH, dir, c.uarch.ram.backing_store);
+    adjust_hash_tree(dir, c.hash_tree);
 }
 
 machine_config machine_config::load(const std::string &dir) {
@@ -84,7 +107,7 @@ machine_config machine_config::load(const std::string &dir) {
                 std::to_string(jv.get<int>()) + ")");
         }
         ju_get_field(j, std::string("config"), c, "");
-        adjust_image_filenames(c, dir);
+        adjust_backing_store(c, dir);
     } catch (std::exception &e) {
         throw std::runtime_error{e.what()};
     }

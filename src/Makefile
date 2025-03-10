@@ -215,8 +215,8 @@ ifneq ($(git_commit),)
 DEFS+=-DGIT_COMMIT='"$(git_commit)"'
 endif
 
-# The SHA3 is third party library we always want to compile with O3
-SHA3_CFLAGS=-O3
+# Some hashing files we always want to compile with O3 so the code is vectorized
+O3_CFLAGS=-O3
 
 # Optimization flags for the interpreter
 ifneq (,$(filter yes,$(relwithdebinfo) $(release)))
@@ -351,6 +351,7 @@ LIBCARTESI_OBJS:= \
 	htif-address-range.o \
 	interpret.o \
 	json-util.o \
+	is-pristine.o \
 	machine-c-api.o \
 	machine-config.o \
 	machine-merkle-tree.o \
@@ -555,7 +556,7 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	@touch $@
 
 sha3.o: ../third-party/tiny_sha3/sha3.c
-	$(CC) $(CFLAGS) $(SHA3_CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(O3_CFLAGS) -c -o $@ $<
 
 uarch-pristine-ram.o: $(UARCH_PRISTINE_RAM_C)
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -565,6 +566,9 @@ uarch-pristine-hash.o: $(UARCH_PRISTINE_HASH_C)
 
 interpret-jump-table.h: ../tools/gen-interpret-jump-table.lua
 	$< > $@
+
+is-pristine.o: is-pristine.cpp
+	$(CXX) $(CXXFLAGS) $(O3_CFLAGS) -c -o $@ $<
 
 interpret.o: interpret.cpp machine-c-version.h interpret-jump-table.h
 	$(CXX) $(CXXFLAGS) $(INTERPRET_CXXFLAGS) -c -o $@ $<

@@ -14,21 +14,18 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef IS_PRISTINE_H
-#define IS_PRISTINE_H
-
-#include "compiler-defines.h"
-#include <stddef.h>
-#include <stdint.h>
+#include "is-pristine.h"
 
 namespace cartesi {
 
-/// \brief This is an optimized function for checking if memory page is pristine.
-/// \param data Memory pointer
-/// \param length Memory length
-/// \details It's intended to be used in situations where length is equal or less than a page size.
-bool is_pristine(const unsigned char *data, size_t length);
+bool is_pristine(const unsigned char *data, size_t length) {
+    // This tight for loop has no branches, and is optimized to SIMD instructions in x86_64,
+    // making it very fast to check if a given page is pristine.
+    unsigned char bits = 0;
+    for (size_t i = 0; i < length; ++i) {
+        bits |= data[i];
+    }
+    return bits == 0;
+}
 
 } // namespace cartesi
-
-#endif

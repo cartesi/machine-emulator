@@ -606,6 +606,7 @@ local function build_machine(ram_image)
             length = 32 << 20,
             backing_store = {
                 data_filename = test_path .. "/" .. ram_image,
+                truncate = true,
             },
         },
         flash_drive = { {

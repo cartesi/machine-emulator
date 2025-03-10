@@ -127,6 +127,7 @@ local function create_default_config(images_dir, command)
             length = 0x4000000,
             backing_store = {
                 data_filename = images_dir .. "linux.bin",
+                truncate = true,
             },
         },
         dtb = {

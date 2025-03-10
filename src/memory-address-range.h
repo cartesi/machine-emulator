@@ -21,6 +21,8 @@
 #include <variant>
 
 #include "address-range.h"
+#include "machine-config.h"
+#include "os-mmap.h"
 #include "unique-c-ptr.h"
 
 namespace cartesi {
@@ -32,26 +34,13 @@ class machine;
 /// \brief An address range occupied by memory
 
 class memory_address_range : public address_range {
-
-    using callocd_ptr = unique_calloc_ptr<unsigned char>;
-    using mmapd_ptr = unique_mmap_ptr<unsigned char>;
-
-    std::variant<std::monostate, ///< Before initialization
-        callocd_ptr,             ///< Automatic pointer for calloced memory
-        mmapd_ptr                ///< Automatic pointer for mmapped memory
-        >
-        m_ptr;
-
+    unique_mmap_ptr<unsigned char> m_ptr;  ///< Pointer to mmaped memory
     unsigned char *m_host_memory;          ///< Start of associated memory region in host.
+    bool m_read_only;                      ///< Whether the mapped memory is read-only on the host
     std::vector<uint8_t> m_dirty_page_map; ///< Map of dirty pages.
 
 public:
     using ptr_type = std::unique_ptr<memory_address_range>;
-
-    /// \brief Mmap'd range data (shared or not).
-    struct mmapd {
-        bool shared;
-    };
 
     /// \brief Constructor for mmap'd ranges.
     /// \param description Description of address range for use in error messages
@@ -59,22 +48,8 @@ public:
     /// \param length Length of address range
     /// \param flags Range flags
     /// \param image_filename Path to backing file.
-    /// \param m Mmap'd range data (shared or not).
     memory_address_range(const std::string &description, uint64_t start, uint64_t length, const pmas_flags &flags,
-        const std::string &image_filename, const mmapd &m);
-
-    /// \brief Calloc'd range data (just a tag).
-    struct callocd {};
-
-    /// \brief Constructor for calloc'd ranges.
-    /// \param description Description of address range for use in error messages
-    /// \param start Start of address range
-    /// \param length Length of address range
-    /// \param flags Range flags
-    /// \param image_filename Path to backing file.
-    /// \param c Calloc'd range data (just a tag).
-    memory_address_range(const std::string &description, uint64_t start, uint64_t length, const pmas_flags &flags,
-        const std::string &image_filename, const callocd & /*c*/);
+        const backing_store_config &backing_store = {}, bool read_only = false);
 
     memory_address_range(const memory_address_range &) = delete;
     memory_address_range &operator=(const memory_address_range &) = delete;
@@ -117,6 +92,10 @@ private:
         return (m_dirty_page_map[map_index] & (1 << (page_index & 7))) != 0;
     }
 
+    bool do_is_host_read_only() const noexcept override {
+        return m_read_only;
+    }
+
     bool do_peek(const machine & /*m*/, uint64_t offset, uint64_t length, const unsigned char **data,
         unsigned char * /*scratch*/) const noexcept override {
         if (contains_relative(offset, length)) {
@@ -127,16 +106,6 @@ private:
         return false;
     }
 };
-
-static inline auto make_callocd_memory_address_range(const std::string &description, uint64_t start, uint64_t length,
-    pmas_flags flags, const std::string &image_filename = {}) {
-    return memory_address_range{description, start, length, flags, image_filename, memory_address_range::callocd{}};
-}
-
-static inline auto make_mmapd_memory_address_range(const std::string &description, uint64_t start, uint64_t length,
-    pmas_flags flags, const std::string &image_filename, bool shared) {
-    return memory_address_range{description, start, length, flags, image_filename, memory_address_range::mmapd{shared}};
-}
 
 } // namespace cartesi
 

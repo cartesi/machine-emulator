@@ -254,6 +254,7 @@ local function build_machine(test_name)
             ram = {
                 backing_store = {
                     data_filename = data_filename,
+                    truncate = true,
                 },
             },
         },

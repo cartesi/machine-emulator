@@ -628,7 +628,7 @@ local has_sync_init_date = false
 local memory_range_replace = {}
 local ram = {
     length = 128 << 20, -- 128MB
-    backing_store = { data_filename = images_path .. "linux.bin" },
+    backing_store = { data_filename = images_path .. "linux.bin", truncate = true },
 }
 local init_splash = true
 local append_bootargs = ""

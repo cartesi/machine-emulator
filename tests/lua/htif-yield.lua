@@ -122,6 +122,7 @@ local config = {
     ram = {
         backing_store = {
             data_filename = test_path .. "/htif_yield.bin",
+            truncate = true,
         },
         length = 0x4000000,
     },

@@ -280,6 +280,7 @@ local function build_machine_config(config_options)
                     length = 0x1000,
                     backing_store = {
                         data_filename = test_util.create_test_uarch_program(test_util.uarch_programs.default),
+                        truncate = true,
                     },
                 },
             },
@@ -817,7 +818,12 @@ local uarch_proof_step_program = {
 
 test_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { backing_store = { data_filename = test_util.create_test_uarch_program(uarch_proof_step_program) } },
+        ram = {
+            backing_store = {
+                data_filename = test_util.create_test_uarch_program(uarch_proof_step_program),
+                truncate = true,
+            },
+        },
     },
 })("merkle tree must be consistent when stepping alternating with and without proofs", function(machine)
     local t0 = 5
@@ -850,7 +856,12 @@ end)
 
 test_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { backing_store = { data_filename = test_util.create_test_uarch_program(uarch_proof_step_program) } },
+        ram = {
+            backing_store = {
+                data_filename = test_util.create_test_uarch_program(uarch_proof_step_program),
+                truncate = true,
+            },
+        },
     },
 })("It should load the uarch ram image from a file", function(machine)
     local expected_ram_image = ""
@@ -1174,7 +1185,12 @@ local uarch_illegal_insn_program = {
 
 test_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { backing_store = { data_filename = test_util.create_test_uarch_program(uarch_illegal_insn_program) } },
+        ram = {
+            backing_store = {
+                data_filename = test_util.create_test_uarch_program(uarch_illegal_insn_program),
+                truncate = true,
+            },
+        },
     },
 })("Detect illegal instruction", function(machine)
     local success, err = pcall(machine.run_uarch, machine)
@@ -1198,7 +1214,7 @@ do_test("uarch ecall putchar should print char to console", function()
                                      processor = initial_reg_values,
                                      ram = {length = 1 << 20},
                                      uarch = {
-                                        ram = { backing_store = { data_filename = uarch_ram_path } }
+                                        ram = { backing_store = { data_filename = uarch_ram_path, truncate = true } }
                                      }
                                  }
                                  os.remove(uarch_ram_path)
@@ -1504,7 +1520,10 @@ local uarch_store_double_in_t0_to_t1 = {
 test_util.make_do_test(build_machine, machine_type, {
     uarch = {
         ram = {
-            backing_store = { data_filename = test_util.create_test_uarch_program(uarch_store_double_in_t0_to_t1) },
+            backing_store = {
+                data_filename = test_util.create_test_uarch_program(uarch_store_double_in_t0_to_t1),
+                truncate = true,
+            },
         },
     },
 })("Log of word access unaligned to merkle tree leaf ", function(machine)

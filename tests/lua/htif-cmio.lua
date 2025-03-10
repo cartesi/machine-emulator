@@ -26,6 +26,7 @@ local config_base = {
         -- then write a byte pattern into `tx_buffer` to be checked inside.
         backing_store = {
             data_filename = test_util.tests_path .. "htif_cmio.bin",
+            truncate = true,
         },
         length = 0x4000000,
     },

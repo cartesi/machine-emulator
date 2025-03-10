@@ -26,6 +26,7 @@ local config_base = {
     ram = {
         backing_store = {
             data_filename = test_util.tests_path .. "htif_console.bin",
+            truncate = true,
         },
         length = 0x4000000,
     },

@@ -1113,7 +1113,7 @@ public:
         std::ofstream of(_uarch_ram_path, std::ios::binary);
         of.write(static_cast<char *>(static_cast<void *>(&test_uarch_ram)), sizeof(test_uarch_ram));
         of.close();
-        _machine_config["uarch"]["ram"] = {{"backing_store", {{"data_filename", _uarch_ram_path}}}};
+        _machine_config["uarch"]["ram"] = {{"backing_store", {{"data_filename", _uarch_ram_path}, {"truncate", true}}}};
         const auto dumped_config = _machine_config.dump();
 
         cm_create_new(dumped_config.c_str(), nullptr, &_machine);

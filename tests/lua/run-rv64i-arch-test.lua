@@ -46,6 +46,7 @@ local config = {
         ram = {
             backing_store = {
                 data_filename = uarch_ram_data_filename,
+                truncate = true,
             },
         },
     },

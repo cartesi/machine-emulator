@@ -365,7 +365,11 @@ test_util.make_do_test(build_machine, machine_type, {
 
     machine:read_memory(rootfs.start, 20)
 
-    machine:replace_memory_range(rootfs.start, rootfs.length, true, input_path)
+    machine:replace_memory_range({
+        start = rootfs.start,
+        length = rootfs.length,
+        backing_store = { shared = true, data_filename = input_path },
+    })
 
     local read_data = machine:read_memory(rootfs.start, 20)
 

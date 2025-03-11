@@ -137,7 +137,8 @@ protected:
 };
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_machine_test, incomplete_machine_fixture) {
-    cm_error error_code = cm_create_new(_machine_config.dump().c_str(), nullptr, nullptr);
+    const auto dumped_config = _machine_config.dump();
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -146,24 +147,23 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_machine_test, incomplete_mach
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_pma_overlapping_test, incomplete_machine_fixture) {
-    _machine_config["flash_drive"] =
-        nlohmann::json{nlohmann::json{nlohmann::json{"start", 0x80000000000000}, nlohmann::json{"length", 0x3c00000},
-                           nlohmann::json{"shared", true}},
-            nlohmann::json{nlohmann::json{"start", 0x7ffffffffff000}, nlohmann::json{"length", 0x2000},
-                nlohmann::json{"shared", true}}};
-    cm_error error_code = cm_create_new(_machine_config.dump().c_str(), nullptr, &_machine);
+    _machine_config["flash_drive"] = nlohmann::json{{{"start", 0x80000000000000}, {"length", 0x3c00000}},
+        {{"start", 0x7ffffffffff000}, {"length", 0x2000}}};
+    const auto dumped_config = _machine_config.dump();
+
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    std::string origin("range of flash drive 1 overlaps with range of existing flash drive 0");
+    std::string origin("address range of flash drive 1 overlaps with address range of existing flash drive 0");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
 class machine_flash_simple_fixture : public incomplete_machine_fixture {
 public:
     machine_flash_simple_fixture() {
-        _machine_config["flash_drive"] = {
-            {{"start", 0x80000000000000}, {"length", 0x3c00000}, {"shared", true}, {"image_filename", ""}}};
+        _machine_config["flash_drive"] = {{{"start", 0x80000000000000}, {"length", 0x3c00000}, {"read_only", false},
+            {"backing_store", {{"shared", false}, {"truncate", false}, {"data_filename", ""}, {"dht_filename", ""}}}}};
     }
 
     machine_flash_simple_fixture(const machine_flash_simple_fixture &other) = delete;
@@ -174,24 +174,26 @@ public:
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_alignment_test, machine_flash_simple_fixture) {
     _machine_config["flash_drive"][0]["start"] = 0x80000000000000 - 1;
+    const auto dumped_config = _machine_config.dump();
 
-    cm_error error_code = cm_create_new(_machine_config.dump().c_str(), nullptr, &_machine);
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    std::string origin("start of flash drive 0 (36028797018963967) must be aligned to page boundary of 4096 bytes");
+    std::string origin("start of flash drive 0 (0x7fffffffffffff) must be aligned to page boundary of 4096 bytes");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_not_addressable_test, machine_flash_simple_fixture) {
     _machine_config["flash_drive"][0]["start"] = 0x100000000000000 - 0x3c00000 + 4096;
     _machine_config["flash_drive"][0]["length"] = 0x3c00000;
+    const auto dumped_config = _machine_config.dump();
 
-    cm_error error_code = cm_create_new(_machine_config.dump().c_str(), nullptr, &_machine);
+    cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, &_machine);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    std::string origin("range of flash drive 0 must use at most 56 bits to be addressable");
+    std::string origin("address range of flash drive 0 must use at most 56 bits to be addressable");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -199,7 +201,8 @@ class ordinary_machine_fixture : public incomplete_machine_fixture {
 public:
     ordinary_machine_fixture() {
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
-        cm_create_new(_machine_config.dump().c_str(), nullptr, &_machine);
+        const auto dumped_config = _machine_config.dump();
+        cm_create_new(dumped_config.c_str(), nullptr, &_machine);
     }
     ~ordinary_machine_fixture() {
         std::filesystem::remove_all(_machine_dir_path);
@@ -437,9 +440,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_machine_hash_test, ordinary_machine_fix
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
-    const auto proof =
-        cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(proof_str)
-            .value();
+    const auto proof = cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(
+        proof_str, "proof")
+                           .value();
     auto proof_root_hash = proof.get_root_hash();
     auto verification = calculate_proof_root_hash(proof);
     BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), proof_root_hash.begin(),
@@ -539,7 +542,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_invalid_address_range_test, ordinary
     cm_error error_code = cm_write_memory(_machine, address, write_data.data(), write_data.size());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
-    std::string origin("attempted write to device memory range");
+    std::string origin("address range to write is not entirely in single memory range");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -632,7 +635,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_virtual_memory_invalid_address_range_test, 
     cm_error error_code = cm_write_virtual_memory(_machine, address, write_data.data(), write_data.size());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
-    std::string origin("attempted write to device memory range");
+    std::string origin("address range to write is not entirely in single memory range");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -825,11 +828,13 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_dirty_page_maps_success_test, ordinary_mac
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_flash_config_test, ordinary_machine_fixture) {
-    cm_error error_code = cm_replace_memory_range(_machine, 0, 0, false, nullptr);
+    const auto dumped_range =
+        nlohmann::json{{"start", 0}, {"length", 0}, {"backing_store", {{"shared", false}}}}.dump();
+    cm_error error_code = cm_replace_memory_range(_machine, dumped_range.c_str());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    std::string origin("attempt to replace a protected range sentinel");
+    std::string origin("attempt to replace inexistent memory range");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -840,7 +845,11 @@ public:
         _flash_file{"/tmp/data.bin"},
         _flash_data{"test data 1234567890"} {
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
-        cm_create_new(_machine_config.dump().c_str(), nullptr, &_machine);
+        const auto dumped_config = _machine_config.dump();
+        cm_error error_code = cm_create_new(dumped_config.c_str(), nullptr, &_machine);
+        BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
+        BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
+
         std::ofstream flash_stream(_flash_file);
         flash_stream << _flash_data;
         flash_stream.close();
@@ -873,13 +882,34 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_initial_config_flash_drive_test, flash_drive_
     BOOST_CHECK_EQUAL(std::string(cfg), _machine_config.dump());
 }
 
+BOOST_FIXTURE_TEST_CASE_NOLINT(replace_null_memory_range_test, flash_drive_machine_fixture) {
+    cm_error error_code = cm_replace_memory_range(_machine, nullptr);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+
+    std::string result = cm_get_last_error_message();
+    std::string origin = "invalid memory range configuration";
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_machine_test, flash_drive_machine_fixture) {
-    cm_error error_code = cm_replace_memory_range(nullptr, 0, 0, false, nullptr);
+    const auto dumped_range =
+        nlohmann::json{{{"start", 0}, {"length", 0}, {{"backing_store", {"shared", false}}}}}.dump();
+    cm_error error_code = cm_replace_memory_range(nullptr, dumped_range.c_str());
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(replace_empty_memory_range_test, flash_drive_machine_fixture) {
+    const auto dumped_range =
+        nlohmann::json{{{"start", 0}, {"length", 0}, {{"backing_store", {"shared", false}}}}}.dump();
+    cm_error error_code = cm_replace_memory_range(nullptr, dumped_range.c_str());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_pma_test, flash_drive_machine_fixture) {
-    cm_error error_code = cm_replace_memory_range(_machine, 0x9000000000000, _flash_size, true, _flash_file.c_str());
+    const auto dumped_range = nlohmann::json{{"start", 0x9000000000000}, {"length", _flash_size},
+        {"backing_store", {{"shared", true}, {"data_filename", _flash_file}}}}
+                                  .dump();
+    cm_error error_code = cm_replace_memory_range(_machine, dumped_range.c_str());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -890,8 +920,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_pma_test, flash_driv
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_length_test, flash_drive_machine_fixture) {
     _flash_size = 0x3c00;
     std::filesystem::resize_file(_flash_file, _flash_size);
+    const auto dumped_range = nlohmann::json{{"start", 0x80000000000000}, {"length", _flash_size},
+        {"backing_store", {{"shared", true}, {"data_filename", _flash_file}}}}
+                                  .dump();
 
-    cm_error error_code = cm_replace_memory_range(_machine, 0x80000000000000, _flash_size, true, _flash_file.c_str());
+    cm_error error_code = cm_replace_memory_range(_machine, dumped_range.c_str());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -901,8 +934,10 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_length_test, flash_d
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_file_length_mismatch_test, flash_drive_machine_fixture) {
     _flash_size = 0x3c00;
-
-    cm_error error_code = cm_replace_memory_range(_machine, 0x80000000000000, _flash_size, true, _flash_file.c_str());
+    const auto dumped_range = nlohmann::json{{"start", 0x80000000000000}, {"length", _flash_size},
+        {"backing_store", {{"shared", true}, {"data_filename", _flash_file}}}}
+                                  .dump();
+    cm_error error_code = cm_replace_memory_range(_machine, dumped_range.c_str());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -912,8 +947,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_file_length_mismatch_test, f
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_zero_length_test, flash_drive_machine_fixture) {
     _flash_size = 0x0;
+    const auto dumped_range = nlohmann::json{{"start", 0x80000000000000}, {"length", _flash_size},
+        {"backing_store", {{"shared", true}, {"data_filename", _flash_file}}}}
+                                  .dump();
 
-    cm_error error_code = cm_replace_memory_range(_machine, 0x80000000000000, _flash_size, true, _flash_file.c_str());
+    cm_error error_code = cm_replace_memory_range(_machine, dumped_range.c_str());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
@@ -922,7 +960,10 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_zero_length_test, flash_driv
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_basic_test, flash_drive_machine_fixture) {
-    cm_error error_code = cm_replace_memory_range(_machine, 0x80000000000000, _flash_size, true, _flash_file.c_str());
+    const auto dumped_range = nlohmann::json{{"start", 0x80000000000000}, {"length", _flash_size},
+        {"backing_store", {{"shared", true}, {"data_filename", _flash_file}}}}
+                                  .dump();
+    cm_error error_code = cm_replace_memory_range(_machine, dumped_range.c_str());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
@@ -993,7 +1034,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_uarch_x_basic_test, ordinary_machine_f
 
     uint64_t uarch_x2_addr{};
     BOOST_CHECK_EQUAL(cm_get_reg_address(_machine, CM_REG_UARCH_X2, &uarch_x2_addr), CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(static_cast<uint64_t>(cartesi::PMA_SHADOW_UARCH_STATE_START + 40), uarch_x2_addr);
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(cartesi::AR_SHADOW_UARCH_STATE_START + 40), uarch_x2_addr);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(read_reg_null_machine_test) {
@@ -1072,9 +1113,10 @@ public:
         std::ofstream of(_uarch_ram_path, std::ios::binary);
         of.write(static_cast<char *>(static_cast<void *>(&test_uarch_ram)), sizeof(test_uarch_ram));
         of.close();
-        _machine_config["uarch"]["ram"]["image_filename"] = _uarch_ram_path;
+        _machine_config["uarch"]["ram"] = {{"backing_store", {{"data_filename", _uarch_ram_path}}}};
+        const auto dumped_config = _machine_config.dump();
 
-        cm_create_new(_machine_config.dump().c_str(), nullptr, &_machine);
+        cm_create_new(dumped_config.c_str(), nullptr, &_machine);
     }
     ~access_log_machine_fixture() {
         cm_delete(_machine);
@@ -1463,11 +1505,11 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_reset_uarch, ordinary_machine_fixture) {
 
     // change the uarch ram in order to confirm if reset will restore it to the initial value
     std::array<uint8_t, 8> random_bytes{1, 2, 3, 4, 5, 6, 7, 8};
-    error_code = cm_write_memory(_machine, cartesi::PMA_UARCH_RAM_START, random_bytes.data(), random_bytes.size());
+    error_code = cm_write_memory(_machine, cartesi::AR_UARCH_RAM_START, random_bytes.data(), random_bytes.size());
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
 
     // grab the modified ram bytes
-    std::vector<unsigned char> modified_uarch_ram(cartesi::PMA_UARCH_RAM_LENGTH);
+    std::vector<unsigned char> modified_uarch_ram(cartesi::AR_UARCH_RAM_LENGTH);
     error_code = cm_read_memory(_machine, cartesi::UARCH_RAM_START_ADDRESS, modified_uarch_ram.data(),
         modified_uarch_ram.size());
     BOOST_REQUIRE_EQUAL(error_code, CM_ERROR_OK);
@@ -1523,9 +1565,9 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, or
     cm_error error_code = cm_get_proof(_machine, 0, 12, &proof_str);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    auto proof =
-        cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(proof_str)
-            .value();
+    auto proof = cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(
+        proof_str, "proof")
+                     .value();
     auto proof_root_hash = proof.get_root_hash();
     auto verification = calculate_proof_root_hash(proof);
     BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), proof_root_hash.begin(),
@@ -1541,7 +1583,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, or
     error_code = cm_get_proof(_machine, 0, 12, &proof_str);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    proof = cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(proof_str)
+    proof = cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(proof_str,
+        "proof")
                 .value();
     proof_root_hash = proof.get_root_hash();
     verification = calculate_proof_root_hash(proof);

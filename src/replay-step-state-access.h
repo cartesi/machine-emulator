@@ -17,19 +17,20 @@
 #ifndef REPLAY_STEP_STATE_ACCESS_H
 #define REPLAY_STEP_STATE_ACCESS_H
 
+#include <cassert>
 #include <cstdlib>
 #include <optional>
+#include <ranges>
 
 #include "compiler-defines.h"
 #include "host-addr.h"
 #include "i-accept-scoped-notes.h"
 #include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
-#include "mock-pma-entry.h"
-#include "pma-constants.h"
+#include "mock-address-range.h"
+#include "pmas.h"
 #include "replay-step-state-access-interop.h"
 #include "riscv-constants.h"
-#include "shadow-pmas.h"
 #include "shadow-state.h"
 #include "shadow-tlb.h"
 #include "shadow-uarch-state.h"
@@ -44,11 +45,6 @@ namespace cartesi {
 
 class replay_step_state_access;
 
-// Type trait that should return the pma_entry type for a state access class
-template <>
-struct i_state_access_pma_entry<replay_step_state_access> {
-    using type = mock_pma_entry;
-};
 // Type trait that should return the fast_addr type for a state access class
 template <>
 struct i_state_access_fast_addr<replay_step_state_access> {
@@ -81,7 +77,7 @@ class replay_step_state_access :
     public i_prefer_shadow_state<replay_step_state_access> {
 public:
     using address_type = uint64_t;
-    using data_type = unsigned char[PMA_PAGE_SIZE];
+    using data_type = unsigned char[AR_PAGE_SIZE];
     using hash_type = std::array<unsigned char, interop_machine_hash_byte_size>;
     static_assert(sizeof(hash_type) == interop_machine_hash_byte_size);
 
@@ -92,11 +88,11 @@ public:
     };
 
     struct context {
-        uint64_t page_count{0};                                    ///< Number of pages in the step log
-        page_type *pages{nullptr};                                 ///< Array of page data
-        uint64_t sibling_count{0};                                 ///< Number of sibling hashes in the step log
-        hash_type *sibling_hashes{nullptr};                        ///< Array of sibling hashes
-        std::array<std::optional<mock_pma_entry>, PMA_MAX> pmas{}; ///< Array of PMA entries
+        uint64_t page_count{0};             ///< Number of pages in the step log
+        page_type *pages{nullptr};          ///< Array of page data
+        uint64_t sibling_count{0};          ///< Number of sibling hashes in the step log
+        hash_type *sibling_hashes{nullptr}; ///< Array of sibling hashes
+        mock_address_ranges ars{};          ///< Array of address ranges
     };
 
 private:
@@ -126,7 +122,6 @@ public:
         if (m_context.page_count == 0) {
             interop_throw_runtime_error("page count is zero");
         }
-
         // set page data
         if (!validate_and_advance_offset(log_size, first_page_offset, sizeof(page_type), m_context.page_count,
                 &sibling_count_offset)) {
@@ -204,19 +199,12 @@ private:
     /// \param paddr The physical address of the page
     /// \return A pointer to the page_type structure if found, nullptr otherwise
     page_type *try_find_page(uint64_t paddr_page) const {
-        const auto page_index = paddr_page >> PMA_PAGE_SIZE_LOG2;
-        uint64_t min{0};
-        uint64_t max{m_context.page_count};
-        while (min < max) {
-            auto mid = (min + max) >> 1;
-            if (m_context.pages[mid].index == page_index) {
-                return &m_context.pages[mid];
-            }
-            if (m_context.pages[mid].index < page_index) {
-                min = mid + 1;
-            } else {
-                max = mid;
-            }
+        const auto page_index = paddr_page >> AR_PAGE_SIZE_LOG2;
+        auto pages = std::ranges::views::counted(m_context.pages, static_cast<int64_t>(m_context.page_count));
+        auto it = std::ranges::lower_bound(pages, page_index, std::ranges::less{},
+            [](const auto &page) { return page.index; });
+        if (it != pages.end() && it->index == page_index) {
+            return &(*it);
         }
         return nullptr;
     }
@@ -225,19 +213,11 @@ private:
     /// \param haddr Host address of page data
     /// \return A pointer to the page_type structure if found, nullptr otherwise
     page_type *try_find_page(host_addr haddr_page) const {
-        uint64_t min{0};
-        uint64_t max{m_context.page_count};
-        while (min < max) {
-            auto mid = (min + max) >> 1;
-            auto mid_page_data = cast_ptr_to_host_addr(m_context.pages[mid].data);
-            if (mid_page_data == haddr_page) {
-                return &m_context.pages[mid];
-            }
-            if (mid_page_data < haddr_page) {
-                min = mid + 1;
-            } else {
-                max = mid;
-            }
+        auto pages = std::ranges::views::counted(m_context.pages, static_cast<int64_t>(m_context.page_count));
+        auto it = std::ranges::lower_bound(pages, haddr_page, std::ranges::less{},
+            [](const auto &page) { return cast_ptr_to_host_addr(page.data); });
+        if (it != pages.end() && cast_ptr_to_host_addr(it->data) == haddr_page) {
+            return &(*it);
         }
         return nullptr;
     }
@@ -310,7 +290,7 @@ private:
                 if (page_log == nullptr) {
                     continue;
                 }
-                const auto paddr_page = page_log->index << PMA_PAGE_SIZE_LOG2;
+                const auto paddr_page = page_log->index << AR_PAGE_SIZE_LOG2;
                 const auto vp_offset = paddr_page - vaddr_page;
                 aliased_aligned_write<uint64_t>(vp_offset_field_haddr, vp_offset);
             }
@@ -340,14 +320,13 @@ private:
         //??D But in the end, we should only update those pages that we touched
         //??D May improve performance when we are running this on ZK
         for (uint64_t i = 0; i < m_context.page_count; i++) {
-            interop_merkle_tree_hash(m_context.pages[i].data, PMA_PAGE_SIZE,
+            interop_merkle_tree_hash(m_context.pages[i].data, AR_PAGE_SIZE,
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
                 reinterpret_cast<interop_hash_type>(&m_context.pages[i].hash));
         }
         size_t next_page = 0;
         size_t next_sibling = 0;
-        auto root_hash =
-            compute_root_hash_impl(0, interop_log2_root_size - PMA_PAGE_SIZE_LOG2, next_page, next_sibling);
+        auto root_hash = compute_root_hash_impl(0, interop_log2_root_size - AR_PAGE_SIZE_LOG2, next_page, next_sibling);
         if (next_page != m_context.page_count) {
             interop_throw_runtime_error("too many pages in log");
         }
@@ -394,7 +373,7 @@ private:
 
     //??D we should probably optimize access to the shadow so it doesn't perform a translation every time
     // We can do this by caching the vh_offset trasnslation of the processor shadow page. This is easy if
-    // static_assert(sizeof(shadow_state) <= PMA_PAGE_SIZE, "shadow state must fit in single page");
+    // static_assert(sizeof(shadow_state) <= AR_PAGE_SIZE, "shadow state must fit in single page");
     uint64_t check_read_reg(machine_reg reg) const {
         const auto haddr = do_get_faddr(machine_reg_address(reg));
         return aliased_aligned_read<uint64_t>(haddr);
@@ -402,19 +381,19 @@ private:
 
     //??D we should probably optimize access to the shadow so it doesn't perform a translation every time
     // We can do this by caching the vh_offset trasnslation of the processor shadow page. This is easy if
-    // static_assert(sizeof(shadow_state) <= PMA_PAGE_SIZE, "shadow state must fit in single page");
+    // static_assert(sizeof(shadow_state) <= AR_PAGE_SIZE, "shadow state must fit in single page");
     void check_write_reg(machine_reg reg, uint64_t val) const {
         const auto haddr = do_get_faddr(machine_reg_address(reg));
         aliased_aligned_write<uint64_t>(haddr, val);
     }
 
-    uint64_t read_pma_istart(uint64_t index) const {
-        const auto haddr = do_get_faddr(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::istart));
+    uint64_t read_pmas_istart(uint64_t index) const {
+        const auto haddr = do_get_faddr(pmas_get_abs_addr(index, pmas_what::istart));
         return aliased_aligned_read<uint64_t>(haddr);
     }
 
-    uint64_t read_pma_ilength(uint64_t index) const {
-        const auto haddr = do_get_faddr(shadow_pmas_get_pma_abs_addr(index, shadow_pmas_what::ilength));
+    uint64_t read_pmas_ilength(uint64_t index) const {
+        const auto haddr = do_get_faddr(pmas_get_abs_addr(index, pmas_what::ilength));
         return aliased_aligned_read<uint64_t>(haddr);
     }
 
@@ -464,20 +443,20 @@ private:
         return false;
     }
 
-    mock_pma_entry &do_read_pma_entry(uint64_t index) const {
+    address_range &do_read_pma(uint64_t index) const {
         assert(index < PMA_MAX);
         // record_step_state_access will have recorded the access to istart and
-        // ilength in its implementation of read_pma_entry.
-        const uint64_t istart = read_pma_istart(index);
-        const uint64_t ilength = read_pma_ilength(index);
+        // ilength in its implementation of read_pmas_entry.
+        const uint64_t istart = read_pmas_istart(index);
+        const uint64_t ilength = read_pmas_ilength(index);
         // NOLINTNEXTLINE(bugprone-narrowing-conversions)
         const int i = static_cast<int>(index);
-        if (!m_context.pmas[i]) {
-            m_context.pmas[i] =
-                make_mock_pma_entry(index, istart, ilength, [](const char *err) { interop_throw_runtime_error(err); });
+        const auto abrt = [](const char *err) { interop_throw_runtime_error(err); };
+        if (std::holds_alternative<std::monostate>(m_context.ars[i])) {
+            m_context.ars[i] = make_mock_address_range(istart, ilength, abrt);
         }
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        return m_context.pmas[index].value();
+        return get_mock_address_range(m_context.ars[index], abrt);
     }
 
     template <typename T, typename A>

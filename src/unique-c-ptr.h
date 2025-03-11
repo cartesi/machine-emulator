@@ -17,7 +17,6 @@
 #ifndef UNIQUE_C_PTR_H
 #define UNIQUE_C_PTR_H
 
-#include "os.h"
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -26,6 +25,8 @@
 #include <system_error>
 #include <tuple>
 #include <type_traits>
+
+#include "os.h"
 
 namespace cartesi {
 
@@ -100,6 +101,13 @@ static inline auto make_unique_mmap(const char *pathname, size_t nmemb, bool sha
     const size_t size = nmemb * sizeof(T);
     T *ptr = static_cast<T *>(os_map_file(pathname, size, shared)); // os_map_file throws on error
     return unique_mmap_ptr<T>(ptr, detail::mmap_deleter{size});
+}
+
+template <typename T>
+static auto inline make_moved_unique(T &&t)
+    requires std::is_rvalue_reference_v<T &&>
+{
+    return std::make_unique<T>(std::forward<T>(t));
 }
 
 } // namespace cartesi

@@ -26,8 +26,7 @@
 #include <cstdint>
 
 #include "host-addr.h"
-#include "pma-constants.h"
-#include "pma-driver.h"
+#include "pmas-constants.h"
 #include "riscv-constants.h"
 
 namespace cartesi {

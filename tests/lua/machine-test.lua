@@ -155,7 +155,7 @@ do_test("machine halt and yield flags and config matches", function(machine)
     local initial_config = machine:get_initial_config()
     -- test_util.print_table(initial_config)
     assert(initial_config["processor"]["marchid"] == cartesi.MARCHID, "marchid value does not match")
-    assert(initial_config["processor"]["pc"] == cartesi.PMA_RAM_START, "pc value does not match")
+    assert(initial_config["processor"]["pc"] == cartesi.AR_RAM_START, "pc value does not match")
     assert(initial_config["ram"]["length"] == 1048576, "ram length value does not match")
     -- Check machine is not halted
     assert(machine:read_reg("iflags_H") == 0, "machine shouldn't be halted")
@@ -197,7 +197,7 @@ do_test("proof check should pass", function(machine)
 
     -- Find ram memory range
     local ram
-    for _, v in ipairs(machine:get_memory_ranges()) do
+    for _, v in ipairs(machine:get_address_ranges()) do
         if v.description == "RAM" then
             ram = v
         end
@@ -291,7 +291,7 @@ end
 
 print("\n\nwrite something to ram memory and check if hash and proof matches")
 do_test("proof  and root hash should match", function(machine)
-    local ram_address_start = cartesi.PMA_RAM_START
+    local ram_address_start = cartesi.AR_RAM_START
 
     -- Find proof for first KB of ram
     local initial_ram_proof = machine:get_proof(ram_address_start, 10)
@@ -350,26 +350,32 @@ test_util.make_do_test(build_machine, machine_type, {
         },
     },
 })("should replace flash drive and read something", function(machine)
-    local rootfs_length = machine:get_initial_config().flash_drive[1].length
+    local rootfs = machine:get_initial_config().flash_drive[1]
     -- Create temp flash file
     local input_path = test_path .. "input.raw"
-    local command = "echo 'test data 1234567890' > "
+    local replaced_data = "test data 1234567890"
+    local command = string.format("echo '%s' > ", replaced_data)
         .. input_path
         .. " && truncate -s "
-        .. tostring(rootfs_length)
+        .. tostring(rootfs.length)
         .. " "
         .. input_path
     local p = assert(io.popen(command))
     p:close()
 
-    local flash_address_start = 0x80000000000000
+    machine:read_memory(rootfs.start, 20)
 
-    machine:read_memory(flash_address_start, 20)
+    machine:replace_memory_range({
+        start = rootfs.start,
+        length = rootfs.length,
+        backing_store = { shared = true, data_filename = input_path },
+    })
 
-    machine:replace_memory_range(flash_address_start, rootfs_length, true, input_path)
+    local read_data = machine:read_memory(rootfs.start, 20)
 
-    local flash_data = machine:read_memory(flash_address_start, 20)
-    assert(flash_data == "test data 1234567890", "data read from replaced flash failed")
+    if read_data ~= replaced_data then
+        error(string.format("expected to read %q from replaced drive (got %q)", replaced_data, read_data))
+    end
     os.remove(input_path)
 end)
 

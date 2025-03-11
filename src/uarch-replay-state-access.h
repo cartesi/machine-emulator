@@ -20,7 +20,6 @@
 /// \file
 /// \brief State access implementation that replays recorded state accesses
 
-#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <ios>

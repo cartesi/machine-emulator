@@ -249,7 +249,7 @@ test_util.merkle_hash = merkle_hash
 function test_util.calculate_emulator_hash(machine)
     local tree = test_util.new_back_merkle_tree(64, PAGE_LOG2_SIZE)
     local last = 0
-    for _, v in ipairs(machine:get_memory_ranges()) do
+    for _, v in ipairs(machine:get_address_ranges()) do
         tree:pad_back((v.start - last) >> PAGE_LOG2_SIZE)
         local finish = v.start + v.length
         for j = v.start, finish - 1, PAGE_SIZE do

@@ -46,8 +46,8 @@ public:
     /// \param m Reference to machine state.
     explicit uarch_state_access(machine &m) : m_m(m) {
         const auto &uram = m_m.get_uarch_state().ram;
-        const auto haddr = cast_ptr_to_host_addr(uram.get_memory_noexcept().get_host_memory());
-        const auto paddr = uram.get_start();
+        const auto haddr = cast_ptr_to_host_addr(uram->get_host_memory());
+        const auto paddr = uram->get_start();
         // initialize translation cache from paddr in uarch RAM to host address
         m_uram_ph_offset = haddr - paddr;
     }
@@ -92,30 +92,11 @@ private:
     }
 
     uint64_t do_read_word(uint64_t paddr) const {
-        if ((paddr & (sizeof(uint64_t) - 1)) != 0) {
-            throw std::runtime_error("misaligned read from uarch");
-        }
-        // If the word is in UARCH_RAM, read it directly
-        // ??D This is an optimization that makes 15% difference in run_uarch tests
-        if (m_m.get_uarch_state().ram.contains(paddr, sizeof(uint64_t))) {
-            auto haddr = m_uram_ph_offset + paddr;
-            return aliased_aligned_read<uint64_t>(haddr);
-        }
         // Forward to machine
         return m_m.read_word(paddr);
     }
 
     void do_write_word(uint64_t paddr, uint64_t val) const {
-        if ((paddr & (sizeof(uint64_t) - 1)) != 0) {
-            throw std::runtime_error("misaligned read from uarch");
-        }
-        // If the word is in UARCH_RAM, write it directly
-        // ??D This is an optimization that makes 15% difference in run_uarch tests
-        if (m_m.get_uarch_state().ram.contains(paddr, sizeof(uint64_t))) {
-            auto haddr = m_uram_ph_offset + paddr;
-            aliased_aligned_write<uint64_t>(haddr, val);
-            return;
-        }
         // Forward to machine
         m_m.write_word(paddr, val);
     }

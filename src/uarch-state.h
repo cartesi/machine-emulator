@@ -22,8 +22,9 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 
-#include "pma.h"
+#include "memory-address-range.h"
 #include "riscv-constants.h"
 
 namespace cartesi {
@@ -42,9 +43,8 @@ struct uarch_state {
     std::array<uint64_t, UARCH_X_REG_COUNT> x{}; ///< Register file.
     uint64_t cycle{};                            ///< Cycles counter
     uint64_t halt_flag{};
-    pma_entry shadow_state; ///< Shadow uarch state
-    pma_entry ram;          ///< Memory range for micro RAM
-    pma_entry empty_pma;    ///< Empty range fallback
+    address_range *shadow_state{}; ///< Shadow uarch state
+    memory_address_range *ram{};   ///< Memory range for uarch RAM
 };
 
 } // namespace cartesi

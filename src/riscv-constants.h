@@ -19,9 +19,9 @@
 
 #include <cstdint>
 
+#include "address-range-constants.h"
 #include "machine-c-version.h"
-#include "pma-constants.h"
-#include "pma-defines.h"
+#include "pmas-constants.h"
 
 /// \file
 /// \brief RISC-V constants
@@ -425,7 +425,7 @@ enum COUNTEREN_rw_masks : uint64_t {
 enum CARTESI_init : uint64_t {
     // The machines starts executing instructions from RAM start by default,
     // and expects a working firmware to be available there.
-    PC_INIT = PMA_RAM_START,                       ///< Initial value for pc
+    PC_INIT = AR_RAM_START,                        ///< Initial value for pc
     FCSR_INIT = UINT64_C(0),                       ///< Initial value for fcsr
     MVENDORID_INIT = UINT64_C(0x6361727465736920), ///< Initial value for mvendorid
     MARCHID_INIT = CM_MARCHID,                     ///< Initial value for marchid
@@ -469,10 +469,10 @@ enum CARTESI_init : uint64_t {
     SENVCFG_INIT = UINT64_C(0),         ///< Initial value for senvcfg
     UARCH_HALT_FLAG_INIT = UINT64_C(0), ///< Initial value for microarchitecture halt flag
     UARCH_X_INIT = UINT64_C(0),         ///< Initial value for microarchitecture general purpose register x
-    UARCH_PC_INIT = EXPAND_UINT64_C(PMA_UARCH_RAM_START_DEF), ///< Initial value for microarchitecture pc
-    UARCH_CYCLE_INIT = UINT64_C(0),                           ///< Initial value for microarchitecture cycle
-    MHARTID_INIT = UINT64_C(0),                               ///< Initial mhartid
-    FDTADDR_INIT = PMA_DTB_START,                             ///< Initial FDT address
+    UARCH_PC_INIT = AR_UARCH_RAM_START, ///< Initial value for microarchitecture pc
+    UARCH_CYCLE_INIT = UINT64_C(0),     ///< Initial value for microarchitecture cycle
+    MHARTID_INIT = UINT64_C(0),         ///< Initial mhartid
+    FDTADDR_INIT = AR_DTB_START,        ///< Initial FDT address
 
     // Registers
     REG_X0 = UINT64_C(0), //< zero - hardwired zero

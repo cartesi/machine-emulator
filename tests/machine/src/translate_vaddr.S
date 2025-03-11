@@ -15,7 +15,7 @@
  */
 
 
-#include <pma-defines.h>
+#include <address-range-defines.h>
 #include <encoding.h>
 
 #define PTE_FLAGS (PTE_V | PTE_R | PTE_W | PTE_X | PTE_U)
@@ -286,7 +286,7 @@ exit:
     srli gp, gp, 15;
     ori gp, gp, 1;
 1:
-    li t0, PMA_HTIF_START_DEF
+    li t0, AR_HTIF_START_DEF
     sd gp, 0(t0);
     j 1b; // Should not be necessary
 

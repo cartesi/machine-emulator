@@ -21,11 +21,9 @@
 #include <cstdint>
 #include <string>
 #include <variant>
-
-#include <boost/container/static_vector.hpp>
+#include <vector>
 
 #include "riscv-constants.h"
-#include "uarch-config.h"
 
 namespace cartesi {
 
@@ -36,7 +34,7 @@ enum machine_config_constants {
     VIRTIO_HOSTFWD_MAX = 16, ///< Maximum number of virtio net user host forward ports
 };
 
-/// \brief Processor state configuration
+/// \brief Processor state config
 struct processor_config final {
     std::array<uint64_t, X_REG_COUNT> x{REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5, REG_X6, REG_X7, REG_X8, REG_X9,
         REG_X10, REG_X11, REG_X12, REG_X13, REG_X14, REG_X15, REG_X16, REG_X17, REG_X18, REG_X19, REG_X20, REG_X21,
@@ -79,50 +77,61 @@ struct processor_config final {
     uint64_t iunrep{IUNREP_INIT};               ///< Value of iunrep CSR
 };
 
-/// \brief RAM state configuration
-struct ram_config final {
-    uint64_t length{0};         ///< RAM length
-    std::string image_filename; ///< RAM image file name
+/// \brief Backing store config
+struct backing_store_config final {
+    bool shared{false};        ///< Should changes be reflected in backing store?
+    bool truncate{false};      ///< Should backing store be truncated to correct size?
+    std::string data_filename; ///< Backing store for associated memory address range
+    std::string dht_filename;  ///< Backing store for corresponding dense hash-tree
 };
 
-/// \brief DTB state configuration
+/// \brief Config with only backing store config field
+struct backing_store_config_only final {
+    backing_store_config backing_store;
+};
+
+/// \brief RAM state config
+struct ram_config final {
+    uint64_t length{0};                 ///< RAM length
+    backing_store_config backing_store; ///< Backing store
+};
+
+/// \brief DTB state config
 struct dtb_config final {
     std::string bootargs{
         "quiet earlycon=sbi console=hvc0 root=/dev/pmem0 rw init=/usr/sbin/cartesi-init"}; ///< Bootargs to pass
                                                                                            ///< to kernel
-    std::string init;           ///< Initialization commands to be executed as root on boot
-    std::string entrypoint;     ///< Commands to execute the main application
-    std::string image_filename; ///< DTB image file
+    std::string init;                   ///< Initialization commands to be executed as root on boot
+    std::string entrypoint;             ///< Commands to execute the main application
+    backing_store_config backing_store; ///< Backing store
 };
 
-/// \brief Memory range configuration
+/// \brief Memory range config
 struct memory_range_config final {
     uint64_t start{0xffffffffffffffffUL};  ///< Memory range start position, default is to auto detect
     uint64_t length{0xffffffffffffffffUL}; ///< Memory range length, default is to auto detect
-    bool shared{false};                    ///< Target changes to memory affect image file?
-    std::string image_filename;            ///< Memory range image file name
+    bool read_only{false};                 ///< Make memory range read-only
+    backing_store_config backing_store;    ///< Backing store
 };
 
 /// \brief List of flash drives
-using flash_drive_configs = boost::container::static_vector<memory_range_config, FLASH_DRIVE_MAX>;
+using flash_drive_configs = std::vector<memory_range_config>;
 
-/// \brief TLB device state configuration
-struct tlb_config final {
-    std::string image_filename; ///< TLB image file name
-};
+/// \brief TLB device state config
+using tlb_config = backing_store_config_only;
 
-/// \brief CLINT device state configuration
+/// \brief CLINT device state config
 struct clint_config final {
     uint64_t mtimecmp{MTIMECMP_INIT}; ///< Value of mtimecmp CSR
 };
 
-/// \brief PLIC device state configuration
+/// \brief PLIC device state config
 struct plic_config final {
     uint64_t girqpend{GIRQPEND_INIT}; ///< Value of girqpend CSR
     uint64_t girqsrvd{GIRQSRVD_INIT}; ///< Value of girqsrvd CSR
 };
 
-/// \brief HTIF device state configuration
+/// \brief HTIF device state config
 struct htif_config final {
     uint64_t fromhost{FROMHOST_INIT}; ///< Value of fromhost CSR
     uint64_t tohost{TOHOST_INIT};     ///< Value of tohost CSR
@@ -150,7 +159,7 @@ struct virtio_hostfwd_config final {
 };
 
 /// \brief List of VirtIO host forwards
-using virtio_hostfwd_configs = boost::container::static_vector<virtio_hostfwd_config, VIRTIO_HOSTFWD_MAX>;
+using virtio_hostfwd_configs = std::vector<virtio_hostfwd_config>;
 
 /// \brief VirtIO user network device state config
 struct virtio_net_user_config final {
@@ -170,40 +179,74 @@ using virtio_device_config = std::variant<virtio_console_config, ///< Console
     >;
 
 /// \brief List of VirtIO devices
-using virtio_configs = boost::container::static_vector<virtio_device_config, VIRTIO_DEVICE_MAX>;
+using virtio_configs = std::vector<virtio_device_config>;
 
-/// \brief cmio buffer configuration
-struct cmio_buffer_config final {
-    bool shared{false};         ///< Target changes to memory affect image file?
-    std::string image_filename; ///< Memory range image file name
-};
-
-/// \brief Cmio configuration
+/// \brief CMIO config
 struct cmio_config final {
-    cmio_buffer_config rx_buffer; ///< RX buffer configuration
-    cmio_buffer_config tx_buffer; ///< TX buffer configuration
+    backing_store_config_only rx_buffer{}; ///< RX buffer config
+    backing_store_config_only tx_buffer{}; ///< TX buffer config
 };
 
-/// \brief Machine state configuration
+/// \brief PMAS config
+using pmas_config = backing_store_config_only;
+
+/// \brief Uarch RAM config
+using uarch_ram_config = backing_store_config_only;
+
+/// \brief Uarch processor config
+struct uarch_processor_config final {
+    std::array<uint64_t, UARCH_X_REG_COUNT> x{}; ///< Value of general-purpose registers
+    uint64_t pc{UARCH_PC_INIT};                  ///< Value of pc
+    uint64_t cycle{UARCH_CYCLE_INIT};            ///< Value of ucycle counter
+    uint64_t halt_flag{};
+};
+
+/// \brief Uarch config
+struct uarch_config final {
+    uarch_processor_config processor{}; ///< Uarch processor
+    uarch_ram_config ram{};             ///< Uarch RAM
+};
+
+/// \brief Hash tree config
+struct hash_tree_config final {
+    std::string hasher{"keccak"}; ///< What hashing function to use?
+    bool shared{false};           ///< Should changes be reflected in backing store?
+    bool truncate{false};         ///< Should backing store be truncated to correct size?
+    std::string sht_filename;     ///< Backing storage for sparse hash-tree
+    std::string phtc_filename;    ///< Backing storage for page hash-tree cache
+    uint64_t phtc_size{2046};     ///< Max number of pages in page hash-tree cache
+};
+
+/// \brief Machine state config
 struct machine_config final {
-    processor_config processor{};    ///< Processor state
-    ram_config ram{};                ///< RAM state
-    dtb_config dtb{};                ///< DTB state
-    flash_drive_configs flash_drive; ///< Flash drives state
-    tlb_config tlb{};                ///< TLB device state
-    clint_config clint{};            ///< CLINT device state
-    plic_config plic{};              ///< PLIC device state
-    htif_config htif{};              ///< HTIF device state
-    virtio_configs virtio;           ///< VirtIO devices state
-    uarch_config uarch{};            ///< microarchitecture configuration
-    cmio_config cmio{};              ///< Cmio state
+    processor_config processor{};    ///< Processor config
+    ram_config ram{};                ///< RAM config
+    dtb_config dtb{};                ///< Device Tree config
+    flash_drive_configs flash_drive; ///< Flash drives config
+    tlb_config tlb{};                ///< Translation Look-aside Buffer config
+    clint_config clint{};            ///< Core-Local Interruptor config
+    plic_config plic{};              ///< Platform-Level Interrupt Controller config
+    htif_config htif{};              ///< Host-Target config InterFace config
+    virtio_configs virtio;           ///< VirtIO devices config
+    cmio_config cmio{};              ///< Cartesi Machine IO config
+    pmas_config pmas{};              ///< Physical Memory Attributes config
+    uarch_config uarch{};            ///< Microarchition config
+    hash_tree_config hash_tree{};    ///< Hash-tree config
 
     /// \brief Get the name where config will be stored in a directory
     static std::string get_config_filename(const std::string &dir);
 
-    /// \brief Get the name where memory range will be stored in a directory
-    static std::string get_image_filename(const std::string &dir, uint64_t start, uint64_t length);
-    static std::string get_image_filename(const std::string &dir, const memory_range_config &c);
+    /// \brief Get the name where the data for an address range will be stored in a directory
+    static std::string get_data_filename(const std::string &dir, uint64_t start, uint64_t length);
+
+    /// \brief Get the name where dense hash-tree for an address range will be stored in a directory
+    static std::string get_dht_filename(const std::string &dir, uint64_t start, uint64_t length);
+
+    /// \brief Get the name where global sparse hash-tree will be stored in a directory
+    static std::string get_sht_filename(const std::string &dir);
+
+    /// \brief Get the name where global page hash-tree cache will be stored in a directory
+    static std::string get_phtc_filename(const std::string &dir);
 
     /// \brief Loads a machine config from a directory
     /// \param dir Directory from whence "config" will be loaded

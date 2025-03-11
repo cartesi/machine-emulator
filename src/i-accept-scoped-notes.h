@@ -20,10 +20,11 @@
 /// \file
 /// \brief Accept scoped notes interface
 
+#include <cstdarg>
 #include <cstdint>
 #include <type_traits>
 
-#include "dump.h"
+#include "assert-printf.h"
 #include "i-state-access.h"
 #include "i-uarch-state-access.h"
 #include "meta.h"
@@ -48,17 +49,28 @@ class i_accept_scoped_notes { // CRTP
     }
 
 public:
-    /// \brief Works as printf if we are dumping scoped notes, otherwise does nothing
-    template <size_t N, typename... ARGS>
-    static void DSN_PRINTF([[maybe_unused]] const char (&fmt)[N], [[maybe_unused]] ARGS... args) {
+    /// \brief Works as vprintf if we are dumping scoped notes, otherwise does nothing
+    static void dsn_vprintf([[maybe_unused]] const char *fmt, [[maybe_unused]] va_list ap) {
 #ifdef DUMP_SCOPED_NOTE
         if constexpr (is_an_i_state_access_v<DERIVED>) {
-            DERIVED::DSA_PRINTF(fmt, args...);
+            DERIVED::dsa_vprintf(fmt, ap);
         } else if (is_an_i_uarch_state_access_v<DERIVED>) {
-            DERIVED::DUSA_PRINTF(fmt, args...);
+            DERIVED::dusa_vprintf(fmt, ap);
         } else {
-            D_PRINTF(fmt, args...);
+            d_vprintf(fmt, ap);
         }
+#endif
+    }
+
+    /// \brief Works as printf if we are dumping scoped notes, otherwise does nothing
+    // Better to use C-style variadic function that checks for format!
+    // NOLINTNEXTLINE(cert-dcl50-cpp)
+    __attribute__((__format__(__printf__, 1, 2))) static void dsn_printf([[maybe_unused]] const char *fmt, ...) {
+#ifdef DUMP_SCOPED_NOTE
+        va_list ap;
+        va_start(ap, fmt);
+        dsn_vprintf(fmt, ap);
+        va_end(ap);
 #endif
     }
 
@@ -66,14 +78,14 @@ public:
     /// \param text String with the text for the annotation
     void push_begin_bracket(const char *text) const {
         derived().do_push_begin_bracket(text);
-        DSN_PRINTF("----> begin %s (%s)\n", text, derived().get_name());
+        dsn_printf("----> begin %s (%s)\n", text, derived().get_name());
     }
 
     /// \brief Adds an end bracket annotation to the log
     /// \param text String with the text for the annotation
     void push_end_bracket(const char *text) const {
         derived().do_push_end_bracket(text);
-        DSN_PRINTF("<---- end %s (%s)\n", text, derived().get_name());
+        dsn_printf("<---- end %s (%s)\n", text, derived().get_name());
     }
 
     /// \brief Adds annotations to the state, bracketing a scope

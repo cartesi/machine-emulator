@@ -24,10 +24,12 @@
 #include <stdexcept>
 #include <string>
 
+#include "address-range-constants.h"
 #include "fdt-builder.h"
 #include "machine-c-version.h"
 #include "machine-config.h"
-#include "pma-constants.h"
+#include "plic-constants.h"
+#include "pmas-constants.h"
 #include "riscv-constants.h"
 #include "rng-seed.h"
 #include "rtc.h"
@@ -119,38 +121,38 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
             fdt.prop_string("compatible", "ucbbar,riscvemu-bar-soc\0simple-bus"s);
             fdt.prop_empty("ranges");
             { // clint
-                fdt.begin_node_num("clint", PMA_CLINT_START);
+                fdt.begin_node_num("clint", AR_CLINT_START);
                 fdt.prop_string("compatible", "riscv,clint0");
-                fdt.prop_u64_list<2>("reg", {PMA_CLINT_START, PMA_CLINT_LENGTH});
+                fdt.prop_u64_list<2>("reg", {AR_CLINT_START, AR_CLINT_LENGTH});
                 fdt.prop_u32_list<4>("interrupts-extended",
                     {INTC_PHANDLE, MIP_MSIP_SHIFT, INTC_PHANDLE, MIP_MTIP_SHIFT});
                 fdt.end_node();
             }
             { // plic
-                fdt.begin_node_num("plic", PMA_PLIC_START);
+                fdt.begin_node_num("plic", AR_PLIC_START);
                 fdt.prop_u32("#interrupt-cells", 1);
                 fdt.prop_empty("interrupt-controller");
                 fdt.prop_string("compatible", "riscv,plic0");
-                fdt.prop_u32("riscv,ndev", PMA_PLIC_MAX_IRQ);
-                fdt.prop_u64_list<2>("reg", {PMA_PLIC_START, PMA_PLIC_LENGTH});
+                fdt.prop_u32("riscv,ndev", PLIC_MAX_IRQ);
+                fdt.prop_u64_list<2>("reg", {AR_PLIC_START, AR_PLIC_LENGTH});
                 fdt.prop_u32_list<4>("interrupts-extended",
                     {INTC_PHANDLE, MIP_SEIP_SHIFT, INTC_PHANDLE, MIP_MEIP_SHIFT});
                 fdt.prop_u32("phandle", PLIC_PHANDLE);
                 fdt.end_node();
             }
             { // htif
-                fdt.begin_node_num("htif", PMA_HTIF_START);
+                fdt.begin_node_num("htif", AR_HTIF_START);
                 fdt.prop_string("compatible", "ucb,htif0");
-                fdt.prop_u64_list<2>("reg", {PMA_HTIF_START, PMA_HTIF_LENGTH});
+                fdt.prop_u64_list<2>("reg", {AR_HTIF_START, AR_HTIF_LENGTH});
                 fdt.prop_u32_list<2>("interrupts-extended", {INTC_PHANDLE, X_HOST});
                 fdt.end_node();
             }
             for (uint32_t virtio_idx = 0; virtio_idx < c.virtio.size(); ++virtio_idx) { // virtio
-                const uint64_t virtio_paddr = PMA_FIRST_VIRTIO_START + (virtio_idx * PMA_VIRTIO_LENGTH);
+                const uint64_t virtio_paddr = AR_FIRST_VIRTIO_START + (virtio_idx * AR_VIRTIO_LENGTH);
                 const uint32_t plic_irq_id = virtio_idx + 1;
                 fdt.begin_node_num("virtio", virtio_paddr);
                 fdt.prop_string("compatible", "virtio,mmio");
-                fdt.prop_u64_list<2>("reg", {virtio_paddr, PMA_VIRTIO_LENGTH});
+                fdt.prop_u64_list<2>("reg", {virtio_paddr, AR_VIRTIO_LENGTH});
                 fdt.prop_u32_list<2>("interrupts-extended", {PLIC_PHANDLE, plic_irq_id});
                 fdt.end_node();
             }
@@ -158,9 +160,9 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
         }
 
         { // memory
-            fdt.begin_node_num("memory", PMA_RAM_START);
+            fdt.begin_node_num("memory", AR_RAM_START);
             fdt.prop_string("device_type", "memory");
-            fdt.prop_u64_list<2>("reg", {PMA_RAM_START, c.ram.length});
+            fdt.prop_u64_list<2>("reg", {AR_RAM_START, c.ram.length});
             fdt.end_node();
         }
 
@@ -170,8 +172,8 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
             fdt.prop_u32("#size-cells", 2);
             fdt.prop_empty("ranges");
             { // reserve 256KB for firmware M-mode code (such as OpenSBI)
-                fdt.begin_node_num("fw_resv", PMA_RAM_START);
-                fdt.prop_u64_list<2>("reg", {PMA_RAM_START, 0x40000});
+                fdt.begin_node_num("fw_resv", AR_RAM_START);
+                fdt.prop_u64_list<2>("reg", {AR_RAM_START, 0x40000});
                 fdt.prop_empty("no-map");
                 fdt.end_node();
             }
@@ -193,13 +195,13 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
         fdt.prop_u32("#size-cells", 2);
         fdt.prop_string("compatible", "ctsi-cmio");
         { // rx_buffer
-            fdt.begin_node_num("rx_buffer", PMA_CMIO_RX_BUFFER_START);
-            fdt.prop_u64_list<2>("reg", {PMA_CMIO_RX_BUFFER_START, PMA_CMIO_RX_BUFFER_LENGTH});
+            fdt.begin_node_num("rx_buffer", AR_CMIO_RX_BUFFER_START);
+            fdt.prop_u64_list<2>("reg", {AR_CMIO_RX_BUFFER_START, AR_CMIO_RX_BUFFER_LENGTH});
             fdt.end_node();
         }
         { // tx_buffer
-            fdt.begin_node_num("tx_buffer", PMA_CMIO_TX_BUFFER_START);
-            fdt.prop_u64_list<2>("reg", {PMA_CMIO_TX_BUFFER_START, PMA_CMIO_TX_BUFFER_LENGTH});
+            fdt.begin_node_num("tx_buffer", AR_CMIO_TX_BUFFER_START);
+            fdt.prop_u64_list<2>("reg", {AR_CMIO_TX_BUFFER_START, AR_CMIO_TX_BUFFER_LENGTH});
             fdt.end_node();
         }
         fdt.end_node();

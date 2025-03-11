@@ -22,15 +22,13 @@
 
 #include <cstdint>
 
-#include "pma.h"
-
 namespace cartesi {
 
 /// \brief Creates a PMA entry for the TLB device
 /// \param start Start address for memory range.
 /// \param length Length of memory range.
 /// \returns Corresponding PMA entry
-pma_entry make_shadow_tlb_pma_entry(uint64_t start, uint64_t length);
+pmas_entry make_shadow_tlb_pmas_entry(uint64_t start, uint64_t length);
 
 } // namespace cartesi
 

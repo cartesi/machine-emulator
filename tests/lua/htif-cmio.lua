@@ -24,7 +24,9 @@ local config_base = {
         -- This test will fetch the cmio buffers from the PMA entries; check
         -- that `rx_buffer` is filled with a byte pattern;
         -- then write a byte pattern into `tx_buffer` to be checked inside.
-        image_filename = test_util.tests_path .. "htif_cmio.bin",
+        backing_store = {
+            data_filename = test_util.tests_path .. "htif_cmio.bin",
+        },
         length = 0x4000000,
     },
 }
@@ -33,7 +35,7 @@ local function stderr(...)
     io.stderr:write(string.format(...))
 end
 
-local final_mcycle = 1835101
+local final_mcycle = 1835100
 local exit_payload = 0
 
 local function test(config)
@@ -41,14 +43,16 @@ local function test(config)
     local machine <close> = cartesi.machine(config)
 
     -- fill input with `pattern`
-    local rx_length = 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE
-    machine:write_memory(cartesi.PMA_CMIO_RX_BUFFER_START, string.rep(pattern, rx_length / 8), rx_length)
+    local rx_length = 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE
+    machine:write_memory(cartesi.AR_CMIO_RX_BUFFER_START, string.rep(pattern, rx_length / 8), rx_length)
 
     machine:run(math.maxinteger)
 
     -- check that buffers got filled in with `pattern`
-    local tx_length = 1 << cartesi.PMA_CMIO_TX_BUFFER_LOG2_SIZE
-    assert(string.rep(pattern, tx_length / 8) == machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, tx_length))
+    local tx_length = 1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE
+    local expected = string.rep(pattern, tx_length / 8)
+    local got = machine:read_memory(cartesi.AR_CMIO_TX_BUFFER_START, tx_length)
+    assert(expected == got, string.format("expected %q..., (got %q...)", expected:sub(1, 10), got:sub(1, 10)))
 
     assert(machine:read_reg("iflags_H") ~= 0)
 

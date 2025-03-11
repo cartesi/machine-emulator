@@ -51,13 +51,13 @@ typedef enum cm_constant {
 } cm_constant;
 
 /// \brief Physical memory addresses (only the most useful are exposed in the API).
-typedef enum cm_pma_constant {
-    CM_PMA_CMIO_RX_BUFFER_START = 0x60000000,
-    CM_PMA_CMIO_RX_BUFFER_LOG2_SIZE = 21,
-    CM_PMA_CMIO_TX_BUFFER_START = 0x60800000,
-    CM_PMA_CMIO_TX_BUFFER_LOG2_SIZE = 21,
-    CM_PMA_RAM_START = 0x80000000,
-} cm_pma_constant;
+typedef enum cm_pmas_constant {
+    CM_AR_CMIO_RX_BUFFER_START = 0x60000000,
+    CM_AR_CMIO_RX_BUFFER_LOG2_SIZE = 21,
+    CM_AR_CMIO_TX_BUFFER_START = 0x60800000,
+    CM_AR_CMIO_TX_BUFFER_LOG2_SIZE = 21,
+    CM_AR_RAM_START = 0x80000000,
+} cm_pmas_constant;
 
 /// \brief Error codes returned from the C API.
 typedef enum cm_error {
@@ -377,10 +377,14 @@ CM_API void cm_delete(cm_machine *m);
 /// {
 ///     "ram": {
 ///         "length": 134217728,
-///         "image_filename": "linux.bin"
+///         "backing_store": {
+///             "data_filename": "linux.bin"
+///         }
 ///     },
 ///     "flash_drive": [{
-///         "image_filename": "rootfs.ext2"
+///         "backing_store": {
+///             "data_filename": "rootfs.ext2"
+///         }
 ///     }],
 ///     "dtb": {
 ///         "entrypoint": "echo Hello world!"
@@ -452,17 +456,25 @@ CM_API cm_error cm_get_runtime_config(const cm_machine *m, const char **runtime_
 
 /// \brief Replaces a memory range.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param start Range start physical address.
-/// \param length Range length in bytes.
-/// \param shared[ni] If true, changes to the range from inside the machine will be
-/// written to the associated image file in the host.
-/// \param image_filename Image file name to load into the range. If NULL, entire
-/// range is cleared with zeros.
+/// \param range_config Memory range configuration as a JSON object in a string.
+/// Must have the same start, length, and read-only settings as an existing memory range.
+/// For example:
+/// ```json
+/// {
+///     "start": 0x80000000000000,
+///     "length": 0x100000,
+///     "read_only": false,
+///     "backing_store": {
+///         "data_filename": "linux.bin"
+///         "dht_filename": "linux.dht"
+///         "shared": false
+///     }
+/// }
+/// ```
 /// \returns 0 for success, non zero code for error.
 /// \details The machine must have been initialized with an existing memory range that
 /// has the same start and length specified in the new range.
-CM_API cm_error cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,
-    const char *image_filename);
+CM_API cm_error cm_replace_memory_range(cm_machine *m, const char *range_config);
 
 /// \brief Returns a JSON object with the machine config used to initialize the machine.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
@@ -472,12 +484,12 @@ CM_API cm_error cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t 
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_get_initial_config(const cm_machine *m, const char **config);
 
-/// \brief Returns a list with all memory ranges in the machine.
+/// \brief Returns a list with all address ranges in the machine.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param ranges Receives the memory ranges as a JSON object in a string,
+/// \param ranges Receives the address ranges as a JSON object in a string,
 /// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
-CM_API cm_error cm_get_memory_ranges(const cm_machine *m, const char **ranges);
+CM_API cm_error cm_get_address_ranges(const cm_machine *m, const char **ranges);
 
 /// \brief Obtains the root hash of the Merkle tree.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).

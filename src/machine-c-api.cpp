@@ -32,20 +32,35 @@
 #include <variant>
 
 #include "access-log.h"
-#include "htif.h"
-#include "i-virtual-machine.h"
+#include "address-range-description.h"
+#include "htif-constants.h"
+#include "i-machine.h"
 #include "interpret.h"
 #include "json-util.h"
+#include "local-machine.h"
 #include "machine-c-api-internal.h"
 #include "machine-config.h"
-#include "machine-memory-range-descr.h"
 #include "machine-merkle-tree.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
 #include "machine.h"
 #include "os-features.h"
-#include "pma-constants.h"
-#include "virtual-machine.h"
+#include "pmas-defines.h"
+
+static_assert(AR_CMIO_RX_BUFFER_START_DEF == CM_AR_CMIO_RX_BUFFER_START);
+static_assert(AR_CMIO_RX_BUFFER_LOG2_SIZE_DEF == CM_AR_CMIO_RX_BUFFER_LOG2_SIZE);
+static_assert(AR_CMIO_TX_BUFFER_START_DEF == CM_AR_CMIO_TX_BUFFER_START);
+static_assert(AR_CMIO_TX_BUFFER_LOG2_SIZE_DEF == CM_AR_CMIO_TX_BUFFER_LOG2_SIZE);
+static_assert(AR_RAM_START_DEF == CM_AR_RAM_START);
+
+static_assert(HTIF_YIELD_AUTOMATIC_REASON_PROGRESS_DEF == CM_CMIO_YIELD_AUTOMATIC_REASON_PROGRESS);
+static_assert(HTIF_YIELD_AUTOMATIC_REASON_TX_OUTPUT_DEF == CM_CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT);
+static_assert(HTIF_YIELD_AUTOMATIC_REASON_TX_REPORT_DEF == CM_CMIO_YIELD_AUTOMATIC_REASON_TX_REPORT);
+static_assert(HTIF_YIELD_MANUAL_REASON_RX_ACCEPTED_DEF == CM_CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED);
+static_assert(HTIF_YIELD_MANUAL_REASON_RX_REJECTED_DEF == CM_CMIO_YIELD_MANUAL_REASON_RX_REJECTED);
+static_assert(HTIF_YIELD_MANUAL_REASON_TX_EXCEPTION_DEF == CM_CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION);
+static_assert(HTIF_YIELD_REASON_ADVANCE_STATE_DEF == CM_CMIO_YIELD_REASON_ADVANCE_STATE);
+static_assert(HTIF_YIELD_REASON_INSPECT_STATE_DEF == CM_CMIO_YIELD_REASON_INSPECT_STATE);
 
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
 static THREAD_LOCAL std::string last_err_msg;
@@ -435,23 +450,23 @@ static cartesi::machine_reg convert_from_c(cm_reg r) {
     throw std::domain_error{"unknown register"};
 }
 
-static cartesi::i_virtual_machine *convert_from_c(cm_machine *m) {
+static cartesi::i_machine *convert_from_c(cm_machine *m) {
     if (m == nullptr) {
         throw std::invalid_argument("invalid machine");
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    return reinterpret_cast<cartesi::i_virtual_machine *>(m);
+    return reinterpret_cast<cartesi::i_machine *>(m);
 }
 
-static const cartesi::i_virtual_machine *convert_from_c(const cm_machine *m) {
+static const cartesi::i_machine *convert_from_c(const cm_machine *m) {
     if (m == nullptr) {
         throw std::invalid_argument("invalid machine");
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    return reinterpret_cast<const cartesi::i_virtual_machine *>(m);
+    return reinterpret_cast<const cartesi::i_machine *>(m);
 }
 
-static cm_machine *convert_to_c(cartesi::i_virtual_machine *cpp_m) {
+static cm_machine *convert_to_c(cartesi::i_machine *cpp_m) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return reinterpret_cast<cm_machine *>(cpp_m);
 }
@@ -473,7 +488,7 @@ cm_error cm_new(cm_machine **new_m) try {
     if (new_m == nullptr) {
         throw std::invalid_argument("invalid new machine output");
     }
-    *new_m = convert_to_c(new cartesi::virtual_machine());
+    *new_m = convert_to_c(new cartesi::local_machine());
     return cm_result_success();
 } catch (...) {
     if (new_m != nullptr) {
@@ -512,10 +527,10 @@ cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config
     if (config == nullptr) {
         throw std::invalid_argument("invalid machine configuration");
     }
-    const auto c = cartesi::from_json<cartesi::machine_config>(config);
+    const auto c = cartesi::from_json<cartesi::machine_config>(config, "config");
     cartesi::machine_runtime_config r;
     if (runtime_config != nullptr) {
-        r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
+        r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config, "runtime_config");
     }
     cpp_m->create(c, r);
     return cm_result_success();
@@ -530,7 +545,7 @@ cm_error cm_load(cm_machine *m, const char *dir, const char *runtime_config) try
     }
     cartesi::machine_runtime_config r;
     if (runtime_config != nullptr) {
-        r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
+        r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config, "runtime_config");
     }
     cpp_m->load(dir, r);
     return cm_result_success();
@@ -692,7 +707,7 @@ cm_error cm_verify_step_uarch(const cm_machine *m, const cm_hash *root_hash_befo
         throw std::invalid_argument("invalid access log");
     }
     const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log).value();
+        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log, "log").value();
     const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
     const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
     if (m != nullptr) {
@@ -712,7 +727,7 @@ cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_hash_bef
         throw std::invalid_argument("invalid access log");
     }
     const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log).value();
+        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log, "log").value();
     const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
     const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
     if (m != nullptr) {
@@ -916,7 +931,7 @@ cm_error cm_set_runtime_config(cm_machine *m, const char *runtime_config) try {
     if (runtime_config == nullptr) {
         throw std::invalid_argument("invalid machine runtime configuration");
     }
-    auto r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config);
+    auto r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config, "runtime_config");
     auto *cpp_m = convert_from_c(m);
     cpp_m->set_runtime_config(r);
     return cm_result_success();
@@ -944,14 +959,12 @@ cm_error cm_get_default_config(const cm_machine *m, const char **config) try {
     return cm_result_failure();
 }
 
-cm_error cm_replace_memory_range(cm_machine *m, uint64_t start, uint64_t length, bool shared,
-    const char *image_filename) try {
+cm_error cm_replace_memory_range(cm_machine *m, const char *range_config) try {
     auto *cpp_m = convert_from_c(m);
-    cartesi::memory_range_config cpp_range;
-    cpp_range.start = start;
-    cpp_range.length = length;
-    cpp_range.shared = shared;
-    cpp_range.image_filename = (image_filename != nullptr) ? image_filename : "";
+    if (range_config == nullptr) {
+        throw std::invalid_argument("invalid memory range configuration");
+    }
+    const auto cpp_range = cartesi::from_json<cartesi::memory_range_config>(range_config, "range_config");
     cpp_m->replace_memory_range(cpp_range);
     return cm_result_success();
 } catch (...) {
@@ -973,12 +986,12 @@ cm_error cm_destroy(cm_machine *m) try {
     return cm_result_failure();
 }
 
-cm_error cm_get_memory_ranges(const cm_machine *m, const char **ranges) try {
+cm_error cm_get_address_ranges(const cm_machine *m, const char **ranges) try {
     if (ranges == nullptr) {
         throw std::invalid_argument("invalid memory range output");
     }
     const auto *cpp_m = convert_from_c(m);
-    const cartesi::machine_memory_range_descrs cpp_ranges = cpp_m->get_memory_ranges();
+    const cartesi::address_range_descriptions cpp_ranges = cpp_m->get_address_ranges();
     *ranges = cm_set_temp_string(cartesi::to_json(cpp_ranges).dump());
     return cm_result_success();
 } catch (...) {
@@ -1021,7 +1034,7 @@ cm_error cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint16_t *re
             if (data_length > *length) {
                 throw std::invalid_argument{"data buffer length is too small"};
             }
-            cpp_m->read_memory(cartesi::PMA_CMIO_TX_BUFFER_START, data, data_length);
+            cpp_m->read_memory(cartesi::AR_CMIO_TX_BUFFER_START, data, data_length);
         }
     }
     if (cmd != nullptr) {
@@ -1078,7 +1091,7 @@ cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reason, cons
         throw std::invalid_argument("invalid access log");
     }
     const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
-        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log).value();
+        cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log, "log").value();
     const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
     const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
     if (m != nullptr) {

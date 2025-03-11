@@ -22,7 +22,7 @@ local test_util = require("cartesi.tests.util")
 local function build_machine()
     local machine_config = {
         ram = {
-            image_filename = test_util.tests_path .. "mtime_interrupt.bin",
+            backing_store = { data_filename = test_util.tests_path .. "mtime_interrupt.bin" },
             length = 32 << 20,
         },
     }

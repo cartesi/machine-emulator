@@ -22,7 +22,7 @@
 #include <cstring>
 
 #include "i-device-state-access.h"
-#include "virtio-device.h"
+#include "virtio-address-range.h"
 
 namespace cartesi {
 

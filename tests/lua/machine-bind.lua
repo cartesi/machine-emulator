@@ -25,7 +25,7 @@ local remote_address
 local test_path = "./"
 local concurrency_update_merkle_tree = util.parse_number(os.getenv("CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE")) or 0
 
--- local lua_cmd = arg[-1] .. " -e "
+local lua_cmd = arg[-1] .. " -e "
 
 -- There is no UINT64_MAX in Lua, so we have to use the signed representation
 local MAX_MCYCLE = -1
@@ -273,13 +273,16 @@ local function build_machine_config(config_options)
         ram = { length = 1 << 20 },
         htif = config_options.htif or nil,
         cmio = config_options.cmio or nil,
-        uarch = config_options.uarch or {
-            processor = get_uarch_cpu_reg_test_values(),
-            ram = {
-                length = 0x1000,
-                image_filename = test_util.create_test_uarch_program(test_util.uarch_programs.default),
+        uarch = config_options.uarch
+            or {
+                processor = get_uarch_cpu_reg_test_values(),
+                ram = {
+                    length = 0x1000,
+                    backing_store = {
+                        data_filename = test_util.create_test_uarch_program(test_util.uarch_programs.default),
+                    },
+                },
             },
-        },
     }
     local runtime = {
         concurrency = {
@@ -298,8 +301,8 @@ local function build_machine(type, config_options)
     else
         new_machine = assert(cartesi.machine(config, runtime))
     end
-    if config.uarch.ram and config.uarch.ram.image_filename then
-        os.remove(config.uarch.ram.image_filename)
+    if config.uarch.ram and config.uarch.ram.backing_store and config.uarch.ram.backing_store.data_filename then
+        os.remove(config.uarch.ram.backing_store.data_filename)
     end
     return new_machine
 end
@@ -371,61 +374,136 @@ do_test("should return address value for uarch x registers", function(machine)
     end
 end)
 
-local function test_config_memory_range(range, name)
-    assert(type(range.length) == "number", "invalid " .. name .. ".length")
-    assert(type(range.start) == "number", "invalid " .. name .. ".start")
-    assert(range.shared == nil or type(range.shared) == "boolean", "invalid " .. name .. ".shared")
-    assert(
-        range.image_filename == nil or type(range.image_filename) == "string",
-        "invalid " .. name .. ".image_filename"
-    )
+local function getfield(t, i, i_prev)
+    if not t then
+        return nil
+    end
+    for f in (i .. "."):gmatch("([^%.]*)%.") do
+        if type(t) ~= "table" then
+            error(string.format("type of %s is %s (expected table)", i_prev, type(t)))
+        end
+        t = t[f]
+        i_prev = i_prev .. "." .. f
+        if not t then
+            return nil
+        end
+    end
+    return t
 end
 
-local function test_cmio_buffer_config(buffer_config, name)
-    assert(buffer_config.shared == nil or type(buffer_config.shared) == "boolean", "invalid " .. name .. ".shared")
-    assert(
-        buffer_config.image_filename == nil or type(buffer_config.image_filename) == "string",
-        "invalid " .. name .. ".image_filename"
-    )
+local function assertfield(t, i, expected, i_prev, needed)
+    i_prev = i_prev or "config"
+    local what = type(getfield(t, i, i_prev))
+    if what ~= expected and what ~= "nil" or needed and what == "nil" then
+        error(string.format("type of %s.%s is %s (expected %s)", i_prev, i, what, expected))
+    end
+end
+
+local function test_backing_store_config(config, name, i_prev)
+    assertfield(config, name .. ".shared", "boolean", i_prev)
+    assertfield(config, name .. ".truncate", "boolean", i_prev)
+    assertfield(config, name .. ".data_filename", "string", i_prev)
+    assertfield(config, name .. ".dht_filename", "string", i_prev)
+end
+
+local function test_flash_drive_config(config, i_prev)
+    assertfield(config, "length", "number", i_prev, "needed")
+    assertfield(config, "start", "number", i_prev, "needed")
+    test_backing_store_config(config, "backing_store", i_prev)
 end
 
 local function test_config(config)
     assert(type(config) == "table", "config not a table")
-    for _, field in ipairs({ "processor", "htif", "clint", "plic", "flash_drive", "ram", "dtb" }) do
-        assert(config[field] and type(config[field]) == "table", "invalid field " .. field)
+    local config_fields = {
+        "processor",
+        "ram",
+        "dtb",
+        "flash_drive",
+        "tlb",
+        "clint",
+        "plic",
+        "htif",
+        "virtio",
+        "cmio",
+        "pmas",
+        "uarch",
+        "hash_tree",
+    }
+    for _, field in ipairs(config_fields) do
+        assertfield(config, field, "table")
     end
-    for i = 1, 31 do
-        assert(type(config.processor["x" .. i]) == "number", "x" .. i .. " is not a number")
+    for i = 0, 31 do
+        assertfield(config, "processor.x" .. i, "number")
     end
-    local htif = config.htif
-    for _, field in ipairs({ "console_getchar", "yield_manual", "yield_automatic" }) do
-        assert(htif[field] == nil or type(htif[field]) == "boolean", "invalid htif." .. field)
+    for i = 0, 31 do
+        assertfield(config, "processor.f" .. i, "number")
     end
-    assert(type(htif.tohost) == "number", "invalid htif.tohost")
-    assert(type(htif.fromhost) == "number", "invalid htif.fromhost")
-    local clint = config.clint
-    assert(type(clint.mtimecmp) == "number", "invalid clint.mtimecmp")
-    local plic = config.plic
-    assert(type(plic.girqpend) == "number", "invalid plic.girqpend")
-    assert(type(plic.girqsrvd) == "number", "invalid plic.girqsrvd")
-    local ram = config.ram
-    assert(type(ram.length) == "number", "invalid ram.length")
-    assert(ram.image_filename == nil or type(ram.image_filename) == "string", "invalid ram.image_filename")
-    local dtb = config.dtb
-    assert(dtb.image_filename == nil or type(dtb.image_filename) == "string", "invalid dtb.image_filename")
-    assert(dtb.bootargs == nil or type(dtb.bootargs) == "string", "invalid dtb.bootargs")
-    assert(dtb.init == nil or type(dtb.init) == "string", "invalid dtb.init")
-    assert(dtb.entrypoint == nil or type(dtb.entrypoint) == "string", "invalid dtb.entrypoint")
-    local tlb = config.tlb
-    assert(tlb.image_filename == nil or type(tlb.image_filename) == "string", "invalid tlb.image_filename")
-    for i, f in ipairs(config.flash_drive) do
-        test_config_memory_range(f, "drive" .. (i - 1))
+    local csrs = {
+        "pc",
+        "fcsr",
+        "mvendorid",
+        "marchid",
+        "mimpid",
+        "mcycle",
+        "icycleinstret",
+        "mstatus",
+        "mtvec",
+        "mscratch",
+        "mepc",
+        "mcause",
+        "mtval",
+        "misa",
+        "mie",
+        "mip",
+        "medeleg",
+        "mideleg",
+        "mcounteren",
+        "menvcfg",
+        "stvec",
+        "sscratch",
+        "sepc",
+        "scause",
+        "stval",
+        "satp",
+        "scounteren",
+        "senvcfg",
+        "ilrsc",
+        "iprv",
+        "iflags_X",
+        "iflags_Y",
+        "iflags_H",
+        "iunrep",
+    }
+    for _, csr in ipairs(csrs) do
+        assertfield(config, "processor." .. csr, "number")
     end
-    local cmio = config.cmio
-    if config.cmio then
-        test_cmio_buffer_config(cmio.rx_buffer, "cmio.rx_buffer")
-        test_cmio_buffer_config(cmio.tx_buffer, "cmio.tx_buffer")
+    assertfield(config, "htif.console_getchar", "boolean")
+    assertfield(config, "htif.yield_manual", "boolean")
+    assertfield(config, "htif.yield_automatic", "boolean")
+    assertfield(config, "htif.tohost", "number")
+    assertfield(config, "htif.fromhost", "number")
+    assertfield(config, "clint.mtimecmp", "number")
+    assertfield(config, "plic.girqpend", "number")
+    assertfield(config, "plic.girqsrvd", "number")
+    assertfield(config, "ram.length", "number")
+    test_backing_store_config(config, "ram.backing_store")
+    assertfield(config, "dtb.bootargs", "string")
+    assertfield(config, "dtb.init", "string")
+    assertfield(config, "dtb.entrypoint", "string")
+    test_backing_store_config(config, "dtb.backing_store")
+    test_backing_store_config(config, "tlb.backing_store")
+    test_backing_store_config(config, "pmas.backing_store")
+    for i, f in ipairs(config.flash_drive or {}) do
+        test_flash_drive_config(f, "config.flash_drive[" .. i .. "]")
     end
+    test_backing_store_config(config, "cmio.rx_buffer.backing_store")
+    test_backing_store_config(config, "cmio.tx_buffer.backing_store")
+    test_backing_store_config(config, "uarch.ram.backing_store")
+    assertfield(config, "hash_tree.shared", "boolean")
+    assertfield(config, "hash_tree.truncate", "boolean")
+    assertfield(config, "hash_tree.sht_filename", "string")
+    assertfield(config, "hash_tree.phtc_filename", "string")
+    assertfield(config, "hash_tree.phtc_size", "number")
 end
 
 print("\n\ntesting get_default_config function binding")
@@ -642,9 +720,12 @@ end)
 print("\n\n check memory reading/writing")
 do_test("written and read values should match", function(machine)
     -- Check mem write and mem read
-    machine:write_memory(0x800000FF, "mydataol12345678", 0x10)
-    local memory_read = machine:read_memory(0x800000FF, 0x10)
-    assert(memory_read == "mydataol12345678")
+    local written = "mydataol12345678"
+    machine:write_memory(0x800000FF, written)
+    local read = machine:read_memory(0x800000FF, written:len())
+    if read ~= written then
+        error(string.format("expected %q (got %q)", written, read))
+    end
 end)
 
 print("\n\n dump step log to console")
@@ -736,7 +817,7 @@ local uarch_proof_step_program = {
 
 test_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { image_filename = test_util.create_test_uarch_program(uarch_proof_step_program) },
+        ram = { backing_store = { data_filename = test_util.create_test_uarch_program(uarch_proof_step_program) } },
     },
 })("merkle tree must be consistent when stepping alternating with and without proofs", function(machine)
     local t0 = 5
@@ -769,7 +850,7 @@ end)
 
 test_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { image_filename = test_util.create_test_uarch_program(uarch_proof_step_program) },
+        ram = { backing_store = { data_filename = test_util.create_test_uarch_program(uarch_proof_step_program) } },
     },
 })("It should load the uarch ram image from a file", function(machine)
     local expected_ram_image = ""
@@ -1006,11 +1087,11 @@ do_test("Test unhappy paths of verify_reset_uarch", function(machine)
         log.accesses[1].address = 0
     end)
 
-    assert_error('field "value/accesses/0/log2_size" is out of bounds', function(log)
+    assert_error('"log/accesses/0/log2_size" is out of bounds', function(log)
         log.accesses[1].log2_size = 64
     end)
 
-    assert_error('missing field "value/accesses/0/read_hash"', function(log)
+    assert_error('missing field "log/accesses/0/read_hash"', function(log)
         log.accesses[#log.accesses].read_hash = nil
     end)
     assert_error("siblings and read hash do not match root hash before 1st access to uarch.state", function(log)
@@ -1022,7 +1103,7 @@ do_test("Test unhappy paths of verify_reset_uarch", function(machine)
     assert_error("missing written hash of uarch.state in 1st access", function(log)
         log.accesses[#log.accesses].written_hash = nil
     end)
-    assert_error('field "value/accesses/0/written" has wrong length', function(log)
+    assert_error('"log/accesses/0/written" has wrong length', function(log)
         log.accesses[#log.accesses].written = "\0"
     end)
     assert_error("written data for uarch.state does not match written hash in 1st access", function(log)
@@ -1093,7 +1174,7 @@ local uarch_illegal_insn_program = {
 
 test_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { image_filename = test_util.create_test_uarch_program(uarch_illegal_insn_program) },
+        ram = { backing_store = { data_filename = test_util.create_test_uarch_program(uarch_illegal_insn_program) } },
     },
 })("Detect illegal instruction", function(machine)
     local success, err = pcall(machine.run_uarch, machine)
@@ -1101,7 +1182,6 @@ test_util.make_do_test(build_machine, machine_type, {
     check_error_find(err, "illegal instruction")
 end)
 
---[==[
 do_test("uarch ecall putchar should print char to console", function()
     local lua_code = [[ "
                                  local cartesi = require 'cartesi'
@@ -1110,16 +1190,16 @@ do_test("uarch ecall putchar should print char to console", function()
                                  local initial_reg_values = {}
                                  local program = {
                                     (cartesi.UARCH_ECALL_FN_PUTCHAR << 20) | 0x00893, -- li	a7,putchar
-                                    0x05800813, -- li	a6,'X''
+                                    0x05800513, -- li a0,'X'
                                     0x00000073, -- ecall
-                                }
+                                 }
                                  local uarch_ram_path = test_util.create_test_uarch_program(program)
                                  local machine = cartesi.machine {
-                                 processor = initial_reg_values,
-                                 ram = {length = 1 << 20},
-                                 uarch = {
-                                    ram = { image_filename = uarch_ram_path }
-                                 }
+                                     processor = initial_reg_values,
+                                     ram = {length = 1 << 20},
+                                     uarch = {
+                                        ram = { backing_store = { data_filename = uarch_ram_path } }
+                                     }
                                  }
                                  os.remove(uarch_ram_path)
                                  machine:run_uarch(3) -- run 3 instructions
@@ -1134,13 +1214,12 @@ do_test("uarch ecall putchar should print char to console", function()
     print("--------------------------")
     assert(output == expected_output, "Output does not match expected output:\n" .. expected_output)
 end)
---]==]
 
 print("\n\ntesting send cmio response ")
 
 do_test("send_cmio_response fails if iflags.Y is not set", function(machine)
     local reason = 1
-    local data = string.rep("a", 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
+    local data = string.rep("a", 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE)
     machine:write_reg("iflags_Y", 0)
     assert(machine:read_reg("iflags_Y") == 0)
     test_util.assert_error("iflags.Y is not set", function()
@@ -1153,7 +1232,7 @@ end)
 
 do_test("send_cmio_response fails if data is too big", function(machine)
     local reason = 1
-    local data_too_big = string.rep("a", 1 + (1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE))
+    local data_too_big = string.rep("a", 1 + (1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE))
     machine:write_reg("iflags_Y", 1)
     test_util.assert_error("CMIO response data is too large", function()
         machine:send_cmio_response(reason, data_too_big)
@@ -1173,22 +1252,22 @@ local function assert_access(accesses, index, expected_key_and_values)
 end
 
 local function test_send_cmio_input_with_different_arguments()
-    local data = string.rep("a", 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
+    local data = string.rep("a", 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE)
     local reason = 1
-    local max_rx_buffer_len = 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE
-    local data_hash = test_util.merkle_hash(data, 0, cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
+    local max_rx_buffer_len = 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE
+    local data_hash = test_util.merkle_hash(data, 0, cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE)
     local all_zeros = string.rep("\0", max_rx_buffer_len)
-    local all_zeros_hash = test_util.merkle_hash(all_zeros, 0, cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
+    local all_zeros_hash = test_util.merkle_hash(all_zeros, 0, cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE)
     -- prepares and asserts the state before send_cmio_response is called
     local function assert_before_cmio_response_sent(machine)
         machine:write_reg("iflags_Y", 1)
         -- initial rx buffer should be all zeros
-        assert(machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, max_rx_buffer_len) == all_zeros)
+        assert(machine:read_memory(cartesi.AR_CMIO_RX_BUFFER_START, max_rx_buffer_len) == all_zeros)
     end
     -- asserts that the machine state is as expected after send_cmio_response is called
     local function assert_after_cmio_response_sent(machine)
         -- rx buffer should now contain the data
-        assert(machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, max_rx_buffer_len) == data)
+        assert(machine:read_memory(cartesi.AR_CMIO_RX_BUFFER_START, max_rx_buffer_len) == data)
         -- iflags.Y should be cleared
         assert(machine:read_reg("iflags_Y") == 0)
         -- fromhost should reflect the reason and data length
@@ -1226,8 +1305,8 @@ local function test_send_cmio_input_with_different_arguments()
                 })
                 assert_access(accesses, 2, {
                     type = "write",
-                    address = cartesi.PMA_CMIO_RX_BUFFER_START,
-                    log2_size = cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE,
+                    address = cartesi.AR_CMIO_RX_BUFFER_START,
+                    log2_size = cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE,
                     read_hash = all_zeros_hash,
                     read = large_data and all_zeros or nil,
                     written_hash = data_hash,
@@ -1285,7 +1364,7 @@ do_test("send_cmio_response with different data sizes", function(machine)
         { data_len = (1 << 20) + 1, write_len = 1 << 21 },
         { data_len = 1 << 21, write_len = 1 << 21 },
     }
-    local rx_buffer_size = 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE
+    local rx_buffer_size = 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE
     local initial_rx_buffer = string.rep("x", rx_buffer_size)
     local reason = 1
     local function padded_data(data, len, padding)
@@ -1302,8 +1381,8 @@ do_test("send_cmio_response with different data sizes", function(machine)
                     logging
                 )
             )
-            machine:write_memory(cartesi.PMA_CMIO_RX_BUFFER_START, initial_rx_buffer)
-            assert(machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, rx_buffer_size) == initial_rx_buffer)
+            machine:write_memory(cartesi.AR_CMIO_RX_BUFFER_START, initial_rx_buffer)
+            assert(machine:read_memory(cartesi.AR_CMIO_RX_BUFFER_START, rx_buffer_size) == initial_rx_buffer)
             local data = string.rep("a", case.data_len)
             machine:write_reg("iflags_Y", 1)
             if logging then
@@ -1316,7 +1395,7 @@ do_test("send_cmio_response with different data sizes", function(machine)
             end
             local expected_rx_buffer = padded_data(data, case.write_len, "\0")
                 .. string.rep("x", rx_buffer_size - case.write_len)
-            local new_rx_buffer = machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, rx_buffer_size)
+            local new_rx_buffer = machine:read_memory(cartesi.AR_CMIO_RX_BUFFER_START, rx_buffer_size)
             assert(
                 new_rx_buffer == expected_rx_buffer,
                 string.format(
@@ -1332,15 +1411,15 @@ do_test("send_cmio_response with different data sizes", function(machine)
 end)
 
 do_test("send_cmio_response of zero bytes", function(machine)
-    local rx_buffer_size = 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE
+    local rx_buffer_size = 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE
     local initial_rx_buffer = string.rep("x", rx_buffer_size)
-    machine:write_memory(cartesi.PMA_CMIO_RX_BUFFER_START, initial_rx_buffer)
-    assert(machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, rx_buffer_size) == initial_rx_buffer)
+    machine:write_memory(cartesi.AR_CMIO_RX_BUFFER_START, initial_rx_buffer)
+    assert(machine:read_memory(cartesi.AR_CMIO_RX_BUFFER_START, rx_buffer_size) == initial_rx_buffer)
     machine:write_reg("iflags_Y", 1)
     local reason = 1
     local data = ""
     machine:send_cmio_response(reason, data)
-    local new_rx_buffer = machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, rx_buffer_size)
+    local new_rx_buffer = machine:read_memory(cartesi.AR_CMIO_RX_BUFFER_START, rx_buffer_size)
     assert(new_rx_buffer == initial_rx_buffer, "rx_buffer should not have been modified")
     assert(machine:read_reg("iflags_Y") == 0, "iflags.Y should be cleared")
     -- log and verify
@@ -1356,8 +1435,8 @@ end)
 local function test_cmio_buffers_backed_by_files()
     local rx_filename = os.tmpname()
     local tx_filename = os.tmpname()
-    local rx_init_data = string.rep("R", 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
-    local tx_init_data = string.rep("T", 1 << cartesi.PMA_CMIO_TX_BUFFER_LOG2_SIZE)
+    local rx_init_data = string.rep("R", 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE)
+    local tx_init_data = string.rep("T", 1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE)
     local deleter = {}
     setmetatable(deleter, {
         __gc = function()
@@ -1372,48 +1451,48 @@ local function test_cmio_buffers_backed_by_files()
     local tx = assert(io.open(tx_filename, "w+"))
     tx:write(tx_init_data)
     tx:close()
-    local tx_new_data = string.rep("x", 1 << cartesi.PMA_CMIO_TX_BUFFER_LOG2_SIZE)
-    local rx_new_data = string.rep("y", 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
+    local tx_new_data = string.rep("x", 1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE)
+    local rx_new_data = string.rep("y", 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE)
 
     test_util.make_do_test(build_machine, machine_type, {
         cmio = {
-            rx_buffer = { image_filename = rx_filename, shared = false },
-            tx_buffer = { image_filename = tx_filename, shared = false },
+            rx_buffer = { backing_store = { data_filename = rx_filename, shared = false } },
+            tx_buffer = { backing_store = { data_filename = tx_filename, shared = false } },
         },
     })("cmio buffers initialized from backing files", function(machine)
-        local rx_data = machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
+        local rx_data = machine:read_memory(cartesi.AR_CMIO_RX_BUFFER_START, 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE)
         assert(rx_data == rx_init_data, "rx buffer data does not match")
-        local tx_data = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, 1 << cartesi.PMA_CMIO_TX_BUFFER_LOG2_SIZE)
+        local tx_data = machine:read_memory(cartesi.AR_CMIO_TX_BUFFER_START, 1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE)
         assert(tx_data == tx_init_data, "tx buffer data does not match")
         -- write new data to buffers to later assert that it was not written to the files
-        machine:write_memory(cartesi.PMA_CMIO_RX_BUFFER_START, rx_new_data)
-        machine:write_memory(cartesi.PMA_CMIO_TX_BUFFER_START, tx_new_data)
+        machine:write_memory(cartesi.AR_CMIO_RX_BUFFER_START, rx_new_data)
+        machine:write_memory(cartesi.AR_CMIO_TX_BUFFER_START, tx_new_data)
     end)
     -- the shared=false from last test should prevent saving the new data to files
     test_util.make_do_test(build_machine, machine_type, {
         cmio = {
-            rx_buffer = { image_filename = rx_filename, shared = true },
-            tx_buffer = { image_filename = tx_filename, shared = true },
+            rx_buffer = { backing_store = { data_filename = rx_filename, shared = true } },
+            tx_buffer = { backing_store = { data_filename = tx_filename, shared = true } },
         },
     })("cmio buffers initialized from backing files should not change", function(machine)
-        local rx_data = machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
+        local rx_data = machine:read_memory(cartesi.AR_CMIO_RX_BUFFER_START, 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE)
         assert(rx_data == rx_init_data, "rx buffer data does not match")
-        local tx_data = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, 1 << cartesi.PMA_CMIO_TX_BUFFER_LOG2_SIZE)
+        local tx_data = machine:read_memory(cartesi.AR_CMIO_TX_BUFFER_START, 1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE)
         assert(tx_data == tx_init_data, "tx buffer data does not match")
         -- write new data to buffers to later assert that it was written to the files
-        machine:write_memory(cartesi.PMA_CMIO_RX_BUFFER_START, rx_new_data)
-        machine:write_memory(cartesi.PMA_CMIO_TX_BUFFER_START, tx_new_data)
+        machine:write_memory(cartesi.AR_CMIO_RX_BUFFER_START, rx_new_data)
+        machine:write_memory(cartesi.AR_CMIO_TX_BUFFER_START, tx_new_data)
     end)
     -- the shared=true from last test should save memory changes to files
     test_util.make_do_test(build_machine, machine_type, {
         cmio = {
-            rx_buffer = { image_filename = rx_filename, shared = false },
-            tx_buffer = { image_filename = tx_filename, shared = false },
+            rx_buffer = { backing_store = { data_filename = rx_filename, shared = false } },
+            tx_buffer = { backing_store = { data_filename = tx_filename, shared = false } },
         },
     })("cmio buffer files should be modified by last write_memory", function(machine)
-        local rx_data = machine:read_memory(cartesi.PMA_CMIO_RX_BUFFER_START, 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
+        local rx_data = machine:read_memory(cartesi.AR_CMIO_RX_BUFFER_START, 1 << cartesi.AR_CMIO_RX_BUFFER_LOG2_SIZE)
         assert(rx_data == rx_new_data, "rx buffer data does not match")
-        local tx_data = machine:read_memory(cartesi.PMA_CMIO_TX_BUFFER_START, 1 << cartesi.PMA_CMIO_TX_BUFFER_LOG2_SIZE)
+        local tx_data = machine:read_memory(cartesi.AR_CMIO_TX_BUFFER_START, 1 << cartesi.AR_CMIO_TX_BUFFER_LOG2_SIZE)
         assert(tx_data == tx_new_data, "tx buffer data does not match")
     end)
 end
@@ -1424,7 +1503,9 @@ local uarch_store_double_in_t0_to_t1 = {
 }
 test_util.make_do_test(build_machine, machine_type, {
     uarch = {
-        ram = { image_filename = test_util.create_test_uarch_program(uarch_store_double_in_t0_to_t1) },
+        ram = {
+            backing_store = { data_filename = test_util.create_test_uarch_program(uarch_store_double_in_t0_to_t1) },
+        },
     },
 })("Log of word access unaligned to merkle tree leaf ", function(machine)
     local leaf_size = 1 << cartesi.TREE_LOG2_WORD_SIZE

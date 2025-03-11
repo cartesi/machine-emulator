@@ -19,7 +19,7 @@
 // WFI loop for this interrupt to happen. When the interrupt occurs, the test
 // checks whether the cause CSR is set properly.
 
-#include <pma-defines.h>
+#include <address-range-defines.h>
 
 // Uses HTIF to exit the emulator with exit code in an immediate
 #define exit_imm(imm) \
@@ -27,7 +27,7 @@
 	j exit;
 
 // MTIMECMP is a CLINT register that is mapped to RAM
-#define MTIMECMP_ADDR	(PMA_CLINT_START_DEF + 0x4000)
+#define MTIMECMP_ADDR	(AR_CLINT_START_DEF + 0x4000)
 
 #define MTIE_MASK	(1<<7)
 #define MIE_MASK	(1<<3)
@@ -90,6 +90,6 @@ exit:
 	srli gp, gp, 15;
 	ori gp, gp, 1;
 1:
-	li t0, PMA_HTIF_START_DEF
+	li t0, AR_HTIF_START_DEF
 	sd gp, 0(t0);
 	j 1b; // Should not be necessary

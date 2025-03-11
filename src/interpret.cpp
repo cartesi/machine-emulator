@@ -92,18 +92,16 @@
 
 #ifdef MICROARCHITECTURE
 #include "machine-uarch-bridge-state-access.h"
-#include "uarch-runtime.h"
 #else
 #include "record-step-state-access.h"
 #include "replay-step-state-access.h"
 #include "state-access.h"
-#include <cassert>
 #endif // MICROARCHITECTURE
 
+#include "assert-printf.h"
 #include "compiler-defines.h"
 #include "device-state-access.h"
-#include "dump.h"
-#include "find-pma-entry.h"
+#include "find-pma.h"
 #include "i-accept-counters.h"
 #include "i-interactive-state-access.h"
 #include "i-state-access.h"
@@ -182,94 +180,94 @@ static void dump_exception_or_interrupt(uint64_t cause, uint64_t a7) {
     if ((cause & MCAUSE_INTERRUPT_FLAG) != 0) {
         switch (cause & ~MCAUSE_INTERRUPT_FLAG) {
             case 0:
-                D_PRINTF("reserved software interrupt", "");
+                d_printf("reserved software interrupt");
                 break;
             case 1:
-                D_PRINTF("supervisor software interrupt", "");
+                d_printf("supervisor software interrupt");
                 break;
             case 2:
-                D_PRINTF("reserved software interrupt", "");
+                d_printf("reserved software interrupt");
                 break;
             case 3:
-                D_PRINTF("machine software interrupt", "");
+                d_printf("machine software interrupt");
                 break;
             case 4:
-                D_PRINTF("reserved timer interrupt", "");
+                d_printf("reserved timer interrupt");
                 break;
             case 5:
-                D_PRINTF("supervisor timer interrupt", "");
+                d_printf("supervisor timer interrupt");
                 break;
             case 6:
-                D_PRINTF("reserved timer interrupt", "");
+                d_printf("reserved timer interrupt");
                 break;
             case 7:
-                D_PRINTF("machine timer interrupt", "");
+                d_printf("machine timer interrupt");
                 break;
             case 8:
-                D_PRINTF("reserved external interrupt", "");
+                d_printf("reserved external interrupt");
                 break;
             case 9:
-                D_PRINTF("supervisor external interrupt", "");
+                d_printf("supervisor external interrupt");
                 break;
             case 10:
-                D_PRINTF("reserved external interrupt", "");
+                d_printf("reserved external interrupt");
                 break;
             case 11:
-                D_PRINTF("machine external interrupt", "");
+                d_printf("machine external interrupt");
                 break;
             default:
-                D_PRINTF("unknown interrupt", "");
+                d_printf("unknown interrupt");
                 break;
         }
     } else {
         switch (cause) {
             case 0:
-                D_PRINTF("instruction address misaligned", "");
+                d_printf("instruction address misaligned");
                 break;
             case 1:
-                D_PRINTF("instruction access fault", "");
+                d_printf("instruction access fault");
                 break;
             case 2:
-                D_PRINTF("illegal instruction", "");
+                d_printf("illegal instruction");
                 break;
             case 3:
-                D_PRINTF("breakpoint", "");
+                d_printf("breakpoint");
                 break;
             case 4:
-                D_PRINTF("load address misaligned", "");
+                d_printf("load address misaligned");
                 break;
             case 5:
-                D_PRINTF("load access fault", "");
+                d_printf("load access fault");
                 break;
             case 6:
-                D_PRINTF("store/amo address misaligned", "");
+                d_printf("store/amo address misaligned");
                 break;
             case 7:
-                D_PRINTF("store/amo access fault", "");
+                d_printf("store/amo access fault");
                 break;
             case 8:
-                D_PRINTF("ecall %d from u-mode", static_cast<int>(a7));
+                d_printf("ecall %d from u-mode", static_cast<int>(a7));
                 break;
             case 9:
-                D_PRINTF("ecall %s(%d) from s-mode", sbi_ecall_name(a7), static_cast<int>(a7));
+                d_printf("ecall %s(%d) from s-mode", sbi_ecall_name(a7), static_cast<int>(a7));
                 break;
             case 10:
-                D_PRINTF("ecall %d reserved", static_cast<int>(a7));
+                d_printf("ecall %d reserved", static_cast<int>(a7));
                 break;
             case 11:
-                D_PRINTF("ecall %s(%d) from m-mode", sbi_ecall_name(a7), static_cast<int>(a7));
+                d_printf("ecall %s(%d) from m-mode", sbi_ecall_name(a7), static_cast<int>(a7));
                 break;
             case 12:
-                D_PRINTF("instruction page fault", "");
+                d_printf("instruction page fault");
                 break;
             case 13:
-                D_PRINTF("load page fault", "");
+                d_printf("load page fault");
                 break;
             case 15:
-                D_PRINTF("store/amo page fault", "");
+                d_printf("store/amo page fault");
                 break;
             default:
-                D_PRINTF("reserved", "");
+                d_printf("reserved");
                 break;
         }
     }
@@ -319,22 +317,22 @@ static void dump_regs(STATE_ACCESS &a) {
         f[i] = a.read_f(i);
     }
     // Now print them
-    D_PRINTF("pc  = " PRIxREG " ", pc);
+    d_printf("pc  = " PRIxREG " ", pc);
     for (int i = 1; i < X_REG_COUNT; i++) {
         const char sep = ((i & (cols - 1)) == (cols - 1)) ? '\n' : ' ';
-        D_PRINTF("%-4s= " PRIxREG "%c", reg_name[i], x[i], sep);
+        d_printf("%-4s= " PRIxREG "%c", reg_name[i], x[i], sep);
     }
     for (int i = 0; i < F_REG_COUNT; i++) {
         const char sep = ((i & (cols - 1)) == (cols - 1)) ? '\n' : ' ';
-        D_PRINTF("%-4s= " PRIxREG "%c", f_reg_name[i], f[i], sep);
+        d_printf("%-4s= " PRIxREG "%c", f_reg_name[i], f[i], sep);
     }
-    D_PRINTF("prv=%s", prv_get_name(iprv));
-    D_PRINTF(" mstatus=" PRIxREG "\n", mstatus);
-    D_PRINTF(" cycles=" PRIuREG, mcycle);
-    D_PRINTF(" insns=" PRIuREG "\n", mcycle - icycleinstret);
-    D_PRINTF("mideleg=" PRIxREG, mideleg);
-    D_PRINTF(" mie=" PRIxREG, mie);
-    D_PRINTF(" mip=" PRIxREG "\n", mip);
+    d_printf("prv=%s", prv_get_name(iprv));
+    d_printf(" mstatus=" PRIxREG "\n", mstatus);
+    d_printf(" cycles=" PRIuREG, mcycle);
+    d_printf(" insns=" PRIuREG "\n", mcycle - icycleinstret);
+    d_printf("mideleg=" PRIxREG, mideleg);
+    d_printf(" mie=" PRIxREG, mie);
+    d_printf(" mip=" PRIxREG "\n", mip);
 #undef PRIxREG
 #undef PRIuREG
 }
@@ -420,10 +418,10 @@ static NO_INLINE uint64_t raise_exception(const STATE_ACCESS a, uint64_t pc, uin
         if (flag) {
             [[maybe_unused]] auto dnote = a.make_scoped_note("dump_exception");
             const auto a7 = a.read_x(17);
-            D_PRINTF("raise_exception: cause=0x%016" PRIx64, cause);
-            D_PRINTF(" tval=0x%016" PRIx64 " (", tval);
+            d_printf("raise_exception: cause=0x%016" PRIx64, cause);
+            d_printf(" tval=0x%016" PRIx64 " (", tval);
             dump_exception_or_interrupt(cause, a7);
-            D_PRINTF(")\n", "");
+            d_printf(")\n");
 #ifdef DUMP_REGS
             dump_regs(a);
 #endif
@@ -995,22 +993,21 @@ static NO_INLINE std::pair<bool, uint64_t> read_virtual_memory_slow(const STATE_
         return {false, pc};
     }
     uint64_t pma_index = 0;
-    const auto &pma = find_pma_entry<T>(a, paddr, pma_index);
-    if (likely(pma.get_istart_R())) {
-        if (likely(pma.get_istart_M())) {
+    const auto &ar = find_pma<T>(a, paddr, pma_index);
+    if (likely(ar.is_readable())) {
+        if (likely(ar.is_memory())) {
             [[maybe_unused]] auto note = a.make_scoped_note("read memory");
             const auto faddr = replace_tlb_entry<TLB_READ>(a, vaddr, paddr, pma_index);
             a.template read_memory_word<T>(faddr, pma_index, pval);
             return {true, pc};
         }
-        if (likely(pma.get_istart_IO())) {
+        if (likely(ar.is_device())) {
             [[maybe_unused]] auto note = a.make_scoped_note("read device");
-            const uint64_t offset = paddr - pma.get_start();
+            const uint64_t offset = paddr - ar.get_start();
             uint64_t val{};
             device_state_access da(a, mcycle);
             // If we do not know how to read, we treat this as a PMA violation
-            const bool status = pma.get_device_noexcept().get_driver()->read(pma.get_device_noexcept().get_context(),
-                &da, offset, &val, log2_size_v<U>);
+            const bool status = ar.read_device(&da, offset, log2_size_v<U>, &val);
             if (likely(status)) {
                 *pval = static_cast<T>(val);
                 // device logs its own state accesses
@@ -1087,18 +1084,17 @@ static NO_INLINE std::pair<execute_status, uint64_t> write_virtual_memory_slow(c
         return {execute_status::failure, pc};
     }
     uint64_t pma_index = 0;
-    auto &pma = find_pma_entry<T>(a, paddr, pma_index);
-    if (likely(pma.get_istart_W())) {
-        if (likely(pma.get_istart_M())) {
+    auto &ar = find_pma<T>(a, paddr, pma_index);
+    if (likely(ar.is_writeable())) {
+        if (likely(ar.is_memory())) {
             const auto faddr = replace_tlb_entry<TLB_WRITE>(a, vaddr, paddr, pma_index);
             a.write_memory_word(faddr, pma_index, static_cast<T>(val64));
             return {execute_status::success, pc};
         }
-        if (likely(pma.get_istart_IO())) {
-            const uint64_t offset = paddr - pma.get_start();
+        if (likely(ar.is_device())) {
+            const uint64_t offset = paddr - ar.get_start();
             device_state_access da(a, mcycle);
-            auto status = pma.get_device_noexcept().get_driver()->write(pma.get_device_noexcept().get_context(), &da,
-                offset, static_cast<U>(static_cast<T>(val64)), log2_size_v<U>);
+            auto status = ar.write_device(&da, offset, log2_size_v<U>, static_cast<U>(static_cast<T>(val64)));
             // If we do not know how to write, we treat this as a PMA violation
             if (likely(status != execute_status::failure)) {
                 return {status, pc};
@@ -1150,11 +1146,11 @@ static auto dump_insn([[maybe_unused]] const STATE_ACCESS a, [[maybe_unused]] ui
     [[maybe_unused]] auto note = a.make_scoped_note("dump_insn");
     uint64_t ppc = pc;
     if (!translate_virtual_address<STATE_ACCESS, false>(a, &ppc, pc, PTE_XWR_X_SHIFT)) {
-        D_PRINTF("v    %08" PRIx64, ppc);
+        d_printf("v    %08" PRIx64, ppc);
     } else {
-        D_PRINTF("p    %08" PRIx64, ppc);
+        d_printf("p    %08" PRIx64, ppc);
     }
-    D_PRINTF(":   %08" PRIx32 "   %s\n", insn, name);
+    d_printf(":   %08" PRIx32 "   %s\n", insn, name);
 #endif
     return a.make_scoped_note(name);
 }
@@ -2091,7 +2087,7 @@ static NO_INLINE uint64_t read_csr(const STATE_ACCESS a, uint64_t mcycle, CSR_ad
         default:
             // Invalid CSRs
 #ifdef DUMP_INVALID_CSR
-            D_PRINTF("csr_read: invalid CSR=0x%x\n", static_cast<int>(csraddr));
+            d_printf("csr_read: invalid CSR=0x%x\n", static_cast<int>(csraddr));
 #endif
             return read_csr_fail(status);
     }
@@ -2439,9 +2435,9 @@ static inline execute_status write_csr_fcsr(const STATE_ACCESS a, uint64_t val) 
 template <typename STATE_ACCESS>
 static NO_INLINE execute_status write_csr(const STATE_ACCESS a, uint64_t mcycle, CSR_address csraddr, uint64_t val) {
 #if defined(DUMP_CSR)
-    D_PRINTF("csr_write: csr=0x%03x val=0x", static_cast<int>(csraddr));
+    d_printf("csr_write: csr=0x%03x val=0x", static_cast<int>(csraddr));
     print_uint64_t(val);
-    D_PRINTF("\n");
+    d_printf("\n");
 #endif
     if (unlikely(csr_is_read_only(csraddr))) {
         return execute_status::failure;
@@ -2584,7 +2580,7 @@ static NO_INLINE execute_status write_csr(const STATE_ACCESS a, uint64_t mcycle,
         default:
             // Invalid CSRs
 #ifdef DUMP_INVALID_CSR
-            D_PRINTF("csr_write: invalid CSR=0x%x\n", static_cast<int>(csraddr));
+            d_printf("csr_write: invalid CSR=0x%x\n", static_cast<int>(csraddr));
 #endif
             return execute_status::failure;
     }
@@ -5396,10 +5392,10 @@ static FORCE_INLINE fetch_status fetch_translate_pc_slow(const STATE_ACCESS a, u
         return fetch_status::exception;
     }
     // Walk memory map to find the range that contains the physical address
-    const auto &pma = find_pma_entry<uint16_t>(a, paddr, pma_index);
+    const auto &ar = find_pma<uint16_t>(a, paddr, pma_index);
     // We only execute directly from RAM (as in "random access memory")
     // If the range is not memory or not executable, this as a PMA violation
-    if (unlikely(!pma.get_istart_M() || !pma.get_istart_X())) {
+    if (unlikely(!ar.is_memory() || !ar.is_executable())) {
         pc = raise_exception(a, pc, MCAUSE_INSN_ACCESS_FAULT, vaddr);
         return fetch_status::exception;
     }

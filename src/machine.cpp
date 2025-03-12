@@ -114,25 +114,22 @@ static inline auto make_memory_address_range(const std::string &d, uint64_t star
     return make_mmapd_memory_address_range(d, start, length, flags, backing_store.data_filename, backing_store.shared);
 }
 
-void machine::check_address_range(const address_range &ar, register_where where) {
+void machine::check_address_range(const address_range &new_ar, register_where where) {
     if (!where.interpret && !where.merkle) {
-        throw std::runtime_error{"address range "s + ar.get_description() + " must be registered somwhere"s};
+        throw std::runtime_error{"address range "s + new_ar.get_description() + " must be registered somewhere"s};
     }
-    const auto start = ar.get_start();
-    const auto length = ar.get_length();
+    const auto start = new_ar.get_start();
+    const auto end = new_ar.get_end();
     // Checks if new range is machine addressable space (safe unsigned overflows)
-    if (start > AR_ADDRESSABLE_MASK || (length > 0 && (length - 1) > (AR_ADDRESSABLE_MASK - start))) {
+    if (start > AR_ADDRESSABLE_MASK || end > AR_ADDRESSABLE_MASK) {
         throw std::invalid_argument{
-            "address range of "s + ar.get_description() + " must use at most 56 bits to be addressable"s};
+            "address range of "s + new_ar.get_description() + " must use at most 56 bits to be addressable"s};
     }
-    const auto length_bit_ceil = ar.get_length_bit_ceil();
     // Range A overlaps with B if A starts before B ends and A ends after B starts
-    for (const auto &existing : m_ars) {
-        const auto existing_start = existing->get_start();
-        const auto existing_length_bit_ceil = existing->get_length_bit_ceil();
-        if (start < existing_start + existing_length_bit_ceil && start + length_bit_ceil > existing_start) {
-            throw std::invalid_argument{"address range of "s + ar.get_description() +
-                " overlaps with address range of existing "s + existing->get_description()};
+    for (const auto &ar : m_ars) {
+        if (start < ar->get_end() && end > ar->get_start()) {
+            throw std::invalid_argument{"address range of "s + new_ar.get_description() +
+                " overlaps with address range of existing "s + ar->get_description()};
         }
     }
 }
@@ -150,16 +147,16 @@ static bool is_protected(PMA_ISTART_DID DID) {
 }
 
 void machine::replace_memory_range(const memory_range_config &config) {
-    for (auto &existing : m_ars) {
+    for (auto &ar : m_ars) {
         //??D Need to add check for new read-only property here
-        if (existing->get_start() == config.start && existing->get_length() == config.length) {
-            if (!existing->is_memory() || is_protected(existing->get_driver_id())) {
-                throw std::invalid_argument{"attempt to replace a protected range "s + existing->get_description()};
+        if (ar->get_start() == config.start && ar->get_length() == config.length) {
+            if (!ar->is_memory() || is_protected(ar->get_driver_id())) {
+                throw std::invalid_argument{"attempt to replace a protected range "s + ar->get_description()};
             }
             // Replace range, preserving original flags.
             // This will automatically start with all pages dirty.
-            existing = make_moved_unique(make_memory_address_range(existing->get_description(), existing->get_start(),
-                existing->get_length(), existing->get_flags(), config.backing_store));
+            ar = make_moved_unique(make_memory_address_range(ar->get_description(), ar->get_start(), ar->get_length(),
+                ar->get_flags(), config.backing_store));
             return;
         }
     }
@@ -861,8 +858,7 @@ void machine::check_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uin
         if ((paddr_page & PAGE_OFFSET_MASK) != 0) {
             throw std::invalid_argument{prefix + "vp_offset is not aligned"s};
         }
-        const auto pmas_end = ar.get_start() + (ar.get_length() - AR_PAGE_SIZE);
-        if (paddr_page < ar.get_start() || paddr_page > pmas_end) {
+        if (paddr_page < ar.get_start() || paddr_page >= ar.get_end()) {
             throw std::invalid_argument{prefix + "vp_offset is inconsistent with pma_index"s};
         }
     } else if (pma_index != TLB_INVALID_PMA_INDEX || vp_offset != 0) {
@@ -1847,8 +1843,8 @@ bool machine::verify_dirty_page_maps() const {
     mark_write_tlb_dirty_pages();
     // Now go over all memory PMAs verifying that all dirty pages are marked
     for (const auto &ar : m_ars) {
-        for (uint64_t offset = 0; offset < ar->get_length(); offset += AR_PAGE_SIZE) {
-            const uint64_t page_address = ar->get_start() + offset;
+        for (uint64_t page_address = ar->get_start(); page_address < ar->get_end(); page_address += AR_PAGE_SIZE) {
+            const auto offset = page_address - ar->get_start();
             if (ar->is_memory()) {
                 const unsigned char *page_data = nullptr;
                 ar->peek(*this, offset, AR_PAGE_SIZE, &page_data, scratch.get());
@@ -2129,7 +2125,7 @@ void machine::read_memory(uint64_t paddr, unsigned char *data, uint64_t length) 
         std::views::transform(
             [this](auto i) -> address_range & { return *m_ars[i]; }) |        // Now address ranges themselves
         std::views::drop_while([paddr, &gap_start](const address_range &ar) { // Only those that end after paddr
-            const auto ar_end = ar.get_start() + ar.get_length();
+            const auto ar_end = ar.get_end();
             if (paddr >= ar_end) {
                 gap_start = ar_end;
                 return true;
@@ -2146,7 +2142,7 @@ void machine::read_memory(uint64_t paddr, unsigned char *data, uint64_t length) 
             paddr += from_gap;
             data += from_gap;
         }
-        gap_start = ar_start + ar.get_length();
+        gap_start = ar.get_end();
         // Write as much as possible from current address range
         if (paddr >= ar_start && paddr < gap_start) {
             const auto from_ar = std::min(gap_start - paddr, length);

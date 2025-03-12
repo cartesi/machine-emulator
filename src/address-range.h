@@ -42,8 +42,7 @@ class address_range {
 
     std::array<char, 32> m_description; ///< Description of address range for use in error messages.
     uint64_t m_start;                   ///< Target physical address where range starts.
-    uint64_t m_length;                  ///< Length of range, in bytes.
-    uint64_t m_length_bit_ceil;         ///< Smallest power of 2 that is not smaller than length, in bytes.
+    uint64_t m_end;                     ///< Target physical address where range ends.
     pmas_flags m_flags;                 ///< Physical memory attribute flags for range.
 
 public:
@@ -53,8 +52,7 @@ public:
     explicit constexpr address_range(const char (&description)[N]) noexcept :
         m_description{},
         m_start{0},
-        m_length{0},
-        m_length_bit_ceil{0},
+        m_end{0},
         m_flags{} {
         for (unsigned i = 0; i < std::min<unsigned>(N, m_description.size() - 1); ++i) {
             m_description[i] = description[i];
@@ -87,38 +85,36 @@ public:
     address_range(const char *description, uint64_t start, uint64_t length, const pmas_flags &flags, ABRT abrt) :
         m_description{},
         m_start{start},
-        m_length{length},
-        m_length_bit_ceil{(length >> 63) == 0 ? std::bit_ceil(length) : 0},
+        m_end{start + length},
         m_flags{flags} {
         // Non-empty description is mandatory
         if (description == nullptr || *description == '\0') {
-            ABRTF(abrt, "address range 0x%" PRIx64 ":0x%" PRIx64 " has empty description", m_start, m_length);
+            ABRTF(abrt, "address range 0x%" PRIx64 ":0x%" PRIx64 " has empty description", start, length);
         }
         for (unsigned i = 0; i < m_description.size() - 1 && description[i] != '\0'; ++i) {
             m_description[i] = description[i];
         }
-        // All address ranges must be page-aligned
-        if ((m_length & ~PMA_ISTART_START_MASK) != 0) {
-            ABRTF(abrt, "length must be multiple of page size when initializing %s", description);
+        // End = start + length cannot overflow
+        if (start >= UINT64_MAX - length) {
+            ABRTF(abrt, "0x%" PRIx64 ":0x%" PRIx64 " is out of bounds when initializing %s", start, length,
+                description);
         }
+        // All address ranges must be page-aligned
         if ((m_start & ~PMA_ISTART_START_MASK) != 0) {
-            ABRTF(abrt, "start of %s (0x%" PRIx64 ") must be aligned to page boundary of %" PRId64 " bytes",
+            ABRTF(abrt, "start of %s (0x%" PRIx64 ") must be aligned to page boundary (every %" PRId64 " bytes)",
                 description, start, AR_PAGE_SIZE);
         }
-        // It must be possible to round length up to the next power of two
-        if (m_length_bit_ceil == 0) {
-            ABRTF(abrt, "address range too long when initializing %s", description);
+        if ((m_end & ~PMA_ISTART_START_MASK) != 0) {
+            ABRTF(abrt, "length of %s (0x% " PRIx64 ") must be multiple of page length (%" PRId64 " bytes)",
+                description, length, AR_PAGE_SIZE);
         }
         // Empty range must really be empty
-        if (m_length == 0) {
-            if (m_start != 0) {
-                ABRTF(abrt, "range with length 0 must start at 0 when initializing %s", description);
+        if (length == 0) {
+            if (start != 0) {
+                ABRTF(abrt, "empty range with length 0 must start at 0 when initializing %s", description);
             }
-            if (m_flags.M) {
-                ABRTF(abrt, "memory address range cannot have length 0 when initializing %s", description);
-            }
-            if (m_flags.IO) {
-                ABRTF(abrt, "device address range cannot have length 0 when initializing %s", description);
+            if (get_istart() != 0) {
+                ABRTF(abrt, "empty range must have clear flags when initializing %s", description);
             }
         }
     }
@@ -157,16 +153,16 @@ public:
         return m_start;
     }
 
+    /// \brief Returns target physical address right past end of range.
+    /// \returns End of range
+    uint64_t get_end() const noexcept {
+        return m_end;
+    }
+
     /// \brief Returns length of range, in bytes.
     /// \returns Length of range
     uint64_t get_length() const noexcept {
-        return m_length;
-    }
-
-    /// \brief Returns smallest power of 2 that is not smaller than range length, in bytes
-    /// \returns Bit-ceil of length of range
-    uint64_t get_length_bit_ceil() const noexcept {
-        return m_length_bit_ceil;
+        return m_end - m_start;
     }
 
     /// \brief Test if address range is occupied by memory
@@ -187,7 +183,7 @@ public:
     /// \returns True if and only if range is empty
     /// \details Empty ranges should be used only for sentinels.
     bool is_empty() const noexcept {
-        return m_length == 0;
+        return m_end == 0;
     }
 
     /// \brief Tests if range is readable

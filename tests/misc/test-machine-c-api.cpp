@@ -179,7 +179,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_alignment_test, mach
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    std::string origin("start of flash drive 0 (0x7fffffffffffff) must be aligned to page boundary of 4096 bytes");
+    std::string origin("start of flash drive 0 (0x7fffffffffffff) must be aligned to page boundary (every 4096 bytes)");
     BOOST_CHECK_EQUAL(origin, result);
 }
 

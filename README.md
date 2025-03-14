@@ -125,19 +125,19 @@ brew install cartesi-machine
 ###### Debian Requirements
 
 ```sh
-sudo apt-get install build-essential git wget libboost1.81-dev liblua5.4-dev libslirp-dev lua5.4
+sudo apt-get install build-essential git wget libgomp-dev libboost1.81-dev liblua5.4-dev libslirp-dev lua5.4
 ```
 
 ###### MacPorts Requirements
 
 ```sh
-sudo port install clang boost181 wget pkgconfig lua54 libslirp
+sudo port install clang libomp boost181 wget pkgconfig lua54 libslirp
 ```
 
 ###### Homebrew Requirements
 
 ```sh
-brew install llvm boost wget pkg-config lua libslirp
+brew install llvm libomp boost wget pkg-config lua libslirp
 ```
 
 #### Build

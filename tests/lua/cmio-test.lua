@@ -114,7 +114,7 @@ local MAX_MCYCLE = -1
 local function load_machine(name)
     local runtime = {
         concurrency = {
-            update_merkle_tree = 0,
+            update_hash_tree = 0,
         },
         skip_root_hash_check = true,
         skip_root_hash_store = true,
@@ -263,7 +263,7 @@ for _, dapp in pairs({ "ioctl", "http" }) do
     local suffix = "-" .. dapp
     local desc = " (" .. machine_type .. "," .. dapp .. ")"
     do_test(
-        "merkle tree state must match and not reset for each advance" .. desc,
+        "hash tree state must match and not reset for each advance" .. desc,
         "advance-state-machine" .. suffix,
         function(machine)
             local hashes = {}

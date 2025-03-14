@@ -18,21 +18,21 @@
 
 #include <cstddef>
 
-#include "machine-merkle-tree.h"
+#include "machine-hash.h"
 #include "uarch-pristine.h"
 
 namespace cartesi {
 
-static machine_merkle_tree::hash_type make_uarch_pristine_state_hash() noexcept {
-    machine_merkle_tree::hash_type h;
+static machine_hash make_uarch_pristine_state_hash() noexcept {
+    machine_hash h;
     for (std::size_t i = 0; i < h.size(); ++i) {
         h[i] = uarch_pristine_hash[i];
     }
     return h;
 }
 
-const machine_merkle_tree::hash_type &get_uarch_pristine_state_hash() {
-    static const machine_merkle_tree::hash_type uarch_pristine_state_hash = make_uarch_pristine_state_hash();
+const machine_hash &get_uarch_pristine_state_hash() noexcept {
+    static const machine_hash uarch_pristine_state_hash = make_uarch_pristine_state_hash();
     return uarch_pristine_state_hash;
 }
 

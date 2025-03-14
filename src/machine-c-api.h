@@ -467,6 +467,7 @@ CM_API cm_error cm_get_runtime_config(const cm_machine *m, const char **runtime_
 ///     "backing_store": {
 ///         "data_filename": "linux.bin"
 ///         "dht_filename": "linux.dht"
+///         "dpt_filename": "linux.dpt"
 ///         "shared": false
 ///     }
 /// }
@@ -496,6 +497,14 @@ CM_API cm_error cm_get_address_ranges(const cm_machine *m, const char **ranges);
 /// \param hash Valid pointer to cm_hash structure that receives the hash.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_get_root_hash(const cm_machine *m, cm_hash *hash);
+
+/// \brief Obtains the hash of a node in the Merkle tree.
+/// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param address Address of node.
+/// \param log2_size Log<sub>2</sub> of node size.
+/// \param hash Valid pointer to cm_hash structure that receives the hash.
+/// \returns 0 for success, non zero code for error.
+CM_API cm_error cm_get_node_hash(const cm_machine *m, uint64_t address, int log2_size, cm_hash *hash);
 
 /// \brief Obtains the proof for a node in the machine state Merkle tree.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
@@ -719,19 +728,12 @@ CM_API cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reaso
 // Integrity checking
 // ------------------------------------
 
-/// \brief Verifies integrity of Merkle tree against current machine state.
+/// \brief Verifies integrity of hash-tree tree against current machine state.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param result True if tree is self-consistent, false otherwise.
 /// \returns 0 for success, non zero code for error.
 /// \details This method is used only for emulator internal tests.
-CM_API cm_error cm_verify_merkle_tree(cm_machine *m, bool *result);
-
-/// \brief Verifies integrity of dirty page maps.
-/// \param m Pointer to a non-empty machine object (holds a machine instance).
-/// \param result True if dirty page maps are consistent, false otherwise.
-/// \returns 0 for success, non zero code for error.
-/// \details This method is used only for emulator internal tests.
-CM_API cm_error cm_verify_dirty_page_maps(cm_machine *m, bool *result);
+CM_API cm_error cm_verify_hash_tree(cm_machine *m, bool *result);
 
 #ifdef __cplusplus
 }

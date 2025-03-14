@@ -69,7 +69,6 @@
 #include "jsonrpc-fork-result.h"
 #include "jsonrpc-version.h"
 #include "machine-config.h"
-#include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
 #include "os.h"
 #include "scope-exit.h"
@@ -78,7 +77,6 @@
 
 using namespace std::string_literals;
 using json = nlohmann::json;
-using hash_type = cartesi::machine_merkle_tree::hash_type;
 
 namespace beast = boost::beast; // from <boost/beast.hpp>
 namespace http = beast::http;   // from <boost/beast/http.hpp>
@@ -124,7 +122,7 @@ static asio::ip::tcp::endpoint parse_endpoint(const std::string &address) {
             throw std::runtime_error("invalid port number"s);
         }
         return {asio::ip::make_address(host), static_cast<uint16_t>(port)};
-    } catch (std::exception &e) {
+    } catch (const std::exception &e) {
         throw std::runtime_error("failed to parse endpoint from address \""s + address + "\": "s + e.what());
     }
 }
@@ -279,13 +277,13 @@ static void jsonrpc_request(std::unique_ptr<boost::asio::io_context> &ioc, std::
     std::string response_s;
     try {
         response_s = json_post(*ioc, *stream, remote_address, request, timeout_at, keep_alive);
-    } catch (std::exception &x) {
+    } catch (const std::exception &x) {
         throw std::runtime_error("jsonrpc error: post error contacting "s + remote_address + " ("s + x.what() + ")"s);
     }
     json response;
     try {
         response = json::parse(response_s);
-    } catch (std::exception &x) {
+    } catch (const std::exception &x) {
         throw std::runtime_error("jsonrpc server error: invalid response ("s + x.what() + ")"s);
     }
     if (!response.contains("jsonrpc")) {
@@ -323,7 +321,7 @@ static void jsonrpc_request(std::unique_ptr<boost::asio::io_context> &ioc, std::
     }
     try {
         cartesi::ju_get_field(response, "result"s, result, ""s);
-    } catch (std::exception &x) {
+    } catch (const std::exception &x) {
         throw std::runtime_error("jsonrpc server error: "s + x.what());
     }
 }
@@ -430,7 +428,7 @@ static boost::asio::ip::tcp::endpoint address_to_endpoint(const std::string &add
             throw std::runtime_error{"invalid port"};
         }
         return {boost::asio::ip::make_address(ip), static_cast<uint16_t>(port)};
-    } catch (std::exception &e) {
+    } catch (const std::exception &e) {
         throw std::runtime_error{"invalid endpoint address \"" + address + "\""};
     }
 }
@@ -697,7 +695,7 @@ void jsonrpc_machine::do_read_memory(uint64_t address, unsigned char *data, uint
 
 void jsonrpc_machine::do_write_memory(uint64_t address, const unsigned char *data, uint64_t length) {
     bool result = false;
-    std::string b64 = cartesi::encode_base64(data, length);
+    std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
     request("machine.write_memory", std::tie(address, b64), result);
 }
 
@@ -713,7 +711,7 @@ void jsonrpc_machine::do_read_virtual_memory(uint64_t address, unsigned char *da
 
 void jsonrpc_machine::do_write_virtual_memory(uint64_t address, const unsigned char *data, uint64_t length) {
     bool result = false;
-    std::string b64 = cartesi::encode_base64(data, length);
+    std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
     request("machine.write_virtual_memory", std::tie(address, b64), result);
 }
 
@@ -737,12 +735,20 @@ access_log jsonrpc_machine::do_log_reset_uarch(const access_log::type &log_type)
     return std::move(result).value();
 }
 
-void jsonrpc_machine::do_get_root_hash(hash_type &hash) const {
+machine_hash jsonrpc_machine::do_get_root_hash() const {
+    machine_hash hash;
     request("machine.get_root_hash", std::tie(), hash);
+    return hash;
 }
 
-machine_merkle_tree::proof_type jsonrpc_machine::do_get_proof(uint64_t address, int log2_size) const {
-    not_default_constructible<machine_merkle_tree::proof_type> result;
+machine_hash jsonrpc_machine::do_get_node_hash(uint64_t address, int log2_size) const {
+    machine_hash hash;
+    request("machine.get_node_hash", std::tie(address, log2_size), hash);
+    return hash;
+}
+
+i_machine::proof_type jsonrpc_machine::do_get_proof(uint64_t address, int log2_size) const {
+    not_default_constructible<proof_type> result;
     request("machine.get_proof", std::tie(address, log2_size), result);
     if (!result.has_value()) {
         throw std::runtime_error("jsonrpc server error: missing result");
@@ -769,21 +775,15 @@ void jsonrpc_machine::do_destroy() {
     request("machine.destroy", std::tie(), result);
 }
 
-bool jsonrpc_machine::do_verify_dirty_page_maps() const {
-    bool result = false;
-    request("machine.verify_dirty_page_maps", std::tie(), result);
-    return result;
-}
-
 uint64_t jsonrpc_machine::do_read_word(uint64_t address) const {
     uint64_t result = 0;
     request("machine.read_word", std::tie(address), result);
     return result;
 }
 
-bool jsonrpc_machine::do_verify_merkle_tree() const {
+bool jsonrpc_machine::do_verify_hash_tree() const {
     bool result = false;
-    request("machine.verify_merkle_tree", std::tie(), result);
+    request("machine.verify_hash_tree", std::tie(), result);
     return result;
 }
 
@@ -801,14 +801,14 @@ address_range_descriptions jsonrpc_machine::do_get_address_ranges() const {
 
 void jsonrpc_machine::do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {
     bool result = false;
-    std::string b64 = cartesi::encode_base64(data, length);
+    std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
     request("machine.send_cmio_response", std::tie(reason, b64), result);
 }
 
 access_log jsonrpc_machine::do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
     const access_log::type &log_type) {
     not_default_constructible<access_log> result;
-    std::string b64 = cartesi::encode_base64(data, length);
+    std::string b64 = cartesi::encode_base64(std::span<const unsigned char>{data, length});
     request("machine.log_send_cmio_response", std::tie(reason, b64, log_type), result);
     if (!result.has_value()) {
         throw std::runtime_error("jsonrpc server error: missing result");
@@ -828,8 +828,8 @@ machine_config jsonrpc_machine::do_get_default_config() const {
     return result;
 }
 
-interpreter_break_reason jsonrpc_machine::do_verify_step(const hash_type &root_hash_before,
-    const std::string &log_filename, uint64_t mcycle_count, const hash_type &root_hash_after) const {
+interpreter_break_reason jsonrpc_machine::do_verify_step(const machine_hash &root_hash_before,
+    const std::string &log_filename, uint64_t mcycle_count, const machine_hash &root_hash_after) const {
     interpreter_break_reason result = interpreter_break_reason::failed;
     auto b64_root_hash_before = encode_base64(root_hash_before);
     auto b64_root_hash_after = encode_base64(root_hash_after);
@@ -838,16 +838,16 @@ interpreter_break_reason jsonrpc_machine::do_verify_step(const hash_type &root_h
     return result;
 }
 
-void jsonrpc_machine::do_verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
-    const hash_type &root_hash_after) const {
+void jsonrpc_machine::do_verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
+    const machine_hash &root_hash_after) const {
     bool result = false;
     auto b64_root_hash_before = encode_base64(root_hash_before);
     auto b64_root_hash_after = encode_base64(root_hash_after);
     request("machine.verify_step_uarch", std::tie(b64_root_hash_before, log, b64_root_hash_after), result);
 }
 
-void jsonrpc_machine::do_verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
-    const hash_type &root_hash_after) const {
+void jsonrpc_machine::do_verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
+    const machine_hash &root_hash_after) const {
     bool result = false;
     auto b64_root_hash_before = encode_base64(root_hash_before);
     auto b64_root_hash_after = encode_base64(root_hash_after);
@@ -855,9 +855,9 @@ void jsonrpc_machine::do_verify_reset_uarch(const hash_type &root_hash_before, c
 }
 
 void jsonrpc_machine::do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-    const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const {
+    const machine_hash &root_hash_before, const access_log &log, const machine_hash &root_hash_after) const {
     bool result = false;
-    std::string b64_data = cartesi::encode_base64(data, length);
+    std::string b64_data = cartesi::encode_base64(std::span<const unsigned char>{data, length});
     auto b64_root_hash_before = encode_base64(root_hash_before);
     auto b64_root_hash_after = encode_base64(root_hash_after);
     request("machine.verify_send_cmio_response",

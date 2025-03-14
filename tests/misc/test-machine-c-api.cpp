@@ -163,8 +163,8 @@ public:
     machine_flash_simple_fixture() {
         _machine_config["flash_drive"] = {{{"start", 0x80000000000000}, {"length", 0x3c00000}, {"read_only", false},
             {"backing_store",
-                {{"shared", false}, {"create", false}, {"truncate", false}, {"data_filename", ""},
-                    {"dht_filename", ""}}}}};
+                {{"shared", false}, {"create", false}, {"truncate", false}, {"data_filename", ""}, {"dht_filename", ""},
+                    {"dpt_filename", ""}}}}};
     }
 
     machine_flash_simple_fixture(const machine_flash_simple_fixture &other) = delete;
@@ -407,14 +407,14 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_invalid_log2_test, ordinary_machine_fix
 
     // log2_root_size = 64
     cm_error error_code = cm_get_proof(_machine, 0, 65, &proof);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_DOMAIN_ERROR);
     std::string result = cm_get_last_error_message();
     std::string origin("invalid log2_size");
     BOOST_CHECK_EQUAL(origin, result);
 
-    // log2_word_size = 3
+    // log2_word_size = 5
     error_code = cm_get_proof(_machine, 0, 2, &proof);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_DOMAIN_ERROR);
     result = cm_get_last_error_message();
     BOOST_CHECK_EQUAL(origin, result);
 }
@@ -441,9 +441,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_machine_hash_test, ordinary_machine_fix
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
-    const auto proof = cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(
-        proof_str, "proof")
-                           .value();
+    const auto proof =
+        cartesi::from_json<cartesi::not_default_constructible<cartesi::merkle_tree_proof>>(proof_str, "proof").value();
     auto proof_root_hash = proof.get_root_hash();
     auto verification = calculate_proof_root_hash(proof);
     BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), proof_root_hash.begin(),
@@ -543,7 +542,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_invalid_address_range_test, ordinary
     cm_error error_code = cm_write_memory(_machine, address, write_data.data(), write_data.size());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
-    std::string origin("attempted write to device memory range");
+    std::string origin("attempted write to device memory range HTIF device");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -636,7 +635,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(write_virtual_memory_invalid_address_range_test, 
     cm_error error_code = cm_write_virtual_memory(_machine, address, write_data.data(), write_data.size());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
-    std::string origin("attempted write to device memory range");
+    std::string origin("attempted write to device memory range HTIF device");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -809,25 +808,6 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_initial_config_basic_test, ordinary_machine_f
     BOOST_CHECK_EQUAL(std::string(cfg), _machine_config.dump());
 }
 
-BOOST_AUTO_TEST_CASE_NOLINT(verify_dirty_page_maps_null_machine_test) {
-    bool result{};
-    cm_error error_code = cm_verify_dirty_page_maps(nullptr, &result);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_dirty_page_maps_null_output_test, ordinary_machine_fixture) {
-    cm_error error_code = cm_verify_dirty_page_maps(_machine, nullptr);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
-}
-
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_dirty_page_maps_success_test, ordinary_machine_fixture) {
-    bool result{};
-    cm_error error_code = cm_verify_dirty_page_maps(_machine, &result);
-    BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    BOOST_CHECK(result);
-}
-
 BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_flash_config_test, ordinary_machine_fixture) {
     const auto dumped_range =
         nlohmann::json{{"start", 0}, {"length", 0}, {"backing_store", {{"shared", false}}}}.dump();
@@ -835,7 +815,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_null_flash_config_test, ordi
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    std::string origin("attempt to replace inexistent memory range");
+    std::string origin("attempted replace of inexistent memory range");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -914,7 +894,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_pma_test, flash_driv
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    std::string origin = "attempt to replace inexistent memory range";
+    std::string origin = "attempted replace of inexistent memory range";
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -929,7 +909,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_invalid_length_test, flash_d
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    std::string origin = "attempt to replace inexistent memory range";
+    std::string origin = "attempted replace of inexistent memory range";
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -942,7 +922,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_file_length_mismatch_test, f
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    std::string origin = "attempt to replace inexistent memory range";
+    std::string origin = "attempted replace of inexistent memory range";
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -956,7 +936,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(replace_memory_range_zero_length_test, flash_driv
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 
     std::string result = cm_get_last_error_message();
-    std::string origin = "attempt to replace inexistent memory range";
+    std::string origin = "attempted replace of inexistent memory range";
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -1072,20 +1052,20 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_reg_basic_test, ordinary_machine_fixtu
     BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x108), pc_addr);
 }
 
-BOOST_AUTO_TEST_CASE_NOLINT(verify_merkle_tree_null_machine_test) {
+BOOST_AUTO_TEST_CASE_NOLINT(verify_hash_tree_null_machine_test) {
     bool ret{};
-    cm_error error_code = cm_verify_merkle_tree(nullptr, &ret);
+    cm_error error_code = cm_verify_hash_tree(nullptr, &ret);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_merkle_tree_null_output_test, ordinary_machine_fixture) {
-    cm_error error_code = cm_verify_merkle_tree(_machine, nullptr);
+BOOST_FIXTURE_TEST_CASE_NOLINT(verify_hash_tree_null_output_test, ordinary_machine_fixture) {
+    cm_error error_code = cm_verify_hash_tree(_machine, nullptr);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(verify_merkle_tree_basic_test, ordinary_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(verify_hash_tree_basic_test, ordinary_machine_fixture) {
     bool ret{};
-    cm_error error_code = cm_verify_merkle_tree(_machine, &ret);
+    cm_error error_code = cm_verify_hash_tree(_machine, &ret);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
     BOOST_CHECK(ret);
@@ -1540,7 +1520,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_reset_uarch, ordinary_machine_fixture) {
     BOOST_REQUIRE(initial_uarch_ram == reset_uarch_ram);
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_root_updates_test, ordinary_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_hash_tree_root_updates_test, ordinary_machine_fixture) {
 
     cm_hash start_hash;
     cm_error error_code = cm_get_root_hash(_machine, &start_hash);
@@ -1561,14 +1541,13 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_root_updates_test, ord
     BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), end_hash, end_hash + sizeof(cm_hash));
 }
 
-BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, ordinary_machine_fixture) {
+BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_hash_tree_proof_updates_test, ordinary_machine_fixture) {
     const char *proof_str{};
     cm_error error_code = cm_get_proof(_machine, 0, 12, &proof_str);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    auto proof = cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(
-        proof_str, "proof")
-                     .value();
+    auto proof =
+        cartesi::from_json<cartesi::not_default_constructible<cartesi::merkle_tree_proof>>(proof_str, "proof").value();
     auto proof_root_hash = proof.get_root_hash();
     auto verification = calculate_proof_root_hash(proof);
     BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), proof_root_hash.begin(),
@@ -1584,9 +1563,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, or
     error_code = cm_get_proof(_machine, 0, 12, &proof_str);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    proof = cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(proof_str,
-        "proof")
-                .value();
+    proof =
+        cartesi::from_json<cartesi::not_default_constructible<cartesi::merkle_tree_proof>>(proof_str, "proof").value();
     proof_root_hash = proof.get_root_hash();
     verification = calculate_proof_root_hash(proof);
     BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), proof_root_hash.begin(),

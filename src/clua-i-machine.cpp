@@ -362,7 +362,7 @@ const char *clua_check_json_string(lua_State *L, int idx, int indent, int ctxidx
         lua_replace(L, idx);             // replace the Lua value with its JSON string representation
         lua_pop(L, 2);                   // pop s, j references
         return luaL_checkstring(L, idx); // return the string
-    } catch (std::exception &e) {
+    } catch (const std::exception &e) {
         luaL_error(L, "failed to parse JSON from a Lua table: %s", e.what());
         return nullptr;
     }
@@ -443,63 +443,61 @@ void clua_push_json_table(lua_State *L, const char *s, int ctxidx, const nlohman
         clua_push_json_value(L, j, ctxidx, schema, schema_dict);
         lua_replace(L, -3); // move into the placeholder slot
         lua_pop(L, 1);      // pop j reference
-    } catch (std::exception &e) {
+    } catch (const std::exception &e) {
         luaL_error(L, "failed to parse JSON from a string: %s", e.what());
     }
 }
 
-static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) {
-    try {
-        // In order to convert Lua tables <-> JSON objects we have to define a schema
-        // to transform some special fields, we only care about:
-        // - Binary strings (translate Base64 strings in JSON to binary strings in Lua)
-        // - Array indexes (translate 0 based index in JSON to 1 based index in Lua)
-        static const nlohmann::json machine_schema_dict = {
-            {"Base64", "Base64"},
-            {"ArrayIndex", "ArrayIndex"},
-            {"Base64Array",
-                {
-                    {"items", "Base64"},
-                }},
-            {"Proof",
-                {
-                    {"target_hash", "Base64"},
-                    {"root_hash", "Base64"},
-                    {"sibling_hashes", "Base64Array"},
-                }},
-            {"Access",
-                {
-                    {"read", "Base64"},
-                    {"read_hash", "Base64"},
-                    {"written", "Base64"},
-                    {"written_hash", "Base64"},
-                    {"sibling_hashes", "Base64Array"},
-                }},
-            {"AccessArray",
-                {
-                    {"items", "Access"},
-                }},
-            {"Bracket",
-                {
-                    {"where", "ArrayIndex"},
-                }},
-            {"BracketArray",
-                {
-                    {"items", "Bracket"},
-                }},
-            {"AccessLog",
-                {
-                    {"accesses", "AccessArray"},
-                    {"brackets", "BracketArray"},
-                }},
-        };
-        return machine_schema_dict;
-    } catch (std::exception &e) {
-        luaL_error(L, "failed to create machine schema dictionary: %s", e.what());
-        static const nlohmann::json dummy;
-        return dummy;
-    }
-};
+static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) try {
+    // In order to convert Lua tables <-> JSON objects we have to define a schema
+    // to transform some special fields, we only care about:
+    // - Binary strings (translate Base64 strings in JSON to binary strings in Lua)
+    // - Array indexes (translate 0 based index in JSON to 1 based index in Lua)
+    static const nlohmann::json machine_schema_dict = {
+        {"Base64", "Base64"},
+        {"ArrayIndex", "ArrayIndex"},
+        {"Base64Array",
+            {
+                {"items", "Base64"},
+            }},
+        {"Proof",
+            {
+                {"target_hash", "Base64"},
+                {"root_hash", "Base64"},
+                {"sibling_hashes", "Base64Array"},
+            }},
+        {"Access",
+            {
+                {"read", "Base64"},
+                {"read_hash", "Base64"},
+                {"written", "Base64"},
+                {"written_hash", "Base64"},
+                {"sibling_hashes", "Base64Array"},
+            }},
+        {"AccessArray",
+            {
+                {"items", "Access"},
+            }},
+        {"Bracket",
+            {
+                {"where", "ArrayIndex"},
+            }},
+        {"BracketArray",
+            {
+                {"items", "Bracket"},
+            }},
+        {"AccessLog",
+            {
+                {"accesses", "AccessArray"},
+                {"brackets", "BracketArray"},
+            }},
+    };
+    return machine_schema_dict;
+} catch (const std::exception &e) {
+    luaL_error(L, "failed to create machine schema dictionary: %s", e.what());
+    static const nlohmann::json dummy;
+    return dummy;
+}
 
 const char *clua_check_schemed_json_string(lua_State *L, int idx, const std::string &schema_name, int ctxidx) {
     const auto &machine_schema_dict = clua_get_machine_schema_dict(L);
@@ -579,6 +577,20 @@ static int machine_obj_index_get_root_hash(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:get_node_hash() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_get_node_hash(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const uint64_t address = luaL_checkinteger(L, 2);
+    const int log2_size = static_cast<int>(luaL_checkinteger(L, 3));
+    cm_hash node_hash{};
+    if (cm_get_node_hash(m.get(), address, log2_size, &node_hash) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    clua_push_cm_hash(L, &node_hash);
+    return 1;
+}
+
 /// \brief This is the machine:read_reg() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_read_reg(lua_State *L) {
@@ -601,7 +613,7 @@ static int machine_obj_index_read_memory(lua_State *L) {
     unsigned char *data{};
     try {
         data = new unsigned char[length];
-    } catch (std::bad_alloc &e) {
+    } catch (const std::bad_alloc &e) {
         luaL_error(L, "failed to allocate memory for buffer");
     }
     auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));
@@ -624,7 +636,7 @@ static int machine_obj_index_read_virtual_memory(lua_State *L) {
     unsigned char *data{};
     try {
         data = new unsigned char[length];
-    } catch (std::bad_alloc &e) {
+    } catch (const std::bad_alloc &e) {
         luaL_error(L, "failed to allocate memory for buffer");
     }
     auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));
@@ -743,24 +755,12 @@ static int machine_obj_index_store(lua_State *L) {
     return 0;
 }
 
-/// \brief This is the machine:verify_dirty_page_maps() method implementation.
+/// \brief This is the machine:verify_hash_tree() method implementation.
 /// \param L Lua state.
-static int machine_obj_index_verify_dirty_page_maps(lua_State *L) {
+static int machine_obj_index_verify_hash_tree(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     bool result{};
-    if (cm_verify_dirty_page_maps(m.get(), &result) != 0) {
-        return luaL_error(L, "%s", cm_get_last_error_message());
-    }
-    lua_pushboolean(L, static_cast<int>(result));
-    return 1;
-}
-
-/// \brief This is the machine:verify_merkle_tree() method implementation.
-/// \param L Lua state.
-static int machine_obj_index_verify_merkle_tree(lua_State *L) {
-    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    bool result{};
-    if (cm_verify_merkle_tree(m.get(), &result) != 0) {
+    if (cm_verify_hash_tree(m.get(), &result) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     lua_pushboolean(L, static_cast<int>(result));
@@ -848,7 +848,7 @@ static int machine_obj_index_receive_cmio_request(lua_State *L) {
     unsigned char *data{};
     try {
         data = new unsigned char[length];
-    } catch (std::bad_alloc &e) {
+    } catch (const std::bad_alloc &e) {
         luaL_error(L, "failed to allocate memory for buffer");
     }
     auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));
@@ -1050,6 +1050,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"get_proof", machine_obj_index_get_proof},
     {"get_reg_address", machine_obj_index_get_reg_address},
     {"get_root_hash", machine_obj_index_get_root_hash},
+    {"get_node_hash", machine_obj_index_get_node_hash},
     {"get_runtime_config", machine_obj_index_get_runtime_config},
     {"is_empty", machine_obj_index_is_empty},
     {"load", machine_obj_index_load},
@@ -1071,8 +1072,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"store", machine_obj_index_store},
     {"swap", machine_obj_index_swap},
     {"translate_virtual_address", machine_obj_index_translate_virtual_address},
-    {"verify_dirty_page_maps", machine_obj_index_verify_dirty_page_maps},
-    {"verify_merkle_tree", machine_obj_index_verify_merkle_tree},
+    {"verify_hash_tree", machine_obj_index_verify_hash_tree},
     {"verify_reset_uarch", machine_obj_index_verify_reset_uarch},
     {"verify_send_cmio_response", machine_obj_index_verify_send_cmio_response},
     {"verify_step", machine_obj_index_verify_step},

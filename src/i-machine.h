@@ -22,9 +22,10 @@
 
 #include "access-log.h"
 #include "address-range-description.h"
+#include "hash-tree.h"
 #include "interpret.h"
 #include "machine-config.h"
-#include "machine-merkle-tree.h"
+#include "machine-hash.h"
 #include "machine.h"
 #include "uarch-interpret.h"
 
@@ -44,7 +45,7 @@ namespace cartesi {
 /// \}
 class i_machine {
 public:
-    using hash_type = machine_merkle_tree::hash_type;
+    using proof_type = hash_tree::proof_type;
     using reg = machine_reg;
 
     /// \brief Constructor
@@ -99,18 +100,23 @@ public:
     }
 
     /// \brief Obtains the proof for a node in the Merkle tree.
-    machine_merkle_tree::proof_type get_proof(uint64_t address, int log2_size) const {
+    proof_type get_proof(uint64_t address, int log2_size) const {
         return do_get_proof(address, log2_size);
     }
 
     /// \brief Obtains the root hash of the Merkle tree.
-    void get_root_hash(hash_type &hash) const {
-        do_get_root_hash(hash);
+    machine_hash get_root_hash() const {
+        return do_get_root_hash();
+    }
+
+    /// \brief Obtains the root hash of the Merkle tree.
+    machine_hash get_node_hash(uint64_t address, int log2_size) const {
+        return do_get_node_hash(address, log2_size);
     }
 
     /// \brief Verifies integrity of Merkle tree.
-    bool verify_merkle_tree() const {
-        return do_verify_merkle_tree();
+    bool verify_hash_tree() const {
+        return do_verify_hash_tree();
     }
 
     /// \brief Reads the value of any register
@@ -156,11 +162,6 @@ public:
     /// \brief Read the value of a word in the machine state.
     uint64_t read_word(uint64_t address) const {
         return do_read_word(address);
-    }
-
-    /// \brief Verify if dirty page maps are consistent.
-    bool verify_dirty_page_maps() const {
-        return do_verify_dirty_page_maps();
     }
 
     /// \brief Returns copy of initialization config.
@@ -226,26 +227,26 @@ public:
     }
 
     /// \brief Checks the validity of a state transition caused by log_step.
-    interpreter_break_reason verify_step(const hash_type &root_hash_before, const std::string &log_filename,
-        uint64_t mcycle_count, const hash_type &root_hash_after) const {
+    interpreter_break_reason verify_step(const machine_hash &root_hash_before, const std::string &log_filename,
+        uint64_t mcycle_count, const machine_hash &root_hash_after) const {
         return do_verify_step(root_hash_before, log_filename, mcycle_count, root_hash_after);
     }
 
     /// \brief Checks the validity of a state transition caused by log_step_uarch.
-    void verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after) const {
+    void verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after) const {
         do_verify_step_uarch(root_hash_before, log, root_hash_after);
     }
 
     /// \brief Checks the validity of a state transition caused by log_reset_uarch.
-    void verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after) const {
+    void verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after) const {
         do_verify_reset_uarch(root_hash_before, log, root_hash_after);
     }
 
     /// \brief Checks the validity of state transitions caused by log_send_cmio_response.
     void verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const {
+        const machine_hash &root_hash_before, const access_log &log, const machine_hash &root_hash_after) const {
         do_verify_send_cmio_response(reason, data, length, root_hash_before, log, root_hash_after);
     }
 
@@ -263,9 +264,9 @@ private:
     virtual void do_store(const std::string &dir) const = 0;
     virtual interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) = 0;
     virtual access_log do_log_step_uarch(const access_log::type &log_type) = 0;
-    virtual machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const = 0;
-    virtual void do_get_root_hash(hash_type &hash) const = 0;
-    virtual bool do_verify_merkle_tree() const = 0;
+    virtual proof_type do_get_proof(uint64_t address, int log2_size) const = 0;
+    virtual machine_hash do_get_root_hash() const = 0;
+    virtual machine_hash do_get_node_hash(uint64_t address, int log2_size) const = 0;
     virtual uint64_t do_read_reg(reg r) const = 0;
     virtual void do_write_reg(reg w, uint64_t val) = 0;
     virtual void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const = 0;
@@ -275,7 +276,6 @@ private:
     virtual uint64_t do_translate_virtual_address(uint64_t vaddr) = 0;
     virtual void do_replace_memory_range(const memory_range_config &new_range) = 0;
     virtual uint64_t do_read_word(uint64_t address) const = 0;
-    virtual bool do_verify_dirty_page_maps() const = 0;
     virtual machine_config do_get_initial_config() const = 0;
     virtual machine_runtime_config do_get_runtime_config() const = 0;
     virtual void do_set_runtime_config(const machine_runtime_config &r) = 0;
@@ -289,14 +289,15 @@ private:
         const access_log::type &log_type) = 0;
     virtual uint64_t do_get_reg_address(reg r) const = 0;
     virtual machine_config do_get_default_config() const = 0;
-    virtual interpreter_break_reason do_verify_step(const hash_type &root_hash_before, const std::string &log_filename,
-        uint64_t mcycle_count, const hash_type &root_hash_after) const = 0;
-    virtual void do_verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after) const = 0;
-    virtual void do_verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after) const = 0;
+    virtual interpreter_break_reason do_verify_step(const machine_hash &root_hash_before,
+        const std::string &log_filename, uint64_t mcycle_count, const machine_hash &root_hash_after) const = 0;
+    virtual void do_verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after) const = 0;
+    virtual void do_verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after) const = 0;
     virtual void do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const = 0;
+        const machine_hash &root_hash_before, const access_log &log, const machine_hash &root_hash_after) const = 0;
+    virtual bool do_verify_hash_tree() const = 0;
     virtual bool do_is_jsonrpc_machine() const {
         return false;
     }

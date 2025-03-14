@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <ranges>
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
@@ -36,15 +37,8 @@ namespace cartesi {
 /// This structure holds a proof that the node spanning a log2_target_size
 /// at a given address in the tree has a certain hash.
 /// \}
-/// \tparam HASH_TYPE the type that holds a hash
-/// \tparam ADDRESS_TYPE the type that holds an address
-template <typename HASH_TYPE, typename ADDRESS_TYPE = uint64_t>
 class merkle_tree_proof final {
 public:
-    using hash_type = HASH_TYPE;
-
-    using address_type = ADDRESS_TYPE;
-
     /// \brief Constructs a merkle_tree_proof object and allocates
     /// room for the sibling hashes
     merkle_tree_proof(int log2_root_size, int log2_target_size) :
@@ -70,7 +64,7 @@ public:
 
     /// \brief Storage for the hashes of the siblings of all nodes along
     /// the path from the root node to the target node.
-    using sibling_hashes_type = std::vector<hash_type>;
+    using sibling_hashes_type = std::vector<machine_hash>;
 
     /// \brief Gets log<sub>2</sub> of size subintended by entire tree.
     /// \returns log<sub>2</sub> of size subintended by entire tree.
@@ -86,61 +80,61 @@ public:
 
     /// \brief Set target node address
     /// \param target_address New address.
-    void set_target_address(address_type target_address) {
+    void set_target_address(uint64_t target_address) {
         m_target_address = target_address;
     }
 
     /// \brief Gets address of target node
     /// \return Reference to hash.
-    const address_type &get_target_address() const {
+    const uint64_t &get_target_address() const {
         return m_target_address;
     }
-    address_type &get_target_address() {
+    uint64_t &get_target_address() {
         return m_target_address;
     }
 
     /// \brief Set hash of target node
     /// \param hash New hash.
-    void set_target_hash(const hash_type &hash) {
-        m_target_hash = hash;
+    void set_target_hash(const_machine_hash_view hash) {
+        std::ranges::copy(hash, m_target_hash.begin());
     }
 
     /// \brief Gets hash of target node
     /// \return Reference to hash.
-    const hash_type &get_target_hash() const {
+    const machine_hash &get_target_hash() const {
         return m_target_hash;
     }
-    hash_type &get_target_hash() {
+    machine_hash &get_target_hash() {
         return m_target_hash;
     }
 
     /// \brief Set hash of root node
     /// \param hash New hash.
-    void set_root_hash(const hash_type &hash) {
-        m_root_hash = hash;
+    void set_root_hash(const_machine_hash_view hash) {
+        std::ranges::copy(hash, m_root_hash.begin());
     }
 
     /// \brief Gets hash of root node
     /// \return Reference to hash.
-    const hash_type &get_root_hash() const {
+    const machine_hash &get_root_hash() const {
         return m_root_hash;
     }
-    hash_type &get_root_hash() {
+    machine_hash &get_root_hash() {
         return m_root_hash;
     }
 
     /// \brief Get hash corresponding to log2_size from the list of siblings.
     /// \param log2_size log<sub>2</sub> of size subintended by hash.
     /// \return Reference to hash inside list of siblings.
-    const hash_type &get_sibling_hash(int log2_size) const {
+    const machine_hash &get_sibling_hash(int log2_size) const {
         return m_sibling_hashes[log2_size_to_index(log2_size)];
     }
 
     /// \brief Modify hash corresponding to log2_size in the list of siblings.
     /// \param hash New hash.
     /// \param log2_size log<sub>2</sub> of size subintended by hash.
-    void set_sibling_hash(const hash_type &hash, int log2_size) {
-        m_sibling_hashes[log2_size_to_index(log2_size)] = hash;
+    void set_sibling_hash(const_machine_hash_view hash, int log2_size) {
+        std::ranges::copy(hash, m_sibling_hashes[log2_size_to_index(log2_size)].begin());
     }
 
     const sibling_hashes_type &get_sibling_hashes() const {
@@ -171,32 +165,30 @@ public:
     }
 
     /// \brief Checks if two Merkle proofs are different
-    bool operator!=(const merkle_tree_proof<hash_type, address_type> &other) const {
+    bool operator!=(const merkle_tree_proof &other) const {
         return !(operator==(other));
     }
 
     ///< \brief Verify if proof is valid
-    ///< \tparam HASHER_TYPE Hasher class to use
+    ///< \tparam H Hasher class to use
     ///< \param h Hasher object to use
     ///< \return True if proof is valid, false otherwise
-    template <typename HASHER_TYPE>
-    bool verify(HASHER_TYPE &h) const {
-        return bubble_up(h, get_target_hash()) == get_root_hash();
+    template <IHasher H>
+    bool verify(H &&h) const {
+        return bubble_up(std::forward<H>(h), get_target_hash()) == get_root_hash();
     }
 
     ///< \brief Verify if proof is valid
-    ///< \tparam HASHER_TYPE Hasher class to use
+    ///< \tparam H Hasher class to use
     ///< \param h Hasher object to use
     ///< \param new_target_hash New target hash to replace
     ///< \return New root hash
-    template <typename HASHER_TYPE>
-    hash_type bubble_up(HASHER_TYPE &h, const hash_type &new_target_hash) const {
-        static_assert(is_an_i_hasher_v<HASHER_TYPE>, "not an i_hasher");
-        static_assert(std::is_same_v<typename std::remove_cvref_t<HASHER_TYPE>::hash_type, hash_type>,
-            "incompatible hash types");
-        hash_type hash = new_target_hash;
+    template <IHasher H>
+    // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
+    machine_hash bubble_up(H &&h, const machine_hash &new_target_hash) const {
+        machine_hash hash = new_target_hash;
         for (int log2_size = get_log2_target_size(); log2_size < get_log2_root_size(); ++log2_size) {
-            const int bit = (get_target_address() & (static_cast<address_type>(1) << log2_size)) != 0;
+            const int bit = (get_target_address() & (static_cast<uint64_t>(1) << log2_size)) != 0;
             if (bit) {
                 get_concat_hash(h, get_sibling_hash(log2_size), hash, hash);
             } else {
@@ -206,12 +198,9 @@ public:
         return hash;
     }
 
-    template <typename HASHER_TYPE>
-    merkle_tree_proof<hash_type, address_type> slice(HASHER_TYPE &h, int new_log2_root_size,
-        int new_log2_target_size) const {
-        static_assert(is_an_i_hasher_v<HASHER_TYPE>, "not an i_hasher");
-        static_assert(std::is_same_v<typename std::remove_cvref_t<HASHER_TYPE>::hash_type, hash_type>,
-            "incompatible hash types");
+    template <IHasher H>
+    // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
+    merkle_tree_proof slice(H &&h, int new_log2_root_size, int new_log2_target_size) const {
         if (new_log2_root_size <= 0) {
             throw std::out_of_range{"log2_root_size is not positive"};
         }
@@ -227,10 +216,10 @@ public:
         if (new_log2_target_size < get_log2_target_size()) {
             throw std::out_of_range{"log2_target_size is too small"};
         }
-        merkle_tree_proof<HASH_TYPE, ADDRESS_TYPE> sliced(new_log2_root_size, new_log2_target_size);
-        hash_type hash = get_target_hash();
+        merkle_tree_proof sliced(new_log2_root_size, new_log2_target_size);
+        machine_hash hash = get_target_hash();
         for (int log2_size = get_log2_target_size(); log2_size < new_log2_target_size; ++log2_size) {
-            int bit = (get_target_address() & (static_cast<address_type>(1) << log2_size)) != 0;
+            const auto bit = (get_target_address() & (static_cast<uint64_t>(1) << log2_size)) != 0;
             if (bit) {
                 get_concat_hash(h, get_sibling_hash(log2_size), hash, hash);
             } else {
@@ -239,8 +228,8 @@ public:
         }
         sliced.set_target_hash(hash);
         for (int log2_size = new_log2_target_size; log2_size < new_log2_root_size; ++log2_size) {
-            int bit = (get_target_address() & (static_cast<address_type>(1) << log2_size)) != 0;
-            const hash_type &sibling_hash = get_sibling_hash(log2_size);
+            const auto bit = (get_target_address() & (static_cast<uint64_t>(1) << log2_size)) != 0;
+            const machine_hash &sibling_hash = get_sibling_hash(log2_size);
             if (bit) {
                 get_concat_hash(h, sibling_hash, hash, hash);
             } else {
@@ -267,11 +256,11 @@ private:
         return index;
     }
 
-    address_type m_target_address{0};     ///< Address of target node
+    uint64_t m_target_address{0};         ///< Address of target node
     int m_log2_target_size{0};            ///< log<sub>2</sub> of size subintended by target node
-    hash_type m_target_hash{};            ///< Hash of target node
+    machine_hash m_target_hash{};         ///< Hash of target node
     int m_log2_root_size{0};              ///< log<sub>2</sub> of size subintended by tree
-    hash_type m_root_hash{};              ///< Hash of root node
+    machine_hash m_root_hash{};           ///< Hash of root node
     sibling_hashes_type m_sibling_hashes; ///< Hashes of siblings in path from target to root
 };
 

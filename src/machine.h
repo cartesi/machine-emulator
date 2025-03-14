@@ -31,12 +31,12 @@
 #include "access-log.h"
 #include "address-range-description.h"
 #include "address-range.h"
+#include "hash-tree.h"
 #include "host-addr.h"
 #include "i-device-state-access.h"
 #include "interpret.h"
 #include "machine-address-ranges.h"
 #include "machine-config.h"
-#include "machine-merkle-tree.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
 #include "os.h"
@@ -49,13 +49,13 @@
 
 namespace cartesi {
 
-/// \brief Tag type used to indicate that merkle tree updates should be skipped.
-struct skip_merkle_tree_update_t {
-    explicit skip_merkle_tree_update_t() = default;
+/// \brief Tag type used to indicate that hash-tree updates should be skipped.
+struct skip_hash_tree_update_t {
+    explicit skip_hash_tree_update_t() = default;
 };
 
-/// \brief Tag indicating that merkle tree updates should be skipped.
-constexpr skip_merkle_tree_update_t skip_merkle_tree_update;
+/// \brief Tag indicating that hash-tree updates should be skipped.
+constexpr skip_hash_tree_update_t skip_hash_tree_update;
 
 /// \class machine
 /// \brief Cartesi Machine implementation
@@ -64,7 +64,7 @@ private:
     machine_config m_c;                   ///< Copy of initialization config
     machine_runtime_config m_r;           ///< Copy of initialization runtime config
     mutable machine_address_ranges m_ars; ///< Address ranges
-    mutable machine_merkle_tree m_t;      ///< Merkle tree of state
+    mutable hash_tree m_ht;               ///< Top level hash tree
     processor_state *m_s;                 ///< Big machine processor state
     uarch_processor_state *m_us;          ///< Microarchitecture processor state
 
@@ -135,8 +135,8 @@ private:
     bool has_htif_console() const;
 
 public:
-    /// \brief Type of hash
-    using hash_type = machine_merkle_tree::hash_type;
+    /// \brief Type of hash and proof
+    using proof_type = hash_tree::proof_type;
 
     using reg = machine_reg;
 
@@ -195,8 +195,8 @@ public:
     /// \param log_filename Name of the file containing the log.
     /// \param mcycle_count Number of mcycles the machine was run for.
     /// \param root_hash_after Hash of the state after the step.
-    static interpreter_break_reason verify_step(const hash_type &root_hash_before, const std::string &log_filename,
-        uint64_t mcycle_count, const hash_type &root_hash_after);
+    static interpreter_break_reason verify_step(const machine_hash &root_hash_before, const std::string &log_filename,
+        uint64_t mcycle_count, const machine_hash &root_hash_after);
 
     /// \brief Runs the machine in the microarchitecture until the mcycles advances by one unit or the micro cycle
     /// counter (uarch_cycle) reaches uarch_cycle_end
@@ -221,22 +221,22 @@ public:
     /// \param root_hash_before State hash before step.
     /// \param log Step state access log.
     /// \param root_hash_after State hash after step.
-    static void verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after);
+    static void verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after);
 
     /// \brief Checks the validity of a state transition caused by log_reset_uarch.
     /// \param root_hash_before State hash before uarch reset
     /// \param log Step state access log.
     /// \param root_hash_after State hash after uarch reset.
-    static void verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after);
+    static void verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after);
 
     /// \brief Returns copy of default machine config
     static machine_config get_default_config();
 
     /// \brief Returns a list of descriptions for all PMA entries registered in the machine, sorted by start
-    const address_range_descriptions &get_address_ranges() const {
-        return m_ars.descriptions();
+    const auto &get_address_ranges() const {
+        return m_ars.descriptions_view();
     }
 
     /// \brief Returns machine state for direct access.
@@ -289,25 +289,25 @@ public:
     /// \returns True if an interrupt was requested, false otherwise.
     bool poll_virtio_devices(uint64_t *timeout_us, i_device_state_access *da);
 
-    /// \brief Update the Merkle tree so it matches the contents of the machine state.
-    /// \returns true if succeeded, false otherwise.
-    bool update_merkle_tree() const;
+    /// \brief Update the hash-tree so it matches the contents of the machine state.
+    /// \returns True if successful, false otherwise.
+    bool update_hash_tree() const;
 
-    /// \brief Update the Merkle tree after a page has been modified in the machine state.
+    /// \brief Update a single page in the hash-tree after it is modified in the machine state.
     /// \param address Any address inside modified page.
     /// \returns true if succeeded, false otherwise.
-    bool update_merkle_tree_page(uint64_t address);
+    bool update_hash_tree_page(uint64_t address);
 
-    /// \brief Obtains the proof for a node in the Merkle tree.
+    /// \brief Obtains the proof for a node in the hash-tree.
     /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
     /// \param log2_size log<sub>2</sub> of size subintended by target node.
     /// Must be between 3 (for a word) and 64 (for the entire address space), inclusive.
     /// \param proof Receives the proof.
     /// \details If the node is
     /// smaller than a page size, then it must lie entirely inside the same PMA range.
-    machine_merkle_tree::proof_type get_proof(uint64_t address, int log2_size) const;
+    proof_type get_proof(uint64_t address, int log2_size) const;
 
-    /// \brief Obtains the proof for a node in the Merkle tree without making any modifications to the tree.
+    /// \brief Obtains the proof for a node in the hash-tree without making any modifications to the tree.
     /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
     /// \param log2_size log<sub>2</sub> of size subintended by target node.
     /// Must be between 3 (for a word) and 64 (for the entire address space), inclusive.
@@ -315,28 +315,27 @@ public:
     /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
     /// This overload is used to optimize proof generation when the caller knows that the tree is already up to
     /// date.
-    machine_merkle_tree::proof_type get_proof(uint64_t address, int log2_size,
-        skip_merkle_tree_update_t /*unused*/) const;
+    proof_type get_proof(uint64_t address, int log2_size, skip_hash_tree_update_t /*unused*/) const;
 
-    /// \brief Obtains the root hash of the Merkle tree.
-    /// \param hash Receives the hash.
-    void get_root_hash(hash_type &hash) const;
+    /// \brief Obtains the root hash of the hash-tree.
+    /// \returns The hash.
+    machine_hash get_root_hash() const;
 
-    /// \brief Obtains the hash of a node in the Merkle tree.
+    /// \brief Obtains the hash of a node in the hash-tree.
     /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
     /// \param log2_size log<sub>2</sub> of size subintended by target node.
-    /// \returns The hash of the target node.
-    hash_type get_merkle_tree_node_hash(uint64_t address, int log2_size) const;
+    /// \returns The hash.
+    machine_hash get_node_hash(uint64_t address, int log2_size) const;
 
-    /// \brief Obtains the hash of a node in the Merkle tree without making any modifications to the tree.
+    /// \brief Obtains the hash of a node in the hash-tree without making any modifications to it.
     /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
     /// \param log2_size log<sub>2</sub> of size subintended by target node.
-    /// \returns The hash of the target node.
-    hash_type get_merkle_tree_node_hash(uint64_t address, int log2_size, skip_merkle_tree_update_t /*unused*/) const;
+    /// \returns The hash.
+    machine_hash get_node_hash(uint64_t address, int log2_size, skip_hash_tree_update_t /*unused*/) const;
 
-    /// \brief Verifies integrity of Merkle tree.
+    /// \brief Verifies integrity of hash tree without making any modifications to it tree.
     /// \returns True if tree is self-consistent, false otherwise.
-    bool verify_merkle_tree() const;
+    bool verify_hash_tree() const;
 
     /// \brief Read the value of any register
     /// \param r Register to read
@@ -423,10 +422,6 @@ public:
 
     /// \brief Go over the write TLB and mark as dirty all pages currently there.
     void mark_write_tlb_dirty_pages() const;
-
-    /// \brief Verify if dirty page maps are consistent.
-    /// \returns true if they are, false if there is an error.
-    bool verify_dirty_page_maps() const;
 
     /// \brief Returns copy of initialization config.
     const machine_config &get_initial_config() const;
@@ -518,7 +513,7 @@ public:
     /// \param log Log containing the state accesses performed by the load operation
     /// \param root_hash_after State hash after response was sent.
     static void verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after);
+        const machine_hash &root_hash_before, const access_log &log, const machine_hash &root_hash_after);
 
     /// \brief Returns a description of what is at a given target physical address
     /// \param paddr Target physical address of interest
@@ -550,7 +545,7 @@ public:
     }
 
     /// \brief Returns whether runtime soft yields are enabled
-    bool is_soft_yield() const {
+    bool get_soft_yield() const {
         return m_r.soft_yield;
     }
 };

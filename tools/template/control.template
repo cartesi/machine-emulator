@@ -5,7 +5,7 @@ Homepage: https://github.com/cartesi/machine-emulator
 Architecture: ARG_ARCH
 Maintainer: Cartesi Machine Reference Unit
 Provides: cartesi-machine-emulator
-Depends: lua5.4, libslirp0
+Depends: lua5.4, libslirp0, libgomp1
 Section: devel
 Priority: optional
 Multi-Arch: foreign

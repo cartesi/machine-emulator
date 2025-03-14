@@ -504,7 +504,7 @@ private:
     }
 
     bool do_get_soft_yield() const {
-        return m_m.is_soft_yield();
+        return m_m.get_soft_yield();
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

@@ -32,7 +32,7 @@ namespace cartesi {
 back_merkle_tree::back_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size) :
     m_log2_root_size{log2_root_size},
     m_log2_leaf_size{log2_leaf_size},
-    m_max_leaves{address_type{1} << (log2_root_size - log2_leaf_size)},
+    m_max_leaves{UINT64_C(1) << (log2_root_size - log2_leaf_size)},
     m_context(std::max(1, log2_root_size - log2_leaf_size + 1)),
     m_pristine_hashes{log2_root_size, log2_word_size} {
     if (log2_root_size < 0) {
@@ -50,20 +50,20 @@ back_merkle_tree::back_merkle_tree(int log2_root_size, int log2_leaf_size, int l
     if (log2_word_size > log2_leaf_size) {
         throw std::out_of_range{"log2_word_size is greater than log2_word_size"};
     }
-    if (log2_root_size - m_log2_leaf_size >= std::numeric_limits<address_type>::digits) {
+    if (log2_root_size - m_log2_leaf_size >= std::numeric_limits<uint64_t>::digits) {
         throw std::out_of_range{"tree is too large for address type"};
     }
 }
 
-void back_merkle_tree::push_back(const hash_type &new_leaf_hash) {
+void back_merkle_tree::push_back(const machine_hash &new_leaf_hash) {
     hasher_type h;
-    hash_type right = new_leaf_hash;
+    machine_hash right = new_leaf_hash;
     if (m_leaf_count >= m_max_leaves) {
         throw std::out_of_range{"too many leaves"};
     }
     const int depth = m_log2_root_size - m_log2_leaf_size;
     for (int i = 0; i <= depth; ++i) {
-        if ((m_leaf_count & (address_type{1} << i)) != 0) {
+        if ((m_leaf_count & (UINT64_C(1) << i)) != 0) {
             const auto &left = m_context[i];
             get_concat_hash(h, left, right, right);
         } else {
@@ -82,7 +82,7 @@ void back_merkle_tree::pad_back(uint64_t new_leaf_count) {
     const int depth = m_log2_root_size - m_log2_leaf_size;
     int j = 0;
     while (j <= depth) {
-        const uint64_t j_span = address_type{1} << j;
+        const uint64_t j_span = UINT64_C(1) << j;
         if (j_span > new_leaf_count) {
             break;
         }
@@ -91,7 +91,7 @@ void back_merkle_tree::pad_back(uint64_t new_leaf_count) {
             // if so, we can add 2^j pristine leaves directly
             auto right = m_pristine_hashes.get_hash(m_log2_leaf_size + j);
             for (int i = j; i <= depth; ++i) {
-                const uint64_t i_span = address_type{1} << i;
+                const uint64_t i_span = UINT64_C(1) << i;
                 if ((m_leaf_count & i_span) != 0) {
                     const auto &left = m_context[i];
                     get_concat_hash(h, left, right, right);
@@ -110,7 +110,7 @@ void back_merkle_tree::pad_back(uint64_t new_leaf_count) {
     }
     // now add the rest of the padding directly to the context
     for (int i = 0; i <= depth; ++i) {
-        const uint64_t i_span = address_type{1} << i;
+        const uint64_t i_span = UINT64_C(1) << i;
         if ((new_leaf_count & i_span) != 0) {
             m_context[i] = m_pristine_hashes.get_hash(m_log2_leaf_size + i);
             new_leaf_count = new_leaf_count - i_span;
@@ -119,14 +119,14 @@ void back_merkle_tree::pad_back(uint64_t new_leaf_count) {
     }
 }
 
-back_merkle_tree::hash_type back_merkle_tree::get_root_hash() const {
+machine_hash back_merkle_tree::get_root_hash() const {
     hasher_type h;
     assert(m_leaf_count <= m_max_leaves);
     const int depth = m_log2_root_size - m_log2_leaf_size;
     if (m_leaf_count < m_max_leaves) {
         auto root = m_pristine_hashes.get_hash(m_log2_leaf_size);
         for (int i = 0; i < depth; ++i) {
-            if ((m_leaf_count & (address_type{1} << i)) != 0) {
+            if ((m_leaf_count & (UINT64_C(1) << i)) != 0) {
                 const auto &left = m_context[i];
                 get_concat_hash(h, left, root, root);
             } else {
@@ -148,9 +148,9 @@ back_merkle_tree::proof_type back_merkle_tree::get_next_leaf_proof() const {
     proof_type proof{m_log2_root_size, m_log2_leaf_size};
     proof.set_target_address(m_leaf_count << m_log2_leaf_size);
     proof.set_target_hash(m_pristine_hashes.get_hash(m_log2_leaf_size));
-    hash_type hash = m_pristine_hashes.get_hash(m_log2_leaf_size);
+    machine_hash hash = m_pristine_hashes.get_hash(m_log2_leaf_size);
     for (int i = 0; i < depth; ++i) {
-        if ((m_leaf_count & (address_type{1} << i)) != 0) {
+        if ((m_leaf_count & (UINT64_C(1) << i)) != 0) {
             const auto &left = m_context[i];
             proof.set_sibling_hash(left, m_log2_leaf_size + i);
             get_concat_hash(h, left, hash, hash);

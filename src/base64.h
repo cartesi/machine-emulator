@@ -17,14 +17,51 @@
 #ifndef BASE64_H
 #define BASE64_H
 
+#include <cstdint>
+#include <sstream>
 #include <string>
-#include <string_view>
+
+#include "concepts.h"
 
 namespace cartesi {
 
-std::string encode_base64(const std::string_view &input);
+namespace detail {
 
-std::string decode_base64(const std::string_view &input);
+size_t b64encode(uint8_t c, uint8_t *input, size_t size, std::ostringstream &sout);
+size_t b64pad(const uint8_t *input, size_t size, std::ostringstream &sout);
+size_t b64decode(uint8_t c, uint8_t *input, size_t size, std::ostringstream &sout);
+
+} // namespace detail
+
+/// \brief Encodes binary data into base64
+/// \param data Input data range
+/// \returns String with encoded data
+template <ContiguousRangeOfByteLike R>
+std::string encode_base64(R &&data) { // NOLINT(cppcoreguidelines-missing-std-forward)
+    //??D we could make this faster by avoiding ostringstream altogether...
+    std::ostringstream sout;
+    uint8_t ctx[4]{};
+    size_t ctxlen = 0;
+    for (auto b : data) {
+        ctxlen = detail::b64encode(static_cast<uint8_t>(b), ctx, ctxlen, sout);
+    }
+    detail::b64pad(ctx, ctxlen, sout);
+    return sout.str();
+}
+
+/// \brief Decodes binary data from base64
+/// \param data Input data range
+/// \returns String with decoded data
+template <ContiguousRangeOfByteLike R>
+std::string decode_base64(R &&data) { // NOLINT(cppcoreguidelines-missing-std-forward)
+    std::ostringstream sout;
+    uint8_t ctx[4]{};
+    size_t ctxlen = 0;
+    for (auto b : data) {
+        ctxlen = detail::b64decode(static_cast<uint8_t>(b), ctx, ctxlen, sout);
+    }
+    return sout.str();
+}
 
 } // namespace cartesi
 

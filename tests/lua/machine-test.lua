@@ -134,7 +134,7 @@ local function build_machine(type, config, runtime_config)
     }
     runtime_config = runtime_config or {
         concurrency = {
-            update_merkle_tree = 0,
+            update_hash_tree = 0,
         },
     }
     if type ~= "local" then
@@ -309,8 +309,8 @@ do_test("proof  and root hash should match", function(machine)
 
     machine:write_memory(0x8000000F, "mydataol12345678", 0x10)
 
-    local verify = machine:verify_merkle_tree()
-    assert(verify, "verify merkle tree failed")
+    local verify = machine:verify_hash_tree()
+    assert(verify, "verify hash tree failed")
 
     -- Find proof for first KB of ram
     local ram_proof = machine:get_proof(ram_address_start, 10)
@@ -330,12 +330,6 @@ do_test("proof  and root hash should match", function(machine)
     assert(initial_calculated_hash ~= calculated_hash, "calculated hash is same after memory is written")
 
     assert(ram_proof.target_hash == calculated_hash, "hash does not match after memory is written")
-end)
-
-print("\n\n check dirty page maps")
-do_test("dirty page maps should be consistent", function(machine)
-    -- Verify dirty page maps
-    assert(machine:verify_dirty_page_maps(), "error verifying dirty page maps")
 end)
 
 print("\n\n check replace flash drives")

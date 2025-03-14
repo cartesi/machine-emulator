@@ -16,13 +16,14 @@
 
 #include <string>
 
-#include "json-util.h"
 #include <back-merkle-tree.h>
+#include <json-util.h>
 #include <keccak-256-hasher.h>
 #include <machine-c-api.h>
+#include <machine-hash.h>
 #include <merkle-tree-proof.h>
 
-using hash_type = cartesi::keccak_256_hasher::hash_type;
+using hash_type = cartesi::machine_hash;
 
 // Calculate root hash for data buffer of log2_size
 namespace detail {
@@ -42,7 +43,7 @@ static hash_type merkle_hash(cartesi::keccak_256_hasher &h, const std::string_vi
     } else {
         h.begin();
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        h.add_data(reinterpret_cast<const unsigned char *>(data.data()), data.size());
+        h.add_data(data);
         h.end(result);
     }
     return result;
@@ -64,7 +65,7 @@ static hash_type merkle_hash(const std::string_view &data, int log2_size) {
     return detail::merkle_hash(h, data, log2_size);
 }
 
-static hash_type calculate_proof_root_hash(const cartesi::machine_merkle_tree::proof_type &proof) {
+static hash_type calculate_proof_root_hash(const cartesi::merkle_tree_proof &proof) {
     hash_type hash;
     memcpy(hash.data(), proof.get_target_hash().data(), sizeof(cm_hash));
     for (int log2_size = static_cast<int>(proof.get_log2_target_size());

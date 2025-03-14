@@ -199,7 +199,7 @@ private:
     /// \param paddr The physical address of the page
     /// \return A pointer to the page_type structure if found, nullptr otherwise
     page_type *try_find_page(uint64_t paddr_page) const {
-        const auto page_index = paddr_page >> AR_PAGE_SIZE_LOG2;
+        const auto page_index = paddr_page >> AR_LOG2_PAGE_SIZE;
         auto pages = std::ranges::views::counted(m_context.pages, static_cast<int64_t>(m_context.page_count));
         auto it = std::ranges::lower_bound(pages, page_index, std::ranges::less{},
             [](const auto &page) { return page.index; });
@@ -290,7 +290,7 @@ private:
                 if (page_log == nullptr) {
                     continue;
                 }
-                const auto paddr_page = page_log->index << AR_PAGE_SIZE_LOG2;
+                const auto paddr_page = page_log->index << AR_LOG2_PAGE_SIZE;
                 const auto vp_offset = paddr_page - vaddr_page;
                 aliased_aligned_write<uint64_t>(vp_offset_field_haddr, vp_offset);
             }
@@ -326,7 +326,7 @@ private:
         }
         size_t next_page = 0;
         size_t next_sibling = 0;
-        auto root_hash = compute_root_hash_impl(0, interop_log2_root_size - AR_PAGE_SIZE_LOG2, next_page, next_sibling);
+        auto root_hash = compute_root_hash_impl(0, interop_log2_root_size - AR_LOG2_PAGE_SIZE, next_page, next_sibling);
         if (next_page != m_context.page_count) {
             interop_throw_runtime_error("too many pages in log");
         }

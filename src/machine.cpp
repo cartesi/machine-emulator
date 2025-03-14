@@ -40,6 +40,7 @@
 #include "compiler-defines.h"
 #include "device-state-access.h"
 #include "dtb.h"
+#include "hash-tree.h"
 #include "host-addr.h"
 #include "hot-tlb.h"
 #include "htif-constants.h"
@@ -48,10 +49,11 @@
 #include "interpret.h"
 #include "is-pristine.h"
 #include "machine-config.h"
+#include "machine-hash.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
-#include "os.h"
-#include "pmas-constants.h"
+#include "merkle-tree-proof.h"
+#include "page-hash-tree-cache.h"
 #include "pmas.h"
 #include "processor-state.h"
 #include "record-send-cmio-state-access.h"
@@ -80,6 +82,11 @@
 /// \brief Cartesi machine implementation
 
 namespace cartesi {
+
+static_assert(static_cast<int>(AR_LOG2_PAGE_SIZE) == static_cast<int>(LOG2_PAGE_SIZE),
+    "address range page size must match RISC-V page size");
+static_assert(static_cast<int>(AR_LOG2_PAGE_SIZE) == static_cast<int>(HASH_TREE_LOG2_PAGE_SIZE),
+    "address range page size must match hash-tree page size");
 
 using namespace std::string_literals;
 
@@ -198,7 +205,7 @@ void machine::init_pmas_contents(const pmas_config &config) {
         }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         auto &dest = *reinterpret_cast<pmas_state *>(pmas.get_host_memory());
-        std::ranges::transform(m_ars.interpret(), dest.begin(),
+        std::ranges::transform(m_ars.pmas_view(), dest.begin(),
             [](const auto &ar) { return pmas_entry{.istart = ar.get_istart(), .ilength = ar.get_ilength()}; });
     }
 }
@@ -257,6 +264,7 @@ machine::machine(machine_config c, machine_runtime_config r) :
     m_c{std::move(c)}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
     m_r{std::move(r)}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
     m_ars{m_c},
+    m_ht{m_c.hash_tree, m_r.concurrency.update_hash_tree, m_ars},
     m_s{std::bit_cast<processor_state *>(m_ars.find(AR_SHADOW_STATE_START, AR_SHADOW_STATE_LENGTH).get_host_memory())},
     m_us{std::bit_cast<uarch_processor_state *>(
         m_ars.find(AR_SHADOW_UARCH_STATE_START, AR_SHADOW_UARCH_STATE_LENGTH).get_host_memory())} {
@@ -283,12 +291,14 @@ void machine::init_tty() {
     }
 }
 
-static void load_hash(const std::string &dir, machine::hash_type &h) {
+static machine_hash load_hash(const std::string &dir) {
     auto name = dir + "/hash";
     auto fp = make_unique_fopen(name.c_str(), "rb");
+    machine_hash h;
     if (fread(h.data(), 1, h.size(), fp.get()) != h.size()) {
         throw std::runtime_error{"error reading from '" + name + "'"};
     }
+    return h;
 }
 
 // ??D It is best to leave the std::move() on r because it may one day be necessary!
@@ -297,20 +307,13 @@ machine::machine(const std::string &dir, machine_runtime_config r) : machine{mac
     if (m_r.skip_root_hash_check) {
         return;
     }
-    hash_type hstored;
-    hash_type hrestored;
-    load_hash(dir, hstored);
-    if (!update_merkle_tree()) {
-        throw std::runtime_error{"error updating Merkle tree"};
-    }
-    m_t.get_root_hash(hrestored);
-    if (hstored != hrestored) {
+    if (load_hash(dir) != get_root_hash()) {
         throw std::runtime_error{"stored and restored hashes do not match"};
     }
 }
 
 void machine::prepare_virtio_devices_select(select_fd_sets *fds, uint64_t *timeout_us) {
-    for (auto &v : m_ars.virtio()) {
+    for (auto &v : m_ars.virtio_view()) {
         v.prepare_select(fds, timeout_us);
     }
 }
@@ -318,7 +321,7 @@ void machine::prepare_virtio_devices_select(select_fd_sets *fds, uint64_t *timeo
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 bool machine::poll_selected_virtio_devices(int select_ret, select_fd_sets *fds, i_device_state_access *da) {
     bool interrupt_requested = false; // NOLINT(misc-const-correctness)
-    for (auto &v : m_ars.virtio()) {
+    for (auto &v : m_ars.virtio_view()) {
         interrupt_requested |= v.poll_selected(select_ret, fds, da);
     }
     return interrupt_requested;
@@ -333,13 +336,13 @@ bool machine::poll_virtio_devices(uint64_t *timeout_us, i_device_state_access *d
 }
 
 bool machine::has_virtio_devices() const {
-    return !m_ars.virtio().empty();
+    return !m_ars.virtio_view().empty();
 }
 
 bool machine::has_virtio_console() const {
     // When present, the console device is guaranteed to be the first VirtIO device,
     // therefore we only need to check the first device.
-    return has_virtio_devices() && m_ars.virtio().front().get_device_id() == VIRTIO_DEVICE_CONSOLE;
+    return has_virtio_devices() && m_ars.virtio_view().front().get_device_id() == VIRTIO_DEVICE_CONSOLE;
 }
 
 bool machine::has_htif_console() const {
@@ -371,7 +374,7 @@ host_addr machine::get_host_addr(uint64_t paddr, uint64_t pma_index) const {
 
 void machine::mark_dirty_page(uint64_t paddr, uint64_t pma_index) {
     auto &ar = read_pma(pma_index);
-    ar.mark_dirty_page(paddr - ar.get_start());
+    ar.get_dirty_page_tree().mark_dirty_page_and_up(paddr - ar.get_start());
 }
 
 void machine::mark_dirty_page(host_addr haddr, uint64_t pma_index) {
@@ -429,7 +432,7 @@ host_addr machine::get_hp_offset(uint64_t pma_index) const {
     return paddr - haddr;
 }
 
-static void store_hash(const machine::hash_type &h, const std::string &dir) {
+static void store_hash(const machine_hash &h, const std::string &dir) {
     auto name = dir + "/hash";
     auto fp = make_unique_fopen(name.c_str(), "wb");
     if (fwrite(h.data(), 1, h.size(), fp.get()) != h.size()) {
@@ -458,7 +461,7 @@ void machine::store_address_range(const address_range &ar, const std::string &di
     auto name = machine_config::get_data_filename(dir, ar.get_start(), ar.get_length());
     auto fp = make_unique_fopen(name.c_str(), "wb"); // will throw if it fails
     if (!ar.is_memory() || ar.get_host_memory() == nullptr) {
-        throw std::runtime_error{"attempt to store non memory address range "s.append(ar.get_description())};
+        throw std::runtime_error{"attempt to store non-memory address range "s.append(ar.get_description())};
     }
     if (fwrite(ar.get_host_memory(), 1, ar.get_length(), fp.get()) != ar.get_length()) {
         throw std::runtime_error{"error writing to '" + name + "'"};
@@ -473,12 +476,7 @@ void machine::store(const std::string &dir) const {
         throw std::system_error{errno, std::generic_category(), "error creating directory '"s + dir + "'"s};
     }
     if (!m_r.skip_root_hash_store) {
-        if (!update_merkle_tree()) {
-            throw std::runtime_error{"error updating Merkle tree"};
-        }
-        hash_type h;
-        m_t.get_root_hash(h);
-        store_hash(h, dir);
+        store_hash(get_root_hash(), dir);
     }
     machine_config c = m_c;
     c.adjust_backing_stores(".");
@@ -1334,192 +1332,30 @@ void machine::mark_write_tlb_dirty_pages() const {
             if (!ar.contains_absolute(paddr_page, AR_PAGE_SIZE)) {
                 throw std::runtime_error{"could not mark dirty page for a TLB entry: TLB is corrupt"};
             }
-            ar.mark_dirty_page(paddr_page - ar.get_start());
+            ar.get_dirty_page_tree().mark_dirty_page_and_up(paddr_page - ar.get_start());
         }
     }
 }
 
-bool machine::verify_dirty_page_maps() const {
-    static_assert(AR_PAGE_SIZE == machine_merkle_tree::get_page_size(),
-        "PMA and machine_merkle_tree page sizes must match");
-    machine_merkle_tree::hasher_type h;
-    auto scratch = make_unique_calloc<unsigned char>(AR_PAGE_SIZE, std::nothrow_t{});
-    if (!scratch) {
-        return false;
-    }
-    bool broken = false;
-    // Go over the write TLB and mark as dirty all pages currently there
+bool machine::update_hash_tree() const {
     mark_write_tlb_dirty_pages();
-    // Now go over all memory PMAs verifying that all dirty pages are marked
-    for (const auto &ar : m_ars.all()) {
-        for (uint64_t page_address = ar.get_start(); page_address < ar.get_end(); page_address += AR_PAGE_SIZE) {
-            const auto offset = page_address - ar.get_start();
-            if (ar.is_memory()) {
-                const unsigned char *page_data = nullptr;
-                ar.peek(*this, offset, AR_PAGE_SIZE, &page_data, scratch.get());
-                hash_type stored;
-                hash_type real;
-                m_t.get_page_node_hash(page_address, stored);
-                m_t.get_page_node_hash(h, page_data, real);
-                const bool marked_dirty = ar.is_page_marked_dirty(offset);
-                const bool is_dirty = (real != stored);
-                if (is_dirty && !marked_dirty) {
-                    broken = true;
-                    std::cerr << std::setfill('0') << std::setw(8) << std::hex << page_address
-                              << " should have been dirty\n";
-                    std::cerr << "  expected " << stored << '\n';
-                    std::cerr << "  got " << real << '\n';
-                    break;
-                }
-            } else if (ar.is_device()) {
-                if (!ar.is_page_marked_dirty(offset)) {
-                    broken = true;
-                    std::cerr << std::setfill('0') << std::setw(8) << std::hex << page_address
-                              << " should have been dirty\n";
-                    std::cerr << "  all pages in IO PMAs must be set to dirty\n";
-                    break;
-                }
-            }
-        }
-    }
-    return !broken;
+    m_ars.mark_always_dirty_pages();
+    return m_ht.update(m_ars);
 }
 
-static uint64_t get_task_concurrency(uint64_t value) {
-    const uint64_t concurrency = value > 0 ? value : std::max(os_get_concurrency(), UINT64_C(1));
-    return std::min(concurrency, static_cast<uint64_t>(THREADS_MAX));
+bool machine::update_hash_tree_page(uint64_t address) {
+    return m_ht.update_page(m_ars, address);
 }
 
-bool machine::update_merkle_tree() const {
-    machine_merkle_tree::hasher_type gh;
-    static_assert(AR_PAGE_SIZE == machine_merkle_tree::get_page_size(),
-        "PMA and machine_merkle_tree page sizes must match");
-    // Go over the write TLB and mark as dirty all pages currently there
-    mark_write_tlb_dirty_pages();
-    // Now go over all PMAs and updating the Merkle tree
-    m_t.begin_update();
-    for (auto &ar : m_ars.merkle()) {
-        // Each PMA has a number of pages
-        auto pages_in_range = (ar.get_length() + AR_PAGE_SIZE - 1) / AR_PAGE_SIZE;
-        // For each PMA, we launch as many threads (n) as defined on concurrency
-        // runtime config or as the hardware supports.
-        const uint64_t n = get_task_concurrency(m_r.concurrency.update_merkle_tree);
-        const bool succeeded = os_parallel_for(n, [&](int j, const parallel_for_mutex &mutex) -> bool {
-            auto scratch = make_unique_calloc<unsigned char>(AR_PAGE_SIZE, std::nothrow_t{});
-            if (!scratch) {
-                return false;
-            }
-            machine_merkle_tree::hasher_type h;
-            // Thread j is responsible for page i if i % n == j.
-            for (uint64_t i = j; i < pages_in_range; i += n) {
-                const uint64_t page_start_in_range = i * AR_PAGE_SIZE;
-                const uint64_t page_address = ar.get_start() + page_start_in_range;
-                const unsigned char *page_data = nullptr;
-                // Skip any clean pages
-                if (!ar.is_page_marked_dirty(page_start_in_range)) {
-                    continue;
-                }
-                // If the peek failed, or if it returned a page for update but
-                // we failed updating it, the entire process failed
-                if (!ar.peek(*this, page_start_in_range, AR_PAGE_SIZE, &page_data, scratch.get())) {
-                    return false;
-                }
-                if (page_data != nullptr) {
-                    if (is_pristine(page_data, AR_PAGE_SIZE)) {
-                        // The update_page_node_hash function in the machine_merkle_tree is not thread
-                        // safe, so we protect it with a mutex
-                        const parallel_for_mutex_guard lock(mutex);
-                        if (!m_t.update_page_node_hash(page_address,
-                                machine_merkle_tree::get_pristine_hash(machine_merkle_tree::get_log2_page_size()))) {
-                            return false;
-                        }
-                    } else {
-                        hash_type hash;
-                        m_t.get_page_node_hash(h, page_data, hash);
-                        {
-                            // The update_page_node_hash function in the machine_merkle_tree is not thread
-                            // safe, so we protect it with a mutex
-                            const parallel_for_mutex_guard lock(mutex);
-                            if (!m_t.update_page_node_hash(page_address, hash)) {
-                                return false;
-                            }
-                        }
-                    }
-                }
-            }
-            return true;
-        });
-        // If any thread failed, we also failed
-        if (!succeeded) {
-            m_t.end_update(gh);
-            return false;
-        }
-        // Otherwise, mark all pages in PMA as clean and move on to next
-        ar.mark_pages_clean();
+machine_hash machine::get_root_hash() const {
+    if (!update_hash_tree()) {
+        throw std::runtime_error{"update hash-tree failed"};
     }
-    const bool ret = m_t.end_update(gh);
-    return ret;
+    return m_ht.get_root_hash();
 }
 
-bool machine::update_merkle_tree_page(uint64_t address) {
-    static_assert(AR_PAGE_SIZE == machine_merkle_tree::get_page_size(),
-        "PMA and machine_merkle_tree page sizes must match");
-    // Align address to beginning of page
-    address &= ~(AR_PAGE_SIZE - 1);
-    auto &ar = m_ars.find<uint8_t>(address);
-    const uint64_t page_start_in_range = address - ar.get_start();
-    machine_merkle_tree::hasher_type h;
-    auto scratch = make_unique_calloc<unsigned char>(AR_PAGE_SIZE, std::nothrow_t{});
-    if (!scratch) {
-        return false;
-    }
-    m_t.begin_update();
-    const unsigned char *page_data = nullptr;
-    if (!ar.peek(*this, page_start_in_range, AR_PAGE_SIZE, &page_data, scratch.get())) {
-        m_t.end_update(h);
-        return false;
-    }
-    if (page_data != nullptr) {
-        const uint64_t page_address = ar.get_start() + page_start_in_range;
-        hash_type hash;
-        m_t.get_page_node_hash(h, page_data, hash);
-        if (!m_t.update_page_node_hash(page_address, hash)) {
-            m_t.end_update(h);
-            return false;
-        }
-    }
-    ar.mark_clean_page(page_start_in_range);
-    return m_t.end_update(h);
-}
-
-void machine::get_root_hash(hash_type &hash) const {
-    if (read_reg(reg::iunrep) != 0) {
-        throw std::runtime_error("cannot compute root hash of unreproducible machines");
-    }
-    if (!update_merkle_tree()) {
-        throw std::runtime_error{"error updating Merkle tree"};
-    }
-    m_t.get_root_hash(hash);
-}
-
-machine::hash_type machine::get_merkle_tree_node_hash(uint64_t address, int log2_size,
-    skip_merkle_tree_update_t /* unused */) const {
-    if (log2_size < 0 || log2_size >= machine_merkle_tree::get_log2_root_size()) {
-        throw std::domain_error{"log2_size is out of bounds"};
-    }
-    if (log2_size >= machine_merkle_tree::get_log2_page_size()) {
-        return m_t.get_node_hash(address, log2_size);
-    }
-    if ((address >> log2_size) << log2_size != address) {
-        throw std::domain_error{"address not aligned to log2_size"};
-    }
-    const auto size = UINT64_C(1) << log2_size;
-    auto scratch = make_unique_calloc<unsigned char>(size);
-    read_memory(address, scratch.get(), size);
-    machine_merkle_tree::hasher_type h;
-    machine_merkle_tree::hash_type hash;
-    get_merkle_tree_hash(h, scratch.get(), size, machine_merkle_tree::get_word_size(), hash);
-    return hash;
+machine_hash machine::get_node_hash(uint64_t address, int log2_size, skip_hash_tree_update_t /* unused */) const {
+    return m_ht.get_node_hash(m_ars, address, log2_size);
 }
 
 const char *machine::get_what_name(uint64_t paddr) {
@@ -1544,61 +1380,28 @@ const char *machine::get_what_name(uint64_t paddr) {
     return "memory";
 }
 
-machine::hash_type machine::get_merkle_tree_node_hash(uint64_t address, int log2_size) const {
-    if (!update_merkle_tree()) {
-        throw std::runtime_error{"error updating Merkle tree"};
+machine_hash machine::get_node_hash(uint64_t address, int log2_size) const {
+    if (!update_hash_tree()) {
+        throw std::runtime_error{"update hash-tree failed"};
     }
-    return get_merkle_tree_node_hash(address, log2_size, skip_merkle_tree_update);
+    return get_node_hash(address, log2_size, skip_hash_tree_update);
 }
 
-bool machine::verify_merkle_tree() const {
-    return m_t.verify_tree();
+bool machine::verify_hash_tree() const {
+    mark_write_tlb_dirty_pages();
+    m_ars.mark_always_dirty_pages();
+    return m_ht.verify(m_ars);
 }
 
-machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_size,
-    skip_merkle_tree_update_t /*unused*/) const {
-    static_assert(AR_PAGE_SIZE == machine_merkle_tree::get_page_size(),
-        "PMA and machine_merkle_tree page sizes must match");
-    // Check for valid target node size
-    if (log2_size > machine_merkle_tree::get_log2_root_size() ||
-        log2_size < machine_merkle_tree::get_log2_word_size()) {
-        throw std::invalid_argument{"invalid log2_size"};
-    }
-    // Check target address alignment
-    if ((address & ((~UINT64_C(0)) >> (64 - log2_size))) != 0) {
-        throw std::domain_error{"address not aligned to log2_size"};
-    }
-    // If proof concerns range smaller than a page, we may need to rebuild part of the proof from
-    // the contents of a page inside some PMA range.
-    // PMA range starts and lengths are multiple of the page size, which is a power of 2.
-    // The size of the desired range is smaller than the page size, but its size is a power of 2,
-    // and it is aligned to its size.
-    // Therefore, it is is either entirely inside a PMA range, or entirely outside it.
-    if (log2_size < machine_merkle_tree::get_log2_page_size()) {
-        const uint64_t length = UINT64_C(1) << log2_size;
-        const auto &ar = m_ars.find(address, length);
-        auto scratch = make_unique_calloc<unsigned char>(AR_PAGE_SIZE);
-        const unsigned char *page_data = nullptr;
-        // If the PMA range is empty, we know the desired range is entirely outside of any non-pristine PMA.
-        // Therefore, the entire page where it lies is also pristine.
-        // Otherwise, the entire desired range is inside it.
-        if (!ar.is_empty()) {
-            const uint64_t page_start_in_range = (address - ar.get_start()) & (~(AR_PAGE_SIZE - 1));
-            if (!ar.peek(*this, page_start_in_range, AR_PAGE_SIZE, &page_data, scratch.get())) {
-                throw std::runtime_error{"PMA peek failed"};
-            }
-        }
-        return m_t.get_proof(address, log2_size, page_data);
-        // If proof concerns range bigger than a page, we already have its hash stored in the tree itself
-    }
-    return m_t.get_proof(address, log2_size, nullptr);
+machine::proof_type machine::get_proof(uint64_t address, int log2_size, skip_hash_tree_update_t /*unused*/) const {
+    return m_ht.get_proof(m_ars, address, log2_size);
 }
 
-machine_merkle_tree::proof_type machine::get_proof(uint64_t address, int log2_size) const {
-    if (!update_merkle_tree()) {
-        throw std::runtime_error{"error updating Merkle tree"};
+machine::proof_type machine::get_proof(uint64_t address, int log2_size) const {
+    if (!update_hash_tree()) {
+        throw std::runtime_error{"update hash-tree failed"};
     }
-    return get_proof(address, log2_size, skip_merkle_tree_update);
+    return get_proof(address, log2_size, skip_hash_tree_update);
 }
 
 template <typename F>
@@ -1622,6 +1425,24 @@ static inline void foreach_aligned_chunk(uint64_t start, uint64_t length, uint64
     }
 }
 
+//??D I think we should have something like this in the address_range interface
+//??D Something that combines a check with contains and returns an optional view
+static std::optional<std::span<const unsigned char>> ar_host_memory_view(const address_range &ar, uint64_t offset,
+    uint64_t length) {
+    if (!ar.contains_relative(offset, length)) {
+        throw std::logic_error{"invalid access to address range "s.append(ar.get_description())};
+    }
+    if (ar.is_memory()) {
+        if (ar.get_host_memory() == nullptr) {
+            throw std::runtime_error{
+                "memory address range "s.append(ar.get_description()).append("has no host memory")};
+        }
+        return std::span<const unsigned char>{ar.get_host_memory() + offset, length};
+    }
+    return {};
+}
+
+//??D change this to use a span, or perhaps a contiguous_range of byte-like elements
 void machine::read_memory(uint64_t paddr, unsigned char *data, uint64_t length) const {
     if (length == 0) {
         return;
@@ -1630,7 +1451,7 @@ void machine::read_memory(uint64_t paddr, unsigned char *data, uint64_t length) 
         throw std::invalid_argument{"invalid data buffer"};
     }
     uint64_t gap_start = 0;
-    auto view = m_ars.merkle() |
+    auto view = m_ars.hash_tree_view() |
         std::views::drop_while([paddr, &gap_start](const address_range &ar) { // Only those that end after paddr
             const auto ar_end = ar.get_end();
             if (paddr >= ar_end) {
@@ -1639,7 +1460,7 @@ void machine::read_memory(uint64_t paddr, unsigned char *data, uint64_t length) 
             }
             return false;
         });
-    for (auto &ar : view) {
+    for (const auto &ar : view) {
         const auto ar_start = ar.get_start();
         // Write as much as possible from pristine gap between last address range and current address range
         if (paddr >= gap_start && paddr < ar_start) {
@@ -1653,18 +1474,13 @@ void machine::read_memory(uint64_t paddr, unsigned char *data, uint64_t length) 
         // Write as much as possible from current address range
         if (paddr >= ar_start && paddr < gap_start) {
             const auto from_ar = std::min(gap_start - paddr, length);
-            const unsigned char *peek_data = nullptr;
-            if (!ar.peek(*this, paddr - ar_start, from_ar, &peek_data, data)) {
-                throw std::runtime_error{"peek failed"};
+            auto data_view = std::span<unsigned char>{data, from_ar};
+            auto ar_view = ar_host_memory_view(ar, paddr - ar_start, from_ar);
+            if (ar_view) {
+                std::ranges::copy(*ar_view, data_view.begin());
+            } else {
+                std::ranges::fill(data_view, 0);
             }
-            if (peek_data == nullptr) {
-                // If the chunk is pristine, copy zero data to buffer
-                memset(data, 0, from_ar);
-            } else if (peek_data != data) {
-                // If peek returned pointer to internal buffer, copy to data buffer
-                memcpy(data, peek_data, from_ar);
-            }
-            // Otherwise, peek already copied to data buffer
             length -= from_ar;
             if (length == 0) {
                 return;
@@ -1679,6 +1495,7 @@ void machine::read_memory(uint64_t paddr, unsigned char *data, uint64_t length) 
     }
 }
 
+//??D change this to use a span, or perhaps a contiguous_range of byte-like elements
 void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t length) {
     if (length == 0) {
         return;
@@ -1687,15 +1504,20 @@ void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t l
         throw std::invalid_argument{"invalid data buffer"};
     }
     auto &ar = m_ars.find(paddr, length);
+    const auto *ar_descr = ar.get_description();
     if (ar.is_device()) {
-        throw std::invalid_argument{"attempted write to device memory range"};
+        throw std::invalid_argument{"attempted write to device memory range "s.append(ar_descr)};
     }
     if (!ar.is_memory()) {
-        throw std::invalid_argument{"address range to write is not entirely in single memory range"};
+        throw std::invalid_argument{"attempted write is not entirely within single memory range"};
     }
     if (ar.is_host_read_only()) {
-        throw std::invalid_argument{"address range to write is read-only in the host"};
+        throw std::invalid_argument{"attempted write to host-read-only memory range "s.append(ar_descr)};
     }
+    if (pmas_is_protected(ar.get_driver_id())) {
+        throw std::invalid_argument{"attempted write to protected memory range "s.append(ar_descr)};
+    }
+    //??D In C++23, change this to use std::span and std::views::chunk std::views::drop/take and std::views::chain
     foreach_aligned_chunk(paddr, length, AR_PAGE_SIZE, [&ar, paddr, data](auto chunk_start, auto chunk_length) {
         const auto *src = data + (chunk_start - paddr);
         const auto offset = chunk_start - ar.get_start();
@@ -1703,13 +1525,9 @@ void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t l
         if (memcmp(dest, src, chunk_length) != 0) {
             // Page is different, we have to copy memory
             memcpy(dest, src, chunk_length);
-            ar.mark_dirty_page(offset);
+            ar.get_dirty_page_tree().mark_dirty_page_and_up(offset);
         }
     });
-    if (pmas_range_overlaps(paddr, length, AR_SHADOW_TLB_START, AR_SHADOW_TLB_LENGTH)) {
-        // Must reinitialize hot TLB again to reflect changes in the shadow TLB
-        init_hot_tlb_contents();
-    }
 }
 
 void machine::fill_memory(uint64_t paddr, uint8_t val, uint64_t length) {
@@ -1717,27 +1535,27 @@ void machine::fill_memory(uint64_t paddr, uint8_t val, uint64_t length) {
         return;
     }
     auto &ar = m_ars.find(paddr, length);
+    const auto *ar_descr = ar.get_description();
     if (ar.is_device()) {
-        throw std::invalid_argument{"attempted fill to device memory range"};
+        throw std::invalid_argument{"attempted fill to device memory range "s.append(ar_descr)};
     }
     if (!ar.is_memory()) {
-        throw std::invalid_argument{"address range to fill is not entirely in memory PMA"};
+        throw std::invalid_argument{"attempted fill is not entirely within single memory range"};
     }
     if (ar.is_host_read_only()) {
-        throw std::invalid_argument{"address range is read-only in the host"};
+        throw std::invalid_argument{"attempted fill to host-read-only memory range "s.append(ar_descr)};
     }
-    if (pmas_range_overlaps(paddr, length, AR_SHADOW_TLB_START, AR_SHADOW_TLB_LENGTH)) {
-        // Filling shadow TLB memory doesn't make sense because it would leave
-        // its state corrupted in most situations.
-        throw std::invalid_argument{"attempted fill to shadow TLB memory range"};
+    if (pmas_is_protected(ar.get_driver_id())) {
+        throw std::invalid_argument{"attempted fill to protected memory range "s.append(ar_descr)};
     }
     // The case of filling a range with zeros is special and optimized for uarch reset
+    //??D In C++23, change this to use std::span and std::views::chunk std::views::drop/take and std::views::chain
     foreach_aligned_chunk(paddr, length, AR_PAGE_SIZE, [&ar, val](auto chunk_start, auto chunk_length) {
         const auto offset = chunk_start - ar.get_start();
         const auto dest = ar.get_host_memory() + offset;
         if (val != 0 || !is_pristine(dest, chunk_length)) {
             memset(dest, val, chunk_length);
-            ar.mark_dirty_page(offset);
+            ar.get_dirty_page_tree().mark_dirty_page_and_up(offset);
         }
     });
 }
@@ -1852,7 +1670,7 @@ void machine::write_word(uint64_t paddr, uint64_t val) {
     }
     const auto offset = paddr - ar.get_start();
     aliased_aligned_write<uint64_t>(ar.get_host_memory() + offset, val);
-    ar.mark_dirty_page(offset);
+    ar.get_dirty_page_tree().mark_dirty_page_and_up(offset);
 }
 
 void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) {
@@ -1862,8 +1680,7 @@ void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uin
 
 access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
     const access_log::type &log_type) {
-    hash_type root_hash_before;
-    get_root_hash(root_hash_before);
+    auto root_hash_before = get_root_hash();
     access_log log(log_type);
     // Call send_cmio_response  with the recording state accessor
     const record_send_cmio_state_access a(*this, log);
@@ -1872,23 +1689,23 @@ access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char 
         cartesi::send_cmio_response(a, reason, data, length);
     }
     // Verify access log before returning
-    hash_type root_hash_after;
-    update_merkle_tree();
-    get_root_hash(root_hash_after);
+    if (!update_hash_tree()) {
+        throw std::runtime_error{"update hash-tree failed"};
+    }
+    auto root_hash_after = get_root_hash();
     verify_send_cmio_response(reason, data, length, root_hash_before, log, root_hash_after);
     return log;
 }
 
 void machine::verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-    const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) {
+    const machine_hash &root_hash_before, const access_log &log, const machine_hash &root_hash_after) {
     replay_send_cmio_state_access::context context(log, root_hash_before);
     // Verify all intermediate state transitions
     replay_send_cmio_state_access a(context);
     cartesi::send_cmio_response(a, reason, data, length);
     a.finish();
     // Make sure the access log ends at the same root hash as the state
-    hash_type obtained_root_hash;
-    a.get_root_hash(obtained_root_hash);
+    auto obtained_root_hash = a.get_root_hash();
     if (obtained_root_hash != root_hash_after) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
     }
@@ -1910,8 +1727,7 @@ void machine::reset_uarch() {
 }
 
 access_log machine::log_reset_uarch(const access_log::type &log_type) {
-    hash_type root_hash_before;
-    get_root_hash(root_hash_before);
+    const machine_hash root_hash_before = get_root_hash();
     // Call uarch_reset_state with a uarch_record_state_access object
     access_log log(log_type);
     uarch_record_state_access a(*this, log);
@@ -1920,23 +1736,23 @@ access_log machine::log_reset_uarch(const access_log::type &log_type) {
         uarch_reset_state(a);
     }
     // Verify access log before returning
-    hash_type root_hash_after;
-    update_merkle_tree();
-    get_root_hash(root_hash_after);
+    if (!update_hash_tree()) {
+        throw std::runtime_error{"update hash-tree failed"};
+    }
+    const auto root_hash_after = get_root_hash();
     verify_reset_uarch(root_hash_before, log, root_hash_after);
     return log;
 }
 
-void machine::verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
-    const hash_type &root_hash_after) {
+void machine::verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
+    const machine_hash &root_hash_after) {
     // Verify all intermediate state transitions
     uarch_replay_state_access::context context{log, root_hash_before};
     uarch_replay_state_access a(context);
     uarch_reset_state(a);
     a.finish();
     // Make sure the access log ends at the same root hash as the state
-    hash_type obtained_root_hash;
-    a.get_root_hash(obtained_root_hash);
+    const machine_hash obtained_root_hash = a.get_root_hash();
     if (obtained_root_hash != root_hash_after) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
     }
@@ -1949,8 +1765,7 @@ access_log machine::log_step_uarch(const access_log::type &log_type) {
     if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error("microarchitecture cannot be used with unreproducible machines");
     }
-    hash_type root_hash_before;
-    get_root_hash(root_hash_before);
+    auto root_hash_before = get_root_hash();
     access_log log(log_type);
     // Call interpret with a logged state access object
     const uarch_record_state_access a(*this, log);
@@ -1959,8 +1774,7 @@ access_log machine::log_step_uarch(const access_log::type &log_type) {
         uarch_step(a);
     }
     // Verify access log before returning
-    hash_type root_hash_after;
-    get_root_hash(root_hash_after);
+    auto root_hash_after = get_root_hash();
     os_silence_putchar(m_r.htif.no_console_putchar);
     verify_step_uarch(root_hash_before, log, root_hash_after);
     return log;
@@ -1969,16 +1783,15 @@ access_log machine::log_step_uarch(const access_log::type &log_type) {
 // Declaration of explicit instantiation in module uarch-step.cpp
 extern template UArchStepStatus uarch_step(uarch_replay_state_access &a);
 
-void machine::verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
-    const hash_type &root_hash_after) {
+void machine::verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
+    const machine_hash &root_hash_after) {
     // Verify all intermediate state transitions
     uarch_replay_state_access::context context{log, root_hash_before};
     uarch_replay_state_access a(context);
     uarch_step(a);
     a.finish();
     // Make sure the access log ends at the same root hash as the state
-    hash_type obtained_root_hash;
-    a.get_root_hash(obtained_root_hash);
+    auto obtained_root_hash = a.get_root_hash();
     if (obtained_root_hash != root_hash_after) {
         throw std::invalid_argument{"mismatch in root hash after replay"};
     }
@@ -1999,18 +1812,16 @@ uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
 }
 
 interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::string &filename) {
-    if (!update_merkle_tree()) {
-        throw std::runtime_error{"error updating Merkle tree"};
+    if (!update_hash_tree()) {
+        throw std::runtime_error{"update hash-tree failed"};
     }
     // Ensure that the microarchitecture is reset
     auto current_uarch_state_hash =
-        get_merkle_tree_node_hash(AR_SHADOW_UARCH_STATE_START, UARCH_STATE_LOG2_SIZE, skip_merkle_tree_update);
+        get_node_hash(AR_SHADOW_UARCH_STATE_START, UARCH_STATE_LOG2_SIZE, skip_hash_tree_update);
     if (current_uarch_state_hash != get_uarch_pristine_state_hash()) {
-        get_merkle_tree_node_hash(AR_SHADOW_UARCH_STATE_START, UARCH_STATE_LOG2_SIZE, skip_merkle_tree_update);
         throw std::runtime_error{"microarchitecture is not reset"};
     }
-    hash_type root_hash_before;
-    get_root_hash(root_hash_before);
+    auto root_hash_before = get_root_hash();
     record_step_state_access::context context(filename);
     record_step_state_access a(context, *this);
     uint64_t mcycle_end{};
@@ -2019,15 +1830,14 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
     }
     auto break_reason = interpret(a, mcycle_end);
     a.finish();
-    hash_type root_hash_after;
-    get_root_hash(root_hash_after);
+    auto root_hash_after = get_root_hash();
     os_silence_putchar(m_r.htif.no_console_putchar);
     verify_step(root_hash_before, filename, mcycle_count, root_hash_after);
     return break_reason;
 }
 
-interpreter_break_reason machine::verify_step(const hash_type &root_hash_before, const std::string &filename,
-    uint64_t mcycle_count, const hash_type &root_hash_after) {
+interpreter_break_reason machine::verify_step(const machine_hash &root_hash_before, const std::string &filename,
+    uint64_t mcycle_count, const machine_hash &root_hash_after) {
     auto data_length = os_get_file_length(filename.c_str(), "step log file");
     auto data = make_unique_mmap<unsigned char>(data_length, os_mmap_flags{}, filename, data_length);
     replay_step_state_access::context context;

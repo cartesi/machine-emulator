@@ -20,14 +20,14 @@
 #include <cstdint>
 
 #include "address-range-constants.h"
-#include "pristine-address-range.h"
+#include "address-range.h"
 
 /// \file
 /// \brief Core-Local Interruptor device.
 
 namespace cartesi {
 
-class clint_address_range final : public pristine_address_range {
+class clint_address_range final : public address_range {
 
     static constexpr pmas_flags m_clint_flags{
         .M = false,
@@ -43,7 +43,7 @@ class clint_address_range final : public pristine_address_range {
 public:
     template <typename ABRT>
     explicit clint_address_range(ABRT abrt) :
-        pristine_address_range("CLINT device", AR_CLINT_START, AR_CLINT_LENGTH, m_clint_flags, abrt) {
+        address_range("CLINT device", AR_CLINT_START, AR_CLINT_LENGTH, m_clint_flags, abrt) {
         ;
     }
 

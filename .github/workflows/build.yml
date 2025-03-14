@@ -227,7 +227,7 @@ jobs:
 
       - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
         run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests --concurrency=update_merkle_tree:1 --test="^rv64ui.*$" --jobs=$(nproc) run_host_and_uarch
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests --concurrency=update_hash_tree:1 --test="^rv64ui.*$" --jobs=$(nproc) run_host_and_uarch
 
       - name: Create uarch json logs to be used to test the Solidity based microarchitecture interpreter
         run: |
@@ -395,7 +395,7 @@ jobs:
 
       - name: Run test suite with microarchitecture and host based interpreters comparing machine hashes at every step
         run: |
-          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests  --test="^rv64ui%-v%-add.bin$" --concurrency=update_merkle_tree:1 --jobs=$(nproc) run_host_and_uarch
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests cartesi-machine-tests  --test="^rv64ui%-v%-add.bin$" --concurrency=update_hash_tree:1 --jobs=$(nproc) run_host_and_uarch
 
       - name: Build machine-emulator "tests" docker image
         uses: docker/build-push-action@v5

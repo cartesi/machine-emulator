@@ -32,17 +32,17 @@ namespace cartesi {
 full_merkle_tree::full_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size) :
     m_log2_root_size{log2_root_size},
     m_log2_leaf_size{log2_leaf_size},
-    m_max_leaves{address_type{1} << std::max(0, log2_root_size - log2_leaf_size)} {
+    m_max_leaves{UINT64_C(1) << std::max(0, log2_root_size - log2_leaf_size)} {
     check_log2_sizes(log2_root_size, log2_leaf_size, log2_word_size);
     m_tree.resize(2 * m_max_leaves);
     init_pristine_subtree(pristine_merkle_tree{log2_root_size, log2_word_size}, 1, log2_root_size);
 }
 
 full_merkle_tree::full_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size,
-    const std::vector<hash_type> &leaves) :
+    const std::vector<machine_hash> &leaves) :
     m_log2_root_size(log2_root_size),
     m_log2_leaf_size(log2_leaf_size),
-    m_max_leaves{address_type{1} << std::max(0, log2_root_size - log2_leaf_size)} {
+    m_max_leaves{UINT64_C(1) << std::max(0, log2_root_size - log2_leaf_size)} {
     check_log2_sizes(log2_root_size, log2_leaf_size, log2_word_size);
     if (leaves.size() > m_max_leaves) {
         throw std::out_of_range{"too many leaves"};
@@ -51,7 +51,7 @@ full_merkle_tree::full_merkle_tree(int log2_root_size, int log2_leaf_size, int l
     init_tree(pristine_merkle_tree{log2_root_size, log2_word_size}, leaves);
 }
 
-full_merkle_tree::proof_type full_merkle_tree::get_proof(address_type address, int log2_size) const {
+full_merkle_tree::proof_type full_merkle_tree::get_proof(uint64_t address, int log2_size) const {
     if (log2_size < get_log2_leaf_size() || log2_size > get_log2_root_size()) {
         throw std::out_of_range{"log2_size is out of bounds"};
     }
@@ -64,7 +64,7 @@ full_merkle_tree::proof_type full_merkle_tree::get_proof(address_type address, i
     proof.set_target_address(address);
     proof.set_target_hash(get_node_hash(address, log2_size));
     for (int log2_sibling_size = log2_size; log2_sibling_size < get_log2_root_size(); ++log2_sibling_size) {
-        auto sibling_address = address ^ (address_type{1} << log2_sibling_size);
+        auto sibling_address = address ^ (UINT64_C(1) << log2_sibling_size);
         proof.set_sibling_hash(get_node_hash(sibling_address, log2_sibling_size), log2_sibling_size);
     }
 #ifndef NDEBUG
@@ -92,7 +92,7 @@ void full_merkle_tree::check_log2_sizes(int log2_root_size, int log2_leaf_size, 
     if (log2_word_size > log2_leaf_size) {
         throw std::out_of_range{"log2_word_size is greater than log2_word_size"};
     }
-    if (log2_root_size >= std::numeric_limits<address_type>::digits) {
+    if (log2_root_size >= std::numeric_limits<uint64_t>::digits) {
         throw std::out_of_range{"tree is too large for address type"};
     }
 }
@@ -113,7 +113,7 @@ void full_merkle_tree::init_subtree(hasher_type &h, int index, int log2_size) {
     }
 }
 
-void full_merkle_tree::init_tree(const pristine_merkle_tree &pristine, const std::vector<hash_type> &leaves) {
+void full_merkle_tree::init_tree(const pristine_merkle_tree &pristine, const std::vector<machine_hash> &leaves) {
     std::copy(leaves.begin(), leaves.end(), &m_tree[m_max_leaves]);
     std::fill_n(&m_tree[m_max_leaves + leaves.size()], m_max_leaves - leaves.size(),
         pristine.get_hash(get_log2_leaf_size()));
@@ -121,11 +121,11 @@ void full_merkle_tree::init_tree(const pristine_merkle_tree &pristine, const std
     init_subtree(h, 1, get_log2_root_size());
 }
 
-full_merkle_tree::address_type full_merkle_tree::get_node_index(address_type address, int log2_size) const {
+uint64_t full_merkle_tree::get_node_index(uint64_t address, int log2_size) const {
     if (log2_size < get_log2_leaf_size() || log2_size > get_log2_root_size()) {
         throw std::out_of_range{"log2_size is out of bounds"};
     }
-    const address_type base = address_type{1} << (get_log2_root_size() - log2_size);
+    const uint64_t base = UINT64_C(1) << (get_log2_root_size() - log2_size);
     // Nodes of log2_size live in indices [base, 2*base)
     // 0 <unused>
     // 1 log2_root_size

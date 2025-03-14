@@ -38,11 +38,14 @@ namespace cartesi {
 /// \brief Machine address ranges.
 /// \details Class holding all address ranges in the machine
 class machine_address_ranges {
+
     std::vector<std::unique_ptr<address_range>> m_all; ///< Owner of all address ranges
-    std::vector<uint64_t> m_merkle;                    ///< Indices of address ranges registered with Merkle tree
-    std::vector<uint64_t> m_interpret;                 ///< Indices of address ranges registered with interpret (PMAs)
+    std::vector<uint64_t> m_hash_tree;                 ///< Indices of address ranges registered with hash tree
+    std::vector<uint64_t> m_pmas;                      ///< Indices of address ranges registered as PMAs
     std::vector<virtio_address_range *> m_virtio;      ///< Pointers to all VirtIO address ranges
     address_range_descriptions m_descrs;               ///< Address range descriptions for users
+    int m_shadow_state_index;                          ///< Index of shadow state address range
+    int m_shadow_uarch_state_index;                    ///< Index of shadow uarch state address range
 
 public:
     /// \brief Constructor
@@ -54,34 +57,44 @@ public:
         return std::views::transform(m_all, [](const auto &p) -> const address_range & { return *p; });
     }
 
-    /// \brief Const view of address ranges registered with Merkle tree
-    auto merkle() const {
-        return std::views::transform(m_merkle, [this](auto i) -> const address_range & { return *m_all[i]; });
+    /// \brief Const view of address ranges registered with hash tree
+    auto hash_tree_view() const {
+        return std::views::transform(m_hash_tree, [this](auto i) -> const address_range & { return *m_all[i]; });
     }
 
-    /// \brief View of address ranges registered with Merkle tree
-    auto merkle() {
-        return std::views::transform(m_merkle, [this](auto i) -> address_range & { return *m_all[i]; });
+    /// \brief View of address ranges registered with hash tree
+    auto hash_tree_view() {
+        return std::views::transform(m_hash_tree, [this](auto i) -> address_range & { return *m_all[i]; });
     }
 
-    /// \brief View of address ranges registered with interpret (PMAs)
-    auto interpret() const {
-        return std::views::transform(m_interpret, [this](auto i) -> address_range & { return *m_all[i]; });
+    /// \brief Const view of address ranges registered as PMAs
+    auto pmas_view() const {
+        return std::views::transform(m_pmas, [this](auto i) -> const address_range & { return *m_all[i]; });
+    }
+
+    /// \brief Const view of address ranges registered as PMAs
+    auto pmas_view() {
+        return std::views::transform(m_pmas, [this](auto i) -> address_range & { return *m_all[i]; });
     }
 
     /// \brief View of all VirtIO address ranges
-    auto virtio() {
+    auto virtio_view() {
         return std::views::transform(m_virtio, [](auto *p) -> virtio_address_range & { return *p; });
     }
 
-    /// \brief Returns the ith address range registered with interpret
+    /// \brief View of all VirtIO address ranges
+    auto virtio_view() const {
+        return std::views::transform(m_virtio, [](auto *p) -> const virtio_address_range & { return *p; });
+    }
+
+    /// \brief Returns the address range corresponding to the ith PMA
     const address_range &read_pma(uint64_t index) const noexcept {
-        if (index >= m_interpret.size()) {
-            static constexpr auto sentinel = make_empty_address_range("sentinel");
+        if (index >= m_pmas.size()) {
+            static auto sentinel = make_empty_address_range("sentinel");
             return sentinel;
         }
         // NOLINTNEXTLINE(bugprone-narrowing-conversions)
-        return *m_all[static_cast<int>(m_interpret[static_cast<int>(index)])];
+        return *m_all[static_cast<int>(m_pmas[static_cast<int>(index)])];
     }
 
     /// \brief Returns const address range that covers a given physical memory region
@@ -123,15 +136,18 @@ public:
     void replace(const memory_range_config &config);
 
     /// \brief Returns descriptions of all address ranges.
-    const address_range_descriptions &descriptions() const {
+    const address_range_descriptions &descriptions_view() const {
         return m_descrs;
     }
+
+    /// \brief Marks as dirty the pages of address ranges assumed dirty
+    void mark_always_dirty_pages();
 
 private:
     ///< Where to register an address range
     struct register_where {
-        bool merkle;    //< Register with Merkle tree, so it appears in the root hash
-        bool interpret; //< Register so interpret can see (and it also appears as a PMA entries in memory)
+        bool hash_tree; //< Register with hash tree, so it appears in the root hash
+        bool pmas;      //< Register as a PMA, so the interpreter can see it
     };
 
     /// \brief Checks if address range can be registered.
@@ -154,11 +170,12 @@ private:
     /// This means the index into the container that owns all address ranges will always refer to same address range
     /// after subsequent calls to register() and  calls to replace() as well.
     /// \details Besides the container that stores the address ranges, the machine maintains three subsets.
-    /// The "merkle" subset lists the indices of the address ranges that will be considered by the Merkle
-    /// tree during the computation of the state hash.
-    /// The "interpret" subset lists the indices of the address ranges visible from within the interpreter (PMAs).
-    /// When registering an address range with the machine, one must specify \p where to register it.
-    /// The "virtio" subset lists every VirtIO address range that has been registered.
+    /// The "hash_tree" subset lists the indices of the address ranges that will be considered by the hash tree
+    /// during the computation of the state hash.
+    /// The "pmas" subset lists the indices of the address ranges registered as PMAs, and therefore visible
+    /// from within the interpreter.
+    /// The \p where parameter tells whether to register the address range with the hash tree and/or as a PMA.
+    /// Finally, the "virtio" subset lists every VirtIO address range that has been registered.
     template <typename AR>
         requires std::is_rvalue_reference_v<AR &&> && std::derived_from<AR, address_range>
     AR &push_back(AR &&ar, register_where where);

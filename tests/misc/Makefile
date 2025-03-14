@@ -45,6 +45,7 @@ PORT_PREFIX = /opt/local
 BOOST_LIB_DIR=-L$(PORT_PREFIX)/libexec/boost/1.87/lib
 BOOST_INC=-I$(PORT_PREFIX)/libexec/boost/1.87/include
 SLIRP_LIB=-L$(PORT_PREFIX)/lib -lslirp
+OMP_LIB=-fopenmp -L$(PORT_PREFIX)/lib/libomp -lgomp
 else
 $(error Neither Homebrew nor MacPorts is installed)
 endif
@@ -97,7 +98,7 @@ CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.h)
 INCS=-I../../src -I../../third-party/tiny_sha3 -I../../third-party/nlohmann-json -I../../third-party/downloads
 WARNS=-Wall -Wpedantic $(BOOST_INC)
 
-CXXFLAGS+=-O2 -g -std=gnu++20 -fvisibility=hidden $(INCS) $(UBFLAGS) $(WARNS)
+CXXFLAGS+=-O2 -g -std=gnu++20 -fopenmp -fvisibility=hidden $(INCS) $(UBFLAGS) $(WARNS)
 
 ifeq ($(slirp),yes)
 LIBCARTESI_LIBS+=$(SLIRP_LIB)
@@ -113,7 +114,7 @@ $(BUILDDIR)/test-merkle-tree-hash: test-merkle-tree-hash.o ../../src/libcartesi.
 	$(CXX) -o $@ $^ $(CXXFLAGS)
 
 $(BUILDDIR)/test-machine-c-api: test-machine-c-api.o ../../src/libcartesi.a ../../src/libcartesi_merkle_tree.a
-	$(CXX) -o $@ $^ $(CXXFLAGS) $(LIBCARTESI_LIBS)
+	$(CXX) -o $@ $^ $(CXXFLAGS) $(LIBCARTESI_LIBS) $(OMP_LIB)
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<

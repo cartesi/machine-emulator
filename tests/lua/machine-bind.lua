@@ -23,7 +23,7 @@ local jsonrpc
 
 local remote_address
 local test_path = "./"
-local concurrency_update_merkle_tree = util.parse_number(os.getenv("CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE")) or 0
+local concurrency_update_hash_tree = util.parse_number(os.getenv("CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE")) or 0
 
 local lua_cmd = arg[-1] .. " -e "
 
@@ -53,10 +53,10 @@ where options are:
     configures the number of threads used in some implementation parts.
 
     <key>:<value> is one of
-        update_merkle_tree:<number>
+        update_hash_tree:<number>
 
-        update_merkle_tree (optional)
-        defines the number of threads to use while calculating the merkle tree.
+        update_hash_tree (optional)
+        defines the number of threads to use while calculating the hash tree.
         when omitted or defined as 0, the number of hardware threads is used if
         it can be identified or else a single thread is used.
 
@@ -115,11 +115,11 @@ local options = {
                 return false
             end
             local c = util.parse_options(opts, {
-                update_merkle_tree = true,
+                update_hash_tree = true,
             })
-            c.update_merkle_tree =
-                assert(util.parse_number(c.update_merkle_tree), "invalid update_merkle_tree number in " .. all)
-            concurrency_update_merkle_tree = c.update_merkle_tree
+            c.update_hash_tree =
+                assert(util.parse_number(c.update_hash_tree), "invalid update_hash_tree number in " .. all)
+            concurrency_update_hash_tree = c.update_hash_tree
             return true
         end,
     },
@@ -241,7 +241,7 @@ local function build_machine_config(config_options)
     }
     local runtime = {
         concurrency = {
-            update_merkle_tree = concurrency_update_merkle_tree,
+            update_hash_tree = concurrency_update_hash_tree,
         },
     }
     return config, runtime
@@ -286,7 +286,7 @@ do_test("machine should have default config shadow register values", function(ma
     end
 end)
 
-print("\n\ntesting merkle tree get_proof for values for registers")
+print("\n\ntesting hash tree get_proof for values for registers")
 do_test("should provide proof for values in registers", function(machine)
     local initial_reg_values = get_cpu_reg_test_values()
     initial_reg_values.mvendorid = nil
@@ -462,10 +462,10 @@ do_test("should return default machine config", function(machine)
     test_config(machine:get_default_config())
 end)
 
-print("\n\n test verifying integrity of the merkle tree")
-do_test("verify_merkle_tree should return true", function(machine)
-    -- Verify starting merkle tree
-    assert(machine:verify_merkle_tree(), "error, non consistent merkle tree")
+print("\n\n test verifying integrity of the hash tree")
+do_test("verify_hash_tree should return true", function(machine)
+    -- Verify starting hash tree
+    assert(machine:verify_hash_tree(), "error, non consistent hash tree")
 end)
 
 print("\n\n test calculation of initial root hash")
@@ -773,7 +773,7 @@ test_util.make_do_test(build_machine, machine_type, {
     uarch = {
         ram = { backing_store = { data_filename = test_util.create_test_uarch_program(uarch_proof_step_program) } },
     },
-})("merkle tree must be consistent when stepping alternating with and without proofs", function(machine)
+})("hash tree must be consistent when stepping alternating with and without proofs", function(machine)
     local t0 = 5
     local t1 = 6
     local t2 = 7
@@ -1463,7 +1463,7 @@ test_util.make_do_test(build_machine, machine_type, {
             backing_store = { data_filename = test_util.create_test_uarch_program(uarch_store_double_in_t0_to_t1) },
         },
     },
-})("Log of word access unaligned to merkle tree leaf ", function(machine)
+})("Log of word access unaligned to hash tree leaf ", function(machine)
     local leaf_size = 1 << cartesi.TREE_LOG2_WORD_SIZE
     local word_size = 8
     local t0 = 5 -- x5 register

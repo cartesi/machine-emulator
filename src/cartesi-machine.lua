@@ -298,10 +298,10 @@ where options are:
     configures the number of threads used in some implementation parts.
 
     <key>:<value> is one of
-        update_merkle_tree:<number>
+        update_hash_tree:<number>
 
-        update_merkle_tree (optional)
-        defines the number of threads to use while calculating the merkle tree.
+        update_hash_tree (optional)
+        defines the number of threads to use while calculating the hash tree.
         when omitted or defined as 0, the number of hardware threads is used if
         it can be identified or else a single thread is used.
 
@@ -676,7 +676,7 @@ local pmas = {}
 local hash_tree = {
     hasher = default_config.hash_tree.hasher,
 }
-local concurrency_update_merkle_tree = 0
+local concurrency_update_hash_tree = 0
 local skip_root_hash_check = false
 local skip_root_hash_store = false
 local skip_version_check = false
@@ -1278,11 +1278,11 @@ local options = {
         "^(%-%-concurrency%=(.+))$",
         function(all, opts)
             local c = util.parse_options(opts, {
-                update_merkle_tree = true,
+                update_hash_tree = true,
             })
-            c.update_merkle_tree =
-                assert(util.parse_number(c.update_merkle_tree), "invalid update_merkle_tree number in " .. all)
-            concurrency_update_merkle_tree = c.update_merkle_tree
+            c.update_hash_tree =
+                assert(util.parse_number(c.update_hash_tree), "invalid update_hash_tree number in " .. all)
+            concurrency_update_hash_tree = c.update_hash_tree
             return true
         end,
     },
@@ -1801,7 +1801,7 @@ end
 
 local runtime_config = {
     concurrency = {
-        update_merkle_tree = concurrency_update_merkle_tree,
+        update_hash_tree = concurrency_update_hash_tree,
     },
     htif = {
         no_console_putchar = htif_no_console_putchar,

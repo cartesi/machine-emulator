@@ -76,7 +76,6 @@ EMULATOR_SOURCES=\
 
 COMPUTE_SOURCES=\
 	compute-uarch-pristine-hash.cpp \
-	$(EMULATOR_SRC_DIR)/machine-merkle-tree.cpp \
 	$(EMULATOR_SRC_DIR)/back-merkle-tree.cpp \
 	$(EMULATOR_SRC_DIR)/pristine-merkle-tree.cpp \
 	$(EMULATOR_SRC_DIR)/complete-merkle-tree.cpp \

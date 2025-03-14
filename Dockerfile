@@ -3,7 +3,7 @@ FROM debian:bookworm-20250407 AS toolchain
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
         build-essential vim wget git lcov \
-        libboost1.81-dev libssl-dev libslirp-dev \
+        libomp-19-dev libboost1.81-dev libssl-dev libslirp-dev \
         ca-certificates pkg-config lua5.4 liblua5.4-dev \
         luarocks xxd procps \
         g++-12-riscv64-linux-gnu=12.2.0-13cross1 \

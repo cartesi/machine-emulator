@@ -46,14 +46,14 @@ pristine_merkle_tree::pristine_merkle_tree(int log2_root_size, int log2_word_siz
     assert(word.size() == (UINT64_C(1) << log2_word_size));
     hasher_type h;
     h.begin();
-    h.add_data(word.data(), word.size());
+    h.add_data(word);
     h.end(m_hashes[0]);
     for (unsigned i = 1; i < m_hashes.size(); ++i) {
         get_concat_hash(h, m_hashes[i - 1], m_hashes[i - 1], m_hashes[i]);
     }
 }
 
-const pristine_merkle_tree::hash_type &pristine_merkle_tree::get_hash(int log2_size) const {
+const machine_hash &pristine_merkle_tree::get_hash(int log2_size) const {
     if (log2_size < m_log2_word_size || log2_size > m_log2_root_size) {
         throw std::out_of_range{"log2_size is out of range"};
     }

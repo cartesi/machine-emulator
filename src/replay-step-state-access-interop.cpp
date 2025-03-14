@@ -17,31 +17,30 @@
 #include "replay-step-state-access-interop.h"
 
 #include <cstddef>
+#include <span>
 #include <type_traits>
 
+#include "hash-tree.h"
 #include "i-hasher.h"
-#include "machine-merkle-tree.h"
 
 using namespace cartesi;
 
-static_assert(interop_log2_root_size == machine_merkle_tree::get_log2_root_size(),
-    "interop_log2_root_size must match machine_merkle_tree::get_log2_root_size()");
-static_assert(sizeof(cartesi::machine_merkle_tree::hash_type) == sizeof(std::remove_pointer_t<interop_hash_type>),
+static_assert(interop_log2_root_size == HASH_TREE_LOG2_ROOT_SIZE,
+    "interop_log2_root_size must match HASH_TREE_LOG2_ROOT_SIZE");
+static_assert(sizeof(cartesi::machine_hash) == sizeof(std::remove_pointer_t<interop_hash_type>),
     "hash_type size mismatch");
 
 extern "C" void interop_merkle_tree_hash(const unsigned char *data, size_t size, interop_hash_type hash) {
-    machine_merkle_tree::hasher_type hasher{};
-    get_merkle_tree_hash(hasher, data, size, machine_merkle_tree::get_word_size(),
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        *reinterpret_cast<machine_merkle_tree::hash_type *>(hash));
+    hash_tree::hasher_type hasher{};
+    get_merkle_tree_hash(hasher, std::span<const unsigned char>{data, size}, HASH_TREE_WORD_SIZE,
+        machine_hash_view{*hash, interop_machine_hash_byte_size});
 }
 
 extern "C" void interop_concat_hash(interop_const_hash_type left, interop_const_hash_type right,
     interop_hash_type result) {
-    machine_merkle_tree::hasher_type hasher{};
+    hash_tree::hasher_type hasher{};
     // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
-    get_concat_hash(hasher, *reinterpret_cast<const machine_merkle_tree::hash_type *>(left),
-        *reinterpret_cast<const machine_merkle_tree::hash_type *>(right),
-        *reinterpret_cast<machine_merkle_tree::hash_type *>(result));
+    get_concat_hash(hasher, *reinterpret_cast<const machine_hash *>(left),
+        *reinterpret_cast<const machine_hash *>(right), *reinterpret_cast<machine_hash *>(result));
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
 }

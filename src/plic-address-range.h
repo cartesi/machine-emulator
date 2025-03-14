@@ -20,9 +20,9 @@
 #include <cstdint>
 
 #include "address-range-constants.h"
+#include "address-range.h"
 #include "i-device-state-access.h"
 #include "plic-constants.h"
-#include "pristine-address-range.h"
 
 /// \file
 /// \brief Platform-Level Interrupt Controller address range.
@@ -37,7 +37,7 @@ void plic_set_pending_irq(i_device_state_access *a, uint32_t irq_id);
 /// \details This is called only by devices to remove an external interrupt notification.
 void plic_reset_pending_irq(i_device_state_access *a, uint32_t irq_id);
 
-class plic_address_range final : public pristine_address_range {
+class plic_address_range final : public address_range {
 
     static constexpr pmas_flags m_plic_flags{
         .M = false,
@@ -53,7 +53,7 @@ class plic_address_range final : public pristine_address_range {
 public:
     template <typename ABRT>
     explicit plic_address_range(ABRT abrt) :
-        pristine_address_range("PLIC device", AR_PLIC_START, AR_PLIC_LENGTH, m_plic_flags, abrt) {
+        address_range("PLIC device", AR_PLIC_START, AR_PLIC_LENGTH, m_plic_flags, abrt) {
         ;
     }
 

@@ -17,23 +17,38 @@
 #ifndef IS_PRISTINE_H
 #define IS_PRISTINE_H
 
-#include "compiler-defines.h"
-#include <stddef.h>
-#include <stdint.h>
+#include <cstddef>
+#include <cstdint>
+#include <ranges>
+
+#include "meta.h"
 
 namespace cartesi {
 
 /// \brief This is an optimized function for checking if memory page is pristine.
 /// \param data Memory pointer
 /// \param length Memory length
-/// \details It's instead to be used in situations where length is equal or less than a page size.
-// NOLINTNEXTLINE(clang-diagnostic-unknown-attributes)
+/// \returns True if all values are 0, false otherwise
+/// \details It's to be used in situations where length is equal or less than a page size.
 static inline bool is_pristine(const unsigned char *data, size_t length) {
     // This tight for loop has no branches, and is optimized to SIMD instructions in x86_64,
     // making it very fast to check if a given page is pristine.
     unsigned char bits = 0;
     for (size_t i = 0; i < length; ++i) {
         bits |= data[i];
+    }
+    return bits == 0;
+}
+
+/// \brief This is an optimized function for checking if memory page is pristine.
+/// \param r Contiguous range of byte-like values
+/// \returns True if all values are 0, false otherwise
+/// \details It's to be used in situations where length is equal or less than a page size.
+template <ContiguousRangeOfByteLike R>
+static inline bool is_pristine(R &&r) { // NOLINT(cppcoreguidelines-missing-std-forward)
+    std::ranges::range_value_t<R> bits{0};
+    for (auto b : r) {
+        bits |= b;
     }
     return bits == 0;
 }

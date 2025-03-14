@@ -20,16 +20,16 @@
 #include <cstdint>
 
 #include "address-range-constants.h"
+#include "address-range.h"
 #include "i-device-state-access.h"
 #include "pmas-constants.h"
-#include "pristine-address-range.h"
 
 /// \file
 /// \brief Host-Target InterFace device.
 
 namespace cartesi {
 
-class htif_address_range final : public pristine_address_range {
+class htif_address_range final : public address_range {
 
     static constexpr pmas_flags m_htif_flags{
         .M = false,
@@ -45,7 +45,7 @@ class htif_address_range final : public pristine_address_range {
 public:
     template <typename ABRT>
     explicit htif_address_range(ABRT abrt) :
-        pristine_address_range("HTIF device", AR_HTIF_START, AR_HTIF_LENGTH, m_htif_flags, abrt) {
+        address_range("HTIF device", AR_HTIF_START, AR_HTIF_LENGTH, m_htif_flags, abrt) {
         ;
     }
 

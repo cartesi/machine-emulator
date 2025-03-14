@@ -43,6 +43,7 @@ struct backing_store_config final {
     bool truncate{false};      ///< Should backing store be truncated to correct size?
     std::string data_filename; ///< Backing store for associated memory address range
     std::string dht_filename;  ///< Backing store for corresponding dense hash-tree
+    std::string dpt_filename;  ///< Backing store for corresponding dirty-page tree
 };
 
 /// \brief Processor state config
@@ -76,7 +77,7 @@ struct dtb_config final {
 struct memory_range_config final {
     uint64_t start{0xffffffffffffffffUL};  ///< Memory range start position, default is to auto detect
     uint64_t length{0xffffffffffffffffUL}; ///< Memory range length, default is to auto detect
-    bool read_only{false};                 ///< Make memory range read-only
+    bool read_only{false};                 ///< Make memory range read-only to host
     backing_store_config backing_store;    ///< Backing store
 };
 
@@ -150,13 +151,12 @@ struct uarch_config final {
 
 /// \brief Hash tree config
 struct hash_tree_config final {
-    std::string hasher{"keccak"}; ///< What hashing function to use?
-    bool shared{false};           ///< Should changes be reflected in backing store?
-    bool create{false};           ///< Should backing store be created to correct size?
-    bool truncate{false};         ///< Should backing store be truncated to correct size?
-    std::string sht_filename;     ///< Backing storage for sparse hash-tree
-    std::string phtc_filename;    ///< Backing storage for page hash-tree cache
-    uint64_t phtc_size{2046};     ///< Max number of pages in page hash-tree cache
+    bool shared{false};        ///< Should changes be reflected in backing store?
+    bool create{false};        ///< Should backing store be created?
+    bool truncate{false};      ///< Should backing store be truncated to correct size?
+    std::string sht_filename;  ///< Backing storage for sparse hash-tree
+    std::string phtc_filename; ///< Backing storage for page hash-tree cache
+    uint64_t phtc_size{2048};  ///< Max number of pages in page hash-tree cache
 };
 
 /// \brief Machine state config
@@ -179,6 +179,9 @@ struct machine_config final {
 
     /// \brief Get the name where dense hash-tree for an address range will be stored in a directory
     static std::string get_dht_filename(const std::string &dir, uint64_t start, uint64_t length);
+
+    /// \brief Get the name where dirty-page -tree for an address range will be stored in a directory
+    static std::string get_dpt_filename(const std::string &dir, uint64_t start, uint64_t length);
 
     /// \brief Get the name where global sparse hash-tree will be stored in a directory
     static std::string get_sht_filename(const std::string &dir);

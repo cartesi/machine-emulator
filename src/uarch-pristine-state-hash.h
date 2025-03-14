@@ -17,13 +17,13 @@
 #ifndef UARCH_STATE_HASH_H
 #define UARCH_STATE_HASH_H
 
-#include "machine-merkle-tree.h"
+#include "machine-hash.h"
 
 namespace cartesi {
 
 /// \brief Hash of the pristine uarch state.
 /// \details This hash is computed at compile time by the program compute-uarch-pristine-hash.cpp
-extern const machine_merkle_tree::hash_type uarch_pristine_state_hash;
+extern const machine_hash uarch_pristine_state_hash;
 
 } // namespace cartesi
 

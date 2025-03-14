@@ -59,8 +59,8 @@ PICCFLAGS=-fPIC
 SOLDFLAGS=-bundle -undefined dynamic_lookup
 LIBLDFLAGS=-dynamiclib
 EXELDFLAGS=
-PTHREAD_CFLAGS=
-PTHREAD_LDFLAGS=-lpthread
+PTHREAD_CFLAGS=-I/opt/local/include/libomp -fopenmp
+PTHREAD_LDFLAGS=-L/opt/local/lib/libomp -lgomp
 CC=clang
 CXX=clang++
 AR=libtool -static -o
@@ -107,8 +107,8 @@ PICCFLAGS=-fPIC
 SOLDFLAGS=-shared $(PICCFLAGS) $(GCLDFLAGS)
 LIBLDFLAGS=$(SOLDFLAGS)
 EXELDFLAGS=$(GCLDFLAGS)
-PTHREAD_CFLAGS=-pthread
-PTHREAD_LDFLAGS=-pthread -lpthread
+PTHREAD_CFLAGS=-fopenmp
+PTHREAD_LDFLAGS=-fopenmp
 CC=gcc
 CXX=g++
 AR=ar rcs
@@ -172,6 +172,7 @@ DEFS+=-DJSON_HAS_FILESYSTEM=0
 DEFS+=-DBOOST_ASIO_DISABLE_THREADS -DBOOST_ASIO_DISABLE_EPOLL -DBOOST_ASIO_DISABLE_EVENTFD
 
 ifeq ($(dump),yes)
+DUMP_DEFS+=-DDUMP_HASH_TREE_STATS
 DUMP_DEFS+=-DDUMP_ILLEGAL_INSN_EXCEPTIONS
 DUMP_DEFS+=-DDUMP_EXCEPTIONS
 DUMP_DEFS+=-DDUMP_INTERRUPTS
@@ -349,12 +350,12 @@ LIBCARTESI_OBJS:= \
 	base64.o \
 	clint-address-range.o \
 	dtb.o \
+	hash-tree.o \
 	htif-address-range.o \
 	interpret.o \
 	json-util.o \
 	machine-c-api.o \
 	machine-config.o \
-	machine-merkle-tree.o \
 	machine.o \
 	machine-address-ranges.o \
 	memory-address-range.o \
@@ -392,7 +393,6 @@ LUACARTESI_OBJS:= \
 
 LIBCARTESI_MERKLE_TREE_OBJS:= \
 	sha3.o \
-	machine-merkle-tree.o \
 	back-merkle-tree.o \
 	pristine-merkle-tree.o \
 	complete-merkle-tree.o \

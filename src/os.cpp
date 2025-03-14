@@ -832,7 +832,7 @@ int os_double_fork([[maybe_unused]] bool emancipate, [[maybe_unused]] const char
     try {
         *err_msg = nullptr;
         return os_double_fork_or_throw(emancipate);
-    } catch (std::exception &e) {
+    } catch (const std::exception &e) {
         error_storage = e.what();
         *err_msg = error_storage.c_str();
         return -1;

@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "keccak-256-hasher.h"
+#include "machine-hash.h"
 #include "merkle-tree-proof.h"
 #include "meta.h"
 #include "pristine-merkle-tree.h"
@@ -41,17 +42,11 @@ public:
     /// \brief Hasher class.
     using hasher_type = keccak_256_hasher;
 
-    /// \brief Storage for a hash.
-    using hash_type = hasher_type::hash_type;
-
-    /// \brief Storage for an address.
-    using address_type = uint64_t;
-
     /// \brief Storage for a proof.
-    using proof_type = merkle_tree_proof<hash_type, address_type>;
+    using proof_type = merkle_tree_proof;
 
     /// \brief Storage for a level in the tree.
-    using level_type = std::vector<hash_type>;
+    using level_type = std::vector<machine_hash>;
 
     /// \brief Constructor for pristine tree
     /// \param log2_root_size Log<sub>2</sub> of tree size
@@ -73,27 +68,27 @@ public:
 
     /// \brief Returns the tree's root hash
     /// \returns Root hash
-    hash_type get_root_hash() const {
+    machine_hash get_root_hash() const {
         return get_node_hash(0, get_log2_root_size());
     }
 
     /// \brief Returns the hash of a node at a given address of a given size
     /// \param address Node address
     /// \param log2_size Log<sub>2</sub> size subintended by node
-    const hash_type &get_node_hash(address_type address, int log2_size) const;
+    const machine_hash &get_node_hash(uint64_t address, int log2_size) const;
 
     /// \brief Returns proof for a given node
     /// \param address Node address
     /// \param log2_size Log<sub>2</sub> size subintended by node
     /// \returns Proof, or throws exception
-    proof_type get_proof(address_type address, int log2_size) const;
+    proof_type get_proof(uint64_t address, int log2_size) const;
 
     /// \brief Appends a new leaf hash to the tree
     /// \param hash Hash to append
-    void push_back(const hash_type &hash);
+    void push_back(const machine_hash &hash);
 
     /// \brief Returns number of leaves in tree
-    address_type size() const {
+    uint64_t size() const {
         return get_level(get_log2_leaf_size()).size();
     };
 

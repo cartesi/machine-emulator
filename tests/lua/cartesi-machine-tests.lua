@@ -395,7 +395,7 @@ local json_list = false
 local periodic_action = false
 local periodic_action_period = math.maxinteger
 local periodic_action_start = 0
-local concurrency_update_merkle_tree = util.parse_number(os.getenv("CARTESI_CONCURRENCY_UPDATE_MERKLE_TREE")) or 0
+local concurrency_update_hash_tree = util.parse_number(os.getenv("CARTESI_CONCURRENCY_UPDATE_HASH_TREE")) or 0
 
 -- List of supported options
 -- Options are processed in order
@@ -520,11 +520,11 @@ local options = {
                 return false
             end
             local c = util.parse_options(opts, {
-                update_merkle_tree = true,
+                update_hash_tree = true,
             })
-            c.update_merkle_tree =
-                assert(util.parse_number(c.update_merkle_tree), "invalid update_merkle_tree number in " .. all)
-            concurrency_update_merkle_tree = c.update_merkle_tree
+            c.update_hash_tree =
+                assert(util.parse_number(c.update_hash_tree), "invalid update_hash_tree number in " .. all)
+            concurrency_update_hash_tree = c.update_hash_tree
             return true
         end,
     },
@@ -618,7 +618,7 @@ local function build_machine(ram_image)
     end
     local runtime = {
         concurrency = {
-            update_merkle_tree = concurrency_update_merkle_tree,
+            update_hash_tree = concurrency_update_hash_tree,
         },
     }
     if remote_address then

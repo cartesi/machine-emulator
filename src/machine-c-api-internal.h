@@ -20,7 +20,7 @@
 #include <string>
 
 #include "machine-c-api.h"
-#include "machine-merkle-tree.h"
+#include "machine-hash.h"
 
 /// \brief Helper function that returns error result from C api function
 cm_error cm_result_failure();
@@ -29,7 +29,7 @@ cm_error cm_result_failure();
 cm_error cm_result_success();
 
 /// \brief Helper function that parses hash from C api structure
-cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash);
+cartesi::machine_hash convert_from_c(const cm_hash *c_hash);
 
 /// \brief Helper function that stores a string to a temporary thread local.
 const char *cm_set_temp_string(const std::string &s);

@@ -688,24 +688,12 @@
       }
     },
     {
-      "name": "machine.verify_merkle_tree",
-      "summary": "Verifies sanity of Merkle tree",
+      "name": "machine.verify_hash_tree",
+      "summary": "Verifies sanity of hash tree",
       "params": [],
       "result": {
         "name": "valid",
-        "description": "True if Merkle tree is sane",
-        "schema": {
-          "type": "boolean"
-        }
-      }
-    },
-    {
-      "name": "machine.verify_dirty_page_maps",
-      "summary": "Verifies sanity of dirty page maps",
-      "params": [],
-      "result": {
-        "name": "valid",
-        "description": "True if dirty page maps are sane",
+        "description": "True if hash tree is sane",
         "schema": {
           "type": "boolean"
         }
@@ -962,7 +950,7 @@
         "title": "ConcurrencyRuntimeConfig",
         "type": "object",
         "properties": {
-          "update_merkle_tree": {
+          "update_hash_tree": {
             "$ref": "#/components/schemas/UnsignedInteger"
           }
         }

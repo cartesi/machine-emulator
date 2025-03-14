@@ -49,6 +49,13 @@ std::string machine_config::get_dht_filename(const std::string &dir, uint64_t st
     return sout.str();
 }
 
+std::string machine_config::get_dpt_filename(const std::string &dir, uint64_t start, uint64_t length) {
+    std::ostringstream sout;
+    // dense hash tree
+    sout << dir << "/" << std::hex << std::setw(16) << std::setfill('0') << start << "-" << length << ".dpt";
+    return sout.str();
+}
+
 std::string machine_config::get_sht_filename(const std::string &dir) {
     // sparse hash tree
     return dir + "/global.sht";
@@ -70,6 +77,7 @@ void machine_config::adjust_backing_store_config(uint64_t start, uint64_t length
     c.truncate = false;
     c.data_filename = machine_config::get_data_filename(dir, start, length);
     c.dht_filename = machine_config::get_dht_filename(dir, start, length);
+    c.dpt_filename = machine_config::get_dpt_filename(dir, start, length);
 }
 
 void machine_config::adjust_hash_tree_config(const std::string &dir, hash_tree_config &c) {
@@ -115,7 +123,7 @@ machine_config machine_config::load(const std::string &dir) {
         }
         ju_get_field(j, std::string("config"), c, "");
         c.adjust_backing_stores(dir);
-    } catch (std::exception &e) {
+    } catch (const std::exception &e) {
         throw std::runtime_error{e.what()};
     }
     return c;

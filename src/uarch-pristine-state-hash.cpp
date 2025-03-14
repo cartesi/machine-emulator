@@ -18,13 +18,13 @@
 
 #include <cstddef>
 
-#include "machine-merkle-tree.h"
+#include "machine-hash.h"
 #include "uarch-pristine.h"
 
 namespace cartesi {
 
-static machine_merkle_tree::hash_type get_uarch_pristine_state_hash() noexcept {
-    machine_merkle_tree::hash_type h;
+static machine_hash get_uarch_pristine_state_hash() noexcept {
+    machine_hash h;
     for (std::size_t i = 0; i < h.size(); ++i) {
         h[i] = uarch_pristine_hash[i];
     }
@@ -33,6 +33,6 @@ static machine_merkle_tree::hash_type get_uarch_pristine_state_hash() noexcept {
 
 /// \brief Hash of the pristine uarch state.
 /// \details This hash is computed at compile time by the program compute-uarch-pristine-hash.cpp
-const machine_merkle_tree::hash_type uarch_pristine_state_hash = get_uarch_pristine_state_hash();
+const machine_hash uarch_pristine_state_hash = get_uarch_pristine_state_hash();
 
 } // namespace cartesi

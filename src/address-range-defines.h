@@ -50,7 +50,7 @@
 
 #define AR_RAM_START_DEF 0x80000000 ///< RAM start address
 
-#define AR_PAGE_SIZE_LOG2_DEF 12 ///< log<sub>2</sub> of physical memory page size.
+#define AR_LOG2_PAGE_SIZE_DEF 12 ///< log<sub>2</sub> of physical memory page size.
 
 // helper for using UINT64_C with defines
 #ifndef EXPAND_UINT64_C

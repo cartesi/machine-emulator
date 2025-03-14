@@ -92,6 +92,17 @@ struct overloads : Ts... {
 };
 
 /// \endcond
+///
+///
+///
+
+// C++20 concept for a POD type
+template <typename T>
+concept POD = std::is_trivially_copyable_v<T> && std::is_standard_layout_v<T>;
+
+// C++20 concept for something that is just like a byte
+template <typename T>
+concept ByteLike = POD<T> && (sizeof(T) == 1);
 
 } // namespace cartesi
 

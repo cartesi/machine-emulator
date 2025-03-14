@@ -209,12 +209,11 @@ struct uarch_config final {
 
 /// \brief Hash tree config
 struct hash_tree_config final {
-    std::string hasher{"keccak"}; ///< What hashing function to use?
-    bool shared{false};           ///< Should changes be reflected in backing store?
-    bool truncate{false};         ///< Should backing store be truncated to correct size?
-    std::string sht_filename;     ///< Backing storage for sparse hash-tree
-    std::string phtc_filename;    ///< Backing storage for page hash-tree cache
-    uint64_t phtc_size{2046};     ///< Max number of pages in page hash-tree cache
+    bool shared{false};        ///< Should changes be reflected in backing store?
+    bool truncate{false};      ///< Should backing store be truncated to correct size?
+    std::string sht_filename;  ///< Backing storage for sparse hash-tree
+    std::string phtc_filename; ///< Backing storage for page hash-tree cache
+    uint64_t phtc_size{2046};  ///< Max number of pages in page hash-tree cache
 };
 
 /// \brief Machine state config

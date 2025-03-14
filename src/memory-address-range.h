@@ -93,14 +93,14 @@ private:
     }
 
     void do_mark_dirty_page(uint64_t offset) noexcept override {
-        auto page_index = offset >> AR_constants::AR_PAGE_SIZE_LOG2;
+        auto page_index = offset >> AR_constants::AR_LOG2_PAGE_SIZE;
         auto map_index = page_index >> 3;
         assert(map_index < m_dirty_page_map.size());
         m_dirty_page_map[map_index] |= (1 << (page_index & 7));
     }
 
     void do_mark_clean_page(uint64_t offset) noexcept override {
-        auto page_index = offset >> AR_constants::AR_PAGE_SIZE_LOG2;
+        auto page_index = offset >> AR_constants::AR_LOG2_PAGE_SIZE;
         auto map_index = page_index >> 3;
         assert(map_index < m_dirty_page_map.size());
         m_dirty_page_map[map_index] &= ~(1 << (page_index & 7));
@@ -111,7 +111,7 @@ private:
     }
 
     bool do_is_page_marked_dirty(uint64_t offset) const noexcept override {
-        auto page_index = offset >> AR_constants::AR_PAGE_SIZE_LOG2;
+        auto page_index = offset >> AR_constants::AR_LOG2_PAGE_SIZE;
         auto map_index = page_index >> 3;
         assert(map_index < m_dirty_page_map.size());
         return (m_dirty_page_map[map_index] & (1 << (page_index & 7))) != 0;

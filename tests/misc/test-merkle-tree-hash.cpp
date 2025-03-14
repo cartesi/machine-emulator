@@ -23,6 +23,7 @@
 #include <exception>
 #include <iostream>
 #include <new>
+#include <span>
 #include <tuple>
 #include <vector>
 
@@ -36,7 +37,7 @@
 
 using namespace cartesi;
 using hasher_type = keccak_256_hasher;
-using hash_type = hasher_type::hash_type;
+using hash_type = machine_hash;
 
 namespace {
 /// \brief Checks if string matches prefix and captures remaninder
@@ -124,7 +125,7 @@ __attribute__((format(printf, 1, 2))) void error(const char *fmt, ...) {
 /// \param hash Receives the leaf hash
 void get_word_hash(hasher_type &h, const unsigned char *word, int log2_word_size, hash_type &hash) {
     h.begin();
-    h.add_data(word, 1 << log2_word_size);
+    h.add_data(std::span<const unsigned char>(word, 1 << log2_word_size));
     h.end(hash);
 }
 

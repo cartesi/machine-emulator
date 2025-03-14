@@ -31,11 +31,11 @@
 #include "access-log.h"
 #include "address-range-description.h"
 #include "address-range.h"
+#include "hash-tree.h"
 #include "host-addr.h"
 #include "i-device-state-access.h"
 #include "interpret.h"
 #include "machine-config.h"
-#include "machine-merkle-tree.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
 #include "machine-state.h"
@@ -63,17 +63,17 @@ private:
     mutable machine_state m_s;                                 ///< Big machine state
     mutable uarch_state m_us;                                  ///< Microarchitecture state
     mutable std::vector<std::unique_ptr<address_range>> m_ars; ///< All address ranges
-    mutable machine_merkle_tree m_t;                           ///< Merkle tree of state
     machine_config m_c;                                        ///< Copy of initialization config
     machine_runtime_config m_r;                                ///< Copy of initialization runtime config
-    std::vector<uint64_t> m_merkle_ars;                   ///< Indices of address ranges that the Mekrle tree can find
-    std::vector<virtio_address_range *> m_virtio_ars;     ///< VirtIO address ranges
+    std::vector<virtio_address_range *> m_virtio_ars;          ///< VirtIO address ranges
     address_range_descriptions m_ards;                    ///< Address range descriptions listed by get_address_ranges()
     std::unordered_map<std::string, uint64_t> m_counters; ///< Counters used for statistics collection
+    std::vector<uint64_t> m_hash_tree_ars;                ///< Indices of address ranges that the Mekrle tree can find
+    // hash_tree m_ht;                                       ///< Top level hash tree
 
     ///< Where to register an address range
     struct register_where {
-        bool merkle;    //< Register with Merkle tree, so it appears in the root hash
+        bool hash_tree; //< Register with hash tree, so it appears in the root hash
         bool interpret; //< Register so interpret can see (and it also appears as a PMA entries in memory)
     };
 
@@ -97,8 +97,8 @@ private:
     /// This means the an index into the container that owns all address ranges will always refers to same address range
     /// after subsequent calls to register_address_range() and  calls to replace_address_range() as well.
     /// \details Besides the container that stores the address ranges, the machine maintains subsets of address ranges.
-    /// The "merkle" address range container lists the indices of the address ranges taht will be considered by
-    /// the Merkle tree during the computation of the state hash.
+    /// The "hash_tree" address range container lists the indices of the address ranges taht will be considered by
+    /// the hash tree during the computation of the state hash.
     /// The "interpret" address range container lists the indices of the address ranges that will be visible from within
     /// the interpreter.
     /// When registering an address range with the machine, one must specify \p where else to register it.
@@ -115,8 +115,8 @@ private:
         if (where.interpret) {                              // Register with interpreter
             m_s.pmas.push_back(index);
         }
-        if (where.merkle) { // Register with Merkle tree
-            m_merkle_ars.push_back(index);
+        if (where.hash_tree) { // Register with hash tree
+            m_hash_tree_ars.push_back(index);
         }
         if constexpr (std::is_convertible_v<AR *, virtio_address_range *>) { // Register with VirtIO
             m_virtio_ars.push_back(&ar_ref);
@@ -182,9 +182,10 @@ private:
     /// \param c CMIO configuration
     void init_cmio_ars(const cmio_config &c);
 
-    /// \brief Initializes the address ranges involced in the Merkle tree
+    /// \brief Initializes the address ranges involced in the hash tree
+    /// \brief h Hash tree configuration
     /// \detail This can only be called after all address ranges have been registerd
-    void init_merkle_ars();
+    void init_hash_tree(const hash_tree_config &h);
 
     /// \brief Initializes the address range descriptions returned by get_address_ranges()
     /// \detail This can only be called after all address ranges have been registered
@@ -218,8 +219,8 @@ private:
     static std::string get_counter_key(const char *name, const char *domain = nullptr);
 
 public:
-    /// \brief Type of hash
-    using hash_type = machine_merkle_tree::hash_type;
+    /// \brief Type of hash and proof
+    using proof_type = hash_tree::proof_type;
 
     using reg = machine_reg;
 
@@ -267,8 +268,8 @@ public:
     /// \param log_filename Name of the file containing the log.
     /// \param mcycle_count Number of mcycles the machine was run for.
     /// \param root_hash_after Hash of the state after the step.
-    static interpreter_break_reason verify_step(const hash_type &root_hash_before, const std::string &log_filename,
-        uint64_t mcycle_count, const hash_type &root_hash_after);
+    static interpreter_break_reason verify_step(const machine_hash &root_hash_before, const std::string &log_filename,
+        uint64_t mcycle_count, const machine_hash &root_hash_after);
 
     /// \brief Runs the machine in the microarchitecture until the mcycles advances by one unit or the micro cycle
     /// counter (uarch_cycle) reaches uarch_cycle_end
@@ -293,15 +294,15 @@ public:
     /// \param root_hash_before State hash before step.
     /// \param log Step state access log.
     /// \param root_hash_after State hash after step.
-    static void verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after);
+    static void verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after);
 
     /// \brief Checks the validity of a state transition caused by log_reset_uarch.
     /// \param root_hash_before State hash before uarch reset
     /// \param log Step state access log.
     /// \param root_hash_after State hash after uarch reset.
-    static void verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after);
+    static void verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after);
 
     /// \brief Returns copy of default machine config
     static machine_config get_default_config();
@@ -392,7 +393,7 @@ public:
     /// \param proof Receives the proof.
     /// \details If the node is
     /// smaller than a page size, then it must lie entirely inside the same PMA range.
-    machine_merkle_tree::proof_type get_proof(uint64_t address, int log2_size) const;
+    proof_type get_proof(uint64_t address, int log2_size) const;
 
     /// \brief Obtains the proof for a node in the Merkle tree without making any modifications to the tree.
     /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
@@ -402,24 +403,23 @@ public:
     /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
     /// This overload is used to optimize proof generation when the caller knows that the tree is already up to
     /// date.
-    machine_merkle_tree::proof_type get_proof(uint64_t address, int log2_size,
-        skip_merkle_tree_update_t /*unused*/) const;
+    proof_type get_proof(uint64_t address, int log2_size, skip_merkle_tree_update_t /*unused*/) const;
 
     /// \brief Obtains the root hash of the Merkle tree.
     /// \param hash Receives the hash.
-    void get_root_hash(hash_type &hash) const;
+    void get_root_hash(machine_hash &hash) const;
 
     /// \brief Obtains the hash of a node in the Merkle tree.
     /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
     /// \param log2_size log<sub>2</sub> of size subintended by target node.
     /// \returns The hash of the target node.
-    hash_type get_merkle_tree_node_hash(uint64_t address, int log2_size) const;
+    machine_hash get_merkle_tree_node_hash(uint64_t address, int log2_size) const;
 
     /// \brief Obtains the hash of a node in the Merkle tree without making any modifications to the tree.
     /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
     /// \param log2_size log<sub>2</sub> of size subintended by target node.
     /// \returns The hash of the target node.
-    hash_type get_merkle_tree_node_hash(uint64_t address, int log2_size, skip_merkle_tree_update_t /*unused*/) const;
+    machine_hash get_merkle_tree_node_hash(uint64_t address, int log2_size, skip_merkle_tree_update_t /*unused*/) const;
 
     /// \brief Verifies integrity of Merkle tree.
     /// \returns True if tree is self-consistent, false otherwise.
@@ -511,6 +511,26 @@ public:
     address_range &read_pma(uint64_t index) noexcept {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
         return const_cast<address_range &>(std::as_const(*this).read_pma(index));
+    }
+
+    /// \brief Returns one of the address ranges considered by the Merkle tree
+    /// \param index Index of desired address range
+    /// \returns Desired address range, or an empty sentinel if index is out of bounds
+    const address_range &read_hash_tree_address_range(uint64_t index) const noexcept {
+        if (index >= m_hash_tree_ars.size()) {
+            static constexpr auto sentinel = make_empty_address_range("sentinel");
+            return sentinel;
+        }
+        // NOLINTNEXTLINE(bugprone-narrowing-conversions)
+        return *m_ars[static_cast<int>(m_hash_tree_ars[static_cast<int>(index)])];
+    }
+
+    /// \brief Returns one of the address ranges considered by the Merkle tree
+    /// \param index Index of desired address range
+    /// \returns Desired address range, or an empty sentinel if index is out of bounds
+    address_range &read_hash_tree_address_range(uint64_t index) noexcept {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+        return const_cast<address_range &>(std::as_const(*this).read_hash_tree_address_range(index));
     }
 
     /// \brief Obtain address range from the machine state that covers a given physical memory region
@@ -648,7 +668,7 @@ public:
     /// \param log Log containing the state accesses performed by the load operation
     /// \param root_hash_after State hash after response was sent.
     static void verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after);
+        const machine_hash &root_hash_before, const access_log &log, const machine_hash &root_hash_after);
 
     /// \brief Returns a description of what is at a given target physical address
     /// \param paddr Target physical address of interest

@@ -62,7 +62,7 @@ static const auto gperf_meta = clua_make_luaL_Reg_array({
 static int cartesi_mod_keccak(lua_State *L) {
     using namespace cartesi;
     keccak_256_hasher h;
-    keccak_256_hasher::hash_type hash;
+    machine_hash hash;
     if (lua_gettop(L) > 2) {
         luaL_argerror(L, 3, "too many arguments");
     }
@@ -76,7 +76,7 @@ static int cartesi_mod_keccak(lua_State *L) {
         uint64_t word = luaL_checkinteger(L, 1);
         h.begin();
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        h.add_data(reinterpret_cast<const unsigned char *>(&word), sizeof(word));
+        h.add_data(std::span<unsigned char>(reinterpret_cast<unsigned char *>(&word), sizeof(word)));
         h.end(hash);
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()), hash.size());
@@ -86,11 +86,11 @@ static int cartesi_mod_keccak(lua_State *L) {
     size_t len1 = 0;
     const char *hash1 = luaL_checklstring(L, 1, &len1);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    h.add_data(reinterpret_cast<const unsigned char *>(hash1), len1);
+    h.add_data(std::span<const char>(hash1, len1));
     size_t len2 = 0;
     const char *hash2 = luaL_optlstring(L, 2, "", &len2);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    h.add_data(reinterpret_cast<const unsigned char *>(hash2), len2);
+    h.add_data(std::span<const char>(hash2, len2));
     h.end(hash);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()), hash.size());

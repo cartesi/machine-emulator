@@ -20,20 +20,21 @@
 /// \file
 /// \brief Hasher interface
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <ranges>
+#include <span>
 #include <stdexcept>
 #include <type_traits>
 
+#include "machine-hash.h"
 #include "meta.h"
 
 namespace cartesi {
 
 /// \brief Hasher interface.
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
-/// \tparam HASH_SIZE Size of hash.
-template <typename DERIVED, typename HASH_SIZE>
+template <typename DERIVED>
 class i_hasher { // CRTP
     /// \brief Returns object cast as the derived class
     DERIVED &derived() {
@@ -46,19 +47,18 @@ class i_hasher { // CRTP
     }
 
 public:
-    constexpr static size_t hash_size = HASH_SIZE::value;
-
-    using hash_type = std::array<unsigned char, hash_size>;
-
     void begin() {
         return derived().do_begin();
     }
 
-    void add_data(const unsigned char *data, size_t length) {
-        return derived().do_add_data(data, length);
+    template <std::ranges::contiguous_range R>
+    void add_data(const R &r)
+        requires ByteLike<std::ranges::range_value_t<R>>
+    {
+        return derived().do_add_data(r);
     }
 
-    void end(hash_type &hash) {
+    void end(machine_hash_view hash) {
         return derived().do_end(hash);
     }
 };
@@ -69,19 +69,36 @@ using is_an_i_hasher = std::integral_constant<bool, is_template_base_of_v<i_hash
 template <typename DERIVED>
 constexpr bool is_an_i_hasher_v = is_an_i_hasher<DERIVED>::value;
 
+// C++20 concept for is_an_i_hasher_v
+template <typename T>
+concept IHasher = is_an_i_hasher_v<T>;
+
+/// \brief Computes the hash of data
+/// \tparam H Hasher class
+/// \param h Hasher object
+/// \param data Data to hash
+/// \param result Receives the hash of data
+template <IHasher H, std::ranges::contiguous_range R>
+inline static void get_hash(H &h, R data, machine_hash_view result)
+        requires ByteLike<std::ranges::range_value_t<R>>
+{
+    h.begin();
+    h.add_data(data);
+    h.end(result);
+}
+
 /// \brief Computes the hash of concatenated hashes
 /// \tparam H Hasher class
 /// \param h Hasher object
 /// \param left Left hash to concatenate
 /// \param right Right hash to concatenate
 /// \param result Receives the hash of the concatenation
-template <typename H>
-inline static void get_concat_hash(H &h, const typename H::hash_type &left, const typename H::hash_type &right,
-    typename H::hash_type &result) {
-    static_assert(is_an_i_hasher_v<H>, "not an i_hasher");
+template <IHasher H>
+inline static void get_concat_hash(H &h, const_machine_hash_view left, const_machine_hash_view right,
+    machine_hash_view result) {
     h.begin();
-    h.add_data(left.data(), static_cast<int>(left.size()));
-    h.add_data(right.data(), static_cast<int>(right.size()));
+    h.add_data(left);
+    h.add_data(right);
     h.end(result);
 }
 
@@ -91,47 +108,40 @@ inline static void get_concat_hash(H &h, const typename H::hash_type &left, cons
 /// \param left Left hash to concatenate
 /// \param right Right hash to concatenate
 /// \return The hash of the concatenation
-template <typename H>
-inline static typename H::hash_type get_concat_hash(H &h, const typename H::hash_type &left,
-    const typename H::hash_type &right) {
-    static_assert(is_an_i_hasher_v<H>, "not an i_hasher");
-    h.begin();
-    h.add_data(left.data(), left.size());
-    h.add_data(right.data(), right.size());
-    typename H::hash_type result;
-    h.end(result);
+template <IHasher H>
+inline static machine_hash get_concat_hash(H &h, const_machine_hash_view left, const_machine_hash_view right) {
+    machine_hash result;
+    get_concat_hash(h, left, right, result);
     return result;
 }
 
 /// \brief  Computes a merkle tree hash of a data buffer
 /// \tparam H Hasher class
+/// \tparam D Contiguous range class
 /// \param h Hasher object
 /// \param data Data to be hashed
-/// \param data_length Length of data
 /// \param word_length  Length of each word
 /// \param result Receives the resulting merkle tree hash
-template <typename H>
-inline static void get_merkle_tree_hash(H &h, const unsigned char *data, uint64_t data_length, uint64_t word_length,
-    typename H::hash_type &result) {
-    if (data_length > word_length) {
-        if (data_length & 1) {
-            throw std::invalid_argument("data_length must be a power of 2 multiple of word_length");
+template <IHasher H, std::ranges::contiguous_range D>
+inline static void get_merkle_tree_hash(H &h, const D &data, uint64_t word_length, machine_hash_view result)
+    requires ByteLike<std::ranges::range_value_t<D>>
+{
+    const auto size = std::ranges::size(data);
+    if (size > word_length) {
+        if (size & 1) {
+            throw std::invalid_argument("data size must be a power of 2 multiple of word_length");
         }
-        data_length = data_length / 2;
-        typename H::hash_type left;
-        get_merkle_tree_hash(h, data, data_length, word_length, left);
-        get_merkle_tree_hash(h, data + data_length, data_length, word_length, result);
-        h.begin();
-        h.add_data(left.data(), left.size());
-        h.add_data(result.data(), result.size());
-        h.end(result);
+        machine_hash left;
+        const auto half_size = size >> 1;
+        auto start = std::ranges::begin(data);
+        get_merkle_tree_hash(h, std::ranges::subrange(start, start + half_size), word_length, left);
+        get_merkle_tree_hash(h, std::ranges::subrange(start + half_size, start + size), word_length, result);
+        get_concat_hash(h, left, result, result);
     } else {
-        if (data_length != word_length) {
-            throw std::invalid_argument("data_length must be a power of 2 multiple of word_length");
+        if (size != word_length) {
+            throw std::invalid_argument("data size must be a power of 2 multiple of word_length");
         }
-        h.begin();
-        h.add_data(data, data_length);
-        h.end(result);
+        get_hash(h, data, result);
     }
 }
 

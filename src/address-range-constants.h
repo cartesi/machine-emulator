@@ -63,8 +63,8 @@ enum AR_ranges : uint64_t {
 
 /// \brief PMA constants.
 enum AR_constants : uint64_t {
-    AR_PAGE_SIZE_LOG2 = EXPAND_UINT64_C(AR_PAGE_SIZE_LOG2_DEF), ///< Log<sub>2</sub> of physical memory page size.
-    AR_PAGE_SIZE = (UINT64_C(1) << AR_PAGE_SIZE_LOG2_DEF),      ///< Physical memory page size.
+    AR_LOG2_PAGE_SIZE = EXPAND_UINT64_C(AR_LOG2_PAGE_SIZE_DEF), ///< Log<sub>2</sub> of physical memory page size.
+    AR_PAGE_SIZE = (UINT64_C(1) << AR_LOG2_PAGE_SIZE_DEF),      ///< Physical memory page size.
 };
 
 /// \brief PMA masks.

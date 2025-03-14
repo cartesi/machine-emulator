@@ -18,7 +18,8 @@
 #include <iomanip>
 #include <iostream>
 
-#include <machine-merkle-tree.h>
+#include <back-merkle-tree.h>
+#include <hash-tree-constants.h>
 #include <shadow-uarch-state.h>
 #include <uarch-constants.h>
 #include <uarch-pristine.h>
@@ -30,13 +31,25 @@
 
 using namespace cartesi;
 
-using tree_type = machine_merkle_tree;
+using tree_type = back_merkle_tree;
 using hash_type = tree_type::hash_type;
-using hashertype = tree_type::hasher_type;
-using proof_type = tree_type::proof_type;
+using hasher_type = tree_type::hasher_type;
 
-static_assert(AR_PAGE_SIZE == tree_type::get_page_size(), "PMA and machine_merkle_tree page sizes must match");
-static_assert(sizeof(shadow_uarch_state) <= AR_PAGE_SIZE, "shadow_uarch_state must fit in one page");
+static constexpr auto word_size = HASH_TREE_WORD_SIZE;
+static constexpr auto log2_word_size = HASH_TREE_LOG2_WORD_SIZE;
+static constexpr auto page_size = HASH_TREE_PAGE_SIZE;
+static constexpr auto log2_page_size = HASH_TREE_LOG2_PAGE_SIZE;
+
+static_assert(AR_PAGE_SIZE == page_size, "address-range and hash-tree page sizes must match");
+static_assert(sizeof(shadow_uarch_state) <= page_size, "shadow_uarch_state must fit in one page");
+static_assert(AR_SHADOW_UARCH_STATE_LENGTH >= sizeof(shadow_uarch_state),
+    "shadow uarch state must fit in its address range");
+static_assert(AR_SHADOW_UARCH_STATE_LENGTH >= page_size,
+    "shadow uarch state address range must be a least one page long");
+static_assert(AR_UARCH_RAM_START % page_size == 0, "uarch ram start must be aligned to page size");
+static_assert(AR_SHADOW_UARCH_STATE_START % page_size == 0, "shadow uarch state start must be aligned to page size");
+static_assert(AR_UARCH_RAM_START >= AR_SHADOW_UARCH_STATE_START + AR_SHADOW_UARCH_STATE_LENGTH,
+    "shadow ram must start after shadow uarch state");
 
 /// \brief Prints help message
 static void help(const char *name) {
@@ -55,8 +68,8 @@ Options:
 }
 
 int main(int argc, char *argv[]) try {
-    tree_type tree{};
-    hashertype hasher{};
+    tree_type tree{UARCH_STATE_LOG2_SIZE, log2_page_size, log2_word_size};
+    hasher_type hasher{};
     hash_type hash{};
 
     // Process command line arguments
@@ -70,53 +83,47 @@ int main(int argc, char *argv[]) try {
     }
 
     // Allocate scratch page buffer
-    auto scratch = make_unique_calloc<unsigned char>(AR_PAGE_SIZE, std::nothrow_t{});
+    auto scratch = make_unique_calloc<unsigned char>(page_size, std::nothrow_t{});
     if (!scratch) {
         throw std::runtime_error("Could not allocate scratch memory");
     }
+    auto scratch_span = std::span<unsigned char>{scratch.get(), page_size};
+    hash_type pristine_hash;
+    get_merkle_tree_hash(hasher, scratch_span, word_size, pristine_hash);
 
     // Build pristine shadow uarch state
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *shadow = reinterpret_cast<shadow_uarch_state *>(scratch.get());
-    memset(scratch.get(), 0, AR_PAGE_SIZE);
+    memset(scratch.get(), 0, page_size);
     shadow->halt_flag = UARCH_HALT_FLAG_INIT;
     shadow->pc = UARCH_PC_INIT;
     shadow->cycle = UARCH_CYCLE_INIT;
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
         shadow->x[i] = UARCH_X_INIT;
     }
-
-    // Start updating merkle tree
-    tree.begin_update();
     // Add shadow uarch state to merkle tree
-    tree.get_page_node_hash(hasher, scratch.get(), hash);
-    if (!tree.update_page_node_hash(UARCH_SHADOW_START_ADDRESS, hash)) {
-        throw std::runtime_error("Could not update uarch shadow tree node hash");
+    get_merkle_tree_hash(hasher, scratch_span, word_size, hash);
+    tree.push_back(hash);
+    // Add pristine gap between shadow uarch state and uarch RAM
+    if (auto gap = (AR_UARCH_RAM_START - page_size - AR_SHADOW_UARCH_STATE_START) / page_size; gap != 0) {
+        tree.pad_back(gap);
     }
     // Add all pages of uarch ram to merkle tree
-    for (uint32_t p = 0; p < uarch_pristine_ram_len; p += AR_PAGE_SIZE) {
+    for (uint32_t p = 0; p < uarch_pristine_ram_len; p += page_size) {
         const auto *page_data = uarch_pristine_ram + p;
-        if (p + AR_PAGE_SIZE > uarch_pristine_ram_len) {
-            memset(scratch.get(), 0, AR_PAGE_SIZE);
+        if (p + page_size > uarch_pristine_ram_len) {
+            memset(scratch.get(), 0, page_size);
             memcpy(scratch.get(), uarch_pristine_ram + p, uarch_pristine_ram_len - p);
             page_data = scratch.get();
         }
-        tree.get_page_node_hash(hasher, page_data, hash);
-        if (!tree.update_page_node_hash(UARCH_RAM_START_ADDRESS + p, hash)) {
-            throw std::runtime_error("Could not update uarch ram tree node hash");
-        }
+        std::span<const unsigned char, page_size> page_data_span(page_data, page_size);
+        get_merkle_tree_hash(hasher, page_data_span, word_size, hash);
+        tree.push_back(hash);
     }
-
-    // Get uarch root hash
-    if (!tree.end_update(hasher)) {
-        throw std::runtime_error("end_update merkle tree failed");
-    }
-    proof_type proof = tree.get_proof(UARCH_STATE_START_ADDRESS, UARCH_STATE_LOG2_SIZE, nullptr);
-    auto &uarch_state_hash = proof.get_target_hash();
-
+    // Get uarch state hash
+    auto uarch_state_hash = tree.get_root_hash();
     // Print header
     std::cout << "// This file is auto-generated and should not be modified" << std::endl;
-
     // Print hash
     std::cout << "unsigned char uarch_pristine_hash[] = {\n  ";
     int i = 0;
@@ -131,7 +138,6 @@ int main(int argc, char *argv[]) try {
     }
     std::cout << "\n};\nunsigned int uarch_pristine_hash_len = " << std::dec << uarch_state_hash.size() << ";"
               << std::endl;
-
     return 0;
 } catch (std::exception &e) {
     std::cerr << "Caught exception: " << e.what() << '\n';

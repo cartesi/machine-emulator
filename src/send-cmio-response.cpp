@@ -21,7 +21,7 @@
 
 #include "send-cmio-response.h"
 
-#include "machine-merkle-tree.h"
+#include "hash-tree-constants.h"
 #include "pmas-constants.h"
 #include "record-send-cmio-state-access.h"
 #include "replay-send-cmio-state-access.h"
@@ -39,8 +39,8 @@ void send_cmio_response(STATE_ACCESS a, uint16 reason, bytes data, uint32 dataLe
     if (dataLength > 0) {
         // Find the write length: the smallest power of 2 that is >= dataLength and >= tree leaf size
         uint32 writeLengthLog2Size = uint32Log2(dataLength);
-        if (writeLengthLog2Size < machine_merkle_tree::get_log2_word_size()) {
-            writeLengthLog2Size = machine_merkle_tree::get_log2_word_size(); // minimum write size is the tree leaf size
+        if (writeLengthLog2Size < HASH_TREE_LOG2_WORD_SIZE) {
+            writeLengthLog2Size = HASH_TREE_LOG2_WORD_SIZE; // minimum write size is the tree leaf size
         }
         if (uint32ShiftLeft(1, writeLengthLog2Size) < dataLength) {
             writeLengthLog2Size += 1;

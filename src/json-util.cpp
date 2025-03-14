@@ -36,10 +36,11 @@
 #include "address-range-description.h"
 #include "base64.h"
 #include "bracket-note.h"
+#include "hash-tree.h"
 #include "interpret.h"
 #include "jsonrpc-fork-result.h"
 #include "machine-config.h"
-#include "machine-merkle-tree.h"
+#include "machine-hash.h"
 #include "machine-runtime-config.h"
 #include "machine.h"
 #include "semantic-version.h"
@@ -61,7 +62,7 @@ std::string encode_base64(const unsigned char *data, uint64_t length) {
     return encode_base64(input);
 }
 
-std::string encode_base64(const machine_merkle_tree::hash_type &hash) {
+std::string encode_base64(const machine_hash &hash) {
     return encode_base64(hash.data(), hash.size());
 }
 
@@ -816,8 +817,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     machine_runtime_config &value, const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_merkle_tree::proof_type::hash_type &value,
-    const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_hash &value, const std::string &path) {
     if (!contains(j, key, path)) {
         return;
     }
@@ -833,8 +833,8 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_merkle_tree
 }
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key,
-    std::optional<machine_merkle_tree::proof_type::hash_type> &optional, const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, std::optional<machine_hash> &optional,
+    const std::string &path) {
     optional = {};
     if (!contains(j, key, path)) {
         return;
@@ -851,15 +851,15 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key,
     std::copy(bin.begin(), bin.end(), optional.value().data());
 }
 
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
-    machine_merkle_tree::proof_type::hash_type &value, const std::string &path);
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, machine_hash &value,
+    const std::string &path);
 
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
-    machine_merkle_tree::proof_type::hash_type &value, const std::string &path);
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, machine_hash &value,
+    const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key,
-    not_default_constructible<machine_merkle_tree::proof_type> &value, const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constructible<hash_tree::proof_type> &value,
+    const std::string &path) {
     value = {};
     if (!contains(j, key, path)) {
         return;
@@ -878,13 +878,13 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key,
     }
     value.emplace(static_cast<int>(log2_root_size), static_cast<int>(log2_target_size));
     auto &proof = value.value();
-    machine_merkle_tree::proof_type::address_type target_address = 0;
+    uint64_t target_address = 0;
     ju_get_field(jk, "target_address"s, target_address, new_path);
     proof.set_target_address(target_address);
-    machine_merkle_tree::proof_type::hash_type target_hash;
+    machine_hash target_hash;
     ju_get_field(jk, "target_hash"s, target_hash, new_path);
     proof.set_target_hash(target_hash);
-    machine_merkle_tree::proof_type::hash_type root_hash;
+    machine_hash root_hash;
     ju_get_field(jk, "root_hash"s, root_hash, new_path);
     proof.set_root_hash(root_hash);
     if (!contains(jk, "sibling_hashes", new_path)) {
@@ -897,17 +897,17 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key,
     const auto sibling_hashes_base = path + "sibling_hashes/";
     for (int log2_size = proof.get_log2_target_size(), i = 0; log2_size < proof.get_log2_root_size();
         ++log2_size, ++i) {
-        machine_merkle_tree::proof_type::hash_type sibling_hash;
+        machine_hash sibling_hash;
         ju_get_field(sh, i, sibling_hash, sibling_hashes_base);
         proof.set_sibling_hash(sibling_hash, log2_size);
     }
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
-    not_default_constructible<machine_merkle_tree::proof_type> &value, const std::string &path);
+    not_default_constructible<hash_tree::proof_type> &value, const std::string &path);
 
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
-    not_default_constructible<machine_merkle_tree::proof_type> &value, const std::string &path);
+    not_default_constructible<hash_tree::proof_type> &value, const std::string &path);
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, access_type &value, const std::string &path) {
@@ -992,16 +992,15 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, con
     }
     access.set_log2_size(static_cast<int>(log2_size));
     // Minimum logged data size is merkle tree word size
-    const uint64_t data_log2_size =
-        std::max(log2_size, static_cast<uint64_t>(machine_merkle_tree::get_log2_word_size()));
+    const uint64_t data_log2_size = std::max(log2_size, static_cast<uint64_t>(HASH_TREE_LOG2_WORD_SIZE));
     uint64_t address = 0;
     ju_get_field(jk, "address"s, address, new_path);
     access.set_address(address);
-    machine_merkle_tree::proof_type::hash_type read_hash;
+    machine_hash read_hash;
     ju_get_field(jk, "read_hash", read_hash, new_path);
     access.set_read_hash(read_hash);
 
-    not_default_constructible<machine_merkle_tree::proof_type::hash_type> written_hash;
+    not_default_constructible<machine_hash> written_hash;
     ju_get_opt_field(jk, "written_hash", written_hash, new_path);
     if (written_hash.has_value()) {
         access.set_written_hash(written_hash.value());
@@ -1030,7 +1029,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, con
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         auto &sibling_hashes = access.get_sibling_hashes().value();
         ju_get_vector_like_field(jk, "sibling_hashes"s, sibling_hashes, new_path);
-        auto expected_depth = static_cast<size_t>(machine_merkle_tree::get_log2_root_size() - data_log2_size);
+        auto expected_depth = static_cast<size_t>(HASH_TREE_LOG2_ROOT_SIZE - data_log2_size);
         if (sibling_hashes.size() != expected_depth) {
             throw std::invalid_argument("\""s + new_path + "sibling_hashes\" has wrong length");
         }
@@ -1335,7 +1334,6 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, hash_tree_config &v
     const auto new_path = path + to_string(key) + "/";
     ju_get_opt_field(jconfig, "shared"s, value.shared, new_path);
     ju_get_opt_field(jconfig, "truncate"s, value.truncate, new_path);
-    ju_get_opt_field(jconfig, "hasher"s, value.hasher, new_path);
     ju_get_opt_field(jconfig, "sht_filename"s, value.sht_filename, new_path);
     ju_get_opt_field(jconfig, "phtc_filename"s, value.phtc_filename, new_path);
     ju_get_opt_field(jconfig, "phtc_size"s, value.phtc_size, new_path);
@@ -1697,17 +1695,17 @@ void to_json(nlohmann::json &j, const machine::reg &reg) {
     j = reg_to_name(reg);
 }
 
-void to_json(nlohmann::json &j, const machine_merkle_tree::hash_type &h) {
+void to_json(nlohmann::json &j, const machine_hash &h) {
     j = encode_base64(h);
 }
 
-void to_json(nlohmann::json &j, const std::vector<machine_merkle_tree::hash_type> &hs) {
+void to_json(nlohmann::json &j, const std::vector<machine_hash> &hs) {
     j = nlohmann::json::array();
     std::transform(hs.cbegin(), hs.cend(), std::back_inserter(j),
-        [](const machine_merkle_tree::hash_type &h) -> nlohmann::json { return h; });
+        [](const machine_hash &h) -> nlohmann::json { return h; });
 }
 
-void to_json(nlohmann::json &j, const machine_merkle_tree::proof_type &p) {
+void to_json(nlohmann::json &j, const hash_tree::proof_type &p) {
     nlohmann::json s = nlohmann::json::array();
     for (int log2_size = p.get_log2_target_size(); log2_size < p.get_log2_root_size(); ++log2_size) {
         s.push_back(encode_base64(p.get_sibling_hash(log2_size)));
@@ -1744,8 +1742,8 @@ void to_json(nlohmann::json &j, const access &a) {
         // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         const auto &sibling_hashes = a.get_sibling_hashes().value();
         // Minimum logged data size is merkle tree word size
-        auto data_log2_size = std::max(a.get_log2_size(), machine_merkle_tree::get_log2_word_size());
-        auto depth = machine_merkle_tree::get_log2_root_size() - data_log2_size;
+        auto data_log2_size = std::max(a.get_log2_size(), HASH_TREE_LOG2_WORD_SIZE);
+        auto depth = HASH_TREE_LOG2_ROOT_SIZE - data_log2_size;
         nlohmann::json s = nlohmann::json::array();
         for (int i = 0; i < depth; i++) {
             s.push_back(encode_base64(sibling_hashes[i]));
@@ -1796,9 +1794,8 @@ void to_json(nlohmann::json &j, const memory_range_config &config) {
 }
 
 void to_json(nlohmann::json &j, const hash_tree_config &config) {
-    j = nlohmann::json{{"hasher", config.hasher}, {"shared", config.shared}, {"truncate", config.truncate},
-        {"sht_filename", config.sht_filename}, {"phtc_filename", config.phtc_filename},
-        {"phtc_size", config.phtc_size}};
+    j = nlohmann::json{{"shared", config.shared}, {"truncate", config.truncate}, {"sht_filename", config.sht_filename},
+        {"phtc_filename", config.phtc_filename}, {"phtc_size", config.phtc_size}};
 }
 
 void to_json(nlohmann::json &j, const processor_config &config) {

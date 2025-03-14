@@ -22,6 +22,7 @@
 #include <type_traits>
 
 #include "i-hasher.h"
+#include "machine-hash.h"
 
 extern "C" {
 #include "sha3.h"
@@ -37,22 +38,24 @@ struct keccak_instance final {
     int pt;
 };
 
-class keccak_256_hasher final : public i_hasher<keccak_256_hasher, std::integral_constant<int, 32>> {
+class keccak_256_hasher final : public i_hasher<keccak_256_hasher> {
     sha3_ctx_t m_ctx{};
-    using base = i_hasher<keccak_256_hasher, std::integral_constant<int, 32>>;
 
-    friend base;
+    friend i_hasher<keccak_256_hasher>;
 
     void do_begin() {
-        sha3_init(&m_ctx, 32, 0x01);
+        sha3_init(&m_ctx, machine_hash_size, 0x01);
     }
 
-    void do_add_data(const unsigned char *data, size_t length) {
-        sha3_update(&m_ctx, data, length);
+    template <std::ranges::contiguous_range R>
+    void do_add_data(const R &r) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        sha3_update(&m_ctx, reinterpret_cast<const unsigned char *>(std::ranges::data(r)), std::ranges::size(r));
     }
 
-    void do_end(hash_type &hash) {
-        sha3_final(hash.data(), &m_ctx);
+    void do_end(machine_hash_view hash) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        sha3_final(reinterpret_cast<unsigned char *>(hash.data()), &m_ctx);
     }
 
 public:

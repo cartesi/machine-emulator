@@ -440,9 +440,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_machine_hash_test, ordinary_machine_fix
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 
-    const auto proof = cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(
-        proof_str, "proof")
-                           .value();
+    const auto proof =
+        cartesi::from_json<cartesi::not_default_constructible<cartesi::merkle_tree_proof>>(proof_str, "proof").value();
     auto proof_root_hash = proof.get_root_hash();
     auto verification = calculate_proof_root_hash(proof);
     BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), proof_root_hash.begin(),
@@ -1565,9 +1564,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, or
     cm_error error_code = cm_get_proof(_machine, 0, 12, &proof_str);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    auto proof = cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(
-        proof_str, "proof")
-                     .value();
+    auto proof =
+        cartesi::from_json<cartesi::not_default_constructible<cartesi::merkle_tree_proof>>(proof_str, "proof").value();
     auto proof_root_hash = proof.get_root_hash();
     auto verification = calculate_proof_root_hash(proof);
     BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), proof_root_hash.begin(),
@@ -1583,9 +1581,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, or
     error_code = cm_get_proof(_machine, 0, 12, &proof_str);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
-    proof = cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(proof_str,
-        "proof")
-                .value();
+    proof =
+        cartesi::from_json<cartesi::not_default_constructible<cartesi::merkle_tree_proof>>(proof_str, "proof").value();
     proof_root_hash = proof.get_root_hash();
     verification = calculate_proof_root_hash(proof);
     BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), proof_root_hash.begin(),

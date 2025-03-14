@@ -31,7 +31,6 @@
 #include "i-hasher.h"
 #include "i-prefer-shadow-uarch-state.h"
 #include "i-uarch-state-access.h"
-#include "machine-merkle-tree.h"
 #include "machine.h"
 #include "meta.h"
 #include "riscv-constants.h"
@@ -53,17 +52,17 @@ class uarch_record_state_access :
     public i_accept_scoped_notes<uarch_record_state_access>,
     public i_prefer_shadow_uarch_state<uarch_record_state_access> {
 
-    using hasher_type = machine_merkle_tree::hasher_type;
-    using hash_type = machine_merkle_tree::hash_type;
+    using hasher_type = hash_tree::hasher_type;
 
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     machine &m_m;      ///< Macro machine
     access_log &m_log; ///< Access log
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 
-    static auto get_hash(hasher_type &hasher, const access_data &data) {
-        hash_type hash{};
-        get_merkle_tree_hash(hasher, data.data(), data.size(), machine_merkle_tree::get_word_size(), hash);
+    template <typename H>
+    static auto get_hash(H &h, const access_data &data) {
+        machine_hash hash{};
+        get_merkle_tree_hash(h, data.data(), data.size(), HASH_TREE_WORD_SIZE, hash);
         return hash;
     }
 
@@ -77,12 +76,12 @@ public:
 
 private:
     static std::pair<uint64_t, int> adjust_access(uint64_t paddr, int log2_size) {
-        static_assert(cartesi::log2_size_v<uint64_t> <= machine_merkle_tree::get_log2_word_size(),
+        static_assert(cartesi::log2_size_v<uint64_t> <= HASH_TREE_LOG2_WORD_SIZE,
             "Merkle tree word size must not be smaller than machine word size");
         if (((paddr >> log2_size) << log2_size) != paddr) {
             throw std::invalid_argument{"misaligned access"};
         }
-        const auto log2_word_size = machine_merkle_tree::get_log2_word_size();
+        const auto log2_word_size = HASH_TREE_LOG2_WORD_SIZE;
         const auto log2_access_size = std::max(log2_size, log2_word_size);
         const auto access_paddr = (paddr >> log2_access_size) << log2_access_size;
         return {access_paddr, log2_access_size};
@@ -109,7 +108,7 @@ private:
         a.set_read_hash(proof.get_target_hash());
     }
 
-    static void log_written_hash(access &a, const hash_type &written_hash) {
+    static void log_written_hash(access &a, const machine_hash &written_hash) {
         a.get_written_hash().emplace(written_hash);
     }
 
@@ -170,7 +169,7 @@ private:
         const auto [access_paddr, access_log2_size] = adjust_access(paddr, log2_size);
         log_access_siblings_and_read_hash(a, access_paddr, access_log2_size);
         // We *need* the read data for small writes, because we splice the written into it
-        if (log2_size < machine_merkle_tree::get_log2_word_size()) {
+        if (log2_size < HASH_TREE_LOG2_WORD_SIZE) {
             std::ignore = log_read_data(a, access_paddr, access_log2_size);
         } else {
             log_read_data_if_requested(a, access_paddr, access_log2_size);
@@ -180,7 +179,7 @@ private:
         // The functor updated the tree, so we don't do it again
         log_written_hash(a, m_m.get_merkle_tree_node_hash(access_paddr, access_log2_size, skip_merkle_tree_update));
         // We don't *need* the written for small writes, but it is convenient to always have it (for debugging purposes)
-        if (log2_size < machine_merkle_tree::get_log2_word_size()) {
+        if (log2_size < HASH_TREE_LOG2_WORD_SIZE) {
             log_written_data(a, access_paddr, access_log2_size);
         } else {
             log_written_data_if_requested(a, access_paddr, access_log2_size);
@@ -253,7 +252,7 @@ private:
         static_assert(SHADOW_TLB_SLOT_SIZE == sizeof(shadow_tlb_slot), "shadow TLB slot size is wrong");
         static_assert((UINT64_C(1) << SHADOW_TLB_SLOT_LOG2_SIZE) == SHADOW_TLB_SLOT_SIZE,
             "shadow TLB slot log2 size is wrong");
-        static_assert(SHADOW_TLB_SLOT_LOG2_SIZE >= machine_merkle_tree::get_log2_word_size(),
+        static_assert(SHADOW_TLB_SLOT_LOG2_SIZE >= HASH_TREE_LOG2_WORD_SIZE,
             "shadow TLB slot must fill at least an entire Merkle tree word");
     }
 

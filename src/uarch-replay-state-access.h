@@ -28,11 +28,11 @@
 #include <vector>
 
 #include "access-log.h"
+#include "hash-tree.h"
 #include "i-accept-scoped-notes.h"
 #include "i-hasher.h"
 #include "i-prefer-shadow-uarch-state.h"
 #include "i-uarch-state-access.h"
-#include "machine-merkle-tree.h"
 #include "meta.h"
 #include "shadow-tlb.h"
 #include "shadow-uarch-state.h"
@@ -45,17 +45,17 @@ class uarch_replay_state_access :
     public i_uarch_state_access<uarch_replay_state_access>,
     public i_accept_scoped_notes<uarch_replay_state_access>,
     public i_prefer_shadow_uarch_state<uarch_replay_state_access> {
-    using tree_type = machine_merkle_tree;
-    using hash_type = tree_type::hash_type;
-    using hasher_type = tree_type::hasher_type;
-    using proof_type = tree_type::proof_type;
+
+    using proof_type = hash_tree::proof_type;
 
 public:
+    using hasher_type = hash_tree::hasher_type;
+
     struct context {
         /// \brief Constructor replay_send_cmio_state_access context
         /// \param log Access log to be replayed
         /// \param initial_hash Initial root hash
-        context(const access_log &log, machine_merkle_tree::hash_type initial_hash) :
+        context(const access_log &log, const machine_hash &initial_hash) :
             accesses(log.get_accesses()),
             root_hash(initial_hash) {
             ;
@@ -64,9 +64,9 @@ public:
         ///< Index of next access to ne consumed
         unsigned int next_access{};
         ///< Root hash before next access
-        machine_merkle_tree::hash_type root_hash;
+        machine_hash root_hash;
         ///< Hasher needed to verify proofs
-        machine_merkle_tree::hasher_type hasher;
+        hasher_type hasher;
     };
 
 private:
@@ -84,14 +84,15 @@ public:
         }
     }
 
-    void get_root_hash(hash_type &hash) const {
+    void get_root_hash(machine_hash &hash) const {
         hash = m_context.root_hash;
     }
 
 private:
     static auto get_hash(hasher_type &hasher, const access_data &data) {
-        hash_type hash{};
-        get_merkle_tree_hash(hasher, data.data(), data.size(), machine_merkle_tree::get_word_size(), hash);
+        machine_hash hash{};
+        get_merkle_tree_hash(hasher, std::span<const unsigned char>{data.data(), data.size()}, HASH_TREE_WORD_SIZE,
+            hash);
         return hash;
     }
 
@@ -127,9 +128,9 @@ private:
     }
 
     static std::pair<uint64_t, int> adjust_access(uint64_t paddr, int log2_size) {
-        static_assert(cartesi::log2_size_v<uint64_t> <= machine_merkle_tree::get_log2_word_size(),
+        static_assert(cartesi::log2_size_v<uint64_t> <= HASH_TREE_LOG2_WORD_SIZE,
             "Merkle tree word size must not be smaller than machine word size");
-        const auto log2_word_size = machine_merkle_tree::get_log2_word_size();
+        const auto log2_word_size = HASH_TREE_LOG2_WORD_SIZE;
         const auto log2_access_size = std::max(log2_size, log2_word_size);
         const auto access_paddr = (paddr >> log2_access_size) << log2_access_size;
         return {access_paddr, log2_access_size};
@@ -182,7 +183,7 @@ private:
         return proof;
     }
 
-    const auto &check_written_hash(const access &a, const hash_type &expected_hash, const char *text) const {
+    const auto &check_written_hash(const access &a, const machine_hash &expected_hash, const char *text) const {
         if (!a.get_written_hash().has_value()) {
             throw std::invalid_argument{"missing written hash of " + std::string(text) + " in " + access_to_report()};
         }
@@ -210,7 +211,7 @@ private:
         // NOLINTEND(bugprone-unchecked-optional-access)
     }
 
-    void check_written_data_if_there(const access &a, const hash_type &written_hash, const char *text) const {
+    void check_written_data_if_there(const access &a, const machine_hash &written_hash, const char *text) const {
         if (!a.get_written().has_value()) {
             return;
         }
@@ -234,11 +235,11 @@ private:
         // NOLINTEND(bugprone-unchecked-optional-access)
     }
 
-    void update_root_hash(const proof_type &proof, const hash_type &written_hash) const {
+    void update_root_hash(const proof_type &proof, const machine_hash &written_hash) const {
         m_context.root_hash = proof.bubble_up(m_context.hasher, written_hash);
     }
 
-    void check_write_access(uint64_t paddr, uint64_t log2_size, const hash_type &expected_hash,
+    void check_write_access(uint64_t paddr, uint64_t log2_size, const machine_hash &expected_hash,
         const char *text) const {
         const auto &a = check_access(text);
         check_access_type(a, access_type::write, text);
@@ -296,14 +297,14 @@ private:
         static_assert(SHADOW_TLB_SLOT_SIZE == sizeof(shadow_tlb_slot), "shadow TLB slot size is wrong");
         static_assert((UINT64_C(1) << SHADOW_TLB_SLOT_LOG2_SIZE) == SHADOW_TLB_SLOT_SIZE,
             "shadow TLB slot log2 size is wrong");
-        static_assert(SHADOW_TLB_SLOT_LOG2_SIZE >= machine_merkle_tree::get_log2_word_size(),
+        static_assert(SHADOW_TLB_SLOT_LOG2_SIZE >= HASH_TREE_LOG2_WORD_SIZE,
             "shadow TLB slot must fill at least an entire Merkle tree word");
         shadow_tlb_slot slot_data{};
         shadow_tlb_fill_slot(vaddr_page, vp_offset, pma_index, slot_data);
-        hash_type slot_hash{};
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        get_merkle_tree_hash(m_context.hasher, reinterpret_cast<uint8_t *>(&slot_data), sizeof(slot_data),
-            machine_merkle_tree::get_word_size(), slot_hash);
+        std::span<const unsigned char> slot_data_span{reinterpret_cast<uint8_t *>(&slot_data), sizeof(slot_data)};
+        machine_hash slot_hash{};
+        get_merkle_tree_hash(m_context.hasher, slot_data_span, HASH_TREE_WORD_SIZE, slot_hash);
         return slot_hash;
     }
 

@@ -24,7 +24,6 @@
 #include "i-machine.h"
 #include "interpret.h"
 #include "machine-config.h"
-#include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
 #include "machine.h"
 #include "uarch-interpret.h"
@@ -82,11 +81,11 @@ access_log local_machine::do_log_step_uarch(const access_log::type &log_type) {
     return get_machine()->log_step_uarch(log_type);
 }
 
-machine_merkle_tree::proof_type local_machine::do_get_proof(uint64_t address, int log2_size) const {
+i_machine::proof_type local_machine::do_get_proof(uint64_t address, int log2_size) const {
     return get_machine()->get_proof(address, log2_size);
 }
 
-void local_machine::do_get_root_hash(hash_type &hash) const {
+void local_machine::do_get_root_hash(machine_hash &hash) const {
     get_machine()->get_root_hash(hash);
 }
 
@@ -184,23 +183,23 @@ machine_config local_machine::do_get_default_config() const {
     return machine::get_default_config();
 }
 
-interpreter_break_reason local_machine::do_verify_step(const hash_type &root_hash_before,
-    const std::string &log_filename, uint64_t mcycle_count, const hash_type &root_hash_after) const {
+interpreter_break_reason local_machine::do_verify_step(const machine_hash &root_hash_before,
+    const std::string &log_filename, uint64_t mcycle_count, const machine_hash &root_hash_after) const {
     return machine::verify_step(root_hash_before, log_filename, mcycle_count, root_hash_after);
 }
 
-void local_machine::do_verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
-    const hash_type &root_hash_after) const {
+void local_machine::do_verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
+    const machine_hash &root_hash_after) const {
     machine::verify_step_uarch(root_hash_before, log, root_hash_after);
 }
 
-void local_machine::do_verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
-    const hash_type &root_hash_after) const {
+void local_machine::do_verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
+    const machine_hash &root_hash_after) const {
     machine::verify_reset_uarch(root_hash_before, log, root_hash_after);
 }
 
 void local_machine::do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-    const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const {
+    const machine_hash &root_hash_before, const access_log &log, const machine_hash &root_hash_after) const {
     machine::verify_send_cmio_response(reason, data, length, root_hash_before, log, root_hash_after);
 }
 

@@ -29,9 +29,9 @@
 #include <vector>
 
 #include "access-log.h"
+#include "hash-tree.h"
 #include "i-hasher.h"
 #include "i-state-access.h"
-#include "machine-merkle-tree.h"
 #include "meta.h"
 #include "riscv-constants.h"
 #include "shadow-state.h"
@@ -49,17 +49,14 @@ struct i_state_access_fast_addr<replay_send_cmio_state_access> {
 
 /// \brief Allows replaying a machine::send_cmio_response() from an access log.
 class replay_send_cmio_state_access : public i_state_access<replay_send_cmio_state_access> {
-    using tree_type = machine_merkle_tree;
-    using hash_type = tree_type::hash_type;
-    using hasher_type = tree_type::hasher_type;
-    using proof_type = tree_type::proof_type;
-
 public:
+    using hasher_type = hash_tree::hasher_type;
+
     struct context {
         /// \brief Constructor replay_send_cmio_state_access context
         /// \param log Access log to be replayed
         /// \param initial_hash Initial root hash
-        context(const access_log &log, machine_merkle_tree::hash_type initial_hash) :
+        context(const access_log &log, const machine_hash &initial_hash) :
             accesses(log.get_accesses()),
             root_hash(initial_hash) {
             ;
@@ -68,9 +65,9 @@ public:
         ///< Index of next access to ne consumed
         unsigned int next_access{};
         ///< Root hash before next access
-        machine_merkle_tree::hash_type root_hash;
+        machine_hash root_hash;
         ///< Hasher needed to verify proofs
-        machine_merkle_tree::hasher_type hasher;
+        hasher_type hasher;
     };
 
 private:
@@ -85,7 +82,7 @@ public:
         }
     }
 
-    void get_root_hash(machine_merkle_tree::hash_type &hash) const {
+    void get_root_hash(machine_hash &hash) const {
         hash = m_context.root_hash;
     }
 
@@ -113,9 +110,9 @@ private:
         }
     }
 
-    static void get_hash(machine_merkle_tree::hasher_type &hasher, const access_data &data,
-        machine_merkle_tree::hash_type &hash) {
-        get_merkle_tree_hash(hasher, data.data(), data.size(), machine_merkle_tree::get_word_size(), hash);
+    template <typename H>
+    static void get_hash(H &h, const access_data &data, machine_hash &hash) {
+        get_merkle_tree_hash(h, std::span<const unsigned char>{data.data(), data.size()}, HASH_TREE_WORD_SIZE, hash);
     }
 
     /// \brief Checks a logged read and advances log.
@@ -125,7 +122,7 @@ private:
     /// \param text Textual description of the access.
     /// \returns Value read.
     uint64_t check_read(uint64_t paligned, const char *text) const {
-        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size_v<uint64_t>,
+        static_assert(HASH_TREE_LOG2_WORD_SIZE >= log2_size_v<uint64_t>,
             "Merkle tree word size must be at least as large as a machine word");
         if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
             throw std::invalid_argument{"address not aligned to word size"};
@@ -145,19 +142,19 @@ private:
         }
         if (access.get_log2_size() != log2_size_v<uint64_t>) {
             throw std::invalid_argument{"expected " + access_to_report() + " to read 2^" +
-                std::to_string(machine_merkle_tree::get_log2_word_size()) + " bytes from " + text};
+                std::to_string(HASH_TREE_LOG2_WORD_SIZE) + " bytes from " + text};
         }
         if (!access.get_read().has_value()) {
             throw std::invalid_argument{"missing read " + std::string(text) + " data at " + access_to_report()};
         }
         // NOLINTBEGIN(bugprone-unchecked-optional-access)
         const auto &read_data = access.get_read().value();
-        if (read_data.size() != machine_merkle_tree::get_word_size()) {
+        if (read_data.size() != HASH_TREE_WORD_SIZE) {
             throw std::invalid_argument{"expected read " + std::string(text) + " data to contain 2^" +
-                std::to_string(machine_merkle_tree::get_log2_word_size()) + " bytes at " + access_to_report()};
+                std::to_string(HASH_TREE_LOG2_WORD_SIZE) + " bytes at " + access_to_report()};
         }
         // check if logged read data hashes to the logged read hash
-        hash_type computed_read_hash{};
+        machine_hash computed_read_hash{};
         get_hash(m_context.hasher, read_data, computed_read_hash);
         if (access.get_read_hash() != computed_read_hash) {
             throw std::invalid_argument{"logged read data of " + std::string(text) +
@@ -170,7 +167,7 @@ private:
             throw std::invalid_argument{"Mismatch in root hash of " + access_to_report()};
         }
         m_context.next_access++;
-        const uint64_t pleaf_aligned = paligned & ~(machine_merkle_tree::get_word_size() - 1);
+        const uint64_t pleaf_aligned = paligned & ~(HASH_TREE_WORD_SIZE - 1);
         const int word_offset = static_cast<int>(paligned - pleaf_aligned);
         return get_word_access_data(read_data, word_offset);
     }
@@ -181,7 +178,7 @@ private:
     /// \param word Word value to write.
     /// \param text Textual description of the access.
     void check_write(uint64_t paligned, uint64_t word, const char *text) const {
-        static_assert(machine_merkle_tree::get_log2_word_size() >= log2_size_v<uint64_t>,
+        static_assert(HASH_TREE_LOG2_WORD_SIZE >= log2_size_v<uint64_t>,
             "Merkle tree word size must be at least as large as a machine word");
         if ((paligned & (sizeof(uint64_t) - 1)) != 0) {
             throw std::invalid_argument{"paligned not aligned to word size"};
@@ -201,7 +198,7 @@ private:
         }
         if (access.get_log2_size() != log2_size_v<uint64_t>) {
             throw std::invalid_argument{"expected " + access_to_report() + " to write 2^" +
-                std::to_string(machine_merkle_tree::get_log2_word_size()) + " bytes to " + text};
+                std::to_string(HASH_TREE_LOG2_WORD_SIZE) + " bytes to " + text};
         }
         // NOLINTBEGIN(bugprone-unchecked-optional-access)
         // check read
@@ -209,12 +206,12 @@ private:
             throw std::invalid_argument{"missing read " + std::string(text) + " data at " + access_to_report()};
         }
         const auto &read_data = access.get_read().value();
-        if (read_data.size() != machine_merkle_tree::get_word_size()) {
+        if (read_data.size() != HASH_TREE_WORD_SIZE) {
             throw std::invalid_argument{"expected overwritten data from " + std::string(text) + " to contain 2^" +
                 std::to_string(access.get_log2_size()) + " bytes at " + access_to_report()};
         }
         // check if read data hashes to the logged read hash
-        hash_type computed_read_hash{};
+        machine_hash computed_read_hash{};
         get_hash(m_context.hasher, read_data, computed_read_hash);
         if (access.get_read_hash() != computed_read_hash) {
             throw std::invalid_argument{"logged read data of " + std::string(text) +
@@ -234,14 +231,14 @@ private:
                 std::to_string(access.get_log2_size()) + " bytes at " + access_to_report()};
         }
         // check if written data hashes to the logged written hash
-        hash_type computed_written_hash{};
+        machine_hash computed_written_hash{};
         get_hash(m_context.hasher, written_data, computed_written_hash);
         if (written_hash != computed_written_hash) {
             throw std::invalid_argument{"logged written data of " + std::string(text) +
                 " does not hash to the logged written hash at " + access_to_report()};
         }
         // check if word being written matches the logged data
-        const uint64_t pleaf_aligned = paligned & ~(machine_merkle_tree::get_word_size() - 1);
+        const uint64_t pleaf_aligned = paligned & ~(HASH_TREE_WORD_SIZE - 1);
         const int word_offset = static_cast<int>(paligned - pleaf_aligned);
         const uint64_t logged_word = get_word_access_data(written_data, word_offset);
         if (word != logged_word) {
@@ -306,7 +303,7 @@ private:
         // NOLINTBEGIN(bugprone-unchecked-optional-access)
         // if read data is available then its hash and the logged read hash must match
         if (access.get_read().has_value()) {
-            hash_type computed_logged_data_hash{};
+            machine_hash computed_logged_data_hash{};
             get_hash(hasher, access.get_read().value(), computed_logged_data_hash);
             if (computed_logged_data_hash != access.get_read_hash()) {
                 throw std::invalid_argument{
@@ -318,7 +315,7 @@ private:
         }
         const auto &written_hash = access.get_written_hash().value();
         // compute hash of data argument padded with zeroes
-        hash_type computed_data_hash{};
+        machine_hash computed_data_hash{};
         auto scratch = make_unique_calloc<unsigned char>(write_length, std::nothrow_t{});
         if (!scratch) {
             throw std::runtime_error("Could not allocate scratch memory");
@@ -327,7 +324,7 @@ private:
         if (write_length > data_length) {
             memset(scratch.get() + data_length, 0, write_length - data_length);
         }
-        get_merkle_tree_hash(hasher, scratch.get(), write_length, machine_merkle_tree::get_word_size(),
+        get_merkle_tree_hash(hasher, std::span<const unsigned char>{scratch.get(), write_length}, HASH_TREE_WORD_SIZE,
             computed_data_hash);
         // check if logged written hash matches the computed data hash
         if (written_hash != computed_data_hash) {
@@ -336,7 +333,7 @@ private:
         }
         if (access.get_written().has_value()) {
             // if written data is available then its hash and the logged written hash must match
-            hash_type computed_hash;
+            machine_hash computed_hash;
             get_hash(hasher, access.get_written().value(), computed_hash);
             if (computed_hash != written_hash) {
                 throw std::invalid_argument{"written hash and written data mismatch at " + access_to_report()};

@@ -366,7 +366,7 @@ const char *clua_check_json_string(lua_State *L, int idx, int indent, int ctxidx
         lua_replace(L, idx);             // replace the Lua value with its JSON string representation
         lua_pop(L, 2);                   // pop s, j references
         return luaL_checkstring(L, idx); // return the string
-    } catch (std::exception &e) {
+    } catch (const std::exception &e) {
         luaL_error(L, "failed to parse JSON from a Lua table: %s", e.what());
         return nullptr;
     }
@@ -447,7 +447,7 @@ void clua_push_json_table(lua_State *L, const char *s, int ctxidx, const nlohman
         clua_push_json_value(L, j, ctxidx, schema, schema_dict);
         lua_replace(L, -3); // move into the placeholder slot
         lua_pop(L, 1);      // pop j reference
-    } catch (std::exception &e) {
+    } catch (const std::exception &e) {
         luaL_error(L, "failed to parse JSON from a string: %s", e.what());
     }
 }
@@ -500,7 +500,7 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) {
                     }},
             };
         }
-    } catch (std::exception &e) {
+    } catch (const std::exception &e) {
         luaL_error(L, "failed to create machine schema dictionary: %s", e.what());
     }
     return machine_schema_dict;
@@ -606,7 +606,7 @@ static int machine_obj_index_read_memory(lua_State *L) {
     unsigned char *data{};
     try {
         data = new unsigned char[length];
-    } catch (std::bad_alloc &e) {
+    } catch (const std::bad_alloc &e) {
         luaL_error(L, "failed to allocate memory for buffer");
     }
     auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));
@@ -629,7 +629,7 @@ static int machine_obj_index_read_virtual_memory(lua_State *L) {
     unsigned char *data{};
     try {
         data = new unsigned char[length];
-    } catch (std::bad_alloc &e) {
+    } catch (const std::bad_alloc &e) {
         luaL_error(L, "failed to allocate memory for buffer");
     }
     auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));
@@ -853,7 +853,7 @@ static int machine_obj_index_receive_cmio_request(lua_State *L) {
     unsigned char *data{};
     try {
         data = new unsigned char[length];
-    } catch (std::bad_alloc &e) {
+    } catch (const std::bad_alloc &e) {
         luaL_error(L, "failed to allocate memory for buffer");
     }
     auto &managed_data = clua_push_to(L, clua_managed_cm_ptr<unsigned char>(data));

@@ -14,24 +14,22 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef CM_C_API_INTERNAL_H
-#define CM_C_API_INTERNAL_H
+#ifndef MACHINE_HASH_H
+#define MACHINE_HASH_H
 
-#include <string>
+/// \file
+/// \brief Storage for a hash
 
-#include "machine-c-api.h"
-#include "machine-hash.h"
+#include <array>
+#include <span>
 
-/// \brief Helper function that returns error result from C api function
-cm_error cm_result_failure();
+namespace cartesi {
 
-/// \brief Helper function that returns success result from C api function
-cm_error cm_result_success();
+static constexpr size_t machine_hash_size = 32;
+using machine_hash = std::array<unsigned char, machine_hash_size>;
+using machine_hash_view = std::span<unsigned char, machine_hash_size>;
+using const_machine_hash_view = std::span<const unsigned char, machine_hash_size>;
 
-/// \brief Helper function that parses hash from C api structure
-cartesi::machine_hash convert_from_c(const cm_hash *c_hash);
+} // namespace cartesi
 
-/// \brief Helper function that stores a string to a temporary thread local.
-const char *cm_set_temp_string(const std::string &s);
-
-#endif // CM_C_API_INTERNAL_H
+#endif

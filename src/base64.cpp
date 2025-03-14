@@ -21,9 +21,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <string_view>
 
-namespace cartesi {
+namespace cartesi::detail {
 
 // Base64 globals
 static constexpr uint8_t b64base[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -43,7 +42,7 @@ static constexpr uint8_t b64unbase[] = {255, 255, 255, 255, 255, 255, 255, 255, 
 // Accumulates bytes in input buffer until 3 bytes are available.
 // Translate the 3 bytes into Base64 form and append to buffer.
 // Returns new number of bytes in buffer.
-static size_t b64encode(uint8_t c, uint8_t *input, size_t size, std::ostringstream &sout) {
+size_t b64encode(uint8_t c, uint8_t *input, size_t size, std::ostringstream &sout) {
     input[size++] = c;
     if (size == 3) {
         uint8_t code[4];
@@ -70,7 +69,7 @@ static size_t b64encode(uint8_t c, uint8_t *input, size_t size, std::ostringstre
 // Encodes the Base64 last 1 or 2 bytes and adds padding '='
 // Result, if any, is appended to buffer.
 // Returns 0.
-static size_t b64pad(const uint8_t *input, size_t size, std::ostringstream &sout) {
+size_t b64pad(const uint8_t *input, size_t size, std::ostringstream &sout) {
     uint64_t value = 0;
     uint8_t code[4] = {'=', '=', '=', '='};
     switch (size) {
@@ -104,7 +103,7 @@ static size_t b64pad(const uint8_t *input, size_t size, std::ostringstream &sout
 // Accumulates bytes in input buffer until 4 bytes are available.
 // Translate the 4 bytes from Base64 form and append to buffer.
 // Returns new number of bytes in buffer.
-static size_t b64decode(uint8_t c, uint8_t *input, size_t size, std::ostringstream &sout) {
+size_t b64decode(uint8_t c, uint8_t *input, size_t size, std::ostringstream &sout) {
     if (b64unbase[c] > 64) {
         if (c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r') { // ignore whitespace characters
             return size;
@@ -145,25 +144,4 @@ static size_t b64decode(uint8_t c, uint8_t *input, size_t size, std::ostringstre
     return size;
 }
 
-std::string encode_base64(const std::string_view &input) {
-    std::ostringstream sout;
-    uint8_t ctx[4]{};
-    size_t ctxlen = 0;
-    for (const char b : input) {
-        ctxlen = b64encode(static_cast<uint8_t>(b), ctx, ctxlen, sout);
-    }
-    b64pad(ctx, ctxlen, sout);
-    return sout.str();
-}
-
-std::string decode_base64(const std::string_view &input) {
-    std::ostringstream sout;
-    uint8_t ctx[4]{};
-    size_t ctxlen = 0;
-    for (const char b : input) {
-        ctxlen = b64decode(static_cast<uint8_t>(b), ctx, ctxlen, sout);
-    }
-    return sout.str();
-}
-
-} // namespace cartesi
+} // namespace cartesi::detail

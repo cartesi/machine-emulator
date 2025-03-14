@@ -23,7 +23,6 @@
 #include <system_error>
 
 #include "address-range-constants.h"
-#include "unique-c-ptr.h"
 
 namespace cartesi {
 
@@ -36,13 +35,34 @@ public:
     }
 };
 
+static bool check_read_only(bool host_read_only, bool flags_W, bool create) {
+    if (host_read_only) {
+        if (create) {
+            throw base_error{"newly-created backing store cannot be read-only"};
+        }
+        if (flags_W) {
+            throw base_error{"backing store for writable memory address range cannot be read-only"};
+        }
+    }
+    return host_read_only;
+}
+
+static const pmas_flags &check_flags(const pmas_flags &flags) {
+    if (!flags.M) {
+        throw base_error{"memory address range must be flagged memory"};
+    }
+    return flags;
+}
+
+static auto throw_base_error = [](const char *err) { throw base_error{err}; };
+
 memory_address_range::memory_address_range(const std::string &description, uint64_t start, uint64_t length,
-    const pmas_flags &flags, const backing_store_config &backing_store, const memory_address_range_flags &ar_flags,
-    uint64_t host_length) try :
-    address_range(description.c_str(), start, length, flags, [](const char *err) { throw base_error{err}; }),
-    m_ptr{make_unique_mmap<unsigned char>(host_length != 0 ? host_length : length,
+    const pmas_flags &flags, const backing_store_config &backing_store,
+    const memory_address_range_config &memory_config) try : 
+    address_range(description.c_str(), start, length, check_flags(flags), throw_base_error),
+    m_ptr{make_unique_mmap<unsigned char>(std::max(memory_config.host_length, length),
         os_mmap_flags{
-            .read_only = ar_flags.read_only && !backing_store.create,
+            .read_only = check_read_only(memory_config.host_read_only, flags.W, backing_store.create),
             .shared = backing_store.shared,
             .create = backing_store.create,
             .truncate = backing_store.truncate,
@@ -50,17 +70,14 @@ memory_address_range::memory_address_range(const std::string &description, uint6
         },
         backing_store.data_filename, length)},
     m_host_memory{m_ptr.get()},
-    m_ar_flags{ar_flags} {
-    if (!is_memory()) {
-        throw std::invalid_argument{"memory range must be flagged memory"s};
-    }
-    m_dirty_page_map.resize((get_length() / (8 * AR_PAGE_SIZE)) + 1, 0xff);
-} catch (base_error &b) {
+    m_config{memory_config},
+    m_dpt{get_level_count(length), length >> AR_LOG2_PAGE_SIZE} {
+} catch (const base_error &b) {
     throw; // already contains the description
-} catch (std::exception &e) {
-    throw std::invalid_argument{e.what() + " when initializing "s + description};
+} catch (const std::exception &e) {
+    throw std::invalid_argument{std::string{e.what()}.append(" when initializing ").append(description)};
 } catch (...) {
-    throw std::invalid_argument{"unknown exception when initializing "s + description};
+    throw std::invalid_argument{"unknown exception when initializing "s.append(description)};
 }
 
 } // namespace cartesi

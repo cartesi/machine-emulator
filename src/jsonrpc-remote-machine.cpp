@@ -65,7 +65,7 @@
 #include "jsonrpc-fork-result.h"
 #include "jsonrpc-version.h"
 #include "machine-config.h"
-#include "machine-merkle-tree.h"
+#include "machine-hash.h"
 #include "machine-runtime-config.h"
 #include "machine.h"
 #include "os.h"
@@ -734,7 +734,7 @@ static tcp::endpoint address_to_endpoint(const std::string &address) {
             throw std::runtime_error{"invalid port"};
         }
         return {asio::ip::make_address(ip), static_cast<uint16_t>(port)};
-    } catch (std::exception &e) {
+    } catch (const std::exception &e) {
         throw std::runtime_error{"invalid endpoint address \"" + address + "\""};
     }
 }
@@ -1031,8 +1031,7 @@ static json jsonrpc_machine_log_reset_uarch_handler(const json &j, const std::sh
 static json jsonrpc_machine_verify_step_handler(const json &j, const std::shared_ptr<http_session> &session) {
     (void) session;
     static const char *param_name[] = {"root_hash_before", "filename", "mcycle_count", "root_hash_after"};
-    auto args = parse_args<cartesi::machine_merkle_tree::hash_type, std::string, uint64_t,
-        cartesi::machine_merkle_tree::hash_type>(j, param_name);
+    auto args = parse_args<cartesi::machine_hash, std::string, uint64_t, cartesi::machine_hash>(j, param_name);
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
     auto reason =
         cartesi::machine::verify_step(std::get<0>(args), std::get<1>(args), std::get<2>(args), std::get<3>(args));
@@ -1046,9 +1045,8 @@ static json jsonrpc_machine_verify_step_handler(const json &j, const std::shared
 static json jsonrpc_machine_verify_step_uarch_handler(const json &j,
     const std::shared_ptr<http_session> & /*session*/) {
     static const char *param_name[] = {"root_hash_before", "log", "root_hash_after"};
-    auto args =
-        parse_args<cartesi::machine_merkle_tree::hash_type, cartesi::not_default_constructible<cartesi::access_log>,
-            cartesi::machine_merkle_tree::hash_type>(j, param_name);
+    auto args = parse_args<cartesi::machine_hash, cartesi::not_default_constructible<cartesi::access_log>,
+        cartesi::machine_hash>(j, param_name);
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
     cartesi::machine::verify_step_uarch(std::get<0>(args), std::get<1>(args).value(), std::get<2>(args));
     return jsonrpc_response_ok(j);
@@ -1061,9 +1059,8 @@ static json jsonrpc_machine_verify_step_uarch_handler(const json &j,
 static json jsonrpc_machine_verify_reset_uarch_handler(const json &j,
     const std::shared_ptr<http_session> & /*session*/) {
     static const char *param_name[] = {"root_hash_before", "log", "root_hash_after"};
-    auto args =
-        parse_args<cartesi::machine_merkle_tree::hash_type, cartesi::not_default_constructible<cartesi::access_log>,
-            cartesi::machine_merkle_tree::hash_type>(j, param_name);
+    auto args = parse_args<cartesi::machine_hash, cartesi::not_default_constructible<cartesi::access_log>,
+        cartesi::machine_hash>(j, param_name);
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
     cartesi::machine::verify_reset_uarch(std::get<0>(args), std::get<1>(args).value(), std::get<2>(args));
     return jsonrpc_response_ok(j);
@@ -1107,7 +1104,7 @@ static json jsonrpc_machine_get_root_hash_handler(const json &j, const std::shar
         return jsonrpc_response_invalid_request(j, "no machine");
     }
     jsonrpc_check_no_params(j);
-    cartesi::machine_merkle_tree::hash_type hash;
+    cartesi::machine_hash hash;
     session->handler->machine->get_root_hash(hash);
     return jsonrpc_response_ok(j, cartesi::encode_base64(hash));
 }
@@ -1140,7 +1137,7 @@ static json jsonrpc_machine_read_memory_handler(const json &j, const std::shared
     auto length = std::get<1>(args);
     auto data = cartesi::make_unique_calloc<unsigned char>(length);
     session->handler->machine->read_memory(address, data.get(), length);
-    return jsonrpc_response_ok(j, cartesi::encode_base64(data.get(), length));
+    return jsonrpc_response_ok(j, cartesi::encode_base64(std::span<unsigned char>{data.get(), length}));
 }
 
 /// \brief JSONRPC handler for the machine.write_memory method
@@ -1174,7 +1171,7 @@ static json jsonrpc_machine_read_virtual_memory_handler(const json &j, const std
     auto length = std::get<1>(args);
     auto data = cartesi::make_unique_calloc<unsigned char>(length);
     session->handler->machine->read_virtual_memory(address, data.get(), length);
-    return jsonrpc_response_ok(j, cartesi::encode_base64(data.get(), length));
+    return jsonrpc_response_ok(j, cartesi::encode_base64(std::span<unsigned char>{data.get(), length}));
 }
 
 /// \brief JSONRPC handler for the machine.write_virtual_memory method
@@ -1388,9 +1385,8 @@ static json jsonrpc_machine_log_send_cmio_response_handler(const json &j,
 static json jsonrpc_machine_verify_send_cmio_response_handler(const json &j,
     const std::shared_ptr<http_session> & /*session*/) {
     static const char *param_name[] = {"reason", "data", "root_hash_before", "log", "root_hash_after"};
-    auto args = parse_args<uint16_t, std::string, cartesi::machine_merkle_tree::hash_type,
-        cartesi::not_default_constructible<cartesi::access_log>, cartesi::machine_merkle_tree::hash_type>(j,
-        param_name);
+    auto args = parse_args<uint16_t, std::string, cartesi::machine_hash,
+        cartesi::not_default_constructible<cartesi::access_log>, cartesi::machine_hash>(j, param_name);
 
     auto bin = cartesi::decode_base64(std::get<1>(args));
     // NOLINTBEGIN(bugprone-unchecked-optional-access)
@@ -1496,9 +1492,9 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         return found->second(j, session);
     }
     return jsonrpc_response_method_not_found(j, method);
-} catch (std::invalid_argument &x) {
+} catch (const std::invalid_argument &x) {
     return jsonrpc_response_invalid_params(j, x.what());
-} catch (std::exception &x) {
+} catch (const std::exception &x) {
     return jsonrpc_response_internal_error(j, x.what());
 }
 
@@ -1550,7 +1546,7 @@ http::message_generator handle_request(HTTP_REQ &&rreq, const std::shared_ptr<ht
     json j;
     try {
         j = json::parse(req.body().data());
-    } catch (std::exception &x) {
+    } catch (const std::exception &x) {
         return jsonrpc_http_reply(req, jsonrpc_response_parse_error(x.what()), session);
     }
     // JSONRPC allows batch requests, each an entry in an array
@@ -1799,7 +1795,7 @@ int main(int argc, char *argv[]) try {
 
     SLOG(trace) << "remote machine server exiting";
     return 0;
-} catch (std::exception &e) {
+} catch (const std::exception &e) {
     SLOG(fatal) << "caught exception: " << e.what();
     return 1;
 } catch (...) {

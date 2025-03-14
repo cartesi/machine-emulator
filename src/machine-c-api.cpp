@@ -41,7 +41,7 @@
 #include "local-machine.h"
 #include "machine-c-api-internal.h"
 #include "machine-config.h"
-#include "machine-merkle-tree.h"
+#include "machine-hash.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
 #include "machine.h"
@@ -75,53 +75,53 @@ const char *cm_set_temp_string(const std::string &s) {
     return temp_string.c_str();
 }
 
-cm_error cm_result_failure() try { throw; } catch (std::exception &e) {
+cm_error cm_result_failure() try { throw; } catch (const std::exception &e) {
     try {
         last_err_msg = e.what();
         throw;
-    } catch (std::invalid_argument &ex) {
+    } catch (const std::invalid_argument &ex) {
         return CM_ERROR_INVALID_ARGUMENT;
-    } catch (std::domain_error &ex) {
+    } catch (const std::domain_error &ex) {
         return CM_ERROR_DOMAIN_ERROR;
-    } catch (std::length_error &ex) {
+    } catch (const std::length_error &ex) {
         return CM_ERROR_LENGTH_ERROR;
-    } catch (std::out_of_range &ex) {
+    } catch (const std::out_of_range &ex) {
         return CM_ERROR_OUT_OF_RANGE;
-    } catch (std::logic_error &ex) {
+    } catch (const std::logic_error &ex) {
         return CM_ERROR_LOGIC_ERROR;
-    } catch (std::bad_optional_access &ex) {
+    } catch (const std::bad_optional_access &ex) {
         return CM_ERROR_BAD_OPTIONAL_ACCESS;
-    } catch (std::range_error &ex) {
+    } catch (const std::range_error &ex) {
         return CM_ERROR_RANGE_ERROR;
-    } catch (std::overflow_error &ex) {
+    } catch (const std::overflow_error &ex) {
         return CM_ERROR_OVERFLOW_ERROR;
-    } catch (std::underflow_error &ex) {
+    } catch (const std::underflow_error &ex) {
         return CM_ERROR_UNDERFLOW_ERROR;
-    } catch (std::regex_error &ex) {
+    } catch (const std::regex_error &ex) {
         return CM_ERROR_REGEX_ERROR;
-    } catch (std::system_error &ex) {
+    } catch (const std::system_error &ex) {
         return CM_ERROR_SYSTEM_ERROR;
-    } catch (std::runtime_error &ex) {
+    } catch (const std::runtime_error &ex) {
         return CM_ERROR_RUNTIME_ERROR;
-    } catch (std::bad_typeid &ex) {
+    } catch (const std::bad_typeid &ex) {
         return CM_ERROR_BAD_TYPEID;
-    } catch (std::bad_any_cast &ex) {
+    } catch (const std::bad_any_cast &ex) {
         return CM_ERROR_BAD_ANY_CAST;
-    } catch (std::bad_cast &ex) {
+    } catch (const std::bad_cast &ex) {
         return CM_ERROR_BAD_CAST;
-    } catch (std::bad_weak_ptr &ex) {
+    } catch (const std::bad_weak_ptr &ex) {
         return CM_ERROR_BAD_WEAK_PTR;
-    } catch (std::bad_function_call &ex) {
+    } catch (const std::bad_function_call &ex) {
         return CM_ERROR_BAD_FUNCTION_CALL;
-    } catch (std::bad_array_new_length &ex) {
+    } catch (const std::bad_array_new_length &ex) {
         return CM_ERROR_BAD_ARRAY_NEW_LENGTH;
-    } catch (std::bad_alloc &ex) {
+    } catch (const std::bad_alloc &ex) {
         return CM_ERROR_BAD_ALLOC;
-    } catch (std::bad_exception &ex) {
+    } catch (const std::bad_exception &ex) {
         return CM_ERROR_BAD_EXCEPTION;
-    } catch (std::bad_variant_access &ex) {
+    } catch (const std::bad_variant_access &ex) {
         return CM_ERROR_BAD_VARIANT_ACCESS;
-    } catch (std::exception &e) {
+    } catch (const std::exception &e) {
         return CM_ERROR_EXCEPTION;
     }
 } catch (...) {
@@ -471,11 +471,11 @@ static cm_machine *convert_to_c(cartesi::i_machine *cpp_m) {
     return reinterpret_cast<cm_machine *>(cpp_m);
 }
 
-cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash) {
+cartesi::machine_hash convert_from_c(const cm_hash *c_hash) {
     if (c_hash == nullptr) {
         throw std::invalid_argument("invalid hash");
     }
-    cartesi::machine_merkle_tree::hash_type cpp_hash; // In emulator this is std::array<unsigned char, hash_size>;
+    cartesi::machine_hash cpp_hash; // In emulator this is std::array<unsigned char, hash_size>;
     memcpy(cpp_hash.data(), c_hash, sizeof(cm_hash));
     return cpp_hash;
 }
@@ -681,8 +681,8 @@ cm_error cm_verify_step(const cm_machine *m, const cm_hash *root_hash_before, co
     if (log_filename == nullptr) {
         throw std::invalid_argument("invalid log_filename");
     }
-    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
-    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    const cartesi::machine_hash cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine_hash cpp_root_hash_after = convert_from_c(root_hash_after);
     cartesi::interpreter_break_reason status{};
     if (m != nullptr) {
         const auto *cpp_m = convert_from_c(m);
@@ -708,8 +708,8 @@ cm_error cm_verify_step_uarch(const cm_machine *m, const cm_hash *root_hash_befo
     }
     const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log, "log").value();
-    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
-    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    const cartesi::machine_hash cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine_hash cpp_root_hash_after = convert_from_c(root_hash_after);
     if (m != nullptr) {
         const auto *cpp_m = convert_from_c(m);
         cpp_m->verify_step_uarch(cpp_root_hash_before, cpp_log, cpp_root_hash_after);
@@ -728,8 +728,8 @@ cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_hash_bef
     }
     const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log, "log").value();
-    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
-    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    const cartesi::machine_hash cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine_hash cpp_root_hash_after = convert_from_c(root_hash_after);
     if (m != nullptr) {
         const auto *cpp_m = convert_from_c(m);
         cpp_m->verify_reset_uarch(cpp_root_hash_before, cpp_log, cpp_root_hash_after);
@@ -746,7 +746,7 @@ cm_error cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_size, 
         throw std::invalid_argument("invalid proof output");
     }
     const auto *cpp_m = convert_from_c(m);
-    const cartesi::machine_merkle_tree::proof_type cpp_proof = cpp_m->get_proof(address, log2_size);
+    const cartesi::i_machine::proof_type cpp_proof = cpp_m->get_proof(address, log2_size);
     *proof = cm_set_temp_string(cartesi::to_json(cpp_proof).dump());
     return cm_result_success();
 } catch (...) {
@@ -761,9 +761,12 @@ cm_error cm_get_root_hash(const cm_machine *m, cm_hash *hash) try {
         throw std::invalid_argument("invalid hash output");
     }
     const auto *cpp_m = convert_from_c(m);
-    cartesi::machine_merkle_tree::hash_type cpp_hash;
+    cartesi::machine_hash cpp_hash;
     cpp_m->get_root_hash(cpp_hash);
-    memcpy(hash, static_cast<const uint8_t *>(cpp_hash.data()), sizeof(cm_hash));
+    using elem_t = std::ranges::range_value_t<cm_hash>;
+    constexpr auto elem_n = std::extent_v<cm_hash>;
+    static_assert(std::ranges::size(cpp_hash) == elem_n);
+    std::ranges::copy(cpp_hash | cartesi::views::cast_to<elem_t>, std::ranges::data(*hash));
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -1092,8 +1095,8 @@ cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reason, cons
     }
     const auto cpp_log = // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         cartesi::from_json<cartesi::not_default_constructible<cartesi::access_log>>(log, "log").value();
-    const cartesi::machine::hash_type cpp_root_hash_before = convert_from_c(root_hash_before);
-    const cartesi::machine::hash_type cpp_root_hash_after = convert_from_c(root_hash_after);
+    const cartesi::machine_hash cpp_root_hash_before = convert_from_c(root_hash_before);
+    const cartesi::machine_hash cpp_root_hash_after = convert_from_c(root_hash_after);
     if (m != nullptr) {
         const auto *cpp_m = convert_from_c(m);
         cpp_m->verify_send_cmio_response(reason, data, length, cpp_root_hash_before, cpp_log, cpp_root_hash_after);

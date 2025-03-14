@@ -467,6 +467,7 @@ CM_API cm_error cm_get_runtime_config(const cm_machine *m, const char **runtime_
 ///     "backing_store": {
 ///         "data_filename": "linux.bin"
 ///         "dht_filename": "linux.dht"
+///         "dpt_filename": "linux.dpt"
 ///         "shared": false
 ///     }
 /// }

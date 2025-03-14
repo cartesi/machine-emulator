@@ -14,24 +14,19 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef CM_C_API_INTERNAL_H
-#define CM_C_API_INTERNAL_H
+#ifndef HASH_TREE_CONSTANTS_H
+#define HASH_TREE_CONSTANTS_H
 
-#include <string>
+#include <cstdint>
 
-#include "machine-c-api.h"
-#include "machine-hash.h"
+namespace cartesi {
 
-/// \brief Helper function that returns error result from C api function
-cm_error cm_result_failure();
+const constexpr int HASH_TREE_LOG2_ROOT_SIZE = 64;
+const constexpr int HASH_TREE_LOG2_WORD_SIZE = 5;
+const constexpr uint64_t HASH_TREE_WORD_SIZE = UINT64_C(1) << HASH_TREE_LOG2_WORD_SIZE;
+const constexpr int HASH_TREE_LOG2_PAGE_SIZE = 12;
+const constexpr uint64_t HASH_TREE_PAGE_SIZE = UINT64_C(1) << HASH_TREE_LOG2_PAGE_SIZE;
 
-/// \brief Helper function that returns success result from C api function
-cm_error cm_result_success();
+} // namespace cartesi
 
-/// \brief Helper function that parses hash from C api structure
-cartesi::machine_hash convert_from_c(const cm_hash *c_hash);
-
-/// \brief Helper function that stores a string to a temporary thread local.
-const char *cm_set_temp_string(const std::string &s);
-
-#endif // CM_C_API_INTERNAL_H
+#endif

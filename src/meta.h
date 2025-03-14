@@ -18,6 +18,7 @@
 #define META_H
 
 #include <cstdint>
+#include <ranges>
 #include <type_traits>
 
 /// \file
@@ -92,6 +93,56 @@ struct overloads : Ts... {
 };
 
 /// \endcond
+///
+///
+///
+
+// C++20 concept for a POD type
+template <typename T>
+concept POD = std::is_trivially_copyable_v<T> && std::is_standard_layout_v<T>;
+
+// C++20 concept for something that is just like a byte
+template <typename T>
+concept ByteLike = POD<T> && (sizeof(T) == 1);
+
+// C++20 concept for a contiguous range of byte-like elements
+template <typename D>
+concept ContiguousRangeOfByteLike =
+    std::ranges::contiguous_range<D> && ByteLike<std::ranges::range_value_t<std::remove_cvref_t<D>>>;
+
+// C++20 concept comparing types while ignoring const, volatile, reference
+template <typename T, typename U>
+concept SameAsNoCVRef = std::same_as<std::remove_cvref_t<T>, std::remove_cvref_t<U>>;
+
+// C++20 concept to check for scoped enums
+template <typename E>
+concept ScopedEnum = std::is_enum_v<E> && !std::is_convertible_v<E, std::underlying_type_t<E>>;
+
+// C++20 concept to check for multiple accepted types
+template <typename T, typename... Ts>
+concept SameAsAny = (std::same_as<T, Ts> || ...);
+
+namespace views {
+
+/// \brief View that allows a range-based for bind to iterator values, instead of dereferenced values
+template <std::ranges::range R>
+    requires(std::ranges::borrowed_range<R> || std::is_lvalue_reference_v<R>)
+constexpr auto iterators(R &&r) {
+    return std::views::iota(r.begin(), r.end());
+}
+
+/// \brief View that casts to another type
+template <typename T>
+constexpr auto cast_to = std::views::transform([](auto x) -> T { return static_cast<T>(x); });
+
+/// \brief Implementation of C++23 slice
+template <std::ranges::viewable_range R>
+constexpr auto slice(R &&r, std::ranges::range_difference_t<R> from, std::ranges::range_difference_t<R> to) {
+    auto count = std::max(to - from, std::ranges::range_difference_t<R>(0));
+    return std::forward<R>(r) | std::views::drop(from) | std::views::take(count);
+}
+
+} // namespace views
 
 } // namespace cartesi
 

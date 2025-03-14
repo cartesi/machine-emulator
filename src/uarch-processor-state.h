@@ -35,7 +35,7 @@ struct uarch_processor_state final {
     uint64_t registers_padding_[477]{}; ///< Padding to align next field to a page boundary
 };
 
-static_assert(sizeof(uarch_processor_state) % 4096 == 0, "machine state size must be multiple of a page size");
+static_assert(sizeof(uarch_processor_state) % 4096 == 0, "uarch processor state size must be multiple of a page size");
 
 } // namespace cartesi
 

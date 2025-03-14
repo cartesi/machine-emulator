@@ -1186,7 +1186,7 @@ bool virtio_p9fs_address_range::do_on_device_queue_available(i_device_state_acce
 #endif
                 return send_error(msg, tag, P9_EPROTO);
         }
-    } catch (std::bad_alloc &e) {
+    } catch (const std::bad_alloc &e) {
         // Both std::string and std::unordered_map may throw std::bad_alloc when out of memory
         return send_error(msg, tag, P9_EOPNOTSUPP);
     } catch (...) {

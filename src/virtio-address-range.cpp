@@ -305,8 +305,7 @@ bool virtq::consume_desc(i_device_state_access *a, uint16_t desc_idx, uint32_t w
 
 virtio_address_range::virtio_address_range(const char *description, uint64_t start, uint64_t length,
     uint32_t virtio_idx, uint32_t device_id, uint64_t device_features, uint32_t config_space_size) :
-    pristine_address_range(description, start, length, m_virtio_flags,
-        [](const char *err) { throw std::invalid_argument{err}; }),
+    address_range(description, start, length, m_virtio_flags, [](const char *err) { throw std::invalid_argument{err}; }),
     virtio_idx(virtio_idx),
     device_id(device_id),
     device_features(device_features | VIRTIO_F_VERSION_1),

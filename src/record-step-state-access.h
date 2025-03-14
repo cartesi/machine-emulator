@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "compiler-defines.h"
+#include "hash-tree.h"
 #include "i-accept-scoped-notes.h"
 #include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
@@ -47,16 +48,11 @@ class record_step_state_access :
     public i_state_access<record_step_state_access>,
     public i_accept_scoped_notes<record_step_state_access>,
     public i_prefer_shadow_state<record_step_state_access> {
-    constexpr static int TREE_LOG2_ROOT_SIZE = machine_merkle_tree::get_log2_root_size();
-    constexpr static int TREE_LOG2_PAGE_SIZE = machine_merkle_tree::get_log2_page_size();
-    constexpr static uint64_t TREE_PAGE_SIZE = UINT64_C(1) << LOG2_PAGE_SIZE;
 
-    using address_type = machine_merkle_tree::address_type;
-    using page_data_type = std::array<uint8_t, TREE_PAGE_SIZE>;
-    using pages_type = std::map<address_type, page_data_type>;
-    using hash_type = machine_merkle_tree::hash_type;
-    using sibling_hashes_type = std::vector<hash_type>;
-    using page_indices_type = std::vector<address_type>;
+    using page_data_type = std::array<uint8_t, HASH_TREE_PAGE_SIZE>;
+    using pages_type = std::map<uint64_t, page_data_type>;
+    using sibling_hashes_type = hash_tree::sibling_hashes_type;
+    using page_indices_type = std::vector<uint64_t>;
 
 public:
     struct context {
@@ -104,14 +100,14 @@ public:
             throw std::runtime_error("Could not write page count to log file");
         }
         for (auto &[address, data] : m_context.touched_pages) {
-            const auto page_index = address >> TREE_LOG2_PAGE_SIZE;
+            const auto page_index = address >> HASH_TREE_LOG2_PAGE_SIZE;
             if (fwrite(&page_index, sizeof(page_index), 1, fp.get()) != 1) {
                 throw std::runtime_error("Could not write page index to log file");
             }
             if (fwrite(data.data(), data.size(), 1, fp.get()) != 1) {
                 throw std::runtime_error("Could not write page data to log file");
             }
-            static const hash_type all_zeros{};
+            static const machine_hash all_zeros{};
             if (fwrite(all_zeros.data(), sizeof(all_zeros), 1, fp.get()) != 1) {
                 throw std::runtime_error("Could not write page hash scratch to log file");
             }
@@ -131,7 +127,7 @@ private:
 
     /// \brief Mark a page as touched and save its contents
     /// \param address address of the page
-    void touch_page(address_type address) const {
+    void touch_page(uint64_t address) const {
         auto page = address & ~PAGE_OFFSET_MASK;
         if (m_context.touched_pages.find(page) != m_context.touched_pages.end()) {
             return; // already saved
@@ -147,10 +143,10 @@ private:
         page_indices_type page_indices{};
         // iterate in ascending order of page addresses (the container is ordered by key)
         for (const auto &[address, _] : m_context.touched_pages) {
-            page_indices.push_back(address >> TREE_LOG2_PAGE_SIZE);
+            page_indices.push_back(address >> HASH_TREE_LOG2_PAGE_SIZE);
         }
         auto next_page_index = page_indices.cbegin();
-        get_sibling_hashes_impl(0, TREE_LOG2_ROOT_SIZE - TREE_LOG2_PAGE_SIZE, page_indices, next_page_index,
+        get_sibling_hashes_impl(0, HASH_TREE_LOG2_ROOT_SIZE - HASH_TREE_LOG2_PAGE_SIZE, page_indices, next_page_index,
             sibling_hashes);
         if (next_page_index != page_indices.cend()) {
             throw std::runtime_error("get_sibling_hashes failed to consume all pages");
@@ -164,13 +160,13 @@ private:
     /// \param page_indices indices of all pages
     /// \param next_page_index smallest page index not visited yet
     /// \param sibling_hashes stores the collected sibling hashes during the recursion
-    void get_sibling_hashes_impl(address_type page_index, int page_count_log2_size, page_indices_type &page_indices,
+    void get_sibling_hashes_impl(uint64_t page_index, int page_count_log2_size, page_indices_type &page_indices,
         page_indices_type::const_iterator &next_page_index, sibling_hashes_type &sibling_hashes) {
         auto page_count = UINT64_C(1) << page_count_log2_size;
         if (next_page_index == page_indices.cend() || page_index + page_count <= *next_page_index) {
             // we can skip the merkle tree update, because a full update was done before the recording started
-            sibling_hashes.push_back(m_m.get_merkle_tree_node_hash(page_index << TREE_LOG2_PAGE_SIZE,
-                page_count_log2_size + TREE_LOG2_PAGE_SIZE, skip_merkle_tree_update));
+            sibling_hashes.push_back(m_m.get_merkle_tree_node_hash(page_index << HASH_TREE_LOG2_PAGE_SIZE,
+                page_count_log2_size + HASH_TREE_LOG2_PAGE_SIZE, skip_merkle_tree_update));
         } else if (page_count_log2_size > 0) {
             get_sibling_hashes_impl(page_index, page_count_log2_size - 1, page_indices, next_page_index,
                 sibling_hashes);

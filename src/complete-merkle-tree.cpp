@@ -41,7 +41,7 @@ complete_merkle_tree::complete_merkle_tree(int log2_root_size, int log2_leaf_siz
 /// \param address Node address
 /// \param log2_size Log<sub>2</sub> size subintended by node
 /// \returns Proof, or throws exception
-complete_merkle_tree::proof_type complete_merkle_tree::get_proof(address_type address, int log2_size) const {
+complete_merkle_tree::proof_type complete_merkle_tree::get_proof(uint64_t address, int log2_size) const {
     if (log2_size < get_log2_leaf_size() || log2_size > get_log2_root_size()) {
         throw std::out_of_range{"log2_size is out of bounds"};
     }
@@ -54,7 +54,7 @@ complete_merkle_tree::proof_type complete_merkle_tree::get_proof(address_type ad
     proof.set_target_address(address);
     proof.set_target_hash(get_node_hash(address, log2_size));
     for (int log2_sibling_size = log2_size; log2_sibling_size < get_log2_root_size(); ++log2_sibling_size) {
-        auto sibling_address = address ^ (address_type{1} << log2_sibling_size);
+        auto sibling_address = address ^ (UINT64_C(1) << log2_sibling_size);
         proof.set_sibling_hash(get_node_hash(sibling_address, log2_sibling_size), log2_sibling_size);
     }
     return proof;
@@ -62,9 +62,9 @@ complete_merkle_tree::proof_type complete_merkle_tree::get_proof(address_type ad
 
 /// \brief Appends a new leaf hash to the tree
 /// \param hash Hash to append
-void complete_merkle_tree::push_back(const hash_type &hash) {
+void complete_merkle_tree::push_back(const machine_hash &hash) {
     auto &leaves = get_level(get_log2_leaf_size());
-    if (leaves.size() >= address_type{1} << (get_log2_root_size() - get_log2_leaf_size())) {
+    if (leaves.size() >= UINT64_C(1) << (get_log2_root_size() - get_log2_leaf_size())) {
         throw std::out_of_range{"tree is full"};
     }
     leaves.push_back(hash);
@@ -87,15 +87,15 @@ void complete_merkle_tree::check_log2_sizes(int log2_root_size, int log2_leaf_si
     if (log2_word_size > log2_leaf_size) {
         throw std::out_of_range{"log2_word_size is greater than log2_word_size"};
     }
-    if (log2_root_size >= std::numeric_limits<address_type>::digits) {
+    if (log2_root_size >= std::numeric_limits<uint64_t>::digits) {
         throw std::out_of_range{"tree is too large for address type"};
     }
 }
 
-const complete_merkle_tree::hash_type &complete_merkle_tree::get_node_hash(address_type address, int log2_size) const {
+const machine_hash &complete_merkle_tree::get_node_hash(uint64_t address, int log2_size) const {
     const auto &level = get_level(log2_size);
     address >>= log2_size;
-    if (address >= (address_type{1} << (get_log2_root_size() - log2_size))) {
+    if (address >= (UINT64_C(1) << (get_log2_root_size() - log2_size))) {
         throw std::out_of_range{"log2_size is out of bounds"};
     }
     if (address < level.size()) {

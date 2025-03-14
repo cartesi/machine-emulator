@@ -349,12 +349,12 @@ LIBCARTESI_OBJS:= \
 	base64.o \
 	clint-address-range.o \
 	dtb.o \
+	hash-tree.o \
 	htif-address-range.o \
 	interpret.o \
 	json-util.o \
 	machine-c-api.o \
 	machine-config.o \
-	machine-merkle-tree.o \
 	machine.o \
 	machine-address-ranges.o \
 	memory-address-range.o \
@@ -392,7 +392,6 @@ LUACARTESI_OBJS:= \
 
 LIBCARTESI_MERKLE_TREE_OBJS:= \
 	sha3.o \
-	machine-merkle-tree.o \
 	back-merkle-tree.o \
 	pristine-merkle-tree.o \
 	complete-merkle-tree.o \

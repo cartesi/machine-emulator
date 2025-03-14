@@ -23,42 +23,49 @@
 #include "address-range.h"
 #include "machine-config.h"
 #include "os-mmap.h"
-#include "unique-c-ptr.h"
+#include "dirty-page-tree.h"
 
 namespace cartesi {
 
 // Forward declarations
 class machine;
 
+/// \brief Configuration for memory address range
+struct memory_address_range_config {
+    ///< Whether memory is read-only on host. (If set, must be read-only on target as well)
+    bool host_read_only{false};
+    ///< Total amount of memory allocated by host. (Must be larger than what is needed by target)
+    uint64_t host_length{0};
+};
+
 /// \file
 /// \brief An address range occupied by memory
 
-struct memory_address_range_flags final {
-    bool read_only{false};        ///< Whether the memory is read-only on the host
-    bool page_uncleanable{false}; //< Whether the memory page dirty state can be cleaned
-};
-
+/// \brief An address range occupied by memory
 class memory_address_range : public address_range {
+
     unique_mmap_ptr<unsigned char> m_ptr;  ///< Pointer to mapped memory
     unsigned char *m_host_memory;          ///< Start of associated memory region in host.
-    memory_address_range_flags m_ar_flags; ///< Memory address range specific flags.
-    std::vector<uint8_t> m_dirty_page_map; ///< Map of dirty pages.
+    memory_address_range_config m_config;  ///< Configuration passed to constructor.
+    dirty_page_tree m_dpt;                 ///< Tree of dirty pages.
 
 public:
-    using ptr_type = std::unique_ptr<memory_address_range>;
 
-    /// \brief Constructor for mmap'd ranges.
+    /// \brief Constructor
     /// \param description Description of address range for use in error messages
     /// \param start Start of address range
     /// \param length Length of address range
-    /// \param flags Range flags
-    /// \param image_filename Path to backing file.
-    /// \param host_length Length of host memory to be mapped.
-    /// This value can exceed the specified length, effectively creating an additional region
-    /// of memory that is not associated with the backing files.
+    /// \param flags Address range flags
+    /// \param backing_store Configuration for underlying file backing.
+    /// \param config Additional configuration for memory address range.
+    /// \p config.host_length Length of host memory to be mapped.
+    /// If set to 0, use \p length.
+    /// Otherwise, \p host_length cannot be smaller than \p length.
+    /// The effect is to allocate additional memory past \p length that is not visible by the address range,
+    /// and is not part of the backing storage, but can be used for other purposes.
+    /// \p config.host_read_only Marks memory as read-only on host itself. Requires \p flags.W to be cleared as well.
     memory_address_range(const std::string &description, uint64_t start, uint64_t length, const pmas_flags &flags,
-        const backing_store_config &backing_store = {}, const memory_address_range_flags &ar_flags = {},
-        uint64_t host_length = 0);
+        const backing_store_config &backing_store, const memory_address_range_config &memory_config);
 
     memory_address_range(const memory_address_range &) = delete;
     memory_address_range &operator=(const memory_address_range &) = delete;
@@ -76,57 +83,24 @@ private:
         return m_host_memory;
     }
 
-    void do_mark_dirty_page(uint64_t offset) noexcept override {
-        auto page_index = offset >> AR_constants::AR_PAGE_SIZE_LOG2;
-        auto map_index = page_index >> 3;
-        assert(map_index < m_dirty_page_map.size());
-        m_dirty_page_map[map_index] |= (1 << (page_index & 7));
-    }
-
-    void do_mark_clean_page(uint64_t offset) noexcept override {
-        if (m_ar_flags.page_uncleanable) {
-            // Dirty pages on this address range are permanently dirty and cannot be cleaned.
-            return;
-        }
-        auto page_index = offset >> AR_constants::AR_PAGE_SIZE_LOG2;
-        auto map_index = page_index >> 3;
-        assert(map_index < m_dirty_page_map.size());
-        m_dirty_page_map[map_index] &= ~(1 << (page_index & 7));
-    }
-
-    void do_mark_pages_clean() noexcept override {
-        if (m_ar_flags.page_uncleanable) {
-            // Dirty pages on this address range are permanently dirty and cannot be cleaned.
-            return;
-        }
-        std::fill(m_dirty_page_map.begin(), m_dirty_page_map.end(), 0);
-    }
-
-    bool do_is_page_marked_dirty(uint64_t offset) const noexcept override {
-        auto page_index = offset >> AR_constants::AR_PAGE_SIZE_LOG2;
-        auto map_index = page_index >> 3;
-        assert(map_index < m_dirty_page_map.size());
-        return (m_dirty_page_map[map_index] & (1 << (page_index & 7))) != 0;
-    }
-
     bool do_is_host_read_only() const noexcept override {
-        return m_ar_flags.read_only;
+        return m_config.host_read_only;
     }
 
-    bool do_is_page_uncleanable() const noexcept override {
-        return m_ar_flags.page_uncleanable;
+    dirty_page_tree &do_get_dirty_page_tree() noexcept override {
+        return m_dpt;
     }
 
-    bool do_peek(const machine & /*m*/, uint64_t offset, uint64_t length, const unsigned char **data,
-        unsigned char * /*scratch*/) const noexcept override {
-        if (contains_relative(offset, length)) {
-            *data = get_host_memory() + offset;
-            return true;
-        }
-        *data = nullptr;
-        return false;
+    const dirty_page_tree &do_get_dirty_page_tree() const noexcept override {
+        return m_dpt;
     }
 };
+
+static inline auto make_memory_address_range(const std::string &description, uint64_t start, uint64_t length,
+    const pmas_flags &flags, const backing_store_config &backing_store = {},
+    const memory_address_range_config &config = {}) {
+    return memory_address_range{description, start, length, flags, backing_store, config};
+}
 
 } // namespace cartesi
 

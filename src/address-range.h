@@ -24,7 +24,9 @@
 #include <tuple>
 
 #include "assert-printf.h"
+#include "i-dense-hash-tree.h"
 #include "i-device-state-access.h"
+#include "i-dirty-page-tree.h"
 #include "interpret.h"
 #include "pmas.h"
 
@@ -40,10 +42,12 @@ class machine;
 /// \details The target's physical address layout is described by an array of specializations of such ranges.
 class address_range {
 
-    std::array<char, 32> m_description; ///< Description of address range for use in error messages.
-    uint64_t m_start;                   ///< Target physical address where range starts.
-    uint64_t m_end;                     ///< Target physical address where range ends.
-    pmas_flags m_flags;                 ///< Physical memory attribute flags for range.
+    std::array<char, 32> m_description;         ///< Description of address range for use in error messages.
+    uint64_t m_start;                           ///< Target physical address where range starts.
+    uint64_t m_end;                             ///< Target physical address where range ends.
+    pmas_flags m_flags;                         ///< Physical memory attribute flags for range.
+    always_dirty_page_tree m_always_dirty_tree; ///< Dirty page tree (unless overriden, always dirty)
+    empty_dense_hash_tree m_no_hashes;          ///< Dense hash tree (unless overriden, empty)
 
 public:
     /// \brief Noexcept constexpr constructor for empty ranges with description
@@ -53,16 +57,13 @@ public:
         m_description{},
         m_start{0},
         m_end{0},
-        m_flags{} {
+        m_flags{},
+        m_always_dirty_tree{0} {
         for (unsigned i = 0; i < std::min<unsigned>(N, m_description.size() - 1); ++i) {
             m_description[i] = description[i];
         }
     }
 
-    address_range(const address_range &other) = default;
-    address_range &operator=(const address_range &other) = default;
-    address_range(address_range &&other) = default;
-    address_range &operator=(address_range &&other) = default;
     // NOLINTNEXTLINE(hicpp-use-equals-default,modernize-use-equals-default)
     constexpr virtual ~address_range() {}; // = default; // doesn't work due to bug in gcc
 
@@ -82,11 +83,13 @@ public:
     /// \param length Length of range, in bytes
     /// \param f Physical memory attribute flags for range
     template <typename ABRT>
-    address_range(const char *description, uint64_t start, uint64_t length, const pmas_flags &flags, ABRT abrt) :
+    constexpr address_range(const char *description, uint64_t start, uint64_t length, const pmas_flags &flags,
+        ABRT abrt) :
         m_description{},
         m_start{start},
         m_end{start + length},
-        m_flags{flags} {
+        m_flags{flags},
+        m_always_dirty_tree{get_level_count(length)} {
         // Non-empty description is mandatory
         if (description == nullptr || *description == '\0') {
             ABRTF(abrt, "address range 0x%" PRIx64 ":0x%" PRIx64 " has empty description", start, length);
@@ -119,11 +122,16 @@ public:
         }
     }
 
+    address_range(const address_range &other) = default;
+    address_range &operator=(const address_range &other) = default;
+    address_range(address_range &&other) = default;
+    address_range &operator=(address_range &&other) = default;
+
     /// \brief Checks if a range of addresses is entirely contained within this range
     /// \param offset Start of range of interest, relative to start of this range
     /// \param length Length of range of interest, in bytes
     /// \returns True if and only if range of interest is entirely contained within this range
-    bool contains_relative(uint64_t offset, uint64_t length) const noexcept {
+    constexpr bool contains_relative(uint64_t offset, uint64_t length) const noexcept {
         return get_length() >= length && offset <= get_length() - length;
     }
 
@@ -131,94 +139,94 @@ public:
     /// \param start Target phyisical address of start of range of interest
     /// \param length Length of range of interest, in bytes
     /// \returns True if and only if range of interest is entirely contained within this range
-    bool contains_absolute(uint64_t start, uint64_t length) const noexcept {
+    constexpr bool contains_absolute(uint64_t start, uint64_t length) const noexcept {
         return start >= get_start() && contains_relative(start - get_start(), length);
     }
 
     /// \brief Returns PMA flags used during construction
     /// \returns Flags
-    const pmas_flags &get_flags() const noexcept {
+    constexpr const pmas_flags &get_flags() const noexcept {
         return m_flags;
     }
 
     /// \brief Returns description of address range for use in error messages.
     /// \returns Description
-    const char *get_description() const noexcept {
+    constexpr const char *get_description() const noexcept {
         return m_description.data();
     }
 
     /// \brief Returns target physical address where range starts.
     /// \returns Start of range
-    uint64_t get_start() const noexcept {
+    constexpr uint64_t get_start() const noexcept {
         return m_start;
     }
 
     /// \brief Returns target physical address right past end of range.
     /// \returns End of range
-    uint64_t get_end() const noexcept {
+    constexpr uint64_t get_end() const noexcept {
         return m_end;
     }
 
     /// \brief Returns length of range, in bytes.
     /// \returns Length of range
-    uint64_t get_length() const noexcept {
+    constexpr uint64_t get_length() const noexcept {
         return m_end - m_start;
     }
 
     /// \brief Test if address range is occupied by memory
     /// \returns True if and only if range is occupied by memory
     /// \details In this case, get_host_memory() is guaranteed not to return nullptr.
-    bool is_memory() const noexcept {
+    constexpr bool is_memory() const noexcept {
         return m_flags.M;
     }
 
     /// \brief Test if address range is occupied by a device
     /// \returns True if and only if range is occupied by a device
     /// \details In this case, read_device() and write_device() are operational.
-    bool is_device() const noexcept {
+    constexpr bool is_device() const noexcept {
         return m_flags.IO;
     }
 
     /// \brief Test if address range is empty
     /// \returns True if and only if range is empty
     /// \details Empty ranges should be used only for sentinels.
-    bool is_empty() const noexcept {
+    constexpr bool is_empty() const noexcept {
         return m_end == 0;
     }
 
     /// \brief Tests if range is readable
     /// \returns True if and only if range is readable from within the machine.
-    bool is_readable() const noexcept {
+    constexpr bool is_readable() const noexcept {
         return m_flags.R;
     }
 
     /// \brief Tests if range is writeable
     /// \returns True if and only if range is writeable from within the machine.
-    bool is_writeable() const noexcept {
+    constexpr bool is_writeable() const noexcept {
         return m_flags.W;
     }
 
     /// \brief Tests if range is executable
     /// \returns True if and only if range is executable from within the machine.
-    bool is_executable() const noexcept {
+    constexpr bool is_executable() const noexcept {
         return m_flags.X;
     }
 
     /// \brief Tests if range is read-idempotent
     /// \returns True if and only if what is read from range remains there until written to
-    bool is_read_idempotent() const noexcept {
+    constexpr bool is_read_idempotent() const noexcept {
         return m_flags.IR;
     }
 
     /// \brief Tests if range is write-idempotent
     /// \returns True if and only if what is written to range remains there and can be read until written to again
-    bool is_write_idempotent() const noexcept {
+    constexpr bool is_write_idempotent() const noexcept {
         return m_flags.IW;
     }
 
     /// \brief Returns driver ID associated to range
     /// \returns The driver ID
-    PMA_ISTART_DID get_driver_id() const noexcept {
+    constexpr PMA_ISTART_DID get_driver_id() const noexcept {
         return m_flags.DID;
     }
 
@@ -235,18 +243,30 @@ public:
         return get_length();
     }
 
-    /// \brief Read contents from address range with, no side-effects.
-    /// \param m Reference to machine.
-    /// \param offset Offset within range to start reading.
-    /// \param length Number of bytes to read.
-    /// \param data Receives pointer to start of data, or nullptr if data is constant *and* pristine (filled with
-    /// zeros).
-    /// \param scratch Pointer to memory buffer that must be able to hold \p length bytes.
-    /// \returns True if operation succeeded, false otherwise.
-    bool peek(const machine &m, uint64_t offset, uint64_t length, const unsigned char **data,
-        unsigned char *scratch) const noexcept {
-        return do_peek(m, offset, length, data, scratch);
-    };
+    /// \brief Returns number of levels in a tree where each leaf is a page
+    int get_level_count() const noexcept {
+        return get_level_count(get_length());
+    }
+
+    /// \brief Returns reference to dirty page tree.
+    i_dirty_page_tree &get_dirty_page_tree() noexcept {
+        return do_get_dirty_page_tree();
+    }
+
+    /// \brief Returns const reference to dirty page tree.
+    const i_dirty_page_tree &get_dirty_page_tree() const noexcept {
+        return do_get_dirty_page_tree();
+    }
+
+    /// \brief Returns reference to dense hash tree.
+    i_dense_hash_tree &get_dense_hash_tree() noexcept {
+        return do_get_dense_hash_tree();
+    }
+
+    /// \brief Returns const reference to dense hash tree tree.
+    const i_dense_hash_tree &get_dense_hash_tree() const noexcept {
+        return do_get_dense_hash_tree();
+    }
 
     // -----
     // These are only for device ranges
@@ -288,59 +308,24 @@ public:
         return do_get_host_memory();
     }
 
-    /// \brief Mark a given page as dirty
-    /// \param offset Any offset in range within desired page
-    void mark_dirty_page(uint64_t offset) noexcept {
-        do_mark_dirty_page(offset);
-    }
-
-    /// \brief Mark all pages in a range of interest as dirty
-    /// \param offset Start of range of interest, relative to start of this range
-    /// \param length Length of range of interest, in bytes
-    void mark_dirty_pages(uint64_t offset, uint64_t length) noexcept {
-        auto offset_aligned = offset &= ~(AR_PAGE_SIZE - 1);
-        const auto length_aligned = length + (offset - offset_aligned);
-        for (; offset_aligned < length_aligned; offset_aligned += AR_PAGE_SIZE) {
-            mark_dirty_page(offset_aligned);
-        }
-    }
-
-    /// \brief Mark a given page as clean
-    /// \param offset Any offset in range within desired page
-    void mark_clean_page(uint64_t offset) noexcept {
-        do_mark_clean_page(offset);
-    }
-
-    /// \brief Marks all pages in range as clean
-    void mark_pages_clean() noexcept {
-        do_mark_pages_clean();
-    }
-
-    /// \brief Tests if a given page is dirty
-    /// \param offset Any offset in range within desired page
-    /// \returns True if and only if page is marked dirty
-    bool is_page_marked_dirty(uint64_t offset) const noexcept {
-        return do_is_page_marked_dirty(offset);
-    }
-
     /// \brief Returns true if the mapped memory is read-only on the host
     /// \returns True if the memory is read-only in the host
     bool is_host_read_only() const noexcept {
         return do_is_host_read_only();
     }
 
-    /// \brief Returns true if pages marked as dirty once are uncleanable
-    /// \returns True if and only if dirty pages are uncleanable
-    bool is_page_uncleanable() const noexcept {
-        return do_is_page_uncleanable();
+protected:
+    /// \brief Returns number of levels in a tree where each leaf is a page
+    /// \param length Length of range, in bytes
+    static constexpr int get_level_count(uint64_t length) noexcept {
+        auto page_count = length >> AR_LOG2_PAGE_SIZE;
+        if (page_count == 0) {
+            return 0;
+        }
+        return std::bit_width(std::bit_ceil(page_count));
     }
 
 private:
-    // Default implementation of peek() always fails
-    virtual bool do_peek(const machine & /*m*/, uint64_t /*offset*/, uint64_t /*length*/,
-        const unsigned char ** /*data*/, unsigned char * /*scratch*/) const noexcept {
-        return false;
-    }
 
     // Default implementation of read_device() for non-device ranges always fails
     virtual bool do_read_device(i_device_state_access * /*a*/, uint64_t /*offset*/, int /*log2_size*/,
@@ -363,30 +348,28 @@ private:
         return nullptr;
     }
 
-    // Default implementation always assumes every page is always dirty
-    virtual void do_mark_dirty_page(uint64_t /*offset*/) noexcept {
-        ;
+    // Defaul implemenation returns always dirty tree
+    virtual i_dirty_page_tree &do_get_dirty_page_tree() noexcept {
+        return m_always_dirty_tree;
     }
 
-    virtual void do_mark_clean_page(uint64_t /*offset*/) noexcept {
-        ;
+    virtual const i_dirty_page_tree &do_get_dirty_page_tree() const noexcept {
+        return m_always_dirty_tree;
     }
 
-    virtual void do_mark_pages_clean() noexcept {
-        ;
+    // Defaul implemenation returns no hashes
+    virtual i_dense_hash_tree &do_get_dense_hash_tree() noexcept {
+        return m_no_hashes;
     }
 
-    virtual bool do_is_page_marked_dirty(uint64_t /*offset*/) const noexcept {
-        return true;
+    virtual const i_dense_hash_tree &do_get_dense_hash_tree() const noexcept {
+        return m_no_hashes;
     }
 
     virtual bool do_is_host_read_only() const noexcept {
         return false;
     }
 
-    virtual bool do_is_page_uncleanable() const noexcept {
-        return false;
-    }
 };
 
 template <size_t N>

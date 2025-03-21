@@ -239,11 +239,12 @@ private:
         // NOLINTBEGIN(bugprone-unchecked-optional-access)
         a.get_written_hash().emplace();
         hasher_type hasher{};
-        get_merkle_tree_hash(hasher, pma.get_memory().get_host_memory(), write_length,
+        const auto offset = paddr - pma.get_start();
+        get_merkle_tree_hash(hasher, pma.get_memory().get_host_memory() + offset, write_length,
             machine_merkle_tree::get_word_size(), a.get_written_hash().value());
         if (m_log.get_log_type().has_large_data()) {
             access_data &data = a.get_written().emplace(write_length);
-            memcpy(data.data(), pma.get_memory().get_host_memory(), write_length);
+            memcpy(data.data(), pma.get_memory().get_host_memory() + offset, write_length);
         }
         // NOLINTEND(bugprone-unchecked-optional-access)
         m_log.push_access(a, "cmio rx buffer");

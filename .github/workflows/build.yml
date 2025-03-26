@@ -735,6 +735,7 @@ jobs:
         with:
           draft: true
           files: |
+            artifacts/cartesi-machine-*.deb
             artifacts/uarch-ram.bin
             add-generated-files.diff
             uarch-logs/uarch-riscv-tests-json-logs-*.tar.gz

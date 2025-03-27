@@ -1535,15 +1535,16 @@ http::message_generator handle_request(HTTP_REQ &&rreq, const std::shared_ptr<ht
         return res;
     }
     // Only accept / URI
+    SLOG(trace) << session->handler->local_endpoint << " request target uri is " << req.target();
     if (req.target() != "/") {
-        SLOG(trace) << session->handler->local_endpoint << " rejected unexpected \"" << req.target() << "\" uri";
+        SLOG(trace) << session->handler->local_endpoint << " request uri rejected";
         http::response<http::empty_body> res{http::status::not_found, req.version()};
         res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
         res.set(http::field::access_control_allow_origin, "*");
         res.keep_alive(req.keep_alive());
         return res;
     }
-    SLOG(trace) << session->handler->local_endpoint << " request is " << req.target();
+    SLOG(trace) << session->handler->local_endpoint << " request body is " << req.body().data();
     // Parse request body into a JSON object
     json j;
     try {

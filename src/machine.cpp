@@ -176,8 +176,8 @@ void machine::init_uarch(const uarch_config &c) {
         write_reg(machine_reg_enum(reg::uarch_x0, i), c.processor.registers.x[i]);
     }
     // Register shadow state
-    m_us.shadow_state = &register_address_range(make_shadow_uarch_state_address_range(AR_SHADOW_UARCH_STATE_START,
-                                                    AR_SHADOW_UARCH_STATE_LENGTH, throw_invalid_argument),
+    register_address_range(make_shadow_uarch_state_address_range(AR_SHADOW_UARCH_STATE_START,
+                               AR_SHADOW_UARCH_STATE_LENGTH, throw_invalid_argument),
         register_where{.merkle = true, .interpret = false});
     // Register RAM
     if (uarch_pristine_ram_len > AR_UARCH_RAM_LENGTH) {
@@ -195,13 +195,13 @@ void machine::init_uarch(const uarch_config &c) {
     };
     constexpr auto ram_description = "uarch RAM";
     if (c.ram.backing_store.data_filename.empty()) {
-        m_us.ram = &register_address_range(
+        auto &uram = register_address_range(
             make_callocd_memory_address_range(ram_description, AR_UARCH_RAM_START, UARCH_RAM_LENGTH, uram_flags),
             register_where{.merkle = true, .interpret = false});
-        memcpy(m_us.ram->get_host_memory(), uarch_pristine_ram, uarch_pristine_ram_len);
+        memcpy(uram.get_host_memory(), uarch_pristine_ram, uarch_pristine_ram_len);
     } else {
-        m_us.ram = &register_address_range(make_memory_address_range(ram_description, AR_UARCH_RAM_START,
-                                               UARCH_RAM_LENGTH, uram_flags, c.ram.backing_store),
+        register_address_range(make_memory_address_range(ram_description, AR_UARCH_RAM_START, UARCH_RAM_LENGTH,
+                                   uram_flags, c.ram.backing_store),
             register_where{.merkle = true, .interpret = false});
     }
 }
@@ -498,12 +498,12 @@ void machine::init_pmas_contents(const pmas_config &config, memory_address_range
     static_assert(sizeof(pmas_state) == PMA_MAX * 2 * sizeof(uint64_t), "inconsistent PMAs state length");
     static_assert(AR_PMAS_LENGTH >= sizeof(pmas_state), "PMAs address range too short");
     if (config.backing_store.data_filename.empty()) {
-        if (m_s.pmas.size() >= PMA_MAX - 1) { // Leave room for a sentinel empty address range after all others
+        if (m_pmas.size() >= PMA_MAX - 1) { // Leave room for a sentinel empty address range after all others
             throw std::runtime_error{"too many address ranges"};
         }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         auto &dest = *reinterpret_cast<pmas_state *>(pmas.get_host_memory());
-        std::ranges::transform(m_s.pmas, dest.begin(), [this](auto i) {
+        std::ranges::transform(m_pmas, dest.begin(), [this](auto i) {
             return pmas_entry{.istart = m_ars[i]->get_istart(), .ilength = m_ars[i]->get_ilength()};
         });
     }
@@ -569,10 +569,9 @@ static inline auto make_pmas_address_range(const pmas_config &config) {
 
 // ??D It is best to leave the std::move() on r because it may one day be necessary!
 // NOLINTNEXTLINE(hicpp-move-const-arg,performance-move-const-arg)
-machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}, m_r{std::move(r)} {
+machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}, m_r{r}, m_soft_yield(r.soft_yield) {
     init_uarch(m_c.uarch);
     init_registers(m_c.processor.registers, m_r);
-    m_s.soft_yield = m_r.soft_yield;
     init_ram_ar(m_c.ram);
     // Will populate when initialization of PMAs is done
     auto &dtb =
@@ -696,7 +695,7 @@ const machine_runtime_config &machine::get_runtime_config() const {
 /// \brief Changes the machine runtime config.
 void machine::set_runtime_config(machine_runtime_config r) {
     m_r = std::move(r); // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
-    m_s.soft_yield = m_r.soft_yield;
+    m_soft_yield = m_r.soft_yield;
     os_silence_putchar(m_r.htif.no_console_putchar);
 }
 
@@ -840,7 +839,7 @@ void machine::check_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uin
         throw std::domain_error{prefix + "TLB slot index is out of range"s};
     }
     if (vaddr_page != TLB_INVALID_PAGE) {
-        if (pma_index >= m_s.pmas.size()) {
+        if (pma_index >= m_pmas.size()) {
             throw std::domain_error{prefix + "pma_index is out of range"s};
         }
         const auto &ar = read_pma(pma_index);
@@ -2399,12 +2398,10 @@ void machine::reset_uarch() {
         write_reg(machine_reg_enum(reg::uarch_x0, i), UARCH_X_INIT);
     }
     // Load embedded pristine RAM image
-    const auto uram_length = m_us.ram->get_length();
-    const auto uram_start = m_us.ram->get_start();
+    write_memory(AR_UARCH_RAM_START, uarch_pristine_ram, uarch_pristine_ram_len);
     // Reset RAM to initial state
-    write_memory(uram_start, uarch_pristine_ram, uarch_pristine_ram_len);
-    if (uram_length > uarch_pristine_ram_len) {
-        fill_memory(uram_start + uarch_pristine_ram_len, 0, uram_length - uarch_pristine_ram_len);
+    if (AR_UARCH_RAM_LENGTH > uarch_pristine_ram_len) {
+        fill_memory(AR_UARCH_RAM_START + uarch_pristine_ram_len, 0, AR_UARCH_RAM_LENGTH - uarch_pristine_ram_len);
     }
 }
 

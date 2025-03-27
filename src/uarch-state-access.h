@@ -45,9 +45,9 @@ public:
     /// \param um Reference to uarch state.
     /// \param m Reference to machine state.
     explicit uarch_state_access(machine &m) : m_m(m) {
-        const auto &uram = m_m.get_uarch_state().ram;
-        const auto haddr = cast_ptr_to_host_addr(uram->get_host_memory());
-        const auto paddr = uram->get_start();
+        const auto &uram = m_m.find_address_range(AR_UARCH_RAM_START, AR_UARCH_RAM_LENGTH);
+        const auto haddr = cast_ptr_to_host_addr(uram.get_host_memory());
+        const auto paddr = AR_UARCH_RAM_START;
         // initialize translation cache from paddr in uarch RAM to host address
         m_uram_ph_offset = haddr - paddr;
     }

@@ -42,11 +42,6 @@ struct uarch_state final {
 
     // Shadow region.
     uarch_registers_state registers; ///< Uarch registers
-
-    // Penumbra region, the fields below are not stored in the backing file,
-    // it's only visible in host resident memory during runtime.
-    address_range *shadow_state{}; ///< Shadow uarch state
-    memory_address_range *ram{};   ///< Memory range for uarch RAM
 };
 
 } // namespace cartesi

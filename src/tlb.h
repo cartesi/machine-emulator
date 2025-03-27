@@ -32,7 +32,7 @@
 namespace cartesi {
 
 /// \brief Index of TLB set
-enum TLB_set_index : uint64_t { TLB_CODE, TLB_READ, TLB_WRITE, TLB_LAST_ = TLB_WRITE };
+enum TLB_set_index : uint64_t { TLB_CODE, TLB_READ, TLB_WRITE, TLB_LAST_ = TLB_WRITE, TLB_NUM_SETS_ = TLB_WRITE + 1 };
 
 /// \brief TLB constants.
 enum TLB_constants : uint64_t {
@@ -46,30 +46,35 @@ enum TLB_constants : uint64_t {
 /// Given a target virtual address vaddr within a page matching vaddr_page in TLB slot, the corresponding host address
 /// haddr = vaddr + vh_offset.
 struct tlb_hot_slot final {
-    uint64_t vaddr_page; ///< Target virtual address of start of page
-    host_addr vh_offset; ///< Offset from target virtual address in the same page to host address
+    uint64_t vaddr_page{TLB_INVALID_PAGE}; ///< Target virtual address of start of page
+    host_addr vh_offset{0};                ///< Offset from target virtual address in the same page to host address
 };
 
 using tlb_hot_set = std::array<tlb_hot_slot, TLB_SET_SIZE>;
+using tlb_hot_state = std::array<tlb_hot_set, TLB_NUM_SETS_>;
 
 /// \brief TLB cold slot.
 /// \details
 /// The pma_index helps translate between target physical addresses and host addresses when needed.
 struct tlb_cold_slot final {
-    uint64_t pma_index; ///< Index of PMA where physical address falls
+    uint64_t vaddr_page{TLB_INVALID_PAGE}; ///< Target virtual address of start of page
+    uint64_t vp_offset{0};                 ///< Offset from target virtual address in the same page to physical address
+    uint64_t pma_index{TLB_INVALID_PMA_INDEX}; ///< Index of PMA where physical address falls
+    uint64_t padding_{0};                      ///< Padding to make sure TLB cold slot size is a power of 2
 };
 
 using tlb_cold_set = std::array<tlb_cold_slot, TLB_SET_SIZE>;
-
-/// \brief TLB state.
-struct tlb_state {
-    std::array<tlb_hot_set, TLB_LAST_ + 1> hot;
-    std::array<tlb_cold_set, TLB_LAST_ + 1> cold;
-};
+using tlb_cold_state = std::array<tlb_cold_set, TLB_NUM_SETS_>;
 
 static_assert(sizeof(uint64_t) >= sizeof(uintptr_t), "TLB expects host pointer fit in 64 bits");
-//??D why?
-static_assert((sizeof(tlb_hot_slot) & (sizeof(tlb_hot_slot) - 1)) == 0, "TLB slot size must be a power of 2");
+
+// We need to ensure TLB state sizes are fixed across different platforms
+static_assert(sizeof(tlb_hot_state) == 3 * TLB_SET_SIZE * 2 * sizeof(uint64_t), "unexpected TLB hot state size");
+static_assert(sizeof(tlb_cold_state) == 3 * TLB_SET_SIZE * 4 * sizeof(uint64_t), "unexpected TLB cold state size");
+static_assert(alignof(tlb_hot_state) == sizeof(uint64_t), "unexpected TLB hot state alignment");
+static_assert(alignof(tlb_cold_state) == sizeof(uint64_t), "unexpected TLB cold state alignment");
+
+// Ensure TLB cold slot size is a power of two, so we can perform atomic writes to the TLB.
 static_assert((sizeof(tlb_cold_slot) & (sizeof(tlb_cold_slot) - 1)) == 0, "TLB slot size must be a power of 2");
 
 /// \brief Gets a TLB slot index for a page.

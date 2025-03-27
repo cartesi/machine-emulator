@@ -458,17 +458,17 @@ private:
 
     template <TLB_set_index SET>
     uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) const {
-        return m_m.get_state().tlb.hot[SET][slot_index].vaddr_page;
+        return m_m.get_state().tlb_hot[SET][slot_index].vaddr_page;
     }
 
     template <TLB_set_index SET>
-    host_addr do_read_tlb_vp_offset(uint64_t slot_index) const {
-        return m_m.get_state().tlb.hot[SET][slot_index].vh_offset;
+    host_addr do_read_tlb_vf_offset(uint64_t slot_index) const {
+        return m_m.get_state().tlb_hot[SET][slot_index].vh_offset;
     }
 
     template <TLB_set_index SET>
     uint64_t do_read_tlb_pma_index(uint64_t slot_index) const {
-        return m_m.get_state().tlb.cold[SET][slot_index].pma_index;
+        return m_m.get_state().tlb_cold[SET][slot_index].pma_index;
     }
 
     template <TLB_set_index SET>
@@ -504,7 +504,7 @@ private:
     }
 
     bool do_get_soft_yield() const {
-        return m_m.get_state().soft_yield;
+        return m_m.is_soft_yield();
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

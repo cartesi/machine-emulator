@@ -70,6 +70,8 @@ private:
     std::vector<virtio_address_range *> m_virtio_ars;     ///< VirtIO address ranges
     address_range_descriptions m_ards;                    ///< Address range descriptions listed by get_address_ranges()
     std::unordered_map<std::string, uint64_t> m_counters; ///< Counters used for statistics collection
+    std::vector<uint64_t> m_pmas;                         ///< Indices of address ranges that interpret can find
+    bool m_soft_yield{false};                             ///< Whether runtime soft yields are enabled
 
     ///< Where to register an address range
     struct register_where {
@@ -113,7 +115,7 @@ private:
         const auto index = m_ars.size();                    // Get index new address range will occupy
         m_ars.push_back(std::move(ptr));                    // Move ptr to list of address ranges
         if (where.interpret) {                              // Register with interpreter
-            m_s.pmas.push_back(index);
+            m_pmas.push_back(index);
         }
         if (where.merkle) { // Register with Merkle tree
             m_merkle_ars.push_back(index);
@@ -497,12 +499,12 @@ public:
     /// \param index Index of desired address range
     /// \returns Desired address range, or an empty sentinel if index is out of bounds
     const address_range &read_pma(uint64_t index) const noexcept {
-        if (index >= m_s.pmas.size()) {
+        if (index >= m_pmas.size()) {
             static constexpr auto sentinel = make_empty_address_range("sentinel");
             return sentinel;
         }
         // NOLINTNEXTLINE(bugprone-narrowing-conversions)
-        return *m_ars[static_cast<int>(m_s.pmas[static_cast<int>(index)])];
+        return *m_ars[static_cast<int>(m_pmas[static_cast<int>(index)])];
     }
 
     /// \brief Returns the address range associated to the PMA at a given index
@@ -677,6 +679,11 @@ public:
     /// \brief Returns all counters
     const auto &get_counters() {
         return m_counters;
+    }
+
+    /// \brief Returns whether runtime soft yields are enabled
+    bool is_soft_yield() const {
+        return m_soft_yield;
     }
 };
 

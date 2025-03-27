@@ -377,15 +377,15 @@ public:
         return val;
     }
 
-    /// \brief Reads TLB's vp_offset
+    /// \brief Reads TLB's vf_offset
     /// \tparam USE TLB set
     /// \param slot_index Slot index
     /// \returns Value in slot.
     template <TLB_set_index SET>
-    fast_addr read_tlb_vp_offset(uint64_t slot_index) const {
+    fast_addr read_tlb_vf_offset(uint64_t slot_index) const {
         [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
-        const auto val = derived().template do_read_tlb_vp_offset<SET>(slot_index);
-        dsa_printf("%s::read_tlb_vp_offset<%" PRIu64 ">(%" PRIu64 ") = %s{0x%" PRIx64 "}\n", get_name(), SET,
+        const auto val = derived().template do_read_tlb_vf_offset<SET>(slot_index);
+        dsa_printf("%s::read_tlb_vf_offset<%" PRIu64 ">(%" PRIu64 ") = %s{0x%" PRIx64 "}\n", get_name(), SET,
             slot_index, fast_addr_name, static_cast<uint64_t>(val));
         return val;
     }
@@ -406,16 +406,16 @@ public:
     /// \tparam USE TLB set
     /// \param slot_index Slot index
     /// \param vaddr_page Value to write
-    /// \param vp_offset Value to write
+    /// \param vf_offset Value to write
     /// \param pma_index Value to write
     /// \detail Writes to the TLB must be modify all fields atomically to prevent an inconsistent state.
     /// This simplifies all state access implementations.
     template <TLB_set_index SET>
-    void write_tlb(uint64_t slot_index, uint64_t vaddr_page, fast_addr vp_offset, uint64_t pma_index) const {
-        derived().template do_write_tlb<SET>(slot_index, vaddr_page, vp_offset, pma_index);
+    void write_tlb(uint64_t slot_index, uint64_t vaddr_page, fast_addr vf_offset, uint64_t pma_index) const {
+        derived().template do_write_tlb<SET>(slot_index, vaddr_page, vf_offset, pma_index);
         [[maybe_unused]] const auto fast_addr_name = std::is_same_v<fast_addr, uint64_t> ? "phys_addr" : "fast_addr";
         dsa_printf("%s::write_tlb<%" PRIu64 ">(%" PRIu64 ", 0x%" PRIx64 ", %s{0x%" PRIx64 "}, %" PRIu64 ")\n",
-            get_name(), SET, slot_index, vaddr_page, fast_addr_name, static_cast<uint64_t>(vp_offset), pma_index);
+            get_name(), SET, slot_index, vaddr_page, fast_addr_name, static_cast<uint64_t>(vf_offset), pma_index);
     }
 
     /// \brief Marks a page as dirty

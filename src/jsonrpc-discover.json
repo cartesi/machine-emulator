@@ -1004,6 +1004,18 @@
         "title": "ProcessorConfig",
         "type": "object",
         "properties": {
+          "registers": {
+            "$ref": "#/components/schemas/RegistersConfig"
+          },
+          "backing_store": {
+            "$ref": "#/components/schemas/BackingStoreConfig"
+          }
+        }
+      },
+      "RegistersConfig": {
+        "title": "RegistersConfig",
+        "type": "object",
+        "properties": {
           "x0": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
@@ -1487,6 +1499,18 @@
       },
       "UarchProcessorConfig": {
         "title": "UarchProcessorConfig",
+        "type": "object",
+        "properties": {
+          "registers": {
+            "$ref": "#/components/schemas/UarchRegistersConfig"
+          },
+          "backing_store": {
+            "$ref": "#/components/schemas/BackingStoreConfig"
+          }
+        }
+      },
+      "UarchRegistersConfig": {
+        "title": "UarchRegistersConfig",
         "type": "object",
         "properties": {
           "x0": {

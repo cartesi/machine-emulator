@@ -26,10 +26,11 @@
 
 #include "memory-address-range.h"
 #include "riscv-constants.h"
+#include "shadow-uarch-state.h"
 
 namespace cartesi {
 
-struct uarch_state {
+struct uarch_state final {
     uarch_state() = default;
     ~uarch_state() = default;
 
@@ -39,10 +40,8 @@ struct uarch_state {
     uarch_state &operator=(const uarch_state &other) = delete;
     uarch_state &operator=(uarch_state &&other) = delete;
 
-    uint64_t pc{};                               ///< Program counter.
-    std::array<uint64_t, UARCH_X_REG_COUNT> x{}; ///< Register file.
-    uint64_t cycle{};                            ///< Cycles counter
-    uint64_t halt_flag{};
+    // Shadow region.
+    uarch_registers_state registers; ///< Uarch registers
 };
 
 } // namespace cartesi

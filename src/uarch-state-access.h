@@ -51,36 +51,36 @@ private:
     friend i_uarch_state_access<uarch_state_access>;
 
     uint64_t do_read_uarch_x(int i) const {
-        return m_m.get_uarch_state().x[i];
+        return m_m.get_uarch_state().registers.x[i];
     }
 
     void do_write_uarch_x(int i, uint64_t val) const {
         assert(i != 0);
-        m_m.get_uarch_state().x[i] = val;
+        m_m.get_uarch_state().registers.x[i] = val;
     }
 
     uint64_t do_read_uarch_pc() const {
-        return m_m.get_uarch_state().pc;
+        return m_m.get_uarch_state().registers.pc;
     }
 
     void do_write_uarch_pc(uint64_t val) const {
-        m_m.get_uarch_state().pc = val;
+        m_m.get_uarch_state().registers.pc = val;
     }
 
     uint64_t do_read_uarch_cycle() const {
-        return m_m.get_uarch_state().cycle;
+        return m_m.get_uarch_state().registers.cycle;
     }
 
     void do_write_uarch_cycle(uint64_t val) const {
-        m_m.get_uarch_state().cycle = val;
+        m_m.get_uarch_state().registers.cycle = val;
     }
 
     uint64_t do_read_uarch_halt_flag() const {
-        return m_m.get_uarch_state().halt_flag;
+        return m_m.get_uarch_state().registers.halt_flag;
     }
 
     void do_write_uarch_halt_flag(uint64_t v) const {
-        m_m.get_uarch_state().halt_flag = v;
+        m_m.get_uarch_state().registers.halt_flag = v;
     }
 
     uint64_t do_read_word(uint64_t paddr) const {

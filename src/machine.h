@@ -79,15 +79,15 @@ private:
     void init_uarch_processor(const uarch_config &c);
 
     /// \brief Initializes registers
-    /// \param p Processor configuration
+    /// \param p Registers configuration
     /// \param r Machine runtime configuration
-    void init_processor(processor_config &p, const machine_runtime_config &r);
+    void init_registers(registers_state &p, const machine_runtime_config &r);
 
     /// \brief Initializes TTY if needed
     /// \param h HTIF configuration
     /// \param r HTIF runtime configuration
     /// \param iunrep Initial value of iunrep CSR
-    void init_tty(const htif_config &h, const htif_runtime_config &r, uint64_t iunrep) const;
+    void init_tty(const htif_state &h, const htif_runtime_config &r, uint64_t iunrep) const;
 
     /// \brief Initializes contents of the shadow PMAs memory
     /// \param pmas_config PMAs configuration
@@ -102,18 +102,6 @@ private:
     /// \brief Initializes contents of machine DTB, if image was not available
     /// \param config Machine configuration
     void init_dtb_contents(const machine_config &config);
-
-    /// \brief Initializes HTIF registers
-    /// \param h HTIF configuration
-    void init_htif_registers(const htif_config &h);
-
-    /// \brief Initializes CLINT registers
-    /// \param c CLINT configuration
-    void init_clint_registers(const clint_config &c);
-
-    /// \brief Initializes PLIC registers
-    /// \param p PLIC configuration
-    void init_plic_registers(const plic_config &p);
 
     /// \brief Dumps statistics
     void dump_stats();

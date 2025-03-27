@@ -147,60 +147,12 @@ end
 
 local SHADOW_BASE = 0x0
 
-local cpu_reg_addr = {
-    pc = 512,
-    fcsr = 520,
-    mvendorid = 528,
-    marchid = 536,
-    mimpid = 544,
-    mcycle = 552,
-    icycleinstret = 560,
-    mstatus = 568,
-    mtvec = 576,
-    mscratch = 584,
-    mepc = 592,
-    mcause = 600,
-    mtval = 608,
-    misa = 616,
-    mie = 624,
-    mip = 632,
-    medeleg = 640,
-    mideleg = 648,
-    mcounteren = 656,
-    menvcfg = 664,
-    stvec = 672,
-    sscratch = 680,
-    sepc = 688,
-    scause = 696,
-    stval = 704,
-    satp = 712,
-    scounteren = 720,
-    senvcfg = 728,
-    ilrsc = 736,
-    iprv = 744,
-    iflags_X = 752,
-    iflags_Y = 760,
-    iflags_H = 768,
-    iunrep = 776,
-    clint_mtimecmp = 784,
-    plic_girqpend = 792,
-    plic_girqsrvd = 800,
-    htif_tohost = 808,
-    htif_fromhost = 816,
-    htif_ihalt = 824,
-    htif_iconsole = 832,
-    htif_iyield = 840,
-}
-for i = 0, 31 do
-    cpu_reg_addr["x" .. i] = i * 8
-end
-
 local function get_uarch_cpu_reg_test_values()
-    local processor = {}
+    local registers = {}
     for i = 0, 31 do
-        processor["x" .. i] = 0x10000 + (i * 8)
+        registers["x" .. i] = 0x10000 + (i * 8)
     end
-    return processor
+    return registers
 end
 
 local function get_cpu_reg_test_values()
@@ -269,13 +221,16 @@ local function build_machine_config(config_options)
     -- Create new machine
     local initial_reg_values = get_cpu_reg_test_values()
     local config = {
-        processor = config_options.processor or initial_reg_values,
+        processor = config_options.processor or {
+            registers = initial_reg_values,
+        },
         ram = { length = 1 << 20 },
-        htif = config_options.htif or nil,
         cmio = config_options.cmio or nil,
         uarch = config_options.uarch
             or {
-                processor = get_uarch_cpu_reg_test_values(),
+                processor = {
+                    registers = get_uarch_cpu_reg_test_values(),
+                },
                 ram = {
                     length = 0x1000,
                     backing_store = {
@@ -327,8 +282,7 @@ do_test("machine should have default config shadow register values", function(ma
     initial_reg_values.mimpid = nil
     -- Check initialization and shadow reads
     for k, v in pairs(initial_reg_values) do
-        local r = machine:read_word(cpu_reg_addr[k])
-        assert(v == r)
+        assert(v == machine:read_word(machine:get_reg_address(k)))
     end
 end)
 
@@ -351,9 +305,9 @@ end)
 print("\n\ntesting get_reg_address function binding")
 do_test("should return address value for registers", function(machine)
     -- Check register address
-    for k, v in pairs(cpu_reg_addr) do
-        local u = machine:get_reg_address(k)
-        assert(u == v, "invalid return for " .. v)
+    local initial_reg_values = get_cpu_reg_test_values()
+    for k, v in pairs(initial_reg_values) do
+        assert(machine:read_reg(k) == machine:read_word(machine:get_reg_address(k)), "invalid return for " .. v)
     end
 end)
 
@@ -420,9 +374,6 @@ local function test_config(config)
         "dtb",
         "flash_drive",
         "tlb",
-        "clint",
-        "plic",
-        "htif",
         "virtio",
         "cmio",
         "pmas",
@@ -430,13 +381,13 @@ local function test_config(config)
         "hash_tree",
     }
     for _, field in ipairs(config_fields) do
-        assertfield(config, field, "table")
+        assertfield(config, field, "table", "config", "needed")
     end
     for i = 0, 31 do
-        assertfield(config, "processor.x" .. i, "number")
+        assertfield(config.processor, "registers.x" .. i, "number", "processor", "needed")
     end
     for i = 0, 31 do
-        assertfield(config, "processor.f" .. i, "number")
+        assertfield(config.processor, "registers.f" .. i, "number", "processor", "needed")
     end
     local csrs = {
         "pc",
@@ -469,22 +420,22 @@ local function test_config(config)
         "senvcfg",
         "ilrsc",
         "iprv",
-        "iflags_X",
-        "iflags_Y",
-        "iflags_H",
+        "iflags.X",
+        "iflags.Y",
+        "iflags.H",
         "iunrep",
+        "htif.ihalt",
+        "htif.iconsole",
+        "htif.iyield",
+        "htif.tohost",
+        "htif.fromhost",
+        "clint.mtimecmp",
+        "plic.girqpend",
+        "plic.girqsrvd",
     }
     for _, csr in ipairs(csrs) do
-        assertfield(config, "processor." .. csr, "number")
+        assertfield(config.processor, "registers." .. csr, "number", "processor", "needed")
     end
-    assertfield(config, "htif.console_getchar", "boolean")
-    assertfield(config, "htif.yield_manual", "boolean")
-    assertfield(config, "htif.yield_automatic", "boolean")
-    assertfield(config, "htif.tohost", "number")
-    assertfield(config, "htif.fromhost", "number")
-    assertfield(config, "clint.mtimecmp", "number")
-    assertfield(config, "plic.girqpend", "number")
-    assertfield(config, "plic.girqsrvd", "number")
     assertfield(config, "ram.length", "number")
     test_backing_store_config(config, "ram.backing_store")
     assertfield(config, "dtb.bootargs", "string")
@@ -533,16 +484,19 @@ do_test("should have expected values", function(machine)
     -- Check initial config
     local initial_config = machine:get_initial_config()
     test_config(initial_config)
-    assert(initial_config.processor.pc == 0x200, "wrong pc reg initial config value")
-    assert(initial_config.processor.ilrsc == 0x2e0, "wrong ilrsc reg initial config value")
-    assert(initial_config.processor.mstatus == 0x230, "wrong mstatus reg initial config value")
-    assert(initial_config.clint.mtimecmp == 0, "wrong clint mtimecmp initial config value")
-    assert(initial_config.plic.girqpend == 0, "wrong plic girqpend initial config value")
-    assert(initial_config.plic.girqsrvd == 0, "wrong plic girqsrvd initial config value")
-    assert(initial_config.htif.fromhost == 0, "wrong htif fromhost initial config value")
-    assert(initial_config.htif.tohost == 0, "wrong htif tohost initial config value")
-    assert(initial_config.htif.yield_automatic == true, "wrong htif yield automatic initial config value")
-    assert(initial_config.htif.yield_manual == true, "wrong htif yield manual initial config value")
+    assert(initial_config.processor.registers.pc == 0x200, "wrong pc reg initial config value")
+    assert(initial_config.processor.registers.ilrsc == 0x2e0, "wrong ilrsc reg initial config value")
+    assert(initial_config.processor.registers.mstatus == 0x230, "wrong mstatus reg initial config value")
+    assert(initial_config.processor.registers.clint.mtimecmp == 0, "wrong clint mtimecmp initial config value")
+    assert(initial_config.processor.registers.plic.girqpend == 0, "wrong plic girqpend initial config value")
+    assert(initial_config.processor.registers.plic.girqsrvd == 0, "wrong plic girqsrvd initial config value")
+    assert(initial_config.processor.registers.htif.fromhost == 0, "wrong htif fromhost initial config value")
+    assert(initial_config.processor.registers.htif.tohost == 0, "wrong htif tohost initial config value")
+    assert(
+        initial_config.processor.registers.htif.iyield
+            == cartesi.HTIF_YIELD_CMD_MANUAL_MASK | cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK,
+        "wrong htif yield automatic initial config value"
+    )
 end)
 
 print("\n\n test read_reg")
@@ -555,7 +509,7 @@ do_test("should return expected values", function(machine)
     initial_reg_values.htif_fromhost = 0x0
     initial_reg_values.htif_ihalt = 0x0
     initial_reg_values.htif_iconsole = 0x0
-    initial_reg_values.htif_iyield = 3
+    initial_reg_values.htif_iyield = cartesi.HTIF_YIELD_CMD_MANUAL_MASK | cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK
 
     -- Check register read
     local to_ignore = {
@@ -569,7 +523,7 @@ do_test("should return expected values", function(machine)
         htif_ihalt = true,
         htif_iconsole = true,
     }
-    for k in pairs(cpu_reg_addr) do
+    for k in pairs(initial_reg_values) do
         if not to_ignore[k] then
             assert(machine:read_reg(k) == initial_reg_values[k], "wrong " .. k .. " value")
         end
@@ -864,7 +818,7 @@ test_util.make_do_test(build_machine, machine_type, {
     assert(ram_image == expected_ram_image)
 end)
 
-test_util.make_do_test(build_machine, machine_type, { processor = { mcycle = 1 }, uarch = {} })(
+test_util.make_do_test(build_machine, machine_type, { processor = { registers = { mcycle = 1 } }, uarch = {} })(
     "It should use the embedded uarch-ram.bin when the uarch config is not provided",
     function(machine)
         assert(machine:read_reg("mcycle") == 1)
@@ -909,13 +863,15 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })(
 
 local test_reset_uarch_config = {
     processor = {
-        halt_flag = 1,
-        cycle = 1,
-        pc = 0,
+        registers = {
+            halt_flag = 1,
+            cycle = 1,
+            pc = 0,
+        },
     },
 }
 for i = 0, 31 do
-    test_reset_uarch_config.processor["x" .. i] = 0x10000 + (i * 8)
+    test_reset_uarch_config.processor.registers["x" .. i] = 0x10000 + (i * 8)
 end
 
 local function test_reset_uarch(machine, with_log, with_annotations)
@@ -924,7 +880,7 @@ local function test_reset_uarch(machine, with_log, with_annotations)
     assert(machine:read_reg("uarch_cycle") == 1)
     assert(machine:read_reg("uarch_pc") == 0)
     for i = 1, 31 do
-        assert(machine:read_reg("uarch_x" .. i) == test_reset_uarch_config.processor["x" .. i])
+        assert(machine:read_reg("uarch_x" .. i) == test_reset_uarch_config.processor.registers["x" .. i])
     end
     -- modify uarch ram
     local gibberish = "mydataol12345678"
@@ -1195,7 +1151,7 @@ do_test("uarch ecall putchar should print char to console", function()
                                  }
                                  local uarch_ram_path = test_util.create_test_uarch_program(program)
                                  local machine = cartesi.machine {
-                                     processor = initial_reg_values,
+                                     registers = initial_reg_values,
                                      ram = {length = 1 << 20},
                                      uarch = {
                                         ram = { backing_store = { data_filename = uarch_ram_path } }
@@ -1336,14 +1292,14 @@ do_test("Dump of log produced by send_cmio_response should match", function(mach
     local data = "0123456789"
     local reason = 7
     local log = machine:log_send_cmio_response(reason, data, cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
-    -- luacheck: push no max line length
-    local expected_dump = "begin send_cmio_response\n"
-        .. "  1: read iflags.Y@0x2f8(760): 0x1(1)\n"
-        .. '  2: write cmio rx buffer@0x60000000(1610612736): hash:"290decd9"(2^5 bytes) -> hash:"555b1f6d"(2^5 bytes)\n'
-        .. "  3: write htif.fromhost@0x330(816): 0x0(0) -> 0x70000000a(30064771082)\n"
-        .. "  4: write iflags.Y@0x2f8(760): 0x1(1) -> 0x0(0)\n"
-        .. "end send_cmio_response\n"
-    -- luacheck: pop
+    local expected_dump = [[
+begin send_cmio_response
+  1: read iflags.Y@0x300(768): 0x1(1)
+  2: write cmio rx buffer@0x60000000(1610612736): hash:"290decd9"(2^5 bytes) -> hash:"555b1f6d"(2^5 bytes)
+  3: write htif.fromhost@0x330(816): 0x0(0) -> 0x70000000a(30064771082)
+  4: write iflags.Y@0x300(768): 0x1(1) -> 0x0(0)
+end send_cmio_response
+]]
     local temp_file <close> = test_util.new_temp_file()
     util.dump_log(log, temp_file)
     local actual_dump = temp_file:read_all()

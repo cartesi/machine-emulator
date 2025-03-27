@@ -154,9 +154,9 @@ do_test("machine halt and yield flags and config matches", function(machine)
     -- Get machine default config  and test for known fields
     local initial_config = machine:get_initial_config()
     -- test_util.print_table(initial_config)
-    assert(initial_config["processor"]["marchid"] == cartesi.MARCHID, "marchid value does not match")
-    assert(initial_config["processor"]["pc"] == cartesi.AR_RAM_START, "pc value does not match")
-    assert(initial_config["ram"]["length"] == 1048576, "ram length value does not match")
+    assert(initial_config.processor.registers.marchid == cartesi.MARCHID, "marchid value does not match")
+    assert(initial_config.processor.registers.pc == cartesi.AR_RAM_START, "pc value does not match")
+    assert(initial_config.ram.length == 1048576, "ram length value does not match")
     -- Check machine is not halted
     assert(machine:read_reg("iflags_H") == 0, "machine shouldn't be halted")
     -- Check machine is not yielded
@@ -340,7 +340,6 @@ end)
 
 print("\n\n check replace flash drives")
 test_util.make_do_test(build_machine, machine_type, {
-    processor = {},
     ram = { length = 1 << 20 },
     flash_drive = {
         {

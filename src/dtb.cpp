@@ -97,7 +97,7 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
                 fdt.prop_u32("reg", 0);
                 fdt.prop_string("status", "okay");
                 fdt.prop_string("compatible", "riscv");
-                fdt.prop_string("riscv,isa", misa_to_isa_string(c.processor.misa));
+                fdt.prop_string("riscv,isa", misa_to_isa_string(c.processor.registers.misa));
                 fdt.prop_string("mmu-type", "riscv,sv39");
                 fdt.prop_u32("clock-frequency", RTC_CLOCK_FREQ);
                 { // interrupt-controller
@@ -206,13 +206,13 @@ void dtb_init(const machine_config &c, unsigned char *dtb_start, uint64_t dtb_le
         fdt.end_node();
 
         // yield
-        if (c.htif.yield_manual || c.htif.yield_automatic) {
+        if (c.processor.registers.htif.iyield != 0) {
             fdt.begin_node("yield");
             fdt.prop_string("compatible", "ctsi-yield");
-            if (c.htif.yield_manual) {
+            if ((c.processor.registers.htif.iyield & HTIF_YIELD_CMD_MANUAL_MASK) != 0) {
                 fdt.prop_empty("manual");
             }
-            if (c.htif.yield_automatic) {
+            if ((c.processor.registers.htif.iyield & HTIF_YIELD_CMD_AUTOMATIC_MASK) != 0) {
                 fdt.prop_empty("automatic");
             }
             fdt.end_node();

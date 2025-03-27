@@ -147,7 +147,7 @@ machine_address_ranges::machine_address_ranges(machine_config &c) {
     push_back(make_shadow_state_address_range(throw_invalid_argument),
         register_where{.merkle = true, .interpret = false});
     push_back(make_pmas_address_range(c.pmas), register_where{.merkle = true, .interpret = true});
-    push_back_virtio(c.virtio, c.processor.iunrep);
+    push_back_virtio(c.virtio, c.processor.registers.iunrep);
 
     // Sort indices visible to Merkle tree by the start of corresponding address range
     std::ranges::sort(

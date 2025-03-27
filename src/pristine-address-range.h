@@ -33,7 +33,7 @@ public:
     /// \param description Description of address range for use in error messages
     /// \param start Target physical address where range starts
     /// \param length Length of range, in bytes
-    /// \param f Phyical memory attribute flags for range
+    /// \param f Physical memory attribute flags for range
     template <typename ABRT>
     pristine_address_range(const char *description, uint64_t start, uint64_t length, pmas_flags f, ABRT abrt) :
         address_range{description, start, length, f, abrt} {

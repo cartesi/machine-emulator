@@ -80,7 +80,7 @@ public:
     /// \param description Description of address range for use in error messages (will be copied)
     /// \param start Target physical address where range starts
     /// \param length Length of range, in bytes
-    /// \param f Phyical memory attribute flags for range
+    /// \param f Physical memory attribute flags for range
     template <typename ABRT>
     address_range(const char *description, uint64_t start, uint64_t length, const pmas_flags &flags, ABRT abrt) :
         m_description{},
@@ -217,7 +217,7 @@ public:
     }
 
     /// \brief Returns driver ID associated to range
-    /// \returns Teh driver ID
+    /// \returns The driver ID
     PMA_ISTART_DID get_driver_id() const noexcept {
         return m_flags.DID;
     }
@@ -228,7 +228,7 @@ public:
         return pmas_pack_istart(m_flags, m_start);
     }
 
-    /// \brief Returns encoded addres range ilength field as per whitepaper
+    /// \brief Returns encoded address range ilength field as per whitepaper
     /// \returns Packed address range ilength
     /// \details This currently contains only the length itself
     uint64_t get_ilength() const noexcept {
@@ -351,7 +351,7 @@ private:
         return nullptr;
     }
 
-    // Defaul implemenation always assumes every page is always dirty
+    // Default implementation always assumes every page is always dirty
     virtual void do_mark_dirty_page(uint64_t /*offset*/) noexcept {
         ;
     }

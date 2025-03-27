@@ -810,19 +810,19 @@ void machine::mark_dirty_page(host_addr haddr, uint64_t pma_index) {
 uint64_t machine::read_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what reg) const {
     switch (reg) {
         case shadow_tlb_what::vaddr_page:
-            return m_s.tlb.hot[set_index][slot_index].vaddr_page;
+            return m_s.tlb_hot[set_index][slot_index].vaddr_page;
         case shadow_tlb_what::vp_offset: {
-            const auto vaddr_page = m_s.tlb.hot[set_index][slot_index].vaddr_page;
+            const auto vaddr_page = m_s.tlb_hot[set_index][slot_index].vaddr_page;
             if (vaddr_page != TLB_INVALID_PAGE) {
-                const auto vh_offset = m_s.tlb.hot[set_index][slot_index].vh_offset;
+                const auto vh_offset = m_s.tlb_hot[set_index][slot_index].vh_offset;
                 const auto haddr_page = vaddr_page + vh_offset;
-                const auto pma_index = m_s.tlb.cold[set_index][slot_index].pma_index;
+                const auto pma_index = m_s.tlb_cold[set_index][slot_index].pma_index;
                 return get_paddr(haddr_page, pma_index) - vaddr_page;
             }
             return 0;
         }
         case shadow_tlb_what::pma_index:
-            return m_s.tlb.cold[set_index][slot_index].pma_index;
+            return m_s.tlb_cold[set_index][slot_index].pma_index;
         case shadow_tlb_what::zero_padding_:
             return 0;
         default:
@@ -864,9 +864,9 @@ void machine::check_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uin
 
 void machine::write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset,
     uint64_t pma_index) {
-    m_s.tlb.hot[set_index][slot_index].vaddr_page = vaddr_page;
-    m_s.tlb.hot[set_index][slot_index].vh_offset = vh_offset;
-    m_s.tlb.cold[set_index][slot_index].pma_index = pma_index;
+    m_s.tlb_hot[set_index][slot_index].vaddr_page = vaddr_page;
+    m_s.tlb_hot[set_index][slot_index].vh_offset = vh_offset;
+    m_s.tlb_cold[set_index][slot_index].pma_index = pma_index;
 }
 
 void machine::write_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
@@ -1805,8 +1805,8 @@ uint64_t machine::get_reg_address(reg r) {
 }
 
 void machine::mark_write_tlb_dirty_pages() const {
-    auto &hot_set = m_s.tlb.hot[TLB_WRITE];
-    auto &cold_set = m_s.tlb.cold[TLB_WRITE];
+    auto &hot_set = m_s.tlb_hot[TLB_WRITE];
+    auto &cold_set = m_s.tlb_cold[TLB_WRITE];
     for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
         const auto &hot_slot = hot_set[slot_index];
         if (hot_slot.vaddr_page != TLB_INVALID_PAGE) {

@@ -21,6 +21,7 @@
 /// \brief Cartesi machine state structure definition.
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -45,12 +46,19 @@ struct machine_state final {
     machine_state &operator=(machine_state &&other) = delete;
 
     // Shadow region.
-    registers_state registers; ///< Registers
+    registers_state registers;          ///< Registers
+    uint64_t registers_padding_[406]{}; ///< Padding to align next field to a page boundary
+    tlb_cold_state tlb_cold;            ///< TLB cold state
+    uint64_t tlb_cold_padding_[256]{};  ///< Padding to align next field to a page boundary
 
     // Penumbra region, the fields below are not stored in the backing file,
     // it's only visible in host resident memory during runtime.
-    tlb_state tlb{}; ///< TLB state
+    tlb_hot_state tlb_hot; ///< TLB hot state
 };
+
+static_assert(offsetof(machine_state, tlb_cold) % 4096 == 0, "tlb cold state must be aligned to a page boundary");
+static_assert(offsetof(machine_state, tlb_hot) % 4096 == 0, "tlb hot state must be aligned to a page boundary");
+static_assert(sizeof(machine_state) % 4096 == 0, "machine state size must be multiple of a page size");
 
 } // namespace cartesi
 

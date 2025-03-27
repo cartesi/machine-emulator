@@ -1017,7 +1017,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_f_basic_test, ordinary_machine_fixture
 
     uint64_t f2_addr{};
     BOOST_CHECK_EQUAL(cm_get_reg_address(_machine, CM_REG_F2, &f2_addr), CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x110), f2_addr);
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x128), f2_addr);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_uarch_x_basic_test, ordinary_machine_fixture) {
@@ -1068,7 +1068,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_reg_basic_test, ordinary_machine_fixtu
 
     uint64_t pc_addr{};
     BOOST_CHECK_EQUAL(cm_get_reg_address(_machine, CM_REG_PC, &pc_addr), CM_ERROR_OK);
-    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x200), pc_addr);
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(0x108), pc_addr);
 }
 
 BOOST_AUTO_TEST_CASE_NOLINT(verify_merkle_tree_null_machine_test) {

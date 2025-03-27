@@ -24,7 +24,7 @@
 #include <vector>
 
 #include "riscv-constants.h"
-#include "shadow-state.h"
+#include "shadow-registers.h"
 #include "shadow-uarch-state.h"
 
 namespace cartesi {
@@ -39,6 +39,7 @@ enum machine_config_constants {
 /// \brief Backing store config
 struct backing_store_config final {
     bool shared{false};        ///< Should changes be reflected in backing store?
+    bool create{false};        ///< Should backing store be created?
     bool truncate{false};      ///< Should backing store be truncated to correct size?
     std::string data_filename; ///< Backing store for associated memory address range
     std::string dht_filename;  ///< Backing store for corresponding dense hash-tree
@@ -57,8 +58,8 @@ struct backing_store_config_only final {
 
 /// \brief RAM state config
 struct ram_config final {
-    uint64_t length{0};                 ///< RAM length
-    backing_store_config backing_store; ///< Backing store
+    uint64_t length{0};                                   ///< RAM length
+    backing_store_config backing_store{.truncate = true}; ///< Backing store
 };
 
 /// \brief DTB state config
@@ -81,9 +82,6 @@ struct memory_range_config final {
 
 /// \brief List of flash drives
 using flash_drive_configs = std::vector<memory_range_config>;
-
-/// \brief TLB device state config
-using tlb_config = backing_store_config_only;
 
 /// \brief VirtIO console device state config
 struct virtio_console_config final {};
@@ -146,14 +144,15 @@ struct uarch_processor_config final {
 
 /// \brief Uarch config
 struct uarch_config final {
-    uarch_processor_config processor{}; ///< Uarch processor
-    uarch_ram_config ram{};             ///< Uarch RAM
+    uarch_processor_config processor{};                        ///< Uarch processor
+    uarch_ram_config ram{.backing_store = {.truncate = true}}; ///< Uarch RAM
 };
 
 /// \brief Hash tree config
 struct hash_tree_config final {
     std::string hasher{"keccak"}; ///< What hashing function to use?
     bool shared{false};           ///< Should changes be reflected in backing store?
+    bool create{false};           ///< Should backing store be created to correct size?
     bool truncate{false};         ///< Should backing store be truncated to correct size?
     std::string sht_filename;     ///< Backing storage for sparse hash-tree
     std::string phtc_filename;    ///< Backing storage for page hash-tree cache
@@ -166,7 +165,6 @@ struct machine_config final {
     ram_config ram{};                ///< RAM config
     dtb_config dtb{};                ///< Device Tree config
     flash_drive_configs flash_drive; ///< Flash drives config
-    tlb_config tlb{};                ///< Translation Look-aside Buffer config
     virtio_configs virtio;           ///< VirtIO devices config
     cmio_config cmio{};              ///< Cartesi Machine IO config
     pmas_config pmas{};              ///< Physical Memory Attributes config
@@ -187,6 +185,13 @@ struct machine_config final {
 
     /// \brief Get the name where global page hash-tree cache will be stored in a directory
     static std::string get_phtc_filename(const std::string &dir);
+
+    static void adjust_backing_store_config(uint64_t start, uint64_t length, const std::string &dir,
+        backing_store_config &c);
+
+    static void adjust_hash_tree_config(const std::string &dir, hash_tree_config &c);
+
+    void adjust_backing_stores(const std::string &dir);
 
     /// \brief Loads a machine config from a directory
     /// \param dir Directory from whence "config" will be loaded

@@ -14,8 +14,8 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef SHADOW_STATE_H
-#define SHADOW_STATE_H
+#ifndef SHADOW_REGISTERS_STATE_H
+#define SHADOW_REGISTERS_STATE_H
 
 #include <cstddef>
 #include <cstdint>
@@ -110,142 +110,142 @@ struct registers_state final {
 };
 
 /// \brief Shadow memory layout
-using shadow_state = registers_state;
+using shadow_registers_state = registers_state;
 
 // We need strong guarantees that shadow_state has fixed size and alignment across platforms.
-static_assert(sizeof(shadow_state) == 106 * sizeof(uint64_t), "unexpected registers state size");
-static_assert(alignof(shadow_state) == sizeof(uint64_t), "unexpected registers state alignment");
+static_assert(sizeof(shadow_registers_state) == 106 * sizeof(uint64_t), "unexpected registers state size");
+static_assert(alignof(shadow_registers_state) == sizeof(uint64_t), "unexpected registers state alignment");
 
-enum class shadow_state_what : uint64_t {
-    x0 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[0]),
-    x1 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[1]),
-    x2 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[2]),
-    x3 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[3]),
-    x4 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[4]),
-    x5 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[5]),
-    x6 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[6]),
-    x7 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[7]),
-    x8 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[8]),
-    x9 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[9]),
-    x10 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[10]),
-    x11 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[11]),
-    x12 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[12]),
-    x13 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[13]),
-    x14 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[14]),
-    x15 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[15]),
-    x16 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[16]),
-    x17 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[17]),
-    x18 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[18]),
-    x19 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[19]),
-    x20 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[20]),
-    x21 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[21]),
-    x22 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[22]),
-    x23 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[23]),
-    x24 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[24]),
-    x25 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[25]),
-    x26 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[26]),
-    x27 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[27]),
-    x28 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[28]),
-    x29 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[29]),
-    x30 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[30]),
-    x31 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[31]),
-    f0 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[0]),
-    f1 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[1]),
-    f2 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[2]),
-    f3 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[3]),
-    f4 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[4]),
-    f5 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[5]),
-    f6 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[6]),
-    f7 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[7]),
-    f8 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[8]),
-    f9 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[9]),
-    f10 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[10]),
-    f11 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[11]),
-    f12 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[12]),
-    f13 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[13]),
-    f14 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[14]),
-    f15 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[15]),
-    f16 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[16]),
-    f17 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[17]),
-    f18 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[18]),
-    f19 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[19]),
-    f20 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[20]),
-    f21 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[21]),
-    f22 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[22]),
-    f23 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[23]),
-    f24 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[24]),
-    f25 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[25]),
-    f26 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[26]),
-    f27 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[27]),
-    f28 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[28]),
-    f29 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[29]),
-    f30 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[30]),
-    f31 = AR_SHADOW_STATE_START + offsetof(shadow_state, f[31]),
-    pc = AR_SHADOW_STATE_START + offsetof(shadow_state, pc),
-    fcsr = AR_SHADOW_STATE_START + offsetof(shadow_state, fcsr),
-    mvendorid = AR_SHADOW_STATE_START + offsetof(shadow_state, mvendorid),
-    marchid = AR_SHADOW_STATE_START + offsetof(shadow_state, marchid),
-    mimpid = AR_SHADOW_STATE_START + offsetof(shadow_state, mimpid),
-    mcycle = AR_SHADOW_STATE_START + offsetof(shadow_state, mcycle),
-    icycleinstret = AR_SHADOW_STATE_START + offsetof(shadow_state, icycleinstret),
-    mstatus = AR_SHADOW_STATE_START + offsetof(shadow_state, mstatus),
-    mtvec = AR_SHADOW_STATE_START + offsetof(shadow_state, mtvec),
-    mscratch = AR_SHADOW_STATE_START + offsetof(shadow_state, mscratch),
-    mepc = AR_SHADOW_STATE_START + offsetof(shadow_state, mepc),
-    mcause = AR_SHADOW_STATE_START + offsetof(shadow_state, mcause),
-    mtval = AR_SHADOW_STATE_START + offsetof(shadow_state, mtval),
-    misa = AR_SHADOW_STATE_START + offsetof(shadow_state, misa),
-    mie = AR_SHADOW_STATE_START + offsetof(shadow_state, mie),
-    mip = AR_SHADOW_STATE_START + offsetof(shadow_state, mip),
-    medeleg = AR_SHADOW_STATE_START + offsetof(shadow_state, medeleg),
-    mideleg = AR_SHADOW_STATE_START + offsetof(shadow_state, mideleg),
-    mcounteren = AR_SHADOW_STATE_START + offsetof(shadow_state, mcounteren),
-    menvcfg = AR_SHADOW_STATE_START + offsetof(shadow_state, menvcfg),
-    stvec = AR_SHADOW_STATE_START + offsetof(shadow_state, stvec),
-    sscratch = AR_SHADOW_STATE_START + offsetof(shadow_state, sscratch),
-    sepc = AR_SHADOW_STATE_START + offsetof(shadow_state, sepc),
-    scause = AR_SHADOW_STATE_START + offsetof(shadow_state, scause),
-    stval = AR_SHADOW_STATE_START + offsetof(shadow_state, stval),
-    satp = AR_SHADOW_STATE_START + offsetof(shadow_state, satp),
-    scounteren = AR_SHADOW_STATE_START + offsetof(shadow_state, scounteren),
-    senvcfg = AR_SHADOW_STATE_START + offsetof(shadow_state, senvcfg),
-    ilrsc = AR_SHADOW_STATE_START + offsetof(shadow_state, ilrsc),
-    iprv = AR_SHADOW_STATE_START + offsetof(shadow_state, iprv),
-    iflags_X = AR_SHADOW_STATE_START + offsetof(shadow_state, iflags.X),
-    iflags_Y = AR_SHADOW_STATE_START + offsetof(shadow_state, iflags.Y),
-    iflags_H = AR_SHADOW_STATE_START + offsetof(shadow_state, iflags.H),
-    iunrep = AR_SHADOW_STATE_START + offsetof(shadow_state, iunrep),
-    clint_mtimecmp = AR_SHADOW_STATE_START + offsetof(shadow_state, clint.mtimecmp),
-    plic_girqpend = AR_SHADOW_STATE_START + offsetof(shadow_state, plic.girqpend),
-    plic_girqsrvd = AR_SHADOW_STATE_START + offsetof(shadow_state, plic.girqsrvd),
-    htif_tohost = AR_SHADOW_STATE_START + offsetof(shadow_state, htif.tohost),
-    htif_fromhost = AR_SHADOW_STATE_START + offsetof(shadow_state, htif.fromhost),
-    htif_ihalt = AR_SHADOW_STATE_START + offsetof(shadow_state, htif.ihalt),
-    htif_iconsole = AR_SHADOW_STATE_START + offsetof(shadow_state, htif.iconsole),
-    htif_iyield = AR_SHADOW_STATE_START + offsetof(shadow_state, htif.iyield),
+enum class shadow_registers_what : uint64_t {
+    x0 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[0]),
+    x1 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[1]),
+    x2 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[2]),
+    x3 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[3]),
+    x4 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[4]),
+    x5 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[5]),
+    x6 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[6]),
+    x7 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[7]),
+    x8 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[8]),
+    x9 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[9]),
+    x10 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[10]),
+    x11 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[11]),
+    x12 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[12]),
+    x13 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[13]),
+    x14 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[14]),
+    x15 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[15]),
+    x16 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[16]),
+    x17 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[17]),
+    x18 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[18]),
+    x19 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[19]),
+    x20 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[20]),
+    x21 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[21]),
+    x22 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[22]),
+    x23 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[23]),
+    x24 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[24]),
+    x25 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[25]),
+    x26 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[26]),
+    x27 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[27]),
+    x28 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[28]),
+    x29 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[29]),
+    x30 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[30]),
+    x31 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, x[31]),
+    f0 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[0]),
+    f1 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[1]),
+    f2 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[2]),
+    f3 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[3]),
+    f4 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[4]),
+    f5 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[5]),
+    f6 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[6]),
+    f7 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[7]),
+    f8 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[8]),
+    f9 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[9]),
+    f10 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[10]),
+    f11 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[11]),
+    f12 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[12]),
+    f13 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[13]),
+    f14 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[14]),
+    f15 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[15]),
+    f16 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[16]),
+    f17 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[17]),
+    f18 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[18]),
+    f19 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[19]),
+    f20 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[20]),
+    f21 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[21]),
+    f22 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[22]),
+    f23 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[23]),
+    f24 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[24]),
+    f25 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[25]),
+    f26 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[26]),
+    f27 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[27]),
+    f28 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[28]),
+    f29 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[29]),
+    f30 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[30]),
+    f31 = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, f[31]),
+    pc = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, pc),
+    fcsr = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, fcsr),
+    mvendorid = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, mvendorid),
+    marchid = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, marchid),
+    mimpid = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, mimpid),
+    mcycle = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, mcycle),
+    icycleinstret = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, icycleinstret),
+    mstatus = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, mstatus),
+    mtvec = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, mtvec),
+    mscratch = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, mscratch),
+    mepc = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, mepc),
+    mcause = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, mcause),
+    mtval = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, mtval),
+    misa = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, misa),
+    mie = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, mie),
+    mip = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, mip),
+    medeleg = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, medeleg),
+    mideleg = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, mideleg),
+    mcounteren = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, mcounteren),
+    menvcfg = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, menvcfg),
+    stvec = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, stvec),
+    sscratch = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, sscratch),
+    sepc = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, sepc),
+    scause = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, scause),
+    stval = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, stval),
+    satp = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, satp),
+    scounteren = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, scounteren),
+    senvcfg = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, senvcfg),
+    ilrsc = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, ilrsc),
+    iprv = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, iprv),
+    iflags_X = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, iflags.X),
+    iflags_Y = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, iflags.Y),
+    iflags_H = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, iflags.H),
+    iunrep = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, iunrep),
+    clint_mtimecmp = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, clint.mtimecmp),
+    plic_girqpend = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, plic.girqpend),
+    plic_girqsrvd = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, plic.girqsrvd),
+    htif_tohost = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, htif.tohost),
+    htif_fromhost = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, htif.fromhost),
+    htif_ihalt = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, htif.ihalt),
+    htif_iconsole = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, htif.iconsole),
+    htif_iyield = AR_SHADOW_REGISTERS_START + offsetof(shadow_registers_state, htif.iyield),
     unknown_ = UINT64_C(1) << 63, // Outside of RISC-V address space
 };
 
-static constexpr shadow_state_what shadow_state_get_what(uint64_t paddr) {
-    if (paddr < AR_SHADOW_STATE_START || paddr - AR_SHADOW_STATE_START >= sizeof(shadow_state) ||
+static constexpr shadow_registers_what shadow_registers_get_what(uint64_t paddr) {
+    if (paddr < AR_SHADOW_REGISTERS_START || paddr - AR_SHADOW_REGISTERS_START >= sizeof(shadow_registers_state) ||
         (paddr & (sizeof(uint64_t) - 1)) != 0) {
-        return shadow_state_what::unknown_;
+        return shadow_registers_what::unknown_;
     }
     // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
-    return static_cast<shadow_state_what>(paddr);
+    return static_cast<shadow_registers_what>(paddr);
 }
 
-static constexpr shadow_state_what shadow_state_get_what(shadow_state_what what, int i) {
-    return static_cast<shadow_state_what>(static_cast<uint64_t>(what) + (i * sizeof(uint64_t)));
+static constexpr shadow_registers_what shadow_registers_get_what(shadow_registers_what what, int i) {
+    return static_cast<shadow_registers_what>(static_cast<uint64_t>(what) + (i * sizeof(uint64_t)));
 }
 
-static constexpr const char *shadow_state_get_what_name(shadow_state_what what) {
+static constexpr const char *shadow_registers_get_what_name(shadow_registers_what what) {
     const auto paddr = static_cast<uint64_t>(what);
-    if (paddr < AR_SHADOW_STATE_START || paddr - AR_SHADOW_STATE_START >= sizeof(shadow_state) ||
+    if (paddr < AR_SHADOW_REGISTERS_START || paddr - AR_SHADOW_REGISTERS_START >= sizeof(shadow_registers_state) ||
         (paddr & (sizeof(uint64_t) - 1)) != 0) {
         return "state.unknown_";
     }
-    using reg = shadow_state_what;
+    using reg = shadow_registers_what;
     switch (what) {
         case reg::x0:
             return "x0";

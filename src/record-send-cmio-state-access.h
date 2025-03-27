@@ -32,10 +32,10 @@
 #include "i-hasher.h"
 #include "i-state-access.h"
 #include "machine-merkle-tree.h"
-#include "machine-state.h"
 #include "machine.h"
 #include "meta.h"
-#include "shadow-state.h"
+#include "processor-state.h"
+#include "shadow-registers.h"
 
 namespace cartesi {
 
@@ -186,17 +186,17 @@ private:
 
     void do_write_iflags_Y(uint64_t val) const {
         log_before_write_write_and_update(machine_reg_address(machine_reg::iflags_Y),
-            m_m.get_state().registers.iflags.Y, val, "iflags.Y");
+            m_m.get_state().shadow.registers.iflags.Y, val, "iflags.Y");
     }
 
     uint64_t do_read_iflags_Y() const {
         log_read(machine_reg_address(machine_reg::iflags_Y), "iflags.Y");
-        return m_m.get_state().registers.iflags.Y;
+        return m_m.get_state().shadow.registers.iflags.Y;
     }
 
     void do_write_htif_fromhost(uint64_t val) const {
         log_before_write_write_and_update(machine_reg_address(machine_reg::htif_fromhost),
-            m_m.get_state().registers.htif.fromhost, val, "htif.fromhost");
+            m_m.get_state().shadow.registers.htif.fromhost, val, "htif.fromhost");
     }
 
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,

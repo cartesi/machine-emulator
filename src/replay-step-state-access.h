@@ -31,7 +31,7 @@
 #include "pmas.h"
 #include "replay-step-state-access-interop.h"
 #include "riscv-constants.h"
-#include "shadow-state.h"
+#include "shadow-registers.h"
 #include "shadow-tlb.h"
 #include "shadow-uarch-state.h"
 #include "strict-aliasing.h"
@@ -231,7 +231,7 @@ private:
             auto *vp_offset_log = try_find_page(vp_offset_field_addr & ~PAGE_OFFSET_MASK);
             const auto vaddr_page_field_addr = shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page);
             auto *vaddr_page_log = try_find_page(vaddr_page_field_addr & ~PAGE_OFFSET_MASK);
-            // If vp_offset was accessed during record, both it and vaddr_apge will appear in the log
+            // If vp_offset was accessed during record, both it and vaddr_page will appear in the log
             // (record_step_state_access makes sure of it)
             // Otherwise, we do not need to translate
             if (vp_offset_log == nullptr || vaddr_page_log == nullptr) {
@@ -268,7 +268,7 @@ private:
             auto *vp_offset_log = try_find_page(vp_offset_field_addr & ~PAGE_OFFSET_MASK);
             const auto vaddr_page_field_addr = shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page);
             auto *vaddr_page_log = try_find_page(vaddr_page_field_addr & ~PAGE_OFFSET_MASK);
-            // If vp_offset was accessed during record, both it and vaddr_apge will appear in the log
+            // If vp_offset was accessed during record, both it and vaddr_page will appear in the log
             // (record_step_state_access makes sure of it)
             // Otherwise, we do not need to translate
             if (vp_offset_log == nullptr || vaddr_page_log == nullptr) {
@@ -402,11 +402,11 @@ private:
     // -----
     friend i_prefer_shadow_state<replay_step_state_access>;
 
-    uint64_t do_read_shadow_state(shadow_state_what what) const {
+    uint64_t do_read_shadow_register(shadow_registers_what what) const {
         return check_read_reg(machine_reg_enum(what));
     }
 
-    void do_write_shadow_state(shadow_state_what what, uint64_t val) const {
+    void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
         check_write_reg(machine_reg_enum(what), val);
     }
 
@@ -481,7 +481,7 @@ private:
     }
 
     template <TLB_set_index SET>
-    host_addr do_read_tlb_vp_offset(uint64_t slot_index) const {
+    host_addr do_read_tlb_vf_offset(uint64_t slot_index) const {
         return check_read_tlb<host_addr>(SET, slot_index, shadow_tlb_what::vp_offset);
     }
 

@@ -373,7 +373,6 @@ local function test_config(config)
         "ram",
         "dtb",
         "flash_drive",
-        "tlb",
         "virtio",
         "cmio",
         "pmas",
@@ -442,13 +441,14 @@ local function test_config(config)
     assertfield(config, "dtb.init", "string")
     assertfield(config, "dtb.entrypoint", "string")
     test_backing_store_config(config, "dtb.backing_store")
-    test_backing_store_config(config, "tlb.backing_store")
+    test_backing_store_config(config, "processor.backing_store")
     test_backing_store_config(config, "pmas.backing_store")
     for i, f in ipairs(config.flash_drive or {}) do
         test_flash_drive_config(f, "config.flash_drive[" .. i .. "]")
     end
     test_backing_store_config(config, "cmio.rx_buffer.backing_store")
     test_backing_store_config(config, "cmio.tx_buffer.backing_store")
+    test_backing_store_config(config, "uarch.processor.backing_store")
     test_backing_store_config(config, "uarch.ram.backing_store")
     assertfield(config, "hash_tree.shared", "boolean")
     assertfield(config, "hash_tree.truncate", "boolean")

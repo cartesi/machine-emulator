@@ -43,7 +43,7 @@
 #include <thread>
 #endif
 
-#if defined(HAVE_TTY) || defined(HAVE_MMAP) || defined(HAVE_TERMIOS) || defined(_WIN32)
+#if defined(HAVE_TTY) || defined(HAVE_TERMIOS) || defined(_WIN32)
 #include <fcntl.h> // open
 #endif
 
@@ -54,11 +54,7 @@
 #endif
 #endif
 
-#ifdef HAVE_MMAP
-#include <sys/mman.h> // mmap/munmap
-#endif
-
-#if defined(HAVE_MMAP) || defined(HAVE_MKDIR) || defined(_WIN32)
+#if defined(HAVE_MKDIR) || defined(_WIN32)
 #include <sys/stat.h> // fstat/mkdir
 #endif
 
@@ -89,7 +85,7 @@
 
 #else // not _WIN32
 
-#if defined(HAVE_TTY) || defined(HAVE_MMAP) || defined(HAVE_TERMIOS) || defined(HAVE_USLEEP)
+#if defined(HAVE_TTY) || defined(HAVE_TERMIOS) || defined(HAVE_USLEEP)
 #include <unistd.h> // write/read/close/usleep/fork
 #endif
 
@@ -118,6 +114,7 @@ struct tty_state {
     bool initialized{false};
     bool resize_pending{false};
     bool silence_putchar{false};
+    uint64_t use_count{0};
     std::array<char, TTY_BUF_SIZE> buf{}; // Characters in console input buffer
     intptr_t buf_pos{};
     intptr_t buf_len{};
@@ -236,11 +233,13 @@ void os_open_tty() {
 #ifdef HAVE_TTY
     auto *s = get_tty_state();
     if (s->initialized) {
+        s->use_count++;
         // Already initialized
         return;
     }
 
     s->initialized = true;
+    s->use_count = 1;
 
 #ifdef HAVE_TERMIOS
     if (s->ttyfd >= 0) { // Already open
@@ -342,10 +341,17 @@ void os_close_tty() {
 #ifdef HAVE_TTY
 #ifdef HAVE_TERMIOS
     auto *s = get_tty_state();
+    if (!s->initialized) {
+        return;
+    }
+    if (--s->use_count > 0) {
+        // Still in use by some other machine
+        return;
+    }
     if (s->ttyfd >= 0) { // Restore old mode
         tcsetattr(s->ttyfd, TCSANOW, &s->oldtty);
         close(s->ttyfd);
-        s->ttyfd = 1;
+        s->ttyfd = -1;
     }
 
 #elif defined(_WIN32)
@@ -551,148 +557,6 @@ int os_mkdir(const char *path, [[maybe_unused]] int mode) {
 #else
     return -1;
 #endif // HAVE_MKDIR
-}
-
-void *os_map_file(const char *path, uint64_t length, bool shared) {
-    if ((path == nullptr) || *path == '\0') {
-        throw std::runtime_error{"image file path must be specified"s};
-    }
-
-#ifdef HAVE_MMAP
-    const int oflag = shared ? O_RDWR : O_RDONLY;
-
-    // Try to open image file
-    const int backing_file = open(path, oflag);
-    if (backing_file < 0) {
-        throw std::system_error{errno, std::generic_category(), "could not open image file '"s + path + "'"s};
-    }
-
-    // Try to get file size
-    struct stat statbuf{};
-    if (fstat(backing_file, &statbuf) < 0) {
-        close(backing_file);
-        throw std::system_error{errno, std::generic_category(),
-            "unable to obtain length of image file '"s + path + "'"s};
-    }
-
-    // Check that it matches range length
-    if (static_cast<uint64_t>(statbuf.st_size) != length) {
-        close(backing_file);
-        throw std::invalid_argument{"image file '"s + path + "' size ("s +
-            std::to_string(static_cast<uint64_t>(statbuf.st_size)) + ") does not match range length ("s +
-            std::to_string(length) + ")"s};
-    }
-
-    // Try to map image file to host memory
-    const int mflag = shared ? MAP_SHARED : MAP_PRIVATE;
-    void *host_memory = mmap(nullptr, length, PROT_READ | PROT_WRITE, mflag, backing_file, 0);
-    if (host_memory == MAP_FAILED) { // NOLINT(cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr)
-        close(backing_file);
-        throw std::system_error{errno, std::generic_category(), "could not map image file '"s + path + "' to memory"s};
-    }
-
-    // We can close the file after mapping it, because the OS will retain a reference of the file on its own
-    close(backing_file);
-    return host_memory;
-
-#elif defined(_WIN32)
-    const int oflag = (shared ? _O_RDWR : _O_RDONLY) | _O_BINARY;
-
-    // Try to open image file
-    const int backing_file = _open(path, oflag);
-    if (backing_file < 0) {
-        throw std::system_error{errno, std::generic_category(), "could not open image file '"s + path + "'"s};
-    }
-
-    // Try to get file size
-    struct __stat64 statbuf{};
-    if (_fstat64(backing_file, &statbuf) < 0) {
-        _close(backing_file);
-        throw std::system_error{errno, std::generic_category(),
-            "unable to obtain length of image file '"s + path + "'"s};
-    }
-
-    // Check that it matches range length
-    if (static_cast<uint64_t>(statbuf.st_size) != length) {
-        _close(backing_file);
-        throw std::invalid_argument{"image file '"s + path + "' size ("s +
-            std::to_string(static_cast<uint64_t>(statbuf.st_size)) + ") does not match range length ("s +
-            std::to_string(length) + ")"s};
-    }
-
-    // Try to map image file to host memory
-    DWORD flProtect = shared ? PAGE_READWRITE : PAGE_READONLY;
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    HANDLE hFile = reinterpret_cast<HANDLE>(_get_osfhandle(backing_file));
-    HANDLE hFileMappingObject = CreateFileMapping(hFile, NULL, flProtect, length >> 32, length & 0xffffffff, NULL);
-    if (!hFileMappingObject) {
-        _close(backing_file);
-        throw std::system_error{errno, std::generic_category(), "could not map image file '"s + path + "' to memory"s};
-    }
-
-    DWORD dwDesiredAccess = shared ? FILE_MAP_WRITE : FILE_MAP_COPY;
-    void *host_memory = MapViewOfFile(hFileMappingObject, dwDesiredAccess, 0, 0, length);
-    if (!host_memory) {
-        _close(backing_file);
-        throw std::system_error{errno, std::generic_category(), "could not map image file '"s + path + "' to memory"s};
-    }
-
-    // We can close the file after mapping it, because the OS will retain a reference of the file on its own
-    _close(backing_file);
-    return host_memory;
-
-#else
-    if (shared) {
-        throw std::runtime_error{"shared image file mapping is unsupported"s};
-    }
-
-    auto fp = unique_fopen(path, "rb", std::nothrow_t{});
-    if (!fp) {
-        throw std::system_error{errno, std::generic_category(), "error opening image file '"s + path + "'"s};
-    }
-    // Get file size
-    if (fseek(fp.get(), 0, SEEK_END)) {
-        throw std::system_error{errno, std::generic_category(),
-            "error obtaining length of image file '"s + path + "'"s};
-    }
-    auto file_length = ftell(fp.get());
-    if (fseek(fp.get(), 0, SEEK_SET)) {
-        throw std::system_error{errno, std::generic_category(),
-            "error obtaining length of image file '"s + path + "'"s};
-    }
-    // Check against PMA range size
-    if (static_cast<uint64_t>(file_length) > length) {
-        throw std::runtime_error{"image file '"s + path + "' of "s + " is too large for range"s};
-    }
-
-    // use calloc to improve performance
-    // NOLINTNEXTLINE(cppcoreguidelines-no-malloc,hicpp-no-malloc)
-    auto host_memory = static_cast<unsigned char *>(std::calloc(1, length));
-    if (!host_memory) {
-        throw std::runtime_error{"error allocating memory"s};
-    }
-
-    // Read to host memory
-    std::ignore = fread(host_memory, 1, length, fp.get());
-    if (ferror(fp.get())) {
-        throw std::system_error{errno, std::generic_category(), "error reading from image file '"s + path + "'"s};
-    }
-    return host_memory;
-
-#endif // HAVE_MMAP
-}
-
-void os_unmap_file(void *host_memory, [[maybe_unused]] uint64_t length) {
-#ifdef HAVE_MMAP
-    munmap(host_memory, length);
-
-#elif defined(_WIN32)
-    UnmapViewOfFile(host_memory);
-
-#else
-    std::free(host_memory);
-
-#endif // HAVE_MMAP
 }
 
 int64_t os_now_us() {

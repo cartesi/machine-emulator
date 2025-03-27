@@ -42,10 +42,9 @@
 #include "plic-address-range.h"
 #include "pmas-constants.h"
 #include "pmas.h"
-#include "shadow-state-address-range.h"
-#include "shadow-tlb-address-range.h"
-#include "shadow-uarch-state-address-range.h"
+#include "processor-state.h"
 #include "uarch-pristine.h"
+#include "uarch-processor-state.h"
 #include "unique-c-ptr.h"
 #include "virtio-address-range.h"
 #include "virtio-console-address-range.h"
@@ -59,29 +58,8 @@ using namespace std::string_literals;
 
 static const auto throw_invalid_argument = [](const char *err) { throw std::invalid_argument{err}; };
 
-/// \brief Creates a memory address range.
-/// \param d Description of address range for use in error messages.
-/// \param start Target physical address where range starts.
-/// \param length Length of range, in bytes.
-/// \param f Flags for address range.
-/// \param backing_store Backing store configuration for range.
-/// \returns New address range with flags already set.
-/// \details If \p backing_store.data_filename is non-empty and file is large enough to back entire address range,
-/// return a memory-mapped range, otherwise use calloc.
-static inline auto make_memory_address_range(const std::string &d, uint64_t start, uint64_t length, pmas_flags flags,
-    const backing_store_config &backing_store) {
-    if (backing_store.data_filename.empty() && backing_store.shared) {
-        throw std::invalid_argument{"shared address range requires non-empty memory filename when initializing " + d};
-    }
-    if (backing_store.data_filename.empty() ||
-        length > static_cast<uint64_t>(os_get_file_length(backing_store.data_filename.c_str()))) {
-        return make_callocd_memory_address_range(d, start, length, flags, backing_store.data_filename);
-    }
-    return make_mmapd_memory_address_range(d, start, length, flags, backing_store.data_filename, backing_store.shared);
-}
-
 static inline auto make_pmas_address_range(const pmas_config &config) {
-    static constexpr pmas_flags m_pmas_flags{
+    static constexpr pmas_flags pmas_flags{
         .M = true,
         .IO = false,
         .R = true,
@@ -91,12 +69,12 @@ static inline auto make_pmas_address_range(const pmas_config &config) {
         .IW = false,
         .DID = PMA_ISTART_DID::memory,
     };
-    return make_memory_address_range("PMAs", AR_PMAS_START, AR_PMAS_LENGTH, m_pmas_flags, config.backing_store);
+    return memory_address_range{"PMAs", AR_PMAS_START, AR_PMAS_LENGTH, pmas_flags, config.backing_store};
 }
 
 static inline auto make_dtb_address_range(const dtb_config &config) {
     // When we pass a RNG seed in a FDT stored in DTB, Linux will wipe out its contents as a security measure,
-    // theref, ore we need to make DTB writable, otherwise boot will hang.
+    // therefore, we need to make DTB writable, otherwise boot will hang.
     static constexpr pmas_flags dtb_flags{
         .M = true,
         .IO = false,
@@ -107,7 +85,45 @@ static inline auto make_dtb_address_range(const dtb_config &config) {
         .IW = true,
         .DID = PMA_ISTART_DID::memory,
     };
-    return make_memory_address_range("DTB"s, AR_DTB_START, AR_DTB_LENGTH, dtb_flags, config.backing_store);
+    return memory_address_range{"DTB"s, AR_DTB_START, AR_DTB_LENGTH, dtb_flags, config.backing_store};
+}
+
+static inline auto make_shadow_state_address_range(const processor_config &config) {
+    static constexpr pmas_flags shadow_state_flags{
+        .M = true,
+        .IO = false,
+        .R = false,
+        .W = false,
+        .X = false,
+        .IR = false,
+        .IW = false,
+        .DID = PMA_ISTART_DID::shadow_state,
+    };
+    auto ar = memory_address_range{"shadow state", AR_SHADOW_STATE_START, AR_SHADOW_STATE_LENGTH, shadow_state_flags,
+        config.backing_store, memory_address_range_flags{.page_uncleanable = true}, sizeof(processor_state)};
+    // Mark pages that are permanently dirty in the shadow
+    ar.mark_dirty_pages(AR_SHADOW_REGISTERS_START - AR_SHADOW_STATE_START, AR_SHADOW_REGISTERS_LENGTH);
+    ar.mark_dirty_pages(AR_SHADOW_TLB_START - AR_SHADOW_STATE_START, AR_SHADOW_TLB_LENGTH);
+    return ar;
+}
+
+static inline auto make_shadow_uarch_state_address_range(const uarch_processor_config &config) {
+    static constexpr pmas_flags shadow_uarch_state_flags{
+        .M = true,
+        .IO = false,
+        .R = false,
+        .W = false,
+        .X = false,
+        .IR = false,
+        .IW = false,
+        .DID = PMA_ISTART_DID::shadow_uarch_state,
+    };
+    auto ar = memory_address_range{"shadow uarch state", AR_SHADOW_UARCH_STATE_START, AR_SHADOW_UARCH_STATE_LENGTH,
+        shadow_uarch_state_flags, config.backing_store, memory_address_range_flags{.page_uncleanable = true},
+        sizeof(uarch_processor_state)};
+    // Mark pages that are permanently dirty in the shadow
+    ar.mark_dirty_pages(0, AR_SHADOW_UARCH_STATE_LENGTH);
+    return ar;
 }
 
 template <typename AR>
@@ -132,9 +148,10 @@ AR &machine_address_ranges::push_back(AR &&ar, register_where where) {
 
 machine_address_ranges::machine_address_ranges(machine_config &c) {
     // Add all address ranges to m_all, and potentially to interpret and merkle
-    push_back_uarch_ram(c.uarch.ram);
-    push_back(make_shadow_uarch_state_address_range(throw_invalid_argument),
+    push_back(make_shadow_state_address_range(c.processor), register_where{.merkle = true, .interpret = false});
+    push_back(make_shadow_uarch_state_address_range(c.uarch.processor),
         register_where{.merkle = true, .interpret = false});
+    push_back_uarch_ram(c.uarch.ram);
     push_back_ram(c.ram);
     push_back(make_dtb_address_range(c.dtb), register_where{.merkle = true, .interpret = true});
     push_back_flash_drives(c.flash_drive);
@@ -142,10 +159,6 @@ machine_address_ranges::machine_address_ranges(machine_config &c) {
     push_back(make_htif_address_range(throw_invalid_argument), register_where{.merkle = false, .interpret = true});
     push_back(make_clint_address_range(throw_invalid_argument), register_where{.merkle = false, .interpret = true});
     push_back(make_plic_address_range(throw_invalid_argument), register_where{.merkle = false, .interpret = true});
-    push_back(make_shadow_tlb_address_range(throw_invalid_argument),
-        register_where{.merkle = true, .interpret = false});
-    push_back(make_shadow_state_address_range(throw_invalid_argument),
-        register_where{.merkle = true, .interpret = false});
     push_back(make_pmas_address_range(c.pmas), register_where{.merkle = true, .interpret = true});
     push_back_virtio(c.virtio, c.processor.registers.iunrep);
 
@@ -166,10 +179,7 @@ machine_address_ranges::machine_address_ranges(machine_config &c) {
 }
 
 void machine_address_ranges::push_back_uarch_ram(const uarch_ram_config &uram) {
-    // Register RAM
-    if (uarch_pristine_ram_len > AR_UARCH_RAM_LENGTH) {
-        throw std::runtime_error("embedded uarch RAM image does not fit in uarch memory");
-    }
+    // Register uarch RAM
     static constexpr pmas_flags uram_flags{
         .M = true,
         .IO = false,
@@ -181,15 +191,16 @@ void machine_address_ranges::push_back_uarch_ram(const uarch_ram_config &uram) {
         .DID = PMA_ISTART_DID::memory,
     };
     constexpr auto ram_description = "uarch RAM";
-    if (uram.backing_store.data_filename.empty()) {
-        auto &ar = push_back(
-            make_callocd_memory_address_range(ram_description, AR_UARCH_RAM_START, AR_UARCH_RAM_LENGTH, uram_flags),
-            register_where{.merkle = true, .interpret = false});
+    auto &ar = push_back(
+        memory_address_range{ram_description, AR_UARCH_RAM_START, AR_UARCH_RAM_LENGTH, uram_flags, uram.backing_store},
+        register_where{.merkle = true, .interpret = false});
+
+    // Initialize uarch RAM
+    if (uram.backing_store.data_filename.empty() || uram.backing_store.create) {
+        if (uarch_pristine_ram_len > AR_UARCH_RAM_LENGTH) {
+            throw std::runtime_error("embedded uarch RAM image does not fit in uarch memory");
+        }
         memcpy(ar.get_host_memory(), uarch_pristine_ram, uarch_pristine_ram_len);
-    } else {
-        push_back(make_memory_address_range(ram_description, AR_UARCH_RAM_START, AR_UARCH_RAM_LENGTH, uram_flags,
-                      uram.backing_store),
-            register_where{.merkle = true, .interpret = false});
     }
 }
 
@@ -228,7 +239,7 @@ void machine_address_ranges::push_back_ram(const ram_config &ram) {
     if (ram.length == 0) {
         throw std::invalid_argument("RAM length cannot be zero");
     }
-    push_back(make_memory_address_range("RAM"s, AR_RAM_START, ram.length, ram_flags, ram.backing_store),
+    push_back(memory_address_range{"RAM"s, AR_RAM_START, ram.length, ram_flags, ram.backing_store},
         register_where{.merkle = true, .interpret = true});
 }
 
@@ -236,17 +247,6 @@ void machine_address_ranges::push_back_flash_drives(flash_drive_configs &flash_d
     if (flash_drive.size() > FLASH_DRIVE_MAX) {
         throw std::invalid_argument{"too many flash drives"};
     }
-    // Flags for flash drives
-    static const pmas_flags flash_flags{
-        .M = true,
-        .IO = false,
-        .R = true,
-        .W = true,
-        .X = false,
-        .IR = true,
-        .IW = true,
-        .DID = PMA_ISTART_DID::flash_drive,
-    };
     // Register all flash drives
     int i = 0; // NOLINT(misc-const-correctness)
     for (auto &f : flash_drive) {
@@ -259,7 +259,7 @@ void machine_address_ranges::push_back_flash_drives(flash_drive_configs &flash_d
         const auto &image_filename = f.backing_store.data_filename;
         if (f.length == UINT64_C(-1)) {
             if (image_filename.empty()) {
-                throw std::system_error{errno, std::generic_category(),
+                throw std::runtime_error{
                     "unable to auto-detect length of "s.append(flash_description).append(" with empty image file")};
             }
             auto fp = make_unique_fopen(image_filename.c_str(), "rb");
@@ -278,7 +278,19 @@ void machine_address_ranges::push_back_flash_drives(flash_drive_configs &flash_d
             }
             f.length = length;
         }
-        push_back(make_memory_address_range(flash_description, f.start, f.length, flash_flags, f.backing_store),
+        // Flags for the flash drive
+        const pmas_flags flash_flags{
+            .M = true,
+            .IO = false,
+            .R = true,
+            .W = !f.read_only,
+            .X = false,
+            .IR = true,
+            .IW = !f.read_only,
+            .DID = PMA_ISTART_DID::flash_drive,
+        };
+        push_back(memory_address_range{flash_description, f.start, f.length, flash_flags, f.backing_store,
+                      memory_address_range_flags{.read_only = f.read_only}},
             register_where{.merkle = true, .interpret = true});
         i++;
     }
@@ -350,7 +362,7 @@ void machine_address_ranges::push_back_virtio(const virtio_configs &virtio, uint
 }
 
 void machine_address_ranges::push_back_cmio(const cmio_config &c) {
-    static const pmas_flags tx_flags{
+    const pmas_flags tx_flags{
         .M = true,
         .IO = false,
         .R = true,
@@ -360,7 +372,7 @@ void machine_address_ranges::push_back_cmio(const cmio_config &c) {
         .IW = true,
         .DID = PMA_ISTART_DID::cmio_tx_buffer,
     };
-    static const pmas_flags rx_flags{
+    const pmas_flags rx_flags{
         .M = true,
         .IO = false,
         .R = true,
@@ -370,26 +382,29 @@ void machine_address_ranges::push_back_cmio(const cmio_config &c) {
         .IW = true,
         .DID = PMA_ISTART_DID::cmio_rx_buffer,
     };
-    push_back(make_memory_address_range("CMIO tx buffer memory range"s, AR_CMIO_TX_BUFFER_START,
-                  AR_CMIO_TX_BUFFER_LENGTH, tx_flags, c.tx_buffer.backing_store),
+    push_back(memory_address_range{"CMIO tx buffer memory range"s, AR_CMIO_TX_BUFFER_START, AR_CMIO_TX_BUFFER_LENGTH,
+                  tx_flags, c.tx_buffer.backing_store},
         register_where{.merkle = true, .interpret = true});
-    push_back(make_memory_address_range("CMIO rx buffer memory range"s, AR_CMIO_RX_BUFFER_START,
-                  AR_CMIO_RX_BUFFER_LENGTH, rx_flags, c.rx_buffer.backing_store),
+    push_back(memory_address_range{"CMIO rx buffer memory range"s, AR_CMIO_RX_BUFFER_START, AR_CMIO_RX_BUFFER_LENGTH,
+                  rx_flags, c.rx_buffer.backing_store},
         register_where{.merkle = true, .interpret = true});
 }
 
 void machine_address_ranges::replace(const memory_range_config &config) {
     for (auto &ar : m_all) {
-        //??D Need to add check for new read-only property here
         if (ar->get_start() == config.start && ar->get_length() == config.length) {
             if (!ar->is_memory() || pmas_is_protected(ar->get_driver_id())) {
                 throw std::invalid_argument{
                     std::string{"attempt to replace a protected range "}.append(ar->get_description())};
             }
+            if (ar->is_host_read_only()) {
+                throw std::invalid_argument{
+                    std::string{"attempt to replace a read-only range "}.append(ar->get_description())};
+            }
             // Replace range, preserving original flags.
             // This will automatically start with all pages dirty.
-            ar = make_moved_unique(make_memory_address_range(ar->get_description(), ar->get_start(), ar->get_length(),
-                ar->get_flags(), config.backing_store));
+            ar = make_moved_unique(memory_address_range{ar->get_description(), ar->get_start(), ar->get_length(),
+                ar->get_flags(), config.backing_store, memory_address_range_flags{.read_only = config.read_only}});
             return;
         }
     }

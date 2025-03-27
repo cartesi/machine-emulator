@@ -162,7 +162,9 @@ class machine_flash_simple_fixture : public incomplete_machine_fixture {
 public:
     machine_flash_simple_fixture() {
         _machine_config["flash_drive"] = {{{"start", 0x80000000000000}, {"length", 0x3c00000}, {"read_only", false},
-            {"backing_store", {{"shared", false}, {"truncate", false}, {"data_filename", ""}, {"dht_filename", ""}}}}};
+            {"backing_store",
+                {{"shared", false}, {"create", false}, {"truncate", false}, {"data_filename", ""},
+                    {"dht_filename", ""}}}}};
     }
 
     machine_flash_simple_fixture(const machine_flash_simple_fixture &other) = delete;
@@ -312,7 +314,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(store_machine_config_version_test, store_file_fix
     auto j = nlohmann::json::parse(ifs);
     BOOST_REQUIRE(j.contains("archive_version"));
     BOOST_REQUIRE(j["archive_version"].is_number_integer());
-    BOOST_CHECK_EQUAL(j["archive_version"].get<int>(), 5);
+    BOOST_CHECK_EQUAL(j["archive_version"].get<int>(), 6);
 }
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(store_null_machine_test, ordinary_machine_fixture) {
@@ -534,14 +536,14 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_virtual_memory_null_data_test, ordinar
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(write_memory_invalid_address_range_test, ordinary_machine_fixture) {
     uint64_t write_value = 0x1234;
-    uint64_t address = 0x100;
+    uint64_t address = 0x40008000; // HTIF
     std::array<uint8_t, sizeof(uint64_t)> write_data{};
     memcpy(write_data.data(), &write_value, write_data.size());
 
     cm_error error_code = cm_write_memory(_machine, address, write_data.data(), write_data.size());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
-    std::string origin("address range to write is not entirely in single memory range");
+    std::string origin("attempted write to device memory range");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -627,14 +629,14 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_memory_massive_test, ordinary_machine_
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(write_virtual_memory_invalid_address_range_test, ordinary_machine_fixture) {
     uint64_t write_value = 0x1234;
-    uint64_t address = 0x100;
+    uint64_t address = 0x40008000; // HTIF
     std::array<uint8_t, sizeof(uint64_t)> write_data{};
     memcpy(write_data.data(), &write_value, write_data.size());
 
     cm_error error_code = cm_write_virtual_memory(_machine, address, write_data.data(), write_data.size());
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
     std::string result = cm_get_last_error_message();
-    std::string origin("address range to write is not entirely in single memory range");
+    std::string origin("attempted write to device memory range");
     BOOST_CHECK_EQUAL(origin, result);
 }
 

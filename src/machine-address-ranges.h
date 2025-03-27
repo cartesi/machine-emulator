@@ -74,7 +74,7 @@ public:
         return std::views::transform(m_virtio, [](auto *p) -> virtio_address_range & { return *p; });
     }
 
-    /// \brief Returns the ith address range registed with interpret
+    /// \brief Returns the ith address range registered with interpret
     const address_range &read_pma(uint64_t index) const noexcept {
         if (index >= m_interpret.size()) {
             static constexpr auto sentinel = make_empty_address_range("sentinel");
@@ -154,7 +154,7 @@ private:
     /// This means the index into the container that owns all address ranges will always refer to same address range
     /// after subsequent calls to register() and  calls to replace() as well.
     /// \details Besides the container that stores the address ranges, the machine maintains three subsets.
-    /// The "merkle" subset lists the indices of the address ranges taht will be considered by the Merkle
+    /// The "merkle" subset lists the indices of the address ranges that will be considered by the Merkle
     /// tree during the computation of the state hash.
     /// The "interpret" subset lists the indices of the address ranges visible from within the interpreter (PMAs).
     /// When registering an address range with the machine, one must specify \p where to register it.
@@ -163,6 +163,7 @@ private:
         requires std::is_rvalue_reference_v<AR &&> && std::derived_from<AR, address_range>
     AR &push_back(AR &&ar, register_where where);
 
+    /// \brief Adds uarch RAM address range
     /// \param c uarch RAM configuration
     void push_back_uarch_ram(const uarch_ram_config &uram);
 

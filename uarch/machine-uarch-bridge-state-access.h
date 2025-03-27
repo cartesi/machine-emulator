@@ -88,11 +88,11 @@ private:
     // -----
     friend i_prefer_shadow_state<machine_uarch_bridge_state_access>;
 
-    uint64_t do_read_shadow_state(shadow_state_what what) const {
+    uint64_t do_read_shadow_register(shadow_registers_what what) const {
         return bridge_read_reg(machine_reg_enum(what));
     }
 
-    void do_write_shadow_state(shadow_state_what what, uint64_t val) const {
+    void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
         bridge_write_reg(machine_reg_enum(what), val);
     }
 
@@ -151,7 +151,7 @@ private:
     }
 
     template <TLB_set_index SET>
-    uint64_t do_read_tlb_vp_offset(uint64_t slot_index) const {
+    uint64_t do_read_tlb_vf_offset(uint64_t slot_index) const {
         return bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::vp_offset);
     }
 

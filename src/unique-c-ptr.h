@@ -48,24 +48,12 @@ struct fclose_deleter {
     }
 };
 
-struct mmap_deleter {
-    size_t m_size;
-    explicit mmap_deleter(size_t size) : m_size(size) {};
-    template <typename T>
-    void operator()(T *ptr) const {
-        os_unmap_file(ptr, m_size);
-    }
-};
-
 } // namespace detail
 
 template <typename T>
 using unique_calloc_ptr = std::unique_ptr<T, detail::free_deleter>;
 
 using unique_file_ptr = std::unique_ptr<FILE, detail::fclose_deleter>;
-
-template <typename T>
-using unique_mmap_ptr = std::unique_ptr<T, detail::mmap_deleter>;
 
 template <typename T>
 static inline auto make_unique_calloc(size_t nmemb) {
@@ -94,13 +82,6 @@ static inline auto make_unique_fopen(const char *pathname, const char *mode) {
 
 static inline auto make_unique_fopen(const char *pathname, const char *mode, const std::nothrow_t & /*tag*/) {
     return unique_file_ptr{fopen(pathname, mode)};
-}
-
-template <typename T>
-static inline auto make_unique_mmap(const char *pathname, size_t nmemb, bool shared) {
-    const size_t size = nmemb * sizeof(T);
-    T *ptr = static_cast<T *>(os_map_file(pathname, size, shared)); // os_map_file throws on error
-    return unique_mmap_ptr<T>(ptr, detail::mmap_deleter{size});
 }
 
 template <typename T>

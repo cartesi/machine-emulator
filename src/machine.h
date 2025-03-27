@@ -39,12 +39,12 @@
 #include "machine-merkle-tree.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
-#include "machine-state.h"
 #include "os.h"
 #include "pmas-constants.h"
+#include "processor-state.h"
 #include "shadow-tlb.h"
 #include "uarch-interpret.h"
-#include "uarch-state.h"
+#include "uarch-processor-state.h"
 #include "virtio-address-range.h"
 
 namespace cartesi {
@@ -64,40 +64,37 @@ private:
     machine_config m_c;                   ///< Copy of initialization config
     machine_runtime_config m_r;           ///< Copy of initialization runtime config
     mutable machine_address_ranges m_ars; ///< Address ranges
-    mutable uarch_state m_us;             ///< Uarch state
-    mutable machine_state m_s;            ///< Big machine state
     mutable machine_merkle_tree m_t;      ///< Merkle tree of state
+    processor_state *m_s;                 ///< Big machine processor state
+    uarch_processor_state *m_us;          ///< Microarchitecture processor state
 
     std::unordered_map<std::string, uint64_t> m_counters; ///< Counters used for statistics collection
+    bool m_tty_opened{false};                             ///< Whether tty was opened
 
     /// \brief Returns offset that converts between machine host addresses and target physical addresses
     /// \param pma_index Index of the memory PMA for the desired offset
     host_addr get_hp_offset(uint64_t pma_index) const;
 
-    /// \brief Initializes uarch processor
-    /// \param c Uarch configuration
-    void init_uarch_processor(const uarch_config &c);
-
-    /// \brief Initializes registers
-    /// \param p Registers configuration
+    /// \brief Initializes processor
+    /// \param p Processor configuration
     /// \param r Machine runtime configuration
-    void init_registers(registers_state &p, const machine_runtime_config &r);
+    void init_processor(processor_config &p, const machine_runtime_config &r);
+
+    /// \brief Initializes microarchitecture processor
+    /// \param c Microarchitecture processor configuration
+    void init_uarch_processor(const uarch_processor_config &p);
 
     /// \brief Initializes TTY if needed
-    /// \param h HTIF configuration
-    /// \param r HTIF runtime configuration
-    /// \param iunrep Initial value of iunrep CSR
-    void init_tty(const htif_state &h, const htif_runtime_config &r, uint64_t iunrep) const;
+    void init_tty();
 
     /// \brief Initializes contents of the shadow PMAs memory
     /// \param pmas_config PMAs configuration
     /// \detail This can only be called after all PMAs have been added
     void init_pmas_contents(const pmas_config &config);
 
-    /// \brief Initializes contents of machine TLB, from image in disk or with default values
-    /// \param config TLB config
+    /// \brief Initialize hot TLB contents
     /// \detail This can only be called after all PMAs have been added
-    void init_tlb_contents(const tlb_config &config);
+    void init_hot_tlb_contents();
 
     /// \brief Initializes contents of machine DTB, if image was not available
     /// \param config Machine configuration
@@ -123,7 +120,7 @@ private:
     /// \brief Stores address range into files for serialization
     /// \param ar Address range to store
     /// \param dir Directory where address ranges will be stored
-    void store_address_range(const address_range &ar, const std::string &dir) const;
+    static void store_address_range(const address_range &ar, const std::string &dir);
 
     /// \brief Checks if the machine has VirtIO devices.
     /// \returns True if at least one VirtIO device is present.
@@ -136,10 +133,6 @@ private:
     /// \brief Checks if the machine has HTIF console device.
     /// \returns True if HTIF console is present.
     bool has_htif_console() const;
-
-    /// \brief Copies the current state into a configuration for serialization
-    /// \returns The configuration
-    machine_config get_serialization_config() const;
 
 public:
     /// \brief Type of hash
@@ -247,23 +240,23 @@ public:
     }
 
     /// \brief Returns machine state for direct access.
-    machine_state &get_state() {
-        return m_s;
+    processor_state &get_state() {
+        return *m_s;
     }
 
     /// \brief Returns machine state for direct read-only access.
-    const machine_state &get_state() const {
-        return m_s;
+    const processor_state &get_state() const {
+        return *m_s;
     }
 
     /// \brief Returns uarch state for direct access.
-    uarch_state &get_uarch_state() {
-        return m_us;
+    uarch_processor_state &get_uarch_state() {
+        return *m_us;
     }
 
     /// \brief Returns uarch state for direct read-only access.
-    const uarch_state &get_uarch_state() const {
-        return m_us;
+    const uarch_processor_state &get_uarch_state() const {
+        return *m_us;
     }
 
     /// \brief Wait for external interrupts requests.
@@ -370,7 +363,7 @@ public:
     /// \param paddr Word address (aligned to 64-bit boundary).
     /// \details The word can be in a writeable area of the address space.
     /// This includes the shadow state and the shadow uarch state.
-    /// (But does NOT include memory-mapped devices, the shadow tlb, shadow PMAs, or unnocupied memory regions.)
+    /// (But does NOT include memory-mapped devices, shadow PMAs, or unnocupied memory regions.)
     void write_word(uint64_t paddr, uint64_t val);
 
     /// \brief Reads a chunk of data, by its target physical address and length.
@@ -501,15 +494,6 @@ public:
     void write_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
         uint64_t pma_index);
 
-    /// \brief Check consistency of TLB slot
-    /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
-    /// \param slot_index Index of slot to update
-    /// \param vaddr_page Virtual address of page to map
-    /// \param vp_offset Offset from target virtual addresses to target physical addresses within page
-    /// \param pma_index Index of PMA where address falls
-    void check_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
-        uint64_t pma_index, const std::string &prefix = "") const;
-
     /// \brief Reads a TLB register
     /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
     /// \param slot_index Index of slot to read
@@ -563,6 +547,11 @@ public:
     /// \brief Returns all counters
     const auto &get_counters() {
         return m_counters;
+    }
+
+    /// \brief Returns whether runtime soft yields are enabled
+    bool is_soft_yield() const {
+        return m_r.soft_yield;
     }
 };
 

@@ -25,8 +25,8 @@
 #include <type_traits>
 
 #include "meta.h"
+#include "shadow-tlb.h"
 #include "shadow-uarch-state.h"
-#include "tlb.h"
 
 namespace cartesi {
 

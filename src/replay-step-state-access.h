@@ -372,7 +372,7 @@ private:
     }
 
     //??D we should probably optimize access to the shadow so it doesn't perform a translation every time
-    // We can do this by caching the vh_offset trasnslation of the processor shadow page. This is easy if
+    // We can do this by caching the vh_offset translation of the registers shadow page. This is easy if
     // static_assert(sizeof(shadow_state) <= AR_PAGE_SIZE, "shadow state must fit in single page");
     uint64_t check_read_reg(machine_reg reg) const {
         const auto haddr = do_get_faddr(machine_reg_address(reg));
@@ -380,7 +380,7 @@ private:
     }
 
     //??D we should probably optimize access to the shadow so it doesn't perform a translation every time
-    // We can do this by caching the vh_offset trasnslation of the processor shadow page. This is easy if
+    // We can do this by caching the vh_offset translation of the registers shadow page. This is easy if
     // static_assert(sizeof(shadow_state) <= AR_PAGE_SIZE, "shadow state must fit in single page");
     void check_write_reg(machine_reg reg, uint64_t val) const {
         const auto haddr = do_get_faddr(machine_reg_address(reg));

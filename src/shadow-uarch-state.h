@@ -28,13 +28,20 @@
 
 namespace cartesi {
 
-/// \brief Shadow uarch memory layout
-struct PACKED shadow_uarch_state {
-    uint64_t halt_flag;
-    uint64_t cycle;
-    uint64_t pc;
-    uint64_t x[UARCH_X_REG_COUNT];
+/// \brief Uarch registers state
+struct uarch_registers_state final {
+    uint64_t halt_flag{UARCH_HALT_FLAG_INIT};
+    uint64_t cycle{UARCH_CYCLE_INIT};
+    uint64_t pc{UARCH_PC_INIT};
+    uint64_t x[UARCH_X_REG_COUNT]{};
 };
+
+/// \brief Shadow uarch memory layout
+using shadow_uarch_state = uarch_registers_state;
+
+// We need strong guarantees that shadow_uarch_state has fixed size and alignment across platforms.
+static_assert(sizeof(shadow_uarch_state) == 35 * sizeof(uint64_t), "unexpected uarch registers state size");
+static_assert(alignof(shadow_uarch_state) == sizeof(uint64_t), "unexpected uarch registers state alignment");
 
 enum class shadow_uarch_state_what : uint64_t {
     uarch_halt_flag = AR_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, halt_flag),

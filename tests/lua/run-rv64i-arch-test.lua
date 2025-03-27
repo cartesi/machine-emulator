@@ -49,7 +49,6 @@ local config = {
             },
         },
     },
-    processor = {},
     ram = { length = 0x1000 },
 }
 

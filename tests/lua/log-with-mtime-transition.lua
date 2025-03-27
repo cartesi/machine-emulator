@@ -4,7 +4,9 @@ local cartesi = require("cartesi")
 
 local config = {
     processor = {
-        mcycle = 99,
+        registers = {
+            mcycle = 99,
+        },
     },
     ram = {
         length = 1 << 12,

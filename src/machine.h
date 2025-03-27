@@ -143,9 +143,9 @@ private:
     void init_uarch(const uarch_config &c);
 
     /// \brief Initializes registers
-    /// \param p Processor configuration
+    /// \param p Registers configuration
     /// \param r Machine runtime configuration
-    void init_processor(processor_config &p, const machine_runtime_config &r);
+    void init_registers(registers_state &p, const machine_runtime_config &r);
 
     /// \brief Initializes RAM address range
     /// \param ram RAM configuration
@@ -162,21 +162,21 @@ private:
 
     /// \brief Initializes HTIF device address range
     /// \param h HTIF configuration
-    void init_htif_ar(const htif_config &h);
+    void init_htif_ar(const htif_state &h);
 
     /// \brief Initializes TTY if needed
     /// \param h HTIF configuration
     /// \param r HTIF runtime configuration
     /// \param iunrep Initial value of iunrep CSR
-    void init_tty(const htif_config &h, const htif_runtime_config &r, uint64_t iunrep) const;
+    void init_tty(const htif_state &h, const htif_runtime_config &r, uint64_t iunrep) const;
 
     /// \brief Initializes CLINT device address range
     /// \param c CLINT configuration
-    void init_clint_ar(const clint_config &c);
+    void init_clint_ar(const clint_state &c);
 
     /// \brief Initializes PLIC device address range
     /// \param p PLIC configuration
-    void init_plic_ar(const plic_config &p);
+    void init_plic_ar(const plic_state &p);
 
     /// \brief Initializes CMIO address ranges
     /// \param c CMIO configuration

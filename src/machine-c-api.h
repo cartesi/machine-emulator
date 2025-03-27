@@ -130,7 +130,7 @@ typedef enum cm_cmio_yield_reason {
 
 /// \brief Machine x, f, and control and status registers.
 typedef enum cm_reg {
-    // Processor x registers
+    // Machine x registers
     CM_REG_X0,
     CM_REG_X1,
     CM_REG_X2,
@@ -163,7 +163,7 @@ typedef enum cm_reg {
     CM_REG_X29,
     CM_REG_X30,
     CM_REG_X31,
-    // Processor f registers
+    // Machine f registers
     CM_REG_F0,
     CM_REG_F1,
     CM_REG_F2,
@@ -196,7 +196,7 @@ typedef enum cm_reg {
     CM_REG_F29,
     CM_REG_F30,
     CM_REG_F31,
-    // Processor CSRs
+    // Machine CSRs
     CM_REG_PC,
     CM_REG_FCSR,
     CM_REG_MVENDORID,

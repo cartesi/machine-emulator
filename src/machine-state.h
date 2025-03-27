@@ -49,9 +49,7 @@ struct machine_state final {
 
     // Penumbra region, the fields below are not stored in the backing file,
     // it's only visible in host resident memory during runtime.
-    tlb_state tlb{};            ///< TLB state
-    bool soft_yield{};          ///< Whether soft yield is enabled
-    std::vector<uint64_t> pmas; ///< Indices of address ranges that interpret can find
+    tlb_state tlb{}; ///< TLB state
 };
 
 } // namespace cartesi

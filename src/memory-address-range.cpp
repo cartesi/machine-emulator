@@ -37,57 +37,24 @@ public:
 };
 
 memory_address_range::memory_address_range(const std::string &description, uint64_t start, uint64_t length,
-    const pmas_flags &flags, const std::string &image_filename, const mmapd &m) try :
+    const pmas_flags &flags, const backing_store_config &backing_store, const memory_address_range_flags &ar_flags,
+    uint64_t host_length) try :
     address_range(description.c_str(), start, length, flags, [](const char *err) { throw base_error{err}; }),
-    m_ptr{make_unique_mmap<unsigned char>(image_filename.c_str(), length, m.shared)},
-    m_host_memory{std::get<mmapd_ptr>(m_ptr).get()} {
+    m_ptr{make_unique_mmap<unsigned char>(host_length != 0 ? host_length : length,
+        os_mmap_flags{
+            .read_only = ar_flags.read_only && !backing_store.create,
+            .shared = backing_store.shared,
+            .create = backing_store.create,
+            .truncate = backing_store.truncate,
+            .lock = !backing_store.data_filename.empty(),
+        },
+        backing_store.data_filename, length)},
+    m_host_memory{m_ptr.get()},
+    m_ar_flags{ar_flags} {
     if (!is_memory()) {
-        throw std::invalid_argument{"memory range must be flagged memory when initializing "s + description};
+        throw std::invalid_argument{"memory range must be flagged memory"s};
     }
     m_dirty_page_map.resize((get_length() / (8 * AR_PAGE_SIZE)) + 1, 0xff);
-} catch (base_error &b) {
-    throw; // already contains the description
-} catch (std::exception &e) {
-    throw std::invalid_argument{e.what() + " when initializing "s + description};
-} catch (...) {
-    throw std::invalid_argument{"unknown exception when initializing "s + description};
-}
-
-memory_address_range::memory_address_range(const std::string &description, uint64_t start, uint64_t length,
-    const pmas_flags &flags, const std::string &image_filename, const callocd & /*c*/) try :
-    address_range(description.c_str(), start, length, flags, [](const char *err) { throw base_error{err}; }),
-    m_ptr{make_unique_calloc<unsigned char>(length)},
-    m_host_memory{std::get<callocd_ptr>(m_ptr).get()} {
-    if (!is_memory()) {
-        throw std::invalid_argument{"memory range must be flagged memory when initializing "s + description};
-    }
-    m_dirty_page_map.resize((length / (8 * AR_PAGE_SIZE)) + 1, 0xff);
-    // Try to load image file, if any
-    if (!image_filename.empty()) {
-        auto fp = make_unique_fopen(image_filename.c_str(), "rb", std::nothrow_t{});
-        if (!fp) {
-            throw std::system_error{errno, std::generic_category(), "error opening image file '"s + image_filename};
-        }
-        // Get file size
-        if (fseek(fp.get(), 0, SEEK_END) != 0) {
-            throw std::system_error{errno, std::generic_category(),
-                "error obtaining length of image file '"s + image_filename};
-        }
-        const auto file_length = static_cast<uint64_t>(ftello(fp.get()));
-        if (fseek(fp.get(), 0, SEEK_SET) != 0) {
-            throw std::system_error{errno, std::generic_category(),
-                "error obtaining length of image file '"s + image_filename};
-        }
-        // Check against PMA range size
-        if (file_length > length) {
-            throw std::runtime_error{"image file '"s + image_filename + "' is too large for range"s};
-        }
-        // Read to host memory
-        const auto read_length = static_cast<uint64_t>(fread(m_host_memory, 1, file_length, fp.get()));
-        if (read_length != file_length) {
-            throw std::runtime_error{"error reading from image file '"s + image_filename};
-        }
-    }
 } catch (base_error &b) {
     throw; // already contains the description
 } catch (std::exception &e) {

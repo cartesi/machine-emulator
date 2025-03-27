@@ -33,10 +33,10 @@
 #include "i-interactive-state-access.h"
 #include "i-state-access.h"
 #include "interpret.h"
-#include "machine-state.h"
 #include "machine.h"
 #include "os.h"
 #include "pmas-constants.h"
+#include "processor-state.h"
 #include "riscv-constants.h"
 #include "shadow-tlb.h"
 #include "strict-aliasing.h"
@@ -77,44 +77,44 @@ private:
     friend i_state_access<state_access>;
 
     uint64_t do_read_x(int i) const {
-        return m_m.get_state().registers.x[i];
+        return m_m.get_state().shadow.registers.x[i];
     }
 
     void do_write_x(int i, uint64_t val) const {
         assert(i != 0);
-        m_m.get_state().registers.x[i] = val;
+        m_m.get_state().shadow.registers.x[i] = val;
     }
 
     uint64_t do_read_f(int i) const {
-        return m_m.get_state().registers.f[i];
+        return m_m.get_state().shadow.registers.f[i];
     }
 
     void do_write_f(int i, uint64_t val) const {
-        m_m.get_state().registers.f[i] = val;
+        m_m.get_state().shadow.registers.f[i] = val;
     }
 
     uint64_t do_read_pc() const {
-        return m_m.get_state().registers.pc;
+        return m_m.get_state().shadow.registers.pc;
     }
 
     void do_write_pc(uint64_t val) const {
-        m_m.get_state().registers.pc = val;
+        m_m.get_state().shadow.registers.pc = val;
     }
 
     uint64_t do_read_fcsr() const {
-        return m_m.get_state().registers.fcsr;
+        return m_m.get_state().shadow.registers.fcsr;
     }
 
     void do_write_fcsr(uint64_t val) const {
-        m_m.get_state().registers.fcsr = val;
+        m_m.get_state().shadow.registers.fcsr = val;
     }
 
     uint64_t do_read_icycleinstret() const {
-        return m_m.get_state().registers.icycleinstret;
+        return m_m.get_state().shadow.registers.icycleinstret;
     }
 
     void do_write_icycleinstret(uint64_t val) const {
-        m_m.get_state().registers.icycleinstret = val;
+        m_m.get_state().shadow.registers.icycleinstret = val;
     }
 
     uint64_t do_read_mvendorid() const { // NOLINT(readability-convert-member-functions-to-static)
@@ -130,279 +130,279 @@ private:
     }
 
     uint64_t do_read_mcycle() const {
-        return m_m.get_state().registers.mcycle;
+        return m_m.get_state().shadow.registers.mcycle;
     }
 
     void do_write_mcycle(uint64_t val) const {
-        m_m.get_state().registers.mcycle = val;
+        m_m.get_state().shadow.registers.mcycle = val;
     }
 
     uint64_t do_read_mstatus() const {
-        return m_m.get_state().registers.mstatus;
+        return m_m.get_state().shadow.registers.mstatus;
     }
 
     void do_write_mstatus(uint64_t val) const {
-        m_m.get_state().registers.mstatus = val;
+        m_m.get_state().shadow.registers.mstatus = val;
     }
 
     uint64_t do_read_menvcfg() const {
-        return m_m.get_state().registers.menvcfg;
+        return m_m.get_state().shadow.registers.menvcfg;
     }
 
     void do_write_menvcfg(uint64_t val) const {
-        m_m.get_state().registers.menvcfg = val;
+        m_m.get_state().shadow.registers.menvcfg = val;
     }
 
     uint64_t do_read_mtvec() const {
-        return m_m.get_state().registers.mtvec;
+        return m_m.get_state().shadow.registers.mtvec;
     }
 
     void do_write_mtvec(uint64_t val) const {
-        m_m.get_state().registers.mtvec = val;
+        m_m.get_state().shadow.registers.mtvec = val;
     }
 
     uint64_t do_read_mscratch() const {
-        return m_m.get_state().registers.mscratch;
+        return m_m.get_state().shadow.registers.mscratch;
     }
 
     void do_write_mscratch(uint64_t val) const {
-        m_m.get_state().registers.mscratch = val;
+        m_m.get_state().shadow.registers.mscratch = val;
     }
 
     uint64_t do_read_mepc() const {
-        return m_m.get_state().registers.mepc;
+        return m_m.get_state().shadow.registers.mepc;
     }
 
     void do_write_mepc(uint64_t val) const {
-        m_m.get_state().registers.mepc = val;
+        m_m.get_state().shadow.registers.mepc = val;
     }
 
     uint64_t do_read_mcause() const {
-        return m_m.get_state().registers.mcause;
+        return m_m.get_state().shadow.registers.mcause;
     }
 
     void do_write_mcause(uint64_t val) const {
-        m_m.get_state().registers.mcause = val;
+        m_m.get_state().shadow.registers.mcause = val;
     }
 
     uint64_t do_read_mtval() const {
-        return m_m.get_state().registers.mtval;
+        return m_m.get_state().shadow.registers.mtval;
     }
 
     void do_write_mtval(uint64_t val) const {
-        m_m.get_state().registers.mtval = val;
+        m_m.get_state().shadow.registers.mtval = val;
     }
 
     uint64_t do_read_misa() const {
-        return m_m.get_state().registers.misa;
+        return m_m.get_state().shadow.registers.misa;
     }
 
     void do_write_misa(uint64_t val) const {
-        m_m.get_state().registers.misa = val;
+        m_m.get_state().shadow.registers.misa = val;
     }
 
     uint64_t do_read_mie() const {
-        return m_m.get_state().registers.mie;
+        return m_m.get_state().shadow.registers.mie;
     }
 
     void do_write_mie(uint64_t val) const {
-        m_m.get_state().registers.mie = val;
+        m_m.get_state().shadow.registers.mie = val;
     }
 
     uint64_t do_read_mip() const {
-        return m_m.get_state().registers.mip;
+        return m_m.get_state().shadow.registers.mip;
     }
 
     void do_write_mip(uint64_t val) const {
-        m_m.get_state().registers.mip = val;
+        m_m.get_state().shadow.registers.mip = val;
     }
 
     uint64_t do_read_medeleg() const {
-        return m_m.get_state().registers.medeleg;
+        return m_m.get_state().shadow.registers.medeleg;
     }
 
     void do_write_medeleg(uint64_t val) const {
-        m_m.get_state().registers.medeleg = val;
+        m_m.get_state().shadow.registers.medeleg = val;
     }
 
     uint64_t do_read_mideleg() const {
-        return m_m.get_state().registers.mideleg;
+        return m_m.get_state().shadow.registers.mideleg;
     }
 
     void do_write_mideleg(uint64_t val) const {
-        m_m.get_state().registers.mideleg = val;
+        m_m.get_state().shadow.registers.mideleg = val;
     }
 
     uint64_t do_read_mcounteren() const {
-        return m_m.get_state().registers.mcounteren;
+        return m_m.get_state().shadow.registers.mcounteren;
     }
 
     void do_write_mcounteren(uint64_t val) const {
-        m_m.get_state().registers.mcounteren = val;
+        m_m.get_state().shadow.registers.mcounteren = val;
     }
 
     uint64_t do_read_senvcfg() const {
-        return m_m.get_state().registers.senvcfg;
+        return m_m.get_state().shadow.registers.senvcfg;
     }
 
     void do_write_senvcfg(uint64_t val) const {
-        m_m.get_state().registers.senvcfg = val;
+        m_m.get_state().shadow.registers.senvcfg = val;
     }
 
     uint64_t do_read_stvec() const {
-        return m_m.get_state().registers.stvec;
+        return m_m.get_state().shadow.registers.stvec;
     }
 
     void do_write_stvec(uint64_t val) const {
-        m_m.get_state().registers.stvec = val;
+        m_m.get_state().shadow.registers.stvec = val;
     }
 
     uint64_t do_read_sscratch() const {
-        return m_m.get_state().registers.sscratch;
+        return m_m.get_state().shadow.registers.sscratch;
     }
 
     void do_write_sscratch(uint64_t val) const {
-        m_m.get_state().registers.sscratch = val;
+        m_m.get_state().shadow.registers.sscratch = val;
     }
 
     uint64_t do_read_sepc() const {
-        return m_m.get_state().registers.sepc;
+        return m_m.get_state().shadow.registers.sepc;
     }
 
     void do_write_sepc(uint64_t val) const {
-        m_m.get_state().registers.sepc = val;
+        m_m.get_state().shadow.registers.sepc = val;
     }
 
     uint64_t do_read_scause() const {
-        return m_m.get_state().registers.scause;
+        return m_m.get_state().shadow.registers.scause;
     }
 
     void do_write_scause(uint64_t val) const {
-        m_m.get_state().registers.scause = val;
+        m_m.get_state().shadow.registers.scause = val;
     }
 
     uint64_t do_read_stval() const {
-        return m_m.get_state().registers.stval;
+        return m_m.get_state().shadow.registers.stval;
     }
 
     void do_write_stval(uint64_t val) const {
-        m_m.get_state().registers.stval = val;
+        m_m.get_state().shadow.registers.stval = val;
     }
 
     uint64_t do_read_satp() const {
-        return m_m.get_state().registers.satp;
+        return m_m.get_state().shadow.registers.satp;
     }
 
     void do_write_satp(uint64_t val) const {
-        m_m.get_state().registers.satp = val;
+        m_m.get_state().shadow.registers.satp = val;
     }
 
     uint64_t do_read_scounteren() const {
-        return m_m.get_state().registers.scounteren;
+        return m_m.get_state().shadow.registers.scounteren;
     }
 
     void do_write_scounteren(uint64_t val) const {
-        m_m.get_state().registers.scounteren = val;
+        m_m.get_state().shadow.registers.scounteren = val;
     }
 
     uint64_t do_read_ilrsc() const {
-        return m_m.get_state().registers.ilrsc;
+        return m_m.get_state().shadow.registers.ilrsc;
     }
 
     void do_write_ilrsc(uint64_t val) const {
-        m_m.get_state().registers.ilrsc = val;
+        m_m.get_state().shadow.registers.ilrsc = val;
     }
 
     uint64_t do_read_iprv() const {
-        return m_m.get_state().registers.iprv;
+        return m_m.get_state().shadow.registers.iprv;
     }
 
     void do_write_iprv(uint64_t val) const {
-        m_m.get_state().registers.iprv = val;
+        m_m.get_state().shadow.registers.iprv = val;
     }
 
     uint64_t do_read_iflags_X() const {
-        return m_m.get_state().registers.iflags.X;
+        return m_m.get_state().shadow.registers.iflags.X;
     }
 
     void do_write_iflags_X(uint64_t val) const {
-        m_m.get_state().registers.iflags.X = val;
+        m_m.get_state().shadow.registers.iflags.X = val;
     }
 
     uint64_t do_read_iflags_Y() const {
-        return m_m.get_state().registers.iflags.Y;
+        return m_m.get_state().shadow.registers.iflags.Y;
     }
 
     void do_write_iflags_Y(uint64_t val) const {
-        m_m.get_state().registers.iflags.Y = val;
+        m_m.get_state().shadow.registers.iflags.Y = val;
     }
 
     uint64_t do_read_iflags_H() const {
-        return m_m.get_state().registers.iflags.H;
+        return m_m.get_state().shadow.registers.iflags.H;
     }
 
     void do_write_iflags_H(uint64_t val) const {
-        m_m.get_state().registers.iflags.H = val;
+        m_m.get_state().shadow.registers.iflags.H = val;
     }
 
     uint64_t do_read_iunrep() const {
-        return m_m.get_state().registers.iunrep;
+        return m_m.get_state().shadow.registers.iunrep;
     }
 
     void do_write_iunrep(uint64_t val) const {
-        m_m.get_state().registers.iunrep = val;
+        m_m.get_state().shadow.registers.iunrep = val;
     }
 
     uint64_t do_read_clint_mtimecmp() const {
-        return m_m.get_state().registers.clint.mtimecmp;
+        return m_m.get_state().shadow.registers.clint.mtimecmp;
     }
 
     void do_write_clint_mtimecmp(uint64_t val) const {
-        m_m.get_state().registers.clint.mtimecmp = val;
+        m_m.get_state().shadow.registers.clint.mtimecmp = val;
     }
 
     uint64_t do_read_plic_girqpend() const {
-        return m_m.get_state().registers.plic.girqpend;
+        return m_m.get_state().shadow.registers.plic.girqpend;
     }
 
     void do_write_plic_girqpend(uint64_t val) const {
-        m_m.get_state().registers.plic.girqpend = val;
+        m_m.get_state().shadow.registers.plic.girqpend = val;
     }
 
     uint64_t do_read_plic_girqsrvd() const {
-        return m_m.get_state().registers.plic.girqsrvd;
+        return m_m.get_state().shadow.registers.plic.girqsrvd;
     }
 
     void do_write_plic_girqsrvd(uint64_t val) const {
-        m_m.get_state().registers.plic.girqsrvd = val;
+        m_m.get_state().shadow.registers.plic.girqsrvd = val;
     }
 
     uint64_t do_read_htif_fromhost() const {
-        return m_m.get_state().registers.htif.fromhost;
+        return m_m.get_state().shadow.registers.htif.fromhost;
     }
 
     void do_write_htif_fromhost(uint64_t val) const {
-        m_m.get_state().registers.htif.fromhost = val;
+        m_m.get_state().shadow.registers.htif.fromhost = val;
     }
 
     uint64_t do_read_htif_tohost() const {
-        return m_m.get_state().registers.htif.tohost;
+        return m_m.get_state().shadow.registers.htif.tohost;
     }
 
     void do_write_htif_tohost(uint64_t val) const {
-        m_m.get_state().registers.htif.tohost = val;
+        m_m.get_state().shadow.registers.htif.tohost = val;
     }
 
     uint64_t do_read_htif_ihalt() const {
-        return m_m.get_state().registers.htif.ihalt;
+        return m_m.get_state().shadow.registers.htif.ihalt;
     }
 
     uint64_t do_read_htif_iconsole() const {
-        return m_m.get_state().registers.htif.iconsole;
+        return m_m.get_state().shadow.registers.htif.iconsole;
     }
 
     uint64_t do_read_htif_iyield() const {
-        return m_m.get_state().registers.htif.iyield;
+        return m_m.get_state().shadow.registers.htif.iyield;
     }
 
     bool do_read_memory(uint64_t paddr, unsigned char *data, uint64_t length) const {
@@ -458,17 +458,17 @@ private:
 
     template <TLB_set_index SET>
     uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) const {
-        return m_m.get_state().tlb.hot[SET][slot_index].vaddr_page;
+        return m_m.get_state().penumbra.tlb[SET][slot_index].vaddr_page;
     }
 
     template <TLB_set_index SET>
-    host_addr do_read_tlb_vp_offset(uint64_t slot_index) const {
-        return m_m.get_state().tlb.hot[SET][slot_index].vh_offset;
+    host_addr do_read_tlb_vf_offset(uint64_t slot_index) const {
+        return m_m.get_state().penumbra.tlb[SET][slot_index].vh_offset;
     }
 
     template <TLB_set_index SET>
     uint64_t do_read_tlb_pma_index(uint64_t slot_index) const {
-        return m_m.get_state().tlb.cold[SET][slot_index].pma_index;
+        return m_m.get_state().shadow.tlb[SET][slot_index].pma_index;
     }
 
     template <TLB_set_index SET>
@@ -504,7 +504,7 @@ private:
     }
 
     bool do_get_soft_yield() const {
-        return m_m.get_state().soft_yield;
+        return m_m.is_soft_yield();
     }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)

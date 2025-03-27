@@ -1352,6 +1352,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, hash_tree_config &v
     const auto &jconfig = j[key];
     const auto new_path = path + to_string(key) + "/";
     ju_get_opt_field(jconfig, "shared"s, value.shared, new_path);
+    ju_get_opt_field(jconfig, "create"s, value.create, new_path);
     ju_get_opt_field(jconfig, "truncate"s, value.truncate, new_path);
     ju_get_opt_field(jconfig, "hasher"s, value.hasher, new_path);
     ju_get_opt_field(jconfig, "sht_filename"s, value.sht_filename, new_path);
@@ -1373,6 +1374,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, backing_store_confi
     const auto &jconfig = j[key];
     const auto new_path = path + to_string(key) + "/";
     ju_get_opt_field(jconfig, "shared"s, value.shared, new_path);
+    ju_get_opt_field(jconfig, "create"s, value.create, new_path);
     ju_get_opt_field(jconfig, "truncate"s, value.truncate, new_path);
     ju_get_opt_field(jconfig, "data_filename"s, value.data_filename, new_path);
     ju_get_opt_field(jconfig, "dht_filename"s, value.dht_filename, new_path);
@@ -1681,7 +1683,6 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_config &val
     ju_get_opt_field(config, "ram"s, value.ram, new_path);
     ju_get_opt_field(config, "dtb"s, value.dtb, new_path);
     ju_get_opt_field(config, "flash_drive"s, value.flash_drive, new_path);
-    ju_get_opt_field(config, "tlb"s, value.tlb, new_path);
     ju_get_opt_field(config, "virtio"s, value.virtio, new_path);
     ju_get_opt_field(config, "cmio"s, value.cmio, new_path);
     ju_get_opt_field(config, "pmas"s, value.pmas, new_path);
@@ -1832,7 +1833,7 @@ void to_json(nlohmann::json &j, const access_log &log) {
 }
 
 void to_json(nlohmann::json &j, const backing_store_config &config) {
-    j = nlohmann::json{{"shared", config.shared}, {"truncate", config.truncate},
+    j = nlohmann::json{{"shared", config.shared}, {"create", config.create}, {"truncate", config.truncate},
         {"data_filename", config.data_filename}, {"dht_filename", config.dht_filename}};
 }
 
@@ -1846,8 +1847,8 @@ void to_json(nlohmann::json &j, const memory_range_config &config) {
 }
 
 void to_json(nlohmann::json &j, const hash_tree_config &config) {
-    j = nlohmann::json{{"hasher", config.hasher}, {"shared", config.shared}, {"truncate", config.truncate},
-        {"sht_filename", config.sht_filename}, {"phtc_filename", config.phtc_filename},
+    j = nlohmann::json{{"hasher", config.hasher}, {"shared", config.shared}, {"create", config.create},
+        {"truncate", config.truncate}, {"sht_filename", config.sht_filename}, {"phtc_filename", config.phtc_filename},
         {"phtc_size", config.phtc_size}};
 }
 
@@ -2036,7 +2037,6 @@ void to_json(nlohmann::json &j, const machine_config &config) {
         {"ram", config.ram},
         {"dtb", config.dtb},
         {"flash_drive", config.flash_drive},
-        {"tlb", config.tlb},
         {"virtio", config.virtio},
         {"cmio", config.cmio},
         {"pmas", config.pmas},

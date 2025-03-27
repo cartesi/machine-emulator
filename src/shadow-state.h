@@ -30,53 +30,91 @@
 
 namespace cartesi {
 
-/// \brief Shadow memory layout
-struct PACKED shadow_state {
-    uint64_t x[X_REG_COUNT]; ///< Register file.
-    uint64_t f[F_REG_COUNT]; ///< Floating-point register file.
-    uint64_t pc;
-    uint64_t fcsr;
-    uint64_t mvendorid;
-    uint64_t marchid;
-    uint64_t mimpid;
-    uint64_t mcycle;
-    uint64_t icycleinstret;
-    uint64_t mstatus;
-    uint64_t mtvec;
-    uint64_t mscratch;
-    uint64_t mepc;
-    uint64_t mcause;
-    uint64_t mtval;
-    uint64_t misa;
-    uint64_t mie;
-    uint64_t mip;
-    uint64_t medeleg;
-    uint64_t mideleg;
-    uint64_t mcounteren;
-    uint64_t menvcfg;
-    uint64_t stvec;
-    uint64_t sscratch;
-    uint64_t sepc;
-    uint64_t scause;
-    uint64_t stval;
-    uint64_t satp;
-    uint64_t scounteren;
-    uint64_t senvcfg;
-    uint64_t ilrsc;
-    uint64_t iprv;
-    uint64_t iflags_X;
-    uint64_t iflags_Y;
-    uint64_t iflags_H;
-    uint64_t iunrep;
-    uint64_t clint_mtimecmp;
-    uint64_t plic_girqpend;
-    uint64_t plic_girqsrvd;
-    uint64_t htif_tohost;
-    uint64_t htif_fromhost;
-    uint64_t htif_ihalt;
-    uint64_t htif_iconsole;
-    uint64_t htif_iyield;
+/// \brief Internal flags state (Cartesi specific).
+struct iflags_state final {
+    uint64_t X{IFLAGS_X_INIT}; ///< CPU has yielded with automatic reset.
+    uint64_t Y{IFLAGS_Y_INIT}; ///< CPU has yielded with manual reset.
+    uint64_t H{IFLAGS_H_INIT}; ///< CPU has been permanently halted.
 };
+
+/// \brief CLINT (Core-Local Interruptor) state
+struct clint_state final {
+    uint64_t mtimecmp{MTIMECMP_INIT}; ///< CSR mtimecmp.
+};
+
+/// \brief PLIC (Platform-Level Interrupt Controller) state
+struct plic_state final {
+    uint64_t girqpend{GIRQPEND_INIT}; ///< CSR girqpend (global interrupts pending).
+    uint64_t girqsrvd{GIRQSRVD_INIT}; ///< CSR girqsrvd (global interrupts served).
+};
+
+/// HTIF (Host-Target config InterFace) state
+struct htif_state final {
+    uint64_t tohost{TOHOST_INIT};     ///< CSR tohost.
+    uint64_t fromhost{FROMHOST_INIT}; ///< CSR fromhost.
+    uint64_t ihalt{IHALT_INIT};       ///< CSR ihalt (Cartesi-specific).
+    uint64_t iconsole{ICONSOLE_INIT}; ///< CSR iconsole (Cartesi-specific).
+    uint64_t iyield{IYIELD_INIT};     ///< CSR iyield (Cartesi-specific).
+};
+
+/// \brief Machine registers state
+struct registers_state final {
+    // The X registers are the very first to optimize access of registers in the interpreter.
+    uint64_t x[X_REG_COUNT]{REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5, REG_X6, REG_X7, REG_X8, REG_X9, REG_X10,
+        REG_X11, REG_X12, REG_X13, REG_X14, REG_X15, REG_X16, REG_X17, REG_X18, REG_X19, REG_X20, REG_X21, REG_X22,
+        REG_X23, REG_X24, REG_X25, REG_X26, REG_X27, REG_X28, REG_X29, REG_X30, REG_X31}; ///< Register file.
+    // The following registers are carefully ordered to have better data locality in the interpreter loop.
+    uint64_t mcycle{MCYCLE_INIT}; ///< CSR mcycle.
+    uint64_t pc{PC_INIT};         ///< Program counter.
+    uint64_t fcsr{FCSR_INIT};     ///< CSR fcsr.
+    uint64_t f[F_REG_COUNT]{};    ///< Floating-point register file.
+    uint64_t iprv{IPRV_INIT};     ///< Privilege level (Cartesi-specific).
+
+    // RISC-V machine CSRs
+    uint64_t mstatus{MSTATUS_INIT};       ///< CSR mstatus.
+    uint64_t mtvec{MTVEC_INIT};           ///< CSR mtvec.
+    uint64_t mscratch{MSCRATCH_INIT};     ///< CSR mscratch.
+    uint64_t mepc{MEPC_INIT};             ///< CSR mepc.
+    uint64_t mcause{MCAUSE_INIT};         ///< CSR mcause.
+    uint64_t mtval{MTVAL_INIT};           ///< CSR mtval.
+    uint64_t misa{MISA_INIT};             ///< CSR misa.
+    uint64_t mie{MIE_INIT};               ///< CSR mie.
+    uint64_t mip{MIP_INIT};               ///< CSR mip.
+    uint64_t medeleg{MEDELEG_INIT};       ///< CSR medeleg.
+    uint64_t mideleg{MIDELEG_INIT};       ///< CSR mideleg.
+    uint64_t mcounteren{MCOUNTEREN_INIT}; ///< CSR mcounteren.
+    uint64_t menvcfg{MENVCFG_INIT};       ///< CSR menvcfg.
+    uint64_t mvendorid{MVENDORID_INIT};   ///< CSR mvendorid.
+    uint64_t marchid{MARCHID_INIT};       ///< CSR marchid.
+    uint64_t mimpid{MIMPID_INIT};         ///< CSR mimpid.
+
+    // RISC-V supervisor CSRs
+    uint64_t stvec{STVEC_INIT};           ///< CSR stvec.
+    uint64_t sscratch{SSCRATCH_INIT};     ///< CSR sscratch.
+    uint64_t sepc{SEPC_INIT};             ///< CSR sepc.
+    uint64_t scause{SCAUSE_INIT};         ///< CSR scause.
+    uint64_t stval{STVAL_INIT};           ///< CSR stval.
+    uint64_t satp{SATP_INIT};             ///< CSR satp.
+    uint64_t scounteren{SCOUNTEREN_INIT}; ///< CSR scounteren.
+    uint64_t senvcfg{SENVCFG_INIT};       ///< CSR senvcfg.
+
+    // Cartesi-specific state
+    uint64_t ilrsc{ILRSC_INIT};                 ///< For LR/SC instructions.
+    uint64_t icycleinstret{ICYCLEINSTRET_INIT}; ///< Difference between mcycle and minstret.
+    uint64_t iunrep{IUNREP_INIT};               ///< Unreproducible mode.
+
+    iflags_state iflags; ///< Internal flags (Cartesi specific).
+    clint_state clint;   ///< CLINT registers.
+    plic_state plic;     ///< PLIC registers.
+    htif_state htif;     ///< HTIF registers.
+};
+
+/// \brief Shadow memory layout
+using shadow_state = registers_state;
+
+// We need strong guarantees that shadow_state has fixed size and alignment across platforms.
+static_assert(sizeof(shadow_state) == 106 * sizeof(uint64_t), "unexpected registers state size");
+static_assert(alignof(shadow_state) == sizeof(uint64_t), "unexpected registers state alignment");
 
 enum class shadow_state_what : uint64_t {
     x0 = AR_SHADOW_STATE_START + offsetof(shadow_state, x[0]),
@@ -173,18 +211,18 @@ enum class shadow_state_what : uint64_t {
     senvcfg = AR_SHADOW_STATE_START + offsetof(shadow_state, senvcfg),
     ilrsc = AR_SHADOW_STATE_START + offsetof(shadow_state, ilrsc),
     iprv = AR_SHADOW_STATE_START + offsetof(shadow_state, iprv),
-    iflags_X = AR_SHADOW_STATE_START + offsetof(shadow_state, iflags_X),
-    iflags_Y = AR_SHADOW_STATE_START + offsetof(shadow_state, iflags_Y),
-    iflags_H = AR_SHADOW_STATE_START + offsetof(shadow_state, iflags_H),
+    iflags_X = AR_SHADOW_STATE_START + offsetof(shadow_state, iflags.X),
+    iflags_Y = AR_SHADOW_STATE_START + offsetof(shadow_state, iflags.Y),
+    iflags_H = AR_SHADOW_STATE_START + offsetof(shadow_state, iflags.H),
     iunrep = AR_SHADOW_STATE_START + offsetof(shadow_state, iunrep),
-    clint_mtimecmp = AR_SHADOW_STATE_START + offsetof(shadow_state, clint_mtimecmp),
-    plic_girqpend = AR_SHADOW_STATE_START + offsetof(shadow_state, plic_girqpend),
-    plic_girqsrvd = AR_SHADOW_STATE_START + offsetof(shadow_state, plic_girqsrvd),
-    htif_tohost = AR_SHADOW_STATE_START + offsetof(shadow_state, htif_tohost),
-    htif_fromhost = AR_SHADOW_STATE_START + offsetof(shadow_state, htif_fromhost),
-    htif_ihalt = AR_SHADOW_STATE_START + offsetof(shadow_state, htif_ihalt),
-    htif_iconsole = AR_SHADOW_STATE_START + offsetof(shadow_state, htif_iconsole),
-    htif_iyield = AR_SHADOW_STATE_START + offsetof(shadow_state, htif_iyield),
+    clint_mtimecmp = AR_SHADOW_STATE_START + offsetof(shadow_state, clint.mtimecmp),
+    plic_girqpend = AR_SHADOW_STATE_START + offsetof(shadow_state, plic.girqpend),
+    plic_girqsrvd = AR_SHADOW_STATE_START + offsetof(shadow_state, plic.girqsrvd),
+    htif_tohost = AR_SHADOW_STATE_START + offsetof(shadow_state, htif.tohost),
+    htif_fromhost = AR_SHADOW_STATE_START + offsetof(shadow_state, htif.fromhost),
+    htif_ihalt = AR_SHADOW_STATE_START + offsetof(shadow_state, htif.ihalt),
+    htif_iconsole = AR_SHADOW_STATE_START + offsetof(shadow_state, htif.iconsole),
+    htif_iyield = AR_SHADOW_STATE_START + offsetof(shadow_state, htif.iyield),
     unknown_ = UINT64_C(1) << 63, // Outside of RISC-V address space
 };
 

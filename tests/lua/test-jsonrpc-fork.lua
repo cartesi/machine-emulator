@@ -117,7 +117,7 @@ local function fork_tree(address, x, depth)
     if depth == 0 then
         local config = machine:get_default_config()
         x = {}
-        for k, v in pairs(config.processor) do
+        for k, v in pairs(config.processor.registers) do
             if k:sub(1, 1) == "x" then
                 x[tonumber(k:sub(2))] = v
             end

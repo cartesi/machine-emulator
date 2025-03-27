@@ -168,12 +168,12 @@ void machine::replace_memory_range(const memory_range_config &config) {
 
 void machine::init_uarch(const uarch_config &c) {
     using reg = machine_reg;
-    write_reg(reg::uarch_pc, c.processor.pc);
-    write_reg(reg::uarch_cycle, c.processor.cycle);
-    write_reg(reg::uarch_halt_flag, c.processor.halt_flag);
+    write_reg(reg::uarch_pc, c.processor.registers.pc);
+    write_reg(reg::uarch_cycle, c.processor.registers.cycle);
+    write_reg(reg::uarch_halt_flag, c.processor.registers.halt_flag);
     // General purpose registers
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
-        write_reg(machine_reg_enum(reg::uarch_x0, i), c.processor.x[i]);
+        write_reg(machine_reg_enum(reg::uarch_x0, i), c.processor.registers.x[i]);
     }
     // Register shadow state
     m_us.shadow_state = &register_address_range(make_shadow_uarch_state_address_range(AR_SHADOW_UARCH_STATE_START,
@@ -206,7 +206,7 @@ void machine::init_uarch(const uarch_config &c) {
     }
 }
 
-void machine::init_processor(processor_config &p, const machine_runtime_config &r) {
+void machine::init_registers(registers_state &p, const machine_runtime_config &r) {
 
     if (p.marchid == UINT64_C(-1)) {
         p.marchid = MARCHID_INIT;
@@ -270,9 +270,9 @@ void machine::init_processor(processor_config &p, const machine_runtime_config &
     write_reg(reg::senvcfg, p.senvcfg);
     write_reg(reg::ilrsc, p.ilrsc);
     write_reg(reg::iprv, p.iprv);
-    write_reg(reg::iflags_X, p.iflags_X);
-    write_reg(reg::iflags_Y, p.iflags_Y);
-    write_reg(reg::iflags_H, p.iflags_H);
+    write_reg(reg::iflags_X, p.iflags.X);
+    write_reg(reg::iflags_Y, p.iflags.Y);
+    write_reg(reg::iflags_H, p.iflags.H);
     write_reg(reg::iunrep, p.iunrep);
 }
 
@@ -417,22 +417,16 @@ void machine::init_virtio_ars(const virtio_configs &virtio, uint64_t iunrep) {
     }
 }
 
-void machine::init_htif_ar(const htif_config &h) {
+void machine::init_htif_ar(const htif_state &h) {
     // Register HTIF device
     register_address_range(make_htif_address_range(throw_invalid_argument),
         register_where{.merkle = false, .interpret = true});
     // Copy HTIF state to from config to machine
     write_reg(reg::htif_tohost, h.tohost);
     write_reg(reg::htif_fromhost, h.fromhost);
-    // Only command in halt device is command 0 and it is always available
-    const uint64_t htif_ihalt = static_cast<uint64_t>(true) << HTIF_HALT_CMD_HALT;
-    write_reg(reg::htif_ihalt, htif_ihalt);
-    const uint64_t htif_iconsole = static_cast<uint64_t>(h.console_getchar) << HTIF_CONSOLE_CMD_GETCHAR |
-        static_cast<uint64_t>(true) << HTIF_CONSOLE_CMD_PUTCHAR;
-    write_reg(reg::htif_iconsole, htif_iconsole);
-    const uint64_t htif_iyield = static_cast<uint64_t>(h.yield_manual) << HTIF_YIELD_CMD_MANUAL |
-        static_cast<uint64_t>(h.yield_automatic) << HTIF_YIELD_CMD_AUTOMATIC;
-    write_reg(reg::htif_iyield, htif_iyield);
+    write_reg(reg::htif_ihalt, h.ihalt);
+    write_reg(reg::htif_iconsole, h.iconsole);
+    write_reg(reg::htif_iyield, h.iyield);
 }
 
 void machine::init_cmio_ars(const cmio_config &c) {
@@ -483,7 +477,7 @@ void machine::init_ars_descriptions() {
     std::ranges::sort(m_ards, [](auto &a, auto &b) { return a.start < b.start; });
 }
 
-void machine::init_clint_ar(const clint_config &c) {
+void machine::init_clint_ar(const clint_state &c) {
     // Register CLINT device
     register_address_range(make_clint_address_range(throw_invalid_argument),
         register_where{.merkle = false, .interpret = true});
@@ -491,7 +485,7 @@ void machine::init_clint_ar(const clint_config &c) {
     write_reg(reg::clint_mtimecmp, c.mtimecmp);
 }
 
-void machine::init_plic_ar(const plic_config &p) {
+void machine::init_plic_ar(const plic_state &p) {
     // Register PLIC device
     register_address_range(make_plic_address_range(throw_invalid_argument),
         register_where{.merkle = false, .interpret = true});
@@ -577,7 +571,7 @@ static inline auto make_pmas_address_range(const pmas_config &config) {
 // NOLINTNEXTLINE(hicpp-move-const-arg,performance-move-const-arg)
 machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}, m_r{std::move(r)} {
     init_uarch(m_c.uarch);
-    init_processor(m_c.processor, m_r);
+    init_registers(m_c.processor.registers, m_r);
     m_s.soft_yield = m_r.soft_yield;
     init_ram_ar(m_c.ram);
     // Will populate when initialization of PMAs is done
@@ -585,9 +579,9 @@ machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}
         register_address_range(make_dtb_address_range(m_c.dtb), register_where{.merkle = true, .interpret = true});
     init_flash_drive_ars(m_c.flash_drive);
     init_cmio_ars(m_c.cmio);
-    init_htif_ar(m_c.htif);
-    init_clint_ar(m_c.clint);
-    init_plic_ar(m_c.plic);
+    init_htif_ar(m_c.processor.registers.htif);
+    init_clint_ar(m_c.processor.registers.clint);
+    init_plic_ar(m_c.processor.registers.plic);
     // Will populate when initialization of PMAs is done
     register_address_range(make_shadow_tlb_address_range(throw_invalid_argument),
         register_where{.merkle = true, .interpret = false});
@@ -596,7 +590,7 @@ machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}
     // Will populate when initialization of PMAs is done
     auto &pmas =
         register_address_range(make_pmas_address_range(m_c.pmas), register_where{.merkle = true, .interpret = true});
-    init_virtio_ars(m_c.virtio, m_c.processor.iunrep);
+    init_virtio_ars(m_c.virtio, m_c.processor.registers.iunrep);
     // Populate PMAs contents.
     // This must be done after all PMA entries are already registered, so we encode them into the shadow
     init_pmas_contents(m_c.pmas, pmas);
@@ -608,16 +602,16 @@ machine::machine(machine_config c, machine_runtime_config r) : m_c{std::move(c)}
     init_dtb_contents(m_c, dtb);
     init_merkle_ars();
     init_ars_descriptions();
-    init_tty(m_c.htif, m_r.htif, m_c.processor.iunrep);
+    init_tty(m_c.processor.registers.htif, m_r.htif, m_c.processor.registers.iunrep);
     // Disable SIGPIPE handler, because this signal can be raised and terminate the emulator process
     // when calling write() on closed file descriptors.
     // This can happen with the stdout console file descriptors or network file descriptors.
     os_disable_sigpipe();
 }
 
-void machine::init_tty(const htif_config &h, const htif_runtime_config &r, uint64_t iunrep) const {
+void machine::init_tty(const htif_state &h, const htif_runtime_config &r, uint64_t iunrep) const {
     // Initialize TTY if console input is enabled
-    if (h.console_getchar || has_virtio_console()) {
+    if ((h.iconsole & HTIF_CONSOLE_CMD_GETCHAR_MASK) != 0 || has_virtio_console()) {
         if (iunrep == 0) {
             throw std::invalid_argument{"TTY stdin is only supported in unreproducible machines"};
         }
@@ -686,7 +680,7 @@ bool machine::has_virtio_console() const {
 }
 
 bool machine::has_htif_console() const {
-    return static_cast<bool>(read_reg(reg::htif_iconsole) & (1 << HTIF_CONSOLE_CMD_GETCHAR));
+    return static_cast<bool>(read_reg(reg::htif_iconsole) & HTIF_CONSOLE_CMD_GETCHAR);
 }
 
 /// \brief Returns copy of initialization config.
@@ -717,68 +711,67 @@ machine_config machine::get_serialization_config() const {
     }
     // Initialize with copy of original config
     machine_config c = m_c;
-    // Copy current processor state to config
+    // Copy current registers state to config
     for (int i = 1; i < X_REG_COUNT; ++i) {
-        c.processor.x[i] = read_reg(machine_reg_enum(reg::x0, i));
+        c.processor.registers.x[i] = read_reg(machine_reg_enum(reg::x0, i));
     }
     for (int i = 0; i < F_REG_COUNT; ++i) {
-        c.processor.f[i] = read_reg(machine_reg_enum(reg::f0, i));
+        c.processor.registers.f[i] = read_reg(machine_reg_enum(reg::f0, i));
     }
-    c.processor.pc = read_reg(reg::pc);
-    c.processor.fcsr = read_reg(reg::fcsr);
-    c.processor.mvendorid = read_reg(reg::mvendorid);
-    c.processor.marchid = read_reg(reg::marchid);
-    c.processor.mimpid = read_reg(reg::mimpid);
-    c.processor.mcycle = read_reg(reg::mcycle);
-    c.processor.icycleinstret = read_reg(reg::icycleinstret);
-    c.processor.mstatus = read_reg(reg::mstatus);
-    c.processor.mtvec = read_reg(reg::mtvec);
-    c.processor.mscratch = read_reg(reg::mscratch);
-    c.processor.mepc = read_reg(reg::mepc);
-    c.processor.mcause = read_reg(reg::mcause);
-    c.processor.mtval = read_reg(reg::mtval);
-    c.processor.misa = read_reg(reg::misa);
-    c.processor.mie = read_reg(reg::mie);
-    c.processor.mip = read_reg(reg::mip);
-    c.processor.medeleg = read_reg(reg::medeleg);
-    c.processor.mideleg = read_reg(reg::mideleg);
-    c.processor.mcounteren = read_reg(reg::mcounteren);
-    c.processor.menvcfg = read_reg(reg::menvcfg);
-    c.processor.stvec = read_reg(reg::stvec);
-    c.processor.sscratch = read_reg(reg::sscratch);
-    c.processor.sepc = read_reg(reg::sepc);
-    c.processor.scause = read_reg(reg::scause);
-    c.processor.stval = read_reg(reg::stval);
-    c.processor.satp = read_reg(reg::satp);
-    c.processor.scounteren = read_reg(reg::scounteren);
-    c.processor.senvcfg = read_reg(reg::senvcfg);
-    c.processor.ilrsc = read_reg(reg::ilrsc);
-    c.processor.iprv = read_reg(reg::iprv);
-    c.processor.iflags_X = read_reg(reg::iflags_X);
-    c.processor.iflags_Y = read_reg(reg::iflags_Y);
-    c.processor.iflags_H = read_reg(reg::iflags_H);
-    c.processor.iunrep = read_reg(reg::iunrep);
+    c.processor.registers.pc = read_reg(reg::pc);
+    c.processor.registers.fcsr = read_reg(reg::fcsr);
+    c.processor.registers.mvendorid = read_reg(reg::mvendorid);
+    c.processor.registers.marchid = read_reg(reg::marchid);
+    c.processor.registers.mimpid = read_reg(reg::mimpid);
+    c.processor.registers.mcycle = read_reg(reg::mcycle);
+    c.processor.registers.icycleinstret = read_reg(reg::icycleinstret);
+    c.processor.registers.mstatus = read_reg(reg::mstatus);
+    c.processor.registers.mtvec = read_reg(reg::mtvec);
+    c.processor.registers.mscratch = read_reg(reg::mscratch);
+    c.processor.registers.mepc = read_reg(reg::mepc);
+    c.processor.registers.mcause = read_reg(reg::mcause);
+    c.processor.registers.mtval = read_reg(reg::mtval);
+    c.processor.registers.misa = read_reg(reg::misa);
+    c.processor.registers.mie = read_reg(reg::mie);
+    c.processor.registers.mip = read_reg(reg::mip);
+    c.processor.registers.medeleg = read_reg(reg::medeleg);
+    c.processor.registers.mideleg = read_reg(reg::mideleg);
+    c.processor.registers.mcounteren = read_reg(reg::mcounteren);
+    c.processor.registers.menvcfg = read_reg(reg::menvcfg);
+    c.processor.registers.stvec = read_reg(reg::stvec);
+    c.processor.registers.sscratch = read_reg(reg::sscratch);
+    c.processor.registers.sepc = read_reg(reg::sepc);
+    c.processor.registers.scause = read_reg(reg::scause);
+    c.processor.registers.stval = read_reg(reg::stval);
+    c.processor.registers.satp = read_reg(reg::satp);
+    c.processor.registers.scounteren = read_reg(reg::scounteren);
+    c.processor.registers.senvcfg = read_reg(reg::senvcfg);
+    c.processor.registers.ilrsc = read_reg(reg::ilrsc);
+    c.processor.registers.iprv = read_reg(reg::iprv);
+    c.processor.registers.iflags.X = read_reg(reg::iflags_X);
+    c.processor.registers.iflags.Y = read_reg(reg::iflags_Y);
+    c.processor.registers.iflags.H = read_reg(reg::iflags_H);
+    c.processor.registers.iunrep = read_reg(reg::iunrep);
     // Copy current CLINT state to config
-    c.clint.mtimecmp = read_reg(reg::clint_mtimecmp);
+    c.processor.registers.clint.mtimecmp = read_reg(reg::clint_mtimecmp);
     // Copy current PLIC state to config
-    c.plic.girqpend = read_reg(reg::plic_girqpend);
-    c.plic.girqsrvd = read_reg(reg::plic_girqsrvd);
+    c.processor.registers.plic.girqpend = read_reg(reg::plic_girqpend);
+    c.processor.registers.plic.girqsrvd = read_reg(reg::plic_girqsrvd);
     // Copy current HTIF state to config
-    c.htif.tohost = read_reg(reg::htif_tohost);
-    c.htif.fromhost = read_reg(reg::htif_fromhost);
-    // c.htif.halt = read_reg(reg::htif_ihalt); // hard-coded to true
-    c.htif.console_getchar = static_cast<bool>(read_reg(reg::htif_iconsole) & (1 << HTIF_CONSOLE_CMD_GETCHAR));
-    c.htif.yield_manual = static_cast<bool>(read_reg(reg::htif_iyield) & (1 << HTIF_YIELD_CMD_MANUAL));
-    c.htif.yield_automatic = static_cast<bool>(read_reg(reg::htif_iyield) & (1 << HTIF_YIELD_CMD_AUTOMATIC));
+    c.processor.registers.htif.tohost = read_reg(reg::htif_tohost);
+    c.processor.registers.htif.fromhost = read_reg(reg::htif_fromhost);
+    c.processor.registers.htif.ihalt = read_reg(reg::htif_ihalt);
+    c.processor.registers.htif.iconsole = read_reg(reg::htif_iconsole);
+    c.processor.registers.htif.iyield = read_reg(reg::htif_iyield);
     // Ensure we don't mess with DTB by writing the original bootargs
     // over the potentially modified memory region we serialize
     c.dtb.bootargs.clear();
     // Copy current uarch state to config
-    c.uarch.processor.cycle = read_reg(reg::uarch_cycle);
-    c.uarch.processor.halt_flag = read_reg(reg::uarch_halt_flag);
-    c.uarch.processor.pc = read_reg(reg::uarch_pc);
+    c.uarch.processor.registers.cycle = read_reg(reg::uarch_cycle);
+    c.uarch.processor.registers.halt_flag = read_reg(reg::uarch_halt_flag);
+    c.uarch.processor.registers.pc = read_reg(reg::uarch_pc);
     for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
-        c.uarch.processor.x[i] = read_reg(machine_reg_enum(reg::uarch_x0, i));
+        c.uarch.processor.registers.x[i] = read_reg(machine_reg_enum(reg::uarch_x0, i));
     }
     // Remove backing filenames from serialization
     // (they will be ignored by save and load for security reasons)
@@ -1037,7 +1030,7 @@ void machine::dump_stats() {
 
 machine::~machine() {
     // Cleanup TTY if console input was enabled
-    if (m_c.htif.console_getchar || has_virtio_console()) {
+    if ((m_c.processor.registers.htif.iconsole & HTIF_CONSOLE_CMD_GETCHAR_MASK) != 0 || has_virtio_console()) {
         os_close_tty();
     }
     dump_insn_hist();
@@ -1048,137 +1041,137 @@ uint64_t machine::read_reg(reg r) const {
     using reg = machine_reg;
     switch (r) {
         case reg::x0:
-            return m_s.x[0];
+            return m_s.registers.x[0];
         case reg::x1:
-            return m_s.x[1];
+            return m_s.registers.x[1];
         case reg::x2:
-            return m_s.x[2];
+            return m_s.registers.x[2];
         case reg::x3:
-            return m_s.x[3];
+            return m_s.registers.x[3];
         case reg::x4:
-            return m_s.x[4];
+            return m_s.registers.x[4];
         case reg::x5:
-            return m_s.x[5];
+            return m_s.registers.x[5];
         case reg::x6:
-            return m_s.x[6];
+            return m_s.registers.x[6];
         case reg::x7:
-            return m_s.x[7];
+            return m_s.registers.x[7];
         case reg::x8:
-            return m_s.x[8];
+            return m_s.registers.x[8];
         case reg::x9:
-            return m_s.x[9];
+            return m_s.registers.x[9];
         case reg::x10:
-            return m_s.x[10];
+            return m_s.registers.x[10];
         case reg::x11:
-            return m_s.x[11];
+            return m_s.registers.x[11];
         case reg::x12:
-            return m_s.x[12];
+            return m_s.registers.x[12];
         case reg::x13:
-            return m_s.x[13];
+            return m_s.registers.x[13];
         case reg::x14:
-            return m_s.x[14];
+            return m_s.registers.x[14];
         case reg::x15:
-            return m_s.x[15];
+            return m_s.registers.x[15];
         case reg::x16:
-            return m_s.x[16];
+            return m_s.registers.x[16];
         case reg::x17:
-            return m_s.x[17];
+            return m_s.registers.x[17];
         case reg::x18:
-            return m_s.x[18];
+            return m_s.registers.x[18];
         case reg::x19:
-            return m_s.x[19];
+            return m_s.registers.x[19];
         case reg::x20:
-            return m_s.x[20];
+            return m_s.registers.x[20];
         case reg::x21:
-            return m_s.x[21];
+            return m_s.registers.x[21];
         case reg::x22:
-            return m_s.x[22];
+            return m_s.registers.x[22];
         case reg::x23:
-            return m_s.x[23];
+            return m_s.registers.x[23];
         case reg::x24:
-            return m_s.x[24];
+            return m_s.registers.x[24];
         case reg::x25:
-            return m_s.x[25];
+            return m_s.registers.x[25];
         case reg::x26:
-            return m_s.x[26];
+            return m_s.registers.x[26];
         case reg::x27:
-            return m_s.x[27];
+            return m_s.registers.x[27];
         case reg::x28:
-            return m_s.x[28];
+            return m_s.registers.x[28];
         case reg::x29:
-            return m_s.x[29];
+            return m_s.registers.x[29];
         case reg::x30:
-            return m_s.x[30];
+            return m_s.registers.x[30];
         case reg::x31:
-            return m_s.x[31];
+            return m_s.registers.x[31];
         case reg::f0:
-            return m_s.f[0];
+            return m_s.registers.f[0];
         case reg::f1:
-            return m_s.f[1];
+            return m_s.registers.f[1];
         case reg::f2:
-            return m_s.f[2];
+            return m_s.registers.f[2];
         case reg::f3:
-            return m_s.f[3];
+            return m_s.registers.f[3];
         case reg::f4:
-            return m_s.f[4];
+            return m_s.registers.f[4];
         case reg::f5:
-            return m_s.f[5];
+            return m_s.registers.f[5];
         case reg::f6:
-            return m_s.f[6];
+            return m_s.registers.f[6];
         case reg::f7:
-            return m_s.f[7];
+            return m_s.registers.f[7];
         case reg::f8:
-            return m_s.f[8];
+            return m_s.registers.f[8];
         case reg::f9:
-            return m_s.f[9];
+            return m_s.registers.f[9];
         case reg::f10:
-            return m_s.f[10];
+            return m_s.registers.f[10];
         case reg::f11:
-            return m_s.f[11];
+            return m_s.registers.f[11];
         case reg::f12:
-            return m_s.f[12];
+            return m_s.registers.f[12];
         case reg::f13:
-            return m_s.f[13];
+            return m_s.registers.f[13];
         case reg::f14:
-            return m_s.f[14];
+            return m_s.registers.f[14];
         case reg::f15:
-            return m_s.f[15];
+            return m_s.registers.f[15];
         case reg::f16:
-            return m_s.f[16];
+            return m_s.registers.f[16];
         case reg::f17:
-            return m_s.f[17];
+            return m_s.registers.f[17];
         case reg::f18:
-            return m_s.f[18];
+            return m_s.registers.f[18];
         case reg::f19:
-            return m_s.f[19];
+            return m_s.registers.f[19];
         case reg::f20:
-            return m_s.f[20];
+            return m_s.registers.f[20];
         case reg::f21:
-            return m_s.f[21];
+            return m_s.registers.f[21];
         case reg::f22:
-            return m_s.f[22];
+            return m_s.registers.f[22];
         case reg::f23:
-            return m_s.f[23];
+            return m_s.registers.f[23];
         case reg::f24:
-            return m_s.f[24];
+            return m_s.registers.f[24];
         case reg::f25:
-            return m_s.f[25];
+            return m_s.registers.f[25];
         case reg::f26:
-            return m_s.f[26];
+            return m_s.registers.f[26];
         case reg::f27:
-            return m_s.f[27];
+            return m_s.registers.f[27];
         case reg::f28:
-            return m_s.f[28];
+            return m_s.registers.f[28];
         case reg::f29:
-            return m_s.f[29];
+            return m_s.registers.f[29];
         case reg::f30:
-            return m_s.f[30];
+            return m_s.registers.f[30];
         case reg::f31:
-            return m_s.f[31];
+            return m_s.registers.f[31];
         case reg::pc:
-            return m_s.pc;
+            return m_s.registers.pc;
         case reg::fcsr:
-            return m_s.fcsr;
+            return m_s.registers.fcsr;
         case reg::mvendorid:
             return MVENDORID_INIT;
         case reg::marchid:
@@ -1186,165 +1179,165 @@ uint64_t machine::read_reg(reg r) const {
         case reg::mimpid:
             return MIMPID_INIT;
         case reg::mcycle:
-            return m_s.mcycle;
+            return m_s.registers.mcycle;
         case reg::icycleinstret:
-            return m_s.icycleinstret;
+            return m_s.registers.icycleinstret;
         case reg::mstatus:
-            return m_s.mstatus;
+            return m_s.registers.mstatus;
         case reg::mtvec:
-            return m_s.mtvec;
+            return m_s.registers.mtvec;
         case reg::mscratch:
-            return m_s.mscratch;
+            return m_s.registers.mscratch;
         case reg::mepc:
-            return m_s.mepc;
+            return m_s.registers.mepc;
         case reg::mcause:
-            return m_s.mcause;
+            return m_s.registers.mcause;
         case reg::mtval:
-            return m_s.mtval;
+            return m_s.registers.mtval;
         case reg::misa:
-            return m_s.misa;
+            return m_s.registers.misa;
         case reg::mie:
-            return m_s.mie;
+            return m_s.registers.mie;
         case reg::mip:
-            return m_s.mip;
+            return m_s.registers.mip;
         case reg::medeleg:
-            return m_s.medeleg;
+            return m_s.registers.medeleg;
         case reg::mideleg:
-            return m_s.mideleg;
+            return m_s.registers.mideleg;
         case reg::mcounteren:
-            return m_s.mcounteren;
+            return m_s.registers.mcounteren;
         case reg::menvcfg:
-            return m_s.menvcfg;
+            return m_s.registers.menvcfg;
         case reg::stvec:
-            return m_s.stvec;
+            return m_s.registers.stvec;
         case reg::sscratch:
-            return m_s.sscratch;
+            return m_s.registers.sscratch;
         case reg::sepc:
-            return m_s.sepc;
+            return m_s.registers.sepc;
         case reg::scause:
-            return m_s.scause;
+            return m_s.registers.scause;
         case reg::stval:
-            return m_s.stval;
+            return m_s.registers.stval;
         case reg::satp:
-            return m_s.satp;
+            return m_s.registers.satp;
         case reg::scounteren:
-            return m_s.scounteren;
+            return m_s.registers.scounteren;
         case reg::senvcfg:
-            return m_s.senvcfg;
+            return m_s.registers.senvcfg;
         case reg::ilrsc:
-            return m_s.ilrsc;
+            return m_s.registers.ilrsc;
         case reg::iprv:
-            return m_s.iprv;
+            return m_s.registers.iprv;
         case reg::iflags_X:
-            return m_s.iflags.X;
+            return m_s.registers.iflags.X;
         case reg::iflags_Y:
-            return m_s.iflags.Y;
+            return m_s.registers.iflags.Y;
         case reg::iflags_H:
-            return m_s.iflags.H;
+            return m_s.registers.iflags.H;
         case reg::iunrep:
-            return m_s.iunrep;
+            return m_s.registers.iunrep;
         case reg::clint_mtimecmp:
-            return m_s.clint.mtimecmp;
+            return m_s.registers.clint.mtimecmp;
         case reg::plic_girqpend:
-            return m_s.plic.girqpend;
+            return m_s.registers.plic.girqpend;
         case reg::plic_girqsrvd:
-            return m_s.plic.girqsrvd;
+            return m_s.registers.plic.girqsrvd;
         case reg::htif_tohost:
-            return m_s.htif.tohost;
+            return m_s.registers.htif.tohost;
         case reg::htif_fromhost:
-            return m_s.htif.fromhost;
+            return m_s.registers.htif.fromhost;
         case reg::htif_ihalt:
-            return m_s.htif.ihalt;
+            return m_s.registers.htif.ihalt;
         case reg::htif_iconsole:
-            return m_s.htif.iconsole;
+            return m_s.registers.htif.iconsole;
         case reg::htif_iyield:
-            return m_s.htif.iyield;
+            return m_s.registers.htif.iyield;
         case reg::uarch_x0:
-            return m_us.x[0];
+            return m_us.registers.x[0];
         case reg::uarch_x1:
-            return m_us.x[1];
+            return m_us.registers.x[1];
         case reg::uarch_x2:
-            return m_us.x[2];
+            return m_us.registers.x[2];
         case reg::uarch_x3:
-            return m_us.x[3];
+            return m_us.registers.x[3];
         case reg::uarch_x4:
-            return m_us.x[4];
+            return m_us.registers.x[4];
         case reg::uarch_x5:
-            return m_us.x[5];
+            return m_us.registers.x[5];
         case reg::uarch_x6:
-            return m_us.x[6];
+            return m_us.registers.x[6];
         case reg::uarch_x7:
-            return m_us.x[7];
+            return m_us.registers.x[7];
         case reg::uarch_x8:
-            return m_us.x[8];
+            return m_us.registers.x[8];
         case reg::uarch_x9:
-            return m_us.x[9];
+            return m_us.registers.x[9];
         case reg::uarch_x10:
-            return m_us.x[10];
+            return m_us.registers.x[10];
         case reg::uarch_x11:
-            return m_us.x[11];
+            return m_us.registers.x[11];
         case reg::uarch_x12:
-            return m_us.x[12];
+            return m_us.registers.x[12];
         case reg::uarch_x13:
-            return m_us.x[13];
+            return m_us.registers.x[13];
         case reg::uarch_x14:
-            return m_us.x[14];
+            return m_us.registers.x[14];
         case reg::uarch_x15:
-            return m_us.x[15];
+            return m_us.registers.x[15];
         case reg::uarch_x16:
-            return m_us.x[16];
+            return m_us.registers.x[16];
         case reg::uarch_x17:
-            return m_us.x[17];
+            return m_us.registers.x[17];
         case reg::uarch_x18:
-            return m_us.x[18];
+            return m_us.registers.x[18];
         case reg::uarch_x19:
-            return m_us.x[19];
+            return m_us.registers.x[19];
         case reg::uarch_x20:
-            return m_us.x[20];
+            return m_us.registers.x[20];
         case reg::uarch_x21:
-            return m_us.x[21];
+            return m_us.registers.x[21];
         case reg::uarch_x22:
-            return m_us.x[22];
+            return m_us.registers.x[22];
         case reg::uarch_x23:
-            return m_us.x[23];
+            return m_us.registers.x[23];
         case reg::uarch_x24:
-            return m_us.x[24];
+            return m_us.registers.x[24];
         case reg::uarch_x25:
-            return m_us.x[25];
+            return m_us.registers.x[25];
         case reg::uarch_x26:
-            return m_us.x[26];
+            return m_us.registers.x[26];
         case reg::uarch_x27:
-            return m_us.x[27];
+            return m_us.registers.x[27];
         case reg::uarch_x28:
-            return m_us.x[28];
+            return m_us.registers.x[28];
         case reg::uarch_x29:
-            return m_us.x[29];
+            return m_us.registers.x[29];
         case reg::uarch_x30:
-            return m_us.x[30];
+            return m_us.registers.x[30];
         case reg::uarch_x31:
-            return m_us.x[31];
+            return m_us.registers.x[31];
         case reg::uarch_pc:
-            return m_us.pc;
+            return m_us.registers.pc;
         case reg::uarch_cycle:
-            return m_us.cycle;
+            return m_us.registers.cycle;
         case reg::uarch_halt_flag:
-            return m_us.halt_flag;
+            return m_us.registers.halt_flag;
         case reg::htif_tohost_dev:
-            return HTIF_DEV_FIELD(m_s.htif.tohost);
+            return HTIF_DEV_FIELD(m_s.registers.htif.tohost);
         case reg::htif_tohost_cmd:
-            return HTIF_CMD_FIELD(m_s.htif.tohost);
+            return HTIF_CMD_FIELD(m_s.registers.htif.tohost);
         case reg::htif_tohost_reason:
-            return HTIF_REASON_FIELD(m_s.htif.tohost);
+            return HTIF_REASON_FIELD(m_s.registers.htif.tohost);
         case reg::htif_tohost_data:
-            return HTIF_DATA_FIELD(m_s.htif.tohost);
+            return HTIF_DATA_FIELD(m_s.registers.htif.tohost);
         case reg::htif_fromhost_dev:
-            return HTIF_DEV_FIELD(m_s.htif.fromhost);
+            return HTIF_DEV_FIELD(m_s.registers.htif.fromhost);
         case reg::htif_fromhost_cmd:
-            return HTIF_CMD_FIELD(m_s.htif.fromhost);
+            return HTIF_CMD_FIELD(m_s.registers.htif.fromhost);
         case reg::htif_fromhost_reason:
-            return HTIF_REASON_FIELD(m_s.htif.fromhost);
+            return HTIF_REASON_FIELD(m_s.registers.htif.fromhost);
         case reg::htif_fromhost_data:
-            return HTIF_DATA_FIELD(m_s.htif.fromhost);
+            return HTIF_DATA_FIELD(m_s.registers.htif.fromhost);
         default:
             throw std::invalid_argument{"unknown register"};
             return 0; // never reached
@@ -1356,199 +1349,199 @@ void machine::write_reg(reg w, uint64_t value) {
         case reg::x0:
             throw std::invalid_argument{"register is read-only"};
         case reg::x1:
-            m_s.x[1] = value;
+            m_s.registers.x[1] = value;
             break;
         case reg::x2:
-            m_s.x[2] = value;
+            m_s.registers.x[2] = value;
             break;
         case reg::x3:
-            m_s.x[3] = value;
+            m_s.registers.x[3] = value;
             break;
         case reg::x4:
-            m_s.x[4] = value;
+            m_s.registers.x[4] = value;
             break;
         case reg::x5:
-            m_s.x[5] = value;
+            m_s.registers.x[5] = value;
             break;
         case reg::x6:
-            m_s.x[6] = value;
+            m_s.registers.x[6] = value;
             break;
         case reg::x7:
-            m_s.x[7] = value;
+            m_s.registers.x[7] = value;
             break;
         case reg::x8:
-            m_s.x[8] = value;
+            m_s.registers.x[8] = value;
             break;
         case reg::x9:
-            m_s.x[9] = value;
+            m_s.registers.x[9] = value;
             break;
         case reg::x10:
-            m_s.x[10] = value;
+            m_s.registers.x[10] = value;
             break;
         case reg::x11:
-            m_s.x[11] = value;
+            m_s.registers.x[11] = value;
             break;
         case reg::x12:
-            m_s.x[12] = value;
+            m_s.registers.x[12] = value;
             break;
         case reg::x13:
-            m_s.x[13] = value;
+            m_s.registers.x[13] = value;
             break;
         case reg::x14:
-            m_s.x[14] = value;
+            m_s.registers.x[14] = value;
             break;
         case reg::x15:
-            m_s.x[15] = value;
+            m_s.registers.x[15] = value;
             break;
         case reg::x16:
-            m_s.x[16] = value;
+            m_s.registers.x[16] = value;
             break;
         case reg::x17:
-            m_s.x[17] = value;
+            m_s.registers.x[17] = value;
             break;
         case reg::x18:
-            m_s.x[18] = value;
+            m_s.registers.x[18] = value;
             break;
         case reg::x19:
-            m_s.x[19] = value;
+            m_s.registers.x[19] = value;
             break;
         case reg::x20:
-            m_s.x[20] = value;
+            m_s.registers.x[20] = value;
             break;
         case reg::x21:
-            m_s.x[21] = value;
+            m_s.registers.x[21] = value;
             break;
         case reg::x22:
-            m_s.x[22] = value;
+            m_s.registers.x[22] = value;
             break;
         case reg::x23:
-            m_s.x[23] = value;
+            m_s.registers.x[23] = value;
             break;
         case reg::x24:
-            m_s.x[24] = value;
+            m_s.registers.x[24] = value;
             break;
         case reg::x25:
-            m_s.x[25] = value;
+            m_s.registers.x[25] = value;
             break;
         case reg::x26:
-            m_s.x[26] = value;
+            m_s.registers.x[26] = value;
             break;
         case reg::x27:
-            m_s.x[27] = value;
+            m_s.registers.x[27] = value;
             break;
         case reg::x28:
-            m_s.x[28] = value;
+            m_s.registers.x[28] = value;
             break;
         case reg::x29:
-            m_s.x[29] = value;
+            m_s.registers.x[29] = value;
             break;
         case reg::x30:
-            m_s.x[30] = value;
+            m_s.registers.x[30] = value;
             break;
         case reg::x31:
-            m_s.x[31] = value;
+            m_s.registers.x[31] = value;
             break;
         case reg::f0:
-            m_s.f[0] = value;
+            m_s.registers.f[0] = value;
             break;
         case reg::f1:
-            m_s.f[1] = value;
+            m_s.registers.f[1] = value;
             break;
         case reg::f2:
-            m_s.f[2] = value;
+            m_s.registers.f[2] = value;
             break;
         case reg::f3:
-            m_s.f[3] = value;
+            m_s.registers.f[3] = value;
             break;
         case reg::f4:
-            m_s.f[4] = value;
+            m_s.registers.f[4] = value;
             break;
         case reg::f5:
-            m_s.f[5] = value;
+            m_s.registers.f[5] = value;
             break;
         case reg::f6:
-            m_s.f[6] = value;
+            m_s.registers.f[6] = value;
             break;
         case reg::f7:
-            m_s.f[7] = value;
+            m_s.registers.f[7] = value;
             break;
         case reg::f8:
-            m_s.f[8] = value;
+            m_s.registers.f[8] = value;
             break;
         case reg::f9:
-            m_s.f[9] = value;
+            m_s.registers.f[9] = value;
             break;
         case reg::f10:
-            m_s.f[10] = value;
+            m_s.registers.f[10] = value;
             break;
         case reg::f11:
-            m_s.f[11] = value;
+            m_s.registers.f[11] = value;
             break;
         case reg::f12:
-            m_s.f[12] = value;
+            m_s.registers.f[12] = value;
             break;
         case reg::f13:
-            m_s.f[13] = value;
+            m_s.registers.f[13] = value;
             break;
         case reg::f14:
-            m_s.f[14] = value;
+            m_s.registers.f[14] = value;
             break;
         case reg::f15:
-            m_s.f[15] = value;
+            m_s.registers.f[15] = value;
             break;
         case reg::f16:
-            m_s.f[16] = value;
+            m_s.registers.f[16] = value;
             break;
         case reg::f17:
-            m_s.f[17] = value;
+            m_s.registers.f[17] = value;
             break;
         case reg::f18:
-            m_s.f[18] = value;
+            m_s.registers.f[18] = value;
             break;
         case reg::f19:
-            m_s.f[19] = value;
+            m_s.registers.f[19] = value;
             break;
         case reg::f20:
-            m_s.f[20] = value;
+            m_s.registers.f[20] = value;
             break;
         case reg::f21:
-            m_s.f[21] = value;
+            m_s.registers.f[21] = value;
             break;
         case reg::f22:
-            m_s.f[22] = value;
+            m_s.registers.f[22] = value;
             break;
         case reg::f23:
-            m_s.f[23] = value;
+            m_s.registers.f[23] = value;
             break;
         case reg::f24:
-            m_s.f[24] = value;
+            m_s.registers.f[24] = value;
             break;
         case reg::f25:
-            m_s.f[25] = value;
+            m_s.registers.f[25] = value;
             break;
         case reg::f26:
-            m_s.f[26] = value;
+            m_s.registers.f[26] = value;
             break;
         case reg::f27:
-            m_s.f[27] = value;
+            m_s.registers.f[27] = value;
             break;
         case reg::f28:
-            m_s.f[28] = value;
+            m_s.registers.f[28] = value;
             break;
         case reg::f29:
-            m_s.f[29] = value;
+            m_s.registers.f[29] = value;
             break;
         case reg::f30:
-            m_s.f[30] = value;
+            m_s.registers.f[30] = value;
             break;
         case reg::f31:
-            m_s.f[31] = value;
+            m_s.registers.f[31] = value;
             break;
         case reg::pc:
-            m_s.pc = value;
+            m_s.registers.pc = value;
             break;
         case reg::fcsr:
-            m_s.fcsr = value;
+            m_s.registers.fcsr = value;
             break;
         case reg::mvendorid:
             throw std::invalid_argument{"register is read-only"};
@@ -1557,243 +1550,243 @@ void machine::write_reg(reg w, uint64_t value) {
         case reg::mimpid:
             throw std::invalid_argument{"register is read-only"};
         case reg::mcycle:
-            m_s.mcycle = value;
+            m_s.registers.mcycle = value;
             break;
         case reg::icycleinstret:
-            m_s.icycleinstret = value;
+            m_s.registers.icycleinstret = value;
             break;
         case reg::mstatus:
-            m_s.mstatus = value;
+            m_s.registers.mstatus = value;
             break;
         case reg::mtvec:
-            m_s.mtvec = value;
+            m_s.registers.mtvec = value;
             break;
         case reg::mscratch:
-            m_s.mscratch = value;
+            m_s.registers.mscratch = value;
             break;
         case reg::mepc:
-            m_s.mepc = value;
+            m_s.registers.mepc = value;
             break;
         case reg::mcause:
-            m_s.mcause = value;
+            m_s.registers.mcause = value;
             break;
         case reg::mtval:
-            m_s.mtval = value;
+            m_s.registers.mtval = value;
             break;
         case reg::misa:
-            m_s.misa = value;
+            m_s.registers.misa = value;
             break;
         case reg::mie:
-            m_s.mie = value;
+            m_s.registers.mie = value;
             break;
         case reg::mip:
-            m_s.mip = value;
+            m_s.registers.mip = value;
             break;
         case reg::medeleg:
-            m_s.medeleg = value;
+            m_s.registers.medeleg = value;
             break;
         case reg::mideleg:
-            m_s.mideleg = value;
+            m_s.registers.mideleg = value;
             break;
         case reg::mcounteren:
-            m_s.mcounteren = value;
+            m_s.registers.mcounteren = value;
             break;
         case reg::menvcfg:
-            m_s.menvcfg = value;
+            m_s.registers.menvcfg = value;
             break;
         case reg::stvec:
-            m_s.stvec = value;
+            m_s.registers.stvec = value;
             break;
         case reg::sscratch:
-            m_s.sscratch = value;
+            m_s.registers.sscratch = value;
             break;
         case reg::sepc:
-            m_s.sepc = value;
+            m_s.registers.sepc = value;
             break;
         case reg::scause:
-            m_s.scause = value;
+            m_s.registers.scause = value;
             break;
         case reg::stval:
-            m_s.stval = value;
+            m_s.registers.stval = value;
             break;
         case reg::satp:
-            m_s.satp = value;
+            m_s.registers.satp = value;
             break;
         case reg::scounteren:
-            m_s.scounteren = value;
+            m_s.registers.scounteren = value;
             break;
         case reg::senvcfg:
-            m_s.senvcfg = value;
+            m_s.registers.senvcfg = value;
             break;
         case reg::ilrsc:
-            m_s.ilrsc = value;
+            m_s.registers.ilrsc = value;
             break;
         case reg::iprv:
-            m_s.iprv = value;
+            m_s.registers.iprv = value;
             break;
         case reg::iflags_X:
-            m_s.iflags.X = value;
+            m_s.registers.iflags.X = value;
             break;
         case reg::iflags_Y:
-            m_s.iflags.Y = value;
+            m_s.registers.iflags.Y = value;
             break;
         case reg::iflags_H:
-            m_s.iflags.H = value;
+            m_s.registers.iflags.H = value;
             break;
         case reg::iunrep:
-            m_s.iunrep = value;
+            m_s.registers.iunrep = value;
             break;
         case reg::clint_mtimecmp:
-            m_s.clint.mtimecmp = value;
+            m_s.registers.clint.mtimecmp = value;
             break;
         case reg::plic_girqpend:
-            m_s.plic.girqpend = value;
+            m_s.registers.plic.girqpend = value;
             break;
         case reg::plic_girqsrvd:
-            m_s.plic.girqsrvd = value;
+            m_s.registers.plic.girqsrvd = value;
             break;
         case reg::htif_tohost:
-            m_s.htif.tohost = value;
+            m_s.registers.htif.tohost = value;
             break;
         case reg::htif_fromhost:
-            m_s.htif.fromhost = value;
+            m_s.registers.htif.fromhost = value;
             break;
         case reg::htif_ihalt:
-            m_s.htif.ihalt = value;
+            m_s.registers.htif.ihalt = value;
             break;
         case reg::htif_iconsole:
-            m_s.htif.iconsole = value;
+            m_s.registers.htif.iconsole = value;
             break;
         case reg::htif_iyield:
-            m_s.htif.iyield = value;
+            m_s.registers.htif.iyield = value;
             break;
         case reg::uarch_x0:
             throw std::invalid_argument{"register is read-only"};
         case reg::uarch_x1:
-            m_us.x[1] = value;
+            m_us.registers.x[1] = value;
             break;
         case reg::uarch_x2:
-            m_us.x[2] = value;
+            m_us.registers.x[2] = value;
             break;
         case reg::uarch_x3:
-            m_us.x[3] = value;
+            m_us.registers.x[3] = value;
             break;
         case reg::uarch_x4:
-            m_us.x[4] = value;
+            m_us.registers.x[4] = value;
             break;
         case reg::uarch_x5:
-            m_us.x[5] = value;
+            m_us.registers.x[5] = value;
             break;
         case reg::uarch_x6:
-            m_us.x[6] = value;
+            m_us.registers.x[6] = value;
             break;
         case reg::uarch_x7:
-            m_us.x[7] = value;
+            m_us.registers.x[7] = value;
             break;
         case reg::uarch_x8:
-            m_us.x[8] = value;
+            m_us.registers.x[8] = value;
             break;
         case reg::uarch_x9:
-            m_us.x[9] = value;
+            m_us.registers.x[9] = value;
             break;
         case reg::uarch_x10:
-            m_us.x[10] = value;
+            m_us.registers.x[10] = value;
             break;
         case reg::uarch_x11:
-            m_us.x[11] = value;
+            m_us.registers.x[11] = value;
             break;
         case reg::uarch_x12:
-            m_us.x[12] = value;
+            m_us.registers.x[12] = value;
             break;
         case reg::uarch_x13:
-            m_us.x[13] = value;
+            m_us.registers.x[13] = value;
             break;
         case reg::uarch_x14:
-            m_us.x[14] = value;
+            m_us.registers.x[14] = value;
             break;
         case reg::uarch_x15:
-            m_us.x[15] = value;
+            m_us.registers.x[15] = value;
             break;
         case reg::uarch_x16:
-            m_us.x[16] = value;
+            m_us.registers.x[16] = value;
             break;
         case reg::uarch_x17:
-            m_us.x[17] = value;
+            m_us.registers.x[17] = value;
             break;
         case reg::uarch_x18:
-            m_us.x[18] = value;
+            m_us.registers.x[18] = value;
             break;
         case reg::uarch_x19:
-            m_us.x[19] = value;
+            m_us.registers.x[19] = value;
             break;
         case reg::uarch_x20:
-            m_us.x[20] = value;
+            m_us.registers.x[20] = value;
             break;
         case reg::uarch_x21:
-            m_us.x[21] = value;
+            m_us.registers.x[21] = value;
             break;
         case reg::uarch_x22:
-            m_us.x[22] = value;
+            m_us.registers.x[22] = value;
             break;
         case reg::uarch_x23:
-            m_us.x[23] = value;
+            m_us.registers.x[23] = value;
             break;
         case reg::uarch_x24:
-            m_us.x[24] = value;
+            m_us.registers.x[24] = value;
             break;
         case reg::uarch_x25:
-            m_us.x[25] = value;
+            m_us.registers.x[25] = value;
             break;
         case reg::uarch_x26:
-            m_us.x[26] = value;
+            m_us.registers.x[26] = value;
             break;
         case reg::uarch_x27:
-            m_us.x[27] = value;
+            m_us.registers.x[27] = value;
             break;
         case reg::uarch_x28:
-            m_us.x[28] = value;
+            m_us.registers.x[28] = value;
             break;
         case reg::uarch_x29:
-            m_us.x[29] = value;
+            m_us.registers.x[29] = value;
             break;
         case reg::uarch_x30:
-            m_us.x[30] = value;
+            m_us.registers.x[30] = value;
             break;
         case reg::uarch_x31:
-            m_us.x[31] = value;
+            m_us.registers.x[31] = value;
             break;
         case reg::uarch_pc:
-            m_us.pc = value;
+            m_us.registers.pc = value;
             break;
         case reg::uarch_cycle:
-            m_us.cycle = value;
+            m_us.registers.cycle = value;
             break;
         case reg::uarch_halt_flag:
-            m_us.halt_flag = value;
+            m_us.registers.halt_flag = value;
             break;
         case reg::htif_tohost_dev:
-            m_s.htif.tohost = HTIF_REPLACE_DEV(m_s.htif.tohost, value);
+            m_s.registers.htif.tohost = HTIF_REPLACE_DEV(m_s.registers.htif.tohost, value);
             break;
         case reg::htif_tohost_cmd:
-            m_s.htif.tohost = HTIF_REPLACE_CMD(m_s.htif.tohost, value);
+            m_s.registers.htif.tohost = HTIF_REPLACE_CMD(m_s.registers.htif.tohost, value);
             break;
         case reg::htif_tohost_reason:
-            m_s.htif.tohost = HTIF_REPLACE_REASON(m_s.htif.tohost, value);
+            m_s.registers.htif.tohost = HTIF_REPLACE_REASON(m_s.registers.htif.tohost, value);
             break;
         case reg::htif_tohost_data:
-            m_s.htif.tohost = HTIF_REPLACE_DATA(m_s.htif.tohost, value);
+            m_s.registers.htif.tohost = HTIF_REPLACE_DATA(m_s.registers.htif.tohost, value);
             break;
         case reg::htif_fromhost_dev:
-            m_s.htif.fromhost = HTIF_REPLACE_DEV(m_s.htif.fromhost, value);
+            m_s.registers.htif.fromhost = HTIF_REPLACE_DEV(m_s.registers.htif.fromhost, value);
             break;
         case reg::htif_fromhost_cmd:
-            m_s.htif.fromhost = HTIF_REPLACE_CMD(m_s.htif.fromhost, value);
+            m_s.registers.htif.fromhost = HTIF_REPLACE_CMD(m_s.registers.htif.fromhost, value);
             break;
         case reg::htif_fromhost_reason:
-            m_s.htif.fromhost = HTIF_REPLACE_REASON(m_s.htif.fromhost, value);
+            m_s.registers.htif.fromhost = HTIF_REPLACE_REASON(m_s.registers.htif.fromhost, value);
             break;
         case reg::htif_fromhost_data:
-            m_s.htif.fromhost = HTIF_REPLACE_DATA(m_s.htif.fromhost, value);
+            m_s.registers.htif.fromhost = HTIF_REPLACE_DATA(m_s.registers.htif.fromhost, value);
             break;
         default:
             throw std::invalid_argument{"unknown register"};
@@ -2556,7 +2549,7 @@ interpreter_break_reason machine::run(uint64_t mcycle_end) {
 std::pair<uint64_t, execute_status> machine::poll_external_interrupts(uint64_t mcycle, uint64_t mcycle_max) {
     const auto status = execute_status::success;
     // Only poll external interrupts if we are in unreproducible mode
-    if (unlikely(m_s.iunrep)) {
+    if (unlikely(m_s.registers.iunrep)) {
         // Convert the relative interval of cycles we can wait to the interval of host time we can wait
         uint64_t timeout_us = (mcycle_max - mcycle) / RTC_CYCLES_PER_US;
         int64_t start_us = 0;

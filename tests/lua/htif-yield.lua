@@ -203,9 +203,13 @@ local function test(machine_config, yield_automatic_enable, yield_manual_enable)
         yield_automatic_enable and "on" or "off",
         yield_manual_enable and "on" or "off"
     )
-    machine_config.htif = {
-        yield_automatic = yield_automatic_enable,
-        yield_manual = yield_manual_enable,
+    machine_config.processor = {
+        registers = {
+            htif = {
+                iyield = (yield_automatic_enable and cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK or 0)
+                    | (yield_manual_enable and cartesi.HTIF_YIELD_CMD_MANUAL_MASK or 0),
+            },
+        },
     }
     local machine <close> = cartesi.machine(machine_config)
     for _, v in ipairs(yields) do

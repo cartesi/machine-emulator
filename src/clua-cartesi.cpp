@@ -30,6 +30,7 @@ extern "C" {
 #include "base64.h"
 #include "clua-i-machine.h"
 #include "clua.h"
+#include "htif-constants.h"
 #include "keccak-256-hasher.h"
 #include "machine-c-api.h"
 #include "machine-c-version.h"
@@ -225,6 +226,12 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_AR_CMIO_TX_BUFFER_START, "AR_CMIO_TX_BUFFER_START", -1);
     clua_setintegerfield(L, CM_AR_CMIO_TX_BUFFER_LOG2_SIZE, "AR_CMIO_TX_BUFFER_LOG2_SIZE", -1);
     clua_setintegerfield(L, CM_AR_RAM_START, "AR_RAM_START", -1);
+    // HTIF masks
+    clua_setintegerfield(L, HTIF_HALT_CMD_HALT_MASK, "HTIF_HALT_CMD_HALT_MASK", -1);
+    clua_setintegerfield(L, HTIF_CONSOLE_CMD_GETCHAR_MASK, "HTIF_CONSOLE_CMD_GETCHAR_MASK", -1);
+    clua_setintegerfield(L, HTIF_CONSOLE_CMD_PUTCHAR_MASK, "HTIF_CONSOLE_CMD_PUTCHAR_MASK", -1);
+    clua_setintegerfield(L, HTIF_YIELD_CMD_MANUAL_MASK, "HTIF_YIELD_CMD_MANUAL_MASK", -1);
+    clua_setintegerfield(L, HTIF_YIELD_CMD_AUTOMATIC_MASK, "HTIF_YIELD_CMD_AUTOMATIC_MASK", -1);
     // Set other constants used by internal tests
     clua_setintegerfield(L, UARCH_STATE_START_ADDRESS, "UARCH_STATE_START_ADDRESS", -1);
     clua_setintegerfield(L, UARCH_STATE_LOG2_SIZE, "UARCH_STATE_LOG2_SIZE", -1);

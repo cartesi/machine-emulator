@@ -20,6 +20,7 @@
 #include <cstdint>
 
 #include "address-range-constants.h"
+#include "htif-constants.h"
 #include "machine-c-version.h"
 #include "pmas-constants.h"
 
@@ -441,32 +442,35 @@ enum CARTESI_init : uint64_t {
     MTVAL_INIT = UINT64_C(0),                                                          ///< Initial value for mtval
     MISA_INIT = (MISA_MXL_VALUE << MISA_MXL_SHIFT) | MISA_EXT_S_MASK | MISA_EXT_U_MASK | MISA_EXT_I_MASK |
         MISA_EXT_M_MASK | MISA_EXT_A_MASK | MISA_EXT_F_MASK | MISA_EXT_D_MASK |
-        MISA_EXT_C_MASK,                ///< Initial value for misa
-    MIE_INIT = UINT64_C(0),             ///< Initial value for mie
-    MIP_INIT = UINT64_C(0),             ///< Initial value for mip
-    MEDELEG_INIT = UINT64_C(0),         ///< Initial value for medeleg
-    MIDELEG_INIT = UINT64_C(0),         ///< Initial value for mideleg
-    MCOUNTEREN_INIT = UINT64_C(0),      ///< Initial value for mcounteren
-    STVEC_INIT = UINT64_C(0),           ///< Initial value for stvec
-    SSCRATCH_INIT = UINT64_C(0),        ///< Initial value for sscratch
-    SEPC_INIT = UINT64_C(0),            ///< Initial value for sepc
-    SCAUSE_INIT = UINT64_C(0),          ///< Initial value for scause
-    STVAL_INIT = UINT64_C(0),           ///< Initial value for stval
-    SATP_INIT = UINT64_C(0),            ///< Initial value for satp
-    SCOUNTEREN_INIT = UINT64_C(0),      ///< Initial value for scounteren
-    ILRSC_INIT = UINT64_C(-1),          ///< Initial value for ilrsc
-    IPRV_INIT = PRV_M,                  ///< Initial value for iprv
-    IFLAGS_X_INIT = UINT64_C(0),        ///< Initial value for iflags_X
-    IFLAGS_Y_INIT = UINT64_C(0),        ///< Initial value for iflags_Y
-    IFLAGS_H_INIT = UINT64_C(0),        ///< Initial value for iflags_H
-    IUNREP_INIT = UINT64_C(0),          ///< Initial value for iunrep
-    MTIMECMP_INIT = UINT64_C(0),        ///< Initial value for mtimecmp
-    GIRQPEND_INIT = UINT64_C(0),        ///< Initial value for girqpend
-    GIRQSRVD_INIT = UINT64_C(0),        ///< Initial value for girqsrvd
-    FROMHOST_INIT = UINT64_C(0),        ///< Initial value for fromhost
-    TOHOST_INIT = UINT64_C(0),          ///< Initial value for tohost
-    MENVCFG_INIT = UINT64_C(0),         ///< Initial value for menvcfg
-    SENVCFG_INIT = UINT64_C(0),         ///< Initial value for senvcfg
+        MISA_EXT_C_MASK,                                                      ///< Initial value for misa
+    MIE_INIT = UINT64_C(0),                                                   ///< Initial value for mie
+    MIP_INIT = UINT64_C(0),                                                   ///< Initial value for mip
+    MEDELEG_INIT = UINT64_C(0),                                               ///< Initial value for medeleg
+    MIDELEG_INIT = UINT64_C(0),                                               ///< Initial value for mideleg
+    MCOUNTEREN_INIT = UINT64_C(0),                                            ///< Initial value for mcounteren
+    STVEC_INIT = UINT64_C(0),                                                 ///< Initial value for stvec
+    SSCRATCH_INIT = UINT64_C(0),                                              ///< Initial value for sscratch
+    SEPC_INIT = UINT64_C(0),                                                  ///< Initial value for sepc
+    SCAUSE_INIT = UINT64_C(0),                                                ///< Initial value for scause
+    STVAL_INIT = UINT64_C(0),                                                 ///< Initial value for stval
+    SATP_INIT = UINT64_C(0),                                                  ///< Initial value for satp
+    SCOUNTEREN_INIT = UINT64_C(0),                                            ///< Initial value for scounteren
+    ILRSC_INIT = UINT64_C(-1),                                                ///< Initial value for ilrsc
+    IPRV_INIT = PRV_M,                                                        ///< Initial value for iprv
+    IFLAGS_X_INIT = UINT64_C(0),                                              ///< Initial value for iflags_X
+    IFLAGS_Y_INIT = UINT64_C(0),                                              ///< Initial value for iflags_Y
+    IFLAGS_H_INIT = UINT64_C(0),                                              ///< Initial value for iflags_H
+    IUNREP_INIT = UINT64_C(0),                                                ///< Initial value for iunrep
+    MTIMECMP_INIT = UINT64_C(0),                                              ///< Initial value for mtimecmp
+    GIRQPEND_INIT = UINT64_C(0),                                              ///< Initial value for girqpend
+    GIRQSRVD_INIT = UINT64_C(0),                                              ///< Initial value for girqsrvd
+    FROMHOST_INIT = UINT64_C(0),                                              ///< Initial value for fromhost
+    TOHOST_INIT = UINT64_C(0),                                                ///< Initial value for tohost
+    MENVCFG_INIT = UINT64_C(0),                                               ///< Initial value for menvcfg
+    SENVCFG_INIT = UINT64_C(0),                                               ///< Initial value for senvcfg
+    IHALT_INIT = HTIF_HALT_CMD_HALT_MASK,                                     ///< Initial value for ihalt
+    ICONSOLE_INIT = HTIF_CONSOLE_CMD_PUTCHAR_MASK,                            ///< Initial value for iconsole
+    IYIELD_INIT = HTIF_YIELD_CMD_MANUAL_MASK | HTIF_YIELD_CMD_AUTOMATIC_MASK, ///< Initial value for iyield
     UARCH_HALT_FLAG_INIT = UINT64_C(0), ///< Initial value for microarchitecture halt flag
     UARCH_X_INIT = UINT64_C(0),         ///< Initial value for microarchitecture general purpose register x
     UARCH_PC_INIT = AR_UARCH_RAM_START, ///< Initial value for microarchitecture pc

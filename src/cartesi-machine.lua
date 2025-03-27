@@ -1720,7 +1720,7 @@ end
 
 local function dump_value_proofs(machine, desired_proofs, config)
     if #desired_proofs > 0 then
-        assert(config.processor.iunrep == 0, "proofs are meaningless in unreproducible mode")
+        assert(config.processor.registers.iunrep == 0, "proofs are meaningless in unreproducible mode")
     end
     for _, desired in ipairs(desired_proofs) do
         local proof = machine:get_proof(desired.address, desired.log2_size)
@@ -1802,17 +1802,20 @@ else
     -- Build machine config
     local config = {
         processor = {
-            iunrep = unreproducible and 1 or 0,
+            registers = {
+                iunrep = unreproducible and 1 or 0,
+                htif = {
+                    iconsole = (htif_console_getchar and cartesi.HTIF_CONSOLE_CMD_GETCHAR_MASK or 0)
+                        | cartesi.HTIF_CONSOLE_CMD_PUTCHAR_MASK,
+                    iyield = (htif_yield_automatic and cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK or 0)
+                        | (htif_yield_manual and cartesi.HTIF_YIELD_CMD_MANUAL_MASK or 0),
+                },
+            },
         },
         ram = ram,
         dtb = dtb,
         flash_drive = {},
         tlb = tlb,
-        htif = {
-            console_getchar = htif_console_getchar,
-            yield_automatic = htif_yield_automatic,
-            yield_manual = htif_yield_manual,
-        },
         virtio = virtio,
         cmio = cmio,
         pmas = pmas,
@@ -1992,15 +1995,20 @@ local cmio_yield_command = {
 }
 
 local function check_cmio_htif_config(htif)
-    assert(not htif.console_getchar, "console getchar must be disabled for cmio")
-    assert(htif.yield_manual, "yield manual must be enabled for cmio")
-    assert(htif.yield_automatic, "yield automatic must be enabled for cmio")
+    assert((htif.iconsole & cartesi.HTIF_CONSOLE_CMD_GETCHAR_MASK) == 0, "console getchar must be disabled for cmio")
+    assert(
+        htif.iyield == (cartesi.HTIF_YIELD_CMD_MANUAL_MASK | cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK),
+        "yield manual must be enabled for cmio"
+    )
 end
 
 local function get_and_print_yield(machine, htif)
     local cmd, reason, data = machine:receive_cmio_request()
     if cmd == cartesi.CMIO_YIELD_COMMAND_AUTOMATIC and reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_PROGRESS then
-        stderr("Progress: %6.2f" .. (htif.console_getchar and "\n" or "\r"), string.unpack("I4", data) / 10)
+        stderr(
+            "Progress: %6.2f" .. ((htif.iconsole & cartesi.HTIF_CONSOLE_CMD_GETCHAR_MASK) ~= 0 and "\n" or "\r"),
+            string.unpack("I4", data) / 10
+        )
         return cmd, reason, data
     end
     local cmd_str = cmio_yield_command[cmd] or "Unknown"
@@ -2070,7 +2078,7 @@ local function save_cmio_inspect_state_report(inspect, data)
 end
 
 local function store_machine(machine, config, dir)
-    assert(config.processor.iunrep == 0, "hashes are meaningless in unreproducible mode")
+    assert(config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
     stderr("Storing machine: please wait\n")
     local values = {}
     if dir:find("%%h") then values.h = util.hexhash(machine:get_root_hash()) end
@@ -2099,13 +2107,13 @@ if gdb_address then
     assert(address and port, "invalid address for GDB")
     gdb_stub:listen_and_wait_gdb(address, tonumber(port))
 end
-if config.processor.iunrep ~= 0 then stderr("Running in unreproducible mode!\n") end
+if config.processor.registers.iunrep ~= 0 then stderr("Running in unreproducible mode!\n") end
 if cmio_advance or cmio_inspect then
-    check_cmio_htif_config(config.htif)
+    check_cmio_htif_config(config.processor.registers.htif)
     assert(remote_address or not perform_rollbacks, "cmio requires --remote-address for snapshot/commit/rollback")
 end
 if initial_hash then
-    assert(config.processor.iunrep == 0, "hashes are meaningless in unreproducible mode")
+    assert(config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
     print_root_hash(machine, stderr_unsilenceable)
 end
 dump_value_proofs(machine, initial_proof, config)
@@ -2192,7 +2200,7 @@ while math.ult(machine:read_reg("mcycle"), max_mcycle) do
         break
     -- deal with yield manual
     elseif machine:read_reg("iflags_Y") ~= 0 then
-        local _, reason, data = get_and_print_yield(machine, config.htif)
+        local _, reason, data = get_and_print_yield(machine, config.processor.registers.htif)
         -- there was an exception
         if reason == cartesi.CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION then
             stderr("cmio exception with payload: %q\n", data)
@@ -2256,7 +2264,7 @@ while math.ult(machine:read_reg("mcycle"), max_mcycle) do
         end
     -- deal with yield automatic
     elseif machine:read_reg("iflags_X") ~= 0 then
-        local _, reason, data = get_and_print_yield(machine, config.htif)
+        local _, reason, data = get_and_print_yield(machine, config.processor.registers.htif)
         -- we have fed an advance state input
         if cmio_advance and cmio_advance.next_input_index > cmio_advance.input_index_begin then
             if reason == cartesi.CMIO_YIELD_AUTOMATIC_REASON_TX_OUTPUT then
@@ -2312,7 +2320,7 @@ if max_uarch_cycle > 0 then
 end
 if gdb_stub then gdb_stub:close() end
 if log_step_uarch then
-    assert(config.processor.iunrep == 0, "micro step proof is meaningless in unreproducible mode")
+    assert(config.processor.registers.iunrep == 0, "micro step proof is meaningless in unreproducible mode")
     stderr("Gathering micro step log: please wait\n")
     util.dump_log(machine:log_step_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS), io.stderr)
 end
@@ -2322,7 +2330,7 @@ if log_reset_uarch then
 end
 if dump_memory_ranges then dump_pmas(machine) end
 if final_hash then
-    assert(config.processor.iunrep == 0, "hashes are meaningless in unreproducible mode")
+    assert(config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
     print_root_hash(machine, stderr_unsilenceable)
 end
 dump_value_proofs(machine, final_proof, config)

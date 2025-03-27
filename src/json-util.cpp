@@ -1159,7 +1159,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     not_default_constructible<access_log> &value, const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, processor_config &value, const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, registers_state &value, const std::string &path) {
     if (!contains(j, key, path)) {
         return;
     }
@@ -1259,10 +1259,28 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, processor_config &v
     ju_get_opt_field(jconfig, "senvcfg"s, value.senvcfg, new_path);
     ju_get_opt_field(jconfig, "ilrsc"s, value.ilrsc, new_path);
     ju_get_opt_field(jconfig, "iprv"s, value.iprv, new_path);
-    ju_get_opt_field(jconfig, "iflags_X"s, value.iflags_X, new_path);
-    ju_get_opt_field(jconfig, "iflags_Y"s, value.iflags_Y, new_path);
-    ju_get_opt_field(jconfig, "iflags_H"s, value.iflags_H, new_path);
+    ju_get_opt_field(jconfig, "iflags"s, value.iflags, new_path);
     ju_get_opt_field(jconfig, "iunrep"s, value.iunrep, new_path);
+    ju_get_opt_field(jconfig, "clint"s, value.clint, new_path);
+    ju_get_opt_field(jconfig, "plic"s, value.plic, new_path);
+    ju_get_opt_field(jconfig, "htif"s, value.htif, new_path);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, registers_state &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, registers_state &value,
+    const std::string &path);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, processor_config &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    ju_get_opt_field(jconfig, "registers"s, value.registers, new_path);
+    ju_get_opt_field(jconfig, "backing_store"s, value.backing_store, new_path);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, processor_config &value,
@@ -1481,7 +1499,25 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, clint_config &value, const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, iflags_state &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    ju_get_opt_field(jconfig, "X"s, value.X, new_path);
+    ju_get_opt_field(jconfig, "Y"s, value.Y, new_path);
+    ju_get_opt_field(jconfig, "H"s, value.H, new_path);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, iflags_state &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, iflags_state &value,
+    const std::string &path);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, clint_state &value, const std::string &path) {
     if (!contains(j, key, path)) {
         return;
     }
@@ -1490,14 +1526,14 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, clint_config &value
     ju_get_opt_field(jconfig, "mtimecmp"s, value.mtimecmp, new_path);
 }
 
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, clint_config &value,
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, clint_state &value,
     const std::string &path);
 
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, clint_config &value,
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, clint_state &value,
     const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, plic_config &value, const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, plic_state &value, const std::string &path) {
     if (!contains(j, key, path)) {
         return;
     }
@@ -1507,14 +1543,14 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, plic_config &value,
     ju_get_opt_field(jconfig, "girqsrvd"s, value.girqsrvd, new_path);
 }
 
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, plic_config &value,
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, plic_state &value,
     const std::string &path);
 
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, plic_config &value,
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, plic_state &value,
     const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, htif_config &value, const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, htif_state &value, const std::string &path) {
     if (!contains(j, key, path)) {
         return;
     }
@@ -1522,15 +1558,15 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, htif_config &value,
     const auto new_path = path + to_string(key) + "/";
     ju_get_opt_field(jconfig, "fromhost"s, value.fromhost, new_path);
     ju_get_opt_field(jconfig, "tohost"s, value.tohost, new_path);
-    ju_get_opt_field(jconfig, "console_getchar"s, value.console_getchar, new_path);
-    ju_get_opt_field(jconfig, "yield_manual"s, value.yield_manual, new_path);
-    ju_get_opt_field(jconfig, "yield_automatic"s, value.yield_automatic, new_path);
+    ju_get_opt_field(jconfig, "ihalt"s, value.ihalt, new_path);
+    ju_get_opt_field(jconfig, "iconsole"s, value.iconsole, new_path);
+    ju_get_opt_field(jconfig, "iyield"s, value.iyield, new_path);
 }
 
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, htif_config &value,
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, htif_state &value,
     const std::string &path);
 
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, htif_config &value,
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, htif_state &value,
     const std::string &path);
 
 template <typename K>
@@ -1551,7 +1587,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_processor_config &value, const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_registers_state &value, const std::string &path) {
     if (!contains(j, key, path)) {
         return;
     }
@@ -1594,6 +1630,23 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_processor_con
     ju_get_opt_field(jconfig, "halt_flag"s, value.halt_flag, new_path);
 }
 
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, uarch_registers_state &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    uarch_registers_state &value, const std::string &path);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_processor_config &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    ju_get_opt_field(jconfig, "registers"s, value.registers, new_path);
+    ju_get_opt_field(jconfig, "backing_store"s, value.backing_store, new_path);
+}
+
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, uarch_processor_config &value,
     const std::string &path);
 
@@ -1629,9 +1682,6 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_config &val
     ju_get_opt_field(config, "dtb"s, value.dtb, new_path);
     ju_get_opt_field(config, "flash_drive"s, value.flash_drive, new_path);
     ju_get_opt_field(config, "tlb"s, value.tlb, new_path);
-    ju_get_opt_field(config, "clint"s, value.clint, new_path);
-    ju_get_opt_field(config, "plic"s, value.plic, new_path);
-    ju_get_opt_field(config, "htif"s, value.htif, new_path);
     ju_get_opt_field(config, "virtio"s, value.virtio, new_path);
     ju_get_opt_field(config, "cmio"s, value.cmio, new_path);
     ju_get_opt_field(config, "pmas"s, value.pmas, new_path);
@@ -1801,7 +1851,7 @@ void to_json(nlohmann::json &j, const hash_tree_config &config) {
         {"phtc_size", config.phtc_size}};
 }
 
-void to_json(nlohmann::json &j, const processor_config &config) {
+void to_json(nlohmann::json &j, const registers_state &config) {
     j = nlohmann::json{{"x0", config.x[0]}, {"x1", config.x[1]}, {"x2", config.x[2]}, {"x3", config.x[3]},
         {"x4", config.x[4]}, {"x5", config.x[5]}, {"x6", config.x[6]}, {"x7", config.x[7]}, {"x8", config.x[8]},
         {"x9", config.x[9]}, {"x10", config.x[10]}, {"x11", config.x[11]}, {"x12", config.x[12]}, {"x13", config.x[13]},
@@ -1824,8 +1874,12 @@ void to_json(nlohmann::json &j, const processor_config &config) {
         {"medeleg", config.medeleg}, {"mideleg", config.mideleg}, {"mcounteren", config.mcounteren},
         {"menvcfg", config.menvcfg}, {"stvec", config.stvec}, {"sscratch", config.sscratch}, {"sepc", config.sepc},
         {"scause", config.scause}, {"stval", config.stval}, {"satp", config.satp}, {"scounteren", config.scounteren},
-        {"senvcfg", config.senvcfg}, {"ilrsc", config.ilrsc}, {"iprv", config.iprv}, {"iflags_X", config.iflags_X},
-        {"iflags_Y", config.iflags_Y}, {"iflags_H", config.iflags_H}, {"iunrep", config.iunrep}};
+        {"senvcfg", config.senvcfg}, {"ilrsc", config.ilrsc}, {"iprv", config.iprv}, {"iflags", config.iflags},
+        {"iunrep", config.iunrep}, {"clint", config.clint}, {"plic", config.plic}, {"htif", config.htif}};
+}
+
+void to_json(nlohmann::json &j, const processor_config &config) {
+    j = nlohmann::json{{"registers", config.registers}, {"backing_store", config.backing_store}};
 }
 
 void to_json(nlohmann::json &j, const flash_drive_configs &fs) {
@@ -1887,26 +1941,34 @@ void to_json(nlohmann::json &j, const dtb_config &config) {
     };
 }
 
-void to_json(nlohmann::json &j, const clint_config &config) {
+void to_json(nlohmann::json &j, const iflags_state &config) {
+    j = nlohmann::json{
+        {"X", config.X},
+        {"Y", config.Y},
+        {"H", config.H},
+    };
+}
+
+void to_json(nlohmann::json &j, const clint_state &config) {
     j = nlohmann::json{
         {"mtimecmp", config.mtimecmp},
     };
 }
 
-void to_json(nlohmann::json &j, const plic_config &config) {
+void to_json(nlohmann::json &j, const plic_state &config) {
     j = nlohmann::json{
         {"girqpend", config.girqpend},
         {"girqsrvd", config.girqsrvd},
     };
 }
 
-void to_json(nlohmann::json &j, const htif_config &config) {
+void to_json(nlohmann::json &j, const htif_state &config) {
     j = nlohmann::json{
         {"fromhost", config.fromhost},
         {"tohost", config.tohost},
-        {"console_getchar", config.console_getchar},
-        {"yield_manual", config.yield_manual},
-        {"yield_automatic", config.yield_automatic},
+        {"ihalt", config.ihalt},
+        {"iconsole", config.iconsole},
+        {"iyield", config.iyield},
     };
 }
 
@@ -1917,7 +1979,7 @@ void to_json(nlohmann::json &j, const cmio_config &config) {
     };
 }
 
-void to_json(nlohmann::json &j, const uarch_processor_config &config) {
+void to_json(nlohmann::json &j, const uarch_registers_state &config) {
     j = nlohmann::json{
         {"x0", config.x[0]},
         {"x1", config.x[1]},
@@ -1957,6 +2019,10 @@ void to_json(nlohmann::json &j, const uarch_processor_config &config) {
     };
 }
 
+void to_json(nlohmann::json &j, const uarch_processor_config &config) {
+    j = nlohmann::json{{"registers", config.registers}, {"backing_store", config.backing_store}};
+}
+
 void to_json(nlohmann::json &j, const uarch_config &config) {
     j = nlohmann::json{
         {"processor", config.processor},
@@ -1971,9 +2037,6 @@ void to_json(nlohmann::json &j, const machine_config &config) {
         {"dtb", config.dtb},
         {"flash_drive", config.flash_drive},
         {"tlb", config.tlb},
-        {"clint", config.clint},
-        {"plic", config.plic},
-        {"htif", config.htif},
         {"virtio", config.virtio},
         {"cmio", config.cmio},
         {"pmas", config.pmas},

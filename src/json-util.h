@@ -307,6 +307,16 @@ template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constructible<access_log> &optional,
     const std::string &path = "params/");
 
+/// \brief Attempts to load a registers_state object from a field in a JSON object
+/// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
+/// \param j JSON object to load from
+/// \param key Key to load value from
+/// \param value Object to store value
+/// \param path Path to j
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, registers_state &value,
+    const std::string &path = "params/");
+
 /// \brief Attempts to load a processor_config object from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
@@ -395,32 +405,41 @@ template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, virtio_configs &value,
     const std::string &path = "params/");
 
-/// \brief Attempts to load a clint_config object from a field in a JSON object
+/// \brief Attempts to load a iflags_state object from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
 /// \param key Key to load value from
 /// \param value Object to store value
 /// \param path Path to j
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, clint_config &value, const std::string &path = "params/");
+void ju_get_opt_field(const nlohmann::json &j, const K &key, iflags_state &value, const std::string &path = "params/");
 
-/// \brief Attempts to load a plic_config object from a field in a JSON object
+/// \brief Attempts to load a clint_state object from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
 /// \param key Key to load value from
 /// \param value Object to store value
 /// \param path Path to j
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, plic_config &value, const std::string &path = "params/");
+void ju_get_opt_field(const nlohmann::json &j, const K &key, clint_state &value, const std::string &path = "params/");
 
-/// \brief Attempts to load an htif_config object from a field in a JSON object
+/// \brief Attempts to load a plic_state object from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
 /// \param key Key to load value from
 /// \param value Object to store value
 /// \param path Path to j
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, htif_config &value, const std::string &path = "params/");
+void ju_get_opt_field(const nlohmann::json &j, const K &key, plic_state &value, const std::string &path = "params/");
+
+/// \brief Attempts to load an htif_state object from a field in a JSON object
+/// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
+/// \param j JSON object to load from
+/// \param key Key to load value from
+/// \param value Object to store value
+/// \param path Path to j
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, htif_state &value, const std::string &path = "params/");
 
 /// \brief Attempts to load a cmio_config object from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
@@ -439,6 +458,16 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, cmio_config &value,
 /// \param path Path to j
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, std::optional<cmio_config> &optional,
+    const std::string &path = "params/");
+
+/// \brief Attempts to load an uarch_registers_state object from a field in a JSON object
+/// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
+/// \param j JSON object to load from
+/// \param key Key to load value from
+/// \param value Object to store value
+/// \param path Path to j
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_registers_state &value,
     const std::string &path = "params/");
 
 /// \brief Attempts to load an uarch_processor_config object from a field in a JSON object
@@ -613,16 +642,19 @@ void to_json(nlohmann::json &j, const access_log &log);
 void to_json(nlohmann::json &j, const backing_store_config &config);
 void to_json(nlohmann::json &j, const backing_store_config_only &config);
 void to_json(nlohmann::json &j, const memory_range_config &config);
+void to_json(nlohmann::json &j, const registers_state &config);
 void to_json(nlohmann::json &j, const processor_config &config);
 void to_json(nlohmann::json &j, const flash_drive_configs &fs);
 void to_json(nlohmann::json &j, const virtio_device_config &config);
 void to_json(nlohmann::json &j, const virtio_configs &vs);
 void to_json(nlohmann::json &j, const ram_config &config);
 void to_json(nlohmann::json &j, const dtb_config &config);
-void to_json(nlohmann::json &j, const clint_config &config);
-void to_json(nlohmann::json &j, const plic_config &config);
-void to_json(nlohmann::json &j, const htif_config &config);
+void to_json(nlohmann::json &j, const iflags_state &config);
+void to_json(nlohmann::json &j, const clint_state &config);
+void to_json(nlohmann::json &j, const plic_state &config);
+void to_json(nlohmann::json &j, const htif_state &config);
 void to_json(nlohmann::json &j, const cmio_config &config);
+void to_json(nlohmann::json &j, const uarch_registers_state &config);
 void to_json(nlohmann::json &j, const uarch_processor_config &config);
 void to_json(nlohmann::json &j, const uarch_config &config);
 void to_json(nlohmann::json &j, const hash_tree_config &config);
@@ -721,6 +753,10 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &k
     not_default_constructible<access_log> &value, const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key,
     not_default_constructible<access_log> &value, const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, registers_state &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, registers_state &value,
+    const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, processor_config &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, processor_config &value,
@@ -757,17 +793,21 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &k
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, virtio_configs &value,
     const std::string &base = "params/");
-extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, clint_config &value,
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, iflags_state &value,
     const std::string &base = "params/");
-extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, clint_config &value,
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, iflags_state &value,
     const std::string &base = "params/");
-extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, plic_config &value,
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, clint_state &value,
     const std::string &base = "params/");
-extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, plic_config &value,
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, clint_state &value,
     const std::string &base = "params/");
-extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, htif_config &value,
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, plic_state &value,
     const std::string &base = "params/");
-extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, htif_config &value,
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, plic_state &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, htif_state &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, htif_state &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, cmio_config &value,
     const std::string &base = "params/");
@@ -777,6 +817,10 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &k
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key,
     std::optional<cmio_config> &value, const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, uarch_registers_state &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, uarch_registers_state &value,
+    const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, uarch_processor_config &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, uarch_processor_config &value,

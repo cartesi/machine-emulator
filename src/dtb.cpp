@@ -29,7 +29,6 @@
 #include "machine-c-version.h"
 #include "machine-config.h"
 #include "plic-constants.h"
-#include "pmas-constants.h"
 #include "riscv-constants.h"
 #include "rng-seed.h"
 #include "rtc.h"

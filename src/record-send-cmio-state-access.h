@@ -213,7 +213,7 @@ private:
         }
         // We need to compute the hash of the existing data before writing
         // Find the target address range
-        auto &ar = m_m.find_address_range(paddr, write_length);
+        const auto &ar = m_m.find_address_range(paddr, write_length);
         if (!ar.is_memory()) {
             throw std::invalid_argument("address range not entirely in memory PMA");
         }

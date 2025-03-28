@@ -16,6 +16,15 @@
 
 #include "memory-address-range.h"
 
+#include <cerrno>
+#include <cstdio>
+#include <exception>
+#include <stdexcept>
+#include <system_error>
+
+#include "address-range-constants.h"
+#include "unique-c-ptr.h"
+
 namespace cartesi {
 
 using namespace std::string_literals;

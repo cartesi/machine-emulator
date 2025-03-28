@@ -40,8 +40,10 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include <boost/asio/connect.hpp>
+#include <boost/asio/deadline_timer.hpp>
 #include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/signal_set.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/beast/version.hpp>
@@ -58,6 +60,7 @@
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
 #include "os.h"
+#include "scope-exit.h"
 #include "semantic-version.h"
 #include "uarch-interpret.h"
 
@@ -398,45 +401,44 @@ static std::string endpoint_to_string(const boost::asio::ip::tcp::endpoint &endp
 jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, fork_result &spawned) :
     m_ioc(new boost::asio::io_context{1}),
     m_stream(new boost::beast::tcp_stream(*m_ioc)) {
-    // this function first blocks SIGUSR1, SIGUSR2 and SIGALRM.
-    // then it double-forks.
-    // the grand-child sends the parent a SIGUSR2 and suicides if failed before execing jsonrpc-remote-cartesi-machine.
-    // otherwise, jsonrpc-remote-cartesi-machine itself sends the parent a SIGUSR1 to notify it is ready.
-    // the parent sets up to receive a SIGALRM after 15 seconds and then waits for SIGUSR1, SIGUSR2 or SIGALRM
-    // if it gets SIGALRM, the grand-child is unresponsive, so the parent kills it and the constructor fails.
-    // if it gets SIGUSR2, the grand-child failed before exec and suicided, so the constructor fails.
-    // if it gets SIGUSR1, jsonrpc-remote-cartesi-machine is ready and the constructor succeeds.
+    // this function double-forks.
+    // the grand-child sends the parent a SIGUSR2 and suicides if failed before executing
+    // jsonrpc-remote-cartesi-machine. otherwise, jsonrpc-remote-cartesi-machine itself sends the parent a SIGUSR1 to
+    // notify it is ready. the parent waits for SIGUSR1/SIGUSR2 up to 15 seconds if it gets SIGUSR2, the grand-child
+    // failed before exec and suicided, so the constructor fails. if it gets SIGUSR1, jsonrpc-remote-cartesi-machine is
+    // ready and the constructor succeeds.
     boost::asio::io_context ioc{1};
-    // NOLINTNEXTLINE(clang-analyzer-optin.cplusplus.VirtualCall)
-    boost::asio::ip::tcp::acceptor a(ioc, address_to_endpoint(address));
-    // already done by constructor
-    // a.open(endpoint.protocol());
-    // a.set_option(asio::socket_base::reuse_address(true));
-    // a.bind(endpoint);
-    // a.listen(asio::socket_base::max_listen_connections);
-    sigset_t mask{};
-    sigset_t omask{};
-    sigemptyset(&mask);        // always returns 0
-    sigaddset(&mask, SIGUSR1); // always returns 0
-    sigaddset(&mask, SIGUSR2); // always returns 0
-    sigaddset(&mask, SIGALRM); // always returns 0
-    if (sigprocmask(SIG_BLOCK, &mask, &omask) < 0) {
-        // sigprocmask can only fail if we screwed up the values. this can't happen.
-        // being paranoid, if it *did* happen, we are trying to avoid a situation where
-        // our process gets killed when the grand-child or the alarm tries to signal us
-        // and the signals are not blocked
-        throw std::system_error{errno, std::generic_category(), "sigprocmask failed"};
-    }
-    bool restore_sigprocmask = true;
+
+    // The acceptor constructor will already perform open, bind and listen
+    boost::asio::ip::tcp::acceptor a(ioc,
+        address_to_endpoint(address)); // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
+
+    // Determine the jsonrpc-remote-cartesi-machine binary to run
     const char *bin = getenv("JSONRPC_REMOTE_CARTESI_MACHINE");
     if (bin == nullptr) {
         bin = "jsonrpc-remote-cartesi-machine";
     }
-    auto ppid = getpid();
-    bool restore_grand_child = false;
+
+    // Save the parent pid
+    const auto ppid = getpid();
+
+    // Start waiting for SIGUSR1/SIGUSR2 signals that may be raised by the grand child.
+    // We need o call this before forking to make sure we always catch them early,
+    // raised signals will be queued until we call async_wait() and run().
+    boost::asio::signal_set wait_signals(ioc, SIGUSR1, SIGUSR2);
+
+    // Notify ASIO that we are about to fork
+    ioc.notify_fork(asio::io_context::fork_prepare);
+
     const int32_t grand_child = cartesi::os_double_fork_or_throw(false);
     if (grand_child == 0) { // grand-child and double-fork() succeeded
-        sigprocmask(SIG_SETMASK, &omask, nullptr);
+        // Notify to ASIO that we are the child
+        ioc.notify_fork(asio::io_context::fork_child);
+
+        // We don't need to catch SIGUSR1/SIGUSR2 for child, so clear them
+        wait_signals.clear();
+
+        // Execute jsonrpc-remote-cartesi-machine
         char sigusr1[256] = "";
         std::ignore = snprintf(sigusr1, std::size(sigusr1), "--sigusr1=%d", ppid);
         char server_fd[256] = "";
@@ -449,62 +451,54 @@ jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, for
             exit(1);
         };
         // code never reaches here
-    } else if (grand_child > 0) {   // parent and double-fork() succeeded
-        restore_grand_child = true; // make sure grand-child is killed if we fail
+    } else if (grand_child > 0) { // parent and double-fork() succeeded
+        // Notify to ASIO that we are the parent
+        ioc.notify_fork(asio::io_context::fork_parent);
+
+        // Make sure grand-child is killed if we fail
+        auto restore_grand_child = make_scope_fail([&] { std::ignore = kill(grand_child, SIGTERM); });
+
+        // Close the acceptor
         m_address = endpoint_to_string(a.local_endpoint());
         a.close();
-        struct itimerval ovalue{};
-        bool restore_itimer = false;
-        try {
-            struct itimerval value{};
-            memset(&value, 0, sizeof(value));
-            value.it_interval.tv_sec = 0;
-            value.it_interval.tv_usec = 0;
-            value.it_value.tv_sec = 15;
-            value.it_value.tv_usec = 0;
-            if (setitimer(ITIMER_REAL, &value, &ovalue) < 0) {
-                // setitimer only fails if we screwed up with the values. this should not happen.
-                // being paranoid, if it *did* happen, and if the grand-child also failed to signal us,
-                // we might hang forever in the following call to sigwait.
-                // we prefer to give up instead of risking a deadlock.
-                throw std::system_error{errno, std::generic_category(), "setitimer failed"};
+
+        // Start a timer so we don't wait forever
+        boost::asio::deadline_timer timer(ioc);
+        timer.expires_from_now(boost::posix_time::seconds(15));
+        timer.async_wait([&](const boost::system::error_code &ec) {
+            if (ec) { // unexpected error
+                throw std::system_error(ec);
             }
-            restore_itimer = true;
-            int sig = 0;
-            if (auto ret = sigwait(&mask, &sig); ret != 0) {
-                throw std::system_error{ret, std::generic_category(), "sigwait failed"};
+            // timer expired, grand-child didn't signal us
+            throw std::runtime_error{"grand-child process unresponsive"};
+        });
+
+        // Wait for a signal from the child
+        wait_signals.async_wait([&](const boost::system::error_code &ec, int sig) {
+            if (ec) { // unexpected error
+                throw std::system_error(ec);
             }
-            if (sig == SIGALRM) { // grand-child didn't signal us before alarm
-                throw std::runtime_error{"grand-child process unresponsive"};
+            if (sig == SIGUSR2) {              // grand-child signaled us that it failed to exec
+                restore_grand_child.release(); // grand-child will have exited on its own
+                throw std::runtime_error{"grand-child failed to run '"s + bin + "'"s};
             }
-            if (sig == SIGUSR2) { // grand-child signaled us that it failed to exec
-                // grand-child will have exited on its own
-                restore_grand_child = false;
-                throw std::runtime_error{"failed to run '"s + bin + "'"s};
+            if (sig != SIGUSR1) {
+                throw std::runtime_error{
+                    "grand-child raised an unexpected signal: expected SIGUSR2, but got "s + std::to_string(sig)};
             }
-            // grand-child signaled us that everything is fine
-            assert(sig == SIGUSR1);
-            setitimer(ITIMER_REAL, &ovalue, nullptr);
-            restore_itimer = false;
-            sigprocmask(SIG_SETMASK, &omask, nullptr);
-            restore_sigprocmask = false;
-            spawned.pid = grand_child;
-            spawned.address = m_address;
-            // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
-            os_disable_sigpipe();
-            check_server_version();
-        } catch (...) {
-            if (restore_sigprocmask) {
-                sigprocmask(SIG_SETMASK, &omask, nullptr);
-            }
-            if (restore_grand_child) {
-                kill(grand_child, SIGTERM);
-            }
-            if (restore_itimer) {
-                setitimer(ITIMER_REAL, &ovalue, nullptr);
-            }
-            throw;
-        }
+        });
+
+        // Block until SIGUSR1/SIGUSR2 is received or timer expires
+        ioc.restart();
+        ioc.run_one();
+
+        // From here own we are sure SIGUSR2 was received, otherwise we would have thrown early
+        spawned.pid = grand_child;
+        spawned.address = m_address;
+
+        // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
+        os_disable_sigpipe();
+        check_server_version();
     }
 }
 

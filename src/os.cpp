@@ -31,6 +31,7 @@
 #include "compiler-defines.h"
 #include "os-features.h"
 #include "os.h"
+#include "scope-exit.h"
 #include "unique-c-ptr.h"
 
 #include <sys/time.h>
@@ -807,12 +808,6 @@ void os_sleep_us(uint64_t timeout_us) {
 #endif
 }
 
-#ifdef HAVE_FORK
-static void sig_alrm(int /*unused*/) {
-    ;
-}
-#endif
-
 // this function forks and intermediate child, and the intermediate child forks a final child
 // the intermediate child simply exits immediately
 // the final child sends its pid to the parent via a pipe
@@ -822,140 +817,93 @@ static void sig_alrm(int /*unused*/) {
 int os_double_fork_or_throw([[maybe_unused]] bool emancipate) {
 #ifdef HAVE_FORK
     int fd[2] = {-1, -1};
-    struct sigaction chld_act{};
-    bool restore_sigchld = false;
-    struct sigaction alrm_act{};
-    bool restore_sigalrm = false;
-    sigset_t omask{};
-    bool restore_sigprocmask = false;
-    try {
-        if (pipe(fd) < 0) {
-            throw std::system_error{errno, std::generic_category(), "pipe failed"};
-        }
-        // make sure we can wait on our child
-        struct sigaction act{};
-        sigemptyset(&act.sa_mask);
-        act.sa_handler = SIG_DFL;
-        act.sa_flags = 0;
-        if (sigaction(SIGCHLD, &act, &chld_act) < 0) {
-            throw std::system_error{errno, std::generic_category(), "sigaction failed setting SIGCHLD handler"};
-        }
-        restore_sigchld = true;
-        // make sure we will receive an alarm that will interrupt a call to read()
-        act.sa_handler = sig_alrm;
-        act.sa_flags = 0;
-        if (sigaction(SIGALRM, &act, &alrm_act) < 0) {
-            throw std::system_error{errno, std::generic_category(), "sigaction failed setting SIGALRM handler"};
-        }
-        restore_sigalrm = true;
-        sigset_t mask{};
-        sigemptyset(&mask);        // always returns 0
-        sigaddset(&mask, SIGALRM); // always returns 0
-        sigaddset(&mask, SIGCHLD); // always returns 0
-        if (sigprocmask(SIG_UNBLOCK, &mask, &omask) < 0) {
-            throw std::system_error{errno, std::generic_category(), "sigprocmask unblocking SIGALRM and SIGCHLD"};
-        }
-        restore_sigprocmask = true;
-        auto ipid = fork();
-        if (ipid == 0) { // intermediate child (fork succeeded)
-            auto fpid = fork();
-            if (fpid == 0) { // final child (fork succeeded)
-                // restore signal mask
-                if (sigprocmask(SIG_SETMASK, &omask, nullptr) < 0) {
-                    exit(1);
-                }
-                // restore SIGALRM handler
-                if (sigaction(SIGALRM, &alrm_act, nullptr) < 0) {
-                    exit(1);
-                }
-                // restore SIGCHLD handler
-                if (sigaction(SIGCHLD, &chld_act, nullptr) < 0) {
-                    exit(1);
-                }
-                // close read-end of pipe
-                close(fd[0]);
-                fd[0] = -1;
-                // break out into our own program group, if requested
-                if (emancipate) {
-                    setpgid(0, 0);
-                }
-                // write fpid so parent can read
-                fpid = getpid();
-                if (write(fd[1], &fpid, sizeof(fpid)) != sizeof(fpid)) {
-                    exit(0);
-                }
-                // close write-end of pipe
-                close(fd[1]);
-                fd[1] = -1;
-                // we are done and can return to whatever caller wants to do as a child
-                return 0;
-            }
-            // intermediate child, fork either failed or succeeded
-            exit(0); // intermediate child exits right away
-
-        } else if (ipid > 0) {         // still parent (fork succeeded)
-            waitpid(ipid, nullptr, 0); // wait on dead intermediate child so it doesn't become a zombie
-            // set alarm so we can't hang while waiting to read final child pid from pipe
-            struct itimerval timer{};
-            memset(&timer, 0, sizeof(timer));
-            timer.it_interval.tv_sec = 0;
-            timer.it_interval.tv_usec = 0;
-            timer.it_value.tv_sec = 10;
-            timer.it_value.tv_usec = 0;
-            struct itimerval oitimer{};
-            memset(&oitimer, 0, sizeof(oitimer));
-            if (setitimer(ITIMER_REAL, &timer, &oitimer) < 0) {
-                throw std::system_error{errno, std::generic_category(), "setitimer failed"};
-            }
-            try {
-                int fpid = 0;
-                const auto ret = read(fd[0], &fpid, sizeof(fpid));
-                if (ret != sizeof(fpid)) {
-                    if (ret < 0) {
-                        auto e = errno;
-                        if (e == EINTR) {
-                            throw std::runtime_error{"parent gave up waiting for child pid"};
-                        }
-                        throw std::system_error{e, std::generic_category(), "failed to read child pid"};
-                    }
-                    throw std::runtime_error{"failed to read child pid"};
-                }
-                // cleanup
-                close(fd[1]);
-                fd[1] = -1; // close write-end of pipe
-                close(fd[0]);
-                fd[0] = -1; // close read-end of pipe
-                sigaction(SIGCHLD, &chld_act, nullptr);
-                sigaction(SIGALRM, &alrm_act, nullptr);
-                sigprocmask(SIG_SETMASK, &omask, nullptr);
-                setitimer(ITIMER_REAL, &oitimer, nullptr);
-                // we are done and can return to whatever caller wants to do as parent
-                return fpid;
-            } catch (...) {
-                setitimer(ITIMER_REAL, &oitimer, nullptr);
-                throw; // rethrow so we can finish cleaning up
-            }
-        } else {
-            throw std::system_error{errno, std::generic_category(), "fork failed"};
-        }
-    } catch (...) {
-        if (restore_sigchld) {
-            sigaction(SIGCHLD, &chld_act, nullptr);
-        }
-        if (restore_sigalrm) {
-            sigaction(SIGALRM, &alrm_act, nullptr);
-        }
-        if (restore_sigprocmask) {
-            sigprocmask(SIG_SETMASK, &omask, nullptr);
-        }
+    if (pipe(fd) < 0) {
+        throw std::system_error{errno, std::generic_category(), "pipe failed"};
+    }
+    auto close_pipe = make_scope_exit([&] {
         if (fd[0] >= 0) {
             close(fd[0]);
+            fd[0] = -1;
         }
         if (fd[1] >= 0) {
             close(fd[1]);
+            fd[1] = -1;
         }
-        throw; // rethrow so caller can see why we failed
+    });
+
+    // make sure we can wait on our child
+    struct sigaction chld_act{};
+    struct sigaction ochld_act{};
+    if (sigemptyset(&chld_act.sa_mask) < 0) {
+        throw std::system_error{errno, std::generic_category(), "sigemptyset failed"};
     }
+    chld_act.sa_handler = SIG_DFL;
+    chld_act.sa_flags = SA_RESTART;
+    if (sigaction(SIGCHLD, &chld_act, &ochld_act) < 0) {
+        throw std::system_error{errno, std::generic_category(), "sigaction failed setting SIGCHLD handler"};
+    }
+    auto restore_sigchld = make_scope_exit([&] { std::ignore = sigaction(SIGCHLD, &ochld_act, nullptr); });
+
+    // fork
+    auto ipid = fork();
+    int fpid = 0;
+    if (ipid < 0) {
+        throw std::system_error{errno, std::generic_category(), "fork failed"};
+    }
+    if (ipid == 0) { // intermediate child (fork succeeded)
+        auto fpid = fork();
+        if (fpid != 0) { // intermediate child, fork either failed or succeeded
+            exit(0);
+        } else { // final child (fork succeeded)
+            // restore SIGCHLD handler
+            restore_sigchld.exit();
+            // close read-end of pipe
+            close(fd[0]);
+            fd[0] = -1;
+            // break out into our own program group, if requested
+            if (emancipate) {
+                setpgid(0, 0);
+            }
+            // write fpid so parent can read
+            fpid = getpid();
+            if (write(fd[1], &fpid, sizeof(fpid)) != sizeof(fpid)) {
+                exit(0);
+            }
+            // close write-end of pipe
+            close(fd[1]);
+            fd[1] = -1;
+            // we are done and can return to whatever caller wants to do as a child
+        }
+    } else { // still parent (fork succeeded)
+        // wait on dead intermediate child so it doesn't become a zombie
+        waitpid(ipid, nullptr, 0);
+
+        // wait fpid to become ready with a timeout
+        fd_set readfds{};
+        FD_ZERO(&readfds);
+        FD_SET(fd[0], &readfds);
+        timeval timeout{};
+        timeout.tv_sec = 15;
+        timeout.tv_usec = 0;
+        const int ready = select(fd[0] + 1, &readfds, nullptr, nullptr, &timeout);
+        if (ready < 0) { // error
+            throw std::system_error{errno, std::generic_category(), "failed to select child pid"};
+        }
+        if (ready == 0) { // timeout
+            throw std::runtime_error{"parent gave up waiting for child pid"};
+        }
+
+        // fpid should be available to read
+        const auto ret = read(fd[0], &fpid, sizeof(fpid));
+        if (ret != sizeof(fpid)) {
+            if (ret < 0) {
+                throw std::system_error{errno, std::generic_category(), "failed to read child pid"};
+            }
+            throw std::runtime_error{"failed to read child pid"};
+        }
+        // we are done and can return to whatever caller wants to do as parent
+    }
+    return fpid;
 #else
     throw std::runtime_error{"fork() is unsupported in this platform"s};
     return -1;

@@ -33,7 +33,8 @@
 #include "os-features.h"
 
 #ifdef HAVE_FORK
-#include <sys/time.h>
+#include <spawn.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #endif
 
@@ -58,6 +59,7 @@
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
 #include "os.h"
+#include "scope-exit.h"
 #include "semantic-version.h"
 #include "uarch-interpret.h"
 
@@ -398,114 +400,98 @@ static std::string endpoint_to_string(const boost::asio::ip::tcp::endpoint &endp
 jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, fork_result &spawned) :
     m_ioc(new boost::asio::io_context{1}),
     m_stream(new boost::beast::tcp_stream(*m_ioc)) {
-    // this function first blocks SIGUSR1, SIGUSR2 and SIGALRM.
-    // then it double-forks.
-    // the grand-child sends the parent a SIGUSR2 and suicides if failed before execing jsonrpc-remote-cartesi-machine.
-    // otherwise, jsonrpc-remote-cartesi-machine itself sends the parent a SIGUSR1 to notify it is ready.
-    // the parent sets up to receive a SIGALRM after 15 seconds and then waits for SIGUSR1, SIGUSR2 or SIGALRM
-    // if it gets SIGALRM, the grand-child is unresponsive, so the parent kills it and the constructor fails.
-    // if it gets SIGUSR2, the grand-child failed before exec and suicided, so the constructor fails.
-    // if it gets SIGUSR1, jsonrpc-remote-cartesi-machine is ready and the constructor succeeds.
-    boost::asio::io_context ioc{1};
-    // NOLINTNEXTLINE(clang-analyzer-optin.cplusplus.VirtualCall)
-    boost::asio::ip::tcp::acceptor a(ioc, address_to_endpoint(address));
-    // already done by constructor
-    // a.open(endpoint.protocol());
-    // a.set_option(asio::socket_base::reuse_address(true));
-    // a.bind(endpoint);
-    // a.listen(asio::socket_base::max_listen_connections);
-    sigset_t mask{};
-    sigset_t omask{};
-    sigemptyset(&mask);        // always returns 0
-    sigaddset(&mask, SIGUSR1); // always returns 0
-    sigaddset(&mask, SIGUSR2); // always returns 0
-    sigaddset(&mask, SIGALRM); // always returns 0
-    if (sigprocmask(SIG_BLOCK, &mask, &omask) < 0) {
-        // sigprocmask can only fail if we screwed up the values. this can't happen.
-        // being paranoid, if it *did* happen, we are trying to avoid a situation where
-        // our process gets killed when the grand-child or the alarm tries to signal us
-        // and the signals are not blocked
-        throw std::system_error{errno, std::generic_category(), "sigprocmask failed"};
-    }
-    bool restore_sigprocmask = true;
+
+    // Create a TCP acceptor and bind it to the specified address
+    // The acceptor automatically performs open, bind and listen operations
+    boost::asio::ip::tcp::acceptor a(*m_ioc,
+        address_to_endpoint(address)); // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
+
+    // Determine which remote machine binary to use
     const char *bin = getenv("CARTESI_JSONRPC_REMOTE_MACHINE");
-    if (bin == nullptr) {
+    if (bin == nullptr) { // Fallback to default name if not set
         bin = "jsonrpc-remote-cartesi-machine";
     }
-    auto ppid = getpid();
-    bool restore_grand_child = false;
-    const int32_t grand_child = cartesi::os_double_fork_or_throw(false);
-    if (grand_child == 0) { // grand-child and double-fork() succeeded
-        sigprocmask(SIG_SETMASK, &omask, nullptr);
-        char sigusr1[256] = "";
-        std::ignore = snprintf(sigusr1, std::size(sigusr1), "--sigusr1=%d", ppid);
-        char server_fd[256] = "";
-        std::ignore = snprintf(server_fd, std::size(server_fd), "--server-fd=%d", a.native_handle());
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-        char *args[] = {const_cast<char *>(bin), server_fd, sigusr1, nullptr};
-        if (execvp(bin, args) < 0) {
-            // here we failed to run jsonrpc-remote-cartesi-machine. nothing we can do.
-            kill(ppid, SIGUSR2); // notify parent as soon as possible that we failed.
-            exit(1);
-        };
-        // code never reaches here
-    } else if (grand_child > 0) {   // parent and double-fork() succeeded
-        restore_grand_child = true; // make sure grand-child is killed if we fail
-        m_address = endpoint_to_string(a.local_endpoint());
-        a.close();
-        struct itimerval ovalue{};
-        bool restore_itimer = false;
-        try {
-            struct itimerval value{};
-            memset(&value, 0, sizeof(value));
-            value.it_interval.tv_sec = 0;
-            value.it_interval.tv_usec = 0;
-            value.it_value.tv_sec = 15;
-            value.it_value.tv_usec = 0;
-            if (setitimer(ITIMER_REAL, &value, &ovalue) < 0) {
-                // setitimer only fails if we screwed up with the values. this should not happen.
-                // being paranoid, if it *did* happen, and if the grand-child also failed to signal us,
-                // we might hang forever in the following call to sigwait.
-                // we prefer to give up instead of risking a deadlock.
-                throw std::system_error{errno, std::generic_category(), "setitimer failed"};
-            }
-            restore_itimer = true;
-            int sig = 0;
-            if (auto ret = sigwait(&mask, &sig); ret != 0) {
-                throw std::system_error{ret, std::generic_category(), "sigwait failed"};
-            }
-            if (sig == SIGALRM) { // grand-child didn't signal us before alarm
-                throw std::runtime_error{"grand-child process unresponsive"};
-            }
-            if (sig == SIGUSR2) { // grand-child signaled us that it failed to exec
-                // grand-child will have exited on its own
-                restore_grand_child = false;
-                throw std::runtime_error{"failed to run '"s + bin + "'"s};
-            }
-            // grand-child signaled us that everything is fine
-            assert(sig == SIGUSR1);
-            setitimer(ITIMER_REAL, &ovalue, nullptr);
-            restore_itimer = false;
-            sigprocmask(SIG_SETMASK, &omask, nullptr);
-            restore_sigprocmask = false;
-            spawned.pid = grand_child;
-            spawned.address = m_address;
-            // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
-            os_disable_sigpipe();
-            check_server_version();
-        } catch (...) {
-            if (restore_sigprocmask) {
-                sigprocmask(SIG_SETMASK, &omask, nullptr);
-            }
-            if (restore_grand_child) {
-                kill(grand_child, SIGTERM);
-            }
-            if (restore_itimer) {
-                setitimer(ITIMER_REAL, &ovalue, nullptr);
-            }
-            throw;
-        }
+
+    // Prepare command-line arguments for the child process
+    char server_fd[256] = "";
+    std::ignore = snprintf(server_fd, std::size(server_fd), "--server-fd=%d", a.native_handle());
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+    char *const args[] = {const_cast<char *>(bin), server_fd, nullptr};
+
+    // Spawn the remote machine as a child process
+    pid_t child_pid{};
+    if (posix_spawnp(&child_pid, bin, nullptr, nullptr, args, environ) != 0) {
+        throw std::system_error{errno, std::generic_category(), "posix_spawnp() failed to spawn server process"};
     }
+
+    // Create a scope exit handler to ensure child processes are properly cleaned up
+    // This prevents zombie processes by making sure we wait for the child to exit
+    auto child_waiter = make_scope_exit([&] {
+        // First attempt to gracefully terminate the child process
+        std::ignore = kill(child_pid, SIGTERM);
+
+        // Wait for the child process to fully exit
+        while (true) {
+            const auto wait_ret = waitpid(child_pid, nullptr, 0);
+
+            // If waitpid() was interrupted by a signal (EINTR), we need to retry
+            // This can happen if another signal arrives during our waitpid() call
+            if (wait_ret == -1 && errno == EINTR) {
+                // Send SIGILL to ensure child process termination
+                // This helps in case the interrupting signal affected the child's state
+                std::ignore = kill(child_pid, SIGILL);
+                continue;
+            }
+
+            // We can exit the waiting loop when either:
+            // 1. waitpid() returns a positive value - this indicates successful wait/child termination
+            // 2. waitpid() fails with ECHILD (No child processes) which can happen in two cases:
+            //    a. The child was already automatically reaped by our SIGCHLD handler set to SIG_IGN
+            //    b. Another SIGCHLD handler in the process has already called waitpid() on this child
+            break;
+        }
+    });
+
+    // Store the local endpoint as our server address for future connections
+    m_address = endpoint_to_string(a.local_endpoint());
+
+    // Close the acceptor socket, as its ownership is now transferred to the child process
+    boost::system::error_code ec;
+    std::ignore = a.close(ec);
+
+    // Install signal handler to ignore SIGPIPE signals that would otherwise
+    // terminate the process when writing to a closed socket connection
+    os_disable_sigpipe();
+
+    // Set a temporary 15-second timeout for initial connection attempts
+    // This provides sufficient time for the server to start up and become available
+    m_timeout = 15000;
+
+    // Verify server compatibility by checking its version against our expected version
+    check_server_version();
+
+    // Fork a new server process (grand-child) to avoid zombie processes
+    // This allows us to use waitpid() on the original child process while the
+    // actual server (grand-child) continues running independently
+    fork_result forked_grand_child{};
+    request("fork", std::tie(), forked_grand_child);
+
+    // Shutdown the original child server process now that we have a forked grand-child
+    bool shutdown_result = false;
+    request("shutdown", std::tie(), shutdown_result, false);
+    m_address = forked_grand_child.address;
+
+    // Rebind the forked server to listen on the originally requested address
+    std::string rebind_result;
+    request("rebind", std::tie(forked_grand_child.address), rebind_result, false);
+    m_address = rebind_result;
+
+    // At this point, we've confirmed the remote server is properly initialized and running
+    spawned.pid = static_cast<int32_t>(forked_grand_child.pid);
+    spawned.address = m_address;
+
+    // Restore the timeout to the default value (-1 means no timeout)
+    m_timeout = -1;
 }
 
 #else

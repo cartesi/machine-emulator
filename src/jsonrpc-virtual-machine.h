@@ -51,6 +51,8 @@ public:
     explicit jsonrpc_virtual_machine(std::string address);
 
     /// \brief Constructor that spawns a new server
+    /// \param address The address to bind the server to
+    /// \param spawned Output parameter that will contain information about the spawned server
     jsonrpc_virtual_machine(const std::string &address, fork_result &spawned);
 
     // no copies or assignments

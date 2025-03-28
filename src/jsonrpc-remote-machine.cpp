@@ -122,7 +122,7 @@ static void install_signal_handler(int signum, HANDLER handler) {
 }
 
 /// \brief Installs signal handlers that should not stop read()/write() primitives.
-static void install_restart_signal_handlers() {
+static void install_signal_handlers() {
     // Prevent dead children from becoming zombies
     install_signal_handler(SIGCHLD, SIG_IGN);
     // Prevent this process from suspending after issuing a SIGTTOU when trying
@@ -133,6 +133,9 @@ static void install_restart_signal_handlers() {
     install_signal_handler(SIGTTOU, SIG_IGN);
     // Prevent this process from crashing on SIGPIPE when remote connection is closed
     install_signal_handler(SIGPIPE, SIG_IGN);
+    // Reset signal handlers that might have been set by the parent process who spawned us
+    install_signal_handler(SIGINT, SIG_DFL);
+    install_signal_handler(SIGTERM, SIG_DFL);
 }
 
 //------------------------------------------------------------------------------
@@ -762,9 +765,8 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
     // Notify ASIO that we are about to fork
     session->handler->ioc.notify_fork(asio::io_context::fork_prepare);
     // Done initializing, so we fork
-    const char *err_msg = nullptr;
-    const int pid = cartesi::os_double_fork(false, &err_msg);
-    if (pid == 0) { // child
+    const auto pid = fork();
+    if (pid == 0) { // Child process and fork() succeeded
         // Notify to ASIO that we are the child
         session->handler->ioc.notify_fork(asio::io_context::fork_child);
         // Close all sessions that were initiated by the parent
@@ -772,17 +774,18 @@ static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_sessi
         // Swap current handler acceptor with the new one
         session->handler->rebind(std::move(acceptor));
         SLOG(trace) << session->handler->local_endpoint << " fork child";
-    } else if (pid > 0) { // parent and fork() succeeded
+    } else { // Parent process, fork() may have succeeded or failed
         // Notify to ASIO that we are the parent
         session->handler->ioc.notify_fork(asio::io_context::fork_parent);
         // Note that the parent doesn't need the server that will be used by the child,
         // we can close it.
         beast::error_code ec;
         std::ignore = acceptor.close(ec);
+        if (pid < 0) { // Fork failed
+            SLOG(error) << session->handler->local_endpoint << " fork failed (" << strerror(errno) << ")";
+            return jsonrpc_response_server_error(j, "fork failed ("s + strerror(errno) + ")"s);
+        }
         SLOG(trace) << session->handler->local_endpoint << " fork parent";
-    } else { // parent and fork() failed
-        SLOG(error) << session->handler->local_endpoint << " fork failed (" << err_msg << ")";
-        return jsonrpc_response_server_error(j, "fork failed ("s + err_msg + ")"s);
     }
     const cartesi::fork_result result{
         .address = new_server_address,
@@ -1636,9 +1639,6 @@ where options are
       use a listening TCP/IP socket file descriptor inherited from parent process
       default is "-1", so a new socket is created based on --server-address
 
-    --sigusr1=<pid>
-      send SIGUSR1 to process when ready
-
     --log-level=<level>
       sets the log level
       <level> can be
@@ -1687,7 +1687,6 @@ static void init_logger(const char *strlevel) {
 int main(int argc, char *argv[]) try {
     const char *server_address = nullptr;
     int server_fd = -1;
-    int sigusr1 = 0;
     const char *log_level = nullptr;
     const char *program_name = PROGRAM_NAME;
 
@@ -1699,9 +1698,7 @@ int main(int argc, char *argv[]) try {
         if (int end = 0; stringval("--server-address=", argv[i], &server_address) ||
             stringval("--log-level=", argv[i], &log_level) ||
             // NOLINTNEXTLINE(cert-err34-c)
-            (sscanf(argv[i], "--server-fd=%d%n", &server_fd, &end) == 1 && argv[i][end] == 0) ||
-            // NOLINTNEXTLINE(cert-err34-c)
-            (sscanf(argv[i], "--sigusr1=%d%n", &sigusr1, &end) == 1 && argv[i][end] == 0)) {
+            (sscanf(argv[i], "--server-fd=%d%n", &server_fd, &end) == 1 && argv[i][end] == 0)) {
             ;
         } else if (strcmp(argv[i], "--help") == 0) {
             help(program_name);
@@ -1712,16 +1709,12 @@ int main(int argc, char *argv[]) try {
         }
     }
 
-    if (sigusr1 != 0) {
-        kill(sigusr1, SIGUSR1);
-    }
-
     init_logger(log_level);
 
     SLOG(info) << "remote machine server version is " << cartesi::JSONRPC_VERSION_MAJOR << "."
                << cartesi::JSONRPC_VERSION_MINOR << "." << cartesi::JSONRPC_VERSION_PATCH;
 
-    install_restart_signal_handlers();
+    install_signal_handlers();
 
     // IO context that will process async events
     asio::io_context ioc{1};

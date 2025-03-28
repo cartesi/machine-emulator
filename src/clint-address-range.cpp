@@ -18,9 +18,9 @@
 
 #include <cstdint>
 
+#include "address-range-constants.h"
 #include "i-device-state-access.h"
 #include "interpret.h"
-#include "pmas-constants.h"
 #include "riscv-constants.h"
 #include "rtc.h"
 

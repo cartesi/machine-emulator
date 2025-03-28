@@ -43,8 +43,6 @@ struct uarch_state {
     std::array<uint64_t, UARCH_X_REG_COUNT> x{}; ///< Register file.
     uint64_t cycle{};                            ///< Cycles counter
     uint64_t halt_flag{};
-    address_range *shadow_state{}; ///< Shadow uarch state
-    memory_address_range *ram{};   ///< Memory range for uarch RAM
 };
 
 } // namespace cartesi

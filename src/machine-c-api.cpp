@@ -32,6 +32,7 @@
 #include <variant>
 
 #include "access-log.h"
+#include "address-range-defines.h"
 #include "address-range-description.h"
 #include "htif-constants.h"
 #include "i-machine.h"
@@ -45,7 +46,6 @@
 #include "machine-runtime-config.h"
 #include "machine.h"
 #include "os-features.h"
-#include "pmas-defines.h"
 
 static std::string &get_last_err_msg_storage() {
     static THREAD_LOCAL std::string last_err_msg;

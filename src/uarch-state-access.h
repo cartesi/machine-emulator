@@ -38,19 +38,11 @@ class uarch_state_access :
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     machine &m_m;
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
-    host_addr m_uram_ph_offset;
 
 public:
-    /// \brief Constructor from machine and uarch states.
-    /// \param um Reference to uarch state.
-    /// \param m Reference to machine state.
-    explicit uarch_state_access(machine &m) : m_m(m) {
-        const auto &uram = m_m.get_uarch_state().ram;
-        const auto haddr = cast_ptr_to_host_addr(uram->get_host_memory());
-        const auto paddr = uram->get_start();
-        // initialize translation cache from paddr in uarch RAM to host address
-        m_uram_ph_offset = haddr - paddr;
-    }
+    /// \brief Constructor from machine.
+    /// \param m Reference to machine.
+    explicit uarch_state_access(machine &m) : m_m(m) {}
 
 private:
     // -----

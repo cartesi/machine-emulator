@@ -43,8 +43,9 @@ class shadow_uarch_state_address_range final : public address_range {
 
 public:
     template <typename ABRT>
-    shadow_uarch_state_address_range(uint64_t start, uint64_t length, ABRT abrt) :
-        address_range("shadow uarch state", start, length, m_shadow_uarch_state_flags, abrt) {
+    explicit shadow_uarch_state_address_range(ABRT abrt) :
+        address_range("shadow uarch state", AR_SHADOW_UARCH_STATE_START, AR_SHADOW_UARCH_STATE_LENGTH,
+            m_shadow_uarch_state_flags, abrt) {
         ;
     }
 
@@ -63,9 +64,8 @@ private:
 };
 
 template <typename ABRT>
-static inline shadow_uarch_state_address_range make_shadow_uarch_state_address_range(uint64_t start, uint64_t length,
-    ABRT abrt) {
-    return shadow_uarch_state_address_range{start, length, abrt};
+static inline shadow_uarch_state_address_range make_shadow_uarch_state_address_range(ABRT abrt) {
+    return shadow_uarch_state_address_range{abrt};
 }
 
 } // namespace cartesi

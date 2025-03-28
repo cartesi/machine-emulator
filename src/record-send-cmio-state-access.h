@@ -213,7 +213,7 @@ private:
         }
         // We need to compute the hash of the existing data before writing
         // Find the target address range
-        auto &ar = m_m.find_address_range(paddr, write_length);
+        const auto &ar = m_m.find_address_range(paddr, write_length);
         if (!ar.is_memory()) {
             throw std::invalid_argument("address range not entirely in memory PMA");
         }
@@ -251,8 +251,8 @@ private:
         a.get_written_hash().emplace();
         hasher_type hasher{};
         const auto offset = paddr - ar.get_start();
-        get_merkle_tree_hash(hasher, ar.get_host_memory() + offset, write_length,
-            machine_merkle_tree::get_word_size(), a.get_written_hash().value());
+        get_merkle_tree_hash(hasher, ar.get_host_memory() + offset, write_length, machine_merkle_tree::get_word_size(),
+            a.get_written_hash().value());
         if (m_log.get_log_type().has_large_data()) {
             access_data &data = a.get_written().emplace(write_length);
             memcpy(data.data(), ar.get_host_memory() + offset, write_length);

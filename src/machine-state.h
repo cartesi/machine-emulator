@@ -113,8 +113,6 @@ struct machine_state {
 
     /// Soft yield
     bool soft_yield{};
-
-    std::vector<uint64_t> pmas; ///< Indices of address ranges that interpret can find
 };
 
 } // namespace cartesi

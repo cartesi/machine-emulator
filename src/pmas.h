@@ -60,6 +60,18 @@ static constexpr const char *pmas_get_DID_name(PMA_ISTART_DID did) {
     return "DID.unknown";
 }
 
+static constexpr bool pmas_is_protected(PMA_ISTART_DID DID) {
+    switch (DID) {
+        case PMA_ISTART_DID::memory:
+        case PMA_ISTART_DID::flash_drive:
+        case PMA_ISTART_DID::cmio_rx_buffer:
+        case PMA_ISTART_DID::cmio_tx_buffer:
+            return false;
+        default:
+            return true;
+    }
+}
+
 ///< Unpacked attribute flags
 struct pmas_flags {
     bool M;             ///< is memory

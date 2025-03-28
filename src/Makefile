@@ -131,8 +131,8 @@ LIBCARTESI_JSONRPC=libcartesi_jsonrpc-$(EMULATOR_VERSION_MAJOR).$(EMULATOR_VERSI
 
 ifeq ($(slirp),yes)
 # Workaround for building with macports lua-luarocks installation
-machine.o: INCS+=$(SLIRP_INC)
-machine.clang-tidy: INCS+=$(SLIRP_INC)
+machine-address-ranges.o: INCS+=$(SLIRP_INC)
+machine-address-ranges.clang-tidy: INCS+=$(SLIRP_INC)
 virtio-net-user-address-range.o: INCS+=$(SLIRP_INC)
 virtio-net-user-address-range.clang-tidy: INCS+=$(SLIRP_INC)
 #INCS+=$(SLIRP_INC)
@@ -355,6 +355,7 @@ LIBCARTESI_OBJS:= \
 	machine-config.o \
 	machine-merkle-tree.o \
 	machine.o \
+	machine-address-ranges.o \
 	memory-address-range.o \
 	os.o \
 	plic-address-range.o \

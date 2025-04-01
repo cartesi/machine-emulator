@@ -90,7 +90,7 @@ static cm_machine *convert_to_c(cartesi::i_virtual_machine *cpp_m) {
     return reinterpret_cast<cm_machine *>(cpp_m);
 }
 
-cm_error cm_jsonrpc_connect_server(const char *address, cm_machine **new_m) try {
+cm_error cm_jsonrpc_connect_server(const char *address, int64_t connect_timeout_ms, cm_machine **new_m) try {
     using namespace cartesi;
     if (address == nullptr) {
         throw std::invalid_argument("invalid address");
@@ -98,7 +98,7 @@ cm_error cm_jsonrpc_connect_server(const char *address, cm_machine **new_m) try 
     if (new_m == nullptr) {
         throw std::invalid_argument("invalid new machine output");
     }
-    *new_m = convert_to_c(new jsonrpc_virtual_machine(address));
+    *new_m = convert_to_c(new jsonrpc_virtual_machine(address, connect_timeout_ms));
     return cm_result_success();
 } catch (...) {
     if (new_m != nullptr) {
@@ -107,8 +107,8 @@ cm_error cm_jsonrpc_connect_server(const char *address, cm_machine **new_m) try 
     return cm_result_failure();
 }
 
-cm_error cm_jsonrpc_spawn_server(const char *address, cm_machine **new_m, const char **bound_address,
-    uint32_t *pid) try {
+cm_error cm_jsonrpc_spawn_server(const char *address, int64_t spawn_timeout_ms, cm_machine **new_m,
+    const char **bound_address, uint32_t *pid) try {
     using namespace cartesi;
     if (address == nullptr) {
         throw std::invalid_argument("invalid address");
@@ -117,7 +117,7 @@ cm_error cm_jsonrpc_spawn_server(const char *address, cm_machine **new_m, const 
         throw std::invalid_argument("invalid new machine output");
     }
     fork_result spawned;
-    *new_m = convert_to_c(new jsonrpc_virtual_machine(address, spawned));
+    *new_m = convert_to_c(new jsonrpc_virtual_machine(address, spawn_timeout_ms, spawned));
     if (bound_address != nullptr) {
         *bound_address = cm_set_temp_string(spawned.address);
     }

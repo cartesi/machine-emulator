@@ -17,6 +17,7 @@
 #include "jsonrpc-virtual-machine.h"
 
 #include <cerrno>
+#include <chrono>
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
@@ -109,9 +110,10 @@ class expiration {
     beast::tcp_stream &m_stream;
 
 public:
-    expiration(beast::tcp_stream &stream, int64_t ms) : m_stream(stream) {
-        if (ms > 0) {
-            beast::get_lowest_layer(m_stream).expires_after(std::chrono::milliseconds(ms));
+    expiration(beast::tcp_stream &stream, std::chrono::time_point<std::chrono::steady_clock> timeout_at) :
+        m_stream(stream) {
+        if (timeout_at != std::chrono::time_point<std::chrono::steady_clock>::max()) {
+            beast::get_lowest_layer(m_stream).expires_at(timeout_at);
         } else {
             beast::get_lowest_layer(m_stream).expires_never();
         }
@@ -127,12 +129,12 @@ public:
 };
 
 static std::string json_post(boost::asio::io_context &ioc, beast::tcp_stream &stream, const std::string &remote_address,
-    const std::string &post_data, int64_t ms, bool keep_alive) {
+    const std::string &post_data, std::chrono::time_point<std::chrono::steady_clock> timeout_at, bool keep_alive) {
     // Determine remote endpoint from remote address
     const asio::ip::tcp::endpoint remote_endpoint = parse_endpoint(remote_address);
 
     // Set expiration to ms milliseconds into the future, automatically clear it when function exits
-    const expiration exp(stream, ms);
+    const expiration exp(stream, timeout_at);
 
     // Close current stream socket when the remote endpoint is different
     if (stream.socket().is_open()) {
@@ -252,15 +254,15 @@ static std::string json_post(boost::asio::io_context &ioc, beast::tcp_stream &st
 
 template <typename R, typename... Ts>
 static void jsonrpc_request(std::unique_ptr<boost::asio::io_context> &ioc, std::unique_ptr<beast::tcp_stream> &stream,
-    const std::string &remote_address, const std::string &method, const std::tuple<Ts...> &tp, R &result, int64_t ms,
-    bool keep_alive = true) {
+    const std::string &remote_address, const std::string &method, const std::tuple<Ts...> &tp, R &result,
+    std::chrono::time_point<std::chrono::steady_clock> timeout_at, bool keep_alive = true) {
     if (!stream || !ioc) {
         throw std::runtime_error{"remote server was shutdown"s};
     }
     auto request = jsonrpc_post_data(method, tp);
     std::string response_s;
     try {
-        response_s = json_post(*ioc, *stream, remote_address, request, ms, keep_alive);
+        response_s = json_post(*ioc, *stream, remote_address, request, timeout_at, keep_alive);
     } catch (std::exception &x) {
         throw std::runtime_error("jsonrpc error: post error contacting "s + remote_address + " ("s + x.what() + ")"s);
     }
@@ -315,7 +317,17 @@ namespace cartesi {
 template <typename R, typename... Ts>
 void jsonrpc_virtual_machine::request(const std::string &method, const std::tuple<Ts...> &tp, R &result,
     bool keep_alive) const {
-    jsonrpc_request(m_ioc, m_stream, m_address, method, tp, result, m_timeout, keep_alive);
+    // Determine request timeout time
+    const auto timeout_at = m_timeout >= 0 ? (std::chrono::steady_clock::now() + std::chrono::milliseconds(m_timeout)) :
+                                             std::chrono::time_point<std::chrono::steady_clock>::max();
+    // Performs the request
+    jsonrpc_request(m_ioc, m_stream, m_address, method, tp, result, timeout_at, keep_alive);
+}
+
+template <typename R, typename... Ts>
+void jsonrpc_virtual_machine::request(const std::string &method, const std::tuple<Ts...> &tp, R &result,
+    std::chrono::time_point<std::chrono::steady_clock> timeout_at, bool keep_alive) const {
+    jsonrpc_request(m_ioc, m_stream, m_address, method, tp, result, timeout_at, keep_alive);
 }
 
 void jsonrpc_virtual_machine::shutdown_server() {
@@ -357,13 +369,31 @@ static inline std::string semver_to_string(uint32_t major, uint32_t minor) {
     return std::to_string(major) + "." + std::to_string(minor);
 }
 
-void jsonrpc_virtual_machine::check_server_version() const {
-    const auto server_version = get_server_version();
+void jsonrpc_virtual_machine::check_server_version(
+    std::chrono::time_point<std::chrono::steady_clock> timeout_at) const {
+    semantic_version server_version;
+    request("get_version", std::tie(), server_version, timeout_at, false);
     if (server_version.major != JSONRPC_VERSION_MAJOR || server_version.minor != JSONRPC_VERSION_MINOR) {
         throw std::runtime_error{"expected server version "s +
             semver_to_string(JSONRPC_VERSION_MAJOR, JSONRPC_VERSION_MINOR) + " (got "s +
             semver_to_string(server_version.major, server_version.minor) + ")"s};
     }
+}
+
+jsonrpc_virtual_machine::jsonrpc_virtual_machine(std::string address, int64_t connect_timeout_ms) :
+    m_ioc(new boost::asio::io_context{1}),
+    m_stream(new boost::beast::tcp_stream(*m_ioc)),
+    m_address(std::move(address)) {
+    // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
+    os_disable_sigpipe();
+
+    // Determine connection timeout time
+    const auto timeout_at = connect_timeout_ms >= 0 ?
+        (std::chrono::steady_clock::now() + std::chrono::milliseconds(connect_timeout_ms)) :
+        std::chrono::time_point<std::chrono::steady_clock>::max();
+
+    // Verify server compatibility by checking its version against our expected version
+    check_server_version(timeout_at);
 }
 
 jsonrpc_virtual_machine::jsonrpc_virtual_machine(std::string address) :
@@ -372,7 +402,6 @@ jsonrpc_virtual_machine::jsonrpc_virtual_machine(std::string address) :
     m_address(std::move(address)) {
     // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
     os_disable_sigpipe();
-    check_server_version();
 }
 
 #ifdef HAVE_FORK
@@ -397,9 +426,15 @@ static std::string endpoint_to_string(const boost::asio::ip::tcp::endpoint &endp
     return ss.str();
 }
 
-jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, fork_result &spawned) :
+jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, int64_t spawn_timeout_ms,
+    fork_result &spawned) :
     m_ioc(new boost::asio::io_context{1}),
     m_stream(new boost::beast::tcp_stream(*m_ioc)) {
+
+    // Determine spawn timeout time
+    const auto timeout_at = spawn_timeout_ms >= 0 ?
+        (std::chrono::steady_clock::now() + std::chrono::milliseconds(spawn_timeout_ms)) :
+        std::chrono::time_point<std::chrono::steady_clock>::max();
 
     // Create a TCP acceptor and bind it to the specified address
     // The acceptor automatically performs open, bind and listen operations
@@ -463,35 +498,34 @@ jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, for
     // terminate the process when writing to a closed socket connection
     os_disable_sigpipe();
 
-    // Set a temporary 15-second timeout for initial connection attempts
-    // This provides sufficient time for the server to start up and become available
-    m_timeout = 15000;
-
     // Verify server compatibility by checking its version against our expected version
-    check_server_version();
+    check_server_version(timeout_at);
 
     // Fork a new server process (grand-child) to avoid zombie processes
     // This allows us to use waitpid() on the original child process while the
     // actual server (grand-child) continues running independently
     fork_result forked_grand_child{};
-    request("fork", std::tie(), forked_grand_child);
+    request("fork", std::tie(), forked_grand_child, timeout_at, true);
+
+    // Ensures the grand-child process is killed if any exceptions occur during the subsequent initialization steps
+    auto grand_child_killer = make_scope_fail([&] {
+        // Send SIGILL signal to forcefully terminate the grand-child process
+        std::ignore = kill(static_cast<pid_t>(forked_grand_child.pid), SIGILL);
+    });
 
     // Shutdown the original child server process now that we have a forked grand-child
     bool shutdown_result = false;
-    request("shutdown", std::tie(), shutdown_result, false);
+    request("shutdown", std::tie(), shutdown_result, timeout_at, false);
     m_address = forked_grand_child.address;
 
     // Rebind the forked server to listen on the originally requested address
     std::string rebind_result;
-    request("rebind", std::tie(forked_grand_child.address), rebind_result, false);
+    request("rebind", std::tie(forked_grand_child.address), rebind_result, timeout_at, false);
     m_address = rebind_result;
 
     // At this point, we've confirmed the remote server is properly initialized and running
-    spawned.pid = static_cast<int32_t>(forked_grand_child.pid);
+    spawned.pid = forked_grand_child.pid;
     spawned.address = m_address;
-
-    // Restore the timeout to the default value (-1 means no timeout)
-    m_timeout = -1;
 }
 
 #else

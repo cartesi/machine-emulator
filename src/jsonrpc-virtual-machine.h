@@ -47,13 +47,19 @@ class jsonrpc_virtual_machine final : public i_virtual_machine {
 public:
     enum class cleanup_call { nothing, destroy, shutdown };
 
-    /// \brief Constructor that connects to existing server
+    /// \brief Constructor that connects to existing JSONRPC server and performs a sanity check on its version
+    /// \param address Address of the server in "host:port" format to connect to
+    /// \param connect_timeout_ms Timeout in milliseconds for the connection attempt
+    explicit jsonrpc_virtual_machine(std::string address, int64_t connect_timeout_ms);
+
+    /// \brief Constructor that connects to existing JSONRPC server without version verification
+    /// \param address Address of the server in "host:port" format to connect to
     explicit jsonrpc_virtual_machine(std::string address);
 
     /// \brief Constructor that spawns a new server
     /// \param address The address to bind the server to
     /// \param spawned Output parameter that will contain information about the spawned server
-    jsonrpc_virtual_machine(const std::string &address, fork_result &spawned);
+    jsonrpc_virtual_machine(const std::string &address, int64_t spawn_timeout_ms, fork_result &spawned);
 
     // no copies or assignments
     jsonrpc_virtual_machine(const jsonrpc_virtual_machine &other) = delete;
@@ -141,15 +147,18 @@ private:
         const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const override;
     bool do_is_jsonrpc_virtual_machine() const override;
 
-    void check_server_version() const;
+    void check_server_version(std::chrono::time_point<std::chrono::steady_clock> timeout_at) const;
     template <typename R, typename... Ts>
     void request(const std::string &method, const std::tuple<Ts...> &tp, R &result, bool keep_alive = true) const;
+    template <typename R, typename... Ts>
+    void request(const std::string &method, const std::tuple<Ts...> &tp, R &result,
+        std::chrono::time_point<std::chrono::steady_clock> timeout_at, bool keep_alive) const;
 
     mutable std::unique_ptr<boost::asio::io_context> m_ioc;     // The io_context is required for all I/O
     mutable std::unique_ptr<boost::beast::tcp_stream> m_stream; // TCP stream for keep alive connections
     cleanup_call m_call{cleanup_call::nothing};
     std::string m_address;
-    int64_t m_timeout = -1;
+    int64_t m_timeout{-1};
 };
 
 } // namespace cartesi

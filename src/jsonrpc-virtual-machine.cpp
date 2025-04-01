@@ -428,7 +428,7 @@ jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, for
         throw std::system_error{errno, std::generic_category(), "sigprocmask failed"};
     }
     bool restore_sigprocmask = true;
-    const char *bin = getenv("JSONRPC_REMOTE_CARTESI_MACHINE");
+    const char *bin = getenv("CARTESI_JSONRPC_REMOTE_MACHINE");
     if (bin == nullptr) {
         bin = "jsonrpc-remote-cartesi-machine";
     }

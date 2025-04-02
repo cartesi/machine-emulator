@@ -178,8 +178,9 @@ struct http_session : std::enable_shared_from_this<http_session> {
         if (ec == asio::error::operation_aborted) { // Operation may be aborted
             return;
         }
-        if (ec == http::error::end_of_stream) { // This means the connection was closed by the client
-            shutdown_send();
+        if (ec == http::error::end_of_stream ||
+            ec == asio::error::connection_reset) { // This means the connection was closed by the client
+            shutdown();
             return;
         }
         if (ec) { // Unexpected error
@@ -219,7 +220,7 @@ struct http_session : std::enable_shared_from_this<http_session> {
         }
         if (ec) { // Unexpected error
             SLOG(error) << "send response error:" << ec.what();
-            shutdown_send();
+            shutdown();
             return;
         }
 
@@ -229,18 +230,15 @@ struct http_session : std::enable_shared_from_this<http_session> {
         } else {
             // This means we should close the connection, usually because
             // the response indicated the "Connection: close" semantic.
-            shutdown_send();
+            shutdown();
         }
     }
 
     // Called we are done with this HTTP session
-    void shutdown_send() {
-        // Here, we deliberately shutdowns only the outgoing traffic,
-        // so the server does not becomes full of TCP connections in TIME_WAIT state.
-
+    void shutdown() {
         // Send a TCP send shutdown.
         beast::error_code ec;
-        std::ignore = stream.socket().shutdown(tcp::socket::shutdown_send, ec);
+        std::ignore = stream.socket().shutdown(tcp::socket::shutdown_both, ec);
 
         // At this point the connection is closed gracefully
     }

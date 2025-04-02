@@ -87,6 +87,18 @@ static std::string jsonrpc_post_data(const std::string &method, const std::tuple
     return jsonrpc_post_data(method, params, std::make_index_sequence<sizeof...(Ts)>{});
 }
 
+// Close a socket of a connection we are done processing.
+static void shutdown_and_close_socket(auto &socket) {
+    // Errors are also silently ignored because at this point all the connection traffic was already processed.
+    beast::error_code ec;
+    // We deliberately omit shutdown on the sending end of the socket to force an RST packet instead of a FIN packet
+    // during close(). This behavior occurs because we've set SO_LINGER to 0 on the TCP socket, which causes it to send
+    // RST packets when closed. By sending RST instead of FIN, we avoid leaving the connection in TIME_WAIT state, which
+    // helps prevent TCP port exhaustion.
+    std::ignore = socket.shutdown(tcp::socket::shutdown_receive, ec);
+    std::ignore = socket.close(ec);
+}
+
 // Parses an endpoint from an address string in the format "<ip>:<port>"
 static asio::ip::tcp::endpoint parse_endpoint(const std::string &address) {
     try {
@@ -141,9 +153,7 @@ static std::string json_post(boost::asio::io_context &ioc, beast::tcp_stream &st
         beast::error_code ec;
         const auto socket_remote_endpoint = stream.socket().remote_endpoint(ec);
         if (ec || socket_remote_endpoint != remote_endpoint) {
-            // We can silently ignore socket shutdown/close errors from previous connections
-            std::ignore = stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-            std::ignore = stream.socket().close(ec);
+            shutdown_and_close_socket(stream.socket());
         }
     }
 
@@ -167,9 +177,9 @@ static std::string json_post(boost::asio::io_context &ioc, beast::tcp_stream &st
         stream.socket().set_option(no_delay_option);
 
         // Minimize socket close time by setting the linger time to 0.
-        // On MacOS, it avoids accumulating socket in TIME_WAIT state, after rapid successive requests,
+        // It avoids accumulating socket in TIME_WAIT state after rapid successive requests,
         // which can consume all available ports.
-        // It is safe to do this because it is the client who decides to close the connection,
+        // It's safe to do this because it is the client who decides to close the connection,
         // after all data is received.
         const boost::asio::socket_base::linger linger_option(true, 0);
         stream.socket().set_option(linger_option);
@@ -234,19 +244,13 @@ static std::string json_post(boost::asio::io_context &ioc, beast::tcp_stream &st
 
         // Gracefully close the socket
         if (!keep_alive || !res.keep_alive()) {
-            beast::error_code ec;
-            // The response was received so we can silently ignore socket shutdown/close errors
-            std::ignore = stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-            std::ignore = stream.socket().close(ec);
+            shutdown_and_close_socket(stream.socket());
         }
 
         // Return response body
         return res.body();
     } catch (...) {
-        // Close stream socket on errors
-        beast::error_code ec;
-        std::ignore = stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-        std::ignore = stream.socket().close(ec);
+        shutdown_and_close_socket(stream.socket());
         // Re-throw exception
         throw;
     }
@@ -593,9 +597,7 @@ jsonrpc_virtual_machine::~jsonrpc_virtual_machine() {
     }
     // Gracefully close any established keep alive connection
     if (m_stream && m_stream->socket().is_open()) {
-        beast::error_code ec;
-        std::ignore = m_stream->socket().shutdown(tcp::socket::shutdown_both, ec);
-        std::ignore = m_stream->socket().close(ec);
+        shutdown_and_close_socket(m_stream->socket());
     }
 }
 

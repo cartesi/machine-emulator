@@ -53,10 +53,10 @@ typedef enum cm_jsonrpc_cleanup_call {
 /// Use cm_delete() to delete the object.
 /// \details The spawned process is in the process group of the caller.
 /// Use cm_jsonrpc_emancipate_server() to make it leader of its own process group.
-/// \details The machine object is not configured to implicitly cleanup anything on cm_delete().
+/// \details The machine object is configured to implicitly cleanup with a shutdown during cm_delete().
 /// Use cm_jsonrpc_set_cleanup_call() to change this setting.
 /// \details Unless the desired jsonrpc-remote-cartesi-machine executable is in the path,
-/// the environment variable JSONRPC_REMOTE_CARTESI_MACHINE must point directly to the executable.
+/// the environment variable CARTESI_JSONRPC_REMOTE_MACHINE must point directly to the executable.
 CM_API cm_error cm_jsonrpc_spawn_server(const char *address, int64_t spawn_timeout_ms, cm_machine **new_m,
     const char **bound_address, uint32_t *pid);
 
@@ -86,8 +86,10 @@ CM_API cm_error cm_jsonrpc_connect_server(const char *address, int64_t connect_t
 /// Use cm_delete() to delete the object.
 /// \details The forked process is in the process group of the remote server.
 /// Use cm_jsonrpc_emancipate_server() to make it leader of its own process group.
-/// \details The machine object is not configured to implicitly cleanup anything on cm_delete().
+/// \details The machine object implicit cleanup on cm_delete() is inherited from the original machine.
 /// Use cm_jsonrpc_set_cleanup_call() to change this setting.
+/// \details The communication timeout is inherited from the original machine object.
+/// Use cm_jsonrpc_set_timeout() to change this setting.
 /// \warning If the server is running on a remote host, the \p pid is also remote and cannot be signaled.
 /// Trying to do so may signal an entirely unrelated process in the local host.
 CM_API cm_error cm_jsonrpc_fork_server(const cm_machine *m, cm_machine **forked_m, const char **address, uint32_t *pid);

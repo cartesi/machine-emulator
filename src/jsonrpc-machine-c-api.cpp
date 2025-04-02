@@ -149,7 +149,10 @@ cm_error cm_jsonrpc_fork_server(const cm_machine *m, cm_machine **forked_m, cons
     if (pid != nullptr) {
         *pid = static_cast<int>(forked.pid);
     }
-    *forked_m = convert_to_c(new jsonrpc_virtual_machine(forked.address));
+    auto *cpp_forked_m = new jsonrpc_virtual_machine(forked.address);
+    cpp_forked_m->set_cleanup_call(cpp_m->get_cleanup_call());
+    cpp_forked_m->set_timeout(cpp_m->get_timeout());
+    *forked_m = convert_to_c(cpp_forked_m);
     return cm_result_success();
 } catch (...) {
     if (address != nullptr) {

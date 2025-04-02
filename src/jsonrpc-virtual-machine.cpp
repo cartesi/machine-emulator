@@ -429,7 +429,8 @@ static std::string endpoint_to_string(const boost::asio::ip::tcp::endpoint &endp
 jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, int64_t spawn_timeout_ms,
     fork_result &spawned) :
     m_ioc(new boost::asio::io_context{1}),
-    m_stream(new boost::beast::tcp_stream(*m_ioc)) {
+    m_stream(new boost::beast::tcp_stream(*m_ioc)),
+    m_call(cleanup_call::shutdown) {
 
     // Determine spawn timeout time
     const auto timeout_at = spawn_timeout_ms >= 0 ?

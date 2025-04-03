@@ -37,6 +37,13 @@
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+// On Linux `environ` is defined in unistd.h, in other platforms we may need to import it.
+#ifdef __APPLE__
+#include <crt_externs.h>
+#define environ (*_NSGetEnviron())
+#endif
+
 #endif
 
 #pragma GCC diagnostic push

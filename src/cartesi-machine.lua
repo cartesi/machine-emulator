@@ -1680,7 +1680,8 @@ local runtime_config = {
 
 if remote_spawn then
     local jsonrpc = require("cartesi.jsonrpc")
-    local _ <close>, address, pid = jsonrpc.spawn_server(remote_address)
+    local server <close>, address, pid = jsonrpc.spawn_server(remote_address)
+    server:set_cleanup_call(jsonrpc.NOTHING) -- we will perform shutdown manually
     stderr("Spawned JSONRPC remote cartesi machine at '%s' with pid %d\n", address, pid)
     remote_address = address
 end

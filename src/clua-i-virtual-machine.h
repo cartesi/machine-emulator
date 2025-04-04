@@ -41,25 +41,17 @@ int clua_i_virtual_machine_init(lua_State *L, int ctxidx);
 /// \param ctxidx Index of Clua context
 int clua_i_virtual_machine_export(lua_State *L, int ctxidx);
 
-/// \brief Create overloaded deleters for C API objects
-template <typename T>
-void clua_delete(T *ptr);
-
 /// \brief Deleter for C data buffer
-template <>
-void clua_delete<unsigned char>(unsigned char *ptr);
+void clua_delete(unsigned char *ptr);
 
 /// \brief Deleter for machine
-template <>
-void clua_delete<cm_machine>(cm_machine *ptr);
+void clua_delete(cm_machine *ptr);
 
 /// \brief Deleter for string
-template <>
-void clua_delete<std::string>(std::string *ptr);
+void clua_delete(std::string *ptr);
 
 /// \brief Deleter for JSON
-template <>
-void clua_delete<nlohmann::json>(nlohmann::json *ptr);
+void clua_delete(nlohmann::json *ptr);
 
 // clua_managed_cm_ptr is a smart pointer,
 // however we don't use all its functionally, therefore we exclude it from code coverage.

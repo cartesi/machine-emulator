@@ -40,6 +40,8 @@ typedef enum cm_jsonrpc_cleanup_call {
 
 /// \brief Spawns a new remote machine server.
 /// \param address Address (in local host) to bind the new remote machine server.
+/// \param spawn_timeout_ms Maximum time in milliseconds to wait for the remote server to spawn before giving up
+/// and returning an error. Use -1 for no timeout.
 /// \param new_m Receives the pointer to the new JSONRPC remote machine object. Set to NULL on failure.
 /// \param bound_address_bound Receives the address that the remote machine server actually bound to,
 /// guaranteed to remain valid only until the next CM_API function is called again on the same thread.
@@ -51,15 +53,17 @@ typedef enum cm_jsonrpc_cleanup_call {
 /// Use cm_delete() to delete the object.
 /// \details The spawned process is in the process group of the caller.
 /// Use cm_jsonrpc_emancipate_server() to make it leader of its own process group.
-/// \details The machine object is not configured to implicitly cleanup anything on cm_delete().
+/// \details The machine object is configured to implicitly cleanup with a shutdown during cm_delete().
 /// Use cm_jsonrpc_set_cleanup_call() to change this setting.
 /// \details Unless the desired jsonrpc-remote-cartesi-machine executable is in the path,
-/// the environment variable JSONRPC_REMOTE_CARTESI_MACHINE must point directly to the executable.
-CM_API cm_error cm_jsonrpc_spawn_server(const char *address, cm_machine **new_m, const char **bound_address,
-    uint32_t *pid);
+/// the environment variable CARTESI_JSONRPC_REMOTE_MACHINE must point directly to the executable.
+CM_API cm_error cm_jsonrpc_spawn_server(const char *address, int64_t spawn_timeout_ms, cm_machine **new_m,
+    const char **bound_address, uint32_t *pid);
 
 /// \brief Connects to an existing remote machine server.
 /// \param address Address of the remote machine server to connect to.
+/// \param connect_timeout_ms Maximum time in milliseconds to wait for the remote server to connect before giving up
+/// and returning an error. Use -1 for no timeout.
 /// \param new_m Receives the pointer to the new JSONRPC remote machine object. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
 /// \details The machine object is not configured to implicitly cleanup anything on cm_delete().
@@ -67,7 +71,7 @@ CM_API cm_error cm_jsonrpc_spawn_server(const char *address, cm_machine **new_m,
 /// \details If the remote machine server already holds a machine instance, it is ready for use.
 /// Otherwise, use cm_create() or cm_load() to instantiate a machine into the object.
 /// Use cm_delete() to delete the object.
-CM_API cm_error cm_jsonrpc_connect_server(const char *address, cm_machine **new_m);
+CM_API cm_error cm_jsonrpc_connect_server(const char *address, int64_t connect_timeout_ms, cm_machine **new_m);
 
 /// \brief Forks the remote machine server.
 /// \param m Pointer to a valid JSONRPC remote machine object.
@@ -82,8 +86,10 @@ CM_API cm_error cm_jsonrpc_connect_server(const char *address, cm_machine **new_
 /// Use cm_delete() to delete the object.
 /// \details The forked process is in the process group of the remote server.
 /// Use cm_jsonrpc_emancipate_server() to make it leader of its own process group.
-/// \details The machine object is not configured to implicitly cleanup anything on cm_delete().
+/// \details The machine object implicit cleanup on cm_delete() is inherited from the original machine.
 /// Use cm_jsonrpc_set_cleanup_call() to change this setting.
+/// \details The communication timeout is inherited from the original machine object.
+/// Use cm_jsonrpc_set_timeout() to change this setting.
 /// \warning If the server is running on a remote host, the \p pid is also remote and cannot be signaled.
 /// Trying to do so may signal an entirely unrelated process in the local host.
 CM_API cm_error cm_jsonrpc_fork_server(const cm_machine *m, cm_machine **forked_m, const char **address, uint32_t *pid);

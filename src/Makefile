@@ -56,7 +56,9 @@ endif
 # Mac OS X specific setup
 ifeq ($(TARGET_OS),Darwin)
 PICCFLAGS=-fPIC
-SOLDFLAGS=-bundle -undefined dynamic_lookup
+# We use -dynamiclib instead of the conventional -bundle flag when compiling Lua libraries
+# allowing jsonrpc.so to link with cartesi.so, which is necessary because they share symbols
+SOLDFLAGS=-dynamiclib -undefined dynamic_lookup
 LIBLDFLAGS=-dynamiclib
 EXELDFLAGS=
 PTHREAD_CFLAGS=
@@ -96,7 +98,9 @@ endif
 SO_EXT=dylib
 LIBCARTESI_LDFLAGS=-install_name '@rpath/$(LIBCARTESI)'
 LIBCARTESI_MERKLE_TREE_LDFLAGS=-install_name '@rpath/$(LIBCARTESI_MERKLE_TREE)'
-LIBCARTESI_JSONRPC_LDFLAGS=-install_name '@rpath/$(LIBCARTESI_JSONRPC)'
+LIBCARTESI_JSONRPC_LDFLAGS=-install_name '@rpath/$(LIBCARTESI_JSONRPC)' -Wl,-rpath,@loader_path
+LUACARTESI_LDFLAGS=-install_name '@rpath/cartesi.so'
+LUACARTESI_JSONRPC_LDFLAGS=-install_name '@rpath/cartesi/jsonrpc.so' -Wl,-rpath,@loader_path/..
 PROFILE_DATA=default.profdata
 
 # Linux or some other POSIX platform
@@ -105,8 +109,8 @@ else
 # Linux specific setup
 PICCFLAGS=-fPIC
 SOLDFLAGS=-shared $(PICCFLAGS) $(GCLDFLAGS)
-LIBLDFLAGS=$(SOLDFLAGS)
-EXELDFLAGS=$(GCLDFLAGS)
+LIBLDFLAGS=$(SOLDFLAGS) -Wl,--no-undefined
+EXELDFLAGS=$(GCLDFLAGS) -Wl,--no-undefined
 PTHREAD_CFLAGS=-pthread
 PTHREAD_LDFLAGS=-pthread -lpthread
 CC=gcc
@@ -120,7 +124,9 @@ SLIRP_LIB=-lslirp
 SO_EXT=so
 LIBCARTESI_LDFLAGS=
 LIBCARTESI_MERKLE_TREE_LDFLAGS=
-LIBCARTESI_JSONRPC_LDFLAGS=
+LIBCARTESI_JSONRPC_LDFLAGS=-Wl,-rpath,'$$ORIGIN'
+LUACARTESI_LDFLAGS=
+LUACARTESI_JSONRPC_LDFLAGS=-Wl,-rpath,'$$ORIGIN/..'
 PROFILE_DATA=
 
 endif
@@ -143,9 +149,9 @@ endif
 
 LIBCARTESI_LIBS=$(LIBCARTESI_COMMON_LIBS)
 LIBCARTESI_MERKLE_TREE_LIBS=
-LIBCARTESI_JSONRPC_LIBS=$(LIBCARTESI_COMMON_LIBS)
+LIBCARTESI_JSONRPC_LIBS=
 LUACARTESI_LIBS=$(LIBCARTESI_COMMON_LIBS)
-LUACARTESI_JSONRPC_LIBS=$(LIBCARTESI_COMMON_LIBS)
+LUACARTESI_JSONRPC_LIBS=
 JSONRPC_REMOTE_CARTESI_MACHINE_LIBS=$(LIBCARTESI_COMMON_LIBS)
 HASH_LIBS=
 
@@ -240,7 +246,8 @@ endif
 
 ifeq ($(sanitize),yes)
 # Enable address and undefined sanitizers
-UBFLAGS+=-fsanitize=address,undefined -fno-sanitize-recover=all
+UBCFLAGS+=-fsanitize=address,undefined -fno-sanitize-recover=all
+UBLDFLAGS+=-fsanitize=address,undefined -fno-sanitize-recover=all
 LIBASAN_SO=$(shell realpath `$(CC) -print-file-name=libasan.so`)
 LIBSTDCPP_SO=$(shell realpath `$(CC) -print-file-name=libstdc++.so`)
 LD_PRELOAD="$(LIBASAN_SO) $(LIBSTDCPP_SO)"
@@ -248,9 +255,9 @@ LD_PRELOAD_PREFIX=LD_PRELOAD=$(LD_PRELOAD)
 LUA=$(LD_PRELOAD_PREFIX) $(LUA_BIN)
 else
 # Flags to minimize undefined behavior
-UBFLAGS+=-fno-strict-aliasing
-UBFLAGS+=-fno-strict-overflow
-UBFLAGS+=-fno-delete-null-pointer-checks
+UBCFLAGS+=-fno-strict-aliasing
+UBCFLAGS+=-fno-strict-overflow
+UBCFLAGS+=-fno-delete-null-pointer-checks
 LD_PRELOAD_PREFIX=
 LUA=$(LUA_BIN)
 endif
@@ -299,9 +306,9 @@ else
 DEFS+=-DNO_THREADS
 endif
 
-CXXFLAGS+=$(OPTFLAGS) -std=gnu++20 -fvisibility=hidden -MMD $(PICCFLAGS) $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
-CFLAGS+=$(OPTFLAGS) -std=gnu99 -fvisibility=hidden -MMD $(PICCFLAGS) $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
-LDFLAGS+=$(UBFLAGS)
+CXXFLAGS+=$(OPTFLAGS) -std=gnu++20 -fvisibility=hidden -MMD $(PICCFLAGS) $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBCFLAGS) $(DEFS) $(WARNS)
+CFLAGS+=$(OPTFLAGS) -std=gnu99 -fvisibility=hidden -MMD $(PICCFLAGS) $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBCFLAGS) $(DEFS) $(WARNS)
+LDFLAGS+=$(UBLDFLAGS)
 
 ifeq ($(coverage),yes)
 ifeq ($(COVERAGE_TOOLCHAIN),gcc)
@@ -385,10 +392,7 @@ LIBCARTESI_OBJS:= \
 
 CARTESI_CLUA_OBJS:= \
 	clua.o \
-	clua-i-virtual-machine.o \
-	uarch-pristine-ram.o \
-	uarch-pristine-state-hash.o \
-	uarch-pristine-hash.o
+	clua-i-virtual-machine.o
 
 LUACARTESI_OBJS:= \
 	clua-cartesi.o \
@@ -409,9 +413,8 @@ LIBCARTESI_JSONRPC_OBJS:= \
 	jsonrpc-virtual-machine.o \
 	os.o \
 	jsonrpc-machine-c-api.o \
-	uarch-pristine-ram.o \
-	uarch-pristine-state-hash.o \
-	uarch-pristine-hash.o
+	base64.o \
+	json-util.o
 
 LUACARTESI_JSONRPC_OBJS:= \
 	clua-cartesi-jsonrpc.o \
@@ -420,10 +423,7 @@ LUACARTESI_JSONRPC_OBJS:= \
 JSONRPC_REMOTE_CARTESI_MACHINE_OBJS:= \
 	jsonrpc-remote-machine.o \
 	jsonrpc-discover.o \
-	slog.o \
-	uarch-pristine-ram.o \
-	uarch-pristine-state-hash.o \
-	uarch-pristine-hash.o
+	slog.o
 
 ifeq ($(gperf),yes)
 DEFS+=-DGPERF
@@ -471,14 +471,14 @@ $(LIBCARTESI_MERKLE_TREE): $(LIBCARTESI_MERKLE_TREE_OBJS)
 $(LIBCARTESI): $(LIBCARTESI_OBJS)
 	$(CXX) -o $@ $^ $(LIBCARTESI_LIBS) $(LDFLAGS) $(LIBCARTESI_LDFLAGS) $(LIBLDFLAGS)
 
-$(LIBCARTESI_JSONRPC): $(LIBCARTESI_JSONRPC_OBJS) libcartesi.a
+$(LIBCARTESI_JSONRPC): $(LIBCARTESI_JSONRPC_OBJS) $(LIBCARTESI)
 	$(CXX) -o $@ $^ $(LIBCARTESI_JSONRPC_LIBS) $(LDFLAGS) $(LIBCARTESI_JSONRPC_LDFLAGS) $(LIBLDFLAGS)
 
 cartesi.so: $(LUACARTESI_OBJS) libcartesi.a
-	$(CXX) -o $@ $^ $(LUACARTESI_LIBS) $(LDFLAGS) $(SOLDFLAGS)
+	$(CXX) -o $@ $^ $(LUACARTESI_LIBS) $(LDFLAGS) $(LUACARTESI_LDFLAGS) $(SOLDFLAGS)
 
-cartesi/jsonrpc.so: $(LUACARTESI_JSONRPC_OBJS) libcartesi_jsonrpc.a libcartesi.a
-	$(CXX) -o $@ $^ $(LUACARTESI_JSONRPC_LIBS) $(LDFLAGS) $(SOLDFLAGS)
+cartesi/jsonrpc.so: $(LUACARTESI_JSONRPC_OBJS) libcartesi_jsonrpc.a cartesi.so
+	$(CXX) -o $@ $^ $(LUACARTESI_JSONRPC_LIBS) $(LDFLAGS) $(LUACARTESI_JSONRPC_LDFLAGS) $(SOLDFLAGS)
 
 lint: $(CLANG_TIDY_TARGETS)
 	@$(MAKE) --no-print-directory -C ../uarch lint

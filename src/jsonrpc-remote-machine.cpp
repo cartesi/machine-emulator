@@ -325,6 +325,7 @@ private:
         }
         SLOG(info) << local_endpoint << " http handler terminated due to signal " << signum;
         stop();
+        close_sessions();
     }
 
     // Receives an incoming TCP connection

@@ -454,7 +454,7 @@ static cm_machine *convert_to_c(cartesi::i_virtual_machine *cpp_m) {
     return reinterpret_cast<cm_machine *>(cpp_m);
 }
 
-cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash) {
+static cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash) {
     if (c_hash == nullptr) {
         throw std::invalid_argument("invalid hash");
     }

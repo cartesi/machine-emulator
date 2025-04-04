@@ -478,7 +478,12 @@ jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, int
     // Create a scope exit handler to ensure child processes are properly cleaned up
     // This prevents zombie processes by making sure we wait for the child to exit
     auto child_waiter = make_scope_exit([&] {
-        // First attempt to gracefully terminate the child process
+        // Close any keep alive open connection first
+        if (m_stream && m_stream->socket().is_open()) {
+            shutdown_and_close_socket(m_stream->socket());
+        }
+
+        // Attempt to gracefully terminate the child process
         std::ignore = kill(child_pid, SIGTERM);
 
         // Wait for the child process to fully exit

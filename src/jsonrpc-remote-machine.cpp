@@ -280,6 +280,13 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
         signals.async_wait(beast::bind_front_handler(&http_handler::on_signal, shared_from_this()));
     }
 
+    // Uninstalls handlers that would stop the HTTP server
+    void uninstall_termination_signal_handlers() {
+        beast::error_code ec;
+        std::ignore = signals.cancel(ec);
+        std::ignore = signals.clear(ec);
+    }
+
     // Begins an asynchronous accept
     void next_accept() {
         acceptor.async_accept(ioc, beast::bind_front_handler(&http_handler::on_accept, shared_from_this()));
@@ -298,12 +305,10 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
     }
 
     // Stop accepting new connections
-    void stop() {
+    void close_acceptor() {
         beast::error_code ec;
-        std::ignore = acceptor.close(ec);
         std::ignore = acceptor.cancel(ec);
-        std::ignore = signals.cancel(ec);
-        std::ignore = signals.clear(ec);
+        std::ignore = acceptor.close(ec);
     }
 
     // Close open sessions
@@ -319,23 +324,28 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
 private:
     // Receives a termination signal
     void on_signal(const beast::error_code &ec, int signum) {
-        // Operation may be aborted (e.g stop() was called)
+        // Operation may be aborted (e.g uninstall_termination_signal_handlers() was called)
         if (ec == asio::error::operation_aborted) {
             return;
         }
         SLOG(info) << local_endpoint << " http handler terminated due to signal " << signum;
-        stop();
+        uninstall_termination_signal_handlers();
+        close_acceptor();
         close_sessions();
     }
 
     // Receives an incoming TCP connection
     void on_accept(const beast::error_code ec, tcp::socket socket) {
-        // Operation may be aborted (e.g rebind() or stop() was called)
-        if (ec == asio::error::operation_aborted) {
+        // Operation may be aborted (e.g rebind() or close_acceptor() was called)
+        if (ec == asio::error::operation_aborted || !acceptor.is_open()) {
             return;
         }
         if (ec) {
             SLOG(error) << local_endpoint << " accept error: " << ec.what();
+            // If we can't accept, the listening socket is probably in a broken state,
+            // close the acceptor so the client abort new connection attempts.
+            // This may happen when amount of open files is reached.
+            close_acceptor();
             return;
         }
 
@@ -692,7 +702,7 @@ static json jsonrpc_shutdown_handler(const json &j, const std::shared_ptr<http_s
     // Close acceptor right-away so the port can be immediately reused after request response.
     // This will also stop the IO main loop when all connections are closed,
     // because the IO context will run out of pending events to execute.
-    session->handler->stop();
+    session->handler->close_acceptor();
     SLOG(trace) << session->handler->local_endpoint << " shutting down";
     return jsonrpc_response_ok(j);
 }

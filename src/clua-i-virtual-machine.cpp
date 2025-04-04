@@ -32,23 +32,19 @@
 
 namespace cartesi {
 
-template <>
-void clua_delete<unsigned char>(unsigned char *ptr) { // NOLINT(readability-non-const-parameter)
+void clua_delete(unsigned char *ptr) { // NOLINT(readability-non-const-parameter)
     delete[] ptr;
 }
 
-template <>
-void clua_delete<cm_machine>(cm_machine *ptr) {
+void clua_delete(cm_machine *ptr) {
     cm_delete(ptr); // this call should never fail
 }
 
-template <>
-void clua_delete<std::string>(std::string *ptr) {
+void clua_delete(std::string *ptr) {
     delete ptr;
 }
 
-template <>
-void clua_delete<nlohmann::json>(nlohmann::json *ptr) {
+void clua_delete(nlohmann::json *ptr) {
     delete ptr;
 }
 

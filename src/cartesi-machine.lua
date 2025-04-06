@@ -658,12 +658,13 @@ end
 
 local function handle_sync_init_date(all)
     if not all then return false end
-    if has_sync_init_date then return end
+    if has_sync_init_date then return true end
     unreproducible = true
     has_sync_init_date = true
     -- round up time by 1, to decrease chance of guest time being in the past
     local seconds = os.time() + 1
     append_init = append_init .. "busybox date -s @" .. seconds .. " >> /dev/null\n"
+    return true
 end
 
 local function handle_virtio_9p(tag, host_directory)
@@ -797,12 +798,13 @@ end
 
 local function handle_virtio_console(all)
     if not all then return false end
-    if has_virtio_console then return end
+    if has_virtio_console then return true end
     unreproducible = true
     has_virtio_console = true
     -- Switch from HTIF Console (hvc0) to VirtIO console (hvc1)
     bootargs = bootargs:gsub("console=hvc0", "console=hvc1")
     table.insert(virtio, 1, { type = "console" })
+    return true
 end
 
 local function handle_interactive(all)
@@ -957,7 +959,7 @@ local options = {
         end,
     },
     {
-        "^%-%-sync%-init-date$",
+        "^%-%-sync%-init%-date$",
         handle_sync_init_date,
     },
     {

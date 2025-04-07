@@ -162,9 +162,11 @@ static const auto jsonrpc_machine_obj_index = cartesi::clua_make_luaL_Reg_array(
 
 /// \brief This is the jsonrpc.connect() method implementation.
 static int mod_connect_server(lua_State *L) {
+    lua_settop(L, 2);
     const char *address = luaL_checkstring(L, 1);
+    const auto connect_timeout_ms = luaL_optinteger(L, 2, -1);
     auto &m = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr));
-    if (cm_jsonrpc_connect_server(address, &m.get()) != 0) {
+    if (cm_jsonrpc_connect_server(address, connect_timeout_ms, &m.get()) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     return 1;
@@ -172,13 +174,14 @@ static int mod_connect_server(lua_State *L) {
 
 /// \brief This is the jsonrpc.spawn_server() method implementation.
 static int mod_spawn_server(lua_State *L) {
-    lua_settop(L, 1);
+    lua_settop(L, 2);
     const char *address = luaL_optstring(L, 1, "127.0.0.1:0");
+    const auto spawn_timeout_ms = luaL_optinteger(L, 2, -1);
     lua_newtable(L);                                                     // server
     auto &m = clua_push_to(L, clua_managed_cm_ptr<cm_machine>(nullptr)); // server object
     const char *bound_address = nullptr;
     uint32_t pid = 0;
-    if (cm_jsonrpc_spawn_server(address, &m.get(), &bound_address, &pid) != 0) {
+    if (cm_jsonrpc_spawn_server(address, spawn_timeout_ms, &m.get(), &bound_address, &pid) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     lua_pushstring(L, bound_address); // server address

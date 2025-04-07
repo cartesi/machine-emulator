@@ -20,18 +20,14 @@
 #include <string>
 
 #include "machine-c-api.h"
-#include "machine-merkle-tree.h"
 
 /// \brief Helper function that returns error result from C api function
-cm_error cm_result_failure();
+CM_API cm_error cm_result_failure();
 
 /// \brief Helper function that returns success result from C api function
-cm_error cm_result_success();
-
-/// \brief Helper function that parses hash from C api structure
-cartesi::machine_merkle_tree::hash_type convert_from_c(const cm_hash *c_hash);
+CM_API cm_error cm_result_success();
 
 /// \brief Helper function that stores a string to a temporary thread local.
-const char *cm_set_temp_string(const std::string &s);
+CM_API const char *cm_set_temp_string(const std::string &s);
 
 #endif // CM_C_API_INTERNAL_H

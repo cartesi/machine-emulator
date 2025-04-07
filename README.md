@@ -65,6 +65,8 @@ In addition, you can watch an insightful interview with Diego Nehab about the Ca
 
 We provide official packages for some distributions, but you can also build from source.
 
+**NOTE:** The official package repositories listed below are not available yet. These instructions explain the installation process once the packages become available.
+
 #### Debian or Ubuntu
 
 We maintain an APT package repository containing binary packages for *amd64*, *arm64* and *riscv64*, you can install with:
@@ -207,7 +209,7 @@ You can check the `cartesi-machine --help` for more information on how to use th
 
 ### Library
 
-You can use the emulator as library in other applications, its `libcartesi` library provides a [C API](https://github.com/cartesi/machine-emulator/blob/refactor/new-readme/src/machine-c-api.h) that is very simple to use.
+You can use the emulator as library in other applications, its `libcartesi` library provides a [C API](src/machine-c-api.h) that is very simple to use.
 
 Check the following wiki guides on how to use with different languages:
 - [C/C++](https://github.com/cartesi/machine-emulator/wiki/Using-the-C-API)
@@ -223,7 +225,7 @@ Check the following wiki guides on how to use with different languages:
 The following projects have been using the emulator:
 - [Cartesi Rollups Node](https://github.com/cartesi/rollups-node) - Uses the emulator's library in Go for Layer 2 rollups on Ethereum.
 - [Cartesi Dave](https://github.com/cartesi/dave) - Uses the emulator's library in Rust for on-chain fraud-proofs validation.
-- [Cartesi CLI](https://github.com/cartesi/machine-emulator/projects) - Uses the emulator's CLI in TypeScript for DApp development.
+- [Cartesi CLI](https://github.com/cartesi/cli) - Uses the emulator's CLI in TypeScript for DApp development.
 
 ## Related Projects
 
@@ -246,7 +248,7 @@ While the full documentation is being refreshed, you can find guides and tutoria
 
 ## Change Log
 
-Changes between emulator releases are documented in [CHANGELOG](CHANGELOG).
+Changes between emulator releases are documented in [CHANGELOG](CHANGELOG.md).
 
 ## Roadmap
 

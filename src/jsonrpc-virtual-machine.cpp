@@ -17,6 +17,7 @@
 #include "jsonrpc-virtual-machine.h"
 
 #include <cerrno>
+#include <chrono>
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
@@ -33,8 +34,16 @@
 #include "os-features.h"
 
 #ifdef HAVE_FORK
-#include <sys/time.h>
+#include <spawn.h>
+#include <sys/wait.h>
 #include <unistd.h>
+
+// On Linux `environ` is defined in unistd.h, in other platforms we may need to import it.
+#ifdef __APPLE__
+#include <crt_externs.h>
+#define environ (*_NSGetEnviron())
+#endif
+
 #endif
 
 #pragma GCC diagnostic push
@@ -58,6 +67,7 @@
 #include "machine-merkle-tree.h"
 #include "machine-runtime-config.h"
 #include "os.h"
+#include "scope-exit.h"
 #include "semantic-version.h"
 #include "uarch-interpret.h"
 
@@ -69,6 +79,12 @@ namespace beast = boost::beast; // from <boost/beast.hpp>
 namespace http = beast::http;   // from <boost/beast/http.hpp>
 namespace asio = boost::asio;   // from <boost/asio.hpp>
 using tcp = asio::ip::tcp;      // from <boost/asio/ip/tcp.hpp>
+
+// The io_context is required for all I/O
+static boost::asio::io_context &get_ioc() {
+    static THREAD_LOCAL boost::asio::io_context ioc{1};
+    return ioc;
+}
 
 template <typename... Ts, size_t... Is>
 static std::string jsonrpc_post_data(const std::string &method, const std::tuple<Ts...> &params,
@@ -82,6 +98,18 @@ static std::string jsonrpc_post_data(const std::string &method, const std::tuple
 template <typename... Ts>
 static std::string jsonrpc_post_data(const std::string &method, const std::tuple<Ts...> &params) {
     return jsonrpc_post_data(method, params, std::make_index_sequence<sizeof...(Ts)>{});
+}
+
+// Close a socket of a connection we are done processing.
+static void shutdown_and_close_socket(auto &socket) {
+    // Errors are also silently ignored because at this point all the connection traffic was already processed.
+    beast::error_code ec;
+    // We deliberately omit shutdown on the sending end of the socket to force an RST packet instead of a FIN packet
+    // during close(). This behavior occurs because we've set SO_LINGER to 0 on the TCP socket, which causes it to send
+    // RST packets when closed. By sending RST instead of FIN, we avoid leaving the connection in TIME_WAIT state, which
+    // helps prevent TCP port exhaustion.
+    std::ignore = socket.shutdown(tcp::socket::shutdown_receive, ec);
+    std::ignore = socket.close(ec);
 }
 
 // Parses an endpoint from an address string in the format "<ip>:<port>"
@@ -107,9 +135,10 @@ class expiration {
     beast::tcp_stream &m_stream;
 
 public:
-    expiration(beast::tcp_stream &stream, int64_t ms) : m_stream(stream) {
-        if (ms > 0) {
-            beast::get_lowest_layer(m_stream).expires_after(std::chrono::milliseconds(ms));
+    expiration(beast::tcp_stream &stream, std::chrono::time_point<std::chrono::steady_clock> timeout_at) :
+        m_stream(stream) {
+        if (timeout_at != std::chrono::time_point<std::chrono::steady_clock>::max()) {
+            beast::get_lowest_layer(m_stream).expires_at(timeout_at);
         } else {
             beast::get_lowest_layer(m_stream).expires_never();
         }
@@ -124,22 +153,22 @@ public:
     }
 };
 
-static std::string json_post(boost::asio::io_context &ioc, beast::tcp_stream &stream, const std::string &remote_address,
-    const std::string &post_data, int64_t ms, bool keep_alive) {
+static std::string json_post(beast::tcp_stream &stream, const std::string &remote_address, const std::string &post_data,
+    std::chrono::time_point<std::chrono::steady_clock> timeout_at, bool keep_alive) {
+    auto &ioc = get_ioc();
+
     // Determine remote endpoint from remote address
     const asio::ip::tcp::endpoint remote_endpoint = parse_endpoint(remote_address);
 
     // Set expiration to ms milliseconds into the future, automatically clear it when function exits
-    const expiration exp(stream, ms);
+    const expiration exp(stream, timeout_at);
 
     // Close current stream socket when the remote endpoint is different
     if (stream.socket().is_open()) {
         beast::error_code ec;
         const auto socket_remote_endpoint = stream.socket().remote_endpoint(ec);
         if (ec || socket_remote_endpoint != remote_endpoint) {
-            // We can silently ignore socket shutdown/close errors from previous connections
-            std::ignore = stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-            std::ignore = stream.socket().close(ec);
+            shutdown_and_close_socket(stream.socket());
         }
     }
 
@@ -163,9 +192,9 @@ static std::string json_post(boost::asio::io_context &ioc, beast::tcp_stream &st
         stream.socket().set_option(no_delay_option);
 
         // Minimize socket close time by setting the linger time to 0.
-        // On MacOS, it avoids accumulating socket in TIME_WAIT state, after rapid successive requests,
+        // It avoids accumulating socket in TIME_WAIT state after rapid successive requests,
         // which can consume all available ports.
-        // It is safe to do this because it is the client who decides to close the connection,
+        // It's safe to do this because it is the client who decides to close the connection,
         // after all data is received.
         const boost::asio::socket_base::linger linger_option(true, 0);
         stream.socket().set_option(linger_option);
@@ -230,35 +259,29 @@ static std::string json_post(boost::asio::io_context &ioc, beast::tcp_stream &st
 
         // Gracefully close the socket
         if (!keep_alive || !res.keep_alive()) {
-            beast::error_code ec;
-            // The response was received so we can silently ignore socket shutdown/close errors
-            std::ignore = stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-            std::ignore = stream.socket().close(ec);
+            shutdown_and_close_socket(stream.socket());
         }
 
         // Return response body
         return res.body();
     } catch (...) {
-        // Close stream socket on errors
-        beast::error_code ec;
-        std::ignore = stream.socket().shutdown(tcp::socket::shutdown_both, ec);
-        std::ignore = stream.socket().close(ec);
+        shutdown_and_close_socket(stream.socket());
         // Re-throw exception
         throw;
     }
 }
 
 template <typename R, typename... Ts>
-static void jsonrpc_request(std::unique_ptr<boost::asio::io_context> &ioc, std::unique_ptr<beast::tcp_stream> &stream,
-    const std::string &remote_address, const std::string &method, const std::tuple<Ts...> &tp, R &result, int64_t ms,
-    bool keep_alive = true) {
-    if (!stream || !ioc) {
+static void jsonrpc_request(std::unique_ptr<beast::tcp_stream> &stream, const std::string &remote_address,
+    const std::string &method, const std::tuple<Ts...> &tp, R &result,
+    std::chrono::time_point<std::chrono::steady_clock> timeout_at, bool keep_alive = true) {
+    if (!stream) {
         throw std::runtime_error{"remote server was shutdown"s};
     }
     auto request = jsonrpc_post_data(method, tp);
     std::string response_s;
     try {
-        response_s = json_post(*ioc, *stream, remote_address, request, ms, keep_alive);
+        response_s = json_post(*stream, remote_address, request, timeout_at, keep_alive);
     } catch (std::exception &x) {
         throw std::runtime_error("jsonrpc error: post error contacting "s + remote_address + " ("s + x.what() + ")"s);
     }
@@ -313,7 +336,17 @@ namespace cartesi {
 template <typename R, typename... Ts>
 void jsonrpc_virtual_machine::request(const std::string &method, const std::tuple<Ts...> &tp, R &result,
     bool keep_alive) const {
-    jsonrpc_request(m_ioc, m_stream, m_address, method, tp, result, m_timeout, keep_alive);
+    // Determine request timeout time
+    const auto timeout_at = m_timeout >= 0 ? (std::chrono::steady_clock::now() + std::chrono::milliseconds(m_timeout)) :
+                                             std::chrono::time_point<std::chrono::steady_clock>::max();
+    // Performs the request
+    jsonrpc_request(m_stream, m_address, method, tp, result, timeout_at, keep_alive);
+}
+
+template <typename R, typename... Ts>
+void jsonrpc_virtual_machine::request(const std::string &method, const std::tuple<Ts...> &tp, R &result,
+    std::chrono::time_point<std::chrono::steady_clock> timeout_at, bool keep_alive) const {
+    jsonrpc_request(m_stream, m_address, method, tp, result, timeout_at, keep_alive);
 }
 
 void jsonrpc_virtual_machine::shutdown_server() {
@@ -323,7 +356,6 @@ void jsonrpc_virtual_machine::shutdown_server() {
     // otherwise we may end up with too many open sockets in garbage collected environments.
     // This will also invalidate any further jsonrpc request.
     m_stream.reset();
-    m_ioc.reset();
 }
 
 void jsonrpc_virtual_machine::delay_next_request(uint64_t ms) const {
@@ -355,8 +387,10 @@ static inline std::string semver_to_string(uint32_t major, uint32_t minor) {
     return std::to_string(major) + "." + std::to_string(minor);
 }
 
-void jsonrpc_virtual_machine::check_server_version() const {
-    const auto server_version = get_server_version();
+void jsonrpc_virtual_machine::check_server_version(
+    std::chrono::time_point<std::chrono::steady_clock> timeout_at) const {
+    semantic_version server_version;
+    request("get_version", std::tie(), server_version, timeout_at, false);
     if (server_version.major != JSONRPC_VERSION_MAJOR || server_version.minor != JSONRPC_VERSION_MINOR) {
         throw std::runtime_error{"expected server version "s +
             semver_to_string(JSONRPC_VERSION_MAJOR, JSONRPC_VERSION_MINOR) + " (got "s +
@@ -364,13 +398,26 @@ void jsonrpc_virtual_machine::check_server_version() const {
     }
 }
 
-jsonrpc_virtual_machine::jsonrpc_virtual_machine(std::string address) :
-    m_ioc(new boost::asio::io_context{1}),
-    m_stream(new boost::beast::tcp_stream(*m_ioc)),
+jsonrpc_virtual_machine::jsonrpc_virtual_machine(std::string address, int64_t connect_timeout_ms) :
+    m_stream(new boost::beast::tcp_stream(get_ioc())),
     m_address(std::move(address)) {
     // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
     os_disable_sigpipe();
-    check_server_version();
+
+    // Determine connection timeout time
+    const auto timeout_at = connect_timeout_ms >= 0 ?
+        (std::chrono::steady_clock::now() + std::chrono::milliseconds(connect_timeout_ms)) :
+        std::chrono::time_point<std::chrono::steady_clock>::max();
+
+    // Verify server compatibility by checking its version against our expected version
+    check_server_version(timeout_at);
+}
+
+jsonrpc_virtual_machine::jsonrpc_virtual_machine(std::string address) :
+    m_stream(new boost::beast::tcp_stream(get_ioc())),
+    m_address(std::move(address)) {
+    // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
+    os_disable_sigpipe();
 }
 
 #ifdef HAVE_FORK
@@ -395,117 +442,111 @@ static std::string endpoint_to_string(const boost::asio::ip::tcp::endpoint &endp
     return ss.str();
 }
 
-jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, fork_result &spawned) :
-    m_ioc(new boost::asio::io_context{1}),
-    m_stream(new boost::beast::tcp_stream(*m_ioc)) {
-    // this function first blocks SIGUSR1, SIGUSR2 and SIGALRM.
-    // then it double-forks.
-    // the grand-child sends the parent a SIGUSR2 and suicides if failed before execing jsonrpc-remote-cartesi-machine.
-    // otherwise, jsonrpc-remote-cartesi-machine itself sends the parent a SIGUSR1 to notify it is ready.
-    // the parent sets up to receive a SIGALRM after 15 seconds and then waits for SIGUSR1, SIGUSR2 or SIGALRM
-    // if it gets SIGALRM, the grand-child is unresponsive, so the parent kills it and the constructor fails.
-    // if it gets SIGUSR2, the grand-child failed before exec and suicided, so the constructor fails.
-    // if it gets SIGUSR1, jsonrpc-remote-cartesi-machine is ready and the constructor succeeds.
-    boost::asio::io_context ioc{1};
-    // NOLINTNEXTLINE(clang-analyzer-optin.cplusplus.VirtualCall)
-    boost::asio::ip::tcp::acceptor a(ioc, address_to_endpoint(address));
-    // already done by constructor
-    // a.open(endpoint.protocol());
-    // a.set_option(asio::socket_base::reuse_address(true));
-    // a.bind(endpoint);
-    // a.listen(asio::socket_base::max_listen_connections);
-    sigset_t mask{};
-    sigset_t omask{};
-    sigemptyset(&mask);        // always returns 0
-    sigaddset(&mask, SIGUSR1); // always returns 0
-    sigaddset(&mask, SIGUSR2); // always returns 0
-    sigaddset(&mask, SIGALRM); // always returns 0
-    if (sigprocmask(SIG_BLOCK, &mask, &omask) < 0) {
-        // sigprocmask can only fail if we screwed up the values. this can't happen.
-        // being paranoid, if it *did* happen, we are trying to avoid a situation where
-        // our process gets killed when the grand-child or the alarm tries to signal us
-        // and the signals are not blocked
-        throw std::system_error{errno, std::generic_category(), "sigprocmask failed"};
-    }
-    bool restore_sigprocmask = true;
+jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, int64_t spawn_timeout_ms,
+    fork_result &spawned) :
+    m_stream(new boost::beast::tcp_stream(get_ioc())),
+    m_call(cleanup_call::shutdown) {
+
+    // Determine spawn timeout time
+    const auto timeout_at = spawn_timeout_ms >= 0 ?
+        (std::chrono::steady_clock::now() + std::chrono::milliseconds(spawn_timeout_ms)) :
+        std::chrono::time_point<std::chrono::steady_clock>::max();
+
+    // Create a TCP acceptor and bind it to the specified address
+    // The acceptor automatically performs open, bind and listen operations
+    boost::asio::ip::tcp::acceptor a(get_ioc(),
+        address_to_endpoint(address)); // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
+
+    // Determine which remote machine binary to use
     const char *bin = getenv("CARTESI_JSONRPC_REMOTE_MACHINE");
-    if (bin == nullptr) {
+    if (bin == nullptr) { // Fallback to default name if not set
         bin = "jsonrpc-remote-cartesi-machine";
     }
-    auto ppid = getpid();
-    bool restore_grand_child = false;
-    const int32_t grand_child = cartesi::os_double_fork_or_throw(false);
-    if (grand_child == 0) { // grand-child and double-fork() succeeded
-        sigprocmask(SIG_SETMASK, &omask, nullptr);
-        char sigusr1[256] = "";
-        std::ignore = snprintf(sigusr1, std::size(sigusr1), "--sigusr1=%d", ppid);
-        char server_fd[256] = "";
-        std::ignore = snprintf(server_fd, std::size(server_fd), "--server-fd=%d", a.native_handle());
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
-        char *args[] = {const_cast<char *>(bin), server_fd, sigusr1, nullptr};
-        if (execvp(bin, args) < 0) {
-            // here we failed to run jsonrpc-remote-cartesi-machine. nothing we can do.
-            kill(ppid, SIGUSR2); // notify parent as soon as possible that we failed.
-            exit(1);
-        };
-        // code never reaches here
-    } else if (grand_child > 0) {   // parent and double-fork() succeeded
-        restore_grand_child = true; // make sure grand-child is killed if we fail
-        m_address = endpoint_to_string(a.local_endpoint());
-        a.close();
-        struct itimerval ovalue{};
-        bool restore_itimer = false;
-        try {
-            struct itimerval value{};
-            memset(&value, 0, sizeof(value));
-            value.it_interval.tv_sec = 0;
-            value.it_interval.tv_usec = 0;
-            value.it_value.tv_sec = 15;
-            value.it_value.tv_usec = 0;
-            if (setitimer(ITIMER_REAL, &value, &ovalue) < 0) {
-                // setitimer only fails if we screwed up with the values. this should not happen.
-                // being paranoid, if it *did* happen, and if the grand-child also failed to signal us,
-                // we might hang forever in the following call to sigwait.
-                // we prefer to give up instead of risking a deadlock.
-                throw std::system_error{errno, std::generic_category(), "setitimer failed"};
-            }
-            restore_itimer = true;
-            int sig = 0;
-            if (auto ret = sigwait(&mask, &sig); ret != 0) {
-                throw std::system_error{ret, std::generic_category(), "sigwait failed"};
-            }
-            if (sig == SIGALRM) { // grand-child didn't signal us before alarm
-                throw std::runtime_error{"grand-child process unresponsive"};
-            }
-            if (sig == SIGUSR2) { // grand-child signaled us that it failed to exec
-                // grand-child will have exited on its own
-                restore_grand_child = false;
-                throw std::runtime_error{"failed to run '"s + bin + "'"s};
-            }
-            // grand-child signaled us that everything is fine
-            assert(sig == SIGUSR1);
-            setitimer(ITIMER_REAL, &ovalue, nullptr);
-            restore_itimer = false;
-            sigprocmask(SIG_SETMASK, &omask, nullptr);
-            restore_sigprocmask = false;
-            spawned.pid = grand_child;
-            spawned.address = m_address;
-            // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
-            os_disable_sigpipe();
-            check_server_version();
-        } catch (...) {
-            if (restore_sigprocmask) {
-                sigprocmask(SIG_SETMASK, &omask, nullptr);
-            }
-            if (restore_grand_child) {
-                kill(grand_child, SIGTERM);
-            }
-            if (restore_itimer) {
-                setitimer(ITIMER_REAL, &ovalue, nullptr);
-            }
-            throw;
-        }
+
+    // Prepare command-line arguments for the child process
+    char server_fd[256] = "";
+    std::ignore = snprintf(server_fd, std::size(server_fd), "--server-fd=%d", a.native_handle());
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+    char *const args[] = {const_cast<char *>(bin), server_fd, nullptr};
+
+    // Spawn the remote machine as a child process
+    pid_t child_pid{};
+    if (posix_spawnp(&child_pid, bin, nullptr, nullptr, args, environ) != 0) {
+        throw std::system_error{errno, std::generic_category(), "posix_spawnp() failed to spawn server process"};
     }
+
+    // Create a scope exit handler to ensure child processes are properly cleaned up
+    // This prevents zombie processes by making sure we wait for the child to exit
+    auto child_waiter = make_scope_exit([&] {
+        // Close any keep alive open connection first
+        if (m_stream && m_stream->socket().is_open()) {
+            shutdown_and_close_socket(m_stream->socket());
+        }
+
+        // Attempt to gracefully terminate the child process
+        std::ignore = kill(child_pid, SIGTERM);
+
+        // Wait for the child process to fully exit
+        while (true) {
+            const auto wait_ret = waitpid(child_pid, nullptr, 0);
+
+            // If waitpid() was interrupted by a signal (EINTR), we need to retry
+            // This can happen if another signal arrives during our waitpid() call
+            if (wait_ret == -1 && errno == EINTR) {
+                // Send SIGILL to ensure child process termination
+                // This helps in case the interrupting signal affected the child's state
+                std::ignore = kill(child_pid, SIGILL);
+                continue;
+            }
+
+            // We can exit the waiting loop when either:
+            // 1. waitpid() returns a positive value - this indicates successful wait/child termination
+            // 2. waitpid() fails with ECHILD (No child processes) which can happen in two cases:
+            //    a. The child was already automatically reaped by our SIGCHLD handler set to SIG_IGN
+            //    b. Another SIGCHLD handler in the process has already called waitpid() on this child
+            break;
+        }
+    });
+
+    // Store the local endpoint as our server address for future connections
+    m_address = endpoint_to_string(a.local_endpoint());
+
+    // Close the acceptor socket, as its ownership is now transferred to the child process
+    boost::system::error_code ec;
+    std::ignore = a.close(ec);
+
+    // Install signal handler to ignore SIGPIPE signals that would otherwise
+    // terminate the process when writing to a closed socket connection
+    os_disable_sigpipe();
+
+    // Verify server compatibility by checking its version against our expected version
+    check_server_version(timeout_at);
+
+    // Fork a new server process (grand-child) to avoid zombie processes
+    // This allows us to use waitpid() on the original child process while the
+    // actual server (grand-child) continues running independently
+    fork_result forked_grand_child{};
+    request("fork", std::tie(), forked_grand_child, timeout_at, true);
+
+    // Ensures the grand-child process is killed if any exceptions occur during the subsequent initialization steps
+    auto grand_child_killer = make_scope_fail([&] {
+        // Send SIGILL signal to forcefully terminate the grand-child process
+        std::ignore = kill(static_cast<pid_t>(forked_grand_child.pid), SIGILL);
+    });
+
+    // Shutdown the original child server process now that we have a forked grand-child
+    bool shutdown_result = false;
+    request("shutdown", std::tie(), shutdown_result, timeout_at, false);
+    m_address = forked_grand_child.address;
+
+    // Rebind the forked server to listen on the originally requested address
+    std::string rebind_result;
+    request("rebind", std::tie(forked_grand_child.address), rebind_result, timeout_at, false);
+    m_address = rebind_result;
+
+    // At this point, we've confirmed the remote server is properly initialized and running
+    spawned.pid = forked_grand_child.pid;
+    spawned.address = m_address;
 }
 
 #else
@@ -572,9 +613,7 @@ jsonrpc_virtual_machine::~jsonrpc_virtual_machine() {
     }
     // Gracefully close any established keep alive connection
     if (m_stream && m_stream->socket().is_open()) {
-        beast::error_code ec;
-        std::ignore = m_stream->socket().shutdown(tcp::socket::shutdown_both, ec);
-        std::ignore = m_stream->socket().close(ec);
+        shutdown_and_close_socket(m_stream->socket());
     }
 }
 

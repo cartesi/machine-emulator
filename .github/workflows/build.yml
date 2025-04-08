@@ -209,7 +209,7 @@ jobs:
 
       - name: Run jsonrpc lua test scripts
         run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh cartesi-jsonrpc-machine cartesi-machine cartesi-machine-tests
 
       - name: Create cmio templates
         run: |
@@ -217,7 +217,7 @@ jobs:
 
       - name: Run cmio lua test scripts
         run: |
-          docker run --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-cmio.sh jsonrpc-remote-cartesi-machine cartesi-machine lua
+          docker run --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-cmio.sh cartesi-jsonrpc-machine cartesi-machine lua
 
       - name: Run Merkle tree tests
         run: |
@@ -381,7 +381,7 @@ jobs:
 
       - name: Run jsonrpc lua test scripts
         run: |
-          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh cartesi-jsonrpc-machine cartesi-machine cartesi-machine-tests
 
       - name: Create cmio templates
         run: |
@@ -389,7 +389,7 @@ jobs:
 
       - name: Run cmio lua test scripts
         run: |
-          docker run --platform linux/arm64 --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-cmio.sh jsonrpc-remote-cartesi-machine cartesi-machine lua
+          docker run --platform linux/arm64 --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-cmio.sh cartesi-jsonrpc-machine cartesi-machine lua
 
       - name: Run Merkle tree tests
         run: |

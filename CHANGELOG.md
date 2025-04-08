@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed `--log-uarch-reset` command line option to `--log-reset-uarch`
 - Renamed `--auto-uarch-reset` command line option to `--auto-reset-uarch`
 - Renamed various C API functions, structs, and enumerations
+- Renamed `jsonrpc-remote-cartesi-machine` to `cartesi-jsonrpc-machine`
 - Revamped project README with more up-to-date explanations and simplified instructions
 - Changed help and configs to be printed to `stdout` instead of `stderr`
 - Changed the public C API to require less manual memory management

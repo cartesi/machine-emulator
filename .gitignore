@@ -10,7 +10,7 @@
 build
 pkg
 third-party/downloads
-src/jsonrpc-remote-cartesi-machine
+src/cartesi-jsonrpc-machine
 src/merkle-tree-hash
 src/tests/test-machine-c-api
 src/tests/test-merkle-tree-hash

@@ -103,4 +103,4 @@ EXPOSE 5002
 
 USER cartesi
 
-CMD [ "/usr/bin/jsonrpc-remote-cartesi-machine", "--server-address=0.0.0.0:5002"]
+CMD [ "/usr/bin/cartesi-jsonrpc-machine", "--server-address=0.0.0.0:5002"]

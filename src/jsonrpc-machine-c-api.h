@@ -55,8 +55,8 @@ typedef enum cm_jsonrpc_cleanup_call {
 /// Use cm_jsonrpc_emancipate_server() to make it leader of its own process group.
 /// \details The machine object is configured to implicitly cleanup with a shutdown during cm_delete().
 /// Use cm_jsonrpc_set_cleanup_call() to change this setting.
-/// \details Unless the desired jsonrpc-remote-cartesi-machine executable is in the path,
-/// the environment variable CARTESI_JSONRPC_REMOTE_MACHINE must point directly to the executable.
+/// \details Unless the desired cartesi-jsonrpc-machine executable is in the path,
+/// the environment variable CARTESI_JSONRPC_MACHINE must point directly to the executable.
 CM_API cm_error cm_jsonrpc_spawn_server(const char *address, int64_t spawn_timeout_ms, cm_machine **new_m,
     const char **bound_address, uint32_t *pid);
 

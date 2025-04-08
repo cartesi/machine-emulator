@@ -1,4 +1,4 @@
-FROM debian:bookworm-20250113 AS toolchain
+FROM debian:bookworm-20250407 AS toolchain
 
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
@@ -80,7 +80,7 @@ FROM builder AS debian-packager
 RUN make install-uarch debian-package DESTDIR=$PWD/_install
 
 ####################################################################################################
-FROM debian:bookworm-20250113-slim
+FROM debian:bookworm-20250407-slim
 ARG TARGETARCH
 
 COPY --from=debian-packager \

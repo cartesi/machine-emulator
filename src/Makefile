@@ -153,7 +153,7 @@ LIBCARTESI_JSONRPC_LIBS=
 LUACARTESI_LIBS=$(LIBCARTESI_COMMON_LIBS)
 LUACARTESI_JSONRPC_LIBS=
 CARTESI_JSONRPC_MACHINE_LIBS=$(LIBCARTESI_COMMON_LIBS)
-HASH_LIBS=
+CARTESI_MERKLE_TREE_HASH_LIBS=
 
 #DEFS+= -DMT_ALL_DIRTY
 
@@ -339,7 +339,7 @@ luacartesi: libluacartesi.a cartesi.so libluacartesi_jsonrpc.a cartesi/jsonrpc.s
 
 jsonrpc: cartesi/jsonrpc.so cartesi-jsonrpc-machine
 
-hash: merkle-tree-hash
+hash: cartesi-merkle-tree-hash
 
 c-api: $(LIBCARTESI) $(LIBCARTESI_MERKLE_TREE) $(LIBCARTESI_JSONRPC)
 
@@ -406,7 +406,7 @@ LIBCARTESI_MERKLE_TREE_OBJS:= \
 	complete-merkle-tree.o \
 	full-merkle-tree.o
 
-MERKLE_TREE_HASH_OBJS:= \
+CARTESI_MERKLE_TREE_HASH_OBJS:= \
 	merkle-tree-hash.o
 
 LIBCARTESI_JSONRPC_OBJS:= \
@@ -529,8 +529,8 @@ $(PROFILE_DATA):
 	llvm-profdata merge -output=default.profdata default*.profraw
 endif
 
-merkle-tree-hash: $(MERKLE_TREE_HASH_OBJS) libcartesi_merkle_tree.a
-	$(CXX) -o $@ $^ $(HASH_LIBS) $(LDFLAGS) $(EXELDFLAGS)
+cartesi-merkle-tree-hash: $(CARTESI_MERKLE_TREE_HASH_OBJS) libcartesi_merkle_tree.a
+	$(CXX) -o $@ $^ $(CARTESI_MERKLE_TREE_HASH_LIBS) $(LDFLAGS) $(EXELDFLAGS)
 
 cartesi-jsonrpc-machine: $(CARTESI_JSONRPC_MACHINE_OBJS) libcartesi_jsonrpc.a libcartesi.a
 	$(CXX) -o $@ $^ $(CARTESI_JSONRPC_MACHINE_LIBS) $(LDFLAGS) $(EXELDFLAGS)
@@ -605,7 +605,7 @@ clean-libcartesi: clean-objs
 	@rm -f *.so *.a cartesi/*.so *.dylib
 
 clean-executables:
-	@rm -f cartesi-jsonrpc-machine merkle-tree-hash compute-uarch-pristine-hash
+	@rm -f cartesi-jsonrpc-machine cartesi-merkle-tree-hash compute-uarch-pristine-hash
 
 clean-coverage:
 	@rm -f *.profdata *.profraw *.gcda *.gcov coverage.info coverage.txt

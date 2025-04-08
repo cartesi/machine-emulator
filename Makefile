@@ -73,7 +73,7 @@ INSTALL_DIR= cp -RP
 SYMLINK= ln -sf
 CHMOD_EXEC= chmod 0755
 
-EMU_TO_BIN= src/cartesi-jsonrpc-machine src/merkle-tree-hash
+EMU_TO_BIN= src/cartesi-jsonrpc-machine src/cartesi-merkle-tree-hash
 EMU_TO_LIB= src/$(LIBCARTESI_SO) src/$(LIBCARTESI_SO_JSONRPC)
 EMU_TO_LIB_A= src/libcartesi.a src/libcartesi_jsonrpc.a src/libluacartesi.a src/libluacartesi_jsonrpc.a
 EMU_LUA_TO_BIN= src/cartesi-machine.lua src/cartesi-machine-stored-hash.lua

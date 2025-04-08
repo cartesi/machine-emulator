@@ -60,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved CI to use more parallel jobs when testing
 - Improved `send_cmio_response` bounds checking
 - Split `iflags` CSR into multiple CSRs
+- Bumped MARCHID version to 19
+- Updated test rootfs to guest tools 0.17.0
 
 ## Removed
 - Removed publishing of Debian package artifacts in favor of official Linux package repositories

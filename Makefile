@@ -22,7 +22,7 @@ DEB_ARCH?= $(shell dpkg --print-architecture 2>/dev/null || echo amd64)
 PREFIX= /usr
 MACHINE_EMULATOR_VERSION= $(shell make -sC src version)
 MACHINE_EMULATOR_SO_VERSION= $(shell make -sC src so-version)
-DEB_FILENAME= cartesi-machine-v$(MACHINE_EMULATOR_VERSION)_$(DEB_ARCH).deb
+DEB_FILENAME= machine-emulator_$(DEB_ARCH).deb
 BIN_RUNTIME_PATH= $(PREFIX)/bin
 LIB_RUNTIME_PATH= $(PREFIX)/lib
 DOC_RUNTIME_PATH= $(PREFIX)/doc/cartesi-machine
@@ -31,8 +31,8 @@ IMAGES_RUNTIME_PATH= $(SHARE_RUNTIME_PATH)/images
 LUA_RUNTIME_CPATH= $(PREFIX)/lib/lua/5.4
 LUA_RUNTIME_PATH= $(PREFIX)/share/lua/5.4
 
-TESTS_DEB_FILENAME= cartesi-machine-tests-v$(MACHINE_EMULATOR_VERSION)_$(DEB_ARCH).deb
-TESTS_DATA_DEB_FILENAME= cartesi-machine-tests-data-v$(MACHINE_EMULATOR_VERSION).deb
+TESTS_DEB_FILENAME= machine-emulator-tests_$(DEB_ARCH).deb
+TESTS_DATA_DEB_FILENAME= machine-emulator-tests-data.deb
 TESTS_DATA_RUNTIME_PATH= $(SHARE_RUNTIME_PATH)/tests/data
 TESTS_SCRIPTS_RUNTIME_PATH= $(SHARE_RUNTIME_PATH)/tests/scripts
 TESTS_LUA_RUNTIME_PATH= $(SHARE_RUNTIME_PATH)/tests/lua
@@ -174,7 +174,7 @@ help:
 	@echo '  doc                                 - Build the doxygen documentation (requires doxygen)'
 	@echo 'Docker images targets:'
 	@echo '  build-emulator-image                - Build the machine-emulator debian based docker image'
-	@echo '  build-debian-package                - Build the cartesi-machine.deb package from image'
+	@echo '  build-debian-package                - Build the machine-emulator.deb package from image'
 	@echo '  build-toolchain                     - Build the emulator toolchain docker image'
 	@echo '  create-generated-files-patch        - Create patch that adds generated files to source tree'
 	@echo 'Cleaning targets:'
@@ -186,7 +186,7 @@ $(SUBCLEAN): %.clean:
 	@$(MAKE) -C $* clean
 
 clean: $(SUBCLEAN)
-	@rm -rf cartesi-machine-*.deb
+	@rm -rf machine-emulator*.deb
 	@rm -rf $(ADD_GENERATED_FILES_DIFF)
 
 depclean: clean
@@ -256,19 +256,19 @@ build-emulator-toolchain-image build-toolchain:
 	docker build $(DOCKER_PLATFORM) --target toolchain -t cartesi/machine-emulator:toolchain -f Dockerfile .
 
 build-emulator-image:
-	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) -t cartesi/machine-emulator:$(TAG) -f Dockerfile .
+	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) -t cartesi/machine-emulator:$(TAG) -f Dockerfile .
 
 build-emulator-tests-image: build-emulator-builder-image build-emulator-image
-	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests -f tests/Dockerfile .
+	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests -f tests/Dockerfile .
 
 build-emulator-tests-builder-image: build-emulator-builder-image
-	docker build $(DOCKER_PLATFORM) --target tests-builder --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests-builder -f tests/Dockerfile .
+	docker build $(DOCKER_PLATFORM) --target tests-builder --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests-builder -f tests/Dockerfile .
 
 build-debian-package:
-	docker build $(DOCKER_PLATFORM) --target debian-packager --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) -t $(DEBIAN_IMG) -f Dockerfile .
+	docker build $(DOCKER_PLATFORM) --target debian-packager --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) -t $(DEBIAN_IMG) -f Dockerfile .
 
 build-tests-debian-packages: build-emulator-builder-image
-	docker build $(DOCKER_PLATFORM) --target tests-debian-packager --build-arg MACHINE_EMULATOR_VERSION=$(MACHINE_EMULATOR_VERSION) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests-debian-packager -f tests/Dockerfile .
+	docker build $(DOCKER_PLATFORM) --target tests-debian-packager --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests-debian-packager -f tests/Dockerfile .
 	$(MAKE) copy-tests-debian-packages
 
 copy-tests-debian-packages:

@@ -81,18 +81,17 @@ RUN make install-uarch debian-package DESTDIR=$PWD/_install
 
 ####################################################################################################
 FROM debian:bookworm-20250113-slim
-ARG MACHINE_EMULATOR_VERSION=0.0.0
 ARG TARGETARCH
 
 COPY --from=debian-packager \
-    /usr/src/emulator/cartesi-machine-v${MACHINE_EMULATOR_VERSION}_${TARGETARCH}.deb \
-    cartesi-machine.deb
+    /usr/src/emulator/machine-emulator_${TARGETARCH}.deb \
+    machine-emulator.deb
 COPY --from=debian-packager /usr/local/lib/lua /usr/local/lib/lua
 COPY --from=debian-packager /usr/local/share/lua /usr/local/share/lua
 
 RUN apt-get update && \
-    apt-get install -y ./cartesi-machine.deb && \
-    rm -rf /var/lib/apt/lists/* /var/cache/apt/* cartesi-machine.deb
+    apt-get install -y ./machine-emulator.deb && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/* machine-emulator.deb
 
 RUN addgroup --system --gid 102 cartesi && \
     adduser --system --uid 102 --ingroup cartesi --disabled-login --no-create-home --home /nonexistent --gecos "cartesi user" --shell /bin/false cartesi

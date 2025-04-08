@@ -104,8 +104,8 @@ jobs:
             uarch-pristine-hash.c
             machine-c-version.h
             interpret-jump-table.h
-            cartesi-machine-v${{ env.MACHINE_EMULATOR_VERSION }}_amd64.deb
-            cartesi-machine-v${{ env.MACHINE_EMULATOR_VERSION }}_arm64.deb
+            machine-emulator_amd64.deb
+            machine-emulator_arm64.deb
 
   test_amd64:
     name: Test (linux/amd64)
@@ -278,8 +278,8 @@ jobs:
         with:
           name: tests-amd64
           path: |
-            cartesi-machine-tests-v${{ env.MACHINE_EMULATOR_VERSION }}_amd64.deb
-            cartesi-machine-tests-data-v${{ env.MACHINE_EMULATOR_VERSION }}.deb
+            machine-emulator-tests_amd64.deb
+            machine-emulator-tests-data.deb
 
   test_arm64:
     name: Test (linux/arm64)
@@ -437,7 +437,7 @@ jobs:
         with:
           name: tests-arm64
           path: |
-            cartesi-machine-tests-v${{ env.MACHINE_EMULATOR_VERSION }}_arm64.deb
+            machine-emulator-tests_arm64.deb
 
   static-analysis:
     name: Static Analysis
@@ -718,7 +718,7 @@ jobs:
 
       - name: Create uarch json logs TAR
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        run: mv uarch-logs/uarch-riscv-tests-json-logs.tar.gz uarch-logs/uarch-riscv-tests-json-logs-v${{ env.MACHINE_EMULATOR_VERSION }}.tar.gz
+        run: mv uarch-logs/uarch-riscv-tests-json-logs.tar.gz uarch-logs/uarch-riscv-tests-json-logs.tar.gz
 
       - name: Create generated files patch
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
@@ -735,9 +735,9 @@ jobs:
         with:
           draft: true
           files: |
-            artifacts/cartesi-machine-*.deb
+            artifacts/machine-emulator_*.deb
             artifacts/uarch-ram.bin
             add-generated-files.diff
-            uarch-logs/uarch-riscv-tests-json-logs-*.tar.gz
-            tests-amd64/cartesi-machine-tests-*.deb
-            tests-arm64/cartesi-machine-tests-*.deb
+            uarch-logs/uarch-riscv-tests-json-logs.tar.gz
+            tests-amd64/machine-emulator-tests_*.deb
+            tests-arm64/machine-emulator-tests_*.deb

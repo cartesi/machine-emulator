@@ -41,8 +41,6 @@ jobs:
           tags: ${{ github.repository_owner }}/machine-emulator:devel.build
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
@@ -60,8 +58,6 @@ jobs:
           tags: cartesi/machine-emulator:amd64_deb
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
@@ -82,8 +78,6 @@ jobs:
           tags: cartesi/machine-emulator:arm64_deb
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
@@ -146,8 +140,6 @@ jobs:
           tags: ${{ github.repository_owner }}/machine-emulator:builder
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
@@ -164,8 +156,6 @@ jobs:
           tags: ${{ github.repository_owner }}/machine-emulator:devel
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
@@ -321,8 +311,6 @@ jobs:
           tags: ${{ github.repository_owner }}/machine-emulator:builder
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
@@ -339,8 +327,6 @@ jobs:
           tags: ${{ github.repository_owner }}/machine-emulator:devel
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
@@ -478,8 +464,6 @@ jobs:
           tags: ${{ github.repository_owner }}/machine-emulator:devel
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
@@ -541,8 +525,6 @@ jobs:
           tags: ${{ github.repository_owner }}/machine-emulator:builder
           push: false
           load: true
-          cache-from: type=gha,scope=debian-coverage
-          cache-to: type=gha,mode=max,scope=debian-coverage
           build-args: |
             GIT_COMMIT=${GITHUB_SHA}
             DEBUG=yes
@@ -623,8 +605,6 @@ jobs:
           tags: ${{ github.repository_owner }}/machine-emulator:builder
           push: false
           load: true
-          cache-from: type=gha,scope=debian-sanitize
-          cache-to: type=gha,mode=max,scope=debian-sanitize
           build-args: |
             DEBUG=yes
             GIT_COMMIT=${GITHUB_SHA}
@@ -703,8 +683,6 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.docker_image_tags.outputs.tags }}
           push: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}

@@ -458,9 +458,9 @@ jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, int
         address_to_endpoint(address)); // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
 
     // Determine which remote machine binary to use
-    const char *bin = getenv("CARTESI_JSONRPC_REMOTE_MACHINE");
+    const char *bin = getenv("CARTESI_JSONRPC_MACHINE");
     if (bin == nullptr) { // Fallback to default name if not set
-        bin = "jsonrpc-remote-cartesi-machine";
+        bin = "cartesi-jsonrpc-machine";
     }
 
     // Prepare command-line arguments for the child process

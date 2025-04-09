@@ -19,8 +19,8 @@ This project includes several submodules and dependencies, each with its own lic
 
 The project releases several Debian packages, each subject to its specific licensing terms:
 
-- `cartesi-machine-[VERSION]_[ARCHITECTURE].deb` and `cartesi-machine-tests-[VERSION]_[ARCHITECTURE].deb` packages are licensed under LGPL v3.0 and may include or link to other software components with different licenses.
-- `cartesi-machine-tests-data-[VERSION].deb`: This package contains files that are individually licensed under various terms, including but not limited to Apache-2.0, BSD-3-Clause-Regents, BSD-3-Clause, and GPL-2.0-only. For a comprehensive overview of the licenses applicable to specific files within this package, please refer to its copyright file, e.g., [tools/template/tests-data-copyright.template](tools/template/tests-data-copyright.template).
+- `machine-emulator-[VERSION]_[ARCHITECTURE].deb` and `machine-tests-[VERSION]_[ARCHITECTURE].deb` packages are licensed under LGPL v3.0 and may include or link to other software components with different licenses.
+- `machine-tests-data-[VERSION].deb`: This package contains files that are individually licensed under various terms, including but not limited to Apache-2.0, BSD-3-Clause-Regents, BSD-3-Clause, and GPL-2.0-only. For a comprehensive overview of the licenses applicable to specific files within this package, please refer to its copyright file, e.g., [tools/template/tests-data-copyright.template](tools/template/tests-data-copyright.template).
 
 For detailed licensing information of each Debian package, please refer to the copyright file included within the package.
 

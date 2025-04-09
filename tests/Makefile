@@ -120,7 +120,7 @@ $(BUILDDIR)/%:
 $(CARTESI_IMAGES): | $(CARTESI_IMAGES_PATH)
 	@wget -nc -i dependencies -P $(CARTESI_IMAGES_PATH)
 	@shasum -ca 256 dependencies.sha256
-	@cd $(CARTESI_IMAGES_PATH) && ln -s rootfs-tools-v0.17.0-test2.ext2 rootfs.ext2
+	@cd $(CARTESI_IMAGES_PATH) && ln -s rootfs-tools.ext2 rootfs.ext2
 	@cd $(CARTESI_IMAGES_PATH) && ln -s linux-6.5.13-ctsi-1-v0.20.0.bin linux.bin
 
 images: | $(CARTESI_IMAGES)
@@ -179,7 +179,7 @@ clean-machines:
 	@rm -rf $(CARTESI_CMIO_PATH)
 
 test-cmio: | $(CARTESI_CMIO_PATH)
-	@./scripts/test-cmio.sh ../src/jsonrpc-remote-cartesi-machine '$(LUA) ../src/cartesi-machine.lua'
+	@./scripts/test-cmio.sh ../src/cartesi-jsonrpc-machine '$(LUA) ../src/cartesi-machine.lua'
 
 test-machine:
 	$(LUA) ./lua/cartesi-machine-tests.lua --jobs=$(NUM_JOBS) run
@@ -203,7 +203,7 @@ test-hash:
 	$(LD_PRELOAD_PREFIX) ./build/misc/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=build/misc/test-merkle-tree-hash
 
 test-jsonrpc:
-	./scripts/test-jsonrpc-server.sh ../src/jsonrpc-remote-cartesi-machine '$(LUA) ../src/cartesi-machine.lua' '$(LUA) ./lua/cartesi-machine-tests.lua' '$(LUA)'
+	./scripts/test-jsonrpc-server.sh ../src/cartesi-jsonrpc-machine '$(LUA) ../src/cartesi-machine.lua' '$(LUA) ./lua/cartesi-machine-tests.lua' '$(LUA)'
 
 test-lua: | $(CARTESI_IMAGES)
 	./scripts/run-lua-tests.sh '$(LUA)'
@@ -251,7 +251,7 @@ coverage-report: $(COVERAGE_OUTPUT_DIR)
 		../src/cartesi.so \
 		-object ../src/cartesi/jsonrpc.so \
 		-object ../src/$(LIBCARTESI_SO) \
-		-object ../src/jsonrpc-remote-cartesi-machine \
+		-object ../src/cartesi-jsonrpc-machine \
 		$(COVERAGE_SOURCES)
 
 export LLVM_PROFILE_FILE=coverage-%p.profraw

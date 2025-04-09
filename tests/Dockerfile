@@ -23,13 +23,13 @@ ENV CARTESI_CMIO_PATH=/tmp/cartesi-machine/tests/data/cmio
 
 USER root
 
-COPY --from=tests-debian-packager /usr/src/emulator/cartesi-machine-tests-*.deb .
+COPY --from=tests-debian-packager /usr/src/emulator/machine-emulator-tests*.deb .
 RUN <<EOF
 set -e
 export DEBIAN_FRONTEND="noninteractive"
 apt-get update
-apt-get install -y ./cartesi-machine-tests-*.deb
-rm -rf /var/lib/apt/lists/* cartesi-machine-tests-*.deb
+apt-get install -y ./machine-emulator-tests*.deb
+rm -rf /var/lib/apt/lists/* machine-emulator-tests*.deb
 mkdir -p ${CARTESI_CMIO_PATH}
 chown -R cartesi:cartesi ${CARTESI_CMIO_PATH}
 EOF

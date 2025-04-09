@@ -75,7 +75,7 @@
 #include "slog.h"
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define PROGRAM_NAME "jsonrpc-remote-cartesi-machine"
+#define PROGRAM_NAME "cartesi-jsonrpc-machine"
 
 namespace beast = boost::beast; // from <boost/beast.hpp>
 namespace http = beast::http;   // from <boost/beast/http.hpp>
@@ -1658,7 +1658,7 @@ where options are
         error
         fatal
       the command line option takes precedence over the environment variable
-      REMOTE_CARTESI_MACHINE_LOG_LEVEL
+      CARTESI_JSONRPC_MACHINE_LOG_LEVEL
 
     --help
       prints this message and exits
@@ -1685,7 +1685,7 @@ static void init_logger(const char *strlevel) {
     using namespace slog;
     severity_level level = severity_level::warning;
     if (strlevel == nullptr) {
-        strlevel = std::getenv("CARTESI_REMOTE_MACHINE_LOG_LEVEL");
+        strlevel = std::getenv("CARTESI_JSONRPC_MACHINE_LOG_LEVEL");
     }
     if (strlevel != nullptr) {
         level = from_string(strlevel);

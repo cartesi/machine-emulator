@@ -20,8 +20,8 @@ local cartesi = require("cartesi")
 local test_util = require("cartesi.tests.util")
 local jsonrpc
 
--- Note: for jsonrpc machine test to work, jsonrpc-remote-cartesi-machine must
--- run on the same computer and jsonrpc-remote-cartesi-machine execution path
+-- Note: for jsonrpc machine test to work, cartesi-jsonrpc-machine must
+-- run on the same computer and cartesi-jsonrpc-machine execution path
 -- must be provided
 
 -- There is no UINT64_MAX in Lua, so we have to use the signed representation
@@ -45,7 +45,7 @@ where options are:
 
   --test-path=<dir>
     path to test execution folder. In case of jsonrpc tests, path must be
-    working directory of jsonrpc-remote-cartesi-machine and must be locally readable
+    working directory of cartesi-jsonrpc-machine and must be locally readable
     (default: "./")
 
 ]=],

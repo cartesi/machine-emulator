@@ -53,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed `--log-uarch-reset` command line option to `--log-reset-uarch`
 - Renamed `--auto-uarch-reset` command line option to `--auto-reset-uarch`
 - Renamed various C API functions, structs, and enumerations
+- Renamed `jsonrpc-remote-cartesi-machine` to `cartesi-jsonrpc-machine`
+- Renamed `merkle-tree-hash` to `cartesi-merkle-tree-hash`
+- Removed `cartesi-` prefix and versioning suffix from CI artifacts names
 - Revamped project README with more up-to-date explanations and simplified instructions
 - Changed help and configs to be printed to `stdout` instead of `stderr`
 - Changed the public C API to require less manual memory management
@@ -60,6 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved CI to use more parallel jobs when testing
 - Improved `send_cmio_response` bounds checking
 - Split `iflags` CSR into multiple CSRs
+- Bumped MARCHID version to 19
+- Updated test rootfs to guest tools 0.17.0
 
 ## Removed
 - Removed publishing of Debian package artifacts in favor of official Linux package repositories

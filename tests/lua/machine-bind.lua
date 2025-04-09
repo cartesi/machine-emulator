@@ -46,7 +46,7 @@ where options are:
 
   --test-path=<dir>
     path to test execution folder. In case of jsonrpc tests, path must be
-    working directory of jsonrpc-remote-cartesi-machine and must be locally readable
+    working directory of cartesi-jsonrpc-machine and must be locally readable
     (default: "./")
 
   --concurrency=<key>:<value>[,<key>:<value>[,...]...]

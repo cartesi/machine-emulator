@@ -41,8 +41,6 @@ jobs:
           tags: ${{ github.repository_owner }}/machine-emulator:devel.build
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
@@ -60,8 +58,6 @@ jobs:
           tags: cartesi/machine-emulator:amd64_deb
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
@@ -82,8 +78,6 @@ jobs:
           tags: cartesi/machine-emulator:arm64_deb
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
@@ -104,8 +98,8 @@ jobs:
             uarch-pristine-hash.c
             machine-c-version.h
             interpret-jump-table.h
-            cartesi-machine-v${{ env.MACHINE_EMULATOR_VERSION }}_amd64.deb
-            cartesi-machine-v${{ env.MACHINE_EMULATOR_VERSION }}_arm64.deb
+            machine-emulator_amd64.deb
+            machine-emulator_arm64.deb
 
   test_amd64:
     name: Test (linux/amd64)
@@ -146,8 +140,6 @@ jobs:
           tags: ${{ github.repository_owner }}/machine-emulator:builder
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
@@ -164,8 +156,6 @@ jobs:
           tags: ${{ github.repository_owner }}/machine-emulator:devel
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
@@ -209,7 +199,7 @@ jobs:
 
       - name: Run jsonrpc lua test scripts
         run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh cartesi-jsonrpc-machine cartesi-machine cartesi-machine-tests
 
       - name: Create cmio templates
         run: |
@@ -217,7 +207,7 @@ jobs:
 
       - name: Run cmio lua test scripts
         run: |
-          docker run --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-cmio.sh jsonrpc-remote-cartesi-machine cartesi-machine lua
+          docker run --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-cmio.sh cartesi-jsonrpc-machine cartesi-machine lua
 
       - name: Run Merkle tree tests
         run: |
@@ -278,8 +268,8 @@ jobs:
         with:
           name: tests-amd64
           path: |
-            cartesi-machine-tests-v${{ env.MACHINE_EMULATOR_VERSION }}_amd64.deb
-            cartesi-machine-tests-data-v${{ env.MACHINE_EMULATOR_VERSION }}.deb
+            machine-emulator-tests_amd64.deb
+            machine-emulator-tests-data.deb
 
   test_arm64:
     name: Test (linux/arm64)
@@ -321,8 +311,6 @@ jobs:
           tags: ${{ github.repository_owner }}/machine-emulator:builder
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
@@ -339,8 +327,6 @@ jobs:
           tags: ${{ github.repository_owner }}/machine-emulator:devel
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
@@ -381,7 +367,7 @@ jobs:
 
       - name: Run jsonrpc lua test scripts
         run: |
-          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh jsonrpc-remote-cartesi-machine cartesi-machine cartesi-machine-tests
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-jsonrpc-server.sh cartesi-jsonrpc-machine cartesi-machine cartesi-machine-tests
 
       - name: Create cmio templates
         run: |
@@ -389,7 +375,7 @@ jobs:
 
       - name: Run cmio lua test scripts
         run: |
-          docker run --platform linux/arm64 --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-cmio.sh jsonrpc-remote-cartesi-machine cartesi-machine lua
+          docker run --platform linux/arm64 --rm -t -v cmio-templates:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/scripts/test-cmio.sh cartesi-jsonrpc-machine cartesi-machine lua
 
       - name: Run Merkle tree tests
         run: |
@@ -437,7 +423,7 @@ jobs:
         with:
           name: tests-arm64
           path: |
-            cartesi-machine-tests-v${{ env.MACHINE_EMULATOR_VERSION }}_arm64.deb
+            machine-emulator-tests_arm64.deb
 
   static-analysis:
     name: Static Analysis
@@ -478,8 +464,6 @@ jobs:
           tags: ${{ github.repository_owner }}/machine-emulator:devel
           push: false
           load: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
@@ -541,8 +525,6 @@ jobs:
           tags: ${{ github.repository_owner }}/machine-emulator:builder
           push: false
           load: true
-          cache-from: type=gha,scope=debian-coverage
-          cache-to: type=gha,mode=max,scope=debian-coverage
           build-args: |
             GIT_COMMIT=${GITHUB_SHA}
             DEBUG=yes
@@ -623,8 +605,6 @@ jobs:
           tags: ${{ github.repository_owner }}/machine-emulator:builder
           push: false
           load: true
-          cache-from: type=gha,scope=debian-sanitize
-          cache-to: type=gha,mode=max,scope=debian-sanitize
           build-args: |
             DEBUG=yes
             GIT_COMMIT=${GITHUB_SHA}
@@ -703,8 +683,6 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.docker_image_tags.outputs.tags }}
           push: true
-          cache-from: type=gha,scope=debian
-          cache-to: type=gha,mode=max,scope=debian
           build-args: |
             DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
             GIT_COMMIT=${GITHUB_SHA}
@@ -715,10 +693,6 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-
-      - name: Create uarch json logs TAR
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        run: mv uarch-logs/uarch-riscv-tests-json-logs.tar.gz uarch-logs/uarch-riscv-tests-json-logs-v${{ env.MACHINE_EMULATOR_VERSION }}.tar.gz
 
       - name: Create generated files patch
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
@@ -735,9 +709,9 @@ jobs:
         with:
           draft: true
           files: |
-            artifacts/cartesi-machine-*.deb
+            artifacts/machine-emulator_*.deb
             artifacts/uarch-ram.bin
             add-generated-files.diff
-            uarch-logs/uarch-riscv-tests-json-logs-*.tar.gz
-            tests-amd64/cartesi-machine-tests-*.deb
-            tests-arm64/cartesi-machine-tests-*.deb
+            uarch-logs/uarch-riscv-tests-json-logs.tar.gz
+            tests-amd64/machine-emulator-tests_*.deb
+            tests-arm64/machine-emulator-tests_*.deb

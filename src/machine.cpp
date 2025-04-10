@@ -64,7 +64,6 @@
 #include "send-cmio-response.h"
 #include "shadow-state-address-range.h"
 #include "shadow-tlb-address-range.h"
-#include "shadow-uarch-state-address-range.h"
 #include "state-access.h"
 #include "strict-aliasing.h"
 #include "tlb.h"
@@ -167,19 +166,36 @@ void machine::replace_memory_range(const memory_range_config &config) {
 }
 
 void machine::init_uarch(const uarch_config &c) {
-    using reg = machine_reg;
-    write_reg(reg::uarch_pc, c.processor.registers.pc);
-    write_reg(reg::uarch_cycle, c.processor.registers.cycle);
-    write_reg(reg::uarch_halt_flag, c.processor.registers.halt_flag);
-    // General purpose registers
-    for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
-        write_reg(machine_reg_enum(reg::uarch_x0, i), c.processor.registers.x[i]);
+    // Register shadow uarch state
+    static constexpr pmas_flags shadow_uarch_state_flags{
+        .M = true,
+        .IO = false,
+        .R = false,
+        .W = false,
+        .X = false,
+        .IR = false,
+        .IW = false,
+        .DID = PMA_ISTART_DID::shadow_uarch_state,
+    };
+    auto &us =
+        register_address_range(make_memory_address_range("shadow uarch state"s, AR_SHADOW_UARCH_STATE_START,
+                                   AR_SHADOW_UARCH_STATE_LENGTH, shadow_uarch_state_flags, c.processor.backing_store),
+            register_where{.merkle = true, .interpret = false});
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    m_us = reinterpret_cast<uarch_state *>(us.get_host_memory());
+
+    // Initialize uarch registers
+    if (c.processor.backing_store.data_filename.empty()) {
+        using reg = machine_reg;
+        write_reg(reg::uarch_pc, c.processor.registers.pc);
+        write_reg(reg::uarch_cycle, c.processor.registers.cycle);
+        write_reg(reg::uarch_halt_flag, c.processor.registers.halt_flag);
+        for (int i = 1; i < UARCH_X_REG_COUNT; i++) {
+            write_reg(machine_reg_enum(reg::uarch_x0, i), c.processor.registers.x[i]);
+        }
     }
-    // Register shadow state
-    register_address_range(make_shadow_uarch_state_address_range(AR_SHADOW_UARCH_STATE_START,
-                               AR_SHADOW_UARCH_STATE_LENGTH, throw_invalid_argument),
-        register_where{.merkle = true, .interpret = false});
-    // Register RAM
+
+    // Register uarch RAM
     if (uarch_pristine_ram_len > AR_UARCH_RAM_LENGTH) {
         throw std::runtime_error("embedded uarch RAM image does not fit in uarch memory");
     }
@@ -783,6 +799,7 @@ machine_config machine::get_serialization_config() const {
     clear_backing_store_filenames(c.cmio.rx_buffer.backing_store);
     clear_backing_store_filenames(c.cmio.tx_buffer.backing_store);
     clear_backing_store_filenames(c.pmas.backing_store);
+    clear_backing_store_filenames(c.uarch.processor.backing_store);
     clear_backing_store_filenames(c.uarch.ram.backing_store);
     c.hash_tree.sht_filename.clear();
     c.hash_tree.phtc_filename.clear();
@@ -940,6 +957,7 @@ void machine::store_address_ranges(const machine_config &c, const std::string &d
     }
     store_address_range(find_address_range<uint64_t>(AR_CMIO_RX_BUFFER_START), directory);
     store_address_range(find_address_range<uint64_t>(AR_CMIO_TX_BUFFER_START), directory);
+    store_address_range(find_address_range<uint64_t>(AR_SHADOW_UARCH_STATE_START), directory);
     store_address_range(find_address_range<uint64_t>(AR_UARCH_RAM_START), directory);
     store_address_range(find_address_range<uint64_t>(AR_PMAS_START), directory);
 }
@@ -1251,75 +1269,75 @@ uint64_t machine::read_reg(reg r) const {
         case reg::htif_iyield:
             return m_s.registers.htif.iyield;
         case reg::uarch_x0:
-            return m_us.registers.x[0];
+            return m_us->registers.x[0];
         case reg::uarch_x1:
-            return m_us.registers.x[1];
+            return m_us->registers.x[1];
         case reg::uarch_x2:
-            return m_us.registers.x[2];
+            return m_us->registers.x[2];
         case reg::uarch_x3:
-            return m_us.registers.x[3];
+            return m_us->registers.x[3];
         case reg::uarch_x4:
-            return m_us.registers.x[4];
+            return m_us->registers.x[4];
         case reg::uarch_x5:
-            return m_us.registers.x[5];
+            return m_us->registers.x[5];
         case reg::uarch_x6:
-            return m_us.registers.x[6];
+            return m_us->registers.x[6];
         case reg::uarch_x7:
-            return m_us.registers.x[7];
+            return m_us->registers.x[7];
         case reg::uarch_x8:
-            return m_us.registers.x[8];
+            return m_us->registers.x[8];
         case reg::uarch_x9:
-            return m_us.registers.x[9];
+            return m_us->registers.x[9];
         case reg::uarch_x10:
-            return m_us.registers.x[10];
+            return m_us->registers.x[10];
         case reg::uarch_x11:
-            return m_us.registers.x[11];
+            return m_us->registers.x[11];
         case reg::uarch_x12:
-            return m_us.registers.x[12];
+            return m_us->registers.x[12];
         case reg::uarch_x13:
-            return m_us.registers.x[13];
+            return m_us->registers.x[13];
         case reg::uarch_x14:
-            return m_us.registers.x[14];
+            return m_us->registers.x[14];
         case reg::uarch_x15:
-            return m_us.registers.x[15];
+            return m_us->registers.x[15];
         case reg::uarch_x16:
-            return m_us.registers.x[16];
+            return m_us->registers.x[16];
         case reg::uarch_x17:
-            return m_us.registers.x[17];
+            return m_us->registers.x[17];
         case reg::uarch_x18:
-            return m_us.registers.x[18];
+            return m_us->registers.x[18];
         case reg::uarch_x19:
-            return m_us.registers.x[19];
+            return m_us->registers.x[19];
         case reg::uarch_x20:
-            return m_us.registers.x[20];
+            return m_us->registers.x[20];
         case reg::uarch_x21:
-            return m_us.registers.x[21];
+            return m_us->registers.x[21];
         case reg::uarch_x22:
-            return m_us.registers.x[22];
+            return m_us->registers.x[22];
         case reg::uarch_x23:
-            return m_us.registers.x[23];
+            return m_us->registers.x[23];
         case reg::uarch_x24:
-            return m_us.registers.x[24];
+            return m_us->registers.x[24];
         case reg::uarch_x25:
-            return m_us.registers.x[25];
+            return m_us->registers.x[25];
         case reg::uarch_x26:
-            return m_us.registers.x[26];
+            return m_us->registers.x[26];
         case reg::uarch_x27:
-            return m_us.registers.x[27];
+            return m_us->registers.x[27];
         case reg::uarch_x28:
-            return m_us.registers.x[28];
+            return m_us->registers.x[28];
         case reg::uarch_x29:
-            return m_us.registers.x[29];
+            return m_us->registers.x[29];
         case reg::uarch_x30:
-            return m_us.registers.x[30];
+            return m_us->registers.x[30];
         case reg::uarch_x31:
-            return m_us.registers.x[31];
+            return m_us->registers.x[31];
         case reg::uarch_pc:
-            return m_us.registers.pc;
+            return m_us->registers.pc;
         case reg::uarch_cycle:
-            return m_us.registers.cycle;
+            return m_us->registers.cycle;
         case reg::uarch_halt_flag:
-            return m_us.registers.halt_flag;
+            return m_us->registers.halt_flag;
         case reg::htif_tohost_dev:
             return HTIF_DEV_FIELD(m_s.registers.htif.tohost);
         case reg::htif_tohost_cmd:
@@ -1661,106 +1679,106 @@ void machine::write_reg(reg w, uint64_t value) {
         case reg::uarch_x0:
             throw std::invalid_argument{"register is read-only"};
         case reg::uarch_x1:
-            m_us.registers.x[1] = value;
+            m_us->registers.x[1] = value;
             break;
         case reg::uarch_x2:
-            m_us.registers.x[2] = value;
+            m_us->registers.x[2] = value;
             break;
         case reg::uarch_x3:
-            m_us.registers.x[3] = value;
+            m_us->registers.x[3] = value;
             break;
         case reg::uarch_x4:
-            m_us.registers.x[4] = value;
+            m_us->registers.x[4] = value;
             break;
         case reg::uarch_x5:
-            m_us.registers.x[5] = value;
+            m_us->registers.x[5] = value;
             break;
         case reg::uarch_x6:
-            m_us.registers.x[6] = value;
+            m_us->registers.x[6] = value;
             break;
         case reg::uarch_x7:
-            m_us.registers.x[7] = value;
+            m_us->registers.x[7] = value;
             break;
         case reg::uarch_x8:
-            m_us.registers.x[8] = value;
+            m_us->registers.x[8] = value;
             break;
         case reg::uarch_x9:
-            m_us.registers.x[9] = value;
+            m_us->registers.x[9] = value;
             break;
         case reg::uarch_x10:
-            m_us.registers.x[10] = value;
+            m_us->registers.x[10] = value;
             break;
         case reg::uarch_x11:
-            m_us.registers.x[11] = value;
+            m_us->registers.x[11] = value;
             break;
         case reg::uarch_x12:
-            m_us.registers.x[12] = value;
+            m_us->registers.x[12] = value;
             break;
         case reg::uarch_x13:
-            m_us.registers.x[13] = value;
+            m_us->registers.x[13] = value;
             break;
         case reg::uarch_x14:
-            m_us.registers.x[14] = value;
+            m_us->registers.x[14] = value;
             break;
         case reg::uarch_x15:
-            m_us.registers.x[15] = value;
+            m_us->registers.x[15] = value;
             break;
         case reg::uarch_x16:
-            m_us.registers.x[16] = value;
+            m_us->registers.x[16] = value;
             break;
         case reg::uarch_x17:
-            m_us.registers.x[17] = value;
+            m_us->registers.x[17] = value;
             break;
         case reg::uarch_x18:
-            m_us.registers.x[18] = value;
+            m_us->registers.x[18] = value;
             break;
         case reg::uarch_x19:
-            m_us.registers.x[19] = value;
+            m_us->registers.x[19] = value;
             break;
         case reg::uarch_x20:
-            m_us.registers.x[20] = value;
+            m_us->registers.x[20] = value;
             break;
         case reg::uarch_x21:
-            m_us.registers.x[21] = value;
+            m_us->registers.x[21] = value;
             break;
         case reg::uarch_x22:
-            m_us.registers.x[22] = value;
+            m_us->registers.x[22] = value;
             break;
         case reg::uarch_x23:
-            m_us.registers.x[23] = value;
+            m_us->registers.x[23] = value;
             break;
         case reg::uarch_x24:
-            m_us.registers.x[24] = value;
+            m_us->registers.x[24] = value;
             break;
         case reg::uarch_x25:
-            m_us.registers.x[25] = value;
+            m_us->registers.x[25] = value;
             break;
         case reg::uarch_x26:
-            m_us.registers.x[26] = value;
+            m_us->registers.x[26] = value;
             break;
         case reg::uarch_x27:
-            m_us.registers.x[27] = value;
+            m_us->registers.x[27] = value;
             break;
         case reg::uarch_x28:
-            m_us.registers.x[28] = value;
+            m_us->registers.x[28] = value;
             break;
         case reg::uarch_x29:
-            m_us.registers.x[29] = value;
+            m_us->registers.x[29] = value;
             break;
         case reg::uarch_x30:
-            m_us.registers.x[30] = value;
+            m_us->registers.x[30] = value;
             break;
         case reg::uarch_x31:
-            m_us.registers.x[31] = value;
+            m_us->registers.x[31] = value;
             break;
         case reg::uarch_pc:
-            m_us.registers.pc = value;
+            m_us->registers.pc = value;
             break;
         case reg::uarch_cycle:
-            m_us.registers.cycle = value;
+            m_us->registers.cycle = value;
             break;
         case reg::uarch_halt_flag:
-            m_us.registers.halt_flag = value;
+            m_us->registers.halt_flag = value;
             break;
         case reg::htif_tohost_dev:
             m_s.registers.htif.tohost = HTIF_REPLACE_DEV(m_s.registers.htif.tohost, value);
@@ -1835,6 +1853,10 @@ bool machine::verify_dirty_page_maps() const {
     bool broken = false;
     // Go over the write TLB and mark as dirty all pages currently there
     mark_write_tlb_dirty_pages();
+    // We don't track dirty pages for shadow memory ranges, so we have to mark them always dirty
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+    const_cast<address_range &>(find_address_range(AR_SHADOW_UARCH_STATE_START, AR_SHADOW_UARCH_STATE_LENGTH))
+        .mark_pages_dirty();
     // Now go over all memory PMAs verifying that all dirty pages are marked
     for (const auto &ar : m_ars) {
         for (uint64_t offset = 0; offset < ar->get_length(); offset += AR_PAGE_SIZE) {
@@ -1881,6 +1903,10 @@ bool machine::update_merkle_tree() const {
         "PMA and machine_merkle_tree page sizes must match");
     // Go over the write TLB and mark as dirty all pages currently there
     mark_write_tlb_dirty_pages();
+    // We don't track dirty pages for shadow memory ranges, so we have to mark them always dirty
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+    const_cast<address_range &>(find_address_range(AR_SHADOW_UARCH_STATE_START, AR_SHADOW_UARCH_STATE_LENGTH))
+        .mark_pages_dirty();
     // Now go over all PMAs and updating the Merkle tree
     m_t.begin_update();
     for (auto &ar : m_merkle_ars | std::views::transform([this](auto i) -> address_range & { return *m_ars[i]; })) {

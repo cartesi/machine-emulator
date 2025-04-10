@@ -18,7 +18,7 @@
 #define MACHINE_REG_H
 
 #include "shadow-state-address-range.h"
-#include "shadow-uarch-state-address-range.h"
+#include "shadow-uarch-state.h"
 
 /// \file
 /// \brief Cartesi machine registers

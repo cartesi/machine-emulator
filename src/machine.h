@@ -61,7 +61,7 @@ constexpr skip_merkle_tree_update_t skip_merkle_tree_update;
 class machine final {
 private:
     mutable machine_state m_s;                                 ///< Big machine state
-    mutable uarch_state m_us;                                  ///< Microarchitecture state
+    mutable uarch_state *m_us{nullptr};                        ///< Microarchitecture state
     mutable std::vector<std::unique_ptr<address_range>> m_ars; ///< All address ranges
     mutable machine_merkle_tree m_t;                           ///< Merkle tree of state
     machine_config m_c;                                        ///< Copy of initialization config
@@ -320,12 +320,12 @@ public:
 
     /// \brief Returns uarch state for direct access.
     uarch_state &get_uarch_state() {
-        return m_us;
+        return *m_us;
     }
 
     /// \brief Returns uarch state for direct read-only access.
     const uarch_state &get_uarch_state() const {
-        return m_us;
+        return *m_us;
     }
 
     /// \brief Returns a list of descriptions for all PMA entries registered in the machine, sorted by start

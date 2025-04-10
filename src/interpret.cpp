@@ -102,6 +102,7 @@
 #include "compiler-defines.h"
 #include "device-state-access.h"
 #include "find-pma.h"
+#include "hot-tlb.h"
 #include "i-accept-counters.h"
 #include "i-interactive-state-access.h"
 #include "i-state-access.h"
@@ -109,7 +110,6 @@
 #include "riscv-constants.h"
 #include "rtc.h"
 #include "soft-float.h"
-#include "tlb.h"
 #include "translate-virtual-address.h"
 #include "uint128.h"
 

@@ -26,9 +26,44 @@
 #include <cstdint>
 
 #include "compiler-defines.h"
-#include "tlb.h"
+#include "pmas-constants.h"
+#include "riscv-constants.h"
 
 namespace cartesi {
+
+/// \brief Index of TLB set
+enum TLB_set_index : uint64_t { TLB_CODE, TLB_READ, TLB_WRITE, TLB_LAST_ = TLB_WRITE, TLB_NUM_SETS_ = TLB_WRITE + 1 };
+
+/// \brief TLB constants.
+enum TLB_constants : uint64_t {
+    TLB_SET_SIZE = 256,
+    TLB_INVALID_PAGE = UINT64_C(-1),
+    TLB_INVALID_PMA_INDEX = UINT64_C(-1),
+};
+
+/// \brief Gets a TLB slot index for a page.
+/// \param vaddr Target virtual address.
+/// \returns TLB slot index.
+constexpr uint64_t tlb_slot_index(uint64_t vaddr) {
+    return (vaddr >> LOG2_PAGE_SIZE) & (TLB_SET_SIZE - 1);
+}
+
+/// \brief Checks for a TLB hit.
+/// \tparam T Type of access needed (uint8_t, uint16_t, uint32_t, uint64_t).
+/// \param slot_vaddr_page vaddr_page in TLB slot
+/// \param vaddr Target virtual address being looked up.
+/// \returns True on hit, false otherwise.
+template <typename T>
+constexpr bool tlb_is_hit(uint64_t slot_vaddr_page, uint64_t vaddr) {
+    // Make sure misaligned accesses are always considered a miss
+    // Otherwise, we could report a hit for a word that goes past the end of the page.
+    // Aligned accesses smaller than a page size cannot straddle two pages.
+    return slot_vaddr_page == (vaddr & ~(PAGE_OFFSET_MASK & ~(sizeof(T) - 1)));
+}
+
+constexpr uint64_t tlb_addr_page(uint64_t addr) {
+    return addr & ~PAGE_OFFSET_MASK;
+}
 
 /// \brief Shadow TLB slot
 /// \details
@@ -39,12 +74,11 @@ namespace cartesi {
 /// We can only do /aligned/ atomic writes.
 /// Therefore, TLB slot cannot be misaligned.
 /// To complete the power-of-two size, we include a zero_padding_ entry.
-struct PACKED shadow_tlb_slot {
-    uint64_t vaddr_page;    ///< Target virtual address of start of page
-    uint64_t vp_offset;     ///< Offset from target virtual address to target physical address within page
-    uint64_t pma_index;     ///< Index of PMA where physical page falls
-                            /// and host addresses
-    uint64_t zero_padding_; ///< Padding to make sure the sizeof(shadow_tlb_slot) is a power of 2
+struct shadow_tlb_slot final {
+    uint64_t vaddr_page{TLB_INVALID_PAGE}; ///< Target virtual address of start of page
+    uint64_t vp_offset{0}; ///< Offset from target virtual address to target physical address within page
+    uint64_t pma_index{TLB_INVALID_PMA_INDEX}; ///< Index of PMA where physical page falls and host addresses
+    uint64_t zero_padding_{0};                 ///< Padding to make sure the sizeof(shadow_tlb_slot) is a power of 2
 };
 
 constexpr uint64_t SHADOW_TLB_SLOT_SIZE = sizeof(shadow_tlb_slot);

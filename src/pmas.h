@@ -38,8 +38,6 @@ static constexpr const char *pmas_get_DID_name(PMA_ISTART_DID did) {
             return "DID.memory";
         case PMA_ISTART_DID::shadow_state:
             return "DID.shadow_state";
-        case PMA_ISTART_DID::shadow_TLB:
-            return "DID.shadow_TLB";
         case PMA_ISTART_DID::flash_drive:
             return "DID.flash_drive";
         case PMA_ISTART_DID::CLINT:
@@ -55,7 +53,7 @@ static constexpr const char *pmas_get_DID_name(PMA_ISTART_DID did) {
         case PMA_ISTART_DID::cmio_tx_buffer:
             return "DID.cmio_tx_buffer";
         case PMA_ISTART_DID::shadow_uarch_state:
-            return "DID.shadow_uarch";
+            return "DID.shadow_uarch_state";
     }
     return "DID.unknown";
 }

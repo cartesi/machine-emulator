@@ -30,7 +30,7 @@
 #include "i-prefer-shadow-state.h"
 #include "meta.h"
 #include "poor-type-name.h"
-#include "tlb.h"
+#include "shadow-tlb.h"
 
 namespace cartesi {
 
@@ -51,7 +51,7 @@ using i_state_access_fast_addr_t = typename i_state_access_fast_addr<STATE_ACCES
             dsa_printf("%s::read_" #REG "() = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), val, val);                    \
             return val;                                                                                                \
         } else {                                                                                                       \
-            return prefer_read_shadow_state(shadow_state_what::REG);                                                   \
+            return prefer_read_shadow_register(shadow_registers_what::REG);                                            \
         }                                                                                                              \
     }
 
@@ -61,7 +61,7 @@ using i_state_access_fast_addr_t = typename i_state_access_fast_addr<STATE_ACCES
             derived().do_write_##REG(val);                                                                             \
             dsa_printf("%s::write_" #REG "(%" PRIu64 "(0x%" PRIx64 "))\n", get_name(), val, val);                      \
         } else {                                                                                                       \
-            prefer_write_shadow_state(shadow_state_what::REG, val);                                                    \
+            prefer_write_shadow_register(shadow_registers_what::REG, val);                                             \
         }                                                                                                              \
     }
 // NOLINTEND(cppcoreguidelines-macro-usage)
@@ -102,17 +102,17 @@ class i_state_access { // CRTP
         return *static_cast<const DERIVED *>(this);
     }
 
-    uint64_t prefer_read_shadow_state(shadow_state_what what) const {
-        const auto val = derived().read_shadow_state(what);
-        [[maybe_unused]] const auto *const what_name = shadow_state_get_what_name(what);
-        dsa_printf("%s::read_shadow_state(%s) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), what_name, val, val);
+    uint64_t prefer_read_shadow_register(shadow_registers_what what) const {
+        const auto val = derived().read_shadow_register(what);
+        [[maybe_unused]] const auto *const what_name = shadow_registers_get_what_name(what);
+        dsa_printf("%s::read_shadow_register(%s) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), what_name, val, val);
         return val;
     }
 
-    void prefer_write_shadow_state(shadow_state_what what, uint64_t val) const {
-        derived().write_shadow_state(what, val);
-        [[maybe_unused]] const auto *const what_name = shadow_state_get_what_name(what);
-        dsa_printf("%s::write_shadow_state(%s, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), what_name, val, val);
+    void prefer_write_shadow_register(shadow_registers_what what, uint64_t val) const {
+        derived().write_shadow_register(what, val);
+        [[maybe_unused]] const auto *const what_name = shadow_registers_get_what_name(what);
+        dsa_printf("%s::write_shadow_register(%s, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), what_name, val, val);
     }
 
 public:
@@ -146,7 +146,7 @@ public:
             dsa_printf("%s::read_x(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), i, val, val);
             return val;
         } else {
-            return prefer_read_shadow_state(shadow_state_get_what(shadow_state_what::x0, i));
+            return prefer_read_shadow_register(shadow_registers_get_what(shadow_registers_what::x0, i));
         }
     }
 
@@ -160,7 +160,7 @@ public:
             derived().do_write_x(i, val);
             dsa_printf("%s::write_x(%d, %" PRIu64 "(0x%" PRIx64 "))\n", get_name(), i, val, val);
         } else {
-            prefer_write_shadow_state(shadow_state_get_what(shadow_state_what::x0, i), val);
+            prefer_write_shadow_register(shadow_registers_get_what(shadow_registers_what::x0, i), val);
         }
     }
 
@@ -173,7 +173,7 @@ public:
             dsa_printf("%s::read_f(%d) = %" PRIu64 "(0x%" PRIx64 ")\n", get_name(), i, val, val);
             return val;
         } else {
-            return prefer_read_shadow_state(shadow_state_get_what(shadow_state_what::f0, i));
+            return prefer_read_shadow_register(shadow_registers_get_what(shadow_registers_what::f0, i));
         }
     }
 
@@ -185,7 +185,7 @@ public:
             derived().do_write_f(i, val);
             dsa_printf("%s::write_f(%d, %" PRIu64 "(%" PRIx64 "))\n", get_name(), i, val, val);
         } else {
-            prefer_write_shadow_state(shadow_state_get_what(shadow_state_what::f0, i), val);
+            prefer_write_shadow_register(shadow_registers_get_what(shadow_registers_what::f0, i), val);
         }
     }
 

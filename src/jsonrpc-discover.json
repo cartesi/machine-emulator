@@ -1341,6 +1341,9 @@
           "length": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
+          "read_only": {
+            "type": "boolean"
+          },
           "backing_store": {
             "$ref": "#/components/schemas/BackingStoreConfig"
           }
@@ -1357,6 +1360,9 @@
             "type": "string"
           },
           "shared": {
+            "type": "boolean"
+          },
+          "create": {
             "type": "boolean"
           },
           "truncate": {
@@ -1428,15 +1434,6 @@
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/MemoryRangeConfig"
-        }
-      },
-      "TLBConfig": {
-        "title": "TLBConfig",
-        "type": "object",
-        "properties": {
-          "backing_store": {
-            "$ref": "#/components/schemas/BackingStoreConfig"
-          }
         }
       },
       "CLINTConfig": {
@@ -1647,6 +1644,12 @@
           "shared": {
             "type": "boolean"
           },
+          "create": {
+            "type": "boolean"
+          },
+          "truncate": {
+            "type": "boolean"
+          },
           "sht_filename": {
             "type": "string"
           },
@@ -1680,9 +1683,6 @@
           },
           "flash_drive": {
             "$ref": "#/components/schemas/FlashDriveConfigs"
-          },
-          "tlb": {
-            "$ref": "#/components/schemas/TLBConfig"
           },
           "clint": {
             "$ref": "#/components/schemas/CLINTConfig"

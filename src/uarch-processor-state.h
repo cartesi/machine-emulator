@@ -14,21 +14,28 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef SHADOW_TLB_FACTORY_H
-#define SHADOW_TLB_FACTORY_H
+#ifndef UARCH_PROCESSOR_STATE_H
+#define UARCH_PROCESSOR_STATE_H
 
 /// \file
-/// \brief TLB device factory.
+/// \brief Cartesi microarchitecture machine processor state structure definition.
 
+#include <array>
 #include <cstdint>
+#include <memory>
+
+#include "memory-address-range.h"
+#include "riscv-constants.h"
+#include "shadow-uarch-state.h"
 
 namespace cartesi {
 
-/// \brief Creates a PMA entry for the TLB device
-/// \param start Start address for memory range.
-/// \param length Length of memory range.
-/// \returns Corresponding PMA entry
-pmas_entry make_shadow_tlb_pmas_entry(uint64_t start, uint64_t length);
+struct uarch_processor_state final {
+    uarch_registers_state registers;    ///< Uarch registers
+    uint64_t registers_padding_[477]{}; ///< Padding to align next field to a page boundary
+};
+
+static_assert(sizeof(uarch_processor_state) % 4096 == 0, "machine state size must be multiple of a page size");
 
 } // namespace cartesi
 

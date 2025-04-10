@@ -41,7 +41,7 @@
 #include "uarch-constants.h"
 #include "uarch-pristine-state-hash.h"
 #include "uarch-pristine.h"
-#include "uarch-state.h"
+#include "uarch-processor-state.h"
 
 namespace cartesi {
 

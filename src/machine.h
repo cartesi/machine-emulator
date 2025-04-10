@@ -38,12 +38,12 @@
 #include "machine-merkle-tree.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
-#include "machine-state.h"
 #include "os.h"
 #include "pmas-constants.h"
+#include "processor-state.h"
 #include "shadow-tlb.h"
 #include "uarch-interpret.h"
-#include "uarch-state.h"
+#include "uarch-processor-state.h"
 #include "virtio-address-range.h"
 
 namespace cartesi {
@@ -60,8 +60,8 @@ constexpr skip_merkle_tree_update_t skip_merkle_tree_update;
 /// \brief Cartesi Machine implementation
 class machine final {
 private:
-    mutable machine_state m_s;                                 ///< Big machine state
-    mutable uarch_state m_us;                                  ///< Microarchitecture state
+    mutable processor_state *m_s{nullptr};                     ///< Big machine processor state
+    mutable uarch_processor_state *m_us{nullptr};              ///< Microarchitecture state
     mutable std::vector<std::unique_ptr<address_range>> m_ars; ///< All address ranges
     mutable machine_merkle_tree m_t;                           ///< Merkle tree of state
     machine_config m_c;                                        ///< Copy of initialization config
@@ -99,7 +99,7 @@ private:
     /// This means the an index into the container that owns all address ranges will always refers to same address range
     /// after subsequent calls to register_address_range() and  calls to replace_address_range() as well.
     /// \details Besides the container that stores the address ranges, the machine maintains subsets of address ranges.
-    /// The "merkle" address range container lists the indices of the address ranges taht will be considered by
+    /// The "merkle" address range container lists the indices of the address ranges that will be considered by
     /// the Merkle tree during the computation of the state hash.
     /// The "interpret" address range container lists the indices of the address ranges that will be visible from within
     /// the interpreter.
@@ -140,9 +140,18 @@ private:
     /// \param pma_index Index of the memory PMA for the desired offset
     host_addr get_hp_offset(uint64_t pma_index) const;
 
-    /// \brief Initializes microarchitecture
-    /// \param c Microarchitecture configuration
-    void init_uarch(const uarch_config &c);
+    /// \brief Initializes microarchitecture processor
+    /// \param c Microarchitecture processor configuration
+    void init_uarch_processor(const uarch_processor_config &c);
+
+    /// \brief Initializes microarchitecture RAM
+    /// \param c Microarchitecture RAM configuration
+    void init_uarch_ram(const uarch_ram_config &c);
+
+    /// \brief Initializes processor
+    /// \param p Processor configuration
+    /// \param r Machine runtime configuration
+    void init_processor(processor_config &p, const machine_runtime_config &r);
 
     /// \brief Initializes registers
     /// \param p Registers configuration
@@ -164,7 +173,7 @@ private:
 
     /// \brief Initializes HTIF device address range
     /// \param h HTIF configuration
-    void init_htif_ar(const htif_state &h);
+    void init_htif_ar();
 
     /// \brief Initializes TTY if needed
     /// \param h HTIF configuration
@@ -174,18 +183,18 @@ private:
 
     /// \brief Initializes CLINT device address range
     /// \param c CLINT configuration
-    void init_clint_ar(const clint_state &c);
+    void init_clint_ar();
 
     /// \brief Initializes PLIC device address range
     /// \param p PLIC configuration
-    void init_plic_ar(const plic_state &p);
+    void init_plic_ar();
 
     /// \brief Initializes CMIO address ranges
     /// \param c CMIO configuration
     void init_cmio_ars(const cmio_config &c);
 
     /// \brief Initializes the address ranges involced in the Merkle tree
-    /// \detail This can only be called after all address ranges have been registerd
+    /// \detail This can only be called after all address ranges have been registered
     void init_merkle_ars();
 
     /// \brief Initializes the address range descriptions returned by get_address_ranges()
@@ -197,10 +206,9 @@ private:
     /// \detail This can only be called after all PMAs have been added
     void init_pmas_contents(const pmas_config &config, memory_address_range &pmas) const;
 
-    /// \brief Initializes contents of machine TLB, from image in disk or with default values
-    /// \param config TLB config
+    /// \brief Initialize hot TLB contents
     /// \detail This can only be called after all PMAs have been added
-    void init_tlb_contents(const tlb_config &config);
+    void init_hot_tlb_contents();
 
     /// \brief Initializes contents of machine DTB, if image was not available
     /// \param config Machine configuration
@@ -309,23 +317,23 @@ public:
     static machine_config get_default_config();
 
     /// \brief Returns machine state for direct access.
-    machine_state &get_state() {
-        return m_s;
+    processor_state &get_state() {
+        return *m_s;
     }
 
     /// \brief Returns machine state for direct read-only access.
-    const machine_state &get_state() const {
-        return m_s;
+    const processor_state &get_state() const {
+        return *m_s;
     }
 
     /// \brief Returns uarch state for direct access.
-    uarch_state &get_uarch_state() {
-        return m_us;
+    uarch_processor_state &get_uarch_state() {
+        return *m_us;
     }
 
     /// \brief Returns uarch state for direct read-only access.
-    const uarch_state &get_uarch_state() const {
-        return m_us;
+    const uarch_processor_state &get_uarch_state() const {
+        return *m_us;
     }
 
     /// \brief Returns a list of descriptions for all PMA entries registered in the machine, sorted by start
@@ -452,7 +460,7 @@ public:
     /// \param paddr Word address (aligned to 64-bit boundary).
     /// \details The word can be in a writeable area of the address space.
     /// This includes the shadow state and the shadow uarch state.
-    /// (But does NOT include memory-mapped devices, the shadow tlb, shadow PMAs, or unnocupied memory regions.)
+    /// (But does NOT include memory-mapped devices, shadow PMAs, or unnocupied memory regions.)
     void write_word(uint64_t paddr, uint64_t val);
 
     /// \brief Reads a chunk of data, by its target physical address and length.
@@ -549,10 +557,6 @@ public:
     /// \returns true if they are, false if there is an error.
     bool verify_dirty_page_maps() const;
 
-    /// \brief Copies the current state into a configuration for serialization
-    /// \returns The configuration
-    machine_config get_serialization_config() const;
-
     /// \brief Returns copy of initialization config.
     const machine_config &get_initial_config() const;
 
@@ -616,15 +620,6 @@ public:
     /// \param pma_index Index of PMA where address falls
     void write_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
         uint64_t pma_index);
-
-    /// \brief Check consistency of TLB slot
-    /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
-    /// \param slot_index Index of slot to update
-    /// \param vaddr_page Virtual address of page to map
-    /// \param vp_offset Offset from target virtual addresses to target physical addresses within page
-    /// \param pma_index Index of PMA where address falls
-    void check_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
-        uint64_t pma_index, const std::string &prefix = "") const;
 
     /// \brief Reads a TLB register
     /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE

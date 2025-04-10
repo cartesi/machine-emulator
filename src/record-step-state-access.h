@@ -201,11 +201,11 @@ private:
     // -----
     friend i_prefer_shadow_state<record_step_state_access>;
 
-    uint64_t do_read_shadow_state(shadow_state_what what) const {
+    uint64_t do_read_shadow_register(shadow_registers_what what) const {
         return log_read_reg(machine_reg_enum(what));
     }
 
-    void do_write_shadow_state(shadow_state_what what, uint64_t val) const {
+    void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
         log_write_reg(machine_reg_enum(what), val);
     }
 
@@ -275,10 +275,10 @@ private:
         // We still need to touch the page data
         // Writes to the TLB slot are atomic, so we know the values in a slot are ALWAYS internally consistent.
         // This means we can safely use all other fields to find paddr_page.
-        const auto vaddr_page = m_m.get_state().tlb_hot[SET][slot_index].vaddr_page;
-        const auto vh_offset = m_m.get_state().tlb_hot[SET][slot_index].vh_offset;
+        const auto vaddr_page = m_m.get_state().hot_tlb[SET][slot_index].vaddr_page;
+        const auto vh_offset = m_m.get_state().hot_tlb[SET][slot_index].vh_offset;
         if (vaddr_page != TLB_INVALID_PAGE) {
-            const auto vp_offset = m_m.get_state().tlb_cold[SET][slot_index].vp_offset;
+            const auto vp_offset = m_m.get_state().shadow_tlb[SET][slot_index].vp_offset;
             const auto paddr_page = vaddr_page + vp_offset;
             touch_page(paddr_page);
         }

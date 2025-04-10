@@ -33,10 +33,10 @@
 #include "i-interactive-state-access.h"
 #include "i-state-access.h"
 #include "interpret.h"
-#include "machine-state.h"
 #include "machine.h"
 #include "os.h"
 #include "pmas-constants.h"
+#include "processor-state.h"
 #include "riscv-constants.h"
 #include "shadow-tlb.h"
 #include "strict-aliasing.h"
@@ -458,17 +458,17 @@ private:
 
     template <TLB_set_index SET>
     uint64_t do_read_tlb_vaddr_page(uint64_t slot_index) const {
-        return m_m.get_state().tlb_hot[SET][slot_index].vaddr_page;
+        return m_m.get_state().hot_tlb[SET][slot_index].vaddr_page;
     }
 
     template <TLB_set_index SET>
     host_addr do_read_tlb_vf_offset(uint64_t slot_index) const {
-        return m_m.get_state().tlb_hot[SET][slot_index].vh_offset;
+        return m_m.get_state().hot_tlb[SET][slot_index].vh_offset;
     }
 
     template <TLB_set_index SET>
     uint64_t do_read_tlb_pma_index(uint64_t slot_index) const {
-        return m_m.get_state().tlb_cold[SET][slot_index].pma_index;
+        return m_m.get_state().shadow_tlb[SET][slot_index].pma_index;
     }
 
     template <TLB_set_index SET>

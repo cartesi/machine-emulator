@@ -88,11 +88,11 @@ private:
     // -----
     friend i_prefer_shadow_state<machine_uarch_bridge_state_access>;
 
-    uint64_t do_read_shadow_state(shadow_state_what what) const {
+    uint64_t do_read_shadow_register(shadow_registers_what what) const {
         return bridge_read_reg(machine_reg_enum(what));
     }
 
-    void do_write_shadow_state(shadow_state_what what, uint64_t val) const {
+    void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
         bridge_write_reg(machine_reg_enum(what), val);
     }
 

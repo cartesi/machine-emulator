@@ -31,7 +31,7 @@
 #include "pmas.h"
 #include "replay-step-state-access-interop.h"
 #include "riscv-constants.h"
-#include "shadow-state.h"
+#include "shadow-registers.h"
 #include "shadow-tlb.h"
 #include "shadow-uarch-state.h"
 #include "strict-aliasing.h"
@@ -402,11 +402,11 @@ private:
     // -----
     friend i_prefer_shadow_state<replay_step_state_access>;
 
-    uint64_t do_read_shadow_state(shadow_state_what what) const {
+    uint64_t do_read_shadow_register(shadow_registers_what what) const {
         return check_read_reg(machine_reg_enum(what));
     }
 
-    void do_write_shadow_state(shadow_state_what what, uint64_t val) const {
+    void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
         check_write_reg(machine_reg_enum(what), val);
     }
 

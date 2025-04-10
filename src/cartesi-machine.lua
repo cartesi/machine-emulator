@@ -107,6 +107,9 @@ where options are:
         data_filename:<filename>
         dht_filename:<filename>
         shared
+        create
+        truncate
+        read_only
         mount:<string>
         user:<string>
 
@@ -136,6 +139,18 @@ where options are:
         shared (optional)
         target modifications to flash drive modify the memory and hash tree files.
         by default, image files are not modified and changes are lost.
+
+        create (optional)
+        create the backing storage file, shared must also be true.
+
+        truncate (optional)
+        truncate the memory length to match memory lengths different from the backing storage,
+        in case of shared flash drive, then it also truncates the underlying backing file.
+        by default, when a length is present it must also match the backing storage length.
+
+        read_only (optional)
+        mark flash drive as read-only, disallowing write attempts from the host or the guest.
+        by default, flash drives are not read-only, thus writable.
 
         mount (optional)
         whether the flash drive should be mounted automatically in init.
@@ -171,11 +186,12 @@ where options are:
 
   --ram=<key>:<value>[,<key>:<value>[,...]...]
   --dtb=<key>:<value>[,<key>:<value>[,...]...]
-  --tlb=<key>:<value>[,<key>:<value>[,...]...]
+  --processor=<key>:<value>[,<key>:<value>[,...]...]
   --cmio-rx-buffer=<key>:<value>[,<key>:<value>[,...]...]
   --cmio-tx-buffer=<key>:<value>[,<key>:<value>[,...]...]
   --pmas=<key>:<value>[,<key>:<value>[,...]...]
   --uarch-ram=<key>:<value>[,<key>:<value>[,...]...]
+  --uarch-processor=<key>:<value>[,<key>:<value>[,...]...]
     configures file storage for other memory ranges in the machine
 
     <key>:<value> is one of
@@ -471,6 +487,31 @@ where options are:
   --load=<directory>
     load machine previously stored in <directory>.
 
+  --init-shared=<directory>
+    initialize a machine sharing snapshot created in <directory>.
+    writable address ranges are shared, thus runtime modifications persist in the snapshot.
+    writable address ranges use reflinks on copy-on-write filesystems for efficient copying.
+    read-only address ranges use hard links to avoid unnecessary copying.
+    address ranges sparsity is preserved to minimize host storage usage.
+
+    MUST BE USED WITH --no-rollback
+
+  --load-shared=<directory>
+    load an existing machine sharing snapshot from <directory>,
+    writable address ranges are shared, thus runtime modifications persists in the snapshot.
+    address ranges sparsity is preserved to minimize host storage usage.
+
+    MUST BE USED WITH --no-rollback
+
+  --clone-shared=<source_directory>,<destination_directory>
+    clones a snapshot from source directory to destination directory and load a machine sharing it.
+    writable address ranges are shared, thus runtime modifications persist in the snapshot.
+    writable address ranges use reflinks on copy-on-write filesystems for efficient copying.
+    read-only address ranges use hard links to avoid unnecessary copying.
+    address ranges sparsity is preserved to minimize host storage usage.
+
+    MUST BE USED WITH --no-rollback
+
   --initial-hash
     print initial state hash before running machine.
 
@@ -614,6 +655,9 @@ local flash_data_filename = { root = images_path .. "rootfs.ext2" }
 local flash_dht_filename = {}
 local flash_label_order = { "root" }
 local flash_shared = {}
+local flash_create = {}
+local flash_truncate = {}
+local flash_read_only = {}
 local flash_mount = {}
 local flash_user = {}
 local flash_start = {}
@@ -1013,13 +1057,6 @@ local options = {
         end,
     },
     {
-        "^(%-%-tlb%=(.+))$",
-        function(all, opts)
-            tlb.backing_store = parse_backing_store(opts, "tlb", all, tlb.backing_store)
-            return true
-        end,
-    },
-    {
         "^(%-%-pmas%=(.+))$",
         function(all, opts)
             pmas.backing_store = parse_backing_store(opts, "pmas", all, pmas.backing_store)
@@ -1146,6 +1183,9 @@ local options = {
                 data_filename = true,
                 dht_filename = true,
                 shared = true,
+                create = true,
+                truncate = true,
+                read_only = true,
                 mount = true,
                 user = true,
                 length = true,
@@ -1155,6 +1195,9 @@ local options = {
             if f.data_filename == true then f.data_filename = "" end
             if f.dht_filename == true then f.dht_filename = "" end
             assert(not f.shared or f.shared == true, "invalid flash drive shared value in " .. all)
+            assert(not f.create or f.create == true, "invalid flash drive create value in " .. all)
+            assert(not f.truncate or f.truncate == true, "invalid flash drive read_only value in " .. all)
+            assert(not f.read_only or f.read_only == true, "invalid flash drive truncate value in " .. all)
             if f.mount == nil then
                 -- mount only if there is a file backing
                 if f.data_filename and f.data_filename ~= "" then
@@ -1179,8 +1222,14 @@ local options = {
             flash_start[d] = f.start or flash_start[d]
             flash_length[d] = f.length or flash_length[d]
             flash_shared[d] = f.shared or flash_shared[d]
+            flash_create[d] = f.create or flash_create[d]
+            flash_truncate[d] = f.truncate or flash_truncate[d]
+            flash_read_only[d] = f.read_only or flash_read_only[d]
             flash_mount[d] = f.mount or flash_mount[d]
             flash_user[d] = f.user or flash_user[d]
+            if d == "root" and f.read_only then -- Mount root filesystem as read-only
+                dtb.bootargs = dtb.bootargs:gsub("rw", "ro")
+            end
             return true
         end,
     },
@@ -1335,6 +1384,9 @@ local options = {
             flash_start.root = nil
             flash_length.root = nil
             flash_shared.root = nil
+            flash_create.root = nil
+            flash_truncate.root = nil
+            flash_read_only.root = nil
             table.remove(flash_label_order, 1)
             dtb.bootargs = dtb.bootargs:gsub(" root=$", "")
             return true
@@ -1846,7 +1898,10 @@ echo "
                 data_filename = flash_data_filename[label],
                 dht_filename = flash_dht_filename[label],
                 shared = flash_shared[label],
+                create = flash_create[label],
+                truncate = flash_truncate[label],
             },
+            read_only = flash_read_only[label],
             start = flash_start[label],
             length = flash_length[label] or -1,
         }

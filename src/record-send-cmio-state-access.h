@@ -32,10 +32,10 @@
 #include "i-hasher.h"
 #include "i-state-access.h"
 #include "machine-merkle-tree.h"
-#include "machine-state.h"
 #include "machine.h"
 #include "meta.h"
-#include "shadow-state.h"
+#include "processor-state.h"
+#include "shadow-registers.h"
 
 namespace cartesi {
 

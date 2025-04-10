@@ -57,7 +57,10 @@ using tlb_hot_state = std::array<tlb_hot_set, TLB_NUM_SETS_>;
 /// \details
 /// The pma_index helps translate between target physical addresses and host addresses when needed.
 struct tlb_cold_slot final {
+    uint64_t vaddr_page{TLB_INVALID_PAGE}; ///< Target virtual address of start of page
+    uint64_t vp_offset{0};                 ///< Offset from target virtual address in the same page to physical address
     uint64_t pma_index{TLB_INVALID_PMA_INDEX}; ///< Index of PMA where physical address falls
+    uint64_t padding_{0};                      ///< Padding to make sure TLB cold slot size is a power of 2
 };
 
 using tlb_cold_set = std::array<tlb_cold_slot, TLB_SET_SIZE>;
@@ -67,9 +70,12 @@ static_assert(sizeof(uint64_t) >= sizeof(uintptr_t), "TLB expects host pointer f
 
 // We need to ensure TLB state sizes are fixed across different platforms
 static_assert(sizeof(tlb_hot_state) == 3 * TLB_SET_SIZE * 2 * sizeof(uint64_t), "unexpected TLB hot state size");
-static_assert(sizeof(tlb_cold_state) == 3 * TLB_SET_SIZE * 1 * sizeof(uint64_t), "unexpected TLB cold state size");
+static_assert(sizeof(tlb_cold_state) == 3 * TLB_SET_SIZE * 4 * sizeof(uint64_t), "unexpected TLB cold state size");
 static_assert(alignof(tlb_hot_state) == sizeof(uint64_t), "unexpected TLB hot state alignment");
 static_assert(alignof(tlb_cold_state) == sizeof(uint64_t), "unexpected TLB cold state alignment");
+
+// Ensure TLB cold slot size is a power of two, so we can perform atomic writes to the TLB.
+static_assert((sizeof(tlb_cold_slot) & (sizeof(tlb_cold_slot) - 1)) == 0, "TLB slot size must be a power of 2");
 
 /// \brief Gets a TLB slot index for a page.
 /// \param vaddr Target virtual address.

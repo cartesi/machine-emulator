@@ -151,7 +151,7 @@ private:
     }
 
     template <TLB_set_index SET>
-    uint64_t do_read_tlb_vp_offset(uint64_t slot_index) const {
+    uint64_t do_read_tlb_vf_offset(uint64_t slot_index) const {
         return bridge_read_shadow_tlb(SET, slot_index, shadow_tlb_what::vp_offset);
     }
 

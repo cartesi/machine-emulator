@@ -49,7 +49,6 @@ struct machine_state final {
     registers_state registers;          ///< Registers
     uint64_t registers_padding_[406]{}; ///< Padding to align next field to a page boundary
     tlb_cold_state tlb_cold;            ///< TLB cold state
-    uint64_t tlb_cold_padding_[256]{};  ///< Padding to align next field to a page boundary
 
     // Penumbra region, the fields below are not stored in the backing file,
     // it's only visible in host resident memory during runtime.

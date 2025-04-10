@@ -462,7 +462,7 @@ private:
     }
 
     template <TLB_set_index SET>
-    host_addr do_read_tlb_vp_offset(uint64_t slot_index) const {
+    host_addr do_read_tlb_vf_offset(uint64_t slot_index) const {
         return m_m.get_state().tlb_hot[SET][slot_index].vh_offset;
     }
 

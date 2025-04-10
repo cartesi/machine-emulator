@@ -810,21 +810,13 @@ void machine::mark_dirty_page(host_addr haddr, uint64_t pma_index) {
 uint64_t machine::read_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what reg) const {
     switch (reg) {
         case shadow_tlb_what::vaddr_page:
-            return m_s.tlb_hot[set_index][slot_index].vaddr_page;
-        case shadow_tlb_what::vp_offset: {
-            const auto vaddr_page = m_s.tlb_hot[set_index][slot_index].vaddr_page;
-            if (vaddr_page != TLB_INVALID_PAGE) {
-                const auto vh_offset = m_s.tlb_hot[set_index][slot_index].vh_offset;
-                const auto haddr_page = vaddr_page + vh_offset;
-                const auto pma_index = m_s.tlb_cold[set_index][slot_index].pma_index;
-                return get_paddr(haddr_page, pma_index) - vaddr_page;
-            }
-            return 0;
-        }
+            return m_s.tlb_cold[set_index][slot_index].vaddr_page;
+        case shadow_tlb_what::vp_offset:
+            return m_s.tlb_cold[set_index][slot_index].vp_offset;
         case shadow_tlb_what::pma_index:
             return m_s.tlb_cold[set_index][slot_index].pma_index;
         case shadow_tlb_what::zero_padding_:
-            return 0;
+            return m_s.tlb_cold[set_index][slot_index].padding_;
         default:
             throw std::domain_error{"unknown shadow TLB register"};
     }
@@ -864,9 +856,16 @@ void machine::check_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uin
 
 void machine::write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset,
     uint64_t pma_index) {
+    uint64_t vp_offset = 0;
+    if (vaddr_page != TLB_INVALID_PAGE) {
+        vp_offset = get_paddr(vh_offset, pma_index);
+    }
     m_s.tlb_hot[set_index][slot_index].vaddr_page = vaddr_page;
     m_s.tlb_hot[set_index][slot_index].vh_offset = vh_offset;
+    m_s.tlb_cold[set_index][slot_index].vaddr_page = vaddr_page;
+    m_s.tlb_cold[set_index][slot_index].vp_offset = vp_offset;
     m_s.tlb_cold[set_index][slot_index].pma_index = pma_index;
+    m_s.tlb_cold[set_index][slot_index].padding_ = 0;
 }
 
 void machine::write_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
@@ -1810,14 +1809,13 @@ void machine::mark_write_tlb_dirty_pages() const {
     for (uint64_t slot_index = 0; slot_index < TLB_SET_SIZE; ++slot_index) {
         const auto &hot_slot = hot_set[slot_index];
         if (hot_slot.vaddr_page != TLB_INVALID_PAGE) {
-            auto haddr_page = hot_slot.vaddr_page + hot_slot.vh_offset;
             const auto &cold_slot = cold_set[slot_index];
             // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
             auto &ar = const_cast<address_range &>(read_pma(cold_slot.pma_index));
             if (!ar.is_memory()) {
                 throw std::runtime_error{"could not mark dirty page for a TLB entry: TLB is corrupt"};
             }
-            auto paddr_page = get_paddr(haddr_page, cold_slot.pma_index);
+            auto paddr_page = hot_slot.vaddr_page + cold_slot.vp_offset;
             if (!ar.contains_absolute(paddr_page, AR_PAGE_SIZE)) {
                 throw std::runtime_error{"could not mark dirty page for a TLB entry: TLB is corrupt"};
             }

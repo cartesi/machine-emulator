@@ -320,6 +320,11 @@ public:
         do_mark_pages_clean();
     }
 
+    /// \brief Marks all pages in range as dirty
+    void mark_pages_dirty() noexcept {
+        do_mark_pages_dirty();
+    }
+
     /// \brief Tests if a given page is dirty
     /// \param offset Any offset in range within desired page
     /// \returns True if and only if page is marked dirty
@@ -365,6 +370,10 @@ private:
     }
 
     virtual void do_mark_pages_clean() noexcept {
+        ;
+    }
+
+    virtual void do_mark_pages_dirty() noexcept {
         ;
     }
 

@@ -22,7 +22,7 @@
 #define AR_SHADOW_STATE_LENGTH_DEF 0x1000        ///< Shadow length in bytes
 #define AR_PMAS_START_DEF 0x10000                ///< PMA Array start address
 #define AR_PMAS_LENGTH_DEF 0x1000                ///< PMA Array length in bytes
-#define AR_SHADOW_TLB_START_DEF 0x20000          ///< TLB start address
+#define AR_SHADOW_TLB_START_DEF 0x1000           ///< TLB start address
 #define AR_SHADOW_TLB_LENGTH_DEF 0x6000          ///< TLB length in bytes
 #define AR_SHADOW_UARCH_STATE_START_DEF 0x400000 ///< microarchitecture shadow state start address
 #define AR_SHADOW_UARCH_STATE_LENGTH_DEF 0x1000  ///< microarchitecture shadow state length

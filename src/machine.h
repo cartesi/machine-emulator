@@ -61,7 +61,7 @@ constexpr skip_merkle_tree_update_t skip_merkle_tree_update;
 class machine final {
 private:
     mutable machine_state m_s;                                 ///< Big machine state
-    mutable uarch_state m_us;                                  ///< Microarchitecture state
+    mutable uarch_state *m_us{nullptr};                        ///< Microarchitecture state
     mutable std::vector<std::unique_ptr<address_range>> m_ars; ///< All address ranges
     mutable machine_merkle_tree m_t;                           ///< Merkle tree of state
     machine_config m_c;                                        ///< Copy of initialization config
@@ -70,6 +70,8 @@ private:
     std::vector<virtio_address_range *> m_virtio_ars;     ///< VirtIO address ranges
     address_range_descriptions m_ards;                    ///< Address range descriptions listed by get_address_ranges()
     std::unordered_map<std::string, uint64_t> m_counters; ///< Counters used for statistics collection
+    std::vector<uint64_t> m_pmas;                         ///< Indices of address ranges that interpret can find
+    bool m_soft_yield{false};                             ///< Whether runtime soft yields are enabled
 
     ///< Where to register an address range
     struct register_where {
@@ -113,7 +115,7 @@ private:
         const auto index = m_ars.size();                    // Get index new address range will occupy
         m_ars.push_back(std::move(ptr));                    // Move ptr to list of address ranges
         if (where.interpret) {                              // Register with interpreter
-            m_s.pmas.push_back(index);
+            m_pmas.push_back(index);
         }
         if (where.merkle) { // Register with Merkle tree
             m_merkle_ars.push_back(index);
@@ -143,9 +145,9 @@ private:
     void init_uarch(const uarch_config &c);
 
     /// \brief Initializes registers
-    /// \param p Processor configuration
+    /// \param p Registers configuration
     /// \param r Machine runtime configuration
-    void init_processor(processor_config &p, const machine_runtime_config &r);
+    void init_registers(registers_state &p, const machine_runtime_config &r);
 
     /// \brief Initializes RAM address range
     /// \param ram RAM configuration
@@ -162,21 +164,21 @@ private:
 
     /// \brief Initializes HTIF device address range
     /// \param h HTIF configuration
-    void init_htif_ar(const htif_config &h);
+    void init_htif_ar(const htif_state &h);
 
     /// \brief Initializes TTY if needed
     /// \param h HTIF configuration
     /// \param r HTIF runtime configuration
     /// \param iunrep Initial value of iunrep CSR
-    void init_tty(const htif_config &h, const htif_runtime_config &r, uint64_t iunrep) const;
+    void init_tty(const htif_state &h, const htif_runtime_config &r, uint64_t iunrep) const;
 
     /// \brief Initializes CLINT device address range
     /// \param c CLINT configuration
-    void init_clint_ar(const clint_config &c);
+    void init_clint_ar(const clint_state &c);
 
     /// \brief Initializes PLIC device address range
     /// \param p PLIC configuration
-    void init_plic_ar(const plic_config &p);
+    void init_plic_ar(const plic_state &p);
 
     /// \brief Initializes CMIO address ranges
     /// \param c CMIO configuration
@@ -318,12 +320,12 @@ public:
 
     /// \brief Returns uarch state for direct access.
     uarch_state &get_uarch_state() {
-        return m_us;
+        return *m_us;
     }
 
     /// \brief Returns uarch state for direct read-only access.
     const uarch_state &get_uarch_state() const {
-        return m_us;
+        return *m_us;
     }
 
     /// \brief Returns a list of descriptions for all PMA entries registered in the machine, sorted by start
@@ -497,12 +499,12 @@ public:
     /// \param index Index of desired address range
     /// \returns Desired address range, or an empty sentinel if index is out of bounds
     const address_range &read_pma(uint64_t index) const noexcept {
-        if (index >= m_s.pmas.size()) {
+        if (index >= m_pmas.size()) {
             static constexpr auto sentinel = make_empty_address_range("sentinel");
             return sentinel;
         }
         // NOLINTNEXTLINE(bugprone-narrowing-conversions)
-        return *m_ars[static_cast<int>(m_s.pmas[static_cast<int>(index)])];
+        return *m_ars[static_cast<int>(m_pmas[static_cast<int>(index)])];
     }
 
     /// \brief Returns the address range associated to the PMA at a given index
@@ -677,6 +679,11 @@ public:
     /// \brief Returns all counters
     const auto &get_counters() {
         return m_counters;
+    }
+
+    /// \brief Returns whether runtime soft yields are enabled
+    bool is_soft_yield() const {
+        return m_soft_yield;
     }
 };
 

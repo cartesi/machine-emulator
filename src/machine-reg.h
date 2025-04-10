@@ -18,7 +18,7 @@
 #define MACHINE_REG_H
 
 #include "shadow-state-address-range.h"
-#include "shadow-uarch-state-address-range.h"
+#include "shadow-uarch-state.h"
 
 /// \file
 /// \brief Cartesi machine registers
@@ -27,7 +27,6 @@ namespace cartesi {
 
 /// \brief List of machine registers
 enum class machine_reg : uint64_t {
-    // Processor x registers
     x0 = static_cast<uint64_t>(shadow_state_what::x0),
     x1 = static_cast<uint64_t>(shadow_state_what::x1),
     x2 = static_cast<uint64_t>(shadow_state_what::x2),

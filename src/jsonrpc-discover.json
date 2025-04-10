@@ -1000,8 +1000,8 @@
           }
         }
       },
-      "ProcessorConfig": {
-        "title": "ProcessorConfig",
+      "RegistersConfig": {
+        "title": "RegistersConfig",
         "type": "object",
         "properties": {
           "x0": {
@@ -1481,8 +1481,8 @@
           }
         }
       },
-      "UarchProcessorConfig": {
-        "title": "UarchProcessorConfig",
+      "UarchRegistersConfig": {
+        "title": "UarchRegistersConfig",
         "type": "object",
         "properties": {
           "x0": {
@@ -1608,8 +1608,8 @@
         "title": "UarchConfig",
         "type": "object",
         "properties": {
-          "processor": {
-            "$ref": "#/components/schemas/UarchProcessorConfig"
+          "registers": {
+            "$ref": "#/components/schemas/UarchRegistersConfig"
           },
           "ram": {
             "$ref": "#/components/schemas/UarchRAMConfig"
@@ -1669,8 +1669,8 @@
         "title": "MachineConfig",
         "type": "object",
         "properties": {
-          "processor": {
-            "$ref": "#/components/schemas/ProcessorConfig"
+          "registers": {
+            "$ref": "#/components/schemas/RegistersConfig"
           },
           "ram": {
             "$ref": "#/components/schemas/RAMConfig"

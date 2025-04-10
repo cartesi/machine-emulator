@@ -110,6 +110,11 @@ private:
         std::fill(m_dirty_page_map.begin(), m_dirty_page_map.end(), 0);
     }
 
+    //??(edubart): Marking everything as dirty is actually dumb, rework this later.
+    void do_mark_pages_dirty() noexcept override {
+        std::fill(m_dirty_page_map.begin(), m_dirty_page_map.end(), 1);
+    }
+
     bool do_is_page_marked_dirty(uint64_t offset) const noexcept override {
         auto page_index = offset >> AR_constants::AR_PAGE_SIZE_LOG2;
         auto map_index = page_index >> 3;

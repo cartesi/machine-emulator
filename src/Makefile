@@ -364,7 +364,6 @@ LIBCARTESI_OBJS:= \
 	sha3.o \
 	shadow-state-address-range.o \
 	shadow-tlb-address-range.o \
-	shadow-uarch-state-address-range.o \
 	uarch-pristine-hash.o \
 	uarch-pristine-ram.o \
 	uarch-pristine-state-hash.o \

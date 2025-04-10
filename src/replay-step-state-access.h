@@ -231,7 +231,7 @@ private:
             auto *vp_offset_log = try_find_page(vp_offset_field_addr & ~PAGE_OFFSET_MASK);
             const auto vaddr_page_field_addr = shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page);
             auto *vaddr_page_log = try_find_page(vaddr_page_field_addr & ~PAGE_OFFSET_MASK);
-            // If vp_offset was accessed during record, both it and vaddr_apge will appear in the log
+            // If vp_offset was accessed during record, both it and vaddr_page will appear in the log
             // (record_step_state_access makes sure of it)
             // Otherwise, we do not need to translate
             if (vp_offset_log == nullptr || vaddr_page_log == nullptr) {
@@ -268,7 +268,7 @@ private:
             auto *vp_offset_log = try_find_page(vp_offset_field_addr & ~PAGE_OFFSET_MASK);
             const auto vaddr_page_field_addr = shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page);
             auto *vaddr_page_log = try_find_page(vaddr_page_field_addr & ~PAGE_OFFSET_MASK);
-            // If vp_offset was accessed during record, both it and vaddr_apge will appear in the log
+            // If vp_offset was accessed during record, both it and vaddr_page will appear in the log
             // (record_step_state_access makes sure of it)
             // Otherwise, we do not need to translate
             if (vp_offset_log == nullptr || vaddr_page_log == nullptr) {
@@ -372,7 +372,7 @@ private:
     }
 
     //??D we should probably optimize access to the shadow so it doesn't perform a translation every time
-    // We can do this by caching the vh_offset trasnslation of the processor shadow page. This is easy if
+    // We can do this by caching the vh_offset translation of the registers shadow page. This is easy if
     // static_assert(sizeof(shadow_state) <= AR_PAGE_SIZE, "shadow state must fit in single page");
     uint64_t check_read_reg(machine_reg reg) const {
         const auto haddr = do_get_faddr(machine_reg_address(reg));
@@ -380,7 +380,7 @@ private:
     }
 
     //??D we should probably optimize access to the shadow so it doesn't perform a translation every time
-    // We can do this by caching the vh_offset trasnslation of the processor shadow page. This is easy if
+    // We can do this by caching the vh_offset translation of the registers shadow page. This is easy if
     // static_assert(sizeof(shadow_state) <= AR_PAGE_SIZE, "shadow state must fit in single page");
     void check_write_reg(machine_reg reg, uint64_t val) const {
         const auto haddr = do_get_faddr(machine_reg_address(reg));
@@ -481,7 +481,7 @@ private:
     }
 
     template <TLB_set_index SET>
-    host_addr do_read_tlb_vp_offset(uint64_t slot_index) const {
+    host_addr do_read_tlb_vf_offset(uint64_t slot_index) const {
         return check_read_tlb<host_addr>(SET, slot_index, shadow_tlb_what::vp_offset);
     }
 

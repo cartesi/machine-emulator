@@ -82,6 +82,8 @@ static void adjust_backing_store(machine_config &c, const std::string &dir) {
     adjust_backing_store(AR_CMIO_RX_BUFFER_START, AR_CMIO_RX_BUFFER_LENGTH, dir, c.cmio.rx_buffer.backing_store);
     adjust_backing_store(AR_CMIO_TX_BUFFER_START, AR_CMIO_TX_BUFFER_LENGTH, dir, c.cmio.tx_buffer.backing_store);
     adjust_backing_store(AR_PMAS_START, AR_PMAS_LENGTH, dir, c.pmas.backing_store);
+    adjust_backing_store(AR_SHADOW_UARCH_STATE_START, AR_SHADOW_UARCH_STATE_LENGTH, dir,
+        c.uarch.processor.backing_store);
     adjust_backing_store(AR_UARCH_RAM_START, AR_UARCH_RAM_LENGTH, dir, c.uarch.ram.backing_store);
     adjust_hash_tree(dir, c.hash_tree);
 }

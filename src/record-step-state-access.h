@@ -264,7 +264,7 @@ private:
 
     //??D This is still a bit too complicated for my taste
     template <TLB_set_index SET>
-    host_addr do_read_tlb_vp_offset(uint64_t slot_index) const {
+    host_addr do_read_tlb_vf_offset(uint64_t slot_index) const {
         // During initialization, replay_step_state_access translates all vp_offset to corresponding vh_offset
         // At deinitialization, it translates them back
         // To do that, it needs the corresponding paddr_page = vaddr_page + vp_offset, and page data itself
@@ -275,12 +275,11 @@ private:
         // We still need to touch the page data
         // Writes to the TLB slot are atomic, so we know the values in a slot are ALWAYS internally consistent.
         // This means we can safely use all other fields to find paddr_page.
-        const auto vaddr_page = m_m.get_state().tlb.hot[SET][slot_index].vaddr_page;
-        const auto vh_offset = m_m.get_state().tlb.hot[SET][slot_index].vh_offset;
+        const auto vaddr_page = m_m.get_state().tlb_hot[SET][slot_index].vaddr_page;
+        const auto vh_offset = m_m.get_state().tlb_hot[SET][slot_index].vh_offset;
         if (vaddr_page != TLB_INVALID_PAGE) {
-            const auto pma_index = m_m.get_state().tlb.cold[SET][slot_index].pma_index;
-            const auto haddr_page = vaddr_page + vh_offset;
-            auto paddr_page = m_m.get_paddr(haddr_page, pma_index);
+            const auto vp_offset = m_m.get_state().tlb_cold[SET][slot_index].vp_offset;
+            const auto paddr_page = vaddr_page + vp_offset;
             touch_page(paddr_page);
         }
         return vh_offset;
@@ -299,12 +298,10 @@ private:
         // We still need to touch the page data
         if (vaddr_page != TLB_INVALID_PAGE) {
             const auto haddr_page = vaddr_page + vh_offset;
-            auto paddr_page = m_m.get_paddr(haddr_page, pma_index);
+            const auto paddr_page = m_m.get_paddr(haddr_page, pma_index);
             touch_page(paddr_page);
         }
-        m_m.get_state().tlb.hot[SET][slot_index].vaddr_page = vaddr_page;
-        m_m.get_state().tlb.hot[SET][slot_index].vh_offset = vh_offset;
-        m_m.get_state().tlb.cold[SET][slot_index].pma_index = pma_index;
+        m_m.write_tlb(SET, slot_index, vaddr_page, vh_offset, pma_index);
     }
 
     fast_addr do_get_faddr(uint64_t paddr, uint64_t pma_index) const {

@@ -80,12 +80,6 @@ namespace http = beast::http;   // from <boost/beast/http.hpp>
 namespace asio = boost::asio;   // from <boost/asio.hpp>
 using tcp = asio::ip::tcp;      // from <boost/asio/ip/tcp.hpp>
 
-// The io_context is required for all I/O
-static boost::asio::io_context &get_ioc() {
-    static THREAD_LOCAL boost::asio::io_context ioc{1};
-    return ioc;
-}
-
 template <typename... Ts, size_t... Is>
 static std::string jsonrpc_post_data(const std::string &method, const std::tuple<Ts...> &params,
     std::index_sequence<Is...> /*unused*/) {
@@ -153,10 +147,8 @@ public:
     }
 };
 
-static std::string json_post(beast::tcp_stream &stream, const std::string &remote_address, const std::string &post_data,
-    std::chrono::time_point<std::chrono::steady_clock> timeout_at, bool keep_alive) {
-    auto &ioc = get_ioc();
-
+static std::string json_post(boost::asio::io_context &ioc, beast::tcp_stream &stream, const std::string &remote_address,
+    const std::string &post_data, std::chrono::time_point<std::chrono::steady_clock> timeout_at, bool keep_alive) {
     // Determine remote endpoint from remote address
     const asio::ip::tcp::endpoint remote_endpoint = parse_endpoint(remote_address);
 
@@ -272,16 +264,16 @@ static std::string json_post(beast::tcp_stream &stream, const std::string &remot
 }
 
 template <typename R, typename... Ts>
-static void jsonrpc_request(std::unique_ptr<beast::tcp_stream> &stream, const std::string &remote_address,
-    const std::string &method, const std::tuple<Ts...> &tp, R &result,
+static void jsonrpc_request(std::unique_ptr<boost::asio::io_context> &ioc, std::unique_ptr<beast::tcp_stream> &stream,
+    const std::string &remote_address, const std::string &method, const std::tuple<Ts...> &tp, R &result,
     std::chrono::time_point<std::chrono::steady_clock> timeout_at, bool keep_alive = true) {
-    if (!stream) {
+    if (!stream || !ioc) {
         throw std::runtime_error{"remote server was shutdown"s};
     }
     auto request = jsonrpc_post_data(method, tp);
     std::string response_s;
     try {
-        response_s = json_post(*stream, remote_address, request, timeout_at, keep_alive);
+        response_s = json_post(*ioc, *stream, remote_address, request, timeout_at, keep_alive);
     } catch (std::exception &x) {
         throw std::runtime_error("jsonrpc error: post error contacting "s + remote_address + " ("s + x.what() + ")"s);
     }
@@ -340,13 +332,13 @@ void jsonrpc_virtual_machine::request(const std::string &method, const std::tupl
     const auto timeout_at = m_timeout >= 0 ? (std::chrono::steady_clock::now() + std::chrono::milliseconds(m_timeout)) :
                                              std::chrono::time_point<std::chrono::steady_clock>::max();
     // Performs the request
-    jsonrpc_request(m_stream, m_address, method, tp, result, timeout_at, keep_alive);
+    jsonrpc_request(m_ioc, m_stream, m_address, method, tp, result, timeout_at, keep_alive);
 }
 
 template <typename R, typename... Ts>
 void jsonrpc_virtual_machine::request(const std::string &method, const std::tuple<Ts...> &tp, R &result,
     std::chrono::time_point<std::chrono::steady_clock> timeout_at, bool keep_alive) const {
-    jsonrpc_request(m_stream, m_address, method, tp, result, timeout_at, keep_alive);
+    jsonrpc_request(m_ioc, m_stream, m_address, method, tp, result, timeout_at, keep_alive);
 }
 
 void jsonrpc_virtual_machine::shutdown_server() {
@@ -356,6 +348,7 @@ void jsonrpc_virtual_machine::shutdown_server() {
     // otherwise we may end up with too many open sockets in garbage collected environments.
     // This will also invalidate any further jsonrpc request.
     m_stream.reset();
+    m_ioc.reset();
 }
 
 void jsonrpc_virtual_machine::delay_next_request(uint64_t ms) const {
@@ -399,7 +392,8 @@ void jsonrpc_virtual_machine::check_server_version(
 }
 
 jsonrpc_virtual_machine::jsonrpc_virtual_machine(std::string address, int64_t connect_timeout_ms) :
-    m_stream(new boost::beast::tcp_stream(get_ioc())),
+    m_ioc(new boost::asio::io_context{1}),
+    m_stream(new boost::beast::tcp_stream(*m_ioc)),
     m_address(std::move(address)) {
     // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
     os_disable_sigpipe();
@@ -414,7 +408,8 @@ jsonrpc_virtual_machine::jsonrpc_virtual_machine(std::string address, int64_t co
 }
 
 jsonrpc_virtual_machine::jsonrpc_virtual_machine(std::string address) :
-    m_stream(new boost::beast::tcp_stream(get_ioc())),
+    m_ioc(new boost::asio::io_context{1}),
+    m_stream(new boost::beast::tcp_stream(*m_ioc)),
     m_address(std::move(address)) {
     // Install handler to ignore SIGPIPE lest we crash when a server closes a connection
     os_disable_sigpipe();
@@ -444,7 +439,8 @@ static std::string endpoint_to_string(const boost::asio::ip::tcp::endpoint &endp
 
 jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, int64_t spawn_timeout_ms,
     fork_result &spawned) :
-    m_stream(new boost::beast::tcp_stream(get_ioc())),
+    m_ioc(new boost::asio::io_context{1}),
+    m_stream(new boost::beast::tcp_stream(*m_ioc)),
     m_call(cleanup_call::shutdown) {
 
     // Determine spawn timeout time
@@ -454,7 +450,7 @@ jsonrpc_virtual_machine::jsonrpc_virtual_machine(const std::string &address, int
 
     // Create a TCP acceptor and bind it to the specified address
     // The acceptor automatically performs open, bind and listen operations
-    boost::asio::ip::tcp::acceptor a(get_ioc(),
+    boost::asio::ip::tcp::acceptor a(*m_ioc,
         address_to_endpoint(address)); // NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
 
     // Determine which remote machine binary to use

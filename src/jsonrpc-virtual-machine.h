@@ -154,6 +154,7 @@ private:
     void request(const std::string &method, const std::tuple<Ts...> &tp, R &result,
         std::chrono::time_point<std::chrono::steady_clock> timeout_at, bool keep_alive) const;
 
+    mutable std::unique_ptr<boost::asio::io_context> m_ioc;     // The io_context is required for all I/O
     mutable std::unique_ptr<boost::beast::tcp_stream> m_stream; // TCP stream for keep alive connections
     cleanup_call m_call{cleanup_call::nothing};
     std::string m_address;

@@ -1000,8 +1000,8 @@
           }
         }
       },
-      "ProcessorConfig": {
-        "title": "ProcessorConfig",
+      "RegistersConfig": {
+        "title": "RegistersConfig",
         "type": "object",
         "properties": {
           "x0": {
@@ -1341,6 +1341,9 @@
           "length": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
+          "read_only": {
+            "type": "boolean"
+          },
           "backing_store": {
             "$ref": "#/components/schemas/BackingStoreConfig"
           }
@@ -1357,6 +1360,9 @@
             "type": "string"
           },
           "shared": {
+            "type": "boolean"
+          },
+          "create": {
             "type": "boolean"
           },
           "truncate": {
@@ -1430,15 +1436,6 @@
           "$ref": "#/components/schemas/MemoryRangeConfig"
         }
       },
-      "TLBConfig": {
-        "title": "TLBConfig",
-        "type": "object",
-        "properties": {
-          "backing_store": {
-            "$ref": "#/components/schemas/BackingStoreConfig"
-          }
-        }
-      },
       "CLINTConfig": {
         "title": "CLINTConfig",
         "type": "object",
@@ -1481,8 +1478,8 @@
           }
         }
       },
-      "UarchProcessorConfig": {
-        "title": "UarchProcessorConfig",
+      "UarchRegistersConfig": {
+        "title": "UarchRegistersConfig",
         "type": "object",
         "properties": {
           "x0": {
@@ -1608,8 +1605,8 @@
         "title": "UarchConfig",
         "type": "object",
         "properties": {
-          "processor": {
-            "$ref": "#/components/schemas/UarchProcessorConfig"
+          "registers": {
+            "$ref": "#/components/schemas/UarchRegistersConfig"
           },
           "ram": {
             "$ref": "#/components/schemas/UarchRAMConfig"
@@ -1647,6 +1644,12 @@
           "shared": {
             "type": "boolean"
           },
+          "create": {
+            "type": "boolean"
+          },
+          "truncate": {
+            "type": "boolean"
+          },
           "sht_filename": {
             "type": "string"
           },
@@ -1669,8 +1672,8 @@
         "title": "MachineConfig",
         "type": "object",
         "properties": {
-          "processor": {
-            "$ref": "#/components/schemas/ProcessorConfig"
+          "registers": {
+            "$ref": "#/components/schemas/RegistersConfig"
           },
           "ram": {
             "$ref": "#/components/schemas/RAMConfig"
@@ -1680,9 +1683,6 @@
           },
           "flash_drive": {
             "$ref": "#/components/schemas/FlashDriveConfigs"
-          },
-          "tlb": {
-            "$ref": "#/components/schemas/TLBConfig"
           },
           "clint": {
             "$ref": "#/components/schemas/CLINTConfig"

@@ -25,8 +25,8 @@
 #include <type_traits>
 
 #include "meta.h"
-#include "shadow-state.h"
-#include "tlb.h"
+#include "shadow-registers.h"
+#include "shadow-tlb.h"
 
 namespace cartesi {
 
@@ -48,12 +48,12 @@ class i_prefer_shadow_state { // CRTP
     }
 
 public:
-    uint64_t read_shadow_state(shadow_state_what what) const {
-        return derived().do_read_shadow_state(what);
+    uint64_t read_shadow_register(shadow_registers_what what) const {
+        return derived().do_read_shadow_register(what);
     }
 
-    void write_shadow_state(shadow_state_what what, uint64_t val) const {
-        derived().do_write_shadow_state(what, val);
+    void write_shadow_register(shadow_registers_what what, uint64_t val) const {
+        derived().do_write_shadow_register(what, val);
     }
 };
 

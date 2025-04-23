@@ -45,9 +45,9 @@ public:
     /// \param um Reference to uarch state.
     /// \param m Reference to machine state.
     explicit uarch_state_access(machine &m) : m_m(m) {
-        const auto &uram = m_m.get_uarch_state().ram;
-        const auto haddr = cast_ptr_to_host_addr(uram->get_host_memory());
-        const auto paddr = uram->get_start();
+        const auto &uram = m_m.find_address_range(AR_UARCH_RAM_START, AR_UARCH_RAM_LENGTH);
+        const auto haddr = cast_ptr_to_host_addr(uram.get_host_memory());
+        const auto paddr = AR_UARCH_RAM_START;
         // initialize translation cache from paddr in uarch RAM to host address
         m_uram_ph_offset = haddr - paddr;
     }
@@ -59,36 +59,36 @@ private:
     friend i_uarch_state_access<uarch_state_access>;
 
     uint64_t do_read_uarch_x(int i) const {
-        return m_m.get_uarch_state().x[i];
+        return m_m.get_uarch_state().registers.x[i];
     }
 
     void do_write_uarch_x(int i, uint64_t val) const {
         assert(i != 0);
-        m_m.get_uarch_state().x[i] = val;
+        m_m.get_uarch_state().registers.x[i] = val;
     }
 
     uint64_t do_read_uarch_pc() const {
-        return m_m.get_uarch_state().pc;
+        return m_m.get_uarch_state().registers.pc;
     }
 
     void do_write_uarch_pc(uint64_t val) const {
-        m_m.get_uarch_state().pc = val;
+        m_m.get_uarch_state().registers.pc = val;
     }
 
     uint64_t do_read_uarch_cycle() const {
-        return m_m.get_uarch_state().cycle;
+        return m_m.get_uarch_state().registers.cycle;
     }
 
     void do_write_uarch_cycle(uint64_t val) const {
-        m_m.get_uarch_state().cycle = val;
+        m_m.get_uarch_state().registers.cycle = val;
     }
 
     uint64_t do_read_uarch_halt_flag() const {
-        return m_m.get_uarch_state().halt_flag;
+        return m_m.get_uarch_state().registers.halt_flag;
     }
 
     void do_write_uarch_halt_flag(uint64_t v) const {
-        m_m.get_uarch_state().halt_flag = v;
+        m_m.get_uarch_state().registers.halt_flag = v;
     }
 
     uint64_t do_read_word(uint64_t paddr) const {

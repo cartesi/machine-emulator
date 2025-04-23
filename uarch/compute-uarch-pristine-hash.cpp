@@ -22,7 +22,7 @@
 #include <shadow-uarch-state.h>
 #include <uarch-constants.h>
 #include <uarch-pristine.h>
-#include <uarch-state.h>
+#include <uarch-processor-state.h>
 #include <unique-c-ptr.h>
 
 /// \file

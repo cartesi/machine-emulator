@@ -59,7 +59,6 @@ enum class PMA_ISTART_DID : uint8_t {
     empty = PMA_EMPTY_DID_DEF,                           ///< DID for empty range
     memory = PMA_MEMORY_DID_DEF,                         ///< DID for memory
     shadow_state = PMA_SHADOW_STATE_DID_DEF,             ///< DID for shadow state
-    shadow_TLB = PMA_SHADOW_TLB_DID_DEF,                 ///< DID for shadow TLB
     flash_drive = PMA_FLASH_DRIVE_DID_DEF,               ///< DID for flash drives
     CLINT = PMA_CLINT_DID_DEF,                           ///< DID for CLINT device
     PLIC = PMA_PLIC_DID_DEF,                             ///< DID for PLIC device

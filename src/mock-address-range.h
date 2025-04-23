@@ -26,13 +26,11 @@
 #include "htif-address-range.h"
 #include "plic-address-range.h"
 #include "pmas.h"
-#include "shadow-state-address-range.h"
-#include "shadow-tlb-address-range.h"
 
 namespace cartesi {
 
-using mock_address_range = std::variant<std::monostate, address_range, clint_address_range, htif_address_range,
-    plic_address_range, shadow_state_address_range, shadow_tlb_address_range>;
+using mock_address_range =
+    std::variant<std::monostate, address_range, clint_address_range, htif_address_range, plic_address_range>;
 
 using mock_address_ranges = std::array<mock_address_range, PMA_MAX>;
 
@@ -61,10 +59,6 @@ static inline mock_address_range make_mock_address_range(uint64_t istart, uint64
         return check_mock_address_range(make_empty_address_range("empty"), start, ilength, flags, abrt);
     }
     switch (flags.DID) {
-        case PMA_ISTART_DID::shadow_state:
-            return check_mock_address_range(make_shadow_state_address_range(abrt), start, ilength, flags, abrt);
-        case PMA_ISTART_DID::shadow_TLB:
-            return check_mock_address_range(make_shadow_tlb_address_range(abrt), start, ilength, flags, abrt);
         case PMA_ISTART_DID::CLINT:
             return check_mock_address_range(make_clint_address_range(abrt), start, ilength, flags, abrt);
         case PMA_ISTART_DID::PLIC:
@@ -91,10 +85,6 @@ address_range &get_mock_address_range(mock_address_range &mock, ABRT abrt) {
             return std::get<3>(mock);
         case 4:
             return std::get<4>(mock);
-        case 5:
-            return std::get<5>(mock);
-        case 6:
-            return std::get<6>(mock);
         default: {
             static auto unhandled = make_empty_address_range("unhandled mock address range");
             abrt("unhandled mock address range");
@@ -102,7 +92,7 @@ address_range &get_mock_address_range(mock_address_range &mock, ABRT abrt) {
             return unhandled;
         }
     }
-    static_assert(std::variant_size_v<mock_address_range> == 7);
+    static_assert(std::variant_size_v<mock_address_range> == 5);
 }
 
 } // namespace cartesi

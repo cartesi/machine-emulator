@@ -151,7 +151,8 @@ HASH_LIBS=
 
 #DEFS+= -DMT_ALL_DIRTY
 
-WARNS=-Wall -Wextra -Wpedantic
+C_WARNS=-Wall -Wextra -Wpedantic
+CXX_WARNS=$(C_WARNS) -Wno-missing-field-initializers
 
 # Place our include directories before the system's
 INCS+= \
@@ -305,8 +306,8 @@ else
 DEFS+=-DNO_THREADS
 endif
 
-CXXFLAGS+=$(OPTFLAGS) -std=gnu++20 -fvisibility=hidden -MMD $(PICCFLAGS) $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
-CFLAGS+=$(OPTFLAGS) -std=gnu99 -fvisibility=hidden -MMD $(PICCFLAGS) $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(WARNS)
+CXXFLAGS+=$(OPTFLAGS) -std=gnu++20 -fvisibility=hidden -MMD $(PICCFLAGS) $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(CXX_WARNS)
+CFLAGS+=$(OPTFLAGS) -std=gnu99 -fvisibility=hidden -MMD $(PICCFLAGS) $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBFLAGS) $(DEFS) $(C_WARNS)
 LDFLAGS+=$(UBFLAGS)
 
 ifeq ($(coverage),yes)
@@ -357,14 +358,12 @@ LIBCARTESI_OBJS:= \
 	machine.o \
 	memory-address-range.o \
 	os.o \
+	os-mmap.o \
 	plic-address-range.o \
 	pristine-merkle-tree.o \
 	replay-step-state-access-interop.o \
 	send-cmio-response.o \
 	sha3.o \
-	shadow-state-address-range.o \
-	shadow-tlb-address-range.o \
-	shadow-uarch-state-address-range.o \
 	uarch-pristine-hash.o \
 	uarch-pristine-ram.o \
 	uarch-pristine-state-hash.o \

@@ -14,11 +14,11 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef UARCH_STATE_H
-#define UARCH_STATE_H
+#ifndef UARCH_PROCESSOR_STATE_H
+#define UARCH_PROCESSOR_STATE_H
 
 /// \file
-/// \brief Cartesi microarchitecture machine state structure definition.
+/// \brief Cartesi microarchitecture machine processor state structure definition.
 
 #include <array>
 #include <cstdint>
@@ -26,26 +26,16 @@
 
 #include "memory-address-range.h"
 #include "riscv-constants.h"
+#include "shadow-uarch-state.h"
 
 namespace cartesi {
 
-struct uarch_state {
-    uarch_state() = default;
-    ~uarch_state() = default;
-
-    /// \brief No copy or move constructor or assignment
-    uarch_state(const uarch_state &other) = delete;
-    uarch_state(uarch_state &&other) = delete;
-    uarch_state &operator=(const uarch_state &other) = delete;
-    uarch_state &operator=(uarch_state &&other) = delete;
-
-    uint64_t pc{};                               ///< Program counter.
-    std::array<uint64_t, UARCH_X_REG_COUNT> x{}; ///< Register file.
-    uint64_t cycle{};                            ///< Cycles counter
-    uint64_t halt_flag{};
-    address_range *shadow_state{}; ///< Shadow uarch state
-    memory_address_range *ram{};   ///< Memory range for uarch RAM
+struct uarch_processor_state final {
+    uarch_registers_state registers;    ///< Uarch registers
+    uint64_t registers_padding_[477]{}; ///< Padding to align next field to a page boundary
 };
+
+static_assert(sizeof(uarch_processor_state) % 4096 == 0, "machine state size must be multiple of a page size");
 
 } // namespace cartesi
 

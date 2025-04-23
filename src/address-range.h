@@ -220,6 +220,20 @@ public:
         return m_flags.IW;
     }
 
+    /// \brief Tests if range can be replaced
+    /// \returns True if and only if range can be replaced
+    bool is_replaceable() const noexcept {
+        switch (m_flags.DID) {
+            case PMA_ISTART_DID::memory:
+            case PMA_ISTART_DID::flash_drive:
+            case PMA_ISTART_DID::cmio_rx_buffer:
+            case PMA_ISTART_DID::cmio_tx_buffer:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     /// \brief Returns driver ID associated to range
     /// \returns Teh driver ID
     PMA_ISTART_DID get_driver_id() const noexcept {
@@ -327,6 +341,18 @@ public:
         return do_is_page_marked_dirty(offset);
     }
 
+    /// \brief Returns true if the mapped memory is read-only on the host
+    /// \returns True if the memory is read-only in the host
+    bool is_host_read_only() const noexcept {
+        return do_is_host_read_only();
+    }
+
+    /// \brief Returns true if pages marked as dirty once are uncleanable
+    /// \returns True if and only if dirty pages are uncleanable
+    bool is_page_uncleanable() const noexcept {
+        return do_is_page_uncleanable();
+    }
+
 private:
     // Default implementation of peek() always fails
     virtual bool do_peek(const machine & /*m*/, uint64_t /*offset*/, uint64_t /*length*/,
@@ -370,6 +396,14 @@ private:
 
     virtual bool do_is_page_marked_dirty(uint64_t /*offset*/) const noexcept {
         return true;
+    }
+
+    virtual bool do_is_host_read_only() const noexcept {
+        return false;
+    }
+
+    virtual bool do_is_page_uncleanable() const noexcept {
+        return false;
     }
 };
 

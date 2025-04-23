@@ -31,7 +31,7 @@
 #include "json-util.h"
 #include "pmas-constants.h"
 
-static constexpr uint32_t archive_version = 5;
+static constexpr uint32_t archive_version = 6;
 
 namespace cartesi {
 
@@ -62,28 +62,34 @@ std::string machine_config::get_config_filename(const std::string &dir) {
     return dir + "/config.json";
 }
 
-static void adjust_backing_store(uint64_t start, uint64_t length, const std::string &dir, backing_store_config &c) {
+void machine_config::adjust_backing_store_config(uint64_t start, uint64_t length, const std::string &dir,
+    backing_store_config &c) {
+    c.shared = false;
+    c.create = false;
+    c.truncate = false;
     c.data_filename = machine_config::get_data_filename(dir, start, length);
     c.dht_filename = machine_config::get_dht_filename(dir, start, length);
 }
 
-static void adjust_hash_tree(const std::string &dir, hash_tree_config &c) {
+void machine_config::adjust_hash_tree_config(const std::string &dir, hash_tree_config &c) {
     c.sht_filename = machine_config::get_sht_filename(dir);
     c.phtc_filename = machine_config::get_phtc_filename(dir);
 }
 
-static void adjust_backing_store(machine_config &c, const std::string &dir) {
-    adjust_backing_store(AR_RAM_START, c.ram.length, dir, c.ram.backing_store);
-    adjust_backing_store(AR_DTB_START, AR_DTB_LENGTH, dir, c.dtb.backing_store);
-    for (auto &f : c.flash_drive) {
-        adjust_backing_store(f.start, f.length, dir, f.backing_store);
+void machine_config::adjust_backing_stores(const std::string &dir) {
+    adjust_backing_store_config(AR_RAM_START, ram.length, dir, ram.backing_store);
+    adjust_backing_store_config(AR_DTB_START, AR_DTB_LENGTH, dir, dtb.backing_store);
+    for (auto &f : flash_drive) {
+        adjust_backing_store_config(f.start, f.length, dir, f.backing_store);
     }
-    adjust_backing_store(AR_SHADOW_TLB_START, AR_SHADOW_TLB_LENGTH, dir, c.tlb.backing_store);
-    adjust_backing_store(AR_CMIO_RX_BUFFER_START, AR_CMIO_RX_BUFFER_LENGTH, dir, c.cmio.rx_buffer.backing_store);
-    adjust_backing_store(AR_CMIO_TX_BUFFER_START, AR_CMIO_TX_BUFFER_LENGTH, dir, c.cmio.tx_buffer.backing_store);
-    adjust_backing_store(AR_PMAS_START, AR_PMAS_LENGTH, dir, c.pmas.backing_store);
-    adjust_backing_store(AR_UARCH_RAM_START, AR_UARCH_RAM_LENGTH, dir, c.uarch.ram.backing_store);
-    adjust_hash_tree(dir, c.hash_tree);
+    adjust_backing_store_config(AR_SHADOW_STATE_START, AR_SHADOW_STATE_LENGTH, dir, processor.backing_store);
+    adjust_backing_store_config(AR_CMIO_RX_BUFFER_START, AR_CMIO_RX_BUFFER_LENGTH, dir, cmio.rx_buffer.backing_store);
+    adjust_backing_store_config(AR_CMIO_TX_BUFFER_START, AR_CMIO_TX_BUFFER_LENGTH, dir, cmio.tx_buffer.backing_store);
+    adjust_backing_store_config(AR_PMAS_START, AR_PMAS_LENGTH, dir, pmas.backing_store);
+    adjust_backing_store_config(AR_SHADOW_UARCH_STATE_START, AR_SHADOW_UARCH_STATE_LENGTH, dir,
+        uarch.processor.backing_store);
+    adjust_backing_store_config(AR_UARCH_RAM_START, AR_UARCH_RAM_LENGTH, dir, uarch.ram.backing_store);
+    adjust_hash_tree_config(dir, hash_tree);
 }
 
 machine_config machine_config::load(const std::string &dir) {
@@ -107,7 +113,7 @@ machine_config machine_config::load(const std::string &dir) {
                 std::to_string(jv.get<int>()) + ")");
         }
         ju_get_field(j, std::string("config"), c, "");
-        adjust_backing_store(c, dir);
+        c.adjust_backing_stores(dir);
     } catch (std::exception &e) {
         throw std::runtime_error{e.what()};
     }

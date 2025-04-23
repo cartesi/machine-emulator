@@ -34,7 +34,7 @@
 #include "machine-merkle-tree.h"
 #include "meta.h"
 #include "riscv-constants.h"
-#include "shadow-state.h"
+#include "shadow-registers.h"
 #include "unique-c-ptr.h"
 
 namespace cartesi {

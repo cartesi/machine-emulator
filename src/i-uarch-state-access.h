@@ -24,7 +24,7 @@
 #include "assert-printf.h"
 #include "i-prefer-shadow-uarch-state.h"
 #include "meta.h"
-#include "tlb.h"
+#include "shadow-tlb.h"
 
 // NOLINTBEGIN(cppcoreguidelines-macro-usage)
 #define DEFINE_USA_READ(REG)                                                                                           \

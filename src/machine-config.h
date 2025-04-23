@@ -24,6 +24,8 @@
 #include <vector>
 
 #include "riscv-constants.h"
+#include "shadow-registers.h"
+#include "shadow-uarch-state.h"
 
 namespace cartesi {
 
@@ -34,55 +36,19 @@ enum machine_config_constants {
     VIRTIO_HOSTFWD_MAX = 16, ///< Maximum number of virtio net user host forward ports
 };
 
-/// \brief Processor state config
-struct processor_config final {
-    std::array<uint64_t, X_REG_COUNT> x{REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5, REG_X6, REG_X7, REG_X8, REG_X9,
-        REG_X10, REG_X11, REG_X12, REG_X13, REG_X14, REG_X15, REG_X16, REG_X17, REG_X18, REG_X19, REG_X20, REG_X21,
-        REG_X22, REG_X23, REG_X24, REG_X25, REG_X26, REG_X27, REG_X28, REG_X29, REG_X30,
-        REG_X31};                               ///< Value of general-purpose registers
-    std::array<uint64_t, F_REG_COUNT> f{};      ///< Value of floating-point registers
-    uint64_t pc{PC_INIT};                       ///< Value of pc
-    uint64_t fcsr{FCSR_INIT};                   ///< Value of fcsr CSR
-    uint64_t mvendorid{MVENDORID_INIT};         ///< Value of mvendorid CSR
-    uint64_t marchid{MARCHID_INIT};             ///< Value of marchid CSR
-    uint64_t mimpid{MIMPID_INIT};               ///< Value of mimpid CSR
-    uint64_t mcycle{MCYCLE_INIT};               ///< Value of mcycle CSR
-    uint64_t icycleinstret{ICYCLEINSTRET_INIT}; ///< Value of icycleinstret CSR
-    uint64_t mstatus{MSTATUS_INIT};             ///< Value of mstatus CSR
-    uint64_t mtvec{MTVEC_INIT};                 ///< Value of mtvec CSR
-    uint64_t mscratch{MSCRATCH_INIT};           ///< Value of mscratch CSR
-    uint64_t mepc{MEPC_INIT};                   ///< Value of mepc CSR
-    uint64_t mcause{MCAUSE_INIT};               ///< Value of mcause CSR
-    uint64_t mtval{MTVAL_INIT};                 ///< Value of mtval CSR
-    uint64_t misa{MISA_INIT};                   ///< Value of misa CSR
-    uint64_t mie{MIE_INIT};                     ///< Value of mie CSR
-    uint64_t mip{MIP_INIT};                     ///< Value of mip CSR
-    uint64_t medeleg{MEDELEG_INIT};             ///< Value of medeleg CSR
-    uint64_t mideleg{MIDELEG_INIT};             ///< Value of mideleg CSR
-    uint64_t mcounteren{MCOUNTEREN_INIT};       ///< Value of mcounteren CSR
-    uint64_t menvcfg{MENVCFG_INIT};             ///< Value of menvcfg CSR
-    uint64_t stvec{STVEC_INIT};                 ///< Value of stvec CSR
-    uint64_t sscratch{SSCRATCH_INIT};           ///< Value of sscratch CSR
-    uint64_t sepc{SEPC_INIT};                   ///< Value of sepc CSR
-    uint64_t scause{SCAUSE_INIT};               ///< Value of scause CSR
-    uint64_t stval{STVAL_INIT};                 ///< Value of stval CSR
-    uint64_t satp{SATP_INIT};                   ///< Value of satp CSR
-    uint64_t scounteren{SCOUNTEREN_INIT};       ///< Value of scounteren CSR
-    uint64_t senvcfg{SENVCFG_INIT};             ///< Value of senvcfg CSR
-    uint64_t ilrsc{ILRSC_INIT};                 ///< Value of ilrsc CSR
-    uint64_t iprv{IPRV_INIT};                   ///< Value of iprv CSR
-    uint64_t iflags_X{IFLAGS_X_INIT};           ///< Value of iflags_X CSR
-    uint64_t iflags_Y{IFLAGS_Y_INIT};           ///< Value of iflags_Y CSR
-    uint64_t iflags_H{IFLAGS_H_INIT};           ///< Value of iflags_H CSR
-    uint64_t iunrep{IUNREP_INIT};               ///< Value of iunrep CSR
-};
-
 /// \brief Backing store config
 struct backing_store_config final {
     bool shared{false};        ///< Should changes be reflected in backing store?
+    bool create{false};        ///< Should backing store be created?
     bool truncate{false};      ///< Should backing store be truncated to correct size?
     std::string data_filename; ///< Backing store for associated memory address range
     std::string dht_filename;  ///< Backing store for corresponding dense hash-tree
+};
+
+/// \brief Processor state config
+struct processor_config final {
+    registers_state registers;
+    backing_store_config backing_store;
 };
 
 /// \brief Config with only backing store config field
@@ -92,8 +58,8 @@ struct backing_store_config_only final {
 
 /// \brief RAM state config
 struct ram_config final {
-    uint64_t length{0};                 ///< RAM length
-    backing_store_config backing_store; ///< Backing store
+    uint64_t length{0};                                   ///< RAM length
+    backing_store_config backing_store{.truncate = true}; ///< Backing store
 };
 
 /// \brief DTB state config
@@ -116,29 +82,6 @@ struct memory_range_config final {
 
 /// \brief List of flash drives
 using flash_drive_configs = std::vector<memory_range_config>;
-
-/// \brief TLB device state config
-using tlb_config = backing_store_config_only;
-
-/// \brief CLINT device state config
-struct clint_config final {
-    uint64_t mtimecmp{MTIMECMP_INIT}; ///< Value of mtimecmp CSR
-};
-
-/// \brief PLIC device state config
-struct plic_config final {
-    uint64_t girqpend{GIRQPEND_INIT}; ///< Value of girqpend CSR
-    uint64_t girqsrvd{GIRQSRVD_INIT}; ///< Value of girqsrvd CSR
-};
-
-/// \brief HTIF device state config
-struct htif_config final {
-    uint64_t fromhost{FROMHOST_INIT}; ///< Value of fromhost CSR
-    uint64_t tohost{TOHOST_INIT};     ///< Value of tohost CSR
-    bool console_getchar{false};      ///< Make console getchar available?
-    bool yield_manual{true};          ///< Make yield manual available?
-    bool yield_automatic{true};       ///< Make yield automatic available?
-};
 
 /// \brief VirtIO console device state config
 struct virtio_console_config final {};
@@ -193,24 +136,23 @@ using pmas_config = backing_store_config_only;
 /// \brief Uarch RAM config
 using uarch_ram_config = backing_store_config_only;
 
-/// \brief Uarch processor config
+/// \brief Uarch processor state config
 struct uarch_processor_config final {
-    std::array<uint64_t, UARCH_X_REG_COUNT> x{}; ///< Value of general-purpose registers
-    uint64_t pc{UARCH_PC_INIT};                  ///< Value of pc
-    uint64_t cycle{UARCH_CYCLE_INIT};            ///< Value of ucycle counter
-    uint64_t halt_flag{};
+    uarch_registers_state registers; ///< Uarch registers
+    backing_store_config backing_store;
 };
 
 /// \brief Uarch config
 struct uarch_config final {
-    uarch_processor_config processor{}; ///< Uarch processor
-    uarch_ram_config ram{};             ///< Uarch RAM
+    uarch_processor_config processor{};                        ///< Uarch processor
+    uarch_ram_config ram{.backing_store = {.truncate = true}}; ///< Uarch RAM
 };
 
 /// \brief Hash tree config
 struct hash_tree_config final {
     std::string hasher{"keccak"}; ///< What hashing function to use?
     bool shared{false};           ///< Should changes be reflected in backing store?
+    bool create{false};           ///< Should backing store be created to correct size?
     bool truncate{false};         ///< Should backing store be truncated to correct size?
     std::string sht_filename;     ///< Backing storage for sparse hash-tree
     std::string phtc_filename;    ///< Backing storage for page hash-tree cache
@@ -223,10 +165,6 @@ struct machine_config final {
     ram_config ram{};                ///< RAM config
     dtb_config dtb{};                ///< Device Tree config
     flash_drive_configs flash_drive; ///< Flash drives config
-    tlb_config tlb{};                ///< Translation Look-aside Buffer config
-    clint_config clint{};            ///< Core-Local Interruptor config
-    plic_config plic{};              ///< Platform-Level Interrupt Controller config
-    htif_config htif{};              ///< Host-Target config InterFace config
     virtio_configs virtio;           ///< VirtIO devices config
     cmio_config cmio{};              ///< Cartesi Machine IO config
     pmas_config pmas{};              ///< Physical Memory Attributes config
@@ -247,6 +185,13 @@ struct machine_config final {
 
     /// \brief Get the name where global page hash-tree cache will be stored in a directory
     static std::string get_phtc_filename(const std::string &dir);
+
+    static void adjust_backing_store_config(uint64_t start, uint64_t length, const std::string &dir,
+        backing_store_config &c);
+
+    static void adjust_hash_tree_config(const std::string &dir, hash_tree_config &c);
+
+    void adjust_backing_stores(const std::string &dir);
 
     /// \brief Loads a machine config from a directory
     /// \param dir Directory from whence "config" will be loaded

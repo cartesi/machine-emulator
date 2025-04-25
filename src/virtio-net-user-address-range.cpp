@@ -66,6 +66,7 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <type_traits>
 
 #include <arpa/inet.h>
 #include <slirp/libslirp.h>
@@ -79,11 +80,12 @@ using namespace std::string_literals;
 
 namespace cartesi {
 
-//??D why ssize_t?
-static ssize_t slirp_send_packet(const void *buf, size_t len, void *opaque) {
+using slirp_callback_size_t = std::invoke_result_t<SlirpWriteCb, const void *, size_t, void *>;
+
+static slirp_callback_size_t slirp_send_packet(const void *buf, size_t len, void *opaque) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    auto *carrier = reinterpret_cast<virtio_net_user_address_range *>(opaque);
-    if (carrier->send_packets.size() >= SLIRP_MAX_PENDING_PACKETS) {
+    auto *context = reinterpret_cast<slirp_context *>(opaque);
+    if (context->send_packets.size() >= SLIRP_MAX_PENDING_PACKETS) {
         // Too many send_packets in the write queue, we can just drop it.
         // Network re-transmission can recover from this.
 #ifdef DEBUG_VIRTIO_ERRORS
@@ -104,8 +106,8 @@ static ssize_t slirp_send_packet(const void *buf, size_t len, void *opaque) {
     slirp_packet packet{.len = len};
     memcpy(packet.buf.data(), buf, len);
     try {
-        carrier->send_packets.emplace_back(packet);
-        return static_cast<ssize_t>(len);
+        context->send_packets.emplace_back(packet);
+        return static_cast<slirp_callback_size_t>(len);
     } catch (...) {
 #ifdef DEBUG_VIRTIO_ERRORS
         std::ignore = fprintf(stderr, "slirp: exception thrown while adding a send packet\n");
@@ -128,39 +130,35 @@ static int64_t slirp_clock_get_ns(void * /*opaque*/) {
 
 static void *slirp_timer_new(SlirpTimerCb cb, void *cb_opaque, void *opaque) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    auto *carrier = reinterpret_cast<virtio_net_user_address_range *>(opaque);
+    auto *context = reinterpret_cast<slirp_context *>(opaque);
     try {
-        auto *timer = new slirp_timer;
+        auto timer = std::make_unique<slirp_timer>();
+        auto *timer_key = timer.get();
         timer->cb = cb;
         timer->cb_opaque = cb_opaque;
         timer->expire_timer_msec = -1;
-        carrier->timers.insert(timer);
-        return timer;
+        context->timers.emplace(timer_key, std::move(timer));
+        return timer_key;
     } catch (...) {
         return nullptr;
     }
 }
 
-static void slirp_timer_free(void *timer_ptr, void *opaque) {
+static void slirp_timer_free(void *timer_key, void *opaque) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    auto *carrier = reinterpret_cast<virtio_net_user_address_range *>(opaque);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    auto *timer = reinterpret_cast<slirp_timer *>(timer_ptr);
-    if (timer != nullptr) {
-        auto it = carrier->timers.find(timer);
-        if (it != carrier->timers.end()) {
-            carrier->timers.erase(it);
-            delete timer;
-        }
+    auto *context = reinterpret_cast<slirp_context *>(opaque);
+    auto it = context->timers.find(timer_key);
+    if (it != context->timers.end()) {
+        context->timers.erase(it);
     }
 }
 
-static void slirp_timer_mod(void *timer_ptr, int64_t expire_timer_msec, void *opaque) {
+static void slirp_timer_mod(void *timer_key, int64_t expire_timer_msec, void *opaque) {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    auto *carrier = reinterpret_cast<virtio_net_user_address_range *>(opaque);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    auto *timer = reinterpret_cast<slirp_timer *>(timer_ptr);
-    if ((timer != nullptr) && carrier->timers.contains(timer)) {
+    auto *context = reinterpret_cast<slirp_context *>(opaque);
+    const auto it = context->timers.find(timer_key);
+    if (it != context->timers.end()) {
+        auto &timer = it->second;
         timer->expire_timer_msec = expire_timer_msec;
     }
 }
@@ -179,36 +177,38 @@ static void slirp_notify(void * /*opaque*/) {
 
 virtio_net_user_address_range::virtio_net_user_address_range(uint64_t start, uint64_t length, uint32_t virtio_idx,
     const cartesi::virtio_net_user_config &config) :
-    virtio_net_address_range("VirtIO Net User", start, length, virtio_idx) {
+    virtio_net_address_range("VirtIO Net User", start, length, virtio_idx),
+    m_context(std::make_unique<slirp_context>()) {
 
     // Configure slirp
-    slirp_cfg.version = std::min<int>(SLIRP_CONFIG_VERSION_MAX, SLIRP_VERSION);
-    slirp_cfg.restricted = 0;                                             // Don't isolate the guest from the host
-    slirp_cfg.in_enabled = true;                                          // IPv4 is enabled
-    slirp_cfg.vnetwork.s_addr = htonl(SLIRP_DEFAULT_IPV4_VNETWORK);       // Network
-    slirp_cfg.vnetmask.s_addr = htonl(SLIRP_DEFAULT_IPV4_VNETMASK);       // Netmask
-    slirp_cfg.vhost.s_addr = htonl(SLIRP_DEFAULT_IPV4_VHOST);             // Host address/gateway
-    slirp_cfg.vdhcp_start.s_addr = htonl(SLIRP_DEFAULT_IPV4_VDHCP_START); // DHCP start address
-    slirp_cfg.vnameserver.s_addr = htonl(SLIRP_DEFAULT_IPV4_VNAMESERVER); // DNS server address
+    m_context->config.version = std::min<int>(SLIRP_CONFIG_VERSION_MAX, SLIRP_VERSION);
+    m_context->config.restricted = 0;                                       // Don't isolate the guest from the host
+    m_context->config.in_enabled = true;                                    // IPv4 is enabled
+    m_context->config.vnetwork.s_addr = htonl(SLIRP_DEFAULT_IPV4_VNETWORK); // Network
+    m_context->config.vnetmask.s_addr = htonl(SLIRP_DEFAULT_IPV4_VNETMASK); // Netmask
+    m_context->config.vhost.s_addr = htonl(SLIRP_DEFAULT_IPV4_VHOST);       // Host address/gateway
+    m_context->config.vdhcp_start.s_addr = htonl(SLIRP_DEFAULT_IPV4_VDHCP_START); // DHCP start address
+    m_context->config.vnameserver.s_addr = htonl(SLIRP_DEFAULT_IPV4_VNAMESERVER); // DNS server address
     // ??(edubart): Should all the above settings be configurable by the user?
     // ??(edubart): Should we add support for IPv6? It is disabled by default.
     // Configure required slirp callbacks
-    slirp_cbs.send_packet = slirp_send_packet;
-    slirp_cbs.guest_error = slirp_guest_error;
-    slirp_cbs.clock_get_ns = slirp_clock_get_ns;
-    slirp_cbs.timer_new = slirp_timer_new;
-    slirp_cbs.timer_free = slirp_timer_free;
-    slirp_cbs.timer_mod = slirp_timer_mod;
+    m_context->callbacks.send_packet = slirp_send_packet;
+    m_context->callbacks.guest_error = slirp_guest_error;
+    m_context->callbacks.clock_get_ns = slirp_clock_get_ns;
+    m_context->callbacks.timer_new = slirp_timer_new;
+    m_context->callbacks.timer_free = slirp_timer_free;
+    m_context->callbacks.timer_mod = slirp_timer_mod;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-    slirp_cbs.register_poll_fd = slirp_register_poll_fd;
-    slirp_cbs.unregister_poll_fd = slirp_unregister_poll_fd;
+    m_context->callbacks.register_poll_fd = slirp_register_poll_fd;
+    m_context->callbacks.unregister_poll_fd = slirp_unregister_poll_fd;
 #pragma GCC diagnostic pop
-    slirp_cbs.notify = slirp_notify;
+    m_context->callbacks.notify = slirp_notify;
 
     // Initialize slirp
-    slirp = slirp_new(&slirp_cfg, &slirp_cbs, this);
-    if (slirp == nullptr) {
+    m_context->slirp =
+        decltype(m_context->slirp){slirp_new(&m_context->config, &m_context->callbacks, m_context.get())};
+    if (m_context->slirp == nullptr) {
         throw std::runtime_error("could not configure slirp network device");
     }
 
@@ -218,26 +218,13 @@ virtio_net_user_address_range::virtio_net_user_address_range(uint64_t start, uin
         struct in_addr guest_addr{};
         host_addr.s_addr = htonl(hostfwd.host_ip);
         guest_addr.s_addr = htonl(hostfwd.guest_ip);
-        if (slirp_add_hostfwd(slirp, static_cast<int>(hostfwd.is_udp), host_addr, hostfwd.host_port, guest_addr,
-                hostfwd.guest_port) < 0) {
+        if (slirp_add_hostfwd(m_context->slirp.get(), static_cast<int>(hostfwd.is_udp), host_addr, hostfwd.host_port,
+                guest_addr, hostfwd.guest_port) < 0) {
             throw std::system_error{errno, std::generic_category(),
                 "failed to forward "s + (hostfwd.is_udp ? "UDP" : "TCP") + " host port " +
                     std::to_string(hostfwd.host_port) + " to guest port " + std::to_string(hostfwd.guest_port)};
         }
     }
-}
-
-virtio_net_user_address_range::~virtio_net_user_address_range() {
-    // Cleanup slirp
-    if (slirp != nullptr) {
-        slirp_cleanup(slirp);
-        slirp = nullptr;
-    }
-    // Delete remaining timers created by slirp
-    for (slirp_timer *timer : timers) {
-        delete timer;
-    }
-    timers.clear();
 }
 
 void virtio_net_user_address_range::do_net_reset() {
@@ -284,10 +271,6 @@ static int slirp_get_revents_cb(int fd, void *opaque) {
 }
 
 void virtio_net_user_address_range::do_net_prepare_select(select_fd_sets *fds, uint64_t *timeout_us) {
-    // Did device reset and slirp failed to reinitialize?
-    if (slirp == nullptr) {
-        return;
-    }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -299,7 +282,7 @@ void virtio_net_user_address_range::do_net_prepare_select(select_fd_sets *fds, u
     uint32_t timeout_ms = initial_timeout_ms;
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-    slirp_pollfds_fill(slirp, &timeout_ms, slirp_add_poll_cb, &slirp_fds);
+    slirp_pollfds_fill(m_context->slirp.get(), &timeout_ms, slirp_add_poll_cb, &slirp_fds);
 #pragma GCC diagnostic pop
     if (initial_timeout_ms != timeout_ms) {
         *timeout_us = static_cast<uint64_t>(timeout_ms) * 1000;
@@ -307,10 +290,6 @@ void virtio_net_user_address_range::do_net_prepare_select(select_fd_sets *fds, u
 }
 
 bool virtio_net_user_address_range::do_net_poll_selected(int select_ret, select_fd_sets *fds) {
-    // Did device reset and slirp failed to reinitialize?
-    if (slirp == nullptr) {
-        return false;
-    }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *readfds = reinterpret_cast<fd_set *>(fds->readfds);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -318,10 +297,11 @@ bool virtio_net_user_address_range::do_net_poll_selected(int select_ret, select_
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *exceptfds = reinterpret_cast<fd_set *>(fds->exceptfds);
     slirp_select_fds slirp_fds{.pmaxfd = nullptr, .readfds = readfds, .writefds = writefds, .exceptfds = exceptfds};
-    slirp_pollfds_poll(slirp, static_cast<int>(select_ret < 0), slirp_get_revents_cb, &slirp_fds);
+    slirp_pollfds_poll(m_context->slirp.get(), static_cast<int>(select_ret < 0), slirp_get_revents_cb, &slirp_fds);
     // Fire expired timers
     const int64_t now_ms = slirp_clock_get_ns(nullptr) / 1000000;
-    for (slirp_timer *timer : timers) {
+    for (auto &it : m_context->timers) {
+        auto &timer = it.second;
         if (timer->expire_timer_msec != -1 && now_ms >= timer->expire_timer_msec) {
             if (timer->cb != nullptr) {
                 timer->cb(timer->cb_opaque);
@@ -330,17 +310,11 @@ bool virtio_net_user_address_range::do_net_poll_selected(int select_ret, select_
             timer->expire_timer_msec = -1;
         }
     }
-    return !send_packets.empty();
+    return !m_context->send_packets.empty();
 }
 
 bool virtio_net_user_address_range::do_net_write_packet_to_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx,
     uint32_t read_avail_len, uint32_t *pread_len) {
-    // Did device reset and slirp failed to reinitialize?
-    if (slirp == nullptr) {
-        // Just drop it.
-        *pread_len = 0;
-        return true;
-    }
     const uint32_t packet_len = read_avail_len - VIRTIO_NET_ETHERNET_FRAME_OFFSET;
     if (packet_len > VIRTIO_NET_ETHERNET_MAX_LENGTH) {
         // This is unexpected, guest is trying to send jumbo Ethernet frames? Just drop it.
@@ -356,7 +330,7 @@ bool virtio_net_user_address_range::do_net_write_packet_to_host(i_device_state_a
         // Failure while accessing guest memory, the driver or guest messed up, return false to reset the device.
         return false;
     }
-    slirp_input(slirp, packet.buf.data(), static_cast<int>(packet.len));
+    slirp_input(m_context->slirp.get(), packet.buf.data(), static_cast<int>(packet.len));
     // Packet was read and the queue is ready to be consumed.
     *pread_len = read_avail_len;
     return true;
@@ -365,13 +339,13 @@ bool virtio_net_user_address_range::do_net_write_packet_to_host(i_device_state_a
 bool virtio_net_user_address_range::do_net_read_packet_from_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx,
     uint32_t write_avail_len, uint32_t *pwritten_len) {
     // If no packet was send by slirp, we can just ignore.
-    if (send_packets.empty()) {
+    if (m_context->send_packets.empty()) {
         *pwritten_len = 0;
         return true;
     }
     // Retrieve the next packet sent by slirp.
-    slirp_packet packet = send_packets.front();
-    send_packets.pop_front();
+    slirp_packet packet = m_context->send_packets.front();
+    m_context->send_packets.pop_front();
     // Is there enough space in the write buffer to write this packet?
     if (VIRTIO_NET_ETHERNET_FRAME_OFFSET + packet.len > write_avail_len) {
 #ifdef DEBUG_VIRTIO_ERRORS

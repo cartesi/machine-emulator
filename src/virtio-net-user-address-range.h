@@ -25,6 +25,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <list>
+#include <memory>
 #include <unordered_set>
 
 #include <slirp/libslirp.h>
@@ -65,14 +66,26 @@ struct slirp_packet {
     std::array<unsigned char, VIRTIO_NET_ETHERNET_MAX_LENGTH> buf{};
 };
 
+namespace detail {
+
+struct slirp_deleter {
+    void operator()(Slirp *slirp) const noexcept {
+        slirp_cleanup(slirp);
+    }
+};
+
+} // namespace detail
+
+struct slirp_context {
+    SlirpConfig config{};
+    SlirpCb callbacks{};
+    std::unique_ptr<Slirp, detail::slirp_deleter> slirp;
+    std::list<slirp_packet> send_packets;
+    std::unordered_map<void *, std::unique_ptr<slirp_timer>> timers;
+};
+
 class virtio_net_user_address_range final : public virtio_net_address_range {
 public:
-    Slirp *slirp = nullptr;
-    SlirpConfig slirp_cfg{};
-    SlirpCb slirp_cbs{};
-    std::list<slirp_packet> send_packets;
-    std::unordered_set<slirp_timer *> timers;
-
     virtio_net_user_address_range(uint64_t start, uint64_t length, uint32_t virtio_idx,
         const virtio_net_user_config &config);
 
@@ -81,7 +94,7 @@ public:
     virtio_net_user_address_range &operator=(virtio_net_user_address_range &&other) = delete;
 
     virtio_net_user_address_range(virtio_net_user_address_range &&other) = default;
-    ~virtio_net_user_address_range() override;
+    ~virtio_net_user_address_range() override = default;
 
 private:
     void do_net_reset() override;
@@ -91,6 +104,8 @@ private:
         uint32_t *pread_len) override;
     bool do_net_read_packet_from_host(i_device_state_access *a, virtq &vq, uint16_t desc_idx, uint32_t write_avail_len,
         uint32_t *pwritten_len) override;
+
+    std::unique_ptr<slirp_context> m_context;
 };
 
 static inline auto make_virtio_net_user_address_range(uint64_t start, uint64_t length, uint32_t virtio_idx,

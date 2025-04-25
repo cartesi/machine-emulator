@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added the `--log-step` command line option to log multiple machine cycles
 - Added the `cm_log_step` and `cm_verify_step` methods to log multiple machine cycles and verify with ZK VMs
 - Added the `cm_receive_cmio_request` method, the counterpart of `cm_send_cmio_response` method
+- Added timeout support for jsonrpc requests
 
 ## Fixed
 - Fixed various linting errors with the latest Clang static analyzer
@@ -32,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed kernel panic bug when feeding 100k stdin inputs into VirtIO console
 - Fixed bug when trying to advance multiple inputs through the `cartesi-machine` CLI
 - Fixed compile errors when targeting Windows, Alpine Linux, and WebAssembly
+- Fixed conflicting symbols between libcartesi and libcartesi_jsonrpc
+- Fixed --sync-init-date and --virtio-console command line options
+- Fixed various issues when forking jsonrpc machines inside a Go environment
 
 ## Changed
 - Optimized RISC-V instruction decoder to use token threading, computed goto, and big jump tables

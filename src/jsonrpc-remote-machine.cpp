@@ -312,10 +312,10 @@ struct http_handler : std::enable_shared_from_this<http_handler> {
     }
 
     // Close open sessions
-    void close_sessions() {
+    void close_sessions(const std::shared_ptr<http_session> &ignore_session = {}) {
         for (const auto &weak_session : sessions) {
             auto session = weak_session.lock();
-            if (session) {
+            if (session && session != ignore_session) {
                 session->close();
             }
         }
@@ -703,6 +703,9 @@ static json jsonrpc_shutdown_handler(const json &j, const std::shared_ptr<http_s
     // This will also stop the IO main loop when all connections are closed,
     // because the IO context will run out of pending events to execute.
     session->handler->close_acceptor();
+    // Cancel other asynchronous pending events so IO context run out of pending events
+    session->handler->close_sessions(session);
+    session->handler->uninstall_termination_signal_handlers();
     SLOG(trace) << session->handler->local_endpoint << " shutting down";
     return jsonrpc_response_ok(j);
 }

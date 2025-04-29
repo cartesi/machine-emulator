@@ -213,15 +213,21 @@ void machine::validate_processor_shadow(bool skip_version_check) const {
 void machine::init_pmas_contents(const pmas_config &config) {
     static_assert(sizeof(pmas_state) == PMA_MAX * 2 * sizeof(uint64_t), "inconsistent PMAs state length");
     static_assert(AR_PMAS_LENGTH >= sizeof(pmas_state), "PMAs address range too short");
+    auto &pmas = m_ars.find(AR_PMAS_START, AR_PMAS_LENGTH);
+    if (!pmas.is_memory()) {
+        throw std::runtime_error{"initialization error: PMAs memory address range not found"};
+    }
+    pmas_state pmas_state{};
+    std::ranges::transform(m_ars.interpret(), pmas_state.begin(),
+        [](const auto &ar) { return pmas_entry{.istart = ar.get_istart(), .ilength = ar.get_ilength()}; });
+
     if (config.backing_store.data_filename.empty() || config.backing_store.create) {
-        auto &pmas = m_ars.find(AR_PMAS_START, AR_PMAS_LENGTH);
-        if (!pmas.is_memory()) {
-            throw std::runtime_error{"initialization error: PMAs memory address range not found"};
+        memcpy(pmas.get_host_memory(), pmas_state.data(), sizeof(pmas_state));
+    } else {
+        // Validate PMAs state is consistent
+        if (memcmp(pmas.get_host_memory(), pmas_state.data(), sizeof(pmas_state)) != 0) {
+            throw std::runtime_error{"PMA state is inconsistent machine address ranges"};
         }
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        auto &dest = *reinterpret_cast<pmas_state *>(pmas.get_host_memory());
-        std::ranges::transform(m_ars.interpret(), dest.begin(),
-            [](const auto &ar) { return pmas_entry{.istart = ar.get_istart(), .ilength = ar.get_ilength()}; });
     }
 }
 

@@ -198,6 +198,8 @@ where options are:
         data_filename:<filename>
         dht_filename:<filename>
         shared
+        create
+        truncate
 
     semantics are the same as for the --flash-drive option.
 
@@ -637,7 +639,6 @@ local flash_mount = {}
 local flash_user = {}
 local flash_start = {}
 local flash_length = {}
-local unreproducible = false
 local virtio = {}
 local virtio_net_user_config
 local virtio_volume_count = 0
@@ -647,7 +648,10 @@ local has_sync_init_date = false
 local memory_range_replace = {}
 local ram = {
     length = 128 << 20, -- 128MB
-    backing_store = { data_filename = images_path .. "linux.bin" },
+    backing_store = {
+        data_filename = images_path .. "linux.bin",
+        dht_filename = "",
+    },
 }
 local init_splash = true
 local append_bootargs = ""
@@ -665,10 +669,27 @@ local cmio = {
 }
 local cmio_advance
 local cmio_inspect
+local processor = {
+    registers = {
+        iunrep = 0,
+        htif = {
+            iconsole = cartesi.HTIF_CONSOLE_CMD_PUTCHAR_MASK,
+            iyield = cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK | cartesi.HTIF_YIELD_CMD_MANUAL_MASK,
+        },
+    },
+}
 local uarch = {
+    processor = {
+        registers = {},
+        backing_store = {
+            data_filename = "",
+            dht_filename = "",
+        },
+    },
     ram = {
         backing_store = {
             data_filename = "",
+            dht_filename = "",
         },
     },
 }
@@ -681,9 +702,6 @@ local skip_root_hash_check = false
 local skip_root_hash_store = false
 local skip_version_check = false
 local htif_no_console_putchar = false
-local htif_console_getchar = false
-local htif_yield_automatic = true
-local htif_yield_manual = true
 local initial_hash = false
 local final_hash = false
 local initial_proof = {}
@@ -709,43 +727,39 @@ local assert_rolling_template = false
 local log_step_mcycle_count
 local log_step_filename
 
-local function parse_memory_range(opts, what, all)
-    local f = util.parse_options(opts, {
-        data_filename = true,
-        dht_filename = true,
-        shared = true,
-        length = true,
-        start = true,
+local function parse_memory_range(opts, all)
+    local f = util.parse_options(opts, all, {
+        data_filename = "string",
+        dht_filename = "string",
+        shared = "boolean",
+        create = "boolean",
+        truncate = "boolean",
+        length = "number",
+        start = "number",
     })
-    if f.data_filename == true then f.backing_filename = "" end
-    if f.dense_hashdense_tree_filename == true then f.dht_filename = "" end
-    if f.shared == nil or f.shared == "false" then f.shared = false end
-    if f.shared == "true" then f.shared = true end
-    assert(type(f.shared) == "boolean", "invalid " .. what .. " shared value in " .. all)
     f.backing_store = {
-        data_filename = f.data_filename,
-        dht_filename = f.dht_filename,
+        data_filename = f.data_filename or "",
+        dht_filename = f.dht_filename or "",
         shared = f.shared,
+        create = f.create,
+        truncate = f.truncate,
     }
     f.data_filename = nil
     f.dht_filename = nil
     f.shared = nil
-    f.start = assert(util.parse_number(f.start), "invalid " .. what .. " start in " .. all)
-    f.length = assert(util.parse_number(f.length), "invalid " .. what .. " length in " .. all)
+    f.create = nil
+    f.truncate = nil
     return f
 end
 
-local function parse_backing_store(opts, what, all, def)
-    local f = util.parse_options(opts, {
-        data_filename = true,
-        dht_filename = true,
-        shared = true,
+local function parse_backing_store(opts, all, def)
+    local f = util.parse_options(opts, all, {
+        data_filename = "string",
+        dht_filename = "string",
+        shared = "boolean",
+        create = "boolean",
+        truncate = "boolean",
     })
-    if f.data_filename == true then f.data_filename = "" end
-    if f.dht_filename == true then f.dht_filename = "" end
-    if f.shared == nil or f.shared == "false" then f.shared = false end
-    if f.shared == "true" then f.shared = true end
-    assert(type(f.shared) == "boolean", "invalid " .. what .. " shared value in " .. all)
     if def then
         for i, v in pairs(def) do
             if f[i] == nil then f[i] = v end
@@ -756,7 +770,7 @@ end
 
 local function handle_sync_init_date()
     if has_sync_init_date then return end
-    unreproducible = true
+    processor.registers.iunrep = 1
     has_sync_init_date = true
     -- round up time by 1, to decrease chance of guest time being in the past
     local seconds = os.time() + 1
@@ -765,26 +779,26 @@ local function handle_sync_init_date()
 end
 
 local function handle_virtio_9p(tag, host_directory)
-    unreproducible = true
+    processor.registers.iunrep = 1
     table.insert(virtio, { type = "p9fs", tag = tag, host_directory = host_directory })
     return true
 end
 
 local function handle_volume_option(host_directory, guest_directory)
-    unreproducible = true
+    processor.registers.iunrep = 1
     local tag = "vfs" .. virtio_volume_count
     virtio_volume_count = virtio_volume_count + 1
     table.insert(virtio, { type = "p9fs", tag = tag, host_directory = host_directory })
     append_init = append_init .. "busybox mkdir -p " .. guest_directory .. " && "
     append_init = append_init .. "busybox mount -t 9p " .. tag .. " " .. guest_directory .. "\n"
     -- sync guest date with host date, otherwise file system updates will have wrong dates
-    handle_sync_init_date(true)
+    handle_sync_init_date()
     return true
 end
 
 local function handle_htif_console_getchar()
-    htif_console_getchar = true
-    unreproducible = true
+    processor.registers.htif.iconsole = processor.registers.htif.iconsole | cartesi.HTIF_CONSOLE_CMD_GETCHAR_MASK
+    processor.registers.iunrep = 1
     return true
 end
 
@@ -856,7 +870,7 @@ end
 
 local function handle_virtio_net(mode, opts)
     if not mode then return false end
-    unreproducible = true
+    processor.registers.iunrep = 1
     if mode == "user" then
         if not virtio_net_user_config then
             virtio_net_user_config = { type = "net-user" }
@@ -882,22 +896,23 @@ busybox ip route add default via 10.0.2.2 dev eth0
 [ -w /etc ] && echo 'nameserver 10.0.2.3' > /etc/resolv.conf
 ]]
     -- sync guest date with host date, otherwise SSL connections may fail to validate certificates
-    handle_sync_init_date(true)
+    handle_sync_init_date()
     return true
 end
 
 local function handle_virtio_console()
-    if has_virtio_console then return end
-    unreproducible = true
+    if has_virtio_console then return true end
+    processor.registers.iunrep = 1
     has_virtio_console = true
     -- Switch from HTIF Console (hvc0) to VirtIO console (hvc1)
     dtb.bootargs = dtb.bootargs:gsub("console=hvc0", "console=hvc1")
     table.insert(virtio, 1, { type = "console" })
+    return true
 end
 
 local function handle_interactive()
-    handle_virtio_console(true)
-    handle_sync_init_date(true)
+    handle_virtio_console()
+    handle_sync_init_date()
     -- Expose current terminal features to the virtual terminal
     local term, lang = os.getenv("TERM"), os.getenv("LANG")
     if term then append_init = append_init .. "export TERM=" .. term .. "\n" end
@@ -999,7 +1014,21 @@ local options = {
     {
         "^(%-%-dtb%=(.+))$",
         function(all, opts)
-            dtb.backing_store = parse_backing_store(opts, "dtb", all, dtb.backing_store)
+            dtb.backing_store = parse_backing_store(opts, all, dtb.backing_store)
+            return true
+        end,
+    },
+    {
+        "^(%-%-processor%=(.+))$",
+        function(all, opts)
+            processor.backing_store = parse_backing_store(opts, all, processor.backing_store)
+            return true
+        end,
+    },
+    {
+        "^(%-%-uarch%-processor%=(.+))$",
+        function(all, opts)
+            uarch.processor.backing_store = parse_backing_store(opts, all, uarch.processor.backing_store)
             return true
         end,
     },
@@ -1027,14 +1056,14 @@ local options = {
     {
         "^(%-%-ram%=(.+))$",
         function(all, opts)
-            ram.backing_store = parse_backing_store(opts, "ram", all, ram.backing_store)
+            ram.backing_store = parse_backing_store(opts, all, ram.backing_store)
             return true
         end,
     },
     {
         "^(%-%-pmas%=(.+))$",
         function(all, opts)
-            pmas.backing_store = parse_backing_store(opts, "pmas", all, pmas.backing_store)
+            pmas.backing_store = parse_backing_store(opts, all, pmas.backing_store)
             return true
         end,
     },
@@ -1048,27 +1077,23 @@ local options = {
     {
         "^(%-%-uarch%-ram%=(.+))$",
         function(all, opts)
-            uarch.ram.backing_store = parse_backing_store(opts, "uarch-ram", all, uarch.ram.backing_store)
+            uarch.ram.backing_store = parse_backing_store(opts, all, uarch.ram.backing_store)
             return true
         end,
     },
     {
         "^(%-%-hash%-tree%=(.+))$",
         function(all, opts)
-            local h = util.parse_options(opts, {
-                hasher = true,
-                sht_filename = true,
-                phtc_filename = true,
-                phtc_size = true,
-                shared = true,
+            local h = util.parse_options(opts, all, {
+                hasher = "string",
+                sht_filename = "string",
+                phtc_filename = "string",
+                phtc_size = "number",
+                shared = "boolean",
             })
-            if h.sht_filename == true then h.sht_filename = "" end
-            if h.phtc_filename == true then h.phtc_filename = "" end
-            if h.hasher == true then h.hasher = "keccak" end
-            if h.shared == nil or h.shared == "false" then h.shared = false end
-            if h.shared == "true" then h.shared = true end
-            h.phtc_size = assert(util.parse_number(h.phtc_size), "invalid page hash cache size in " .. all)
-            assert(type(h.shared) == "boolean", "invalid hash tree shared value in " .. all)
+            h.sht_filename = h.sht_filename or ""
+            h.phtc_filename = h.phtc_filename or ""
+            h.hasher = h.hasher or "keccak"
             for i, v in pairs(h) do
                 hash_tree[i] = v
             end
@@ -1078,7 +1103,7 @@ local options = {
     {
         "^%-%-unreproducible$",
         function()
-            unreproducible = true
+            processor.registers.iunrep = 1
             return true
         end,
     },
@@ -1138,7 +1163,7 @@ local options = {
         "^%-%-no%-htif%-yield%-manual$",
         function(all)
             if not all then return false end
-            htif_yield_manual = false
+            processor.registers.htif.iyield = processor.registers.htif.iyield & ~cartesi.HTIF_YIELD_CMD_MANUAL_MASK
             return true
         end,
     },
@@ -1146,33 +1171,29 @@ local options = {
         "^%-%-no%-htif%-yield%-automatic$",
         function(all)
             if not all then return false end
-            htif_yield_automatic = false
+            processor.registers.htif.iyield = processor.registers.htif.iyield & ~cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK
             return true
         end,
     },
     {
         "^(%-%-flash%-drive%=(.+))$",
         function(all, opts)
-            local f = util.parse_options(opts, {
-                label = true,
-                data_filename = true,
-                dht_filename = true,
-                shared = true,
-                create = true,
-                truncate = true,
-                read_only = true,
-                mount = true,
-                user = true,
-                length = true,
-                start = true,
+            local f = util.parse_options(opts, all, {
+                label = "string",
+                data_filename = "string",
+                dht_filename = "string",
+                shared = "boolean",
+                create = "boolean",
+                truncate = "boolean",
+                read_only = "boolean",
+                mount = "boolean",
+                user = "string",
+                length = "number",
+                start = "number",
             })
             assert(f.label, "missing flash drive label in " .. all)
-            if f.data_filename == true then f.data_filename = "" end
-            if f.dht_filename == true then f.dht_filename = "" end
-            assert(not f.shared or f.shared == true, "invalid flash drive shared value in " .. all)
-            assert(not f.create or f.create == true, "invalid flash drive create value in " .. all)
-            assert(not f.truncate or f.truncate == true, "invalid flash drive read_only value in " .. all)
-            assert(not f.read_only or f.read_only == true, "invalid flash drive truncate value in " .. all)
+            f.data_filename = f.data_filename or ""
+            f.dht_filename = f.dht_filename or ""
             if f.mount == nil then
                 -- mount only if there is a file backing
                 if f.data_filename and f.data_filename ~= "" then
@@ -1180,13 +1201,11 @@ local options = {
                 else
                     f.mount = false
                 end
-            elseif f.mount == "true" then
+            elseif f.mount == true then
                 f.mount = "/mnt/" .. f.label
-            elseif f.mount == "false" then
+            elseif f.mount == false then
                 f.mount = false
             end
-            if f.start then f.start = assert(util.parse_number(f.start), "invalid flash drive start in " .. all) end
-            if f.length then f.length = assert(util.parse_number(f.length), "invalid flash drive length in " .. all) end
             local d = f.label
             if not flash_data_filename[d] then
                 flash_label_order[#flash_label_order + 1] = d
@@ -1211,35 +1230,32 @@ local options = {
     {
         "^(%-%-replace%-flash%-drive%=(.+))$",
         function(all, opts)
-            memory_range_replace[#memory_range_replace + 1] = parse_memory_range(opts, "flash drive", all)
+            memory_range_replace[#memory_range_replace + 1] = parse_memory_range(opts, all)
             return true
         end,
     },
     {
         "^(%-%-replace%-memory%-range%=(.+))$",
         function(all, opts)
-            memory_range_replace[#memory_range_replace + 1] = parse_memory_range(opts, "memory range", all)
+            memory_range_replace[#memory_range_replace + 1] = parse_memory_range(opts, all)
             return true
         end,
     },
     {
         "^(%-%-cmio%-advance%-state%=(.+))$",
         function(all, opts)
-            local r = util.parse_options(opts, {
-                input = true,
-                input_index_begin = true,
-                input_index_end = true,
-                output_hashes_root_hash = true,
-                output = true,
-                report = true,
-                hashes = true,
+            local r = util.parse_options(opts, all, {
+                input = "string",
+                input_index_begin = "number",
+                input_index_end = "number",
+                output_hashes_root_hash = "string",
+                output = "string",
+                report = "string",
+                hashes = "boolean",
             })
-            assert(not r.hashes or r.hashes == true, "invalid hashes value in " .. all)
             r.input = r.input or "input-%i.bin"
             r.input_index_begin = r.input_index_begin or 0
-            r.input_index_begin = assert(util.parse_number(r.input_index_begin), "invalid input index begin in " .. all)
             r.input_index_end = r.input_index_end or 0
-            r.input_index_end = assert(util.parse_number(r.input_index_end), "invalid input index end in " .. all)
             r.output = r.output or "input-%i-output-%o.bin"
             r.report = r.report or "input-%i-report-%o.bin"
             r.output_hashes_root_hash = r.output_hashes_root_hash or "input-%i-output-hahes-root-hash.bin"
@@ -1249,12 +1265,12 @@ local options = {
         end,
     },
     {
-        "^%-%-cmio%-inspect%-state%=(.+)$",
-        function(opts)
-            local r = util.parse_options(opts, {
-                query = true,
-                report = true,
-                hashes = true,
+        "^(%-%-cmio%-inspect%-state%=(.+))$",
+        function(all, opts)
+            local r = util.parse_options(opts, all, {
+                query = "string",
+                report = "string",
+                hashes = "boolean",
             })
             r.query = r.query or "query.bin"
             r.report = r.report or "query-report-%o.bin"
@@ -1276,11 +1292,10 @@ local options = {
     {
         "^(%-%-concurrency%=(.+))$",
         function(all, opts)
-            local c = util.parse_options(opts, {
-                update_merkle_tree = true,
+            local c = util.parse_options(opts, all, {
+                update_merkle_tree = "number",
             })
-            c.update_merkle_tree =
-                assert(util.parse_number(c.update_merkle_tree), "invalid update_merkle_tree number in " .. all)
+            assert(c.update_merkle_tree, "invalid update_merkle_tree number in " .. all)
             concurrency_update_merkle_tree = c.update_merkle_tree
             return true
         end,
@@ -1320,14 +1335,12 @@ local options = {
     {
         "^(%-%-initial%-proof%=(.+))$",
         function(all, opts)
-            local p = util.parse_options(opts, {
-                address = true,
-                log2_size = true,
-                filename = true,
+            local p = util.parse_options(opts, all, {
+                address = "number",
+                log2_size = "number",
+                filename = "string",
             })
             p.cmdline = all
-            p.address = assert(util.parse_number(p.address), "invalid address in " .. all)
-            p.log2_size = assert(util.parse_number(p.log2_size), "invalid log2_size in " .. all)
             assert(p.log2_size >= 3, "log2_size must be at least 3 in " .. all)
             initial_proof[#initial_proof + 1] = p
             return true
@@ -1337,14 +1350,12 @@ local options = {
         "^(%-%-final%-proof%=(.+))$",
         function(all, opts)
             if not opts then return false end
-            local p = util.parse_options(opts, {
-                address = true,
-                log2_size = true,
-                filename = true,
+            local p = util.parse_options(opts, all, {
+                address = "number",
+                log2_size = "number",
+                filename = "string",
             })
             p.cmdline = all
-            p.address = assert(util.parse_number(p.address), "invalid address in " .. all)
-            p.log2_size = assert(util.parse_number(p.log2_size), "invalid log2_size in " .. all)
             assert(p.log2_size >= 3, "log2_size must be at least 3 in " .. all)
             final_proof[#final_proof + 1] = p
             return true
@@ -1610,8 +1621,7 @@ local options = {
         "^(%-%-cmio%-rx%-buffer%=(.+))$",
         function(all, opts)
             if not opts then return false end
-            cmio.rx_buffer.backing_store =
-                parse_backing_store(opts, "cmio rx buffer", all, cmio.rx_buffer.backing_store)
+            cmio.rx_buffer.backing_store = parse_backing_store(opts, all, cmio.rx_buffer.backing_store)
             return true
         end,
     },
@@ -1619,8 +1629,7 @@ local options = {
         "^(%-%-cmio%-tx%-buffer%=(.+))$",
         function(all, opts)
             if not opts then return false end
-            cmio.tx_buffer.backing_store =
-                parse_backing_store(opts, "cmio tx buffer", all, cmio.tx_buffer.backing_store)
+            cmio.tx_buffer.backing_store = parse_backing_store(opts, all, cmio.tx_buffer.backing_store)
             return true
         end,
     },
@@ -1826,17 +1835,7 @@ elseif load_dir then
 else
     -- Build machine config
     local config = {
-        processor = {
-            registers = {
-                iunrep = unreproducible and 1 or 0,
-                htif = {
-                    iconsole = (htif_console_getchar and cartesi.HTIF_CONSOLE_CMD_GETCHAR_MASK or 0)
-                        | cartesi.HTIF_CONSOLE_CMD_PUTCHAR_MASK,
-                    iyield = (htif_yield_automatic and cartesi.HTIF_YIELD_CMD_AUTOMATIC_MASK or 0)
-                        | (htif_yield_manual and cartesi.HTIF_YIELD_CMD_MANUAL_MASK or 0),
-                },
-            },
-        },
+        processor = processor,
         ram = ram,
         dtb = dtb,
         flash_drive = {},

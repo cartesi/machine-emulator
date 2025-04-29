@@ -114,11 +114,10 @@ local options = {
             if not opts then
                 return false
             end
-            local c = util.parse_options(opts, {
-                update_merkle_tree = true,
+            local c = util.parse_options(opts, all, {
+                update_merkle_tree = "number",
             })
-            c.update_merkle_tree =
-                assert(util.parse_number(c.update_merkle_tree), "invalid update_merkle_tree number in " .. all)
+            assert(c.update_merkle_tree, "invalid update_merkle_tree number in " .. all)
             concurrency_update_merkle_tree = c.update_merkle_tree
             return true
         end,

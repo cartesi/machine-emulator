@@ -368,6 +368,9 @@ public:
     /// \returns True if tree is self-consistent, false otherwise.
     bool verify_hash_tree() const;
 
+    /// \brief Validate integrity of processor shadow.
+    void validate_processor_shadow(bool skip_version_check) const;
+
     /// \brief Read the value of any register
     /// \param r Register to read
     /// \returns The value of the register

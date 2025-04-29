@@ -70,12 +70,6 @@ static constexpr bool pmas_is_protected(PMA_ISTART_DID DID) {
     }
 }
 
-static constexpr bool pmas_range_overlaps(uint64_t a_start, uint64_t a_length, uint64_t b_start, uint64_t b_length) {
-    const uint64_t a_end = a_start + a_length - 1;
-    const uint64_t b_end = b_start + b_length - 1;
-    return (a_start <= b_end && a_end >= b_start);
-}
-
 ///< Unpacked attribute flags
 struct pmas_flags {
     bool M;             ///< is memory

@@ -519,11 +519,10 @@ local options = {
             if not opts then
                 return false
             end
-            local c = util.parse_options(opts, {
-                update_hash_tree = true,
+            local c = util.parse_options(opts, all, {
+                update_hash_tree = "number",
             })
-            c.update_hash_tree =
-                assert(util.parse_number(c.update_hash_tree), "invalid update_hash_tree number in " .. all)
+            c.update_hash_tree = assert(c.update_hash_tree, "invalid update_hash_tree number in " .. all)
             concurrency_update_hash_tree = c.update_hash_tree
             return true
         end,

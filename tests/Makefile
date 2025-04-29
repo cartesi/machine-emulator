@@ -194,7 +194,7 @@ test-hash-tree:
 	$(LUA) ./lua/hash-tree.lua
 
 test-uarch-compare:
-	$(LUA) ./lua/cartesi-machine-tests.lua --test="^rv64ui.*$$" --concurrency=update_merkle_tree:1 --jobs=$(NUM_JOBS) run_host_and_uarch
+	$(LUA) ./lua/cartesi-machine-tests.lua --test="^rv64ui.*$$" --concurrency=update_hash_tree:1 --jobs=$(NUM_JOBS) run_host_and_uarch
 
 test-uarch-rv64ui:
 	$(LUA) ./lua/uarch-riscv-tests.lua --jobs=$(NUM_JOBS) run

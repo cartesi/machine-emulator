@@ -163,7 +163,16 @@ function _M.parse_number(n)
     return nil
 end
 
-function _M.parse_options(s, keys)
+function _M.parse_boolean(b)
+    if b == "true" or b == true then
+        return true
+    elseif b == "false" or b == false then
+        return false
+    end
+    return nil
+end
+
+function _M.parse_options(s, all, keys)
     local function escape(v)
         -- replace escaped \, :, and , with something "safe"
         v = string.gsub(v, "%\\%\\", "\0")
@@ -184,14 +193,30 @@ function _M.parse_options(s, keys)
             v = unescape(v)
         else
             k = unescape(o)
-            v = true
+            v = nil
         end
-        assert(keys[k], string.format("unknown option '%q'", k))
+        assert(keys[k], string.format("unknown option %q in '%s'", k, all))
         if keys[k] == "array" then
             options[k] = options[k] or {}
             table.insert(options[k], v)
-        else
+        elseif keys[k] == "boolean" then
+            if v == nil then
+                v = true
+            else
+                v = _M.parse_boolean(v)
+                if v == nil then error(string.format("invalid boolean for option %q in '%s'", k, all)) end
+            end
             options[k] = v
+        elseif keys[k] == "number" then
+            v = _M.parse_number(v)
+            if v == nil then error(string.format("invalid number for option %q in '%s'", k, all)) end
+            options[k] = v
+        elseif keys[k] == "string" then
+            if v == nil then error(string.format("missing string for option %q in '%s'", k, all)) end
+            options[k] = v
+        elseif type(keys[k]) == "table" then
+            if not keys[k][v] then error(string.format("invalid value for option %q in '%s'", k, all)) end
+            options[k] = keys[k][v]
         end
     end)
     return options

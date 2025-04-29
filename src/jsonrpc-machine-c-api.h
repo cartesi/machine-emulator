@@ -27,11 +27,11 @@ extern "C" {
 // API enums
 // -----------------------------------------------------------------------------
 
-/// \brief Resources to cleanup when machine object is deleted
+/// \brief Resources to cleanup when a machine object is deleted.
 typedef enum cm_jsonrpc_cleanup_call {
-    CM_JSONRPC_NOTHING, ///< Just delete object
-    CM_JSONRPC_DESTROY, ///< Implicitly call cm_destroy()
-    CM_JSONRPC_SHUTDOWN ///< Implicitly call cm_jsonrpc_shutdown_server()
+    CM_JSONRPC_NOTHING, ///< Just delete the object
+    CM_JSONRPC_DESTROY, ///< Implicitly calls cm_destroy()
+    CM_JSONRPC_SHUTDOWN ///< Implicitly calls cm_jsonrpc_shutdown_server()
 } cm_jsonrpc_cleanup_call;
 
 // -----------------------------------------------------------------------------
@@ -39,11 +39,11 @@ typedef enum cm_jsonrpc_cleanup_call {
 // -----------------------------------------------------------------------------
 
 /// \brief Spawns a new remote machine server.
-/// \param address Address (in local host) to bind the new remote machine server.
+/// \param address Address (in the local host) to bind the new remote machine server.
 /// \param spawn_timeout_ms Maximum time in milliseconds to wait for the remote server to spawn before giving up
 /// and returning an error. Use -1 for no timeout.
 /// \param new_m Receives the pointer to the new JSONRPC remote machine object. Set to NULL on failure.
-/// \param bound_address_bound Receives the address that the remote machine server actually bound to,
+/// \param bound_address Receives the address that the remote machine server actually bound to,
 /// guaranteed to remain valid only until the next CM_API function is called again on the same thread.
 /// Set to NULL on failure.
 /// \param pid Receives the spawned server process id. Set to 0 on failure.
@@ -76,7 +76,7 @@ CM_API cm_error cm_jsonrpc_connect_server(const char *address, int64_t connect_t
 /// \brief Forks the remote machine server.
 /// \param m Pointer to a valid JSONRPC remote machine object.
 /// \param forked_m Receives the pointer to the forked JSONRPC remote machine object. Set to NULL on failure.
-/// \param address If function succeeds, receives address the forked server bound to,
+/// \param address Receives the address the forked server bound to if the function succeeds,
 /// guaranteed to remain valid only until the next CM_API function is called again on the same thread.
 /// Set to NULL on failure.
 /// \param pid If function succeeds, receives the forked child process id (can be NULL). Set to 0 on failure.
@@ -90,7 +90,7 @@ CM_API cm_error cm_jsonrpc_connect_server(const char *address, int64_t connect_t
 /// Use cm_jsonrpc_set_cleanup_call() to change this setting.
 /// \details The communication timeout is inherited from the original machine object.
 /// Use cm_jsonrpc_set_timeout() to change this setting.
-/// \warning If the server is running on a remote host, the \p pid is also remote and cannot be signaled.
+/// \warning If the server is running on a remote host, the pid is also remote and cannot be signaled.
 /// Trying to do so may signal an entirely unrelated process in the local host.
 CM_API cm_error cm_jsonrpc_fork_server(const cm_machine *m, cm_machine **forked_m, const char **address, uint32_t *pid);
 
@@ -98,34 +98,34 @@ CM_API cm_error cm_jsonrpc_fork_server(const cm_machine *m, cm_machine **forked_
 /// \param m Pointer to a valid JSONRPC remote machine object.
 /// \returns 0 for success, non zero code for error.
 /// \details cm_delete() may fail silently when implicitly calling cm_jsonrpc_shutdown_server().
-/// To make sure the server was successfully shutdown, call cm_jsonrpc_shutdown_server() explicitly.
+/// To make sure the server was successfully shut down, call cm_jsonrpc_shutdown_server() explicitly.
 /// \details This function does not delete the machine object.
 /// You must still call cm_delete() afterwards.
 CM_API cm_error cm_jsonrpc_shutdown_server(cm_machine *m);
 
-/// \brief Changes the address the remote machine server is listening to.
+/// \brief Changes the address that the remote machine server is listening to.
 /// \param m Pointer to a valid JSONRPC remote machine object.
 /// \param address Address the remote machine server should bind to.
 /// \param address_bound Receives the address that the remote machine server actually bound to,
 /// guaranteed to remain valid only until the next CM_API function is called again on the same thread.
 /// Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
-/// \detail The function automatically updates the address the machine object uses to communicate with the server.
+/// \details This function automatically updates the address the machine object uses to communicate with the server.
 CM_API cm_error cm_jsonrpc_rebind_server(cm_machine *m, const char *address, const char **address_bound);
 
 /// \brief Gets the semantic version of the remote machine server.
 /// \param m Pointer to a valid JSONRPC remote machine object.
-/// \param semantic_version Receives the semantic version as a JSON object in a string,
+/// \param version Receives the semantic version as a JSON object in a string,
 /// guaranteed to remain valid only until the next CM_API function is called again on the same thread.
 /// Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_jsonrpc_get_server_version(const cm_machine *m, const char **version);
 
-/// \brief Breaks server out of parent program group.
+/// \brief Breaks the server out of its parent process group.
 /// \param m Pointer to a valid JSONRPC remote machine object.
 /// \returns 0 for success, non zero code for error.
-/// \detail A spawned/forked server process starts in the same process group as its parent.
-/// This function makes it the leader of its own program group.
+/// \details A spawned/forked server process starts in the same process group as its parent.
+/// This function makes it the leader of its own process group.
 CM_API cm_error cm_jsonrpc_emancipate_server(cm_machine *m);
 
 // -----------------------------------------------------------------------------
@@ -134,13 +134,13 @@ CM_API cm_error cm_jsonrpc_emancipate_server(cm_machine *m);
 
 /// \brief Sets a timeout for communication with remote machine server.
 /// \param m Pointer to a valid JSONRPC remote machine object.
-/// \param ms Number of milliseconds to wait before returning with a timeout. Use -1 to block indefinitely.
+/// \param ms Number of milliseconds to wait before returning due to a timeout. Use -1 to block indefinitely.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_jsonrpc_set_timeout(cm_machine *m, int64_t ms);
 
 /// \brief Gets the current timeout for communication with remote machine server.
 /// \param m Pointer to a valid JSONRPC remote machine object.
-/// \param ms Receives the number of milliseconds to wait before returning with a timeout. (-1 blocks indefinitely).
+/// \param ms Receives the number of milliseconds to wait before returning due to a timeout. (-1 blocks indefinitely).
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_jsonrpc_get_timeout(cm_machine *m, int64_t *ms);
 
@@ -153,14 +153,14 @@ CM_API cm_error cm_jsonrpc_get_timeout(cm_machine *m, int64_t *ms);
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_jsonrpc_set_cleanup_call(cm_machine *m, cm_jsonrpc_cleanup_call call);
 
-/// \brief Retrieves the implicit cleanup call at object is deletion.
+/// \brief Retrieves the implicit cleanup call at the time of object deletion.
 /// \param m Pointer to a valid JSONRPC remote machine object.
 /// \param call Receives either CM_JSONRPC_NOTHING, CM_JSONRPC_DESTROY, or CM_JSONRPC_SHUTDOWN.
 /// See cm_jsonrpc_set_cleanup_call().
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_jsonrpc_get_cleanup_call(cm_machine *m, cm_jsonrpc_cleanup_call *call);
 
-/// \brief Retrieves the address of remote server.
+/// \brief Retrieves the address of the remote server.
 /// \param m Pointer to a valid JSONRPC remote machine object.
 /// \param address Receives the address of the remote machine, guaranteed to remain valid only until
 /// the next CM_API function is called again on the same thread.
@@ -171,9 +171,9 @@ CM_API cm_error cm_jsonrpc_get_server_address(cm_machine *m, const char **addres
 // Debugging and testing
 // -----------------------------------------------------------------------------
 
-/// \brief Asks server to delay next request by a given amount of time.
+/// \brief Asks the server to delay the next request by a given amount of time.
 /// \param m Pointer to a valid JSONRPC remote machine object.
-/// \param ms Number of milliseconds to delay next request.
+/// \param ms Number of milliseconds to delay the next request.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_jsonrpc_delay_next_request(cm_machine *m, uint64_t ms);
 

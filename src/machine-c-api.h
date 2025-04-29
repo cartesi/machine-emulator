@@ -124,8 +124,8 @@ typedef enum cm_cmio_yield_reason {
     CM_CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED = 1,  ///< Input in rx buffer was accepted
     CM_CMIO_YIELD_MANUAL_REASON_RX_REJECTED = 2,  ///< Input in rx buffer was rejected
     CM_CMIO_YIELD_MANUAL_REASON_TX_EXCEPTION = 4, ///< Exception happened
-    CM_CMIO_YIELD_REASON_ADVANCE_STATE = 0,       ///< Input in rx buffer is advance state
-    CM_CMIO_YIELD_REASON_INSPECT_STATE = 1,       ///< Input in rx buffer is inspect state
+    CM_CMIO_YIELD_REASON_ADVANCE_STATE = 0,       ///< Input in rx buffer is an advance state
+    CM_CMIO_YIELD_REASON_INSPECT_STATE = 1,       ///< Input in rx buffer is an inspect state
 } cm_cmio_yield_reason;
 
 /// \brief Machine x, f, and control and status registers.
@@ -305,8 +305,8 @@ typedef struct cm_machine cm_machine;
 /// \brief Returns the error message set by the very last C API call.
 /// \returns A C string, guaranteed to remain valid only until the next CM_API function call.
 /// \details The string returned by this function must not be changed nor deallocated, and remains valid until
-/// next CM_API function that can return a cm_error code is called.
-/// Must be called from the same thread that called the function that produced the error.
+/// the next CM_API function that can return a cm_error code is called.
+/// Must be called from the same thread as the function that produced the error.
 /// In case the last CM_API function call on that thread was successful, returns an empty string.
 /// \warning Do not use the empty string as an indication that the previous call was successful.
 /// This would be error-prone since calls from different threads may see different strings.
@@ -344,18 +344,18 @@ CM_API cm_error cm_get_reg_address(const cm_machine *m, cm_reg reg, uint64_t *va
 /// Use cm_delete() to delete the object.
 CM_API cm_error cm_new(cm_machine **new_m);
 
-/// \brief Clones empty machine object from existing one.
+/// \brief Clones an empty machine object from an existing one.
 /// \param m Pointer to the existing machine object to clone from.
 /// \param new_m Receives the pointer to the new machine object. Set to NULL on failure.
 /// \returns 0 for success, non zero code for error.
 /// \details The new machine object will be of the same type as \p m.
-/// Local if \p m is local, remote on the same host if \p is remote.
+/// Local if \p m is local, remote on the same host if \p m is remote.
 /// Regardless, a newly created object is empty (does not hold a machine instance).
 /// Use cm_create() or cm_load() to instantiate a machine into the object.
 /// Use cm_delete() to delete the object.
 CM_API cm_error cm_clone_empty(const cm_machine *m, cm_machine **new_m);
 
-/// \brief Checks if object is empty (does not hold a machine instance).
+/// \brief Checks if an object is empty (does not hold a machine instance).
 /// \param m Pointer to the existing machine object.
 /// \param yes Receives true if empty, false otherwise.
 /// \returns 0 for success, non zero code for error.
@@ -371,7 +371,7 @@ CM_API void cm_delete(cm_machine *m);
 /// \brief Creates a new machine instance from configuration.
 /// \param m Pointer to an empty machine object (does not hold a machine instance).
 /// \param config Machine configuration as a JSON object in a string (at least RAM length must be set).
-/// An useful config needs at least RAM length and image, a rootfs flash drive image and DTB entrypoint to be set.
+/// A useful config needs at least RAM length and image, a rootfs flash drive image, and a DTB entrypoint to be set.
 /// For example:
 /// ```json
 /// {
@@ -399,7 +399,7 @@ CM_API cm_error cm_create(cm_machine *m, const char *config, const char *runtime
 /// \returns 0 for success, non zero code for error.
 /// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
 /// \details Use cm_delete() to delete the object.
-/// \details See cm_load() and cm_create() for more details.
+/// \details See cm_new() and cm_create() for more details.
 CM_API cm_error cm_create_new(const char *config, const char *runtime_config, cm_machine **new_m);
 
 /// \brief Loads a new machine instance from a previously stored directory.
@@ -417,7 +417,7 @@ CM_API cm_error cm_load(cm_machine *m, const char *dir, const char *runtime_conf
 /// \returns 0 for success, non zero code for error.
 /// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
 /// \details Use cm_delete() to delete the object.
-/// \details See cm_load() and cm_create() for more details.
+/// \details See cm_new() and cm_load() for more details.
 CM_API cm_error cm_load_new(const char *dir, const char *runtime_config, cm_machine **new_m);
 
 /// \brief Stores a machine instance to a directory, serializing its entire state.
@@ -442,7 +442,7 @@ CM_API cm_error cm_destroy(cm_machine *m);
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_set_runtime_config(cm_machine *m, const char *runtime_config);
 
-/// \brief Changes the machine runtime config.
+/// \brief Gets the machine runtime configuration.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param runtime_config Receives the runtime configuration as a JSON object in a string,
 /// guaranteed to remain valid only until the next CM_API function is called from the same thread.
@@ -488,7 +488,7 @@ CM_API cm_error cm_get_root_hash(const cm_machine *m, cm_hash *hash);
 /// \brief Obtains the proof for a node in the machine state Merkle tree.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param address Address of target node. Must be aligned to a 2^log2_size boundary.
-/// \param log2_size The log base 2 of the size subtended by target node.
+/// \param log2_size The log base 2 of the size subtended by the target node.
 /// Must be between CM_TREE_LOG2_WORD_SIZE (for a word) and CM_TREE_LOG2_ROOT_SIZE
 /// (for the entire address space), inclusive.
 /// \param proof Receives the proof as a JSON object in a string,
@@ -537,11 +537,11 @@ CM_API cm_error cm_read_memory(const cm_machine *m, uint64_t address, uint8_t *d
 /// \param data Source for chunk of data.
 /// \param length Size of chunk in bytes.
 /// \returns 0 for success, non zero code for error.
-/// \details The entire chunk must be inside the same PMA region.
+/// \details The entire chunk must be inside the same memory range.
 /// Moreover, unlike cm_read_memory(), the memory range written to must not be mapped to a device.
 CM_API cm_error cm_write_memory(cm_machine *m, uint64_t address, const uint8_t *data, uint64_t length);
 
-/// \brief Reads a chunk of data from a machine memory range, by its virtual memory.
+/// \brief Reads a chunk of data from a machine memory range, by its virtual address.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param address Virtual address to start reading.
 /// \param data Receives chunk of memory.
@@ -571,7 +571,7 @@ CM_API cm_error cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint
 // Running
 // ------------------------------------
 
-/// \brief Runs the machine until CM_REG_MCYCLE reaches mcycle_end, machine yields, or halts.
+/// \brief Runs the machine until CM_REG_MCYCLE reaches mcycle_end, the machine yields, or halts.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param mcycle_end End cycle value.
 /// \param break_reason Receives reason for returning (can be NULL). Set to CM_BREAK_REASON_FAILED on failure.
@@ -597,9 +597,9 @@ CM_API cm_error cm_reset_uarch(cm_machine *m);
 /// \param reason Receives the yield reason (see below).
 /// \param data Receives the yield data. If NULL, length will still be set without reading any data.
 /// \param length Receives the yield data length. Must be initialized to the size of data buffer.
-/// \details May fail if machine is not in a valid yield state or data length isn't big enough.
+/// \details May fail if the machine is not in a valid yield state or data length isn't big enough.
 /// In case of an automatic yield with progress reason, length is 4 and data is the per mille progress as an integer.
-/// In case of other automatic yields length is variable (up to 2MB) and data is an output or reports.
+/// In case of other automatic yields, length is variable (up to 2MB) and data is an output or reports.
 /// In case of a manual yield with accepted reason, length is 32 and data is filled with the output hashes root hash.
 /// In case of a manual yield with rejected reason, length and data can be ignored. Machine state should be reverted.
 /// In case of a manual yield with exception reason, data/length point to a message. Machine state is irrecoverable.
@@ -613,7 +613,7 @@ CM_API cm_error cm_receive_cmio_request(const cm_machine *m, uint8_t *cmd, uint1
 /// \param data Response data to send.
 /// \param length Length of response data.
 /// \returns 0 for success, non zero code for error.
-/// \details This method should only be called as a response to cmio requests with manual yield command
+/// \details This method should only be called as a response to cmio requests with manual yield command,
 /// where the reason is either accepted or a GIO request, may fail otherwise.
 CM_API cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint8_t *data, uint64_t length);
 
@@ -628,7 +628,7 @@ CM_API cm_error cm_send_cmio_response(cm_machine *m, uint16_t reason, const uint
 /// \param break_reason Receives reason for returning (can be NULL). Set to CM_BREAK_REASON_FAILED on failure.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_log_step(cm_machine *m, uint64_t mcycle_count, const char *log_filename,
-    cm_break_reason *break_reason_result);
+    cm_break_reason *break_reason);
 
 /// \brief Runs the machine in the microarchitecture for one micro cycle logging all accesses to the state.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
@@ -682,7 +682,7 @@ CM_API cm_error cm_verify_step(const cm_machine *m, const cm_hash *root_hash_bef
 CM_API cm_error cm_verify_step_uarch(const cm_machine *m, const cm_hash *root_hash_before, const char *log,
     const cm_hash *root_hash_after);
 
-/// \brief Checks the validity of a state transition produced by cm_log_verify_reset_uarch.
+/// \brief Checks the validity of a state transition produced by cm_log_reset_uarch.
 /// \param m Pointer to a machine object. Can be NULL (for local machines).
 /// \param root_hash_before State hash before reset.
 /// \param log State access log to be verified as a JSON object in a string.
@@ -714,7 +714,7 @@ CM_API cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reaso
 /// \details This method is used only for emulator internal tests.
 CM_API cm_error cm_verify_merkle_tree(cm_machine *m, bool *result);
 
-/// \brief Verify integrity of dirty page maps.
+/// \brief Verifies integrity of dirty page maps.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param result True if dirty page maps are consistent, false otherwise.
 /// \returns 0 for success, non zero code for error.

@@ -59,8 +59,10 @@
 #include "replay-step-state-access.h"
 #include "riscv-constants.h"
 #include "rtc.h"
+#include "scope-exit.h"
 #include "send-cmio-response.h"
 #include "shadow-tlb.h"
+#include "shadow-uarch-state.h"
 #include "state-access.h"
 #include "strict-aliasing.h"
 #include "translate-virtual-address.h"
@@ -96,6 +98,11 @@ void machine::init_uarch_processor(const uarch_processor_config &p) {
             write_reg(machine_reg_enum(reg::uarch_x0, i), p.registers.x[i]);
         }
     }
+
+    // Ensure uarch x0 is actually zero
+    if (m_us->registers.x[0] != 0) {
+        throw std::invalid_argument{"uarch x0 register is corrupt"};
+    }
 }
 
 void machine::init_processor(processor_config &p, const machine_runtime_config &r) {
@@ -108,24 +115,12 @@ void machine::init_processor(processor_config &p, const machine_runtime_config &
             p.registers.marchid = MARCHID_INIT;
         }
 
-        if (p.registers.marchid != MARCHID_INIT && !r.skip_version_check) {
-            throw std::invalid_argument{"marchid mismatch, emulator version is incompatible"};
-        }
-
         if (p.registers.mvendorid == UINT64_C(-1)) {
             p.registers.mvendorid = MVENDORID_INIT;
         }
 
-        if (p.registers.mvendorid != MVENDORID_INIT && !r.skip_version_check) {
-            throw std::invalid_argument{"mvendorid mismatch, emulator version is incompatible"};
-        }
-
         if (p.registers.mimpid == UINT64_C(-1)) {
             p.registers.mimpid = MIMPID_INIT;
-        }
-
-        if (p.registers.mimpid != MIMPID_INIT && !r.skip_version_check) {
-            throw std::invalid_argument{"mimpid mismatch, emulator version is incompatible"};
         }
 
         // General purpose registers
@@ -184,6 +179,34 @@ void machine::init_processor(processor_config &p, const machine_runtime_config &
         // PLIC registers
         write_reg(reg::plic_girqpend, p.registers.plic.girqpend);
         write_reg(reg::plic_girqsrvd, p.registers.plic.girqsrvd);
+    }
+
+    // Check if registers are consistent
+    validate_processor_shadow(r.skip_version_check);
+}
+
+void machine::validate_processor_shadow(bool skip_version_check) const {
+    // Ensure emulator version is compatible
+    if (!skip_version_check) {
+        if (m_s->shadow.registers.marchid != MARCHID_INIT) {
+            throw std::invalid_argument{"marchid mismatch, emulator version is incompatible"};
+        }
+        if (m_s->shadow.registers.mvendorid != MVENDORID_INIT) {
+            throw std::invalid_argument{"mvendorid mismatch, emulator version is incompatible"};
+        }
+        if (m_s->shadow.registers.mimpid != MIMPID_INIT) {
+            throw std::invalid_argument{"mimpid mismatch, emulator version is incompatible"};
+        }
+    }
+    // Ensure x0 is actually zero
+    if (m_s->shadow.registers.x[0] != 0) {
+        throw std::invalid_argument{"x0 register is corrupt"};
+    }
+    // Ensure padding bytes are consistent
+    if (!is_pristine(std::bit_cast<unsigned char *>(&m_s->shadow.registers_padding_[0]),
+            sizeof(m_s->shadow.registers_padding_)) ||
+        !is_pristine(std::bit_cast<unsigned char *>(&m_s->shadow.tlb_padding_[0]), sizeof(m_s->shadow.tlb_padding_))) {
+        throw std::invalid_argument{"shadow padding bytes are corrupt"};
     }
 }
 
@@ -1695,6 +1718,25 @@ void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t l
     if (ar.is_host_read_only()) {
         throw std::invalid_argument{"address range to write is read-only in the host"};
     }
+    // Handle special case for writing to shadow memory, allowing manual snapshots
+    // for machines with shared layouts via read_memory()/write_memory()
+    if (paddr == AR_SHADOW_STATE_START && length == AR_SHADOW_STATE_LENGTH) {
+        // Save the current processor state for potential rollback
+        static const auto s = *m_s;
+        // Overwrite the processor shadow state with the provided data
+        static_assert(AR_SHADOW_STATE_LENGTH == sizeof(m_s->shadow));
+        memcpy(std::bit_cast<unsigned char *>(&m_s->shadow), data, sizeof(m_s->shadow));
+        // Ensure processor state rollback in case of failure during subsequent operations
+        auto state_reverter = scope_fail([&] { *m_s = s; });
+        // Ensure the new processor shadow state is consistent
+        validate_processor_shadow(m_r.skip_version_check);
+        // Reinitialize the hot TLB to reflect changes in the shadow TLB and verify consistency
+        init_hot_tlb_contents();
+        return;
+    }
+    if (pmas_is_protected(ar.get_driver_id())) {
+        throw std::invalid_argument{"attempt to write to protected memory range"};
+    }
     foreach_aligned_chunk(paddr, length, AR_PAGE_SIZE, [&ar, paddr, data](auto chunk_start, auto chunk_length) {
         const auto *src = data + (chunk_start - paddr);
         const auto offset = chunk_start - ar.get_start();
@@ -1705,10 +1747,6 @@ void machine::write_memory(uint64_t paddr, const unsigned char *data, uint64_t l
             ar.mark_dirty_page(offset);
         }
     });
-    if (pmas_range_overlaps(paddr, length, AR_SHADOW_TLB_START, AR_SHADOW_TLB_LENGTH)) {
-        // Must reinitialize hot TLB again to reflect changes in the shadow TLB
-        init_hot_tlb_contents();
-    }
 }
 
 void machine::fill_memory(uint64_t paddr, uint8_t val, uint64_t length) {
@@ -1725,10 +1763,8 @@ void machine::fill_memory(uint64_t paddr, uint8_t val, uint64_t length) {
     if (ar.is_host_read_only()) {
         throw std::invalid_argument{"address range is read-only in the host"};
     }
-    if (pmas_range_overlaps(paddr, length, AR_SHADOW_TLB_START, AR_SHADOW_TLB_LENGTH)) {
-        // Filling shadow TLB memory doesn't make sense because it would leave
-        // its state corrupted in most situations.
-        throw std::invalid_argument{"attempted fill to shadow TLB memory range"};
+    if (pmas_is_protected(ar.get_driver_id())) {
+        throw std::invalid_argument{"attempt fill to protected memory range"};
     }
     // The case of filling a range with zeros is special and optimized for uarch reset
     foreach_aligned_chunk(paddr, length, AR_PAGE_SIZE, [&ar, val](auto chunk_start, auto chunk_length) {
@@ -1831,6 +1867,24 @@ void machine::write_word(uint64_t paddr, uint64_t val) {
     if ((paddr & (sizeof(uint64_t) - 1)) != 0) {
         throw std::domain_error{"attempted misaligned write to word"};
     }
+    // If in shadow, forward to write_reg
+    if (paddr >= AR_SHADOW_REGISTERS_START && paddr - AR_SHADOW_REGISTERS_START < AR_SHADOW_REGISTERS_LENGTH) {
+        auto reg = shadow_registers_get_what(paddr);
+        if (reg == shadow_registers_what::unknown_) {
+            throw std::runtime_error("unhandled write to shadow state");
+        }
+        write_reg(machine_reg_enum(reg), val);
+        return;
+    }
+    // If in uarch shadow, forward to write_reg
+    if (paddr >= AR_SHADOW_UARCH_STATE_START && paddr - AR_SHADOW_UARCH_STATE_START < AR_SHADOW_UARCH_STATE_LENGTH) {
+        auto reg = shadow_uarch_state_get_what(paddr);
+        if (reg == shadow_uarch_state_what::unknown_) {
+            throw std::runtime_error("unhandled write to shadow uarch state");
+        }
+        write_reg(machine_reg_enum(reg), val);
+        return;
+    }
     auto &ar = m_ars.find(paddr, sizeof(uint64_t));
     if (!ar.is_memory() || ar.get_host_memory() == nullptr) {
         std::ostringstream err;
@@ -1844,10 +1898,11 @@ void machine::write_word(uint64_t paddr, uint64_t val) {
             << "(" << std::dec << paddr << ")";
         throw std::runtime_error{err.str()};
     }
-    if (pmas_range_overlaps(paddr, sizeof(uint64_t), AR_SHADOW_TLB_START, AR_SHADOW_TLB_LENGTH)) {
-        // Writing a single word to shadow TLB memory is not supported,
-        // it would leave corrupt its state in most situations.
-        throw std::invalid_argument{"attempted memory word write to shadow TLB memory range"};
+    if (pmas_is_protected(ar.get_driver_id())) {
+        std::ostringstream err;
+        err << "attempted memory word write to protected memory range " << ar.get_description() << " at address 0x"
+            << std::hex << paddr << "(" << std::dec << paddr << ")";
+        throw std::runtime_error{err.str()};
     }
     const auto offset = paddr - ar.get_start();
     aliased_aligned_write<uint64_t>(ar.get_host_memory() + offset, val);

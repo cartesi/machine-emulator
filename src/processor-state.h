@@ -39,7 +39,7 @@ struct shadow_state final {
     registers_state registers;          ///< Registers state
     uint64_t registers_padding_[406]{}; ///< Padding to align next field to a page boundary
     shadow_tlb_state tlb;               ///< Shadow TLB state
-    uint64_t shadow_tlb_padding[512]{}; ///< Padding to align next field to a page boundary
+    uint64_t tlb_padding_[512]{};       ///< Padding to align next field to a page boundary
 };
 
 /// \brief Penumbra state.

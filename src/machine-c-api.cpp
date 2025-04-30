@@ -45,11 +45,13 @@
 #include "pma-constants.h"
 #include "virtual-machine.h"
 
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-static THREAD_LOCAL std::string last_err_msg;
+static std::string &get_last_err_msg_storage() {
+    static THREAD_LOCAL std::string last_err_msg;
+    return last_err_msg;
+}
 
 const char *cm_get_last_error_message() {
-    return last_err_msg.c_str();
+    return get_last_err_msg_storage().c_str();
 }
 
 const char *cm_set_temp_string(const std::string &s) {
@@ -60,7 +62,7 @@ const char *cm_set_temp_string(const std::string &s) {
 
 cm_error cm_result_failure() try { throw; } catch (std::exception &e) {
     try {
-        last_err_msg = e.what();
+        get_last_err_msg_storage() = e.what();
         throw;
     } catch (std::invalid_argument &ex) {
         return CM_ERROR_INVALID_ARGUMENT;
@@ -109,16 +111,16 @@ cm_error cm_result_failure() try { throw; } catch (std::exception &e) {
     }
 } catch (...) {
     try {
-        last_err_msg = std::string("unknown error");
+        get_last_err_msg_storage() = std::string("unknown error");
     } catch (...) {
         // Failed to allocate string, last resort is to set an empty error.
-        last_err_msg.clear();
+        get_last_err_msg_storage().clear();
     }
     return CM_ERROR_UNKNOWN;
 }
 
 cm_error cm_result_success() {
-    last_err_msg.clear();
+    get_last_err_msg_storage().clear();
     return CM_ERROR_OK;
 }
 

@@ -140,6 +140,9 @@ cm_error cm_jsonrpc_spawn_server(const char *address, int64_t spawn_timeout_ms, 
 
 cm_error cm_jsonrpc_fork_server(const cm_machine *m, cm_machine **forked_m, const char **address, uint32_t *pid) try {
     using namespace cartesi;
+    if (forked_m == nullptr) {
+        throw std::invalid_argument("invalid forked machine output");
+    }
     if (address == nullptr) {
         throw std::invalid_argument("invalid address output");
     }
@@ -147,7 +150,7 @@ cm_error cm_jsonrpc_fork_server(const cm_machine *m, cm_machine **forked_m, cons
     const auto forked = cpp_m->fork_server();
     *address = cm_set_temp_string(forked.address);
     if (pid != nullptr) {
-        *pid = static_cast<int>(forked.pid);
+        *pid = forked.pid;
     }
     auto *cpp_forked_m = new jsonrpc_virtual_machine(forked.address);
     cpp_forked_m->set_cleanup_call(cpp_m->get_cleanup_call());
@@ -155,6 +158,9 @@ cm_error cm_jsonrpc_fork_server(const cm_machine *m, cm_machine **forked_m, cons
     *forked_m = convert_to_c(cpp_forked_m);
     return cm_result_success();
 } catch (...) {
+    if (forked_m != nullptr) {
+        *forked_m = nullptr;
+    }
     if (address != nullptr) {
         *address = nullptr;
     }

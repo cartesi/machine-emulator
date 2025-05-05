@@ -280,9 +280,12 @@ do_test("machine should have default config shadow register values", function(ma
     initial_reg_values.mvendorid = nil
     initial_reg_values.marchid = nil
     initial_reg_values.mimpid = nil
+    initial_reg_values.x0 = nil
     -- Check initialization and shadow reads
     for k, v in pairs(initial_reg_values) do
         assert(v == machine:read_word(machine:get_reg_address(k)))
+        machine:write_word(machine:get_reg_address(k), ~v)
+        assert(~v == machine:read_word(machine:get_reg_address(k)))
     end
 end)
 

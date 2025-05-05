@@ -158,6 +158,11 @@ public:
         return do_read_word(address);
     }
 
+    /// \brief Write the value of a word in the machine state.
+    void write_word(uint64_t address, uint64_t value) {
+        do_write_word(address, value);
+    }
+
     /// \brief Verify if dirty page maps are consistent.
     bool verify_dirty_page_maps() const {
         return do_verify_dirty_page_maps();
@@ -275,6 +280,7 @@ private:
     virtual uint64_t do_translate_virtual_address(uint64_t vaddr) = 0;
     virtual void do_replace_memory_range(const memory_range_config &new_range) = 0;
     virtual uint64_t do_read_word(uint64_t address) const = 0;
+    virtual void do_write_word(uint64_t address, uint64_t value) = 0;
     virtual bool do_verify_dirty_page_maps() const = 0;
     virtual machine_config do_get_initial_config() const = 0;
     virtual machine_runtime_config do_get_runtime_config() const = 0;

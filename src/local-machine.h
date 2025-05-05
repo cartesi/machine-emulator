@@ -64,6 +64,7 @@ private:
     uint64_t do_translate_virtual_address(uint64_t vaddr) override;
     void do_replace_memory_range(const memory_range_config &new_range) override;
     uint64_t do_read_word(uint64_t address) const override;
+    void do_write_word(uint64_t address, uint64_t value) override;
     bool do_verify_dirty_page_maps() const override;
     machine_config do_get_initial_config() const override;
     machine_runtime_config do_get_runtime_config() const override;

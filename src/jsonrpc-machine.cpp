@@ -749,6 +749,11 @@ uint64_t jsonrpc_machine::do_read_word(uint64_t address) const {
     return result;
 }
 
+void jsonrpc_machine::do_write_word(uint64_t address, uint64_t value) {
+    bool result = false;
+    request("machine.write_word", std::tie(address, value), result);
+}
+
 bool jsonrpc_machine::do_verify_merkle_tree() const {
     bool result = false;
     request("machine.verify_merkle_tree", std::tie(), result);

@@ -130,6 +130,10 @@ uint64_t local_machine::do_read_word(uint64_t address) const {
     return get_machine()->read_word(address);
 }
 
+void local_machine::do_write_word(uint64_t address, uint64_t value) {
+    get_machine()->write_word(address, value);
+}
+
 bool local_machine::do_verify_dirty_page_maps() const {
     return get_machine()->verify_dirty_page_maps();
 }

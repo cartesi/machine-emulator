@@ -121,6 +121,7 @@ private:
     void do_destroy() override;
     bool do_verify_dirty_page_maps() const override;
     uint64_t do_read_word(uint64_t address) const override;
+    void do_write_word(uint64_t address, uint64_t value) override;
     bool do_verify_merkle_tree() const override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
     address_range_descriptions do_get_address_ranges() const override;

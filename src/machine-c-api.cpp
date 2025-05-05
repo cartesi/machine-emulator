@@ -840,6 +840,14 @@ cm_error cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val) try 
     return cm_result_failure();
 }
 
+cm_error cm_write_word(cm_machine *m, uint64_t address, uint64_t val) try {
+    auto *cpp_m = convert_from_c(m);
+    cpp_m->write_word(address, val);
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
 cm_error cm_read_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length) try {
     const auto *cpp_m = convert_from_c(m);
     cpp_m->read_memory(address, data, length);

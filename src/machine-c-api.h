@@ -524,22 +524,30 @@ CM_API cm_error cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2
 /// \brief Reads the value of a word in the machine state, by its physical address.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param address Word address (aligned to 64-bit boundary).
-/// \param val Receives word value.
+/// \param val Receives word value (little-endian).
 /// \returns 0 for success, non zero code for error.
 /// \warning The implementation is slow when the word falls in a memory range mapped to a device.
 CM_API cm_error cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val);
 
+/// \brief Writes the value of a word in the machine state, by its physical address.
+/// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param address Word address (aligned to 64-bit boundary).
+/// \param val Word value to write (little-endian).
+/// \returns 0 for success, non zero code for error.
+/// \warning The implementation is slow when the word falls in a memory range mapped to a device.
+CM_API cm_error cm_write_word(cm_machine *m, uint64_t address, uint64_t val);
+
 /// \brief Reads the value of a register.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param reg Register to read.
-/// \param val Receives the value.
+/// \param val Receives the value (little-endian).
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_read_reg(const cm_machine *m, cm_reg reg, uint64_t *val);
 
 /// \brief Writes the value of a register.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param reg Register to write.
-/// \param val Value to write.
+/// \param val Value to write (little-endian).
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_write_reg(cm_machine *m, cm_reg reg, uint64_t val);
 

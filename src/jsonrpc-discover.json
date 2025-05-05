@@ -481,6 +481,35 @@
       }
     },
     {
+      "name": "machine.write_word",
+      "summary": "Writes a 64-bit word from memory (must be aligned)",
+      "params": [
+        {
+          "name": "address",
+          "description": "Starting physical address of word",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        },
+        {
+          "name": "value",
+          "description": "Value of word (little-endian)",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "description": "True when operation succeeded",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
       "name": "machine.read_memory",
       "summary": "Reads a span of memory from the state (must be contained in the same memory range)",
       "params": [

@@ -129,6 +129,7 @@ private:
     void do_set_runtime_config(const machine_runtime_config &r) override;
     void do_destroy() override;
     uint64_t do_read_word(uint64_t address) const override;
+    void do_write_word(uint64_t address, uint64_t value) override;
     machine_config do_get_initial_config() const override;
     hash_tree_stats do_get_hash_tree_stats(bool clear) override;
     bool do_verify_hash_tree() const override;

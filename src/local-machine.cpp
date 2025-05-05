@@ -138,6 +138,10 @@ uint64_t local_machine::do_read_word(uint64_t address) const {
     return get_machine()->read_word(address);
 }
 
+void local_machine::do_write_word(uint64_t address, uint64_t value) {
+    get_machine()->write_word(address, value);
+}
+
 hash_tree_stats local_machine::do_get_hash_tree_stats(bool clear) {
     return get_machine()->get_hash_tree_stats(clear);
 }

@@ -843,6 +843,16 @@ static int machine_obj_index_write_virtual_memory(lua_State *L) {
     return 0;
 }
 
+/// \brief This is the machine:write_word() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_write_word(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    if (cm_write_word(m.get(), luaL_checkinteger(L, 2), luaL_checkinteger(L, 3)) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    return 0;
+}
+
 /// \brief This is the machine:translate_virtual_address() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_translate_virtual_address(lua_State *L) {
@@ -1151,6 +1161,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"write_memory", machine_obj_index_write_memory},
     {"write_reg", machine_obj_index_write_reg},
     {"write_virtual_memory", machine_obj_index_write_virtual_memory},
+    {"write_word", machine_obj_index_write_word},
 });
 
 /// \brief This is the class() constructor implementation.

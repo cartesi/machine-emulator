@@ -468,6 +468,11 @@ BOOST_AUTO_TEST_CASE_NOLINT(read_word_null_machine_test) {
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
 }
 
+BOOST_AUTO_TEST_CASE_NOLINT(write_word_null_machine_test) {
+    cm_error error_code = cm_write_word(nullptr, 0x100, 0);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_INVALID_ARGUMENT);
+}
+
 BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_invalid_address_test, ordinary_machine_fixture) {
     uint64_t word_value = 0;
     cm_error error_code = cm_read_word(_machine, 0xffffffff, &word_value);
@@ -475,6 +480,15 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_word_invalid_address_test, ordinary_machine_
 
     std::string result = cm_get_last_error_message();
     std::string origin("attempted misaligned read from word");
+    BOOST_CHECK_EQUAL(origin, result);
+}
+
+BOOST_FIXTURE_TEST_CASE_NOLINT(write_word_invalid_address_test, ordinary_machine_fixture) {
+    cm_error error_code = cm_write_word(_machine, 0xffffffff, 0);
+    BOOST_CHECK_EQUAL(error_code, CM_ERROR_DOMAIN_ERROR);
+
+    std::string result = cm_get_last_error_message();
+    std::string origin("attempted misaligned write to word");
     BOOST_CHECK_EQUAL(origin, result);
 }
 
@@ -557,10 +571,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_word_basic_test, ordinary_machine_fixt
     uint64_t read_value = 0;
     uint64_t write_value = 0x1234;
     uint64_t address = 0x80000000;
-    std::array<uint8_t, sizeof(uint64_t)> write_data{};
-    memcpy(write_data.data(), &write_value, write_data.size());
 
-    cm_error error_code = cm_write_memory(_machine, address, write_data.data(), write_data.size());
+    cm_error error_code = cm_write_word(_machine, address, write_value);
     BOOST_CHECK_EQUAL(error_code, CM_ERROR_OK);
     BOOST_CHECK_EQUAL(std::string(""), std::string(cm_get_last_error_message()));
 

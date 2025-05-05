@@ -1175,6 +1175,22 @@ static json jsonrpc_machine_read_word_handler(const json &j, const std::shared_p
     return jsonrpc_response_ok(j, session->handler->machine->read_word(address));
 }
 
+/// \brief JSONRPC handler for the machine.write_word method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_machine_write_word_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    static const char *param_name[] = {"address", "value"};
+    auto args = parse_args<uint64_t, uint64_t>(j, param_name);
+    auto address = std::get<0>(args);
+    auto value = std::get<1>(args);
+    session->handler->machine->write_word(address, value);
+    return jsonrpc_response_ok(j);
+}
+
 /// \brief JSONRPC handler for the machine.read_memory method
 /// \param j JSON request object
 /// \param session HTTP session
@@ -1507,6 +1523,7 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.get_proof", jsonrpc_machine_get_proof_handler},
         {"machine.get_root_hash", jsonrpc_machine_get_root_hash_handler},
         {"machine.read_word", jsonrpc_machine_read_word_handler},
+        {"machine.write_word", jsonrpc_machine_write_word_handler},
         {"machine.read_memory", jsonrpc_machine_read_memory_handler},
         {"machine.write_memory", jsonrpc_machine_write_memory_handler},
         {"machine.read_virtual_memory", jsonrpc_machine_read_virtual_memory_handler},

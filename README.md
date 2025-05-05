@@ -2,7 +2,7 @@
 
 [![Latest Release](https://img.shields.io/github/v/release/cartesi/machine-emulator?label=version)](https://github.com/cartesi/machine-emulator/releases)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/cartesi/machine-emulator/build.yml?branch=main)](https://github.com/cartesi/machine-emulator/actions)
-[![License](https://img.shields.io/github/license/cartesi/machine-emulator)](LICENSE)
+[![License](https://img.shields.io/github/license/cartesi/machine-emulator)](LICENSES.md)
 
 The Cartesi Machine Emulator is the basis of Cartesi's verifiable computation framework.
 It is a portable, deterministic, high-performance RISC-V emulator (a.k.a. a virtual machine) that can run complex computations off-chain but supports on-chain verification via fraud proofs.

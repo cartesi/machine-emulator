@@ -94,6 +94,9 @@ void machine_config::adjust_backing_stores(const std::string &dir) {
 }
 
 machine_config machine_config::load(const std::string &dir) {
+    if (dir.empty()) {
+        throw std::invalid_argument{"directory name cannot be empty"};
+    }
     machine_config c;
     auto name = machine_config::get_config_filename(dir);
     std::ifstream ifs(name, std::ios::binary);
@@ -122,6 +125,9 @@ machine_config machine_config::load(const std::string &dir) {
 }
 
 void machine_config::store(const std::string &dir) const {
+    if (dir.empty()) {
+        throw std::invalid_argument{"directory name cannot be empty"};
+    }
     auto name = get_config_filename(dir);
     nlohmann::json j;
     j["archive_version"] = archive_version;

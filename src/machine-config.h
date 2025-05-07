@@ -29,6 +29,13 @@
 
 namespace cartesi {
 
+/// \brief Sharing modes
+enum class sharing_mode {
+    none,   ///< No sharing, all machine changes will be in-memory
+    config, ///< Share backing stores marked as shared in the machine configuration
+    all,    ///< Share all backing stores, all machine changes will be on-disk
+};
+
 /// \brief Machine config constants
 enum machine_config_constants {
     FLASH_DRIVE_MAX = 8,     ///< Maximum number of flash drives

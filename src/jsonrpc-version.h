@@ -22,7 +22,7 @@
 namespace cartesi {
 
 constexpr uint32_t JSONRPC_VERSION_MAJOR = 0;
-constexpr uint32_t JSONRPC_VERSION_MINOR = 5;
+constexpr uint32_t JSONRPC_VERSION_MINOR = 6;
 constexpr uint32_t JSONRPC_VERSION_PATCH = 0;
 constexpr const char *JSONRPC_VERSION_PRE_RELEASE = "";
 constexpr const char *JSONRPC_VERSION_BUILD = "";

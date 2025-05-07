@@ -281,7 +281,7 @@ void machine::init_dtb_contents(const machine_config &config) {
 }
 
 // ??D It is best to leave the std::move() on r because it may one day be necessary!
-machine::machine(machine_config c, machine_runtime_config r) :
+machine::machine(machine_config c, machine_runtime_config r, const std::string & /*dir*/) :
     m_c{std::move(c)}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
     m_r{std::move(r)}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
     m_ars{m_c},
@@ -320,8 +320,9 @@ static void load_hash(const std::string &dir, machine::hash_type &h) {
 }
 
 // ??D It is best to leave the std::move() on r because it may one day be necessary!
-// NOLINTNEXTLINE(hicpp-move-const-arg,performance-move-const-arg)
-machine::machine(const std::string &dir, machine_runtime_config r) : machine{machine_config::load(dir), std::move(r)} {
+machine::machine(const std::string &dir, machine_runtime_config r, sharing_mode /*sharing*/) :
+    // NOLINTNEXTLINE(hicpp-move-const-arg,performance-move-const-arg)
+    machine{machine_config::load(dir), std::move(r)} {
     if (m_r.skip_root_hash_check) {
         return;
     }
@@ -493,7 +494,10 @@ void machine::store_address_range(const address_range &ar, const std::string &di
     }
 }
 
-void machine::store(const std::string &dir) const {
+void machine::store(const std::string &dir, sharing_mode /*sharing*/) const {
+    if (dir.empty()) {
+        throw std::invalid_argument{"directory name cannot be empty"};
+    }
     if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error{"cannot store unreproducible machines"};
     }
@@ -513,6 +517,8 @@ void machine::store(const std::string &dir) const {
     c.store(dir);
     store_address_ranges(c, dir);
 }
+
+void machine::clone_stored(const std::string & /*from_dir*/, const std::string & /*to_dir*/) {}
 
 void machine::dump_insn_hist() {
 #ifdef DUMP_INSN_HIST

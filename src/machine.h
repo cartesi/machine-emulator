@@ -143,16 +143,22 @@ public:
     /// \brief Constructor from machine configuration
     /// \param config Machine config to use instantiating machine
     /// \param runtime Runtime config to use with machine
-    explicit machine(machine_config config, machine_runtime_config runtime = {});
+    explicit machine(machine_config config, machine_runtime_config runtime = {}, const std::string &dir = {});
 
     /// \brief Constructor from previously serialized directory
     /// \param directory Directory to load stored machine from
     /// \param runtime Runtime config to use with machine
-    explicit machine(const std::string &directory, machine_runtime_config runtime = {});
+    explicit machine(const std::string &directory, machine_runtime_config runtime = {},
+        sharing_mode sharing = sharing_mode::none);
 
     /// \brief Serialize entire state to directory
     /// \param directory Directory to store machine into
-    void store(const std::string &directory) const;
+    void store(const std::string &directory, sharing_mode sharing = sharing_mode::all) const;
+
+    /// \brief Clones a machine stored from source directory to destination directory.
+    /// \param from_dir Path to the source directory where the machine is stored.
+    /// \param to_dir Path to the destination directory where the cloned machine will be stored.
+    static void clone_stored(const std::string &from_dir, const std::string &to_dir);
 
     /// \brief Returns address range that covers a given physical memory region
     /// \param paddr Target physical address of start of region.

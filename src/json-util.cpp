@@ -232,6 +232,21 @@ static auto reg_from_name(const std::string &name) {
     return got->second;
 }
 
+static auto sharing_mode_to_name(sharing_mode sharing) {
+    switch (sharing) {
+        case sharing_mode::none:
+            return "none";
+        case sharing_mode::config:
+            return "config";
+        case sharing_mode::all:
+            return "all";
+        default:
+            throw std::domain_error{"invalid sharing mode"};
+            break;
+    }
+    return "";
+}
+
 static auto reg_to_name(machine::reg r) {
     using reg = machine::reg;
     switch (r) {
@@ -540,6 +555,16 @@ static auto reg_to_name(machine::reg r) {
     return "";
 }
 
+static sharing_mode sharing_mode_from_name(const std::string &name) {
+    const static std::unordered_map<std::string, sharing_mode> g_sharing_name = {{"none", sharing_mode::none},
+        {"config", sharing_mode::config}, {"all", sharing_mode::all}};
+    auto got = g_sharing_name.find(name);
+    if (got == g_sharing_name.end()) {
+        throw std::domain_error{"invalid sharing mode"};
+    }
+    return got->second;
+}
+
 static interpreter_break_reason interpreter_break_reason_from_name(const std::string &name) {
     using ibr = interpreter_break_reason;
     const static std::unordered_map<std::string, ibr> g_ibr_name = {{"failed", ibr::failed}, {"halted", ibr::halted},
@@ -728,6 +753,24 @@ template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t
     const std::string &path);
 
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, machine::reg &value,
+    const std::string &path);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, sharing_mode &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jk = j[key];
+    if (!jk.is_string()) {
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
+    }
+    value = sharing_mode_from_name(jk.template get<std::string>());
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, sharing_mode &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, sharing_mode &value,
     const std::string &path);
 
 template <typename K>
@@ -1746,6 +1789,10 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
 
 void to_json(nlohmann::json &j, const machine::reg &reg) {
     j = reg_to_name(reg);
+}
+
+void to_json(nlohmann::json &j, const sharing_mode &sharing) {
+    j = sharing_mode_to_name(sharing);
 }
 
 void to_json(nlohmann::json &j, const machine_merkle_tree::hash_type &h) {

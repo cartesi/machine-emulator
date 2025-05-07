@@ -221,6 +221,31 @@ static auto reg_from_name(const std::string &name) {
     return got->second;
 }
 
+static auto sharing_mode_to_name(sharing_mode sharing) {
+    switch (sharing) {
+        case sharing_mode::none:
+            return "none";
+        case sharing_mode::config:
+            return "config";
+        case sharing_mode::all:
+            return "all";
+        default:
+            throw std::domain_error{"invalid sharing mode"};
+            break;
+    }
+    return "";
+}
+
+static sharing_mode sharing_mode_from_name(const std::string &name) {
+    const static std::unordered_map<std::string, sharing_mode> g_sharing_name = {{"none", sharing_mode::none},
+        {"config", sharing_mode::config}, {"all", sharing_mode::all}};
+    auto got = g_sharing_name.find(name);
+    if (got == g_sharing_name.end()) {
+        throw std::domain_error{"invalid sharing mode"};
+    }
+    return got->second;
+}
+
 static auto reg_to_name(machine_reg r) {
     using reg = machine_reg;
     switch (r) {
@@ -780,6 +805,24 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, sharing_mode &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jk = j[key];
+    if (!jk.is_string()) {
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
+    }
+    value = sharing_mode_from_name(jk.template get<std::string>());
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, sharing_mode &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, sharing_mode &value,
+    const std::string &path);
+
+template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, interpreter_break_reason &value, const std::string &path) {
     if (!contains(j, key, path)) {
         return;
@@ -856,6 +899,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_runtime_con
     ju_get_opt_field(j[key], "skip_root_hash_store"s, value.skip_root_hash_store, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "skip_version_check"s, value.skip_version_check, path + to_string(key) + "/");
     ju_get_opt_field(j[key], "soft_yield"s, value.soft_yield, path + to_string(key) + "/");
+    ju_get_opt_field(j[key], "no_reserve"s, value.no_reserve, path + to_string(key) + "/");
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, machine_runtime_config &value,
@@ -1890,6 +1934,10 @@ void to_json(nlohmann::json &j, const machine_reg &reg) {
     j = reg_to_name(reg);
 }
 
+void to_json(nlohmann::json &j, const sharing_mode &sharing) {
+    j = sharing_mode_to_name(sharing);
+}
+
 void to_json(nlohmann::json &j, const base64_machine_hash &h) {
     j = encode_base64(h.get());
 }
@@ -2214,6 +2262,7 @@ void to_json(nlohmann::json &j, const machine_runtime_config &runtime) {
         {"skip_root_hash_store", runtime.skip_root_hash_store},
         {"skip_version_check", runtime.skip_version_check},
         {"soft_yield", runtime.soft_yield},
+        {"no_reserve", runtime.no_reserve},
     };
 }
 

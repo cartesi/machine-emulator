@@ -35,6 +35,10 @@ class machine;
 struct memory_address_range_config {
     ///< Whether memory is read-only on host. (If set, must be read-only on target as well)
     bool host_read_only{false};
+    ///< Whether host should not reserve memory when mapping the memory.
+    /// Only useful to create or load machines with large unused address space on host without enough memory or swap.
+    /// (Use with caution as the process may crash when running out of host memory)/
+    bool host_no_reserve{false};
     ///< Total amount of memory allocated by host. (Must be larger than what is needed by target)
     uint64_t host_length{0};
 };
@@ -42,12 +46,11 @@ struct memory_address_range_config {
 /// \file
 /// \brief An address range occupied by memory
 
-/// \brief An address range occupied by memory
 class memory_address_range : public address_range {
-
     unique_mmap_ptr<unsigned char> m_ptr; ///< Pointer to mapped memory
     unsigned char *m_host_memory;         ///< Start of associated memory region in host.
-    memory_address_range_config m_config; ///< Configuration passed to constructor.
+    memory_address_range_config m_config; ///< Memory configuration passed to constructor.
+    backing_store_config m_backing_store; ///< Backing store configuration passed to constructor.
     dirty_page_tree m_dpt;                ///< Tree of dirty pages.
     dense_hash_tree m_dht;                ///< Dense hash tree of pages.
 
@@ -66,7 +69,7 @@ public:
     /// and is not part of the backing storage, but can be used for other purposes.
     /// \p config.host_read_only Marks memory as read-only on host itself. Requires \p flags.W to be cleared as well.
     memory_address_range(const std::string &description, uint64_t start, uint64_t length, const pmas_flags &flags,
-        const backing_store_config &backing_store, const memory_address_range_config &memory_config);
+        const backing_store_config &backing_store = {}, const memory_address_range_config &memory_config = {});
 
     memory_address_range(const memory_address_range &) = delete;
     memory_address_range &operator=(const memory_address_range &) = delete;
@@ -88,6 +91,10 @@ private:
         return m_config.host_read_only;
     }
 
+    bool do_is_backing_store_shared() const noexcept override {
+        return m_backing_store.shared;
+    }
+
     dirty_page_tree &do_get_dirty_page_tree() noexcept override {
         return m_dpt;
     }
@@ -104,12 +111,6 @@ private:
         return m_dht;
     }
 };
-
-static inline auto make_memory_address_range(const std::string &description, uint64_t start, uint64_t length,
-    const pmas_flags &flags, const backing_store_config &backing_store = {},
-    const memory_address_range_config &config = {}) {
-    return memory_address_range{description, start, length, flags, backing_store, config};
-}
 
 } // namespace cartesi
 

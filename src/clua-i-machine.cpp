@@ -786,8 +786,23 @@ static int machine_obj_index_log_step_uarch(lua_State *L) {
 /// \brief This is the machine:store() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_store(lua_State *L) {
+    lua_settop(L, 3);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
-    if (cm_store(m.get(), luaL_checkstring(L, 2)) != 0) {
+    const char *dir = luaL_checkstring(L, 2);
+    const auto sharing = static_cast<cm_sharing_mode>(luaL_optinteger(L, 3, CM_SHARING_ALL));
+    if (cm_store(m.get(), dir, sharing) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    return 0;
+}
+
+/// \brief This is the machine:clone_stored() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_clone_stored(lua_State *L) {
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const char *from_dir = luaL_checkstring(L, 2);
+    const char *to_dir = luaL_checkstring(L, 3);
+    if (cm_clone_stored(m.get(), from_dir, to_dir) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     return 0;
@@ -959,12 +974,13 @@ static int machine_obj_index_is_empty(lua_State *L) {
 /// \brief This is the machine:create() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_create(lua_State *L) {
-    lua_settop(L, 3);
+    lua_settop(L, 4);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const char *runtime_config = !lua_isnil(L, 3) ? clua_check_json_string(L, 3) : nullptr;
+    const char *dir = luaL_optstring(L, 4, nullptr);
     // Create or load a machine depending on the type of the first argument
     const char *config = clua_check_json_string(L, 2);
-    if (cm_create(m.get(), config, runtime_config) != 0) {
+    if (cm_create(m.get(), config, runtime_config, dir) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     lua_settop(L, 1);
@@ -1004,11 +1020,12 @@ static int machine_obj_index_collect_uarch_cycle_root_hashes(lua_State *L) {
 /// \brief This is the machine:load() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_load(lua_State *L) {
-    lua_settop(L, 3);
+    lua_settop(L, 4);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const char *runtime_config = !lua_isnil(L, 3) ? clua_check_json_string(L, 3) : nullptr;
     const char *dir = luaL_checkstring(L, 2);
-    if (cm_load(m.get(), dir, runtime_config) != 0) {
+    const auto sharing = static_cast<cm_sharing_mode>(luaL_optinteger(L, 4, CM_SHARING_NONE));
+    if (cm_load(m.get(), dir, runtime_config, sharing) != 0) {
         return luaL_error(L, "%s", cm_get_last_error_message());
     }
     lua_settop(L, 1);
@@ -1151,6 +1168,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"send_cmio_response", machine_obj_index_send_cmio_response},
     {"set_runtime_config", machine_obj_index_set_runtime_config},
     {"store", machine_obj_index_store},
+    {"clone_stored", machine_obj_index_clone_stored},
     {"swap", machine_obj_index_swap},
     {"translate_virtual_address", machine_obj_index_translate_virtual_address},
     {"verify_hash_tree", machine_obj_index_verify_hash_tree},
@@ -1169,7 +1187,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
 static int machine_meta_call(lua_State *L) {
     // This receives the source machine that is being "called" as the first argument,
     // either a config or a directory as second argument, and an optional runtime config as third argument.
-    lua_settop(L, 3);
+    lua_settop(L, 4);
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1); // source machine
     // We could be creating a local machine or a remote machine.
     // When we call cm_clone_empty(m.get(), ...), it creates a new empty object from the same underlying type as
@@ -1182,12 +1200,14 @@ static int machine_meta_call(lua_State *L) {
     // Create or load a machine depending on the type of the first argument
     if (lua_isstring(L, 2) == 0) {
         const char *config = clua_check_json_string(L, 2);
-        if (cm_create(new_m.get(), config, runtime_config) != 0) {
+        const char *dir = luaL_optstring(L, 4, nullptr);
+        if (cm_create(new_m.get(), config, runtime_config, dir) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     } else {
         const char *dir = luaL_checkstring(L, 2);
-        if (cm_load(new_m.get(), dir, runtime_config) != 0) {
+        const auto sharing = static_cast<cm_sharing_mode>(luaL_optinteger(L, 4, CM_SHARING_NONE));
+        if (cm_load(new_m.get(), dir, runtime_config, sharing) != 0) {
             return luaL_error(L, "%s", cm_get_last_error_message());
         }
     }

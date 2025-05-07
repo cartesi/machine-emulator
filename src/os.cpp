@@ -14,8 +14,12 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "os.h"
 #include "os-features.h"
+
+// Must be included first
+#include "os-posix-compat.h"
+
+#include "os.h"
 
 #include <array>
 #include <cerrno>
@@ -37,12 +41,6 @@
 #include <csignal>
 #endif
 
-#ifdef HAVE_THREADS
-#include <future>
-#include <mutex>
-#include <thread>
-#endif
-
 #if defined(HAVE_TTY) || defined(HAVE_TERMIOS) || defined(_WIN32)
 #include <fcntl.h> // open
 #endif
@@ -54,30 +52,7 @@
 #endif
 #endif
 
-#if defined(HAVE_MKDIR) || defined(_WIN32)
-#include <sys/stat.h> // fstat/mkdir
-#endif
-
 #ifdef _WIN32
-
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-
-#ifndef _CRT_SECURE_NO_WARNINGS
-#define _CRT_SECURE_NO_WARNINGS
-#endif
-
-#include <direct.h> // mkdir
-#include <io.h>     // _write/_close
-#include <windows.h>
-
-#ifndef STDOUT_FILENO
-#define STDOUT_FILENO 0
-#endif
-
-#define plat_write _write
-#define plat_mkdir(a, mode) _mkdir(a)
 
 #if defined(HAVE_SELECT)
 #include <winsock2.h> // select
@@ -92,9 +67,6 @@
 #if defined(HAVE_SELECT)
 #include <sys/select.h> // select
 #endif
-
-#define plat_write write
-#define plat_mkdir mkdir
 
 #endif // _WIN32
 
@@ -532,7 +504,7 @@ void os_putchar(uint8_t ch) {
     } else {
         // In interactive sessions we want to immediately write the character to stdout,
         // without any buffering.
-        if (plat_write(STDOUT_FILENO, &ch, 1) < 1) {
+        if (write(STDOUT_FILENO, &ch, 1) < 1) {
             ;
         }
     }
@@ -551,55 +523,11 @@ void os_putchars(const uint8_t *data, size_t len) {
     }
 }
 
-int os_mkdir(const char *path, [[maybe_unused]] int mode) {
-#ifdef HAVE_MKDIR
-    return plat_mkdir(path, mode);
-#else
-    return -1;
-#endif // HAVE_MKDIR
-}
-
 int64_t os_now_us() {
     static const std::chrono::time_point<std::chrono::high_resolution_clock> start{
         std::chrono::high_resolution_clock::now()};
     auto end = std::chrono::high_resolution_clock::now();
     return static_cast<int64_t>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
-}
-
-uint64_t os_get_concurrency() {
-#ifdef HAVE_THREADS
-    return std::thread::hardware_concurrency();
-#else
-    return 1;
-#endif
-}
-
-bool os_parallel_for(uint64_t n, const std::function<bool(uint64_t j, const parallel_for_mutex &mutex)> &task) {
-#ifdef HAVE_THREADS
-    if (n > 1) {
-        std::mutex mutex;
-        const parallel_for_mutex for_mutex = {.lock = [&] { mutex.lock(); }, .unlock = [&] { mutex.unlock(); }};
-        std::vector<std::future<bool>> futures;
-        futures.reserve(n);
-        for (uint64_t j = 0; j < n; ++j) {
-            futures.emplace_back(std::async(std::launch::async, task, j, for_mutex));
-        }
-        // Check if any thread failed
-        bool succeeded = true;
-        for (auto &f : futures) {
-            succeeded = succeeded && f.get();
-        }
-        // Return overall status
-        return succeeded;
-    }
-#endif
-    // Run without extra threads when concurrency is 1 or as fallback
-    const parallel_for_mutex for_mutex{.lock = [] {}, .unlock = [] {}};
-    bool succeeded = true;
-    for (uint64_t j = 0; j < n; ++j) {
-        succeeded = succeeded && task(j, for_mutex);
-    }
-    return succeeded;
 }
 
 bool os_select_fds(const os_select_before_callback &before_cb, const os_select_after_callback &after_cb,
@@ -661,25 +589,6 @@ void os_sleep_us(uint64_t timeout_us) {
 #elif defined(_WIN32)
     Sleep(timeout_us / 1000);
 #endif
-}
-
-int64_t os_get_file_length(const char *filename, const char *text) {
-    auto fp = make_unique_fopen(filename, "rb");
-    if (fseek(fp.get(), 0, SEEK_END) != 0) {
-        throw std::system_error{errno, std::generic_category(),
-            "unable to obtain length of file '"s + filename + "' "s + text};
-    }
-    const auto length = ftell(fp.get());
-    if (length < 0) {
-        throw std::system_error{errno, std::generic_category(),
-            "unable to obtain length of file '"s + filename + "' "s + text};
-    }
-    return length;
-}
-
-bool os_file_exists(const char *filename) {
-    struct stat buffer{};
-    return (stat(filename, &buffer) == 0);
 }
 
 } // namespace cartesi

@@ -64,7 +64,7 @@
 #define HAVE_SELECT
 #endif
 
-#if !defined(NO_POSIX_FILE) && !defined(__wasi__)
+#if !defined(NO_POSIX_FS) && !defined(__wasi__)
 #define HAVE_POSIX_FS
 #endif
 
@@ -78,6 +78,14 @@
 
 #if !defined(NO_FLOCK) && (defined(__linux__) || defined(__unix__) || defined(__APPLE__)) && !defined(__wasi__)
 #define HAVE_FLOCK
+#endif
+
+#if !defined(NO_FICLONE) && defined(__linux__) && defined(HAVE_IOCTL)
+#define HAVE_FICLONE
+#endif
+
+#if !defined(NO_CLONEFILE) && defined(__APPLE__)
+#define HAVE_CLONEFILE
 #endif
 
 #endif

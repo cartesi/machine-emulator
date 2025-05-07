@@ -313,6 +313,12 @@ public:
         return do_is_host_read_only();
     }
 
+    /// \brief Returns true if the mapped memory is shared with a backing store in the host
+    /// \returns True if the memory is shared in the host
+    bool is_backing_store_shared() const noexcept {
+        return do_is_backing_store_shared();
+    }
+
 protected:
     /// \brief Returns number of levels in a tree where each leaf is a page
     /// \param length Length of range, in bytes
@@ -348,6 +354,10 @@ private:
     }
 
     virtual bool do_is_host_read_only() const noexcept {
+        return false;
+    }
+
+    virtual bool do_is_backing_store_shared() const noexcept {
         return false;
     }
 

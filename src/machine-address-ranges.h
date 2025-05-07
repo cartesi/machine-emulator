@@ -31,6 +31,7 @@
 #include "machine-config.h"
 #include "machine-runtime-config.h"
 #include "meta.h"
+#include "scope-remove.h"
 #include "virtio-address-range.h"
 
 namespace cartesi {
@@ -49,8 +50,12 @@ class machine_address_ranges {
 
 public:
     /// \brief Constructor
-    /// \param c Machine configuration
-    explicit machine_address_ranges(machine_config &c);
+    /// \param config Machine configuration
+    /// \param runtime_config Runtime configuration
+    /// \param dir Directory for backing store files (can be empty)
+    /// \param remover Scope remove object to remove created files on failure
+    explicit machine_address_ranges(const machine_config &config, const machine_runtime_config &runtime_config,
+        const std::string &dir, scope_remove &remover);
 
     /// \brief Const view of all address ranges
     auto all() const {
@@ -190,8 +195,9 @@ private:
 
     /// \brief Adds flash drive address ranges
     /// \param flash_drive Flash drive configurations
+    /// \param runtime_config Runtime configuration
     /// \detail This modifies the flash drive configuration with automatic start/length from backing storage, if needed
-    void push_back_flash_drives(flash_drive_configs &flash_drive);
+    void push_back_flash_drives(const flash_drive_configs &flash_drive, const machine_runtime_config &runtime_config);
 
     /// \brief Adds virtio address ranges
     /// \param virtio VirtIO configurations

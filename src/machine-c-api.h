@@ -128,6 +128,13 @@ typedef enum cm_cmio_yield_reason {
     CM_CMIO_YIELD_REASON_INSPECT_STATE = 1,       ///< Input in rx buffer is an inspect state
 } cm_cmio_yield_reason;
 
+/// \brief Sharing modes.
+typedef enum cm_sharing_mode {
+    CM_SHARING_NONE = 0,   ///< No sharing, all machine changes will be in-memory
+    CM_SHARING_CONFIG = 1, ///< Share backing stores marked as shared in the machine configuration
+    CM_SHARING_ALL = 2,    ///< Share all backing stores, all machine changes will be on-disk
+} cm_sharing_mode;
+
 /// \brief Machine x, f, and control and status registers.
 typedef enum cm_reg {
     // Machine x registers
@@ -398,44 +405,66 @@ CM_API void cm_delete(cm_machine *m);
 /// }
 /// ```
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
+/// \param dir Directory to create an on-disk machine. If NULL or empty, the machine will be created in-memory.
 /// \returns 0 for success, non zero code for error.
 /// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
-CM_API cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config);
+CM_API cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config, const char *dir);
 
 /// \brief Combines cm_new() and cm_create() for convenience.
 /// \param config Machine configuration as a JSON object in a string (at least RAM length must be set).
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \param new_m Receives the pointer to the new machine object with a machine instance. Set to NULL on failure.
+/// \param dir Directory to create an on-disk machine. If NULL or empty, the machine will be created in-memory.
 /// \returns 0 for success, non zero code for error.
 /// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
 /// \details Use cm_delete() to delete the object.
 /// \details See cm_new() and cm_create() for more details.
-CM_API cm_error cm_create_new(const char *config, const char *runtime_config, cm_machine **new_m);
+CM_API cm_error cm_create_new(const char *config, const char *runtime_config, const char *dir, cm_machine **new_m);
 
 /// \brief Loads a new machine instance from a previously stored directory.
 /// \param m Pointer to an empty machine object (does not hold a machine instance).
 /// \param dir Directory where previous machine is stored.
+/// \param sharing Backing stores sharing mode.
+/// CM_SHARING_NONE: Machine state will be fully in-memory.
+/// CM_SHARING_CONFIG: Machine state will be on-disk for shared backing stores, but in-memory for everything else.
+/// CM_SHARING_ALL: Machine state will be fully on-disk.
+/// \param new_m Receives the pointer to the new machine object with a machine instance. Set to NULL on failure.
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
 /// \returns 0 for success, non zero code for error.
 /// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
-CM_API cm_error cm_load(cm_machine *m, const char *dir, const char *runtime_config);
+CM_API cm_error cm_load(cm_machine *m, const char *dir, const char *runtime_config, cm_sharing_mode sharing);
 
 /// \brief Combines cm_new() and cm_load() for convenience.
 /// \param dir Directory where previous machine is stored.
 /// \param runtime_config Machine runtime configuration as a JSON object in a string (can be NULL).
-/// \param new_m Receives the pointer to the new machine object with a machine instance. Set to NULL on failure.
+/// \param sharing Backing stores sharing mode.
 /// \returns 0 for success, non zero code for error.
 /// \details Use cm_destroy() to destroy the machine instance and remove it from the object.
 /// \details Use cm_delete() to delete the object.
-/// \details See cm_new() and cm_load() for more details.
-CM_API cm_error cm_load_new(const char *dir, const char *runtime_config, cm_machine **new_m);
+/// \details See cm_load() and cm_create() for more details.
+CM_API cm_error cm_load_new(const char *dir, const char *runtime_config, cm_sharing_mode sharing, cm_machine **new_m);
 
 /// \brief Stores a machine instance to a directory, serializing its entire state.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param dir Directory where the machine will be stored.
+/// \param sharing Specifies how machine changes are reflected in the new store.
+/// CM_SHARING_NONE: Copies backing stores from the initial machine state (rarely useful).
+/// CM_SHARING_CONFIG: Store current machine state for shared backing stores; others are copied from the initial state.
+/// CM_SHARING_ALL: Store current machine state for all backing stores.
 /// \returns 0 for success, non zero code for error.
 /// \details The function refuses to store into an existing directory (it will not overwrite an existing machine).
-CM_API cm_error cm_store(const cm_machine *m, const char *dir);
+CM_API cm_error cm_store(const cm_machine *m, const char *dir, cm_sharing_mode sharing);
+
+/// \brief Clones a machine stored from source directory to destination directory.
+/// \param m Pointer to a machine object. Can be NULL (for local machines).
+/// \param from_dir Path to the source directory containing a valid machine to be cloned.
+/// \param to_dir Path to the destination directory where the cloned machine will be stored.
+/// \returns 0 for success, non zero code for error.
+/// \details Read-only files are copied using hard links on filesystems that support them.
+/// Writable files are copied using reflinks on copy-on-write filesystems.
+/// Sparsity of files is preserved.
+/// The source directory machine must not have a running instance.
+CM_API cm_error cm_clone_stored(const cm_machine *m, const char *from_dir, const char *to_dir);
 
 /// \brief Destroy a machine instance and remove it from the object.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).

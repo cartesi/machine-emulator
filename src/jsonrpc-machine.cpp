@@ -554,9 +554,10 @@ jsonrpc_machine::jsonrpc_machine(const std::string & /*address*/, fork_result & 
 
 #endif
 
-void jsonrpc_machine::do_load(const std::string &directory, const machine_runtime_config &runtime) {
+void jsonrpc_machine::do_load(const std::string &directory, const machine_runtime_config &runtime,
+    sharing_mode sharing) {
     bool result = false;
-    request("machine.load", std::tie(directory, runtime), result);
+    request("machine.load", std::tie(directory, runtime, sharing), result);
 }
 
 bool jsonrpc_machine::do_is_empty() const {
@@ -584,9 +585,10 @@ i_machine *jsonrpc_machine::do_clone_empty() const {
     return clone;
 };
 
-void jsonrpc_machine::do_create(const machine_config &config, const machine_runtime_config &runtime) {
+void jsonrpc_machine::do_create(const machine_config &config, const machine_runtime_config &runtime,
+    const std::string &dir) {
     bool result = false;
-    request("machine.create", std::tie(config, runtime), result);
+    request("machine.create", std::tie(config, runtime, dir), result);
 }
 
 jsonrpc_machine::~jsonrpc_machine() {
@@ -654,9 +656,14 @@ interpreter_break_reason jsonrpc_machine::do_log_step(uint64_t mcycle_count, con
     return result;
 }
 
-void jsonrpc_machine::do_store(const std::string &directory) const {
+void jsonrpc_machine::do_store(const std::string &directory, sharing_mode sharing) const {
     bool result = false;
-    request("machine.store", std::tie(directory), result);
+    request("machine.store", std::tie(directory, sharing), result);
+}
+
+void jsonrpc_machine::do_clone_stored(const std::string &from_dir, const std::string &to_dir) const {
+    bool result = false;
+    request("machine.clone_stored", std::tie(from_dir, to_dir), result);
 }
 
 uint64_t jsonrpc_machine::do_read_reg(reg r) const {

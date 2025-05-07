@@ -780,6 +780,9 @@ static std::string endpoint_to_string(const tcp::endpoint &endpoint) {
 /// server.
 static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_session> &session) {
     jsonrpc_check_no_params(j);
+    if (session->handler->machine && session->handler->machine->has_shared_address_range()) {
+        throw std::domain_error("cannot fork machines with shared address ranges");
+    }
     // Listen in desired port before fork so failures happen still in parent,
     // who can directly report them to client
     tcp::acceptor acceptor{session->handler->ioc, tcp::endpoint{session->handler->local_endpoint.address(), 0}};
@@ -846,8 +849,9 @@ static json jsonrpc_machine_load_handler(const json &j, const std::shared_ptr<ht
     if (session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "machine exists");
     }
-    static const char *param_name[] = {"directory", "runtime_config"};
-    auto args = parse_args<std::string, cartesi::optional_param<cartesi::machine_runtime_config>>(j, param_name);
+    static const char *param_name[] = {"directory", "runtime_config", "sharing"};
+    auto args = parse_args<std::string, cartesi::optional_param<cartesi::machine_runtime_config>,
+        cartesi::optional_param<cartesi::sharing_mode>>(j, param_name);
     switch (count_args(args)) {
         case 1:
             session->handler->machine = std::make_unique<cartesi::machine>(std::get<0>(args));
@@ -855,6 +859,11 @@ static json jsonrpc_machine_load_handler(const json &j, const std::shared_ptr<ht
         case 2:
             session->handler->machine = std::make_unique<cartesi::machine>(std::get<0>(args),
                 std::get<1>(args).value()); // NOLINT(bugprone-unchecked-optional-access)
+            break;
+        case 3:
+            session->handler->machine = std::make_unique<cartesi::machine>(std::get<0>(args),
+                std::get<1>(args).value(),  // NOLINT(bugprone-unchecked-optional-access)
+                std::get<2>(args).value()); // NOLINT(bugprone-unchecked-optional-access)
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};
@@ -870,9 +879,9 @@ static json jsonrpc_machine_create_handler(const json &j, const std::shared_ptr<
     if (session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "machine exists");
     }
-    static const char *param_name[] = {"config", "runtime_config"};
-    auto args =
-        parse_args<cartesi::machine_config, cartesi::optional_param<cartesi::machine_runtime_config>>(j, param_name);
+    static const char *param_name[] = {"config", "runtime_config", "directory"};
+    auto args = parse_args<cartesi::machine_config, cartesi::optional_param<cartesi::machine_runtime_config>,
+        cartesi::optional_param<std::string>>(j, param_name);
     switch (count_args(args)) {
         case 1:
             session->handler->machine = std::make_unique<cartesi::machine>(std::get<0>(args));
@@ -880,6 +889,11 @@ static json jsonrpc_machine_create_handler(const json &j, const std::shared_ptr<
         case 2:
             session->handler->machine = std::make_unique<cartesi::machine>(std::get<0>(args),
                 std::get<1>(args).value()); // // NOLINT(bugprone-unchecked-optional-access)
+            break;
+        case 3:
+            session->handler->machine = std::make_unique<cartesi::machine>(std::get<0>(args),
+                std::get<1>(args).value(),  // NOLINT(bugprone-unchecked-optional-access)
+                std::get<2>(args).value()); // NOLINT(bugprone-unchecked-optional-access)
             break;
         default:
             throw std::runtime_error{"error detecting number of arguments"};
@@ -971,9 +985,23 @@ static json jsonrpc_machine_store_handler(const json &j, const std::shared_ptr<h
     if (!session->handler->machine) {
         return jsonrpc_response_invalid_request(j, "no machine");
     }
-    static const char *param_name[] = {"directory"};
-    auto args = parse_args<std::string>(j, param_name);
-    session->handler->machine->store(std::get<0>(args));
+    static const char *param_name[] = {"directory", "sharing"};
+    auto args = parse_args<std::string, cartesi::sharing_mode>(j, param_name);
+    session->handler->machine->store(std::get<0>(args), std::get<1>(args));
+    return jsonrpc_response_ok(j);
+}
+
+/// \brief JSONRPC handler for the machine.clone_stored method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_machine_clone_stored_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    static const char *param_name[] = {"from_dir", "to_dir"};
+    auto args = parse_args<std::string, std::string>(j, param_name);
+    cartesi::machine::clone_stored(std::get<0>(args), std::get<1>(args));
     return jsonrpc_response_ok(j);
 }
 
@@ -1510,6 +1538,7 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.load", jsonrpc_machine_load_handler},
         {"machine.destroy", jsonrpc_machine_destroy_handler},
         {"machine.store", jsonrpc_machine_store_handler},
+        {"machine.clone_stored", jsonrpc_machine_clone_stored_handler},
         {"machine.run", jsonrpc_machine_run_handler},
         {"machine.log_step", jsonrpc_machine_log_step_handler},
         {"machine.run_uarch", jsonrpc_machine_run_uarch_handler},

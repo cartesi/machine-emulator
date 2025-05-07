@@ -90,43 +90,8 @@ void os_putchars(const uint8_t *data, size_t len);
 /// \param yes If true, putchar is silenced
 void os_silence_putchar(bool yes);
 
-/// \brief Creates a new directory
-int os_mkdir(const char *path, int mode);
-
 /// \brief Get time elapsed since its first call with microsecond precision
 int64_t os_now_us();
-
-/// \brief Get the number of concurrent threads supported by the OS
-uint64_t os_get_concurrency();
-
-/// \brief Mutex for os_parallel_for()
-struct parallel_for_mutex {
-    std::function<void()> lock;
-    std::function<void()> unlock;
-};
-
-/// \brief Mutex guard for os_parallel_for()
-struct parallel_for_mutex_guard {
-    explicit parallel_for_mutex_guard(const parallel_for_mutex &mutex) : mutex(mutex) {
-        mutex.lock();
-    }
-    ~parallel_for_mutex_guard() {
-        mutex.unlock();
-    }
-
-    parallel_for_mutex_guard() = delete;
-    parallel_for_mutex_guard(const parallel_for_mutex_guard &) = default;
-    parallel_for_mutex_guard(parallel_for_mutex_guard &&) = default;
-    parallel_for_mutex_guard &operator=(const parallel_for_mutex_guard &) = delete;
-    parallel_for_mutex_guard &operator=(parallel_for_mutex_guard &&) = delete;
-
-private:
-    parallel_for_mutex mutex;
-};
-
-/// \brief Runs a for loop in parallel using up to n threads
-/// \return True if all thread tasks succeeded
-bool os_parallel_for(uint64_t n, const std::function<bool(uint64_t j, const parallel_for_mutex &mutex)> &task);
 
 // Callbacks used by os_select_fds().
 using os_select_before_callback = std::function<void(select_fd_sets *fds, uint64_t *timeout_us)>;
@@ -145,12 +110,6 @@ void os_disable_sigpipe();
 
 /// \brief Sleep until timeout_us microseconds elapsed
 void os_sleep_us(uint64_t timeout_us);
-
-/// \brief Get the length of a file
-int64_t os_get_file_length(const char *filename, const char *text = "");
-
-/// \brief Check if a file exists
-bool os_file_exists(const char *filename);
 
 } // namespace cartesi
 

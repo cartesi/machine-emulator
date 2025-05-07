@@ -104,13 +104,15 @@ public:
 private:
     i_machine *do_clone_empty() const override;
     bool do_is_empty() const override;
-    void do_create(const machine_config &config, const machine_runtime_config &runtime) override;
-    void do_load(const std::string &directory, const machine_runtime_config &runtime) override;
+    void do_create(const machine_config &config, const machine_runtime_config &runtime,
+        const std::string &dir) override;
+    void do_load(const std::string &directory, const machine_runtime_config &runtime, sharing_mode sharing) override;
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
     void do_collect_mcycle_root_hashes(uint64_t mcycle_phase, uint64_t mcycle_period, uint64_t period_count,
         mcycle_root_hashes &result) override;
     interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) override;
-    void do_store(const std::string &dir) const override;
+    void do_store(const std::string &dir, sharing_mode sharing) const override;
+    void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const override;
     uint64_t do_read_reg(reg r) const override;
     void do_write_reg(reg w, uint64_t val) override;
     void do_read_memory(uint64_t address, unsigned char *data, uint64_t length) const override;

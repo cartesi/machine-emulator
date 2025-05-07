@@ -43,6 +43,7 @@
 #include "os.h"
 #include "pmas-constants.h"
 #include "processor-state.h"
+#include "scope-remove.h"
 #include "shadow-tlb.h"
 #include "uarch-cycle-root-hashes.h"
 #include "uarch-interpret.h"
@@ -64,7 +65,7 @@ constexpr skip_hash_tree_update_t skip_hash_tree_update;
 /// \brief Cartesi Machine implementation
 class machine final {
 private:
-    machine_config m_c;                   ///< Copy of initialization config
+    const machine_config m_c;             ///< Copy of initialization config
     machine_runtime_config m_r;           ///< Copy of initialization runtime config
     mutable machine_address_ranges m_ars; ///< Address ranges
     mutable hash_tree m_ht;               ///< Top level hash tree
@@ -81,7 +82,7 @@ private:
     /// \brief Initializes processor
     /// \param p Processor configuration
     /// \param r Machine runtime configuration
-    void init_processor(processor_config &p, const machine_runtime_config &r);
+    void init_processor(const processor_config &p, const machine_runtime_config &r);
 
     /// \brief Initializes microarchitecture processor
     /// \param c Microarchitecture processor configuration
@@ -115,16 +116,6 @@ private:
     /// \details The counter is key is the concatenation of \p domain with \p name.
     static std::string get_counter_key(const char *name, const char *domain = nullptr);
 
-    /// \brief Stores address ranges into files for serialization
-    /// \param c Serialization machine config
-    /// \param dir Directory where address ranges will be stored
-    void store_address_ranges(const machine_config &c, const std::string &dir) const;
-
-    /// \brief Stores address range into files for serialization
-    /// \param ar Address range to store
-    /// \param dir Directory where address ranges will be stored
-    static void store_address_range(const address_range &ar, const std::string &dir);
-
     /// \brief Checks if the machine has VirtIO devices.
     /// \returns True if at least one VirtIO device is present.
     bool has_virtio_devices() const;
@@ -147,16 +138,24 @@ public:
     /// \brief Constructor from machine configuration
     /// \param config Machine config to use instantiating machine
     /// \param runtime Runtime config to use with machine
-    explicit machine(machine_config config, machine_runtime_config runtime = {});
+    /// \param remover Object that may remove created files and directories if construction fails
+    explicit machine(machine_config config, machine_runtime_config runtime = {}, const std::string &dir = {},
+        scope_remove remover = {});
 
     /// \brief Constructor from previously serialized directory
     /// \param directory Directory to load stored machine from
     /// \param runtime Runtime config to use with machine
-    explicit machine(const std::string &directory, machine_runtime_config runtime = {});
+    explicit machine(const std::string &directory, machine_runtime_config runtime = {},
+        sharing_mode sharing = sharing_mode::none);
 
     /// \brief Serialize entire state to directory
     /// \param directory Directory to store machine into
-    void store(const std::string &directory) const;
+    void store(const std::string &directory, sharing_mode sharing = sharing_mode::all) const;
+
+    /// \brief Clones a machine stored from source directory to destination directory.
+    /// \param from_dir Path to the source directory where the machine is stored.
+    /// \param to_dir Path to the destination directory where the cloned machine will be stored.
+    static void clone_stored(const std::string &from_dir, const std::string &to_dir);
 
     /// \brief Returns address range that covers a given physical memory region
     /// \param paddr Target physical address of start of region.
@@ -587,6 +586,11 @@ public:
     /// \brief Returns hash tree hash function
     hash_function_type get_hash_function() const {
         return m_c.hash_tree.hash_function;
+    }
+
+    /// \brief Returns whether the machine contains a shared address range
+    bool has_shared_address_range() const {
+        return std::ranges::any_of(m_ars.all(), [](const auto &ar) { return ar.is_backing_store_shared(); });
     }
 };
 

@@ -365,6 +365,7 @@ LIBCARTESI_OBJS:= \
 	memory-address-range.o \
 	os.o \
 	os-mmap.o \
+	os-filesystem.o \
 	plic-address-range.o \
 	pristine-merkle-tree.o \
 	replay-step-state-access-interop.o \

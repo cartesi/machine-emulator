@@ -28,6 +28,7 @@
 #include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
 #include "machine.h"
+#include "os-filesystem.h"
 #include "pmas.h"
 #include "shadow-tlb.h"
 #include "unique-c-ptr.h"
@@ -81,7 +82,7 @@ public:
     /// \param m reference to machine
     /// \details The log file is saved when finish() is called
     record_step_state_access(context &context, machine &m) : m_context(context), m_m(m) {
-        if (os_file_exists(m_context.filename.c_str())) {
+        if (os::exists(m_context.filename)) {
             throw std::runtime_error("file already exists");
         }
     }

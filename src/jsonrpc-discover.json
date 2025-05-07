@@ -130,6 +130,13 @@
           "schema": {
             "$ref": "#/components/schemas/MachineRuntimeConfig"
           }
+        },
+        {
+          "name": "directory",
+          "description": "Directory to create an on-disk machine instance",
+          "schema": {
+            "type": "string"
+          }
         }
       ],
       "result": {
@@ -158,6 +165,14 @@
           "required": false,
           "schema": {
             "$ref": "#/components/schemas/MachineRuntimeConfig"
+          }
+        },
+        {
+          "name": "sharing",
+          "description": "Backing stores sharing mode",
+          "required": false,
+          "schema": {
+            "$ref": "#/components/schemas/SharingMode"
           }
         }
       ],
@@ -188,6 +203,43 @@
         {
           "name": "directory",
           "description": "Directory to stored machine instance",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "sharing",
+          "description": "Backing stores sharing mode",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/SharingMode"
+          }
+        }
+      ],
+      "result": {
+        "name": "status",
+        "description": "True when operation succeeded",
+        "schema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "name": "machine.clone_stored",
+      "summary": "Clones a machine stored from source directory to destination directory",
+      "params": [
+        {
+          "name": "from_dir",
+          "description": "Source directory",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        },
+        {
+          "name": "to_dir",
+          "description": "Destination directory",
           "required": true,
           "schema": {
             "type": "string"
@@ -1145,6 +1197,9 @@
           },
           "soft_yield": {
             "type": "boolean"
+          },
+          "no_reserve": {
+            "type": "boolean"
           }
         }
       },
@@ -2065,6 +2120,10 @@
           }
         },
         "required": ["log_type", "accesses"]
+      },
+      "SharingMode": {
+        "title": "SharingMode",
+        "enum": ["none", "config", "all"]
       },
       "REG": {
         "title": "REG",

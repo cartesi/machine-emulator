@@ -14,25 +14,10 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef _CRT_SECURE_NO_WARNINGS
-#define _CRT_SECURE_NO_WARNINGS
-#endif
-#include <windows.h>
-#endif // _WIN32
-
-#include <cstring>
-#include <stdexcept>
-#include <system_error>
-
 #include "os-features.h"
-#include "os-mmap.h"
-#include "scope-exit.h"
 
-//------------------------------------------------------------------------------
+// Must be included before
+#include "os-posix-compat.h"
 
 #if defined(HAVE_MMAP)
 #include <fcntl.h>    // open
@@ -47,6 +32,15 @@
 #if defined(HAVE_FLOCK)
 #include <sys/file.h> // flock
 #endif
+
+#include "os-mmap.h"
+
+#include "scope-exit.h"
+
+#include <cerrno>
+#include <cstring>
+#include <stdexcept>
+#include <system_error>
 
 namespace cartesi {
 
@@ -76,14 +70,8 @@ uint64_t os_get_mmap_page_size() {
 os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string &backing_filename,
     uint64_t backing_length) {
     // Check some preconditions
-    if (backing_filename.empty() && (flags.lock || flags.shared || flags.create)) {
+    if (backing_filename.empty() && flags.shared) {
         throw std::invalid_argument{"backing filename must be specified"s};
-    }
-    if (flags.create && !flags.shared) {
-        throw std::invalid_argument{"created backing files must be shared"s};
-    }
-    if (flags.read_only && flags.shared && (flags.create || flags.truncate)) {
-        throw std::invalid_argument{"cannot create or truncate backing files that are shared read-only"s};
     }
     if (length == 0) {
         throw std::invalid_argument{"memory map length cannot be zero"s};
@@ -109,10 +97,6 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
         if (backing_fd >= 0) {
             // Close backing file
             close(backing_fd);
-            // Remove backing file in case it was created
-            if (flags.create) {
-                unlink(backing_filename.c_str());
-            }
         }
     });
 
@@ -121,14 +105,9 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
         // Determine backing file open flags
         int oflags = (shared_write ? O_RDWR : O_RDONLY);
         oflags |= O_CLOEXEC; // to remove file locks on fork + exec
-        mode_t omode = 0;
-        if (flags.create) {
-            oflags |= O_CREAT | O_EXCL;
-            omode = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
-        }
 
         // Open backing file
-        backing_fd = open(backing_filename.c_str(), oflags, omode);
+        backing_fd = open(backing_filename.c_str(), oflags);
         if (backing_fd < 0) {
             throw std::system_error{errno, std::generic_category(),
                 "unable to open backing file '"s + backing_filename + "'"s};
@@ -136,42 +115,31 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
 
 #ifdef HAVE_FLOCK
         // Lock backing file immediately after opening it
-        if (flags.lock) {
-            const int flockop = (shared_write ? LOCK_EX : LOCK_SH) | LOCK_NB;
-            if (flock(backing_fd, flockop) < 0) {
-                throw std::system_error{errno, std::generic_category(),
-                    "unable to lock backing file '"s + backing_filename + "'"s};
-            }
+        const int flockop = (shared_write ? LOCK_EX : LOCK_SH) | LOCK_NB;
+        if (flock(backing_fd, flockop) != 0) {
+            throw std::system_error{errno, std::generic_category(),
+                "unable to lock backing file '"s + backing_filename + "'"s};
         }
 #endif // HAVE_FLOCK
 
         // Get backing file size
         struct stat statbuf{};
-        if (fstat(backing_fd, &statbuf) < 0) {
+        if (fstat(backing_fd, &statbuf) != 0) {
             throw std::system_error{errno, std::generic_category(),
                 "unable to obtain length of backing file '"s + backing_filename + "'"s};
         }
         backing_file_length = static_cast<uint64_t>(statbuf.st_size);
 
-        // When backing file length mismatch the desired backing length we may need to truncate
+        // Check backing file length mismatch
         if (backing_file_length != backing_length) {
-            if (!(flags.truncate || flags.create)) { // Can we truncate?
+            if (flags.shared) {
                 throw std::runtime_error{"backing file '"s + backing_filename + "' length ("s +
                     std::to_string(backing_file_length) + ") does not match desired backing length ("s +
                     std::to_string(backing_length) + ")"s};
             }
-            if (flags.shared) { // Truncate backing file to match the desired length
-                if (ftruncate(backing_fd, static_cast<off_t>(backing_length)) < 0) {
-                    throw std::runtime_error{"unable to truncate backing file '"s + backing_filename + "' length ("s +
-                        std::to_string(backing_file_length) + ") to desired backing length ("s +
-                        std::to_string(backing_length) + ")"s};
-                }
-                backing_file_length = backing_length;
-            } else {
-                // Backing file length may be less than desired backing length,
-                // but this is fine, as we are not sharing the file.
-                // The gap between the file length and the memory length will be allocated as anonymous memory.
-            }
+            // Backing file length may be less than desired backing length,
+            // but this is fine, as we are not sharing the file.
+            // The gap between the file length and the memory length will be allocated as anonymous memory.
         }
     }
 
@@ -180,6 +148,11 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
     if (backing_fd < 0) { // The mapping is not backed by any file
         mflags |= MAP_ANONYMOUS;
     }
+    int extra_mflags = 0;
+    if (flags.no_reserve) {
+        extra_mflags |= MAP_NORESERVE;
+    }
+    mflags |= extra_mflags;
 
     // Determine map protection flags
     int mprot = PROT_READ;
@@ -204,7 +177,8 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
         // and the second portion is backed by anonymous memory.
 
         // Map entire memory range, this is required to use the subsequent MAP_FIXED safely.
-        host_memory = mmap(nullptr, length, mprot, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        // const int m
+        host_memory = mmap(nullptr, length, mprot, MAP_PRIVATE | MAP_ANONYMOUS | extra_mflags, -1, 0);
         if (host_memory == MAP_FAILED) {
             throw std::system_error{errno, std::generic_category(), "unable to map memory"s};
         }
@@ -248,6 +222,7 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
 
     return os_mmapd{.host_memory = host_memory,
         .length = length,
+        .flags = flags,
         .backing_sync_length = shared_write ? backing_length : 0,
         .backing_fd = backing_fd};
 
@@ -274,16 +249,11 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
             std::ignore = CloseHandle(memory_mapping);
         }
         if (backing_fh != INVALID_HANDLE_VALUE) {
-            if (flags.lock) {
-                OVERLAPPED overlapped{};
-                std::ignore = UnlockFileEx(backing_fh, 0, MAXDWORD, MAXDWORD, &overlapped);
-            }
+            // Unlock file
+            OVERLAPPED overlapped{};
+            std::ignore = UnlockFileEx(backing_fh, 0, MAXDWORD, MAXDWORD, &overlapped);
             // Close backing file
             std::ignore = CloseHandle(backing_fh);
-            // Remove backing file in case it was created
-            if (flags.create) {
-                std::ignore = DeleteFileA(backing_filename.c_str());
-            }
         }
     });
 
@@ -292,7 +262,7 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
         // Determine backing file open flags
         const DWORD open_access = GENERIC_READ | (!flags.read_only ? GENERIC_WRITE : 0);
         const DWORD share_mode = FILE_SHARE_READ | (!flags.read_only ? FILE_SHARE_WRITE : 0);
-        const DWORD creation = flags.create ? CREATE_NEW : OPEN_EXISTING;
+        const DWORD creation = OPEN_EXISTING;
 
         // Open backing file
         backing_fh = CreateFileA(backing_filename.c_str(), open_access, share_mode, nullptr, creation,
@@ -303,16 +273,14 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
         }
 
         // Lock backing file immediately after opening it
-        if (flags.lock) {
-            DWORD lock_flags = LOCKFILE_FAIL_IMMEDIATELY; // Non-blocking lock
-            if (shared_write) {
-                lock_flags |= LOCKFILE_EXCLUSIVE_LOCK; // Exclusive lock for writing
-            }
-            OVERLAPPED overlapped{};
-            if (!LockFileEx(backing_fh, lock_flags, 0, MAXDWORD, MAXDWORD, &overlapped)) {
-                throw std::system_error{static_cast<int>(GetLastError()), std::system_category(),
-                    "unable to lock backing file '" + backing_filename + "'"};
-            }
+        DWORD lock_flags = LOCKFILE_FAIL_IMMEDIATELY; // Non-blocking lock
+        if (shared_write) {
+            lock_flags |= LOCKFILE_EXCLUSIVE_LOCK; // Exclusive lock for writing
+        }
+        OVERLAPPED overlapped{};
+        if (!LockFileEx(backing_fh, lock_flags, 0, MAXDWORD, MAXDWORD, &overlapped)) {
+            throw std::system_error{static_cast<int>(GetLastError()), std::system_category(),
+                "unable to lock backing file '" + backing_filename + "'"};
         }
 
         // Get backing file size
@@ -323,63 +291,18 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
         }
         backing_file_length = static_cast<uint64_t>(size.QuadPart);
 
-        // When backing file length mismatch the desired backing length we may need to truncate
+        // Check backing file length mismatch
         if (backing_file_length != backing_length) {
-            if (!(flags.truncate || flags.create)) { // Can we truncate?
+            if (flags.shared) {
                 throw std::runtime_error{"backing file '"s + backing_filename + "' length ("s +
                     std::to_string(backing_file_length) + ") does not match desired backing length ("s +
                     std::to_string(backing_length) + ")"s};
-            }
-            if (flags.shared) { // Truncate backing file to match the desired length
-                // Set file pointer to the new size position
-                LARGE_INTEGER new_size{.QuadPart = static_cast<LONGLONG>(backing_length)};
-                if (!SetFilePointerEx(backing_fh, new_size, nullptr, FILE_BEGIN)) {
-                    throw std::system_error{static_cast<int>(GetLastError()), std::system_category(),
-                        "unable to seek backing file '"s + backing_filename + "'"s};
-                }
-
-                // Set the end of file at the current position
-                if (!SetEndOfFile(backing_fh)) {
-                    throw std::system_error{static_cast<int>(GetLastError()), std::system_category(),
-                        "unable to truncate backing file '"s + backing_filename + "'"s};
-                }
-
-                // Initialize truncated bytes to zeros
-                if (backing_length > backing_file_length) {
-                    // Set file pointer to truncate position
-                    LARGE_INTEGER truncate_pos{.QuadPart = static_cast<LONGLONG>(backing_file_length)};
-                    if (!SetFilePointerEx(backing_fh, truncate_pos, nullptr, FILE_BEGIN)) {
-                        throw std::system_error{static_cast<int>(GetLastError()), std::system_category(),
-                            "unable to seek backing file '"s + backing_filename + "'"s};
-                    }
-
-                    // Write zeros in chunks
-                    static uint8_t zero_buffer[65536]{};
-                    uint64_t remaining = backing_length - backing_file_length;
-                    while (remaining > 0) {
-                        const auto write_size = static_cast<DWORD>(std::min<uint64_t>(remaining, sizeof(zero_buffer)));
-                        DWORD bytes_written = 0;
-                        if (!WriteFile(backing_fh, zero_buffer, write_size, &bytes_written, nullptr) ||
-                            bytes_written != write_size) {
-                            throw std::system_error{static_cast<int>(GetLastError()), std::system_category(),
-                                "unable to write backing file '"s + backing_filename + "'"s};
-                        }
-                        remaining -= bytes_written;
-                    }
-                }
-
-                // Flush file changes
-                if (!FlushFileBuffers(backing_fh)) {
-                    throw std::system_error{static_cast<int>(GetLastError()), std::system_category(),
-                        "unable to flush backing file '"s + backing_filename + "'"s};
-                }
 
                 backing_file_length = backing_length;
-            } else {
-                // Backing file length may be less than desired backing length,
-                // but this is fine, as we are not sharing the file.
-                // The gap between the file length and the memory length will be allocated as anonymous memory.
             }
+            // Backing file length may be less than desired backing length,
+            // but this is fine, as we are not sharing the file.
+            // The gap between the file length and the memory length will be allocated as anonymous memory.
         }
     }
 
@@ -446,12 +369,12 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
 
     return os_mmapd{.host_memory = host_memory,
         .length = length,
+        .flags = flags,
         .backing_sync_length = shared_write ? backing_length : 0,
         .memory_mapping = static_cast<void *>(memory_mapping),
         .backing_host_memory = backing_host_memory,
         .backing_mapping = backing_mapping,
-        .backing_fh = static_cast<void *>(backing_fh),
-        .backing_lock = flags.lock};
+        .backing_fh = static_cast<void *>(backing_fh)};
 
 #else  // Fallback implementation using standard C APIs
     // Over-allocate to ensure we can align the pointer and store the original pointer.
@@ -480,10 +403,6 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
         if (backing_fp != nullptr) {
             // Close backing file
             std::ignore = std::fclose(backing_fp);
-            // Remove backing file in case it was created
-            if (flags.create) {
-                std::ignore = std::remove(backing_filename.c_str());
-            }
         }
     });
 
@@ -491,16 +410,7 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
     if (!backing_filename.empty()) {
         // Determine backing file open flags
         const char *mode{};
-        if (flags.create) {
-            // Check if file already exists first
-            auto *fp = std::fopen(backing_filename.c_str(), "rb");
-            if (fp != nullptr) {
-                std::ignore = std::fclose(fp);
-                throw std::system_error{errno, std::generic_category(),
-                    "unable to create backing file '"s + backing_filename + "': file already exists"s};
-            }
-            mode = "w+b";
-        } else if (shared_write) {
+        if (shared_write) {
             mode = "r+b";
         } else {
             mode = "rb";
@@ -536,38 +446,16 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
                 "unable to read from backing file '"s + backing_filename + "'"s};
         }
 
-        // When backing file length mismatch the desired backing length we may need to truncate
+        // Check backing file length mismatch
         if (backing_file_length != backing_length) {
-            if (!(flags.truncate || flags.create)) { // Can we truncate?
+            if (flags.shared) {
                 throw std::runtime_error{"backing file '"s + backing_filename + "' length ("s +
                     std::to_string(backing_file_length) + ") does not match desired backing length ("s +
                     std::to_string(backing_length) + ")"s};
             }
-            if (flags.shared) { // Truncate backing file to match the desired length
-                // In order to truncate the file using standard C API,
-                // we need recreate from scratch and copy over the existing content.
-                if (std::fclose(backing_fp) != 0) {
-                    throw std::system_error{errno, std::generic_category(),
-                        "unable to truncate backing file '"s + backing_filename + "': fclose() failed"s};
-                }
-                backing_fp = std::fopen(backing_filename.c_str(), "w+b");
-                if (backing_fp == nullptr) {
-                    throw std::system_error{errno, std::generic_category(),
-                        "unable to truncate backing file '"s + backing_filename + "': fopen() failed"s};
-                }
-                if (static_cast<uint64_t>(std::fwrite(host_memory, 1, backing_length, backing_fp)) != backing_length) {
-                    throw std::system_error{errno, std::generic_category(),
-                        "unable to truncate backing file '"s + backing_filename + "': fwrite() failed"s};
-                }
-                if (std::fflush(backing_fp) != 0) {
-                    throw std::system_error{errno, std::generic_category(),
-                        "unable to truncate backing file '"s + backing_filename + "': fflush() failed"s};
-                }
-            } else {
-                // Backing file length may be less than desired backing length,
-                // but this is fine, as we are not sharing the file.
-                // The gap between the file length and the memory length will be allocated as anonymous memory.
-            }
+            // Backing file length may be less than desired backing length,
+            // but this is fine, as we are not sharing the file.
+            // The gap between the file length and the memory length will be allocated as anonymous memory.
         }
 
         // Rewind the backing file to the beginning
@@ -579,6 +467,7 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
 
     return os_mmapd{.host_memory = host_memory,
         .length = length,
+        .flags = flags,
         .backing_sync_length = shared_write ? backing_length : 0,
         .backing_fp = backing_fp,
         .unaligned_host_memory = unaligned_host_memory};
@@ -588,29 +477,28 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
 void os_munmap(const os_mmapd &mmapd) noexcept {
 #ifdef HAVE_MMAP
     if (mmapd.host_memory != nullptr && mmapd.length > 0) {
+        // Asynchronously flush mapped memory to disk to help prevent data loss
         if (mmapd.backing_sync_length > 0) {
-            // Request the kernel to flush the mapped file to disk asynchronously.
-            // This may reduce the risk of file corruption in the event of unexpected host power loss.
             std::ignore = msync(mmapd.host_memory, mmapd.backing_sync_length, MS_ASYNC);
         }
         std::ignore = munmap(mmapd.host_memory, mmapd.length);
     }
     if (mmapd.backing_fd != -1) {
         // Closing a file will also release file locks
-        std::ignore = close(mmapd.backing_fd);
+        while (close(mmapd.backing_fd) != 0 && errno == EINTR) {
+            // Interrupted by signal, retry
+        };
     }
 
 #elif defined(_WIN32) // Windows implementation
     // Flush changes to disk if necessary
     if (mmapd.backing_sync_length > 0 && mmapd.host_memory != nullptr) {
-        if (mmapd.backing_host_memory != nullptr) { // Copy contents to the backing file
+        // Asynchronously flush mapped memory to disk to help prevent data loss
+        if (mmapd.backing_host_memory != nullptr) {
             std::memcpy(mmapd.backing_host_memory, mmapd.host_memory, mmapd.backing_sync_length);
             std::ignore = FlushViewOfFile(mmapd.backing_host_memory, mmapd.backing_sync_length);
         } else {
             std::ignore = FlushViewOfFile(mmapd.host_memory, mmapd.backing_sync_length);
-        }
-        if (mmapd.backing_fh != nullptr && mmapd.backing_fh != INVALID_HANDLE_VALUE) {
-            std::ignore = FlushFileBuffers(mmapd.backing_fh);
         }
     }
     if (mmapd.host_memory != nullptr) {
@@ -626,10 +514,8 @@ void os_munmap(const os_mmapd &mmapd) noexcept {
         std::ignore = CloseHandle(static_cast<HANDLE>(mmapd.backing_mapping));
     }
     if (mmapd.backing_fh != nullptr && mmapd.backing_fh != INVALID_HANDLE_VALUE) {
-        if (mmapd.backing_lock) {
-            OVERLAPPED overlapped{};
-            std::ignore = UnlockFileEx(static_cast<HANDLE>(mmapd.backing_fh), 0, MAXDWORD, MAXDWORD, &overlapped);
-        }
+        OVERLAPPED overlapped{};
+        std::ignore = UnlockFileEx(static_cast<HANDLE>(mmapd.backing_fh), 0, MAXDWORD, MAXDWORD, &overlapped);
         std::ignore = CloseHandle(static_cast<HANDLE>(mmapd.backing_fh));
     }
 
@@ -637,7 +523,6 @@ void os_munmap(const os_mmapd &mmapd) noexcept {
     if (mmapd.backing_sync_length > 0 && mmapd.host_memory != nullptr && mmapd.backing_fp != nullptr) {
         // Write back changes to backing file
         std::ignore = std::fwrite(mmapd.host_memory, 1, mmapd.backing_sync_length, mmapd.backing_fp);
-        std::ignore = std::fflush(mmapd.backing_fp);
     }
     if (mmapd.unaligned_host_memory != nullptr) {
         std::free(mmapd.unaligned_host_memory); // NOLINT(cppcoreguidelines-no-malloc,hicpp-no-malloc)

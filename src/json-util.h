@@ -157,6 +157,15 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, semantic_version &v
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_reg &value, const std::string &path = "params/");
 
+/// \brief Attempts to load an sharing_mode name from a field in a JSON object
+/// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
+/// \param j JSON object to load from
+/// \param key Key to load value from
+/// \param value Object to store value
+/// \param path Path to j
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, sharing_mode &value, const std::string &path = "params/");
+
 /// \brief Attempts to load an interpreter_break_reason name from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
@@ -719,6 +728,7 @@ void to_json(nlohmann::json &j, const concurrency_runtime_config &config);
 void to_json(nlohmann::json &j, const htif_runtime_config &config);
 void to_json(nlohmann::json &j, const machine_runtime_config &runtime);
 void to_json(nlohmann::json &j, const machine_reg &reg);
+void to_json(nlohmann::json &j, const sharing_mode &sharing);
 void to_json(nlohmann::json &j, const address_range_description &mrd);
 void to_json(nlohmann::json &j, const address_range_descriptions &mrds);
 void to_json(nlohmann::json &j, const fork_result &fork_result);
@@ -751,6 +761,10 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const std::string
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, machine_reg &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, machine_reg &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, sharing_mode &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, sharing_mode &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, interpreter_break_reason &value,
     const std::string &base = "params/");

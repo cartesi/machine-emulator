@@ -455,6 +455,18 @@ static cartesi::machine_reg convert_from_c(cm_reg r) {
     throw std::domain_error{"unknown register"};
 }
 
+static cartesi::sharing_mode convert_from_c(cm_sharing_mode sharing) {
+    switch (sharing) {
+        case CM_SHARING_NONE:
+            return cartesi::sharing_mode::none;
+        case CM_SHARING_CONFIG:
+            return cartesi::sharing_mode::config;
+        case CM_SHARING_ALL:
+            return cartesi::sharing_mode::all;
+    }
+    throw std::domain_error{"unknown sharing mode"};
+}
+
 static cartesi::i_machine *convert_from_c(cm_machine *m) {
     if (m == nullptr) {
         throw std::invalid_argument("invalid machine");
@@ -537,7 +549,7 @@ cm_error cm_is_empty(const cm_machine *m, bool *yes) try {
     return cm_result_failure();
 }
 
-cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config) try {
+cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config, const char *dir) try {
     auto *cpp_m = convert_from_c(m);
     if (config == nullptr) {
         throw std::invalid_argument("invalid machine configuration");
@@ -547,13 +559,13 @@ cm_error cm_create(cm_machine *m, const char *config, const char *runtime_config
     if (runtime_config != nullptr) {
         r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config, "runtime_config");
     }
-    cpp_m->create(c, r);
+    cpp_m->create(c, r, dir != nullptr ? std::string(dir) : std::string());
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
 }
 
-cm_error cm_load(cm_machine *m, const char *dir, const char *runtime_config) try {
+cm_error cm_load(cm_machine *m, const char *dir, const char *runtime_config, cm_sharing_mode sharing) try {
     auto *cpp_m = convert_from_c(m);
     if (dir == nullptr) {
         throw std::invalid_argument("invalid dir");
@@ -562,18 +574,18 @@ cm_error cm_load(cm_machine *m, const char *dir, const char *runtime_config) try
     if (runtime_config != nullptr) {
         r = cartesi::from_json<cartesi::machine_runtime_config>(runtime_config, "runtime_config");
     }
-    cpp_m->load(dir, r);
+    cpp_m->load(dir, r, convert_from_c(sharing));
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
 }
 
-cm_error cm_load_new(const char *dir, const char *runtime_config, cm_machine **new_m) {
+cm_error cm_load_new(const char *dir, const char *runtime_config, cm_sharing_mode sharing, cm_machine **new_m) {
     auto err = cm_new(new_m);
     if (err != 0) {
         return err;
     }
-    err = cm_load(*new_m, dir, runtime_config);
+    err = cm_load(*new_m, dir, runtime_config, sharing);
     if (err != 0) {
         cm_delete(*new_m);
         *new_m = nullptr;
@@ -581,12 +593,12 @@ cm_error cm_load_new(const char *dir, const char *runtime_config, cm_machine **n
     return err;
 }
 
-cm_error cm_create_new(const char *config, const char *runtime_config, cm_machine **new_m) {
+cm_error cm_create_new(const char *config, const char *runtime_config, const char *dir, cm_machine **new_m) {
     auto err = cm_new(new_m);
     if (err != 0) {
         return err;
     }
-    err = cm_create(*new_m, config, runtime_config);
+    err = cm_create(*new_m, config, runtime_config, dir);
     if (err != 0) {
         cm_delete(*new_m);
         *new_m = nullptr;
@@ -594,12 +606,26 @@ cm_error cm_create_new(const char *config, const char *runtime_config, cm_machin
     return err;
 }
 
-cm_error cm_store(const cm_machine *m, const char *dir) try {
+cm_error cm_store(const cm_machine *m, const char *dir, cm_sharing_mode sharing) try {
     if (dir == nullptr) {
         throw std::invalid_argument("invalid dir");
     }
     const auto *cpp_m = convert_from_c(m);
-    cpp_m->store(dir);
+    cpp_m->store(dir, convert_from_c(sharing));
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
+cm_error cm_clone_stored(const cm_machine *m, const char *from_dir, const char *to_dir) try {
+    if (from_dir == nullptr) {
+        throw std::invalid_argument("invalid from dir");
+    }
+    if (to_dir == nullptr) {
+        throw std::invalid_argument("invalid to dir");
+    }
+    const auto *cpp_m = convert_from_c(m);
+    cpp_m->clone_stored(from_dir, to_dir);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();

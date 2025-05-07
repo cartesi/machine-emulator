@@ -339,6 +339,11 @@ where options are:
 
     DON'T USE THIS OPTION IN PRODUCTION
 
+  --no-reserve
+    don't reserve swap memory for flash drives.
+
+    DON'T USE THIS OPTION IN PRODUCTION
+
   --max-mcycle=<number>
     stop at a given mcycle (default: 2305843009213693952).
 
@@ -489,12 +494,47 @@ where options are:
   --no-htif-yield-automatic
     do not honor yield requests with automatic reset by target.
 
-  --store=<directory>
+  --create=<directory>
+    initializes a machine using fully on-disk state stored to <directory>,
+    the effect is similar as creating a machine and using --store=<directory>,
+    however this is the only safe way to create machines with large address spaces
+    or to propagate "shared" backing stores to configuration files.
+
+    MUST BE USED WITH --no-rollback
+
+  --load=<directory>[,<key>:<value>[,...]...]
+    load machine stored in <directory>.
+
+    <key>:<value> is one of
+        clone:<source_directory>
+        sharing:<mode>
+
+        clone (optional)
+        clones previously stored machine from <source_directory> to <directory> and loads it.
+        writable address ranges use reference links on copy-on-write filesystems.
+        read-only address ranges use hard links to avoid unnecessary copying.
+        files sparsity is preserved to minimize storage usage.
+
+        sharing (optional)
+        affects how address ranges modifications reflect the loaded backing stores:
+            none: keeps state in-memory only; no backing store modifications.
+            config: only configured "shared" backing stores operate on-disk and are modified.
+            all: keeps state on-disk, modifying all backing stores.
+        the default mode is "none", but if clone is present then the default mode is "all".
+        all modes except "none" MUST BE USED WITH --no-rollback.
+
+  --store=<directory>[,<key>:<value>[,...]...]
     store machine to <directory>, where "%%h" is substituted by the
     state hash in the directory name.
 
-  --load=<directory>
-    load machine previously stored in <directory>.
+    <key>:<value> is one of
+        sharing:<mode>
+
+        sharing (optional)
+        affects how address ranges modifications reflect the new backing stores:
+            none: copies backing stores as they were during load (rarely useful).
+            config: store "shared" backing stores from current state; others are copied as they were during load.
+            all: (default) store current state for all backings stores.
 
   --initial-hash
     print initial state hash before running machine.
@@ -713,6 +753,7 @@ local concurrency_update_hash_tree = 0
 local skip_root_hash_check = false
 local skip_root_hash_store = false
 local skip_version_check = false
+local no_reserve = false
 local htif_no_console_putchar = false
 local initial_hash = false
 local final_hash = false
@@ -730,6 +771,10 @@ local auto_reset_uarch = false
 local log_reset_uarch = false
 local store_dir
 local load_dir
+local create_dir
+local clone_dir
+local load_sharing
+local store_sharing
 local cmdline_opts_finished = false
 local store_config = false
 local store_json_config = false
@@ -1350,6 +1395,14 @@ local options = {
         end,
     },
     {
+        "^%-%-no%-reserve$",
+        function(all)
+            if not all then return false end
+            no_reserve = true
+            return true
+        end,
+    },
+    {
         "^(%-%-initial%-proof%=(.+))$",
         function(all, opts)
             local p = util.parse_options(opts, all, {
@@ -1469,18 +1522,49 @@ local options = {
         end,
     },
     {
-        "^%-%-load%=(.*)$",
+        "^%-%-create%=(.*)$",
         function(opts)
             if not opts or #opts < 1 then return false end
-            load_dir = opts
+            create_dir = opts
             return true
         end,
     },
     {
-        "^%-%-store%=(.*)$",
-        function(opts)
-            if not opts or #opts < 1 then return false end
-            store_dir = opts
+        "^%-%-load%=(([^,]+),?(.*))$",
+        function(all, dir, opts)
+            if not all or not dir then return false end
+            if #opts > 0 then
+                local o = util.parse_options(opts, all, {
+                    clone = "string",
+                    sharing = {
+                        none = cartesi.SHARING_NONE,
+                        config = cartesi.SHARING_CONFIG,
+                        all = cartesi.SHARING_ALL,
+                    },
+                })
+                clone_dir = o.clone
+                load_sharing = o.sharing
+                if clone_dir and not load_sharing then load_sharing = cartesi.SHARING_ALL end
+            end
+            load_dir = dir
+            return true
+        end,
+    },
+    {
+        "^%-%-store%=(([^,]+),?(.*))$",
+        function(all, dir, opts)
+            if not all or not dir then return false end
+            if #opts > 0 then
+                local o = util.parse_options(opts, all, {
+                    sharing = {
+                        none = cartesi.SHARING_NONE,
+                        config = cartesi.SHARING_CONFIG,
+                        all = cartesi.SHARING_ALL,
+                    },
+                })
+                store_sharing = o.sharing
+            end
+            store_dir = dir
             return true
         end,
     },
@@ -1855,6 +1939,7 @@ local runtime_config = {
     skip_root_hash_check = skip_root_hash_check,
     skip_root_hash_store = skip_root_hash_store,
     skip_version_check = skip_version_check,
+    no_reserve = no_reserve,
 }
 
 if remote_spawn then
@@ -1865,13 +1950,17 @@ if remote_spawn then
     remote_address = address
 end
 
-local main_machine
-if remote_address and not remote_create then
-    main_machine = new_machine()
-elseif load_dir then
+if create_dir then
+    assert(not (remote_address and not remote_create), "cannot use --create and --no-remote-create at the same time")
+    assert(not load_dir, "cannot use --create and --load at the same time")
+end
+
+local main_machine = new_machine()
+if load_dir then
     stderr("Loading machine: please wait\n")
-    main_machine = new_machine():load(load_dir, runtime_config)
-else
+    if clone_dir then main_machine:clone_stored(clone_dir, load_dir) end
+    main_machine = main_machine:load(load_dir, runtime_config, load_sharing)
+elseif not (remote_address and not remote_create) then
     -- Build machine config
     local config = {
         processor = processor,
@@ -1990,7 +2079,7 @@ echo "
         config = setmetatable(cartesi.fromjson(f:read("a")), { __index = config })
     end
 
-    main_machine = new_machine():create(config, runtime_config)
+    main_machine = main_machine:create(config, runtime_config, create_dir)
 end
 
 for _, r in ipairs(memory_range_replace) do
@@ -2154,13 +2243,13 @@ local function save_cmio_inspect_state_report(inspect, data)
     f:close()
 end
 
-local function store_machine(machine, config, dir)
+local function store_machine(machine, config, dir, sharing)
     assert(config.processor.registers.iunrep == 0, "hashes are meaningless in unreproducible mode")
     stderr("Storing machine: please wait\n")
     local values = {}
     if dir:find("%%h") then values.h = util.hexhash(machine:get_root_hash()) end
     local name = instantiate_filename(dir, values)
-    machine:store(name)
+    machine:store(name, sharing)
 end
 
 local function dump_pmas(machine)
@@ -2443,7 +2532,7 @@ if final_hash then
     print_root_hash(machine, stderr_unsilenceable)
 end
 dump_value_proofs(machine, final_proof, config)
-if store_dir then store_machine(machine, config, store_dir) end
+if store_dir then store_machine(machine, config, store_dir, store_sharing) end
 if assert_rolling_template then
     local cmd, reason = machine:receive_cmio_request()
     if not (cmd == cartesi.CMIO_YIELD_COMMAND_MANUAL and reason == cartesi.CMIO_YIELD_MANUAL_REASON_RX_ACCEPTED) then

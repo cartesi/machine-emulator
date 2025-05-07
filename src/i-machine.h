@@ -72,13 +72,14 @@ public:
     }
 
     /// \brief Create a machine from config
-    void create(const machine_config &config, const machine_runtime_config &runtime = {}) {
-        do_create(config, runtime);
+    void create(const machine_config &config, const machine_runtime_config &runtime = {}, const std::string &dir = {}) {
+        do_create(config, runtime, dir);
     }
 
     /// \brief Load Create a machine from config
-    void load(const std::string &directory, const machine_runtime_config &runtime = {}) {
-        do_load(directory, runtime);
+    void load(const std::string &directory, const machine_runtime_config &runtime = {},
+        const sharing_mode sharing = sharing_mode::none) {
+        do_load(directory, runtime, sharing);
     }
 
     /// \brief Runs the machine until mcycle reaches mcycle_end or the machine halts.
@@ -94,8 +95,13 @@ public:
     }
 
     /// \brief Serialize entire state to directory
-    void store(const std::string &dir) const {
-        do_store(dir);
+    void store(const std::string &dir, sharing_mode sharing = sharing_mode::all) const {
+        do_store(dir, sharing);
+    }
+
+    /// \brief Clones a machine stored from source directory to destination directory
+    void clone_stored(const std::string &from_dir, const std::string &to_dir) const {
+        do_clone_stored(from_dir, to_dir);
     }
 
     /// \brief  Runs the machine for the given mcycle count and generates a log file of accessed pages and proof data.
@@ -285,12 +291,14 @@ public:
 private:
     virtual i_machine *do_clone_empty() const = 0;
     virtual bool do_is_empty() const = 0;
-    virtual void do_create(const machine_config &config, const machine_runtime_config &runtime) = 0;
-    virtual void do_load(const std::string &directory, const machine_runtime_config &runtime) = 0;
+    virtual void do_create(const machine_config &config, const machine_runtime_config &runtime,
+        const std::string &dir) = 0;
+    virtual void do_load(const std::string &directory, const machine_runtime_config &runtime, sharing_mode sharing) = 0;
     virtual interpreter_break_reason do_run(uint64_t mcycle_end) = 0;
     virtual void do_collect_mcycle_root_hashes(uint64_t mcycle_phase, uint64_t mcycle_period, uint64_t period_count,
         mcycle_root_hashes &result) = 0;
-    virtual void do_store(const std::string &dir) const = 0;
+    virtual void do_store(const std::string &dir, sharing_mode sharing) const = 0;
+    virtual void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const = 0;
     virtual interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) = 0;
     virtual access_log do_log_step_uarch(const access_log::type &log_type) = 0;
     virtual hash_tree_proof do_get_proof(uint64_t address, int log2_size) const = 0;

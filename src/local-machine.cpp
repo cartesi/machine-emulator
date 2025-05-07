@@ -38,12 +38,13 @@ bool local_machine::do_is_empty() const {
     return m_machine == nullptr;
 }
 
-void local_machine::do_create(const machine_config &config, const machine_runtime_config &runtime) {
-    m_machine = new machine(config, runtime);
+void local_machine::do_create(const machine_config &config, const machine_runtime_config &runtime,
+    const std::string &dir) {
+    m_machine = new machine(config, runtime, dir);
 }
 
-void local_machine::do_load(const std::string &directory, const machine_runtime_config &runtime) {
-    m_machine = new machine(directory, runtime);
+void local_machine::do_load(const std::string &directory, const machine_runtime_config &runtime, sharing_mode sharing) {
+    m_machine = new machine(directory, runtime, sharing);
 }
 
 local_machine::~local_machine() {
@@ -65,8 +66,12 @@ const machine *local_machine::get_machine() const {
     return m_machine;
 }
 
-void local_machine::do_store(const std::string &directory) const {
-    get_machine()->store(directory);
+void local_machine::do_store(const std::string &directory, sharing_mode sharing) const {
+    get_machine()->store(directory, sharing);
+}
+
+void local_machine::do_clone_stored(const std::string &from_dir, const std::string &to_dir) const {
+    machine::clone_stored(from_dir, to_dir);
 }
 
 interpreter_break_reason local_machine::do_run(uint64_t mcycle_end) {

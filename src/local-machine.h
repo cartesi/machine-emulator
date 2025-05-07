@@ -46,13 +46,15 @@ public:
 private:
     i_machine *do_clone_empty() const override;
     bool do_is_empty() const override;
-    void do_create(const machine_config &config, const machine_runtime_config &runtime) override;
-    void do_load(const std::string &directory, const machine_runtime_config &runtime) override;
+    void do_create(const machine_config &config, const machine_runtime_config &runtime,
+        const std::string &dir) override;
+    void do_load(const std::string &directory, const machine_runtime_config &runtime, sharing_mode sharing) override;
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
     void do_collect_mcycle_root_hashes(uint64_t mcycle_phase, uint64_t mcycle_period, uint64_t period_count,
         mcycle_root_hashes &result) override;
     interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) override;
-    void do_store(const std::string &directory) const override;
+    void do_store(const std::string &directory, sharing_mode sharing) const override;
+    void do_clone_stored(const std::string &from_dir, const std::string &to_dir) const override;
     access_log do_log_step_uarch(const access_log::type &log_type) override;
     hash_tree_proof do_get_proof(uint64_t address, int log2_size) const override;
     machine_hash do_get_root_hash() const override;

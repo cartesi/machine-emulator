@@ -197,7 +197,7 @@ function _M.parse_options(s, all, keys)
             k = unescape(o)
             v = nil
         end
-        assert(keys[k], string.format("unknown option '%q' in '%s'", k, all))
+        assert(keys[k], string.format("unknown option %q in '%s'", k, all))
         if keys[k] == "array" then
             options[k] = options[k] or {}
             table.insert(options[k], v)
@@ -206,16 +206,19 @@ function _M.parse_options(s, all, keys)
                 v = true
             else
                 v = _M.parse_boolean(v)
-                if v == nil then error(string.format("invalid boolean for option '%q' in '%s'", k, all)) end
+                if v == nil then error(string.format("invalid boolean for option %q in '%s'", k, all)) end
             end
             options[k] = v
         elseif keys[k] == "number" then
             v = _M.parse_number(v)
-            if v == nil then error(string.format("invalid number for option '%q' in '%s'", k, all)) end
+            if v == nil then error(string.format("invalid number for option %q in '%s'", k, all)) end
             options[k] = v
         elseif keys[k] == "string" then
-            if v == nil then error(string.format("missing string for option '%q' in '%s'", k, all)) end
+            if v == nil then error(string.format("missing string for option %q in '%s'", k, all)) end
             options[k] = v
+        elseif type(keys[k]) == "table" then
+            if not keys[k][v] then error(string.format("invalid value for option %q in '%s'", k, all)) end
+            options[k] = keys[k][v]
         end
     end)
     return options

@@ -35,7 +35,8 @@ class machine;
 
 struct memory_address_range_flags final {
     bool read_only{false};        ///< Whether the memory is read-only on the host
-    bool page_uncleanable{false}; //< Whether the memory page dirty state can be cleaned
+    bool page_uncleanable{false}; ///< Whether the memory page dirty state can be cleaned
+    bool no_reserve{false};       ///< Whether the memory is not reserved
 };
 
 class memory_address_range : public address_range {
@@ -43,6 +44,7 @@ class memory_address_range : public address_range {
     unsigned char *m_host_memory;          ///< Start of associated memory region in host.
     memory_address_range_flags m_ar_flags; ///< Memory address range specific flags.
     std::vector<uint8_t> m_dirty_page_map; ///< Map of dirty pages.
+    bool m_shared{false};                  ///< Whether the memory is shared with the backing file.
 
 public:
     using ptr_type = std::unique_ptr<memory_address_range>;
@@ -111,6 +113,10 @@ private:
 
     bool do_is_host_read_only() const noexcept override {
         return m_ar_flags.read_only;
+    }
+
+    bool do_is_host_shared() const noexcept override {
+        return m_shared;
     }
 
     bool do_is_page_uncleanable() const noexcept override {

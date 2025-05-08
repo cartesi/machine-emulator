@@ -14,8 +14,12 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "os.h"
 #include "os-features.h"
+
+// Must be included first
+#include "os-posix-compat.h"
+
+#include "os.h"
 
 #include <array>
 #include <cerrno>
@@ -54,30 +58,7 @@
 #endif
 #endif
 
-#if defined(HAVE_MKDIR) || defined(_WIN32)
-#include <sys/stat.h> // fstat/mkdir
-#endif
-
 #ifdef _WIN32
-
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-
-#ifndef _CRT_SECURE_NO_WARNINGS
-#define _CRT_SECURE_NO_WARNINGS
-#endif
-
-#include <direct.h> // mkdir
-#include <io.h>     // _write/_close
-#include <windows.h>
-
-#ifndef STDOUT_FILENO
-#define STDOUT_FILENO 0
-#endif
-
-#define plat_write _write
-#define plat_mkdir(a, mode) _mkdir(a)
 
 #if defined(HAVE_SELECT)
 #include <winsock2.h> // select
@@ -96,9 +77,6 @@
 #if defined(HAVE_SELECT)
 #include <sys/select.h> // select
 #endif
-
-#define plat_write write
-#define plat_mkdir mkdir
 
 #endif // _WIN32
 
@@ -536,7 +514,7 @@ void os_putchar(uint8_t ch) {
     } else {
         // In interactive sessions we want to immediately write the character to stdout,
         // without any buffering.
-        if (plat_write(STDOUT_FILENO, &ch, 1) < 1) {
+        if (write(STDOUT_FILENO, &ch, 1) < 1) {
             ;
         }
     }
@@ -553,14 +531,6 @@ void os_putchars(const uint8_t *data, size_t len) {
     for (size_t i = 0; i < len; ++i) {
         os_putchar(data[i]);
     }
-}
-
-int os_mkdir(const char *path, [[maybe_unused]] int mode) {
-#ifdef HAVE_MKDIR
-    return plat_mkdir(path, mode);
-#else
-    return -1;
-#endif // HAVE_MKDIR
 }
 
 int64_t os_now_us() {
@@ -841,25 +811,6 @@ int os_double_fork([[maybe_unused]] bool emancipate, [[maybe_unused]] const char
     *err_msg = "fork() is unsupported in this platform";
     return -1;
 #endif
-}
-
-int64_t os_get_file_length(const char *filename, const char *text) {
-    auto fp = make_unique_fopen(filename, "rb");
-    if (fseek(fp.get(), 0, SEEK_END) != 0) {
-        throw std::system_error{errno, std::generic_category(),
-            "unable to obtain length of file '"s + filename + "' "s + text};
-    }
-    const auto length = ftell(fp.get());
-    if (length < 0) {
-        throw std::system_error{errno, std::generic_category(),
-            "unable to obtain length of file '"s + filename + "' "s + text};
-    }
-    return length;
-}
-
-bool os_file_exists(const char *filename) {
-    struct stat buffer{};
-    return (stat(filename, &buffer) == 0);
 }
 
 } // namespace cartesi

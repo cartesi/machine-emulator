@@ -32,9 +32,27 @@
 // Enable this define to debug VirtIO Plan 9 filesystem operations
 // #define DEBUG_VIRTIO_P9FS
 
-#include "virtio-p9fs-address-range.h"
-
+#include "os-features.h"
 #ifdef HAVE_POSIX_FS
+
+// Must be included before
+#include "os-posix-compat.h"
+
+#ifdef __APPLE__
+#include <sys/mount.h>
+#include <sys/param.h>
+#elif !defined(_WIN32)
+#include <sys/statfs.h>
+#include <sys/sysmacros.h>
+#endif
+
+#include <dirent.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#include "virtio-p9fs-address-range.h"
 
 #include <algorithm>
 #include <array>
@@ -49,113 +67,9 @@
 #include <tuple>
 #include <utility>
 
-#include <dirent.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#ifdef __APPLE__
-#include <sys/mount.h>
-#include <sys/param.h>
-#elif defined(_WIN32)
-#define WIN32_LEAN_AND_MEAN
-#include <direct.h>
-#include <sys/utime.h>
-#include <windows.h>
-#else
-#include <sys/statfs.h>
-#include <sys/sysmacros.h>
-#endif
-#include <unistd.h>
-
 #include "i-device-state-access.h"
 #include "virtio-address-range.h"
 #include "virtio-serializer.h"
-
-#ifdef _WIN32
-#define lstat stat
-int fsync(int fd) {
-    HANDLE h = (HANDLE) _get_osfhandle(fd);
-    if (h == INVALID_HANDLE_VALUE) {
-        return -1;
-    }
-    if (!FlushFileBuffers(h)) {
-        return -1;
-    }
-    return 0;
-}
-
-static inline void timespec_to_filetime(const struct timespec tv, FILETIME *ft) {
-    long long winTime = tv.tv_sec * 10000000LL + tv.tv_nsec / 100LL + 116444736000000000LL;
-    ft->dwLowDateTime = winTime;
-    ft->dwHighDateTime = winTime >> 32;
-}
-
-ssize_t pread(int fd, void *buf, size_t count, uint64_t offset) {
-    HANDLE hFile = (HANDLE) _get_osfhandle(fd);
-    DWORD dwBytesRead = 0;
-    OVERLAPPED ovl{};
-    ovl.Offset = (DWORD) offset;
-    ovl.OffsetHigh = (DWORD) (offset >> 32);
-    SetLastError(0);
-    if (!ReadFile(hFile, buf, (DWORD) count, &dwBytesRead, &ovl) && GetLastError() != ERROR_HANDLE_EOF) {
-        errno = GetLastError();
-        return -1;
-    }
-    return dwBytesRead;
-}
-
-ssize_t pwrite(int fd, const void *buf, size_t count, uint64_t offset) {
-    HANDLE hFile = (HANDLE) _get_osfhandle(fd);
-    DWORD dwBytesWritten = 0;
-    OVERLAPPED ovl{};
-    ovl.Offset = (DWORD) offset;
-    ovl.OffsetHigh = (DWORD) (offset >> 32);
-    SetLastError(0);
-    if (!WriteFile(hFile, buf, (DWORD) count, &dwBytesWritten, &ovl) && GetLastError() != ERROR_HANDLE_EOF) {
-        errno = GetLastError();
-        return -1;
-    }
-    return dwBytesWritten;
-}
-
-#define UTIME_NOW -1
-#define UTIME_OMIT -2
-
-static int futimens(int fd, const struct timespec times[2]) {
-    HANDLE hFile = (HANDLE) _get_osfhandle(fd);
-    if (hFile == INVALID_HANDLE_VALUE) {
-        errno = EBADF;
-        return -1;
-    }
-    FILETIME now{}, aft{}, mft{};
-    FILETIME *pft[2] = {&aft, &mft};
-    GetSystemTimeAsFileTime(&now);
-    if (times) {
-        for (int i = 0; i < 2; ++i) {
-            if (times[i].tv_nsec == UTIME_NOW) {
-                *pft[i] = now;
-            } else if (times[i].tv_nsec == UTIME_OMIT) {
-                pft[i] = NULL;
-            } else if (times[i].tv_nsec >= 0 && times[i].tv_nsec < 1000000000L) {
-                long long winTime = times[i].tv_sec * 10000000LL + times[i].tv_nsec / 100LL + 116444736000000000LL;
-                pft[i]->dwLowDateTime = winTime;
-                pft[i]->dwHighDateTime = winTime >> 32;
-            } else {
-                errno = EINVAL;
-                return -1;
-            }
-        }
-    } else {
-        aft = mft = now;
-    }
-    if (!SetFileTime(hFile, NULL, pft[0], pft[1])) {
-        errno = GetLastError();
-        return -1;
-    }
-    return 0;
-}
-
-#endif // _WIN32
 
 namespace cartesi {
 
@@ -2084,14 +1998,10 @@ bool virtio_p9fs_address_range::op_mkdir(virtq_unserializer &&mmsg, uint16_t tag
     }
     // Create the directory
     const std::string path = join_path_name(dfidp->path, name);
-#ifdef _WIN32
-    if (_mkdir(path.c_str()) != 0) {
-        return send_error(msg, tag, host_errno_to_p9(errno));
-    }
-#else
     if (mkdir(path.c_str(), static_cast<mode_t>(mode)) != 0) {
         return send_error(msg, tag, host_errno_to_p9(errno));
     }
+#ifndef _WIN32
     // If we fail to change ownership, we silent ignore the error
     if (lchown(path.c_str(), static_cast<uid_t>(dfidp->uid), static_cast<gid_t>(gid)) != 0) {
         errno = 0;

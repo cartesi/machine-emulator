@@ -18,26 +18,56 @@
 #define IS_PRISTINE_H
 
 #include "compiler-defines.h"
-#include <stddef.h>
-#include <stdint.h>
+
+#include <bit>
+#include <cstddef>
+#include <cstdint>
+
+// NOLINTBEGIN(clang-diagnostic-unknown-pragmas)
 
 namespace cartesi {
 
 /// \brief This is an optimized function for checking if memory page is pristine.
 /// \param data Memory pointer
 /// \param length Memory length
+/// \returns True if the page is pristine, false otherwise.
 /// \details It's instead to be used in situations where length is equal or less than a page size.
-// NOLINTNEXTLINE(clang-diagnostic-unknown-attributes)
-static inline bool is_pristine(const unsigned char *data, size_t length) {
-    // This tight for loop has no branches, and is optimized to SIMD instructions in x86_64,
+static inline bool is_pristine(const unsigned char *data, size_t length) noexcept {
+    // This tight for loop has no branches, and is optimized to SIMD instructions,
     // making it very fast to check if a given page is pristine.
     unsigned char bits = 0;
+#ifdef __GNUC__
+#pragma GCC unroll 8
+#endif
     for (size_t i = 0; i < length; ++i) {
         bits |= data[i];
     }
     return bits == 0;
 }
 
+/// \brief This is an optimized function for checking if memory aligned page is pristine.
+/// \tparam ALIGNED_PAGE_SIZE Memory page size.
+/// \param data Memory pointer, must be aligned to ALIGNED_PAGE_SIZE and of size ALIGNED_PAGE_SIZE.
+/// \returns True if the page is pristine, false otherwise.
+template <size_t ALIGNED_PAGE_SIZE>
+static inline bool is_aligned_page_pristine(const unsigned char *data) noexcept {
+    static_assert(ALIGNED_PAGE_SIZE % sizeof(uint64_t) == 0);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *aligned_data = reinterpret_cast<const uint64_t *>(__builtin_assume_aligned(data, ALIGNED_PAGE_SIZE));
+    // This tight for loop has no branches, and is optimized to used SIMD instructions,
+    // making it very fast to check if a given page is pristine.
+    uint64_t bits = 0;
+#ifdef __GNUC__
+#pragma GCC unroll 8
+#endif
+    for (size_t i = 0; i < ALIGNED_PAGE_SIZE / sizeof(uint64_t); ++i) {
+        bits |= aligned_data[i];
+    }
+    return bits == 0;
+}
+
 } // namespace cartesi
+
+// NOLINTEND(clang-diagnostic-unknown-pragmas)
 
 #endif

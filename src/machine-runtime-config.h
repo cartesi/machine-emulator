@@ -42,6 +42,7 @@ struct machine_runtime_config {
     bool skip_root_hash_store{};
     bool skip_version_check{};
     bool soft_yield{};
+    bool no_reserve{}; ///< Do not reserve swap memory when mapping flash drives
 };
 
 /// \brief CONCURRENCY constants

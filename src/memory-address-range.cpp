@@ -18,11 +18,12 @@
 
 #include <cerrno>
 #include <cstdio>
-#include <exception>
+#include <cstring>
 #include <stdexcept>
 #include <system_error>
 
 #include "address-range-constants.h"
+#include "os-filesystem.h"
 #include "unique-c-ptr.h"
 
 namespace cartesi {
@@ -42,15 +43,23 @@ memory_address_range::memory_address_range(const std::string &description, uint6
     address_range(description.c_str(), start, length, flags, [](const char *err) { throw base_error{err}; }),
     m_ptr{make_unique_mmap<unsigned char>(host_length != 0 ? host_length : length,
         os_mmap_flags{
-            .read_only = ar_flags.read_only && !backing_store.create,
+            .read_only = ar_flags.read_only && !backing_store.create && !backing_store.data_filename.empty(),
             .shared = backing_store.shared,
-            .create = backing_store.create,
-            .truncate = backing_store.truncate,
-            .lock = !backing_store.data_filename.empty(),
+            .no_reserve = ar_flags.no_reserve,
         },
         backing_store.data_filename, length)},
     m_host_memory{m_ptr.get()},
-    m_ar_flags{ar_flags} {
+    m_ar_flags{ar_flags},
+    m_shared{backing_store.shared} {
+    if (backing_store.shared && backing_store.data_filename.empty()) {
+        throw std::invalid_argument{"shared backing store must have a filename"};
+    }
+    if (backing_store.create && !backing_store.shared) {
+        throw std::invalid_argument{"created backing store must also be shared"};
+    }
+    if (backing_store.truncate && !backing_store.shared) {
+        throw std::invalid_argument{"truncated backing store must also be shared"};
+    }
     if (!is_memory()) {
         throw std::invalid_argument{"memory range must be flagged memory"s};
     }

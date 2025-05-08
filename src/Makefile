@@ -222,6 +222,8 @@ SHA3_CFLAGS=-O3
 # Optimization flags for the interpreter
 ifneq (,$(filter yes,$(relwithdebinfo) $(release)))
 ifneq (,$(findstring gcc,$(CC)))
+# Enable vectorization of operations on pages in GCC 12.x and below
+OPTFLAGS+=-ftree-vectorize
 # The following improves computed goto dispatch as stated in GCC manual
 INTERPRET_CXXFLAGS+=-fno-gcse
 # The following remove extra jumps in the computed goto dispatch
@@ -360,6 +362,7 @@ LIBCARTESI_OBJS:= \
 	memory-address-range.o \
 	os.o \
 	os-mmap.o \
+	os-filesystem.o \
 	plic-address-range.o \
 	pristine-merkle-tree.o \
 	replay-step-state-access-interop.o \

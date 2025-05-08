@@ -65,8 +65,8 @@ struct backing_store_config_only final {
 
 /// \brief RAM state config
 struct ram_config final {
-    uint64_t length{0};                                   ///< RAM length
-    backing_store_config backing_store{.truncate = true}; ///< Backing store
+    uint64_t length{0};                 ///< RAM length
+    backing_store_config backing_store; ///< Backing store
 };
 
 /// \brief DTB state config
@@ -151,8 +151,8 @@ struct uarch_processor_config final {
 
 /// \brief Uarch config
 struct uarch_config final {
-    uarch_processor_config processor{};                        ///< Uarch processor
-    uarch_ram_config ram{.backing_store = {.truncate = true}}; ///< Uarch RAM
+    uarch_processor_config processor{}; ///< Uarch processor
+    uarch_ram_config ram{};             ///< Uarch RAM
 };
 
 /// \brief Hash tree config
@@ -194,20 +194,27 @@ struct machine_config final {
     static std::string get_phtc_filename(const std::string &dir);
 
     static void adjust_backing_store_config(uint64_t start, uint64_t length, const std::string &dir,
-        backing_store_config &c);
+        sharing_mode sharing, backing_store_config &c);
 
     static void adjust_hash_tree_config(const std::string &dir, hash_tree_config &c);
 
-    void adjust_backing_stores(const std::string &dir);
+    /// \brief Adjusts the machine config filling in default values
+    machine_config &adjust_defaults();
+
+    /// \brief Adjust backing stores to point to the directory
+    machine_config &adjust_backing_stores(const std::string &dir, sharing_mode sharing = sharing_mode::config);
 
     /// \brief Loads a machine config from a directory
     /// \param dir Directory from whence "config" will be loaded
+    /// \param sharing Sharing mode conversion policy to use for backing stores
     /// \returns The config loaded
-    static machine_config load(const std::string &dir);
+    static machine_config load(const std::string &dir, sharing_mode sharing = sharing_mode::config);
 
     /// \brief Stores the machine config to a directory
     /// \param dir Directory where "config" will be stored
-    void store(const std::string &dir) const;
+    /// \param sharing Sharing mode conversion policy to use for backing stores
+    /// \returns The filename where the config was stored.
+    std::string store(const std::string &dir, sharing_mode sharing = sharing_mode::config) const;
 };
 
 } // namespace cartesi

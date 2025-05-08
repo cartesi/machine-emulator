@@ -1078,6 +1078,9 @@
           },
           "soft_yield": {
             "type": "boolean"
+          },
+          "no_reserve": {
+            "type": "boolean"
           }
         }
       },

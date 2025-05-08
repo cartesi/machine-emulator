@@ -49,6 +49,7 @@
 #include "machine-config.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
+#include "os-filesystem.h"
 #include "os.h"
 #include "pmas-constants.h"
 #include "pmas.h"
@@ -60,6 +61,7 @@
 #include "riscv-constants.h"
 #include "rtc.h"
 #include "scope-exit.h"
+#include "scope-remove.h"
 #include "send-cmio-response.h"
 #include "shadow-tlb.h"
 #include "shadow-uarch-state.h"
@@ -105,23 +107,10 @@ void machine::init_uarch_processor(const uarch_processor_config &p) {
     }
 }
 
-void machine::init_processor(processor_config &p, const machine_runtime_config &r) {
+void machine::init_processor(const processor_config &p, const machine_runtime_config &r) {
     if (p.backing_store.data_filename.empty() || p.backing_store.create) {
         // Initialize to default values first
         *m_s = processor_state{};
-
-        // Initialize registers
-        if (p.registers.marchid == UINT64_C(-1)) {
-            p.registers.marchid = MARCHID_INIT;
-        }
-
-        if (p.registers.mvendorid == UINT64_C(-1)) {
-            p.registers.mvendorid = MVENDORID_INIT;
-        }
-
-        if (p.registers.mimpid == UINT64_C(-1)) {
-            p.registers.mimpid = MIMPID_INIT;
-        }
 
         // General purpose registers
         for (int i = 1; i < X_REG_COUNT; i++) {
@@ -281,10 +270,10 @@ void machine::init_dtb_contents(const machine_config &config) {
 }
 
 // ??D It is best to leave the std::move() on r because it may one day be necessary!
-machine::machine(machine_config c, machine_runtime_config r, const std::string & /*dir*/) :
-    m_c{std::move(c)}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
-    m_r{std::move(r)}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
-    m_ars{m_c},
+machine::machine(machine_config c, machine_runtime_config r, const std::string &dir, scope_remove remover) :
+    m_c{std::move(c).adjust_defaults()}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
+    m_r{std::move(r)},                   // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
+    m_ars{m_c, m_r, dir, remover},
     m_s{std::bit_cast<processor_state *>(m_ars.find(AR_SHADOW_STATE_START, AR_SHADOW_STATE_LENGTH).get_host_memory())},
     m_us{std::bit_cast<uarch_processor_state *>(
         m_ars.find(AR_SHADOW_UARCH_STATE_START, AR_SHADOW_UARCH_STATE_LENGTH).get_host_memory())} {
@@ -298,6 +287,8 @@ machine::machine(machine_config c, machine_runtime_config r, const std::string &
     // when calling write() on closed file descriptors.
     // This can happen with the stdout console file descriptors or network file descriptors.
     os_disable_sigpipe();
+    // Construction succeeded, keep all created files and directories
+    remover.retain_all();
 }
 
 void machine::init_tty() {
@@ -311,30 +302,12 @@ void machine::init_tty() {
     }
 }
 
-static void load_hash(const std::string &dir, machine::hash_type &h) {
-    auto name = dir + "/hash";
-    auto fp = make_unique_fopen(name.c_str(), "rb");
-    if (fread(h.data(), 1, h.size(), fp.get()) != h.size()) {
-        throw std::runtime_error{"error reading from '" + name + "'"};
-    }
-}
-
 // ??D It is best to leave the std::move() on r because it may one day be necessary!
-machine::machine(const std::string &dir, machine_runtime_config r, sharing_mode /*sharing*/) :
+machine::machine(const std::string &dir, machine_runtime_config r, sharing_mode sharing) :
     // NOLINTNEXTLINE(hicpp-move-const-arg,performance-move-const-arg)
-    machine{machine_config::load(dir), std::move(r)} {
+    machine{machine_config::load(dir, sharing), std::move(r)} {
     if (m_r.skip_root_hash_check) {
         return;
-    }
-    hash_type hstored;
-    hash_type hrestored;
-    load_hash(dir, hstored);
-    if (!update_merkle_tree()) {
-        throw std::runtime_error{"error updating Merkle tree"};
-    }
-    m_t.get_root_hash(hrestored);
-    if (hstored != hrestored) {
-        throw std::runtime_error{"stored and restored hashes do not match"};
     }
 }
 
@@ -458,67 +431,109 @@ host_addr machine::get_hp_offset(uint64_t pma_index) const {
     return paddr - haddr;
 }
 
-static void store_hash(const machine::hash_type &h, const std::string &dir) {
-    auto name = dir + "/hash";
-    auto fp = make_unique_fopen(name.c_str(), "wb");
-    if (fwrite(h.data(), 1, h.size(), fp.get()) != h.size()) {
-        throw std::runtime_error{"error writing to '" + name + "'"};
-    }
-}
-
-void machine::store_address_ranges(const machine_config &c, const std::string &dir) const {
-    store_address_range(m_ars.find<uint64_t>(AR_DTB_START), dir);
-    store_address_range(m_ars.find<uint64_t>(AR_RAM_START), dir);
-    store_address_range(m_ars.find<uint64_t>(AR_SHADOW_STATE_START), dir);
-    for (const auto &f : c.flash_drive) {
-        store_address_range(m_ars.find<uint64_t>(f.start), dir);
-    }
-    store_address_range(m_ars.find<uint64_t>(AR_CMIO_RX_BUFFER_START), dir);
-    store_address_range(m_ars.find<uint64_t>(AR_CMIO_TX_BUFFER_START), dir);
-    store_address_range(m_ars.find<uint64_t>(AR_SHADOW_UARCH_STATE_START), dir);
-    store_address_range(m_ars.find<uint64_t>(AR_UARCH_RAM_START), dir);
-    store_address_range(m_ars.find<uint64_t>(AR_PMAS_START), dir);
-}
-
-void machine::store_address_range(const address_range &ar, const std::string &dir) {
+static void store_address_range(const backing_store_config &from_config, const address_range &ar, bool read_only,
+    const std::string &dir, sharing_mode sharing, scope_remove &remover) {
     if (ar.is_empty()) {
         throw std::runtime_error{"attempt to store empty address range "s.append(ar.get_description())};
     }
-    auto name = machine_config::get_data_filename(dir, ar.get_start(), ar.get_length());
-    auto fp = make_unique_fopen(name.c_str(), "wb"); // will throw if it fails
     if (!ar.is_memory() || ar.get_host_memory() == nullptr) {
         throw std::runtime_error{"attempt to store non memory address range "s.append(ar.get_description())};
     }
-    if (fwrite(ar.get_host_memory(), 1, ar.get_length(), fp.get()) != ar.get_length()) {
-        throw std::runtime_error{"error writing to '" + name + "'"};
+    // Write the memory data to a file
+    const std::string &data_filename = machine_config::get_data_filename(dir, ar.get_start(), ar.get_length());
+    if (sharing == sharing_mode::all || (sharing == sharing_mode::config && from_config.shared)) {
+        os::create_file(data_filename, std::span{ar.get_host_memory(), static_cast<size_t>(ar.get_length())});
+    } else { // Copy unshared backing store
+        if (from_config.data_filename.empty()) {
+            throw std::runtime_error{"attempt to restore unbacked address range "s.append(ar.get_description())};
+        }
+        if (from_config.shared) {
+            throw std::runtime_error{"attempt to restore shared address range "s.append(ar.get_description())};
+        }
+        os::copy_file(from_config.data_filename, data_filename, ar.get_length());
+    }
+    remover.add_file(data_filename);
+    if (read_only) {
+        // Mark host read-only ranges as read-only
+        os::change_writable(data_filename, false);
     }
 }
 
-void machine::store(const std::string &dir, sharing_mode /*sharing*/) const {
+void machine::store(const std::string &dir, sharing_mode sharing) const {
     if (dir.empty()) {
         throw std::invalid_argument{"directory name cannot be empty"};
     }
     if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error{"cannot store unreproducible machines"};
     }
-    if (os_mkdir(dir.c_str(), 0700) != 0) {
-        throw std::system_error{errno, std::generic_category(), "error creating directory '"s + dir + "'"s};
+    scope_remove remover;
+    // Create directory
+    os::create_directory(dir);
+    remover.add_directory(dir);
+    // Store config
+    remover.add_file(m_c.store(dir, sharing));
+    // Store all address ranges
+    store_address_range(m_c.processor.backing_store, m_ars.find<uint64_t>(AR_SHADOW_STATE_START), false, dir, sharing,
+        remover);
+    store_address_range(m_c.pmas.backing_store, m_ars.find<uint64_t>(AR_PMAS_START), true, dir, sharing, remover);
+    store_address_range(m_c.dtb.backing_store, m_ars.find<uint64_t>(AR_DTB_START), false, dir, sharing, remover);
+    store_address_range(m_c.ram.backing_store, m_ars.find<uint64_t>(AR_RAM_START), false, dir, sharing, remover);
+    store_address_range(m_c.cmio.rx_buffer.backing_store, m_ars.find<uint64_t>(AR_CMIO_RX_BUFFER_START), false, dir,
+        sharing, remover);
+    store_address_range(m_c.cmio.tx_buffer.backing_store, m_ars.find<uint64_t>(AR_CMIO_TX_BUFFER_START), false, dir,
+        sharing, remover);
+    store_address_range(m_c.uarch.processor.backing_store, m_ars.find<uint64_t>(AR_SHADOW_UARCH_STATE_START), false,
+        dir, sharing, remover);
+    store_address_range(m_c.uarch.ram.backing_store, m_ars.find<uint64_t>(AR_UARCH_RAM_START), false, dir, sharing,
+        remover);
+    for (const auto &f : m_c.flash_drive) {
+        store_address_range(f.backing_store, m_ars.find<uint64_t>(f.start), f.read_only, dir, sharing, remover);
     }
-    if (!m_r.skip_root_hash_store) {
-        if (!update_merkle_tree()) {
-            throw std::runtime_error{"error updating Merkle tree"};
-        }
-        hash_type h;
-        m_t.get_root_hash(h);
-        store_hash(h, dir);
-    }
-    machine_config c = m_c;
-    c.adjust_backing_stores(".");
-    c.store(dir);
-    store_address_ranges(c, dir);
+    // Retain all stored files
+    remover.retain_all();
 }
 
-void machine::clone_stored(const std::string & /*from_dir*/, const std::string & /*to_dir*/) {}
+static void clone_address_range(const backing_store_config &from, const backing_store_config &to,
+    scope_remove &remover) {
+    os::clone_file(from.data_filename, to.data_filename);
+    remover.add_file(to.data_filename);
+}
+
+void machine::clone_stored(const std::string &from_dir, const std::string &to_dir) {
+    if (from_dir.empty() || to_dir.empty()) {
+        throw std::invalid_argument{"directory name cannot be empty"};
+    }
+    const auto from_c = machine_config::load(from_dir);
+    const auto to_c = machine_config(from_c).adjust_backing_stores(to_dir);
+
+    scope_remove remover;
+
+    // Create directory
+    os::create_directory(to_dir);
+    remover.add_directory(to_dir);
+
+    // Clone config
+    const auto from_config_filename = machine_config::get_config_filename(from_dir);
+    const auto to_config_filename = machine_config::get_config_filename(to_dir);
+    os::clone_file(from_config_filename, to_config_filename);
+    remover.add_file(to_config_filename);
+
+    // Clone all address ranges
+    clone_address_range(from_c.processor.backing_store, to_c.processor.backing_store, remover);
+    clone_address_range(from_c.pmas.backing_store, to_c.pmas.backing_store, remover);
+    clone_address_range(from_c.dtb.backing_store, to_c.dtb.backing_store, remover);
+    clone_address_range(from_c.ram.backing_store, to_c.ram.backing_store, remover);
+    clone_address_range(from_c.cmio.rx_buffer.backing_store, to_c.cmio.rx_buffer.backing_store, remover);
+    clone_address_range(from_c.cmio.tx_buffer.backing_store, to_c.cmio.tx_buffer.backing_store, remover);
+    clone_address_range(from_c.uarch.processor.backing_store, to_c.uarch.processor.backing_store, remover);
+    clone_address_range(from_c.uarch.ram.backing_store, to_c.uarch.ram.backing_store, remover);
+    for (size_t i = 0; i < to_c.flash_drive.size(); ++i) {
+        clone_address_range(from_c.flash_drive[i].backing_store, to_c.flash_drive[i].backing_store, remover);
+    }
+
+    // Retain all stored files
+    remover.retain_all();
+}
 
 void machine::dump_insn_hist() {
 #ifdef DUMP_INSN_HIST
@@ -2093,7 +2108,7 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
 
 interpreter_break_reason machine::verify_step(const hash_type &root_hash_before, const std::string &filename,
     uint64_t mcycle_count, const hash_type &root_hash_after) {
-    auto data_length = os_get_file_length(filename.c_str(), "step log file");
+    auto data_length = os::file_size(filename);
     auto data = make_unique_mmap<unsigned char>(data_length, os_mmap_flags{}, filename, data_length);
     replay_step_state_access::context context;
     replay_step_state_access a(context, data.get(), data_length, root_hash_before);

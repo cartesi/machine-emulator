@@ -329,6 +329,12 @@ public:
         return do_is_host_read_only();
     }
 
+    /// \brief Returns true if the mapped memory is shared with a backing store in the host
+    /// \returns True if the memory is shared in the host
+    bool is_host_shared() const noexcept {
+        return do_is_host_shared();
+    }
+
     /// \brief Returns true if pages marked as dirty once are uncleanable
     /// \returns True if and only if dirty pages are uncleanable
     bool is_page_uncleanable() const noexcept {
@@ -381,6 +387,10 @@ private:
     }
 
     virtual bool do_is_host_read_only() const noexcept {
+        return false;
+    }
+
+    virtual bool do_is_host_shared() const noexcept {
         return false;
     }
 

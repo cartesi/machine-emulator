@@ -688,6 +688,10 @@ static std::tuple<ARGS...> parse_args(const json &j, const char *(&param_name)[s
 /// \returns JSON response object
 static json jsonrpc_shutdown_handler(const json &j, const std::shared_ptr<http_session> &session) {
     jsonrpc_check_no_params(j);
+    // Ensure the machine is unmapped before shutting down.
+    // This step releases memory and flushes any pending changes to disk,
+    // allowing files from the destroyed machine to be safely reused afterward.
+    session->handler->machine.reset();
     // Close acceptor right-away so the port can be immediately reused after request response.
     // This will also stop the IO main loop when all connections are closed,
     // because the IO context will run out of pending events to execute.
@@ -756,6 +760,9 @@ static std::string endpoint_to_string(const tcp::endpoint &endpoint) {
 /// server.
 static json jsonrpc_fork_handler(const json &j, const std::shared_ptr<http_session> &session) {
     jsonrpc_check_no_params(j);
+    if (session->handler->machine && session->handler->machine->has_shared_address_range()) {
+        throw std::domain_error("cannot fork machines with shared address ranges");
+    }
     // Listen in desired port before fork so failures happen still in parent,
     // who can directly report them to client
     tcp::acceptor acceptor{session->handler->ioc, tcp::endpoint{session->handler->local_endpoint.address(), 0}};

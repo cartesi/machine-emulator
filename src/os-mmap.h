@@ -32,7 +32,7 @@
 /// - Cross-platform compatibility with platform-specific optimizations.
 ///
 /// This module is designed to handle complex memory mapping scenarios, such as partial file
-/// mappings, file truncation, and synchronization of file-backed memory regions.
+/// mappings, and synchronization of file-backed memory regions.
 /// \}
 
 #include <cstdint>
@@ -49,17 +49,16 @@ namespace cartesi {
 
 /// \brief Flags for memory mapping operations.
 struct os_mmap_flags {
-    bool read_only{false}; ///< Mark mapped memory as read-only
-    bool shared{false};    ///< Share mapped memory with the backing file
-    bool create{false};    ///< Create the backing file (requires shared to be true)
-    bool truncate{false};  ///< Truncate backing file to match the specified backing file length
-    bool lock{false};      ///< Lock the backing file for exclusive writing when shared, otherwise for shared reading
+    bool read_only{false};  ///< Mark mapped memory as read-only
+    bool shared{false};     ///< Share mapped memory with the backing file
+    bool no_reserve{false}; ///< Do not reserve sawp memory for the mapping
 };
 
 /// \brief Structure representing a memory-mapped region.
 struct os_mmapd {
     void *host_memory{nullptr};      ///< Pointer to the mapped memory region
     uint64_t length{0};              ///< The total size of the mapped memory
+    os_mmap_flags flags;             ///< Flags used for the mapping
     uint64_t backing_sync_length{0}; ///< Length of file-backed portion for which memory sync is needed
 #ifdef HAVE_MMAP
     int backing_fd{-1}; ///< File descriptor of the backing file
@@ -68,7 +67,6 @@ struct os_mmapd {
     void *backing_host_memory{nullptr}; ///< Pointer to the backing file mapped memory region
     void *backing_mapping{nullptr};     ///< Handle of the backing file mapping
     void *backing_fh{nullptr};          ///< Handle of the backing file
-    bool backing_lock{false};           ///< Whether the backing file was locked
 #else
     FILE *backing_fp{nullptr};            ///< Pointer of the backing file
     void *unaligned_host_memory{nullptr}; ///< Pointer to the memory that we can deallocate with std::free()
@@ -82,8 +80,8 @@ uint64_t os_get_mmap_page_size();
 /// \brief Maps a memory region, optionally backed by a file.
 /// \param length Total memory length to map.
 /// \param flags Flags for the mapping.
-/// \param backing_filename Path to the file to back the memory mapping (if empty, creates anonymous mapping).
-/// \param backing_length The expected or intended size of the backing file in bytes (must be <= length).
+/// \param backing_filename Path to the file to back the memory mapping.
+/// \param backing_length The expected size of the backing file in bytes (must be <= length).
 /// \returns Structure containing the memory mapping information.
 /// \details The memory is guaranteed to be aligned to 4096-byte boundaries.
 /// Memory above backing file length are zereod, and modifications to that region are not written out to the file.

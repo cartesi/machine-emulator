@@ -90,9 +90,6 @@ void os_putchars(const uint8_t *data, size_t len);
 /// \param yes If true, putchar is silenced
 void os_silence_putchar(bool yes);
 
-/// \brief Creates a new directory
-int os_mkdir(const char *path, int mode);
-
 /// \brief Get time elapsed since its first call with microsecond precision
 int64_t os_now_us();
 
@@ -160,12 +157,6 @@ int os_double_fork_or_throw(bool emancipate);
 // \returns In case of success, grand-child returns 0 and the parent returns the grand-child pid.
 // In case of error, parent returns -1 and there is no grand-child.
 int os_double_fork(bool emancipate, const char **err_msg);
-
-/// \brief Get the length of a file
-int64_t os_get_file_length(const char *filename, const char *text = "");
-
-/// \brief Check if a file exists
-bool os_file_exists(const char *filename);
 
 } // namespace cartesi
 

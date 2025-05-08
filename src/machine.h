@@ -42,6 +42,7 @@
 #include "os.h"
 #include "pmas-constants.h"
 #include "processor-state.h"
+#include "scope-remove.h"
 #include "shadow-tlb.h"
 #include "uarch-interpret.h"
 #include "uarch-processor-state.h"
@@ -61,7 +62,7 @@ constexpr skip_merkle_tree_update_t skip_merkle_tree_update;
 /// \brief Cartesi Machine implementation
 class machine final {
 private:
-    machine_config m_c;                   ///< Copy of initialization config
+    const machine_config m_c;             ///< Copy of initialization config
     machine_runtime_config m_r;           ///< Copy of initialization runtime config
     mutable machine_address_ranges m_ars; ///< Address ranges
     mutable machine_merkle_tree m_t;      ///< Merkle tree of state
@@ -78,7 +79,7 @@ private:
     /// \brief Initializes processor
     /// \param p Processor configuration
     /// \param r Machine runtime configuration
-    void init_processor(processor_config &p, const machine_runtime_config &r);
+    void init_processor(const processor_config &p, const machine_runtime_config &r);
 
     /// \brief Initializes microarchitecture processor
     /// \param c Microarchitecture processor configuration
@@ -112,16 +113,6 @@ private:
     /// \details The counter is key is the concatenation of \p domain with \p name.
     static std::string get_counter_key(const char *name, const char *domain = nullptr);
 
-    /// \brief Stores address ranges into files for serialization
-    /// \param c Serialization machine config
-    /// \param dir Directory where address ranges will be stored
-    void store_address_ranges(const machine_config &c, const std::string &dir) const;
-
-    /// \brief Stores address range into files for serialization
-    /// \param ar Address range to store
-    /// \param dir Directory where address ranges will be stored
-    static void store_address_range(const address_range &ar, const std::string &dir);
-
     /// \brief Checks if the machine has VirtIO devices.
     /// \returns True if at least one VirtIO device is present.
     bool has_virtio_devices() const;
@@ -143,7 +134,9 @@ public:
     /// \brief Constructor from machine configuration
     /// \param config Machine config to use instantiating machine
     /// \param runtime Runtime config to use with machine
-    explicit machine(machine_config config, machine_runtime_config runtime = {}, const std::string &dir = {});
+    /// \param remover Object that may remove created files and directories if construction fails
+    explicit machine(machine_config config, machine_runtime_config runtime = {}, const std::string &dir = {},
+        scope_remove remover = {});
 
     /// \brief Constructor from previously serialized directory
     /// \param directory Directory to load stored machine from
@@ -561,6 +554,11 @@ public:
     /// \brief Returns whether runtime soft yields are enabled
     bool is_soft_yield() const {
         return m_r.soft_yield;
+    }
+
+    /// \brief Returns whether the machine contains a shared address range
+    bool has_shared_address_range() const {
+        return std::ranges::any_of(m_ars.all(), [](const auto &ar) { return ar.is_host_shared(); });
     }
 };
 

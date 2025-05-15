@@ -152,6 +152,8 @@ function _M.parse_number(n)
         return base << 20
     elseif rest == "Gi" then
         return base << 30
+    elseif rest == "Ti" then
+        return base << 40
     elseif rest == "" then
         return base
     end

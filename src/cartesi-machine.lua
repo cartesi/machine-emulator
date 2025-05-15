@@ -110,11 +110,13 @@ where options are:
         create
         truncate
         read_only
+        mke2fs
         mount:<string>
         user:<string>
 
-        label (mandatory)
+        label (optional)
         identifies the flash drive. init attempts to mount it as /mnt/<label>.
+        if omitted, the label is set to "driveX", where X starts at 1.
 
         start (optional)
         sets the starting physical memory offset for flash drive in bytes.
@@ -152,9 +154,14 @@ where options are:
         mark flash drive as read-only, disallowing write attempts from the host or the guest.
         by default, flash drives are not read-only, thus writable.
 
+        mke2fs (optional)
+        whether the flash drive should be formatted as an ext2 filesystem in init.
+        by default, the drive is formatted as ext2 filesystem if there is no backing file,
+        you can use "mke2fs:false" to disables ext2 formatting.
+
         mount (optional)
         whether the flash drive should be mounted automatically in init.
-        by default, the drive is mounted if there is an image file backing it,
+        by default, the drive is mounted if there is an image file backing it or is formatted (mke2fs option),
         you can use "mount:false" to disables auto mounting,
         you can also use "mount:<path>" to choose a custom mount point.
 
@@ -640,6 +647,7 @@ local flash_create = {}
 local flash_truncate = {}
 local flash_read_only = {}
 local flash_mount = {}
+local flash_mke2fs = {}
 local flash_user = {}
 local flash_start = {}
 local flash_length = {}
@@ -1192,24 +1200,26 @@ local options = {
                 create = "boolean",
                 truncate = "boolean",
                 read_only = "boolean",
-                mount = "boolean",
+                mount = "string",
+                mke2fs = "boolean",
                 user = "string",
                 length = "number",
                 start = "number",
             })
-            assert(f.label, "missing flash drive label in " .. all)
+            if f.label == nil then f.label = "drive" .. #flash_label_order end
             f.data_filename = f.data_filename or ""
             f.dht_filename = f.dht_filename or ""
+            if f.mke2fs == nil then f.mke2fs = f.data_filename == "" end
             if f.mount == nil then
                 -- mount only if there is a file backing
-                if f.data_filename and f.data_filename ~= "" then
+                if f.data_filename ~= "" or f.mke2fs then
                     f.mount = "/mnt/" .. f.label
                 else
                     f.mount = false
                 end
-            elseif f.mount == true then
+            elseif f.mount == "true" then
                 f.mount = "/mnt/" .. f.label
-            elseif f.mount == false then
+            elseif f.mount == "false" then
                 f.mount = false
             end
             local d = f.label
@@ -1226,6 +1236,7 @@ local options = {
             flash_truncate[d] = f.truncate or flash_truncate[d]
             flash_read_only[d] = f.read_only or flash_read_only[d]
             flash_mount[d] = f.mount or flash_mount[d]
+            flash_mke2fs[d] = f.mke2fs or flash_mke2fs[d]
             flash_user[d] = f.user or flash_user[d]
             if d == "root" and f.read_only then -- Mount root filesystem as read-only
                 dtb.bootargs = dtb.bootargs:gsub("rw", "ro")
@@ -1908,9 +1919,20 @@ echo "
             length = flash_length[label] or -1,
         }
         -- auto mount
+        local mke2fs = flash_mke2fs[label]
+        if label ~= "root" and mke2fs then -- format filesystem
+            local cmd = table.concat({
+                'busybox mke2fs -F -b 4096 -I 256 -L "',
+                label,
+                '" /dev/',
+                devname,
+                " > /dev/null",
+            })
+            config.dtb.init = config.dtb.init .. cmd .. "\n"
+        end
         local mount = flash_mount[label]
         local chownpath = "/dev/" .. devname
-        if label ~= "root" and mount then
+        if label ~= "root" and mount then -- mount filesystem
             local cmd = table.concat({
                 'busybox mkdir -p "',
                 mount,

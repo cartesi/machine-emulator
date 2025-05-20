@@ -157,7 +157,6 @@ CXX_WARNS=$(C_WARNS) -Wno-missing-field-initializers
 # Place our include directories before the system's
 INCS+= \
 	-I../third-party/llvm-flang-uint128 \
-	-I../third-party/tiny_sha3 \
 	-I../third-party/nlohmann-json \
 	-I../third-party/downloads \
 	$(BOOST_INC)
@@ -217,8 +216,8 @@ ifneq ($(git_commit),)
 DEFS+=-DGIT_COMMIT='"$(git_commit)"'
 endif
 
-# The SHA3 is third party library we always want to compile with O3
-SHA3_CFLAGS=-O3
+# Hashing libraries have special optimizations flags
+HASH_CFLAGS=-O3 -DNDEBUG
 
 # Optimization flags for the interpreter
 ifneq (,$(filter yes,$(relwithdebinfo) $(release)))
@@ -365,7 +364,8 @@ LIBCARTESI_OBJS:= \
 	pristine-merkle-tree.o \
 	replay-step-state-access-interop.o \
 	send-cmio-response.o \
-	sha3.o \
+	keccak-256-hasher.o \
+	is-pristine.o \
 	uarch-pristine-hash.o \
 	uarch-pristine-ram.o \
 	uarch-pristine-state-hash.o \
@@ -392,7 +392,8 @@ LUACARTESI_OBJS:= \
 	$(CARTESI_CLUA_OBJS)
 
 LIBCARTESI_MERKLE_TREE_OBJS:= \
-	sha3.o \
+	keccak-256-hasher.o \
+	is-pristine.o \
 	back-merkle-tree.o \
 	pristine-merkle-tree.o \
 	complete-merkle-tree.o \
@@ -554,8 +555,6 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	@$(CC) $(CFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
-sha3.o: ../third-party/tiny_sha3/sha3.c
-	$(CC) $(CFLAGS) $(SHA3_CFLAGS) -c -o $@ $<
 
 uarch-pristine-ram.o: $(UARCH_PRISTINE_RAM_C)
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -568,6 +567,12 @@ interpret-jump-table.h: ../tools/gen-interpret-jump-table.lua
 
 interpret.o: interpret.cpp machine-c-version.h interpret-jump-table.h
 	$(CXX) $(CXXFLAGS) $(INTERPRET_CXXFLAGS) -c -o $@ $<
+
+keccak-256-hasher.o: keccak-256-hasher.cpp
+	$(CXX) $(CXXFLAGS) $(HASH_CFLAGS) -c -o $@ $<
+
+is-pristine.o: is-pristine.cpp
+	$(CXX) $(CXXFLAGS) $(HASH_CFLAGS) -c -o $@ $<
 
 %.o: %.cpp machine-c-version.h
 	$(CXX) $(CXXFLAGS) -c -o $@ $<

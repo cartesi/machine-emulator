@@ -19,43 +19,88 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <type_traits>
 
+#include "compiler-defines.h"
 #include "i-hasher.h"
 #include "machine-hash.h"
 
-extern "C" {
-#include "sha3.h"
-}
-
 namespace cartesi {
 
-struct keccak_instance final {
-    union {
-        uint8_t b[200];
-        uint64_t q[25];
-    } st;
-    int pt;
+union keccak_ctx final {
+    uint8_t b[200]; // 8-bit bytes
+    uint64_t q[25]; // 64-bit words
 };
 
+/// \brief Keccak-f[1600] permutation generic implementation
+MULTIVERSION_GENERIC void keccakf(uint64_t st[25]) noexcept;
+
+// \brief Updates keccak state with new data
+MULTIVERSION_GENERIC size_t keccak_update(keccak_ctx &ctx, std::span<const uint8_t> data, size_t j) noexcept;
+
+// \brief Finalizes the keccak state and produces the hash
+MULTIVERSION_GENERIC void keccak_final(keccak_ctx &ctx, machine_hash_view hash, size_t j) noexcept;
+
+// \brief Hashes the data using keccak
+MULTIVERSION_GENERIC void keccak_hash(std::span<const uint8_t> data, machine_hash_view hash) noexcept;
+
+// \brief Hashes the hash tree word using keccak
+MULTIVERSION_GENERIC void keccak_hash(const_hash_tree_word_view data, machine_hash_view hash) noexcept;
+
+// \brief Hashes the concatenation of two data buffers using keccak
+MULTIVERSION_GENERIC void keccak_concat_hash(std::span<const uint8_t> data1, std::span<const uint8_t> data2,
+    machine_hash_view hash) noexcept;
+// \brief Hashes the concatenation of two hashes using keccak
+MULTIVERSION_GENERIC void keccak_concat_hash(const_machine_hash_view data1, const_machine_hash_view data2,
+
+    machine_hash_view hash) noexcept;
+
+// Optimized implementation for x86_64 architecture leveraging modern CPU instruction sets:
+// - BMI1/BMI2 (Bit Manipulation Instructions) provide specialized bit operations:
+//   * RORX performs optimized bitwise rotation without requiring separate shift operations
+//   * ANDN efficiently computes (~x & y) in a single instruction
+// - AVX2 is utilized just for efficient loading of constants and initial data XOR operations,
+// the algorithm's inherent data dependencies prevent a more effective vectorization
+#ifdef USE_MULTIVERSINING_AMD64
+MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccakf(uint64_t st[25]) noexcept;
+MULTIVERSION_AMD64_AVX2_BMI_BMI2 size_t keccak_update(keccak_ctx &ctx, std::span<const uint8_t> data,
+    size_t j) noexcept;
+MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_final(keccak_ctx &ctx, std::span<uint8_t, 32> hash, size_t j) noexcept;
+MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_hash(std::span<const uint8_t> data, machine_hash_view hash) noexcept;
+MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_hash(const_hash_tree_word_view data, machine_hash_view hash) noexcept;
+MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_concat_hash(std::span<const uint8_t> data1, std::span<const uint8_t> data2,
+    machine_hash_view hash) noexcept;
+MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_concat_hash(const_machine_hash_view data1, const_machine_hash_view data2,
+    machine_hash_view hash) noexcept;
+#endif
+
 class keccak_256_hasher final : public i_hasher<keccak_256_hasher> {
-    sha3_ctx_t m_ctx{};
+    keccak_ctx m_ctx{};
+    size_t m_j{};
 
     friend i_hasher<keccak_256_hasher>;
 
     void do_begin() noexcept {
-        sha3_init(&m_ctx, machine_hash_size, 0x01);
+        m_ctx = keccak_ctx{};
+        m_j = 0;
     }
-
-    template <ContiguousRangeOfByteLike R>
-    void do_add_data(R &&r) noexcept { // NOLINT(cppcoreguidelines-missing-std-forward)
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        sha3_update(&m_ctx, reinterpret_cast<const unsigned char *>(std::ranges::data(r)), std::ranges::size(r));
+    void do_add_data(std::span<const uint8_t> data) noexcept {
+        m_j = keccak_update(m_ctx, data, m_j);
     }
-
     void do_end(machine_hash_view hash) noexcept {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        sha3_final(reinterpret_cast<unsigned char *>(hash.data()), &m_ctx);
+        keccak_final(m_ctx, hash, m_j);
+    }
+
+    template <size_t Extent>
+    static void do_hash(std::span<const uint8_t, Extent> data, machine_hash_view hash) noexcept {
+        keccak_hash(data, hash);
+    }
+
+    template <size_t Extent>
+    static void do_concat_hash(std::span<const uint8_t, Extent> data1, std::span<const uint8_t, Extent> data2,
+        machine_hash_view hash) noexcept {
+        keccak_concat_hash(data1, data2, hash);
     }
 
 public:

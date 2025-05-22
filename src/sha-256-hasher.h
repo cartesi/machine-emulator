@@ -14,59 +14,49 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef KECCAK_256_HASHER_H
-#define KECCAK_256_HASHER_H
+#ifndef SHA256_HASHER_H
+#define SHA256_HASHER_H
 
-#include <cstddef>
-#include <cstdint>
 #include <type_traits>
 
 #include "machine-hash.h"
 
 extern "C" {
-#include "sha3.h"
+#include "sha256.h"
 }
 
 namespace cartesi {
 
-struct keccak_instance final {
-    union {
-        uint8_t b[200];
-        uint64_t q[25];
-    } st;
-    int pt;
-};
-
-class keccak_256_hasher final {
-    sha3_ctx_t m_ctx{};
+class sha_256_hasher final {
+    sha256_context m_ctx{};
 
 public:
     void begin() {
-        sha3_init(&m_ctx, 32, 0x01);
+        sha256_init(&m_ctx);
     }
 
     void add_data(const unsigned char *data, size_t length) {
-        sha3_update(&m_ctx, data, length);
+        sha256_hash(&m_ctx, data, length);
     }
 
     void end(machine_hash &hash) {
-        sha3_final(hash.data(), &m_ctx);
+        sha256_done(&m_ctx, hash.data());
     }
 
     /// \brief Default constructor
-    keccak_256_hasher() = default;
+    sha_256_hasher() = default;
 
     /// \brief Default destructor
-    ~keccak_256_hasher() = default;
+    ~sha_256_hasher() = default;
 
     /// \brief No copy constructor
-    keccak_256_hasher(const keccak_256_hasher &) = default;
+    sha_256_hasher(const sha_256_hasher &) = default;
     /// \brief No move constructor
-    keccak_256_hasher(keccak_256_hasher &&) = default;
+    sha_256_hasher(sha_256_hasher &&) = default;
     /// \brief No copy assignment
-    keccak_256_hasher &operator=(const keccak_256_hasher &) = default;
+    sha_256_hasher &operator=(const sha_256_hasher &) = default;
     /// \brief No move assignment
-    keccak_256_hasher &operator=(keccak_256_hasher &&) = default;
+    sha_256_hasher &operator=(sha_256_hasher &&) = default;
 };
 
 } // namespace cartesi

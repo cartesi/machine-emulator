@@ -1627,6 +1627,15 @@
           "$ref": "#/components/schemas/VirtIODeviceConfig"
         }
       },
+      "HashTreeConfigs": {
+        "title": "HashTreeConfigs",
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string"
+          }
+        }
+      },
       "MachineConfig": {
         "title": "MachineConfig",
         "type": "object",
@@ -1663,6 +1672,9 @@
           },
           "virtio": {
             "$ref": "#/components/schemas/VirtIOConfigs"
+          },
+          "hash_tree": {
+            "$ref": "#/components/schemas/HashTreeConfigs"
           }
         },
         "required": ["ram"]

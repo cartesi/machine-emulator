@@ -190,6 +190,7 @@ local cpu_reg_addr = {
     htif_ihalt = 824,
     htif_iconsole = 832,
     htif_iyield = 840,
+    hash_tree_target = 848,
 }
 for i = 0, 31 do
     cpu_reg_addr["x" .. i] = i * 8
@@ -235,6 +236,7 @@ local function get_cpu_reg_test_values()
         fcsr = 0x61,
         ilrsc = 0x2e0,
         iunrep = 0x0,
+        hash_tree_target = cartesi.HASH_TREE_TARGET_UARCH,
     }
     for i = 0, 31 do
         reg_values["x" .. i] = i * 8
@@ -260,6 +262,7 @@ local function build_machine_config(config_options)
     -- Create new machine
     local initial_reg_values = get_cpu_reg_test_values()
     local config = {
+        hash_tree = config_options.hash_tree or nil,
         processor = config_options.processor or initial_reg_values,
         ram = { length = 1 << 20 },
         htif = config_options.htif or nil,
@@ -299,6 +302,65 @@ local do_test = test_util.make_do_test(build_machine, machine_type)
 
 print("Testing machine bindings for type " .. machine_type)
 
+print("\n\nDifferent hash tree hash targets")
+
+do_test("Hash tree target should be keccak by default", function(machine)
+    assert(machine:get_initial_config().hash_tree.target == "uarch", "hash tree target should be uarch")
+end)
+
+test_util.make_do_test(build_machine, machine_type, { hash_tree = { target = "uarch" } })(
+    "Hash tree hash tree target should be keccak for uarch target",
+    function(machine)
+        assert(machine:get_initial_config().hash_tree.target == "uarch", "hash tree target should be uarch")
+        assert(
+            machine:read_reg("hash_tree_target") == cartesi.HASH_TREE_TARGET_UARCH,
+            "hash tree target should be uarch"
+        )
+        assert(
+            machine:read_word(machine:get_reg_address("hash_tree_target")) == cartesi.HASH_TREE_TARGET_UARCH,
+            "hash tree target should be uarch"
+        )
+        local root_hash = machine:get_root_hash()
+        local keccak_calculated = test_util.calculate_emulator_hash(machine, cartesi.keccak)
+        assert(root_hash == keccak_calculated, "initial root hash does not match")
+        local sha256_calculated = test_util.calculate_emulator_hash(machine, cartesi.sha256)
+        assert(root_hash ~= sha256_calculated, "initial root hash should not match sha256")
+    end
+)
+
+test_util.make_do_test(build_machine, machine_type, { hash_tree = { target = "risc0" } })(
+    "Hash tree hash tree target should be sha256 for riscv target",
+    function(machine)
+        assert(machine:get_initial_config().hash_tree.target == "risc0", "hash tree target should be risc0")
+        assert(
+            machine:read_reg("hash_tree_target") == cartesi.HASH_TREE_TARGET_RISC0,
+            "hash tree target should be HASH_TREE_TARGET_RISC0"
+        )
+        assert(
+            machine:read_word(machine:get_reg_address("hash_tree_target")) == cartesi.HASH_TREE_TARGET_RISC0,
+            "hash tree target should be HASH_TREE_TARGET_RISC0"
+        )
+        local root_hash = machine:get_root_hash()
+        local sha256_calculated = test_util.calculate_emulator_hash(machine, cartesi.sha256)
+        assert(root_hash == sha256_calculated, "initial root hash does not match")
+        local keccak_calculated = test_util.calculate_emulator_hash(machine, cartesi.keccak)
+        assert(root_hash ~= keccak_calculated, "initial root hash should not match keccak")
+    end
+)
+
+test_util.make_do_test(function() end, machine_type, {})(
+    "Fails to construct machine of unsupported hash tree target",
+    function()
+        local success, err = pcall(function()
+            build_machine(machine_type, {
+                hash_tree = { target = "invalid" },
+            })
+        end)
+        assert(success == false)
+        assert(err and err:match('field "value/hash_tree/target" has invalid value'))
+    end
+)
+
 print("\n\ntesting machine initial flags")
 do_test("machine should not have halt and yield initial flags set", function(machine)
     -- Check machine is not halted
@@ -322,6 +384,7 @@ end)
 
 print("\n\ntesting merkle tree get_proof for values for registers")
 do_test("should provide proof for values in registers", function(machine)
+    local hash_fn = test_util.get_machine_hash_tree_hash_fn(machine)
     local initial_reg_values = get_cpu_reg_test_values()
     initial_reg_values.mvendorid = nil
     initial_reg_values.marchid = nil
@@ -331,7 +394,7 @@ do_test("should provide proof for values in registers", function(machine)
     for _, v in pairs(initial_reg_values) do
         for el = cartesi.TREE_LOG2_WORD_SIZE, cartesi.TREE_LOG2_ROOT_SIZE - 1 do
             local a = test_util.align(v, el)
-            assert(test_util.check_proof(assert(machine:get_proof(a, el), "no proof")), "proof failed")
+            assert(test_util.check_proof(assert(machine:get_proof(a, el), "no proof"), hash_fn), "proof failed")
         end
     end
 end)
@@ -388,6 +451,8 @@ local function test_config(config)
     for i = 1, 31 do
         assert(type(config.processor["x" .. i]) == "number", "x" .. i .. " is not a number")
     end
+    local hash_tree = config.hash_tree
+    assert(hash_tree.target == nil or type(hash_tree.target) == "string", "invalid hash_tree.target")
     local htif = config.htif
     for _, field in ipairs({ "console_getchar", "yield_manual", "yield_automatic" }) do
         assert(htif[field] == nil or type(htif[field]) == "boolean", "invalid htif." .. field)
@@ -432,11 +497,12 @@ end)
 
 print("\n\n test calculation of initial root hash")
 do_test("should return expected value", function(machine)
+    local hash_fn = test_util.get_machine_hash_tree_hash_fn(machine)
     -- Get starting root hash
     local root_hash = machine:get_root_hash()
     print("Root hash: ", test_util.tohex(root_hash))
 
-    local calculated_root_hash = test_util.calculate_emulator_hash(machine)
+    local calculated_root_hash = test_util.calculate_emulator_hash(machine, hash_fn)
 
     assert(root_hash == calculated_root_hash, "initial root hash does not match")
 end)
@@ -680,6 +746,7 @@ do_test("Step log must contain conssitent data hashes", function(machine)
     local log = machine:log_step_uarch()
     local final_hash = machine:get_root_hash()
     machine:verify_step_uarch(initial_hash, log, final_hash)
+    assert(log.hash_tree_target == "uarch", "log hash_tree_target should be uarch")
     local read_access = log.accesses[1]
     assert(read_access.type == "read")
     local read_hash = read_access.read_hash
@@ -702,6 +769,19 @@ do_test("Step log must contain conssitent data hashes", function(machine)
     write_access.written_hash = wrong_hash
     _, err = pcall(machine.verify_step_uarch, machine, initial_hash, log, final_hash)
     assert(err:match("logged written data of uarch.cycle does not hash to the logged written hash at 8th access"))
+end)
+
+do_test("Can't verify uarch step for non-uarch target", function(machine)
+    local initial_hash = machine:get_root_hash()
+    local log = machine:log_step_uarch()
+    assert(log.hash_tree_target == "uarch", "log hash_tree_target should be uarch")
+    local final_hash = machine:get_root_hash()
+    machine:verify_step_uarch(initial_hash, log, final_hash)
+    -- it should refuse to verify the step with a different target
+    log.hash_tree_target = "risc0"
+    local ok, err = pcall(machine.verify_step_uarch, machine, initial_hash, log, final_hash)
+    assert(not ok, "verify_step_uarch should fail")
+    assert(err:match("operation not supported: hash_tree target is not uarch"))
 end)
 
 do_test("step when uarch cycle is max", function(machine)
@@ -829,6 +909,7 @@ for i = 0, 31 do
 end
 
 local function test_reset_uarch(machine, with_log, with_annotations)
+    local hash_fn = test_util.get_machine_hash_tree_hash_fn(machine)
     -- assert initial fixture state
     assert(machine:read_reg("uarch_halt_flag") ~= 0)
     assert(machine:read_reg("uarch_cycle") == 1)
@@ -841,7 +922,7 @@ local function test_reset_uarch(machine, with_log, with_annotations)
     machine:write_memory(cartesi.UARCH_RAM_START_ADDRESS, gibberish, #gibberish)
     assert(machine:read_memory(cartesi.UARCH_RAM_START_ADDRESS, #gibberish) == gibberish)
     -- assert uarch state hash is not pristine
-    local uarch_state_hash = test_util.calculate_uarch_state_hash(machine)
+    local uarch_state_hash = test_util.calculate_uarch_state_hash(machine, hash_fn)
     assert(uarch_state_hash ~= cartesi.UARCH_PRISTINE_STATE_HASH)
     -- reset uarch state
     if with_log then
@@ -869,7 +950,7 @@ local function test_reset_uarch(machine, with_log, with_annotations)
     -- assert that gibberish was removed from uarch ram
     assert(machine:read_memory(cartesi.UARCH_RAM_START_ADDRESS, #gibberish) ~= gibberish)
     -- compute current uarch state hash
-    uarch_state_hash = test_util.calculate_uarch_state_hash(machine)
+    uarch_state_hash = test_util.calculate_uarch_state_hash(machine, hash_fn)
     -- assert computed and pristine hash match
     assert(uarch_state_hash == cartesi.UARCH_PRISTINE_STATE_HASH)
 end
@@ -905,6 +986,22 @@ test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_c
         -- verifying incorrect final hash
         _, err = pcall(machine.verify_reset_uarch, machine, initial_hash, log, wrong_hash)
         assert(err:match("mismatch in root hash after replay"))
+    end
+)
+
+test_util.make_do_test(build_machine, machine_type, { uarch = test_reset_uarch_config })(
+    "Should refuse to verify reset_uarch with non-uarch target",
+    function(machine)
+        local initial_hash = machine:get_root_hash()
+        local log = machine:log_reset_uarch(cartesi.ACCESS_LOG_TYPE_ANNOTATIONS)
+        assert(log.hash_tree_target == "uarch", "log hash_tree_target should be uarch")
+        local final_hash = machine:get_root_hash()
+        -- verify happy path
+        machine:verify_reset_uarch(initial_hash, log, final_hash)
+        -- it should fail if it is not uarch
+        log.hash_tree_target = "risc0"
+        local _, err = pcall(machine.verify_reset_uarch, machine, final_hash, log, final_hash)
+        assert(err:match("operation not supported: hash_tree_target is not uarch"))
     end
 )
 
@@ -1088,6 +1185,26 @@ do_test("Test unhappy paths of verify_step_uarch", function(machine)
     end)
 end)
 
+test_util.make_do_test(build_machine, machine_type, { hash_tree = { target = "risc0" } })(
+    "Uarch operations should fail if hash tree target is not uarch",
+    function(machine)
+        assert(machine:get_initial_config().hash_tree.target == "risc0", "hash tree target should be risc0")
+        -- The machine is configured for risc0, therefore:
+        -- run_uarch should fail
+        local success, err = pcall(machine.run_uarch, machine, 1)
+        assert(success == false and err:match("operation not supported: hash_tree target is not uarch"))
+        -- reset_uarch should fail
+        success, err = pcall(machine.reset_uarch, machine)
+        assert(success == false and err:match("operation not supported: hash_tree target is not uarch"))
+        -- log_reset_uarch should fail
+        success, err = pcall(machine.log_reset_uarch, machine)
+        assert(success == false and err:match("operation not supported: hash_tree target is not uarch"))
+        --log_uarch step should fail
+        success, err = pcall(machine.log_step_uarch, machine)
+        assert(success == false and err:match("operation not supported: hash_tree target is not uarch"))
+    end
+)
+
 print("\n\n testing unsupported uarch instructions ")
 
 local uarch_illegal_insn_program = {
@@ -1175,13 +1292,11 @@ local function assert_access(accesses, index, expected_key_and_values)
     end
 end
 
-local function test_send_cmio_input_with_different_arguments()
+local function test_send_cmio_input_with_different_arguments(hash_tree_target)
     local data = string.rep("a", 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
     local reason = 1
     local max_rx_buffer_len = 1 << cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE
-    local data_hash = test_util.merkle_hash(data, 0, cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
     local all_zeros = string.rep("\0", max_rx_buffer_len)
-    local all_zeros_hash = test_util.merkle_hash(all_zeros, 0, cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE)
     -- prepares and asserts the state before send_cmio_response is called
     local function assert_before_cmio_response_sent(machine)
         machine:write_reg("iflags_Y", 1)
@@ -1198,20 +1313,30 @@ local function test_send_cmio_input_with_different_arguments()
         local expected_fromhost = ((reason & 0xffff) << 32) | (#data & 0xffffffff)
         assert(machine:read_reg("htif_fromhost") == expected_fromhost)
     end
-    do_test("send_cmio_response happy path", function(machine)
-        assert_before_cmio_response_sent(machine)
-        machine:send_cmio_response(reason, data)
-        assert_after_cmio_response_sent(machine)
-    end)
+
+    test_util.make_do_test(build_machine, machine_type, { hash_tree = { target = hash_tree_target }, uarch = {} })(
+        "send_cmio_response happy path ",
+        function(machine)
+            assert_before_cmio_response_sent(machine)
+            machine:send_cmio_response(reason, data)
+            assert_after_cmio_response_sent(machine)
+        end
+    )
     for _, large_data in ipairs({ false, true }) do
         local annotations = true
-        do_test(
+        test_util.make_do_test(build_machine, machine_type, { hash_tree = { target = hash_tree_target }, uarch = {} })(
             string.format(
-                "log_send_cmio_response happy path with annotations=%s, large_data=%s",
+                "log_send_cmio_response with annotations=%s, large_data=%s, hash_tree_target=%s",
                 annotations,
-                large_data
+                large_data,
+                hash_tree_target
             ),
             function(machine)
+                local hash_fn = test_util.get_machine_hash_tree_hash_fn(machine)
+                local data_hash = test_util.merkle_hash(data, 0, cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE, hash_fn)
+                local all_zeros_hash =
+                    test_util.merkle_hash(all_zeros, 0, cartesi.PMA_CMIO_RX_BUFFER_LOG2_SIZE, hash_fn)
+
                 local log_type = (annotations and cartesi.ACCESS_LOG_TYPE_ANNOTATIONS or 0)
                     | (large_data and cartesi.ACCESS_LOG_TYPE_LARGE_DATA or 0)
                 assert_before_cmio_response_sent(machine)
@@ -1253,7 +1378,8 @@ local function test_send_cmio_input_with_different_arguments()
     end
 end
 
-test_send_cmio_input_with_different_arguments()
+test_send_cmio_input_with_different_arguments("uarch")
+test_send_cmio_input_with_different_arguments("risc0")
 
 do_test("Dump of log produced by send_cmio_response should match", function(machine)
     machine:write_reg("iflags_Y", 1)
@@ -1502,8 +1628,9 @@ end)
 -- helper function to load a step log file into a table
 local function read_step_log_file(filename)
     local file <close> = assert(io.open(filename, "rb"))
+    local hash_tree_target = string.unpack("<I8", file:read(8))
     local page_count = string.unpack("<I8", file:read(8))
-    local log = { pages = {}, siblings = {} }
+    local log = { hash_tree_target = hash_tree_target, pages = {}, siblings = {} }
     for i = 1, page_count do
         log.pages[i] = {
             index = string.unpack("<I8", file:read(8)),
@@ -1525,6 +1652,7 @@ local function write_step_log_file(logdata, filename)
     if logdata.override_page_count then
         page_count = logdata.override_page_count
     end
+    file:write(string.pack("<I8", logdata.hash_tree_target))
     file:write(string.pack("<I8", page_count))
     for _, page in ipairs(logdata.pages) do
         file:write(string.pack("<I8", page.index))
@@ -1580,6 +1708,11 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
     assert(machine:read_reg("mcycle") == mcycle_count)
     local root_hash_after = machine:get_root_hash()
     assert(root_hash_before ~= root_hash_after)
+    -- verify the hash tree target identifier in the log file
+    assert(
+        read_step_log_file(filename1).hash_tree_target == cartesi.HASH_TREE_TARGET_UARCH,
+        "hash_tree_target should be uarch"
+    )
     -- verify step should pass
     status = machine:verify_step(root_hash_before, filename1, mcycle_count, root_hash_after)
     assert(status == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
@@ -1598,6 +1731,14 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
         -- copy original file without modifications
     end)
     machine:verify_step(root_hash_before, filename2, mcycle_count, root_hash_after)
+    -- override hash_tree_target to an invelid value
+    copy_step_log(filename1, filename2, function(log_data)
+        log_data.hash_tree_target = 2
+    end)
+    _, err = pcall(function()
+        machine:verify_step(root_hash_before, filename2, mcycle_count, root_hash_after)
+    end)
+    assert(err:match("invalid log format: hash tree target not supported"))
     -- modify page data
     copy_step_log(filename1, filename2, function(log_data)
         log_data.pages[1].data = string.reverse(log_data.pages[1].data)
@@ -1712,5 +1853,37 @@ test_util.make_do_test(build_machine, machine_type, { uarch = {} })("log_step sa
     status = machine:log_step(1, filename1)
     assert(status == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
 end)
+
+test_util.make_do_test(build_machine, machine_type, { hash_tree = { target = "risc0" }, uarch = {} })(
+    "log_step with hash_tree.target=risc0 ",
+    function(machine)
+        local filename = os.tmpname()
+        local deleter = {}
+        setmetatable(deleter, {
+            __gc = function()
+                os.remove(filename)
+            end,
+        })
+        os.remove(filename)
+        machine:write_reg("mcycle", 0)
+        -- get current root hash and log step
+        local root_hash_before = machine:get_root_hash()
+        local mcycle_count = 10
+        local status = machine:log_step(mcycle_count, filename)
+        assert(status == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+        assert(machine:read_reg("mcycle") == mcycle_count)
+        local root_hash_after = machine:get_root_hash()
+        assert(root_hash_before ~= root_hash_after)
+        -- verify step should pass
+        status = machine:verify_step(root_hash_before, filename, mcycle_count, root_hash_after)
+        assert(status == cartesi.BREAK_REASON_REACHED_TARGET_MCYCLE)
+        local sha256_calculated = test_util.calculate_emulator_hash(machine, cartesi.sha256)
+        -- hash_tree_target tag in the log file should be correct
+        local log_data = read_step_log_file(filename)
+        assert(log_data.hash_tree_target == cartesi.HASH_TREE_TARGET_RISC0, "hash_tree_target should be risc0")
+
+        assert(sha256_calculated == machine:get_root_hash(), "hashes do not match")
+    end
+)
 
 print("\n\nAll machine binding tests for type " .. machine_type .. " passed")

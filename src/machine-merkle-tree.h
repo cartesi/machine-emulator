@@ -28,7 +28,7 @@
 #include <unordered_map>
 #include <utility>
 
-#include "keccak-256-hasher.h"
+#include "i-hasher.h"
 #include "merkle-tree-proof.h"
 #include "pristine-merkle-tree.h"
 
@@ -111,26 +111,22 @@ public:
         return m_word_size;
     }
 
-    /// \brief Hasher class.
-    using hasher_type = keccak_256_hasher;
-
-    /// \brief Storage for a hash.
-    using hash_type = hasher_type::hash_type;
-
     /// \brief Storage for the proof of a word value.
-    using proof_type = merkle_tree_proof<hash_type, address_type>;
+    using proof_type = merkle_tree_proof;
 
     /// \brief Storage for the hashes of the siblings of all nodes along
     /// the path from the root to target node.
     using siblings_type = proof_type::sibling_hashes_type;
 
 private:
+    const hash_tree_target m_hash_tree_target; ///< Hash tree target.
+
     /// \brief Merkle tree node structure.
     /// \details A node is known to be an inner-node or a page-node implicitly
     /// based on its height in the tree.
     //??D This is assumed to be a POD type in the implementation
     struct tree_node {
-        hash_type hash;                   ///< Hash of subintended data.
+        machine_hash hash;                ///< Hash of subintended data.
         tree_node *parent;                ///< Pointer to parent node (nullptr for root).
         std::array<tree_node *, 2> child; ///< Children nodes.
         uint64_t mark;                    ///< Helper for traversal algorithms.
@@ -181,11 +177,11 @@ private:
     /// \param h Hasher object.
     /// \param log2_size log<sub>2</sub> of size subintended by node.
     /// \param node Node to be updated.
-    static void update_inner_node_hash(hasher_type &h, int log2_size, tree_node *node);
+    void update_inner_node_hash(i_hasher &h, int log2_size, tree_node *node);
 
     /// \brief Dumps a hash to std::cerr.
     /// \param hash Hash to be dumped.
-    static void dump_hash(const hash_type &hash);
+    static void dump_hash(const machine_hash &hash);
 
     /// \brief Returns the hash for a child of a given node.
     /// \param child_log2_size log2_size of child node.
@@ -193,7 +189,7 @@ private:
     /// \param bit Bit corresponding to child_log2_size in child node address.
     /// \return Reference to child hash. If child pointer is null,
     /// returns a pristine hash.
-    static const hash_type &get_child_hash(int child_log2_size, const tree_node *node, int bit);
+    const machine_hash &get_child_hash(int child_log2_size, const tree_node *node, int bit) const;
 
     /// \brief Dumps tree rooted at node to std::cerr.
     /// \param node Root of subtree.
@@ -217,7 +213,7 @@ private:
     /// \param node Root of subtree.
     /// \param  log2_size log<sub>2</sub> of size subintended by \p node.
     /// \returns True if tree is consistent, false otherwise.
-    bool verify_tree(hasher_type &h, tree_node *node, int log2_size) const;
+    bool verify_tree(i_hasher &h, tree_node *node, int log2_size) const;
 
     /// \brief Computes the page index for a memory address.
     /// \param address Memory address.
@@ -240,7 +236,7 @@ private:
     /// \param start Start of contiguous memory subintended by node.
     /// \param log2_size log<sub>2</sub> of size subintended by node.
     /// \param hash Receives the hash.
-    void get_page_node_hash(hasher_type &h, const unsigned char *start, int log2_size, hash_type &hash) const;
+    void get_page_node_hash(i_hasher &h, const unsigned char *start, int log2_size, machine_hash &hash) const;
 
     /// \brief Gets the sibling hashes along the path from
     /// the node currently being visited and a target node.
@@ -259,8 +255,8 @@ private:
     /// \param curr_diverged True if node currently being visited is
     /// itself not in path from root to target node.
     /// \param proof Proof to receive sibling hashes.
-    void get_inside_page_sibling_hashes(hasher_type &h, address_type address, int log2_size, hash_type &hash,
-        const unsigned char *curr_data, int log2_curr_size, hash_type &curr_hash, int parent_diverged,
+    void get_inside_page_sibling_hashes(i_hasher &h, address_type address, int log2_size, machine_hash &hash,
+        const unsigned char *curr_data, int log2_curr_size, machine_hash &curr_hash, int parent_diverged,
         int curr_diverged, proof_type &proof) const;
 
     /// \brief Gets the sibling hashes along the path from a
@@ -271,13 +267,17 @@ private:
     /// \param page_data Pointer to start of contiguous page data.
     /// \param page_hash Receives the hash for the page.
     /// \param proof Proof to receive sibling hashes.
-    void get_inside_page_sibling_hashes(address_type address, int log2_size, hash_type &hash,
-        const unsigned char *page_data, hash_type &page_hash, proof_type &proof) const;
+    void get_inside_page_sibling_hashes(address_type address, int log2_size, machine_hash &hash,
+        const unsigned char *page_data, machine_hash &page_hash, proof_type &proof) const;
 
     // Precomputed hashes of spans of zero bytes with
     // increasing power-of-two sizes, from 2^LOG2_WORD_SIZE
     // to 2^LOG2_ROOT_SIZE bytes.
-    static const pristine_merkle_tree &pristine_hashes();
+    static const pristine_merkle_tree &pristine_hashes(hash_tree_target hash_tree_target);
+
+    const pristine_merkle_tree &pristine_hashes() const {
+        return pristine_hashes(m_hash_tree_target);
+    }
 
 public:
     /// \brief Verifies the entire Merkle tree.
@@ -286,7 +286,7 @@ public:
 
     /// \brief Default constructor.
     /// \details Initializes memory to zero.
-    machine_merkle_tree();
+    explicit machine_merkle_tree(hash_tree_target hash_tree_target);
 
     /// \brief No copy constructor
     machine_merkle_tree(const machine_merkle_tree &) = delete;
@@ -301,9 +301,13 @@ public:
     /// \details Releases all used memory
     ~machine_merkle_tree();
 
+    i_hasher make_hasher() const {
+        return i_hasher::make(m_hash_tree_target);
+    }
+
     /// \brief Returns the root hash.
     /// \param hash Receives the hash.
-    void get_root_hash(hash_type &hash) const;
+    void get_root_hash(machine_hash &hash) const;
 
     /// \brief Start tree update.
     /// \returns True.
@@ -317,14 +321,14 @@ public:
     /// \returns True if succeeded, false otherwise.
     /// \details This method is not thread safe, so be careful when using
     /// parallelization to compute Merkle trees
-    bool update_page_node_hash(address_type page_index, const hash_type &hash);
+    bool update_page_node_hash(address_type page_index, const machine_hash &hash);
 
     /// \brief End tree update.
     /// \param h Hasher object.
     /// \returns True if succeeded, false otherwise.
     /// \details This method is not thread safe, so be careful when using
     /// parallelization to compute Merkle trees
-    bool end_update(hasher_type &h);
+    bool end_update(i_hasher &h);
 
     /// \brief Returns the proof for a node in the tree.
     /// \param target_address Address of target node. Must be aligned
@@ -342,26 +346,26 @@ public:
     /// \param h Hasher object.
     /// \param page_data Pointer to start of contiguous page data.
     /// \param hash Receives the hash.
-    void get_page_node_hash(hasher_type &h, const unsigned char *page_data, hash_type &hash) const;
+    void get_page_node_hash(i_hasher &h, const unsigned char *page_data, machine_hash &hash) const;
 
     /// \brief Gets currently stored hash for page node.
     /// \param page_index Page index for node.
     /// \param hash Receives the hash.
-    void get_page_node_hash(address_type page_index, hash_type &hash) const;
+    void get_page_node_hash(address_type page_index, machine_hash &hash) const;
 
     /// \brief Get the hash of a node in the Merkle tree.
     /// \param target_address Address of target node.
     /// \param log2_target_size log2 of the node size.
     /// \return Hash of the node.
-    hash_type get_node_hash(address_type target_address, int log2_target_size) const;
+    machine_hash get_node_hash(address_type target_address, int log2_target_size) const;
 
     /// \brief Returns the hash for a log2_size pristine node.
     /// \param log2_size log<sub>2</sub> of size subintended by node.
     /// \return Reference to precomputed hash.
-    static const hash_type &get_pristine_hash(int log2_size);
+    const machine_hash &get_pristine_hash(int log2_size) const;
 };
 
-std::ostream &operator<<(std::ostream &out, const machine_merkle_tree::hash_type &hash);
+std::ostream &operator<<(std::ostream &out, const machine_hash &hash);
 
 } // namespace cartesi
 

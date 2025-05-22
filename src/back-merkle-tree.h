@@ -39,23 +39,17 @@ namespace cartesi {
 /// The class only ever stores log(n) hashes (1 for each tree level).
 class back_merkle_tree {
 public:
-    /// \brief Hasher class.
-    using hasher_type = keccak_256_hasher;
-
-    /// \brief Storage for a hash.
-    using hash_type = hasher_type::hash_type;
-
     /// \brief Storage for a hash.
     using address_type = uint64_t;
 
     /// \brief Storage for the proof of a word value.
-    using proof_type = merkle_tree_proof<hash_type, address_type>;
+    using proof_type = merkle_tree_proof;
 
     /// \brief Constructor
     /// \param log2_root_size Log<sub>2</sub> of root node
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word node
-    back_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size);
+    back_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, i_hasher hasher);
 
     /// \brief Appends a new hash to the tree
     /// \param new_leaf_hash Hash of new leaf data
@@ -88,7 +82,7 @@ public:
     /// If the bit is not set, we simply store context[i] = right and break
     /// In other words, we can update the context in
     /// log time (log2_root_size-log2_leaf_size)
-    void push_back(const hash_type &new_leaf_hash);
+    void push_back(const machine_hash &new_leaf_hash);
 
     /// \brief Appends a number of padding hashes to the tree
     /// \param leaf_count Number of padding hashes to append
@@ -131,7 +125,7 @@ public:
     /// root = hash(root, pristine[i+log2_leaf_size]) and move up a bit
     /// (i.e., to grow our subtree, we need to pad it on the right with
     /// a pristine subtree of the same size)
-    hash_type get_root_hash() const;
+    machine_hash get_root_hash() const;
 
     /// \brief Returns proof for the next pristine leaf
     /// \returns Proof for leaf at given index, or throws exception
@@ -140,11 +134,12 @@ public:
     proof_type get_next_leaf_proof() const;
 
 private:
-    int m_log2_root_size;                   ///< Log<sub>2</sub> of tree size
-    int m_log2_leaf_size;                   ///< Log<sub>2</sub> of leaf size
+    int m_log2_root_size; ///< Log<sub>2</sub> of tree size
+    int m_log2_leaf_size; ///< Log<sub>2</sub> of leaf size
+    mutable i_hasher m_hasher;
     address_type m_leaf_count{0};           ///< Number of leaves already added
     address_type m_max_leaves;              ///< Maximum number of leaves
-    std::vector<hash_type> m_context;       ///< Hashes of bits set in leaf_count
+    std::vector<machine_hash> m_context;    ///< Hashes of bits set in leaf_count
     pristine_merkle_tree m_pristine_hashes; ///< Hash of pristine subtrees of all sizes
 };
 

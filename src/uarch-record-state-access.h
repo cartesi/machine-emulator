@@ -49,8 +49,6 @@ namespace cartesi {
 
 /// \details The uarch_record_state_access logs all access to the machine state.
 class uarch_record_state_access : public i_uarch_state_access<uarch_record_state_access> {
-    using hasher_type = machine_merkle_tree::hasher_type;
-    using hash_type = machine_merkle_tree::hash_type;
 
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     uarch_state &m_us;
@@ -85,9 +83,9 @@ class uarch_record_state_access : public i_uarch_state_access<uarch_record_state
         }
     }
 
-    static void get_hash(const access_data &data, hash_type &hash) {
-        hasher_type hasher;
-        get_merkle_tree_hash(hasher, data.data(), data.size(), machine_merkle_tree::get_word_size(), hash);
+    static void get_hash(const access_data &data, machine_hash &hash) {
+        auto hasher = i_hasher::make_uarch();
+        hasher.get_merkle_tree_hash(data.data(), data.size(), machine_merkle_tree::get_word_size(), hash);
     }
 
 public:

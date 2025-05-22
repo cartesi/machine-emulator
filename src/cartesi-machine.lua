@@ -429,6 +429,12 @@ where options are:
   --load=<directory>
     load machine previously stored in <directory>.
 
+  --hash-tree-target=<target>
+    set the target environment for hash tree verification
+    possible values are:
+        "uarch" (default)
+        "risc0"
+
   --initial-hash
     print initial state hash before running machine.
 
@@ -604,6 +610,7 @@ local htif_console_getchar = false
 local htif_yield_automatic = true
 local htif_yield_manual = true
 local initial_hash = false
+local hash_tree_target = "uarch"
 local final_hash = false
 local initial_proof = {}
 local final_proof = {}
@@ -1187,6 +1194,15 @@ local options = {
         end,
     },
     {
+        "^%-%-hash%-tree%-target%=(.*)$",
+        function(o)
+            if not o or #o < 1 then return false end
+            assert(o == "uarch" or o == "risc0", "invalid hash tree target " .. o)
+            hash_tree_target = o
+            return true
+        end,
+    },
+    {
         "^(%-%-initial%-proof%=(.+))$",
         function(all, opts)
             if not opts then return false end
@@ -1719,8 +1735,10 @@ else
         uarch = uarch,
         flash_drive = {},
         virtio = virtio,
+        hash_tree = {
+            target = hash_tree_target,
+        },
     }
-
     -- show splash on init
     if init_splash then
         config.dtb.init = config.dtb.init

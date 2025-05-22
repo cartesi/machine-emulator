@@ -94,7 +94,7 @@ CLANG_TIDY_HEADER_FILTER=$(CURDIR)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
 CLANG_FORMAT=clang-format
 CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.h)
 
-INCS=-I../../src -I../../third-party/tiny_sha3 -I../../third-party/nlohmann-json -I../../third-party/downloads
+INCS=-I../../src -I../../third-party/tiny_sha3 -I../../third-party/SHA256 -I../../third-party/nlohmann-json -I../../third-party/downloads
 WARNS=-Wall -Wpedantic
 
 CXXFLAGS+=-O2 -g -std=gnu++20 -fvisibility=hidden $(INCS) $(UBFLAGS) $(WARNS)
@@ -110,7 +110,7 @@ all: $(BUILDDIR)/test-merkle-tree-hash $(BUILDDIR)/test-machine-c-api
 	@exit 1
 
 $(BUILDDIR)/test-merkle-tree-hash: test-merkle-tree-hash.cpp ../../src/libcartesi.a ../../src/libcartesi_merkle_tree.a
-	$(CXX) -o $@ $^ $(CXXFLAGS)
+	$(CXX) -o $@ $^ $(CXXFLAGS)  $(BOOST_INC)
 
 $(BUILDDIR)/test-machine-c-api: test-machine-c-api.cpp ../../src/libcartesi.a ../../src/libcartesi_merkle_tree.a
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(BOOST_INC) $(LIBCARTESI_LIBS)

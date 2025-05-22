@@ -28,10 +28,11 @@
 
 namespace cartesi {
 
-complete_merkle_tree::complete_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size) :
+complete_merkle_tree::complete_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, i_hasher h) :
     m_log2_root_size{log2_root_size},
     m_log2_leaf_size{log2_leaf_size},
-    m_pristine{log2_root_size, log2_word_size},
+    m_hasher{h},
+    m_pristine{h, log2_root_size, log2_word_size},
     m_tree(std::max(0, log2_root_size - log2_leaf_size + 1)) {
     check_log2_sizes(log2_root_size, log2_leaf_size, log2_word_size);
 }
@@ -61,7 +62,7 @@ complete_merkle_tree::proof_type complete_merkle_tree::get_proof(address_type ad
 
 /// \brief Appends a new leaf hash to the tree
 /// \param hash Hash to append
-void complete_merkle_tree::push_back(const hash_type &hash) {
+void complete_merkle_tree::push_back(const machine_hash &hash) {
     auto &leaves = get_level(get_log2_leaf_size());
     if (leaves.size() >= address_type{1} << (get_log2_root_size() - get_log2_leaf_size())) {
         throw std::out_of_range{"tree is full"};
@@ -91,7 +92,7 @@ void complete_merkle_tree::check_log2_sizes(int log2_root_size, int log2_leaf_si
     }
 }
 
-const complete_merkle_tree::hash_type &complete_merkle_tree::get_node_hash(address_type address, int log2_size) const {
+const machine_hash &complete_merkle_tree::get_node_hash(address_type address, int log2_size) const {
     const auto &level = get_level(log2_size);
     address >>= log2_size;
     if (address >= (address_type{1} << (get_log2_root_size() - log2_size))) {
@@ -104,7 +105,6 @@ const complete_merkle_tree::hash_type &complete_merkle_tree::get_node_hash(addre
 }
 
 void complete_merkle_tree::bubble_up() {
-    hasher_type h;
     // Go bottom up, updating hashes
     for (int log2_next_size = get_log2_leaf_size() + 1; log2_next_size <= get_log2_root_size(); ++log2_next_size) {
         auto log2_prev_size = log2_next_size - 1;
@@ -121,11 +121,11 @@ void complete_merkle_tree::bubble_up() {
         auto last_safe_entry = prev.size() / 2;
         // Do all entries for which we have two non-pristine children
         for (; first_entry < last_safe_entry; ++first_entry) {
-            get_concat_hash(h, prev[2 * first_entry], prev[(2 * first_entry) + 1], next[first_entry]);
+            m_hasher.get_concat_hash(prev[2 * first_entry], prev[(2 * first_entry) + 1], next[first_entry]);
         }
         // Maybe do last odd entry
         if (prev.size() > 2 * last_safe_entry) {
-            get_concat_hash(h, prev.back(), m_pristine.get_hash(log2_prev_size), next[last_safe_entry]);
+            m_hasher.get_concat_hash(prev.back(), m_pristine.get_hash(log2_prev_size), next[last_safe_entry]);
         }
     }
 }

@@ -85,7 +85,7 @@ machine_merkle_tree::proof_type virtual_machine::do_get_proof(uint64_t address, 
     return get_machine()->get_proof(address, log2_size);
 }
 
-void virtual_machine::do_get_root_hash(hash_type &hash) const {
+void virtual_machine::do_get_root_hash(machine_hash &hash) const {
     get_machine()->get_root_hash(hash);
 }
 
@@ -183,23 +183,23 @@ machine_config virtual_machine::do_get_default_config() const {
     return machine::get_default_config();
 }
 
-interpreter_break_reason virtual_machine::do_verify_step(const hash_type &root_hash_before,
-    const std::string &log_filename, uint64_t mcycle_count, const hash_type &root_hash_after) const {
+interpreter_break_reason virtual_machine::do_verify_step(const machine_hash &root_hash_before,
+    const std::string &log_filename, uint64_t mcycle_count, const machine_hash &root_hash_after) const {
     return machine::verify_step(root_hash_before, log_filename, mcycle_count, root_hash_after);
 }
 
-void virtual_machine::do_verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
-    const hash_type &root_hash_after) const {
+void virtual_machine::do_verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
+    const machine_hash &root_hash_after) const {
     machine::verify_step_uarch(root_hash_before, log, root_hash_after);
 }
 
-void virtual_machine::do_verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
-    const hash_type &root_hash_after) const {
+void virtual_machine::do_verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
+    const machine_hash &root_hash_after) const {
     machine::verify_reset_uarch(root_hash_before, log, root_hash_after);
 }
 
 void virtual_machine::do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-    const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const {
+    const machine_hash &root_hash_before, const access_log &log, const machine_hash &root_hash_after) const {
     machine::verify_send_cmio_response(reason, data, length, root_hash_before, log, root_hash_after);
 }
 

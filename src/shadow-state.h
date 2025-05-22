@@ -76,6 +76,7 @@ struct PACKED shadow_state {
     uint64_t htif_ihalt;
     uint64_t htif_iconsole;
     uint64_t htif_iyield;
+    uint64_t hash_tree_target;
 };
 
 /// \brief Global instance of the processor shadow device driver.

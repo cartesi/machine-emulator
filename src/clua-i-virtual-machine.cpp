@@ -166,6 +166,7 @@ cm_reg clua_check_cm_proc_reg(lua_State *L, int idx) try {
         {"htif_ihalt", CM_REG_HTIF_IHALT},
         {"htif_iconsole", CM_REG_HTIF_ICONSOLE},
         {"htif_iyield", CM_REG_HTIF_IYIELD},
+        {"hash_tree_target", CM_REG_HASH_TREE_TARGET},
         {"uarch_x0", CM_REG_UARCH_X0},
         {"uarch_x1", CM_REG_UARCH_X1},
         {"uarch_x2", CM_REG_UARCH_X2},

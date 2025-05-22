@@ -18,123 +18,128 @@
 #define I_HASHER_H
 
 /// \file
-/// \brief Hasher interface
+/// \brief Hasher class
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
 #include <type_traits>
+#include <variant>
 
+#include "hash-tree-target.h"
+#include "keccak-256-hasher.h"
+#include "machine-config.h"
+#include "machine-hash.h"
 #include "meta.h"
+#include "sha-256-hasher.h"
 
 namespace cartesi {
 
-/// \brief Hasher interface.
-/// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
-/// \tparam HASH_SIZE Size of hash.
-template <typename DERIVED, typename HASH_SIZE>
-class i_hasher { // CRTP
-    i_hasher() = default;
-    friend DERIVED;
+/// \brief Hasher interface
+class i_hasher {
+    hash_tree_target m_hash_tree_target;
+    std::variant<keccak_256_hasher, sha_256_hasher> m_hasher;
 
-    /// \brief Returns object cast as the derived class
-    DERIVED &derived() {
-        return *static_cast<DERIVED *>(this);
-    }
-
-    /// \brief Returns object cast as the derived class
-    const DERIVED &derived() const {
-        return *static_cast<const DERIVED *>(this);
+    /// \brief Constructor
+    /// \param hash_tree_target Hash tree target.
+    /// \details The actual hashing algorithm is selected based on the hash tree target.
+    explicit i_hasher(hash_tree_target hash_tree_target) : m_hash_tree_target(hash_tree_target) {
+        switch (hash_tree_target) {
+            case hash_tree_target::uarch:
+                m_hasher = keccak_256_hasher();
+                break;
+            case hash_tree_target::risc0:
+                m_hasher = sha_256_hasher();
+                break;
+        }
     }
 
 public:
-    constexpr static size_t hash_size = HASH_SIZE::value;
+    /// \brief Returns the hash tree target
+    hash_tree_target get_hash_tree_target() const {
+        return m_hash_tree_target;
+    }
 
-    using hash_type = std::array<unsigned char, hash_size>;
-
+    /// \brief Begins the hashing process
     void begin() {
-        return derived().do_begin();
+        std::visit([](auto &h) { h.begin(); }, m_hasher);
     }
 
+    /// \brief Adds data to the hash
+    /// \param data Pointer to the data to be added
+    /// \param length Length of the data to be added
     void add_data(const unsigned char *data, size_t length) {
-        return derived().do_add_data(data, length);
+        std::visit([data, length](auto &h) { h.add_data(data, length); }, m_hasher);
     }
 
-    void end(hash_type &hash) {
-        return derived().do_end(hash);
+    /// \brief Finalizes the hash
+    /// \param hash Receives the resulting hash
+    void end(machine_hash &hash) {
+        std::visit([&hash](auto &h) { h.end(hash); }, m_hasher);
+    }
+
+    /// \brief Creates a hasher object
+    static i_hasher make_uarch() {
+        return make(hash_tree_target::uarch);
+    }
+
+    /// \brief Creates a hasher object
+    static i_hasher make_risc0() {
+        return make(hash_tree_target::risc0);
+    }
+
+    /// \brief Creates a hasher object
+    static i_hasher make(hash_tree_target hash_tree_target) {
+        switch (hash_tree_target) {
+            case hash_tree_target::uarch:
+                return i_hasher(hash_tree_target::uarch);
+            case hash_tree_target::risc0:
+                return i_hasher(hash_tree_target::risc0);
+        }
+    }
+
+    /// \brief Computes the hash of concatenated hashes
+    /// \param h Hasher object
+    /// \param left Left hash to concatenate
+    /// \param right Right hash to concatenate
+    /// \param result Receives the hash of the concatenation
+    void get_concat_hash(const machine_hash &left, const machine_hash &right, machine_hash &result) {
+        begin();
+        add_data(left.data(), static_cast<int>(left.size()));
+        add_data(right.data(), static_cast<int>(right.size()));
+        end(result);
+    }
+
+    /// \brief  Computes a merkle tree hash of a data buffer
+    /// \param h Hasher object
+    /// \param data Data to be hashed
+    /// \param data_length Length of data
+    /// \param word_length  Length of each word
+    /// \param result Receives the resulting merkle tree hash
+    void get_merkle_tree_hash(const unsigned char *data, uint64_t data_length, uint64_t word_length,
+        machine_hash &result) {
+        if (data_length > word_length) {
+            if ((data_length & 1) != 0) {
+                throw std::invalid_argument("data_length must be a power of 2 multiple of word_length");
+            }
+            data_length = data_length / 2;
+            machine_hash left;
+            get_merkle_tree_hash(data, data_length, word_length, left);
+            get_merkle_tree_hash(data + data_length, data_length, word_length, result);
+            begin();
+            add_data(left.data(), left.size());
+            add_data(result.data(), result.size());
+            end(result);
+        } else {
+            if (data_length != word_length) {
+                throw std::invalid_argument("data_length must be a power of 2 multiple of word_length");
+            }
+            begin();
+            add_data(data, data_length);
+            end(result);
+        }
     }
 };
-
-template <typename DERIVED>
-using is_an_i_hasher =
-    std::integral_constant<bool, is_template_base_of<i_hasher, typename remove_cvref<DERIVED>::type>::value>;
-
-/// \brief Computes the hash of concatenated hashes
-/// \tparam H Hasher class
-/// \param h Hasher object
-/// \param left Left hash to concatenate
-/// \param right Right hash to concatenate
-/// \param result Receives the hash of the concatenation
-template <typename H>
-inline static void get_concat_hash(H &h, const typename H::hash_type &left, const typename H::hash_type &right,
-    typename H::hash_type &result) {
-    static_assert(is_an_i_hasher<H>::value, "not an i_hasher");
-    h.begin();
-    h.add_data(left.data(), static_cast<int>(left.size()));
-    h.add_data(right.data(), static_cast<int>(right.size()));
-    h.end(result);
-}
-
-/// \brief Computes the hash of concatenated hashes
-/// \tparam H Hasher class
-/// \param h Hasher object
-/// \param left Left hash to concatenate
-/// \param right Right hash to concatenate
-/// \return The hash of the concatenation
-template <typename H>
-inline static typename H::hash_type get_concat_hash(H &h, const typename H::hash_type &left,
-    const typename H::hash_type &right) {
-    static_assert(is_an_i_hasher<H>::value, "not an i_hasher");
-    h.begin();
-    h.add_data(left.data(), left.size());
-    h.add_data(right.data(), right.size());
-    typename H::hash_type result;
-    h.end(result);
-    return result;
-}
-
-/// \brief  Computes a merkle tree hash of a data buffer
-/// \tparam H Hasher class
-/// \param h Hasher object
-/// \param data Data to be hashed
-/// \param data_length Length of data
-/// \param word_length  Length of each word
-/// \param result Receives the resulting merkle tree hash
-template <typename H>
-inline static void get_merkle_tree_hash(H &h, const unsigned char *data, uint64_t data_length, uint64_t word_length,
-    typename H::hash_type &result) {
-    if (data_length > word_length) {
-        if (data_length & 1) {
-            throw std::invalid_argument("data_length must be a power of 2 multiple of word_length");
-        }
-        data_length = data_length / 2;
-        typename H::hash_type left;
-        get_merkle_tree_hash(h, data, data_length, word_length, left);
-        get_merkle_tree_hash(h, data + data_length, data_length, word_length, result);
-        h.begin();
-        h.add_data(left.data(), left.size());
-        h.add_data(result.data(), result.size());
-        h.end(result);
-    } else {
-        if (data_length != word_length) {
-            throw std::invalid_argument("data_length must be a power of 2 multiple of word_length");
-        }
-        h.begin();
-        h.add_data(data, data_length);
-        h.end(result);
-    }
-}
 
 } // namespace cartesi
 

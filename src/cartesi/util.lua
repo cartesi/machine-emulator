@@ -121,6 +121,7 @@ function _M.dump_json_log(log, init_mcycle, init_uarch_cycle, final_mcycle, fina
     indentout(out, indent + 1, '"init_uarch_cycle": %u,\n', init_uarch_cycle)
     indentout(out, indent + 1, '"final_mcycle": %u,\n', final_mcycle)
     indentout(out, indent + 1, '"final_uarch_cycle": %u,\n', final_uarch_cycle)
+    indentout(out, indent + 1, '"hash_tree_target": %s,\n', log.hash_tree_target)
     indentout(out, indent + 1, '"accesses": [\n')
     dump_json_log_accesses(log.accesses, out, indent + 2)
     indentout(out, indent + 1, "]")

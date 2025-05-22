@@ -53,7 +53,7 @@ private:
     void do_store(const std::string &directory) const override;
     access_log do_log_step_uarch(const access_log::type &log_type) override;
     machine_merkle_tree::proof_type do_get_proof(uint64_t address, int log2_size) const override;
-    void do_get_root_hash(hash_type &hash) const override;
+    void do_get_root_hash(machine_hash &hash) const override;
     bool do_verify_merkle_tree() const override;
     uint64_t do_read_reg(reg r) const override;
     void do_write_reg(reg w, uint64_t val) override;
@@ -78,14 +78,15 @@ private:
         const access_log::type &log_type) override;
     uint64_t do_get_reg_address(reg r) const override;
     machine_config do_get_default_config() const override;
-    interpreter_break_reason do_verify_step(const hash_type &root_hash_before, const std::string &log_filename,
-        uint64_t mcycle_count, const hash_type &root_hash_after) const override;
-    void do_verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after) const override;
-    void do_verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after) const override;
+    interpreter_break_reason do_verify_step(const machine_hash &root_hash_before, const std::string &log_filename,
+        uint64_t mcycle_count, const machine_hash &root_hash_after) const override;
+    void do_verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after) const override;
+    void do_verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after) const override;
     void do_verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after) const override;
+        const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after) const override;
 
     machine *get_machine();
     const machine *get_machine() const;

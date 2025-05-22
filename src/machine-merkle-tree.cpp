@@ -32,10 +32,19 @@
 namespace cartesi {
 
 // Initialize static pristine hashes
-const cartesi::pristine_merkle_tree &machine_merkle_tree::pristine_hashes() {
-    static const cartesi::pristine_merkle_tree tree{machine_merkle_tree::get_log2_root_size(),
-        machine_merkle_tree::get_log2_word_size()};
-    return tree;
+const cartesi::pristine_merkle_tree &machine_merkle_tree::pristine_hashes(hash_tree_target hash_tree_target) {
+    static const cartesi::pristine_merkle_tree uarch_tree{i_hasher::make_uarch(),
+        machine_merkle_tree::get_log2_root_size(), machine_merkle_tree::get_log2_word_size()};
+
+    static const cartesi::pristine_merkle_tree risc0_tree{i_hasher::make_risc0(),
+        machine_merkle_tree::get_log2_root_size(), machine_merkle_tree::get_log2_word_size()};
+
+    switch (hash_tree_target) {
+        case hash_tree_target::uarch:
+            return uarch_tree;
+        case hash_tree_target::risc0:
+            return risc0_tree;
+    }
 }
 
 constexpr machine_merkle_tree::address_type machine_merkle_tree::get_page_index(address_type address) {
@@ -108,16 +117,19 @@ machine_merkle_tree::tree_node *machine_merkle_tree::new_page_node(address_type 
     return node;
 }
 
-void machine_merkle_tree::get_page_node_hash(hasher_type &h, const unsigned char *start, int log2_size,
-    hash_type &hash) const {
+void machine_merkle_tree::get_page_node_hash(i_hasher &h, const unsigned char *start, int log2_size,
+    machine_hash &hash) const {
+    if (h.get_hash_tree_target() != m_hash_tree_target) {
+        throw std::runtime_error{"hash tree target mismatch"};
+    }
     if (log2_size > get_log2_word_size()) {
-        hash_type child0;
-        hash_type child1;
+        machine_hash child0;
+        machine_hash child1;
         --log2_size;
         const address_type size = UINT64_C(1) << log2_size;
         get_page_node_hash(h, start, log2_size, child0);
         get_page_node_hash(h, start + size, log2_size, child1);
-        get_concat_hash(h, child0, child1, hash);
+        h.get_concat_hash(child0, child1, hash);
     } else {
         h.begin();
         h.add_data(start, get_word_size());
@@ -125,7 +137,7 @@ void machine_merkle_tree::get_page_node_hash(hasher_type &h, const unsigned char
     }
 }
 
-void machine_merkle_tree::get_page_node_hash(hasher_type &h, const unsigned char *page_data, hash_type &hash) const {
+void machine_merkle_tree::get_page_node_hash(i_hasher &h, const unsigned char *page_data, machine_hash &hash) const {
     if (page_data != nullptr) {
         get_page_node_hash(h, page_data, get_log2_page_size(), hash);
     } else {
@@ -133,7 +145,7 @@ void machine_merkle_tree::get_page_node_hash(hasher_type &h, const unsigned char
     }
 }
 
-void machine_merkle_tree::get_page_node_hash(address_type page_index, hash_type &hash) const {
+void machine_merkle_tree::get_page_node_hash(address_type page_index, machine_hash &hash) const {
     assert(page_index == get_page_index(page_index));
     tree_node *node = get_page_node(page_index);
     if (node == nullptr) {
@@ -143,17 +155,16 @@ void machine_merkle_tree::get_page_node_hash(address_type page_index, hash_type 
     }
 }
 
-const machine_merkle_tree::hash_type &machine_merkle_tree::get_child_hash(int child_log2_size, const tree_node *node,
-    int bit) {
+const machine_hash &machine_merkle_tree::get_child_hash(int child_log2_size, const tree_node *node, int bit) const {
     const tree_node *child = node->child[bit];
     return (child != nullptr) ? child->hash : get_pristine_hash(child_log2_size);
 }
 
-void machine_merkle_tree::update_inner_node_hash(hasher_type &h, int log2_size, tree_node *node) {
-    get_concat_hash(h, get_child_hash(log2_size - 1, node, 0), get_child_hash(log2_size - 1, node, 1), node->hash);
+void machine_merkle_tree::update_inner_node_hash(i_hasher &h, int log2_size, tree_node *node) {
+    h.get_concat_hash(get_child_hash(log2_size - 1, node, 0), get_child_hash(log2_size - 1, node, 1), node->hash);
 }
 
-void machine_merkle_tree::dump_hash(const hash_type &hash) {
+void machine_merkle_tree::dump_hash(const machine_hash &hash) {
     auto f = std::cerr.flags();
     for (const auto &b : hash) {
         std::cerr << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(b);
@@ -162,7 +173,7 @@ void machine_merkle_tree::dump_hash(const hash_type &hash) {
     std::cerr.flags(f);
 }
 
-const machine_merkle_tree::hash_type &machine_merkle_tree::get_pristine_hash(int log2_size) {
+const machine_hash &machine_merkle_tree::get_pristine_hash(int log2_size) const {
     return pristine_hashes().get_hash(log2_size);
 }
 
@@ -200,16 +211,16 @@ void machine_merkle_tree::destroy_merkle_tree() {
     memset(&m_root_storage, 0, sizeof(m_root_storage));
 }
 
-void machine_merkle_tree::get_inside_page_sibling_hashes(hasher_type &h, address_type address, int log2_size,
-    hash_type &hash, const unsigned char *curr_data, int log2_curr_size, hash_type &curr_hash, int parent_diverged,
-    int curr_diverged, proof_type &proof) const {
+void machine_merkle_tree::get_inside_page_sibling_hashes(i_hasher &h, address_type address, int log2_size,
+    machine_hash &hash, const unsigned char *curr_data, int log2_curr_size, machine_hash &curr_hash,
+    int parent_diverged, int curr_diverged, proof_type &proof) const {
     // If node currently being visited is larger than a
     // word, invoke recursively
     if (log2_curr_size > get_log2_word_size()) {
         const int log2_child_size = log2_curr_size - 1;
         const address_type child_size = UINT64_C(1) << log2_child_size;
-        hash_type first_hash;
-        hash_type second_hash;
+        machine_hash first_hash;
+        machine_hash second_hash;
         const int child_bit = static_cast<int>((address & child_size) != 0);
         get_inside_page_sibling_hashes(h, address, log2_size, hash, curr_data, log2_child_size, first_hash,
             static_cast<int>((parent_diverged != 0) || (curr_diverged) != 0), static_cast<int>(child_bit != 0), proof);
@@ -217,7 +228,7 @@ void machine_merkle_tree::get_inside_page_sibling_hashes(hasher_type &h, address
             second_hash, static_cast<int>((parent_diverged != 0) || (curr_diverged) != 0),
             static_cast<int>(child_bit != 1), proof);
         // Compute curr_hash from hashes of its children
-        get_concat_hash(h, first_hash, second_hash, curr_hash);
+        h.get_concat_hash(first_hash, second_hash, curr_hash);
         // Otherwise directly compute hash of word
     } else {
         h.begin();
@@ -238,9 +249,9 @@ void machine_merkle_tree::get_inside_page_sibling_hashes(hasher_type &h, address
     }
 }
 
-void machine_merkle_tree::get_inside_page_sibling_hashes(address_type address, int log2_size, hash_type &hash,
-    const unsigned char *page_data, hash_type &page_hash, proof_type &proof) const {
-    hasher_type h;
+void machine_merkle_tree::get_inside_page_sibling_hashes(address_type address, int log2_size, machine_hash &hash,
+    const unsigned char *page_data, machine_hash &page_hash, proof_type &proof) const {
+    auto h = make_hasher();
     get_inside_page_sibling_hashes(h, address, log2_size, hash, page_data, get_log2_page_size(), page_hash,
         0 /* parent hasn't diverted */, 0 /* curr node hasn't diverged */, proof);
 }
@@ -254,7 +265,7 @@ bool machine_merkle_tree::begin_update() {
     return true;
 }
 
-bool machine_merkle_tree::update_page_node_hash(address_type page_index, const hash_type &hash) {
+bool machine_merkle_tree::update_page_node_hash(address_type page_index, const machine_hash &hash) {
     assert(get_page_index(page_index) == page_index);
     tree_node *node = get_page_node(page_index);
     // If there is no page node for this page index, allocate a fresh one
@@ -275,7 +286,11 @@ bool machine_merkle_tree::update_page_node_hash(address_type page_index, const h
     return true;
 }
 
-bool machine_merkle_tree::end_update(hasher_type &h) {
+bool machine_merkle_tree::end_update(i_hasher &h) {
+    if (h.get_hash_tree_target() != m_hash_tree_target) {
+        throw std::runtime_error{"hash tree target mismatch"};
+    }
+
     // Now go over the queue of inner nodes updating their hashes and
     // enqueueing their parents until the queue is empty
     while (!m_merkle_update_fifo.empty()) {
@@ -293,7 +308,10 @@ bool machine_merkle_tree::end_update(hasher_type &h) {
     return true;
 }
 
-machine_merkle_tree::machine_merkle_tree() : m_root_storage{}, m_root{&m_root_storage} {
+machine_merkle_tree::machine_merkle_tree(hash_tree_target hash_tree_target) :
+    m_hash_tree_target(hash_tree_target),
+    m_root_storage{},
+    m_root{&m_root_storage} {
     m_root->hash = get_pristine_hash(get_log2_root_size());
 #ifdef MERKLE_DUMP_STATS
     m_num_nodes = 0;
@@ -312,16 +330,16 @@ machine_merkle_tree::~machine_merkle_tree() {
 #endif
 }
 
-void machine_merkle_tree::get_root_hash(hash_type &hash) const {
+void machine_merkle_tree::get_root_hash(machine_hash &hash) const {
     hash = m_root->hash;
 }
 
 bool machine_merkle_tree::verify_tree() const {
-    hasher_type h;
+    auto h = make_hasher();
     return verify_tree(h, m_root, get_log2_root_size());
 }
 
-bool machine_merkle_tree::verify_tree(hasher_type &h, tree_node *node, int log2_size) const {
+bool machine_merkle_tree::verify_tree(i_hasher &h, tree_node *node, int log2_size) const {
     // pristine node is always correct
     if (node == nullptr) {
         return true;
@@ -334,8 +352,8 @@ bool machine_merkle_tree::verify_tree(hasher_type &h, tree_node *node, int log2_
         if (!first_ok || !second_ok) {
             return false;
         }
-        hash_type hash;
-        get_concat_hash(h, get_child_hash(child_log2_size, node, 0), get_child_hash(child_log2_size, node, 1), hash);
+        machine_hash hash;
+        h.get_concat_hash(get_child_hash(child_log2_size, node, 0), get_child_hash(child_log2_size, node, 1), hash);
         return hash == node->hash;
         // Assume page nodes are correct
     }
@@ -386,7 +404,7 @@ machine_merkle_tree::proof_type machine_merkle_tree::get_proof(address_type targ
         // We hit a page node along the path to the target node
     } else if (log2_node_size == get_log2_page_size()) {
         assert(node);
-        hash_type page_hash;
+        machine_hash page_hash;
         // If target node is smaller than page size
         if (log2_target_size < get_log2_page_size()) {
             // If we were given the page data, compute from it
@@ -423,7 +441,7 @@ machine_merkle_tree::proof_type machine_merkle_tree::get_proof(address_type targ
     proof.set_root_hash(m_root->hash); // NOLINT: m_root can't be nullptr
 #ifndef NDEBUG
     // Return proof only if it passes verification
-    hasher_type h;
+    auto h = make_hasher();
     if (!proof.verify(h)) {
         throw std::runtime_error{"proof failed verification"};
     }
@@ -431,8 +449,7 @@ machine_merkle_tree::proof_type machine_merkle_tree::get_proof(address_type targ
     return proof;
 }
 
-machine_merkle_tree::hash_type machine_merkle_tree::get_node_hash(address_type target_address,
-    int log2_target_size) const {
+machine_hash machine_merkle_tree::get_node_hash(address_type target_address, int log2_target_size) const {
     if (log2_target_size > get_log2_root_size() || log2_target_size < get_log2_word_size()) {
         throw std::runtime_error{"log2_target_size is out of bounds"};
     }
@@ -458,7 +475,7 @@ machine_merkle_tree::hash_type machine_merkle_tree::get_node_hash(address_type t
     return node->hash;
 }
 
-std::ostream &operator<<(std::ostream &out, const machine_merkle_tree::hash_type &hash) {
+std::ostream &operator<<(std::ostream &out, const machine_hash &hash) {
     auto f = out.flags();
     for (const unsigned b : hash) {
         out << std::hex << std::setfill('0') << std::setw(2) << b;

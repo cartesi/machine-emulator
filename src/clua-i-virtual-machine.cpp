@@ -441,57 +441,56 @@ void clua_push_json_table(lua_State *L, const char *s, int ctxidx, const nlohman
 }
 
 static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) {
-    static nlohmann::json machine_schema_dict;
     try {
-        if (machine_schema_dict.is_null()) {
-            // In order to convert Lua tables <-> JSON objects we have to define a schema
-            // to transform some special fields, we only care about:
-            // - Binary strings (translate Base64 strings in JSON to binary strings in Lua)
-            // - Array indexes (translate 0 based index in JSON to 1 based index in Lua)
-            machine_schema_dict = {
-                {"Base64", "Base64"},
-                {"ArrayIndex", "ArrayIndex"},
-                {"Base64Array",
-                    {
-                        {"items", "Base64"},
-                    }},
-                {"Proof",
-                    {
-                        {"target_hash", "Base64"},
-                        {"root_hash", "Base64"},
-                        {"sibling_hashes", "Base64Array"},
-                    }},
-                {"Access",
-                    {
-                        {"read", "Base64"},
-                        {"read_hash", "Base64"},
-                        {"written", "Base64"},
-                        {"written_hash", "Base64"},
-                        {"sibling_hashes", "Base64Array"},
-                    }},
-                {"AccessArray",
-                    {
-                        {"items", "Access"},
-                    }},
-                {"Bracket",
-                    {
-                        {"where", "ArrayIndex"},
-                    }},
-                {"BracketArray",
-                    {
-                        {"items", "Bracket"},
-                    }},
-                {"AccessLog",
-                    {
-                        {"accesses", "AccessArray"},
-                        {"brackets", "BracketArray"},
-                    }},
-            };
-        }
+        // In order to convert Lua tables <-> JSON objects we have to define a schema
+        // to transform some special fields, we only care about:
+        // - Binary strings (translate Base64 strings in JSON to binary strings in Lua)
+        // - Array indexes (translate 0 based index in JSON to 1 based index in Lua)
+        static const nlohmann::json machine_schema_dict = {
+            {"Base64", "Base64"},
+            {"ArrayIndex", "ArrayIndex"},
+            {"Base64Array",
+                {
+                    {"items", "Base64"},
+                }},
+            {"Proof",
+                {
+                    {"target_hash", "Base64"},
+                    {"root_hash", "Base64"},
+                    {"sibling_hashes", "Base64Array"},
+                }},
+            {"Access",
+                {
+                    {"read", "Base64"},
+                    {"read_hash", "Base64"},
+                    {"written", "Base64"},
+                    {"written_hash", "Base64"},
+                    {"sibling_hashes", "Base64Array"},
+                }},
+            {"AccessArray",
+                {
+                    {"items", "Access"},
+                }},
+            {"Bracket",
+                {
+                    {"where", "ArrayIndex"},
+                }},
+            {"BracketArray",
+                {
+                    {"items", "Bracket"},
+                }},
+            {"AccessLog",
+                {
+                    {"accesses", "AccessArray"},
+                    {"brackets", "BracketArray"},
+                }},
+        };
+        return machine_schema_dict;
     } catch (std::exception &e) {
         luaL_error(L, "failed to create machine schema dictionary: %s", e.what());
+        static const nlohmann::json dummy;
+        return dummy;
     }
-    return machine_schema_dict;
 };
 
 const char *clua_check_schemed_json_string(lua_State *L, int idx, const std::string &schema_name, int ctxidx) {

@@ -23,7 +23,7 @@
 
 namespace cartesi {
 
-static machine_merkle_tree::hash_type get_uarch_pristine_state_hash() noexcept {
+static machine_merkle_tree::hash_type make_uarch_pristine_state_hash() noexcept {
     machine_merkle_tree::hash_type h;
     for (std::size_t i = 0; i < h.size(); ++i) {
         h[i] = uarch_pristine_hash[i];
@@ -31,8 +31,9 @@ static machine_merkle_tree::hash_type get_uarch_pristine_state_hash() noexcept {
     return h;
 }
 
-/// \brief Hash of the pristine uarch state.
-/// \details This hash is computed at compile time by the program compute-uarch-pristine-hash.cpp
-const machine_merkle_tree::hash_type uarch_pristine_state_hash = get_uarch_pristine_state_hash();
+const machine_merkle_tree::hash_type &get_uarch_pristine_state_hash() {
+    static const machine_merkle_tree::hash_type uarch_pristine_state_hash = make_uarch_pristine_state_hash();
+    return uarch_pristine_state_hash;
+}
 
 } // namespace cartesi

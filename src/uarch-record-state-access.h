@@ -439,7 +439,7 @@ private:
         // reconstruct the proof
         a.set_sibling_hashes(proof.get_sibling_hashes());
 
-        a.set_written_hash(uarch_pristine_state_hash);
+        a.set_written_hash(get_uarch_pristine_state_hash());
 
         // Restore uarch to pristine state
         m_us.halt_flag = false;

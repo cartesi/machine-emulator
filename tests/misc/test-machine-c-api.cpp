@@ -27,7 +27,6 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include <boost/endian/conversion.hpp>
-#include <boost/process.hpp>
 #include <boost/test/included/unit_test.hpp>
 #pragma GCC diagnostic pop
 

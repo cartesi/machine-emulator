@@ -21,9 +21,9 @@
 
 namespace cartesi {
 
-/// \brief Hash of the pristine uarch state.
+/// \brief Gets the hash of the pristine uarch state.
 /// \details This hash is computed at compile time by the program compute-uarch-pristine-hash.cpp
-extern const machine_merkle_tree::hash_type uarch_pristine_state_hash;
+const machine_merkle_tree::hash_type &get_uarch_pristine_state_hash();
 
 } // namespace cartesi
 

@@ -356,7 +356,7 @@ private:
             throw std::invalid_argument{"write " + access_to_report() + " has no written hash"};
         }
         const auto &written_hash = access.get_written_hash().value();
-        if (written_hash != uarch_pristine_state_hash) {
+        if (written_hash != get_uarch_pristine_state_hash()) {
             throw std::invalid_argument{
                 "expected written hash of " + access_to_report() + " to be the start hash of the pristine uarch state"};
         }

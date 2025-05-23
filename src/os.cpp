@@ -133,7 +133,7 @@ struct tty_state {
 
 /// Returns pointer to the global TTY state
 static tty_state *get_tty_state() {
-    static tty_state data;
+    static THREAD_LOCAL tty_state data;
     return &data;
 }
 #endif // HAVE_TTY
@@ -145,7 +145,7 @@ struct putchar_state {
 
 /// Returns pointer to the global TTY state
 static putchar_state *get_putchar_state() {
-    static putchar_state data;
+    static THREAD_LOCAL putchar_state data;
     return &data;
 }
 
@@ -696,12 +696,8 @@ void os_unmap_file(unsigned char *host_memory, [[maybe_unused]] uint64_t length)
 }
 
 int64_t os_now_us() {
-    static std::chrono::time_point<std::chrono::high_resolution_clock> start{};
-    static bool started = false;
-    if (!started) {
-        started = true;
-        start = std::chrono::high_resolution_clock::now();
-    }
+    static const std::chrono::time_point<std::chrono::high_resolution_clock> start{
+        std::chrono::high_resolution_clock::now()};
     auto end = std::chrono::high_resolution_clock::now();
     return static_cast<int64_t>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
 }

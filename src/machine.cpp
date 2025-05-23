@@ -2240,7 +2240,7 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
     // Ensure that the microarchitecture is reset
     auto current_uarch_state_hash =
         get_merkle_tree_node_hash(PMA_SHADOW_UARCH_STATE_START, UARCH_STATE_LOG2_SIZE, skip_merkle_tree_update);
-    if (current_uarch_state_hash != uarch_pristine_state_hash) {
+    if (current_uarch_state_hash != get_uarch_pristine_state_hash()) {
         throw std::runtime_error{"microarchitecture is not reset"};
     }
     hash_type root_hash_before;

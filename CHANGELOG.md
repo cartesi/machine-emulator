@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.19.0] - 2024-05-27
 ## Added
 - Added `libluacartesi.a` and `libluacartesi_jsonrpc.a` static libraries when installing to allow packaging statically linked Lua programs
 - Added `--remote-spawn` command line option to spawn remote machines
@@ -36,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed conflicting symbols between libcartesi and libcartesi_jsonrpc
 - Fixed --sync-init-date and --virtio-console command line options
 - Fixed various issues when forking jsonrpc machines inside a Go environment
+- Fixed potential data races in multi-threaded environments
 
 ## Changed
 - Optimized RISC-V instruction decoder to use token threading, computed goto, and big jump tables
@@ -68,7 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved `send_cmio_response` bounds checking
 - Split `iflags` CSR into multiple CSRs
 - Bumped MARCHID version to 19
-- Updated test rootfs to guest tools 0.17.0
+- Updated test rootfs to guest tools 0.17.1
 
 ## Removed
 - Removed publishing of Debian package artifacts in favor of official Linux package repositories
@@ -554,7 +557,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [0.2.0]
 - [0.1.0]
 
-[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.18.1...HEAD
+[Unreleased]: https://github.com/cartesi/machine-emulator/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.19.0
 [0.18.1]: https://github.com/cartesi/machine-emulator/releases/tag/v0.18.1
 [0.18.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.18.0
 [0.17.0]: https://github.com/cartesi/machine-emulator/releases/tag/v0.17.0

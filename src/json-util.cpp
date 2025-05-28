@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <iterator>
 #include <optional>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -61,7 +62,7 @@ std::string to_string(const char *s) {
 /// \param name Register name
 /// \returns The register index
 static auto reg_from_name(const std::string &name) {
-    using reg = machine::reg;
+    using reg = machine_reg;
     const static std::unordered_map<std::string, reg> g_reg_name = {
         {"x0", reg::x0},
         {"x1", reg::x1},
@@ -220,8 +221,8 @@ static auto reg_from_name(const std::string &name) {
     return got->second;
 }
 
-static auto reg_to_name(machine::reg r) {
-    using reg = machine::reg;
+static auto reg_to_name(machine_reg r) {
+    using reg = machine_reg;
     switch (r) {
         case reg::x0:
             return "x0";
@@ -701,7 +702,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, machine::reg &value, const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_reg &value, const std::string &path) {
     if (!contains(j, key, path)) {
         return;
     }
@@ -712,10 +713,10 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine::reg &value
     value = reg_from_name(jk.template get<std::string>());
 }
 
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, machine::reg &value,
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, machine_reg &value,
     const std::string &path);
 
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, machine::reg &value,
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, machine_reg &value,
     const std::string &path);
 
 template <typename K>
@@ -845,7 +846,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constructible<hash_tree::proof_type> &value,
+void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constructible<hash_tree_proof> &value,
     const std::string &path) {
     value = {};
     if (!contains(j, key, path)) {
@@ -891,10 +892,58 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constru
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
-    not_default_constructible<hash_tree::proof_type> &value, const std::string &path);
+    not_default_constructible<hash_tree_proof> &value, const std::string &path);
 
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
-    not_default_constructible<hash_tree::proof_type> &value, const std::string &path);
+    not_default_constructible<hash_tree_proof> &value, const std::string &path);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, page_hash_tree_cache_stats &value,
+    const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jstats = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    ju_get_opt_field(jstats, "page_hits"s, value.page_hits, new_path);
+    ju_get_opt_field(jstats, "page_misses"s, value.page_misses, new_path);
+    ju_get_opt_field(jstats, "word_hits"s, value.word_hits, new_path);
+    ju_get_opt_field(jstats, "word_misses"s, value.word_misses, new_path);
+    ju_get_opt_field(jstats, "inner_page_hashes"s, value.inner_page_hashes, new_path);
+    ju_get_opt_field(jstats, "pristine_pages"s, value.pristine_pages, new_path);
+    ju_get_opt_field(jstats, "non_pristine_pages"s, value.non_pristine_pages, new_path);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
+    page_hash_tree_cache_stats &value, const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    page_hash_tree_cache_stats &value, const std::string &path);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, hash_tree_stats &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jstats = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    ju_get_opt_field(jstats, "phtc"s, value.phtc, new_path);
+    ju_get_opt_field(jstats, "sparse_node_hashes"s, value.sparse_node_hashes, new_path);
+    const auto &jdnh = jstats["dense_node_hashes"];
+    if (!jdnh.is_array()) {
+        throw std::invalid_argument("\""s + new_path + "dense_node_hashes\" not an array"s);
+    }
+    const auto dense_node_hashes_base = path + "dense_node_hashes/";
+    for (uint64_t log2_size = 0; log2_size < value.dense_node_hashes.size(); ++log2_size) {
+        ju_get_field(jdnh, log2_size, value.dense_node_hashes[log2_size], dense_node_hashes_base);
+    }
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, hash_tree_stats &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, hash_tree_stats &value,
+    const std::string &path);
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, access_type &value, const std::string &path) {
@@ -1730,7 +1779,7 @@ template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, fork_result &value,
     const std::string &path);
 
-void to_json(nlohmann::json &j, const machine::reg &reg) {
+void to_json(nlohmann::json &j, const machine_reg &reg) {
     j = reg_to_name(reg);
 }
 
@@ -1740,11 +1789,10 @@ void to_json(nlohmann::json &j, const machine_hash &h) {
 
 void to_json(nlohmann::json &j, const std::vector<machine_hash> &hs) {
     j = nlohmann::json::array();
-    std::transform(hs.cbegin(), hs.cend(), std::back_inserter(j),
-        [](const machine_hash &h) -> nlohmann::json { return h; });
+    std::ranges::transform(hs, std::back_inserter(j), [](const machine_hash &h) -> nlohmann::json { return h; });
 }
 
-void to_json(nlohmann::json &j, const hash_tree::proof_type &p) {
+void to_json(nlohmann::json &j, const hash_tree_proof &p) {
     nlohmann::json s = nlohmann::json::array();
     for (int log2_size = p.get_log2_target_size(); log2_size < p.get_log2_root_size(); ++log2_size) {
         s.push_back(encode_base64(p.get_sibling_hash(log2_size)));
@@ -1797,13 +1845,12 @@ void to_json(nlohmann::json &j, const bracket_note &b) {
 
 void to_json(nlohmann::json &j, const std::vector<bracket_note> &bs) {
     j = nlohmann::json::array();
-    std::transform(bs.cbegin(), bs.cend(), std::back_inserter(j),
-        [](const bracket_note &b) -> nlohmann::json { return b; });
+    std::ranges::transform(bs, std::back_inserter(j), [](const bracket_note &b) -> nlohmann::json { return b; });
 }
 
 void to_json(nlohmann::json &j, const std::vector<access> &as) {
     j = nlohmann::json::array();
-    std::transform(as.cbegin(), as.cend(), std::back_inserter(j), [](const access &a) -> nlohmann::json { return a; });
+    std::ranges::transform(as, std::back_inserter(j), [](const access &a) -> nlohmann::json { return a; });
 }
 
 void to_json(nlohmann::json &j, const access_log::type &log_type) {
@@ -1872,8 +1919,7 @@ void to_json(nlohmann::json &j, const processor_config &config) {
 
 void to_json(nlohmann::json &j, const flash_drive_configs &fs) {
     j = nlohmann::json::array();
-    std::transform(fs.cbegin(), fs.cend(), std::back_inserter(j),
-        [](const memory_range_config &m) -> nlohmann::json { return m; });
+    std::ranges::transform(fs, std::back_inserter(j), [](const memory_range_config &m) -> nlohmann::json { return m; });
 }
 
 void to_json(nlohmann::json &j, const virtio_device_config &config) {
@@ -1887,7 +1933,7 @@ void to_json(nlohmann::json &j, const virtio_device_config &config) {
                     {"host_directory", vdev_config.host_directory}};
             } else if constexpr (std::is_same_v<T, cartesi::virtio_net_user_config>) {
                 nlohmann::json jhostfwd = nlohmann::json::array();
-                std::transform(vdev_config.hostfwd.cbegin(), vdev_config.hostfwd.cend(), std::back_inserter(jhostfwd),
+                std::ranges::transform(vdev_config.hostfwd, std::back_inserter(jhostfwd),
                     [](const virtio_hostfwd_config &h) -> nlohmann::json {
                         return nlohmann::json{
                             {"is_udp", h.is_udp},
@@ -1909,7 +1955,7 @@ void to_json(nlohmann::json &j, const virtio_device_config &config) {
 
 void to_json(nlohmann::json &j, const virtio_configs &vs) {
     j = nlohmann::json::array();
-    std::transform(vs.cbegin(), vs.cend(), std::back_inserter(j),
+    std::ranges::transform(vs, std::back_inserter(j),
         [](const virtio_device_config &v) -> nlohmann::json { return v; });
 }
 
@@ -2061,8 +2107,7 @@ void to_json(nlohmann::json &j, const address_range_description &mrd) {
 
 void to_json(nlohmann::json &j, const address_range_descriptions &mrds) {
     j = nlohmann::json::array();
-    std::transform(mrds.cbegin(), mrds.cend(), std::back_inserter(j),
-        [](const auto &a) -> nlohmann::json { return a; });
+    std::ranges::transform(mrds, std::back_inserter(j), [](const auto &a) -> nlohmann::json { return a; });
 }
 
 void to_json(nlohmann::json &j, const fork_result &fork_result) {
@@ -2076,6 +2121,28 @@ void to_json(nlohmann::json &j, const semantic_version &version) {
         {"patch", version.patch},
         {"pre_release", version.pre_release},
         {"build", version.build},
+    };
+}
+
+void to_json(nlohmann::json &j, const hash_tree_stats &stats) {
+    auto jdnh = nlohmann::json::array();
+    std::ranges::copy(stats.dense_node_hashes, std::back_inserter(jdnh));
+    j = nlohmann::json{
+        {"sparse_node_hashes", stats.sparse_node_hashes},
+        {"dense_node_hashes", jdnh},
+        {"phtc", stats.phtc},
+    };
+}
+
+void to_json(nlohmann::json &j, const page_hash_tree_cache_stats &stats) {
+    j = nlohmann::json{
+        {"page_hits", stats.page_hits},
+        {"page_misses", stats.page_misses},
+        {"word_hits", stats.word_hits},
+        {"word_misses", stats.word_misses},
+        {"inner_page_hashes", stats.inner_page_hashes},
+        {"pristine_pages", stats.pristine_pages},
+        {"non_pristine_pages", stats.non_pristine_pages},
     };
 }
 

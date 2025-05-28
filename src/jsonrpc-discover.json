@@ -353,7 +353,7 @@
     },
     {
       "name": "machine.get_proof",
-      "summary": "Obtains a Merkle proof for a range in the machine state",
+      "summary": "Obtains a hash-tree proof for a range in the machine state",
       "params": [
         {
           "name": "address",
@@ -377,6 +377,27 @@
         "description": "Proof of range contents",
         "schema": {
           "$ref": "#/components/schemas/Proof"
+        }
+      }
+    },
+    {
+      "name": "machine.get_hash_tree_stats",
+      "summary": "Returns statistics for the hash tree",
+      "params": [
+        {
+          "name": "clear",
+          "description": "Whether to clear the stats after retrieving them",
+          "required": true,
+          "schema": {
+              "type": "boolean"
+          }
+        }
+      ],
+      "result": {
+        "name": "stats",
+        "description": "Statistics for the hash tre",
+        "schema": {
+          "$ref": "#/components/schemas/HashTreeStats"
         }
       }
     },
@@ -961,6 +982,55 @@
         "properties": {
           "no_console_putchar": {
             "type": "boolean"
+          }
+        }
+      },
+      "HashTreeStats": {
+        "title": "HashTreeStats",
+        "type": "object",
+        "properties": {
+          "phtc": {
+            "$ref": "#/components/schemas/PageHashTreeCacheStats"
+          },
+          "sparse_node_hashes": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "dense_node_hashes": {
+            "$ref": "#/components/schemas/UnsignedIntegerArray"
+          }
+        }
+      },
+      "UnsignedIntegerArray": {
+        "title": "UnsignedIntegerArray",
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/UnsignedInteger"
+        }
+      },
+      "PageHashTreeCacheStats": {
+        "title": "PageHashTreeCacheStats",
+        "type": "object",
+        "properties": {
+          "page_hits": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "page_misses": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "word_hits": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "word_misses": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "inner_page_hashes": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "pristine_pages": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "non_pristine_pages": {
+            "$ref": "#/components/schemas/UnsignedInteger"
           }
         }
       },

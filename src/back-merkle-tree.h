@@ -20,9 +20,9 @@
 #include <cstdint>
 #include <vector>
 
+#include "hash-tree-proof.h"
 #include "keccak-256-hasher.h"
 #include "machine-hash.h"
-#include "merkle-tree-proof.h"
 #include "pristine-merkle-tree.h"
 
 /// \file
@@ -47,7 +47,7 @@ public:
     using hash_type = machine_hash;
 
     /// \brief Storage for the proof of a word value.
-    using proof_type = merkle_tree_proof;
+    using proof_type = hash_tree_proof;
 
     /// \brief Constructor
     /// \param log2_root_size Log<sub>2</sub> of root node

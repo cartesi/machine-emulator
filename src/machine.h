@@ -23,14 +23,14 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
-
-#include <unordered_map>
 
 #include "access-log.h"
 #include "address-range-description.h"
 #include "address-range.h"
+#include "hash-tree-stats.h"
 #include "hash-tree.h"
 #include "host-addr.h"
 #include "i-device-state-access.h"
@@ -175,6 +175,11 @@ public:
 
     /// \brief Destructor.
     ~machine();
+
+    /// \brief Returns hash-tree statistics
+    /// \param clear Clear all statistics after collecting them
+    /// \returns Structure containing all statistics
+    hash_tree_stats get_hash_tree_stats(bool clear = false) noexcept;
 
     /// \brief Runs the machine until mcycle reaches mcycle_end, the machine halts or yields.
     /// \param mcycle_end Maximum value of mcycle before function returns.

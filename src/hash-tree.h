@@ -22,11 +22,12 @@
 
 #include "address-range.h"
 #include "hash-tree-constants.h"
+#include "hash-tree-proof.h"
+#include "hash-tree-stats.h"
 #include "keccak-256-hasher.h"
 #include "machine-address-ranges.h"
 #include "machine-config.h"
 #include "machine-hash.h"
-#include "merkle-tree-proof.h"
 #include "page-hash-tree-cache.h"
 #include "unique-c-ptr.h"
 
@@ -110,7 +111,7 @@ class hash_tree {
 
 public:
     using hasher_type = keccak_256_hasher;
-    using proof_type = merkle_tree_proof;
+    using proof_type = hash_tree_proof;
 
     using nodes_type = std::vector<node_type>;
     using sibling_hashes_type = std::vector<machine_hash>;
@@ -136,7 +137,7 @@ public:
 
     void dump(const_address_ranges ars, std::ostream &out);
 
-    void clear_stats();
+    hash_tree_stats get_stats(bool clear = false) noexcept;
 
 private:
     using changed_address_ranges = std::vector<int>;
@@ -180,10 +181,9 @@ private:
     os_signpost_id_t m_spid_update_dense_trees;
     os_signpost_id_t m_spid_update_sparse_tree;
 #endif
-#ifdef DUMP_HASH_TREE_STATS
-    int m_sparse_node_hashes{0};
-    static std::array<std::atomic<int>, 64> m_dense_node_hashes;
-#endif
+
+    std::atomic<uint64_t> m_sparse_node_hashes{0};
+    std::array<std::atomic<uint64_t>, HASH_TREE_LOG2_ROOT_SIZE> m_dense_node_hashes{};
 };
 
 } // namespace cartesi

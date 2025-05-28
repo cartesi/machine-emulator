@@ -30,13 +30,15 @@
 #include "access-log.h"
 #include "address-range-description.h"
 #include "bracket-note.h"
-#include "hash-tree.h"
+#include "hash-tree-proof.h"
+#include "hash-tree-stats.h"
 #include "interpret.h"
 #include "jsonrpc-fork-result.h"
 #include "machine-config.h"
 #include "machine-hash.h"
+#include "machine-reg.h"
 #include "machine-runtime-config.h"
-#include "machine.h"
+#include "page-hash-tree-cache-stats.h"
 #include "semantic-version.h"
 #include "uarch-interpret.h"
 
@@ -151,7 +153,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, semantic_version &v
 /// \param value Object to store value
 /// \param path Path to j
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, machine::reg &value, const std::string &path = "params/");
+void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_reg &value, const std::string &path = "params/");
 
 /// \brief Attempts to load an interpreter_break_reason name from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
@@ -222,14 +224,34 @@ template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, std::optional<machine_hash> &optional,
     const std::string &path = "params/");
 
-/// \brief Attempts to load an Merkle tree proof object from a field in a JSON object
+/// \brief Attempts to load a hash-tree proof object from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
 /// \param key Key to load value from
 /// \param value Object to store value
 /// \param path Path to j
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constructible<hash_tree::proof_type> &value,
+void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constructible<hash_tree_proof> &value,
+    const std::string &path = "params/");
+
+/// \brief Attempts to load a page_hash_tree_cache_stats object from a field in a JSON object
+/// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
+/// \param j JSON object to load from
+/// \param key Key to load value from
+/// \param value Object to store value
+/// \param path Path to j
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, page_hash_tree_cache_stats &value,
+    const std::string &path = "params/");
+
+/// \brief Attempts to load a hash_tree_stats object from a field in a JSON object
+/// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
+/// \param j JSON object to load from
+/// \param key Key to load value from
+/// \param value Object to store value
+/// \param path Path to j
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, hash_tree_stats &value,
     const std::string &path = "params/");
 
 /// \brief Attempts to load an access_type name from a field in a JSON object
@@ -617,7 +639,9 @@ void ju_get_field(const nlohmann::json &j, const K &key, T &value, const std::st
 void to_json(nlohmann::json &j, const access_log::type &log_type);
 void to_json(nlohmann::json &j, const machine_hash &h);
 void to_json(nlohmann::json &j, const std::vector<machine_hash> &hs);
-void to_json(nlohmann::json &j, const hash_tree::proof_type &p);
+void to_json(nlohmann::json &j, const hash_tree_proof &p);
+void to_json(nlohmann::json &j, const page_hash_tree_cache_stats &s);
+void to_json(nlohmann::json &j, const hash_tree_stats &s);
 void to_json(nlohmann::json &j, const access &a);
 void to_json(nlohmann::json &j, const bracket_note &b);
 void to_json(nlohmann::json &j, const std::vector<bracket_note> &bs);
@@ -646,7 +670,7 @@ void to_json(nlohmann::json &j, const machine_config &config);
 void to_json(nlohmann::json &j, const concurrency_runtime_config &config);
 void to_json(nlohmann::json &j, const htif_runtime_config &config);
 void to_json(nlohmann::json &j, const machine_runtime_config &runtime);
-void to_json(nlohmann::json &j, const machine::reg &reg);
+void to_json(nlohmann::json &j, const machine_reg &reg);
 void to_json(nlohmann::json &j, const address_range_description &mrd);
 void to_json(nlohmann::json &j, const address_range_descriptions &mrds);
 void to_json(nlohmann::json &j, const fork_result &fork_result);
@@ -673,9 +697,9 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &k
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, semantic_version &value,
     const std::string &base = "params/");
-extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, machine::reg &value,
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, machine_reg &value,
     const std::string &base = "params/");
-extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, machine::reg &value,
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, machine_reg &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, interpreter_break_reason &value,
     const std::string &base = "params/");
@@ -702,9 +726,17 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &k
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, machine_hash &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key,
-    not_default_constructible<hash_tree::proof_type> &value, const std::string &base = "params/");
+    not_default_constructible<hash_tree_proof> &value, const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key,
-    not_default_constructible<hash_tree::proof_type> &value, const std::string &base = "params/");
+    not_default_constructible<hash_tree_proof> &value, const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, page_hash_tree_cache_stats &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key,
+    page_hash_tree_cache_stats &value, const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, hash_tree_stats &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, hash_tree_stats &value,
+    const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, access_type &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, access_type &value,

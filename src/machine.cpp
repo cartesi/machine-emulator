@@ -40,6 +40,7 @@
 #include "compiler-defines.h"
 #include "device-state-access.h"
 #include "dtb.h"
+#include "hash-tree-proof.h"
 #include "hash-tree.h"
 #include "host-addr.h"
 #include "hot-tlb.h"
@@ -52,7 +53,6 @@
 #include "machine-hash.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
-#include "merkle-tree-proof.h"
 #include "page-hash-tree-cache.h"
 #include "pmas.h"
 #include "processor-state.h"
@@ -89,6 +89,10 @@ static_assert(static_cast<int>(AR_LOG2_PAGE_SIZE) == static_cast<int>(HASH_TREE_
     "address range page size must match hash-tree page size");
 
 using namespace std::string_literals;
+
+hash_tree_stats machine::get_hash_tree_stats(bool clear) noexcept {
+    return m_ht.get_stats(clear);
+}
 
 void machine::init_uarch_processor(const uarch_processor_config &p) {
     if (p.backing_store.data_filename.empty() || p.backing_store.create) {

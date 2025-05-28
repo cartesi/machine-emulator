@@ -713,5 +713,6 @@ jobs:
             artifacts/uarch-ram.bin
             add-generated-files.diff
             uarch-logs/uarch-riscv-tests-json-logs.tar.gz
+            tests-amd64/machine-emulator-tests-data.deb
             tests-amd64/machine-emulator-tests_*.deb
             tests-arm64/machine-emulator-tests_*.deb

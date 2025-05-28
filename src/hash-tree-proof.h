@@ -14,11 +14,11 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef MERKLE_TREE_PROOF_H
-#define MERKLE_TREE_PROOF_H
+#ifndef HASH_TREE_PROOF_H
+#define HASH_TREE_PROOF_H
 
 /// \file
-/// \brief Merkle tree proof structure
+/// \brief Hash-tree proof structure
 
 #include <algorithm>
 #include <cstdint>
@@ -32,16 +32,16 @@
 
 namespace cartesi {
 
-/// \brief Merkle tree proof structure
+/// \brief Hash-tree proof structure
 /// \details \{
 /// This structure holds a proof that the node spanning a log2_target_size
 /// at a given address in the tree has a certain hash.
 /// \}
-class merkle_tree_proof final {
+class hash_tree_proof final {
 public:
-    /// \brief Constructs a merkle_tree_proof object and allocates
+    /// \brief Constructs a hash_tree_proof object and allocates
     /// room for the sibling hashes
-    merkle_tree_proof(int log2_root_size, int log2_target_size) :
+    hash_tree_proof(int log2_root_size, int log2_target_size) :
         m_log2_target_size{log2_target_size},
         m_log2_root_size{log2_root_size},
         m_sibling_hashes(std::max(0, log2_root_size - log2_target_size)) {
@@ -56,11 +56,11 @@ public:
         }
     }
 
-    merkle_tree_proof(const merkle_tree_proof &other) = default;
-    merkle_tree_proof(merkle_tree_proof &&other) noexcept = default;
-    merkle_tree_proof &operator=(const merkle_tree_proof &other) = default;
-    merkle_tree_proof &operator=(merkle_tree_proof &&other) noexcept = default;
-    ~merkle_tree_proof() = default;
+    hash_tree_proof(const hash_tree_proof &other) = default;
+    hash_tree_proof(hash_tree_proof &&other) noexcept = default;
+    hash_tree_proof &operator=(const hash_tree_proof &other) = default;
+    hash_tree_proof &operator=(hash_tree_proof &&other) noexcept = default;
+    ~hash_tree_proof() = default;
 
     /// \brief Storage for the hashes of the siblings of all nodes along
     /// the path from the root node to the target node.
@@ -141,8 +141,8 @@ public:
         return m_sibling_hashes;
     }
 
-    /// \brief Checks if two Merkle proofs are equal
-    bool operator==(const merkle_tree_proof &other) const {
+    /// \brief Checks if two hash-tree proofs are equal
+    bool operator==(const hash_tree_proof &other) const {
         if (get_log2_target_size() != other.get_log2_target_size()) {
             return false;
         }
@@ -164,8 +164,8 @@ public:
         return true;
     }
 
-    /// \brief Checks if two Merkle proofs are different
-    bool operator!=(const merkle_tree_proof &other) const {
+    /// \brief Checks if two hash-tree proofs are different
+    bool operator!=(const hash_tree_proof &other) const {
         return !(operator==(other));
     }
 
@@ -200,7 +200,7 @@ public:
 
     template <IHasher H>
     // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
-    merkle_tree_proof slice(H &&h, int new_log2_root_size, int new_log2_target_size) const {
+    hash_tree_proof slice(H &&h, int new_log2_root_size, int new_log2_target_size) const {
         if (new_log2_root_size <= 0) {
             throw std::out_of_range{"log2_root_size is not positive"};
         }
@@ -216,7 +216,7 @@ public:
         if (new_log2_target_size < get_log2_target_size()) {
             throw std::out_of_range{"log2_target_size is too small"};
         }
-        merkle_tree_proof sliced(new_log2_root_size, new_log2_target_size);
+        hash_tree_proof sliced(new_log2_root_size, new_log2_target_size);
         machine_hash hash = get_target_hash();
         for (int log2_size = get_log2_target_size(); log2_size < new_log2_target_size; ++log2_size) {
             const auto bit = (get_target_address() & (static_cast<uint64_t>(1) << log2_size)) != 0;

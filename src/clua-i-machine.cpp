@@ -532,6 +532,20 @@ static int machine_obj_index_get_proof(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:get_hash_tree_stats() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_get_hash_tree_stats(lua_State *L) {
+    lua_settop(L, 2);
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const bool clear = lua_toboolean(L, 2) != 0;
+    const char *stats = nullptr;
+    if (cm_get_hash_tree_stats(m.get(), clear, &stats) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    clua_push_json_table(L, stats);
+    return 1;
+}
+
 static int machine_obj_index_get_initial_config(lua_State *L) {
     auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
     const char *config = nullptr;
@@ -1048,6 +1062,7 @@ static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"get_initial_config", machine_obj_index_get_initial_config},
     {"get_address_ranges", machine_obj_index_get_address_ranges},
     {"get_proof", machine_obj_index_get_proof},
+    {"get_hash_tree_stats", machine_obj_index_get_hash_tree_stats},
     {"get_reg_address", machine_obj_index_get_reg_address},
     {"get_root_hash", machine_obj_index_get_root_hash},
     {"get_node_hash", machine_obj_index_get_node_hash},

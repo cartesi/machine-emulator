@@ -1107,6 +1107,19 @@ static json jsonrpc_machine_get_proof_handler(const json &j, const std::shared_p
         session->handler->machine->get_proof(std::get<0>(args), static_cast<int>(std::get<1>(args))));
 }
 
+/// \brief JSONRPC handler for the machine.get_hash_tree_stats method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_machine_get_hash_tree_stats_handler(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    static const char *param_name[] = {"clear"};
+    auto args = parse_args<bool>(j, param_name);
+    return jsonrpc_response_ok(j, session->handler->machine->get_hash_tree_stats(std::get<0>(args)));
+}
+
 /// \brief JSONRPC handler for the machine.verify_hash_tree method
 /// \param j JSON request object
 /// \param session HTTP session
@@ -1488,9 +1501,10 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"machine.log_reset_uarch", jsonrpc_machine_log_reset_uarch_handler},
         {"machine.verify_reset_uarch", jsonrpc_machine_verify_reset_uarch_handler},
         {"machine.verify_step_uarch", jsonrpc_machine_verify_step_uarch_handler},
+        {"machine.get_hash_tree_stats", jsonrpc_machine_get_hash_tree_stats_handler},
+        {"machine.get_node_hash", jsonrpc_machine_get_node_hash_handler},
         {"machine.get_proof", jsonrpc_machine_get_proof_handler},
         {"machine.get_root_hash", jsonrpc_machine_get_root_hash_handler},
-        {"machine.get_node_hash", jsonrpc_machine_get_node_hash_handler},
         {"machine.read_word", jsonrpc_machine_read_word_handler},
         {"machine.read_memory", jsonrpc_machine_read_memory_handler},
         {"machine.write_memory", jsonrpc_machine_write_memory_handler},

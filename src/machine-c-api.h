@@ -728,12 +728,20 @@ CM_API cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reaso
 // Integrity checking
 // ------------------------------------
 
-/// \brief Verifies integrity of hash-tree tree against current machine state.
+/// \brief Verifies integrity of hash tree against current machine state.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param result True if tree is self-consistent, false otherwise.
 /// \returns 0 for success, non zero code for error.
 /// \details This method is used only for emulator internal tests.
 CM_API cm_error cm_verify_hash_tree(cm_machine *m, bool *result);
+
+/// \brief Obtains hash tree statistics
+/// \param m Pointer to a non-empty machine object (holds a machine instance).
+/// \param clear Whether to clear the statistics after retrieving them.
+/// \param stats Receives the statistics as a JSON object in a string,
+/// guaranteed to remain valid only until the next CM_API function is called from the same thread.
+/// \returns 0 for success, non zero code for error.
+CM_API cm_error cm_get_hash_tree_stats(cm_machine *m, bool clear, const char **stats);
 
 #ifdef __cplusplus
 }

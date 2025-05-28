@@ -52,7 +52,7 @@ private:
     interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) override;
     void do_store(const std::string &directory) const override;
     access_log do_log_step_uarch(const access_log::type &log_type) override;
-    proof_type do_get_proof(uint64_t address, int log2_size) const override;
+    hash_tree_proof do_get_proof(uint64_t address, int log2_size) const override;
     machine_hash do_get_root_hash() const override;
     machine_hash do_get_node_hash(uint64_t address, int log2_size) const override;
     bool do_verify_hash_tree() const override;
@@ -66,6 +66,7 @@ private:
     void do_replace_memory_range(const memory_range_config &new_range) override;
     uint64_t do_read_word(uint64_t address) const override;
     machine_config do_get_initial_config() const override;
+    hash_tree_stats do_get_hash_tree_stats(bool clear) override;
     machine_runtime_config do_get_runtime_config() const override;
     void do_set_runtime_config(const machine_runtime_config &r) override;
     void do_destroy() override;

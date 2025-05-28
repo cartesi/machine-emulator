@@ -81,7 +81,7 @@ access_log local_machine::do_log_step_uarch(const access_log::type &log_type) {
     return get_machine()->log_step_uarch(log_type);
 }
 
-i_machine::proof_type local_machine::do_get_proof(uint64_t address, int log2_size) const {
+hash_tree_proof local_machine::do_get_proof(uint64_t address, int log2_size) const {
     return get_machine()->get_proof(address, log2_size);
 }
 
@@ -131,6 +131,10 @@ void local_machine::do_replace_memory_range(const memory_range_config &new_range
 
 uint64_t local_machine::do_read_word(uint64_t address) const {
     return get_machine()->read_word(address);
+}
+
+hash_tree_stats local_machine::do_get_hash_tree_stats(bool clear) {
+    return get_machine()->get_hash_tree_stats(clear);
 }
 
 machine_config local_machine::do_get_initial_config() const {

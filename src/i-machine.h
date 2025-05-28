@@ -22,11 +22,12 @@
 
 #include "access-log.h"
 #include "address-range-description.h"
-#include "hash-tree.h"
+#include "hash-tree-proof.h"
+#include "hash-tree-stats.h"
 #include "interpret.h"
 #include "machine-config.h"
 #include "machine-hash.h"
-#include "machine.h"
+#include "machine-reg.h"
 #include "uarch-interpret.h"
 
 namespace cartesi {
@@ -45,7 +46,6 @@ namespace cartesi {
 /// \}
 class i_machine {
 public:
-    using proof_type = hash_tree::proof_type;
     using reg = machine_reg;
 
     /// \brief Constructor
@@ -100,7 +100,7 @@ public:
     }
 
     /// \brief Obtains the proof for a node in the Merkle tree.
-    proof_type get_proof(uint64_t address, int log2_size) const {
+    hash_tree_proof get_proof(uint64_t address, int log2_size) const {
         return do_get_proof(address, log2_size);
     }
 
@@ -162,6 +162,13 @@ public:
     /// \brief Read the value of a word in the machine state.
     uint64_t read_word(uint64_t address) const {
         return do_read_word(address);
+    }
+
+    /// \brief Returns hash-tree statistics
+    /// \param clear Clear all statistics after collecting them
+    /// \returns Structure containing all statistics
+    hash_tree_stats get_hash_tree_stats(bool clear = false) {
+        return do_get_hash_tree_stats(clear);
     }
 
     /// \brief Returns copy of initialization config.
@@ -264,7 +271,7 @@ private:
     virtual void do_store(const std::string &dir) const = 0;
     virtual interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) = 0;
     virtual access_log do_log_step_uarch(const access_log::type &log_type) = 0;
-    virtual proof_type do_get_proof(uint64_t address, int log2_size) const = 0;
+    virtual hash_tree_proof do_get_proof(uint64_t address, int log2_size) const = 0;
     virtual machine_hash do_get_root_hash() const = 0;
     virtual machine_hash do_get_node_hash(uint64_t address, int log2_size) const = 0;
     virtual uint64_t do_read_reg(reg r) const = 0;
@@ -277,6 +284,7 @@ private:
     virtual void do_replace_memory_range(const memory_range_config &new_range) = 0;
     virtual uint64_t do_read_word(uint64_t address) const = 0;
     virtual machine_config do_get_initial_config() const = 0;
+    virtual hash_tree_stats do_get_hash_tree_stats(bool clear) = 0;
     virtual machine_runtime_config do_get_runtime_config() const = 0;
     virtual void do_set_runtime_config(const machine_runtime_config &r) = 0;
     virtual void do_destroy() = 0;

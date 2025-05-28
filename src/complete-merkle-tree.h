@@ -21,9 +21,9 @@
 #include <type_traits>
 #include <vector>
 
+#include "hash-tree-proof.h"
 #include "keccak-256-hasher.h"
 #include "machine-hash.h"
-#include "merkle-tree-proof.h"
 #include "meta.h"
 #include "pristine-merkle-tree.h"
 
@@ -43,7 +43,7 @@ public:
     using hasher_type = keccak_256_hasher;
 
     /// \brief Storage for a proof.
-    using proof_type = merkle_tree_proof;
+    using proof_type = hash_tree_proof;
 
     /// \brief Storage for a level in the tree.
     using level_type = std::vector<machine_hash>;

@@ -102,7 +102,6 @@ public:
     const std::string &get_server_address() const;
 
 private:
-    machine_config do_get_initial_config() const override;
     i_machine *do_clone_empty() const override;
     bool do_is_empty() const override;
     void do_create(const machine_config &config, const machine_runtime_config &runtime) override;
@@ -121,13 +120,15 @@ private:
     access_log do_log_reset_uarch(const access_log::type &log_type) override;
     machine_hash do_get_root_hash() const override;
     machine_hash do_get_node_hash(uint64_t address, int log2_size) const override;
-    proof_type do_get_proof(uint64_t address, int log2_size) const override;
+    hash_tree_proof do_get_proof(uint64_t address, int log2_size) const override;
     void do_replace_memory_range(const memory_range_config &new_range) override;
     access_log do_log_step_uarch(const access_log::type &log_type) override;
     machine_runtime_config do_get_runtime_config() const override;
     void do_set_runtime_config(const machine_runtime_config &r) override;
     void do_destroy() override;
     uint64_t do_read_word(uint64_t address) const override;
+    machine_config do_get_initial_config() const override;
+    hash_tree_stats do_get_hash_tree_stats(bool clear) override;
     bool do_verify_hash_tree() const override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
     address_range_descriptions do_get_address_ranges() const override;

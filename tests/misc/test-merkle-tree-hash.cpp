@@ -30,9 +30,9 @@
 #include <back-merkle-tree.h>
 #include <complete-merkle-tree.h>
 #include <full-merkle-tree.h>
+#include <hash-tree-proof.h>
 #include <i-hasher.h>
 #include <keccak-256-hasher.h>
-#include <merkle-tree-proof.h>
 #include <unique-c-ptr.h>
 
 using namespace cartesi;

@@ -299,10 +299,9 @@ public:
     /// \param offset Start of range of interest, relative to start of this range
     /// \param length Length of range of interest, in bytes
     void mark_dirty_pages_and_up(uint64_t offset, uint64_t length) noexcept {
-        auto offset_aligned = offset & ~(AR_PAGE_SIZE - 1);
-        const auto length_aligned = length + (offset - offset_aligned);
-        for (; offset_aligned < length_aligned; offset_aligned += AR_PAGE_SIZE) {
-            mark_dirty_page_and_up(offset_aligned);
+        const auto end = offset + length;
+        for (offset &= ~(AR_PAGE_SIZE - 1); offset < end; offset += AR_PAGE_SIZE) {
+            mark_dirty_page_and_up(offset);
         }
     }
 

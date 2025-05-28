@@ -172,14 +172,26 @@ hash_tree::proof_type hash_tree::get_proof(address_ranges ars, uint64_t address,
     }
 }
 
-void hash_tree::clear_stats() {
-    m_page_cache.clear_stats();
-#ifdef DUMP_HASH_TREE_STATS
-    m_sparse_node_hashes = 0;
-    for (auto &a : m_dense_node_hashes) {
-        a = 0;
+hash_tree_stats hash_tree::get_stats(bool clear) noexcept {
+    auto s = hash_tree_stats{
+        .phtc = m_page_cache.get_stats(clear),
+        .sparse_node_hashes = m_sparse_node_hashes.load(),
+    };
+    std::ranges::copy(m_dense_node_hashes | std::views::transform([](auto &a) {
+        std::cerr << "ha " << a.load() << '\n';
+        return a.load();
+    }),
+        s.dense_node_hashes.begin());
+    for (auto i : s.dense_node_hashes) {
+        std::cerr << "hi " << i << '\n';
     }
-#endif
+    if (clear) {
+        m_sparse_node_hashes = 0;
+        for (auto &a : m_dense_node_hashes) {
+            a = 0;
+        }
+    }
+    return s;
 }
 
 bool hash_tree::update_dirty_page(hasher_type &h, address_range &ar, page_hash_tree_cache::entry &entry,
@@ -191,7 +203,7 @@ bool hash_tree::update_dirty_page(hasher_type &h, address_range &ar, page_hash_t
     }
     const auto offset = paddr_page - ar.get_start();
     const auto page_view = std::span<const unsigned char, HASH_TREE_PAGE_SIZE>{base + offset, HASH_TREE_PAGE_SIZE};
-    auto ret = entry.update(h, page_view, m_page_cache.get_pristine_page_hash_tree());
+    auto ret = m_page_cache.update_entry(h, page_view, entry);
     auto node_hash_view = ar.get_dense_hash_tree().node_hash_view(offset, HASH_TREE_LOG2_PAGE_SIZE);
     changed = !std::ranges::equal(entry.root_hash_view(), node_hash_view);
     if (changed) {
@@ -834,12 +846,5 @@ void hash_tree::dump(const_address_ranges ars, std::ostream &out) {
     }
     out << "}\n";
 }
-
-#ifdef DUMP_HASH_TREE_STATS
-std::atomic<int> page_hash_tree_cache::entry::m_word_hit{0};
-std::atomic<int> page_hash_tree_cache::entry::m_word_miss{0};
-std::atomic<int> page_hash_tree_cache::entry::m_inner_page_node_hashes{0};
-std::array<std::atomic<int>, 64> hash_tree::m_dense_node_hashes{};
-#endif
 
 } // namespace cartesi

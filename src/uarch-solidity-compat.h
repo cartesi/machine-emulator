@@ -27,6 +27,8 @@
 #include <cinttypes>
 #endif
 
+#include "shadow-tlb.h"
+
 /// \file
 /// \brief Solidity Compatibility Layer
 /// \brief The purpose of this file is to facilitate porting the uarch instruction interpreter to Solidity.

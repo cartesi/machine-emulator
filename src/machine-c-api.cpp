@@ -743,12 +743,27 @@ cm_error cm_verify_reset_uarch(const cm_machine *m, const cm_hash *root_hash_bef
     return cm_result_failure();
 }
 
+cm_error cm_get_hash_tree_stats(cm_machine *m, bool clear, const char **stats) try {
+    if (stats == nullptr) {
+        throw std::invalid_argument("invalid stats output");
+    }
+    auto *cpp_m = convert_from_c(m);
+    const auto cpp_stats = cpp_m->get_hash_tree_stats(clear);
+    *stats = cm_set_temp_string(cartesi::to_json(cpp_stats).dump());
+    return cm_result_success();
+} catch (...) {
+    if (stats != nullptr) {
+        *stats = nullptr;
+    }
+    return cm_result_failure();
+}
+
 cm_error cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_size, const char **proof) try {
     if (proof == nullptr) {
         throw std::invalid_argument("invalid proof output");
     }
     const auto *cpp_m = convert_from_c(m);
-    const cartesi::i_machine::proof_type cpp_proof = cpp_m->get_proof(address, log2_size);
+    const auto cpp_proof = cpp_m->get_proof(address, log2_size);
     *proof = cm_set_temp_string(cartesi::to_json(cpp_proof).dump());
     return cm_result_success();
 } catch (...) {

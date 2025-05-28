@@ -17,11 +17,11 @@
 #include <string>
 
 #include <back-merkle-tree.h>
+#include <hash-tree-proof.h>
 #include <json-util.h>
 #include <keccak-256-hasher.h>
 #include <machine-c-api.h>
 #include <machine-hash.h>
-#include <merkle-tree-proof.h>
 
 using hash_type = cartesi::machine_hash;
 
@@ -65,7 +65,7 @@ static hash_type merkle_hash(const std::string_view &data, int log2_size) {
     return detail::merkle_hash(h, data, log2_size);
 }
 
-static hash_type calculate_proof_root_hash(const cartesi::merkle_tree_proof &proof) {
+static hash_type calculate_proof_root_hash(const cartesi::hash_tree_proof &proof) {
     hash_type hash;
     memcpy(hash.data(), proof.get_target_hash().data(), sizeof(cm_hash));
     for (int log2_size = static_cast<int>(proof.get_log2_target_size());

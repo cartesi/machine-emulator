@@ -17,6 +17,9 @@
 #ifndef PAGE_HASH_TREE_CACHE_H
 #define PAGE_HASH_TREE_CACHE_H
 
+/// \file
+/// \brief Page hash-tree cache interface
+
 #include <atomic>
 #include <functional>
 #include <iomanip>
@@ -35,17 +38,20 @@
 #include "is-pristine.h"
 #include "machine-hash.h"
 #include "meta.h"
+#include "page-hash-tree-cache-stats.h"
 #include "ranges.h"
 #include "strict-aliasing.h"
 
 namespace cartesi {
 
+/// \class page_hash_tree_cache
+/// \brief Page hash-tree cache implementation
 class page_hash_tree_cache {
 
     static constexpr int m_page_size = HASH_TREE_PAGE_SIZE;
     static constexpr int m_word_size = HASH_TREE_WORD_SIZE;
-    static constexpr int m_page_word_count = m_page_size / m_word_size;
-    static constexpr int m_page_hash_tree_size = 2 * m_page_word_count;
+    static constexpr int m_page_word_count = m_page_size / m_word_size; ///< Number of words in a page
+    static constexpr int m_page_hash_tree_size = 2 * m_page_word_count; ///< Number of words in a page hash-tree
 
     using address_type = uint64_t;
 
@@ -59,34 +65,48 @@ public:
     static_assert(POD<machine_hash>, "machine_hash must be trivially copyable and standard layout");
     static_assert(POD<page_hash_tree>, "page_hash_tree must be trivially copyable and standard layout");
 
+    /// \class entry
+    /// \brief Page hash-tree cache entry implementation
     class entry : public boost::intrusive::list_base_hook<> {
 
-        page m_page{};
-        page_hash_tree m_hash_tree{};
+        page m_page{};                ///< Page data for entry
+        page_hash_tree m_hash_tree{}; ///< Hash-tree of data
 
-        static constexpr uint64_t m_paddr_page_offset = 0;
-        static constexpr uint64_t m_borrowed_offset = sizeof(uint64_t);
+        // First hash is not used, so we use its storage for some fields
+        static constexpr uint64_t m_paddr_page_offset = 0;              ///< Offset where paddr_page is stored
+        static constexpr uint64_t m_borrowed_offset = sizeof(uint64_t); ///< Offset where borrowee flag is stored
 
         friend page_hash_tree_cache;
 
-        entry &set_paddr_page(uint64_t paddr_page) noexcept {
-            aliased_aligned_write<uint64_t>(&m_hash_tree[0][m_paddr_page_offset], paddr_page);
+        /// \brief Sets page address for entry
+        /// \param paddr_page Target physical address of page
+        /// \returns Reference to entry (for composition of operations)
+        entry &set_paddr_page(address_type paddr_page) noexcept {
+            aliased_aligned_write<uint64_t>(&m_hash_tree[0][m_paddr_page_offset], static_cast<uint64_t>(paddr_page));
             return *this;
         }
 
-        entry &set_borrowed(uint64_t borrowed) noexcept {
-            aliased_aligned_write<uint64_t>(&m_hash_tree[0][m_borrowed_offset], borrowed);
+        /// \brief Sets borrowed flag for entry
+        /// \param borrowed True if entry was borrowed
+        /// \returns Reference to entry (for composition of operations)
+        entry &set_borrowed(bool borrowed) noexcept {
+            aliased_aligned_write<uint64_t>(&m_hash_tree[0][m_borrowed_offset], static_cast<uint64_t>(borrowed));
             return *this;
         }
 
-        uint64_t get_borrowed() const noexcept {
-            return aliased_aligned_read<uint64_t>(&m_hash_tree[0][m_borrowed_offset]);
+        /// \brief Gets borrowed flag for entry
+        /// \returns Reference true if entry is borrowed
+        bool get_borrowed() const noexcept {
+            return static_cast<bool>(aliased_aligned_read<uint64_t>(&m_hash_tree[0][m_borrowed_offset]));
         }
 
+        /// \brief Make entry's page pristine
         void clear_page() noexcept {
             std::ranges::fill(m_page, 0);
         }
 
+        /// \brief Make entry's hash tree pristine
+        /// \param pristine Pristine hash tree
         void clear_hash_tree(const page_hash_tree &pristine) noexcept {
             auto paddr_page = get_paddr_page();
             auto borrowed = get_borrowed();
@@ -95,44 +115,40 @@ public:
             set_borrowed(borrowed);
         }
 
+        /// \brief Make entry's page and hash tree pristine, clear page address and borrowed flag
+        /// \param pristine Pristine hash tree
         void clear(const page_hash_tree &pristine) noexcept {
             clear_hash_tree(pristine);
             clear_page();
-            set_borrowed(0);
+            set_borrowed(false);
             set_paddr_page(0);
         }
 
+        /// \brief Returns index of left child of node in page hash tree
+        /// \param i Node index
+        /// \returns Index of node's left child
         static int left_child(int i) {
             return 2 * i;
         }
 
+        /// \brief Returns index of right child of node in page hash tree
+        /// \param i Node index
+        /// \returns Index of node's right child
         static int right_child(int i) {
             return (2 * i) + 1;
         }
 
+        /// \brief Returns index of parent of node in page hash tree
+        /// \param i Node index
+        /// \returns Index of node's parent
         static int parent(int i) {
             return i / 2;
         }
 
-    public:
-        explicit entry(const page_hash_tree &pristine) : m_hash_tree{pristine} {}
-
-        entry(const entry &other) = default;
-        entry(entry &&other) = default;
-        entry &operator=(const entry &other) = default;
-        entry &operator=(entry &&other) = default;
-        ~entry() = default;
-
-        uint64_t get_paddr_page() const noexcept {
-            return aliased_aligned_read<uint64_t>(&m_hash_tree[0][m_paddr_page_offset]);
-        }
-
-#ifdef DUMP_HASH_TREE_STATS
-        static std::atomic<int> m_word_hit;
-        static std::atomic<int> m_word_miss;
-        static std::atomic<int> m_inner_page_node_hashes;
-#endif
-
+        /// \brief Returns a pristine page tree for a given hasher
+        /// \tparam H Hasher type
+        /// \param h Hasher object
+        /// \returns Pristine page hash tree
         template <IHasher H>
         // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
         static page_hash_tree get_pristine_page_hash_tree(H &&h) noexcept {
@@ -150,124 +166,166 @@ public:
             return tree;
         }
 
+        /// \brief Returns entry's page
+        /// \returns Reference to entry's page
         const auto &get_page() const noexcept {
             return m_page;
         }
 
+        /// \brief Returns entry's page
+        /// \returns Reference to entry's page
+        auto &get_page() noexcept {
+            return m_page;
+        }
+
+        /// \brief Returns entry's page hash tree
+        /// \returns Reference to entry's page hash tree
+        const auto &get_page_hash_tree() const noexcept {
+            return m_hash_tree;
+        }
+
+        /// \brief Returns entry's page hash tree
+        /// \returns Reference to entry's page hash tree
+        auto &get_page_hash_tree() noexcept {
+            return m_hash_tree;
+        }
+
+    public:
+        /// \brief Constructor from pristine page
+        /// \param pristine Pristine page hash tree for hasher in use
+        explicit entry(const page_hash_tree &pristine) : m_hash_tree{pristine} {}
+
+        entry(const entry &other) = default;
+        entry(entry &&other) = default;
+        entry &operator=(const entry &other) = default;
+        entry &operator=(entry &&other) = default;
+        ~entry() = default;
+
+        /// \brief Returns page address for entry
+        /// \returns Target physical address of page
+        address_type get_paddr_page() const noexcept {
+            return static_cast<address_type>(aliased_aligned_read<uint64_t>(&m_hash_tree[0][m_paddr_page_offset]));
+        }
+
+        /// \brief Returns view to root hash from entry's page hash tree
+        /// \returns View to root hash
         const_machine_hash_view root_hash_view() const noexcept {
             return m_hash_tree[1];
         }
 
-        const_machine_hash_view node_hash_view(uint64_t address, int log2_size) const noexcept {
+        /// \brief Returns view to node hash from entry's page hash tree
+        /// \param offset Node offset within page
+        /// \param log2_size Log<sub>2</sub> of node size. Must be between log<sub>2</sub> of word and page sizes
+        /// \returns View to node hash
+        const_machine_hash_view node_hash_view(address_type offset, int log2_size) const noexcept {
             static constexpr machine_hash no_hash{};
             if (log2_size < HASH_TREE_LOG2_WORD_SIZE || log2_size > HASH_TREE_LOG2_PAGE_SIZE) {
                 assert(false && "log2_size is out of range");
                 return no_hash;
             }
-            auto start = UINT64_C(1) << (HASH_TREE_LOG2_PAGE_SIZE - log2_size);
-            auto index = address >> log2_size;
-            if (index > start || (index << log2_size) != address) {
-                assert(false && "address is out of range");
+            auto start = address_type{1} << (HASH_TREE_LOG2_PAGE_SIZE - log2_size);
+            auto index = offset >> log2_size;
+            if (index > start || (index << log2_size) != offset) {
+                assert(false && "offset is out of range");
                 return no_hash;
             }
             return m_hash_tree[start + index];
         }
+    };
 
-        template <IHasher H, ContiguousRangeOfByteLike D>
-        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
-        bool update(H &&h, D &&d, const page_hash_tree &pristine) noexcept {
-            if (std::ranges::size(d) != m_page_size) {
-                return false;
-            }
-            if (is_pristine(d)) {
-                clear_hash_tree(pristine);
-                clear_page();
-                return true;
-            }
-            const const_page_view page{std::ranges::data(d), std::ranges::size(d)};
-            circular_buffer<int, m_page_word_count / 2> dirty_nodes;
-            // Go over all words in the entry page, comparing with updated page,
-            // and updating the hashes for the modified words
-            //??D In C++23, we would use std::views::slide and std::views::zip to write this in declarative style.
-            const page_view entry_page{m_page};
-#ifdef DUMP_HASH_TREE_STATS
-            int hit = 0;
-            int miss = 0;
-#endif
-            for (int offset = 0, index = m_page_word_count; offset < m_page_size; offset += m_word_size, ++index) {
-                const auto entry_word = entry_page.subspan(offset, m_word_size);
-                const auto page_word = page.subspan(offset, m_word_size);
-                if (!std::ranges::equal(entry_word, page_word)) {
-                    get_hash(h, page_word, m_hash_tree[index]);
-                    std::ranges::copy(page_word, entry_word.begin());
-                    dirty_nodes.try_push_back(parent(index));
-#ifdef DUMP_HASH_TREE_STATS
-                    ++miss;
-#endif
-                } else {
-#ifdef DUMP_HASH_TREE_STATS
-                    ++hit;
-#endif
-                }
-            }
-#ifdef DUMP_HASH_TREE_STATS
-            m_word_hit += hit;
-            m_word_miss += miss;
-#endif
-            // Now go over fifo, taking a node, updating its from its children, and enqueueing its parent for update
-#ifdef DUMP_HASH_TREE_STATS
-            int inner_page_node_hashes = 0;
-#endif
-            while (!dirty_nodes.empty()) {
-                const int index = dirty_nodes.front();
-                dirty_nodes.pop_front();
-#ifdef DUMP_HASH_TREE_STATS
-                ++inner_page_node_hashes;
-#endif
-                get_concat_hash(h, m_hash_tree[left_child(index)], m_hash_tree[right_child(index)], m_hash_tree[index]);
-                if (index != 1) {
-                    dirty_nodes.try_push_back(parent(index));
-                }
-            }
-#ifdef DUMP_HASH_TREE_STATS
-            m_inner_page_node_hashes += inner_page_node_hashes;
-#endif
+    /// \brief Updates and entry with new page data
+    /// \tparam H Hasher type
+    /// \tparam D Data range type
+    /// \param h Hasher object
+    /// \param d Contiguous range with new page data
+    /// \param e Entry to update
+    /// \returns True if update succeeded, false otherwise
+    template <IHasher H, ContiguousRangeOfByteLike D>
+    // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
+    bool update_entry(H &&h, D &&d, entry &e) noexcept {
+        if (std::ranges::size(d) != m_page_size) {
+            return false;
+        }
+        if (is_pristine(d)) {
+            e.clear_hash_tree(m_pristine_page_hash_tree);
+            e.clear_page();
+            ++m_pristine_pages;
             return true;
         }
+        ++m_non_pristine_pages;
+        const const_page_view page{std::ranges::data(d), std::ranges::size(d)};
+        circular_buffer<int, m_page_word_count / 2> dirty_nodes;
+        // Go over all words in the entry page, comparing with updated page,
+        // and updating the hashes for the modified words
+        //??D In C++23, we would use std::views::slide and std::views::zip to write this in declarative style.
+        const page_view entry_page{e.get_page()};
+        int hit = 0;
+        int miss = 0;
+        auto &page_tree = e.get_page_hash_tree();
+        for (int offset = 0, index = m_page_word_count; offset < m_page_size; offset += m_word_size, ++index) {
+            const auto entry_word = entry_page.subspan(offset, m_word_size);
+            const auto page_word = page.subspan(offset, m_word_size);
+            if (!std::ranges::equal(entry_word, page_word)) {
+                get_hash(h, page_word, page_tree[index]);
+                std::ranges::copy(page_word, entry_word.begin());
+                dirty_nodes.try_push_back(e.parent(index));
+                ++miss;
+            } else {
+                ++hit;
+            }
+        }
+        m_word_hits += hit;
+        m_word_misses += miss;
+        // Now go over fifo, taking a node, updating its from its children, and enqueueing its parent for update
+        int inner_page_hashes = 0;
+        while (!dirty_nodes.empty()) {
+            const int index = dirty_nodes.front();
+            dirty_nodes.pop_front();
+            ++inner_page_hashes;
+            get_concat_hash(h, page_tree[e.left_child(index)], page_tree[e.right_child(index)], page_tree[index]);
+            if (index != 1) {
+                dirty_nodes.try_push_back(e.parent(index));
+            }
+        }
+        m_inner_page_hashes += inner_page_hashes;
+        return true;
+    }
 
-        template <IHasher H>
-        // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
-        bool verify(H &&h) noexcept {
-            std::cerr << "verifying entry\n";
-            const page_view entry_page{m_page};
-            for (int offset = 0, index = m_page_word_count; offset < m_page_size; offset += m_word_size, ++index) {
-                const auto page_word = entry_page.subspan(offset, m_word_size);
-                const auto page_word_hash = get_hash(h, page_word);
-                if (page_word_hash != m_hash_tree[index]) {
-                    const int log2_size = HASH_TREE_LOG2_WORD_SIZE;
+    template <IHasher H>
+    // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
+    bool verify_entry(H &&h, entry &e) noexcept {
+        std::cerr << "verifying entry\n";
+        const page_view entry_page{e.get_page()};
+        auto &page_tree = e.get_page_hash_tree();
+        for (int offset = 0, index = m_page_word_count; offset < m_page_size; offset += m_word_size, ++index) {
+            const auto page_word = entry_page.subspan(offset, m_word_size);
+            const auto page_word_hash = get_hash(h, page_word);
+            if (page_word_hash != page_tree[index]) {
+                const int log2_size = HASH_TREE_LOG2_WORD_SIZE;
+                std::cerr << "hash mismatch in index " << std::dec << index << ":" << log2_size << '\n';
+                return false;
+            }
+        }
+        int start = m_page_word_count / 2;
+        const int log2_size = HASH_TREE_LOG2_WORD_SIZE + 1;
+        while (start != 0) {
+            for (int index = start; index < 2 * start; ++index) {
+                const auto node_hash =
+                    get_concat_hash(h, page_tree[e.left_child(index)], page_tree[e.right_child(index)]);
+                if (node_hash != page_tree[index]) {
                     std::cerr << "hash mismatch in index " << std::dec << index << ":" << log2_size << '\n';
                     return false;
                 }
             }
-            int start = m_page_word_count / 2;
-            const int log2_size = HASH_TREE_LOG2_WORD_SIZE + 1;
-            while (start != 0) {
-                for (int index = start; index < 2 * start; ++index) {
-                    const auto node_hash =
-                        get_concat_hash(h, m_hash_tree[left_child(index)], m_hash_tree[right_child(index)]);
-                    if (node_hash != m_hash_tree[index]) {
-                        std::cerr << "hash mismatch in index " << std::dec << index << ":" << log2_size << '\n';
-                        return false;
-                    }
-                }
-                start /= 2;
-            }
-            return true;
+            start /= 2;
         }
-    };
+        return true;
+    }
 
-    // static_assert(POD<entry>, "entry must be trivially copyable and standard layout");
-
+    /// \brief Constructor from hasher and number of entries
+    /// \tparam H Hasher type
+    /// \param h Hasher object
+    /// \param num_entries Number of entries in cache
     template <IHasher H>
     page_hash_tree_cache(H &&h, size_t num_entries) :
         m_pristine_page_hash_tree{entry::get_pristine_page_hash_tree(std::forward<H>(h))},
@@ -280,10 +338,138 @@ public:
     page_hash_tree_cache &operator=(const page_hash_tree_cache &other) = delete;
     page_hash_tree_cache &operator=(page_hash_tree_cache &&other) = delete;
 
-    const page_hash_tree &get_pristine_page_hash_tree() const {
-        return m_pristine_page_hash_tree;
+    /// \brief Tries to borrow a cache entry
+    /// \param paddr_page Target physical address of page to borrow
+    /// \param hit Receives true if page was found in cache, false if another page was evicted and its entry returned
+    /// \returns Entry for page, nothing if all pages have already been borrowed
+    std::optional<std::reference_wrapper<entry>> borrow_entry(address_type paddr_page, bool &hit) {
+        // Found entry for page in map?
+        if (auto it = m_map.find(paddr_page); it != m_map.end()) {
+            entry &e = it->second.second;
+            if (e.get_borrowed()) {
+                throw std::runtime_error{"page hash-tree cache entry already borrowed"};
+            }
+            // Make it most recently used
+            m_lru.splice(m_lru.begin(), m_lru, it->second.first);
+            hit = true;
+            ++m_page_hits;
+            // Return borrowed entry
+            return std::ref(e.set_borrowed(true));
+        }
+        hit = false;
+        // Not in map, but we still have unused entries to lend
+        if (m_used < m_entries.size()) {
+            ++m_page_misses;
+            entry &e = m_entries[m_used++];
+            if (e.get_borrowed()) {
+                throw std::runtime_error{"page hash-tree cache entry already borrowed"};
+            }
+            m_lru.push_front(e);
+            m_map.emplace(paddr_page, map_value{m_lru.begin(), e});
+            // Return borrowed
+            return std::ref(e.set_borrowed(true).set_paddr_page(paddr_page));
+        }
+        // Evict least recently used
+        auto &e = m_lru.back();
+        // If even that has been borrowed, we are out of entries to lend
+        if (e.get_borrowed()) {
+            return {};
+        }
+        m_map.erase(e.get_paddr_page());
+        m_lru.pop_back();
+        m_lru.push_front(e);
+        m_map.emplace(paddr_page, map_value{m_lru.begin(), e});
+        return std::ref(e.set_borrowed(true).set_paddr_page(paddr_page));
     }
 
+    /// \brief Tries to borrow a cache entry
+    /// \param paddr_page Target physical address of page to borrow
+    /// \returns Entry for page, nothing if all pages have already been borrowed
+    auto borrow_entry(address_type paddr_page) {
+        bool hit = false;
+        return borrow_entry(paddr_page, hit);
+    }
+
+    /// \brief Returns entry that has been borrowed
+    /// \param e Entry to return
+    static bool return_entry(entry &e) {
+        if (!e.get_borrowed()) {
+            throw std::runtime_error{"returning page hash-tree cache entry that is not borrowed"};
+        }
+        e.set_borrowed(false);
+        return true;
+    }
+
+    /// \brief Returns maximum number of entries in cache
+    constexpr auto capacity() const noexcept {
+        return m_entries.size();
+    }
+
+    /// \brief Clear entire cache
+    void clear() noexcept {
+        m_lru.clear();
+        m_map.clear();
+        for (auto &e : m_entries) {
+            e.clear(m_pristine_page_hash_tree);
+        }
+        m_used = 0;
+    }
+
+    /// \brief Returns current statistics
+    /// \param clear Whether to clear statistics after retrieving them
+    /// \returns Statistics
+    page_hash_tree_cache_stats get_stats(bool clear = false) noexcept {
+        auto s = page_hash_tree_cache_stats{
+            .page_hits = m_page_hits.load(),
+            .page_misses = m_page_misses.load(),
+            .word_hits = m_word_hits.load(),
+            .word_misses = m_word_misses.load(),
+            .inner_page_hashes = m_inner_page_hashes.load(),
+            .pristine_pages = m_pristine_pages.load(),
+            .non_pristine_pages = m_non_pristine_pages.load(),
+        };
+        if (clear) {
+            m_page_hits = 0;
+            m_page_misses = 0;
+            m_word_hits = 0;
+            m_word_misses = 0;
+            m_inner_page_hashes = 0;
+            m_pristine_pages = 0;
+            m_non_pristine_pages = 0;
+        }
+        return s;
+    }
+
+    /// \brief Destructor
+    ~page_hash_tree_cache() {
+#ifdef DUMP_HASH_TREE_STATS
+        auto s = get_stats();
+        auto pages_all = s.page_hits + s.page_misses;
+        if (pages_all > 0) {
+            std::cerr << "page hits: " << s.page_hits << '\n';
+            std::cerr << "page misses: " << s.page_misses << '\n';
+            std::cerr << "page hit rate: " << 100.0 * static_cast<double>(s.page_hits) / static_cast<double>(pages_all)
+                      << '\n';
+        }
+        auto word_all = s.word_hits + s.word_misses;
+        if (word_all > 0) {
+            std::cerr << "word hits: " << s.word_hits << '\n';
+            std::cerr << "word misses: " << s.word_misses << '\n';
+            std::cerr << "word hit rate: " << 100.0 * static_cast<double>(s.word_hits) / static_cast<double>(word_all)
+                      << '\n';
+        }
+        std::cerr << "inner page hashes: " << s.inner_page_hashes << '\n';
+        auto pristine_all = s.pristine_pages + s.non_pristine_pages;
+        if (pristine_all > 0) {
+            std::cerr << "pristine pages: " << s.inner_page_hashes << '\n';
+            std::cerr << "non-pristine pages: " << s.inner_page_hashes << '\n';
+            std::cerr << "pristine page ratio: "
+                      << 100.0 * static_cast<double>(s.pristine_pages) / static_cast<double>(pristine_all) << '\n';
+        }
+#endif
+    }
+
+private:
     void dump_lru() const {
         std::cerr << "lru: " << std::hex;
         for (const auto &p : m_lru) {
@@ -310,124 +496,26 @@ public:
         std::cerr << "\n";
     }
 
-    std::optional<std::reference_wrapper<entry>> borrow_entry(uint64_t paddr_page, bool &hit) {
-        // Found entry for page in map?
-        if (auto it = m_map.find(paddr_page); it != m_map.end()) {
-            entry &e = it->second.second;
-            if (e.get_borrowed() != 0) {
-                throw std::runtime_error{"page hash-tree cache entry already borrowed"};
-            }
-            // Make it most recently used
-            m_lru.splice(m_lru.begin(), m_lru, it->second.first);
-            hit = true;
-#ifdef DUMP_HASH_TREE_STATS
-            ++m_page_hit;
-#endif
-            // Return borrowed entry
-            return std::ref(e.set_borrowed(1));
-        }
-        hit = false;
-        // Not in map, but we still have unused entries to lend
-        if (m_used < m_entries.size()) {
-#ifdef DUMP_HASH_TREE_STATS
-            ++m_page_miss;
-#endif
-            entry &e = m_entries[m_used++];
-            if (e.get_borrowed() != 0) {
-                throw std::runtime_error{"page hash-tree cache entry already borrowed"};
-            }
-            m_lru.push_front(e);
-            m_map.emplace(paddr_page, map_value{m_lru.begin(), e});
-            // Return borrowed
-            return std::ref(e.set_borrowed(1).set_paddr_page(paddr_page));
-        }
-        // Evict least recently used
-        auto &e = m_lru.back();
-        // If even that has been borrowed, we are out of entries to lend
-        if (e.get_borrowed() != 0) {
-            return {};
-        }
-        m_map.erase(e.get_paddr_page());
-        m_lru.pop_back();
-        m_lru.push_front(e);
-        m_map.emplace(paddr_page, map_value{m_lru.begin(), e});
-        return std::ref(e.set_borrowed(1).set_paddr_page(paddr_page));
-    }
-
-    auto borrow_entry(uint64_t paddr_page) {
-        bool hit = false;
-        return borrow_entry(paddr_page, hit);
-    }
-
-    static bool return_entry(entry &e) {
-        if (e.get_borrowed() == 0) {
-            throw std::runtime_error{"returning page hash-tree cache entry that is not borrowed"};
-        }
-        e.set_borrowed(0);
-        return true;
-    }
-
-    constexpr auto capacity() const noexcept {
-        return m_entries.size();
-    }
-
-    void clear() noexcept {
-        m_lru.clear();
-        m_map.clear();
-        for (auto &e : m_entries) {
-            e.clear(m_pristine_page_hash_tree);
-        }
-        m_used = 0;
-    }
-
-    void clear_stats() noexcept {
-#ifdef DUMP_HASH_TREE_STATS
-        m_page_hit = 0;
-        m_page_miss = 0;
-        entry::m_inner_page_node_hashes = 0;
-        entry::m_word_hit = 0;
-        entry::m_word_miss = 0;
-#endif
-    }
-
-    ~page_hash_tree_cache() {
-#ifdef DUMP_HASH_TREE_STATS
-        auto all = m_page_hit + m_page_miss;
-        if (all > 0) {
-            std::cerr << "page hits: " << m_page_hit << '\n';
-            std::cerr << "page misses: " << m_page_miss << '\n';
-            std::cerr << "page hit rate: " << 100.0 * static_cast<double>(m_page_hit) / static_cast<double>(all)
-                      << '\n';
-        }
-        auto word_hit = entry::m_word_hit.load();
-        auto word_miss = entry::m_word_miss.load();
-        auto word_all = word_hit + word_miss;
-        if (word_all > 0) {
-            std::cerr << "word hits: " << word_hit << '\n';
-            std::cerr << "word misses: " << word_miss << '\n';
-            std::cerr << "word hit rate: " << 100.0 * static_cast<double>(word_hit) / static_cast<double>(word_all)
-                      << '\n';
-        }
-        std::cerr << "inner page node hashes: " << entry::m_inner_page_node_hashes.load() << '\n';
-#endif
-    }
-
-private:
-    using lru = boost::intrusive::list<entry>;
-    using map_value = std::pair<lru::iterator, entry &>;
-    const page_hash_tree m_pristine_page_hash_tree;
+    using lru = boost::intrusive::list<entry>;           ///< Least-recently-used container type
+    using map_value = std::pair<lru::iterator, entry &>; ///< Value type for map
+    const page_hash_tree m_pristine_page_hash_tree;      ///< Pristine page hash tree for hasher in use
     //??D Replace std::vector so entries can live on disk
-    std::vector<entry> m_entries;
+    std::vector<entry> m_entries; ///< Array of page hash-tree cache entries
     //??D Replace the boost intrusive list with index-based implementation so list can live on disk as well
-    lru m_lru;
+    lru m_lru; ///< Least-recently-used list of entries
     //??D Only the map will be reloaded from disk
     //??D We *could* also replace the implementation, but I think this would be overkill
-    std::unordered_map<address_type, map_value> m_map;
-    size_t m_used{0};
-#ifdef DUMP_HASH_TREE_STATS
-    size_t m_page_hit;
-    size_t m_page_miss;
-#endif
+    std::unordered_map<address_type, map_value> m_map; ///< Map from page addresses to corresponding entries
+    size_t m_used{0};                                  ///< How many entries have already been used
+
+    // Statistics
+    std::atomic<uint64_t> m_page_hits{0};         ///\< Number of pages looked up and found in cache
+    std::atomic<uint64_t> m_page_misses{0};       ///\< Number of pages looked up but missing from cache
+    std::atomic<uint64_t> m_word_hits{0};         ///\< Number of words equal to corresponding word in cache entry
+    std::atomic<uint64_t> m_word_misses{0};       ///\< Number of words differing from corresponding word in cache entry
+    std::atomic<uint64_t> m_inner_page_hashes{0}; ///\< Number of inner page hashing operations performed
+    std::atomic<uint64_t> m_pristine_pages{0};    ///\< Number of pages found to be pristine
+    std::atomic<uint64_t> m_non_pristine_pages{0}; ///\< Number of pages found not to be pristine
 };
 
 } // namespace cartesi

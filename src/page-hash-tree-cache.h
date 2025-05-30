@@ -40,6 +40,7 @@
 #include "meta.h"
 #include "page-hash-tree-cache-stats.h"
 #include "ranges.h"
+#include "signposts.h"
 #include "strict-aliasing.h"
 
 namespace cartesi {
@@ -246,12 +247,17 @@ public:
         if (std::ranges::size(d) != m_page_size) {
             return false;
         }
-        if (is_pristine(d)) {
-            e.clear_hash_tree(m_pristine_page_hash_tree);
-            e.clear_page();
-            ++m_pristine_pages;
-            return true;
+        {
+            SCOPED_SIGNPOST(m_log, m_spid_pristine_check_and_update, "phtc: pristine check and update", "");
+            if (is_pristine(d)) {
+                SCOPED_SIGNPOST(m_log, m_spid_pristine_update, "phtc: pristine update", "");
+                e.clear_hash_tree(m_pristine_page_hash_tree);
+                e.clear_page();
+                ++m_pristine_pages;
+                return true;
+            }
         }
+        SCOPED_SIGNPOST(m_log, m_spid_non_pristine_update, "phtc: non-pristine update", "");
         ++m_non_pristine_pages;
         const const_page_view page{std::ranges::data(d), std::ranges::size(d)};
         circular_buffer<int, m_page_word_count / 2> dirty_nodes;
@@ -327,7 +333,16 @@ public:
     /// \param h Hasher object
     /// \param num_entries Number of entries in cache
     template <IHasher H>
+#ifndef HAS_SIGNPOSTS
     page_hash_tree_cache(H &&h, size_t num_entries) :
+#else
+    page_hash_tree_cache(os_log_t log, H &&h, size_t num_entries) :
+        m_log{log},
+        m_spid_borrow{os_signpost_id_generate(m_log)},
+        m_spid_pristine_check_and_update{os_signpost_id_generate(m_log)},
+        m_spid_pristine_update{os_signpost_id_generate(m_log)},
+        m_spid_non_pristine_update{os_signpost_id_generate(m_log)},
+#endif
         m_pristine_page_hash_tree{entry::get_pristine_page_hash_tree(std::forward<H>(h))},
         m_entries{num_entries, entry{m_pristine_page_hash_tree}} {
         m_map.reserve(num_entries);
@@ -343,6 +358,7 @@ public:
     /// \param hit Receives true if page was found in cache, false if another page was evicted and its entry returned
     /// \returns Entry for page, nothing if all pages have already been borrowed
     std::optional<std::reference_wrapper<entry>> borrow_entry(address_type paddr_page, bool &hit) {
+        SCOPED_SIGNPOST(m_log, m_spid_borrow, "phtc: borrow", "");
         // Found entry for page in map?
         if (auto it = m_map.find(paddr_page); it != m_map.end()) {
             entry &e = it->second.second;
@@ -495,6 +511,14 @@ private:
         }
         std::cerr << "\n";
     }
+
+#ifdef HAS_SIGNPOSTS
+    os_log_t m_log;
+    os_signpost_id_t m_spid_borrow;
+    os_signpost_id_t m_spid_pristine_check_and_update;
+    os_signpost_id_t m_spid_pristine_update;
+    os_signpost_id_t m_spid_non_pristine_update;
+#endif
 
     using lru = boost::intrusive::list<entry>;           ///< Least-recently-used container type
     using map_value = std::pair<lru::iterator, entry &>; ///< Value type for map

@@ -27,26 +27,7 @@
 #include <omp.h>
 
 #include "machine-address-ranges.h"
-
-#ifdef __APPLE__
-#define CONCAT(x, y) x##y
-
-#define SCOPED_SIGNPOST_IMPL(log, id, name, line, ...)                                                                 \
-    struct CONCAT(scoped_signpost_, line) {                                                                            \
-        os_log_t m_log;                                                                                                \
-        os_signpost_id_t m_id;                                                                                         \
-        CONCAT(scoped_signpost_, line)(os_log_t l, os_signpost_id_t i) : m_log(l), m_id(i) {                           \
-            os_signpost_interval_begin(l, i, name, __VA_ARGS__);                                                       \
-        }                                                                                                              \
-        ~CONCAT(scoped_signpost_, line)() {                                                                            \
-            os_signpost_interval_end(m_log, m_id, name, __VA_ARGS__);                                                  \
-        }                                                                                                              \
-    } CONCAT(signpost_instance_, line)(log, id)
-
-#define SCOPED_SIGNPOST(log, id, name, ...) SCOPED_SIGNPOST_IMPL(log, id, name, __LINE__, __VA_ARGS__)
-#else
-#define SCOPED_SIGNPOST(log, id, name, ...)
-#endif
+#include "signposts.h"
 
 namespace cartesi {
 
@@ -216,9 +197,12 @@ bool hash_tree::return_updated_dirty_pages(address_ranges ars, dirty_pages &batc
     changed_address_ranges &changed_ars) {
     std::atomic<int> update_failed{0}; // NOLINT(misc-const-correctness)
 //??D The batch size past which we switch to parallel updates needs to be tuned empirically
+// constexpr auto chunk_size = 1;
+// #pragma omp parallel if (static_cast<int>(batch.size()) > chunk_size)
 #pragma omp parallel if (static_cast<int>(batch.size()) > omp_get_max_threads() * 4)
     {
         hasher_type h; // NOLINT(misc-const-correctness)
+// #pragma omp for schedule(static, chunk_size)
 #pragma omp for
         // NOLINTNEXTLINE(modernize-loop-convert)
         for (decltype(batch.size()) i = 0; i < batch.size(); ++i) {
@@ -275,7 +259,7 @@ hash_tree::~hash_tree() {
 }
 
 bool hash_tree::update_dirty_pages(address_ranges ars, changed_address_ranges &changed_ars) {
-    SCOPED_SIGNPOST(m_log, m_spid_update_page_hashes, "update page hashes", "");
+    SCOPED_SIGNPOST(m_log, m_spid_update_page_hashes, "hash-tree: update page hashes", "");
     bool update_failed = false;
     dirty_pages batch;
     batch.reserve(m_page_cache.capacity());
@@ -329,12 +313,15 @@ void hash_tree::update_and_clear_dense_node_entries(dense_node_entries &batch, i
         return;
     }
 //??D The batch size past which we switch to parallel updates needs to be tuned empirically
+// constexpr auto chunk_size = 2;
+// #pragma omp parallel if (static_cast<int>(batch.size()) > chunk_size)
 #pragma omp parallel if (static_cast<int>(batch.size()) > omp_get_max_threads() * 32)
     {
         hasher_type h; // NOLINT(misc-const-correctness)
 #ifdef DUMP_HASH_TREE_STATS
         int updates = 0;
 #endif
+// #pragma omp for schedule(static, chunk_size)
 #pragma omp for
         // NOLINTNEXTLINE(modernize-loop-convert)
         for (decltype(batch.size()) i = 0; i < batch.size(); ++i) {
@@ -356,7 +343,7 @@ void hash_tree::update_and_clear_dense_node_entries(dense_node_entries &batch, i
 }
 
 bool hash_tree::update_dense_trees(address_ranges ars, const changed_address_ranges &changed_ars) {
-    SCOPED_SIGNPOST(m_log, m_spid_update_dense_trees, "update dense trees", "");
+    SCOPED_SIGNPOST(m_log, m_spid_update_dense_trees, "hash-tree: update dense trees", "");
     if (changed_ars.empty()) {
         return true;
     }
@@ -391,7 +378,7 @@ bool hash_tree::update_dense_trees(address_ranges ars, const changed_address_ran
 }
 
 bool hash_tree::update_sparse_tree(address_ranges ars, const changed_address_ranges &changed_ars) {
-    SCOPED_SIGNPOST(m_log, m_spid_update_sparse_tree, "update sparse tree", "");
+    SCOPED_SIGNPOST(m_log, m_spid_update_sparse_tree, "hash-tree: update sparse tree", "");
     // If there no changed address ranges, we are done
     // Otherwise, allocate a fifo that holds at most one entry per changed address-range leaf-node
     // For each changed address-range leaf-node,
@@ -558,7 +545,7 @@ bool hash_tree::verify(address_ranges ars) const {
 }
 
 bool hash_tree::update(address_ranges ars) {
-    SCOPED_SIGNPOST(m_log, m_spid_update, "update hash tree", "");
+    SCOPED_SIGNPOST(m_log, m_spid_update, "hash-tree: update", "");
     omp_set_num_threads(m_concurrency);
     changed_address_ranges changed_ars;
     auto update_succeeded = update_dirty_pages(ars, changed_ars) && update_dense_trees(ars, changed_ars) &&
@@ -648,17 +635,19 @@ static int get_concurrency(int value) {
 }
 
 hash_tree::hash_tree(const hash_tree_config &config, uint64_t concurrency, const_address_ranges ars) :
-    m_sparse_nodes{create_nodes(ars)},
+#ifdef HAS_SIGNPOSTS
+    m_log{os_log_create("io.cartesi.machine-emulator", "hash-tree")},
+    m_spid_update{os_signpost_id_generate(m_log)},
+    m_spid_update_page_hashes{os_signpost_id_generate(m_log)},
+    m_spid_update_dense_trees{os_signpost_id_generate(m_log)},
+    m_spid_update_sparse_tree{os_signpost_id_generate(m_log)},
+    m_page_cache{m_log, hasher_type{}, config.phtc_size},
+#else
     m_page_cache{hasher_type{}, config.phtc_size},
+#endif
+    m_sparse_nodes{create_nodes(ars)},
     m_pristine_hashes{get_pristine_hashes()},
     m_concurrency{get_concurrency(static_cast<int>(concurrency))} {
-#ifdef __APPLE__
-    m_log = os_log_create("io.cartesi.machine-emulator", "hash-tree");
-    m_spid_update = os_signpost_id_generate(m_log);
-    m_spid_update_page_hashes = os_signpost_id_generate(m_log);
-    m_spid_update_dense_trees = os_signpost_id_generate(m_log);
-    m_spid_update_sparse_tree = os_signpost_id_generate(m_log);
-#endif
 }
 
 void hash_tree::check_address_ranges(const_address_ranges ars) {

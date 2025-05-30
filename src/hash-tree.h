@@ -29,12 +29,8 @@
 #include "machine-config.h"
 #include "machine-hash.h"
 #include "page-hash-tree-cache.h"
+#include "signposts.h"
 #include "unique-c-ptr.h"
-
-#ifdef __APPLE__
-#include <os/log.h>
-#include <os/signpost.h>
-#endif
 
 namespace cartesi {
 
@@ -169,18 +165,19 @@ private:
     static nodes_type create_nodes(const_address_ranges ars);
     static void check_address_ranges(const_address_ranges ars);
 
-    //??D Replace std::vector so entries can live on disk
-    nodes_type m_sparse_nodes;
-    mutable page_hash_tree_cache m_page_cache;
-    const pristine_hashes m_pristine_hashes;
-    int m_concurrency;
-#ifdef __APPLE__
+#ifdef HAS_SIGNPOSTS
     os_log_t m_log;
     os_signpost_id_t m_spid_update;
     os_signpost_id_t m_spid_update_page_hashes;
     os_signpost_id_t m_spid_update_dense_trees;
     os_signpost_id_t m_spid_update_sparse_tree;
 #endif
+
+    mutable page_hash_tree_cache m_page_cache;
+    //??D Replace std::vector so entries can live on disk
+    nodes_type m_sparse_nodes;
+    const pristine_hashes m_pristine_hashes;
+    int m_concurrency;
 
     std::atomic<uint64_t> m_sparse_node_hashes{0};
     std::array<std::atomic<uint64_t>, HASH_TREE_LOG2_ROOT_SIZE> m_dense_node_hashes{};

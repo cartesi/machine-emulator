@@ -716,3 +716,111 @@ jobs:
             uarch-logs/uarch-riscv-tests-json-logs.tar.gz
             tests-amd64/machine-emulator-tests_*.deb
             tests-arm64/machine-emulator-tests_*.deb
+
+  risc0:
+    name: RISC Zero
+    runs-on: ubuntu-latest-8-cores
+    steps:
+      - name: Checkout machine emulator source code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Setup variables
+        run: echo MACHINE_EMULATOR_VERSION=`make version` >> $GITHUB_ENV
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Depot CLI
+        uses: depot/setup-action@v1
+
+      - name: Build machine-emulator "builder" docker image
+        uses: depot/build-push-action@v1
+        with:
+          file: Dockerfile
+          context: .
+          target: builder
+          platforms: linux/amd64
+          tags: ${{ github.repository_owner }}/machine-emulator:builder
+          push: false
+          load: true
+          build-args: |
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
+            GIT_COMMIT=${GITHUB_SHA}
+            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
+
+      - name: Build machine-emulator docker image
+        uses: depot/build-push-action@v1
+        with:
+          file: Dockerfile
+          context: .
+          platforms: linux/amd64
+          tags: ${{ github.repository_owner }}/machine-emulator:devel
+          push: false
+          load: true
+          build-args: |
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
+            GIT_COMMIT=${GITHUB_SHA}
+            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+          project: ${{ vars.DEPOT_PROJECT }}
+          token: ${{ secrets.DEPOT_TOKEN }}
+
+      - name: Build machine-emulator "tests" docker image
+        uses: docker/build-push-action@v5
+        with:
+          file: tests/Dockerfile
+          context: .
+          platforms: linux/amd64
+          tags: ${{ github.repository_owner }}/machine-emulator:tests
+          push: false
+          load: true
+          build-args: |
+            DEBUG=${{ (startsWith(github.ref, 'refs/tags/v') && 'no' || 'yes') }}
+            MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
+
+      - name: Simple boot inside the docker image
+        run: docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests /usr/bin/cartesi-machine /bin/true
+
+      - name: Create step log test files
+        run: |
+          mkdir -p /tmp/cartesi-machine/tests/data
+          chmod 777 /tmp/cartesi-machine/tests/data
+          docker run --rm -t -v /tmp/cartesi-machine/tests/data:/tmp/cartesi-machine/tests/data cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/lua/create-step-logs.lua
+          ls -l /tmp/cartesi-machine/tests/data
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install rzup
+        run: |
+          cargo install --git https://github.com/risc0/risc0 rzup
+          rzup install cargo-risczero 2.0.2
+          rzup install r0vm 2.0.2
+          rzup install rust 1.85.0
+          rzup install cpp 2024.1.5
+          rzup show
+
+      - name: Build interpret-jump-table.h
+        run: docker run --rm -v .:/this-dir -t cartesi/machine-emulator:tests /this-dir/tools/gen-interpret-jump-table.lua > src/interpret-jump-table.h
+
+      - name: Build risc0 prover/verifier
+        run: make risc0
+
+      - name : Run risc0 tests
+        run: CARTESI_STEP_LOGS_PATH=/tmp/cartesi-machine/tests/data/step-logs make test-risc0

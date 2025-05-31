@@ -45,7 +45,7 @@ end
 local function create_default_config(images_dir, command)
     return {
         hash_tree = {
-            target = "risc0"
+            target = "risc0",
         },
         ram = {
             length = 0x4000000,
@@ -66,16 +66,12 @@ local function create_default_config(images_dir, command)
     }
 end
 
-local function adjust_path(path)
-    return string.gsub(path or ".", "/*$", "") .. "/"
-end
-
 local function adjust_images_path(path)
     return string.gsub(path or ".", "/*$", "") .. "/"
 end
 
 local IMAGES_DIR = adjust_images_path(test_util.images_path)
- local STEP_LOGS_PATH = adjust_images_path(test_util.step_logs_path)
+local STEP_LOGS_PATH = adjust_images_path(test_util.step_logs_path)
 
 local function create_machine(command)
     local config = create_default_config(IMAGES_DIR, command)
@@ -84,7 +80,9 @@ local function create_machine(command)
 end
 
 local function hexstring(hash)
-    return (string.gsub(hash, ".", function(c) return string.format("%02x", string.byte(c)) end))
+    return (string.gsub(hash, ".", function(c)
+        return string.format("%02x", string.byte(c))
+    end))
 end
 
 local function create_step_log(mcycle_count, command, start_mcycle)
@@ -94,7 +92,7 @@ local function create_step_log(mcycle_count, command, start_mcycle)
         os.remove(temp_filename)
     end
     setmetatable(deleter, {
-        __gc = remove_temp_file
+        __gc = remove_temp_file,
     })
 
     start_mcycle = start_mcycle or 0
@@ -102,9 +100,18 @@ local function create_step_log(mcycle_count, command, start_mcycle)
     machine:run(start_mcycle)
     assert(machine:read_reg("mcycle") == start_mcycle)
     local root_hash_before = machine:get_root_hash()
-     machine:log_step(mcycle_count, temp_filename)
+    machine:log_step(mcycle_count, temp_filename)
     local root_hash_after = machine:get_root_hash()
-    local final_filename = STEP_LOGS_PATH .. "step-" .. start_mcycle .. "-"  .. hexstring(root_hash_before) .. "-" .. mcycle_count .. "-" .. hexstring(root_hash_after) .. ".log"
+    local final_filename = STEP_LOGS_PATH
+        .. "step-"
+        .. start_mcycle
+        .. "-"
+        .. hexstring(root_hash_before)
+        .. "-"
+        .. mcycle_count
+        .. "-"
+        .. hexstring(root_hash_after)
+        .. ".log"
     os.execute("cp " .. temp_filename .. " " .. final_filename)
     print("Created step log:" .. final_filename)
     remove_temp_file()

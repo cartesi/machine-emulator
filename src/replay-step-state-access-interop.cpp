@@ -19,7 +19,7 @@
 
 using namespace cartesi;
 
-static i_hasher make_hasher(int target) {
+static i_hasher make_hasher(uint64_t target) {
     auto maybe_hash_tree_target = parse_hash_tree_target(target);
     if (!maybe_hash_tree_target) {
         interop_throw_runtime_error("unsupported hash tree target");
@@ -32,7 +32,7 @@ static_assert(interop_log2_root_size == machine_merkle_tree::get_log2_root_size(
 static_assert(sizeof(cartesi::machine_hash) == sizeof(std::remove_pointer_t<interop_hash_type>),
     "machine_hash size mismatch");
 
-extern "C" void interop_merkle_tree_hash(int hash_tree_target, const unsigned char *data, size_t size,
+extern "C" void interop_merkle_tree_hash(uint64_t hash_tree_target, const unsigned char *data, size_t size,
     interop_hash_type hash) {
     auto hasher = make_hasher(hash_tree_target);
     hasher.get_merkle_tree_hash(data, size, machine_merkle_tree::get_word_size(),
@@ -40,8 +40,8 @@ extern "C" void interop_merkle_tree_hash(int hash_tree_target, const unsigned ch
         *reinterpret_cast<machine_hash *>(hash));
 }
 
-extern "C" void interop_concat_hash(int hash_tree_target, interop_const_hash_type left, interop_const_hash_type right,
-    interop_hash_type result) {
+extern "C" void interop_concat_hash(uint64_t hash_tree_target, interop_const_hash_type left,
+    interop_const_hash_type right, interop_hash_type result) {
     auto hasher = make_hasher(hash_tree_target);
     // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
     hasher.get_concat_hash(*reinterpret_cast<const machine_hash *>(left),

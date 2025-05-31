@@ -94,7 +94,7 @@ DEPDIR = third-party
 SRCDIR = $(abspath src)
 TESTSDIR = $(abspath tests)
 DOWNLOADDIR = $(DEPDIR)/downloads
-SUBCLEAN = $(addsuffix .clean,$(SRCDIR) uarch tests)
+SUBCLEAN = $(addsuffix .clean,$(SRCDIR) uarch tests risc0)
 
 # Docker image tag
 TAG ?= devel
@@ -160,6 +160,7 @@ help:
 	@echo '* all                                 - Build the src/ code. To build from a clean clone, run: make submodules all'
 	@echo '  uarch                               - Build microarchitecture (requires riscv64-cartesi-linux-gnu-* toolchain)'
 	@echo '  uarch-with-toolchain                - Build microarchitecture using the toolchain docker image'
+	@echo '  risc0                               - Build risc0 (requires cargo'
 	@echo '  build-tests-all                     - Build all tests (machine, uarch and misc)'
 	@echo '  build-tests-machine                 - Build machine emulator tests (requires rv64gc-lp64d riscv64-cartesi-linux-gnu-* toolchain)'
 	@echo '  build-tests-machine-with-toolchain  - Build machine emulator tests using the rv64gc-lp64d toolchain docker image'
@@ -169,6 +170,7 @@ help:
 	@echo '  build-tests-misc-with-builder-image - Build miscellaneous tests using the cartesi/machine-emulator:builder image'
 	@echo '  test-machine                        - Run machine emulator tests'
 	@echo '  test-uarch                          - Run uarch tests'
+	@echo '  test-risc0                         - Run risc0 tests'
 	@echo '  test-misc                           - Run miscellaneous tests'
 	@echo '  test                                - Run all tests'
 	@echo '  doc                                 - Build the doxygen documentation (requires doxygen)'
@@ -226,6 +228,9 @@ version:
 test:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C tests $@
 
+test-risc0:
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C risc0 test
+
 test% coverage% build-tests%:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C tests $@
 
@@ -242,6 +247,9 @@ source-default:
 
 uarch: $(SRCDIR)/machine-c-version.h $(SRCDIR)/interpret-jump-table.h
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C uarch
+
+risc0: $(SRCDIR)/machine-c-version.h
+	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C risc0
 
 $(SRCDIR)/machine-c-version.h:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) machine-c-version.h
@@ -392,5 +400,5 @@ $(ADD_GENERATED_FILES_DIFF): $(GENERATED_FILES)
 	git diff --default-prefix --staged --output=$(ADD_GENERATED_FILES_DIFF)
 	git reset -- $(GENERATED_FILES)
 
-.PHONY: help all submodules doc clean distclean src luacartesi hash uarch \
+.PHONY: help all submodules doc clean distclean src luacartesi hash uarch risc0 \
 	create-generated-files-patch $(SUBDIRS) $(SUBCLEAN)

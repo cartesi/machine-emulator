@@ -25,6 +25,7 @@
 #include "device-state-access.h"
 #include "htif.h"
 #include "i-state-access.h"
+#include "machine-reg.h"
 #include "plic.h"
 #include "pma-constants.h"
 #include "replay-step-state-access-interop.h"
@@ -469,7 +470,7 @@ private:
     // \brief Compute the current machine root hash
     machine_hash compute_root_hash() {
         for (uint64_t i = 0; i < m_context.page_count; i++) {
-            interop_merkle_tree_hash(static_cast<int>(m_context.target), m_context.pages[i].data, PMA_PAGE_SIZE,
+            interop_merkle_tree_hash(static_cast<uint64_t>(m_context.target), m_context.pages[i].data, PMA_PAGE_SIZE,
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
                 reinterpret_cast<interop_hash_type>(&m_context.pages[i].hash));
         }
@@ -509,7 +510,7 @@ private:
             auto right = compute_root_hash_impl(page_index + (UINT64_C(1) << (page_count_log2_size - 1)),
                 page_count_log2_size - 1, next_page, next_sibling);
             machine_hash hash{};
-            interop_concat_hash(static_cast<int>(m_context.target), reinterpret_cast<interop_hash_type>(&left),
+            interop_concat_hash(static_cast<uint64_t>(m_context.target), reinterpret_cast<interop_hash_type>(&left),
                 reinterpret_cast<interop_hash_type>(&right), reinterpret_cast<interop_hash_type>(&hash));
             return hash;
         }

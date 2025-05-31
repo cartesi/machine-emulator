@@ -710,6 +710,7 @@ uint64_t os_get_concurrency() {
 #endif
 }
 
+#ifndef RISC0ARCHITECTURE
 bool os_parallel_for(uint64_t n, const std::function<bool(uint64_t j, const parallel_for_mutex &mutex)> &task) {
 #ifdef HAVE_THREADS
     if (n > 1) {
@@ -737,6 +738,8 @@ bool os_parallel_for(uint64_t n, const std::function<bool(uint64_t j, const para
     }
     return succeeded;
 }
+
+#endif // ifndef RISC0ARCHITECTURE
 
 bool os_select_fds(const os_select_before_callback &before_cb, const os_select_after_callback &after_cb,
     uint64_t *timeout_us) {

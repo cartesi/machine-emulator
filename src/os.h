@@ -105,6 +105,7 @@ int64_t os_now_us();
 /// \brief Get the number of concurrent threads supported by the OS
 uint64_t os_get_concurrency();
 
+#ifndef RISC0ARCHITECTURE
 /// \brief Mutex for os_parallel_for()
 struct parallel_for_mutex {
     std::function<void()> lock;
@@ -145,6 +146,8 @@ using os_select_after_callback = std::function<bool(int select_ret, select_fd_se
 /// this value may be updated in case a before_cb() has an deadline timer before the timeout.
 bool os_select_fds(const os_select_before_callback &before_cb, const os_select_after_callback &after_cb,
     uint64_t *timeout_us);
+
+#endif // ifndef RISC0ARCHITECTURE
 
 /// \brief Disable sigpipe
 void os_disable_sigpipe();

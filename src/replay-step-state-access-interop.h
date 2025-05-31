@@ -18,9 +18,10 @@
 #define REPLAY_STEP_STATE_ACCESS_INTEROP_H
 
 #include "compiler-defines.h"
+#include "hash-tree-target.h"
+#include "machine-hash.h"
 #include <cstdint>
 #include <cstdlib>
-#include <stdexcept>
 
 const static uint64_t interop_log2_root_size = 64;
 constexpr size_t interop_machine_hash_byte_size = 32;
@@ -28,14 +29,22 @@ constexpr size_t interop_machine_hash_byte_size = 32;
 using interop_hash_type = unsigned char (*)[interop_machine_hash_byte_size];
 using interop_const_hash_type = const unsigned char (*)[interop_machine_hash_byte_size];
 
+#ifdef RISC0ARCHITECTURE
+extern "C" NO_RETURN void interop_abort_with_msg(const char *msg);
+NO_RETURN inline void interop_throw_runtime_error(const char *msg) {
+    interop_abort_with_msg(msg);
+}
+#else
+#include <stdexcept>
 NO_RETURN inline void interop_throw_runtime_error(const char *msg) {
     throw std::runtime_error(msg);
 }
+#endif
 
-extern "C" void interop_merkle_tree_hash(int hash_tree_target, const unsigned char *data, size_t size,
+extern "C" void interop_merkle_tree_hash(uint64_t hash_tree_target, const unsigned char *data, size_t size,
     interop_hash_type hash);
 
-extern "C" void interop_concat_hash(int hash_tree_target, interop_const_hash_type left, interop_const_hash_type right,
-    interop_hash_type result);
+extern "C" void interop_concat_hash(uint64_t hash_tree_target, interop_const_hash_type left,
+    interop_const_hash_type right, interop_hash_type result);
 
 #endif

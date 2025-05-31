@@ -126,6 +126,7 @@ local mcycle_stride = max_mcycle // files_count
 local max_step_count = 1000
 local mcycle_count = mcycle_stride > max_step_count and max_step_count or mcycle_stride
 
+print('----> opa')
 create_directory(STEP_LOGS_PATH)
 for start_mcycle = 0, max_mcycle, mcycle_stride do
     create_step_log(mcycle_count, command, start_mcycle)

@@ -814,5 +814,5 @@ jobs:
         run: make risc0
 
       - name : Run risc0 tests
-        run: makeCARTESI_STEP_LOGS_PATH=step-logs test-risc0
+        run: CARTESI_STEP_LOGS_PATH=step-logs make test-risc0
       

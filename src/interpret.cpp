@@ -20,9 +20,11 @@
 #include <type_traits>
 #include <utility>
 
-#ifdef MICROARCHITECTURE
+#if defined(MICROARCHITECTURE)
 #include "uarch-machine-state-access.h"
 #include "uarch-runtime.h"
+#elif defined(RISC0ARCHITECTURE)
+#include "replay-step-state-access.h"
 #else
 #include "record-step-state-access.h"
 #include "replay-step-state-access.h"
@@ -5937,9 +5939,12 @@ interpreter_break_reason interpret(STATE_ACCESS a, uint64_t mcycle_end) {
     return interpreter_break_reason::reached_target_mcycle;
 }
 
-#ifdef MICROARCHITECTURE
+#if defined(MICROARCHITECTURE)
 // Explicit instantiation for uarch_machine_state_access
 template interpreter_break_reason interpret(uarch_machine_state_access a, uint64_t mcycle_end);
+#elif defined(RISC0ARCHITECTURE)
+// Explicit instantiation for replay_step_state_access in RISC0
+template interpreter_break_reason interpret(replay_step_state_access &a, uint64_t mcycle_end);
 #else
 // Explicit instantiation for state_access
 template interpreter_break_reason interpret(state_access a, uint64_t mcycle_end);

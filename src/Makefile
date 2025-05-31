@@ -164,6 +164,7 @@ CLANG_TIDY_WARNS=-Wthread-safety -Wglobal-constructors
 INCS+= \
 	-I../third-party/llvm-flang-uint128 \
 	-I../third-party/tiny_sha3 \
+	-I../third-party/SHA256 \
 	-I../third-party/nlohmann-json \
 	-I../third-party/downloads \
 	$(BOOST_INC)
@@ -215,6 +216,9 @@ endif
 
 # The SHA3 is third party library we always want to compile with O3
 SHA3_CFLAGS=-O3
+
+# The SHA256 is third party library we always want to compile with O3
+SHA256_CFLAGS=-O3
 
 # Optimization flags for the interpreter
 ifneq (,$(filter yes,$(relwithdebinfo) $(release)))
@@ -378,6 +382,7 @@ LIBCARTESI_OBJS:= \
 	uarch-step.o \
 	uarch-reset-state.o \
 	sha3.o \
+	sha256.o \
 	machine-merkle-tree.o \
 	pristine-merkle-tree.o \
 	uarch-interpret.o \
@@ -398,6 +403,7 @@ LUACARTESI_OBJS:= \
 
 LIBCARTESI_MERKLE_TREE_OBJS:= \
 	sha3.o \
+	sha256.o \
 	machine-merkle-tree.o \
 	back-merkle-tree.o \
 	pristine-merkle-tree.o \
@@ -551,6 +557,7 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 	@$(CXX) $(CXXFLAGS) $(LUA_INC) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
 	@touch $@
 
+
 %.clang-tidy: %.c
 	@$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- $(CFLAGS) $(CLANG_TIDY_WARNS) -DCLANG_TIDY_LINT 2>/dev/null
 	@$(CC) $(CFLAGS) $< -MM -MT $@ -MF $@.d > /dev/null 2>&1
@@ -558,6 +565,12 @@ jsonrpc-discover.cpp: jsonrpc-discover.json
 
 sha3.o: ../third-party/tiny_sha3/sha3.c
 	$(CC) $(CFLAGS) $(SHA3_CFLAGS) -c -o $@ $<
+
+sha256.o: ../third-party/SHA256/sha256.c
+	$(CC) $(CFLAGS) $(SHA256_CFLAGS) -c -o $@ $<
+
+sha256.o: ../third-party/SHA256/sha256.c
+	$(CC) $(CFLAGS) $(SHA256_CFLAGS) -c -o $@ $<
 
 uarch-pristine-ram.o: $(UARCH_PRISTINE_RAM_C)
 	$(CC) $(CFLAGS) -c -o $@ $<

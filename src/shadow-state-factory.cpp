@@ -97,6 +97,7 @@ static bool shadow_state_peek(const pma_entry & /*pma*/, const machine &m, uint6
     s->htif_ihalt = m.read_reg(machine_reg::htif_ihalt);
     s->htif_iconsole = m.read_reg(machine_reg::htif_iconsole);
     s->htif_iyield = m.read_reg(machine_reg::htif_iyield);
+    s->hash_tree_target = m.read_reg(machine_reg::hash_tree_target);
     *page_data = scratch;
     return true;
 }

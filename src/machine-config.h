@@ -24,6 +24,7 @@
 
 #include <boost/container/static_vector.hpp>
 
+#include "hash-tree-target.h"
 #include "riscv-constants.h"
 #include "uarch-config.h"
 
@@ -184,6 +185,11 @@ struct cmio_config final {
     cmio_buffer_config tx_buffer; ///< TX buffer configuration
 };
 
+/// \brief Hash tree configuration
+struct hash_tree_config final {
+    hash_tree_target target{hash_tree_target::uarch}; ///< Target to hash
+};
+
 /// \brief Machine state configuration
 struct machine_config final {
     processor_config processor{};    ///< Processor state
@@ -197,6 +203,7 @@ struct machine_config final {
     virtio_configs virtio;           ///< VirtIO devices state
     uarch_config uarch{};            ///< microarchitecture configuration
     cmio_config cmio{};              ///< Cmio state
+    hash_tree_config hash_tree;      ///< Hash tree state
 
     /// \brief Get the name where config will be stored in a directory
     static std::string get_config_filename(const std::string &dir);

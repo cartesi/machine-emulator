@@ -165,10 +165,11 @@ end)
 
 print("\n\ntesting if machine initial hash is correct")
 do_test("machine initial hash should match", function(machine)
+    local hash_fn = test_util.get_machine_hash_tree_hash_fn(machine)
     -- Get starting root hash
     local root_hash = machine:get_root_hash()
 
-    local calculated_root_hash = test_util.calculate_emulator_hash(machine)
+    local calculated_root_hash = test_util.calculate_emulator_hash(machine, hash_fn)
 
     print("Root hash:", test_util.tohex(root_hash), " calculated root hash:", test_util.tohex(calculated_root_hash))
 
@@ -177,17 +178,18 @@ end)
 
 print("\n\ntesting root hash after step one")
 do_test("machine root hash after step one should match", function(machine)
+    local hash_fn = test_util.get_machine_hash_tree_hash_fn(machine)
     -- Get starting root hash
     local root_hash = machine:get_root_hash()
     print("Root hash:", test_util.tohex(root_hash))
 
-    local calculated_root_hash = test_util.calculate_emulator_hash(machine)
+    local calculated_root_hash = test_util.calculate_emulator_hash(machine, hash_fn)
     assert(root_hash == calculated_root_hash, "Initial root hash does not match")
 
     -- Perform step and check if hash matches
     machine:log_step_uarch()
     local root_hash_step1 = machine:get_root_hash()
-    local calculated_root_hash_step1 = test_util.calculate_emulator_hash(machine)
+    local calculated_root_hash_step1 = test_util.calculate_emulator_hash(machine, hash_fn)
     assert(root_hash_step1 == calculated_root_hash_step1, "hash after first step does not match")
 end)
 
@@ -204,7 +206,9 @@ do_test("proof check should pass", function(machine)
     end
     -- Ccalculate hash of ram
     local ram_log2_size = math.ceil(math.log(ram.length, 2))
-    local calculated_ram_hash = test_util.merkle_hash(machine:read_memory(ram.start, ram.length), 0, ram_log2_size)
+    local hash_fn = test_util.get_machine_hash_tree_hash_fn(machine)
+    local calculated_ram_hash =
+        test_util.merkle_hash(machine:read_memory(ram.start, ram.length), 0, ram_log2_size, hash_fn)
     -- Get proof of ram and check if hashes match
     local ram_proof = machine:get_proof(ram.start, ram_log2_size)
     local root_hash = machine:get_root_hash()
@@ -220,6 +224,7 @@ end)
 
 print("\n\nrun machine to 1000 mcycle and check for mcycle and root hash")
 do_test("mcycle and root hash should match", function(machine)
+    local hash_fn = test_util.get_machine_hash_tree_hash_fn(machine)
     -- Run to 1000 cycle tics
     local current_mcycle = machine:read_reg("mcycle")
     while current_mcycle < 1000 do
@@ -231,7 +236,7 @@ do_test("mcycle and root hash should match", function(machine)
 
     local root_hash = machine:get_root_hash()
 
-    local calculated_root_hash_1000 = test_util.calculate_emulator_hash(machine)
+    local calculated_root_hash_1000 = test_util.calculate_emulator_hash(machine, hash_fn)
 
     print("1000 cycle hash: ", test_util.tohex(root_hash))
     assert(root_hash == calculated_root_hash_1000, "machine hash does not match after 1000 cycles")
@@ -239,6 +244,7 @@ end)
 
 print("\n\nrun machine to end mcycle and check for mcycle, hash and halt flag")
 do_test("mcycle and root hash should match", function(machine)
+    local hash_fn = test_util.get_machine_hash_tree_hash_fn(machine)
     -- The following is a RISC-V bytecode that will halt the machine immediately,
     -- by writing 1 to HTIF tohost (0x40008000)
     local halt_bytecode = "\x93\x02\x10\x00" -- li t0,1
@@ -256,7 +262,7 @@ do_test("mcycle and root hash should match", function(machine)
     local root_hash = machine:get_root_hash()
     print("End hash: ", test_util.tohex(root_hash))
 
-    local calculated_end_hash = test_util.calculate_emulator_hash(machine)
+    local calculated_end_hash = test_util.calculate_emulator_hash(machine, hash_fn)
 
     assert(root_hash == calculated_end_hash, "machine hash does not match after on end cycle")
 end)
@@ -291,13 +297,14 @@ end
 
 print("\n\nwrite something to ram memory and check if hash and proof matches")
 do_test("proof  and root hash should match", function(machine)
+    local hash_fn = test_util.get_machine_hash_tree_hash_fn(machine)
     local ram_address_start = cartesi.PMA_RAM_START
 
     -- Find proof for first KB of ram
     local initial_ram_proof = machine:get_proof(ram_address_start, 10)
     -- Calculate hash
     local initial_memory_read = machine:read_memory(ram_address_start, 2 ^ 10)
-    local initial_calculated_hash = test_util.merkle_hash(initial_memory_read, 0, 10)
+    local initial_calculated_hash = test_util.merkle_hash(initial_memory_read, 0, 10, hash_fn)
     assert(initial_ram_proof.target_hash == initial_calculated_hash, "initial hash does not match")
 
     print(
@@ -316,7 +323,7 @@ do_test("proof  and root hash should match", function(machine)
     local ram_proof = machine:get_proof(ram_address_start, 10)
     -- Calculate hash
     local memory_read = machine:read_memory(ram_address_start, 2 ^ 10)
-    local calculated_hash = test_util.merkle_hash(memory_read, 0, 10)
+    local calculated_hash = test_util.merkle_hash(memory_read, 0, 10, hash_fn)
 
     print(
         "end target hash:",

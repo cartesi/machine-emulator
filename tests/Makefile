@@ -31,11 +31,13 @@ TARGETS_WITH_TOOLCHAIN = $(addsuffix -with-toolchain,build-tests-machine build-t
 
 CARTESI_IMAGES_PATH ?= $(abspath ./build/images)
 CARTESI_CMIO_PATH ?= $(abspath ./build/cmio)
+CARTESI_STEP_LOGS_PATH ?= $(abspath ./build/step-logs)
 CARTESI_TESTS_PATH ?= $(abspath ./build/machine)
 CARTESI_TESTS_UARCH_PATH ?= $(abspath ./build/uarch)
 
 export CARTESI_IMAGES_PATH
 export CARTESI_CMIO_PATH
+export CARTESI_STEP_LOGS_PATH
 export CARTESI_TESTS_PATH
 export CARTESI_TESTS_UARCH_PATH
 
@@ -85,7 +87,7 @@ CARTESI_IMAGES = $(CARTESI_IMAGES_PATH)/linux.bin
 STYLUA=stylua
 STYLUA_FLAGS=--indent-type Spaces
 
-build-tests-all: misc build-tests-machine-with-toolchain build-tests-uarch-with-toolchain images $(CARTESI_CMIO_PATH)
+build-tests-all: misc build-tests-machine-with-toolchain build-tests-uarch-with-toolchain images $(CARTESI_CMIO_PATH) $(CARTESI_STEP_LOGS_PATH)
 
 build-tests-machine: machine riscv-tests
 
@@ -175,8 +177,14 @@ create-machines $(CARTESI_CMIO_PATH): | $(CARTESI_IMAGES)
 	@rm -rf $(CARTESI_CMIO_PATH)
 	$(LUA) ./lua/create-machines.lua
 
+create-step-logs $(CARTESI_STEP_LOGS_PATH): | $(CARTESI_IMAGES)
+	$(LUA) ./lua/create-step-logs.lua
+
 clean-machines:
 	@rm -rf $(CARTESI_CMIO_PATH)
+
+clean-step-logs:
+	@rm -rf $(CARTESI_STEP_LOGS_PATH)
 
 test-cmio: | $(CARTESI_CMIO_PATH)
 	@./scripts/test-cmio.sh ../src/cartesi-jsonrpc-machine '$(LUA) ../src/cartesi-machine.lua'
@@ -200,7 +208,8 @@ test-uarch-interpreter:
 	$(MAKE) -C ../third-party/riscv-arch-test verify XLEN=64 RISCV_TARGET=cartesi RISCV_ISA=rv64i RISCV_DEVICE=I WORK=$(BUILDDIR)/uarch-riscv-arch-test RUN_ARCH_TEST='$(RUN_ARCH_TEST)'
 
 test-hash:
-	$(LD_PRELOAD_PREFIX) ./build/misc/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=build/misc/test-merkle-tree-hash
+	$(LD_PRELOAD_PREFIX) ./build/misc/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=build/misc/test-merkle-tree-hash --hash-tree-target=uarch
+	$(LD_PRELOAD_PREFIX) ./build/misc/test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=build/misc/test-merkle-tree-hash --hash-tree-target=risc0
 
 test-jsonrpc:
 	./scripts/test-jsonrpc-server.sh ../src/cartesi-jsonrpc-machine '$(LUA) ../src/cartesi-machine.lua' '$(LUA) ./lua/cartesi-machine-tests.lua' '$(LUA)'

@@ -29,6 +29,7 @@
 #include "machine-c-api.h"
 #include "machine-c-version.h"
 #include "riscv-constants.h"
+#include "sha-256-hasher.h"
 #include "uarch-constants.h"
 #include "uarch-pristine.h"
 
@@ -57,7 +58,47 @@ static const auto gperf_meta = clua_make_luaL_Reg_array({
 static int cartesi_mod_keccak(lua_State *L) {
     using namespace cartesi;
     keccak_256_hasher h;
-    keccak_256_hasher::hash_type hash;
+    machine_hash hash;
+    if (lua_gettop(L) > 2) {
+        luaL_argerror(L, 3, "too many arguments");
+    }
+    if (lua_gettop(L) < 1) {
+        luaL_argerror(L, 1, "too few arguments");
+    }
+    if (lua_isinteger(L, 1) != 0) {
+        if (lua_gettop(L) > 1) {
+            luaL_argerror(L, 2, "too many arguments");
+        }
+        uint64_t word = luaL_checkinteger(L, 1);
+        h.begin();
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        h.add_data(reinterpret_cast<const unsigned char *>(&word), sizeof(word));
+        h.end(hash);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()), hash.size());
+        return 1;
+    }
+    h.begin();
+    size_t len1 = 0;
+    const char *hash1 = luaL_checklstring(L, 1, &len1);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    h.add_data(reinterpret_cast<const unsigned char *>(hash1), len1);
+    size_t len2 = 0;
+    const char *hash2 = luaL_optlstring(L, 2, "", &len2);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    h.add_data(reinterpret_cast<const unsigned char *>(hash2), len2);
+    h.end(hash);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()), hash.size());
+    return 1;
+}
+
+/// \brief This is the cartesi.keccak() function implementation.
+/// \param L Lua state.
+static int cartesi_mod_sha256(lua_State *L) {
+    using namespace cartesi;
+    sha_256_hasher h;
+    machine_hash hash;
     if (lua_gettop(L) > 2) {
         luaL_argerror(L, 3, "too many arguments");
     }
@@ -148,6 +189,7 @@ static int cartesi_mod_new(lua_State *L) try {
 /// \brief Contents of the cartesi module table.
 static const auto cartesi_mod = clua_make_luaL_Reg_array({
     {"keccak", cartesi_mod_keccak},
+    {"sha256", cartesi_mod_sha256},
     {"tobase64", cartesi_mod_tobase64},
     {"frombase64", cartesi_mod_frombase64},
     {"tojson", cartesi_mod_tojson},
@@ -192,6 +234,8 @@ CM_API int luaopen_cartesi(lua_State *L) {
     clua_setintegerfield(L, CM_VERSION_MINOR, "VERSION_MINOR", -1);
     clua_setintegerfield(L, CM_VERSION_PATCH, "VERSION_PATCH", -1);
     clua_setintegerfield(L, CM_HASH_SIZE, "HASH_SIZE", -1);
+    clua_setintegerfield(L, CM_HASH_TREE_TARGET_UARCH, "HASH_TREE_TARGET_UARCH", -1);
+    clua_setintegerfield(L, CM_HASH_TREE_TARGET_RISC0, "HASH_TREE_TARGET_RISC0", -1);
     clua_setintegerfield(L, CM_TREE_LOG2_WORD_SIZE, "TREE_LOG2_WORD_SIZE", -1);
     clua_setintegerfield(L, CM_TREE_LOG2_PAGE_SIZE, "TREE_LOG2_PAGE_SIZE", -1);
     clua_setintegerfield(L, CM_TREE_LOG2_ROOT_SIZE, "TREE_LOG2_ROOT_SIZE", -1);

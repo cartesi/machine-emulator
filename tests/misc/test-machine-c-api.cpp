@@ -440,7 +440,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(get_proof_machine_hash_test, ordinary_machine_fix
         cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(proof_str)
             .value();
     auto proof_root_hash = proof.get_root_hash();
-    auto verification = calculate_proof_root_hash(proof);
+    auto h = make_hasher(_machine);
+    auto verification = calculate_proof_root_hash(h, proof);
     BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), proof_root_hash.begin(),
         proof_root_hash.end());
     verification = calculate_emulator_hash(_machine);
@@ -1526,7 +1527,8 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, or
         cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(proof_str)
             .value();
     auto proof_root_hash = proof.get_root_hash();
-    auto verification = calculate_proof_root_hash(proof);
+    auto h = make_hasher(_machine);
+    auto verification = calculate_proof_root_hash(h, proof);
     BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), proof_root_hash.begin(),
         proof_root_hash.end());
     verification = calculate_emulator_hash(_machine);
@@ -1543,7 +1545,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(machine_verify_merkle_tree_proof_updates_test, or
     proof = cartesi::from_json<cartesi::not_default_constructible<cartesi::machine_merkle_tree::proof_type>>(proof_str)
                 .value();
     proof_root_hash = proof.get_root_hash();
-    verification = calculate_proof_root_hash(proof);
+    verification = calculate_proof_root_hash(h, proof);
     BOOST_CHECK_EQUAL_COLLECTIONS(verification.begin(), verification.end(), proof_root_hash.begin(),
         proof_root_hash.end());
     verification = calculate_emulator_hash(_machine);

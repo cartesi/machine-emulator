@@ -796,6 +796,8 @@ jobs:
 
       - name: Create step log test files
         run: |
+          ls -l /usr/share/cartesi-machine/tests/lua
+          ls -l /usr/share/cartesi-machine/tests/lua/step-logs
           docker run --rm -t -v step-logs:/tmp/cartesi-machine/tests/data/step-logs cartesi/machine-emulator:tests /usr/share/cartesi-machine/tests/lua/create-step-logs.lua
 
       - name: Install Rust toolchain

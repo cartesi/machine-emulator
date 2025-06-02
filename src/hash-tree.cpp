@@ -16,7 +16,6 @@
 
 #include "hash-tree.h"
 
-#include <atomic>
 #include <bit>
 #include <iostream>
 #include <queue>
@@ -26,8 +25,12 @@
 
 #include <omp.h>
 
+#include "i-hasher.h"
 #include "machine-address-ranges.h"
+#include "machine-hash.h"
+#include "page-hash-tree-cache-stats.h"
 #include "signposts.h"
+#include "simd-hasher.h"
 
 namespace cartesi {
 
@@ -156,16 +159,9 @@ hash_tree::proof_type hash_tree::get_proof(address_ranges ars, uint64_t address,
 hash_tree_stats hash_tree::get_stats(bool clear) noexcept {
     auto s = hash_tree_stats{
         .phtc = m_page_cache.get_stats(clear),
-        .sparse_node_hashes = m_sparse_node_hashes.load(),
+        .sparse_node_hashes = m_sparse_node_hashes,
+        .dense_node_hashes = m_dense_node_hashes,
     };
-    std::ranges::copy(m_dense_node_hashes | std::views::transform([](auto &a) {
-        std::cerr << "ha " << a.load() << '\n';
-        return a.load();
-    }),
-        s.dense_node_hashes.begin());
-    for (auto i : s.dense_node_hashes) {
-        std::cerr << "hi " << i << '\n';
-    }
     if (clear) {
         m_sparse_node_hashes = 0;
         for (auto &a : m_dense_node_hashes) {
@@ -184,12 +180,27 @@ bool hash_tree::update_dirty_page(hasher_type &h, address_range &ar, page_hash_t
     }
     const auto offset = paddr_page - ar.get_start();
     const auto page_view = std::span<const unsigned char, HASH_TREE_PAGE_SIZE>{base + offset, HASH_TREE_PAGE_SIZE};
-    auto ret = m_page_cache.update_entry(h, page_view, entry);
+    page_simd_tree_hasher queue;
+    auto ret = m_page_cache.enqueue_hash_entry(h, page_view, entry, queue, m_page_cache.get_stats_ref());
+    queue.flush(h);
     auto node_hash_view = ar.get_dense_hash_tree().node_hash_view(offset, HASH_TREE_LOG2_PAGE_SIZE);
     changed = !std::ranges::equal(entry.root_hash_view(), node_hash_view);
     if (changed) {
         std::ranges::copy(entry.root_hash_view(), node_hash_view.begin());
     }
+    return ret;
+}
+
+bool hash_tree::enqueue_hash_dirty_page(hasher_type &h, address_range &ar, page_hash_tree_cache::entry &entry,
+    page_simd_tree_hasher &queue, page_hash_tree_cache_stats &stats) {
+    const auto paddr_page = entry.get_paddr_page();
+    const auto *base = ar.get_host_memory();
+    if (!ar.is_memory() || base == nullptr || !ar.contains_absolute(paddr_page, HASH_TREE_PAGE_SIZE)) {
+        return false;
+    }
+    const auto offset = paddr_page - ar.get_start();
+    const auto page_view = std::span<const unsigned char, HASH_TREE_PAGE_SIZE>{base + offset, HASH_TREE_PAGE_SIZE};
+    auto ret = m_page_cache.enqueue_hash_entry(h, page_view, entry, queue, stats);
     return ret;
 }
 
@@ -199,18 +210,56 @@ bool hash_tree::return_updated_dirty_pages(address_ranges ars, dirty_pages &batc
         return true;
     }
     const int batch_size = static_cast<int>(batch.size());
-    std::atomic<int> update_failed{0}; // NOLINT(misc-const-correctness)
     //??D The batch size past which we switch to parallel updates needs to be tuned empirically
     hasher_type h; // NOLINT(misc-const-correctness)
-#pragma omp parallel for private(h) if (batch_size > m_concurrency * 4)
-    // NOLINTNEXTLINE(modernize-loop-convert)
-    for (int i = 0; i < batch_size; ++i) {
-        auto &[ar_index, br, changed] = batch[i];
-        auto &ar = ars[ar_index];
-        if (!update_dirty_page(h, ar, br, changed)) {
-            update_failed.store(1, std::memory_order_relaxed);
+    constexpr int block_size = HASHER_MAX_LANE_COUNT;
+    uint64_t update_failures{0};
+    uint64_t word_hits{0};
+    uint64_t word_misses{0};
+    uint64_t inner_page_hashes{0};
+    uint64_t pristine_pages{0};
+    uint64_t non_pristine_pages{0};
+#pragma omp parallel for schedule(dynamic) private(h) reduction(+ : update_failures, word_hits, word_misses,           \
+        inner_page_hashes, pristine_pages, non_pristine_pages) if (batch_size > m_concurrency * 4)
+    for (int i = 0; i < batch_size; i += block_size) {
+        // Queue entries to be hashed
+        page_simd_tree_hasher queue;
+        page_hash_tree_cache_stats stats;
+        for (int j = i; j < std::min(batch_size, i + block_size); ++j) {
+            auto &[ar_index, br, changed] = batch[j];
+            auto &ar = ars[ar_index];
+            if (!enqueue_hash_dirty_page(h, ar, br, queue, stats)) {
+                ++update_failures;
+            }
         }
+        // Flush remaining parallel hashes
+        queue.flush(h);
+        // Update changed entries
+        for (int j = i; j < std::min(batch_size, i + block_size); ++j) {
+            auto &[ar_index, br, changed] = batch[j];
+            auto &ar = ars[ar_index];
+            const auto offset = br.get_paddr_page() - ar.get_start();
+            auto node_hash_view = ar.get_dense_hash_tree().node_hash_view(offset, HASH_TREE_LOG2_PAGE_SIZE);
+            changed = !std::ranges::equal(br.root_hash_view(), node_hash_view);
+            if (changed) {
+                std::ranges::copy(br.root_hash_view(), node_hash_view.begin());
+            }
+        }
+        // Increment stats
+        word_hits += stats.word_hits;
+        word_misses += stats.word_misses;
+        inner_page_hashes += stats.inner_page_hashes;
+        pristine_pages += stats.pristine_pages;
+        non_pristine_pages += stats.non_pristine_pages;
     }
+
+    auto &stats = m_page_cache.get_stats_ref();
+    stats.word_hits += word_hits;
+    stats.word_misses += word_misses;
+    stats.inner_page_hashes += inner_page_hashes;
+    stats.pristine_pages += pristine_pages;
+    stats.non_pristine_pages += non_pristine_pages;
+
     // Return all entries and collect address ranges that were actually changed by update
     for (auto &[ar_index, br, changed] : batch) {
         auto &ar = ars[ar_index];
@@ -229,24 +278,23 @@ bool hash_tree::return_updated_dirty_pages(address_ranges ars, dirty_pages &batc
                 ar.get_dirty_page_tree().mark_clean_page_and_up(offset);
             }
         } else {
-            update_failed.store(1, std::memory_order_relaxed);
+            ++update_failures;
         }
     }
     // Done with batch
     batch.clear();
-    return static_cast<bool>(update_failed.load(std::memory_order_relaxed));
+    return update_failures > 0;
 }
 
 hash_tree::~hash_tree() {
 #ifdef DUMP_HASH_TREE_STATS
     std::cerr << "sparse node hashes: " << std::dec << m_sparse_node_hashes << '\n';
     std::cerr << "dense node hashes: \n";
-    int sum = 0;
-    for (int i = 0; auto &a : m_dense_node_hashes) {
-        auto av = a.load();
-        sum += av;
-        if (av != 0) {
-            std::cerr << "    " << std::dec << i << ": " << av << '\n';
+    uint64_t sum = 0;
+    for (int i = 0; auto a : m_dense_node_hashes) {
+        sum += a;
+        if (a != 0) {
+            std::cerr << "    " << std::dec << i << ": " << a << '\n';
         }
         ++i;
     }
@@ -311,17 +359,19 @@ void hash_tree::update_and_clear_dense_node_entries(dense_node_entries &batch, i
     const int batch_size = static_cast<int>(batch.size());
     //??D The batch size past which we switch to parallel updates needs to be tuned empirically
     int updates = 0;
-    hasher_type h; // NOLINT(misc-const-correctness)
-#pragma omp parallel for private(h, updates) if (batch_size > m_concurrency * 32)
-    // NOLINTNEXTLINE(modernize-loop-convert)
-    for (decltype(batch.size()) i = 0; i < batch.size(); ++i) {
-        auto &[dht, offset] = batch[i];
-        auto child_size = UINT64_C(1) << (log2_size - 1);
-        auto parent = dht.node_hash_view(offset, log2_size);
-        auto left = dht.node_hash_view(offset, log2_size - 1);
-        auto right = dht.node_hash_view(offset + child_size, log2_size - 1);
-        get_concat_hash(h, left, right, parent);
-        ++updates;
+    simd_concat_hasher<hasher_type, const_machine_hash_view> h;
+#pragma omp parallel for private(h, updates) if (batch_size > m_concurrency * 4)
+    for (int block_start = 0; block_start < batch_size; block_start += SIMD_HASHER_LANE_COUNT) {
+        for (int i = block_start; i < std::min(batch_size, block_start + SIMD_HASHER_LANE_COUNT); ++i) {
+            auto &[dht, offset] = batch[i];
+            auto child_size = UINT64_C(1) << (log2_size - 1);
+            auto parent = dht.node_hash_view(offset, log2_size);
+            auto left = dht.node_hash_view(offset, log2_size - 1);
+            auto right = dht.node_hash_view(offset + child_size, log2_size - 1);
+            h.enqueue(left, right, parent);
+            ++updates;
+        }
+        h.flush();
     }
     m_dense_node_hashes[log2_size] += updates;
     batch.clear();
@@ -531,6 +581,7 @@ bool hash_tree::update(address_ranges ars) {
     SCOPED_SIGNPOST(m_log, m_spid_update, "hash-tree: update", "");
     omp_set_num_threads(m_concurrency);
     changed_address_ranges changed_ars;
+    changed_ars.reserve(ars.size());
     auto update_succeeded = update_dirty_pages(ars, changed_ars) && update_dense_trees(ars, changed_ars) &&
         update_sparse_tree(ars, changed_ars);
     if (update_succeeded) {

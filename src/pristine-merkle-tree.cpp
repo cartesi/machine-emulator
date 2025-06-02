@@ -45,9 +45,7 @@ pristine_merkle_tree::pristine_merkle_tree(int log2_root_size, int log2_word_siz
     std::vector<uint8_t> word(1 << log2_word_size, 0);
     assert(word.size() == (UINT64_C(1) << log2_word_size));
     hasher_type h;
-    h.begin();
-    h.add_data(word);
-    h.end(m_hashes[0]);
+    h.hash(word, m_hashes[0]);
     for (unsigned i = 1; i < m_hashes.size(); ++i) {
         get_concat_hash(h, m_hashes[i - 1], m_hashes[i - 1], m_hashes[i]);
     }

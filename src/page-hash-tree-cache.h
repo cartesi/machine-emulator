@@ -20,7 +20,7 @@
 /// \file
 /// \brief Page hash-tree cache interface
 
-#include <atomic>
+#include <bit>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -29,10 +29,12 @@
 #include <span>
 #include <unordered_map>
 
+#include <boost/container/static_vector.hpp>
 #include <boost/intrusive/list.hpp>
 
 #include "address-range-constants.h"
 #include "circular-buffer.h"
+#include "compiler-defines.h"
 #include "hash-tree-constants.h"
 #include "i-hasher.h"
 #include "is-pristine.h"
@@ -41,9 +43,213 @@
 #include "page-hash-tree-cache-stats.h"
 #include "ranges.h"
 #include "signposts.h"
+#include "simd-hasher.h"
 #include "strict-aliasing.h"
 
 namespace cartesi {
+
+class page_simd_tree_hasher {
+    struct leaf_entry {
+        const_hash_tree_word_view data;
+        machine_hash_view result;
+    };
+
+    struct node_entry {
+        const_machine_hash_view left;
+        const_machine_hash_view right;
+        machine_hash_view result;
+    };
+
+    static constexpr int QUEUE_LOG2_HEIGHT = HASH_TREE_LOG2_PAGE_SIZE - HASH_TREE_LOG2_WORD_SIZE;
+    static constexpr int QUEUE_MAX_SIZE = (1 << (QUEUE_LOG2_HEIGHT - 1)) * HASHER_MAX_LANE_COUNT;
+    boost::container::static_vector<leaf_entry, HASHER_MAX_LANE_COUNT> m_leaves_queue;
+    std::array<boost::container::static_vector<node_entry, QUEUE_MAX_SIZE>, QUEUE_LOG2_HEIGHT> m_nodes_queues{};
+
+    template <IHasher H>
+    void flush_leaves(H &h) {
+        auto &q = m_leaves_queue;
+        size_t i = q.size();
+        if (likely(i >= 8)) { // x8 parallel hashing
+            i -= 8;
+            h.simd_concat_hash(array2d<const_hash_tree_word_view, 1, 8>{{{
+                                   q[i + 0].data,
+                                   q[i + 1].data,
+                                   q[i + 2].data,
+                                   q[i + 3].data,
+                                   q[i + 4].data,
+                                   q[i + 5].data,
+                                   q[i + 6].data,
+                                   q[i + 7].data,
+                               }}},
+                std::array<machine_hash_view, 8>{{
+                    q[i + 0].result,
+                    q[i + 1].result,
+                    q[i + 2].result,
+                    q[i + 3].result,
+                    q[i + 4].result,
+                    q[i + 5].result,
+                    q[i + 6].result,
+                    q[i + 7].result,
+                }});
+        }
+        if (i >= 4) { // x4 parallel hashing
+            i -= 4;
+            h.simd_concat_hash(array2d<const_hash_tree_word_view, 1, 4>{{{
+                                   q[i + 0].data,
+                                   q[i + 1].data,
+                                   q[i + 2].data,
+                                   q[i + 3].data,
+                               }}},
+                std::array<machine_hash_view, 4>{{
+                    q[i + 0].result,
+                    q[i + 1].result,
+                    q[i + 2].result,
+                    q[i + 3].result,
+                }});
+        }
+        if (i >= 2) { // x2 parallel hashing
+            i -= 2;
+            h.simd_concat_hash(array2d<const_hash_tree_word_view, 1, 2>{{{
+                                   q[i + 0].data,
+                                   q[i + 1].data,
+                               }}},
+                std::array<machine_hash_view, 2>{{
+                    q[i + 0].result,
+                    q[i + 1].result,
+                }});
+        }
+        if (i >= 1) { // x1 hashing
+            i -= 1;
+            h.simd_concat_hash(array2d<const_hash_tree_word_view, 1, 1>{{
+                                   {q[i + 0].data},
+                               }},
+                std::array<machine_hash_view, 1>{
+                    {q[i + 0].result},
+                });
+        }
+        q.clear();
+    }
+
+    template <IHasher H>
+    void flush_nodes(H &h, int log2_level) {
+        auto &q = m_nodes_queues[log2_level - 1];
+        size_t i = q.size();
+        while (i >= 8) { // x8 parallel hashing
+            i -= 8;
+            h.simd_concat_hash(array2d<const_machine_hash_view, 2, 8>{{
+                                   {
+                                       q[i + 0].left,
+                                       q[i + 1].left,
+                                       q[i + 2].left,
+                                       q[i + 3].left,
+                                       q[i + 4].left,
+                                       q[i + 5].left,
+                                       q[i + 6].left,
+                                       q[i + 7].left,
+                                   },
+                                   {
+                                       q[i + 0].right,
+                                       q[i + 1].right,
+                                       q[i + 2].right,
+                                       q[i + 3].right,
+                                       q[i + 4].right,
+                                       q[i + 5].right,
+                                       q[i + 6].right,
+                                       q[i + 7].right,
+                                   },
+                               }},
+                std::array<machine_hash_view, 8>{
+                    q[i + 0].result,
+                    q[i + 1].result,
+                    q[i + 2].result,
+                    q[i + 3].result,
+                    q[i + 4].result,
+                    q[i + 5].result,
+                    q[i + 6].result,
+                    q[i + 7].result,
+                });
+        }
+        if (i >= 4) { // x4 parallel hashing
+            i -= 4;
+            h.simd_concat_hash(array2d<const_machine_hash_view, 2, 4>{{
+                                   {
+                                       q[i + 0].left,
+                                       q[i + 1].left,
+                                       q[i + 2].left,
+                                       q[i + 3].left,
+                                   },
+                                   {
+                                       q[i + 0].right,
+                                       q[i + 1].right,
+                                       q[i + 2].right,
+                                       q[i + 3].right,
+                                   },
+                               }},
+                std::array<machine_hash_view, 4>{
+                    q[i + 0].result,
+                    q[i + 1].result,
+                    q[i + 2].result,
+                    q[i + 3].result,
+                });
+        }
+        if (i >= 2) { // x2 parallel hashing
+            i -= 2;
+            h.simd_concat_hash(array2d<const_machine_hash_view, 2, 2>{{
+                                   {
+                                       q[i + 0].left,
+                                       q[i + 1].left,
+                                   },
+                                   {
+                                       q[i + 0].right,
+                                       q[i + 1].right,
+                                   },
+                               }},
+                std::array<machine_hash_view, 2>{
+                    q[i + 0].result,
+                    q[i + 1].result,
+                });
+        }
+        if (i >= 1) { // x1 parallel hashing
+            i -= 1;
+            h.simd_concat_hash(array2d<const_machine_hash_view, 2, 1>{{
+                                   {q[i + 0].left},
+                                   {q[i + 0].right},
+                               }},
+                std::array<machine_hash_view, 1>{{
+                    q[i + 0].result,
+                }});
+        }
+        q.clear();
+    }
+
+public:
+    /// \brief Enqueues a leaf for hashing
+    template <IHasher H>
+    void enqueue_leaf(H &h, const_hash_tree_word_view data, machine_hash_view result) {
+        m_leaves_queue.emplace_back(leaf_entry{.data = data, .result = result});
+        if (unlikely(m_leaves_queue.size() == m_leaves_queue.capacity())) {
+            // Leaves queue is full, flush it
+            flush_leaves(h);
+        }
+    }
+
+    /// \brief Enqueues a node for hashing
+    void enqueue_node(int log2_level, const_machine_hash_view left, const_machine_hash_view right,
+        machine_hash_view result) {
+        assert(log2_level >= 1 || log2_level < static_cast<int>(m_nodes_queues.size() + 1));
+        auto &nodes_queue = m_nodes_queues[log2_level - 1];
+        nodes_queue.emplace_back(node_entry{.left = left, .right = right, .result = result});
+    }
+
+    /// \brief Flushes the entire queue
+    template <IHasher H>
+    void flush(H &h) {
+        flush_leaves(h);
+        for (int log2_level = 1; log2_level <= QUEUE_LOG2_HEIGHT; ++log2_level) {
+            flush_nodes(h, log2_level);
+        }
+    }
+};
 
 /// \class page_hash_tree_cache
 /// \brief Page hash-tree cache implementation
@@ -146,6 +352,13 @@ public:
             return i / 2;
         }
 
+        /// \brief Returns the log2 level of a node in the page hash tree (its height in the tree)
+        /// \param i Node index
+        /// \returns Log 2 level of the node
+        static int log2_level(int i) {
+            return std::countl_zero(static_cast<uint32_t>(i)) - 24;
+        }
+
         /// \brief Returns a pristine page tree for a given hasher
         /// \tparam H Hasher type
         /// \param h Hasher object
@@ -234,7 +447,7 @@ public:
         }
     };
 
-    /// \brief Updates and entry with new page data
+    /// \brief Enqueue entry to be hashed with new page data
     /// \tparam H Hasher type
     /// \tparam D Data range type
     /// \param h Hasher object
@@ -243,7 +456,8 @@ public:
     /// \returns True if update succeeded, false otherwise
     template <IHasher H, ContiguousRangeOfByteLike D>
     // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
-    bool update_entry(H &&h, D &&d, entry &e) noexcept {
+    bool enqueue_hash_entry(H &&h, D &&d, entry &e, page_simd_tree_hasher &queue,
+        page_hash_tree_cache_stats &stats) noexcept {
         if (std::ranges::size(d) != m_page_size) {
             return false;
         }
@@ -253,12 +467,11 @@ public:
                 SCOPED_SIGNPOST(m_log, m_spid_pristine_update, "phtc: pristine update", "");
                 e.clear_hash_tree(m_pristine_page_hash_tree);
                 e.clear_page();
-                ++m_pristine_pages;
+                ++stats.pristine_pages;
                 return true;
             }
         }
         SCOPED_SIGNPOST(m_log, m_spid_non_pristine_update, "phtc: non-pristine update", "");
-        ++m_non_pristine_pages;
         const const_page_view page{std::ranges::data(d), std::ranges::size(d)};
         circular_buffer<int, m_page_word_count / 2> dirty_nodes;
         // Go over all words in the entry page, comparing with updated page,
@@ -269,31 +482,33 @@ public:
         int miss = 0;
         auto &page_tree = e.get_page_hash_tree();
         for (int offset = 0, index = m_page_word_count; offset < m_page_size; offset += m_word_size, ++index) {
-            const auto entry_word = entry_page.subspan(offset, m_word_size);
-            const auto page_word = page.subspan(offset, m_word_size);
-            if (!std::ranges::equal(entry_word, page_word)) {
-                get_hash(h, page_word, page_tree[index]);
+            const auto entry_word = std::span<unsigned char, m_word_size>{entry_page.subspan(offset, m_word_size)};
+            const auto page_word = std::span<const unsigned char, m_word_size>{page.subspan(offset, m_word_size)};
+            if (unlikely(!std::ranges::equal(entry_word, page_word))) {
                 std::ranges::copy(page_word, entry_word.begin());
+                queue.enqueue_leaf(h, page_word, page_tree[index]);
                 dirty_nodes.try_push_back(e.parent(index));
                 ++miss;
             } else {
                 ++hit;
             }
         }
-        m_word_hits += hit;
-        m_word_misses += miss;
         // Now go over fifo, taking a node, updating its from its children, and enqueueing its parent for update
         int inner_page_hashes = 0;
         while (!dirty_nodes.empty()) {
             const int index = dirty_nodes.front();
             dirty_nodes.pop_front();
             ++inner_page_hashes;
-            get_concat_hash(h, page_tree[e.left_child(index)], page_tree[e.right_child(index)], page_tree[index]);
+            queue.enqueue_node(e.log2_level(index), page_tree[e.left_child(index)], page_tree[e.right_child(index)],
+                page_tree[index]);
             if (index != 1) {
                 dirty_nodes.try_push_back(e.parent(index));
             }
         }
-        m_inner_page_hashes += inner_page_hashes;
+        stats.word_hits += hit;
+        stats.word_misses += miss;
+        stats.inner_page_hashes += inner_page_hashes;
+        ++stats.non_pristine_pages;
         return true;
     }
 
@@ -304,7 +519,7 @@ public:
         const page_view entry_page{e.get_page()};
         auto &page_tree = e.get_page_hash_tree();
         for (int offset = 0, index = m_page_word_count; offset < m_page_size; offset += m_word_size, ++index) {
-            const auto page_word = entry_page.subspan(offset, m_word_size);
+            const auto page_word = std::span<const unsigned char, m_word_size>{entry_page.subspan(offset, m_word_size)};
             const auto page_word_hash = get_hash(h, page_word);
             if (page_word_hash != page_tree[index]) {
                 const int log2_size = HASH_TREE_LOG2_WORD_SIZE;
@@ -368,14 +583,14 @@ public:
             // Make it most recently used
             m_lru.splice(m_lru.begin(), m_lru, it->second.first);
             hit = true;
-            ++m_page_hits;
+            ++m_stats.page_hits;
             // Return borrowed entry
             return std::ref(e.set_borrowed(true));
         }
         hit = false;
         // Not in map, but we still have unused entries to lend
         if (m_used < m_entries.size()) {
-            ++m_page_misses;
+            ++m_stats.page_misses;
             entry &e = m_entries[m_used++];
             if (e.get_borrowed()) {
                 throw std::runtime_error{"page hash-tree cache entry already borrowed"};
@@ -391,6 +606,7 @@ public:
         if (e.get_borrowed()) {
             return {};
         }
+        ++m_stats.page_misses;
         m_map.erase(e.get_paddr_page());
         m_lru.pop_back();
         m_lru.push_front(e);
@@ -435,25 +651,21 @@ public:
     /// \param clear Whether to clear statistics after retrieving them
     /// \returns Statistics
     page_hash_tree_cache_stats get_stats(bool clear = false) noexcept {
-        auto s = page_hash_tree_cache_stats{
-            .page_hits = m_page_hits.load(),
-            .page_misses = m_page_misses.load(),
-            .word_hits = m_word_hits.load(),
-            .word_misses = m_word_misses.load(),
-            .inner_page_hashes = m_inner_page_hashes.load(),
-            .pristine_pages = m_pristine_pages.load(),
-            .non_pristine_pages = m_non_pristine_pages.load(),
-        };
+        auto s = m_stats;
         if (clear) {
-            m_page_hits = 0;
-            m_page_misses = 0;
-            m_word_hits = 0;
-            m_word_misses = 0;
-            m_inner_page_hashes = 0;
-            m_pristine_pages = 0;
-            m_non_pristine_pages = 0;
+            m_stats.page_hits = 0;
+            m_stats.page_misses = 0;
+            m_stats.word_hits = 0;
+            m_stats.word_misses = 0;
+            m_stats.inner_page_hashes = 0;
+            m_stats.pristine_pages = 0;
+            m_stats.non_pristine_pages = 0;
         }
         return s;
+    }
+
+    page_hash_tree_cache_stats &get_stats_ref() noexcept {
+        return m_stats;
     }
 
     /// \brief Destructor
@@ -533,13 +745,7 @@ private:
     size_t m_used{0};                                  ///< How many entries have already been used
 
     // Statistics
-    std::atomic<uint64_t> m_page_hits{0};         ///\< Number of pages looked up and found in cache
-    std::atomic<uint64_t> m_page_misses{0};       ///\< Number of pages looked up but missing from cache
-    std::atomic<uint64_t> m_word_hits{0};         ///\< Number of words equal to corresponding word in cache entry
-    std::atomic<uint64_t> m_word_misses{0};       ///\< Number of words differing from corresponding word in cache entry
-    std::atomic<uint64_t> m_inner_page_hashes{0}; ///\< Number of inner page hashing operations performed
-    std::atomic<uint64_t> m_pristine_pages{0};    ///\< Number of pages found to be pristine
-    std::atomic<uint64_t> m_non_pristine_pages{0}; ///\< Number of pages found not to be pristine
+    page_hash_tree_cache_stats m_stats;
 };
 
 } // namespace cartesi

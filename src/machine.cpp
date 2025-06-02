@@ -1557,7 +1557,7 @@ void machine::fill_memory(uint64_t paddr, uint8_t val, uint64_t length) {
     foreach_aligned_chunk(paddr, length, AR_PAGE_SIZE, [&ar, val](auto chunk_start, auto chunk_length) {
         const auto offset = chunk_start - ar.get_start();
         const auto dest = ar.get_host_memory() + offset;
-        if (val != 0 || !is_pristine(dest, chunk_length)) {
+        if (val != 0 || !is_pristine(std::span<const unsigned char>{dest, chunk_length})) {
             memset(dest, val, chunk_length);
             ar.get_dirty_page_tree().mark_dirty_page_and_up(offset);
         }

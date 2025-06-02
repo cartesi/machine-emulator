@@ -269,8 +269,8 @@ public:
         int miss = 0;
         auto &page_tree = e.get_page_hash_tree();
         for (int offset = 0, index = m_page_word_count; offset < m_page_size; offset += m_word_size, ++index) {
-            const auto entry_word = entry_page.subspan(offset, m_word_size);
-            const auto page_word = page.subspan(offset, m_word_size);
+            const auto entry_word = std::span<unsigned char, m_word_size>{entry_page.subspan(offset, m_word_size)};
+            const auto page_word = std::span<const unsigned char, m_word_size>{page.subspan(offset, m_word_size)};
             if (!std::ranges::equal(entry_word, page_word)) {
                 get_hash(h, page_word, page_tree[index]);
                 std::ranges::copy(page_word, entry_word.begin());
@@ -304,7 +304,7 @@ public:
         const page_view entry_page{e.get_page()};
         auto &page_tree = e.get_page_hash_tree();
         for (int offset = 0, index = m_page_word_count; offset < m_page_size; offset += m_word_size, ++index) {
-            const auto page_word = entry_page.subspan(offset, m_word_size);
+            const auto page_word = std::span<const unsigned char, m_word_size>{entry_page.subspan(offset, m_word_size)};
             const auto page_word_hash = get_hash(h, page_word);
             if (page_word_hash != page_tree[index]) {
                 const int log2_size = HASH_TREE_LOG2_WORD_SIZE;

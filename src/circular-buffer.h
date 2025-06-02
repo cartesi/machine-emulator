@@ -171,10 +171,12 @@ public:
     /// \brief Adds new entry to back of container, if not already there
     /// \tparam U Type for universal reference to value
     /// \param value Value to insert. L-value references are copied, r-value references are moved.
+    /// \details The container must not be full.
     template <typename U>
         requires std::constructible_from<T, U &&> && std::equality_comparable_with<T, U>
     void try_push_back(U &&value) noexcept {
         if (empty() || back() != value) {
+            assert(!full() && "circular buffer container is full");
             push_back(std::forward<U>(value));
         }
     }

@@ -231,7 +231,9 @@ os_mmapd os_mmap(uint64_t length, const os_mmap_flags &flags, const std::string 
                 throw std::system_error{errno, std::generic_category(),
                     "possible non zero partial page when mapping backing file '"s + backing_filename + "' to memory"s};
             }
-            std::memset(std::bit_cast<uint8_t *>(backing_host_memory) + backing_file_length, 0, partial_page_remaining);
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            std::memset(reinterpret_cast<uint8_t *>(backing_host_memory) + backing_file_length, 0,
+                partial_page_remaining);
         }
     } else { // Can perform a single mmap()
         host_memory = mmap(nullptr, length, mprot, mflags, backing_fd, 0);

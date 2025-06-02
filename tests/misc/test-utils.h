@@ -41,10 +41,8 @@ static hash_type merkle_hash(cartesi::keccak_256_hasher &h, const std::string_vi
         auto right = merkle_hash(h, std::string_view{data.data() + half_size, half_size}, log2_size);
         get_concat_hash(h, left, right, result);
     } else {
-        h.begin();
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        h.add_data(data);
-        h.end(result);
+        h.hash(data, result);
     }
     return result;
 }

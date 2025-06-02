@@ -20,7 +20,7 @@ else
 HOST_CXX := g++
 HOST_CC := gcc
 endif
-HOST_CFLAGS := -I$(THIRD_PARTY_DIR)/tiny_sha3 -I$(EMULATOR_SRC_DIR)
+HOST_CFLAGS := -I$(EMULATOR_SRC_DIR)
 HOST_CXXFLAGS := -std=c++20
 
 CC := $(TOOLCHAIN_PREFIX)gcc
@@ -80,7 +80,9 @@ COMPUTE_SOURCES=\
 	$(EMULATOR_SRC_DIR)/pristine-merkle-tree.cpp \
 	$(EMULATOR_SRC_DIR)/complete-merkle-tree.cpp \
 	$(EMULATOR_SRC_DIR)/full-merkle-tree.cpp \
-	$(THIRD_PARTY_DIR)/tiny_sha3/sha3.c \
+	$(EMULATOR_SRC_DIR)/keccak-256-hasher.cpp \
+	$(EMULATOR_SRC_DIR)/sha-256-hasher.cpp \
+	$(EMULATOR_SRC_DIR)/is-pristine.cpp \
 	uarch-pristine-ram.c
 
 UARCH_OBJS = $(patsubst %.c,%.uarch_c.o,$(patsubst %.cpp,%.uarch_cpp.o,$(UARCH_SOURCES)))

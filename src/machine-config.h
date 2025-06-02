@@ -156,7 +156,7 @@ struct hash_tree_config final {
     bool truncate{false};      ///< Should backing store be truncated to correct size?
     std::string sht_filename;  ///< Backing storage for sparse hash-tree
     std::string phtc_filename; ///< Backing storage for page hash-tree cache
-    uint64_t phtc_size{2048};  ///< Max number of pages in page hash-tree cache
+    uint64_t phtc_size{8192};  ///< Max number of pages in page hash-tree cache
 };
 
 /// \brief Machine state config
@@ -168,7 +168,7 @@ struct machine_config final {
     virtio_configs virtio;           ///< VirtIO devices config
     cmio_config cmio{};              ///< Cartesi Machine IO config
     pmas_config pmas{};              ///< Physical Memory Attributes config
-    uarch_config uarch{};            ///< Microarchition config
+    uarch_config uarch{};            ///< Microarchitecture config
     hash_tree_config hash_tree{};    ///< Hash-tree config
 
     /// \brief Get the name where config will be stored in a directory

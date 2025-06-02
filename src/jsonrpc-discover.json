@@ -1023,6 +1023,9 @@
           "word_misses": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },
+          "page_changes": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
           "inner_page_hashes": {
             "$ref": "#/components/schemas/UnsignedInteger"
           },

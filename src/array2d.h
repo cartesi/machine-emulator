@@ -14,23 +14,18 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef HASH_TREE_STATS_H
-#define HASH_TREE_STATS_H
-
-#include "hash-tree-constants.h"
-#include "page-hash-tree-cache-stats.h"
+#ifndef ARRAY2D_H
+#define ARRAY2D_H
 
 #include <array>
-#include <cstdint>
+#include <cstddef>
 
 namespace cartesi {
 
-struct hash_tree_stats {
-    page_hash_tree_cache_stats phtc;
-    uint64_t sparse_node_hashes{0};
-    std::array<uint64_t, HASH_TREE_LOG2_ROOT_SIZE> dense_node_hashes{};
-};
+//??(edubart): In future C++ standards we should switch to `std::mdarray` or `std::mdspan`
+template <class T, std::size_t M, std::size_t N>
+using array2d = std::array<std::array<T, N>, M>;
 
 } // namespace cartesi
 
-#endif // HASH_TREE_STATS_H
+#endif // ARRAY2D_H

@@ -34,7 +34,9 @@ extern "C" {
 #include "keccak-256-hasher.h"
 #include "machine-c-api.h"
 #include "machine-c-version.h"
+#include "machine-hash.h"
 #include "riscv-constants.h"
+#include "sha-256-hasher.h"
 #include "uarch-constants.h"
 #include "uarch-pristine.h"
 
@@ -58,44 +60,52 @@ static const auto gperf_meta = clua_make_luaL_Reg_array({
 });
 #endif
 
-/// \brief This is the cartesi.keccak() function implementation.
+/// \brief Generic hasher function implementation.
+/// \tparam Hasher Type of hasher to use.
 /// \param L Lua state.
-static int cartesi_mod_keccak(lua_State *L) {
+template <typename Hasher>
+static int cartesi_mod_hasher(lua_State *L) {
     using namespace cartesi;
-    keccak_256_hasher h;
-    machine_hash hash;
-    if (lua_gettop(L) > 2) {
+    const auto nargs = lua_gettop(L);
+    if (nargs > 2) {
         luaL_argerror(L, 3, "too many arguments");
     }
-    if (lua_gettop(L) < 1) {
+    if (nargs < 1) {
         luaL_argerror(L, 1, "too few arguments");
     }
-    if (lua_isinteger(L, 1) != 0) {
-        if (lua_gettop(L) > 1) {
-            luaL_argerror(L, 2, "too many arguments");
-        }
-        uint64_t word = luaL_checkinteger(L, 1);
-        h.begin();
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        h.add_data(std::span<unsigned char>(reinterpret_cast<unsigned char *>(&word), sizeof(word)));
-        h.end(hash);
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()), hash.size());
-        return 1;
-    }
-    h.begin();
     size_t len1 = 0;
-    const char *hash1 = luaL_checklstring(L, 1, &len1);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    h.add_data(std::span<const char>(hash1, len1));
     size_t len2 = 0;
-    const char *hash2 = luaL_optlstring(L, 2, "", &len2);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    h.add_data(std::span<const char>(hash2, len2));
-    h.end(hash);
+    const auto *data1 = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 1, &len1));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto *data2 = reinterpret_cast<const unsigned char *>(luaL_optlstring(L, 2, "", &len2));
+    Hasher h;
+    machine_hash hash;
+    // Handle special case that may have optimal implementations
+    if (len1 == MACHINE_HASH_SIZE && len2 == MACHINE_HASH_SIZE) { // Special case for hash tree concatenation
+        h.concat_hash(const_machine_hash_view{data1, len1}, const_machine_hash_view{data2, len2}, hash);
+    } else if (len1 == HASH_TREE_WORD_SIZE && len2 == 0) { // Special case for hash tree word
+        h.hash(const_hash_tree_word_view{data1, len1}, hash);
+    } else if (len2 > 0) { // Generic concat hash
+        h.concat_hash(std::span<const unsigned char>{data1, len1}, std::span<const unsigned char>{data2, len2}, hash);
+    } else { // Generic hash
+        h.hash(std::span<const unsigned char>{data1, len1}, hash);
+    }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()), hash.size());
     return 1;
+}
+
+/// \brief This is the cartesi.keccak256() function implementation.
+/// \param L Lua state.
+static int cartesi_mod_keccak256(lua_State *L) {
+    return cartesi_mod_hasher<cartesi::keccak_256_hasher>(L);
+}
+
+/// \brief This is the cartesi.sha256() function implementation.
+/// \param L Lua state.
+static int cartesi_mod_sha256(lua_State *L) {
+    return cartesi_mod_hasher<cartesi::sha_256_hasher>(L);
 }
 
 static int cartesi_mod_tobase64(lua_State *L) try {
@@ -153,7 +163,8 @@ static int cartesi_mod_new(lua_State *L) try {
 
 /// \brief Contents of the cartesi module table.
 static const auto cartesi_mod = clua_make_luaL_Reg_array({
-    {"keccak", cartesi_mod_keccak},
+    {"keccak256", cartesi_mod_keccak256},
+    {"sha256", cartesi_mod_sha256},
     {"tobase64", cartesi_mod_tobase64},
     {"frombase64", cartesi_mod_frombase64},
     {"tojson", cartesi_mod_tojson},

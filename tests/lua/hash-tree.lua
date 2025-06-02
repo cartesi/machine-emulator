@@ -112,7 +112,7 @@ local function check_proof(proof)
         else
             first, second = hash, sibling_hash
         end
-        hash = cartesi.keccak(first, second)
+        hash = cartesi.keccak256(first, second)
     end
     return hash == proof.root_hash
 end
@@ -208,7 +208,7 @@ for _, p in ipairs(interesting_pages) do
     for address = page, page + PAGE_SIZE - 1, WORD_SIZE do
         local h1 = machine:get_node_hash(address, LOG2_WORD_SIZE)
         local word = machine:read_memory(address, WORD_SIZE)
-        local h2 = cartesi.keccak(word)
+        local h2 = cartesi.keccak256(word)
         if h1 ~= h2 then
             stderr("        hash mismatch on word 0x%016x (%u)\n", address, address)
             stderr("            0x%.16s... vs 0x%.16s...\n", tohex(h1), tohex(h2))
@@ -219,7 +219,7 @@ for _, p in ipairs(interesting_pages) do
     for log2_size = LOG2_WORD_SIZE + 1, LOG2_PAGE_SIZE do
         local new_hashes = {}
         for i = 1, #hashes - 1, 2 do
-            new_hashes[#new_hashes + 1] = cartesi.keccak(hashes[i], hashes[i + 1])
+            new_hashes[#new_hashes + 1] = cartesi.keccak256(hashes[i], hashes[i + 1])
         end
         hashes = new_hashes
         for i = 1, #hashes do

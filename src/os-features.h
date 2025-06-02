@@ -28,6 +28,10 @@
 #define THREAD_LOCAL
 #endif
 
+#if !defined(NO_THREADS) && !defined(NO_OPENMP) && defined(_OPENMP) && !defined(__wasm__)
+#define HAVE_OPENMP
+#endif
+
 #if !defined(NO_TERMIOS) && !defined(_WIN32) && !defined(__wasi__)
 #define HAVE_TERMIOS
 #endif

@@ -20,7 +20,7 @@
 /// \file
 /// \brief Page hash-tree cache interface
 
-#include <atomic>
+#include <bit>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -29,10 +29,12 @@
 #include <span>
 #include <unordered_map>
 
+#include <boost/container/static_vector.hpp>
 #include <boost/intrusive/list.hpp>
 
 #include "address-range-constants.h"
 #include "circular-buffer.h"
+#include "compiler-defines.h"
 #include "hash-tree-constants.h"
 #include "i-hasher.h"
 #include "is-pristine.h"
@@ -41,6 +43,7 @@
 #include "page-hash-tree-cache-stats.h"
 #include "ranges.h"
 #include "signposts.h"
+#include "simd-hasher.h"
 #include "strict-aliasing.h"
 
 namespace cartesi {
@@ -62,6 +65,7 @@ public:
     using const_page_view = std::span<const unsigned char, m_page_size>;
 
     using page_hash_tree = std::array<machine_hash, m_page_hash_tree_size>;
+    using page_hash_tree_view = std::span<machine_hash, m_page_hash_tree_size>;
     static_assert(POD<page>, "hash_tree must be trivially copyable and standard layout");
     static_assert(POD<machine_hash>, "machine_hash must be trivially copyable and standard layout");
     static_assert(POD<page_hash_tree>, "page_hash_tree must be trivially copyable and standard layout");
@@ -144,6 +148,13 @@ public:
         /// \returns Index of node's parent
         static int parent(int i) {
             return i / 2;
+        }
+
+        /// \brief Returns the log2 level of a node in the page hash tree (its height in the tree)
+        /// \param i Node index
+        /// \returns Log 2 level of the node
+        static int log2_level(int i) {
+            return std::countl_zero(static_cast<uint32_t>(i)) - 24;
         }
 
         /// \brief Returns a pristine page tree for a given hasher
@@ -234,7 +245,71 @@ public:
         }
     };
 
-    /// \brief Updates and entry with new page data
+    template <IHasher hasher_type>
+    class simd_hasher {
+        struct leaf_entry {
+            const_hash_tree_word_view data;
+            machine_hash_view result;
+        };
+
+        struct node_entry {
+            const_machine_hash_view left;
+            const_machine_hash_view right;
+            machine_hash_view result;
+        };
+
+        struct dirty_entry {
+            page_hash_tree_view page_tree;
+            int node_index{0};
+            bool operator==(const dirty_entry &other) const noexcept {
+                return page_tree.data() == other.page_tree.data() && node_index == other.node_index;
+            }
+        };
+
+        static constexpr size_t QUEUE_MAX_SIZE =
+            ((UINT64_C(1) << ((HASH_TREE_LOG2_PAGE_SIZE - HASH_TREE_LOG2_WORD_SIZE) - 1))) *
+            hasher_type::MAX_LANE_COUNT;
+
+        hasher_type m_hasher;
+        simd_data_hasher<hasher_type, const_hash_tree_word_view> m_leaves_queue;
+        simd_concat_hasher<hasher_type, const_machine_hash_view> m_concat_queue;
+        circular_buffer<dirty_entry, QUEUE_MAX_SIZE> m_dirty_queue;
+
+    public:
+        static constexpr int QUEUE_MAX_PAGE_COUNT = hasher_type::MAX_LANE_COUNT;
+
+        /// \brief Enqueues a leaf for hashing
+        void enqueue_leaf(const_hash_tree_word_view data, page_hash_tree_view page_tree, int word_index) noexcept {
+            m_leaves_queue.enqueue(data, page_tree[word_index]);
+            m_dirty_queue.try_push_back(dirty_entry{.page_tree = page_tree, .node_index = entry::parent(word_index)});
+        }
+
+        /// \brief Flushes the entire queue
+        int flush() noexcept {
+            m_leaves_queue.flush();
+            int hashes = 0;
+
+            while (!m_dirty_queue.empty()) {
+                for (size_t i = 0, n = m_dirty_queue.size(); i < n; ++i) {
+                    const auto &d = m_dirty_queue.front();
+                    const auto node_index = d.node_index;
+                    const auto page_tree = d.page_tree;
+                    m_dirty_queue.pop_front();
+                    ++hashes;
+                    m_concat_queue.enqueue(page_tree[entry::left_child(node_index)],
+                        page_tree[entry::right_child(node_index)], page_tree[node_index]);
+                    if (node_index > 1) [[likely]] {
+                        m_dirty_queue.try_push_back(
+                            dirty_entry{.page_tree = page_tree, .node_index = entry::parent(node_index)});
+                    }
+                }
+                m_concat_queue.flush();
+            }
+            return hashes;
+        }
+    };
+
+    /// \brief Enqueue entry to be hashed with new page data
     /// \tparam H Hasher type
     /// \tparam D Data range type
     /// \param h Hasher object
@@ -243,7 +318,8 @@ public:
     /// \returns True if update succeeded, false otherwise
     template <IHasher H, ContiguousRangeOfByteLike D>
     // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
-    bool update_entry(H &&h, D &&d, entry &e) noexcept {
+    bool enqueue_hash_entry(page_hash_tree_cache::simd_hasher<H> &queue, D &&d, entry &e,
+        page_hash_tree_cache_stats &stats) noexcept {
         if (std::ranges::size(d) != m_page_size) {
             return false;
         }
@@ -253,14 +329,12 @@ public:
                 SCOPED_SIGNPOST(m_log, m_spid_pristine_update, "phtc: pristine update", "");
                 e.clear_hash_tree(m_pristine_page_hash_tree);
                 e.clear_page();
-                ++m_pristine_pages;
+                ++stats.pristine_pages;
                 return true;
             }
         }
         SCOPED_SIGNPOST(m_log, m_spid_non_pristine_update, "phtc: non-pristine update", "");
-        ++m_non_pristine_pages;
         const const_page_view page{std::ranges::data(d), std::ranges::size(d)};
-        circular_buffer<int, m_page_word_count / 2> dirty_nodes;
         // Go over all words in the entry page, comparing with updated page,
         // and updating the hashes for the modified words
         //??D In C++23, we would use std::views::slide and std::views::zip to write this in declarative style.
@@ -269,31 +343,19 @@ public:
         int miss = 0;
         auto &page_tree = e.get_page_hash_tree();
         for (int offset = 0, index = m_page_word_count; offset < m_page_size; offset += m_word_size, ++index) {
-            const auto entry_word = entry_page.subspan(offset, m_word_size);
-            const auto page_word = page.subspan(offset, m_word_size);
-            if (!std::ranges::equal(entry_word, page_word)) {
-                get_hash(h, page_word, page_tree[index]);
+            const auto entry_word = std::span<unsigned char, m_word_size>{entry_page.subspan(offset, m_word_size)};
+            const auto page_word = std::span<const unsigned char, m_word_size>{page.subspan(offset, m_word_size)};
+            if (!std::ranges::equal(entry_word, page_word)) [[unlikely]] {
                 std::ranges::copy(page_word, entry_word.begin());
-                dirty_nodes.try_push_back(e.parent(index));
+                queue.enqueue_leaf(page_word, page_tree, index);
                 ++miss;
             } else {
                 ++hit;
             }
         }
-        m_word_hits += hit;
-        m_word_misses += miss;
-        // Now go over fifo, taking a node, updating its from its children, and enqueueing its parent for update
-        int inner_page_hashes = 0;
-        while (!dirty_nodes.empty()) {
-            const int index = dirty_nodes.front();
-            dirty_nodes.pop_front();
-            ++inner_page_hashes;
-            get_concat_hash(h, page_tree[e.left_child(index)], page_tree[e.right_child(index)], page_tree[index]);
-            if (index != 1) {
-                dirty_nodes.try_push_back(e.parent(index));
-            }
-        }
-        m_inner_page_hashes += inner_page_hashes;
+        stats.word_hits += hit;
+        stats.word_misses += miss;
+        ++stats.non_pristine_pages;
         return true;
     }
 
@@ -304,7 +366,7 @@ public:
         const page_view entry_page{e.get_page()};
         auto &page_tree = e.get_page_hash_tree();
         for (int offset = 0, index = m_page_word_count; offset < m_page_size; offset += m_word_size, ++index) {
-            const auto page_word = entry_page.subspan(offset, m_word_size);
+            const auto page_word = std::span<const unsigned char, m_word_size>{entry_page.subspan(offset, m_word_size)};
             const auto page_word_hash = get_hash(h, page_word);
             if (page_word_hash != page_tree[index]) {
                 const int log2_size = HASH_TREE_LOG2_WORD_SIZE;
@@ -384,14 +446,14 @@ public:
             // Make it most recently used
             m_lru.splice(m_lru.begin(), m_lru, it->second.first);
             hit = true;
-            ++m_page_hits;
+            ++m_stats.page_hits;
             // Return borrowed entry
             return std::ref(e.set_borrowed(true));
         }
         hit = false;
         // Not in map, but we still have unused entries to lend
         if (m_used < m_entries.size()) {
-            ++m_page_misses;
+            ++m_stats.page_misses;
             entry &e = m_entries[m_used++];
             if (e.get_borrowed()) {
                 throw std::runtime_error{"page hash-tree cache entry already borrowed"};
@@ -407,6 +469,7 @@ public:
         if (e.get_borrowed()) {
             return {};
         }
+        ++m_stats.page_misses;
         m_map.erase(e.get_paddr_page());
         m_lru.pop_back();
         m_lru.push_front(e);
@@ -451,25 +514,22 @@ public:
     /// \param clear Whether to clear statistics after retrieving them
     /// \returns Statistics
     page_hash_tree_cache_stats get_stats(bool clear = false) noexcept {
-        auto s = page_hash_tree_cache_stats{
-            .page_hits = m_page_hits.load(),
-            .page_misses = m_page_misses.load(),
-            .word_hits = m_word_hits.load(),
-            .word_misses = m_word_misses.load(),
-            .inner_page_hashes = m_inner_page_hashes.load(),
-            .pristine_pages = m_pristine_pages.load(),
-            .non_pristine_pages = m_non_pristine_pages.load(),
-        };
+        auto s = m_stats;
         if (clear) {
-            m_page_hits = 0;
-            m_page_misses = 0;
-            m_word_hits = 0;
-            m_word_misses = 0;
-            m_inner_page_hashes = 0;
-            m_pristine_pages = 0;
-            m_non_pristine_pages = 0;
+            m_stats.page_hits = 0;
+            m_stats.page_misses = 0;
+            m_stats.word_hits = 0;
+            m_stats.word_misses = 0;
+            m_stats.page_changes = 0;
+            m_stats.inner_page_hashes = 0;
+            m_stats.pristine_pages = 0;
+            m_stats.non_pristine_pages = 0;
         }
         return s;
+    }
+
+    page_hash_tree_cache_stats &get_stats_ref() noexcept {
+        return m_stats;
     }
 
     /// \brief Destructor
@@ -490,11 +550,12 @@ public:
             std::cerr << "word hit rate: " << 100.0 * static_cast<double>(s.word_hits) / static_cast<double>(word_all)
                       << '\n';
         }
+        std::cerr << "changed pages: " << s.page_changes << '\n';
         std::cerr << "inner page hashes: " << s.inner_page_hashes << '\n';
         auto pristine_all = s.pristine_pages + s.non_pristine_pages;
         if (pristine_all > 0) {
-            std::cerr << "pristine pages: " << s.inner_page_hashes << '\n';
-            std::cerr << "non-pristine pages: " << s.inner_page_hashes << '\n';
+            std::cerr << "pristine pages: " << s.pristine_pages << '\n';
+            std::cerr << "non-pristine pages: " << s.non_pristine_pages << '\n';
             std::cerr << "pristine page ratio: "
                       << 100.0 * static_cast<double>(s.pristine_pages) / static_cast<double>(pristine_all) << '\n';
         }
@@ -549,13 +610,7 @@ private:
     size_t m_used{0};                                  ///< How many entries have already been used
 
     // Statistics
-    std::atomic<uint64_t> m_page_hits{0};         ///\< Number of pages looked up and found in cache
-    std::atomic<uint64_t> m_page_misses{0};       ///\< Number of pages looked up but missing from cache
-    std::atomic<uint64_t> m_word_hits{0};         ///\< Number of words equal to corresponding word in cache entry
-    std::atomic<uint64_t> m_word_misses{0};       ///\< Number of words differing from corresponding word in cache entry
-    std::atomic<uint64_t> m_inner_page_hashes{0}; ///\< Number of inner page hashing operations performed
-    std::atomic<uint64_t> m_pristine_pages{0};    ///\< Number of pages found to be pristine
-    std::atomic<uint64_t> m_non_pristine_pages{0}; ///\< Number of pages found not to be pristine
+    page_hash_tree_cache_stats m_stats;
 };
 
 } // namespace cartesi

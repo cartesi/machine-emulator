@@ -17,42 +17,40 @@
 #ifndef IS_PRISTINE_H
 #define IS_PRISTINE_H
 
+#include "compiler-defines.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <ranges>
+#include <span>
 
+#include "address-range-constants.h"
 #include "concepts.h"
 #include "meta.h"
 
 namespace cartesi {
 
-/// \brief This is an optimized function for checking if memory page is pristine.
-/// \param data Memory pointer
-/// \param length Memory length
-/// \returns True if all values are 0, false otherwise
+/// \brief This is an optimized function for checking if data is pristine.
+/// \param data Memory data.
+/// \returns True if all values are 0, false otherwise.
 /// \details It's to be used in situations where length is equal or less than a page size.
-static inline bool is_pristine(const unsigned char *data, size_t length) {
-    // This tight for loop has no branches, and is optimized to SIMD instructions in x86_64,
-    // making it very fast to check if a given page is pristine.
-    unsigned char bits = 0;
-    for (size_t i = 0; i < length; ++i) {
-        bits |= data[i];
-    }
-    return bits == 0;
-}
+MULTIVERSION_GENERIC bool is_pristine(std::span<const unsigned char> data) noexcept;
 
 /// \brief This is an optimized function for checking if memory page is pristine.
-/// \param r Contiguous range of byte-like values
-/// \returns True if all values are 0, false otherwise
-/// \details It's to be used in situations where length is equal or less than a page size.
+MULTIVERSION_GENERIC bool is_pristine(std::span<const unsigned char, AR_PAGE_SIZE> data) noexcept;
+
 template <ContiguousRangeOfByteLike R>
-static inline bool is_pristine(R &&r) { // NOLINT(cppcoreguidelines-missing-std-forward)
-    std::ranges::range_value_t<R> bits{0};
-    for (auto b : r) {
-        bits |= b;
-    }
-    return bits == 0;
+bool is_pristine(R &&r) noexcept { // NOLINT(cppcoreguidelines-missing-std-forward)
+    return is_pristine(std::span<const unsigned char>{std::ranges::data(r), std::ranges::size(r)});
 }
+
+#ifdef USE_MULTIVERSINING_AMD64
+MULTIVERSION_AMD64_AVX2 bool is_pristine(std::span<const unsigned char> data) noexcept;
+MULTIVERSION_AMD64_AVX2 bool is_pristine(std::span<const unsigned char, AR_PAGE_SIZE> data) noexcept;
+
+MULTIVERSION_AMD64_AVX512 bool is_pristine(std::span<const unsigned char> data) noexcept;
+MULTIVERSION_AMD64_AVX512 bool is_pristine(std::span<const unsigned char, AR_PAGE_SIZE> data) noexcept;
+#endif
 
 } // namespace cartesi
 

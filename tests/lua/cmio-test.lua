@@ -160,7 +160,7 @@ local function check_output(machine, expected)
     end
     assert(expected == output)
 
-    return cartesi.keccak(output)
+    return cartesi.keccak256(output)
 end
 
 local function check_report(machine, expected)
@@ -195,14 +195,14 @@ local function check_outputs_root_hash(root_hash, output_hashes)
             end
             local c2 = output_hashes[child + 1]
             if c2 then
-                parent_output_hashes[parent] = cartesi.keccak(c1, c2)
+                parent_output_hashes[parent] = cartesi.keccak256(c1, c2)
             else
-                parent_output_hashes[parent] = cartesi.keccak(c1, z)
+                parent_output_hashes[parent] = cartesi.keccak256(c1, z)
             end
             parent = parent + 1
             child = child + 2
         end
-        z = cartesi.keccak(z, z)
+        z = cartesi.keccak256(z, z)
         output_hashes = parent_output_hashes
     end
     assert(root_hash == output_hashes[1], "output root hash mismatch")

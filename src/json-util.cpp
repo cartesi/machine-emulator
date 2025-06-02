@@ -949,6 +949,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, page_hash_tree_cach
     ju_get_opt_field(jstats, "page_misses"s, value.page_misses, new_path);
     ju_get_opt_field(jstats, "word_hits"s, value.word_hits, new_path);
     ju_get_opt_field(jstats, "word_misses"s, value.word_misses, new_path);
+    ju_get_opt_field(jstats, "page_changes"s, value.page_changes, new_path);
     ju_get_opt_field(jstats, "inner_page_hashes"s, value.inner_page_hashes, new_path);
     ju_get_opt_field(jstats, "pristine_pages"s, value.pristine_pages, new_path);
     ju_get_opt_field(jstats, "non_pristine_pages"s, value.non_pristine_pages, new_path);
@@ -2216,6 +2217,7 @@ void to_json(nlohmann::json &j, const page_hash_tree_cache_stats &stats) {
         {"page_misses", stats.page_misses},
         {"word_hits", stats.word_hits},
         {"word_misses", stats.word_misses},
+        {"page_changes", stats.page_changes},
         {"inner_page_hashes", stats.inner_page_hashes},
         {"pristine_pages", stats.pristine_pages},
         {"non_pristine_pages", stats.non_pristine_pages},

@@ -38,10 +38,10 @@ local zero_keccak_hash_table = {
 }
 
 do
-    local hash = cartesi.keccak(string.rep("\0", 1 << WORD_LOG2_SIZE))
+    local hash = cartesi.keccak256(string.rep("\0", 1 << WORD_LOG2_SIZE))
     for i = WORD_LOG2_SIZE, ROOT_LOG2_SIZE - 1 do
         zero_keccak_hash_table[i] = hash
-        hash = cartesi.keccak(hash, hash)
+        hash = cartesi.keccak256(hash, hash)
     end
 end
 
@@ -91,7 +91,7 @@ function back_merkle_tree_meta.__index:push_back(new_leaf_hash)
     for i = 0, depth do
         if self.m_leaf_count & (0x01 << i) ~= 0x0 then
             local left = self.m_context[i]
-            right = cartesi.keccak(left, right)
+            right = cartesi.keccak256(left, right)
         else
             self.m_context[i] = right
             break
@@ -121,7 +121,7 @@ function back_merkle_tree_meta.__index:pad_back(new_leaf_count)
                 local i_span = 0x1 << i
                 if (self.m_leaf_count & i_span) ~= 0x0 then
                     local left = self.m_context[i]
-                    right = cartesi.keccak(left, right)
+                    right = cartesi.keccak256(left, right)
                 else
                     self.m_context[i] = right
                     -- next outer loop starts again from where inner loop left off
@@ -154,10 +154,10 @@ function back_merkle_tree_meta.__index:get_root_hash()
         for i = 0, depth - 1 do
             if (self.m_leaf_count & (0x01 << i)) ~= 0 then
                 local left = self.m_context[i]
-                root = cartesi.keccak(left, root)
+                root = cartesi.keccak256(left, root)
             else
                 local right = zero_keccak_hash_table[self.m_log2_leaf_size + i]
-                root = cartesi.keccak(root, right)
+                root = cartesi.keccak256(root, right)
             end
         end
         return root
@@ -214,7 +214,7 @@ function test_util.check_proof(proof)
         else
             first, second = hash, proof.sibling_hashes[log2_size - proof.log2_target_size + 1]
         end
-        hash = cartesi.keccak(first, second)
+        hash = cartesi.keccak256(first, second)
     end
     return hash == proof.root_hash
 end
@@ -236,9 +236,9 @@ local function merkle_hash(data, start, log2_size)
         local child_log2_size = log2_size - 1
         local left = merkle_hash(data, start, child_log2_size)
         local right = merkle_hash(data, start + (1 << child_log2_size), child_log2_size)
-        return cartesi.keccak(left, right)
+        return cartesi.keccak256(left, right)
     else
-        return cartesi.keccak(data:sub(start + 1, start + (1 << WORD_LOG2_SIZE)))
+        return cartesi.keccak256(data:sub(start + 1, start + (1 << WORD_LOG2_SIZE)))
     end
 end
 

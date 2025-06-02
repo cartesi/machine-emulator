@@ -116,9 +116,7 @@ __attribute__((__format__(__printf__, 1, 2))) static void error(const char *fmt,
 /// \param log2_word_size Log<sub>2</sub> of word size
 /// \param hash Receives the word hash
 static void get_word_hash(hasher_type &h, const unsigned char *word, int log2_word_size, machine_hash &hash) {
-    h.begin();
-    h.add_data(std::span<const unsigned char>(word, 1 << log2_word_size));
-    h.end(hash);
+    h.hash(std::span<const unsigned char>(word, 1 << log2_word_size), hash);
 }
 
 /// \brief Computes the Merkle hash of a leaf of data

@@ -14,24 +14,18 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef MACHINE_HASH_H
-#define MACHINE_HASH_H
-
-/// \file
-/// \brief Storage for a hash
+#ifndef ARRAY2D_H
+#define ARRAY2D_H
 
 #include <array>
-#include <span>
-#include <vector>
+#include <cstddef>
 
 namespace cartesi {
 
-static constexpr size_t MACHINE_HASH_SIZE = 32;
-using machine_hash = std::array<unsigned char, MACHINE_HASH_SIZE>;
-using machine_hash_view = std::span<unsigned char, MACHINE_HASH_SIZE>;
-using const_machine_hash_view = std::span<const unsigned char, MACHINE_HASH_SIZE>;
-using machine_hashes = std::vector<machine_hash>;
+//??(edubart): In future C++ standards we should switch to `std::mdarray` or `std::mdspan`
+template <class T, std::size_t M, std::size_t N>
+using array2d = std::array<std::array<T, N>, M>;
 
 } // namespace cartesi
 
-#endif
+#endif // ARRAY2D_H

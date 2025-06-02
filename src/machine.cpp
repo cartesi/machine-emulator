@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <array>
-#include <bit>
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
@@ -218,12 +217,11 @@ void machine::validate_processor_shadow(bool skip_version_check) const {
         throw std::invalid_argument{"x0 register is corrupt"};
     }
     // Ensure padding bytes are consistent
-    if ( // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        !is_pristine(reinterpret_cast<unsigned char *>(&m_s->shadow.registers_padding_[0]),
-            sizeof(m_s->shadow.registers_padding_)) ||
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        !is_pristine(reinterpret_cast<unsigned char *>(&m_s->shadow.tlb_padding_[0]),
-            sizeof(m_s->shadow.tlb_padding_))) {
+    if (!is_pristine(std::span<const unsigned char>{// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            reinterpret_cast<unsigned char *>(&m_s->shadow.registers_padding_[0]),
+            sizeof(m_s->shadow.registers_padding_)}) ||
+        !is_pristine(std::span<const unsigned char>{// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            reinterpret_cast<unsigned char *>(&m_s->shadow.tlb_padding_[0]), sizeof(m_s->shadow.tlb_padding_)})) {
         throw std::invalid_argument{"shadow padding bytes are corrupt"};
     }
 }
@@ -1612,7 +1610,7 @@ void machine::fill_memory(uint64_t paddr, uint8_t val, uint64_t length) {
     foreach_aligned_chunk(paddr, length, AR_PAGE_SIZE, [&ar, val](auto chunk_start, auto chunk_length) {
         const auto offset = chunk_start - ar.get_start();
         const auto dest = ar.get_host_memory() + offset;
-        if (val != 0 || !is_pristine(dest, chunk_length)) {
+        if (val != 0 || !is_pristine(std::span<const unsigned char>{dest, chunk_length})) {
             memset(dest, val, chunk_length);
             ar.get_dirty_page_tree().mark_dirty_page_and_up(offset);
         }
@@ -2024,10 +2022,13 @@ void machine::collect_mcycle_root_hashes(uint64_t mcycle_phase, uint64_t mcycle_
     if (!update_hash_tree()) {
         throw std::runtime_error{"update hash tree failed"};
     }
-    auto current_uarch_state_hash =
-        get_node_hash(AR_SHADOW_UARCH_STATE_START, UARCH_STATE_LOG2_SIZE, skip_hash_tree_update);
-    if (current_uarch_state_hash != get_uarch_pristine_state_hash()) {
-        throw std::runtime_error{"microarchitecture is not reset"};
+    if (m_c.hash_tree.hash_function == hash_function_type::keccak256) {
+        // Ensure that the microarchitecture is reset
+        auto current_uarch_state_hash =
+            get_node_hash(AR_SHADOW_UARCH_STATE_START, UARCH_STATE_LOG2_SIZE, skip_hash_tree_update);
+        if (current_uarch_state_hash != get_uarch_pristine_state_hash()) {
+            throw std::runtime_error{"microarchitecture is not reset"};
+        }
     }
     collect_mcycle_hashes_state_access::context context{};
     context.dirty_words.reserve(mcycle_period * 3);

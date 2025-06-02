@@ -20,7 +20,7 @@ local bint = require("bint")(256 + bint_extra)
 
 local P, R, S, C, Ct, V, Cmt, Carg = lpeg.P, lpeg.R, lpeg.S, lpeg.C, lpeg.Ct, lpeg.V, lpeg.Cmt, lpeg.Carg
 local cartesi = require("cartesi")
-local keccak = cartesi.keccak
+local keccak256 = cartesi.keccak256
 
 local tinsert = table.insert
 
@@ -272,7 +272,7 @@ function _M.parse_func_sig(sig)
     local err = { pos = 0, what = "unknown error" }
     local parsed_sig = check_match_error(sig, func_sig:match(sig, 1, err), err)
     local canonic_sig = canonic_func_sig(parsed_sig)
-    local func_sel = keccak(canonic_sig):sub(1, 4)
+    local func_sel = keccak256(canonic_sig):sub(1, 4)
     parsed_func_sig_cache[sig] = {
         parsed_func_sig = parsed_sig,
         func_sel = func_sel,

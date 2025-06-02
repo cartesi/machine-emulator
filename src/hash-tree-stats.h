@@ -27,8 +27,8 @@ namespace cartesi {
 
 struct hash_tree_stats {
     page_hash_tree_cache_stats phtc;
-    uint64_t sparse_node_hashes;
-    std::array<uint64_t, HASH_TREE_LOG2_ROOT_SIZE> dense_node_hashes;
+    uint64_t sparse_node_hashes{0};
+    std::array<uint64_t, HASH_TREE_LOG2_ROOT_SIZE> dense_node_hashes{};
 };
 
 } // namespace cartesi

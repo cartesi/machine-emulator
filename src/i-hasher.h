@@ -27,11 +27,16 @@
 #include <stdexcept>
 #include <type_traits>
 
+#include "array2d.h"
 #include "concepts.h"
+#include "hash-tree-constants.h"
 #include "machine-hash.h"
 #include "meta.h"
 
 namespace cartesi {
+
+using hash_tree_word_view = std::span<unsigned char, HASH_TREE_WORD_SIZE>;
+using const_hash_tree_word_view = std::span<const unsigned char, HASH_TREE_WORD_SIZE>;
 
 /// \brief Hasher interface.
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
@@ -48,17 +53,50 @@ class i_hasher { // CRTP
     }
 
 public:
-    void begin() noexcept {
-        return derived().do_begin();
+    template <ContiguousRangeOfByteLike D>
+    void hash(D &&data, machine_hash_view hash) noexcept { // NOLINT(cppcoreguidelines-missing-std-forward)
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        auto data_span = std::span<const unsigned char>{reinterpret_cast<const uint8_t *>(std::ranges::data(data)),
+            std::ranges::size(data)};
+        return derived().do_simd_concat_hash(array2d<std::span<const unsigned char>, 1, 1>{{{data_span}}},
+            std::array<machine_hash_view, 1>{hash});
+    }
+
+    void hash(const_hash_tree_word_view data, machine_hash_view hash) noexcept {
+        return derived().do_simd_concat_hash(array2d<const_hash_tree_word_view, 1, 1>{{{data}}},
+            std::array<machine_hash_view, 1>{hash});
     }
 
     template <ContiguousRangeOfByteLike D>
-    void add_data(D &&data) noexcept {
-        return derived().do_add_data(std::forward<D>(data));
+    void concat_hash(D &&data1, D &&data2, // NOLINT(cppcoreguidelines-missing-std-forward)
+        machine_hash_view hash) noexcept {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        auto data1_span = std::span<const unsigned char>{reinterpret_cast<const uint8_t *>(std::ranges::data(data1)),
+            std::ranges::size(data1)};
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        auto data2_span = std::span<const unsigned char>{reinterpret_cast<const uint8_t *>(std::ranges::data(data2)),
+            std::ranges::size(data2)};
+        return derived().do_simd_concat_hash(
+            array2d<std::span<const unsigned char>, 2, 1>{{{data1_span}, {data2_span}}},
+            std::array<machine_hash_view, 1>{hash});
     }
 
-    void end(machine_hash_view hash) noexcept {
-        return derived().do_end(hash);
+    void concat_hash(const_machine_hash_view data1, const_machine_hash_view data2, machine_hash_view hash) noexcept {
+        return derived().do_simd_concat_hash(array2d<const_machine_hash_view, 2, 1>{{{data1}, {data2}}},
+            std::array<machine_hash_view, 1>{hash});
+    }
+
+    template <size_t ConcatCount, size_t ParallelCount>
+    void simd_concat_hash(const array2d<const_hash_tree_word_view, ConcatCount, ParallelCount> &data,
+        const std::array<machine_hash_view, ParallelCount> &hash) noexcept {
+        return derived().do_simd_concat_hash(data, hash);
+    }
+
+    // \brief Gets the optimal number of SIMD lanes for hashing.
+    // \returns The optimal number of SIMD lanes for hashing.
+    // \details This value is architecture-dependent and may vary based on the available instruction sets.
+    static size_t get_optimal_lane_count() noexcept {
+        return DERIVED::do_get_optimal_lane_count();
     }
 };
 
@@ -79,9 +117,7 @@ concept IHasher = is_an_i_hasher_v<T>;
 /// \param result Receives the hash of data
 template <IHasher H, ContiguousRangeOfByteLike D>
 inline static void get_hash(H &h, D &&data, machine_hash_view result) noexcept {
-    h.begin();
-    h.add_data(std::forward<D>(data));
-    h.end(result);
+    h.hash(std::forward<D>(data), result);
 }
 
 /// \brief Computes the hash of data
@@ -105,10 +141,7 @@ inline static machine_hash get_hash(H &&h, D &&data) noexcept {
 template <IHasher H>
 inline static void get_concat_hash(H &h, const_machine_hash_view left, const_machine_hash_view right,
     machine_hash_view result) noexcept {
-    h.begin();
-    h.add_data(left);
-    h.add_data(right);
-    h.end(result);
+    h.concat_hash(left, right, result);
 }
 
 /// \brief Computes the hash of concatenated hashes

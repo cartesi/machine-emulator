@@ -499,6 +499,10 @@ where options are:
     this option implies --initial-hash and --final-hash.
     (default: none)
 
+  --dense-uarch-hashes=<number-length>[,<number-start>]
+    prints root hash every uarch cycle for <number-length> mcycles.
+    if <number-start> is given, the dense hashing will start at that mcycle.
+
   --log-step=<mcycle-count>,<filename>
     log and save a step of <mcycle-count> mcycles to <filename>.
 
@@ -690,6 +694,8 @@ local initial_proof = {}
 local final_proof = {}
 local periodic_hashes_period = math.maxinteger
 local periodic_hashes_start = 0
+local dense_uarch_hashes_start
+local dense_uarch_hashes_end
 local dump_memory_ranges = false
 local max_mcycle = math.maxinteger
 local max_uarch_cycle = 0
@@ -1562,6 +1568,23 @@ local options = {
         end,
     },
     {
+        "^(%-%-dense%-uarch%-hashes%=(.*))$",
+        function(all, v)
+            if not v then return false end
+            string.gsub(v, "^([^%,]+),(.+)$", function(l, s)
+                dense_uarch_hashes_start = assert(util.parse_number(s), "invalid start " .. all)
+                dense_uarch_hashes_end = dense_uarch_hashes_start
+                    + assert(util.parse_number(l), "invalid length " .. all)
+            end)
+            if not dense_uarch_hashes_start then
+                dense_uarch_hashes_start = 0
+                dense_uarch_hashes_end = dense_uarch_hashes_start
+                    + assert(util.parse_number(v), "invalid length " .. all)
+            end
+            return true
+        end,
+    },
+    {
         "^%-%-store%-config(%=?)(%g*)$",
         function(opts, v)
             if not opts then return false end
@@ -1743,6 +1766,10 @@ end
 
 local function print_root_hash(machine, print)
     (print or stderr)("%u: %s\n", machine:read_reg("mcycle"), util.hexhash(machine:get_root_hash()))
+end
+
+local function print_uarch_root_hash(machine, mcycle, uarch_cycle, print)
+    (print or stderr)("%u,%u: %s\n", mcycle, uarch_cycle, util.hexhash(machine:get_root_hash()))
 end
 
 local function dump_value_proofs(machine, desired_proofs, config)
@@ -2215,6 +2242,38 @@ while math.ult(machine:read_reg("mcycle"), max_mcycle) do
     local next_mcycle = math.min(next_hash_mcycle, max_mcycle)
     if gdb_stub and gdb_stub:is_connected() then
         gdb_stub:run(next_mcycle)
+    elseif dense_uarch_hashes_start then
+        local current_mcycle = machine:read_reg("mcycle")
+        if
+            current_mcycle >= dense_uarch_hashes_start
+            and current_mcycle < dense_uarch_hashes_end
+            and current_mcycle < next_mcycle
+        then
+            if current_mcycle == dense_uarch_hashes_start then print_root_hash(machine) end
+            for step = 1, math.max(math.min(next_mcycle, dense_uarch_hashes_end) - current_mcycle, 0) do
+                for uarch_cycle = 1, math.maxinteger do
+                    local break_reason = machine:run_uarch(uarch_cycle)
+                    print_uarch_root_hash(machine, current_mcycle + step - 1, uarch_cycle)
+                    if machine:read_reg("uarch_halt_flag") ~= 0 then
+                        machine:reset_uarch()
+                        print_root_hash(machine)
+                        break
+                    end
+                    assert(break_reason == cartesi.UARCH_BREAK_REASON_REACHED_TARGET_CYCLE)
+                end
+                if
+                    machine:read_reg("iflags_H") ~= 0
+                    or machine:read_reg("iflags_X") ~= 0
+                    or machine:read_reg("iflags_Y") ~= 0
+                then
+                    break
+                end
+            end
+        elseif current_mcycle < dense_uarch_hashes_start then
+            machine:run(math.min(next_mcycle, dense_uarch_hashes_start))
+        else
+            machine:run(next_mcycle)
+        end
     else
         machine:run(next_mcycle)
     end

@@ -195,24 +195,20 @@ bool hash_tree::update_dirty_page(hasher_type &h, address_range &ar, page_hash_t
 
 bool hash_tree::return_updated_dirty_pages(address_ranges ars, dirty_pages &batch,
     changed_address_ranges &changed_ars) {
+    if (batch.empty()) {
+        return true;
+    }
+    const int batch_size = static_cast<int>(batch.size());
     std::atomic<int> update_failed{0}; // NOLINT(misc-const-correctness)
-//??D The batch size past which we switch to parallel updates needs to be tuned empirically
-// constexpr auto chunk_size = 1;
-// #pragma omp parallel if (static_cast<int>(batch.size()) > chunk_size)
-#pragma omp parallel if (static_cast<int>(batch.size()) > omp_get_max_threads() * 4)
-    {
-        hasher_type h; // NOLINT(misc-const-correctness)
-// #pragma omp for schedule(static, chunk_size)
-#pragma omp for
-        // NOLINTNEXTLINE(modernize-loop-convert)
-        for (decltype(batch.size()) i = 0; i < batch.size(); ++i) {
-            auto &[ar_index, br, changed] = batch[i];
-            auto &ar = ars[ar_index];
-            if (!update_dirty_page(h, ar, br, changed)) {
-                update_failed.store(1, std::memory_order_relaxed);
-#pragma omp cancel for
-            }
-#pragma omp cancellation point for
+    //??D The batch size past which we switch to parallel updates needs to be tuned empirically
+    hasher_type h; // NOLINT(misc-const-correctness)
+#pragma omp parallel for private(h) if (batch_size > m_concurrency * 4)
+    // NOLINTNEXTLINE(modernize-loop-convert)
+    for (int i = 0; i < batch_size; ++i) {
+        auto &[ar_index, br, changed] = batch[i];
+        auto &ar = ars[ar_index];
+        if (!update_dirty_page(h, ar, br, changed)) {
+            update_failed.store(1, std::memory_order_relaxed);
         }
     }
     // Return all entries and collect address ranges that were actually changed by update
@@ -312,33 +308,22 @@ void hash_tree::update_and_clear_dense_node_entries(dense_node_entries &batch, i
     if (batch.empty()) {
         return;
     }
-//??D The batch size past which we switch to parallel updates needs to be tuned empirically
-// constexpr auto chunk_size = 2;
-// #pragma omp parallel if (static_cast<int>(batch.size()) > chunk_size)
-#pragma omp parallel if (static_cast<int>(batch.size()) > omp_get_max_threads() * 32)
-    {
-        hasher_type h; // NOLINT(misc-const-correctness)
-#ifdef DUMP_HASH_TREE_STATS
-        int updates = 0;
-#endif
-// #pragma omp for schedule(static, chunk_size)
-#pragma omp for
-        // NOLINTNEXTLINE(modernize-loop-convert)
-        for (decltype(batch.size()) i = 0; i < batch.size(); ++i) {
-            auto &[dht, offset] = batch[i];
-            auto child_size = UINT64_C(1) << (log2_size - 1);
-            auto parent = dht.node_hash_view(offset, log2_size);
-            auto left = dht.node_hash_view(offset, log2_size - 1);
-            auto right = dht.node_hash_view(offset + child_size, log2_size - 1);
-            get_concat_hash(h, left, right, parent);
-#ifdef DUMP_HASH_TREE_STATS
-            ++updates;
-#endif
-        }
-#ifdef DUMP_HASH_TREE_STATS
-        m_dense_node_hashes[log2_size] += updates;
-#endif
+    const int batch_size = static_cast<int>(batch.size());
+    //??D The batch size past which we switch to parallel updates needs to be tuned empirically
+    int updates = 0;
+    hasher_type h; // NOLINT(misc-const-correctness)
+#pragma omp parallel for private(h, updates) if (batch_size > m_concurrency * 32)
+    // NOLINTNEXTLINE(modernize-loop-convert)
+    for (decltype(batch.size()) i = 0; i < batch.size(); ++i) {
+        auto &[dht, offset] = batch[i];
+        auto child_size = UINT64_C(1) << (log2_size - 1);
+        auto parent = dht.node_hash_view(offset, log2_size);
+        auto left = dht.node_hash_view(offset, log2_size - 1);
+        auto right = dht.node_hash_view(offset + child_size, log2_size - 1);
+        get_concat_hash(h, left, right, parent);
+        ++updates;
     }
+    m_dense_node_hashes[log2_size] += updates;
     batch.clear();
 }
 
@@ -418,9 +403,7 @@ bool hash_tree::update_sparse_tree(address_ranges ars, const changed_address_ran
         auto left_hash_view = get_sparse_node_hash_view(inner_node.left, log2_size - 1);
         auto right_hash_view = get_sparse_node_hash_view(inner_node.right, log2_size - 1);
         get_concat_hash(h, left_hash_view, right_hash_view, inner_node.hash);
-#ifdef DUMP_HASH_TREE_STATS
         ++m_sparse_node_hashes;
-#endif
         if (!is_pristine(inner_node.parent)) {
             auto &parent_node = m_sparse_nodes[inner_node.parent];
             if (parent_node.marked == 0) {

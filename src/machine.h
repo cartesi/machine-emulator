@@ -127,7 +127,6 @@ private:
 
 public:
     /// \brief Type of hash
-    using hash_type = machine_merkle_tree::hash_type;
 
     using reg = machine_reg;
 
@@ -174,8 +173,8 @@ public:
     /// \param log_filename Name of the file containing the log.
     /// \param mcycle_count Number of mcycles the machine was run for.
     /// \param root_hash_after Hash of the state after the step.
-    static interpreter_break_reason verify_step(const hash_type &root_hash_before, const std::string &log_filename,
-        uint64_t mcycle_count, const hash_type &root_hash_after);
+    static interpreter_break_reason verify_step(const machine_hash &root_hash_before, const std::string &log_filename,
+        uint64_t mcycle_count, const machine_hash &root_hash_after);
 
     /// \brief Runs the machine in the microarchitecture until the mcycles advances by one unit or the micro cycle
     /// counter (uarch_cycle) reaches uarch_cycle_end
@@ -200,15 +199,15 @@ public:
     /// \param root_hash_before State hash before step.
     /// \param log Step state access log.
     /// \param root_hash_after State hash after step.
-    static void verify_step_uarch(const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after);
+    static void verify_step_uarch(const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after);
 
     /// \brief Checks the validity of a state transition caused by log_reset_uarch.
     /// \param root_hash_before State hash before uarch reset
     /// \param log Step state access log.
     /// \param root_hash_after State hash after uarch reset.
-    static void verify_reset_uarch(const hash_type &root_hash_before, const access_log &log,
-        const hash_type &root_hash_after);
+    static void verify_reset_uarch(const machine_hash &root_hash_before, const access_log &log,
+        const machine_hash &root_hash_after);
 
     /// \brief Returns copy of default machine config
     static machine_config get_default_config();
@@ -291,19 +290,19 @@ public:
 
     /// \brief Obtains the root hash of the Merkle tree.
     /// \param hash Receives the hash.
-    void get_root_hash(hash_type &hash) const;
+    void get_root_hash(machine_hash &hash) const;
 
     /// \brief Obtains the hash of a node in the Merkle tree.
     /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
     /// \param log2_size log<sub>2</sub> of size subintended by target node.
     /// \returns The hash of the target node.
-    hash_type get_merkle_tree_node_hash(uint64_t address, int log2_size) const;
+    machine_hash get_merkle_tree_node_hash(uint64_t address, int log2_size) const;
 
     /// \brief Obtains the hash of a node in the Merkle tree without making any modifications to the tree.
     /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
     /// \param log2_size log<sub>2</sub> of size subintended by target node.
     /// \returns The hash of the target node.
-    hash_type get_merkle_tree_node_hash(uint64_t address, int log2_size, skip_merkle_tree_update_t /*unused*/) const;
+    machine_hash get_merkle_tree_node_hash(uint64_t address, int log2_size, skip_merkle_tree_update_t /*unused*/) const;
 
     /// \brief Verifies integrity of Merkle tree.
     /// \returns True if tree is self-consistent, false otherwise.
@@ -447,7 +446,7 @@ public:
     /// \param log Log containing the state accesses performed by the load operation
     /// \param root_hash_after State hash after response was sent.
     static void verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
-        const hash_type &root_hash_before, const access_log &log, const hash_type &root_hash_after);
+        const machine_hash &root_hash_before, const access_log &log, const machine_hash &root_hash_after);
 };
 
 } // namespace cartesi

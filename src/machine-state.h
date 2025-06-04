@@ -29,6 +29,7 @@
 
 #include <boost/container/static_vector.hpp>
 
+#include "hash-tree-target.h"
 #include "pma-constants.h"
 #include "pma.h"
 #include "riscv-constants.h"
@@ -85,6 +86,12 @@ struct machine_state {
     uint64_t senvcfg{};    ///< CSR senvcfg.
 
     // Cartesi-specific state
+
+    // Hash tree state
+    struct {
+        hash_tree_target target{}; //< Hash tree target.
+    } hash_tree;
+
     uint64_t ilrsc{};         ///< For LR/SC instructions (Cartesi-specific).
     uint64_t icycleinstret{}; ///< CSR icycleinstret (Cartesi-specific).
     struct {

@@ -43,6 +43,12 @@ extern "C" {
 // -----------------------------------------------------------------------------
 
 /// \brief Constants.
+typedef enum cm_hash_tree_target {
+    CM_HASH_TREE_TARGET_UARCH = 0,
+    CM_HASH_TREE_TARGET_RISC0 = 1,
+} cm_hash_tree_target;
+
+/// \brief Constants.
 typedef enum cm_constant {
     CM_HASH_SIZE = 32,
     CM_TREE_LOG2_WORD_SIZE = 5,
@@ -240,6 +246,7 @@ typedef enum cm_reg {
     CM_REG_HTIF_IHALT,
     CM_REG_HTIF_ICONSOLE,
     CM_REG_HTIF_IYIELD,
+    CM_REG_HASH_TREE_TARGET,
     // Microarchitecture registers
     CM_REG_UARCH_X0,
     CM_REG_UARCH_X1,

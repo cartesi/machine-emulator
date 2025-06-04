@@ -1,0 +1,23 @@
+[package]
+name = "cartesi_risc0"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "cartesi_risc0"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cartesi-risc0-cli"
+path = "src/main.rs"
+
+[dependencies]
+methods = { path = "../methods" }
+memmap2 = "0.9.5"
+risc0-zkvm = { version = "2.0.0" }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+hex = "0.4"
+sha2 = "0.10"
+bincode = "1.3"
+serde = "1.0"
+cartesi_risc0_shared = { path = "../shared" }

@@ -21,7 +21,7 @@
 #include <cstdint>
 #include <type_traits>
 
-#include "i-hasher.h"
+#include "machine-hash.h"
 
 extern "C" {
 #include "sha3.h"
@@ -37,24 +37,22 @@ struct keccak_instance final {
     int pt;
 };
 
-class keccak_256_hasher final : public i_hasher<keccak_256_hasher, std::integral_constant<int, 32>> {
+class keccak_256_hasher final {
     sha3_ctx_t m_ctx{};
 
-    friend i_hasher<keccak_256_hasher, std::integral_constant<int, 32>>;
-
-    void do_begin() {
+public:
+    void begin() {
         sha3_init(&m_ctx, 32, 0x01);
     }
 
-    void do_add_data(const unsigned char *data, size_t length) {
+    void add_data(const unsigned char *data, size_t length) {
         sha3_update(&m_ctx, data, length);
     }
 
-    void do_end(hash_type &hash) {
+    void end(machine_hash &hash) {
         sha3_final(hash.data(), &m_ctx);
     }
 
-public:
     /// \brief Default constructor
     keccak_256_hasher() = default;
 
@@ -62,13 +60,13 @@ public:
     ~keccak_256_hasher() = default;
 
     /// \brief No copy constructor
-    keccak_256_hasher(const keccak_256_hasher &) = delete;
+    keccak_256_hasher(const keccak_256_hasher &) = default;
     /// \brief No move constructor
-    keccak_256_hasher(keccak_256_hasher &&) = delete;
+    keccak_256_hasher(keccak_256_hasher &&) = default;
     /// \brief No copy assignment
-    keccak_256_hasher &operator=(const keccak_256_hasher &) = delete;
+    keccak_256_hasher &operator=(const keccak_256_hasher &) = default;
     /// \brief No move assignment
-    keccak_256_hasher &operator=(keccak_256_hasher &&) = delete;
+    keccak_256_hasher &operator=(keccak_256_hasher &&) = default;
 };
 
 } // namespace cartesi

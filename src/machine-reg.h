@@ -135,8 +135,9 @@ enum class machine_reg : uint64_t {
     htif_ihalt = PMA_SHADOW_STATE_START + offsetof(shadow_state, htif_ihalt),
     htif_iconsole = PMA_SHADOW_STATE_START + offsetof(shadow_state, htif_iconsole),
     htif_iyield = PMA_SHADOW_STATE_START + offsetof(shadow_state, htif_iyield),
+    hash_tree_target = PMA_SHADOW_STATE_START + offsetof(shadow_state, hash_tree_target),
     first_ = x0,
-    last_ = htif_iyield,
+    last_ = hash_tree_target,
 
     uarch_halt_flag = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, halt_flag),
     uarch_cycle = PMA_SHADOW_UARCH_STATE_START + offsetof(shadow_uarch_state, cycle),

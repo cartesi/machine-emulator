@@ -14,26 +14,21 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#include "uarch-pristine-state-hash.h"
+#ifndef MACHINE_HASH_H
+#define MACHINE_HASH_H
 
+#include <array>
 #include <cstddef>
-
-#include "machine-merkle-tree.h"
-#include "uarch-pristine.h"
+#include <cstdint>
 
 namespace cartesi {
 
-static machine_hash make_uarch_pristine_state_hash() noexcept {
-    machine_hash h;
-    for (std::size_t i = 0; i < h.size(); ++i) {
-        h[i] = uarch_pristine_hash[i];
-    }
-    return h;
-}
+/// \brief Size of hash in bytes.
+constexpr size_t machine_hash_size = 32;
 
-const machine_hash &get_uarch_pristine_state_hash() {
-    static const machine_hash uarch_pristine_state_hash = make_uarch_pristine_state_hash();
-    return uarch_pristine_state_hash;
-}
+/// \brief Hash type.
+using machine_hash = std::array<unsigned char, machine_hash_size>;
 
 } // namespace cartesi
+
+#endif // HASH_H

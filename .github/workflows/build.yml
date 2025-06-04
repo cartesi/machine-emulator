@@ -211,7 +211,8 @@ jobs:
 
       - name: Run Merkle tree tests
         run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash --hash-tree-target=uarch
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash --hash-tree-target=risc0
 
       - name: Run C API tests
         run: |

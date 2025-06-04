@@ -32,16 +32,29 @@ local test_util = {
     tests_uarch_path = adjust_path(assert(os.getenv("CARTESI_TESTS_UARCH_PATH"))),
 }
 
-local zero_keccak_hash_table = {
-    "",
-    "",
-}
-
-do
-    local hash = cartesi.keccak(string.rep("\0", 1 << WORD_LOG2_SIZE))
+local function compute_zero_hash_table(hash_fn)
+    local zero_hash_table = {
+        "",
+        "",
+    }
+    local hash = hash_fn(string.rep("\0", 1 << WORD_LOG2_SIZE))
     for i = WORD_LOG2_SIZE, ROOT_LOG2_SIZE - 1 do
-        zero_keccak_hash_table[i] = hash
-        hash = cartesi.keccak(hash, hash)
+        zero_hash_table[i] = hash
+        hash = hash_fn(hash, hash)
+    end
+    return zero_hash_table
+end
+
+local zero_keccak_hash_table = compute_zero_hash_table(cartesi.keccak)
+local zero_sha256_hash_table = compute_zero_hash_table(cartesi.sha256)
+
+local function get_zero_hash_table(hasher_fn)
+    if hasher_fn == cartesi.keccak then
+        return zero_keccak_hash_table
+    elseif hasher_fn == cartesi.sha256 then
+        return zero_sha256_hash_table
+    else
+        assert(false, "Invalid hash function")
     end
 end
 
@@ -93,7 +106,7 @@ function back_merkle_tree_meta.__index:push_back(new_leaf_hash)
     for i = 0, depth do
         if self.m_leaf_count & (0x01 << i) ~= 0x0 then
             local left = self.m_context[i]
-            right = cartesi.keccak(left, right)
+            right = self.hash_fn(left, right)
         else
             self.m_context[i] = right
             break
@@ -118,12 +131,12 @@ function back_merkle_tree_meta.__index:pad_back(new_leaf_count)
         -- is our smallest tree at depth j?
         if (self.m_leaf_count & j_span) ~= 0x0 then
             -- if so, we can add 2^j pristine leaves directly
-            local right = zero_keccak_hash_table[self.m_log2_leaf_size + j]
+            local right = self.zero_hash_table[self.m_log2_leaf_size + j]
             for i = j, depth do
                 local i_span = 0x1 << i
                 if (self.m_leaf_count & i_span) ~= 0x0 then
                     local left = self.m_context[i]
-                    right = cartesi.keccak(left, right)
+                    right = self.hash_fn(left, right)
                 else
                     self.m_context[i] = right
                     -- next outer loop starts again from where inner loop left off
@@ -141,7 +154,7 @@ function back_merkle_tree_meta.__index:pad_back(new_leaf_count)
     for i = 0, depth do
         local i_span = 0x1 << i
         if (new_leaf_count & i_span) ~= 0x0 then
-            self.m_context[i] = zero_keccak_hash_table[self.m_log2_leaf_size + i]
+            self.m_context[i] = self.zero_hash_table[self.m_log2_leaf_size + i]
             new_leaf_count = new_leaf_count - i_span
             self.m_leaf_count = self.m_leaf_count + i_span
         end
@@ -152,14 +165,14 @@ function back_merkle_tree_meta.__index:get_root_hash()
     assert(self.m_leaf_count <= self.m_max_leaves, "too many leaves")
     local depth = self.m_log2_root_size - self.m_log2_leaf_size
     if self.m_leaf_count < self.m_max_leaves then
-        local root = zero_keccak_hash_table[self.m_log2_leaf_size]
+        local root = self.zero_hash_table[self.m_log2_leaf_size]
         for i = 0, depth - 1 do
             if (self.m_leaf_count & (0x01 << i)) ~= 0 then
                 local left = self.m_context[i]
-                root = cartesi.keccak(left, root)
+                root = self.hash_fn(left, root)
             else
-                local right = zero_keccak_hash_table[self.m_log2_leaf_size + i]
-                root = cartesi.keccak(root, right)
+                local right = self.zero_hash_table[self.m_log2_leaf_size + i]
+                root = self.hash_fn(root, right)
             end
         end
         return root
@@ -168,8 +181,10 @@ function back_merkle_tree_meta.__index:get_root_hash()
     end
 end
 
-function test_util.new_back_merkle_tree(log2_root_size, log2_leaf_size)
+function test_util.new_back_merkle_tree(log2_root_size, log2_leaf_size, hash_fn)
     local self = {}
+    self.hash_fn = hash_fn
+    self.zero_hash_table = get_zero_hash_table(hash_fn)
     self.m_context = {}
     self.m_log2_leaf_size = log2_leaf_size
     self.m_log2_root_size = log2_root_size
@@ -206,7 +221,22 @@ function test_util.split_string(inputstr, sep)
     return t
 end
 
-function test_util.check_proof(proof)
+function test_util.get_machine_hash_tree_hash_fn(machine)
+    assert(machine, "machine is nil")
+    local config = machine:get_initial_config()
+
+    local hash_tree_target = config.hash_tree.target
+    if hash_tree_target == "uarch" then
+        return cartesi.keccak
+    elseif hash_tree_target == "risc0" then
+        return cartesi.sha256
+    else
+        assert(false, "Invalid hash tree target: " .. tostring(hash_tree_target))
+    end
+end
+
+function test_util.check_proof(proof, hash_fn)
+    assert(hash_fn, "hash_fn is nil")
     local hash = proof.target_hash
     for log2_size = proof.log2_target_size, proof.log2_root_size - 1 do
         local bit = (proof.target_address & (1 << log2_size)) ~= 0
@@ -216,7 +246,7 @@ function test_util.check_proof(proof)
         else
             first, second = hash, proof.sibling_hashes[log2_size - proof.log2_target_size + 1]
         end
-        hash = cartesi.keccak(first, second)
+        hash = hash_fn(first, second)
     end
     return hash == proof.root_hash
 end
@@ -231,16 +261,17 @@ function test_util.load_file(filename)
     return data
 end
 
-local function merkle_hash(data, start, log2_size)
+local function merkle_hash(data, start, log2_size, hash_fn)
+    local zero_hash_table = get_zero_hash_table(hash_fn)
     if log2_size == PAGE_LOG2_SIZE and data:sub(start + 1, start + PAGE_SIZE) == ZERO_PAGE then
-        return zero_keccak_hash_table[PAGE_LOG2_SIZE]
+        return zero_hash_table[PAGE_LOG2_SIZE]
     elseif log2_size > WORD_LOG2_SIZE then
         local child_log2_size = log2_size - 1
-        local left = merkle_hash(data, start, child_log2_size)
-        local right = merkle_hash(data, start + (1 << child_log2_size), child_log2_size)
-        return cartesi.keccak(left, right)
+        local left = merkle_hash(data, start, child_log2_size, hash_fn)
+        local right = merkle_hash(data, start + (1 << child_log2_size), child_log2_size, hash_fn)
+        return hash_fn(left, right)
     else
-        return cartesi.keccak(data:sub(start + 1, start + (1 << WORD_LOG2_SIZE)))
+        return hash_fn(data:sub(start + 1, start + (1 << WORD_LOG2_SIZE)), nil)
     end
 end
 
@@ -248,14 +279,14 @@ test_util.merkle_hash = merkle_hash
 
 -- Take data from dumped memory files
 -- and calculate root hash of the machine
-function test_util.calculate_emulator_hash(machine)
-    local tree = test_util.new_back_merkle_tree(64, PAGE_LOG2_SIZE)
+function test_util.calculate_emulator_hash(machine, hash_fn)
+    local tree = test_util.new_back_merkle_tree(64, PAGE_LOG2_SIZE, hash_fn)
     local last = 0
     for _, v in ipairs(machine:get_memory_ranges()) do
         tree:pad_back((v.start - last) >> PAGE_LOG2_SIZE)
         local finish = v.start + v.length
         for j = v.start, finish - 1, PAGE_SIZE do
-            local page_hash = merkle_hash(machine:read_memory(j, PAGE_SIZE), 0, PAGE_LOG2_SIZE)
+            local page_hash = merkle_hash(machine:read_memory(j, PAGE_SIZE), 0, PAGE_LOG2_SIZE, hash_fn)
             tree:push_back(page_hash)
         end
         last = finish
@@ -264,12 +295,12 @@ function test_util.calculate_emulator_hash(machine)
 end
 
 -- Read memory from given machine and calculate uarch state hash
-function test_util.calculate_uarch_state_hash(machine)
+function test_util.calculate_uarch_state_hash(machine, hash_fn)
     local shadow_data = machine:read_memory(cartesi.UARCH_SHADOW_START_ADDRESS, cartesi.UARCH_SHADOW_LENGTH)
     local ram_data = machine:read_memory(cartesi.UARCH_RAM_START_ADDRESS, cartesi.UARCH_RAM_LENGTH)
-    local tree = test_util.new_back_merkle_tree(cartesi.UARCH_STATE_LOG2_SIZE, PAGE_LOG2_SIZE)
+    local tree = test_util.new_back_merkle_tree(cartesi.UARCH_STATE_LOG2_SIZE, PAGE_LOG2_SIZE, hash_fn)
     for j = 0, #shadow_data - 1, PAGE_SIZE do
-        local page_hash = merkle_hash(shadow_data, j, PAGE_LOG2_SIZE)
+        local page_hash = merkle_hash(shadow_data, j, PAGE_LOG2_SIZE, hash_fn)
         tree:push_back(page_hash)
     end
     -- pad the region between the end of shadow data and start of ram
@@ -277,7 +308,7 @@ function test_util.calculate_uarch_state_hash(machine)
         (cartesi.UARCH_RAM_START_ADDRESS - cartesi.UARCH_SHADOW_START_ADDRESS - #shadow_data) >> PAGE_LOG2_SIZE
     )
     for j = 0, #ram_data - 1, PAGE_SIZE do
-        local page_hash = merkle_hash(ram_data, j, PAGE_LOG2_SIZE)
+        local page_hash = merkle_hash(ram_data, j, PAGE_LOG2_SIZE, hash_fn)
         tree:push_back(page_hash)
     end
     return tree:get_root_hash()

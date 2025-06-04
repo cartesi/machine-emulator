@@ -59,7 +59,7 @@ std::string encode_base64(const unsigned char *data, uint64_t length) {
     return encode_base64(input);
 }
 
-std::string encode_base64(const machine_merkle_tree::hash_type &hash) {
+std::string encode_base64(const machine_hash &hash) {
     return encode_base64(hash.data(), hash.size());
 }
 
@@ -187,6 +187,7 @@ static auto reg_from_name(const std::string &name) {
         {"htif_ihalt", reg::htif_ihalt},
         {"htif_iconsole", reg::htif_iconsole},
         {"htif_iyield", reg::htif_iyield},
+        {"hash_tree_target", reg::hash_tree_target},
         {"uarch_x0", reg::uarch_x0},
         {"uarch_x1", reg::uarch_x1},
         {"uarch_x2", reg::uarch_x2},
@@ -461,6 +462,8 @@ static auto reg_to_name(machine::reg r) {
             return "htif_iconsole";
         case reg::htif_iyield:
             return "htif_iyield";
+        case reg::hash_tree_target:
+            return "hash_tree_target";
         case reg::uarch_x0:
             return "uarch_x0";
         case reg::uarch_x1:
@@ -814,8 +817,7 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     machine_runtime_config &value, const std::string &path);
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_merkle_tree::proof_type::hash_type &value,
-    const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_hash &value, const std::string &path) {
     if (!contains(j, key)) {
         return;
     }
@@ -831,8 +833,8 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_merkle_tree
 }
 
 template <typename K>
-void ju_get_opt_field(const nlohmann::json &j, const K &key,
-    std::optional<machine_merkle_tree::proof_type::hash_type> &optional, const std::string &path) {
+void ju_get_opt_field(const nlohmann::json &j, const K &key, std::optional<machine_hash> &optional,
+    const std::string &path) {
     optional = {};
     if (!contains(j, key)) {
         return;
@@ -849,11 +851,11 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key,
     std::copy(bin.begin(), bin.end(), optional.value().data());
 }
 
-template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
-    machine_merkle_tree::proof_type::hash_type &value, const std::string &path);
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, machine_hash &value,
+    const std::string &path);
 
-template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
-    machine_merkle_tree::proof_type::hash_type &value, const std::string &path);
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, machine_hash &value,
+    const std::string &path);
 
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key,
@@ -879,10 +881,10 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key,
     machine_merkle_tree::proof_type::address_type target_address = 0;
     ju_get_field(jk, "target_address"s, target_address, new_path);
     proof.set_target_address(target_address);
-    machine_merkle_tree::proof_type::hash_type target_hash;
+    machine_hash target_hash;
     ju_get_field(jk, "target_hash"s, target_hash, new_path);
     proof.set_target_hash(target_hash);
-    machine_merkle_tree::proof_type::hash_type root_hash;
+    machine_hash root_hash;
     ju_get_field(jk, "root_hash"s, root_hash, new_path);
     proof.set_root_hash(root_hash);
     if (!contains(jk, "sibling_hashes")) {
@@ -895,7 +897,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key,
     const auto sibling_hashes_base = path + "sibling_hashes/";
     for (int log2_size = proof.get_log2_target_size(), i = 0; log2_size < proof.get_log2_root_size();
         ++log2_size, ++i) {
-        machine_merkle_tree::proof_type::hash_type sibling_hash;
+        machine_hash sibling_hash;
         ju_get_field(sh, i, sibling_hash, sibling_hashes_base);
         proof.set_sibling_hash(sibling_hash, log2_size);
     }
@@ -995,11 +997,11 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, access &access, con
     uint64_t address = 0;
     ju_get_field(jk, "address"s, address, new_path);
     access.set_address(address);
-    machine_merkle_tree::proof_type::hash_type read_hash;
+    machine_hash read_hash;
     ju_get_field(jk, "read_hash", read_hash, new_path);
     access.set_read_hash(read_hash);
 
-    not_default_constructible<machine_merkle_tree::proof_type::hash_type> written_hash;
+    not_default_constructible<machine_hash> written_hash;
     ju_get_opt_field(jk, "written_hash", written_hash, new_path);
     if (written_hash.has_value()) {
         access.set_written_hash(written_hash.value());
@@ -1125,6 +1127,8 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constru
     if (!log_type.has_value()) {
         throw std::logic_error("log_type conversion bug");
     }
+    hash_tree_target target{hash_tree_target::uarch};
+    ju_get_opt_field(jk, "hash_tree_target"s, target, new_path);
     std::vector<access> accesses;
     ju_get_vector_like_field(jk, "accesses"s, accesses, new_path);
     for (unsigned i = 0; i < accesses.size(); ++i) {
@@ -1149,7 +1153,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, not_default_constru
             }
         }
     }
-    optional.emplace(std::move(accesses), std::move(brackets), std::move(notes), log_type.value());
+    optional.emplace(std::move(accesses), std::move(brackets), std::move(notes), log_type.value(), target);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key,
@@ -1527,6 +1531,44 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, hash_tree_target &value, const std::string &path) {
+    if (!contains(j, key)) {
+        return;
+    }
+    std::string temp{};
+    ju_get_field(j, key, temp, path);
+    auto maybe_hash_tree_target = parse_hash_tree_target(temp.c_str());
+    if (maybe_hash_tree_target.has_value()) {
+        value = maybe_hash_tree_target.value();
+        return;
+    }
+
+    throw std::invalid_argument("field \""s + path + to_string(key) + "\" has invalid value");
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, hash_tree_target &value,
+    const std::string &base);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, hash_tree_target &value,
+    const std::string &base);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, hash_tree_config &value, const std::string &path) {
+    if (!contains(j, key)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    ju_get_field(jconfig, "target"s, value.target, new_path);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, hash_tree_config &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, hash_tree_config &value,
+    const std::string &path);
+
+template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_processor_config &value, const std::string &path) {
     if (!contains(j, key)) {
         return;
@@ -1627,6 +1669,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, machine_config &val
     ju_get_opt_field(config, "htif"s, value.htif, new_path);
     ju_get_opt_field(config, "uarch"s, value.uarch, new_path);
     ju_get_opt_field(config, "cmio"s, value.cmio, new_path);
+    ju_get_opt_field(config, "hash_tree"s, value.hash_tree, new_path);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, machine_config &value,
@@ -1687,14 +1730,14 @@ void to_json(nlohmann::json &j, const machine::reg &reg) {
     j = reg_to_name(reg);
 }
 
-void to_json(nlohmann::json &j, const machine_merkle_tree::hash_type &h) {
+void to_json(nlohmann::json &j, const machine_hash &h) {
     j = encode_base64(h);
 }
 
-void to_json(nlohmann::json &j, const std::vector<machine_merkle_tree::hash_type> &hs) {
+void to_json(nlohmann::json &j, const std::vector<machine_hash> &hs) {
     j = nlohmann::json::array();
     std::transform(hs.cbegin(), hs.cend(), std::back_inserter(j),
-        [](const machine_merkle_tree::hash_type &h) -> nlohmann::json { return h; });
+        [](const machine_hash &h) -> nlohmann::json { return h; });
 }
 
 void to_json(nlohmann::json &j, const machine_merkle_tree::proof_type &p) {
@@ -1764,7 +1807,9 @@ void to_json(nlohmann::json &j, const access_log::type &log_type) {
 }
 
 void to_json(nlohmann::json &j, const access_log &log) {
-    j = nlohmann::json{{"log_type", log.get_log_type()}, {"accesses", log.get_accesses()}};
+    j = nlohmann::json{{"log_type", log.get_log_type()}, {"hash_tree_target", log.get_hash_tree_target()},
+        {"accesses", log.get_accesses()}};
+
     if (log.get_log_type().has_annotations()) {
         j["notes"] = log.get_notes();
         j["brackets"] = log.get_brackets();
@@ -1955,6 +2000,23 @@ void to_json(nlohmann::json &j, const uarch_config &config) {
     };
 }
 
+void to_json(nlohmann::json &j, const hash_tree_target &target) {
+    switch (target) {
+        case hash_tree_target::uarch:
+            j = "uarch";
+            break;
+        case hash_tree_target::risc0:
+            j = "risc0";
+            break;
+    }
+}
+
+void to_json(nlohmann::json &j, const hash_tree_config &config) {
+    j = nlohmann::json{
+        {"target", config.target},
+    };
+}
+
 void to_json(nlohmann::json &j, const machine_config &config) {
     j = nlohmann::json{
         {"processor", config.processor},
@@ -1968,6 +2030,7 @@ void to_json(nlohmann::json &j, const machine_config &config) {
         {"htif", config.htif},
         {"uarch", config.uarch},
         {"cmio", config.cmio},
+        {"hash_tree", config.hash_tree},
     };
 }
 

@@ -31,8 +31,6 @@
 using namespace cartesi;
 
 using tree_type = machine_merkle_tree;
-using hash_type = tree_type::hash_type;
-using hashertype = tree_type::hasher_type;
 using proof_type = tree_type::proof_type;
 
 static_assert(PMA_PAGE_SIZE == tree_type::get_page_size(), "PMA and machine_merkle_tree page sizes must match");
@@ -55,9 +53,9 @@ Options:
 }
 
 int main(int argc, char *argv[]) try {
-    tree_type tree{};
-    hashertype hasher{};
-    hash_type hash{};
+    tree_type tree{hash_tree_target::uarch};
+    auto hasher = tree.make_hasher();
+    machine_hash hash{};
 
     // Process command line arguments
     for (int i = 1; i < argc; ++i) {

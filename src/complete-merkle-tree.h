@@ -21,7 +21,7 @@
 #include <type_traits>
 #include <vector>
 
-#include "keccak-256-hasher.h"
+#include "i-hasher.h"
 #include "merkle-tree-proof.h"
 #include "meta.h"
 #include "pristine-merkle-tree.h"
@@ -38,34 +38,29 @@ namespace cartesi {
 /// The tree is optimized to store only the hashes that are not pristine.
 class complete_merkle_tree {
 public:
-    /// \brief Hasher class.
-    using hasher_type = keccak_256_hasher;
-
-    /// \brief Storage for a hash.
-    using hash_type = hasher_type::hash_type;
-
     /// \brief Storage for an address.
     using address_type = uint64_t;
 
     /// \brief Storage for a proof.
-    using proof_type = merkle_tree_proof<hash_type, address_type>;
+    using proof_type = merkle_tree_proof;
 
     /// \brief Storage for a level in the tree.
-    using level_type = std::vector<hash_type>;
+    using level_type = std::vector<machine_hash>;
 
     /// \brief Constructor for pristine tree
     /// \param log2_root_size Log<sub>2</sub> of tree size
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
-    complete_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size);
+    complete_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, i_hasher h);
 
     /// \brief Constructor from non-pristine leaves (assumed flushed left)
     /// \param log2_root_size Log<sub>2</sub> of tree size
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
+    /// \param hasher Hasher
     template <typename L>
-    complete_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, L &&leaves) :
-        complete_merkle_tree{log2_root_size, log2_leaf_size, log2_word_size} {
+    complete_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, i_hasher hasher, L &&leaves) :
+        complete_merkle_tree{log2_root_size, log2_leaf_size, log2_word_size, hasher} {
         static_assert(std::is_same_v<level_type, typename remove_cvref<L>::type>, "not a leaves vector");
         get_level(get_log2_leaf_size()) = std::forward<L>(leaves);
         bubble_up();
@@ -73,14 +68,14 @@ public:
 
     /// \brief Returns the tree's root hash
     /// \returns Root hash
-    hash_type get_root_hash() const {
+    machine_hash get_root_hash() const {
         return get_node_hash(0, get_log2_root_size());
     }
 
     /// \brief Returns the hash of a node at a given address of a given size
     /// \param address Node address
     /// \param log2_size Log<sub>2</sub> size subintended by node
-    const hash_type &get_node_hash(address_type address, int log2_size) const;
+    const machine_hash &get_node_hash(address_type address, int log2_size) const;
 
     /// \brief Returns proof for a given node
     /// \param address Node address
@@ -90,7 +85,7 @@ public:
 
     /// \brief Appends a new leaf hash to the tree
     /// \param hash Hash to append
-    void push_back(const hash_type &hash);
+    void push_back(const machine_hash &hash);
 
     /// \brief Returns number of leaves in tree
     address_type size() const {
@@ -131,6 +126,7 @@ private:
 
     int m_log2_root_size;            ///< Log<sub>2</sub> of tree size
     int m_log2_leaf_size;            ///< Log<sub>2</sub> of page size
+    mutable i_hasher m_hasher;       ///< Hash function
     pristine_merkle_tree m_pristine; ///< Pristine hashes for all levels
     std::vector<level_type> m_tree;  ///< Merkle tree
 };

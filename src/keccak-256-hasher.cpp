@@ -21,6 +21,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 
 namespace cartesi {
 
@@ -40,9 +41,7 @@ constexpr size_t KECCAK_WORD_COUNT = 25;
 constexpr size_t KECCAK_RSIZE = (KECCAK_WORD_COUNT * sizeof(uint64_t)) - (static_cast<size_t>(2) * KECCAK_HASH_SIZE);
 
 template <size_t ParallelCount>
-struct uint64_vector_type {
-    using type = uint64_t __attribute__((vector_size(64)));
-};
+struct uint64_vector_type;
 
 template <>
 struct uint64_vector_type<1> {
@@ -124,19 +123,10 @@ struct alignas(CACHE_LINE_SIZE) keccak_ctx final {
             }
         }
     }
-
-    template <size_t SpanExtent>
-    static FORCE_INLINE void hash(const std::array<std::span<const uint8_t, SpanExtent>, ParallelCount> &data,
-        const std::array<machine_hash_view, ParallelCount> &hashes) noexcept {
-        keccak_ctx ctx;
-        ctx.update(data);
-        ctx.final(hashes);
-    }
-
     template <size_t ConcatCount, size_t SpanExtent>
-    static FORCE_INLINE void concat_hash(
-        const std::array<std::array<std::span<const uint8_t, SpanExtent>, ParallelCount>, ConcatCount> &data,
-        const std::array<machine_hash_view, ParallelCount> &hashes) noexcept {
+    static FORCE_INLINE void parallel_concat_hash(
+        array2d<std::span<const uint8_t, SpanExtent>, ConcatCount, ParallelCount> data,
+        std::array<machine_hash_view, ParallelCount> hashes) noexcept {
         keccak_ctx ctx;
         UNROLL_LOOP(MAX_CONCAT_COUNT)
         for (size_t i = 0; i < ConcatCount; ++i) {
@@ -150,45 +140,160 @@ struct alignas(CACHE_LINE_SIZE) keccak_ctx final {
 
 // Generic implementations
 
-MULTIVERSION_GENERIC void keccak_hash(std::span<const uint8_t> data, machine_hash_view hash) noexcept {
-    keccak_ctx<1>::hash(std::array<std::span<const uint8_t>, 1>{data}, std::array<machine_hash_view, 1>{hash});
+MULTIVERSION_GENERIC void keccak_data_1x1(const array2d<std::span<const uint8_t>, 1, 1> &data,
+    const std::array<machine_hash_view, 1> &hash) noexcept {
+    keccak_ctx<1>::parallel_concat_hash<1>(data, hash);
 }
-MULTIVERSION_GENERIC void keccak_hash(const_hash_tree_word_view data, machine_hash_view hash) noexcept {
-    keccak_ctx<1>::hash(std::array<std::span<const uint8_t>, 1>{data}, std::array<machine_hash_view, 1>{hash});
+MULTIVERSION_GENERIC void keccak_word_1x1(const array2d<const_hash_tree_word_view, 1, 1> &data,
+    const std::array<machine_hash_view, 1> &hash) noexcept {
+    keccak_ctx<1>::parallel_concat_hash(data, hash);
 }
-MULTIVERSION_GENERIC void keccak_concat_hash(std::span<const uint8_t> data1, std::span<const uint8_t> data2,
-    machine_hash_view hash) noexcept {
-    keccak_ctx<1>::concat_hash<2>(
-        std::array<std::array<std::span<const uint8_t>, 1>, 2>{std::array<std::span<const uint8_t>, 1>{data1}, {data2}},
-        std::array<machine_hash_view, 1>{hash});
+MULTIVERSION_GENERIC void keccak_word_1x2(const array2d<const_hash_tree_word_view, 1, 2> &data,
+    const std::array<machine_hash_view, 2> &hash) noexcept {
+    keccak_ctx<2>::parallel_concat_hash(data, hash);
 }
-MULTIVERSION_GENERIC void keccak_concat_hash(const_machine_hash_view data1, const_machine_hash_view data2,
-    machine_hash_view hash) noexcept {
-    keccak_ctx<1>::concat_hash<2>(
-        std::array<std::array<std::span<const uint8_t>, 1>, 2>{std::array<std::span<const uint8_t>, 1>{data1}, {data2}},
-        std::array<machine_hash_view, 1>{hash});
+MULTIVERSION_GENERIC void keccak_word_1x4(const array2d<const_hash_tree_word_view, 1, 4> &data,
+    const std::array<machine_hash_view, 4> &hash) noexcept {
+    keccak_ctx<4>::parallel_concat_hash(data, hash);
+}
+MULTIVERSION_GENERIC void keccak_word_1x8(const array2d<const_hash_tree_word_view, 1, 8> &data,
+    const std::array<machine_hash_view, 8> &hash) noexcept {
+    keccak_ctx<8>::parallel_concat_hash(data, hash);
+}
+MULTIVERSION_GENERIC void keccak_data_2x1(const array2d<std::span<const uint8_t>, 2, 1> &data,
+    const std::array<machine_hash_view, 1> &hash) noexcept {
+    keccak_ctx<1>::parallel_concat_hash(data, hash);
+}
+MULTIVERSION_GENERIC void keccak_hash_2x1(const array2d<const_machine_hash_view, 2, 1> &data,
+    const std::array<machine_hash_view, 1> &hash) noexcept {
+    keccak_ctx<1>::parallel_concat_hash(data, hash);
+}
+MULTIVERSION_GENERIC void keccak_hash_2x2(const array2d<const_machine_hash_view, 2, 2> &data,
+    const std::array<machine_hash_view, 2> &hash) noexcept {
+    keccak_ctx<2>::parallel_concat_hash(data, hash);
+}
+MULTIVERSION_GENERIC void keccak_hash_2x4(const array2d<const_machine_hash_view, 2, 4> &data,
+    const std::array<machine_hash_view, 4> &hash) noexcept {
+    keccak_ctx<4>::parallel_concat_hash(data, hash);
+}
+MULTIVERSION_GENERIC void keccak_hash_2x8(const array2d<const_machine_hash_view, 2, 8> &data,
+    const std::array<machine_hash_view, 8> &hash) noexcept {
+    keccak_ctx<8>::parallel_concat_hash(data, hash);
 }
 
 // x86_64 implementations
 
 #ifdef USE_MULTIVERSINING_AMD64
-MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_hash(std::span<const uint8_t> data, machine_hash_view hash) noexcept {
-    keccak_ctx<1>::hash(std::array<std::span<const uint8_t>, 1>{data}, std::array<machine_hash_view, 1>{hash});
+
+MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_data_1x1(const array2d<std::span<const uint8_t>, 1, 1> &data,
+    const std::array<machine_hash_view, 1> &hash) noexcept {
+    keccak_ctx<1>::parallel_concat_hash<1>(data, hash);
 }
-MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_hash(const_hash_tree_word_view data, machine_hash_view hash) noexcept {
-    keccak_ctx<1>::hash(std::array<std::span<const uint8_t>, 1>{data}, std::array<machine_hash_view, 1>{hash});
+MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_word_1x1(const array2d<const_hash_tree_word_view, 1, 1> &data,
+    const std::array<machine_hash_view, 1> &hash) noexcept {
+    keccak_ctx<1>::parallel_concat_hash(data, hash);
 }
-MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_concat_hash(std::span<const uint8_t> data1, std::span<const uint8_t> data2,
-    machine_hash_view hash) noexcept {
-    keccak_ctx<1>::concat_hash<2>(
-        std::array<std::array<std::span<const uint8_t>, 1>, 2>{std::array<std::span<const uint8_t>, 1>{data1}, {data2}},
-        std::array<machine_hash_view, 1>{hash});
+MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_word_1x2(const array2d<const_hash_tree_word_view, 1, 2> &data,
+    const std::array<machine_hash_view, 2> &hash) noexcept {
+    keccak_ctx<2>::parallel_concat_hash(data, hash);
 }
-MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_concat_hash(const_machine_hash_view data1, const_machine_hash_view data2,
-    machine_hash_view hash) noexcept {
-    keccak_ctx<1>::concat_hash<2>(
-        std::array<std::array<std::span<const uint8_t>, 1>, 2>{std::array<std::span<const uint8_t>, 1>{data1}, {data2}},
-        std::array<machine_hash_view, 1>{hash});
+MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_word_1x4(const array2d<const_hash_tree_word_view, 1, 4> &data,
+    const std::array<machine_hash_view, 4> &hash) noexcept {
+    keccak_ctx<4>::parallel_concat_hash(data, hash);
+}
+MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_word_1x8(const array2d<const_hash_tree_word_view, 1, 8> &data,
+    const std::array<machine_hash_view, 8> &hash) noexcept {
+    keccak_ctx<4>::parallel_concat_hash(array2d<const_hash_tree_word_view, 1, 4>{{{
+                                            data[0][0],
+                                            data[0][1],
+                                            data[0][2],
+                                            data[0][3],
+                                        }}},
+        std::array<machine_hash_view, 4>{
+            hash[0],
+            hash[1],
+            hash[2],
+            hash[3],
+        });
+    keccak_ctx<4>::parallel_concat_hash(array2d<const_hash_tree_word_view, 1, 4>{{{
+                                            data[0][4],
+                                            data[0][5],
+                                            data[0][6],
+                                            data[0][7],
+                                        }}},
+        std::array<machine_hash_view, 4>{
+            hash[4],
+            hash[5],
+            hash[6],
+            hash[7],
+        });
+}
+MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_data_2x1(const array2d<std::span<const uint8_t>, 2, 1> &data,
+    const std::array<machine_hash_view, 1> &hash) noexcept {
+    keccak_ctx<1>::parallel_concat_hash(data, hash);
+}
+MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_hash_2x1(const array2d<const_machine_hash_view, 2, 1> &data,
+    const std::array<machine_hash_view, 1> &hash) noexcept {
+    keccak_ctx<1>::parallel_concat_hash(data, hash);
+}
+MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_hash_2x2(const array2d<const_machine_hash_view, 2, 2> &data,
+    const std::array<machine_hash_view, 2> &hash) noexcept {
+    keccak_ctx<2>::parallel_concat_hash(data, hash);
+}
+MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_hash_2x4(const array2d<const_machine_hash_view, 2, 4> &data,
+    const std::array<machine_hash_view, 4> &hash) noexcept {
+    keccak_ctx<4>::parallel_concat_hash(data, hash);
+}
+MULTIVERSION_AMD64_AVX2_BMI_BMI2 void keccak_hash_2x8(const array2d<const_machine_hash_view, 2, 8> &data,
+    const std::array<machine_hash_view, 8> &hash) noexcept {
+    keccak_ctx<4>::parallel_concat_hash(array2d<const_machine_hash_view, 2, 4>{{
+                                            {
+                                                data[0][0],
+                                                data[0][1],
+                                                data[0][2],
+                                                data[0][3],
+                                            },
+                                            {
+                                                data[1][0],
+                                                data[1][1],
+                                                data[1][2],
+                                                data[1][3],
+                                            },
+                                        }},
+        std::array<machine_hash_view, 4>{
+            hash[0],
+            hash[1],
+            hash[2],
+            hash[3],
+        });
+    keccak_ctx<4>::parallel_concat_hash(array2d<const_machine_hash_view, 2, 4>{{
+                                            {
+                                                data[0][4],
+                                                data[0][5],
+                                                data[0][6],
+                                                data[0][7],
+                                            },
+                                            {
+                                                data[1][4],
+                                                data[1][5],
+                                                data[1][6],
+                                                data[1][7],
+                                            },
+                                        }},
+        std::array<machine_hash_view, 4>{
+            hash[4],
+            hash[5],
+            hash[6],
+            hash[7],
+        });
+}
+MULTIVERSION_AMD64_AVX512_BMI_BMI2 void keccak_word_1x8(const array2d<const_hash_tree_word_view, 1, 8> &data,
+    const std::array<machine_hash_view, 8> &hash) noexcept {
+    keccak_ctx<8>::parallel_concat_hash(data, hash);
+}
+MULTIVERSION_AMD64_AVX512_BMI_BMI2 void keccak_hash_2x8(const array2d<const_machine_hash_view, 2, 8> &data,
+    const std::array<machine_hash_view, 8> &hash) noexcept {
+    keccak_ctx<8>::parallel_concat_hash(data, hash);
 }
 #endif
 

@@ -28,6 +28,7 @@
 #include <stdexcept>
 #include <type_traits>
 
+#include "array2d.h"
 #include "concepts.h"
 #include "hash-tree-constants.h"
 #include "machine-hash.h"
@@ -36,6 +37,8 @@
 namespace cartesi {
 
 using const_hash_tree_word_view = std::span<const unsigned char, HASH_TREE_WORD_SIZE>;
+
+constexpr int HASHER_MAX_PARALLEL_COUNT = 8; ///< Maximum number of parallel hashes
 
 /// \brief Hasher interface.
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
@@ -54,28 +57,37 @@ class i_hasher { // CRTP
 public:
     template <ContiguousRangeOfByteLike D>
     void hash(D &&data, machine_hash_view hash) noexcept { // NOLINT(cppcoreguidelines-missing-std-forward)
-        return derived().do_hash(
-            std::span<const uint8_t>{std::bit_cast<const uint8_t *>(std::ranges::data(data)), std::ranges::size(data)},
-            hash);
+        auto data_span =
+            std::span<const uint8_t>{std::bit_cast<const uint8_t *>(std::ranges::data(data)), std::ranges::size(data)};
+        return derived().do_parallel_concat_hash(array2d<std::span<const uint8_t>, 1, 1>{{{data_span}}},
+            std::array<machine_hash_view, 1>{hash});
     }
 
     void hash(const_hash_tree_word_view data, machine_hash_view hash) noexcept {
-        return derived().do_hash(data, hash);
+        return derived().do_parallel_concat_hash(array2d<const_hash_tree_word_view, 1, 1>{{{data}}},
+            std::array<machine_hash_view, 1>{hash});
     }
 
     template <ContiguousRangeOfByteLike D>
     void concat_hash(D &&data1, D &&data2, // NOLINT(cppcoreguidelines-missing-std-forward)
         machine_hash_view hash) noexcept {
-        return derived().do_concat_hash(
-            std::span<const uint8_t>{std::bit_cast<const uint8_t *>(std::ranges::data(data1)),
-                std::ranges::size(data1)},
-            std::span<const uint8_t>{std::bit_cast<const uint8_t *>(std::ranges::data(data2)),
-                std::ranges::size(data2)},
-            hash);
+        auto data1_span = std::span<const uint8_t>{std::bit_cast<const uint8_t *>(std::ranges::data(data1)),
+            std::ranges::size(data1)};
+        auto data2_span = std::span<const uint8_t>{std::bit_cast<const uint8_t *>(std::ranges::data(data2)),
+            std::ranges::size(data2)};
+        return derived().do_parallel_concat_hash(array2d<std::span<const uint8_t>, 2, 1>{{{data1_span}, {data2_span}}},
+            std::array<machine_hash_view, 1>{hash});
     }
 
     void concat_hash(const_machine_hash_view data1, const_machine_hash_view data2, machine_hash_view hash) noexcept {
-        return derived().do_concat_hash(data1, data2, hash);
+        return derived().do_parallel_concat_hash(array2d<const_machine_hash_view, 2, 1>{{{data1}, {data2}}},
+            std::array<machine_hash_view, 1>{hash});
+    }
+
+    template <size_t ConcatCount, size_t ParallelCount>
+    void parallel_concat_hash(const array2d<const_hash_tree_word_view, ConcatCount, ParallelCount> &data,
+        const std::array<machine_hash_view, ParallelCount> &hash) noexcept {
+        return derived().do_parallel_concat_hash(data, hash);
     }
 };
 

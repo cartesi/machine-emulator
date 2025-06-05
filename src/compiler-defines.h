@@ -60,6 +60,7 @@
 #define USE_MULTIVERSINING_AMD64
 #define MULTIVERSION_GENERIC __attribute__((target("default")))
 #define MULTIVERSION_AMD64_AVX2_BMI_BMI2 __attribute__((target("avx2,bmi,bmi2")))
+#define MULTIVERSION_AMD64_AVX512_BMI_BMI2 __attribute__((target("avx512f,avx512vl,bmi,bmi2")))
 #define MULTIVERSION_AMD64_AVX2 __attribute__((target("avx2")))
 #else
 #define MULTIVERSION_GENERIC __attribute__((noinline))

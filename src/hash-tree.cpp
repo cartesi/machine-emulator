@@ -26,6 +26,7 @@
 
 #include <omp.h>
 
+#include "i-hasher.h"
 #include "machine-address-ranges.h"
 #include "signposts.h"
 
@@ -184,12 +185,27 @@ bool hash_tree::update_dirty_page(hasher_type &h, address_range &ar, page_hash_t
     }
     const auto offset = paddr_page - ar.get_start();
     const auto page_view = std::span<const unsigned char, HASH_TREE_PAGE_SIZE>{base + offset, HASH_TREE_PAGE_SIZE};
-    auto ret = m_page_cache.update_entry(h, page_view, entry);
+    parallel_hash_queue queue;
+    auto ret = m_page_cache.enqueue_hash_entry(h, page_view, entry, queue);
+    queue.flush(h);
     auto node_hash_view = ar.get_dense_hash_tree().node_hash_view(offset, HASH_TREE_LOG2_PAGE_SIZE);
     changed = !std::ranges::equal(entry.root_hash_view(), node_hash_view);
     if (changed) {
         std::ranges::copy(entry.root_hash_view(), node_hash_view.begin());
     }
+    return ret;
+}
+
+bool hash_tree::enqueue_hash_dirty_page(hasher_type &h, address_range &ar, page_hash_tree_cache::entry &entry,
+    parallel_hash_queue &queue) {
+    const auto paddr_page = entry.get_paddr_page();
+    const auto *base = ar.get_host_memory();
+    if (!ar.is_memory() || base == nullptr || !ar.contains_absolute(paddr_page, HASH_TREE_PAGE_SIZE)) {
+        return false;
+    }
+    const auto offset = paddr_page - ar.get_start();
+    const auto page_view = std::span<const unsigned char, HASH_TREE_PAGE_SIZE>{base + offset, HASH_TREE_PAGE_SIZE};
+    auto ret = m_page_cache.enqueue_hash_entry(h, page_view, entry, queue);
     return ret;
 }
 
@@ -202,13 +218,30 @@ bool hash_tree::return_updated_dirty_pages(address_ranges ars, dirty_pages &batc
     std::atomic<int> update_failed{0}; // NOLINT(misc-const-correctness)
     //??D The batch size past which we switch to parallel updates needs to be tuned empirically
     hasher_type h; // NOLINT(misc-const-correctness)
+    constexpr int block_size = HASHER_MAX_PARALLEL_COUNT;
 #pragma omp parallel for private(h) if (batch_size > m_concurrency * 4)
-    // NOLINTNEXTLINE(modernize-loop-convert)
-    for (int i = 0; i < batch_size; ++i) {
-        auto &[ar_index, br, changed] = batch[i];
-        auto &ar = ars[ar_index];
-        if (!update_dirty_page(h, ar, br, changed)) {
-            update_failed.store(1, std::memory_order_relaxed);
+    for (int i = 0; i < batch_size; i += block_size) {
+        // Queue entries to be hashed
+        parallel_hash_queue queue;
+        for (int j = i; j < std::min(batch_size, i + block_size); ++j) {
+            auto &[ar_index, br, changed] = batch[j];
+            auto &ar = ars[ar_index];
+            if (!enqueue_hash_dirty_page(h, ar, br, queue)) {
+                update_failed.store(1, std::memory_order_relaxed);
+            }
+        }
+        // Flush remaining parallel hashes
+        queue.flush(h);
+        // Update changed entries
+        for (int j = i; j < std::min(batch_size, i + block_size); ++j) {
+            auto &[ar_index, br, changed] = batch[j];
+            auto &ar = ars[ar_index];
+            const auto offset = br.get_paddr_page() - ar.get_start();
+            auto node_hash_view = ar.get_dense_hash_tree().node_hash_view(offset, HASH_TREE_LOG2_PAGE_SIZE);
+            changed = !std::ranges::equal(br.root_hash_view(), node_hash_view);
+            if (changed) {
+                std::ranges::copy(br.root_hash_view(), node_hash_view.begin());
+            }
         }
     }
     // Return all entries and collect address ranges that were actually changed by update

@@ -389,13 +389,13 @@
           "description": "Whether to clear the stats after retrieving them",
           "required": true,
           "schema": {
-              "type": "boolean"
+            "type": "boolean"
           }
         }
       ],
       "result": {
         "name": "stats",
-        "description": "Statistics for the hash tre",
+        "description": "Statistics for the hash tree",
         "schema": {
           "$ref": "#/components/schemas/HashTreeStats"
         }

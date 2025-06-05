@@ -17,6 +17,7 @@
 #ifndef REPLAY_STEP_STATE_ACCESS_H
 #define REPLAY_STEP_STATE_ACCESS_H
 
+#include <algorithm>
 #include <cassert>
 #include <cstdlib>
 #include <optional>
@@ -27,6 +28,7 @@
 #include "i-accept-scoped-notes.h"
 #include "i-prefer-shadow-state.h"
 #include "i-state-access.h"
+#include "machine-reg.h"
 #include "mock-address-range.h"
 #include "pmas.h"
 #include "replay-step-state-access-interop.h"

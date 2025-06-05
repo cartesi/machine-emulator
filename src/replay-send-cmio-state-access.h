@@ -32,6 +32,7 @@
 #include "hash-tree.h"
 #include "i-hasher.h"
 #include "i-state-access.h"
+#include "machine-reg.h"
 #include "meta.h"
 #include "riscv-constants.h"
 #include "shadow-registers.h"

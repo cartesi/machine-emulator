@@ -123,7 +123,7 @@ int main(int argc, char *argv[]) try {
     // Get uarch state hash
     auto uarch_state_hash = tree.get_root_hash();
     // Print header
-    std::cout << "// This file is auto-generated and should not be modified" << std::endl;
+    std::cout << "// This file is auto-generated and should not be modified\n";
     // Print hash
     std::cout << "unsigned char uarch_pristine_hash[] = {\n  ";
     int i = 0;
@@ -136,8 +136,7 @@ int main(int argc, char *argv[]) try {
         std::cout << "0x" << std::setw(2) << std::setfill('0') << std::hex << static_cast<int>(c);
         i++;
     }
-    std::cout << "\n};\nunsigned int uarch_pristine_hash_len = " << std::dec << uarch_state_hash.size() << ";"
-              << std::endl;
+    std::cout << "\n};\nunsigned int uarch_pristine_hash_len = " << std::dec << uarch_state_hash.size() << ";\n";
     return 0;
 } catch (std::exception &e) {
     std::cerr << "Caught exception: " << e.what() << '\n';

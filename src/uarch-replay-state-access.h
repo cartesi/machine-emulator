@@ -33,6 +33,8 @@
 #include "i-hasher.h"
 #include "i-prefer-shadow-uarch-state.h"
 #include "i-uarch-state-access.h"
+#include "machine-reg.h"
+#include "machine.h"
 #include "meta.h"
 #include "shadow-tlb.h"
 #include "shadow-uarch-state.h"

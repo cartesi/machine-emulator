@@ -59,10 +59,10 @@ class parallel_hash_queue {
         machine_hash_view result;
     };
 
-    static constexpr size_t QUEUE_LOG2_HEIGHT = HASH_TREE_LOG2_PAGE_SIZE - HASH_TREE_LOG2_WORD_SIZE;
+    static constexpr int QUEUE_LOG2_HEIGHT = HASH_TREE_LOG2_PAGE_SIZE - HASH_TREE_LOG2_WORD_SIZE;
+    static constexpr int QUEUE_MAX_SIZE = (1 << (QUEUE_LOG2_HEIGHT - 1)) * HASHER_MAX_PARALLEL_COUNT;
     boost::container::static_vector<leaf_entry, HASHER_MAX_PARALLEL_COUNT> m_leaves_queue;
-    std::array<boost::container::static_vector<node_entry, HASHER_MAX_PARALLEL_COUNT>, QUEUE_LOG2_HEIGHT>
-        m_nodes_queues{};
+    std::array<boost::container::static_vector<node_entry, QUEUE_MAX_SIZE>, QUEUE_LOG2_HEIGHT> m_nodes_queues{};
 
     template <IHasher H>
     void flush_leaves(H &h) {
@@ -133,7 +133,7 @@ class parallel_hash_queue {
     void flush_nodes(H &h, int log2_level) {
         auto &q = m_nodes_queues[log2_level - 1];
         size_t i = q.size();
-        if (likely(i >= 8)) { // x8 parallel hashing
+        while (i >= 8) { // x8 parallel hashing
             i -= 8;
             h.parallel_concat_hash(array2d<const_machine_hash_view, 2, 8>{{
                                        {
@@ -225,39 +225,28 @@ public:
     /// \brief Enqueues a leaf for hashing
     template <IHasher H>
     void enqueue_hash_leaf(H &h, const_hash_tree_word_view data, machine_hash_view result) {
+        m_leaves_queue.emplace_back(leaf_entry{.data = data, .result = result});
         if (unlikely(m_leaves_queue.size() == m_leaves_queue.capacity())) {
-            // Leaves queue is full, flush it first
+            // Leaves queue is full, flush it
             flush_leaves(h);
         }
-        m_leaves_queue.emplace_back(leaf_entry{.data = data, .result = result});
     }
 
     /// \brief Enqueues a node for hashing
-    template <IHasher H>
-    void enqueue_hash_node(H &h, int log2_level, const_machine_hash_view left, const_machine_hash_view right,
+    void enqueue_hash_node(int log2_level, const_machine_hash_view left, const_machine_hash_view right,
         machine_hash_view result) {
         assert(log2_level >= 1 || log2_level < static_cast<int>(m_nodes_queues.size() + 1));
         auto &nodes_queue = m_nodes_queues[log2_level - 1];
-        if (unlikely(nodes_queue.size() == nodes_queue.capacity())) {
-            // Node queue for this level is full, flush lower levels first up to this level
-            flush_up_to(h, log2_level);
-        }
         nodes_queue.emplace_back(node_entry{.left = left, .right = right, .result = result});
-    }
-
-    /// \brief Flushes all leaves and nodes up to a given max log2 level
-    template <IHasher H>
-    void flush_up_to(H &h, int max_log2_level) {
-        flush_leaves(h);
-        for (int log2_level = 1; log2_level <= max_log2_level; ++log2_level) {
-            flush_nodes(h, log2_level);
-        }
     }
 
     /// \brief Flushes the entire queue
     template <IHasher H>
     void flush(H &h) {
-        flush_up_to(h, static_cast<int>(m_nodes_queues.size()));
+        flush_leaves(h);
+        for (int log2_level = 1; log2_level <= QUEUE_LOG2_HEIGHT; ++log2_level) {
+            flush_nodes(h, log2_level);
+        }
     }
 };
 
@@ -511,7 +500,7 @@ public:
             const int index = dirty_nodes.front();
             dirty_nodes.pop_front();
             ++inner_page_hashes;
-            queue.enqueue_hash_node(h, e.log2_level(index), page_tree[e.left_child(index)],
+            queue.enqueue_hash_node(e.log2_level(index), page_tree[e.left_child(index)],
                 page_tree[e.right_child(index)], page_tree[index]);
             if (index != 1) {
                 dirty_nodes.try_push_back(e.parent(index));

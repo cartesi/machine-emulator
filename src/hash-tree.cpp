@@ -219,7 +219,7 @@ bool hash_tree::return_updated_dirty_pages(address_ranges ars, dirty_pages &batc
     //??D The batch size past which we switch to parallel updates needs to be tuned empirically
     hasher_type h; // NOLINT(misc-const-correctness)
     constexpr int block_size = HASHER_MAX_PARALLEL_COUNT;
-#pragma omp parallel for private(h) if (batch_size > m_concurrency * 4)
+#pragma omp parallel for private(h) if (batch_size > m_concurrency * block_size)
     for (int i = 0; i < batch_size; i += block_size) {
         // Queue entries to be hashed
         parallel_hash_queue queue;

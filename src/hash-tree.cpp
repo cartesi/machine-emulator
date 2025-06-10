@@ -202,7 +202,7 @@ bool hash_tree::return_updated_dirty_pages(address_ranges ars, dirty_pages &batc
     std::atomic<int> update_failed{0}; // NOLINT(misc-const-correctness)
     //??D The batch size past which we switch to parallel updates needs to be tuned empirically
     hasher_type h; // NOLINT(misc-const-correctness)
-#pragma omp parallel for private(h) if (batch_size > m_concurrency * 4)
+#pragma omp parallel for private(h) schedule(dynamic) if (batch_size > m_concurrency * 4)
     // NOLINTNEXTLINE(modernize-loop-convert)
     for (int i = 0; i < batch_size; ++i) {
         auto &[ar_index, br, changed] = batch[i];
@@ -312,7 +312,7 @@ void hash_tree::update_and_clear_dense_node_entries(dense_node_entries &batch, i
     //??D The batch size past which we switch to parallel updates needs to be tuned empirically
     int updates = 0;
     hasher_type h; // NOLINT(misc-const-correctness)
-#pragma omp parallel for private(h, updates) if (batch_size > m_concurrency * 32)
+#pragma omp parallel for private(h, updates) schedule(dynamic) if (batch_size > m_concurrency * 32)
     // NOLINTNEXTLINE(modernize-loop-convert)
     for (decltype(batch.size()) i = 0; i < batch.size(); ++i) {
         auto &[dht, offset] = batch[i];
@@ -529,6 +529,7 @@ bool hash_tree::verify(address_ranges ars) const {
 
 bool hash_tree::update(address_ranges ars) {
     SCOPED_SIGNPOST(m_log, m_spid_update, "hash-tree: update", "");
+    auto old_concurrency = omp_get_num_threads();
     omp_set_num_threads(m_concurrency);
     changed_address_ranges changed_ars;
     auto update_succeeded = update_dirty_pages(ars, changed_ars) && update_dense_trees(ars, changed_ars) &&
@@ -538,6 +539,7 @@ bool hash_tree::update(address_ranges ars) {
             ars[ar_index].get_dirty_page_tree().clean();
         }
     }
+    omp_set_num_threads(old_concurrency);
     return update_succeeded;
 }
 

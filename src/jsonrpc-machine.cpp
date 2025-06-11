@@ -538,7 +538,7 @@ jsonrpc_machine::jsonrpc_machine(const std::string &address, int64_t spawn_timeo
 
     // Rebind the forked server to listen on the originally requested address
     std::string rebind_result;
-    request("rebind", std::tie(forked_grand_child.address), rebind_result, timeout_at, false);
+    request("rebind", std::tie(address), rebind_result, timeout_at, false);
     m_address = rebind_result;
 
     // At this point, we've confirmed the remote server is properly initialized and running

@@ -149,7 +149,7 @@ private:
     bool update_dirty_pages(address_ranges ars, changed_address_ranges &changed_ars);
     bool update_dirty_page(hasher_type &h, address_range &ar, page_hash_tree_cache::entry &entry, bool &changed);
     bool enqueue_hash_dirty_page(hasher_type &h, address_range &ar, page_hash_tree_cache::entry &entry,
-        page_simd_tree_hasher &queue);
+        page_simd_tree_hasher &queue, page_hash_tree_cache_stats &stats);
     bool return_updated_dirty_pages(address_ranges ars, dirty_pages &batch, changed_address_ranges &changed_ars);
 
     bool update_dense_trees(address_ranges ars, const changed_address_ranges &changed_ars);
@@ -181,8 +181,8 @@ private:
     const pristine_hashes m_pristine_hashes;
     int m_concurrency;
 
-    std::atomic<uint64_t> m_sparse_node_hashes{0};
-    std::array<std::atomic<uint64_t>, HASH_TREE_LOG2_ROOT_SIZE> m_dense_node_hashes{};
+    uint64_t m_sparse_node_hashes{0};
+    std::array<uint64_t, HASH_TREE_LOG2_ROOT_SIZE> m_dense_node_hashes{};
 };
 
 } // namespace cartesi

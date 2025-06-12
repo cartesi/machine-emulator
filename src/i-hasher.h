@@ -36,6 +36,7 @@
 
 namespace cartesi {
 
+using hash_tree_word_view = std::span<unsigned char, HASH_TREE_WORD_SIZE>;
 using const_hash_tree_word_view = std::span<const unsigned char, HASH_TREE_WORD_SIZE>;
 
 constexpr int HASHER_MAX_PARALLEL_COUNT = 8; ///< Maximum number of parallel hashes

@@ -30,7 +30,7 @@ namespace cartesi {
 
 constexpr int SIMD_HASHER_LANE_COUNT = 8; ///< Number of SIMD hasher lanes
 
-template <typename hasher_type, typename data_type>
+template <typename hasher_type, typename data_type, size_t QueueSize = SIMD_HASHER_LANE_COUNT>
 class simd_data_hasher {
     struct data_entry {
         data_type data;
@@ -38,7 +38,7 @@ class simd_data_hasher {
     };
 
     hasher_type m_hasher;
-    boost::container::static_vector<data_entry, SIMD_HASHER_LANE_COUNT> m_queue{};
+    boost::container::static_vector<data_entry, QueueSize> m_queue{};
 
 public:
     /// \brief Enqueues data for hashing
@@ -55,7 +55,7 @@ public:
     void flush() noexcept {
         auto &q = m_queue;
         size_t i = q.size();
-        if (likely(i >= 8)) { // x8 parallel hashing
+        while (i >= 8) { // x8 parallel hashing
             i -= 8;
             m_hasher.parallel_concat_hash(array2d<data_type, 1, 8>{{{
                                               q[i + 0].data,
@@ -117,7 +117,7 @@ public:
     }
 };
 
-template <typename hasher_type, typename data_type>
+template <typename hasher_type, typename data_type, size_t QueueSize = SIMD_HASHER_LANE_COUNT>
 class simd_concat_hasher {
     struct concat_entry {
         data_type left;
@@ -126,7 +126,7 @@ class simd_concat_hasher {
     };
 
     hasher_type m_hasher;
-    boost::container::static_vector<concat_entry, SIMD_HASHER_LANE_COUNT> m_queue{};
+    boost::container::static_vector<concat_entry, QueueSize> m_queue{};
 
 public:
     /// \brief Enqueues data for concat hashing
@@ -143,7 +143,7 @@ public:
     void flush() noexcept {
         auto &q = m_queue;
         size_t i = q.size();
-        if (i >= 8) { // x8 parallel hashing
+        while (i >= 8) { // x8 parallel hashing
             i -= 8;
             m_hasher.parallel_concat_hash(array2d<data_type, 2, 8>{{
                                               {

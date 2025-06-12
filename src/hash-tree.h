@@ -149,7 +149,7 @@ private:
     bool update_dirty_pages(address_ranges ars, changed_address_ranges &changed_ars);
     bool update_dirty_page(hasher_type &h, address_range &ar, page_hash_tree_cache::entry &entry, bool &changed);
     bool enqueue_hash_dirty_page(hasher_type &h, address_range &ar, page_hash_tree_cache::entry &entry,
-        parallel_hash_queue &queue);
+        page_simd_tree_hasher &queue);
     bool return_updated_dirty_pages(address_ranges ars, dirty_pages &batch, changed_address_ranges &changed_ars);
 
     bool update_dense_trees(address_ranges ars, const changed_address_ranges &changed_ars);

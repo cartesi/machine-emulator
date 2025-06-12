@@ -44,10 +44,11 @@
 #include "ranges.h"
 #include "signposts.h"
 #include "strict-aliasing.h"
+#include "simd-hasher.h"
 
 namespace cartesi {
 
-class parallel_hash_queue {
+class page_simd_tree_hasher {
     struct leaf_entry {
         const_hash_tree_word_view data;
         machine_hash_view result;
@@ -224,7 +225,7 @@ class parallel_hash_queue {
 public:
     /// \brief Enqueues a leaf for hashing
     template <IHasher H>
-    void enqueue_hash_leaf(H &h, const_hash_tree_word_view data, machine_hash_view result) {
+    void enqueue_leaf(H &h, const_hash_tree_word_view data, machine_hash_view result) {
         m_leaves_queue.emplace_back(leaf_entry{.data = data, .result = result});
         if (unlikely(m_leaves_queue.size() == m_leaves_queue.capacity())) {
             // Leaves queue is full, flush it
@@ -233,7 +234,7 @@ public:
     }
 
     /// \brief Enqueues a node for hashing
-    void enqueue_hash_node(int log2_level, const_machine_hash_view left, const_machine_hash_view right,
+    void enqueue_node(int log2_level, const_machine_hash_view left, const_machine_hash_view right,
         machine_hash_view result) {
         assert(log2_level >= 1 || log2_level < static_cast<int>(m_nodes_queues.size() + 1));
         auto &nodes_queue = m_nodes_queues[log2_level - 1];
@@ -455,7 +456,7 @@ public:
     /// \returns True if update succeeded, false otherwise
     template <IHasher H, ContiguousRangeOfByteLike D>
     // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
-    bool enqueue_hash_entry(H &&h, D &&d, entry &e, parallel_hash_queue &queue) noexcept {
+    bool enqueue_hash_entry(H &&h, D &&d, entry &e, page_simd_tree_hasher &queue) noexcept {
         if (std::ranges::size(d) != m_page_size) {
             return false;
         }
@@ -484,7 +485,7 @@ public:
             const auto entry_word = std::span<unsigned char, m_word_size>{entry_page.subspan(offset, m_word_size)};
             const auto page_word = std::span<const unsigned char, m_word_size>{page.subspan(offset, m_word_size)};
             if (unlikely(!std::ranges::equal(entry_word, page_word))) {
-                queue.enqueue_hash_leaf(h, page_word, page_tree[index]);
+                queue.enqueue_leaf(h, page_word, page_tree[index]);
                 std::ranges::copy(page_word, entry_word.begin());
                 dirty_nodes.try_push_back(e.parent(index));
                 ++miss;
@@ -500,7 +501,7 @@ public:
             const int index = dirty_nodes.front();
             dirty_nodes.pop_front();
             ++inner_page_hashes;
-            queue.enqueue_hash_node(e.log2_level(index), page_tree[e.left_child(index)],
+            queue.enqueue_node(e.log2_level(index), page_tree[e.left_child(index)],
                 page_tree[e.right_child(index)], page_tree[index]);
             if (index != 1) {
                 dirty_nodes.try_push_back(e.parent(index));

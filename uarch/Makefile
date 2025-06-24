@@ -164,4 +164,4 @@ clean-auto-generated:
 	@rm -f uarch-pristine-hash.c uarch-pristine-ram.c
 
 clean: clean-executables clean-auto-generated
-	@rm -f *.ld *.elf *.bin *.tmp link.ld $(UARCH_OBJS) $(EMULATOR_OBJS) $(COMPUTE_OBJS) uarch-ram-entry.o *.clang-tidy *.insn.txt *.objdump
+	@rm -f *.ld *.elf *.bin *.tmp *.o $(UARCH_OBJS) $(EMULATOR_OBJS) $(COMPUTE_OBJS) *.clang-tidy *.insn.txt *.objdump

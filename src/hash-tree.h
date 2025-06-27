@@ -147,9 +147,9 @@ private:
     static pristine_hashes get_pristine_hashes();
 
     bool update_dirty_pages(address_ranges ars, changed_address_ranges &changed_ars);
-    bool update_dirty_page(hasher_type &h, address_range &ar, page_hash_tree_cache::entry &entry, bool &changed);
-    bool enqueue_hash_dirty_page(hasher_type &h, address_range &ar, page_hash_tree_cache::entry &entry,
-        page_simd_tree_hasher &queue, page_hash_tree_cache_stats &stats);
+    bool update_dirty_page(address_range &ar, page_hash_tree_cache::entry &entry, bool &changed);
+    bool enqueue_hash_dirty_page(page_hash_tree_cache::simd_hasher<hasher_type> &queue, address_range &ar,
+        page_hash_tree_cache::entry &entry, page_hash_tree_cache_stats &stats);
     bool return_updated_dirty_pages(address_ranges ars, dirty_pages &batch, changed_address_ranges &changed_ars);
 
     bool update_dense_trees(address_ranges ars, const changed_address_ranges &changed_ars);

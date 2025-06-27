@@ -39,8 +39,6 @@ namespace cartesi {
 using hash_tree_word_view = std::span<unsigned char, HASH_TREE_WORD_SIZE>;
 using const_hash_tree_word_view = std::span<const unsigned char, HASH_TREE_WORD_SIZE>;
 
-constexpr int HASHER_MAX_LANE_COUNT = 8; ///< Maximum number of parallel hashes
-
 /// \brief Hasher interface.
 /// \tparam DERIVED Derived class implementing the interface. (An example of CRTP.)
 template <typename DERIVED>

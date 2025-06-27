@@ -48,209 +48,6 @@
 
 namespace cartesi {
 
-class page_simd_tree_hasher {
-    struct leaf_entry {
-        const_hash_tree_word_view data;
-        machine_hash_view result;
-    };
-
-    struct node_entry {
-        const_machine_hash_view left;
-        const_machine_hash_view right;
-        machine_hash_view result;
-    };
-
-    static constexpr int QUEUE_LOG2_HEIGHT = HASH_TREE_LOG2_PAGE_SIZE - HASH_TREE_LOG2_WORD_SIZE;
-    static constexpr int QUEUE_MAX_SIZE = (1 << (QUEUE_LOG2_HEIGHT - 1)) * HASHER_MAX_LANE_COUNT;
-    boost::container::static_vector<leaf_entry, HASHER_MAX_LANE_COUNT> m_leaves_queue;
-    std::array<boost::container::static_vector<node_entry, QUEUE_MAX_SIZE>, QUEUE_LOG2_HEIGHT> m_nodes_queues{};
-
-    template <IHasher H>
-    void flush_leaves(H &h) {
-        auto &q = m_leaves_queue;
-        size_t i = q.size();
-        if (likely(i >= 8)) { // x8 parallel hashing
-            i -= 8;
-            h.simd_concat_hash(array2d<const_hash_tree_word_view, 1, 8>{{{
-                                   q[i + 0].data,
-                                   q[i + 1].data,
-                                   q[i + 2].data,
-                                   q[i + 3].data,
-                                   q[i + 4].data,
-                                   q[i + 5].data,
-                                   q[i + 6].data,
-                                   q[i + 7].data,
-                               }}},
-                std::array<machine_hash_view, 8>{{
-                    q[i + 0].result,
-                    q[i + 1].result,
-                    q[i + 2].result,
-                    q[i + 3].result,
-                    q[i + 4].result,
-                    q[i + 5].result,
-                    q[i + 6].result,
-                    q[i + 7].result,
-                }});
-        }
-        if (i >= 4) { // x4 parallel hashing
-            i -= 4;
-            h.simd_concat_hash(array2d<const_hash_tree_word_view, 1, 4>{{{
-                                   q[i + 0].data,
-                                   q[i + 1].data,
-                                   q[i + 2].data,
-                                   q[i + 3].data,
-                               }}},
-                std::array<machine_hash_view, 4>{{
-                    q[i + 0].result,
-                    q[i + 1].result,
-                    q[i + 2].result,
-                    q[i + 3].result,
-                }});
-        }
-        if (i >= 2) { // x2 parallel hashing
-            i -= 2;
-            h.simd_concat_hash(array2d<const_hash_tree_word_view, 1, 2>{{{
-                                   q[i + 0].data,
-                                   q[i + 1].data,
-                               }}},
-                std::array<machine_hash_view, 2>{{
-                    q[i + 0].result,
-                    q[i + 1].result,
-                }});
-        }
-        if (i >= 1) { // x1 hashing
-            i -= 1;
-            h.simd_concat_hash(array2d<const_hash_tree_word_view, 1, 1>{{
-                                   {q[i + 0].data},
-                               }},
-                std::array<machine_hash_view, 1>{
-                    {q[i + 0].result},
-                });
-        }
-        q.clear();
-    }
-
-    template <IHasher H>
-    void flush_nodes(H &h, int log2_level) {
-        auto &q = m_nodes_queues[log2_level - 1];
-        size_t i = q.size();
-        while (i >= 8) { // x8 parallel hashing
-            i -= 8;
-            h.simd_concat_hash(array2d<const_machine_hash_view, 2, 8>{{
-                                   {
-                                       q[i + 0].left,
-                                       q[i + 1].left,
-                                       q[i + 2].left,
-                                       q[i + 3].left,
-                                       q[i + 4].left,
-                                       q[i + 5].left,
-                                       q[i + 6].left,
-                                       q[i + 7].left,
-                                   },
-                                   {
-                                       q[i + 0].right,
-                                       q[i + 1].right,
-                                       q[i + 2].right,
-                                       q[i + 3].right,
-                                       q[i + 4].right,
-                                       q[i + 5].right,
-                                       q[i + 6].right,
-                                       q[i + 7].right,
-                                   },
-                               }},
-                std::array<machine_hash_view, 8>{
-                    q[i + 0].result,
-                    q[i + 1].result,
-                    q[i + 2].result,
-                    q[i + 3].result,
-                    q[i + 4].result,
-                    q[i + 5].result,
-                    q[i + 6].result,
-                    q[i + 7].result,
-                });
-        }
-        if (i >= 4) { // x4 parallel hashing
-            i -= 4;
-            h.simd_concat_hash(array2d<const_machine_hash_view, 2, 4>{{
-                                   {
-                                       q[i + 0].left,
-                                       q[i + 1].left,
-                                       q[i + 2].left,
-                                       q[i + 3].left,
-                                   },
-                                   {
-                                       q[i + 0].right,
-                                       q[i + 1].right,
-                                       q[i + 2].right,
-                                       q[i + 3].right,
-                                   },
-                               }},
-                std::array<machine_hash_view, 4>{
-                    q[i + 0].result,
-                    q[i + 1].result,
-                    q[i + 2].result,
-                    q[i + 3].result,
-                });
-        }
-        if (i >= 2) { // x2 parallel hashing
-            i -= 2;
-            h.simd_concat_hash(array2d<const_machine_hash_view, 2, 2>{{
-                                   {
-                                       q[i + 0].left,
-                                       q[i + 1].left,
-                                   },
-                                   {
-                                       q[i + 0].right,
-                                       q[i + 1].right,
-                                   },
-                               }},
-                std::array<machine_hash_view, 2>{
-                    q[i + 0].result,
-                    q[i + 1].result,
-                });
-        }
-        if (i >= 1) { // x1 parallel hashing
-            i -= 1;
-            h.simd_concat_hash(array2d<const_machine_hash_view, 2, 1>{{
-                                   {q[i + 0].left},
-                                   {q[i + 0].right},
-                               }},
-                std::array<machine_hash_view, 1>{{
-                    q[i + 0].result,
-                }});
-        }
-        q.clear();
-    }
-
-public:
-    /// \brief Enqueues a leaf for hashing
-    template <IHasher H>
-    void enqueue_leaf(H &h, const_hash_tree_word_view data, machine_hash_view result) {
-        m_leaves_queue.emplace_back(leaf_entry{.data = data, .result = result});
-        if (unlikely(m_leaves_queue.size() == m_leaves_queue.capacity())) {
-            // Leaves queue is full, flush it
-            flush_leaves(h);
-        }
-    }
-
-    /// \brief Enqueues a node for hashing
-    void enqueue_node(int log2_level, const_machine_hash_view left, const_machine_hash_view right,
-        machine_hash_view result) {
-        assert(log2_level >= 1 || log2_level < static_cast<int>(m_nodes_queues.size() + 1));
-        auto &nodes_queue = m_nodes_queues[log2_level - 1];
-        nodes_queue.emplace_back(node_entry{.left = left, .right = right, .result = result});
-    }
-
-    /// \brief Flushes the entire queue
-    template <IHasher H>
-    void flush(H &h) {
-        flush_leaves(h);
-        for (int log2_level = 1; log2_level <= QUEUE_LOG2_HEIGHT; ++log2_level) {
-            flush_nodes(h, log2_level);
-        }
-    }
-};
-
 /// \class page_hash_tree_cache
 /// \brief Page hash-tree cache implementation
 class page_hash_tree_cache {
@@ -447,6 +244,68 @@ public:
         }
     };
 
+    template <IHasher hasher_type>
+    class simd_hasher {
+        struct leaf_entry {
+            const_hash_tree_word_view data;
+            machine_hash_view result;
+        };
+
+        struct node_entry {
+            const_machine_hash_view left;
+            const_machine_hash_view right;
+            machine_hash_view result;
+        };
+
+        struct dirty_entry {
+            page_hash_tree *page_tree{nullptr}; // TODO(edubart): use page index
+            int node_index{0};
+            bool operator==(const dirty_entry &other) const noexcept {
+                return page_tree == other.page_tree && node_index == other.node_index;
+            }
+        };
+
+        static constexpr int QUEUE_LOG2_HEIGHT = HASH_TREE_LOG2_PAGE_SIZE - HASH_TREE_LOG2_WORD_SIZE;
+        static constexpr size_t QUEUE_MAX_SIZE = ((1UL << (QUEUE_LOG2_HEIGHT - 1)) + 1) * SIMD_HASHER_LANE_COUNT;
+        hasher_type m_hasher;
+        simd_data_hasher<hasher_type, const_hash_tree_word_view, SIMD_HASHER_LANE_COUNT> m_leaves_queue;
+        simd_concat_hasher<hasher_type, const_machine_hash_view, SIMD_HASHER_LANE_COUNT> m_concat_queue;
+        circular_buffer<dirty_entry, QUEUE_MAX_SIZE> m_dirty_queue;
+
+    public:
+        /// \brief Enqueues a leaf for hashing
+        void enqueue_leaf(const_hash_tree_word_view data, page_hash_tree &page_tree, int word_index) {
+            m_leaves_queue.enqueue(data, page_tree[word_index]);
+            assert(!m_dirty_queue.full() && "dirty queue is full while enqueuing leaf");
+            m_dirty_queue.try_push_back(dirty_entry{.page_tree = &page_tree, .node_index = entry::parent(word_index)});
+        }
+
+        /// \brief Flushes the entire queue
+        int flush() {
+            m_leaves_queue.flush();
+            int hashes = 0;
+
+            while (!m_dirty_queue.empty()) {
+                for (size_t i = 0, n = m_dirty_queue.size(); i < n; ++i) {
+                    const auto &d = m_dirty_queue.front();
+                    const int node_index = d.node_index;
+                    auto &page_tree = *d.page_tree;
+                    m_dirty_queue.pop_front();
+                    ++hashes;
+                    m_concat_queue.enqueue(page_tree[entry::left_child(node_index)],
+                        page_tree[entry::right_child(node_index)], page_tree[node_index]);
+                    if (node_index != 1) {
+                        assert(!m_dirty_queue.full() && "dirty queue is full while enqueuing node");
+                        m_dirty_queue.try_push_back(
+                            dirty_entry{.page_tree = &page_tree, .node_index = entry::parent(node_index)});
+                    }
+                }
+                m_concat_queue.flush();
+            }
+            return hashes;
+        }
+    };
+
     /// \brief Enqueue entry to be hashed with new page data
     /// \tparam H Hasher type
     /// \tparam D Data range type
@@ -456,7 +315,7 @@ public:
     /// \returns True if update succeeded, false otherwise
     template <IHasher H, ContiguousRangeOfByteLike D>
     // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
-    bool enqueue_hash_entry(H &&h, D &&d, entry &e, page_simd_tree_hasher &queue,
+    bool enqueue_hash_entry(page_hash_tree_cache::simd_hasher<H> &queue, D &&d, entry &e,
         page_hash_tree_cache_stats &stats) noexcept {
         if (std::ranges::size(d) != m_page_size) {
             return false;
@@ -473,7 +332,6 @@ public:
         }
         SCOPED_SIGNPOST(m_log, m_spid_non_pristine_update, "phtc: non-pristine update", "");
         const const_page_view page{std::ranges::data(d), std::ranges::size(d)};
-        circular_buffer<int, m_page_word_count / 2> dirty_nodes;
         // Go over all words in the entry page, comparing with updated page,
         // and updating the hashes for the modified words
         //??D In C++23, we would use std::views::slide and std::views::zip to write this in declarative style.
@@ -486,28 +344,14 @@ public:
             const auto page_word = std::span<const unsigned char, m_word_size>{page.subspan(offset, m_word_size)};
             if (unlikely(!std::ranges::equal(entry_word, page_word))) {
                 std::ranges::copy(page_word, entry_word.begin());
-                queue.enqueue_leaf(h, page_word, page_tree[index]);
-                dirty_nodes.try_push_back(e.parent(index));
+                queue.enqueue_leaf(page_word, page_tree, index);
                 ++miss;
             } else {
                 ++hit;
             }
         }
-        // Now go over fifo, taking a node, updating its from its children, and enqueueing its parent for update
-        int inner_page_hashes = 0;
-        while (!dirty_nodes.empty()) {
-            const int index = dirty_nodes.front();
-            dirty_nodes.pop_front();
-            ++inner_page_hashes;
-            queue.enqueue_node(e.log2_level(index), page_tree[e.left_child(index)], page_tree[e.right_child(index)],
-                page_tree[index]);
-            if (index != 1) {
-                dirty_nodes.try_push_back(e.parent(index));
-            }
-        }
         stats.word_hits += hit;
         stats.word_misses += miss;
-        stats.inner_page_hashes += inner_page_hashes;
         ++stats.non_pristine_pages;
         return true;
     }

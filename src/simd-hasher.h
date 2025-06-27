@@ -48,7 +48,7 @@ public:
     /// \param result Receives the hash of data
     void enqueue(data_type data, machine_hash_view result) {
         m_queue.emplace_back(data_entry{.data = data, .result = result});
-        if (unlikely(m_queue.size() == m_queue.capacity())) { // Queue is full, auto flush it
+        if (unlikely(m_queue.size() == QueueSize)) { // Queue is full, auto flush it
             flush();
         }
     }
@@ -137,10 +137,11 @@ public:
     /// \param result Receives the hash of data
     void enqueue(data_type left, data_type right, machine_hash_view result) {
         m_queue.emplace_back(concat_entry{.left = left, .right = right, .result = result});
-        if (unlikely(m_queue.size() == m_queue.capacity())) { // Queue is full, auto flush it
+        if (unlikely(m_queue.size() == QueueSize)) { // Queue is full, auto flush it
             flush();
         }
     }
+
     /// \brief Flushes the queue, clearing it in the process
     void flush() noexcept {
         auto &q = m_queue;

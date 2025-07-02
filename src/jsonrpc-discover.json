@@ -2,7 +2,7 @@
   "openrpc": "1.0.0-rc1",
   "info": {
     "title": "Remote Cartesi Machine",
-    "version": "0.5.0",
+    "version": "0.6.0",
     "description": "API for controlling a remote Cartesi Machine server",
     "license": {
       "name": "MIT"
@@ -224,6 +224,43 @@
       }
     },
     {
+      "name": "machine.collect_mcycle_root_hashes",
+      "summary": "Collect root hashes periodically while running the emulator",
+      "params": [
+        {
+          "name": "mcycle_phase",
+          "description": "Number of machine cycles elapsed since last root hash collected",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        },
+        {
+          "name": "mcycle_period",
+          "description": "Number of machine cycles between root hashes to collect",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        },
+        {
+          "name": "period_count",
+          "description": "Number of hashes to collect",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "description": "Collected hashes",
+        "schema": {
+          "$ref": "#/components/schemas/McycleRootHashes"
+        }
+      }
+    },
+    {
       "name": "machine.run_uarch",
       "summary": "Runs the small emulator until a given cycle",
       "params": [
@@ -241,6 +278,27 @@
         "description": "Reason call returned",
         "schema": {
           "$ref": "#/components/schemas/UarchInterpreterBreakReason"
+        }
+      }
+    },
+    {
+      "name": "machine.collect_uarch_cycle_root_hashes",
+      "summary": "Collect root hashes while running the emulator's uarch",
+      "params": [
+        {
+          "name": "mcycle_count",
+          "description": "Number of machine cycles to execute, uarch cycle by uarch cycle",
+          "required": true,
+          "schema": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          }
+        }
+      ],
+      "result": {
+        "name": "result",
+        "description": "Collected hashes",
+        "schema": {
+          "$ref": "#/components/schemas/UarchCycleRootHashes"
         }
       }
     },
@@ -341,11 +399,11 @@
     },
     {
       "name": "machine.get_root_hash",
-      "summary": "Obtains the Merkle hash of the current machine state",
+      "summary": "Obtains the hash-tree root hash of the current machine state",
       "params": [],
       "result": {
         "name": "hash",
-        "description": "Merkle hash",
+        "description": "Root hash",
         "schema": {
           "$ref": "#/components/schemas/Base64Hash"
         }
@@ -2147,6 +2205,46 @@
         "items": {
           "$ref": "#/components/schemas/AddressRangeDescription"
         }
+      },
+      "McycleRootHashes": {
+        "title": "McycleRootHashes",
+        "type": "object",
+        "properties": {
+          "hashes": {
+            "$ref": "#/components/schemas/Base64HashArray"
+          },
+          "mcycle_phase": {
+            "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "break_reason": {
+            "$ref": "#/components/schemas/InterpreterBreakReason"
+          }
+        },
+        "required": [
+          "hashes",
+          "mcycle_phase",
+          "break_reason"
+        ]
+      },
+      "UarchCycleRootHashes": {
+        "title": "UarchCycleRootHashes",
+        "type": "object",
+        "properties": {
+          "hashes": {
+            "$ref": "#/components/schemas/Base64HashArray"
+          },
+          "reset_indices": {
+            "$ref": "#/components/schemas/UnsignedIntegerArray"
+          },
+          "break_reason": {
+            "$ref": "#/components/schemas/InterpreterBreakReason"
+          }
+        },
+        "required": [
+          "hashes",
+          "reset_indices",
+          "break_reason"
+        ]
       }
     }
   }

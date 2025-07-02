@@ -33,6 +33,18 @@ enum class UArchStepStatus : int {
 template <typename STATE_ACCESS>
 UArchStepStatus uarch_step(STATE_ACCESS a);
 
+// Forward declarations
+class uarch_state_access;
+class collect_uarch_cycle_hashes_state_access;
+class uarch_record_state_access;
+class uarch_replay_state_access;
+
+// Declaration of explicit instantiations in module uarch-step.cpp
+extern template UArchStepStatus uarch_step(uarch_state_access a);
+extern template UArchStepStatus uarch_step(collect_uarch_cycle_hashes_state_access a);
+extern template UArchStepStatus uarch_step(uarch_record_state_access a);
+extern template UArchStepStatus uarch_step(uarch_replay_state_access a);
+
 } // namespace cartesi
 
 #endif

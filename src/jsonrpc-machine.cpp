@@ -643,6 +643,11 @@ interpreter_break_reason jsonrpc_machine::do_run(uint64_t mcycle_end) {
     return result;
 }
 
+void jsonrpc_machine::do_collect_mcycle_root_hashes(uint64_t mcycle_phase, uint64_t mcycle_period,
+    uint64_t period_count, mcycle_root_hashes &result) {
+    request("machine.collect_mcycle_root_hashes", std::tie(mcycle_phase, mcycle_period, period_count), result);
+}
+
 interpreter_break_reason jsonrpc_machine::do_log_step(uint64_t mcycle_count, const std::string &filename) {
     interpreter_break_reason result = interpreter_break_reason::failed;
     request("machine.log_step", std::tie(mcycle_count, filename), result);
@@ -797,6 +802,10 @@ uarch_interpreter_break_reason jsonrpc_machine::do_run_uarch(uint64_t uarch_cycl
     uarch_interpreter_break_reason result = uarch_interpreter_break_reason::reached_target_cycle;
     request("machine.run_uarch", std::tie(uarch_cycle_end), result);
     return result;
+}
+
+void jsonrpc_machine::do_collect_uarch_cycle_root_hashes(uint64_t mcycle_count, uarch_cycle_root_hashes &result) {
+    request("machine.collect_uarch_cycle_root_hashes", std::tie(mcycle_count), result);
 }
 
 address_range_descriptions jsonrpc_machine::do_get_address_ranges() const {

@@ -600,12 +600,60 @@ CM_API cm_error cm_translate_virtual_address(cm_machine *m, uint64_t vaddr, uint
 /// \details You may want to receive cmio requests depending on the run break reason.
 CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *break_reason);
 
+/// \brief Collects the root hashes after every \p mcycle_period machine cycles, for \p period_count periods.
+/// Returns when done, or if the machine halts or yields.
+/// \param mcycle_phase Number of machine cycles elapsed since last root hash collected.
+/// \param mcycle_period Number of machine cycles between root hashes to collect.
+/// \param period_count Number of hashes to collect.
+/// \param result Receives an JSON object as a string, guaranteed to remain valid only until
+/// the next CM_API function is called from the same thread.
+/// The field "hashes" is an array (of hashes as base64-encoded strings) with the root hashes after each period.
+/// The field "mcycle_phase" is the number of machine cycles elapsed since last root hash collected.
+/// The field "break_reason" is an integer with the reason why the function returned.
+/// (Set to CM_BREAK_REASON_FAILED on failure.)
+/// For example:
+/// ```json
+/// {
+///     "hashes": ["2av44Q3TaHKREgULA/iMoNe+btxCr+ja+hHGtXxaGjM=", ..., "FMAHn7mc2f+I30UjiywbAtOkw99iOa3NWS6fWql3UNU="],
+///     "mcycle_phase": 1278,
+///     "break_reason": CM_BREAK_REASON_YIELDED_AUTOMATICALLY
+/// }
+/// ```
+/// \returns 0 for success, non zero code for error.
+/// \detail The first hash added to \p result.hashes is the root hash after (\p mcycle_period - \p mcycle_phase)
+/// machine cycles (if the function managed to get that far before returning).
+CM_API cm_error cm_collect_mcycle_root_hashes(cm_machine *m, uint64_t mcycle_countdown, uint64_t mcycle_period,
+    uint64_t period_count, const char **result);
+
 /// \brief Runs the machine microarchitecture until CM_REG_UARCH_CYCLE reaches uarch_cycle_end or it halts.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).
 /// \param uarch_cycle_end End micro cycle value.
 /// \param uarch_break_reason Receives reason for returning (can be NULL).
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_run_uarch(cm_machine *m, uint64_t uarch_cycle_end, cm_uarch_break_reason *uarch_break_reason);
+
+/// \brief Collects the root hashes after every uarch cycle, for \p mcycle_count machine cycles, implicitly
+/// resetting the uarch between each machine cycle. Returns when done, or if the machine halts or yields.
+/// \param mcycle_count Number of machine cycles to execute, uarch cycle by uarch cycle.
+/// \param hashes Receives an JSON object as a string, guaranteed to remain valid only until
+/// the next CM_API function is called from the same thread.
+/// The field "hashes" is an array (of hashes as base64-encoded strings) with the root hashes after each uarch cycle.
+/// The field "reset_indices" is an array with indices of the root hashes after each implicit uarch reset
+/// (i.e., after each machine cycle).
+/// The field "break_reason" is an integer with the reason why the function returned.
+/// (Set to CM_BREAK_REASON_FAILED on failure.)
+/// For example:
+/// ```json
+/// {
+///     "hashes": ["2av44Q3TaHKREgULA/iMoNe+btxCr+ja+hHGtXxaGjM=", ..., "FMAHn7mc2f+I30UjiywbAtOkw99iOa3NWS6fWql3UNU="],
+///     "reset_indices": [712, ..., 2293768],
+///     "break_reason": CM_BREAK_REASON_YIELDED_MANUALLY
+/// }
+/// ```
+/// \returns 0 for success, non zero code for error.
+/// \detail The first hash added to \p hashes is the root hash after the first uarch cycle, the last is the
+/// root hash at the time function returns (for whatever reason), which always happens right after an uarch reset.
+CM_API cm_error cm_collect_uarch_cycle_root_hashes(cm_machine *m, uint64_t mcycle_count, const char **result);
 
 /// \brief Resets the entire microarchitecture state to pristine values.
 /// \param m Pointer to a non-empty machine object (holds a machine instance).

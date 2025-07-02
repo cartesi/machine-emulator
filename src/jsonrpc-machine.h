@@ -107,6 +107,8 @@ private:
     void do_create(const machine_config &config, const machine_runtime_config &runtime) override;
     void do_load(const std::string &directory, const machine_runtime_config &runtime) override;
     interpreter_break_reason do_run(uint64_t mcycle_end) override;
+    void do_collect_mcycle_root_hashes(uint64_t mcycle_phase, uint64_t mcycle_period, uint64_t period_count,
+        mcycle_root_hashes &result) override;
     interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) override;
     void do_store(const std::string &dir) const override;
     uint64_t do_read_reg(reg r) const override;
@@ -131,6 +133,7 @@ private:
     hash_tree_stats do_get_hash_tree_stats(bool clear) override;
     bool do_verify_hash_tree() const override;
     uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) override;
+    void do_collect_uarch_cycle_root_hashes(uint64_t mcycle_count, uarch_cycle_root_hashes &result) override;
     address_range_descriptions do_get_address_ranges() const override;
     void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) override;
     access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,

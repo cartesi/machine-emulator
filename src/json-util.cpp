@@ -529,6 +529,36 @@ static auto reg_to_name(machine_reg r) {
     return "";
 }
 
+static std::string uarch_interpreter_break_reason_to_name(uarch_interpreter_break_reason reason) {
+    using R = uarch_interpreter_break_reason;
+    switch (reason) {
+        case R::uarch_halted:
+            return "uarch_halted";
+        case R::reached_target_cycle:
+            return "reached_target_cycle";
+    }
+    throw std::domain_error{"invalid uarch interpreter break reason"};
+}
+
+static std::string interpreter_break_reason_to_name(interpreter_break_reason reason) {
+    using R = interpreter_break_reason;
+    switch (reason) {
+        case R::failed:
+            return "failed";
+        case R::halted:
+            return "halted";
+        case R::yielded_manually:
+            return "yielded_manually";
+        case R::yielded_automatically:
+            return "yielded_automatically";
+        case R::yielded_softly:
+            return "yielded_softly";
+        case R::reached_target_mcycle:
+            return "reached_target_mcycle";
+    }
+    throw std::domain_error{"invalid interpreter break reason"};
+}
+
 static interpreter_break_reason interpreter_break_reason_from_name(const std::string &name) {
     using ibr = interpreter_break_reason;
     const static std::unordered_map<std::string, ibr> g_ibr_name = {{"failed", ibr::failed}, {"halted", ibr::halted},
@@ -552,7 +582,7 @@ static uarch_interpreter_break_reason uarch_interpreter_break_reason_from_name(c
     throw std::domain_error{"invalid uarch interpreter break reason"};
 }
 
-static std::string access_type_name(access_type at) {
+static std::string access_type_to_name(access_type at) {
     switch (at) {
         case access_type::read:
             return "read";
@@ -562,12 +592,22 @@ static std::string access_type_name(access_type at) {
     throw std::domain_error{"invalid access type"};
 }
 
-static std::string bracket_type_name(bracket_type bt) {
+static std::string bracket_type_to_name(bracket_type bt) {
     switch (bt) {
         case bracket_type::begin:
             return "begin";
         case bracket_type::end:
             return "end";
+    }
+    throw std::domain_error{"invalid bracket type"};
+}
+
+static bracket_type bracket_type_from_name(const std::string &name) {
+    if (name == "begin") {
+        return bracket_type::begin;
+    }
+    if (name == "end") {
+        return bracket_type::end;
     }
     throw std::domain_error{"invalid bracket type"};
 }
@@ -1087,16 +1127,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, bracket_type &value
     if (!jk.is_string()) {
         throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
     }
-    const auto &v = jk.template get<std::string>();
-    if (v == "begin") {
-        value = bracket_type::begin;
-        return;
-    }
-    if (v == "end") {
-        value = bracket_type::end;
-        return;
-    }
-    throw std::invalid_argument("\""s + path + to_string(key) + "\" not a bracket type");
+    value = bracket_type_from_name(jk.template get<std::string>());
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, bracket_type &value,
@@ -1779,17 +1810,54 @@ template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t
 template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, fork_result &value,
     const std::string &path);
 
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, mcycle_root_hashes &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    ju_get_vector_like_field(jconfig, "hashes"s, value.hashes, new_path);
+    ju_get_field(jconfig, "mcycle_phase"s, value.mcycle_phase, new_path);
+    ju_get_field(jconfig, "break_reason"s, value.break_reason, new_path);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, mcycle_root_hashes &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, mcycle_root_hashes &value,
+    const std::string &path);
+
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_cycle_root_hashes &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jconfig = j[key];
+    const auto new_path = path + to_string(key) + "/";
+    ju_get_vector_like_field(jconfig, "hashes"s, value.hashes, new_path);
+    ju_get_vector_like_field(jconfig, "reset_indices"s, value.hashes, new_path);
+    ju_get_field(jconfig, "break_reason"s, value.break_reason, new_path);
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, uarch_cycle_root_hashes &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key,
+    uarch_cycle_root_hashes &value, const std::string &path);
+
 void to_json(nlohmann::json &j, const machine_reg &reg) {
     j = reg_to_name(reg);
 }
 
-void to_json(nlohmann::json &j, const machine_hash &h) {
-    j = encode_base64(h);
+void to_json(nlohmann::json &j, const base64_machine_hash &h) {
+    j = encode_base64(h.get());
 }
 
-void to_json(nlohmann::json &j, const std::vector<machine_hash> &hs) {
+void to_json(nlohmann::json &j, const base64_machine_hashes &hs) {
     j = nlohmann::json::array();
-    std::ranges::transform(hs, std::back_inserter(j), [](const machine_hash &h) -> nlohmann::json { return h; });
+    std::ranges::transform(hs.get(), std::back_inserter(j),
+        [](const machine_hash &h) -> nlohmann::json { return base64_machine_hash(h); });
 }
 
 void to_json(nlohmann::json &j, const hash_tree_proof &p) {
@@ -1804,7 +1872,7 @@ void to_json(nlohmann::json &j, const hash_tree_proof &p) {
 
 void to_json(nlohmann::json &j, const access &a) {
     j = nlohmann::json{
-        {"type", access_type_name(a.get_type())},
+        {"type", access_type_to_name(a.get_type())},
         {"address", a.get_address()},
         {"log2_size", a.get_log2_size()},
     };
@@ -1840,7 +1908,15 @@ void to_json(nlohmann::json &j, const access &a) {
 }
 
 void to_json(nlohmann::json &j, const bracket_note &b) {
-    j = nlohmann::json{{"type", bracket_type_name(b.type)}, {"where", b.where}, {"text", b.text}};
+    j = nlohmann::json{{"type", bracket_type_to_name(b.type)}, {"where", b.where}, {"text", b.text}};
+}
+
+void to_json(nlohmann::json &j, const uarch_interpreter_break_reason &break_reason) {
+    j = uarch_interpreter_break_reason_to_name(break_reason);
+}
+
+void to_json(nlohmann::json &j, const interpreter_break_reason &break_reason) {
+    j = interpreter_break_reason_to_name(break_reason);
 }
 
 void to_json(nlohmann::json &j, const std::vector<bracket_note> &bs) {
@@ -2144,6 +2220,21 @@ void to_json(nlohmann::json &j, const page_hash_tree_cache_stats &stats) {
         {"pristine_pages", stats.pristine_pages},
         {"non_pristine_pages", stats.non_pristine_pages},
     };
+}
+
+void to_json(nlohmann::json &j, const std::vector<uint64_t> &ints) {
+    j = nlohmann::json::array();
+    std::ranges::copy(ints, std::back_inserter(j));
+}
+
+void to_json(nlohmann::json &j, const mcycle_root_hashes &result) {
+    j = nlohmann::json{{"hashes", base64_machine_hashes(result.hashes)}, {"mcycle_phase", result.mcycle_phase},
+        {"break_reason", result.break_reason}};
+}
+
+void to_json(nlohmann::json &j, const uarch_cycle_root_hashes &result) {
+    j = nlohmann::json{{"hashes", base64_machine_hashes(result.hashes)}, {"reset_indices", result.reset_indices},
+        {"break_reason", result.break_reason}};
 }
 
 } // namespace cartesi

@@ -28,6 +28,8 @@
 #include "machine-config.h"
 #include "machine-hash.h"
 #include "machine-reg.h"
+#include "mcycle-root-hashes.h"
+#include "uarch-cycle-root-hashes.h"
 #include "uarch-interpret.h"
 
 namespace cartesi {
@@ -82,6 +84,13 @@ public:
     /// \brief Runs the machine until mcycle reaches mcycle_end or the machine halts.
     interpreter_break_reason run(uint64_t mcycle_end) {
         return do_run(mcycle_end);
+    }
+
+    /// \brief Collects the root hashes after every \p mcycle_period machine cycles, for \p period_count periods.
+    /// Returns when done, or if the machine halts or yields.
+    void collect_mcycle_root_hashes(uint64_t mcycle_phase, uint64_t mcycle_period, uint64_t period_count,
+        mcycle_root_hashes &result) {
+        do_collect_mcycle_root_hashes(mcycle_phase, mcycle_period, period_count, result);
     }
 
     /// \brief Serialize entire state to directory
@@ -207,6 +216,12 @@ public:
         return do_run_uarch(uarch_cycle_end);
     }
 
+    /// \brief Collects the root hashes after every \p uarch_cycle, for \p mcycle_count machine cycles, implicitly
+    /// resetting the uarch between mcycles.
+    void collect_uarch_cycle_root_hashes(uint64_t mcycle_count, uarch_cycle_root_hashes &result) {
+        do_collect_uarch_cycle_root_hashes(mcycle_count, result);
+    }
+
     /// \brief Returns a list of descriptions for all PMA entries registered in the machine, sorted by start
     virtual address_range_descriptions get_address_ranges() const {
         return do_get_address_ranges();
@@ -268,6 +283,8 @@ private:
     virtual void do_create(const machine_config &config, const machine_runtime_config &runtime) = 0;
     virtual void do_load(const std::string &directory, const machine_runtime_config &runtime) = 0;
     virtual interpreter_break_reason do_run(uint64_t mcycle_end) = 0;
+    virtual void do_collect_mcycle_root_hashes(uint64_t mcycle_phase, uint64_t mcycle_period, uint64_t period_count,
+        mcycle_root_hashes &result) = 0;
     virtual void do_store(const std::string &dir) const = 0;
     virtual interpreter_break_reason do_log_step(uint64_t mcycle_count, const std::string &filename) = 0;
     virtual access_log do_log_step_uarch(const access_log::type &log_type) = 0;
@@ -291,6 +308,7 @@ private:
     virtual void do_reset_uarch() = 0;
     virtual access_log do_log_reset_uarch(const access_log::type &log_type) = 0;
     virtual uarch_interpreter_break_reason do_run_uarch(uint64_t uarch_cycle_end) = 0;
+    virtual void do_collect_uarch_cycle_root_hashes(uint64_t mcycle_count, uarch_cycle_root_hashes &result) = 0;
     virtual address_range_descriptions do_get_address_ranges() const = 0;
     virtual void do_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length) = 0;
     virtual access_log do_log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,

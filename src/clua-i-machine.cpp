@@ -399,6 +399,9 @@ static void clua_push_json_value(lua_State *L, const nlohmann::json &j, int ctxi
                 lua_pushlstring(L, binary_data.data(), binary_data.length());
                 lua_replace(L, -3); // move into the placeholder slot
                 lua_pop(L, 1);      // pop binary_data reference
+            } else if (schema.is_object() && schema.contains(data)) {
+                static const nlohmann::json empty_schema;
+                clua_push_json_value(L, schema.at(data), ctxidx, empty_schema, schema_dict);
             } else {
                 lua_pushlstring(L, data.data(), data.length());
             }
@@ -451,14 +454,25 @@ void clua_push_json_table(lua_State *L, const char *s, int ctxidx, const nlohman
 static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) try {
     // In order to convert Lua tables <-> JSON objects we have to define a schema
     // to transform some special fields, we only care about:
-    // - Binary strings (translate Base64 strings in JSON to binary strings in Lua)
+    // - Binary strings (translate Base64 strings in JSON to binary strings in Lua
+    //   or convert to integers of an enumeration)
     // - Array indexes (translate 0 based index in JSON to 1 based index in Lua)
     static const nlohmann::json machine_schema_dict = {
         {"Base64", "Base64"},
+        {"InterpreterBreakReason",
+            {{"failed", CM_BREAK_REASON_FAILED}, {"halted", CM_BREAK_REASON_HALTED},
+                {"yielded_manually", CM_BREAK_REASON_YIELDED_MANUALLY},
+                {"yielded_automatically", CM_BREAK_REASON_YIELDED_AUTOMATICALLY},
+                {"yielded_softly", CM_BREAK_REASON_YIELDED_SOFTLY},
+                {"reached_target_mcycle", CM_BREAK_REASON_REACHED_TARGET_MCYCLE}}},
         {"ArrayIndex", "ArrayIndex"},
         {"Base64Array",
             {
                 {"items", "Base64"},
+            }},
+        {"ArrayArrayIndex",
+            {
+                {"items", "ArrayIndex"},
             }},
         {"Proof",
             {
@@ -490,6 +504,16 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) try {
             {
                 {"accesses", "AccessArray"},
                 {"brackets", "BracketArray"},
+            }},
+        {"McycleRootHashes",
+            {
+                {"hashes", "Base64Array"},
+                {"break_reason", "InterpreterBreakReason"},
+            }},
+        {"UarchCycleRootHashes",
+            {
+                {"hashes", "Base64Array"},
+                {"reset_indices", "ArrayArrayIndex"},
             }},
     };
     return machine_schema_dict;
@@ -937,6 +961,36 @@ static int machine_obj_index_create(lua_State *L) {
     return 1;
 }
 
+/// \brief This is the machine:collect_mcycle_root_hashes() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_collect_mcycle_root_hashes(lua_State *L) {
+    lua_settop(L, 4);
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const uint64_t mcycle_phase = luaL_checkinteger(L, 2);
+    const uint64_t mcycle_period = luaL_checkinteger(L, 3);
+    const uint64_t period_count = luaL_checkinteger(L, 4);
+    const char *result = nullptr;
+    if (cm_collect_mcycle_root_hashes(m.get(), mcycle_phase, mcycle_period, period_count, &result) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    clua_push_schemed_json_table(L, result, "McycleRootHashes");
+    return 1;
+}
+
+/// \brief This is the machine:collect_uarch_cycle_root_hashes() method implementation.
+/// \param L Lua state.
+static int machine_obj_index_collect_uarch_cycle_root_hashes(lua_State *L) {
+    lua_settop(L, 2);
+    auto &m = clua_check<clua_managed_cm_ptr<cm_machine>>(L, 1);
+    const uint64_t mcycle_count = luaL_checkinteger(L, 2);
+    const char *result = nullptr;
+    if (cm_collect_uarch_cycle_root_hashes(m.get(), mcycle_count, &result) != 0) {
+        return luaL_error(L, "%s", cm_get_last_error_message());
+    }
+    clua_push_schemed_json_table(L, result, "UarchCycleRootHashes");
+    return 1;
+}
+
 /// \brief This is the machine:load() method implementation.
 /// \param L Lua state.
 static int machine_obj_index_load(lua_State *L) {
@@ -1057,6 +1111,8 @@ static int machine_obj_index_swap(lua_State *L) {
 /// \brief Contents of the machine object metatable __index table.
 static const auto machine_obj_index = cartesi::clua_make_luaL_Reg_array({
     {"create", machine_obj_index_create},
+    {"collect_mcycle_root_hashes", machine_obj_index_collect_mcycle_root_hashes},
+    {"collect_uarch_cycle_root_hashes", machine_obj_index_collect_uarch_cycle_root_hashes},
     {"destroy", machine_obj_index_destroy},
     {"get_default_config", machine_obj_index_get_default_config},
     {"get_initial_config", machine_obj_index_get_initial_config},

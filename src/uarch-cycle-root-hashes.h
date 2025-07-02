@@ -14,23 +14,22 @@
 // with this program (see COPYING). If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef MACHINE_HASH_H
-#define MACHINE_HASH_H
+#ifndef UARCH_CYCLE_ROOT_HASHES_H
+#define UARCH_CYCLE_ROOT_HASHES_H
 
-/// \file
-/// \brief Storage for a hash
+#include <cstdint>
 
-#include <array>
-#include <span>
-#include <vector>
+#include "interpret.h"
+#include "machine-hash.h"
 
 namespace cartesi {
 
-static constexpr size_t machine_hash_size = 32;
-using machine_hash = std::array<unsigned char, machine_hash_size>;
-using machine_hash_view = std::span<unsigned char, machine_hash_size>;
-using const_machine_hash_view = std::span<const unsigned char, machine_hash_size>;
-using machine_hashes = std::vector<machine_hash>;
+/// \brief Collected uarch cycle root hashes
+struct uarch_cycle_root_hashes {
+    machine_hashes hashes;                   ///< Root hashes after each uarch cycle
+    std::vector<uint64_t> reset_indices;     ///< Indices into hashes[] after each uarch reset
+    interpreter_break_reason break_reason{}; ///< Reason why function returned
+};
 
 } // namespace cartesi
 

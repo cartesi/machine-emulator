@@ -38,8 +38,10 @@
 #include "machine-hash.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
+#include "mcycle-root-hashes.h"
 #include "page-hash-tree-cache-stats.h"
 #include "semantic-version.h"
+#include "uarch-cycle-root-hashes.h"
 #include "uarch-interpret.h"
 
 namespace cartesi {
@@ -560,6 +562,26 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, address_range_descr
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, fork_result &value, const std::string &path = "params/");
 
+/// \brief Attempts to load an mcycle_root_hashes object from a field in a JSON object
+/// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
+/// \param j JSON object to load from
+/// \param key Key to load value from
+/// \param value Object to store value
+/// \param path Path to j
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, mcycle_root_hashes &value,
+    const std::string &path = "params/");
+
+/// \brief Attempts to load an uarch_cycle_root_hashes object from a field in a JSON object
+/// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
+/// \param j JSON object to load from
+/// \param key Key to load value from
+/// \param value Object to store value
+/// \param path Path to j
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_cycle_root_hashes &value,
+    const std::string &path = "params/");
+
 /// \brief Attempts to load a vector from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from
@@ -635,10 +657,24 @@ void ju_get_field(const nlohmann::json &j, const K &key, T &value, const std::st
     ju_get_opt_field(j, key, value, path);
 }
 
+template <typename T>
+class override_to_json {
+    const T &m_t; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
+
+public:
+    explicit override_to_json(const T &t) : m_t(t) {};
+    const T &get() const {
+        return m_t;
+    }
+};
+
+using base64_machine_hash = override_to_json<machine_hash>;
+using base64_machine_hashes = override_to_json<machine_hashes>;
+
 // Automatic conversion functions from Cartesi types to nlohmann::json
 void to_json(nlohmann::json &j, const access_log::type &log_type);
-void to_json(nlohmann::json &j, const machine_hash &h);
-void to_json(nlohmann::json &j, const std::vector<machine_hash> &hs);
+void to_json(nlohmann::json &j, const base64_machine_hash &h);
+void to_json(nlohmann::json &j, const base64_machine_hashes &hs);
 void to_json(nlohmann::json &j, const hash_tree_proof &p);
 void to_json(nlohmann::json &j, const page_hash_tree_cache_stats &s);
 void to_json(nlohmann::json &j, const hash_tree_stats &s);
@@ -647,6 +683,8 @@ void to_json(nlohmann::json &j, const bracket_note &b);
 void to_json(nlohmann::json &j, const std::vector<bracket_note> &bs);
 void to_json(nlohmann::json &j, const std::vector<access> &as);
 void to_json(nlohmann::json &j, const access_log &log);
+void to_json(nlohmann::json &j, const interpreter_break_reason &break_reason);
+void to_json(nlohmann::json &j, const uarch_interpreter_break_reason &break_reason);
 void to_json(nlohmann::json &j, const backing_store_config &config);
 void to_json(nlohmann::json &j, const backing_store_config_only &config);
 void to_json(nlohmann::json &j, const memory_range_config &config);
@@ -675,6 +713,9 @@ void to_json(nlohmann::json &j, const address_range_description &mrd);
 void to_json(nlohmann::json &j, const address_range_descriptions &mrds);
 void to_json(nlohmann::json &j, const fork_result &fork_result);
 void to_json(nlohmann::json &j, const semantic_version &version);
+void to_json(nlohmann::json &j, const std::vector<uint64_t> &uints);
+void to_json(nlohmann::json &j, const mcycle_root_hashes &result);
+void to_json(nlohmann::json &j, const uarch_cycle_root_hashes &result);
 
 // Extern template declarations
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, std::string &value,
@@ -864,6 +905,14 @@ extern template void ju_get_opt_field(const nlohmann::json &j, const std::string
 extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, fork_result &value,
     const std::string &base = "params/");
 extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, fork_result &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, mcycle_root_hashes &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, mcycle_root_hashes &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const uint64_t &key, uarch_cycle_root_hashes &value,
+    const std::string &base = "params/");
+extern template void ju_get_opt_field(const nlohmann::json &j, const std::string &key, uarch_cycle_root_hashes &value,
     const std::string &base = "params/");
 
 template <typename T>

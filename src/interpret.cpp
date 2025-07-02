@@ -93,6 +93,7 @@
 #ifdef MICROARCHITECTURE
 #include "machine-uarch-bridge-state-access.h"
 #else
+#include "collect-mcycle-hashes-state-access.h"
 #include "record-step-state-access.h"
 #include "replay-step-state-access.h"
 #include "state-access.h"
@@ -6128,6 +6129,8 @@ template interpreter_break_reason interpret(state_access a, uint64_t mcycle_end)
 template interpreter_break_reason interpret(record_step_state_access a, uint64_t mcycle_end);
 // Explicit instantiation for replay_step_state_access
 template interpreter_break_reason interpret(replay_step_state_access a, uint64_t mcycle_end);
+// Explicit instantiation for collect_mcycle_hashes_state_access
+template interpreter_break_reason interpret(collect_mcycle_hashes_state_access a, uint64_t mcycle_end);
 #endif // MICROARCHITECTURE
 
 } // namespace cartesi

@@ -21,6 +21,7 @@
 
 #include "uarch-step.h"
 
+#include "collect-uarch-cycle-hashes-state-access.h"
 #include "uarch-record-state-access.h"
 #include "uarch-replay-state-access.h"
 #include "uarch-state-access.h"
@@ -1119,6 +1120,9 @@ template UArchStepStatus uarch_step(const uarch_record_state_access a);
 
 // Explicit instantiation for uarch_replay_state_access
 template UArchStepStatus uarch_step(const uarch_replay_state_access a);
+
+// Explicit instantiation for uarch_replay_state_access
+template UArchStepStatus uarch_step(const collect_uarch_cycle_hashes_state_access a);
 
 } // namespace cartesi
 // NOLINTEND(google-readability-casting,misc-const-correctness,modernize-use-auto,hicpp-use-auto)

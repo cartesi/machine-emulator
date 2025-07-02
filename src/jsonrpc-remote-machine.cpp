@@ -887,6 +887,41 @@ static json jsonrpc_machine_create_handler(const json &j, const std::shared_ptr<
     return jsonrpc_response_ok(j);
 }
 
+/// \brief JSONRPC handler for the machine.collect_mcycle_root_hashes method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_machine_collect_mcycle_root_hashes(const json &j, const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    static const char *param_name[] = {"mcycle_phase", "mcycle_period", "period_count"};
+    auto args = parse_args<uint64_t, uint64_t, uint64_t>(j, param_name);
+    auto mcycle_phase = std::get<0>(args);
+    auto mcycle_period = std::get<1>(args);
+    auto period_count = std::get<2>(args);
+    cartesi::mcycle_root_hashes result;
+    session->handler->machine->collect_mcycle_root_hashes(mcycle_phase, mcycle_period, period_count, result);
+    return jsonrpc_response_ok(j, result);
+}
+
+/// \brief JSONRPC handler for the machine.collect_uarch_cycle_root_hashes method
+/// \param j JSON request object
+/// \param session HTTP session
+/// \returns JSON response object
+static json jsonrpc_machine_collect_uarch_cycle_root_hashes(const json &j,
+    const std::shared_ptr<http_session> &session) {
+    if (!session->handler->machine) {
+        return jsonrpc_response_invalid_request(j, "no machine");
+    }
+    static const char *param_name[] = {"mcycle_count"};
+    auto args = parse_args<uint64_t>(j, param_name);
+    auto mcycle_count = std::get<0>(args);
+    cartesi::uarch_cycle_root_hashes result;
+    session->handler->machine->collect_uarch_cycle_root_hashes(mcycle_count, result);
+    return jsonrpc_response_ok(j, result);
+}
+
 /// \brief JSONRPC handler for the machine.destroy method
 /// \param j JSON request object
 /// \param session HTTP session
@@ -942,28 +977,6 @@ static json jsonrpc_machine_store_handler(const json &j, const std::shared_ptr<h
     return jsonrpc_response_ok(j);
 }
 
-/// \brief Translate an interpret_break_reason value to string
-/// \param reason interpret_break_reason value to translate
-/// \returns String representation of value
-static std::string interpreter_break_reason_name(cartesi::interpreter_break_reason reason) {
-    using R = cartesi::interpreter_break_reason;
-    switch (reason) {
-        case R::failed:
-            return "failed";
-        case R::halted:
-            return "halted";
-        case R::yielded_manually:
-            return "yielded_manually";
-        case R::yielded_automatically:
-            return "yielded_automatically";
-        case R::yielded_softly:
-            return "yielded_softly";
-        case R::reached_target_mcycle:
-            return "reached_target_mcycle";
-    }
-    throw std::domain_error{"invalid interpreter break reason"};
-}
-
 /// \brief JSONRPC handler for the machine.run method
 /// \param j JSON request object
 /// \param session HTTP session
@@ -975,7 +988,7 @@ static json jsonrpc_machine_run_handler(const json &j, const std::shared_ptr<htt
     static const char *param_name[] = {"mcycle_end"};
     auto args = parse_args<uint64_t>(j, param_name);
     auto reason = session->handler->machine->run(std::get<0>(args));
-    return jsonrpc_response_ok(j, interpreter_break_reason_name(reason));
+    return jsonrpc_response_ok(j, reason);
 }
 
 /// \brief JSONRPC handler for the machine.log_step method
@@ -989,21 +1002,7 @@ static json jsonrpc_machine_log_step_handler(const json &j, const std::shared_pt
     static const char *param_name[] = {"mcycle_count", "filename"};
     auto args = parse_args<uint64_t, std::string>(j, param_name);
     auto reason = session->handler->machine->log_step(std::get<0>(args), std::get<1>(args));
-    return jsonrpc_response_ok(j, interpreter_break_reason_name(reason));
-}
-
-/// \brief Translate an uarch_interpret_break_reason value to string
-/// \param reason uarch_interpret_break_reason value to translate
-/// \returns String representation of value
-static std::string uarch_interpreter_break_reason_name(cartesi::uarch_interpreter_break_reason reason) {
-    using R = cartesi::uarch_interpreter_break_reason;
-    switch (reason) {
-        case R::uarch_halted:
-            return "uarch_halted";
-        case R::reached_target_cycle:
-            return "reached_target_cycle";
-    }
-    throw std::domain_error{"invalid uarch interpreter break reason"};
+    return jsonrpc_response_ok(j, reason);
 }
 
 /// \brief JSONRPC handler for the machine.run_uarch method
@@ -1017,7 +1016,7 @@ static json jsonrpc_machine_run_uarch_handler(const json &j, const std::shared_p
     static const char *param_name[] = {"uarch_cycle_end"};
     auto args = parse_args<uint64_t>(j, param_name);
     auto reason = session->handler->machine->run_uarch(std::get<0>(args));
-    return jsonrpc_response_ok(j, uarch_interpreter_break_reason_name(reason));
+    return jsonrpc_response_ok(j, reason);
 }
 
 /// \brief JSONRPC handler for the machine.log_step_uarch method
@@ -1059,7 +1058,7 @@ static json jsonrpc_machine_verify_step_handler(const json &j, const std::shared
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
     auto reason =
         cartesi::machine::verify_step(std::get<0>(args), std::get<1>(args), std::get<2>(args), std::get<3>(args));
-    return jsonrpc_response_ok(j, interpreter_break_reason_name(reason));
+    return jsonrpc_response_ok(j, reason);
 }
 
 /// \brief JSONRPC handler for the machine.verify_step_uarch method
@@ -1142,7 +1141,7 @@ static json jsonrpc_machine_get_root_hash_handler(const json &j, const std::shar
     }
     jsonrpc_check_no_params(j);
     auto hash = session->handler->machine->get_root_hash();
-    return jsonrpc_response_ok(j, cartesi::encode_base64(hash));
+    return jsonrpc_response_ok(j, cartesi::base64_machine_hash(hash));
 }
 
 /// \brief JSONRPC handler for the machine.get_node_hash method
@@ -1159,7 +1158,7 @@ static json jsonrpc_machine_get_node_hash_handler(const json &j, const std::shar
         throw std::domain_error("log2_size is out of range");
     }
     auto hash = session->handler->machine->get_node_hash(std::get<0>(args), static_cast<int>(std::get<1>(args)));
-    return jsonrpc_response_ok(j, cartesi::encode_base64(hash));
+    return jsonrpc_response_ok(j, cartesi::base64_machine_hash(hash));
 }
 
 /// \brief JSONRPC handler for the machine.read_word method
@@ -1488,6 +1487,8 @@ static json jsonrpc_dispatch_method(const json &j, const std::shared_ptr<http_se
         {"get_version", jsonrpc_get_version_handler},
         {"delay_next_request", jsonrpc_delay_next_request_handler},
         {"rpc.discover", jsonrpc_rpc_discover_handler},
+        {"machine.collect_mcycle_root_hashes", jsonrpc_machine_collect_mcycle_root_hashes},
+        {"machine.collect_uarch_cycle_root_hashes", jsonrpc_machine_collect_uarch_cycle_root_hashes},
         {"machine.create", jsonrpc_machine_create_handler},
         {"machine.is_empty", jsonrpc_machine_is_empty_handler},
         {"machine.load", jsonrpc_machine_load_handler},

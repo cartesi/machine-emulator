@@ -39,10 +39,12 @@
 #include "machine-config.h"
 #include "machine-reg.h"
 #include "machine-runtime-config.h"
+#include "mcycle-root-hashes.h"
 #include "os.h"
 #include "pmas-constants.h"
 #include "processor-state.h"
 #include "shadow-tlb.h"
+#include "uarch-cycle-root-hashes.h"
 #include "uarch-interpret.h"
 #include "uarch-processor-state.h"
 #include "virtio-address-range.h"
@@ -135,9 +137,10 @@ private:
     bool has_htif_console() const;
 
 public:
-    /// \brief Type of hash and proof
+    /// \brief Shorthand for the proof type
     using proof_type = hash_tree::proof_type;
 
+    /// \brief Shorthand for machine register type
     using reg = machine_reg;
 
     /// \brief Constructor from machine configuration
@@ -189,6 +192,19 @@ public:
     ///  halts.
     interpreter_break_reason run(uint64_t mcycle_end);
 
+    /// \brief Collects the root hashes after every \p mcycle_period machine cycles, for \p period_count periods.
+    /// Returns when done, or if the machine halts or yields.
+    /// \param mcycle_phase Number of machine cycles elapsed since last root hash collected.
+    /// \param mcycle_period Number of machine cycles between root hashes to collect.
+    /// \param period_count Number of hashes to collect.
+    /// \param result Stores into result.hashes the root hashes after each period.
+    /// Stores into result.mcycle_phase the number of machine cycles after last root hash collected.
+    /// Stores into result.break_reason the reason the function returned.
+    /// \detail The first hash added to \p result.hashes is the root hash after (\p mcycle_period - \p mcycle_phase)
+    /// machine cycles (if the function managed to get that far before returning).
+    void collect_mcycle_root_hashes(uint64_t mcycle_phase, uint64_t mcycle_period, uint64_t period_count,
+        mcycle_root_hashes &result);
+
     /// \brief Runs the machine for the given mcycle count and generates a log of accessed pages and proof data.
     /// \param mcycle_count Number of mcycles to run the machine for.
     /// \param filename Name of the file to store the log.
@@ -207,6 +223,16 @@ public:
     /// counter (uarch_cycle) reaches uarch_cycle_end
     /// \param uarch_cycle_end uarch_cycle limit
     uarch_interpreter_break_reason run_uarch(uint64_t uarch_cycle_end);
+
+    /// \brief Collects the root hashes after every uarch cycle, for \p mcycle_count machine cycles, implicitly
+    /// resetting the uarch between each machine cycle. Returns when done, or if the machine halts or yields.
+    /// \param mcycle_count Number of machine cycles to execute, uarch cycle by uarch cycle.
+    /// \param result Stores into result.hashes the root hashes after each uarch cycle.
+    /// Stores into result.reset_indices the indices of the root hashes after each implicit uarch reset (i.e., after
+    /// each machine cycle). Stores into result.break_reason the reason why the function returned.
+    /// \detail The first hash added to \p result.hashes is the root hash after the first uarch cycle, the last is the
+    /// root hash at the time function returns (for whatever reason), which always happens right after an uarch reset.
+    void collect_uarch_cycle_root_hashes(uint64_t mcycle_count, uarch_cycle_root_hashes &result);
 
     /// \brief Advances one micro step and returns a state access log.
     /// \param log_type Type of access log to generate.

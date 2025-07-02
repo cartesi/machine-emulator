@@ -18,15 +18,14 @@
 
 #include <cstdint>
 
+#include "collect-uarch-cycle-hashes-state-access.h"
 #include "uarch-state-access.h"
 #include "uarch-step.h"
 
 namespace cartesi {
 
-// Declaration of explicit instantiation in module uarch-step.cpp
-extern template UArchStepStatus uarch_step(const uarch_state_access a);
-
-uarch_interpreter_break_reason uarch_interpret(const uarch_state_access a, uint64_t cycle_end) {
+template <typename STATE_ACCESS>
+uarch_interpreter_break_reason uarch_interpret(const STATE_ACCESS a, uint64_t cycle_end) {
     uint64_t cycle = a.read_uarch_cycle();
     if (cycle_end < cycle) {
         throw std::invalid_argument{"uarch_cycle is past"};
@@ -48,5 +47,12 @@ uarch_interpreter_break_reason uarch_interpret(const uarch_state_access a, uint6
     }
     return uarch_interpreter_break_reason::reached_target_cycle;
 }
+
+// Explicit instantiation for uarch_state_access
+template uarch_interpreter_break_reason uarch_interpret(const uarch_state_access a, uint64_t uarch_cycle_end);
+
+// Explicit instantiation for collect_uarch_cycle_hashes_state_access
+template uarch_interpreter_break_reason uarch_interpret(const collect_uarch_cycle_hashes_state_access a,
+    uint64_t uarch_cycle_end);
 
 } // namespace cartesi

@@ -18,6 +18,7 @@
 #define HASH_TREE_H
 
 #include <iosfwd>
+#include <unordered_set>
 #include <vector>
 
 #include "address-range.h"
@@ -44,7 +45,14 @@ class hash_tree {
     };
 
     using dirty_pages = std::vector<dirty_page>;
-    using dense_node_entry = std::pair<i_dense_hash_tree &, uint64_t>;
+    struct dense_node_entry {
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
+        i_dense_hash_tree &dht;
+        uint64_t offset;
+        bool operator==(const dense_node_entry &other) const {
+            return &dht == &other.dht && offset == other.offset;
+        }
+    };
     using dense_node_entries = std::vector<dense_node_entry>;
     using pristine_hashes = std::array<machine_hash, HASH_TREE_LOG2_ROOT_SIZE + 1>;
 
@@ -109,6 +117,7 @@ public:
     using hasher_type = keccak_256_hasher;
     using proof_type = hash_tree_proof;
 
+    using dirty_words_type = std::unordered_set<uint64_t>;
     using nodes_type = std::vector<node_type>;
     using sibling_hashes_type = std::vector<machine_hash>;
 
@@ -122,6 +131,8 @@ public:
     ~hash_tree();
 
     bool update(address_ranges ars);
+
+    bool update_words(address_ranges ars, dirty_words_type dirty_words);
 
     bool update_page(address_ranges ars, uint64_t paddr_page);
 

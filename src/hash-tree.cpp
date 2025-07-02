@@ -27,6 +27,7 @@
 #include <omp.h>
 
 #include "machine-address-ranges.h"
+#include "scope-exit.h"
 #include "signposts.h"
 
 namespace cartesi {
@@ -183,8 +184,8 @@ bool hash_tree::update_dirty_page(hasher_type &h, address_range &ar, page_hash_t
         return false;
     }
     const auto offset = paddr_page - ar.get_start();
-    const auto page_view = std::span<const unsigned char, HASH_TREE_PAGE_SIZE>{base + offset, HASH_TREE_PAGE_SIZE};
-    auto ret = m_page_cache.update_entry(h, page_view, entry);
+    const auto page = std::span<const unsigned char, HASH_TREE_PAGE_SIZE>{base + offset, HASH_TREE_PAGE_SIZE};
+    auto ret = m_page_cache.update_entry(h, page, entry);
     auto node_hash_view = ar.get_dense_hash_tree().node_hash_view(offset, HASH_TREE_LOG2_PAGE_SIZE);
     changed = !std::ranges::equal(entry.root_hash_view(), node_hash_view);
     if (changed) {
@@ -497,6 +498,7 @@ bool hash_tree::verify(address_ranges ars) const {
         const auto &dpt = ar.get_dirty_page_tree();
         auto ar_actually_dirty = false;
         for (uint64_t offset = 0; offset < ar.get_length(); offset += HASH_TREE_PAGE_SIZE) {
+            auto paddr_page = ar.get_start() + offset;
             auto page = mem.subspan(offset, HASH_TREE_PAGE_SIZE);
             auto page_hash = get_merkle_tree_hash(h, page, HASH_TREE_WORD_SIZE);
             auto actually_dirty = !std::ranges::equal(page_hash, dht.node_hash_view(offset, HASH_TREE_LOG2_PAGE_SIZE));
@@ -504,25 +506,43 @@ bool hash_tree::verify(address_ranges ars) const {
             auto marked_dirty = dpt.is_node_dirty(offset, HASH_TREE_LOG2_PAGE_SIZE);
             if (actually_dirty != marked_dirty) {
                 if (!marked_dirty) {
-                    std::cerr << "page 0x" << std::hex << std::uppercase << offset << " of " << ar.get_description()
-                              << " is " << (marked_dirty ? "" : "not ") << "marked dirty but is "
-                              << (actually_dirty ? "" : "not ") << "dirty";
                     ret = false;
-                    std::cerr << "! FAILED!";
+                    std::cerr << "page 0x" << std::hex << std::uppercase << paddr_page << " (in "
+                              << ar.get_description() << ") is " << (marked_dirty ? "" : "not ")
+                              << "marked dirty but is " << (actually_dirty ? "" : "not ") << "dirty\n";
+                    // check page in cache it is there
+                    auto opt_br = m_page_cache.borrow_entry_if_hit(paddr_page);
+                    if (opt_br) {
+                        auto &cache_entry = opt_br->get();
+
+                        if (!std::ranges::equal(page_hash, cache_entry.root_hash_view())) {
+                            std::cerr << "    cached page root hash mismatch\n";
+                        }
+                        const page_hash_tree_cache::page_view entry_page{cache_entry.get_page()};
+                        for (auto word_offset = 0UL; word_offset < HASH_TREE_PAGE_SIZE;
+                            word_offset += HASH_TREE_WORD_SIZE) {
+                            const auto page_word = page.subspan(word_offset, HASH_TREE_WORD_SIZE);
+                            const auto entry_word = entry_page.subspan(word_offset, HASH_TREE_WORD_SIZE);
+                            if (!std::ranges::equal(page_word, entry_word)) {
+                                std::cerr << "    word 0x" << std::hex << std::uppercase << (paddr_page + word_offset)
+                                          << " differs\n";
+                            }
+                        }
+                        m_page_cache.return_entry(cache_entry);
+                    }
+                    std::cerr << "! FAILED!\n";
                 }
-                std::cerr << "\n";
             }
         }
         const int ar_log2_size = HASH_TREE_LOG2_PAGE_SIZE + ar.get_level_count() - 1;
         auto ar_marked_dirty = dpt.is_node_dirty(0, ar_log2_size);
         if (ar_actually_dirty != ar_marked_dirty) {
             if (!ar_marked_dirty) {
+                ret = false;
                 std::cerr << ar.get_description() << " is " << (ar_marked_dirty ? "" : "not ") << "marked dirty but is "
                           << (ar_actually_dirty ? "" : "not ") << "dirty";
-                ret = false;
-                std::cerr << "! FAILED!";
+                std::cerr << "! FAILED!\n";
             }
-            std::cerr << "\n";
         }
         const auto &ar_node = m_sparse_nodes[ar_node_index];
         if (!std::ranges::equal(ar_node.hash, dht.node_hash_view(0, ar_log2_size))) {
@@ -547,6 +567,145 @@ bool hash_tree::update(address_ranges ars) {
     }
     omp_set_num_threads(old_concurrency);
     return update_succeeded;
+}
+
+bool hash_tree::update_words(address_ranges ars, dirty_words_type dirty_words) {
+    constexpr auto page_mask = ~UINT64_C(HASH_TREE_PAGE_SIZE - 1);
+    auto old_concurrency = omp_get_num_threads();
+    omp_set_num_threads(m_concurrency);
+    const scope_exit num_threads{[old_concurrency]() { omp_set_num_threads(old_concurrency); }};
+    // Dirty_words contains an unordered set of the address of all words that became dirty since last update
+    // We copy these to a sorted vector "words"
+    // Every word in the same page must be updated by the same thread
+    // So we compute a vector "page_starts" with the indices into "words" of the first word in each page
+    // It is over this "page_starts" vector that we iterate over using threads
+    if (dirty_words.empty()) {
+        return true;
+    }
+    std::vector<uint64_t> words;
+    words.reserve(dirty_words.size());
+    std::ranges::copy(dirty_words, std::back_inserter(words));
+    std::ranges::sort(words);
+    std::vector<uint64_t> page_starts;
+    uint64_t last_paddr_page = -1;
+    //??D change to std::views::enumerate on C++23
+    for (uint64_t start = 0; auto word : words) {
+        auto paddr_page = word & page_mask;
+        if (paddr_page != last_paddr_page) {
+            page_starts.push_back(start);
+            last_paddr_page = paddr_page;
+        }
+        ++start;
+    }
+    page_starts.push_back(words.size()); // last entry
+    //??D I'll assume here that we do not have more threads than the cache size,
+    // so we don't need to process in batches, and will fail if this assumption if false
+    std::atomic<int> update_failed{0}; // NOLINT(misc-const-correctness)
+    int ar_index = 0;
+    int max_level_count = 0;
+    hasher_type h;
+    std::vector<uint64_t> curr_page_node;
+    std::vector<uint64_t> next_page_node;
+    dense_node_entries curr_dense_node;
+    dense_node_entries next_dense_node;
+    changed_address_ranges changed_ars;
+    for (unsigned i = 0; i < page_starts.size() - 1; ++i) {
+        auto begin = page_starts[i];
+        auto end = page_starts[i + 1];
+        auto paddr_page = words[begin] & page_mask;
+        bool hit = false;
+        auto opt_br = m_page_cache.borrow_entry(paddr_page, hit);
+        if (!opt_br) {
+            update_failed.store(1, std::memory_order_relaxed);
+            continue;
+        }
+        auto &cache_entry = opt_br->get();
+        while (!ars[ar_index].contains_absolute(paddr_page, HASH_TREE_PAGE_SIZE)) {
+            if (ar_index >= static_cast<int>(ars.size())) {
+                update_failed.store(1, std::memory_order_relaxed);
+                m_page_cache.return_entry(cache_entry);
+                continue;
+            }
+            ++ar_index;
+        }
+        auto &ar = ars[ar_index];
+        if (changed_ars.empty() || changed_ars.back() != ar_index) {
+            changed_ars.push_back(ar_index);
+        }
+        max_level_count = std::max(max_level_count, ar.get_level_count());
+        const auto *base = ar.get_host_memory();
+        if (!ar.is_memory() || base == nullptr) {
+            update_failed.store(1, std::memory_order_relaxed);
+            m_page_cache.return_entry(cache_entry);
+            continue;
+        }
+        const auto page_offset = paddr_page - ar.get_start();
+        // if we had a cache hit, update only the words that changed in the cache
+        if (hit) {
+            auto page = std::span<const unsigned char, HASH_TREE_PAGE_SIZE>{base + page_offset, HASH_TREE_PAGE_SIZE};
+            auto &page_tree = cache_entry.get_page_hash_tree();
+            const page_hash_tree_cache::page_view entry_page{cache_entry.get_page()};
+            curr_page_node.clear();
+            for (auto word_address : std::span(words).subspan(begin, end - begin)) {
+                const auto word_offset = word_address - paddr_page;
+                const auto page_word = page.subspan(word_offset, HASH_TREE_WORD_SIZE);
+                const auto entry_word = entry_page.subspan(word_offset, HASH_TREE_WORD_SIZE);
+                auto index = (HASH_TREE_PAGE_SIZE + word_offset) / HASH_TREE_WORD_SIZE;
+                get_hash(h, page_word, page_tree[index]);
+                std::ranges::copy(page_word, entry_word.begin());
+                auto parent = index / 2;
+                if (curr_page_node.empty() || curr_page_node.back() != parent) {
+                    curr_page_node.push_back(parent);
+                }
+            }
+            for (int log2_size = HASH_TREE_LOG2_WORD_SIZE + 1; log2_size <= HASH_TREE_LOG2_PAGE_SIZE; ++log2_size) {
+                next_page_node.clear();
+                for (auto index : curr_page_node) {
+                    auto left = index * 2;
+                    auto right = (index * 2) + 1;
+                    get_concat_hash(h, page_tree[left], page_tree[right], page_tree[index]);
+                    auto parent = index / 2;
+                    if (next_page_node.empty() || next_page_node.back() != parent) { // We know parent != 0
+                        next_page_node.push_back(parent);
+                    }
+                }
+                std::swap(curr_page_node, next_page_node);
+            }
+            // otherwise, the update from scratch
+        } else {
+            bool changed = false;
+            if (!update_dirty_page(h, ar, cache_entry, changed)) {
+                update_failed.store(1, std::memory_order_relaxed);
+                m_page_cache.return_entry(cache_entry);
+            }
+        }
+        auto &dht = ar.get_dense_hash_tree();
+        auto node_hash_view = dht.node_hash_view(page_offset, HASH_TREE_LOG2_PAGE_SIZE);
+        std::ranges::copy(cache_entry.root_hash_view(), node_hash_view.begin());
+        m_page_cache.return_entry(cache_entry);
+        auto dense_node =
+            dense_node_entry{.dht = dht, .offset = get_aligned_address(page_offset, HASH_TREE_LOG2_PAGE_SIZE + 1)};
+        if (curr_dense_node.empty() || curr_dense_node.back() != dense_node) {
+            curr_dense_node.push_back(dense_node);
+        }
+    }
+    for (int level = 1; level < max_level_count; ++level) {
+        auto log2_size = HASH_TREE_LOG2_PAGE_SIZE + level;
+        next_dense_node.clear();
+        for (auto &[dht, offset] : curr_dense_node) {
+            auto child_size = UINT64_C(1) << (log2_size - 1);
+            auto parent = dht.node_hash_view(offset, log2_size);
+            auto left = dht.node_hash_view(offset, log2_size - 1);
+            auto right = dht.node_hash_view(offset + child_size, log2_size - 1);
+            get_concat_hash(h, left, right, parent);
+            auto dense_node = dense_node_entry{.dht = dht, .offset = get_aligned_address(offset, log2_size + 1)};
+            if (next_dense_node.empty() || next_dense_node.back() != dense_node) {
+                next_dense_node.push_back(dense_node);
+            }
+        }
+        std::swap(curr_dense_node, next_dense_node);
+    }
+    return !static_cast<bool>(update_failed.load(std::memory_order_relaxed)) && update_sparse_tree(ars, changed_ars);
 }
 
 bool hash_tree::update_page(address_ranges ars, uint64_t paddr_page) {

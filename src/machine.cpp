@@ -26,6 +26,7 @@
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <memory>
 #include <ranges>
 #include <sstream>
@@ -37,6 +38,8 @@
 #include "access-log.h"
 #include "address-range-constants.h"
 #include "address-range.h"
+#include "collect-mcycle-hashes-state-access.h"
+#include "collect-uarch-cycle-hashes-state-access.h"
 #include "compiler-defines.h"
 #include "device-state-access.h"
 #include "dtb.h"
@@ -1353,7 +1356,7 @@ bool machine::update_hash_tree_page(uint64_t address) {
 
 machine_hash machine::get_root_hash() const {
     if (!update_hash_tree()) {
-        throw std::runtime_error{"update hash-tree failed"};
+        throw std::runtime_error{"update hash tree failed"};
     }
     return m_ht.get_root_hash();
 }
@@ -1386,7 +1389,7 @@ const char *machine::get_what_name(uint64_t paddr) {
 
 machine_hash machine::get_node_hash(uint64_t address, int log2_size) const {
     if (!update_hash_tree()) {
-        throw std::runtime_error{"update hash-tree failed"};
+        throw std::runtime_error{"update hash tree failed"};
     }
     return get_node_hash(address, log2_size, skip_hash_tree_update);
 }
@@ -1403,7 +1406,7 @@ machine::proof_type machine::get_proof(uint64_t address, int log2_size, skip_has
 
 machine::proof_type machine::get_proof(uint64_t address, int log2_size) const {
     if (!update_hash_tree()) {
-        throw std::runtime_error{"update hash-tree failed"};
+        throw std::runtime_error{"update hash tree failed"};
     }
     return get_proof(address, log2_size, skip_hash_tree_update);
 }
@@ -1694,7 +1697,7 @@ access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char 
     }
     // Verify access log before returning
     if (!update_hash_tree()) {
-        throw std::runtime_error{"update hash-tree failed"};
+        throw std::runtime_error{"update hash tree failed"};
     }
     auto root_hash_after = get_root_hash();
     verify_send_cmio_response(reason, data, length, root_hash_before, log, root_hash_after);
@@ -1741,7 +1744,7 @@ access_log machine::log_reset_uarch(const access_log::type &log_type) {
     }
     // Verify access log before returning
     if (!update_hash_tree()) {
-        throw std::runtime_error{"update hash-tree failed"};
+        throw std::runtime_error{"update hash tree failed"};
     }
     const auto root_hash_after = get_root_hash();
     verify_reset_uarch(root_hash_before, log, root_hash_after);
@@ -1817,7 +1820,7 @@ uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
 
 interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::string &filename) {
     if (!update_hash_tree()) {
-        throw std::runtime_error{"update hash-tree failed"};
+        throw std::runtime_error{"update hash tree failed"};
     }
     // Ensure that the microarchitecture is reset
     auto current_uarch_state_hash =
@@ -1859,6 +1862,10 @@ interpreter_break_reason machine::run(uint64_t mcycle_end) {
     const auto mcycle = read_reg(reg::mcycle);
     if (mcycle_end < mcycle) {
         throw std::invalid_argument{"mcycle is past"};
+    }
+    const auto uarch_cycle = read_reg(reg::uarch_cycle);
+    if (uarch_cycle != 0) {
+        throw std::invalid_argument{"microarchitecture is not reset"};
     }
     const state_access a(*this);
     os_silence_putchar(m_r.htif.no_console_putchar);
@@ -1926,6 +1933,121 @@ uint64_t machine::read_counter(const char *name, const char *domain) {
 
 void machine::write_counter(uint64_t val, const char *name, const char *domain) {
     m_counters[get_counter_key(name, domain)] = val;
+}
+
+void machine::collect_mcycle_root_hashes(uint64_t mcycle_phase, uint64_t mcycle_period, uint64_t period_count,
+    mcycle_root_hashes &result) {
+    result.hashes.clear();
+    if (mcycle_period == 0) {
+        throw std::runtime_error{"mcycle_period cannot be 0"};
+    }
+    if (mcycle_phase >= mcycle_period) {
+        throw std::runtime_error{"mcycle_phase must be in {0, ..., mcycle_period-1}"};
+    }
+    if (read_reg(reg::iunrep) != 0) {
+        throw std::runtime_error{"cannot collect hashes from unreproducible machines"};
+    }
+    if (m_r.soft_yield) {
+        throw std::runtime_error{"cannot collect hashes when soft yield is enabled"};
+    }
+    if (!update_hash_tree()) {
+        throw std::runtime_error{"update hash tree failed"};
+    }
+    auto current_uarch_state_hash =
+        get_node_hash(AR_SHADOW_UARCH_STATE_START, UARCH_STATE_LOG2_SIZE, skip_hash_tree_update);
+    if (current_uarch_state_hash != get_uarch_pristine_state_hash()) {
+        throw std::runtime_error{"microarchitecture is not reset"};
+    }
+    collect_mcycle_hashes_state_access::context context{};
+    context.dirty_words.reserve(mcycle_period * 3);
+    const collect_mcycle_hashes_state_access a(context, *this);
+    os_silence_putchar(m_r.htif.no_console_putchar);
+    auto mcycle_start = read_reg(reg::mcycle);
+    for (uint64_t period = 0; period < period_count; ++period) {
+        uint64_t mcycle_target{};
+        context.dirty_words.clear();
+        if (__builtin_add_overflow(mcycle_start, mcycle_period - mcycle_phase, &mcycle_target)) {
+            mcycle_target = UINT64_MAX;
+        }
+        mcycle_phase = 0;
+        result.break_reason = interpret(a, mcycle_target);
+        const auto mcycle_end = read_reg(reg::mcycle);
+        if (!m_ht.update_words(m_ars, context.dirty_words)) {
+            throw std::runtime_error{"update hash tree failed"};
+        }
+        context.dirty_words.clear();
+        // If the machine stopped before we asked, we are done
+        if (mcycle_end != mcycle_target) {
+            break;
+        }
+        result.hashes.emplace_back(m_ht.get_root_hash());
+        mcycle_start = mcycle_end;
+    }
+    result.mcycle_phase = read_reg(reg::mcycle) - mcycle_start;
+}
+
+void machine::collect_uarch_cycle_root_hashes(uint64_t mcycle_count, uarch_cycle_root_hashes &result) {
+    result.hashes.clear();
+    result.reset_indices.clear();
+    if (read_reg(reg::iunrep) != 0) {
+        throw std::runtime_error{"cannot collect hashes from unreproducible machines"};
+    }
+    if (m_r.soft_yield) {
+        throw std::runtime_error{"cannot collect hashes when soft yield is enabled"};
+    }
+    if (!update_hash_tree()) {
+        throw std::runtime_error{"update hash tree failed"};
+    }
+    auto current_uarch_state_hash =
+        get_node_hash(AR_SHADOW_UARCH_STATE_START, UARCH_STATE_LOG2_SIZE, skip_hash_tree_update);
+    if (current_uarch_state_hash != get_uarch_pristine_state_hash()) {
+        throw std::runtime_error{"microarchitecture is not reset"};
+    }
+    collect_uarch_cycle_hashes_state_access::context context{};
+    context.dirty_words.reserve(mcycle_count);
+    const collect_uarch_cycle_hashes_state_access a(context, *this);
+    os_silence_putchar(m_r.htif.no_console_putchar);
+    auto mcycle_start = read_reg(reg::mcycle);
+    for (uint64_t mcycles = 0; mcycles < mcycle_count; ++mcycles) {
+        auto uarch_cycle_start = read_reg(reg::uarch_cycle);
+        // Add one hash after each uarch cycle
+        for (;;) {
+            uint64_t uarch_cycle_target = 0;
+            if (__builtin_add_overflow(uarch_cycle_start, 1, &uarch_cycle_target)) {
+                break;
+            }
+            uarch_interpret(a, uarch_cycle_target);
+            const auto uarch_cycle_end = read_reg(reg::uarch_cycle);
+            if (!m_ht.update_words(m_ars, context.dirty_words)) {
+                throw std::runtime_error{"update hash tree failed"};
+            }
+            context.dirty_words.clear();
+            if (uarch_cycle_end != uarch_cycle_target) {
+                break;
+            }
+            result.hashes.emplace_back(m_ht.get_root_hash());
+            uarch_cycle_start = uarch_cycle_end;
+        }
+        // Add one hash after the uarch reset, and the index where it happened
+        //??D maybe optimize this?
+        reset_uarch();
+        if (!update_hash_tree()) {
+            throw std::runtime_error{"update hash tree failed"};
+        }
+        result.reset_indices.emplace_back(result.hashes.size());
+        result.hashes.emplace_back(m_ht.get_root_hash());
+    }
+    // Now check why we stopped
+    auto mcycle_end = read_reg(reg::mcycle);
+    if (mcycle_end - mcycle_start == mcycle_count) {
+        result.break_reason = interpreter_break_reason::reached_target_mcycle;
+    } else if (read_reg(reg::iflags_H) != 0) {
+        result.break_reason = interpreter_break_reason::halted;
+    } else if (read_reg(reg::iflags_Y) != 0) {
+        result.break_reason = interpreter_break_reason::yielded_manually;
+    } else if (read_reg(reg::iflags_X) != 0) {
+        result.break_reason = interpreter_break_reason::yielded_automatically;
+    }
 }
 
 } // namespace cartesi

@@ -21,13 +21,20 @@
 
 namespace cartesi {
 
-// Forward declaration
-class uarch_state_access;
-
 enum class uarch_interpreter_break_reason : int { reached_target_cycle, uarch_halted };
 
 // Run the microarchitecture interpreter until cycle hits a target or a fixed point is reached
-uarch_interpreter_break_reason uarch_interpret(uarch_state_access a, uint64_t uarch_cycle_end);
+template <typename STATE_ACCESS>
+uarch_interpreter_break_reason uarch_interpret(STATE_ACCESS a, uint64_t uarch_cycle_end);
+
+// Forward declarations
+class uarch_state_access;
+class collect_uarch_cycle_hashes_state_access;
+
+// Declaration of explicit instantiations in module uarch-interpret.cpp
+extern template uarch_interpreter_break_reason uarch_interpret(uarch_state_access a, uint64_t uarch_cycle_end);
+extern template uarch_interpreter_break_reason uarch_interpret(collect_uarch_cycle_hashes_state_access a,
+    uint64_t uarch_cycle_end);
 
 } // namespace cartesi
 

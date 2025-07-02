@@ -167,30 +167,6 @@ public:
             return tree;
         }
 
-        /// \brief Returns entry's page
-        /// \returns Reference to entry's page
-        const auto &get_page() const noexcept {
-            return m_page;
-        }
-
-        /// \brief Returns entry's page
-        /// \returns Reference to entry's page
-        auto &get_page() noexcept {
-            return m_page;
-        }
-
-        /// \brief Returns entry's page hash tree
-        /// \returns Reference to entry's page hash tree
-        const auto &get_page_hash_tree() const noexcept {
-            return m_hash_tree;
-        }
-
-        /// \brief Returns entry's page hash tree
-        /// \returns Reference to entry's page hash tree
-        auto &get_page_hash_tree() noexcept {
-            return m_hash_tree;
-        }
-
     public:
         /// \brief Constructor from pristine page
         /// \param pristine Pristine page hash tree for hasher in use
@@ -206,6 +182,30 @@ public:
         /// \returns Target physical address of page
         address_type get_paddr_page() const noexcept {
             return static_cast<address_type>(aliased_aligned_read<uint64_t>(&m_hash_tree[0][m_paddr_page_offset]));
+        }
+
+        /// \brief Returns entry's page hash tree
+        /// \returns Reference to entry's page hash tree
+        const auto &get_page_hash_tree() const noexcept {
+            return m_hash_tree;
+        }
+
+        /// \brief Returns entry's page hash tree
+        /// \returns Reference to entry's page hash tree
+        auto &get_page_hash_tree() noexcept {
+            return m_hash_tree;
+        }
+
+        /// \brief Returns entry's page
+        /// \returns Reference to entry's page
+        const auto &get_page() const noexcept {
+            return m_page;
+        }
+
+        /// \brief Returns entry's page
+        /// \returns Reference to entry's page
+        auto &get_page() noexcept {
+            return m_page;
         }
 
         /// \brief Returns view to root hash from entry's page hash tree
@@ -352,6 +352,22 @@ public:
     page_hash_tree_cache(page_hash_tree_cache &&other) = delete;
     page_hash_tree_cache &operator=(const page_hash_tree_cache &other) = delete;
     page_hash_tree_cache &operator=(page_hash_tree_cache &&other) = delete;
+
+    /// \brief Tries to borrow a cache entry
+    /// \param paddr_page Target physical address of page to borrow
+    /// \returns Entry for page if in cache, nothing otherwise
+    std::optional<std::reference_wrapper<entry>> borrow_entry_if_hit(address_type paddr_page) {
+        // Found entry for page in map?
+        if (auto it = m_map.find(paddr_page); it != m_map.end()) {
+            entry &e = it->second.second;
+            if (e.get_borrowed()) {
+                throw std::runtime_error{"page hash-tree cache entry already borrowed"};
+            }
+            // Return borrowed entry
+            return std::ref(e.set_borrowed(true));
+        }
+        return {};
+    }
 
     /// \brief Tries to borrow a cache entry
     /// \param paddr_page Target physical address of page to borrow

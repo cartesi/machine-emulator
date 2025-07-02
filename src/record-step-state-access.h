@@ -316,7 +316,6 @@ private:
         os_putchar(c);
     }
 
-    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     constexpr const char *do_get_name() const { // NOLINT(readability-convert-member-functions-to-static)
         return "record_step_state_access";
     }

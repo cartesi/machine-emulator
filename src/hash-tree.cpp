@@ -224,7 +224,7 @@ bool hash_tree::return_updated_dirty_pages(address_ranges ars, dirty_pages &batc
                 }
                 // If page was marked dirty but was not in fact dirty
             } else {
-                // We can safely mark the page clean because its contents already matched its
+                // We can safely mark the page clean because its contents already matched its hash
                 // So we won't need to "bubble-up" any hash changes based on it
                 ar.get_dirty_page_tree().mark_clean_page_and_up(offset);
             }
@@ -271,9 +271,15 @@ bool hash_tree::update_dirty_pages(address_ranges ars, changed_address_ranges &c
             break;
         }
         const auto start = ar.get_start();
-        auto view = ar.get_dirty_page_tree().dirty_offsets_view(HASH_TREE_LOG2_PAGE_SIZE) |
-            std::views::filter([length = ar.get_length()](auto offset) { return offset < length; });
-        for (auto offset : view) {
+        const auto length = ar.get_length();
+        auto &dht = ar.get_dense_hash_tree();
+        auto &dpt = ar.get_dirty_page_tree();
+        for (auto offset : dpt.dirty_offsets_view(HASH_TREE_LOG2_PAGE_SIZE)) {
+            if (offset >= length) {
+                auto hash_view = dht.node_hash_view(offset, HASH_TREE_LOG2_PAGE_SIZE);
+                std::ranges::copy(m_pristine_hashes[HASH_TREE_LOG2_PAGE_SIZE], hash_view.begin());
+                continue;
+            }
             const auto paddr_page = start + offset;
             auto opt_br = m_page_cache.borrow_entry(paddr_page);
             // If we have no entry, the cache ran out of entries to lend

@@ -64,6 +64,17 @@ private:
         return level_count;
     }
 
+    void build_from_leaves() {
+        for (auto level : levels_view() | std::views::drop(1)) {
+            for (auto pos : views::iterators(level_positions_view(level))) {
+                if (do_is_dirty_position(get_left_child_position(pos)) ||
+                    do_is_dirty_position(get_right_child_position(pos))) {
+                    m_tree[*pos] = status_type::dirty;
+                }
+            }
+        }
+    }
+
 public:
     /// \brief Constructor for leaves marked the same way
     /// \param leaf_count Number of leaves in tree. This is rounded up to the next power of 2.
@@ -72,28 +83,27 @@ public:
         i_dirty_page_tree{check_level_count(level_count, leaf_count)},
         m_leaf_positions{level_positions_view(0)},
         m_valid_positions{position_iterator(1), position_iterator(position_iterator::value_type{1} << level_count)},
-        m_tree{typename container_type::size_type{1} << level_count, init} {
-        // Leaves past leaf_count start clean because they don't really exist
-        if (init != status_type::clean) {
-            auto past_leaf_count = m_tree | std::views::drop(leaf_positions_view().front() + leaf_count);
-            std::ranges::fill(past_leaf_count, status_type::clean);
-        }
+        m_tree{typename container_type::size_type{1} << level_count, status_type::clean} {
+        const auto lp = m_leaf_positions;
+        const auto first_leaf = *lp.begin();
+        const auto first_pad = first_leaf + leaf_count;
+        const auto pad_count = *lp.end() - first_pad;
+        std::ranges::fill(std::span(m_tree).subspan(first_leaf, leaf_count), init);
+        std::ranges::fill(std::span(m_tree).subspan(first_pad, pad_count), status_type::dirty);
+        build_from_leaves();
     }
 
     /// \brief Constructor from initializer list
     /// \param leaves Status of first few leaves in tree.
     /// \details This is a constructor mostly used in simple tests
     explicit dirty_page_tree(int level_count, std::initializer_list<status_type> leaves) :
-        dirty_page_tree{level_count, leaves.size(), status_type::clean} {
-        std::ranges::copy(leaves, &m_tree[leaf_positions_view().front()]);
-        for (auto level : levels_view() | std::views::drop(1)) {
-            for (auto pos : views::iterators(level_positions_view(level))) {
-                if (is_dirty_position(get_left_child_position(pos)) ||
-                    is_dirty_position(get_right_child_position(pos))) {
-                    m_tree[*pos] = status_type::dirty;
-                }
-            }
-        }
+        i_dirty_page_tree{check_level_count(level_count, leaves.size())},
+        m_leaf_positions{level_positions_view(0)},
+        m_valid_positions{position_iterator(1), position_iterator(position_iterator::value_type{1} << level_count)},
+        m_tree{typename container_type::size_type{1} << level_count, status_type::clean} {
+        const auto lp = m_leaf_positions;
+        std::ranges::copy(leaves, &m_tree[*lp.begin()]);
+        build_from_leaves();
     }
 
     // Dump tree in DOT format
@@ -102,7 +112,7 @@ public:
         std::cout << "    node [shape=circle, width=0.5, height=0.5, fixedsize=true, style=filled];\n";
         std::cout << "  subgraph Dirty {\n";
         for (auto pos : views::iterators(valid_positions_view())) {
-            if (is_dirty_position(pos)) {
+            if (do_is_dirty_position(pos)) {
                 std::cout << "    A" << *pos << "[fillcolor=gray, label=\"" << *pos << "\"];\n";
             }
         }
@@ -217,7 +227,7 @@ private:
         while (pos != get_root_position()) {
             if (pos == get_left_sibling_position(pos)) {
                 const auto r = get_right_sibling_position(pos);
-                if (is_dirty_position(r)) {
+                if (do_is_dirty_position(r)) {
                     pos = r;
                     down(pos, level);
                     return;
@@ -231,9 +241,9 @@ private:
     void down(position_iterator &pos, positions_range level) const {
         while (!is_position_in(pos, level)) {
             auto el = get_left_child_position(pos);
-            if (!is_dirty_position(el)) {
+            if (!do_is_dirty_position(el)) {
                 auto r = get_right_child_position(pos);
-                if (!is_dirty_position(r)) {
+                if (!do_is_dirty_position(r)) {
                     // no more dirty entries
                     pos = invalid_position;
                     return;
@@ -243,13 +253,6 @@ private:
                 pos = el;
             }
         }
-    }
-
-    /// \brief Checks if node at valid position is dirty
-    /// \param node Position of node
-    /// \returns True if dirty, false otherwise
-    bool is_dirty_position(position_iterator pos) const {
-        return m_tree[*pos] == status_type::dirty;
     }
 
     /// \brief Checks if node at valid position is clean
@@ -286,7 +289,7 @@ private:
     void do_mark_clean_leaf_position_and_up([[maybe_unused]] position_iterator pos) noexcept override {
         while (pos != get_root_position()) {
             m_tree[*pos] = status_type::clean;
-            if (m_tree[*get_sibling_position(pos)] != status_type::clean) {
+            if (do_is_dirty_position(get_sibling_position(pos))) {
                 return;
             }
             pos = get_parent_position(pos);
@@ -299,7 +302,7 @@ private:
     /// \details Assumes \p pos points to a leaf position
     void do_mark_dirty_leaf_position_and_up(position_iterator pos) noexcept override {
         while (pos != get_root_position()) {
-            if (m_tree[*pos] == status_type::dirty) {
+            if (do_is_dirty_position(pos)) {
                 return;
             }
             m_tree[*pos] = status_type::dirty;
@@ -310,7 +313,7 @@ private:
 
     /// \brief Tells if the node at given position is dirty
     bool do_is_dirty_position(position_iterator pos) const noexcept override {
-        return is_dirty_position(pos);
+        return m_tree[*pos] == status_type::dirty;
     }
 
     /// \brief Clean entire tree
@@ -318,6 +321,7 @@ private:
         for (auto pos : dirty_positions_view(leaf_positions_view())) {
             do_mark_clean_leaf_position_and_up(pos);
         }
+        assert(m_tree[*get_root_position()] == status_type::clean);
     }
 
     // -----

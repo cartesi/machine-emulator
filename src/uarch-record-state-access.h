@@ -52,19 +52,10 @@ class uarch_record_state_access :
     public i_accept_scoped_notes<uarch_record_state_access>,
     public i_prefer_shadow_uarch_state<uarch_record_state_access> {
 
-    using hasher_type = hash_tree::hasher_type;
-
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     machine &m_m;      ///< Macro machine
     access_log &m_log; ///< Access log
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
-
-    template <typename H>
-    static auto get_hash(H &h, const access_data &data) {
-        machine_hash hash{};
-        get_merkle_tree_hash(h, data.data(), data.size(), HASH_TREE_WORD_SIZE, hash);
-        return hash;
-    }
 
 public:
     /// \brief Constructor from machine and uarch states.

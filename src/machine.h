@@ -45,6 +45,7 @@
 #include "shadow-tlb.h"
 #include "uarch-interpret.h"
 #include "uarch-processor-state.h"
+#include "variant-hasher.h"
 #include "virtio-address-range.h"
 
 namespace cartesi {
@@ -552,6 +553,11 @@ public:
     /// \brief Returns whether runtime soft yields are enabled
     bool get_soft_yield() const {
         return m_r.soft_yield;
+    }
+
+    /// \brief Returns hash tree hash function
+    hash_function_type get_hash_function() const {
+        return m_c.hash_tree.hash_function;
     }
 };
 

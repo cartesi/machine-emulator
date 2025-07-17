@@ -29,7 +29,7 @@
 
 namespace cartesi {
 
-pristine_merkle_tree::pristine_merkle_tree(int log2_root_size, int log2_word_size) :
+pristine_merkle_tree::pristine_merkle_tree(int log2_root_size, int log2_word_size, hash_function_type hash_function) :
     m_log2_root_size{log2_root_size},
     m_log2_word_size{log2_word_size},
     m_hashes(std::max(0, log2_root_size - log2_word_size + 1)) {
@@ -44,7 +44,7 @@ pristine_merkle_tree::pristine_merkle_tree(int log2_root_size, int log2_word_siz
     }
     std::vector<uint8_t> word(1 << log2_word_size, 0);
     assert(word.size() == (UINT64_C(1) << log2_word_size));
-    hasher_type h;
+    variant_hasher h{hash_function};
     h.hash(word, m_hashes[0]);
     for (unsigned i = 1; i < m_hashes.size(); ++i) {
         get_concat_hash(h, m_hashes[i - 1], m_hashes[i - 1], m_hashes[i]);

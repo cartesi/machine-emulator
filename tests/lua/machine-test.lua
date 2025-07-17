@@ -204,7 +204,9 @@ do_test("proof check should pass", function(machine)
     end
     -- Ccalculate hash of ram
     local ram_log2_size = math.ceil(math.log(ram.length, 2))
-    local calculated_ram_hash = test_util.merkle_hash(machine:read_memory(ram.start, ram.length), 0, ram_log2_size)
+    local hash_fn = machine:get_initial_config().hash_tree.hash_function
+    local calculated_ram_hash =
+        test_util.merkle_hash(machine:read_memory(ram.start, ram.length), 0, ram_log2_size, hash_fn)
     -- Get proof of ram and check if hashes match
     local ram_proof = machine:get_proof(ram.start, ram_log2_size)
     local root_hash = machine:get_root_hash()
@@ -297,7 +299,8 @@ do_test("proof  and root hash should match", function(machine)
     local initial_ram_proof = machine:get_proof(ram_address_start, 10)
     -- Calculate hash
     local initial_memory_read = machine:read_memory(ram_address_start, 2 ^ 10)
-    local initial_calculated_hash = test_util.merkle_hash(initial_memory_read, 0, 10)
+    local hash_fn = machine:get_initial_config().hash_tree.hash_function
+    local initial_calculated_hash = test_util.merkle_hash(initial_memory_read, 0, 10, hash_fn)
     assert(initial_ram_proof.target_hash == initial_calculated_hash, "initial hash does not match")
 
     print(
@@ -316,7 +319,7 @@ do_test("proof  and root hash should match", function(machine)
     local ram_proof = machine:get_proof(ram_address_start, 10)
     -- Calculate hash
     local memory_read = machine:read_memory(ram_address_start, 2 ^ 10)
-    local calculated_hash = test_util.merkle_hash(memory_read, 0, 10)
+    local calculated_hash = test_util.merkle_hash(memory_read, 0, 10, hash_fn)
 
     print(
         "end target hash:",

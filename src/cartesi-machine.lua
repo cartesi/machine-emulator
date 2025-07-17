@@ -205,13 +205,13 @@ where options are:
     configures the global hash tree the the machine
 
     <key>:<value> is one of
-        hasher:<string>
+        hash_function:<string>
         sht_filename:<filename>
         phtc_filename:<filename>
         phtc_size:<number>
         shared
 
-        hasher (default: "keccak")
+        hash_function (default: "keccak256")
 		hashing algorithm used for the tree
 
         sht_filename (optional)
@@ -678,7 +678,7 @@ local uarch = {
 }
 local pmas = {}
 local hash_tree = {
-    hasher = default_config.hash_tree.hasher,
+    hash_function = default_config.hash_tree.hash_function,
 }
 local concurrency_update_hash_tree = 0
 local skip_root_hash_check = false
@@ -1063,7 +1063,7 @@ local options = {
         "^(%-%-hash%-tree%=(.+))$",
         function(all, opts)
             local h = util.parse_options(opts, {
-                hasher = true,
+                hash_function = true,
                 sht_filename = true,
                 phtc_filename = true,
                 phtc_size = true,
@@ -1071,10 +1071,12 @@ local options = {
             })
             if h.sht_filename == true then h.sht_filename = "" end
             if h.phtc_filename == true then h.phtc_filename = "" end
-            if h.hasher == true then h.hasher = "keccak" end
+            if h.hash_function == true then h.hash_function = "keccak256" end
             if h.shared == nil or h.shared == "false" then h.shared = false end
             if h.shared == "true" then h.shared = true end
-            h.phtc_size = assert(util.parse_number(h.phtc_size), "invalid page hash cache size in " .. all)
+            if h.phtc_size ~= nil then
+                assert(util.parse_number(h.phtc_size), "invalid page hash cache size in " .. all)
+            end
             assert(type(h.shared) == "boolean", "invalid hash tree shared value in " .. all)
             for i, v in pairs(h) do
                 hash_tree[i] = v

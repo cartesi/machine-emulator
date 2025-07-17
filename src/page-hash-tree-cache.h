@@ -29,7 +29,6 @@
 #include <span>
 #include <unordered_map>
 
-#include <boost/container/static_vector.hpp>
 #include <boost/intrusive/list.hpp>
 
 #include "address-range-constants.h"
@@ -246,7 +245,7 @@ public:
     };
 
     template <IHasher hasher_type>
-    class simd_hasher {
+    class simd_page_hasher {
         struct leaf_entry {
             const_hash_tree_word_view data;
             machine_hash_view result;
@@ -270,13 +269,14 @@ public:
             ((UINT64_C(1) << ((HASH_TREE_LOG2_PAGE_SIZE - HASH_TREE_LOG2_WORD_SIZE) - 1))) *
             hasher_type::MAX_LANE_COUNT;
 
-        hasher_type m_hasher;
         simd_data_hasher<hasher_type, const_hash_tree_word_view> m_leaves_queue;
         simd_concat_hasher<hasher_type, const_machine_hash_view> m_concat_queue;
         circular_buffer<dirty_entry, QUEUE_MAX_SIZE> m_dirty_queue;
 
     public:
         static constexpr int QUEUE_MAX_PAGE_COUNT = hasher_type::MAX_LANE_COUNT;
+
+        explicit simd_page_hasher(hasher_type &hasher) : m_leaves_queue{hasher}, m_concat_queue{hasher} {}
 
         /// \brief Enqueues a leaf for hashing
         void enqueue_leaf(const_hash_tree_word_view data, page_hash_tree_view page_tree, int word_index) noexcept {
@@ -318,7 +318,7 @@ public:
     /// \returns True if update succeeded, false otherwise
     template <IHasher H, ContiguousRangeOfByteLike D>
     // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
-    bool enqueue_hash_entry(page_hash_tree_cache::simd_hasher<H> &queue, D &&d, entry &e,
+    bool enqueue_hash_entry(page_hash_tree_cache::simd_page_hasher<H> &queue, D &&d, entry &e,
         page_hash_tree_cache_stats &stats) noexcept {
         if (std::ranges::size(d) != m_page_size) {
             return false;

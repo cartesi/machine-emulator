@@ -38,24 +38,27 @@ namespace cartesi {
 /// \tparam hasher_type The underlying SIMD hasher implementation
 /// \tparam data_type The type of data to be hashed
 /// \tparam MaxQueueSize Maximum number of items that can be queued (defaults to hasher's max lane count)
-template <typename hasher_type, typename data_type, size_t MaxQueueSize = hasher_type::MAX_LANE_COUNT>
+template <IHasher hasher_type, typename data_type, size_t MaxQueueSize = hasher_type::MAX_LANE_COUNT>
 class simd_data_hasher {
     struct data_entry {
         data_type data;           ///< Data to be hashed
         machine_hash_view result; ///< View where the hash result will be stored
     };
 
-    hasher_type m_hasher;                                                ///< The underlying SIMD hasher instance
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
+    hasher_type &m_hasher;                                               ///< Underlying hasher instance
     boost::container::static_vector<data_entry, MaxQueueSize> m_queue{}; ///< Queue of pending hash operations
 
 public:
+    explicit simd_data_hasher(hasher_type &hasher) : m_hasher(hasher) {}
+
     /// \brief Enqueues data for hashing
     /// \param data Data to hash
     /// \param result Receives the hash of data
     /// \details If the queue reaches the optimal size, it is automatically flushed.
     void enqueue(data_type data, machine_hash_view result) noexcept {
         m_queue.emplace_back(data_entry{.data = data, .result = result});
-        static const size_t optimal_queue_size = std::min(MaxQueueSize, hasher_type::get_optimal_lane_count());
+        static const size_t optimal_queue_size = std::min(MaxQueueSize, m_hasher.get_optimal_lane_count());
         if (m_queue.size() >= optimal_queue_size) [[unlikely]] { // Queue is full, auto flush it
             flush();
         }
@@ -172,7 +175,7 @@ public:
 /// \tparam hasher_type The underlying SIMD hasher implementation
 /// \tparam data_type The type of data to be hashed
 /// \tparam MaxQueueSize Maximum number of pairs that can be queued (defaults to hasher's max lane count)
-template <typename hasher_type, typename data_type, size_t MaxQueueSize = hasher_type::MAX_LANE_COUNT>
+template <IHasher hasher_type, typename data_type, size_t MaxQueueSize = hasher_type::MAX_LANE_COUNT>
 class simd_concat_hasher {
     struct concat_entry {
         data_type left;           ///< Left data to be concatenated and hashed
@@ -180,11 +183,14 @@ class simd_concat_hasher {
         machine_hash_view result; ///< View where the hash result will be stored
     };
 
-    hasher_type m_hasher; ///< The underlying SIMD hasher instance
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
+    hasher_type &m_hasher; ///< The underlying SIMD hasher instance
     boost::container::static_vector<concat_entry, MaxQueueSize>
         m_queue{}; ///< Queue of pending concatenation hash operations
 
 public:
+    explicit simd_concat_hasher(hasher_type &hasher) : m_hasher(hasher) {}
+
     /// \brief Enqueues data pair for concat hashing
     /// \param left Left data to hash
     /// \param right Right data to hash
@@ -192,7 +198,7 @@ public:
     /// \details If the queue reaches the optimal size, it is automatically flushed.
     void enqueue(data_type left, data_type right, machine_hash_view result) noexcept {
         m_queue.emplace_back(concat_entry{.left = left, .right = right, .result = result});
-        static const size_t optimal_queue_size = std::min(MaxQueueSize, hasher_type::get_optimal_lane_count());
+        static const size_t optimal_queue_size = std::min(MaxQueueSize, m_hasher.get_optimal_lane_count());
         if (m_queue.size() >= optimal_queue_size) [[unlikely]] { // Queue is full, auto flush it
             flush();
         }

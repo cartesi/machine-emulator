@@ -29,12 +29,14 @@
 
 namespace cartesi {
 
-back_merkle_tree::back_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size) :
+back_merkle_tree::back_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size,
+    hash_function_type hash_function) :
     m_log2_root_size{log2_root_size},
     m_log2_leaf_size{log2_leaf_size},
     m_max_leaves{UINT64_C(1) << (log2_root_size - log2_leaf_size)},
     m_context(std::max(1, log2_root_size - log2_leaf_size + 1)),
-    m_pristine_hashes{log2_root_size, log2_word_size} {
+    m_pristine_hashes{log2_root_size, log2_word_size, hash_function},
+    m_hash_function(hash_function) {
     if (log2_root_size < 0) {
         throw std::out_of_range{"log2_root_size is negative"};
     }
@@ -56,7 +58,7 @@ back_merkle_tree::back_merkle_tree(int log2_root_size, int log2_leaf_size, int l
 }
 
 void back_merkle_tree::push_back(const machine_hash &new_leaf_hash) {
-    hasher_type h;
+    variant_hasher h{m_hash_function};
     machine_hash right = new_leaf_hash;
     if (m_leaf_count >= m_max_leaves) {
         throw std::out_of_range{"too many leaves"};
@@ -75,7 +77,7 @@ void back_merkle_tree::push_back(const machine_hash &new_leaf_hash) {
 }
 
 void back_merkle_tree::pad_back(uint64_t new_leaf_count) {
-    hasher_type h;
+    variant_hasher h{m_hash_function};
     if (new_leaf_count > m_max_leaves || m_leaf_count + new_leaf_count > m_max_leaves) {
         throw std::invalid_argument("too many leaves");
     }
@@ -120,7 +122,7 @@ void back_merkle_tree::pad_back(uint64_t new_leaf_count) {
 }
 
 machine_hash back_merkle_tree::get_root_hash() const {
-    hasher_type h;
+    variant_hasher h{m_hash_function};
     assert(m_leaf_count <= m_max_leaves);
     const int depth = m_log2_root_size - m_log2_leaf_size;
     if (m_leaf_count < m_max_leaves) {
@@ -144,7 +146,7 @@ back_merkle_tree::proof_type back_merkle_tree::get_next_leaf_proof() const {
     if (m_leaf_count >= m_max_leaves) {
         throw std::out_of_range{"tree is full"};
     }
-    hasher_type h;
+    variant_hasher h{m_hash_function};
     proof_type proof{m_log2_root_size, m_log2_leaf_size};
     proof.set_target_address(m_leaf_count << m_log2_leaf_size);
     proof.set_target_hash(m_pristine_hashes.get_hash(m_log2_leaf_size));

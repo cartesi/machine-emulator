@@ -24,13 +24,13 @@
 #include "hash-tree-constants.h"
 #include "hash-tree-proof.h"
 #include "hash-tree-stats.h"
-#include "keccak-256-hasher.h"
 #include "machine-address-ranges.h"
 #include "machine-config.h"
 #include "machine-hash.h"
 #include "page-hash-tree-cache.h"
 #include "signposts.h"
 #include "unique-c-ptr.h"
+#include "variant-hasher.h"
 
 namespace cartesi {
 
@@ -106,13 +106,13 @@ class hash_tree {
     using const_address_ranges = hash_tree_view<const machine_address_ranges>;
 
 public:
-    using hasher_type = keccak_256_hasher;
     using proof_type = hash_tree_proof;
 
     using nodes_type = std::vector<node_type>;
     using sibling_hashes_type = std::vector<machine_hash>;
 
-    hash_tree(const hash_tree_config &config, uint64_t concurrency, const_address_ranges ars);
+    hash_tree(const hash_tree_config &config, uint64_t concurrency, const_address_ranges ars,
+        hash_function_type hash_function);
 
     hash_tree(const hash_tree &other) = delete;
     hash_tree(hash_tree &&other) = delete;
@@ -144,11 +144,11 @@ private:
 
     machine_hash get_dense_node_hash(address_range &ar, uint64_t address, int log2_size);
 
-    static pristine_hashes get_pristine_hashes();
+    static pristine_hashes get_pristine_hashes(hash_function_type hash_function);
 
     bool update_dirty_pages(address_ranges ars, changed_address_ranges &changed_ars);
     bool update_dirty_page(address_range &ar, page_hash_tree_cache::entry &entry, bool &changed);
-    bool enqueue_hash_dirty_page(page_hash_tree_cache::simd_hasher<hasher_type> &queue, address_range &ar,
+    bool enqueue_hash_dirty_page(page_hash_tree_cache::simd_page_hasher<variant_hasher> &queue, address_range &ar,
         page_hash_tree_cache::entry &entry, page_hash_tree_cache_stats &stats);
     bool return_updated_dirty_pages(address_ranges ars, dirty_pages &batch, changed_address_ranges &changed_ars);
 
@@ -180,6 +180,7 @@ private:
     nodes_type m_sparse_nodes;
     const pristine_hashes m_pristine_hashes;
     int m_concurrency;
+    hash_function_type m_hash_function;
 
     uint64_t m_sparse_node_hashes{0};
     std::array<uint64_t, HASH_TREE_LOG2_ROOT_SIZE> m_dense_node_hashes{};

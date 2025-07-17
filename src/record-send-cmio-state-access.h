@@ -53,16 +53,15 @@ struct i_state_access_fast_addr<record_send_cmio_state_access> {
 class record_send_cmio_state_access :
     public i_state_access<record_send_cmio_state_access>,
     public i_accept_scoped_notes<record_send_cmio_state_access> {
-    using hasher_type = hash_tree::hasher_type;
     // NOLINTBEGIN(cppcoreguidelines-avoid-const-or-ref-data-members)
     machine &m_m;      ///< Associated machine
     access_log &m_log; ///< Pointer to access log
     // NOLINTEND(cppcoreguidelines-avoid-const-or-ref-data-members)
 
-    static void get_hash(const access_data &data, machine_hash &hash) {
-        hasher_type hasher;
-        get_merkle_tree_hash(hasher, std::span<const access_data::value_type>{data.data(), data.size()},
-            HASH_TREE_WORD_SIZE, hash);
+    template <IHasher H>
+    static void get_hash(H &h, const access_data &data, machine_hash &hash) {
+        get_merkle_tree_hash(h, std::span<const access_data::value_type>{data.data(), data.size()}, HASH_TREE_WORD_SIZE,
+            hash);
     }
 
 public:
@@ -103,7 +102,8 @@ private:
         a.get_read().value().resize(HASH_TREE_WORD_SIZE);
         // read the entire leaf where the word is located
         m_m.read_memory(pleaf_aligned, a.get_read().value().data(), HASH_TREE_WORD_SIZE);
-        get_hash(a.get_read().value(), a.get_read_hash());
+        variant_hasher h(m_m.get_hash_function());
+        get_hash(h, a.get_read().value(), a.get_read_hash());
         // NOLINTEND(bugprone-unchecked-optional-access)
         m_log.push_access(std::move(a), text);
     }
@@ -138,14 +138,15 @@ private:
         a.get_read().emplace();
         a.get_read().value().resize(HASH_TREE_WORD_SIZE);
         m_m.read_memory(pleaf_aligned, a.get_read().value().data(), HASH_TREE_WORD_SIZE);
-        get_hash(a.get_read().value(), a.get_read_hash());
+        variant_hasher h(m_m.get_hash_function());
+        get_hash(h, a.get_read().value(), a.get_read_hash());
         // the logged written data is the same as the read data, but with the word at paligned replaced by word
         a.set_written(access_data(a.get_read().value()));                    // copy the read data
         const int word_offset = static_cast<int>(paligned - pleaf_aligned);  // offset of word in leaf
         replace_word_access_data(val, a.get_written().value(), word_offset); // replace the word
         // compute the hash of the written data
         a.get_written_hash().emplace();
-        get_hash(a.get_written().value(), a.get_written_hash().value());
+        get_hash(h, a.get_written().value(), a.get_written_hash().value());
         // NOLINTEND(bugprone-unchecked-optional-access)
         m_log.push_access(std::move(a), text);
     }
@@ -247,9 +248,9 @@ private:
         // log hash and written data
         // NOLINTBEGIN(bugprone-unchecked-optional-access)
         a.get_written_hash().emplace();
-        hasher_type hasher{};
+        variant_hasher h(m_m.get_hash_function());
         const auto offset = paddr - ar.get_start();
-        get_merkle_tree_hash(hasher, std::span<const unsigned char>{ar.get_host_memory() + offset, write_length},
+        get_merkle_tree_hash(h, std::span<const unsigned char>{ar.get_host_memory() + offset, write_length},
             HASH_TREE_WORD_SIZE, a.get_written_hash().value());
         if (m_log.get_log_type().has_large_data()) {
             access_data &data = a.get_written().emplace(write_length);

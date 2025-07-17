@@ -511,6 +511,16 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_processor_con
 template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, uarch_config &value, const std::string &path = "params/");
 
+/// \brief Attempts to load a hash_function_type object from a field in a JSON object
+/// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
+/// \param j JSON object to load from
+/// \param key Key to load value from
+/// \param value Object to store value
+/// \param path Path to j
+template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, hash_function_type &value,
+    const std::string &path = "params/");
+
 /// \brief Attempts to load an hash_tree_config object from a field in a JSON object
 /// \tparam K Key type (explicit extern declarations for uint64_t and std::string are provided)
 /// \param j JSON object to load from

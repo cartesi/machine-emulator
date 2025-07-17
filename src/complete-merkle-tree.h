@@ -22,10 +22,10 @@
 #include <vector>
 
 #include "hash-tree-proof.h"
-#include "keccak-256-hasher.h"
 #include "machine-hash.h"
 #include "meta.h"
 #include "pristine-merkle-tree.h"
+#include "variant-hasher.h"
 
 /// \file
 /// \brief Complete Merkle tree interface.
@@ -39,9 +39,6 @@ namespace cartesi {
 /// The tree is optimized to store only the hashes that are not pristine.
 class complete_merkle_tree {
 public:
-    /// \brief Hasher class.
-    using hasher_type = keccak_256_hasher;
-
     /// \brief Storage for a proof.
     using proof_type = hash_tree_proof;
 
@@ -52,15 +49,16 @@ public:
     /// \param log2_root_size Log<sub>2</sub> of tree size
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
-    complete_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size);
+    complete_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, hash_function_type hash_function);
 
     /// \brief Constructor from non-pristine leaves (assumed flushed left)
     /// \param log2_root_size Log<sub>2</sub> of tree size
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
     template <typename L>
-    complete_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, L &&leaves) :
-        complete_merkle_tree{log2_root_size, log2_leaf_size, log2_word_size} {
+    complete_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, L &&leaves,
+        hash_function_type hash_function) :
+        complete_merkle_tree{log2_root_size, log2_leaf_size, log2_word_size, hash_function} {
         static_assert(std::is_same_v<level_type, std::remove_cvref_t<L>>, "not a leaves vector");
         get_level(get_log2_leaf_size()) = std::forward<L>(leaves);
         bubble_up();
@@ -124,10 +122,11 @@ private:
     /// hash at level
     level_type &get_level(int log2_size);
 
-    int m_log2_root_size;            ///< Log<sub>2</sub> of tree size
-    int m_log2_leaf_size;            ///< Log<sub>2</sub> of page size
-    pristine_merkle_tree m_pristine; ///< Pristine hashes for all levels
-    std::vector<level_type> m_tree;  ///< Merkle tree
+    int m_log2_root_size;               ///< Log<sub>2</sub> of tree size
+    int m_log2_leaf_size;               ///< Log<sub>2</sub> of page size
+    pristine_merkle_tree m_pristine;    ///< Pristine hashes for all levels
+    std::vector<level_type> m_tree;     ///< Merkle tree
+    hash_function_type m_hash_function; ///< Hash function
 };
 
 } // namespace cartesi

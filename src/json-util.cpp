@@ -552,6 +552,26 @@ static uarch_interpreter_break_reason uarch_interpreter_break_reason_from_name(c
     throw std::domain_error{"invalid uarch interpreter break reason"};
 }
 
+static hash_function_type hash_function_from_name(const std::string &name) {
+    const static std::unordered_map<std::string, hash_function_type> g_hash_function_name = {
+        {"sha256", hash_function_type::sha256}, {"keccak256", hash_function_type::keccak256}};
+    auto got = g_hash_function_name.find(name);
+    if (got == g_hash_function_name.end()) {
+        throw std::domain_error{"invalid hash function type"};
+    }
+    return got->second;
+}
+
+static std::string hash_function_name(hash_function_type hf) {
+    switch (hf) {
+        case hash_function_type::keccak256:
+            return "keccak256";
+        case hash_function_type::sha256:
+            return "sha256";
+    }
+    throw std::domain_error{"invalid hash function type"};
+}
+
 static std::string access_type_name(access_type at) {
     switch (at) {
         case access_type::read:
@@ -1381,6 +1401,24 @@ template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::
     const std::string &path);
 
 template <typename K>
+void ju_get_opt_field(const nlohmann::json &j, const K &key, hash_function_type &value, const std::string &path) {
+    if (!contains(j, key, path)) {
+        return;
+    }
+    const auto &jk = j[key];
+    if (!jk.is_string()) {
+        throw std::invalid_argument("\""s + path + to_string(key) + "\" not a string");
+    }
+    value = hash_function_from_name(jk.template get<std::string>());
+}
+
+template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, hash_function_type &value,
+    const std::string &path);
+
+template void ju_get_opt_field<std::string>(const nlohmann::json &j, const std::string &key, hash_function_type &value,
+    const std::string &path);
+
+template <typename K>
 void ju_get_opt_field(const nlohmann::json &j, const K &key, hash_tree_config &value, const std::string &path) {
     if (!contains(j, key, path)) {
         return;
@@ -1393,6 +1431,7 @@ void ju_get_opt_field(const nlohmann::json &j, const K &key, hash_tree_config &v
     ju_get_opt_field(jconfig, "sht_filename"s, value.sht_filename, new_path);
     ju_get_opt_field(jconfig, "phtc_filename"s, value.phtc_filename, new_path);
     ju_get_opt_field(jconfig, "phtc_size"s, value.phtc_size, new_path);
+    ju_get_opt_field(jconfig, "hash_function"s, value.hash_function, new_path);
 }
 
 template void ju_get_opt_field<uint64_t>(const nlohmann::json &j, const uint64_t &key, hash_tree_config &value,
@@ -1883,8 +1922,8 @@ void to_json(nlohmann::json &j, const memory_range_config &config) {
 
 void to_json(nlohmann::json &j, const hash_tree_config &config) {
     j = nlohmann::json{{"shared", config.shared}, {"create", config.create}, {"truncate", config.truncate},
-        {"sht_filename", config.sht_filename}, {"phtc_filename", config.phtc_filename},
-        {"phtc_size", config.phtc_size}};
+        {"sht_filename", config.sht_filename}, {"phtc_filename", config.phtc_filename}, {"phtc_size", config.phtc_size},
+        {"hash_function", hash_function_name(config.hash_function)}};
 }
 
 void to_json(nlohmann::json &j, const registers_state &config) {

@@ -20,6 +20,7 @@
 
 #include <back-merkle-tree.h>
 #include <hash-tree-constants.h>
+#include <keccak-256-hasher.h>
 #include <shadow-uarch-state.h>
 #include <uarch-constants.h>
 #include <uarch-pristine.h>
@@ -30,10 +31,6 @@
 /// \brief This program computes the hash of the pristine uarch state ad writes it to stdout
 
 using namespace cartesi;
-
-using tree_type = back_merkle_tree;
-using hash_type = tree_type::hash_type;
-using hasher_type = tree_type::hasher_type;
 
 static constexpr auto word_size = HASH_TREE_WORD_SIZE;
 static constexpr auto log2_word_size = HASH_TREE_LOG2_WORD_SIZE;
@@ -68,9 +65,9 @@ Options:
 }
 
 int main(int argc, char *argv[]) try {
-    tree_type tree{UARCH_STATE_LOG2_SIZE, log2_page_size, log2_word_size};
-    hasher_type hasher{};
-    hash_type hash{};
+    back_merkle_tree tree{UARCH_STATE_LOG2_SIZE, log2_page_size, log2_word_size, hash_function_type::keccak256};
+    keccak_256_hasher hasher{};
+    machine_hash hash{};
 
     // Process command line arguments
     for (int i = 1; i < argc; ++i) {
@@ -88,7 +85,7 @@ int main(int argc, char *argv[]) try {
         throw std::runtime_error("Could not allocate scratch memory");
     }
     auto scratch_span = std::span<unsigned char>{scratch.get(), page_size};
-    hash_type pristine_hash;
+    machine_hash pristine_hash;
     get_merkle_tree_hash(hasher, scratch_span, word_size, pristine_hash);
 
     // Build pristine shadow uarch state

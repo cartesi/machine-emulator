@@ -17,18 +17,6 @@
 #ifndef KECCAK_256_HASHER_H
 #define KECCAK_256_HASHER_H
 
-// TODO(edubart): remove this hack
-#if 0 // NOLINT(readability-avoid-unconditional-preprocessor-if)
-#include "sha-256-hasher.h"
-
-namespace cartesi {
-
-using keccak_256_hasher = sha_256_hasher;
-
-} // namespace cartesi
-
-#else
-
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -104,37 +92,12 @@ MULTIVERSION_AMD64_AVX512_BMI_BMI2 void keccak_256_hash_2x8(const array2d<const_
 
 class keccak_256_hasher final : public i_hasher<keccak_256_hasher> {
 public:
-    static constexpr int MAX_LANE_COUNT = 8; ///< Number of maximum supported SIMD lanes
+    static constexpr int MAX_LANE_COUNT = 8;
 
-    /// \brief Default constructor
-    keccak_256_hasher() = default;
-
-    /// \brief Default destructor
-    ~keccak_256_hasher() = default;
-
-    /// \brief No copy constructor
-    keccak_256_hasher(const keccak_256_hasher &) = delete;
-    /// \brief No move constructor
-    keccak_256_hasher(keccak_256_hasher &&) = delete;
-    /// \brief No copy assignment
-    keccak_256_hasher &operator=(const keccak_256_hasher &) = delete;
-    /// \brief No move assignment
-    keccak_256_hasher &operator=(keccak_256_hasher &&) = delete;
-
-    // \brief Hashes the concatenation of data in SIMD using Keccak-256
-    // \tparam LaneCount Number of SIMD lanes
-    // \tparam ConcatCount Number of concatenated data items
-    // \tparam Extent Extent of the data span
-    // \param data Data to hash, as a multi-dimensional array of spans
-    // \param hash Array of machine hashes to store the results
-    // \warning When LaneCount is greater than 1, it is assumed data spans have same size, there is no check for that.
     template <size_t ConcatCount, size_t LaneCount, size_t Extent>
     static void do_simd_concat_hash(const array2d<std::span<const unsigned char, Extent>, ConcatCount, LaneCount> &data,
         const std::array<machine_hash_view, LaneCount> &hash) noexcept;
 
-    // \brief Gets the optimal number of SIMD lanes for SHA-256
-    // \returns The optimal number of SIMD lanes for SHA-256
-    // \details This value is architecture-dependent and may vary based on the available instruction sets.
     static size_t do_get_optimal_lane_count() noexcept {
         return keccak_256_get_optimal_lane_count();
     }
@@ -306,7 +269,5 @@ inline void keccak_256_hasher::do_simd_concat_hash<2, 16, MACHINE_HASH_SIZE>(
 }
 
 } // namespace cartesi
-
-#endif // #if
 
 #endif

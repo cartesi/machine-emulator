@@ -33,6 +33,7 @@
 #include "i-hasher.h"
 #include "i-prefer-shadow-uarch-state.h"
 #include "i-uarch-state-access.h"
+#include "keccak-256-hasher.h"
 #include "machine-reg.h"
 #include "machine.h"
 #include "meta.h"
@@ -51,8 +52,6 @@ class uarch_replay_state_access :
     using proof_type = hash_tree::proof_type;
 
 public:
-    using hasher_type = hash_tree::hasher_type;
-
     struct context {
         /// \brief Constructor replay_send_cmio_state_access context
         /// \param log Access log to be replayed
@@ -68,7 +67,7 @@ public:
         ///< Root hash before next access
         machine_hash root_hash;
         ///< Hasher needed to verify proofs
-        hasher_type hasher;
+        keccak_256_hasher hasher;
     };
 
 private:
@@ -91,10 +90,10 @@ public:
     }
 
 private:
-    static auto get_hash(hasher_type &hasher, const access_data &data) {
+    template <IHasher H>
+    static auto get_hash(H &h, const access_data &data) {
         machine_hash hash{};
-        get_merkle_tree_hash(hasher, std::span<const unsigned char>{data.data(), data.size()}, HASH_TREE_WORD_SIZE,
-            hash);
+        get_merkle_tree_hash(h, std::span<const unsigned char>{data.data(), data.size()}, HASH_TREE_WORD_SIZE, hash);
         return hash;
     }
 

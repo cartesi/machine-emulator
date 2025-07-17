@@ -30,17 +30,18 @@ static_assert(interop_log2_root_size == HASH_TREE_LOG2_ROOT_SIZE,
 static_assert(sizeof(cartesi::machine_hash) == sizeof(std::remove_pointer_t<interop_hash_type>),
     "hash_type size mismatch");
 
-extern "C" void interop_merkle_tree_hash(const unsigned char *data, size_t size, interop_hash_type hash) {
-    hash_tree::hasher_type hasher{};
-    get_merkle_tree_hash(hasher, std::span<const unsigned char>{data, size}, HASH_TREE_WORD_SIZE,
+extern "C" void interop_merkle_tree_hash(cartesi::hash_function_type hash_function, const unsigned char *data,
+    size_t size, interop_hash_type hash) {
+    variant_hasher h{hash_function};
+    get_merkle_tree_hash(h, std::span<const unsigned char>{data, size}, HASH_TREE_WORD_SIZE,
         machine_hash_view{*hash, interop_machine_hash_byte_size});
 }
 
-extern "C" void interop_concat_hash(interop_const_hash_type left, interop_const_hash_type right,
-    interop_hash_type result) {
-    hash_tree::hasher_type hasher{};
+extern "C" void interop_concat_hash(cartesi::hash_function_type hash_function, interop_const_hash_type left,
+    interop_const_hash_type right, interop_hash_type result) {
+    variant_hasher h{hash_function};
     // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
-    get_concat_hash(hasher, *reinterpret_cast<const machine_hash *>(left),
-        *reinterpret_cast<const machine_hash *>(right), *reinterpret_cast<machine_hash *>(result));
+    get_concat_hash(h, *reinterpret_cast<const machine_hash *>(left), *reinterpret_cast<const machine_hash *>(right),
+        *reinterpret_cast<machine_hash *>(result));
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
 }

@@ -19,11 +19,9 @@
 #include <back-merkle-tree.h>
 #include <hash-tree-proof.h>
 #include <json-util.h>
-#include <keccak-256-hasher.h>
 #include <machine-c-api.h>
 #include <machine-hash.h>
-
-using hash_type = cartesi::machine_hash;
+#include <variant-hasher.h>
 
 // Calculate root hash for data buffer of log2_size
 namespace detail {
@@ -32,12 +30,12 @@ constexpr int WORD_LOG2_SIZE = 5;
 constexpr int MERKLE_PAGE_LOG2_SIZE = 12;
 constexpr int MERKLE_PAGE_SIZE = (UINT64_C(1) << MERKLE_PAGE_LOG2_SIZE);
 
-static hash_type merkle_hash(cartesi::keccak_256_hasher &h, const std::string_view &data, int log2_size) {
-    hash_type result;
+static cartesi::machine_hash merkle_hash(cartesi::variant_hasher &h, const std::string_view &data, int log2_size) {
+    cartesi::machine_hash result;
     if (log2_size > WORD_LOG2_SIZE) {
         --log2_size;
         auto half_size = data.size() / 2;
-        auto left = merkle_hash(h, std::string_view{data.data(), half_size}, log2_size);
+        auto left = merkle_hash(h, std::string_view{data.data() + 0, half_size}, log2_size);
         auto right = merkle_hash(h, std::string_view{data.data() + half_size, half_size}, log2_size);
         get_concat_hash(h, left, right, result);
     } else {
@@ -49,7 +47,18 @@ static hash_type merkle_hash(cartesi::keccak_256_hasher &h, const std::string_vi
 
 } // namespace detail
 
-static hash_type merkle_hash(const std::string_view &data, int log2_size) {
+// \brief Creates a hasher object compatible with the one used by the machine's config
+static cartesi::hash_function_type get_machine_hash_function(cm_machine *machine) {
+    const char *cfg_jsonstr{};
+    cm_error error_code = cm_get_initial_config(machine, &cfg_jsonstr);
+    if (error_code != 0) {
+        throw std::runtime_error{cm_get_last_error_message()};
+    }
+    const auto cfg = cartesi::from_json<cartesi::machine_config>(cfg_jsonstr, "config");
+    return cfg.hash_tree.hash_function;
+}
+
+static cartesi::machine_hash merkle_hash(cartesi::variant_hasher &h, const std::string_view &data, int log2_size) {
     if (log2_size > 63) {
         throw std::domain_error("log2_size is too large");
     }
@@ -59,20 +68,18 @@ static hash_type merkle_hash(const std::string_view &data, int log2_size) {
     if ((UINT64_C(1) << log2_size) != data.size()) {
         throw std::invalid_argument("log2_size does not match data size");
     }
-    cartesi::keccak_256_hasher h;
     return detail::merkle_hash(h, data, log2_size);
 }
 
-static hash_type calculate_proof_root_hash(const cartesi::hash_tree_proof &proof) {
-    hash_type hash;
+static cartesi::machine_hash calculate_proof_root_hash(cartesi::variant_hasher &h,
+    const cartesi::hash_tree_proof &proof) {
+    cartesi::machine_hash hash;
     memcpy(hash.data(), proof.get_target_hash().data(), sizeof(cm_hash));
-    for (int log2_size = static_cast<int>(proof.get_log2_target_size());
-        log2_size < static_cast<int>(proof.get_log2_root_size()); ++log2_size) {
-        cartesi::keccak_256_hasher h;
+    for (int log2_size = proof.get_log2_target_size(); log2_size < proof.get_log2_root_size(); ++log2_size) {
         auto bit = (proof.get_target_address() & (UINT64_C(1) << log2_size));
-        hash_type first;
-        hash_type second;
-        if (bit) {
+        cartesi::machine_hash first;
+        cartesi::machine_hash second;
+        if (bit != 0) {
             memcpy(first.data(), proof.get_sibling_hashes()[log2_size - proof.get_log2_target_size()].data(),
                 sizeof(cm_hash));
             second = hash;
@@ -86,8 +93,11 @@ static hash_type calculate_proof_root_hash(const cartesi::hash_tree_proof &proof
     return hash;
 }
 
-static hash_type calculate_emulator_hash(cm_machine *machine) {
-    cartesi::back_merkle_tree tree(CM_TREE_LOG2_ROOT_SIZE, CM_TREE_LOG2_PAGE_SIZE, CM_TREE_LOG2_WORD_SIZE);
+static cartesi::machine_hash calculate_emulator_hash(cm_machine *machine) {
+    const auto hash_function = get_machine_hash_function(machine);
+    cartesi::variant_hasher h(hash_function);
+    cartesi::back_merkle_tree tree(CM_TREE_LOG2_ROOT_SIZE, CM_TREE_LOG2_PAGE_SIZE, CM_TREE_LOG2_WORD_SIZE,
+        hash_function);
     std::string page;
     page.resize(detail::MERKLE_PAGE_SIZE);
     const char *ranges_jsonstr{};
@@ -96,7 +106,7 @@ static hash_type calculate_emulator_hash(cm_machine *machine) {
     }
     const auto mrds = cartesi::from_json<cartesi::address_range_descriptions>(ranges_jsonstr, "memory_ranges");
     uint64_t last = 0;
-    for (auto m : mrds) {
+    for (const auto &m : mrds) {
         tree.pad_back((m.start - last) >> detail::MERKLE_PAGE_LOG2_SIZE);
         auto end = m.start + m.length;
         for (uint64_t s = m.start; s < end; s += detail::MERKLE_PAGE_SIZE) {
@@ -104,7 +114,7 @@ static hash_type calculate_emulator_hash(cm_machine *machine) {
             if (cm_read_memory(machine, s, reinterpret_cast<unsigned char *>(page.data()), page.size()) != 0) {
                 throw std::runtime_error{cm_get_last_error_message()};
             }
-            auto page_hash = merkle_hash(page, detail::MERKLE_PAGE_LOG2_SIZE);
+            auto page_hash = merkle_hash(h, page, detail::MERKLE_PAGE_LOG2_SIZE);
             tree.push_back(page_hash);
         }
         last = end;

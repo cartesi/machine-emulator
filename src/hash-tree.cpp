@@ -180,7 +180,8 @@ bool hash_tree::update_dirty_page(address_range &ar, page_hash_tree_cache::entry
     }
     const auto offset = paddr_page - ar.get_start();
     const auto page_view = std::span<const unsigned char, HASH_TREE_PAGE_SIZE>{base + offset, HASH_TREE_PAGE_SIZE};
-    page_hash_tree_cache::simd_hasher<hasher_type> queue;
+    variant_hasher h{m_hash_function};
+    page_hash_tree_cache::simd_page_hasher<variant_hasher> queue(h);
     auto &stats = m_page_cache.get_stats_ref();
     auto ret = m_page_cache.enqueue_hash_entry(queue, page_view, entry, stats);
     stats.inner_page_hashes += queue.flush();
@@ -193,8 +194,8 @@ bool hash_tree::update_dirty_page(address_range &ar, page_hash_tree_cache::entry
     return ret;
 }
 
-bool hash_tree::enqueue_hash_dirty_page(page_hash_tree_cache::simd_hasher<hasher_type> &queue, address_range &ar,
-    page_hash_tree_cache::entry &entry, page_hash_tree_cache_stats &stats) {
+bool hash_tree::enqueue_hash_dirty_page(page_hash_tree_cache::simd_page_hasher<variant_hasher> &queue,
+    address_range &ar, page_hash_tree_cache::entry &entry, page_hash_tree_cache_stats &stats) {
     const auto paddr_page = entry.get_paddr_page();
     const auto *base = ar.get_host_memory();
     if (!ar.is_memory() || base == nullptr || !ar.contains_absolute(paddr_page, HASH_TREE_PAGE_SIZE)) {
@@ -212,12 +213,12 @@ bool hash_tree::return_updated_dirty_pages(address_ranges ars, dirty_pages &batc
     }
     //??D The batch size past which we switch to parallel updates needs to be tuned empirically
     const int batch_size = static_cast<int>(batch.size());
-    const int threads = (m_concurrency > 1 && batch_size > m_concurrency) ? m_concurrency : 1;
-    // ??(edubart): Using block size > 1 with multi-threading was not beneficial in benchmarks
-    // most likely due to work imbalance between threads leading to less effective OpenMP dynamic scheduling.
-    // However for single-threaded execution, a larger block size should always improve performance by
-    // maximizing SIMD hashing.
-    const int block_size = threads > 1 ? 1 : page_hash_tree_cache::simd_hasher<hasher_type>::QUEUE_MAX_PAGE_COUNT;
+    // Set block size to maximize SIMD lane utilization by hashing multiple pages together
+    const int block_size = std::min(static_cast<int>(variant_hasher{m_hash_function}.get_optimal_lane_count()),
+        page_hash_tree_cache::simd_page_hasher<variant_hasher>::QUEUE_MAX_PAGE_COUNT);
+    // It's only worth to use multi-threading if we have enough entries to process
+    const int threads =
+        (m_concurrency > 1 && batch_size > m_concurrency && batch_size > block_size) ? m_concurrency : 1;
     uint64_t update_failures{0};
     uint64_t word_hits{0};
     uint64_t word_misses{0};
@@ -229,7 +230,8 @@ bool hash_tree::return_updated_dirty_pages(address_ranges ars, dirty_pages &batc
         word_hits, word_misses, page_changes, inner_page_hashes, pristine_pages, non_pristine_pages)
     for (int i = 0; i < batch_size; i += block_size) {
         // Queue entries to be hashed
-        page_hash_tree_cache::simd_hasher<hasher_type> queue;
+        variant_hasher h{m_hash_function};
+        page_hash_tree_cache::simd_page_hasher<variant_hasher> queue(h);
         page_hash_tree_cache_stats stats;
         for (int j = i; j < std::min(batch_size, i + block_size); ++j) {
             auto &[ar_index, br, changed] = batch[j];
@@ -374,13 +376,13 @@ void hash_tree::update_and_clear_dense_node_entries(dense_node_entries &batch, i
     }
     //??D The batch size past which we switch to parallel updates needs to be tuned empirically
     const int batch_size = static_cast<int>(batch.size());
+    const int block_size = static_cast<int>(variant_hasher{m_hash_function}.get_optimal_lane_count());
     // It's only worth to use multi-threading if we have enough entries to process
-    const int threads =
-        (m_concurrency > 1 && batch_size > m_concurrency * hasher_type::MAX_LANE_COUNT) ? m_concurrency : 1;
-    const int block_size = hasher_type::MAX_LANE_COUNT;
+    const int threads = (m_concurrency > 1 && batch_size > m_concurrency * block_size) ? m_concurrency : 1;
 #pragma omp parallel for schedule(static) if (threads > 1) num_threads(threads)
     for (int block_start = 0; block_start < batch_size; block_start += block_size) {
-        simd_concat_hasher<hasher_type, const_machine_hash_view> queue;
+        variant_hasher h{m_hash_function};
+        simd_concat_hasher<variant_hasher, const_machine_hash_view> queue(h);
         for (int i = block_start; i < std::min(batch_size, block_start + block_size); ++i) {
             auto &[dht, offset] = batch[i];
             auto child_size = UINT64_C(1) << (log2_size - 1);
@@ -459,7 +461,8 @@ bool hash_tree::update_sparse_tree(address_ranges ars, const changed_address_ran
             changed.emplace(ar_parent_node.log2_size, ar_node.parent);
         }
     }
-    simd_concat_hasher<hasher_type, const_machine_hash_view> queue;
+    variant_hasher h{m_hash_function};
+    simd_concat_hasher<variant_hasher, const_machine_hash_view> queue(h);
     int last_log2_size = -1;
     while (!changed.empty()) {
         auto [log2_size, inner_index] = changed.top();
@@ -557,7 +560,7 @@ machine_hash hash_tree::get_node_hash(address_ranges ars, uint64_t address, int 
 }
 
 bool hash_tree::verify(address_ranges ars) const {
-    hasher_type h;
+    variant_hasher h{m_hash_function};
     bool ret = true;
     for (auto ar_node_index = get_ar_sparse_node_index(0); const auto &ar : ars) {
         const std::span<const unsigned char> mem{ar.get_host_memory(), ar.get_length()};
@@ -618,7 +621,7 @@ bool hash_tree::update(address_ranges ars) {
 bool hash_tree::update_page(address_ranges ars, uint64_t paddr_page) {
     paddr_page >>= HASH_TREE_LOG2_PAGE_SIZE;
     paddr_page <<= HASH_TREE_LOG2_PAGE_SIZE;
-    hasher_type h;
+    variant_hasher h{m_hash_function};
     // Find address range where page might lie
     auto it = std::ranges::find_if(ars,
         [paddr_page](auto &ar) { return ar.contains_absolute(paddr_page, HASH_TREE_PAGE_SIZE); });
@@ -674,8 +677,8 @@ bool hash_tree::update_page(address_ranges ars, uint64_t paddr_page) {
     return true;
 }
 
-hash_tree::pristine_hashes hash_tree::get_pristine_hashes() {
-    hasher_type h;
+hash_tree::pristine_hashes hash_tree::get_pristine_hashes(hash_function_type hash_function) {
+    variant_hasher h{hash_function};
     pristine_hashes hashes{};
     std::array<unsigned char, HASH_TREE_WORD_SIZE> zero{};
     machine_hash hash = get_hash(h, zero);
@@ -695,20 +698,22 @@ static int get_concurrency([[maybe_unused]] int value) {
 #endif
 }
 
-hash_tree::hash_tree(const hash_tree_config &config, uint64_t concurrency, const_address_ranges ars) :
+hash_tree::hash_tree(const hash_tree_config &config, uint64_t concurrency, const_address_ranges ars,
+    hash_function_type hash_function) :
 #ifdef HAS_SIGNPOSTS
     m_log{os_log_create("io.cartesi.machine-emulator", "hash-tree")},
     m_spid_update{os_signpost_id_generate(m_log)},
     m_spid_update_page_hashes{os_signpost_id_generate(m_log)},
     m_spid_update_dense_trees{os_signpost_id_generate(m_log)},
     m_spid_update_sparse_tree{os_signpost_id_generate(m_log)},
-    m_page_cache{m_log, hasher_type{}, config.phtc_size},
+    m_page_cache{m_log, variant_hasher{hash_function}, config.phtc_size},
 #else
-    m_page_cache{hasher_type{}, config.phtc_size},
+    m_page_cache{variant_hasher{hash_function}, config.phtc_size},
 #endif
     m_sparse_nodes{create_nodes(ars)},
-    m_pristine_hashes{get_pristine_hashes()},
-    m_concurrency{get_concurrency(static_cast<int>(concurrency))} {
+    m_pristine_hashes{get_pristine_hashes(hash_function)},
+    m_concurrency{get_concurrency(static_cast<int>(concurrency))},
+    m_hash_function{hash_function} {
 }
 
 void hash_tree::check_address_ranges(const_address_ranges ars) {

@@ -31,6 +31,7 @@
 #include "pmas.h"
 #include "shadow-tlb.h"
 #include "unique-c-ptr.h"
+#include "variant-hasher.h"
 
 namespace cartesi {
 
@@ -58,10 +59,13 @@ public:
     struct context {
         /// \brief Constructor of record step state access context
         /// \param filename where to save the log
-        explicit context(std::string filename) : filename(std::move(filename)) {
+        explicit context(std::string filename, hash_function_type hash_function) :
+            filename(std::move(filename)),
+            hash_function(hash_function) {
             ;
         }
         std::string filename;             ///<  where to save the log
+        hash_function_type hash_function; ///<  hash function type to use for the log
         mutable pages_type touched_pages; ///<  copy of all pages touched during execution
     };
 
@@ -91,11 +95,16 @@ public:
 
         // Write log file.
         // The log format is as follows:
-        // page_count, [(page_index, data, scratch_area), ...], sibling_count, [sibling_hash, ...]
+        // hash_function, page_count, [(page_index, data, scratch_area), ...], sibling_count, [sibling_hash, ...]
         // We store the page index, instead of the page address.
         // Scratch area is used by the replay to store page hashes, which change during replay
         // This is to work around the lack of dynamic memory allocation when replaying the log in microarchitectures
         auto fp = make_unique_fopen(m_context.filename.c_str(), "wb");
+        // write the hash function type so the hasher can be recreated by the replay
+        auto hash_function = static_cast<uint64_t>(m_context.hash_function);
+        if (fwrite(&hash_function, sizeof(hash_function), 1, fp.get()) != 1) {
+            throw std::runtime_error("Could not write hash function type to log file");
+        }
         if (fwrite(&page_count, sizeof(page_count), 1, fp.get()) != 1) {
             throw std::runtime_error("Could not write page count to log file");
         }
@@ -129,7 +138,7 @@ private:
     /// \param address address of the page
     void touch_page(uint64_t address) const {
         auto page = address & ~PAGE_OFFSET_MASK;
-        if (m_context.touched_pages.find(page) != m_context.touched_pages.end()) {
+        if (m_context.touched_pages.contains(page)) {
             return; // already saved
         }
         auto [it, _] = m_context.touched_pages.emplace(page, page_data_type());

@@ -23,17 +23,20 @@
 #include <utility>
 
 #include "i-hasher.h"
+#include "variant-hasher.h"
 
 /// \file
 /// \brief Complete Merkle tree implementation.
 
 namespace cartesi {
 
-complete_merkle_tree::complete_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size) :
+complete_merkle_tree::complete_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size,
+    hash_function_type hash_function) :
     m_log2_root_size{log2_root_size},
     m_log2_leaf_size{log2_leaf_size},
-    m_pristine{log2_root_size, log2_word_size},
-    m_tree(std::max(0, log2_root_size - log2_leaf_size + 1)) {
+    m_pristine{log2_root_size, log2_word_size, hash_function},
+    m_tree(std::max(0, log2_root_size - log2_leaf_size + 1)),
+    m_hash_function(hash_function) {
     check_log2_sizes(log2_root_size, log2_leaf_size, log2_word_size);
 }
 
@@ -105,7 +108,7 @@ const machine_hash &complete_merkle_tree::get_node_hash(uint64_t address, int lo
 }
 
 void complete_merkle_tree::bubble_up() {
-    hasher_type h;
+    variant_hasher h{m_hash_function};
     // Go bottom up, updating hashes
     for (int log2_next_size = get_log2_leaf_size() + 1; log2_next_size <= get_log2_root_size(); ++log2_next_size) {
         auto log2_prev_size = log2_next_size - 1;

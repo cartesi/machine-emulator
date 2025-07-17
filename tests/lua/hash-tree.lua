@@ -101,7 +101,7 @@ local function compare_proofs(p1, p2, padding)
     return true
 end
 
-local function check_proof(proof)
+local function check_proof(proof, hash_fn)
     local hash = proof.target_hash
     for log2_size = proof.log2_target_size, proof.log2_root_size - 1 do
         local bit = 1 << log2_size
@@ -112,7 +112,7 @@ local function check_proof(proof)
         else
             first, second = hash, sibling_hash
         end
-        hash = cartesi.keccak256(first, second)
+        hash = cartesi[hash_fn](first, second)
     end
     return hash == proof.root_hash
 end
@@ -188,10 +188,11 @@ table.insert(interesting_pages, { -PAGE_SIZE, { start = last_end, length = -last
 
 -- check all page hashes
 print("checking all page hashes")
+local hash_fn = machine:get_initial_config().hash_tree.hash_function
 for _, v in ipairs(machine:get_address_ranges()) do
     for address = v.start, v.start + v.length - 1, PAGE_SIZE do
         local h1 = machine:get_node_hash(address, LOG2_PAGE_SIZE)
-        local h2 = test_util.merkle_hash(machine:read_memory(address, PAGE_SIZE), 0, LOG2_PAGE_SIZE)
+        local h2 = test_util.merkle_hash(machine:read_memory(address, PAGE_SIZE), 0, LOG2_PAGE_SIZE, hash_fn)
         if h1 ~= h2 then
             stderr("hash mismatch on page 0x%016x (offset 0x%016x in %s)\n", address, address - v.start, v.description)
             stderr("    0x%.16s... vs 0x%.16s...\n", tohex(h1), tohex(h2))
@@ -208,7 +209,7 @@ for _, p in ipairs(interesting_pages) do
     for address = page, page + PAGE_SIZE - 1, WORD_SIZE do
         local h1 = machine:get_node_hash(address, LOG2_WORD_SIZE)
         local word = machine:read_memory(address, WORD_SIZE)
-        local h2 = cartesi.keccak256(word)
+        local h2 = cartesi[hash_fn](word)
         if h1 ~= h2 then
             stderr("        hash mismatch on word 0x%016x (%u)\n", address, address)
             stderr("            0x%.16s... vs 0x%.16s...\n", tohex(h1), tohex(h2))
@@ -219,7 +220,7 @@ for _, p in ipairs(interesting_pages) do
     for log2_size = LOG2_WORD_SIZE + 1, LOG2_PAGE_SIZE do
         local new_hashes = {}
         for i = 1, #hashes - 1, 2 do
-            new_hashes[#new_hashes + 1] = cartesi.keccak256(hashes[i], hashes[i + 1])
+            new_hashes[#new_hashes + 1] = cartesi[hash_fn](hashes[i], hashes[i + 1])
         end
         hashes = new_hashes
         for i = 1, #hashes do
@@ -252,11 +253,11 @@ for log2_size = LOG2_WORD_SIZE, LOG2_ROOT_SIZE - 1 do
                         if not compare_proofs(mproof, oproof, "        ") then
                             stderr("    proof mismatch for offset 0x%016x (%u)\n", address, address)
                         end
-                        if not check_proof(oproof) then
+                        if not check_proof(oproof, hash_fn) then
                             stderr("    test proof for offset 0x%016x (%u) failed\n", address, address)
                             os.exit(1)
                         end
-                        if not check_proof(mproof) then
+                        if not check_proof(mproof, hash_fn) then
                             stderr("    machine proof for offset 0x%016x (%u) failed\n", address, address)
                             os.exit(1)
                         end

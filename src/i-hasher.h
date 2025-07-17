@@ -53,11 +53,18 @@ class i_hasher { // CRTP
     }
 
 public:
+    static constexpr int MAX_LANE_COUNT = DERIVED::MAX_LANE_COUNT; ///< Number of maximum supported SIMD lanes
+
     template <ContiguousRangeOfByteLike D>
     void hash(D &&data, machine_hash_view hash) noexcept { // NOLINT(cppcoreguidelines-missing-std-forward)
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        auto data_span = std::span<const unsigned char>{reinterpret_cast<const uint8_t *>(std::ranges::data(data)),
-            std::ranges::size(data)};
+        const auto data_span =
+            std::span<const unsigned char>{// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+                reinterpret_cast<const uint8_t *>(std::ranges::data(data)), std::ranges::size(data)};
+        if (data_span.size() == HASH_TREE_WORD_SIZE) { // Special case for hash tree word hashing
+            return derived().do_simd_concat_hash(
+                array2d<std::span<const unsigned char>, 1, 1>{{{const_hash_tree_word_view{data_span}}}},
+                std::array<machine_hash_view, 1>{hash});
+        }
         return derived().do_simd_concat_hash(array2d<std::span<const unsigned char>, 1, 1>{{{data_span}}},
             std::array<machine_hash_view, 1>{hash});
     }
@@ -70,12 +77,17 @@ public:
     template <ContiguousRangeOfByteLike D>
     void concat_hash(D &&data1, D &&data2, // NOLINT(cppcoreguidelines-missing-std-forward)
         machine_hash_view hash) noexcept {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        auto data1_span = std::span<const unsigned char>{reinterpret_cast<const uint8_t *>(std::ranges::data(data1)),
-            std::ranges::size(data1)};
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        auto data2_span = std::span<const unsigned char>{reinterpret_cast<const uint8_t *>(std::ranges::data(data2)),
-            std::ranges::size(data2)};
+        auto data1_span = std::span<const unsigned char>{// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            reinterpret_cast<const uint8_t *>(std::ranges::data(data1)), std::ranges::size(data1)};
+        auto data2_span = std::span<const unsigned char>{// NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            reinterpret_cast<const uint8_t *>(std::ranges::data(data2)), std::ranges::size(data2)};
+        if (data1_span.size() == MACHINE_HASH_SIZE &&
+            data2_span.size() == MACHINE_HASH_SIZE) { // Special case for hash tree hash concatenation
+            return derived().do_simd_concat_hash(
+                array2d<const_machine_hash_view, 2, 1>{
+                    {{const_machine_hash_view{data1_span}}, {const_machine_hash_view{data2_span}}}},
+                std::array<machine_hash_view, 1>{hash});
+        }
         return derived().do_simd_concat_hash(
             array2d<std::span<const unsigned char>, 2, 1>{{{data1_span}, {data2_span}}},
             std::array<machine_hash_view, 1>{hash});
@@ -86,6 +98,13 @@ public:
             std::array<machine_hash_view, 1>{hash});
     }
 
+    // \brief Hashes the concatenation of data using multiple SIMD lanes.
+    // \tparam LaneCount Number of SIMD lanes
+    // \tparam ConcatCount Number of concatenated data items
+    // \tparam Extent Extent of the data span
+    // \param data Data to hash, as a multi-dimensional array of spans
+    // \param hash Array of machine hashes to store the results
+    // \warning When LaneCount is greater than 1, it is assumed data spans have same size, there is no check for that.
     template <size_t ConcatCount, size_t ParallelCount>
     void simd_concat_hash(const array2d<const_hash_tree_word_view, ConcatCount, ParallelCount> &data,
         const std::array<machine_hash_view, ParallelCount> &hash) noexcept {
@@ -95,8 +114,8 @@ public:
     // \brief Gets the optimal number of SIMD lanes for hashing.
     // \returns The optimal number of SIMD lanes for hashing.
     // \details This value is architecture-dependent and may vary based on the available instruction sets.
-    static size_t get_optimal_lane_count() noexcept {
-        return DERIVED::do_get_optimal_lane_count();
+    size_t get_optimal_lane_count() const noexcept {
+        return derived().do_get_optimal_lane_count();
     }
 };
 

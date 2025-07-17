@@ -26,6 +26,7 @@
 #include "riscv-constants.h"
 #include "shadow-registers.h"
 #include "shadow-uarch-state.h"
+#include "variant-hasher.h"
 
 namespace cartesi {
 
@@ -157,6 +158,7 @@ struct hash_tree_config final {
     std::string sht_filename;  ///< Backing storage for sparse hash-tree
     std::string phtc_filename; ///< Backing storage for page hash-tree cache
     uint64_t phtc_size{8192};  ///< Max number of pages in page hash-tree cache
+    hash_function_type hash_function{hash_function_type::keccak256}; ///< Hash function type to use in the hash-tree
 };
 
 /// \brief Machine state config

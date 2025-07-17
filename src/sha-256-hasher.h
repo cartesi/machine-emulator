@@ -102,35 +102,10 @@ class sha_256_hasher final : public i_hasher<sha_256_hasher> {
 public:
     static constexpr int MAX_LANE_COUNT = 16; ///< Number of maximum supported SIMD lanes
 
-    /// \brief Default constructor
-    sha_256_hasher() = default;
-
-    /// \brief Default destructor
-    ~sha_256_hasher() = default;
-
-    /// \brief No copy constructor
-    sha_256_hasher(const sha_256_hasher &) = delete;
-    /// \brief No move constructor
-    sha_256_hasher(sha_256_hasher &&) = delete;
-    /// \brief No copy assignment
-    sha_256_hasher &operator=(const sha_256_hasher &) = delete;
-    /// \brief No move assignment
-    sha_256_hasher &operator=(sha_256_hasher &&) = delete;
-
-    // \brief Hashes the concatenation of data in SIMD using SHA-256
-    // \tparam LaneCount Number of SIMD lanes
-    // \tparam ConcatCount Number of concatenated data items
-    // \tparam Extent Extent of the data span
-    // \param data Data to hash, as a multi-dimensional array of spans
-    // \param hash Array of machine hashes to store the results
-    // \warning When LaneCount is greater than 1, it is assumed data spans have same size, there is no check for that.
     template <size_t ConcatCount, size_t LaneCount, size_t Extent>
     static void do_simd_concat_hash(const array2d<std::span<const unsigned char, Extent>, ConcatCount, LaneCount> &data,
         const std::array<machine_hash_view, LaneCount> &hash) noexcept;
 
-    // \brief Gets the optimal number of SIMD lanes for SHA-256
-    // \returns The optimal number of SIMD lanes for SHA-256
-    // \details This value is architecture-dependent and may vary based on the available instruction sets.
     static size_t do_get_optimal_lane_count() noexcept {
         return sha_256_get_optimal_lane_count();
     }

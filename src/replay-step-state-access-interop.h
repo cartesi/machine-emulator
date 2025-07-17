@@ -17,10 +17,11 @@
 #ifndef REPLAY_STEP_STATE_ACCESS_INTEROP_H
 #define REPLAY_STEP_STATE_ACCESS_INTEROP_H
 
-#include "compiler-defines.h"
 #include <cstdint>
 #include <cstdlib>
-#include <stdexcept>
+
+#include "compiler-defines.h"
+#include "variant-hasher.h"
 
 const static uint64_t interop_log2_root_size = 64;
 constexpr size_t interop_machine_hash_byte_size = 32;
@@ -32,9 +33,10 @@ NO_RETURN inline void interop_throw_runtime_error(const char *msg) {
     throw std::runtime_error(msg);
 }
 
-extern "C" void interop_merkle_tree_hash(const unsigned char *data, size_t size, interop_hash_type hash);
+extern "C" void interop_merkle_tree_hash(cartesi::hash_function_type hash_function, const unsigned char *data,
+    size_t size, interop_hash_type hash);
 
-extern "C" void interop_concat_hash(interop_const_hash_type left, interop_const_hash_type right,
-    interop_hash_type result);
+extern "C" void interop_concat_hash(cartesi::hash_function_type hash_function, interop_const_hash_type left,
+    interop_const_hash_type right, interop_hash_type result);
 
 #endif

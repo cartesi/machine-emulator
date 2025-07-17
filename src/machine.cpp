@@ -80,6 +80,7 @@
 #include "uarch-state-access.h"
 #include "uarch-step.h"
 #include "unique-c-ptr.h"
+#include "variant-hasher.h"
 #include "virtio-address-range.h"
 
 /// \file
@@ -301,7 +302,7 @@ machine::machine(machine_config c, machine_runtime_config r) :
     m_c{std::move(c)}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
     m_r{std::move(r)}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
     m_ars{m_c},
-    m_ht{m_c.hash_tree, m_r.concurrency.update_hash_tree, m_ars},
+    m_ht{m_c.hash_tree, m_r.concurrency.update_hash_tree, m_ars, m_c.hash_tree.hash_function},
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     m_s{reinterpret_cast<processor_state *>(
         m_ars.find(AR_SHADOW_STATE_START, AR_SHADOW_STATE_LENGTH).get_host_memory())},
@@ -1756,6 +1757,10 @@ void machine::send_cmio_response(uint16_t reason, const unsigned char *data, uin
 
 access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
     const access_log::type &log_type) {
+    if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
+        throw std::runtime_error{
+            "access logs can only be used with hash tree configured with Keccak-256 hash function"};
+    }
     auto root_hash_before = get_root_hash();
     access_log log(log_type);
     // Call send_cmio_response  with the recording state accessor
@@ -1764,10 +1769,6 @@ access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char 
         [[maybe_unused]] auto note = a.make_scoped_note("send_cmio_response");
         cartesi::send_cmio_response(a, reason, data, length);
     }
-    // Verify access log before returning
-    if (!update_hash_tree()) {
-        throw std::runtime_error{"update hash tree failed"};
-    }
     auto root_hash_after = get_root_hash();
     verify_send_cmio_response(reason, data, length, root_hash_before, log, root_hash_after);
     return log;
@@ -1775,7 +1776,7 @@ access_log machine::log_send_cmio_response(uint16_t reason, const unsigned char 
 
 void machine::verify_send_cmio_response(uint16_t reason, const unsigned char *data, uint64_t length,
     const machine_hash &root_hash_before, const access_log &log, const machine_hash &root_hash_after) {
-    replay_send_cmio_state_access::context context(log, root_hash_before);
+    replay_send_cmio_state_access::context context{log, root_hash_before, hash_function_type::keccak256};
     // Verify all intermediate state transitions
     replay_send_cmio_state_access a(context);
     cartesi::send_cmio_response(a, reason, data, length);
@@ -1788,6 +1789,10 @@ void machine::verify_send_cmio_response(uint16_t reason, const unsigned char *da
 }
 
 void machine::reset_uarch() {
+    if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
+        throw std::runtime_error{
+            "microarchitecture can only be used with hash tree configured with Keccak-256 hash function"};
+    }
     write_reg(reg::uarch_halt_flag, UARCH_HALT_FLAG_INIT);
     write_reg(reg::uarch_pc, UARCH_PC_INIT);
     write_reg(reg::uarch_cycle, UARCH_CYCLE_INIT);
@@ -1803,6 +1808,10 @@ void machine::reset_uarch() {
 }
 
 access_log machine::log_reset_uarch(const access_log::type &log_type) {
+    if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
+        throw std::runtime_error{
+            "microarchitecture can only be used with hash tree configured with Keccak-256 hash function"};
+    }
     const machine_hash root_hash_before = get_root_hash();
     // Call uarch_reset_state with a uarch_record_state_access object
     access_log log(log_type);
@@ -1810,10 +1819,6 @@ access_log machine::log_reset_uarch(const access_log::type &log_type) {
     {
         [[maybe_unused]] auto note = a.make_scoped_note("reset_uarch_state");
         uarch_reset_state(a);
-    }
-    // Verify access log before returning
-    if (!update_hash_tree()) {
-        throw std::runtime_error{"update hash tree failed"};
     }
     const auto root_hash_after = get_root_hash();
     verify_reset_uarch(root_hash_before, log, root_hash_after);
@@ -1840,6 +1845,10 @@ extern template UArchStepStatus uarch_step(uarch_record_state_access &a);
 access_log machine::log_step_uarch(const access_log::type &log_type) {
     if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error("microarchitecture cannot be used with unreproducible machines");
+    }
+    if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
+        throw std::runtime_error{
+            "microarchitecture can only be used with hash tree configured with Keccak-256 hash function"};
     }
     auto root_hash_before = get_root_hash();
     access_log log(log_type);
@@ -1879,6 +1888,10 @@ machine_config machine::get_default_config() {
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
+    if (m_c.hash_tree.hash_function != hash_function_type::keccak256) {
+        throw std::runtime_error{
+            "microarchitecture can only be used with hash tree configured with Keccak-256 hash function"};
+    }
     if (read_reg(reg::iunrep) != 0) {
         throw std::runtime_error("microarchitecture cannot be used with unreproducible machines");
     }
@@ -1888,17 +1901,15 @@ uarch_interpreter_break_reason machine::run_uarch(uint64_t uarch_cycle_end) {
 }
 
 interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::string &filename) {
-    if (!update_hash_tree()) {
-        throw std::runtime_error{"update hash tree failed"};
-    }
-    // Ensure that the microarchitecture is reset
-    auto current_uarch_state_hash =
-        get_node_hash(AR_SHADOW_UARCH_STATE_START, UARCH_STATE_LOG2_SIZE, skip_hash_tree_update);
-    if (current_uarch_state_hash != get_uarch_pristine_state_hash()) {
-        throw std::runtime_error{"microarchitecture is not reset"};
+    if (m_c.hash_tree.hash_function == hash_function_type::keccak256) {
+        // Ensure that the microarchitecture is reset
+        auto current_uarch_state_hash = get_node_hash(AR_SHADOW_UARCH_STATE_START, UARCH_STATE_LOG2_SIZE);
+        if (current_uarch_state_hash != get_uarch_pristine_state_hash()) {
+            throw std::runtime_error{"microarchitecture is not reset"};
+        }
     }
     auto root_hash_before = get_root_hash();
-    record_step_state_access::context context(filename);
+    record_step_state_access::context context(filename, m_c.hash_tree.hash_function);
     record_step_state_access a(context, *this);
     uint64_t mcycle_end{};
     if (__builtin_add_overflow(a.read_mcycle(), mcycle_count, &mcycle_end)) {

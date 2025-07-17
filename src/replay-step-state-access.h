@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdlib>
+#include <functional>
 #include <optional>
 #include <ranges>
 
@@ -39,6 +40,7 @@
 #include "strict-aliasing.h"
 #include "uarch-constants.h"
 #include "uarch-defines.h"
+#include "variant-hasher.h"
 
 namespace cartesi {
 
@@ -80,21 +82,21 @@ class replay_step_state_access :
 public:
     using address_type = uint64_t;
     using data_type = unsigned char[AR_PAGE_SIZE];
-    using hash_type = std::array<unsigned char, interop_machine_hash_byte_size>;
-    static_assert(sizeof(hash_type) == interop_machine_hash_byte_size);
+    static_assert(sizeof(machine_hash) == interop_machine_hash_byte_size);
 
     struct PACKED page_type {
         address_type index;
         data_type data;
-        hash_type hash;
+        machine_hash hash;
     };
 
     struct context {
-        uint64_t page_count{0};             ///< Number of pages in the step log
-        page_type *pages{nullptr};          ///< Array of page data
-        uint64_t sibling_count{0};          ///< Number of sibling hashes in the step log
-        hash_type *sibling_hashes{nullptr}; ///< Array of sibling hashes
-        mock_address_ranges ars{};          ///< Array of address ranges
+        hash_function_type hash_function{hash_function_type::keccak256}; ///< Hash function used for the step log
+        uint64_t page_count{0};                                          ///< Number of pages in the step log
+        page_type *pages{nullptr};                                       ///< Array of page data
+        uint64_t sibling_count{0};                                       ///< Number of sibling hashes in the step log
+        machine_hash *sibling_hashes{nullptr};                           ///< Array of sibling hashes
+        mock_address_ranges ars{};                                       ///< Array of address ranges
     };
 
 private:
@@ -108,19 +110,38 @@ public:
     // \param root_hash_before The expected machine root hash before the replay
     // \throw runtime_error if the initial root hash does not match or the log data is invalid
     replay_step_state_access(context &context, unsigned char *log_image, uint64_t log_size,
-        const hash_type &root_hash_before) :
+        const machine_hash &root_hash_before) :
         m_context(context) {
         // relevant offsets in the log data
+        uint64_t page_count_offset{};
         uint64_t first_page_offset{};
         uint64_t first_sibling_offset{};
         uint64_t sibling_count_offset{};
         uint64_t end_offset{}; // end of the log data
 
+        // hash function type
+        uint64_t temp_hash_function{};
+        if (!validate_and_advance_offset(log_size, 0, sizeof(temp_hash_function), 1, &page_count_offset)) {
+            interop_throw_runtime_error("hash function type past end of step log");
+        }
+        temp_hash_function = aliased_aligned_read<uint64_t, uint8_t>(log_image + 0);
+        switch (temp_hash_function) {
+            case static_cast<uint64_t>(hash_function_type::keccak256):
+                m_context.hash_function = hash_function_type::keccak256;
+                break;
+            case static_cast<uint64_t>(hash_function_type::sha256):
+                m_context.hash_function = hash_function_type::sha256;
+                break;
+            default:
+                interop_throw_runtime_error("invalid log format: unsupported hash function type");
+        }
+
         // set page count
-        if (!validate_and_advance_offset(log_size, 0, sizeof(m_context.page_count), 1, &first_page_offset)) {
+        if (!validate_and_advance_offset(log_size, page_count_offset, sizeof(m_context.page_count), 1,
+                &first_page_offset)) {
             interop_throw_runtime_error("page count past end of step log");
         }
-        m_context.page_count = aliased_aligned_read<uint64_t, uint8_t>(log_image);
+        m_context.page_count = aliased_aligned_read<uint64_t, uint8_t>(log_image + page_count_offset);
         if (m_context.page_count == 0) {
             interop_throw_runtime_error("page count is zero");
         }
@@ -140,12 +161,12 @@ public:
         m_context.sibling_count = aliased_aligned_read<uint64_t, uint8_t>(log_image + sibling_count_offset);
 
         // set sibling hashes
-        if (!validate_and_advance_offset(log_size, first_sibling_offset, sizeof(hash_type), m_context.sibling_count,
+        if (!validate_and_advance_offset(log_size, first_sibling_offset, sizeof(machine_hash), m_context.sibling_count,
                 &end_offset)) {
             interop_throw_runtime_error("sibling hashes past end of step log");
         }
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        m_context.sibling_hashes = reinterpret_cast<hash_type *>(log_image + first_sibling_offset);
+        m_context.sibling_hashes = reinterpret_cast<machine_hash *>(log_image + first_sibling_offset);
 
         // ensure that we read exactly the expected log size
         if (end_offset != log_size) {
@@ -154,7 +175,7 @@ public:
 
         // ensure that the page indexes are in increasing order
         // and that the scratch hash area is all zeros
-        static const hash_type all_zeros{};
+        static const machine_hash all_zeros{};
         for (uint64_t i = 0; i < m_context.page_count; i++) {
             if (i > 0 && m_context.pages[i - 1].index >= m_context.pages[i].index) {
                 interop_throw_runtime_error("invalid log format: page index is not in increasing order");
@@ -183,7 +204,7 @@ public:
     // \brief Finish the replay and check the final machine root hash
     // \param final_root_hash The expected final machine root hash
     // \throw runtime_error if the final root hash does not match
-    void finish(const hash_type &root_hash_after) {
+    void finish(const machine_hash &root_hash_after) {
         // reset all tlb vh offsets to zero
         // this is to mimic peek behavior of tlb pma device
         relocate_tlb_vh_offset_to_vp_offset<TLB_CODE>();
@@ -316,13 +337,13 @@ private:
     }
 
     // \brief Compute the current machine root hash
-    hash_type compute_root_hash() {
+    machine_hash compute_root_hash() {
         //??D Here we should only do this for dirty pages, right?
         //??D Initially, all pages are dirty, because we don't know their hashes
         //??D But in the end, we should only update those pages that we touched
         //??D May improve performance when we are running this on ZK
         for (uint64_t i = 0; i < m_context.page_count; i++) {
-            interop_merkle_tree_hash(m_context.pages[i].data, AR_PAGE_SIZE,
+            interop_merkle_tree_hash(m_context.hash_function, m_context.pages[i].data, AR_PAGE_SIZE,
                 // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
                 reinterpret_cast<interop_hash_type>(&m_context.pages[i].hash));
         }
@@ -344,7 +365,7 @@ private:
     // \param next_page Index of the next page to be visited
     // \param next_sibling Index of the next sibling hash to be visited
     // \return Resulting root hash of the range
-    hash_type compute_root_hash_impl(address_type page_index, int log2_page_count, size_t &next_page,
+    machine_hash compute_root_hash_impl(address_type page_index, int log2_page_count, size_t &next_page,
         size_t &next_sibling) {
         // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast))
         auto page_count = UINT64_C(1) << log2_page_count;
@@ -358,9 +379,9 @@ private:
             auto left = compute_root_hash_impl(page_index, log2_page_count - 1, next_page, next_sibling);
             const auto halfway_page_index = page_index + (page_count >> 1);
             auto right = compute_root_hash_impl(halfway_page_index, log2_page_count - 1, next_page, next_sibling);
-            hash_type hash{};
-            interop_concat_hash(reinterpret_cast<interop_hash_type>(&left), reinterpret_cast<interop_hash_type>(&right),
-                reinterpret_cast<interop_hash_type>(&hash));
+            machine_hash hash{};
+            interop_concat_hash(m_context.hash_function, reinterpret_cast<interop_hash_type>(&left),
+                reinterpret_cast<interop_hash_type>(&right), reinterpret_cast<interop_hash_type>(&hash));
             return hash;
         }
         if (m_context.pages[next_page].index == page_index) {

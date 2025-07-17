@@ -21,16 +21,16 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
 #include <iostream>
 #include <tuple>
 
 #include "back-merkle-tree.h"
 #include "i-hasher.h"
-#include "keccak-256-hasher.h"
 #include "unique-c-ptr.h"
+#include "variant-hasher.h"
 
 using namespace cartesi;
-using hasher_type = keccak_256_hasher;
 
 /// \brief Checks if string matches prefix and captures remaninder
 /// \param pre Prefix to match in str.
@@ -80,12 +80,12 @@ static void print_hash(const machine_hash &hash, FILE *f) {
 /// \param f File to read from
 /// \returns Hash if successful, nothing otherwise
 static std::optional<machine_hash> read_hash(FILE *f) {
-    std::array<char, hasher_type::hash_size * 2> hex_hash{};
+    std::array<char, variant_hasher::hash_size * 2> hex_hash{};
     if (fread(hex_hash.data(), 1, hex_hash.size(), f) != hex_hash.size()) {
         return {};
     }
     machine_hash h;
-    for (size_t i = 0; i < hasher_type::hash_size; ++i) {
+    for (size_t i = 0; i < variant_hasher::hash_size; ++i) {
         std::array<char, 3> hex_c{hex_hash[2 * i], hex_hash[2 * i + 1], '\0'};
         unsigned c = 0;
         // NOLINTNEXTLINE(cert-err34-c): we just generated the string so we don't need to verify it
@@ -115,7 +115,7 @@ __attribute__((__format__(__printf__, 1, 2))) static void error(const char *fmt,
 /// \param word Pointer to word data. Must contain 2^log2_word_size bytes
 /// \param log2_word_size Log<sub>2</sub> of word size
 /// \param hash Receives the word hash
-static void get_word_hash(hasher_type &h, const unsigned char *word, int log2_word_size, machine_hash &hash) {
+static void get_word_hash(variant_hasher &h, const unsigned char *word, int log2_word_size, machine_hash &hash) {
     h.hash(std::span<const unsigned char>(word, 1 << log2_word_size), hash);
 }
 
@@ -126,7 +126,7 @@ static void get_word_hash(hasher_type &h, const unsigned char *word, int log2_wo
 /// \param log2_leaf_size Log<sub>2</sub> of leaf size
 /// \param log2_word_size Log<sub>2</sub> of word size
 /// \returns Merkle hash of leaf data
-static machine_hash get_leaf_hash(hasher_type &h, const unsigned char *leaf_data, int log2_leaf_size,
+static machine_hash get_leaf_hash(variant_hasher &h, const unsigned char *leaf_data, int log2_leaf_size,
     int log2_word_size) {
     assert(log2_word_size >= 1);
     assert(log2_leaf_size >= log2_word_size);
@@ -140,17 +140,6 @@ static machine_hash get_leaf_hash(hasher_type &h, const unsigned char *leaf_data
     machine_hash leaf;
     get_word_hash(h, leaf_data, log2_word_size, leaf);
     return leaf;
-}
-
-/// \brief Computes the Merkle hash of a leaf of data
-/// \param leaf_data Pointer to buffer containing leaf data with
-/// at least 2^log2_leaf_size bytes
-/// \param log2_leaf_size Log<sub>2</sub> of leaf size
-/// \param log2_word_size Log<sub>2</sub> of word size
-/// \returns Merkle hash of leaf data
-static machine_hash get_leaf_hash(const unsigned char *leaf_data, int log2_leaf_size, int log2_word_size) {
-    hasher_type h;
-    return get_leaf_hash(h, leaf_data, log2_leaf_size, log2_word_size);
 }
 
 /// \brief Prints help message
@@ -196,7 +185,7 @@ Options:
     exit(0);
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) try {
     const char *input_name = nullptr;
     int log2_word_size = 3;
     int log2_leaf_size = 12;
@@ -244,7 +233,9 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    back_merkle_tree back_tree{log2_root_size, log2_leaf_size, log2_word_size};
+    const auto hash_function = hash_function_type::keccak256;
+    back_merkle_tree back_tree{log2_root_size, log2_leaf_size, log2_word_size, hash_function};
+    variant_hasher h{hash_function};
 
     const uint64_t max_leaves = UINT64_C(1) << (log2_root_size - log2_leaf_size);
     uint64_t leaf_count = 0;
@@ -264,7 +255,7 @@ int main(int argc, char *argv[]) {
         // Pad leaf with zeros if file ended before next leaf boundary
         memset(leaf_buf.get() + got, 0, leaf_size - got);
         // Compute leaf hash
-        auto leaf_hash = get_leaf_hash(leaf_buf.get(), log2_leaf_size, log2_word_size);
+        auto leaf_hash = get_leaf_hash(h, leaf_buf.get(), log2_leaf_size, log2_word_size);
         // Add leaf to incremental tree
         back_tree.push_back(leaf_hash);
         // Compare the root hash for the incremental tree and the
@@ -273,4 +264,10 @@ int main(int argc, char *argv[]) {
     }
     print_hash(back_tree.get_root_hash(), stdout);
     return 0;
+} catch (const std::exception &e) {
+    error("exception: %s\n", e.what());
+    return 1;
+} catch (...) {
+    error("unknown exception\n");
+    return 1;
 }

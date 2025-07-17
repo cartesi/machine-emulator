@@ -1814,9 +1814,6 @@
         "title": "HashTreeConfig",
         "type": "object",
         "properties": {
-          "hasher": {
-            "type": "string"
-          },
           "shared": {
             "type": "boolean"
           },
@@ -1834,6 +1831,9 @@
           },
           "phtc_size": {
             "$ref": "#/components/schemas/UnsignedInteger"
+          },
+          "hash_function": {
+            "$ref": "#/components/schemas/HashFunctionType"
           }
         }
       },
@@ -1886,6 +1886,10 @@
           }
         },
         "required": ["ram"]
+      },
+      "HashFunctionType": {
+        "title": "HashFunctionType",
+        "enum": ["keccak256", "sha256"]
       },
       "InterpreterBreakReason": {
         "title": "InterpreterBreakReason",

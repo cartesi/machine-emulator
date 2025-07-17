@@ -81,12 +81,7 @@ static int cartesi_mod_hasher(lua_State *L) {
     const auto *data2 = reinterpret_cast<const unsigned char *>(luaL_optlstring(L, 2, "", &len2));
     Hasher h;
     machine_hash hash;
-    // Handle special case that may have optimal implementations
-    if (len1 == MACHINE_HASH_SIZE && len2 == MACHINE_HASH_SIZE) { // Special case for hash tree concatenation
-        h.concat_hash(const_machine_hash_view{data1, len1}, const_machine_hash_view{data2, len2}, hash);
-    } else if (len1 == HASH_TREE_WORD_SIZE && len2 == 0) { // Special case for hash tree word
-        h.hash(const_hash_tree_word_view{data1, len1}, hash);
-    } else if (len2 > 0) { // Generic concat hash
+    if (len2 > 0) { // Generic concat hash
         h.concat_hash(std::span<const unsigned char>{data1, len1}, std::span<const unsigned char>{data2, len2}, hash);
     } else { // Generic hash
         h.hash(std::span<const unsigned char>{data1, len1}, hash);

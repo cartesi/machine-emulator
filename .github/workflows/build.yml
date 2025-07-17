@@ -211,7 +211,8 @@ jobs:
 
       - name: Run Merkle tree tests
         run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash --hash-function=keccak256
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash --hash-function=sha256
 
       - name: Run C API tests
         run: |
@@ -379,7 +380,8 @@ jobs:
 
       - name: Run Merkle tree tests
         run: |
-          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash --hash-function=keccak256
+          docker run --platform linux/arm64 --rm -t ${{ github.repository_owner }}/machine-emulator:tests test-merkle-tree-hash --log2-root-size=30 --log2-leaf-size=12 --input=/usr/bin/test-merkle-tree-hash --hash-function=sha256
 
       - name: Run C API tests
         run: |
@@ -633,7 +635,7 @@ jobs:
 
       - name: Run tests with sanitizer
         run: |
-          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:sanitizer make sanitize=yes test-save-and-load test-machine test-hash test-lua test-jsonrpc test-c-api coverage-machine test-uarch-rv64ui test-uarch-interpreter coverage-uarch
+          docker run --rm -t ${{ github.repository_owner }}/machine-emulator:sanitizer make sanitize=yes test-save-and-load test-machine test-lua test-jsonrpc test-c-api coverage-machine test-uarch-rv64ui test-uarch-interpreter coverage-uarch
 
   publish_artifacts:
     name: Publish artifacts

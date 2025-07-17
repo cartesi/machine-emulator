@@ -214,13 +214,13 @@ where options are:
     configures the global hash tree the the machine
 
     <key>:<value> is one of
-        hasher:<string>
+        hash_function:<string>
         sht_filename:<filename>
         phtc_filename:<filename>
         phtc_size:<number>
         shared
 
-        hasher (default: "keccak")
+        hash_function (default: "keccak256")
 		hashing algorithm used for the tree
 
         sht_filename (optional)
@@ -707,7 +707,7 @@ local uarch = {
 }
 local pmas = {}
 local hash_tree = {
-    hasher = default_config.hash_tree.hasher,
+    hash_function = default_config.hash_tree.hash_function,
 }
 local concurrency_update_hash_tree = 0
 local skip_root_hash_check = false
@@ -1099,7 +1099,7 @@ local options = {
         "^(%-%-hash%-tree%=(.+))$",
         function(all, opts)
             local h = util.parse_options(opts, all, {
-                hasher = "string",
+                hash_function = "string",
                 sht_filename = "string",
                 phtc_filename = "string",
                 phtc_size = "number",
@@ -1107,7 +1107,7 @@ local options = {
             })
             h.sht_filename = h.sht_filename or ""
             h.phtc_filename = h.phtc_filename or ""
-            h.hasher = h.hasher or "keccak"
+            h.hash_function = h.hash_function or "keccak256"
             for i, v in pairs(h) do
                 hash_tree[i] = v
             end

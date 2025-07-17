@@ -29,26 +29,29 @@
 
 namespace cartesi {
 
-full_merkle_tree::full_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size) :
+full_merkle_tree::full_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size,
+    hash_function_type hash_function) :
     m_log2_root_size{log2_root_size},
     m_log2_leaf_size{log2_leaf_size},
-    m_max_leaves{UINT64_C(1) << std::max(0, log2_root_size - log2_leaf_size)} {
+    m_max_leaves{UINT64_C(1) << std::max(0, log2_root_size - log2_leaf_size)},
+    m_hash_function{hash_function} {
     check_log2_sizes(log2_root_size, log2_leaf_size, log2_word_size);
     m_tree.resize(2 * m_max_leaves);
-    init_pristine_subtree(pristine_merkle_tree{log2_root_size, log2_word_size}, 1, log2_root_size);
+    init_pristine_subtree(pristine_merkle_tree{log2_root_size, log2_word_size, hash_function}, 1, log2_root_size);
 }
 
 full_merkle_tree::full_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size,
-    const std::vector<machine_hash> &leaves) :
+    const std::vector<machine_hash> &leaves, hash_function_type hash_function) :
     m_log2_root_size(log2_root_size),
     m_log2_leaf_size(log2_leaf_size),
-    m_max_leaves{UINT64_C(1) << std::max(0, log2_root_size - log2_leaf_size)} {
+    m_max_leaves{UINT64_C(1) << std::max(0, log2_root_size - log2_leaf_size)},
+    m_hash_function{hash_function} {
     check_log2_sizes(log2_root_size, log2_leaf_size, log2_word_size);
     if (leaves.size() > m_max_leaves) {
         throw std::out_of_range{"too many leaves"};
     }
     m_tree.resize(2 * m_max_leaves);
-    init_tree(pristine_merkle_tree{log2_root_size, log2_word_size}, leaves);
+    init_tree(pristine_merkle_tree{log2_root_size, log2_word_size, hash_function}, leaves);
 }
 
 full_merkle_tree::proof_type full_merkle_tree::get_proof(uint64_t address, int log2_size) const {
@@ -68,7 +71,7 @@ full_merkle_tree::proof_type full_merkle_tree::get_proof(uint64_t address, int l
         proof.set_sibling_hash(get_node_hash(sibling_address, log2_sibling_size), log2_sibling_size);
     }
 #ifndef NDEBUG
-    hasher_type h{};
+    variant_hasher h{m_hash_function};
     if (!proof.verify(h)) {
         throw std::runtime_error{"produced invalid proof"};
     }
@@ -105,7 +108,7 @@ void full_merkle_tree::init_pristine_subtree(const pristine_merkle_tree &pristin
     }
 }
 
-void full_merkle_tree::init_subtree(hasher_type &h, int index, int log2_size) {
+void full_merkle_tree::init_subtree(variant_hasher &h, int index, int log2_size) {
     if (log2_size > get_log2_leaf_size()) {
         init_subtree(h, left_child_index(index), log2_size - 1);
         init_subtree(h, right_child_index(index), log2_size - 1);
@@ -117,7 +120,7 @@ void full_merkle_tree::init_tree(const pristine_merkle_tree &pristine, const std
     std::copy(leaves.begin(), leaves.end(), &m_tree[m_max_leaves]);
     std::fill_n(&m_tree[m_max_leaves + leaves.size()], m_max_leaves - leaves.size(),
         pristine.get_hash(get_log2_leaf_size()));
-    hasher_type h;
+    variant_hasher h{m_hash_function};
     init_subtree(h, 1, get_log2_root_size());
 }
 

@@ -21,9 +21,9 @@
 #include <vector>
 
 #include "hash-tree-proof.h"
-#include "keccak-256-hasher.h"
 #include "machine-hash.h"
 #include "pristine-merkle-tree.h"
+#include "variant-hasher.h"
 
 /// \file
 /// \brief Full Merkle tree interface.
@@ -34,9 +34,6 @@ namespace cartesi {
 /// \details This class implements a full merkle tree
 class full_merkle_tree {
 public:
-    /// \brief Hasher class.
-    using hasher_type = keccak_256_hasher;
-
     /// \brief Storage for a proof.
     using proof_type = hash_tree_proof;
 
@@ -44,7 +41,7 @@ public:
     /// \param log2_root_size Log<sub>2</sub> of root node
     /// \param log2_leaf_size Log<sub>2</sub> of leaf node
     /// \param log2_word_size Log<sub>2</sub> of word
-    full_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size);
+    full_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size, hash_function_type hash_function);
 
     /// \brief Constructor for list of consecutive leaf hashes
     /// \param log2_root_size Log<sub>2</sub> of root node
@@ -52,7 +49,7 @@ public:
     /// \param log2_word_size Log<sub>2</sub> of word
     /// \param leaves List of leaf hashes
     full_merkle_tree(int log2_root_size, int log2_leaf_size, int log2_word_size,
-        const std::vector<machine_hash> &leaves);
+        const std::vector<machine_hash> &leaves, hash_function_type hash_function);
 
     /// \brief Returns log<sub>2</sub> of size of tree
     int get_log2_root_size() const {
@@ -114,7 +111,7 @@ private:
     /// \param log2_size Log<sub>2</sub> size of root at index
     /// \details The nodes corresponding to subtrees of size log2_leaf_size
     /// are assumed to have already been set prior to calling this function
-    void init_subtree(hasher_type &h, int index, int log2_size);
+    void init_subtree(variant_hasher &h, int index, int log2_size);
 
     /// \brief Initialize tree from a list of consecutive page hashes
     /// \param leaves List of page hashes
@@ -128,10 +125,11 @@ private:
     /// \param log2_size
     uint64_t get_node_index(uint64_t address, int log2_size) const;
 
-    int m_log2_root_size;             ///< Log<sub>2</sub> of tree size
-    int m_log2_leaf_size;             ///< Log<sub>2</sub> of leaf size
-    uint64_t m_max_leaves;            ///< Maximum number of leaves
-    std::vector<machine_hash> m_tree; ///< Binary heap with tree node hashes
+    int m_log2_root_size;               ///< Log<sub>2</sub> of tree size
+    int m_log2_leaf_size;               ///< Log<sub>2</sub> of leaf size
+    uint64_t m_max_leaves;              ///< Maximum number of leaves
+    std::vector<machine_hash> m_tree;   ///< Binary heap with tree node hashes
+    hash_function_type m_hash_function; ///< Hash function
 };
 
 } // namespace cartesi

@@ -37,6 +37,7 @@
 #include "riscv-constants.h"
 #include "shadow-registers.h"
 #include "unique-c-ptr.h"
+#include "variant-hasher.h"
 
 namespace cartesi {
 
@@ -51,15 +52,14 @@ struct i_state_access_fast_addr<replay_send_cmio_state_access> {
 /// \brief Allows replaying a machine::send_cmio_response() from an access log.
 class replay_send_cmio_state_access : public i_state_access<replay_send_cmio_state_access> {
 public:
-    using hasher_type = hash_tree::hasher_type;
-
     struct context {
         /// \brief Constructor replay_send_cmio_state_access context
         /// \param log Access log to be replayed
         /// \param initial_hash Initial root hash
-        context(const access_log &log, const machine_hash &initial_hash) :
+        context(const access_log &log, const machine_hash &initial_hash, hash_function_type hash_function) :
             accesses(log.get_accesses()),
-            root_hash(initial_hash) {
+            root_hash(initial_hash),
+            hash_function(hash_function) {
             ;
         }
         const std::vector<access> &accesses; // NOLINT(cppcoreguidelines-avoid-const-or-ref-data-members)
@@ -67,8 +67,8 @@ public:
         unsigned int next_access{};
         ///< Root hash before next access
         machine_hash root_hash;
-        ///< Hasher needed to verify proofs
-        hasher_type hasher;
+        ///< Hash function type used for the log
+        hash_function_type hash_function;
     };
 
 private:
@@ -111,7 +111,7 @@ private:
         }
     }
 
-    template <typename H>
+    template <IHasher H>
     static void get_hash(H &h, const access_data &data, machine_hash &hash) {
         get_merkle_tree_hash(h, std::span<const unsigned char>{data.data(), data.size()}, HASH_TREE_WORD_SIZE, hash);
     }
@@ -154,9 +154,10 @@ private:
             throw std::invalid_argument{"expected read " + std::string(text) + " data to contain 2^" +
                 std::to_string(HASH_TREE_LOG2_WORD_SIZE) + " bytes at " + access_to_report()};
         }
+        variant_hasher h{m_context.hash_function};
         // check if logged read data hashes to the logged read hash
         machine_hash computed_read_hash{};
-        get_hash(m_context.hasher, read_data, computed_read_hash);
+        get_hash(h, read_data, computed_read_hash);
         if (access.get_read_hash() != computed_read_hash) {
             throw std::invalid_argument{"logged read data of " + std::string(text) +
                 " data does not hash to the logged read hash at " + access_to_report()};
@@ -164,7 +165,7 @@ private:
         // NOLINTEND(bugprone-unchecked-optional-access)
         // check proof
         auto proof = access.make_proof(m_context.root_hash);
-        if (!proof.verify(m_context.hasher)) {
+        if (!proof.verify(h)) {
             throw std::invalid_argument{"Mismatch in root hash of " + access_to_report()};
         }
         m_context.next_access++;
@@ -211,9 +212,10 @@ private:
             throw std::invalid_argument{"expected overwritten data from " + std::string(text) + " to contain 2^" +
                 std::to_string(access.get_log2_size()) + " bytes at " + access_to_report()};
         }
+        variant_hasher h{m_context.hash_function};
         // check if read data hashes to the logged read hash
         machine_hash computed_read_hash{};
-        get_hash(m_context.hasher, read_data, computed_read_hash);
+        get_hash(h, read_data, computed_read_hash);
         if (access.get_read_hash() != computed_read_hash) {
             throw std::invalid_argument{"logged read data of " + std::string(text) +
                 " does not hash to the logged read hash at " + access_to_report()};
@@ -233,7 +235,7 @@ private:
         }
         // check if written data hashes to the logged written hash
         machine_hash computed_written_hash{};
-        get_hash(m_context.hasher, written_data, computed_written_hash);
+        get_hash(h, written_data, computed_written_hash);
         if (written_hash != computed_written_hash) {
             throw std::invalid_argument{"logged written data of " + std::string(text) +
                 " does not hash to the logged written hash at " + access_to_report()};
@@ -256,11 +258,11 @@ private:
         // NOLINTEND(bugprone-unchecked-optional-access)
         // check proof
         auto proof = access.make_proof(m_context.root_hash);
-        if (!proof.verify(m_context.hasher)) {
+        if (!proof.verify(h)) {
             throw std::invalid_argument{"Mismatch in root hash of " + access_to_report()};
         }
         // Update root hash to reflect the data written by this access
-        m_context.root_hash = proof.bubble_up(m_context.hasher, written_hash);
+        m_context.root_hash = proof.bubble_up(h, written_hash);
         m_context.next_access++;
     }
 
@@ -278,7 +280,7 @@ private:
 
     void do_write_memory_with_padding(uint64_t paddr, const unsigned char *data, uint64_t data_length,
         int write_length_log2_size) const {
-        hasher_type hasher{};
+        variant_hasher h{m_context.hash_function};
         if (data == nullptr) {
             throw std::invalid_argument("data is null");
         }
@@ -305,7 +307,7 @@ private:
         // if read data is available then its hash and the logged read hash must match
         if (access.get_read().has_value()) {
             machine_hash computed_logged_data_hash{};
-            get_hash(hasher, access.get_read().value(), computed_logged_data_hash);
+            get_hash(h, access.get_read().value(), computed_logged_data_hash);
             if (computed_logged_data_hash != access.get_read_hash()) {
                 throw std::invalid_argument{
                     "hash of read data and read hash at " + access_to_report() + " does not match read hash"};
@@ -325,7 +327,7 @@ private:
         if (write_length > data_length) {
             memset(scratch.get() + data_length, 0, write_length - data_length);
         }
-        get_merkle_tree_hash(hasher, std::span<const unsigned char>{scratch.get(), write_length}, HASH_TREE_WORD_SIZE,
+        get_merkle_tree_hash(h, std::span<const unsigned char>{scratch.get(), write_length}, HASH_TREE_WORD_SIZE,
             computed_data_hash);
         // check if logged written hash matches the computed data hash
         if (written_hash != computed_data_hash) {
@@ -335,7 +337,7 @@ private:
         if (access.get_written().has_value()) {
             // if written data is available then its hash and the logged written hash must match
             machine_hash computed_hash;
-            get_hash(hasher, access.get_written().value(), computed_hash);
+            get_hash(h, access.get_written().value(), computed_hash);
             if (computed_hash != written_hash) {
                 throw std::invalid_argument{"written hash and written data mismatch at " + access_to_report()};
             }
@@ -343,11 +345,11 @@ private:
         // NOLINTEND(bugprone-unchecked-optional-access)
         // check proof
         auto proof = access.make_proof(m_context.root_hash);
-        if (!proof.verify(m_context.hasher)) {
+        if (!proof.verify(h)) {
             throw std::invalid_argument{"Mismatch in root hash of " + access_to_report()};
         }
         // Update root hash to reflect the data written by this access
-        m_context.root_hash = proof.bubble_up(m_context.hasher, written_hash);
+        m_context.root_hash = proof.bubble_up(h, written_hash);
         m_context.next_access++;
     }
 

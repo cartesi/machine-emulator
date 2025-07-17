@@ -20,8 +20,8 @@
 #include <cstdint>
 #include <vector>
 
-#include "keccak-256-hasher.h"
 #include "machine-hash.h"
+#include "variant-hasher.h"
 
 /// \file
 /// \brief Pristine Merkle tree interface.
@@ -31,13 +31,10 @@ namespace cartesi {
 /// \brief Hashes of pristine subtrees for a range of sizes
 class pristine_merkle_tree {
 public:
-    /// \brief Hasher class.
-    using hasher_type = keccak_256_hasher;
-
     /// \brief Constructor
     /// \param log2_root_size Log<sub>2</sub> of root node
     /// \param log2_word_size Log<sub>2</sub> of word
-    pristine_merkle_tree(int log2_root_size, int log2_word_size);
+    pristine_merkle_tree(int log2_root_size, int log2_word_size, hash_function_type hash_function);
 
     /// \brief Returns hash of pristine subtree
     /// \param log2_size Log<sub>2</sub> of subtree size. Must be between

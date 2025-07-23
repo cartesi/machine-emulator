@@ -24,6 +24,7 @@
 #include <memory>
 #include <new>
 #include <optional>
+#include <ranges>
 #include <regex>
 #include <stdexcept>
 #include <string>
@@ -38,6 +39,7 @@
 #include "i-machine.h"
 #include "interpret.h"
 #include "json-util.h"
+#include "keccak-256-hasher.h"
 #include "local-machine.h"
 #include "machine-c-api-internal.h"
 #include "machine-config.h"
@@ -46,6 +48,7 @@
 #include "machine-runtime-config.h"
 #include "machine.h"
 #include "os-features.h"
+#include "sha-256-hasher.h"
 
 static std::string &get_last_err_msg_storage() {
     static THREAD_LOCAL std::string last_err_msg;
@@ -478,8 +481,18 @@ static cartesi::machine_hash convert_from_c(const cm_hash *c_hash) {
         throw std::invalid_argument("invalid hash");
     }
     cartesi::machine_hash cpp_hash; // In emulator this is std::array<unsigned char, hash_size>;
-    memcpy(cpp_hash.data(), c_hash, sizeof(cm_hash));
+    std::memcpy(cpp_hash.data(), c_hash, sizeof(cm_hash));
     return cpp_hash;
+}
+
+static void convert_to_c(cartesi::machine_hash cpp_hash, cm_hash *c_hash) {
+    if (c_hash == nullptr) {
+        throw std::invalid_argument("invalid hash output");
+    }
+    using elem_t = std::ranges::range_value_t<cm_hash>;
+    constexpr auto elem_n = std::extent_v<cm_hash>;
+    static_assert(std::ranges::size(cpp_hash) == elem_n);
+    std::ranges::copy(cpp_hash | cartesi::views::cast_to<elem_t>, std::ranges::data(*c_hash));
 }
 
 // ----------------------------------------------
@@ -774,30 +787,18 @@ cm_error cm_get_proof(const cm_machine *m, uint64_t address, int32_t log2_size, 
 }
 
 cm_error cm_get_root_hash(const cm_machine *m, cm_hash *hash) try {
-    if (hash == nullptr) {
-        throw std::invalid_argument("invalid hash output");
-    }
     const auto *cpp_m = convert_from_c(m);
-    cartesi::machine_hash cpp_hash = cpp_m->get_root_hash();
-    using elem_t = std::ranges::range_value_t<cm_hash>;
-    constexpr auto elem_n = std::extent_v<cm_hash>;
-    static_assert(std::ranges::size(cpp_hash) == elem_n);
-    std::ranges::copy(cpp_hash | cartesi::views::cast_to<elem_t>, std::ranges::data(*hash));
+    const cartesi::machine_hash cpp_hash = cpp_m->get_root_hash();
+    convert_to_c(cpp_hash, hash);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
 }
 
 cm_error cm_get_node_hash(const cm_machine *m, uint64_t address, int log2_size, cm_hash *hash) try {
-    if (hash == nullptr) {
-        throw std::invalid_argument("invalid hash output");
-    }
     const auto *cpp_m = convert_from_c(m);
-    cartesi::machine_hash cpp_hash = cpp_m->get_node_hash(address, log2_size);
-    using elem_t = std::ranges::range_value_t<cm_hash>;
-    constexpr auto elem_n = std::extent_v<cm_hash>;
-    static_assert(std::ranges::size(cpp_hash) == elem_n);
-    std::ranges::copy(cpp_hash | cartesi::views::cast_to<elem_t>, std::ranges::data(*hash));
+    const cartesi::machine_hash cpp_hash = cpp_m->get_node_hash(address, log2_size);
+    convert_to_c(cpp_hash, hash);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -874,17 +875,17 @@ cm_error cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val) try 
     return cm_result_failure();
 }
 
-cm_error cm_read_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length) try {
+cm_error cm_read_memory(const cm_machine *m, uint64_t paddr, uint8_t *data, uint64_t length) try {
     const auto *cpp_m = convert_from_c(m);
-    cpp_m->read_memory(address, data, length);
+    cpp_m->read_memory(paddr, data, length);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
 }
 
-cm_error cm_write_memory(cm_machine *m, uint64_t address, const uint8_t *data, uint64_t length) try {
+cm_error cm_write_memory(cm_machine *m, uint64_t paddr, const uint8_t *data, uint64_t length) try {
     auto *cpp_m = convert_from_c(m);
-    cpp_m->write_memory(address, data, length);
+    cpp_m->write_memory(paddr, data, length);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
@@ -1121,6 +1122,61 @@ cm_error cm_verify_send_cmio_response(const cm_machine *m, uint16_t reason, cons
         cartesi::machine::verify_send_cmio_response(reason, data, length, cpp_root_hash_before, cpp_log,
             cpp_root_hash_after);
     }
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
+cm_error cm_get_hash(cm_hash_function hash_function, const uint8_t *data, uint64_t length, cm_hash *result) try {
+    if (data == nullptr && length > 0) {
+        throw std::invalid_argument("invalid data input");
+    }
+    const std::span<const unsigned char> data_span{data, length};
+    cartesi::machine_hash cpp_result;
+
+    switch (hash_function) {
+        case CM_HASH_KECCAK256: {
+            cartesi::keccak_256_hasher hasher;
+            hasher.hash(data_span, cpp_result);
+            break;
+        }
+        case CM_HASH_SHA256: {
+            cartesi::sha_256_hasher hasher;
+            hasher.hash(data_span, cpp_result);
+            break;
+        }
+        default:
+            throw std::invalid_argument("invalid hash function");
+    }
+
+    convert_to_c(cpp_result, result);
+    return cm_result_success();
+} catch (...) {
+    return cm_result_failure();
+}
+
+cm_error cm_get_concat_hash(cm_hash_function hash_function, const cm_hash *left, const cm_hash *right,
+    cm_hash *result) try {
+    cartesi::machine_hash cpp_left = convert_from_c(left);
+    cartesi::machine_hash cpp_right = convert_from_c(right);
+    cartesi::machine_hash cpp_result;
+
+    switch (hash_function) {
+        case CM_HASH_KECCAK256: {
+            cartesi::keccak_256_hasher h;
+            h.concat_hash(cpp_left, cpp_right, cpp_result);
+            break;
+        }
+        case CM_HASH_SHA256: {
+            cartesi::sha_256_hasher h;
+            h.concat_hash(cpp_left, cpp_right, cpp_result);
+            break;
+        }
+        default:
+            throw std::invalid_argument("invalid hash function");
+    }
+
+    convert_to_c(cpp_result, result);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();

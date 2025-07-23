@@ -291,6 +291,12 @@ typedef enum cm_reg {
     CM_REG_LAST_ = CM_REG_UARCH_HALT_FLAG,
 } cm_reg;
 
+/// \brief Hash function types.
+typedef enum cm_hash_function {
+    CM_HASH_KECCAK256 = 0, ///< Keccak-256 (recommended for fraud proofs using microarchitecture)
+    CM_HASH_SHA256 = 1,    ///< SHA-256 (recommended for fraud proofs using zkVMs)
+} cm_hash_function;
+
 /// \brief Storage for machine hash.
 typedef uint8_t cm_hash[CM_HASH_SIZE];
 
@@ -742,6 +748,29 @@ CM_API cm_error cm_verify_hash_tree(cm_machine *m, bool *result);
 /// guaranteed to remain valid only until the next CM_API function is called from the same thread.
 /// \returns 0 for success, non zero code for error.
 CM_API cm_error cm_get_hash_tree_stats(cm_machine *m, bool clear, const char **stats);
+
+// ------------------------------------
+// Hashing
+// ------------------------------------
+
+/// \brief Gets the hash of data.
+/// \param hash_function Hash function to use.
+/// \param data Data to hash.
+/// \param length Length of data in bytes.
+/// \param result Valid pointer to cm_hash (32-byte array) that receives the hash.
+/// \returns 0 for success, non zero code for error.
+/// \details This function is optimized to hash words of hash trees, but can be used for any data.
+CM_API cm_error cm_get_hash(cm_hash_function hash_function, const uint8_t *data, uint64_t length, cm_hash *result);
+
+/// \brief Gets the hash of a concatenation of two hashes.
+/// \param hash_function Hash function to use.
+/// \param left Left hash to concatenate.
+/// \param right Right hash to concatenate.
+/// \param result Valid pointer to cm_hash (32-byte array) that receives the hash.
+/// \returns 0 for success, non zero code for error.
+/// \details This function is optimized and intended to be used for concatenating hashes of hash trees.
+CM_API cm_error cm_get_concat_hash(cm_hash_function hash_function, const cm_hash *left, const cm_hash *right,
+    cm_hash *result);
 
 #ifdef __cplusplus
 }

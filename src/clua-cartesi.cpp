@@ -31,12 +31,10 @@ extern "C" {
 #include "clua-i-machine.h"
 #include "clua.h"
 #include "htif-constants.h"
-#include "keccak-256-hasher.h"
 #include "machine-c-api.h"
 #include "machine-c-version.h"
 #include "machine-hash.h"
 #include "riscv-constants.h"
-#include "sha-256-hasher.h"
 #include "uarch-constants.h"
 #include "uarch-pristine.h"
 
@@ -61,11 +59,10 @@ static const auto gperf_meta = clua_make_luaL_Reg_array({
 #endif
 
 /// \brief Generic hasher function implementation.
-/// \tparam Hasher Type of hasher to use.
+/// \tparam hash_function Hash function type (keccak256 or sha256).
 /// \param L Lua state.
-template <typename Hasher>
+template <cm_hash_function hash_function>
 static int cartesi_mod_hasher(lua_State *L) {
-    using namespace cartesi;
     const auto nargs = lua_gettop(L);
     if (nargs > 2) {
         luaL_argerror(L, 3, "too many arguments");
@@ -79,28 +76,41 @@ static int cartesi_mod_hasher(lua_State *L) {
     const auto *data1 = reinterpret_cast<const unsigned char *>(luaL_checklstring(L, 1, &len1));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     const auto *data2 = reinterpret_cast<const unsigned char *>(luaL_optlstring(L, 2, "", &len2));
-    Hasher h;
-    machine_hash hash;
-    if (len2 > 0) { // Generic concat hash
-        h.concat_hash(std::span<const unsigned char>{data1, len1}, std::span<const unsigned char>{data2, len2}, hash);
-    } else { // Generic hash
-        h.hash(std::span<const unsigned char>{data1, len1}, hash);
+
+    cm_hash hash{};
+
+    if (len2 > 0) { // Concat hash of two inputs
+        if (len1 != CM_HASH_SIZE || len2 != CM_HASH_SIZE) {
+            luaL_argerror(L, 1, "concatenate hash is only supported for inputs with size of hash");
+        }
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        const auto *left = reinterpret_cast<const cm_hash *>(data1);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        const auto *right = reinterpret_cast<const cm_hash *>(data2);
+        if (cm_get_concat_hash(hash_function, left, right, &hash) != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
+    } else { // Single hash
+        if (cm_get_hash(hash_function, data1, len1, &hash) != 0) {
+            return luaL_error(L, "%s", cm_get_last_error_message());
+        }
     }
+
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-    lua_pushlstring(L, reinterpret_cast<const char *>(hash.data()), hash.size());
+    lua_pushlstring(L, reinterpret_cast<const char *>(hash), sizeof(hash));
     return 1;
 }
 
 /// \brief This is the cartesi.keccak256() function implementation.
 /// \param L Lua state.
 static int cartesi_mod_keccak256(lua_State *L) {
-    return cartesi_mod_hasher<cartesi::keccak_256_hasher>(L);
+    return cartesi_mod_hasher<CM_HASH_KECCAK256>(L);
 }
 
 /// \brief This is the cartesi.sha256() function implementation.
 /// \param L Lua state.
 static int cartesi_mod_sha256(lua_State *L) {
-    return cartesi_mod_hasher<cartesi::sha_256_hasher>(L);
+    return cartesi_mod_hasher<CM_HASH_SHA256>(L);
 }
 
 static int cartesi_mod_tobase64(lua_State *L) try {

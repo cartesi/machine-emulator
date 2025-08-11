@@ -21,12 +21,14 @@
 /// \brief Dirty map as a complete tree
 
 #include <algorithm>
+#include <cassert>
 #include <concepts>
 #include <cstdint>
 #include <iostream>
 #include <iterator>
 #include <ranges>
 #include <stdexcept>
+#include <vector>
 
 #include "i-dirty-page-tree.h"
 #include "ranges.h"

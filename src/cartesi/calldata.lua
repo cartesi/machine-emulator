@@ -38,7 +38,7 @@ end
 -- Throws formatted error
 local function errorf(fmt, ...) error(string.format(fmt, ...)) end
 
--- Converts 'value' (a bint) to a its 256-bit big-endian represantation as a string
+-- Converts 'value' (a bint) to a its 256-bit big-endian representation as a string
 local function tobe(value) return bint.tobe(value):sub(bint_extra / 8 + 1) end
 
 -- Converts 'hex' (an hex-encoded sequence of bytes) to the corresponding decoded string

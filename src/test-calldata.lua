@@ -91,7 +91,7 @@ end
 local function check_parse_type_spec_error(s, expected_err)
     local ret, err = pcall(calldata.parse_type_spec, s)
     assert(not ret, "expected error")
-    assert(is_suffix(expected_err, err), string.format("expected sufix '%s' in '%s'", expected_err, tostring(err)))
+    assert(is_suffix(expected_err, err), string.format("expected suffix '%s' in '%s'", expected_err, tostring(err)))
 end
 
 local function strdiff(a, b)
@@ -124,13 +124,13 @@ end
 local function check_encode_calldata_hex_error(s, args, expected_err)
     local ret, err = pcall(calldata.encode_calldata_hex, s, args)
     assert(not ret, "expected error")
-    assert(is_suffix(expected_err, err), string.format("expected sufix '%s' in '%s'", expected_err, tostring(err)))
+    assert(is_suffix(expected_err, err), string.format("expected suffix '%s' in '%s'", expected_err, tostring(err)))
 end
 
 local function check_decode_calldata_hex_error(s, cd, expected_err)
     local ret, err = pcall(calldata.decode_calldata_hex, s, cd)
     assert(not ret, "expected error")
-    assert(is_suffix(expected_err, err), string.format("expected sufix '%s' in '%s'", expected_err, tostring(err)))
+    assert(is_suffix(expected_err, err), string.format("expected suffix '%s' in '%s'", expected_err, tostring(err)))
 end
 
 local function check_encode_hex(s, expected_hex)
@@ -159,8 +159,10 @@ end
 local function check_decode_hex_error(s, expected_err)
     local ret, err = calldata.decode_hex(s)
     assert(not ret, "expected error")
-    assert(is_suffix(expected_err, err), string.format("expected sufix '%s' in '%s'", expected_err, tostring(err)))
+    assert(is_suffix(expected_err, err), string.format("expected suffix '%s' in '%s'", expected_err, tostring(err)))
 end
+
+-- luacheck: push no max line length
 
 -- check hex encoding/decoding
 check_encode_hex("", "0x")
@@ -168,14 +170,15 @@ check_encode_hex("\x00", "0x00")
 check_encode_hex("\x00\x01", "0x0001")
 check_encode_hex("\x00\x01\x02", "0x000102")
 check_encode_hex("\x00\x01\x02\x03", "0x00010203")
-local all = {}
-local all_hex = { "0x" }
-for i = 0, 255 do
-    all[i + 1] = string.char(i)
-    all_hex[i + 2] = string.format("%02x", i)
-end
-all = table.concat(all)
-all_hex = table.concat(all_hex)
+local all, all_hex = (function()
+    local all = {}
+    local all_hex = { "0x" }
+    for i = 0, 255 do
+        all[i + 1] = string.char(i)
+        all_hex[i + 2] = string.format("%02x", i)
+    end
+    return table.concat(all), table.concat(all_hex)
+end)()
 check_encode_hex(all, all_hex)
 check_decode_hex("0x", "")
 check_decode_hex("0X00", "\x00")
@@ -279,7 +282,7 @@ local function make_int(size, data_location, name)
     return { type_name = "int", size = size or 256, name = name, data_location = data_location }
 end
 local function make_uint(size, data_location, name)
-    return { type_name = "int", size = size or 256, name = name, data_location = data_location }
+    return { type_name = "uint", size = size or 256, name = name, data_location = data_location }
 end
 local function make_tuple(components, data_location, name)
     return { type_name = "tuple", components = components, name = name, data_location = data_location }
@@ -288,6 +291,7 @@ local empty_tuple = make_tuple({})
 local function make_address(data_location, name)
     return { type_name = "address", name = name, data_location = data_location }
 end
+
 local function make_bool(data_location, name) return { type_name = "bool", name = name, data_location = data_location } end
 
 -- check
@@ -299,6 +303,7 @@ check_parse_func_sig("_a()", { name = "_a", params = empty_tuple, returns = empt
 check_parse_func_sig("_a0()", { name = "_a0", params = empty_tuple, returns = empty_tuple })
 check_parse_func_sig("_a0a()", { name = "_a0a", params = empty_tuple, returns = empty_tuple })
 check_parse_func_sig("_(int)", { name = "_", params = make_tuple({ make_int() }), returns = empty_tuple })
+check_parse_func_sig("_(uint)", { name = "_", params = make_tuple({ make_uint() }), returns = empty_tuple })
 check_parse_func_sig(
     "_(int a)",
     { name = "_", params = make_tuple({ make_int(nil, nil, "a") }), returns = empty_tuple }
@@ -749,3 +754,5 @@ check_decode_calldata_hex_error(
 check_decode_calldata_hex_error("_(bytes7)", "0x155cf58f", "insufficient calldata for bytes7")
 
 check_decode_calldata_hex_error("_(bytes7)", "0x155cf5", "calldata too short (missing function selector)")
+
+-- luacheck: pop

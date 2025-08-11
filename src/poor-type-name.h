@@ -17,6 +17,8 @@
 #ifndef POOR_TYPE_NAME_H
 #define POOR_TYPE_NAME_H
 
+#include <cstdint>
+
 namespace cartesi {
 
 //?DD Poor man's rtti that works in microarchitecture

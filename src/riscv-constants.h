@@ -125,7 +125,7 @@ enum MISA_shifts {
     MISA_EXT_U_SHIFT = ('U' - 'A'),
     MISA_EXT_I_SHIFT = ('I' - 'A'),
     MISA_EXT_M_SHIFT = ('M' - 'A'),
-    MISA_EXT_A_SHIFT = ('A' - 'A'),
+    MISA_EXT_A_SHIFT = ('A' - 'A'), // NOLINT(misc-redundant-expression)
     MISA_EXT_F_SHIFT = ('F' - 'A'),
     MISA_EXT_D_SHIFT = ('D' - 'A'),
     MISA_EXT_C_SHIFT = ('C' - 'A'),

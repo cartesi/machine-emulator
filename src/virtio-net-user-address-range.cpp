@@ -160,7 +160,7 @@ static void slirp_timer_mod(void *timer_ptr, int64_t expire_timer_msec, void *op
     auto *carrier = reinterpret_cast<virtio_net_user_address_range *>(opaque);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *timer = reinterpret_cast<slirp_timer *>(timer_ptr);
-    if ((timer != nullptr) && carrier->timers.find(timer) != carrier->timers.end()) {
+    if ((timer != nullptr) && carrier->timers.contains(timer)) {
         timer->expire_timer_msec = expire_timer_msec;
     }
 }

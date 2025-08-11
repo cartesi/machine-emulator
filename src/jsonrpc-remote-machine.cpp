@@ -461,7 +461,7 @@ static json jsonrpc_response_invalid_params(const json &j, const std::string &me
 static void jsonrpc_check_allowed_fields(const json &j, const std::unordered_set<std::string> &keys,
     const std::string &base = "params/") {
     for (const auto &[key, val] : j.items()) {
-        if (keys.find(key) == keys.end()) {
+        if (!keys.contains(key)) {
             // NOLINTNEXTLINE(performance-inefficient-string-concatenation)
             throw std::invalid_argument("unexpected field \"/"s + base + key + "\""s);
         }

@@ -42,7 +42,7 @@ namespace cartesi {
 /// The the root is at position 1.
 /// As usual, the left and right children of the node at pos are 2*position and (2*posision+1), respectively.
 /// The tree maintains the following invariants:
-///   1) When a node is dirty, all parent nodes in the path torwards the root are also dirty;
+///   1) When a node is dirty, all parent nodes in the path towards the root are also dirty;
 ///   2) A node is clean only if all its children nodes are also clean.
 /// The leaves (page nodes) are at level 0, and the root is at level log2_leaf_count.
 /// The number level_count of levels in the tree is ceil(log2_page_count)+1.
@@ -158,7 +158,7 @@ protected:
     };
 
     // -----
-    // Private methods that must be overriden by derived class
+    // Private methods that must be overridden by derived class
     // These will only ever be called by the base class, and always with valid arguments
     // -----
 

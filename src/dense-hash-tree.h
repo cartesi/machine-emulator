@@ -17,8 +17,11 @@
 #ifndef DENSE_HASH_TREE_H
 #define DENSE_HASH_TREE_H
 
+#include <limits>
+#include <stdexcept>
 #include <vector>
 
+#include "address-range-constants.h"
 #include "hash-tree-constants.h"
 #include "i-dense-hash-tree.h"
 #include "machine-hash.h"

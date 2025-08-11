@@ -55,7 +55,7 @@ class machine_uarch_bridge_state_access :
     mock_address_ranges &m_ars;
 
 public:
-    machine_uarch_bridge_state_access(std::array<mock_address_range, PMA_MAX> &ars) : m_ars(ars) {}
+    explicit machine_uarch_bridge_state_access(std::array<mock_address_range, PMA_MAX> &ars) : m_ars(ars) {}
     machine_uarch_bridge_state_access(const machine_uarch_bridge_state_access &other) = default;
     machine_uarch_bridge_state_access(machine_uarch_bridge_state_access &&other) = default;
     machine_uarch_bridge_state_access &operator=(const machine_uarch_bridge_state_access &other) = delete;
@@ -71,11 +71,11 @@ private:
         ua_aliased_aligned_write<uint64_t>(machine_reg_address(reg), val);
     }
 
-    static uint64_t bridge_read_pma_istart(int i) {
+    static uint64_t bridge_read_pma_istart(uint64_t i) {
         return ua_aliased_aligned_read<uint64_t>(pmas_get_abs_addr(i, pmas_what::istart));
     }
 
-    static uint64_t bridge_read_pma_ilength(int i) {
+    static uint64_t bridge_read_pma_ilength(uint64_t i) {
         return ua_aliased_aligned_read<uint64_t>(pmas_get_abs_addr(i, pmas_what::ilength));
     }
 
@@ -88,10 +88,12 @@ private:
     // -----
     friend i_prefer_shadow_state<machine_uarch_bridge_state_access>;
 
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     uint64_t do_read_shadow_register(shadow_registers_what what) const {
         return bridge_read_reg(machine_reg_enum(what));
     }
 
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
         bridge_write_reg(machine_reg_enum(what), val);
     }
@@ -111,6 +113,7 @@ private:
         ua_aliased_aligned_write<T, A>(paddr, val);
     }
 
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     bool do_read_memory(uint64_t /*paddr*/, unsigned char * /*data*/, uint64_t /*length*/) const {
         // This is not implemented yet because it's not being used
         assert(false && "read_memory() unexpectedly called");
@@ -118,6 +121,7 @@ private:
         return false;
     }
 
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     bool do_write_memory(uint64_t /*paddr*/, const unsigned char * /*data*/, uint64_t /*length*/) const {
         // This is not implemented yet because it's not being used
         assert(false && "write_memory() unexpectedly called");
@@ -141,6 +145,7 @@ private:
         return get_mock_address_range(m_ars[i], throw_abort);
     }
 
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     uint64_t do_get_faddr(uint64_t paddr, uint64_t /* pma_index */) const {
         return paddr;
     }
@@ -165,10 +170,12 @@ private:
         ua_write_tlb_ECALL(SET, slot_index, vaddr_page, vp_offset, pma_index);
     }
 
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     void do_putchar(uint8_t c) const {
         ua_putchar_ECALL(c);
     }
 
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     void do_mark_dirty_page(uint64_t paddr, uint64_t pma_index) const {
         ua_mark_dirty_page_ECALL(paddr, pma_index);
     }
@@ -176,8 +183,6 @@ private:
     constexpr const char *do_get_name() const { // NOLINT(readability-convert-member-functions-to-static)
         return "machine_uarch_bridge_state_access";
     }
-
-    // NOLINTEND(readability-convert-member-functions-to-static)
 };
 
 } // namespace cartesi

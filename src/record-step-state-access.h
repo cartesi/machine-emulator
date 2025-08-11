@@ -129,7 +129,7 @@ private:
     /// \param address address of the page
     void touch_page(uint64_t address) const {
         auto page = address & ~PAGE_OFFSET_MASK;
-        if (m_context.touched_pages.find(page) != m_context.touched_pages.end()) {
+        if (m_context.touched_pages.contains(page)) {
             return; // already saved
         }
         auto [it, _] = m_context.touched_pages.emplace(page, page_data_type());

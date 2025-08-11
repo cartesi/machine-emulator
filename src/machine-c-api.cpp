@@ -907,17 +907,17 @@ cm_error cm_read_word(const cm_machine *m, uint64_t address, uint64_t *val) try 
     return cm_result_failure();
 }
 
-cm_error cm_read_memory(const cm_machine *m, uint64_t address, uint8_t *data, uint64_t length) try {
+cm_error cm_read_memory(const cm_machine *m, uint64_t paddr, uint8_t *data, uint64_t length) try {
     const auto *cpp_m = convert_from_c(m);
-    cpp_m->read_memory(address, data, length);
+    cpp_m->read_memory(paddr, data, length);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();
 }
 
-cm_error cm_write_memory(cm_machine *m, uint64_t address, const uint8_t *data, uint64_t length) try {
+cm_error cm_write_memory(cm_machine *m, uint64_t paddr, const uint8_t *data, uint64_t length) try {
     auto *cpp_m = convert_from_c(m);
-    cpp_m->write_memory(address, data, length);
+    cpp_m->write_memory(paddr, data, length);
     return cm_result_success();
 } catch (...) {
     return cm_result_failure();

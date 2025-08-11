@@ -718,7 +718,7 @@ do_test("machine step should pass verifications", function(machine)
 end)
 
 print("\n\ntesting step and verification")
-do_test("Step log must contain conssitent data hashes", function(machine)
+do_test("Step log must contain consistent data hashes", function(machine)
     local wrong_hash = string.rep("\0", cartesi.HASH_SIZE)
     local initial_hash = machine:get_root_hash()
     local log = machine:log_step_uarch()
@@ -1160,9 +1160,8 @@ do_test("uarch ecall putchar should print char to console", function()
                                  os.remove(uarch_ram_path)
                                  machine:run_uarch(3) -- run 3 instructions
                                  " 2>&1]]
-    local p = io.popen(lua_cmd .. lua_code)
-    local output = p:read(2000)
-    p:close()
+    local p <close> = assert(io.popen(lua_cmd .. lua_code))
+    local output = assert(p:read(2000))
     local expected_output = "X"
     print("Output of uarch ecall putchar:")
     print("--------------------------")

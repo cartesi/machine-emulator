@@ -447,13 +447,13 @@
           "description": "Whether to clear the stats after retrieving them",
           "required": true,
           "schema": {
-              "type": "boolean"
+            "type": "boolean"
           }
         }
       ],
       "result": {
         "name": "stats",
-        "description": "Statistics for the hash tre",
+        "description": "Statistics for the hash tree",
         "schema": {
           "$ref": "#/components/schemas/HashTreeStats"
         }
@@ -2220,11 +2220,7 @@
             "$ref": "#/components/schemas/InterpreterBreakReason"
           }
         },
-        "required": [
-          "hashes",
-          "mcycle_phase",
-          "break_reason"
-        ]
+        "required": ["hashes", "mcycle_phase", "break_reason"]
       },
       "UarchCycleRootHashes": {
         "title": "UarchCycleRootHashes",
@@ -2240,11 +2236,7 @@
             "$ref": "#/components/schemas/InterpreterBreakReason"
           }
         },
-        "required": [
-          "hashes",
-          "reset_indices",
-          "break_reason"
-        ]
+        "required": ["hashes", "reset_indices", "break_reason"]
       }
     }
   }

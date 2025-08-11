@@ -26,15 +26,15 @@ extern "C" void __cxa_pure_virtual() {
     abort();
 }
 
-extern "C" int atexit(void (*)(void)) {
+extern "C" int atexit([[maybe_unused]] void (*f)()) {
     return 0;
 }
 
 // NOLINTNEXTLINE(cert-dcl54-cpp,misc-new-delete-overloads,hicpp-new-delete-operators)
-void operator delete(void * /*ptr*/) {}
+void operator delete(void * /*ptr*/) noexcept {}
 
 // NOLINTNEXTLINE(cert-dcl54-cpp,misc-new-delete-overloads,hicpp-new-delete-operators)
-void operator delete(void * /*ptr*/, size_t /*size*/) {}
+void operator delete(void * /*ptr*/, size_t /*size*/) noexcept {}
 
 // NOLINTNEXTLINE(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 extern "C" void __assert_func(const char * /*file*/, int /*line*/, const char * /*func*/, const char * /*e*/) {}

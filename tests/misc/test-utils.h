@@ -37,7 +37,7 @@ static hash_type merkle_hash(cartesi::keccak_256_hasher &h, const std::string_vi
     if (log2_size > WORD_LOG2_SIZE) {
         --log2_size;
         auto half_size = data.size() / 2;
-        auto left = merkle_hash(h, std::string_view{data.data(), half_size}, log2_size);
+        auto left = merkle_hash(h, std::string_view{data.data() + 0, half_size}, log2_size);
         auto right = merkle_hash(h, std::string_view{data.data() + half_size, half_size}, log2_size);
         get_concat_hash(h, left, right, result);
     } else {
@@ -68,13 +68,12 @@ static hash_type merkle_hash(const std::string_view &data, int log2_size) {
 static hash_type calculate_proof_root_hash(const cartesi::hash_tree_proof &proof) {
     hash_type hash;
     memcpy(hash.data(), proof.get_target_hash().data(), sizeof(cm_hash));
-    for (int log2_size = static_cast<int>(proof.get_log2_target_size());
-        log2_size < static_cast<int>(proof.get_log2_root_size()); ++log2_size) {
+    for (int log2_size = proof.get_log2_target_size(); log2_size < proof.get_log2_root_size(); ++log2_size) {
         cartesi::keccak_256_hasher h;
         auto bit = (proof.get_target_address() & (UINT64_C(1) << log2_size));
         hash_type first;
         hash_type second;
-        if (bit) {
+        if (bit != 0) {
             memcpy(first.data(), proof.get_sibling_hashes()[log2_size - proof.get_log2_target_size()].data(),
                 sizeof(cm_hash));
             second = hash;
@@ -98,7 +97,7 @@ static hash_type calculate_emulator_hash(cm_machine *machine) {
     }
     const auto mrds = cartesi::from_json<cartesi::address_range_descriptions>(ranges_jsonstr, "memory_ranges");
     uint64_t last = 0;
-    for (auto m : mrds) {
+    for (const auto &m : mrds) {
         tree.pad_back((m.start - last) >> detail::MERKLE_PAGE_LOG2_SIZE);
         auto end = m.start + m.length;
         for (uint64_t s = m.start; s < end; s += detail::MERKLE_PAGE_SIZE) {

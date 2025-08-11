@@ -20,8 +20,8 @@
 #include "compiler-defines.h"
 #include "third-party/printf/printf.h"
 
-#include <inttypes.h>
-#include <stddef.h>
+#include <cinttypes>
+#include <cstddef>
 
 #ifndef NDEBUG
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)

@@ -59,6 +59,7 @@ struct fdt_reserve_entry {
 };
 
 static inline uint32_t to_be32(uint32_t v) {
+    // NOLINTNEXTLINE(misc-redundant-expression)
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "code assumes little-endian byte ordering");
     return __builtin_bswap32(v);
 }

@@ -47,6 +47,7 @@ static constexpr uint64_t base(uint64_t v) {
 }
 
 static bool clint_read_msip(i_device_state_access *a, uint64_t *val, int log2_size) {
+    // NOLINTNEXTLINE(misc-redundant-expression)
     static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "code assumes little-endian byte ordering");
     static_assert(base(clint_msip0_rel_addr) != base(clint_mtimecmp_rel_addr) &&
             base(clint_mtimecmp_rel_addr) != base(clint_mtime_rel_addr) &&

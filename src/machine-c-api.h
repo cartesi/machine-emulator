@@ -622,7 +622,7 @@ CM_API cm_error cm_run(cm_machine *m, uint64_t mcycle_end, cm_break_reason *brea
 /// \returns 0 for success, non zero code for error.
 /// \detail The first hash added to \p result.hashes is the root hash after (\p mcycle_period - \p mcycle_phase)
 /// machine cycles (if the function managed to get that far before returning).
-CM_API cm_error cm_collect_mcycle_root_hashes(cm_machine *m, uint64_t mcycle_countdown, uint64_t mcycle_period,
+CM_API cm_error cm_collect_mcycle_root_hashes(cm_machine *m, uint64_t mcycle_phase, uint64_t mcycle_period,
     uint64_t period_count, const char **result);
 
 /// \brief Runs the machine microarchitecture until CM_REG_UARCH_CYCLE reaches uarch_cycle_end or it halts.

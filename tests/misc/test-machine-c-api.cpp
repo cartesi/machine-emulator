@@ -47,7 +47,7 @@
 #include "test-utils.h"
 #include "uarch-solidity-compat.h"
 
-// NOLINTBEGIN(cppcoreguidelines-avoid-do-while)
+// NOLINTBEGIN(cppcoreguidelines-avoid-do-while,cppcoreguidelines-non-private-member-variables-in-classes)
 
 // NOLINTNEXTLINE
 #define BOOST_AUTO_TEST_CASE_NOLINT(...) BOOST_AUTO_TEST_CASE(__VA_ARGS__)
@@ -74,7 +74,7 @@ public:
         _default_machine_config = config;
     }
 
-    ~default_machine_fixture() {}
+    ~default_machine_fixture() = default;
 
     default_machine_fixture(const default_machine_fixture &other) = delete;
     default_machine_fixture(default_machine_fixture &&other) noexcept = delete;
@@ -83,7 +83,7 @@ public:
 
 protected:
     cm_machine *_machine{};
-    std::string _default_machine_config{};
+    std::string _default_machine_config;
 };
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(load_machine_unknown_dir_test, default_machine_fixture) {
@@ -119,12 +119,13 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_default_machine_test, default_mach
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class incomplete_machine_fixture : public default_machine_fixture {
 public:
-    incomplete_machine_fixture() : _machine_config{} {
+    incomplete_machine_fixture() {
         const char *config{};
         cm_get_default_config(nullptr, &config);
         _machine_config = nlohmann::json::parse(config);
         _machine_config["ram"]["length"] = 1 << 20;
     }
+    ~incomplete_machine_fixture() = default;
 
     incomplete_machine_fixture(const incomplete_machine_fixture &other) = delete;
     incomplete_machine_fixture(incomplete_machine_fixture &&other) noexcept = delete;
@@ -132,7 +133,7 @@ public:
     incomplete_machine_fixture &operator=(incomplete_machine_fixture &&other) noexcept = delete;
 
 protected:
-    nlohmann::json _machine_config{};
+    nlohmann::json _machine_config;
 };
 
 BOOST_FIXTURE_TEST_CASE_NOLINT(create_machine_null_machine_test, incomplete_machine_fixture) {
@@ -166,6 +167,7 @@ public:
                 {{"shared", false}, {"create", false}, {"truncate", false}, {"data_filename", ""}, {"dht_filename", ""},
                     {"dpt_filename", ""}}}}};
     }
+    ~machine_flash_simple_fixture() = default;
 
     machine_flash_simple_fixture(const machine_flash_simple_fixture &other) = delete;
     machine_flash_simple_fixture(machine_flash_simple_fixture &&other) noexcept = delete;
@@ -231,6 +233,11 @@ public:
     ~serialized_machine_fixture() {
         std::filesystem::remove_all(_machine_config_path.string());
     }
+
+    serialized_machine_fixture(const serialized_machine_fixture &other) = delete;
+    serialized_machine_fixture(serialized_machine_fixture &&other) noexcept = delete;
+    serialized_machine_fixture &operator=(const serialized_machine_fixture &other) = delete;
+    serialized_machine_fixture &operator=(serialized_machine_fixture &&other) noexcept = delete;
 
 protected:
     std::filesystem::path _machine_config_path;
@@ -589,7 +596,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_memory_scattered_data, ordinary_machin
     // we are going to write data on a page junction:
     // one byte at the end of the third page and one byte
     // at the beginning of the fourth
-    uint64_t address = 0x80004000 - sizeof(write_value) / 2;
+    uint64_t address = 0x80004000 - (sizeof(write_value) / 2);
 
     std::array<uint8_t, sizeof(uint16_t)> write_data{};
     std::array<uint8_t, sizeof(uint16_t)> read_data{};
@@ -671,7 +678,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(read_write_virtual_memory_scattered_data, ordinar
     // we are going to write data on a page junction:
     // one byte at the end of the third page and one byte
     // at the beginning of the fourth
-    uint64_t address = 0x80004000 - sizeof(write_value) / 2;
+    uint64_t address = 0x80004000 - (sizeof(write_value) / 2);
 
     std::array<uint8_t, sizeof(uint16_t)> write_data{};
     std::array<uint8_t, sizeof(uint16_t)> read_data{};
@@ -849,7 +856,7 @@ public:
     flash_drive_machine_fixture &operator=(flash_drive_machine_fixture &&other) noexcept = delete;
 
 protected:
-    size_t _flash_size;
+    size_t _flash_size{};
     std::string _flash_file;
     std::string _flash_data;
     std::string _machine_dir_path;
@@ -1082,8 +1089,7 @@ BOOST_FIXTURE_TEST_CASE_NOLINT(verify_step_uarch_log_null_log_test, default_mach
 
 class access_log_machine_fixture : public incomplete_machine_fixture {
 public:
-    access_log_machine_fixture() {
-        _log_type = CM_ACCESS_LOG_TYPE_ANNOTATIONS;
+    access_log_machine_fixture() : _log_type(CM_ACCESS_LOG_TYPE_ANNOTATIONS) {
         _machine_dir_path = (std::filesystem::temp_directory_path() / "661b6096c377cdc07756df488059f4407c8f4").string();
 
         uint32_t test_uarch_ram[] = {
@@ -1092,7 +1098,8 @@ public:
             0x00000073,                                                            // ecall
         };
         std::ofstream of(_uarch_ram_path, std::ios::binary);
-        of.write(static_cast<char *>(static_cast<void *>(&test_uarch_ram)), sizeof(test_uarch_ram));
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        of.write(reinterpret_cast<char *>(&test_uarch_ram), sizeof(test_uarch_ram));
         of.close();
         _machine_config["uarch"]["ram"] = {{"backing_store", {{"data_filename", _uarch_ram_path}}}};
         const auto dumped_config = _machine_config.dump();
@@ -1685,4 +1692,4 @@ BOOST_AUTO_TEST_CASE_NOLINT(uarch_solidity_compatibility_layer) {
     BOOST_CHECK_EQUAL(int8ToUint64(int8(127)), 127);
     BOOST_CHECK_EQUAL(int8ToUint64(int8(-128)), 0xffffffffffffff80ULL);
 }
-// NOLINTEND(cppcoreguidelines-avoid-do-while)
+// NOLINTEND(cppcoreguidelines-avoid-do-while,cppcoreguidelines-non-private-member-variables-in-classes)

@@ -272,8 +272,11 @@ machine::machine(machine_config c, machine_runtime_config r) :
     m_r{std::move(r)}, // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
     m_ars{m_c},
     m_ht{m_c.hash_tree, m_r.concurrency.update_hash_tree, m_ars},
-    m_s{std::bit_cast<processor_state *>(m_ars.find(AR_SHADOW_STATE_START, AR_SHADOW_STATE_LENGTH).get_host_memory())},
-    m_us{std::bit_cast<uarch_processor_state *>(
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    m_s{reinterpret_cast<processor_state *>(
+        m_ars.find(AR_SHADOW_STATE_START, AR_SHADOW_STATE_LENGTH).get_host_memory())},
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    m_us{reinterpret_cast<uarch_processor_state *>(
         m_ars.find(AR_SHADOW_UARCH_STATE_START, AR_SHADOW_UARCH_STATE_LENGTH).get_host_memory())} {
     init_processor(m_c.processor, m_r);
     init_uarch_processor(m_c.uarch.processor);

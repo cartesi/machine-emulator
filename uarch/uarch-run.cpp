@@ -29,10 +29,6 @@
 
 using namespace cartesi;
 
-// Let the state accessor be on static memory storage to speed up uarch initialization
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-mock_address_ranges ars;
-
 namespace cartesi {
 
 // Declaration of explicit instantiation in module interpret.cpp when compiled with microarchitecture
@@ -43,7 +39,9 @@ extern template interpreter_break_reason interpret(machine_uarch_bridge_state_ac
 /// \brief  Advances one mcycle by executing the "big machine interpreter" compiled to the microarchitecture
 /// \return This function never returns
 extern "C" NO_RETURN void interpret_next_mcycle_with_uarch() {
-    machine_uarch_bridge_state_access a(ars);
+    // Let the state accessor be on static memory storage to speed up uarch initialization
+    static mock_address_ranges ars;
+    const machine_uarch_bridge_state_access a(ars);
     const uint64_t mcycle_end = a.read_mcycle() + 1;
     interpret(a, mcycle_end);
     // Finished executing a whole mcycle: halt the microarchitecture

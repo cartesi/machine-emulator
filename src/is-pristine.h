@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <ranges>
 
+#include "concepts.h"
 #include "meta.h"
 
 namespace cartesi {

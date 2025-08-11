@@ -87,13 +87,15 @@ UARCH_OBJS = $(patsubst %.c,%.uarch_c.o,$(patsubst %.cpp,%.uarch_cpp.o,$(UARCH_S
 EMULATOR_OBJS = $(patsubst %.c,%.emulator_c.o,$(patsubst %.cpp,%.emulator_cpp.o,$(EMULATOR_SOURCES)))
 COMPUTE_OBJS = $(patsubst %.c,%.compute_c.o,$(patsubst %.cpp,%.compute_cpp.o,$(COMPUTE_SOURCES)))
 
-LINTER_SOURCES=$($(strip $(wildcard uarch-*.cpp) $(wildcard uarch-*.c)))
-LINTER_HEADERS=$($(strip $(wildcard uarch-*.h)))
+LINTER_SOURCES=$(strip $(wildcard uarch-*.cpp))
+LINTER_HEADERS=$(strip $(wildcard uarch-*.h))
 EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)
 CLANG_TIDY_HEADER_FILTER=$(CURDIR)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
 CLANG_TIDY=clang-tidy
-CLANG_TIDY_TARGETS=$(patsubst %.cpp,%.clang-tidy,$(patsubst %.c,%.clang-tidy,$(LINTER_SOURCES)))
+CLANG_TIDY_TARGETS=$(patsubst %.cpp,%.clang-tidy,$(LINTER_SOURCES))
+CLANG_TIDY_FLAGS=--warnings-as-errors=*
+CLANG_TIDY_WARNS=-Wthread-safety -Wglobal-constructors -Wno-unused-command-line-argument -Wno-format
 
 .PHONY: all clean validate-instruction-set
 
@@ -152,7 +154,7 @@ uarch-ram-entry.o: uarch-ram-entry.S
 	grep -v '^#' $@.tmp > $@
 
 %.clang-tidy: %.cpp
-	$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- -target riscv64-linux-gnu $(CFLAGS) $(CXXFLAGS) -Wno-unused-command-line-argument 2>/dev/null
+	$(CLANG_TIDY) --header-filter='$(CLANG_TIDY_HEADER_FILTER)' $(CLANG_TIDY_FLAGS) $< -- -target riscv64-linux-gnu $(CFLAGS) $(CXXFLAGS) $(CLANG_TIDY_WARNS) 2>/dev/null
 	@touch $@
 
 lint: $(CLANG_TIDY_TARGETS)
@@ -164,4 +166,4 @@ clean-auto-generated:
 	@rm -f uarch-pristine-hash.c uarch-pristine-ram.c
 
 clean: clean-executables clean-auto-generated
-	@rm -f *.ld *.elf *.bin *.tmp link.ld $(UARCH_OBJS) $(EMULATOR_OBJS) $(COMPUTE_OBJS) uarch-ram-entry.o *.clang-tidy *.insn.txt *.objdump
+	@rm -f *.ld *.elf *.bin *.tmp *.o *.clang-tidy *.insn.txt *.objdump $(UARCH_OBJS) $(EMULATOR_OBJS) $(COMPUTE_OBJS)

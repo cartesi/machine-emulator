@@ -352,7 +352,7 @@ private:
     }
 
 #ifndef MICROARCHITECTURE
-    // Defaul implemenation returns always dirty tree
+    // Default implemenationt returns always dirty tree
     virtual const i_dirty_page_tree &do_get_dirty_page_tree() const noexcept {
         const static empty_dirty_page_tree no_dirty{};
         return no_dirty;
@@ -363,7 +363,7 @@ private:
         return const_cast<i_dirty_page_tree &>(std::as_const(*this).do_get_dirty_page_tree());
     }
 
-    // Defaul implemenation returns no hashes
+    // Default implemenationt returns no hashes
     virtual const i_dense_hash_tree &do_get_dense_hash_tree() const noexcept {
         const static empty_dense_hash_tree no_hashes{};
         return no_hashes;

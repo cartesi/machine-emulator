@@ -17,6 +17,7 @@
 #ifndef MACHINE_REG_H
 #define MACHINE_REG_H
 
+#include "shadow-registers.h"
 #include "shadow-uarch-state.h"
 
 /// \file

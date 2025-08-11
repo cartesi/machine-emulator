@@ -46,7 +46,9 @@ static inline void *cast_phys_addr_to_ptr(uint64_t paddr) {
 //??D I don't know why GCC warns about this overflow when there is none.
 //??D The code generated seems to be pretty good as well.
 #pragma GCC diagnostic push
+#ifndef __clang__
 #pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
 /// \brief Writes a value to memory.
 /// \tparam T Type of value.
 /// \tparam A Type to which \p paddr is aligned.

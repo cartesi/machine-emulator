@@ -17,6 +17,9 @@
 #ifndef JSONRPC_FORK_RESULT_H
 #define JSONRPC_FORK_RESULT_H
 
+#include <cstdint>
+#include <string>
+
 namespace cartesi {
 
 struct fork_result final {

@@ -23,12 +23,16 @@
 #include <concepts>
 #include <cstddef>
 #include <iterator>
+#include <limits>
 #include <span>
 #include <utility>
+#include <variant>
+#include <vector>
 
 #include <boost/container/static_vector.hpp>
 #include <boost/iterator/iterator_adaptor.hpp>
 
+#include "concepts.h"
 #include "meta.h"
 
 namespace cartesi {
@@ -36,7 +40,7 @@ namespace cartesi {
 /// \brief Circular buffer container.
 /// \tparam T type of entry in container.
 /// \tparam N maximum number of entries container can hold.
-/// \details The circular buffer contianer with a fixed number of entries.
+/// \details The circular buffer container with a fixed number of entries.
 /// The container that be statically allocated, when \p N is passed as a template argument at compile time.
 /// It can be dynamically allocated, with the size is chosen in the constructor at runtime.
 /// \p T does not need to be default-constructible.

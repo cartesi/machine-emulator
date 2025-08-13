@@ -316,7 +316,7 @@ C_WARNS+=-Wno-unknown-pragmas
 CXX_WARNS+=-Wno-unknown-pragmas
 endif
 
-CXXFLAGS+=$(OPTFLAGS) -std=gnu++20 -fvisibility=hidden -MMD $(PICCFLAGS) $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBCFLAGS) $(DEFS) $(CXX_WARNS)
+CXXFLAGS+=$(OPTFLAGS) -std=gnu++23 -fvisibility=hidden -MMD $(PICCFLAGS) $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBCFLAGS) $(DEFS) $(CXX_WARNS)
 CFLAGS+=$(OPTFLAGS) -std=gnu99 -fvisibility=hidden -MMD $(PICCFLAGS) $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBCFLAGS) $(DEFS) $(C_WARNS)
 LDFLAGS+=$(UBLDFLAGS)
 

@@ -98,7 +98,7 @@ CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.h)
 INCS=-I../../src -I../../third-party/nlohmann-json -I../../third-party/downloads
 WARNS=-Wall -Wpedantic $(BOOST_INC)
 
-CXXFLAGS+=-O2 -g -std=gnu++20 -fopenmp -fvisibility=hidden $(INCS) $(UBFLAGS) $(WARNS)
+CXXFLAGS+=-O2 -g -std=gnu++23 -fopenmp -fvisibility=hidden $(INCS) $(UBFLAGS) $(WARNS)
 
 ifeq ($(slirp),yes)
 LIBCARTESI_LIBS+=$(SLIRP_LIB)

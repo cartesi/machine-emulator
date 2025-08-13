@@ -116,7 +116,7 @@ brew install cartesi-machine
 
 ##### System Requirements
 
-- C++ Compiler with support for C++20 (tested with GCC >= 11.x and Clang >= 14.x).
+- C++ Compiler with support for C++23 (tested with GCC >= 14.x and Clang >= 19.x).
 - GNU Make >= 3.81
 - Boost >= 1.83
 - Lua >= 5.4.6 (optional, required for scripting support and interactive terminal)

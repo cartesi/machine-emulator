@@ -21,7 +21,7 @@ HOST_CXX := g++
 HOST_CC := gcc
 endif
 HOST_CFLAGS := -I$(EMULATOR_SRC_DIR)
-HOST_CXXFLAGS := -std=c++20
+HOST_CXXFLAGS := -std=c++23
 
 CC := $(TOOLCHAIN_PREFIX)gcc
 LD := $(TOOLCHAIN_PREFIX)ld
@@ -58,7 +58,7 @@ CFLAGS := -march=rv64i -mabi=lp64 -Wl,--gc-sections $(OPTFLAGS) $(UBFLAGS) $(WAR
 	$(UARCH_DEFS) \
 	$(TOOLCHAIN_INCS)
 
-CXXFLAGS := -std=c++20 -fno-rtti \
+CXXFLAGS := -std=c++23 -fno-rtti \
 	-fno-threadsafe-statics \
 	-fno-use-cxa-atexit
 

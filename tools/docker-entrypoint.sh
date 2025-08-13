@@ -52,5 +52,5 @@ else
   fi
 
   echo Running as $USERNAME and group $(id -ng $UID)
-  exec /usr/local/bin/su-exec $USERNAME "$@"
+  exec gosu $USERNAME "$@"
 fi

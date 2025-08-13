@@ -5,7 +5,7 @@ Homepage: https://github.com/cartesi/machine-emulator
 Architecture: ARG_ARCH
 Maintainer: Cartesi Machine Reference Unit
 Provides: cartesi-machine-tests
-Depends: cartesi-machine-emulator (>= ARG_VERSION)
+Depends: cartesi-machine-emulator (>= ARG_VERSION), lua-posix
 Section: devel
 Priority: optional
 Multi-Arch: foreign

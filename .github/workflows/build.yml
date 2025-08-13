@@ -531,6 +531,7 @@ jobs:
             GIT_COMMIT=${GITHUB_SHA}
             DEBUG=yes
             COVERAGE=yes
+            THREADS=no
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
           project: ${{ vars.DEPOT_PROJECT }}
           token: ${{ secrets.DEPOT_TOKEN }}
@@ -548,6 +549,7 @@ jobs:
           build-args: |
             DEBUG=yes
             COVERAGE=yes
+            THREADS=no
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
 
       - name: Run coverage
@@ -571,7 +573,7 @@ jobs:
 
   sanitize:
     name: Sanitize
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -630,7 +632,7 @@ jobs:
             SANITIZE=yes
             MACHINE_EMULATOR_VERSION=${{ env.MACHINE_EMULATOR_VERSION }}
 
-      - name: MMAP rnd_bits workaround for the new GitHub ubuntu-22 runner
+      - name: MMAP rnd_bits workaround for the new GitHub Ubuntu runner
         run: sudo sysctl vm.mmap_rnd_bits=28
 
       - name: Run tests with sanitizer
@@ -640,7 +642,7 @@ jobs:
   publish_artifacts:
     name: Publish artifacts
     needs: [build, static-analysis, coverage, sanitize, test_amd64, test_arm64]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout emulator source code
         uses: actions/checkout@v4

@@ -219,7 +219,7 @@ bool hash_tree::return_updated_dirty_pages(address_ranges ars, dirty_pages &batc
     const int block_size = std::min(static_cast<int>(variant_hasher{m_hash_function}.get_optimal_lane_count()),
         page_hash_tree_cache::simd_page_hasher<variant_hasher>::QUEUE_MAX_PAGE_COUNT);
     // It's only worth to use multi-threading if we have enough entries to process
-    const int threads =
+    [[maybe_unused]] const int threads =
         (m_concurrency > 1 && batch_size > m_concurrency && batch_size > block_size) ? m_concurrency : 1;
     uint64_t update_failures{0};
     uint64_t word_hits{0};
@@ -380,7 +380,8 @@ void hash_tree::update_and_clear_dense_node_entries(dense_node_entries &batch, i
     const int batch_size = static_cast<int>(batch.size());
     const int block_size = static_cast<int>(variant_hasher{m_hash_function}.get_optimal_lane_count());
     // It's only worth to use multi-threading if we have enough entries to process
-    const int threads = (m_concurrency > 1 && batch_size > m_concurrency * block_size) ? m_concurrency : 1;
+    [[maybe_unused]] const int threads =
+        (m_concurrency > 1 && batch_size > m_concurrency * block_size) ? m_concurrency : 1;
 #pragma omp parallel for schedule(static) if (threads > 1) num_threads(threads)
     for (int block_start = 0; block_start < batch_size; block_start += block_size) {
         variant_hasher h{m_hash_function};

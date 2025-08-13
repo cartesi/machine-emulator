@@ -80,7 +80,7 @@ sudo apt-get update
 sudo apt-get install cartesi-machine
 ```
 
-The packages provided in this APT repository are known to work with **Debian 12** (Bookworm) and **Ubuntu 24.04** (Noble).
+The packages provided in this APT repository are known to work with **Debian 13** (Trixie) and **Ubuntu 24.04** (Noble).
 
 #### Alpine Linux
 
@@ -118,14 +118,14 @@ brew install cartesi-machine
 
 - C++ Compiler with support for C++20 (tested with GCC >= 11.x and Clang >= 14.x).
 - GNU Make >= 3.81
-- Boost >= 1.81
-- Lua >= 5.4.4 (optional, required for scripting support and interactive terminal)
+- Boost >= 1.83
+- Lua >= 5.4.6 (optional, required for scripting support and interactive terminal)
 - Libslirp >= 4.6.0 (optional, required for networking support)
 
 ###### Debian Requirements
 
 ```sh
-sudo apt-get install build-essential git wget libgomp-dev libboost1.81-dev liblua5.4-dev libslirp-dev lua5.4
+sudo apt-get install build-essential git wget libgomp-dev libboost1.83-dev liblua5.4-dev libslirp-dev lua5.4
 ```
 
 ###### MacPorts Requirements

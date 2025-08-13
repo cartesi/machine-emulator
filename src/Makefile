@@ -196,11 +196,14 @@ export UARCH_DEFS += $(DUMP_DEFS)
 
 # By default we compile in release with debug information,
 # so the emulator is packaged correctly by default.
-ifeq (,$(filter yes,$(relwithdebinfo) $(release) $(debug) $(sanitize)))
+ifeq (,$(filter yes,$(relwithdebinfo) $(release) $(debug) $(coverage) $(sanitize)))
 relwithdebinfo=yes
 endif
 
-ifeq ($(relwithdebinfo),yes)
+ifeq ($(coverage),yes)
+OPTFLAGS+=-Og -g -fno-omit-frame-pointer -fno-dce -fno-inline
+DEFS+=-DCODE_COVERAGE
+else ifeq ($(relwithdebinfo),yes)
 OPTFLAGS+=-O2 -g
 INTERPRET_CXXFLAGS+=-DNDEBUG # disable asserts only for interpret.cpp
 else ifeq ($(release),yes)
@@ -309,6 +312,8 @@ CXXFLAGS+=$(PTHREAD_CFLAGS)
 LDFLAGS+=$(PTHREAD_LDFLAGS)
 else
 DEFS+=-DNO_THREADS
+C_WARNS+=-Wno-unknown-pragmas
+CXX_WARNS+=-Wno-unknown-pragmas
 endif
 
 CXXFLAGS+=$(OPTFLAGS) -std=gnu++20 -fvisibility=hidden -MMD $(PICCFLAGS) $(CC_MARCH) $(INCS) $(GCFLAGS) $(UBCFLAGS) $(DEFS) $(CXX_WARNS)
@@ -319,12 +324,12 @@ ifeq ($(coverage),yes)
 ifeq ($(COVERAGE_TOOLCHAIN),gcc)
 CC=gcc
 CXX=g++
-CXXFLAGS+=-g -Og -fno-dce -fno-inline -DCODE_COVERAGE --coverage
+CXXFLAGS+=--coverage
 LDFLAGS+=--coverage
 else ifeq ($(COVERAGE_TOOLCHAIN),clang)
 CC=clang
 CXX=clang++
-CXXFLAGS+=-g -O0 -DCODE_COVERAGE -fprofile-instr-generate -fcoverage-mapping
+CXXFLAGS+=-fprofile-instr-generate -fcoverage-mapping
 LDFLAGS+=-fprofile-instr-generate -fcoverage-mapping
 else ifneq ($(COVERAGE_TOOLCHAIN),)
 $(error invalid value for COVERAGE_TOOLCHAIN: $(COVERAGE_TOOLCHAIN))

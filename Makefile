@@ -209,10 +209,10 @@ doc:
 bundle-boost: $(DEPDIR)/downloads/boost
 $(DEPDIR)/downloads/boost:
 	mkdir -p $(DOWNLOADDIR)
-	wget -O $(DEPDIR)/downloads/boost_1_81_0.tar.gz https://archives.boost.io/release/1.81.0/source/boost_1_81_0.tar.gz
-	tar -C $(DEPDIR)/downloads -xzf $(DEPDIR)/downloads/boost_1_81_0.tar.gz boost_1_81_0/boost
-	mv $(DEPDIR)/downloads/boost_1_81_0/boost $(DEPDIR)/downloads/boost
-	rm -rf $(DEPDIR)/downloads/boost_1_81_0.tar.gz $(DEPDIR)/downloads/boost_1_81_0
+	wget -O $(DEPDIR)/downloads/boost_1_83_0.tar.gz https://archives.boost.io/release/1.83.0/source/boost_1_83_0.tar.gz
+	tar -C $(DEPDIR)/downloads -xzf $(DEPDIR)/downloads/boost_1_83_0.tar.gz boost_1_83_0/boost
+	mv $(DEPDIR)/downloads/boost_1_83_0/boost $(DEPDIR)/downloads/boost
+	rm -rf $(DEPDIR)/downloads/boost_1_83_0.tar.gz $(DEPDIR)/downloads/boost_1_83_0
 
 submodules:
 	git submodule update --init --recursive
@@ -253,22 +253,22 @@ $(SRCDIR)/interpret-jump-table.h:
 	@eval $$($(MAKE) -s --no-print-directory env); $(MAKE) -C $(SRCDIR) interpret-jump-table.h
 
 build-emulator-builder-image:
-	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --target builder -t cartesi/machine-emulator:builder -f Dockerfile .
+	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg THREADS=$(threads) --build-arg SANITIZE=$(sanitize) --target builder -t cartesi/machine-emulator:builder -f Dockerfile .
 
 build-emulator-toolchain-image build-toolchain:
 	docker build $(DOCKER_PLATFORM) --target toolchain -t cartesi/machine-emulator:toolchain -f Dockerfile .
 
 build-emulator-image:
-	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) -t cartesi/machine-emulator:$(TAG) -f Dockerfile .
+	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg THREADS=$(threads) --build-arg SANITIZE=$(sanitize) -t cartesi/machine-emulator:$(TAG) -f Dockerfile .
 
 build-emulator-tests-image: build-emulator-builder-image build-emulator-image
-	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests -f tests/Dockerfile .
+	docker build $(DOCKER_PLATFORM) --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg THREADS=$(threads) --build-arg SANITIZE=$(sanitize) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests -f tests/Dockerfile .
 
 build-emulator-tests-builder-image: build-emulator-builder-image
-	docker build $(DOCKER_PLATFORM) --target tests-builder --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests-builder -f tests/Dockerfile .
+	docker build $(DOCKER_PLATFORM) --target tests-builder --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg THREADS=$(threads) --build-arg SANITIZE=$(sanitize) --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests-builder -f tests/Dockerfile .
 
 build-debian-package:
-	docker build $(DOCKER_PLATFORM) --target debian-packager --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg SANITIZE=$(sanitize) -t $(DEBIAN_IMG) -f Dockerfile .
+	docker build $(DOCKER_PLATFORM) --target debian-packager --build-arg DEBUG=$(debug) --build-arg COVERAGE=$(coverage) --build-arg THREADS=$(threads) --build-arg SANITIZE=$(sanitize) -t $(DEBIAN_IMG) -f Dockerfile .
 
 build-tests-debian-packages: build-emulator-builder-image
 	docker build $(DOCKER_PLATFORM) --target tests-debian-packager --build-arg TAG=$(TAG) -t cartesi/machine-emulator:tests-debian-packager -f tests/Dockerfile .

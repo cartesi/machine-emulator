@@ -58,10 +58,8 @@ endif
 
 COVERAGE_TOOLCHAIN?=gcc
 COVERAGE_OUTPUT_DIR=$(BUILDDIR)/coverage
-COVERAGE_WORKLOAD=\
-	dhrystone 1000000; \
-	whetstone 10000
-COVERAGE_SOURCES=$(filter-out ../src/%.pb.h, $(wildcard ../src/*.h) $(wildcard ../src/*.cpp))
+COVERAGE_WORKLOAD=stress-ng --cpu 1 --cpu-ops 1
+COVERAGE_SOURCES=$(wildcard ../src/*.h) $(wildcard ../src/*.cpp)
 
 ifeq ($(sanitize),yes)
 ifeq ($(TARGET_OS),Darwin)
@@ -240,14 +238,12 @@ coverage-uarch:
 	$(LUA) ./lua/htif-yield.lua --uarch
 
 ifeq ($(COVERAGE_TOOLCHAIN),gcc)
-LCOV_CONFIG=--rc lcov_branch_coverage=1
+GCOVR_FLAGS=--gcov-ignore-parse-errors
 coverage-report: $(COVERAGE_OUTPUT_DIR)
-	rm -f ../src/*.pb.cc.gcda ../src/*.pb.h.gcda
-	gcov --demangled-names --relative-only --branch-probabilities ../src/*.gcda
-	lcov --capture --directory ../src/ --no-external --exclude '*.pb.*' -o coverage.info $(LCOV_CONFIG) --quiet
-	genhtml --quiet coverage.info --output-directory $(COVERAGE_OUTPUT_DIR)/gcc $(LCOV_CONFIG)
-	lcov --list coverage.info $(LCOV_CONFIG) | tee $(COVERAGE_OUTPUT_DIR)/coverage.txt
-	lcov --summary coverage.info $(LCOV_CONFIG) | tee -a $(COVERAGE_OUTPUT_DIR)/coverage.txt
+	cd ../src && gcov --demangled-names --relative-only --branch-probabilities *.gcda
+	mkdir -p $(COVERAGE_OUTPUT_DIR)/gcc
+	gcovr $(GCOVR_FLAGS) --root ../src --html-details $(COVERAGE_OUTPUT_DIR)/gcc/index.html
+	gcovr $(GCOVR_FLAGS) --print-summary | tee $(COVERAGE_OUTPUT_DIR)/coverage.txt
 else ifeq ($(COVERAGE_TOOLCHAIN),clang)
 coverage-report: $(COVERAGE_OUTPUT_DIR)
 	llvm-profdata merge -sparse $(shell find . -name 'coverage*.profraw') -o coverage.profdata

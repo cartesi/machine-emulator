@@ -2,10 +2,11 @@ ARG TAG=devel
 FROM cartesi/machine-emulator:builder AS tests-builder
 ARG DEBUG=no
 ARG COVERAGE=no
+ARG THREADS=yes
 ARG SANITIZE=no
 
-RUN make -j$(nproc) build-tests-machine debug=$DEBUG coverage=$COVERAGE sanitize=$SANITIZE
-RUN make -j$(nproc) build-tests-misc build-tests-uarch build-tests-images debug=$DEBUG coverage=$COVERAGE sanitize=$SANITIZE
+RUN make -j$(nproc) build-tests-machine debug=$DEBUG coverage=$COVERAGE threads=$THREADS sanitize=$SANITIZE
+RUN make -j$(nproc) build-tests-misc build-tests-uarch build-tests-images debug=$DEBUG coverage=$COVERAGE threads=$THREADS sanitize=$SANITIZE
 
 ####################################################################################################
 FROM tests-builder AS tests-debian-packager

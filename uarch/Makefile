@@ -3,8 +3,8 @@ TOOLCHAIN_LIBS = -lgcc
 
 ifeq ($(DEV_ENV_HAS_TOOLCHAIN),yes)
 TOOLCHAIN_INCS=\
-	-I/usr/riscv64-linux-gnu/include/c++/12 \
-	-I/usr/riscv64-linux-gnu/include/c++/12/riscv64-linux-gnu \
+	-I/usr/riscv64-linux-gnu/include/c++/14 \
+	-I/usr/riscv64-linux-gnu/include/c++/14/riscv64-linux-gnu \
 	-I/usr/riscv64-linux-gnu/include
 else
 TOOLCHAIN_INCS=

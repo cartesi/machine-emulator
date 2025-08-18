@@ -16,7 +16,7 @@
 
 local lpeg = require("lpeg")
 local bint_extra = 256
-local bint = require("bint")(256 + bint_extra)
+local bint = require("cartesi.third-party.bint")(256 + bint_extra)
 
 local P, R, S, C, Ct, V, Cmt, Carg = lpeg.P, lpeg.R, lpeg.S, lpeg.C, lpeg.Ct, lpeg.V, lpeg.Cmt, lpeg.Carg
 local cartesi = require("cartesi")

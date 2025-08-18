@@ -300,7 +300,7 @@ CLANG_FORMAT_FILES:=$(strip $(CLANG_FORMAT_FILES))
 CLANG_FORMAT_FILES:=$(filter-out $(CLANG_FORMAT_IGNORE_FILES),$(strip $(CLANG_FORMAT_FILES)))
 
 STYLUA=stylua
-STYLUA_FLAGS=--indent-type Spaces --collapse-simple-statement Always
+STYLUA_FLAGS=--indent-type Spaces --collapse-simple-statement Always --respect-ignores
 
 EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)

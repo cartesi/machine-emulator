@@ -81,7 +81,7 @@ RUN_ARCH_TEST = $(LUA) $(abspath ./lua/run-rv64i-arch-test.lua)
 CARTESI_IMAGES = $(CARTESI_IMAGES_PATH)/linux.bin
 
 STYLUA=stylua
-STYLUA_FLAGS=--indent-type Spaces
+STYLUA_FLAGS=--indent-type Spaces --respect-ignores
 
 build-tests-all: misc build-tests-machine-with-toolchain build-tests-uarch-with-toolchain images $(CARTESI_CMIO_PATH)
 

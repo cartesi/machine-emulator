@@ -25,11 +25,27 @@ local function adjust_path(path)
     return string.gsub(path or ".", "/*$", "") .. "/"
 end
 
+-- Returns the directory absolute path at level `dirlevel` for the calling script at level `calllevel`.
+local function get_script_path(dirlevel, calllevel)
+    local info = debug.getinfo(calllevel or 1, "S")
+    local path = info and info.source and info.source:match("^@([^\n\r]+)")
+    assert(path, "could not retrieve calling script path")
+    path = require("posix.stdlib").realpath(path)
+    if dirlevel and dirlevel > 0 then
+        local segments = {}
+        for segment in path:gmatch("[^/]+") do
+            table.insert(segments, segment)
+        end
+        return "/" .. table.concat(segments, "/", 1, #segments - dirlevel)
+    end
+    return path
+end
+
 local test_util = {
-    images_path = adjust_path(assert(os.getenv("CARTESI_IMAGES_PATH"), "must set CARTESI_IMAGES_PATH")),
-    tests_path = adjust_path(assert(os.getenv("CARTESI_TESTS_PATH"), "must set CARTESI_TESTS_PATH")),
-    cmio_path = adjust_path(assert(os.getenv("CARTESI_CMIO_PATH"), "must set CARTESI_CMIO_PATH")),
-    tests_uarch_path = adjust_path(assert(os.getenv("CARTESI_TESTS_UARCH_PATH"), "must set CARTESI_TESTS_UARCH_PATH")),
+    images_path = adjust_path(os.getenv("CARTESI_IMAGES_PATH") or get_script_path(5) .. "/src"),
+    tests_path = adjust_path(os.getenv("CARTESI_TESTS_PATH") or get_script_path(4) .. "/build/machine"),
+    cmio_path = adjust_path(os.getenv("CARTESI_CMIO_PATH") or get_script_path(4) .. "/build/cmio"),
+    tests_uarch_path = adjust_path(os.getenv("CARTESI_TESTS_UARCH_PATH") or get_script_path(4) .. "/build/uarch"),
 }
 
 local function compute_zero_hash_table(hash_fn)

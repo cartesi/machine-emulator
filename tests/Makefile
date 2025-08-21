@@ -188,9 +188,6 @@ test-machine-with-log-step:
 test-uarch:
 	$(LUA) ./lua/cartesi-machine-tests.lua --jobs=$(NUM_JOBS) run_uarch
 
-test-hash-tree:
-	$(LUA) ./lua/hash-tree.lua
-
 test-uarch-compare:
 	$(LUA) ./lua/cartesi-machine-tests.lua --test="^rv64ui.*$$" --concurrency=update_hash_tree:1 --jobs=$(NUM_JOBS) run_host_and_uarch
 
@@ -257,7 +254,7 @@ coverage-report: $(COVERAGE_OUTPUT_DIR)
 export LLVM_PROFILE_FILE=coverage-%p.profraw
 endif
 
-test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-hash-tree test-lua test-jsonrpc test-c-api test-hash test-cmio test-machine-with-log-step
+test: test-save-and-load test-yield-and-save test-machine test-uarch test-uarch-rv64ui test-uarch-interpreter test-lua test-jsonrpc test-c-api test-hash test-cmio test-machine-with-log-step
 
 lint format check-format:
 	@$(MAKE) -C misc $@

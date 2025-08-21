@@ -22,6 +22,8 @@ local lester = require("cartesi.third-party.lester")
 lester.parse_args()
 
 require("spec-hash-functions")
+require("spec-hash-tree")
+require("spec-collect-hashes")
 
 lester.report() -- Print overall statistic of the tests run.
 lester.exit() -- Exit with success if all tests passed.

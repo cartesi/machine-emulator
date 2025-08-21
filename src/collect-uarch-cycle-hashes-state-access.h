@@ -59,7 +59,7 @@ public:
 
 private:
     void mark_dirty_word(uint64_t address) const {
-        constexpr uint64_t word_mask = ~UINT64_C(HASH_TREE_WORD_SIZE - 1);
+        constexpr uint64_t word_mask = ~(HASH_TREE_WORD_SIZE - 1);
         m_c.dirty_words.insert(address & word_mask);
     }
 

@@ -408,6 +408,9 @@ public:
         m_pristine_page_hash_tree{entry::get_pristine_page_hash_tree(std::forward<H>(h))},
         m_entries{num_entries, entry{m_pristine_page_hash_tree}} {
         m_map.reserve(num_entries);
+        if (num_entries == 0) {
+            throw std::invalid_argument{"page hash-tree cache must have at least one entry"};
+        }
     }
 
     page_hash_tree_cache(const page_hash_tree_cache &other) = delete;

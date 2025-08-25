@@ -22,6 +22,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -77,7 +78,16 @@ private:
 
     /// \brief Returns offset that converts between machine host addresses and target physical addresses
     /// \param pma_index Index of the memory PMA for the desired offset
-    host_addr get_hp_offset(uint64_t pma_index) const;
+    host_addr get_hp_offset(uint64_t pma_index) const {
+        using namespace std::string_literals;
+        const auto &ar = read_pma(pma_index);
+        if (!ar.is_memory()) [[unlikely]] {
+            throw std::domain_error{"PMA index is not of memory range ("s + ar.get_description() + ")"s};
+        }
+        auto haddr = cast_ptr_to_host_addr(ar.get_host_memory());
+        auto paddr = ar.get_start();
+        return paddr - haddr;
+    }
 
     /// \brief Initializes processor
     /// \param p Processor configuration
@@ -327,7 +337,9 @@ public:
     /// \brief Update a single page in the hash-tree after it is modified in the machine state.
     /// \param address Any address inside modified page.
     /// \returns true if succeeded, false otherwise.
-    bool update_hash_tree_page(uint64_t address);
+    bool update_hash_tree_page(uint64_t address) {
+        return m_ht.update_page(m_ars, address);
+    }
 
     /// \brief Obtains the proof for a node in the hash-tree.
     /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
@@ -346,7 +358,9 @@ public:
     /// \details If the node is smaller than a page size, then it must lie entirely inside the same PMA range.
     /// This overload is used to optimize proof generation when the caller knows that the tree is already up to
     /// date.
-    proof_type get_proof(uint64_t address, int log2_size, skip_hash_tree_update_t /*unused*/) const;
+    proof_type get_proof(uint64_t address, int log2_size, skip_hash_tree_update_t /*unused*/) const {
+        return m_ht.get_proof(m_ars, address, log2_size);
+    }
 
     /// \brief Obtains the root hash of the hash-tree.
     /// \returns The hash.
@@ -362,7 +376,9 @@ public:
     /// \param address Address of target node. Must be aligned to a 2<sup>log2_size</sup> boundary.
     /// \param log2_size log<sub>2</sub> of size subintended by target node.
     /// \returns The hash.
-    machine_hash get_node_hash(uint64_t address, int log2_size, skip_hash_tree_update_t /*unused*/) const;
+    machine_hash get_node_hash(uint64_t address, int log2_size, skip_hash_tree_update_t /*unused*/) const {
+        return m_ht.get_node_hash(m_ars, address, log2_size);
+    }
 
     /// \brief Verifies integrity of hash tree without making any modifications to it tree.
     /// \returns True if tree is self-consistent, false otherwise.
@@ -486,24 +502,34 @@ public:
     /// \param pma_index Index of PMA where address falls
     /// \returns Corresponding target physical address
     /// \details This method also converts from vh_offset to vp_offset
-    uint64_t get_paddr(host_addr haddr, uint64_t pma_index) const;
+    uint64_t get_paddr(host_addr haddr, uint64_t pma_index) const {
+        return static_cast<uint64_t>(haddr + get_hp_offset(pma_index));
+    }
 
     /// \brief Converts from target physical address to machine host address
     /// \param paddr Target physical address to convert
     /// \param pma_index Index of PMA where address falls
     /// \returns Corresponding machine host address
     /// \details This method also converts from vp_offset to vh_offset
-    host_addr get_host_addr(uint64_t paddr, uint64_t pma_index) const;
+    host_addr get_host_addr(uint64_t paddr, uint64_t pma_index) const {
+        return host_addr{paddr} - get_hp_offset(pma_index);
+    }
 
     /// \brief Marks a page as dirty
     /// \param haddr Machine host address within page
     /// \param pma_index Index of PMA where address falls
-    void mark_dirty_page(host_addr haddr, uint64_t pma_index);
+    void mark_dirty_page(host_addr haddr, uint64_t pma_index) {
+        auto paddr = get_paddr(haddr, pma_index);
+        mark_dirty_page(paddr, pma_index);
+    }
 
     /// \brief Marks a page as dirty
     /// \param paddr Target phyislcal address within page
     /// \param pma_index Index of PMA where address falls
-    void mark_dirty_page(uint64_t paddr, uint64_t pma_index);
+    void mark_dirty_page(uint64_t paddr, uint64_t pma_index) {
+        auto &ar = read_pma(pma_index);
+        ar.get_dirty_page_tree().mark_dirty_page_and_up(paddr - ar.get_start());
+    }
 
     /// \brief Updates a TLB slot
     /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
@@ -512,7 +538,18 @@ public:
     /// \param vh_offset Offset from target virtual addresses to host addresses within page
     /// \param pma_index Index of PMA where address falls
     void write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset,
-        uint64_t pma_index);
+        uint64_t pma_index) {
+        uint64_t vp_offset = 0;
+        if (vaddr_page != TLB_INVALID_PAGE) [[likely]] {
+            vp_offset = get_paddr(vh_offset, pma_index);
+        }
+        m_s->penumbra.tlb[set_index][slot_index].vaddr_page = vaddr_page;
+        m_s->penumbra.tlb[set_index][slot_index].vh_offset = vh_offset;
+        m_s->shadow.tlb[set_index][slot_index].vaddr_page = vaddr_page;
+        m_s->shadow.tlb[set_index][slot_index].vp_offset = vp_offset;
+        m_s->shadow.tlb[set_index][slot_index].pma_index = pma_index;
+        m_s->shadow.tlb[set_index][slot_index].zero_padding_ = 0;
+    }
 
     /// \brief Updates a TLB slot
     /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
@@ -521,14 +558,35 @@ public:
     /// \param vp_offset Offset from target virtual addresses to target physical addresses within page
     /// \param pma_index Index of PMA where address falls
     void write_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
-        uint64_t pma_index);
+        uint64_t pma_index) {
+        if (vaddr_page != TLB_INVALID_PAGE) [[likely]] {
+            auto paddr_page = vaddr_page + vp_offset;
+            const auto vh_offset = get_host_addr(paddr_page, pma_index) - vaddr_page;
+            write_tlb(set_index, slot_index, vaddr_page, vh_offset, pma_index);
+        } else {
+            write_tlb(set_index, slot_index, TLB_INVALID_PAGE, host_addr{0}, TLB_INVALID_PMA_INDEX);
+        }
+    }
 
     /// \brief Reads a TLB register
     /// \param set_index TLB_CODE, TLB_READ, or TLB_WRITE
     /// \param slot_index Index of slot to read
     /// \param reg Register to read from slot
     /// \returns Value of register
-    uint64_t read_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what reg) const;
+    uint64_t read_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what reg) const {
+        switch (reg) {
+            case shadow_tlb_what::vaddr_page:
+                return m_s->shadow.tlb[set_index][slot_index].vaddr_page;
+            case shadow_tlb_what::vp_offset:
+                return m_s->shadow.tlb[set_index][slot_index].vp_offset;
+            case shadow_tlb_what::pma_index:
+                return m_s->shadow.tlb[set_index][slot_index].pma_index;
+            case shadow_tlb_what::zero_padding_:
+                return m_s->shadow.tlb[set_index][slot_index].zero_padding_;
+            default:
+                throw std::domain_error{"unknown shadow TLB register"};
+        }
+    }
 
     /// \brief Sends cmio response and returns an access log
     /// \param reason Reason for sending response.

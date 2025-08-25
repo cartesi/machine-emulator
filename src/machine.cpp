@@ -382,74 +382,6 @@ void machine::set_runtime_config(machine_runtime_config r) {
     m_r = std::move(r); // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
 }
 
-uint64_t machine::get_paddr(host_addr haddr, uint64_t pma_index) const {
-    return static_cast<uint64_t>(haddr + get_hp_offset(pma_index));
-}
-
-host_addr machine::get_host_addr(uint64_t paddr, uint64_t pma_index) const {
-    return host_addr{paddr} - get_hp_offset(pma_index);
-}
-
-void machine::mark_dirty_page(uint64_t paddr, uint64_t pma_index) {
-    auto &ar = read_pma(pma_index);
-    ar.get_dirty_page_tree().mark_dirty_page_and_up(paddr - ar.get_start());
-}
-
-void machine::mark_dirty_page(host_addr haddr, uint64_t pma_index) {
-    auto paddr = get_paddr(haddr, pma_index);
-    mark_dirty_page(paddr, pma_index);
-}
-
-uint64_t machine::read_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, shadow_tlb_what reg) const {
-    switch (reg) {
-        case shadow_tlb_what::vaddr_page:
-            return m_s->shadow.tlb[set_index][slot_index].vaddr_page;
-        case shadow_tlb_what::vp_offset:
-            return m_s->shadow.tlb[set_index][slot_index].vp_offset;
-        case shadow_tlb_what::pma_index:
-            return m_s->shadow.tlb[set_index][slot_index].pma_index;
-        case shadow_tlb_what::zero_padding_:
-            return m_s->shadow.tlb[set_index][slot_index].zero_padding_;
-        default:
-            throw std::domain_error{"unknown shadow TLB register"};
-    }
-}
-
-void machine::write_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset,
-    uint64_t pma_index) {
-    uint64_t vp_offset = 0;
-    if (vaddr_page != TLB_INVALID_PAGE) {
-        vp_offset = get_paddr(vh_offset, pma_index);
-    }
-    m_s->penumbra.tlb[set_index][slot_index].vaddr_page = vaddr_page;
-    m_s->penumbra.tlb[set_index][slot_index].vh_offset = vh_offset;
-    m_s->shadow.tlb[set_index][slot_index].vaddr_page = vaddr_page;
-    m_s->shadow.tlb[set_index][slot_index].vp_offset = vp_offset;
-    m_s->shadow.tlb[set_index][slot_index].pma_index = pma_index;
-    m_s->shadow.tlb[set_index][slot_index].zero_padding_ = 0;
-}
-
-void machine::write_shadow_tlb(TLB_set_index set_index, uint64_t slot_index, uint64_t vaddr_page, uint64_t vp_offset,
-    uint64_t pma_index) {
-    if (vaddr_page != TLB_INVALID_PAGE) {
-        auto paddr_page = vaddr_page + vp_offset;
-        const auto vh_offset = get_host_addr(paddr_page, pma_index) - vaddr_page;
-        write_tlb(set_index, slot_index, vaddr_page, vh_offset, pma_index);
-    } else {
-        write_tlb(set_index, slot_index, TLB_INVALID_PAGE, host_addr{0}, TLB_INVALID_PMA_INDEX);
-    }
-}
-
-host_addr machine::get_hp_offset(uint64_t pma_index) const {
-    const auto &ar = read_pma(pma_index);
-    if (!ar.is_memory()) {
-        throw std::domain_error{"PMA index is not of memory range ("s + ar.get_description() + ")"};
-    }
-    auto haddr = cast_ptr_to_host_addr(ar.get_host_memory());
-    auto paddr = ar.get_start();
-    return paddr - haddr;
-}
-
 static void store_address_range(const backing_store_config &from_config, const address_range &ar, bool read_only,
     const std::string &dir, sharing_mode sharing, scope_remove &remover) {
     if (ar.is_empty()) {
@@ -1413,19 +1345,11 @@ bool machine::update_hash_tree() const {
     return m_ht.update(m_ars);
 }
 
-bool machine::update_hash_tree_page(uint64_t address) {
-    return m_ht.update_page(m_ars, address);
-}
-
 machine_hash machine::get_root_hash() const {
     if (!update_hash_tree()) {
         throw std::runtime_error{"update hash tree failed"};
     }
     return m_ht.get_root_hash();
-}
-
-machine_hash machine::get_node_hash(uint64_t address, int log2_size, skip_hash_tree_update_t /* unused */) const {
-    return m_ht.get_node_hash(m_ars, address, log2_size);
 }
 
 const char *machine::get_what_name(uint64_t paddr) {
@@ -1461,10 +1385,6 @@ bool machine::verify_hash_tree() const {
     mark_write_tlb_dirty_pages();
     m_ars.mark_always_dirty_pages();
     return m_ht.verify(m_ars);
-}
-
-machine::proof_type machine::get_proof(uint64_t address, int log2_size, skip_hash_tree_update_t /*unused*/) const {
-    return m_ht.get_proof(m_ars, address, log2_size);
 }
 
 machine::proof_type machine::get_proof(uint64_t address, int log2_size) const {
@@ -1944,10 +1864,10 @@ interpreter_break_reason machine::log_step(uint64_t mcycle_count, const std::str
     if (__builtin_add_overflow(a.read_mcycle(), mcycle_count, &mcycle_end)) {
         mcycle_end = UINT64_MAX;
     }
+    os_silence_putchar(m_r.htif.no_console_putchar);
     auto break_reason = interpret(a, mcycle_end);
     a.finish();
     auto root_hash_after = get_root_hash();
-    os_silence_putchar(m_r.htif.no_console_putchar);
     verify_step(root_hash_before, filename, mcycle_count, root_hash_after);
     return break_reason;
 }
@@ -2071,13 +1991,13 @@ void machine::collect_mcycle_root_hashes(uint64_t mcycle_phase, uint64_t mcycle_
         }
     }
     collect_mcycle_hashes_state_access::context context{};
-    context.dirty_words.reserve(mcycle_period * 3);
+    context.dirty_words.reserve(std::clamp<uint64_t>(mcycle_period * 4, 256, 2048));
+    result.hashes.reserve(mcycle_period);
     const collect_mcycle_hashes_state_access a(context, *this);
     os_silence_putchar(m_r.htif.no_console_putchar);
     auto mcycle_start = read_reg(reg::mcycle);
     for (uint64_t period = 0; period < period_count; ++period) {
         uint64_t mcycle_target{};
-        context.dirty_words.clear();
         if (__builtin_add_overflow(mcycle_start, mcycle_period - mcycle_phase, &mcycle_target)) {
             mcycle_target = UINT64_MAX;
         }
@@ -2116,7 +2036,8 @@ void machine::collect_uarch_cycle_root_hashes(uint64_t mcycle_count, uarch_cycle
         throw std::runtime_error{"microarchitecture is not reset"};
     }
     collect_uarch_cycle_hashes_state_access::context context{};
-    context.dirty_words.reserve(mcycle_count);
+    context.dirty_words.reserve(std::clamp<uint64_t>(mcycle_count * 4, 256, 2048));
+    result.hashes.reserve(mcycle_count * 512);
     const collect_uarch_cycle_hashes_state_access a(context, *this);
     os_silence_putchar(m_r.htif.no_console_putchar);
     auto mcycle_start = read_reg(reg::mcycle);

@@ -274,7 +274,7 @@ public:
     /// \detail The derived class is free to ignore the operation
     void mark_dirty_page_and_up(uint64_t offset) noexcept {
         const auto pos = to_position(offset, AR_LOG2_PAGE_SIZE); // Returns invalid position if node is out of bounds
-        if (pos != invalid_position) {
+        if (pos != invalid_position) [[likely]] {
             mark_dirty_leaf_position_and_up(pos);
         }
     }
@@ -290,7 +290,7 @@ public:
     /// \detail The derived class is free to ignore the operation
     void mark_clean_page_and_up(uint64_t offset) noexcept {
         const auto pos = to_position(offset, AR_LOG2_PAGE_SIZE); // Returns invalid position if node is out of bounds
-        if (pos != invalid_position) {
+        if (pos != invalid_position) [[likely]] {
             mark_clean_leaf_position_and_up(pos);
         }
     }
@@ -300,7 +300,7 @@ public:
     /// \param length Length of range of interest, in bytes
     void mark_dirty_pages_and_up(uint64_t offset, uint64_t length) noexcept {
         const auto end = offset + length;
-        for (offset &= ~(AR_PAGE_SIZE - 1); offset < end; offset += AR_PAGE_SIZE) {
+        for (offset &= ~(AR_PAGE_SIZE - 1); offset < end; offset += AR_PAGE_SIZE) [[likely]] {
             mark_dirty_page_and_up(offset);
         }
     }

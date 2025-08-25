@@ -18,8 +18,9 @@
 #define HASH_TREE_H
 
 #include <iosfwd>
-#include <unordered_set>
 #include <vector>
+
+#include "unordered_dense.h"
 
 #include "address-range.h"
 #include "hash-tree-constants.h"
@@ -116,7 +117,7 @@ class hash_tree {
 public:
     using proof_type = hash_tree_proof;
 
-    using dirty_words_type = std::unordered_set<uint64_t>;
+    using dirty_words_type = ankerl::unordered_dense::set<uint64_t>;
     using nodes_type = std::vector<node_type>;
     using sibling_hashes_type = std::vector<machine_hash>;
 

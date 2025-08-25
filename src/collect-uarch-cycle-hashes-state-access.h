@@ -21,8 +21,8 @@
 /// \brief State access implementation that record and logs all accesses
 #include <cstdint>
 #include <stdexcept>
-#include <unordered_set>
 
+#include "compiler-defines.h"
 #include "hash-tree.h"
 #include "i-accept-scoped-notes.h"
 #include "i-prefer-shadow-uarch-state.h"
@@ -58,7 +58,7 @@ public:
     collect_uarch_cycle_hashes_state_access(context &c, machine &m) : m_c(c), m_m(m) {}
 
 private:
-    void mark_dirty_word(uint64_t address) const {
+    NO_INLINE void mark_dirty_word(uint64_t address) const {
         constexpr uint64_t word_mask = ~(HASH_TREE_WORD_SIZE - 1);
         m_c.dirty_words.insert(address & word_mask);
     }
@@ -69,13 +69,22 @@ private:
     friend i_prefer_shadow_uarch_state<collect_uarch_cycle_hashes_state_access>;
 
     uint64_t do_read_shadow_uarch_state(shadow_uarch_state_what what) const {
-        return m_m.read_reg(machine_reg_enum(what));
+        // Code assumes we only attempt to read valid registers
+        static_assert(shadow_uarch_state_get_what(AR_SHADOW_UARCH_STATE_START) ==
+                shadow_uarch_state_what::uarch_halt_flag,
+            "code assumes halt_flag is the first shadow uarch register");
+        const auto *regs = &m_m.get_uarch_state().registers.halt_flag;
+        return regs[(static_cast<uint64_t>(what) - AR_SHADOW_UARCH_STATE_START) / sizeof(uint64_t)];
     }
 
     void do_write_shadow_uarch_state(shadow_uarch_state_what what, uint64_t val) const {
-        auto reg = machine_reg_enum(what);
-        mark_dirty_word(machine_reg_address(reg));
-        m_m.write_reg(reg, val);
+        // Code assumes we only attempt to write valid and writeable registers
+        static_assert(shadow_uarch_state_get_what(AR_SHADOW_UARCH_STATE_START) ==
+                shadow_uarch_state_what::uarch_halt_flag,
+            "code assumes halt_flag is the first shadow uarch register");
+        auto *regs = &m_m.get_uarch_state().registers.halt_flag;
+        regs[(static_cast<uint64_t>(what) - AR_SHADOW_UARCH_STATE_START) / sizeof(uint64_t)] = val;
+        mark_dirty_word(static_cast<uint64_t>(what));
     }
 
     // -----

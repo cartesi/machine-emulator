@@ -19,8 +19,8 @@
 
 #include <cassert>
 #include <stdexcept>
-#include <unordered_set>
 
+#include "compiler-defines.h"
 #include "hash-tree.h"
 #include "i-accept-scoped-notes.h"
 #include "i-prefer-shadow-state.h"
@@ -68,7 +68,7 @@ public:
 private:
     using fast_addr_type = host_addr;
 
-    void mark_dirty_word(uint64_t address) const {
+    NO_INLINE void mark_dirty_word(uint64_t address) const {
         constexpr uint64_t word_mask = ~(HASH_TREE_WORD_SIZE - 1);
         m_c.dirty_words.insert(address & word_mask);
     }
@@ -79,13 +79,20 @@ private:
     friend i_prefer_shadow_state<collect_mcycle_hashes_state_access>;
 
     uint64_t do_read_shadow_register(shadow_registers_what what) const {
-        return m_m.read_reg(machine_reg_enum(what));
+        // Code assumes we only attempt to read valid registers
+        static_assert(shadow_registers_get_what(AR_SHADOW_REGISTERS_START) == shadow_registers_what::x0,
+            "code assumes x0 is the first shadow register");
+        const auto *regs = &m_m.get_state().shadow.registers.x[0];
+        return regs[(static_cast<uint64_t>(what) - AR_SHADOW_REGISTERS_START) / sizeof(uint64_t)];
     }
 
     void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
-        auto reg = machine_reg_enum(what);
-        mark_dirty_word(machine_reg_address(reg));
-        m_m.write_reg(reg, val);
+        // Code assumes we only attempt to write valid and writeable registers
+        static_assert(shadow_registers_get_what(AR_SHADOW_REGISTERS_START) == shadow_registers_what::x0,
+            "code assumes x0 is the first shadow register");
+        auto *regs = &m_m.get_state().shadow.registers.x[0];
+        regs[(static_cast<uint64_t>(what) - AR_SHADOW_REGISTERS_START) / sizeof(uint64_t)] = val;
+        mark_dirty_word(static_cast<uint64_t>(what));
     }
 
     // -----

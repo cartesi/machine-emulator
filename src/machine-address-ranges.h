@@ -94,7 +94,7 @@ public:
 
     /// \brief Returns the address range corresponding to the ith PMA
     const address_range &read_pma(uint64_t index) const noexcept {
-        if (index >= m_pmas.size()) {
+        if (index >= m_pmas.size()) [[unlikely]] {
             static auto sentinel = make_empty_address_range("sentinel");
             return sentinel;
         }

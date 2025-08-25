@@ -163,6 +163,7 @@ CLANG_TIDY_WARNS=-Wthread-safety -Wglobal-constructors
 
 # Place our include directories before the system's
 INCS+= \
+	-I../third-party/ankerl \
 	-I../third-party/llvm-flang-uint128 \
 	-I../third-party/nlohmann-json \
 	-I../third-party/downloads \

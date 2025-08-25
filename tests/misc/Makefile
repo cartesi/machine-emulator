@@ -95,7 +95,7 @@ CLANG_TIDY_HEADER_FILTER=$(CURDIR)/($(subst $(SPACE),|,$(LINTER_HEADERS)))
 CLANG_FORMAT=clang-format
 CLANG_FORMAT_FILES:=$(wildcard *.cpp) $(wildcard *.h)
 
-INCS=-I../../src -I../../third-party/nlohmann-json -I../../third-party/downloads
+INCS=-I../../src -I../../third-party/ankerl -I../../third-party/nlohmann-json -I../../third-party/downloads
 WARNS=-Wall -Wpedantic $(BOOST_INC)
 
 CXXFLAGS+=-O2 -g -std=gnu++23 -fopenmp -fvisibility=hidden $(INCS) $(UBFLAGS) $(WARNS)

@@ -29,10 +29,11 @@
 #include <span>
 #include <unordered_map>
 
+#include <boost/container/static_vector.hpp>
 #include <boost/intrusive/list.hpp>
 
 #include "address-range-constants.h"
-#include "circular-buffer.h"
+#include "algorithm.h"
 #include "compiler-defines.h"
 #include "hash-tree-constants.h"
 #include "i-hasher.h"
@@ -271,7 +272,7 @@ public:
 
         simd_data_hasher<hasher_type, const_hash_tree_word_view> m_leaves_queue;
         simd_concat_hasher<hasher_type, const_machine_hash_view> m_concat_queue;
-        circular_buffer<dirty_entry, QUEUE_MAX_SIZE> m_dirty_queue;
+        boost::container::static_vector<dirty_entry, QUEUE_MAX_SIZE> m_dirty_queue;
 
     public:
         static constexpr int QUEUE_MAX_PAGE_COUNT = hasher_type::MAX_LANE_COUNT;
@@ -281,7 +282,8 @@ public:
         /// \brief Enqueues a leaf for hashing
         void enqueue_leaf(const_hash_tree_word_view data, page_hash_tree_view page_tree, int word_index) noexcept {
             m_leaves_queue.enqueue(data, page_tree[word_index]);
-            m_dirty_queue.try_push_back(dirty_entry{.page_tree = page_tree, .node_index = entry::parent(word_index)});
+            algorithm::try_push_back(m_dirty_queue,
+                dirty_entry{.page_tree = page_tree, .node_index = entry::parent(word_index)});
         }
 
         /// \brief Flushes the entire queue
@@ -289,21 +291,20 @@ public:
             m_leaves_queue.flush();
             int hashes = 0;
 
+            decltype(m_dirty_queue) next_dirty_queue;
             while (!m_dirty_queue.empty()) {
-                for (size_t i = 0, n = m_dirty_queue.size(); i < n; ++i) {
-                    const auto &d = m_dirty_queue.front();
-                    const auto node_index = d.node_index;
-                    const auto page_tree = d.page_tree;
-                    m_dirty_queue.pop_front();
+                for (const dirty_entry &d : m_dirty_queue) {
                     ++hashes;
-                    m_concat_queue.enqueue(page_tree[entry::left_child(node_index)],
-                        page_tree[entry::right_child(node_index)], page_tree[node_index]);
-                    if (node_index > 1) [[likely]] {
-                        m_dirty_queue.try_push_back(
-                            dirty_entry{.page_tree = page_tree, .node_index = entry::parent(node_index)});
+                    m_concat_queue.enqueue(d.page_tree[entry::left_child(d.node_index)],
+                        d.page_tree[entry::right_child(d.node_index)], d.page_tree[d.node_index]);
+                    if (d.node_index > 1) [[likely]] {
+                        algorithm::try_push_back(next_dirty_queue,
+                            dirty_entry{.page_tree = d.page_tree, .node_index = entry::parent(d.node_index)});
                     }
                 }
                 m_concat_queue.flush();
+                m_dirty_queue.clear();
+                std::swap(m_dirty_queue, next_dirty_queue);
             }
             return hashes;
         }

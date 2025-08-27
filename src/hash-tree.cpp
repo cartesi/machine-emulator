@@ -23,6 +23,7 @@
 #include <string>
 #include <utility>
 
+#include "algorithm.h"
 #include "os-features.h"
 
 #ifdef HAVE_OPENMP
@@ -283,9 +284,7 @@ bool hash_tree::return_updated_dirty_pages(address_ranges ars, dirty_pages &batc
             // If page hash was changed during update
             if (changed) {
                 // If we haven't already done so, add changed address range to list
-                if (changed_ars.empty() || ar_index != changed_ars.back()) {
-                    changed_ars.push_back(ar_index);
-                }
+                algorithm::try_push_back(changed_ars, ar_index);
                 // If page was marked dirty but was not in fact dirty
             } else {
                 // We can safely mark the page clean because its contents already matched its hash
@@ -699,9 +698,7 @@ bool hash_tree::update_words(address_ranges ars, dirty_words_type dirty_words) {
             continue;
         }
         auto &ar = ars[ar_index];
-        if (changed_ars.empty() || changed_ars.back() != ar_index) {
-            changed_ars.push_back(ar_index);
-        }
+        algorithm::try_push_back(changed_ars, ar_index);
         max_level_count = std::max(max_level_count, ar.get_level_count());
         const auto *base = ar.get_host_memory();
         if (!ar.is_memory() || base == nullptr) {
@@ -742,11 +739,8 @@ bool hash_tree::update_words(address_ranges ars, dirty_words_type dirty_words) {
         auto node_hash_view = dht.node_hash_view(page_offset, HASH_TREE_LOG2_PAGE_SIZE);
         std::ranges::copy(cache_entry.root_hash_view(), node_hash_view.begin());
         m_page_cache.return_entry(cache_entry);
-        auto dense_node =
-            dense_node_entry{.dht = dht, .offset = get_aligned_address(page_offset, HASH_TREE_LOG2_PAGE_SIZE + 1)};
-        if (curr_dense_node.empty() || curr_dense_node.back() != dense_node) {
-            curr_dense_node.push_back(dense_node);
-        }
+        algorithm::try_push_back(curr_dense_node,
+            dense_node_entry{.dht = dht, .offset = get_aligned_address(page_offset, HASH_TREE_LOG2_PAGE_SIZE + 1)});
     }
     for (int level = 1; level < max_level_count; ++level) {
         auto log2_size = HASH_TREE_LOG2_PAGE_SIZE + level;
@@ -759,10 +753,8 @@ bool hash_tree::update_words(address_ranges ars, dirty_words_type dirty_words) {
             auto left = dht.node_hash_view(offset, log2_size - 1);
             auto right = dht.node_hash_view(offset + child_size, log2_size - 1);
             queue.enqueue(left, right, parent);
-            auto dense_node = dense_node_entry{.dht = dht, .offset = get_aligned_address(offset, log2_size + 1)};
-            if (next_dense_node.empty() || next_dense_node.back() != dense_node) {
-                next_dense_node.push_back(dense_node);
-            }
+            algorithm::try_push_back(next_dense_node,
+                dense_node_entry{.dht = dht, .offset = get_aligned_address(offset, log2_size + 1)});
         }
         queue.flush();
         std::swap(curr_dense_node, next_dense_node);

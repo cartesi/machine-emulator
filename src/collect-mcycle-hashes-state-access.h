@@ -44,12 +44,11 @@ struct i_state_access_fast_addr<collect_mcycle_hashes_state_access> {
 /// \brief Records machine state access into a step log file
 class collect_mcycle_hashes_state_access :
     public i_state_access<collect_mcycle_hashes_state_access>,
-    public i_prefer_shadow_state<collect_mcycle_hashes_state_access>,
     public i_accept_scoped_notes<collect_mcycle_hashes_state_access> {
 
 public:
     struct context {
-        hash_tree::dirty_words_type dirty_words;
+        hash_tree::dirty_pages_type dirty_pages;
     };
 
 private:
@@ -67,38 +66,358 @@ public:
 
 private:
     using fast_addr_type = host_addr;
+    static constexpr uint64_t page_mask = ~(HASH_TREE_PAGE_SIZE - 1);
 
     NO_INLINE void mark_dirty_word(uint64_t address) const {
-        constexpr uint64_t word_mask = ~(HASH_TREE_WORD_SIZE - 1);
-        m_c.dirty_words.insert(address & word_mask);
+        m_c.dirty_pages.insert(address & page_mask);
     }
 
-    // -----
-    // i_prefer_shadow_state interface implementation
-    // -----
-    friend i_prefer_shadow_state<collect_mcycle_hashes_state_access>;
-
-    uint64_t do_read_shadow_register(shadow_registers_what what) const {
-        // Code assumes we only attempt to read valid registers
-        static_assert(shadow_registers_get_what(AR_SHADOW_REGISTERS_START) == shadow_registers_what::x0,
-            "code assumes x0 is the first shadow register");
-        const auto *regs = &m_m.get_state().shadow.registers.x[0];
-        return regs[(static_cast<uint64_t>(what) - AR_SHADOW_REGISTERS_START) / sizeof(uint64_t)];
-    }
-
-    void do_write_shadow_register(shadow_registers_what what, uint64_t val) const {
-        // Code assumes we only attempt to write valid and writeable registers
-        static_assert(shadow_registers_get_what(AR_SHADOW_REGISTERS_START) == shadow_registers_what::x0,
-            "code assumes x0 is the first shadow register");
-        auto *regs = &m_m.get_state().shadow.registers.x[0];
-        regs[(static_cast<uint64_t>(what) - AR_SHADOW_REGISTERS_START) / sizeof(uint64_t)] = val;
-        mark_dirty_word(static_cast<uint64_t>(what));
+    NO_INLINE void mark_dirty_word(host_addr address, uint64_t pma_index) const {
+        m_c.dirty_pages.insert(m_m.get_paddr(address, pma_index) & page_mask);
     }
 
     // -----
     // i_state_access interface implementation
     // -----
     friend i_state_access<collect_mcycle_hashes_state_access>;
+
+    uint64_t do_read_x(int i) const {
+        return m_m.get_state().shadow.registers.x[i];
+    }
+
+    void do_write_x(int i, uint64_t val) const {
+        assert(i != 0);
+        m_m.get_state().shadow.registers.x[i] = val;
+    }
+
+    uint64_t do_read_f(int i) const {
+        return m_m.get_state().shadow.registers.f[i];
+    }
+
+    void do_write_f(int i, uint64_t val) const {
+        m_m.get_state().shadow.registers.f[i] = val;
+    }
+
+    uint64_t do_read_pc() const {
+        return m_m.get_state().shadow.registers.pc;
+    }
+
+    void do_write_pc(uint64_t val) const {
+        m_m.get_state().shadow.registers.pc = val;
+    }
+
+    uint64_t do_read_fcsr() const {
+        return m_m.get_state().shadow.registers.fcsr;
+    }
+
+    void do_write_fcsr(uint64_t val) const {
+        m_m.get_state().shadow.registers.fcsr = val;
+    }
+
+    uint64_t do_read_icycleinstret() const {
+        return m_m.get_state().shadow.registers.icycleinstret;
+    }
+
+    void do_write_icycleinstret(uint64_t val) const {
+        m_m.get_state().shadow.registers.icycleinstret = val;
+    }
+
+    uint64_t do_read_mvendorid() const { // NOLINT(readability-convert-member-functions-to-static)
+        return MVENDORID_INIT;
+    }
+
+    uint64_t do_read_marchid() const { // NOLINT(readability-convert-member-functions-to-static)
+        return MARCHID_INIT;
+    }
+
+    uint64_t do_read_mimpid() const { // NOLINT(readability-convert-member-functions-to-static)
+        return MIMPID_INIT;
+    }
+
+    uint64_t do_read_mcycle() const {
+        return m_m.get_state().shadow.registers.mcycle;
+    }
+
+    void do_write_mcycle(uint64_t val) const {
+        m_m.get_state().shadow.registers.mcycle = val;
+
+        // Only mcycle writes mark all registers as dirty.
+        // This is done for efficiency, since the interpreter writes mcycle only when exiting its loop.
+        // Also note that by design it is impossible for the interpreter to write other registers without writing
+        // mcycle.
+        for (uint64_t paddr_page = AR_SHADOW_REGISTERS_START;
+            paddr_page < AR_SHADOW_REGISTERS_START + AR_SHADOW_STATE_LENGTH; paddr_page += HASH_TREE_PAGE_SIZE) {
+            mark_dirty_word(paddr_page);
+        }
+    }
+
+    uint64_t do_read_mstatus() const {
+        return m_m.get_state().shadow.registers.mstatus;
+    }
+
+    void do_write_mstatus(uint64_t val) const {
+        m_m.get_state().shadow.registers.mstatus = val;
+    }
+
+    uint64_t do_read_menvcfg() const {
+        return m_m.get_state().shadow.registers.menvcfg;
+    }
+
+    void do_write_menvcfg(uint64_t val) const {
+        m_m.get_state().shadow.registers.menvcfg = val;
+    }
+
+    uint64_t do_read_mtvec() const {
+        return m_m.get_state().shadow.registers.mtvec;
+    }
+
+    void do_write_mtvec(uint64_t val) const {
+        m_m.get_state().shadow.registers.mtvec = val;
+    }
+
+    uint64_t do_read_mscratch() const {
+        return m_m.get_state().shadow.registers.mscratch;
+    }
+
+    void do_write_mscratch(uint64_t val) const {
+        m_m.get_state().shadow.registers.mscratch = val;
+    }
+
+    uint64_t do_read_mepc() const {
+        return m_m.get_state().shadow.registers.mepc;
+    }
+
+    void do_write_mepc(uint64_t val) const {
+        m_m.get_state().shadow.registers.mepc = val;
+    }
+
+    uint64_t do_read_mcause() const {
+        return m_m.get_state().shadow.registers.mcause;
+    }
+
+    void do_write_mcause(uint64_t val) const {
+        m_m.get_state().shadow.registers.mcause = val;
+    }
+
+    uint64_t do_read_mtval() const {
+        return m_m.get_state().shadow.registers.mtval;
+    }
+
+    void do_write_mtval(uint64_t val) const {
+        m_m.get_state().shadow.registers.mtval = val;
+    }
+
+    uint64_t do_read_misa() const {
+        return m_m.get_state().shadow.registers.misa;
+    }
+
+    void do_write_misa(uint64_t val) const {
+        m_m.get_state().shadow.registers.misa = val;
+    }
+
+    uint64_t do_read_mie() const {
+        return m_m.get_state().shadow.registers.mie;
+    }
+
+    void do_write_mie(uint64_t val) const {
+        m_m.get_state().shadow.registers.mie = val;
+    }
+
+    uint64_t do_read_mip() const {
+        return m_m.get_state().shadow.registers.mip;
+    }
+
+    void do_write_mip(uint64_t val) const {
+        m_m.get_state().shadow.registers.mip = val;
+    }
+
+    uint64_t do_read_medeleg() const {
+        return m_m.get_state().shadow.registers.medeleg;
+    }
+
+    void do_write_medeleg(uint64_t val) const {
+        m_m.get_state().shadow.registers.medeleg = val;
+    }
+
+    uint64_t do_read_mideleg() const {
+        return m_m.get_state().shadow.registers.mideleg;
+    }
+
+    void do_write_mideleg(uint64_t val) const {
+        m_m.get_state().shadow.registers.mideleg = val;
+    }
+
+    uint64_t do_read_mcounteren() const {
+        return m_m.get_state().shadow.registers.mcounteren;
+    }
+
+    void do_write_mcounteren(uint64_t val) const {
+        m_m.get_state().shadow.registers.mcounteren = val;
+    }
+
+    uint64_t do_read_senvcfg() const {
+        return m_m.get_state().shadow.registers.senvcfg;
+    }
+
+    void do_write_senvcfg(uint64_t val) const {
+        m_m.get_state().shadow.registers.senvcfg = val;
+    }
+
+    uint64_t do_read_stvec() const {
+        return m_m.get_state().shadow.registers.stvec;
+    }
+
+    void do_write_stvec(uint64_t val) const {
+        m_m.get_state().shadow.registers.stvec = val;
+    }
+
+    uint64_t do_read_sscratch() const {
+        return m_m.get_state().shadow.registers.sscratch;
+    }
+
+    void do_write_sscratch(uint64_t val) const {
+        m_m.get_state().shadow.registers.sscratch = val;
+    }
+
+    uint64_t do_read_sepc() const {
+        return m_m.get_state().shadow.registers.sepc;
+    }
+
+    void do_write_sepc(uint64_t val) const {
+        m_m.get_state().shadow.registers.sepc = val;
+    }
+
+    uint64_t do_read_scause() const {
+        return m_m.get_state().shadow.registers.scause;
+    }
+
+    void do_write_scause(uint64_t val) const {
+        m_m.get_state().shadow.registers.scause = val;
+    }
+
+    uint64_t do_read_stval() const {
+        return m_m.get_state().shadow.registers.stval;
+    }
+
+    void do_write_stval(uint64_t val) const {
+        m_m.get_state().shadow.registers.stval = val;
+    }
+
+    uint64_t do_read_satp() const {
+        return m_m.get_state().shadow.registers.satp;
+    }
+
+    void do_write_satp(uint64_t val) const {
+        m_m.get_state().shadow.registers.satp = val;
+    }
+
+    uint64_t do_read_scounteren() const {
+        return m_m.get_state().shadow.registers.scounteren;
+    }
+
+    void do_write_scounteren(uint64_t val) const {
+        m_m.get_state().shadow.registers.scounteren = val;
+    }
+
+    uint64_t do_read_ilrsc() const {
+        return m_m.get_state().shadow.registers.ilrsc;
+    }
+
+    void do_write_ilrsc(uint64_t val) const {
+        m_m.get_state().shadow.registers.ilrsc = val;
+    }
+
+    uint64_t do_read_iprv() const {
+        return m_m.get_state().shadow.registers.iprv;
+    }
+
+    void do_write_iprv(uint64_t val) const {
+        m_m.get_state().shadow.registers.iprv = val;
+    }
+
+    uint64_t do_read_iflags_X() const {
+        return m_m.get_state().shadow.registers.iflags.X;
+    }
+
+    void do_write_iflags_X(uint64_t val) const {
+        m_m.get_state().shadow.registers.iflags.X = val;
+    }
+
+    uint64_t do_read_iflags_Y() const {
+        return m_m.get_state().shadow.registers.iflags.Y;
+    }
+
+    void do_write_iflags_Y(uint64_t val) const {
+        m_m.get_state().shadow.registers.iflags.Y = val;
+    }
+
+    uint64_t do_read_iflags_H() const {
+        return m_m.get_state().shadow.registers.iflags.H;
+    }
+
+    void do_write_iflags_H(uint64_t val) const {
+        m_m.get_state().shadow.registers.iflags.H = val;
+    }
+
+    uint64_t do_read_iunrep() const {
+        return m_m.get_state().shadow.registers.iunrep;
+    }
+
+    void do_write_iunrep(uint64_t val) const {
+        m_m.get_state().shadow.registers.iunrep = val;
+    }
+
+    uint64_t do_read_clint_mtimecmp() const {
+        return m_m.get_state().shadow.registers.clint.mtimecmp;
+    }
+
+    void do_write_clint_mtimecmp(uint64_t val) const {
+        m_m.get_state().shadow.registers.clint.mtimecmp = val;
+    }
+
+    uint64_t do_read_plic_girqpend() const {
+        return m_m.get_state().shadow.registers.plic.girqpend;
+    }
+
+    void do_write_plic_girqpend(uint64_t val) const {
+        m_m.get_state().shadow.registers.plic.girqpend = val;
+    }
+
+    uint64_t do_read_plic_girqsrvd() const {
+        return m_m.get_state().shadow.registers.plic.girqsrvd;
+    }
+
+    void do_write_plic_girqsrvd(uint64_t val) const {
+        m_m.get_state().shadow.registers.plic.girqsrvd = val;
+    }
+
+    uint64_t do_read_htif_fromhost() const {
+        return m_m.get_state().shadow.registers.htif.fromhost;
+    }
+
+    void do_write_htif_fromhost(uint64_t val) const {
+        m_m.get_state().shadow.registers.htif.fromhost = val;
+    }
+
+    uint64_t do_read_htif_tohost() const {
+        return m_m.get_state().shadow.registers.htif.tohost;
+    }
+
+    void do_write_htif_tohost(uint64_t val) const {
+        m_m.get_state().shadow.registers.htif.tohost = val;
+    }
+
+    uint64_t do_read_htif_ihalt() const {
+        return m_m.get_state().shadow.registers.htif.ihalt;
+    }
+
+    uint64_t do_read_htif_iconsole() const {
+        return m_m.get_state().shadow.registers.htif.iconsole;
+    }
+
+    uint64_t do_read_htif_iyield() const {
+        return m_m.get_state().shadow.registers.htif.iyield;
+    }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
     bool do_read_memory(uint64_t paddr, const unsigned char *data, uint64_t length) const {
@@ -129,7 +448,7 @@ private:
 
     template <typename T, typename A>
     void do_write_memory_word(host_addr haddr, uint64_t pma_index, T val) const {
-        mark_dirty_word(m_m.get_paddr(haddr, pma_index));
+        mark_dirty_word(haddr, pma_index);
         aliased_aligned_write<T, A>(haddr, val);
     }
 
@@ -152,9 +471,8 @@ private:
     //??D This is still a bit too complicated for my taste
     template <TLB_set_index SET>
     void do_write_tlb(uint64_t slot_index, uint64_t vaddr_page, host_addr vh_offset, uint64_t pma_index) const {
+        // Marking only one slot field suffices because mark_dirty_word actually marks pages
         mark_dirty_word(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vaddr_page));
-        mark_dirty_word(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::vp_offset));
-        mark_dirty_word(shadow_tlb_get_abs_addr(SET, slot_index, shadow_tlb_what::pma_index));
         m_m.write_tlb(SET, slot_index, vaddr_page, vh_offset, pma_index);
     }
 

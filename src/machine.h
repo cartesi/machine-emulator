@@ -79,10 +79,9 @@ private:
     /// \brief Returns offset that converts between machine host addresses and target physical addresses
     /// \param pma_index Index of the memory PMA for the desired offset
     host_addr get_hp_offset(uint64_t pma_index) const {
-        using namespace std::string_literals;
-        const auto &ar = read_pma(pma_index);
+        const auto &ar = m_ars.read_pma(pma_index);
         if (!ar.is_memory()) [[unlikely]] {
-            throw std::domain_error{"PMA index is not of memory range ("s + ar.get_description() + ")"s};
+            throw std::domain_error{"attempt to get host to physical offset of PMA that is not a memory range"};
         }
         auto haddr = cast_ptr_to_host_addr(ar.get_host_memory());
         auto paddr = ar.get_start();

@@ -15,6 +15,7 @@
 //
 
 #include "machine.h"
+#include "hash-tree-constants.h"
 #include "os-features.h"
 
 #include <algorithm>
@@ -1991,7 +1992,7 @@ void machine::collect_mcycle_root_hashes(uint64_t mcycle_phase, uint64_t mcycle_
         }
     }
     collect_mcycle_hashes_state_access::context context{};
-    context.dirty_words.reserve(std::clamp<uint64_t>(mcycle_period * 4, 256, 2048));
+    context.dirty_pages.reserve(std::clamp<uint64_t>(mcycle_period * 4, 16, 4096));
     result.hashes.reserve(mcycle_period);
     const collect_mcycle_hashes_state_access a(context, *this);
     os_silence_putchar(m_r.htif.no_console_putchar);
@@ -2004,10 +2005,15 @@ void machine::collect_mcycle_root_hashes(uint64_t mcycle_phase, uint64_t mcycle_
         mcycle_phase = 0;
         result.break_reason = interpret(a, mcycle_target);
         const auto mcycle_end = read_reg(reg::mcycle);
-        if (!m_ht.update_words(m_ars, context.dirty_words)) {
+        for (const uint64_t paddr_page : context.dirty_pages) {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+            auto &ar = const_cast<address_range &>(find_address_range(paddr_page, HASH_TREE_PAGE_SIZE));
+            ar.get_dirty_page_tree().mark_dirty_pages_and_up(paddr_page - ar.get_start(), HASH_TREE_PAGE_SIZE);
+        }
+        if (!m_ht.update(m_ars)) {
             throw std::runtime_error{"update hash tree failed"};
         }
-        context.dirty_words.clear();
+        context.dirty_pages.clear();
         // If the machine stopped before we asked, we are done
         if (mcycle_end != mcycle_target) {
             break;
@@ -2036,8 +2042,9 @@ void machine::collect_uarch_cycle_root_hashes(uint64_t mcycle_count, uarch_cycle
         throw std::runtime_error{"microarchitecture is not reset"};
     }
     collect_uarch_cycle_hashes_state_access::context context{};
-    context.dirty_words.reserve(std::clamp<uint64_t>(mcycle_count * 4, 256, 2048));
+    context.dirty_words.reserve(8);
     result.hashes.reserve(mcycle_count * 512);
+    result.reset_indices.reserve(mcycle_count);
     const collect_uarch_cycle_hashes_state_access a(context, *this);
     os_silence_putchar(m_r.htif.no_console_putchar);
     auto mcycle_start = read_reg(reg::mcycle);

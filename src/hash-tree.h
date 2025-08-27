@@ -118,6 +118,7 @@ public:
     using proof_type = hash_tree_proof;
 
     using dirty_words_type = ankerl::unordered_dense::set<uint64_t>;
+    using dirty_pages_type = ankerl::unordered_dense::set<uint64_t>;
     using nodes_type = std::vector<node_type>;
     using sibling_hashes_type = std::vector<machine_hash>;
 

@@ -482,14 +482,4 @@ void machine_address_ranges::replace(const memory_range_config &config) {
     throw std::invalid_argument{"attempted replace of inexistent memory range"};
 }
 
-const address_range &machine_address_ranges::find(uint64_t paddr, uint64_t length) const noexcept {
-    static auto sentinel = make_empty_address_range("sentinel");
-    for (const auto &ar : m_all) {
-        if (ar->contains_absolute(paddr, length)) {
-            return *ar;
-        }
-    }
-    return sentinel;
-}
-
 } // namespace cartesi

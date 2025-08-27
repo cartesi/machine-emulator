@@ -47,6 +47,7 @@ class machine_address_ranges {
     address_range_descriptions m_descrs;               ///< Address range descriptions for users
     int m_shadow_state_index;                          ///< Index of shadow state address range
     int m_shadow_uarch_state_index;                    ///< Index of shadow uarch state address range
+    address_range m_sentinel{make_empty_address_range("sentinel")};
 
 public:
     /// \brief Constructor
@@ -95,18 +96,24 @@ public:
     /// \brief Returns the address range corresponding to the ith PMA
     const address_range &read_pma(uint64_t index) const noexcept {
         if (index >= m_pmas.size()) [[unlikely]] {
-            static auto sentinel = make_empty_address_range("sentinel");
-            return sentinel;
+            return m_sentinel;
         }
         // NOLINTNEXTLINE(bugprone-narrowing-conversions)
-        return *m_all[static_cast<int>(m_pmas[static_cast<int>(index)])];
+        return *m_all[static_cast<size_t>(m_pmas[static_cast<size_t>(index)])];
     }
 
     /// \brief Returns const address range that covers a given physical memory region
     /// \param paddr Target physical address of start of region.
     /// \param length Length of region, in bytes.
     /// \returns Corresponding address range if found, or an empty sentinel otherwise.
-    const address_range &find(uint64_t paddr, uint64_t length) const noexcept;
+    const address_range &find(uint64_t paddr, uint64_t length) const noexcept {
+        for (const auto &ar : m_all) {
+            if (ar->contains_absolute(paddr, length)) {
+                return *ar;
+            }
+        }
+        return m_sentinel;
+    }
 
     /// \brief Returns address range that covers a given physical memory region
     /// \param paddr Target physical address of start of region.

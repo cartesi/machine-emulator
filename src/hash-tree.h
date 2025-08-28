@@ -18,6 +18,7 @@
 #define HASH_TREE_H
 
 #include <iosfwd>
+#include <memory_resource>
 #include <vector>
 
 #include "unordered_dense.h"
@@ -45,7 +46,7 @@ class hash_tree {
         bool changed;                    ///< Whether the update operation really changed the page
     };
 
-    using dirty_pages = std::vector<dirty_page>;
+    using dirty_pages = std::pmr::vector<dirty_page>;
     struct dense_node_entry {
         // NOLINTNEXTLINE(cppcoreguidelines-avoid-const-or-ref-data-members)
         i_dense_hash_tree &dht;
@@ -54,7 +55,7 @@ class hash_tree {
             return &dht == &other.dht && offset == other.offset;
         }
     };
-    using dense_node_entries = std::vector<dense_node_entry>;
+    using dense_node_entries = std::pmr::vector<dense_node_entry>;
     using pristine_hashes = std::array<machine_hash, HASH_TREE_LOG2_ROOT_SIZE + 1>;
 
     using index_type = int64_t;
@@ -134,7 +135,7 @@ public:
 
     bool update(address_ranges ars);
 
-    bool update_words(address_ranges ars, dirty_words_type dirty_words);
+    bool update_words(address_ranges ars, const dirty_words_type &dirty_words);
 
     bool update_page(address_ranges ars, uint64_t paddr_page);
 
@@ -149,7 +150,7 @@ public:
     hash_tree_stats get_stats(bool clear = false) noexcept;
 
 private:
-    using changed_address_ranges = std::vector<int>;
+    using changed_address_ranges = std::pmr::vector<int>;
 
     void get_pristine_proof(int curr_log2_size, proof_type &proof) const;
     void get_dense_proof(address_range &ar, int ar_log2_size, uint64_t address, proof_type &proof);
@@ -194,7 +195,7 @@ private:
     const pristine_hashes m_pristine_hashes;
     int m_concurrency;
     hash_function_type m_hash_function;
-
+    std::pmr::unsynchronized_pool_resource m_memory_pool;
     uint64_t m_sparse_node_hashes{0};
     std::array<uint64_t, HASH_TREE_LOG2_ROOT_SIZE> m_dense_node_hashes{};
 };

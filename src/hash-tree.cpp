@@ -319,7 +319,7 @@ hash_tree::~hash_tree() {
 bool hash_tree::update_dirty_pages(address_ranges ars, changed_address_ranges &changed_ars) {
     SCOPED_SIGNPOST(m_log, m_spid_update_page_hashes, "hash-tree: update page hashes", "");
     bool update_failed = false;
-    dirty_pages batch;
+    dirty_pages batch{&m_memory_pool};
     batch.reserve(m_page_cache.capacity());
     // Go sequentially over dirty pages of all address ranges, collecting borrowed cache entries for them.
     // The cache eventually runs out of entries to lend.
@@ -407,7 +407,7 @@ bool hash_tree::update_dense_trees(address_ranges ars, const changed_address_ran
     }
     // We can batch more if we have more concurrency, however we need to limit to not run out of memory.
     const size_t batch_size = std::min(m_concurrency << 10, 16384);
-    dense_node_entries batch;
+    dense_node_entries batch{&m_memory_pool};
     batch.reserve(batch_size);
     // Get maximum log2_size of all address ranges
     const auto max_level_count = std::ranges::max(
@@ -450,9 +450,10 @@ bool hash_tree::update_sparse_tree(address_ranges ars, const changed_address_ran
         return true;
     }
     using E = std::pair<int, int>;
-    std::vector<E> changed_backing;
+    std::pmr::vector<E> changed_backing{&m_memory_pool};
     changed_backing.reserve(changed_count);
-    std::priority_queue<E, std::vector<E>, std::greater<>> changed(std::greater<>{}, std::move(changed_backing));
+    std::priority_queue<E, decltype(changed_backing), std::greater<>> changed(std::greater<>{},
+        std::move(changed_backing));
     for (auto ar_index : changed_ars) {
         auto ar_node_index = get_ar_sparse_node_index(ar_index);
         auto &ar_node = m_sparse_nodes[ar_node_index];
@@ -630,7 +631,7 @@ bool hash_tree::verify(address_ranges ars) const {
 
 bool hash_tree::update(address_ranges ars) {
     SCOPED_SIGNPOST(m_log, m_spid_update, "hash-tree: update", "");
-    changed_address_ranges changed_ars;
+    changed_address_ranges changed_ars{&m_memory_pool};
     changed_ars.reserve(ars.size());
     auto update_succeeded = update_dirty_pages(ars, changed_ars) && update_dense_trees(ars, changed_ars) &&
         update_sparse_tree(ars, changed_ars);
@@ -642,7 +643,7 @@ bool hash_tree::update(address_ranges ars) {
     return update_succeeded;
 }
 
-bool hash_tree::update_words(address_ranges ars, dirty_words_type dirty_words) {
+bool hash_tree::update_words(address_ranges ars, const dirty_words_type &dirty_words) {
     constexpr auto page_mask = ~(HASH_TREE_PAGE_SIZE - 1);
     // Dirty_words contains an unordered set of the address of all words that became dirty since last update
     // We copy these to a sorted vector "words"
@@ -652,11 +653,18 @@ bool hash_tree::update_words(address_ranges ars, dirty_words_type dirty_words) {
     if (dirty_words.empty()) {
         return true;
     }
-    std::vector<uint64_t> words;
+    dense_node_entries curr_dense_node{&m_memory_pool};
+    dense_node_entries next_dense_node{&m_memory_pool};
+    changed_address_ranges changed_ars{&m_memory_pool};
+    std::pmr::vector<uint64_t> words{&m_memory_pool};
+    std::pmr::vector<uint64_t> page_starts{&m_memory_pool};
+    curr_dense_node.reserve(4);
+    next_dense_node.reserve(4);
+    changed_ars.reserve(2);
     words.reserve(dirty_words.size());
+    page_starts.reserve(words.size());
     std::ranges::copy(dirty_words, std::back_inserter(words));
     std::ranges::sort(words);
-    std::vector<uint64_t> page_starts;
     uint64_t last_paddr_page = -1;
     //??D change to std::views::enumerate on C++23
     for (uint64_t start = 0; auto word : words) {
@@ -673,9 +681,6 @@ bool hash_tree::update_words(address_ranges ars, dirty_words_type dirty_words) {
     uint64_t update_failures{0}; // NOLINT(misc-const-correctness)
     int ar_index = 0;
     int max_level_count = 0;
-    dense_node_entries curr_dense_node;
-    dense_node_entries next_dense_node;
-    changed_address_ranges changed_ars;
     for (unsigned i = 0; i < page_starts.size() - 1; ++i) {
         auto begin = page_starts[i];
         auto end = page_starts[i + 1];

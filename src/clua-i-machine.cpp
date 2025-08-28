@@ -514,6 +514,7 @@ static const nlohmann::json &clua_get_machine_schema_dict(lua_State *L) try {
             {
                 {"hashes", "Base64Array"},
                 {"reset_indices", "ArrayArrayIndex"},
+                {"break_reason", "InterpreterBreakReason"},
             }},
     };
     return machine_schema_dict;
